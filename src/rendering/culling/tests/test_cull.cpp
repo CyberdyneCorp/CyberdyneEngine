@@ -192,6 +192,16 @@ CY_TEST_CASE("an always-visible instance bypasses the tree but not the layer mas
     CY_REQUIRE(index.insert(sky).has_value());
     CY_CHECK_EQ(index.statistics().always_visible, 1U);
     CY_CHECK_EQ(index.statistics().renderables, 0U);
+    CullWorkspace workspace(allocator());
+    CullResults results(allocator());
+    CY_REQUIRE(cull_view(index, make_view(), CullOptions{}, workspace, results).has_value());
+    CY_REQUIRE_EQ(results.opaque.size(), 1U);
+    CY_CHECK_EQ(results.opaque[0].stable_id, 1U);
+
+    CullView wrong_layer = make_view();
+    wrong_layer.layer_mask = 0;
+    CY_REQUIRE(cull_view(index, wrong_layer, CullOptions{}, workspace, results).has_value());
+    CY_CHECK(results.opaque.empty());
 }
 
 CY_TEST_CASE("a shadow caster that cannot reach the camera frustum is rejected") {
@@ -230,6 +240,28 @@ CY_TEST_CASE("a shadow caster that cannot reach the camera frustum is rejected")
     CY_REQUIRE(cull_shadow_casters(index, shadow, casters, stats).has_value());
     CY_CHECK_EQ(stats.casters, 2U);
     CY_CHECK_EQ(stats.rejected_by_sweep, 0U);
+}
+
+CY_TEST_CASE("an always-visible displaced caster survives shadow culling") {
+    SpatialIndex index(allocator());
+    SpatialEntry displaced = make_entry({0, 0, 1000}, 1);
+    displaced.flags |= cy::rendering::kSpatialAlwaysVisible;
+    CY_REQUIRE(index.insert(displaced).has_value());
+
+    cy::rendering::ShadowCullView shadow;
+    shadow.shadow_frustum = make_view().frustum;
+    shadow.camera_frustum = make_view().frustum;
+    shadow.light_direction = cy::Vec3{0, -1, 0};
+    shadow.sweep_distance = 20.0F;
+    cy::Array<cy::rendering::VisibleInstance> casters(allocator());
+    cy::rendering::ShadowCullStatistics stats;
+    CY_REQUIRE(cull_shadow_casters(index, shadow, casters, stats).has_value());
+    CY_REQUIRE_EQ(casters.size(), 1U);
+    CY_CHECK_EQ(casters[0].stable_id, 1U);
+
+    shadow.layer_mask = 0;
+    CY_REQUIRE(cull_shadow_casters(index, shadow, casters, stats).has_value());
+    CY_CHECK(casters.empty());
 }
 
 CY_TEST_CASE("the broad phase reads three dense arrays, and the payload is a fourth") {

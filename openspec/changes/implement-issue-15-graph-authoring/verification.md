@@ -296,3 +296,16 @@ pixels in the native regression. The editor MCP `editor:window?panel=viewport` c
 a tan cube, gray receiver plane, and cast shadow (viewport chroma 50). The MCP capture helper now
 retries the editor's bounded "presented no frame" response, covered by a regression test. The
 broader displacement and motion assertions remain separate issue #15 work.
+
+## Scene effect and Swift ABI reconciliation (2026-09-28)
+
+The emitter-local parameter and scene effect changes from the local checkout were merged onto the
+PR head in a separate worktree. The PR already had ABI 1.3 game services, so the two VFX instance
+entries append after `spawn_destroy` as ABI 1.4. The ABI baseline, Rust SDK, and Swift overlay were
+regenerated in table order. `just quality-abi` and the Swift package tests pass. Native `unit.abi`,
+`integration.vfx_compiler`, `integration.vfx`, `integration.editor_scene_vfx`, and
+`smoke.editor_script_runtime` pass, as do the focused editor backend, material cook, and culling
+suites. Rust interface, service, shell, and MCP library tests pass; the MCP wire suite passes all
+36 tests. Strict OpenSpec validation and the issue 15 documentation probe pass. The changed
+scene VFX C++ helpers score at most 15 in the available cognitive-complexity analyzer; the Python
+analyzer is not installed. Native image and CPU-displacement proof for task 3.3 remains open.

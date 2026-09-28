@@ -14,7 +14,9 @@
 #include <cy/vfx/runtime.h>
 #include <cy/vfx/world.h>
 
+#include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -124,6 +126,36 @@ struct ModuleSpec {
     payload.u32v(static_cast<u32>(mapped.size()));
     for (const std::string& name : mapped) {
         payload.text(name).text(std::string(directory) + name + ".cyvfxmodule");
+    }
+    return payload.envelope("cyvfxdoc 1\n");
+}
+
+[[nodiscard]] std::string scoped_parameter_system(std::string_view first_owner = "calm") {
+    Payload payload;
+    payload.u32v(4).text("puff").u32v(2);
+    for (const std::string_view emitter : {"calm", "smoke"}) {
+        const std::string canvas = "cyvfxcanvas 1\nemitter " + std::string(emitter) +
+                                   "\nnode 1 vfx.parameter\nprop 1 parameter speed\n"
+                                   "node 2 vfx.spawn_count\nlink 1 out 2 value\n";
+        const std::string initialise =
+            "cyvfxcanvas 1\nemitter " + std::string(emitter) +
+            "\nnode 1 vfx.constant\nprop 1 value 0 0 0\n"
+            "node 2 vfx.set_attribute\nprop 2 attribute position\nlink 1 out 2 value\n"
+            "node 3 vfx.constant\nprop 3 value 1\n"
+            "node 4 vfx.set_attribute\nprop 4 attribute size\nlink 3 out 4 value\n"
+            "node 5 vfx.constant\nprop 5 value 5\n"
+            "node 6 vfx.set_attribute\nprop 6 attribute lifetime\nlink 5 out 6 value\n";
+        payload.text(emitter).u8v(1).text("Sprite").u32v(2);
+        payload.u8v(static_cast<u8>(Stage::Spawn)).text(canvas);
+        payload.u8v(static_cast<u8>(Stage::Initialise)).text(initialise);
+        payload.u32v(0).u32v(0);    // modules, interfaces
+        payload.u32v(256).u32v(0);  // capacity, attributes
+    }
+    payload.u32v(0).u32v(0).u32v(0);  // system parameters, channels, module paths
+    payload.u32v(2);                  // emitter parameters
+    for (const std::string_view emitter : {first_owner, std::string_view("smoke")}) {
+        payload.text(emitter).text("speed").text("float");
+        payload.u32v(0x40000000U).u32v(0).u32v(0).u32v(0).u8v(1);
     }
     return payload.envelope("cyvfxdoc 1\n");
 }
@@ -251,6 +283,70 @@ void check_names_emitter_and_module(const Cook& cook, std::string_view code,
 }
 
 }  // namespace
+
+CY_TEST_CASE("emitter parameters retain scope through the authoring reader and compiler") {
+    auto invalid = read_authoring_document(scoped_parameter_system("missing"), allocator());
+    CY_CHECK(!invalid.has_value());
+
+    auto authored = read_authoring_document(scoped_parameter_system(), allocator());
+    CY_REQUIRE(authored.has_value());
+    CY_CHECK(authored->find_parameter(Name::intern("calm"), Name::intern("speed")) != nullptr);
+    CY_CHECK(authored->find_parameter(Name::intern("smoke"), Name::intern("speed")) != nullptr);
+    CY_CHECK(authored->find_parameter(Name::intern("speed")) == nullptr);
+
+    Cook cook;
+    CY_REQUIRE(cook.ok);
+    CY_REQUIRE(cook.run(scoped_parameter_system(), {}));
+    CY_CHECK_EQ(cook.cooked->parameters().size(), 2U);
+    CY_CHECK(cook.slang().find("cyVfxEmitter_4_calm_speed") != std::string::npos);
+    CY_CHECK(cook.slang().find("cyVfxEmitter_5_smoke_speed") != std::string::npos);
+
+    SimulationWorld world(allocator());
+    WorldDescription description;
+    description.pool_bytes = 1ULL * 1024ULL * 1024ULL;
+    description.max_instances = 1;
+    CY_REQUIRE(world.initialize(description).has_value());
+    auto handle = world.play(*cook.cooked, EffectSpawn{});
+    CY_REQUIRE(handle.has_value());
+    const f32 calm_speed[] = {0.0F};
+    const f32 smoke_speed[] = {120.0F};
+    CY_CHECK(world
+                 .set_parameter(*handle, Name::intern("calm"), Name::intern("speed"),
+                                Span<const f32>(calm_speed, 1))
+                 .has_value());
+    CY_CHECK(world
+                 .set_parameter(*handle, Name::intern("smoke"), Name::intern("speed"),
+                                Span<const f32>(smoke_speed, 1))
+                 .has_value());
+    CY_CHECK(!world.set_parameter(*handle, Name::intern("speed"), Span<const f32>(smoke_speed, 1))
+                  .has_value());
+    auto calm_value = world.get_parameter(*handle, Name::intern("calm"), Name::intern("speed"));
+    auto smoke_value = world.get_parameter(*handle, Name::intern("smoke"), Name::intern("speed"));
+    CY_REQUIRE(calm_value.has_value());
+    CY_REQUIRE(smoke_value.has_value());
+    CY_CHECK_EQ(calm_value->count, 1U);
+    CY_CHECK_EQ(calm_value->lanes[0], 0.0F);
+    CY_CHECK_EQ(smoke_value->lanes[0], 120.0F);
+    CY_CHECK_EQ(smoke_value->type.text(), "float");
+    CY_CHECK_FALSE(world.get_parameter(*handle, Name::intern("speed")).has_value());
+    CY_CHECK_FALSE(world.set_parameter(*handle, Name::intern("calm"), Name::intern("speed"),
+                                       Span<const f32>(smoke_speed, 0)));
+    const f32 non_finite[] = {std::numeric_limits<f32>::infinity()};
+    CY_CHECK_FALSE(world.set_parameter(*handle, Name::intern("calm"), Name::intern("speed"),
+                                       Span<const f32>(non_finite, 1)));
+    CY_CHECK_EQ(world.get_parameter(*handle, Name::intern("calm"), Name::intern("speed"))->lanes[0],
+                0.0F);
+    StepReport stepped;
+    for (u32 frame = 0; frame < 60; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, stepped).has_value());
+    }
+    const EffectInstance* instance = world.find(*handle);
+    CY_REQUIRE(instance != nullptr);
+    const Span<const u8> calm = world.alive_flags(instance->first_block);
+    const Span<const u8> smoke = world.alive_flags(instance->first_block + 1);
+    CY_CHECK(std::ranges::none_of(calm, [](u8 alive) { return alive != 0; }));
+    CY_CHECK(std::ranges::any_of(smoke, [](u8 alive) { return alive != 0; }));
+}
 
 CY_TEST_CASE("a system referencing a saved module compiles with the module's nodes contributing") {
     Cook without;

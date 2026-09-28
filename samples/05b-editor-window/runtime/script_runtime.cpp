@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MIT
 #include "script_runtime.h"
 
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include "scene_vfx_runtime.h"
+#endif
+
+#include <cy/abi/errors.h>
+#include <cy/abi/var.h>
 #include <cy/scene/node.h>
 
 #include <bit>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string_view>
 #include <vector>
@@ -195,6 +202,11 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
     }
     binding_ = std::move(*binding);
     host_.bind_world(binding_.get());
+    play_ = &play;
+    authored_ = &authored;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    host_.bind_vfx_effects(scene_vfx_ != nullptr ? this : nullptr);
+#endif
     Expected<UniquePtr<abi::BehaviourRuntime>, Error> runtime =
         make_unique<abi::BehaviourRuntime>(*allocator_, *allocator_, host_);
     if (!runtime) {
@@ -251,6 +263,9 @@ void ScriptRuntime::stop() noexcept {
     active_library_.clear();
     runtime_.reset();
     host_.bind_world(nullptr);
+    host_.bind_vfx_effects(nullptr);
+    play_ = nullptr;
+    authored_ = nullptr;
     binding_.reset();
 }
 
@@ -280,6 +295,107 @@ Status ScriptRuntime::tick(gameplay::PlaySession& play, f32 dt) noexcept {
         }
     }
     return ok();
+}
+
+u64 ScriptRuntime::scene_node(CyEntity entity) const noexcept {
+    if (play_ == nullptr || authored_ == nullptr || entity == CY_ENTITY_NULL) {
+        return 0;
+    }
+    for (const ser::WorldNode& node : authored_->nodes()) {
+        if (node.live && play_->entity_for(node.identity).bits() == entity) {
+            return node.identity;
+        }
+    }
+    return 0;
+}
+
+CyResult ScriptRuntime::get(CyEntity entity, const char* emitter, const char* parameter,
+                            CyVar& out_value) noexcept {
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    const u64 node = scene_node(entity);
+    if (node == 0 || scene_vfx_ == nullptr) {
+        return abi::report(CY_RESULT_NOT_FOUND, "Play entity has no scene VFX effect");
+    }
+    auto current = scene_vfx_->get_parameter(node, Name::intern(emitter), Name::intern(parameter));
+    if (!current) {
+        return abi::report(current.error());
+    }
+    out_value = abi::var_nil();
+    const std::string_view type = current->type.text();
+    if (type == "float") {
+        out_value.type = CY_VAR_F32;
+        out_value.payload.as_f32 = current->lanes[0];
+    } else if (type == "int") {
+        out_value.type = CY_VAR_I64;
+        out_value.payload.as_i64 = static_cast<i64>(current->lanes[0]);
+    } else if (type == "bool") {
+        out_value.type = CY_VAR_BOOL;
+        out_value.payload.as_bool = current->lanes[0] != 0.0F;
+    } else {
+        out_value.type = type == "vec2" ? CY_VAR_VEC2 : type == "vec3" ? CY_VAR_VEC3 : CY_VAR_VEC4;
+        for (u32 lane = 0; lane < current->count; ++lane) {
+            out_value.payload.as_f32x4[lane] = current->lanes[lane];
+        }
+    }
+    abi::clear_last_error();
+    return CY_RESULT_OK;
+#else
+    (void)entity;
+    (void)emitter;
+    (void)parameter;
+    (void)out_value;
+    return abi::report(CY_RESULT_UNAVAILABLE, "VFX is disabled in this build");
+#endif
+}
+
+CyResult ScriptRuntime::set(CyEntity entity, const char* emitter, const char* parameter,
+                            const CyVar& value) noexcept {
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    CyVar current{};
+    if (const CyResult read = get(entity, emitter, parameter, current); read != CY_RESULT_OK) {
+        return read;
+    }
+    if (value.type != current.type) {
+        return abi::report(CY_RESULT_INVALID_ARGUMENT,
+                           "VFX parameter value type differs from its declaration");
+    }
+    f32 lanes[4] = {};
+    u32 count = 1;
+    switch (value.type) {
+        case CY_VAR_F32:
+            lanes[0] = value.payload.as_f32;
+            break;
+        case CY_VAR_I64:
+            if (value.payload.as_i64 < -16'777'216 || value.payload.as_i64 > 16'777'216) {
+                return abi::report(CY_RESULT_OUT_OF_RANGE,
+                                   "VFX integer exceeds the exact runtime parameter range");
+            }
+            lanes[0] = static_cast<f32>(value.payload.as_i64);
+            break;
+        case CY_VAR_BOOL:
+            lanes[0] = value.payload.as_bool ? 1.0F : 0.0F;
+            break;
+        case CY_VAR_VEC2:
+        case CY_VAR_VEC3:
+        case CY_VAR_VEC4:
+            count = value.type == CY_VAR_VEC2 ? 2U : value.type == CY_VAR_VEC3 ? 3U : 4U;
+            for (u32 lane = 0; lane < count; ++lane) {
+                lanes[lane] = value.payload.as_f32x4[lane];
+            }
+            break;
+        default:
+            return abi::report(CY_RESULT_INVALID_ARGUMENT, "unsupported VFX parameter value type");
+    }
+    const u64 node = scene_node(entity);
+    return abi::unwrap(scene_vfx_->set_parameter(node, Name::intern(emitter),
+                                                 Name::intern(parameter), {lanes, count}));
+#else
+    (void)entity;
+    (void)emitter;
+    (void)parameter;
+    (void)value;
+    return abi::report(CY_RESULT_UNAVAILABLE, "VFX is disabled in this build");
+#endif
 }
 
 }  // namespace cy::sample::editor_window

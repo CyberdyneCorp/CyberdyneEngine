@@ -12,8 +12,12 @@
 
 namespace cy::sample::editor_window {
 
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+class SceneVfxRuntime;
+#endif
+
 /// Runs project Swift behaviours on authored nodes while the hosted Play session is active.
-class ScriptRuntime {
+class ScriptRuntime : private abi::VfxEffectBackend {
 public:
     ScriptRuntime(Allocator& allocator, const char* project,
                   const char* module_path = nullptr) noexcept;
@@ -25,8 +29,16 @@ public:
     [[nodiscard]] Expected<abi::ReloadReport, Error> reload(const char* library) noexcept;
     [[nodiscard]] bool active() const noexcept { return static_cast<bool>(runtime_); }
     [[nodiscard]] u32 count() const noexcept { return static_cast<u32>(identities_.size()); }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    void bind_scene_vfx(SceneVfxRuntime* runtime) noexcept { scene_vfx_ = runtime; }
+#endif
 
 private:
+    [[nodiscard]] CyResult set(CyEntity entity, const char* emitter, const char* parameter,
+                               const CyVar& value) noexcept override;
+    [[nodiscard]] CyResult get(CyEntity entity, const char* emitter, const char* parameter,
+                               CyVar& out_value) noexcept override;
+    [[nodiscard]] u64 scene_node(CyEntity entity) const noexcept;
     Allocator* allocator_;
     std::string project_;
     std::string module_path_;
@@ -36,6 +48,11 @@ private:
     UniquePtr<abi::BehaviourRuntime> runtime_;
     abi::ModuleManifest manifest_;
     std::vector<u64> identities_;
+    gameplay::PlaySession* play_ = nullptr;
+    const scene::serialization::World* authored_ = nullptr;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    SceneVfxRuntime* scene_vfx_ = nullptr;
+#endif
 };
 
 }  // namespace cy::sample::editor_window

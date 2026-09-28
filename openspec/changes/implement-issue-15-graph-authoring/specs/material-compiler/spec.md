@@ -19,3 +19,8 @@ The compiler SHALL report the variants produced for each geometry source under v
 #### Scenario: Displaced shadow and motion
 - **WHEN** a material offsets moving geometry
 - **THEN** visible geometry, its shadow, and motion vectors SHALL match a CPU-displaced reference
+
+#### Scenario: Displacement crosses the source mesh bounds
+- **WHEN** a vertex graph moves a mesh into the view or shadow volume from outside its original
+  bounds
+- **THEN** scene culling SHALL retain that mesh and its shadow caster

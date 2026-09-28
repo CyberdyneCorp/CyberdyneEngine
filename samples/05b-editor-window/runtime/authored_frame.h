@@ -76,7 +76,8 @@ public:
     [[nodiscard]] Status render(const scene::serialization::World& world,
                                 const first_light::Camera& camera, bool editor_lighting = true,
                                 const vfx::SimulationWorld* preview = nullptr,
-                                std::optional<f32> time_seconds = std::nullopt) noexcept;
+                                std::optional<f32> time_seconds = std::nullopt,
+                                const vfx::SimulationWorld* scene_vfx = nullptr) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     [[nodiscard]] const rendering::particles::ParticleReport& vfx_particle_report() const noexcept {
         return vfx_renderer_.report();
@@ -141,7 +142,7 @@ private:
     [[nodiscard]] Status copy_motion_readback(const Readback& motion) noexcept;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     [[nodiscard]] Status prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
-                                     Vec3 eye) noexcept;
+                                     const vfx::SimulationWorld* scene_vfx, Vec3 eye) noexcept;
 #endif
     void release_geometry() noexcept;
 

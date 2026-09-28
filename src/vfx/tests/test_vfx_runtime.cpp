@@ -8,16 +8,20 @@
 #include "effects.h"
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/registry.h>
 #include <cy/ecs/firewall.h>
 #include <cy/test/test.h>
 #include <cy/vfx/authoring.h>
 #include <cy/vfx/catalogue.h>
 #include <cy/vfx/interfaces.h>
 #include <cy/vfx/runtime.h>
+#include <cy/vfx/scene_effects.h>
 #include <cy/vfx/world.h>
+#include <cy_reflect_generated_scene.h>
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <string>
@@ -76,6 +80,87 @@ struct Cooked {
 }
 
 }  // namespace
+
+CY_TEST_CASE("two authored scene effects load independent exposed overrides into the engine") {
+    constexpr std::string_view source = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "cy::vfx::Effect"
+  field 4 text "asset" ""
+  field 5 bool "enabled" ""
+  field 6 float "system.intensity.float" ""
+node 0 - "fx" "Quiet"
+  component 1
+    field 1 0 0 0 1
+    field 2 1 2 3
+    field 3 1 1 1
+  component 2
+    field 4 "effects/plume.cyvfxdoc"
+    field 5 true
+    field 6 0.25
+node 1 - "fx" "Loud"
+  component 1
+    field 1 0 0 0 1
+    field 2 4 5 6
+    field 3 1 1 1
+  component 2
+    field 4 "effects/plume.cyvfxdoc"
+    field 5 true
+    field 6 1
+)";
+    scene::serialization::World scene(allocator());
+    CY_REQUIRE(scene::serialization::read_world(source, "worlds/effects.cyworld", scene));
+    reflect::TypeRegistry registry;
+    CY_REQUIRE(reflect::register_scene_types(registry));
+    scene::serialization::AuthoringSchema schema(allocator());
+    CY_REQUIRE(scene::serialization::build_authoring_schema(registry, schema));
+    CY_REQUIRE(scene::serialization::resolve_against(scene, schema));
+    Cooked cooked;
+    CY_REQUIRE(cooked.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    SceneEffects bindings(allocator());
+    const auto resolve = [](std::string_view asset,
+                            void* context) noexcept -> Expected<const CompiledSystem*, Error> {
+        if (asset != "effects/plume.cyvfxdoc") {
+            return fail(ErrorCode::NotFound, "unknown VFX system asset");
+        }
+        return *static_cast<const CompiledSystem* const*>(context);
+    };
+    const CompiledSystem* system = &*cooked;
+    const Status loaded = bindings.load(scene, world, resolve, &system);
+    if (!loaded) {
+        std::fprintf(stderr, "scene binding refusal: %s\n", loaded.error().message);
+    }
+    CY_REQUIRE(loaded.has_value());
+    CY_CHECK_EQ(bindings.size(), 2U);
+    const EffectHandle quiet = bindings.find(scene.nodes()[0].identity);
+    const EffectHandle loud = bindings.find(scene.nodes()[1].identity);
+    CY_REQUIRE(quiet != kInvalidEffect);
+    CY_REQUIRE(loud != kInvalidEffect);
+    CY_CHECK_NE(quiet, loud);
+    CY_CHECK_EQ(world.find(quiet)->position.x, 1.0F);
+    CY_CHECK_EQ(world.find(loud)->position.x, 4.0F);
+    StepReport report;
+    for (u32 frame = 0; frame < 4; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report));
+    }
+    CY_REQUIRE(world.find(quiet) != nullptr);
+    CY_REQUIRE(world.find(loud) != nullptr);
+    CY_CHECK_EQ(world.find(loud)->live_particles, world.find(quiet)->live_particles * 4U);
+
+    std::string unknown(source);
+    const usize position = unknown.find("system.intensity.float");
+    CY_REQUIRE(position != std::string::npos);
+    unknown.replace(position, std::strlen("system.intensity.float"), "system.missing.float");
+    scene::serialization::World invalid(allocator());
+    CY_REQUIRE(scene::serialization::read_world(unknown, "worlds/effects.cyworld", invalid));
+    CY_REQUIRE(scene::serialization::resolve_against(invalid, schema));
+    CY_CHECK_FALSE(bindings.load(invalid, world, resolve, &system));
+    CY_CHECK_EQ(bindings.size(), 0U);
+}
 
 CY_TEST_CASE("the editor's two-emitter VFX draft cooks, plays and publishes particles") {
     const std::string path =

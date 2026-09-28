@@ -2758,3 +2758,290 @@ fn a_headless_server_refuses_the_window_and_says_what_would_work() {
     assert!(text.contains("headless"), "{text}");
     assert!(text.contains("--mcp"), "{text}");
 }
+
+#[test]
+fn emitter_parameter_commands_save_reopen_and_undo_over_mcp() {
+    use cy_editor_interface::specialised::vfx::VfxDocument;
+
+    let sandbox = Sandbox::new("vfx-emitter-parameters");
+    let reference = "game/sparks.cyvfxdoc";
+    std::fs::write(
+        sandbox.0.join(reference),
+        VfxDocument::new("sparks").unwrap().encode_text().unwrap(),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vfx.emitter.add","arguments":{"reference":"game/sparks.cyvfxdoc","name":"embers","target":"cpu","renderer":"Sprite"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vfx.emitter.parameter.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","name":"speed","kind":"float","values":[2,0,0,0],"exposed":true}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(false));
+    let read = || {
+        VfxDocument::decode_text(&std::fs::read_to_string(sandbox.0.join(reference)).unwrap())
+            .unwrap()
+    };
+    assert_eq!(
+        read().emitter_parameters[0].parameter.value[0].to_bits(),
+        2.0_f32.to_bits()
+    );
+    let refused = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vfx.emitter.parameter.set","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"missing","name":"speed","kind":"float","values":[3,0,0,0],"exposed":true}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&refused, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(
+        read().emitter_parameters[0].parameter.value[0].to_bits(),
+        2.0_f32.to_bits()
+    );
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(read().emitter_parameters.is_empty());
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(read().emitter_parameters.len(), 1);
+    let removed = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.emitter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&removed, 1).get("isError"), &Json::Bool(false));
+    assert!(read().emitter_parameters.is_empty());
+}
+
+#[test]
+fn scene_effect_instances_keep_independent_overrides_through_mcp_and_world_reopen() {
+    use cy_editor_core::value::Value;
+    use cy_editor_documents::selection::Selection;
+    use cy_editor_interface::inspector::{Control, GeneratedInspector};
+    use cy_editor_reflection::Catalogue;
+
+    let sandbox = Sandbox::new("vfx-scene-instances");
+    write_scene_effect_sample(&sandbox);
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/city.cyworld").unwrap();
+
+    let create = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"scene.vfx-effect.create","arguments":{"asset":"game/sparks.cyvfxdoc"}}}"#;
+    let first = converse(&[INITIALIZE, create], &mut editor);
+    assert_eq!(result(&first, 1).get("isError"), &Json::Bool(false));
+    let a = editor.selection.get().nodes().next().unwrap();
+    let second = converse(&[INITIALIZE, create], &mut editor);
+    assert_eq!(result(&second, 1).get("isError"), &Json::Bool(false));
+    let b = editor.selection.get().nodes().next().unwrap();
+    assert_ne!(a, b);
+    assert_invalid_scene_integer_overrides(&mut editor, a);
+
+    let active = editor.workspace.active().unwrap();
+    let mut selected = Selection::new();
+    selected.add_node(a);
+    editor.selection.set(selected);
+    let document = editor.documents.get(active).unwrap();
+    let effect = document.schema().type_named("cy::vfx::Effect").unwrap();
+    let effect_type = effect.id;
+    let intensity = effect.field_named("system.intensity.float").unwrap().id;
+    let mut inspector =
+        GeneratedInspector::with_catalogue(Catalogue::of_document(document.schema()));
+    inspector.refresh(&editor);
+    let section = inspector
+        .sections()
+        .iter()
+        .find(|section| section.title == "cy::vfx::Effect")
+        .expect("the scene effect has a generated Inspector section");
+    assert!(
+        section
+            .rows
+            .iter()
+            .any(|row| row.name == "emitter.embers.speed.float" && row.control == Control::Number)
+    );
+    inspector.begin_edit(effect_type, intensity, Value::Float(5.0));
+    assert_eq!(inspector.commit_edit(&mut editor).unwrap(), 1);
+    let document = editor.documents.get(active).unwrap();
+    assert_eq!(
+        document.content().field(a, effect_type, intensity),
+        Some(&Value::Float(5.0))
+    );
+    assert_eq!(
+        document.content().field(b, effect_type, intensity),
+        Some(&Value::Float(1.0))
+    );
+
+    for (node, value) in [(a, 3), (b, 7)] {
+        let request = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{{\"name\":\"scene.vfx-effect.parameter.set\",\"arguments\":{{\"entity\":\"{node}\",\"name\":\"intensity\",\"values\":[{value},0,0,0]}}}}}}"
+        );
+        let replies = converse(&[INITIALIZE, &request], &mut editor);
+        assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+    }
+    let local = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{{\"name\":\"scene.vfx-effect.parameter.set\",\"arguments\":{{\"entity\":\"{a}\",\"emitter\":\"embers\",\"name\":\"speed\",\"values\":[9,0,0,0]}}}}}}"
+    );
+    let replies = converse(&[INITIALIZE, &local], &mut editor);
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(false));
+
+    let folded = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{{\"name\":\"scene.vfx-effect.parameter.set\",\"arguments\":{{\"entity\":\"{a}\",\"name\":\"gravity\",\"values\":[2,0,0,0]}}}}}}"
+    );
+    let refusal = converse(&[INITIALIZE, &folded], &mut editor);
+    assert_eq!(result(&refusal, 1).get("isError"), &Json::Bool(true));
+    let undo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undo, 1).get("isError"), &Json::Bool(false));
+    let active = editor.workspace.active().unwrap();
+    let document = editor.documents.get(active).unwrap();
+    let effect = document.schema().type_named("cy::vfx::Effect").unwrap();
+    let speed = effect.field_named("emitter.embers.speed.float").unwrap().id;
+    assert_eq!(
+        document.content().field(a, effect.id, speed),
+        Some(&Value::Float(2.0))
+    );
+    let redo = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redo, 1).get("isError"), &Json::Bool(false));
+
+    assert_scene_effect_reopen(&editor, a, b);
+}
+
+fn write_scene_effect_sample(sandbox: &Sandbox) {
+    use cy_editor_interface::specialised::vfx::{
+        Emitter, EmitterParameter, Parameter, SimulationPath, VfxDocument,
+    };
+
+    let mut vfx = VfxDocument::new("sparks").unwrap();
+    vfx.parameters.push(Parameter {
+        name: "intensity".into(),
+        kind: "float".into(),
+        value: [1.0, 0.0, 0.0, 0.0],
+        exposed: true,
+    });
+    vfx.parameters.push(Parameter {
+        name: "gravity".into(),
+        kind: "float".into(),
+        value: [9.8, 0.0, 0.0, 0.0],
+        exposed: false,
+    });
+    vfx.parameters.push(Parameter {
+        name: "bursts".into(),
+        kind: "int".into(),
+        value: [2.0, 0.0, 0.0, 0.0],
+        exposed: true,
+    });
+    vfx.emitters.push(Emitter {
+        name: "embers".into(),
+        path: SimulationPath::CpuRequired,
+        renderer: "Sprite".into(),
+        stages: Vec::new(),
+        modules: Vec::new(),
+        interfaces: Vec::new(),
+        capacity: 1024,
+        attributes: Vec::new(),
+    });
+    vfx.emitter_parameters.push(EmitterParameter {
+        emitter: "embers".into(),
+        parameter: Parameter {
+            name: "speed".into(),
+            kind: "float".into(),
+            value: [2.0, 0.0, 0.0, 0.0],
+            exposed: true,
+        },
+    });
+    std::fs::write(
+        sandbox.0.join("game/sparks.cyvfxdoc"),
+        vfx.encode_text().unwrap(),
+    )
+    .unwrap();
+}
+
+fn assert_invalid_scene_integer_overrides(
+    editor: &mut Editor,
+    entity: cy_editor_core::ids::NodeId,
+) {
+    use cy_editor_core::value::Value;
+
+    for value in ["2.5", "2147483648"] {
+        let request = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{{\"name\":\"scene.vfx-effect.parameter.set\",\"arguments\":{{\"entity\":\"{entity}\",\"name\":\"bursts\",\"values\":[{value},0,0,0]}}}}}}"
+        );
+        let replies = converse(&[INITIALIZE, &request], editor);
+        assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(true));
+        let document = editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap();
+        let effect = document.schema().type_named("cy::vfx::Effect").unwrap();
+        let bursts = effect.field_named("system.bursts.int").unwrap();
+        assert_eq!(
+            document.content().field(entity, effect.id, bursts.id),
+            Some(&Value::Int(2))
+        );
+    }
+}
+
+fn assert_scene_effect_reopen(
+    editor: &Editor,
+    a: cy_editor_core::ids::NodeId,
+    b: cy_editor_core::ids::NodeId,
+) {
+    use cy_editor_core::value::Value;
+    use cy_editor_documents::Document;
+
+    let active = editor.workspace.active().unwrap();
+    let saved = cy_editor_services::worldfile::write_world(editor.documents.get(active).unwrap());
+    let mut reopened = Document::new("worlds/city.cyworld");
+    cy_editor_services::worldfile::load(&saved, &mut reopened, Actor::human("reopen")).unwrap();
+    let component = reopened.schema().type_named("cy::vfx::Effect").unwrap();
+    let intensity = component.field_named("system.intensity.float").unwrap().id;
+    let speed = component
+        .field_named("emitter.embers.speed.float")
+        .unwrap()
+        .id;
+    assert_eq!(
+        reopened.content().field(a, component.id, intensity),
+        Some(&Value::Float(3.0))
+    );
+    assert_eq!(
+        reopened.content().field(b, component.id, intensity),
+        Some(&Value::Float(7.0))
+    );
+    assert_eq!(
+        reopened.content().field(a, component.id, speed),
+        Some(&Value::Float(9.0))
+    );
+    assert_eq!(
+        reopened.content().field(b, component.id, speed),
+        Some(&Value::Float(2.0))
+    );
+}

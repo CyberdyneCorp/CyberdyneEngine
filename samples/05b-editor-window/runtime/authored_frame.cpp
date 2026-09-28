@@ -1771,7 +1771,8 @@ Status AuthoredFrame::copy_motion_readback(const Readback& motion) noexcept {
 
 Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
                              bool editor_lighting, const vfx::SimulationWorld* preview,
-                             std::optional<f32> time_seconds) noexcept {
+                             std::optional<f32> time_seconds,
+                             const vfx::SimulationWorld* scene_vfx) noexcept {
     if (!initialized_) {
         return fail(ErrorCode::Unavailable, "authored frame: not initialized");
     }
@@ -1830,12 +1831,13 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     }
     recorder_.clear_extensions();
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
-    if (Status prepared = prepare_vfx(*begun, preview, eye); !prepared) {
+    if (Status prepared = prepare_vfx(*begun, preview, scene_vfx, eye); !prepared) {
         (void)device_->end_frame();
         return prepared;
     }
 #else
     (void)preview;
+    (void)scene_vfx;
 #endif
     Status result = capture(*begun, camera, editor_lighting, time_seconds);
     Status ended = device_->end_frame();
@@ -1854,15 +1856,35 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
 
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 Status AuthoredFrame::prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
-                                  Vec3 eye) noexcept {
+                                  const vfx::SimulationWorld* scene_vfx, Vec3 eye) noexcept {
     vfx_renderer_.reset_report();
-    if (preview == nullptr) {
+    if (preview == nullptr && scene_vfx == nullptr) {
         return ok();
     }
-    if (Status published =
-            vfx::publish_sprites(*preview, eye, kVfxCapacity, vfx_records_, vfx_published_);
-        !published) {
-        return published;
+    vfx_records_.clear();
+    vfx_published_ = {};
+    if (scene_vfx != nullptr) {
+        if (Status published =
+                vfx::publish_sprites(*scene_vfx, eye, kVfxCapacity, vfx_records_, vfx_published_);
+            !published) {
+            return published;
+        }
+    }
+    if (preview != nullptr) {
+        Array<rendering::particles::ParticleInstance> preview_records(*allocator_);
+        vfx::PublishReport preview_report;
+        const u32 remaining = kVfxCapacity - static_cast<u32>(vfx_records_.size());
+        if (Status published =
+                vfx::publish_sprites(*preview, eye, remaining, preview_records, preview_report);
+            !published) {
+            return published;
+        }
+        if (Status appended = vfx_records_.append(preview_records.span()); !appended) {
+            return appended;
+        }
+        vfx_published_.particles += preview_report.particles;
+        vfx_published_.emitters += preview_report.emitters;
+        vfx_published_.dropped += preview_report.dropped;
     }
     if (Status uploaded = vfx_renderer_.upload(slot, vfx_records_.span()); !uploaded) {
         return uploaded;

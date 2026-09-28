@@ -5,13 +5,21 @@ use cy_editor_commands::{
     Arguments, Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, ProjectHost,
     Registry,
 };
+use cy_editor_core::ids::{FieldId, NodeId, TypeId};
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
+use cy_editor_documents::document::Document;
+use cy_editor_documents::schema::DocumentSchema;
+use cy_editor_documents::selection::Selection;
 use cy_editor_services::authoring::within_scope;
+use cy_editor_services::primitives::add_transform;
 
 use super::graph::{Catalogue, GraphCanvas, Layout, NodeKey};
 use super::material::catalogue_from_service;
-use super::vfx::{Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument};
+use super::vfx::{
+    Attribute, Emitter, EmitterParameter, EventChannel, Parameter, SimulationPath, Stage,
+    VfxDocument, validate_parameter,
+};
 use super::vfx_module::{ModuleInput, VfxModule};
 
 /// Install the same VFX actions for the command palette, scripts, and MCP projection.
@@ -30,6 +38,10 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(set_node_property())?;
     registry.register(set_parameter())?;
     registry.register(remove_parameter())?;
+    registry.register(set_emitter_parameter())?;
+    registry.register(remove_emitter_parameter())?;
+    registry.register(create_scene_effect())?;
+    registry.register(set_scene_effect_parameter())?;
     registry.register(set_emitter_capacity())?;
     registry.register(set_attribute())?;
     registry.register(remove_attribute())?;
@@ -385,6 +397,9 @@ fn remove_emitter() -> Command {
             edit_document(context, reference, |document, _| {
                 let index = emitter_index(document, name)?;
                 document.emitters.remove(index);
+                document
+                    .emitter_parameters
+                    .retain(|entry| entry.emitter != name);
                 Ok(Outcome::new(format!("Removed VFX emitter {name}")))
             })
         },
@@ -950,6 +965,392 @@ fn remove_parameter() -> Command {
             })
         },
     )
+}
+
+fn set_emitter_parameter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.parameter.set",
+            "Set Emitter Parameter",
+            "Creates or updates one emitter-local typed default in an undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the owning emitter.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Parameter name visible in that emitter's graphs.",
+        ))
+        .with(ParameterSpec::required(
+            "kind",
+            ValueKind::Text,
+            "Numeric parameter type.",
+        ))
+        .with(ParameterSpec::required(
+            "values",
+            ValueKind::Vec4,
+            "Default value, with unused lanes zeroed.",
+        ))
+        .with(ParameterSpec::required(
+            "exposed",
+            ValueKind::Bool,
+            "Whether a playing effect may override this value.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let name = text(arguments, "name");
+            let kind = text(arguments, "kind");
+            let Some(Value::Vec4(value)) = arguments.get("values") else {
+                return Err(Problem::new(
+                    "set an emitter parameter",
+                    "four numeric lanes are required",
+                ));
+            };
+            let exposed = matches!(arguments.get("exposed"), Some(Value::Bool(true)));
+            edit_document(context, reference, |document, _| {
+                emitter_index(document, emitter)?;
+                let entry = EmitterParameter {
+                    emitter: emitter.into(),
+                    parameter: Parameter {
+                        name: name.into(),
+                        kind: kind.into(),
+                        value: *value,
+                        exposed,
+                    },
+                };
+                if let Some(existing) = document
+                    .emitter_parameters
+                    .iter_mut()
+                    .find(|existing| existing.emitter == emitter && existing.parameter.name == name)
+                {
+                    *existing = entry;
+                } else {
+                    document.emitter_parameters.push(entry);
+                }
+                Ok(Outcome::new(format!("Set {emitter} parameter {name}")))
+            })
+        },
+    )
+}
+
+fn remove_emitter_parameter() -> Command {
+    Command::new(
+        metadata(
+            "vfx.emitter.parameter.remove",
+            "Remove Emitter Parameter",
+            "Removes one emitter-local parameter in an undoable edit.",
+        )
+        .with(ParameterSpec::required(
+            "emitter",
+            ValueKind::Text,
+            "Name of the emitter that owns this parameter.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Name of the local parameter to remove from that emitter.",
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference");
+            let emitter = text(arguments, "emitter");
+            let name = text(arguments, "name");
+            edit_document(context, reference, |document, _| {
+                let index = document
+                    .emitter_parameters
+                    .iter()
+                    .position(|entry| entry.emitter == emitter && entry.parameter.name == name)
+                    .ok_or_else(|| {
+                        Problem::new("remove an emitter parameter", "parameter does not exist")
+                    })?;
+                document.emitter_parameters.remove(index);
+                Ok(Outcome::new(format!("Removed {emitter} parameter {name}")))
+            })
+        },
+    )
+}
+
+const EFFECT_COMPONENT: &str = "cy::vfx::Effect";
+
+fn scene_field(
+    schema: &mut DocumentSchema,
+    component: TypeId,
+    name: &str,
+    kind: ValueKind,
+) -> Result<FieldId> {
+    if let Some(field) = schema
+        .type_of(component)
+        .and_then(|definition| definition.field_named(name))
+    {
+        if field.kind != kind {
+            return Err(Problem::new(
+                "author a scene effect",
+                format!("field {name} has another value type"),
+            ));
+        }
+        return Ok(field.id);
+    }
+    schema.declare_field(component, name, kind, format!("VFX {name} override"))
+}
+
+fn scene_component(schema: &mut DocumentSchema, name: &str) -> TypeId {
+    if let Some(definition) = schema.type_named(name) {
+        definition.id
+    } else {
+        schema.declare_type(name, false)
+    }
+}
+
+#[allow(clippy::cast_possible_truncation)] // validate_parameter bounds integral f32 values to i32.
+fn scene_parameter_value(parameter: &Parameter) -> Result<(ValueKind, Value)> {
+    validate_parameter(parameter)?;
+    Ok(match parameter.kind.as_str() {
+        "vec2" => (
+            ValueKind::Vec2,
+            Value::Vec2([parameter.value[0], parameter.value[1]]),
+        ),
+        "vec3" => (
+            ValueKind::Vec3,
+            Value::Vec3([parameter.value[0], parameter.value[1], parameter.value[2]]),
+        ),
+        "vec4" => (ValueKind::Vec4, Value::Vec4(parameter.value)),
+        "int" => (ValueKind::Int, Value::Int(parameter.value[0] as i64)),
+        "bool" => (ValueKind::Bool, Value::Bool(parameter.value[0] != 0.0)),
+        _ => (ValueKind::Float, Value::Float(parameter.value[0])),
+    })
+}
+
+fn scene_parameter_name(emitter: Option<&str>, parameter: &Parameter) -> String {
+    match emitter {
+        Some(name) => format!("emitter.{name}.{}.{}", parameter.name, parameter.kind),
+        None => format!("system.{}.{}", parameter.name, parameter.kind),
+    }
+}
+
+fn add_scene_effect(
+    document: &mut Document,
+    node: NodeId,
+    asset: &str,
+    vfx: &VfxDocument,
+) -> Result<()> {
+    let component = scene_component(document.schema_mut(), EFFECT_COMPONENT);
+    let asset_field = scene_field(document.schema_mut(), component, "asset", ValueKind::Text)?;
+    let enabled_field = scene_field(document.schema_mut(), component, "enabled", ValueKind::Bool)?;
+    let mut fields = vec![
+        (asset_field, Value::Text(asset.into())),
+        (enabled_field, Value::Bool(true)),
+    ];
+    for (emitter, parameter) in vfx
+        .parameters
+        .iter()
+        .map(|parameter| (None, parameter))
+        .chain(
+            vfx.emitter_parameters
+                .iter()
+                .map(|entry| (Some(entry.emitter.as_str()), &entry.parameter)),
+        )
+    {
+        if !parameter.exposed {
+            continue;
+        }
+        let name = scene_parameter_name(emitter, parameter);
+        let (kind, value) = scene_parameter_value(parameter)?;
+        let field = scene_field(document.schema_mut(), component, &name, kind)?;
+        fields.push((field, value));
+    }
+    document.add_component(node, component, fields)
+}
+
+fn create_scene_effect() -> Command {
+    Command::new(
+        Metadata::new(
+            "scene.vfx-effect.create",
+            "Create VFX Effect",
+            "Scene",
+            "Creates a scene effect instance with Inspector fields for exposed parameters.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "asset",
+            ValueKind::Text,
+            "Project-relative .cyvfxdoc system to play on this scene entity.",
+        ))
+        .with(ParameterSpec::optional(
+            "at",
+            ValueKind::Vec3,
+            "Initial world position in metres; the origin when omitted.",
+            Value::Vec3([0.0, 0.0, 0.0]),
+        )),
+        |context, arguments| {
+            let asset = text(arguments, "asset");
+            cy_editor_services::vfx_document::validate_reference(asset)?;
+            let vfx = VfxDocument::decode_text(&host(context)?.vfx_document_read(asset)?)?;
+            let document_id = context.active_document().ok_or_else(|| {
+                Problem::new("create a scene effect", "no scene document is open")
+            })?;
+            let actor = context.actor();
+            let at = match arguments.get("at") {
+                Some(Value::Vec3(position)) => *position,
+                _ => [0.0, 0.0, 0.0],
+            };
+            let document = context
+                .document_mut(document_id)
+                .ok_or_else(|| Problem::not_found("the open scene"))?;
+            let node = document.with_transaction("Create VFX Effect", actor, |document| {
+                let node = document.create_node(None)?;
+                document.set_name(node, &vfx.name)?;
+                add_transform(document, node, at)?;
+                add_scene_effect(document, node, asset, &vfx)?;
+                Ok(node)
+            })?;
+            let mut selection = Selection::new();
+            selection.add_node(node);
+            context.set_selection(selection);
+            Ok(Outcome::new(format!("Created VFX effect {}", vfx.name))
+                .with("entity", Value::Text(node.to_string())))
+        },
+    )
+}
+
+fn set_scene_effect_parameter() -> Command {
+    Command::new(
+        Metadata::new(
+            "scene.vfx-effect.parameter.set",
+            "Set Scene VFX Parameter",
+            "Scene",
+            "Overrides one exposed parameter on one saved VFX effect entity.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "entity",
+            ValueKind::Text,
+            "Hexadecimal identity of the scene effect entity to change.",
+        ))
+        .with(ParameterSpec::required(
+            "name",
+            ValueKind::Text,
+            "Declared system or emitter-local parameter name.",
+        ))
+        .with(ParameterSpec::optional(
+            "emitter",
+            ValueKind::Text,
+            "Owning emitter name; empty for a shared system parameter.",
+            Value::Text(String::new()),
+        ))
+        .with(ParameterSpec::required(
+            "values",
+            ValueKind::Vec4,
+            "Override components in engine order, with unused lanes zeroed.",
+        )),
+        apply_scene_effect_parameter,
+    )
+}
+
+fn scene_effect_asset(document: &Document, entity: NodeId) -> Result<String> {
+    let component = document
+        .schema()
+        .type_named(EFFECT_COMPONENT)
+        .ok_or_else(|| Problem::new("set a scene VFX parameter", "scene has no VFX effects"))?;
+    let field = component
+        .field_named("asset")
+        .ok_or_else(|| Problem::new("set a scene VFX parameter", "effect has no asset field"))?;
+    match document.content().field(entity, component.id, field.id) {
+        Some(Value::Text(asset)) => Ok(asset.clone()),
+        _ => Err(Problem::new(
+            "set a scene VFX parameter",
+            "entity is not a VFX effect",
+        )),
+    }
+}
+
+fn scene_effect_declaration<'a>(
+    vfx: &'a VfxDocument,
+    emitter: &str,
+    name: &str,
+) -> Result<&'a Parameter> {
+    let found = if emitter.is_empty() {
+        vfx.parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+    } else {
+        vfx.emitter_parameters
+            .iter()
+            .find(|entry| entry.emitter == emitter && entry.parameter.name == name)
+            .map(|entry| &entry.parameter)
+    };
+    let declaration = found
+        .ok_or_else(|| Problem::new("set a scene VFX parameter", "parameter is not declared"))?;
+    if !declaration.exposed {
+        return Err(Problem::new(
+            "set a scene VFX parameter",
+            "parameter is folded at cook time",
+        ));
+    }
+    Ok(declaration)
+}
+
+fn apply_scene_effect_parameter(
+    context: &mut dyn CommandContext,
+    arguments: &Arguments,
+) -> Result<Outcome> {
+    let entity = u128::from_str_radix(text(arguments, "entity"), 16)
+        .map(NodeId::from_u128)
+        .map_err(|_| Problem::new("set a scene VFX parameter", "invalid entity identity"))?;
+    let emitter = text(arguments, "emitter");
+    let name = text(arguments, "name");
+    let Some(Value::Vec4(values)) = arguments.get("values") else {
+        return Err(Problem::new(
+            "set a scene VFX parameter",
+            "four components are required",
+        ));
+    };
+    let document_id = context
+        .active_document()
+        .ok_or_else(|| Problem::new("set a scene VFX parameter", "no scene document is open"))?;
+    let document = context
+        .document(document_id)
+        .ok_or_else(|| Problem::not_found("the open scene"))?;
+    let asset = scene_effect_asset(document, entity)?;
+    let vfx = VfxDocument::decode_text(&host(context)?.vfx_document_read(&asset)?)?;
+    let declaration = scene_effect_declaration(&vfx, emitter, name)?;
+    let mut override_value = declaration.clone();
+    override_value.value = *values;
+    let (kind, value) = scene_parameter_value(&override_value)?;
+    let field_name = scene_parameter_name((!emitter.is_empty()).then_some(emitter), declaration);
+    let actor = context.actor();
+    let document = context
+        .document_mut(document_id)
+        .ok_or_else(|| Problem::not_found("the open scene"))?;
+    let component = document
+        .schema()
+        .type_named(EFFECT_COMPONENT)
+        .ok_or_else(|| Problem::new("set a scene VFX parameter", "scene has no VFX effects"))?;
+    let field = component.field_named(&field_name).ok_or_else(|| {
+        Problem::new(
+            "set a scene VFX parameter",
+            "effect field is not in the scene schema",
+        )
+    })?;
+    if field.kind != kind
+        || document
+            .content()
+            .field(entity, component.id, field.id)
+            .is_none()
+    {
+        return Err(Problem::new(
+            "set a scene VFX parameter",
+            "effect field is not present on this entity",
+        ));
+    }
+    let component_id = component.id;
+    let field_id = field.id;
+    document.with_transaction("Set Scene VFX Parameter", actor, |document| {
+        document.set_field(entity, component_id, field_id, value)
+    })?;
+    Ok(Outcome::new(format!("Set scene VFX parameter {name}")))
 }
 
 fn set_emitter_capacity() -> Command {

@@ -110,6 +110,47 @@ struct StandardLibrary {
     shader::SourceRegistry registry;
 };
 
+[[nodiscard]] Status append_attribute_value(
+    Writer& writer, const Node& node, const rendering::material::VertexInterpolant* interpolant,
+    std::string_view source) noexcept {
+    if (interpolant != nullptr && node.type == interpolant->type) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".vertex_");
+        writer.text(node.symbol.text());
+        writer.text(";\n");
+    } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+        writer.text(" = editorFrame.frame.shadowControl.z;\n");
+    } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".positionRelativeToCamera;\n");
+    } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".objectPosition;\n");
+    } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".normal;\n");
+    } else if ((node.symbol == Name::intern("uv0") || node.symbol == Name::intern("uv1")) &&
+               node.type == ValueType::Vec2) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".uv;\n");
+    } else if (node.symbol == Name::intern("tangent") && node.type == ValueType::Vec4) {
+        writer.text(" = float4(1.0, 0.0, 0.0, 1.0);\n");
+    } else if (node.symbol == Name::intern("color0") && node.type == ValueType::Vec3) {
+        writer.text(" = ");
+        writer.text(source);
+        writer.text(".color.rgb;\n");
+    } else {
+        return fail(ErrorCode::Unsupported,
+                    "the material requires a vertex attribute this viewport mesh cannot supply");
+    }
+    return writer.status();
+}
+
 [[nodiscard]] Status append_attribute_bindings(const CompiledProgram& program, Writer& writer,
                                                std::string_view source) noexcept {
     for (const Node& node : program.module.nodes()) {
@@ -135,41 +176,8 @@ struct StandardLibrary {
         }
         writer.text("    ctx.attributes.");
         writer.text(node.symbol.text());
-        if (interpolant != nullptr && node.type == interpolant->type) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".vertex_");
-            writer.text(node.symbol.text());
-            writer.text(";\n");
-        } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
-            writer.text(" = editorFrame.frame.shadowControl.z;\n");
-        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".positionRelativeToCamera;\n");
-        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".objectPosition;\n");
-        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".normal;\n");
-        } else if ((node.symbol == Name::intern("uv0") || node.symbol == Name::intern("uv1")) &&
-                   node.type == ValueType::Vec2) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".uv;\n");
-        } else if (node.symbol == Name::intern("tangent") && node.type == ValueType::Vec4) {
-            writer.text(" = float4(1.0, 0.0, 0.0, 1.0);\n");
-        } else if (node.symbol == Name::intern("color0") && node.type == ValueType::Vec3) {
-            writer.text(" = ");
-            writer.text(source);
-            writer.text(".color.rgb;\n");
-        } else {
-            return fail(
-                ErrorCode::Unsupported,
-                "the material requires a vertex attribute this viewport mesh cannot supply");
+        if (Status bound = append_attribute_value(writer, node, interpolant, source); !bound) {
+            return bound;
         }
     }
     return writer.status();
@@ -468,6 +476,79 @@ float4 editorMaterialFragment(EditorVertexOutput input) : SV_Target
                 "the runtime value type does not match the compiled parameter layout");
 }
 
+[[nodiscard]] Status append_vertex_attribute_bindings(Writer& writer,
+                                                      const CompiledProgram& program) noexcept {
+    for (const Node& node : program.module.nodes()) {
+        if (node.op == Op::Field) {
+            if (node.symbol != Name::intern("wind") || node.type != ValueType::Vec3) {
+                return fail(ErrorCode::Unsupported,
+                            "the authored scene has no binding for this environment field");
+            }
+            continue;
+        }
+        if (node.op != Op::Attribute) {
+            continue;
+        }
+        bool interpolant = false;
+        for (const auto& root : program.module.vertex_interpolants()) {
+            interpolant |= root.name == node.symbol;
+        }
+        if (interpolant) {
+            continue;
+        }
+        writer.text("    ctx.attributes.");
+        writer.text(node.symbol.text());
+        if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+            writer.text(" = timeSeconds;\n");
+        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+            writer.text(" = relative;\n");
+        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+            writer.text(" = modelPosition;\n");
+        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
+            writer.text(" = normal;\n");
+        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
+            writer.text(" = uv;\n");
+        } else {
+            return fail(ErrorCode::Unsupported,
+                        "the authored scene mesh cannot supply a vertex graph attribute");
+        }
+    }
+    return ok();
+}
+
+[[nodiscard]] Status append_fragment_attribute_bindings(Writer& writer,
+                                                        const CompiledProgram& program) noexcept {
+    for (const Node& node : program.module.nodes()) {
+        if (node.op != Op::Attribute) {
+            continue;
+        }
+        writer.text("    ctx.attributes.");
+        writer.text(node.symbol.text());
+        const auto interpolants = program.module.vertex_interpolants();
+        const auto found = std::find_if(interpolants.begin(), interpolants.end(),
+                                        [&](const auto& root) { return root.name == node.symbol; });
+        if (found != interpolants.end() && found->type == node.type) {
+            writer.text(" = input.vertex_");
+            writer.text(node.symbol.text());
+            writer.text(";\n");
+        } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
+            writer.text(" = sceneMaterialTime();\n");
+        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
+            writer.text(" = input.relativePosition;\n");
+        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
+            writer.text(" = input.objectPosition;\n");
+        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
+            writer.text(" = input.normal;\n");
+        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
+            writer.text(" = input.uv;\n");
+        } else {
+            return fail(ErrorCode::Unsupported,
+                        "the authored scene mesh cannot supply a fragment graph attribute");
+        }
+    }
+    return ok();
+}
+
 }  // namespace
 
 Status assemble_material_unit(const CompiledProgram& program, Array<char>& unit) noexcept {
@@ -574,40 +655,8 @@ SceneMaterialEvaluation sceneMaterialEvaluate(CyInstanceTransform instance, floa
     if (declared->fields > 0) {
         writer.text("    ctx.fieldPosition = relative;\n");
     }
-    for (const Node& node : program.module.nodes()) {
-        if (node.op == Op::Field) {
-            if (node.symbol != Name::intern("wind") || node.type != ValueType::Vec3) {
-                return fail(ErrorCode::Unsupported,
-                            "the authored scene has no binding for this environment field");
-            }
-            continue;
-        }
-        if (node.op != Op::Attribute) {
-            continue;
-        }
-        bool interpolant = false;
-        for (const auto& root : program.module.vertex_interpolants()) {
-            interpolant |= root.name == node.symbol;
-        }
-        if (interpolant) {
-            continue;
-        }
-        writer.text("    ctx.attributes.");
-        writer.text(node.symbol.text());
-        if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
-            writer.text(" = timeSeconds;\n");
-        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
-            writer.text(" = relative;\n");
-        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
-            writer.text(" = modelPosition;\n");
-        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
-            writer.text(" = normal;\n");
-        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
-            writer.text(" = uv;\n");
-        } else {
-            return fail(ErrorCode::Unsupported,
-                        "the authored scene mesh cannot supply a vertex graph attribute");
-        }
+    if (Status bound = append_vertex_attribute_bindings(writer, program); !bound) {
+        return bound;
     }
     writer.text("    let materialVertex = ");
     writer.text({generated_entry.data(), generated_entry.size()});
@@ -716,33 +765,8 @@ float4 cySceneMaterialFragment(CySceneForwardVertex input) : SV_Target
     if (declared->fields > 0) {
         writer.text("    ctx.fieldPosition = input.relativePosition;\n");
     }
-    for (const Node& node : program.module.nodes()) {
-        if (node.op != Op::Attribute) {
-            continue;
-        }
-        writer.text("    ctx.attributes.");
-        writer.text(node.symbol.text());
-        const auto interpolants = program.module.vertex_interpolants();
-        const auto found = std::find_if(interpolants.begin(), interpolants.end(),
-                                        [&](const auto& root) { return root.name == node.symbol; });
-        if (found != interpolants.end() && found->type == node.type) {
-            writer.text(" = input.vertex_");
-            writer.text(node.symbol.text());
-            writer.text(";\n");
-        } else if (node.symbol == Name::intern("time_seconds") && node.type == ValueType::Float) {
-            writer.text(" = sceneMaterialTime();\n");
-        } else if (node.symbol == Name::intern("position") && node.type == ValueType::Vec3) {
-            writer.text(" = input.relativePosition;\n");
-        } else if (node.symbol == Name::intern("object_position") && node.type == ValueType::Vec3) {
-            writer.text(" = input.objectPosition;\n");
-        } else if (node.symbol == Name::intern("normal") && node.type == ValueType::Vec3) {
-            writer.text(" = input.normal;\n");
-        } else if (node.symbol == Name::intern("uv0") && node.type == ValueType::Vec2) {
-            writer.text(" = input.uv;\n");
-        } else {
-            return fail(ErrorCode::Unsupported,
-                        "the authored scene mesh cannot supply a fragment graph attribute");
-        }
+    if (Status bound = append_fragment_attribute_bindings(writer, program); !bound) {
+        return bound;
     }
     writer.text("    CySurface compiled = cyDefaultSurface();\n    ");
     writer.text({generated_entry.data(), generated_entry.size()});
@@ -923,6 +947,25 @@ MetalMaterialRuntime::MetalMaterialRuntime(Allocator& allocator, first_light::Re
       previews_(allocator) {}
 
 MetalMaterialRuntime::~MetalMaterialRuntime() = default;
+
+Status MetalMaterialRuntime::preview_graph(std::string_view canonical_graph) noexcept {
+    auto compiled = compile_scene_graph_material(canonical_graph, *allocator_);
+    if (!compiled) {
+        return make_unexpected(compiled.error());
+    }
+    const u64 artefact = compiled->cook_key();
+    if (artefact == graph_preview_artefact_) {
+        return ok();
+    }
+    if (Status retained = publish(artefact, *compiled); !retained) {
+        return retained;
+    }
+    if (Status bound = renderer_->bind_material(0, 0, artefact); !bound) {
+        return bound;
+    }
+    graph_preview_artefact_ = artefact;
+    return ok();
+}
 
 Status MetalMaterialRuntime::prepare_frame(const first_light::Camera& camera) noexcept {
     if (!wind_requested_) {

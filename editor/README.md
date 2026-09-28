@@ -474,14 +474,18 @@ moves outside the preview region; other field names receive a named refusal. The
 includes `materials/issue15_sway.cymatcanvas` and its Engine-authored `.cygraph` beside
 `worlds/issue15-sway.cyworld` for opening the time and sine vertex graph in a scene. Native pixel
 proof for displacement, shadow, and motion remains tracked by issue #15.
+Run `just test-issue15-acceptance` on a Mac with a working Metal device to verify the full issue
+#15 ledger locally, including its reference image and CPU-displaced pixel comparisons.
 When an opened graph is assigned to a mesh in the active scene, including an imported material
-slot, Validate and Compile send `StaticMesh` to the Engine material compiler. A material assigned
-to a terrain layer sends `Terrain`; a material used by both requests both variants. The editor
+slot, Validate, Compile, Save, and live Preview send its geometry source to the Engine material
+compiler. An ordinary mesh requests `StaticMesh`; a `.cyvg` mesh asset requests
+`VirtualGeometry`. A material assigned to a terrain layer sends `Terrain`; a material used by
+multiple sources requests each variant. A `.cyvg` asset can be assigned through the same mesh
+asset command used by the Inspector and MCP. The editor
 backend also accepts named geometry-source requests and reports the compiler's
 `vertex-geometry-unsupported` diagnostic for a vertex graph assigned to `VirtualGeometry`. A
-successful Compile result lists the named geometry
-sources whose variants were produced. Discovering virtual-geometry assignments from scene assets
-and build descriptions remains part of issue #15.
+successful Compile result lists the named geometry sources whose variants were produced. A vertex
+graph assigned to a `.cyvg` mesh is refused before Save or live Preview replaces the scene graph.
 The desktop Save button and `material.graph.save` over MCP invoke the same registered command.
 Both send the active scene's mesh and terrain assignments to the engine, which refuses unsupported
 vertex paths before authoring the canonical graph. Saving a graph and syncing its generated
@@ -499,6 +503,11 @@ validates the complete graph through the engine.
 The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
 and shadow passes. A graph requiring an unbound environment field is refused before replacing the
 last valid preview. The Engine weather wind field is bound for scene and material-mesh previews.
+The scene viewport conservatively keeps vertex-graph meshes in view and shadow draw lists because
+their displaced bounds can extend beyond the source mesh. Large scenes with many such graphs may
+draw more meshes until authored displacement bounds are available.
+With no authored world open on the Metal host, live graph Preview applies to the first-light
+material mesh. With a world open, Preview applies to every scene mesh using that graph reference.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 
@@ -585,8 +594,7 @@ runtime readiness waits for an attached preview device. The
 **Save VFX draft** action writes a versioned `.cyvfxdoc` through the `vfx.document.save` command,
 so it participates in scene-document undo/redo and can be reopened through
 `vfx.document.read`. A scene document must be active for save history. This source is editable
-authoring data; engine canonicalisation, runtime cooking, and runtime preview are tracked by
-`openspec/changes/implement-issue-15-graph-authoring/`.
+authoring data; the engine reads and cooks it for the runtime preview.
 After creation gives a system its project path, each desktop frame that changes its VFX
 canvas or metadata saves one document transaction automatically. The same applies to a saved
 module. Undo and redo reload the open graph from the project source; an unchanged frame does not
@@ -628,6 +636,17 @@ command succeeds, and adds one undo entry. A new system without a saved path add
 declarations through MCP with the same save and undo history. Invalid bounds or attribute types
 leave the saved document intact.
 `vfx.parameter.remove` removes a saved system parameter by name.
+`vfx.emitter.parameter.set` and `vfx.emitter.parameter.remove` edit typed defaults for one named
+emitter through the same undoable transaction. Two emitters may use the same local parameter name;
+the VFX compiler and runtime resolve it by emitter. Removing an emitter removes its local
+declarations too. The preview parameter command addresses a local declaration as
+`emitter:name`; a bare name addresses a system declaration.
+`scene.vfx-effect.create` adds a scene entity with a `.cyvfxdoc` asset reference and generated
+Inspector fields for every exposed system and emitter parameter. `scene.vfx-effect.parameter.set`
+changes one entity's typed override by its hexadecimal identity; both commands use the scene's
+undo history. Saving a `.cyworld` stores the asset path and each instance's values.
+Integer defaults and scene overrides must be whole numbers in the signed 32-bit range; invalid
+values are refused without changing the saved document or instance override.
 Interface names and renderer choices in saved commands are checked against the engine when the
 draft is compiled; the desktop pickers only offer entries reported by the attached engine.
 Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
@@ -647,15 +666,17 @@ reapply an edit. An open scene document is required for these transactions.
 The current draft payload records emitter capacity, typed particle attributes with range,
 tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
 open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as
-version 3 payloads. Version 2 drafts also reopen. Version 3 maps module names to explicit
-project-relative `.cyvfxmodule` paths. The `.cyvfxdoc` text envelope remains version 1.
+version 4 payloads. Version 2 drafts also reopen. Version 3 maps module names to explicit
+project-relative `.cyvfxmodule` paths. Version 4 adds emitter-local typed parameters while retaining
+the older fields. The `.cyvfxdoc` text envelope remains version 1.
 The VFX panel exposes those declarations in collapsible sections: typed system parameters with
-runtime exposure, per-emitter capacity and particle attributes with precision controls, and event
+runtime exposure, emitter-local typed parameters, per-emitter capacity and particle attributes with precision controls, and event
 channels with event/depth limits and optional CPU readback. Invalid metadata edits leave the open
 draft intact. **Save VFX draft** records the resulting document through the project transaction
 command. Undo and redo of that command now refresh the open VFX document and stage canvas as well
 as the project file; undoing its creation closes the open draft until redo restores it. Direct
-history for every unsaved edit remains an OpenSpec task. A separately saved `.cyvfxmodule`
+history for a pathless draft begins with its first Save; the desktop New action creates a saved
+asset immediately, so subsequent edits are undoable. A separately saved `.cyvfxmodule`
 records one compatible stage, named typed inputs, dependency names, and a shared-canvas graph.
 `vfx.module.save` and `vfx.module.read` use the command registry shared with MCP; save requires an
 active scene document and supports undo/redo. The sample project includes
@@ -664,7 +685,8 @@ active scene document and supports undo/redo. The sample project includes
 stage, typed host inputs and dependencies, and save changes through `vfx.module.save`. It can
 attach a saved module to an emitter through an undoable document save;
 the attachment records its explicit project path. Creation, module saves, and attachments refresh when the
-scene history is undone or redone. Unsaved graph edits do not yet have individual history entries.
+scene history is undone or redone. A pathless local graph draft is saved as one transaction before
+its node edits can receive individual history entries.
 Opening or creating another module keeps unsaved changes in place; **Discard module edits**
 reopens its last saved source or closes a new module that has never been saved.
 Each referenced module needs an explicit path

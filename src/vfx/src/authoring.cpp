@@ -397,33 +397,67 @@ private:
     return asset.add_emitter(std::move(emitter));
 }
 
+[[nodiscard]] Expected<ParameterDecl, Error> read_parameter(Reader& reader) noexcept {
+    ParameterDecl parameter;
+    auto name = reader.name();
+    auto type = reader.name();
+    if (!name || !type) {
+        return make_unexpected(malformed("invalid VFX parameter declaration"));
+    }
+    parameter.name = *name;
+    parameter.type = *type;
+    for (f32& value : parameter.value) {
+        auto component = reader.number();
+        if (!component) {
+            return make_unexpected(component.error());
+        }
+        value = *component;
+    }
+    auto exposed = reader.byte();
+    if (!exposed || *exposed > 1) {
+        return make_unexpected(malformed("invalid VFX parameter exposure"));
+    }
+    parameter.exposed = *exposed != 0;
+    return parameter;
+}
+
 [[nodiscard]] Status read_parameters(Reader& reader, VfxSystemAsset& asset) noexcept {
     auto count = reader.count();
     if (!count) {
         return make_unexpected(count.error());
     }
     for (u32 index = 0; index < *count; ++index) {
-        ParameterDecl parameter;
-        auto name = reader.name();
-        auto type = reader.name();
-        if (!name || !type) {
-            return make_unexpected(malformed("invalid VFX parameter declaration"));
+        auto parameter = read_parameter(reader);
+        if (!parameter) {
+            return make_unexpected(parameter.error());
         }
-        parameter.name = *name;
-        parameter.type = *type;
-        for (f32& value : parameter.value) {
-            auto component = reader.number();
-            if (!component) {
-                return make_unexpected(component.error());
-            }
-            value = *component;
+        if (Status declared = asset.declare_parameter(*parameter); !declared) {
+            return declared;
         }
-        auto exposed = reader.byte();
-        if (!exposed || *exposed > 1) {
-            return make_unexpected(malformed("invalid VFX parameter exposure"));
+    }
+    return ok();
+}
+
+[[nodiscard]] Status read_emitter_parameters(Reader& reader, VfxSystemAsset& asset) noexcept {
+    auto count = reader.count();
+    if (!count) {
+        return make_unexpected(count.error());
+    }
+    for (u32 index = 0; index < *count; ++index) {
+        auto emitter = reader.name();
+        auto parameter = read_parameter(reader);
+        if (!emitter || !parameter) {
+            return make_unexpected(malformed("invalid emitter VFX parameter"));
         }
-        parameter.exposed = *exposed != 0;
-        if (Status declared = asset.declare_parameter(parameter); !declared) {
+        parameter->emitter = *emitter;
+        const std::string qualified = "cyVfxEmitter_" + std::to_string(emitter->text().size()) +
+                                      "_" + std::string(emitter->text()) + "_" +
+                                      std::string(parameter->name.text());
+        if (qualified.size() > Name::kMaxLength) {
+            return make_unexpected(malformed("emitter VFX parameter name is too long"));
+        }
+        parameter->shader_name = Name::intern(qualified);
+        if (Status declared = asset.declare_parameter(*parameter); !declared) {
             return declared;
         }
     }
@@ -505,7 +539,7 @@ Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
     auto version = reader.word();
     auto name = reader.name();
     auto count = reader.count();
-    if (!version || (*version < 1 || *version > 3) || !name || !count) {
+    if (!version || (*version < 1 || *version > 4) || !name || !count) {
         return make_unexpected(malformed("unsupported VFX document payload"));
     }
     VfxSystemAsset asset(allocator, *name);
@@ -525,6 +559,11 @@ Expected<VfxSystemAsset, Error> read_authoring_document(std::string_view source,
     if (*version >= 3) {
         if (Status mapped = read_module_assets(reader, asset); !mapped) {
             return make_unexpected(mapped.error());
+        }
+    }
+    if (*version >= 4) {
+        if (Status parameters = read_emitter_parameters(reader, asset); !parameters) {
+            return make_unexpected(parameters.error());
         }
     }
     if (!reader.done()) {

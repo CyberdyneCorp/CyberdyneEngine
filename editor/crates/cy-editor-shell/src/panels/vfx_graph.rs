@@ -9,7 +9,8 @@ use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::SpecialisedEditors;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, Link, NodeKey, Property};
 use cy_editor_interface::specialised::vfx::{
-    Attribute, Emitter, EventChannel, Parameter, SimulationPath, Stage, VfxDocument,
+    Attribute, Emitter, EmitterParameter, EventChannel, Parameter, SimulationPath, Stage,
+    VfxDocument,
 };
 use cy_editor_interface::specialised::vfx_module::{ModuleInput, VfxModule};
 use cy_editor_services::backend::VfxCompileState;
@@ -886,6 +887,9 @@ fn declaration_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ui.collapsing("System parameters", |ui| parameter_controls(panels, ui));
             ui.collapsing("Event channels", |ui| channel_controls(panels, ui));
             if let Some((emitter, _)) = panels.specialised.active_vfx_stage() {
+                ui.collapsing("Emitter parameters", |ui| {
+                    emitter_parameter_controls(panels, ui, emitter);
+                });
                 ui.collapsing("Particle attributes", |ui| {
                     attribute_controls(panels, ui, emitter);
                 });
@@ -1042,6 +1046,101 @@ fn parameter_arguments(parameter: &Parameter) -> Arguments {
         .with("kind", Value::Text(parameter.kind.clone()))
         .with("values", Value::Vec4(parameter.value))
         .with("exposed", Value::Bool(parameter.exposed))
+}
+
+fn emitter_parameter_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui, emitter: usize) {
+    let document = panels.specialised.vfx_document().unwrap();
+    let emitter_name = document.emitters[emitter].name.clone();
+    let entries: Vec<_> = document
+        .emitter_parameters
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.emitter == emitter_name)
+        .map(|(index, entry)| (index, entry.parameter.clone()))
+        .collect();
+    for (index, mut parameter) in entries {
+        let mut remove = false;
+        let mut changed = false;
+        let mut value_changed = false;
+        ui.horizontal(|ui| {
+            ui.label(format!("{} ({})", parameter.name, parameter.kind));
+            value_changed = parameter_values(ui, &parameter.kind, &mut parameter.value);
+            changed |= value_changed;
+            changed |= ui
+                .checkbox(&mut parameter.exposed, "Runtime exposed")
+                .changed();
+            remove = ui.button("Remove").clicked();
+        });
+        if changed || remove {
+            let live = parameter.clone();
+            let command = if remove {
+                "vfx.emitter.parameter.remove"
+            } else {
+                "vfx.emitter.parameter.set"
+            };
+            let arguments =
+                parameter_arguments(&parameter).with("emitter", Value::Text(emitter_name.clone()));
+            edit_document_metadata(panels, command, arguments, |document| {
+                if remove {
+                    document.emitter_parameters.remove(index);
+                } else {
+                    document.emitter_parameters[index].parameter = parameter;
+                }
+            });
+            if panels.inputs.vfx_document_problem.is_none()
+                && value_changed
+                && !remove
+                && live.exposed
+                && panels.editor.backend.vfx_preview_snapshot().is_some()
+            {
+                let lanes = match live.kind.as_str() {
+                    "vec2" => 2,
+                    "vec3" => 3,
+                    "vec4" => 4,
+                    _ => 1,
+                };
+                panels.inputs.vfx_live_parameters.push_back((
+                    format!("{}:{}", emitter_name, live.name),
+                    live.value,
+                    lanes,
+                ));
+            } else {
+                panels.inputs.vfx_compile_signature = None;
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.label("New");
+        ui.text_edit_singleline(&mut panels.inputs.vfx_parameter_name);
+        numeric_kind(
+            ui,
+            ("new-emitter-parameter-kind", emitter),
+            &mut panels.inputs.vfx_parameter_kind,
+        );
+        parameter_values(
+            ui,
+            &panels.inputs.vfx_parameter_kind,
+            &mut panels.inputs.vfx_parameter_values,
+        );
+        ui.checkbox(&mut panels.inputs.vfx_parameter_exposed, "Runtime exposed");
+        if ui.button("Add emitter parameter").clicked() {
+            let parameter = Parameter {
+                name: panels.inputs.vfx_parameter_name.clone(),
+                kind: panels.inputs.vfx_parameter_kind.clone(),
+                value: panels.inputs.vfx_parameter_values,
+                exposed: panels.inputs.vfx_parameter_exposed,
+            };
+            let arguments =
+                parameter_arguments(&parameter).with("emitter", Value::Text(emitter_name.clone()));
+            edit_document_metadata(panels, "vfx.emitter.parameter.set", arguments, |document| {
+                document.emitter_parameters.push(EmitterParameter {
+                    emitter: emitter_name,
+                    parameter,
+                });
+            });
+            panels.inputs.vfx_compile_signature = None;
+        }
+    });
 }
 
 fn channel_controls(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
@@ -1659,7 +1758,10 @@ fn remove_open_emitter(specialised: &mut SpecialisedEditors, index: usize) -> Re
     if index >= document.emitters.len() {
         return Err(Problem::new("remove a VFX emitter", "unknown emitter"));
     }
-    document.emitters.remove(index);
+    let removed = document.emitters.remove(index).name;
+    document
+        .emitter_parameters
+        .retain(|entry| entry.emitter != removed);
     let next = index.min(document.emitters.len().saturating_sub(1));
     let select_next = !document.emitters.is_empty();
     specialised.start_vfx_document(document)?;
@@ -2667,6 +2769,15 @@ mod tests {
                 capacity: 1024,
                 attributes: Vec::new(),
             });
+            document.emitter_parameters.push(EmitterParameter {
+                emitter: name.into(),
+                parameter: Parameter {
+                    name: "speed".into(),
+                    kind: "float".into(),
+                    value: [1.0, 0.0, 0.0, 0.0],
+                    exposed: true,
+                },
+            });
         }
         editors.start_vfx_document(document).unwrap();
         editors.select_vfx_stage(1, Stage::Update).unwrap();
@@ -2683,6 +2794,8 @@ mod tests {
         let remaining = editors.vfx_document_snapshot().unwrap().unwrap();
         assert_eq!(remaining.emitters.len(), 1);
         assert_eq!(remaining.emitters[0].name, "embers");
+        assert_eq!(remaining.emitter_parameters.len(), 1);
+        assert_eq!(remaining.emitter_parameters[0].emitter, "embers");
         assert!(remaining.emitters[0].stages.iter().any(|stage| {
             stage.stage == Stage::Update && stage.canvas.contains("node 1 vfx.constant")
         }));
@@ -2690,6 +2803,13 @@ mod tests {
         remove_open_emitter(&mut editors, 0).unwrap();
         assert_eq!(editors.active_vfx_stage(), None);
         assert!(editors.vfx_document().unwrap().emitters.is_empty());
+        assert!(
+            editors
+                .vfx_document()
+                .unwrap()
+                .emitter_parameters
+                .is_empty()
+        );
     }
 
     #[test]

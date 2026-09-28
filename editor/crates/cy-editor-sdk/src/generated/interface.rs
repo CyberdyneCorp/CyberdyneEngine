@@ -2061,4 +2061,60 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Set one exposed parameter on a playing scene effect entity.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn vfx_effect_parameter_set(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        emitter: *const ::std::ffi::c_char,
+        parameter: *const ::std::ffi::c_char,
+        value: *const ffi::CyVar,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .vfx_effect_parameter_set
+            .ok_or(CallError::Missing("vfx_effect_parameter_set"))?;
+        let raw = unsafe { entry(engine, entity, emitter, parameter, value) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Read one exposed parameter from a playing scene effect entity.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn vfx_effect_parameter_get(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        emitter: *const ::std::ffi::c_char,
+        parameter: *const ::std::ffi::c_char,
+        into: *mut ffi::CyVar,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .vfx_effect_parameter_get
+            .ok_or(CallError::Missing("vfx_effect_parameter_get"))?;
+        let raw = unsafe { entry(engine, entity, emitter, parameter, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

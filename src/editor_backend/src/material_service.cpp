@@ -335,6 +335,44 @@ cy::f32 read_f32(const Array<u8>& bytes, usize offset) noexcept {
     return value;
 }
 
+u32 preview_attribute_count(cy::Span<const cy::vfx::AttributeSlot> slots) noexcept {
+    u32 count = 0;
+    for (const cy::vfx::AttributeSlot& slot : slots) {
+        if (!slot.elided && count < 32U) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+Status put_preview_attributes(Array<u8>& out, const VfxPreviewState& preview,
+                              const cy::vfx::EffectInstance& instance, u32 emitter,
+                              u32 particle) noexcept {
+    const auto slots = preview.system->emitters()[emitter].layout().slots();
+    u32 count = preview_attribute_count(slots);
+    if (!put_u8(out, 1) || !put_u32(out, emitter) || !put_u32(out, particle) ||
+        !put_u32(out, count)) {
+        return cy::fail(cy::ErrorCode::OutOfMemory, "VFX preview sample encoding failed");
+    }
+    for (const cy::vfx::AttributeSlot& slot : slots) {
+        if (slot.elided || count == 0) {
+            continue;
+        }
+        if (!put_text(out, slot.name.text()) || !put_u8(out, static_cast<u8>(slot.components))) {
+            return cy::fail(cy::ErrorCode::OutOfMemory, "VFX preview attribute encoding failed");
+        }
+        for (u32 component = 0; component < slot.components; ++component) {
+            if (!put_f32(out, preview.world.read_attribute(instance, emitter, particle, slot.name,
+                                                           component))) {
+                return cy::fail(cy::ErrorCode::OutOfMemory,
+                                "VFX preview attribute encoding failed");
+            }
+        }
+        --count;
+    }
+    return cy::ok();
+}
+
 Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
                           const cy::vfx::EffectInstance* instance) noexcept {
     if (instance == nullptr || !preview.system.has_value()) {
@@ -346,34 +384,7 @@ Status put_preview_sample(Array<u8>& out, const VfxPreviewState& preview,
             if (flags[particle] == 0) {
                 continue;
             }
-            const auto slots = preview.system->emitters()[emitter].layout().slots();
-            u32 count = 0;
-            for (const cy::vfx::AttributeSlot& slot : slots) {
-                count += !slot.elided && count < 32U ? 1U : 0U;
-            }
-            if (!put_u8(out, 1) || !put_u32(out, emitter) || !put_u32(out, particle) ||
-                !put_u32(out, count)) {
-                return cy::fail(cy::ErrorCode::OutOfMemory, "VFX preview sample encoding failed");
-            }
-            for (const cy::vfx::AttributeSlot& slot : slots) {
-                if (slot.elided || count == 0) {
-                    continue;
-                }
-                if (!put_text(out, slot.name.text()) ||
-                    !put_u8(out, static_cast<u8>(slot.components))) {
-                    return cy::fail(cy::ErrorCode::OutOfMemory,
-                                    "VFX preview attribute encoding failed");
-                }
-                for (u32 component = 0; component < slot.components; ++component) {
-                    if (!put_f32(out, preview.world.read_attribute(*instance, emitter, particle,
-                                                                   slot.name, component))) {
-                        return cy::fail(cy::ErrorCode::OutOfMemory,
-                                        "VFX preview attribute encoding failed");
-                    }
-                }
-                --count;
-            }
-            return cy::ok();
+            return put_preview_attributes(out, preview, *instance, emitter, particle);
         }
     }
     return put_u8(out, 0);
@@ -525,9 +536,20 @@ CyResult preview_parameter_update(CyServiceSession_T& session) noexcept {
         }
     }
     const std::string name(reinterpret_cast<const char*>(payload.data() + 4), length);
-    if (Status updated = session.vfx_preview.world.set_parameter(
-            session.vfx_preview.handle, cy::Name::intern(name), {values, count});
-        !updated) {
+    const usize separator = name.find(':');
+    if (separator != std::string::npos && (separator == 0 || separator + 1 == name.size() ||
+                                           name.find(':', separator + 1) != std::string::npos)) {
+        return failed(session, "vfx.preview.parameter", "invalid emitter parameter identity");
+    }
+    const Status updated =
+        separator == std::string::npos
+            ? session.vfx_preview.world.set_parameter(session.vfx_preview.handle,
+                                                      cy::Name::intern(name), {values, count})
+            : session.vfx_preview.world.set_parameter(
+                  session.vfx_preview.handle,
+                  cy::Name::intern(std::string_view(name).substr(0, separator)),
+                  cy::Name::intern(std::string_view(name).substr(separator + 1)), {values, count});
+    if (!updated) {
         return failed(session, "vfx.preview.parameter", updated.error().message);
     }
     return preview_snapshot(session);
@@ -1113,6 +1135,81 @@ CyResult capabilities(CyServiceSession_T& session,
     return put_u64(session.event_payload, features) ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
 }
 
+#if defined(CY_EDITOR_HAS_VFX)
+CyResult dispatch_vfx(CyServiceSession_T& session, std::string_view operation,
+                      cy::Allocator& allocator) noexcept {
+    if (operation == "vfx.catalogue.get") {
+        return cy::vfx::encode_vfx_catalogue(session.event_payload) ? CY_RESULT_OK
+                                                                    : CY_RESULT_OUT_OF_MEMORY;
+    }
+    if (operation == "vfx.authoring-capabilities.get") {
+        return cy::vfx::encode_authoring_capabilities(session.event_payload, nullptr)
+                   ? CY_RESULT_OK
+                   : CY_RESULT_OUT_OF_MEMORY;
+    }
+    if (operation == "vfx.compile") {
+        return compile_vfx(session, allocator);
+    }
+    if (operation == "vfx.preview.load") {
+        return preview_load(session, allocator);
+    }
+    if (operation == "vfx.preview.state") {
+        return preview_snapshot(session);
+    }
+    if (operation == "vfx.preview.control") {
+        return preview_control(session);
+    }
+    if (operation == "vfx.preview.step") {
+        return preview_step(session);
+    }
+    if (operation == "vfx.preview.parameter.update") {
+        return preview_parameter_update(session);
+    }
+    return failed(session, "operation-unsupported", "this backend does not support the operation");
+}
+#endif
+
+CyResult dispatch_material(CyServiceSession_T& session, std::string_view operation,
+                           cy::editor::MaterialPreviewRuntime* preview_runtime,
+                           cy::editor::MaterialAuthoringRuntime* authoring_runtime,
+                           cy::Allocator& allocator) noexcept {
+    if (operation == "material.catalogue.get") {
+        return cy::graph::material::encode_material_catalogue(session.event_payload)
+                   ? CY_RESULT_OK
+                   : CY_RESULT_OUT_OF_MEMORY;
+    }
+    if (operation == "material.validate") {
+        return compile_graph(session, preview_runtime, allocator, false);
+    }
+    if (operation == "material.compile") {
+        return compile_graph(session, preview_runtime, allocator, true);
+    }
+    if (operation == "material.author") {
+        return compile_graph(session, preview_runtime, allocator, false, true);
+    }
+    if (operation == "material.preview.set") {
+        return preview_authored_graph(session, authoring_runtime, allocator);
+    }
+    return failed(session, "operation-unsupported", "this backend does not support the operation");
+}
+
+CyResult dispatch_preview(CyServiceSession_T& session, std::string_view operation,
+                          cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
+    if (operation == "preview.create") {
+        return preview_create(session, preview_runtime);
+    }
+    if (operation == "preview.destroy") {
+        return preview_destroy(session, preview_runtime);
+    }
+    if (operation == "preview.parameter.update") {
+        return preview_parameter_update(session, preview_runtime);
+    }
+    if (operation == "preview.reload") {
+        return preview_reload(session, preview_runtime);
+    }
+    return failed(session, "operation-unsupported", "this backend does not support the operation");
+}
+
 }  // namespace
 
 namespace cy::editor {
@@ -1209,57 +1306,20 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
     const std::string_view operation(session->operation);
     if (!session->cancelled && session->schema != 1) {
         result = failed(*session, "schema-unsupported", "this operation supports schema 1");
-        out_event.kind = CY_SERVICE_EVENT_FAILED;
     } else if (!session->cancelled && operation == "capabilities.get") {
         result = capabilities(*session, preview_runtime_, authoring_runtime_);
-    } else if (!session->cancelled && operation == "material.catalogue.get") {
-        if (Status encoded = graph::material::encode_material_catalogue(session->event_payload);
-            !encoded) {
-            result = CY_RESULT_OUT_OF_MEMORY;
-        }
+    } else if (!session->cancelled && operation.starts_with("material.")) {
+        result = dispatch_material(*session, operation, preview_runtime_, authoring_runtime_,
+                                   *allocator_);
 #if defined(CY_EDITOR_HAS_VFX)
-    } else if (!session->cancelled && operation == "vfx.catalogue.get") {
-        if (Status encoded = vfx::encode_vfx_catalogue(session->event_payload); !encoded) {
-            result = CY_RESULT_OUT_OF_MEMORY;
-        }
-    } else if (!session->cancelled && operation == "vfx.authoring-capabilities.get") {
-        if (Status encoded = vfx::encode_authoring_capabilities(session->event_payload, nullptr);
-            !encoded) {
-            result = CY_RESULT_OUT_OF_MEMORY;
-        }
-    } else if (!session->cancelled && operation == "vfx.compile") {
-        result = compile_vfx(*session, *allocator_);
-    } else if (!session->cancelled && operation == "vfx.preview.load") {
-        result = preview_load(*session, *allocator_);
-    } else if (!session->cancelled && operation == "vfx.preview.state") {
-        result = preview_snapshot(*session);
-    } else if (!session->cancelled && operation == "vfx.preview.control") {
-        result = preview_control(*session);
-    } else if (!session->cancelled && operation == "vfx.preview.step") {
-        result = preview_step(*session);
-    } else if (!session->cancelled && operation == "vfx.preview.parameter.update") {
-        result = preview_parameter_update(*session);
+    } else if (!session->cancelled && operation.starts_with("vfx.")) {
+        result = dispatch_vfx(*session, operation, *allocator_);
 #endif
-    } else if (!session->cancelled && operation == "material.validate") {
-        result = compile_graph(*session, preview_runtime_, *allocator_, false);
-    } else if (!session->cancelled && operation == "material.compile") {
-        result = compile_graph(*session, preview_runtime_, *allocator_, true);
-    } else if (!session->cancelled && operation == "material.author") {
-        result = compile_graph(*session, preview_runtime_, *allocator_, false, true);
-    } else if (!session->cancelled && operation == "material.preview.set") {
-        result = preview_authored_graph(*session, authoring_runtime_, *allocator_);
-    } else if (!session->cancelled && operation == "preview.create") {
-        result = preview_create(*session, preview_runtime_);
-    } else if (!session->cancelled && operation == "preview.destroy") {
-        result = preview_destroy(*session, preview_runtime_);
-    } else if (!session->cancelled && operation == "preview.parameter.update") {
-        result = preview_parameter_update(*session, preview_runtime_);
-    } else if (!session->cancelled && operation == "preview.reload") {
-        result = preview_reload(*session, preview_runtime_);
+    } else if (!session->cancelled && operation.starts_with("preview.")) {
+        result = dispatch_preview(*session, operation, preview_runtime_);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");
-        out_event.kind = CY_SERVICE_EVENT_FAILED;
     }
     if (result != CY_RESULT_OK) {
         return result;

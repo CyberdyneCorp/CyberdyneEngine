@@ -28,7 +28,7 @@ const CyInterface& table() noexcept {
 
 CY_TEST_CASE("the 1.3 table carries every game-service entry, after every 1.2 entry") {
     const CyInterface& iface = table();
-    CY_CHECK_EQ(iface.header.abi_minor, 3U);
+    CY_CHECK_GE(iface.header.abi_minor, 3U);
     CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
 
     // Appended, never inserted: the first 1.3 entry comes straight after the last 1.2 one.
@@ -80,8 +80,11 @@ CY_TEST_CASE("the 1.3 table carries every game-service entry, after every 1.2 en
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    // And the last of them is the last member of the table, so nothing was declared and not listed.
-    CY_CHECK_EQ(offsetof(CyInterface, spawn_destroy) + sizeof(void*), sizeof(CyInterface));
+    // The 1.4 VFX entries follow the complete 1.3 game-service prefix.
+    CY_CHECK_EQ(offsetof(CyInterface, spawn_destroy) + sizeof(void*),
+                offsetof(CyInterface, vfx_effect_parameter_set));
+    CY_CHECK_EQ(offsetof(CyInterface, vfx_effect_parameter_get) + sizeof(void*),
+                sizeof(CyInterface));
 }
 
 CY_TEST_CASE("a new host starts with no game backend and in no phase") {

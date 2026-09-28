@@ -46,6 +46,7 @@ cy-editor-viewport = { path = "../cy-editor-viewport" }
 cy-editor-documents = { path = "../cy-editor-documents" }
 cy-editor-interface = { path = "../cy-editor-interface" }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-reflection = { path = "../cy-editor-reflection" }
 
 [lints]
 workspace = true

@@ -21,11 +21,14 @@
 - [x] 2.4 Make parameter edits update a running effect without compilation and graph edits recompile; test the distinction.
 - [x] 2.5 Add engine-backed preview controls and bounded particle, budget, event, and attribute inspection.
 - [x] 2.6 Expose equivalent VFX editing through MCP and verify undo/redo and MCP parity.
+- [x] 2.7 Author emitter-local typed parameters beside shared system parameters; preserve their identities through save/reopen, compiler, cook, preview, and runtime lookup.
+- [x] 2.8 Add a serializable scene effect binding with per-instance exposed-parameter overrides; edit it in the Inspector and MCP, and verify two scene instances retain different values through save/reopen and runtime load.
+- [x] 2.9 Append effect-instance parameter set/get to the C ABI and generated Swift overlay; prove a Swift module changes one live instance without recompiling or changing another.
 
 ## 3. Vertex-stage material graphs
 
 - [x] 3.1 Add stage-aware material catalogue nodes and outputs for offset, custom interpolants, and displacement, including time, geometry attributes, noise, wind, and math.
-- [ ] 3.2 Compile vertex expressions and report geometry-source variants; refuse unsupported paths in editor and cook with tests.
+- [x] 3.2 Compile vertex expressions and report geometry-source variants; refuse unsupported paths in editor and cook with tests.
 - [ ] 3.3 Apply offset consistently to visible geometry, shadows, and motion vectors; compare with CPU-displaced reference geometry.
 - [ ] 3.4 Preview vertex graphs on the material mesh and scene, and add transaction/MCP parity tests.
 
@@ -33,3 +36,4 @@
 
 - [ ] 4.1 Add executable ledger criteria for each issue #15 acceptance criterion and record a red mutation for each.
 - [ ] 4.2 Update editor and authoring documentation and sample instructions; validate OpenSpec strictly, run relevant C++/Rust/render tests, and measure changed-function cognitive complexity.
+- [ ] 4.3 Add executable ledger probes and red mutations for scene instance and Swift VFX parameter paths found in issue #15's scope audit.

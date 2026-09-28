@@ -85,6 +85,7 @@ cy_add_module(
         ${CY_EDITOR_WINDOW_RHI})
 
 if(CY_VFX)
+    target_sources(cy_editor_window_runtime PRIVATE scene_vfx_runtime.cpp)
     target_link_libraries(cy_editor_window_runtime PRIVATE cy::vfx cy::rendering-particles)
     target_compile_definitions(cy_editor_window_runtime PRIVATE CY_EDITOR_WINDOW_HAS_VFX=1)
 endif()

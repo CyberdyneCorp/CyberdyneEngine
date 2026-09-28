@@ -233,8 +233,20 @@ Status VfxSystemAsset::declare_parameter(const ParameterDecl& decl) noexcept {
         return fail(ErrorCode::InvalidArgument,
                     "vfx: a parameter's type is not in the VFX type lattice");
     }
+    if (!decl.emitter.is_empty() &&
+        (find_emitter(decl.emitter) == nullptr || decl.shader_name.is_empty())) {
+        return fail(ErrorCode::InvalidArgument,
+                    "vfx: an emitter parameter needs an existing emitter and shader name");
+    }
+    const Name shader_name = decl.shader_name.is_empty() ? decl.name : decl.shader_name;
     for (ParameterDecl& existing : parameters_) {
-        if (existing.name == decl.name) {
+        const Name existing_shader =
+            existing.shader_name.is_empty() ? existing.name : existing.shader_name;
+        if (existing_shader == shader_name &&
+            (existing.emitter != decl.emitter || existing.name != decl.name)) {
+            return fail(ErrorCode::AlreadyExists, "vfx: two parameters share a shader name");
+        }
+        if (existing.name == decl.name && existing.emitter == decl.emitter) {
             existing = decl;
             return ok();
         }
@@ -244,11 +256,20 @@ Status VfxSystemAsset::declare_parameter(const ParameterDecl& decl) noexcept {
 
 const ParameterDecl* VfxSystemAsset::find_parameter(Name parameter) const noexcept {
     for (const ParameterDecl& decl : parameters_) {
-        if (decl.name == parameter) {
+        if (decl.emitter.is_empty() && decl.name == parameter) {
             return &decl;
         }
     }
     return nullptr;
+}
+
+const ParameterDecl* VfxSystemAsset::find_parameter(Name emitter, Name parameter) const noexcept {
+    for (const ParameterDecl& decl : parameters_) {
+        if (decl.emitter == emitter && decl.name == parameter) {
+            return &decl;
+        }
+    }
+    return find_parameter(parameter);
 }
 
 Status VfxSystemAsset::declare_channel(const EventChannelDecl& decl) noexcept {

@@ -76,6 +76,38 @@ void append_text(std::vector<cy::u8>& bytes, std::string_view value) {
     bytes.insert(bytes.end(), value.begin(), value.end());
 }
 
+std::string with_emitter_parameter(const std::string& source) {
+    constexpr std::string_view kHeader = "cyvfxdoc 1\n";
+    CY_REQUIRE(source.starts_with(kHeader));
+    std::vector<cy::u8> bytes;
+    const auto nibble = [](char digit) -> cy::u8 {
+        return static_cast<cy::u8>(digit <= '9' ? digit - '0' : digit - 'a' + 10);
+    };
+    for (cy::usize offset = kHeader.size(); offset + 1 < source.size(); offset += 2) {
+        bytes.push_back(
+            static_cast<cy::u8>((nibble(source[offset]) << 4U) | nibble(source[offset + 1])));
+    }
+    CY_REQUIRE_EQ(read_u32(bytes.data()), 2U);
+    bytes[0] = 4;          // Version 4 adds module mappings and emitter parameters.
+    append_u32(bytes, 0);  // No module mappings.
+    append_u32(bytes, 1);  // One emitter parameter.
+    append_text(bytes, "CpuEmitter");
+    append_text(bytes, "local_speed");
+    append_text(bytes, "float");
+    append_f32(bytes, 2.0F);
+    append_f32(bytes, 0.0F);
+    append_f32(bytes, 0.0F);
+    append_f32(bytes, 0.0F);
+    bytes.push_back(1);
+    constexpr char kDigits[] = "0123456789abcdef";
+    std::string result(kHeader);
+    for (cy::u8 byte : bytes) {
+        result.push_back(kDigits[byte >> 4U]);
+        result.push_back(kDigits[byte & 15U]);
+    }
+    return result;
+}
+
 CyServiceEvent submit_and_poll(const CyInterface& api, cy::abi::Host& host,
                                CyServiceSession session, const CyServiceRequest& request) {
     CY_REQUIRE_EQ(api.service_submit(&host, session, &request), CY_RESULT_OK);
@@ -238,5 +270,23 @@ CY_TEST_CASE("editor_backend: VFX preview controls and live parameters use the e
     CY_CHECK_EQ(scrubbed.time, 0.1F);
     CY_CHECK_GT(scrubbed.live, 0U);
     CY_CHECK_FALSE(scrubbed.playing);
+
+    const std::string scoped = with_emitter_parameter(source);
+    const std::vector<cy::u8> scoped_bytes(scoped.begin(), scoped.end());
+    const VfxPreviewSnapshot scoped_loaded =
+        preview_snapshot(call("vfx.preview.load", scoped_bytes));
+    std::vector<cy::u8> local;
+    append_text(local, "CpuEmitter:local_speed");
+    local.push_back(1);
+    append_f32(local, 3.0F);
+    const VfxPreviewSnapshot local_update =
+        preview_snapshot(call("vfx.preview.parameter.update", local));
+    CY_CHECK_EQ(local_update.cook_key, scoped_loaded.cook_key);
+    local.clear();
+    append_text(local, "GpuEmitter:local_speed");
+    local.push_back(1);
+    append_f32(local, 3.0F);
+    CY_CHECK_EQ(call("vfx.preview.parameter.update", local).kind,
+                static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
     api->service_close(&host, session);
 }

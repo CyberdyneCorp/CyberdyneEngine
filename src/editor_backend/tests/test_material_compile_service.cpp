@@ -283,7 +283,8 @@ CY_TEST_CASE("editor_backend: compiler refusals reach the material editor") {
     api->service_close(&host, session);
 }
 
-CY_TEST_CASE("editor_backend: live graph preview validates before updating the authored scene") {
+CY_TEST_CASE(
+    "editor_backend: live graph preview validates geometry before updating the authored scene") {
     cy::abi::Host host(allocator());
     AuthoringRuntime runtime;
     cy::editor::MaterialService service(allocator(), nullptr, &runtime);
@@ -312,6 +313,38 @@ CY_TEST_CASE("editor_backend: live graph preview validates before updating the a
     event = submit_and_poll(*api, host, session, request);
     CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
     CY_CHECK_EQ(runtime.updates, 1);
+
+    constexpr std::string_view vertex_canvas =
+        "cymatcanvas 1\nmaterial moving_mesh\n"
+        "node 1 material.object_position\n"
+        "node 2 material.vertex_output\n"
+        "link 1 out 2 offset\n";
+    payload.clear();
+    append_text(payload, "materials/live.cygraph");
+    const std::string unsupported =
+        std::string("cymatrequest 1\ngeometry VirtualGeometry\n") + std::string(vertex_canvas);
+    append_text(payload, unsupported);
+    request = {
+        sizeof(CyServiceRequest), 1, 63, "material.preview.set", payload.data(), payload.size()};
+    event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_FAILED));
+    CY_REQUIRE(event.payload_size >= 13U);
+    const cy::u32 code_size = read_u32(event.payload + 9);  // schema, count, severity
+    CY_REQUIRE(event.payload_size >= 13U + code_size);
+    CY_CHECK_EQ(std::string_view(reinterpret_cast<const char*>(event.payload + 13), code_size),
+                "vertex-geometry-unsupported");
+    CY_CHECK_EQ(runtime.updates, 1);
+
+    payload.clear();
+    append_text(payload, "materials/live.cygraph");
+    const std::string supported =
+        std::string("cymatrequest 1\ngeometry StaticMesh\n") + std::string(vertex_canvas);
+    append_text(payload, supported);
+    request = {
+        sizeof(CyServiceRequest), 1, 64, "material.preview.set", payload.data(), payload.size()};
+    event = submit_and_poll(*api, host, session, request);
+    CY_CHECK_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(runtime.updates, 2);
     api->service_close(&host, session);
 }
 

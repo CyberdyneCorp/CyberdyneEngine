@@ -52,6 +52,8 @@ public:
     [[nodiscard]] Status publish(
         u64 artefact, const rendering::material::CompiledMaterial& material) noexcept override;
     [[nodiscard]] Status prepare_frame(const first_light::Camera& camera) noexcept;
+    /// Apply an unsaved authored graph to the first-light material preview mesh.
+    [[nodiscard]] Status preview_graph(std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status create(u64 preview) noexcept override;
     [[nodiscard]] Status reload(
         u64 preview, u64 artefact,
@@ -74,6 +76,7 @@ private:
     Array<Preview> previews_;
     std::unique_ptr<WindFieldPreview> wind_;
     bool wind_requested_ = false;
+    u64 graph_preview_artefact_ = 0;
 };
 
 }  // namespace cy::sample::editor_window

@@ -773,6 +773,7 @@ dependencies = [
  "cy-editor-interface",
  "cy-editor-json",
  "cy-editor-protocol",
+ "cy-editor-reflection",
  "cy-editor-services",
  "cy-editor-viewport",
 ]

@@ -308,7 +308,7 @@ struct Lowering {
             report(*state.sink, node.key, n.prop_parameter, "vfx: a parameter node names nothing");
             return fail(ErrorCode::InvalidArgument, "vfx: a parameter with no name");
         }
-        const ParameterDecl* decl = state.asset->find_parameter(named->text);
+        const ParameterDecl* decl = state.asset->find_parameter(state.emitter->name(), named->text);
         if (decl == nullptr) {
             report(*state.sink, node.key, n.prop_parameter,
                    "vfx: this parameter is not declared by the system", named->text);
@@ -323,7 +323,8 @@ struct Lowering {
                                   0};
             return builder.make(Constant, type, Name{}, value, {});
         }
-        return builder.make(Parameter, type, decl->name, Immediate{}, {});
+        const Name shader_name = decl->shader_name.is_empty() ? decl->name : decl->shader_name;
+        return builder.make(Parameter, type, shader_name, Immediate{}, {});
     }
 
     if (node.type == n.attribute) {
@@ -1178,6 +1179,8 @@ struct KernelPlan {
     key = hash_u64(key, options.attribute_liveness ? 1U : 0U);
     for (const ParameterDecl& parameter : asset.parameters()) {
         key = hash_text(key, parameter.name.text());
+        key = hash_text(key, parameter.emitter.text());
+        key = hash_text(key, parameter.type.text());
         key = hash_bytes(key, parameter.value, sizeof(parameter.value));
         key = hash_u64(key, parameter.exposed ? 1U : 0U);
     }

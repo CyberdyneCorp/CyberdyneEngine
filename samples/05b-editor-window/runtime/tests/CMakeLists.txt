@@ -41,6 +41,20 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../wind_field_preview.cpp"
         DEPENDENCIES cy::weather cy::environment)
 
+    if(CY_VFX)
+        cy_add_test(
+            NAME editor_scene_vfx
+            KIND integration
+            SOURCES
+                "${tests_dir}/test_scene_vfx_runtime.cpp"
+                "${tests_dir}/../scene_vfx_runtime.cpp"
+            DEPENDENCIES cy::vfx cy::scene cy::scene-serialization
+            DEFINITIONS
+                CY_EDITOR_WINDOW_HAS_VFX=1
+                "CY_SAMPLE_PROJECT=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project\"")
+        target_include_directories(cy_test_integration_editor_scene_vfx PRIVATE "${tests_dir}/..")
+    endif()
+
     # THE AUTHORED FRAME ON LINUX'S DEVICE TOO. Since PR #14 the hosted runtime draws every opened
     # world through `AuthoredFrame`, so the pixel assertions that prove it on Metal are the ones
     # that prove the Linux viewport. Issue #18: nothing ran them on Vulkan.
@@ -172,6 +186,8 @@ function(cy_editor_window_runtime_declare_tests)
         if(spin_swift_result EQUAL 0)
             set(spin_module_dir "${CMAKE_CURRENT_BINARY_DIR}/spin-module")
             set(spin_module "${spin_module_dir}/out/libCyGame_g1.so")
+            file(GLOB_RECURSE spin_package_sources CONFIGURE_DEPENDS
+                 "${CMAKE_SOURCE_DIR}/bindings/swift/Sources/*")
             add_custom_command(
                 OUTPUT "${spin_module}"
                 COMMAND "${Python3_EXECUTABLE}"
@@ -180,6 +196,7 @@ function(cy_editor_window_runtime_declare_tests)
                         --generation "1=${tests_dir}/../../project/game"
                 DEPENDS "${tests_dir}/../../project/game/SpinCube.swift"
                         "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                        ${spin_package_sources}
                 VERBATIM)
             add_custom_target(cy_editor_spin_module DEPENDS "${spin_module}")
             cy_add_test(
@@ -190,6 +207,15 @@ function(cy_editor_window_runtime_declare_tests)
                 DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
                              cy::scene-serialization cy::scene
                 DEFINITIONS "CY_SPIN_MODULE=\"${spin_module}\"")
+            if(CY_VFX)
+                target_sources(cy_test_smoke_editor_script_runtime PRIVATE
+                               "${tests_dir}/../scene_vfx_runtime.cpp")
+                target_link_libraries(cy_test_smoke_editor_script_runtime PRIVATE cy::vfx)
+                target_compile_definitions(
+                    cy_test_smoke_editor_script_runtime PRIVATE
+                    CY_EDITOR_WINDOW_HAS_VFX=1
+                    "CY_VFX_SAMPLE_PROJECT=\"${tests_dir}/../../project\"")
+            endif()
             add_dependencies(cy_test_smoke_editor_script_runtime cy_editor_spin_module)
             target_include_directories(cy_test_smoke_editor_script_runtime PRIVATE
                                        "${tests_dir}/..")

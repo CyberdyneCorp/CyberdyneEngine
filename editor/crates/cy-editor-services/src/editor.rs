@@ -100,6 +100,20 @@ fn material_geometry_payload(mut canvas: Vec<u8>, geometry: &[&str]) -> Result<V
     Ok(request)
 }
 
+fn material_preview_payload(reference: &str, canvas: &str, geometry: &[&str]) -> Result<Vec<u8>> {
+    let source = material_geometry_payload(canvas.as_bytes().to_vec(), geometry)?;
+    let source = std::str::from_utf8(&source).map_err(|_| {
+        Problem::new(
+            "preview a material graph",
+            "the material request is not UTF-8",
+        )
+    })?;
+    let mut payload = cy_editor_core::codec::Writer::new();
+    payload.text(reference);
+    payload.text(source);
+    Ok(payload.finish())
+}
+
 /// The editor's authoritative state.
 pub struct Editor {
     /// Open documents.
@@ -337,14 +351,35 @@ impl Editor {
             return Vec::new();
         };
         let mut sources = Vec::new();
-        // The authored scene renderer currently loads MeshRenderer assets as static meshes.
-        if document.content().nodes().any(|node| {
-            mesh_of(document, node).is_some()
-                && material_slots_of(document, node)
-                    .iter()
-                    .any(|material| material == reference)
-        }) {
+        let mut static_mesh = false;
+        let mut virtual_geometry = false;
+        for node in document.content().nodes() {
+            let Some(mesh) = mesh_of(document, node) else {
+                continue;
+            };
+            if !material_slots_of(document, node)
+                .iter()
+                .any(|material| material == reference)
+            {
+                continue;
+            }
+            // CYVG is the Engine's cooked virtual-geometry format. An authored mesh reference to
+            // that format must reach its named compiler path, even though this viewport currently
+            // draws only static meshes.
+            if std::path::Path::new(&mesh)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("cyvg"))
+            {
+                virtual_geometry = true;
+            } else {
+                static_mesh = true;
+            }
+        }
+        if static_mesh {
             sources.push("StaticMesh");
+        }
+        if virtual_geometry {
+            sources.push("VirtualGeometry");
         }
         let schema = document.schema();
         if let (Some(terrain), Some(layer)) = (
@@ -420,10 +455,9 @@ impl Editor {
         reference: &str,
         canvas: &str,
     ) -> Result<cy_editor_protocol::RequestId> {
-        let mut payload = cy_editor_core::codec::Writer::new();
-        payload.text(reference);
-        payload.text(canvas);
-        self.request_material(MaterialOperation::Preview, payload.finish())
+        let geometry = self.assigned_material_geometry(Some(reference));
+        let payload = material_preview_payload(reference, canvas, &geometry)?;
+        self.request_material(MaterialOperation::Preview, payload)
     }
 
     /// Cooperatively cancel the currently pending material operation.
@@ -1807,6 +1841,23 @@ mod tests {
     }
 
     #[test]
+    fn material_preview_carries_assigned_geometry_to_the_engine() {
+        let canvas = "cymatcanvas 1\nmaterial sway\n";
+        let payload = material_preview_payload(
+            "materials/sway.cygraph",
+            canvas,
+            &["StaticMesh", "VirtualGeometry"],
+        )
+        .unwrap();
+        let mut reader = cy_editor_core::codec::Reader::new(&payload);
+        assert_eq!(reader.text().unwrap(), "materials/sway.cygraph");
+        assert_eq!(
+            reader.text().unwrap(),
+            format!("cymatrequest 1\ngeometry StaticMesh,VirtualGeometry\n{canvas}")
+        );
+    }
+
+    #[test]
     fn assigned_material_geometry_includes_meshes_and_terrain_layers() {
         let mut editor = Editor::default();
         let id = editor.open_document("worlds/materials.cyworld").unwrap();
@@ -1864,13 +1915,42 @@ mod tests {
                     layer,
                     vec![(material, Value::Text("materials/orphan.cygraph".into()))],
                 )?;
+                let clustered = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/stone.cyvg",
+                    Transform3::default(),
+                )?;
+                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+                document.record(
+                    cy_editor_documents::operation::Operation::SetAssetReference {
+                        node: clustered,
+                        component: binding.component,
+                        field: binding.material,
+                        before: String::new(),
+                        after: "materials/shared.cygraph".into(),
+                    },
+                )?;
                 Ok(())
             })
             .unwrap();
         let geometry = editor.assigned_material_geometry(Some("materials/shared.cygraph"));
-        assert_eq!(geometry, ["StaticMesh", "Terrain"]);
+        assert_eq!(geometry, ["StaticMesh", "VirtualGeometry", "Terrain"]);
         let payload = material_geometry_payload(b"cymatcanvas 1\n".to_vec(), &geometry).unwrap();
-        assert!(payload.starts_with(b"cymatrequest 1\ngeometry StaticMesh,Terrain\n"));
+        assert!(
+            payload.starts_with(b"cymatrequest 1\ngeometry StaticMesh,VirtualGeometry,Terrain\n")
+        );
+        let preview =
+            material_preview_payload("materials/shared.cygraph", "cymatcanvas 1\n", &geometry)
+                .unwrap();
+        let mut reader = cy_editor_core::codec::Reader::new(&preview);
+        assert_eq!(reader.text().unwrap(), "materials/shared.cygraph");
+        assert!(
+            reader
+                .text()
+                .unwrap()
+                .starts_with("cymatrequest 1\ngeometry StaticMesh,VirtualGeometry,Terrain\n")
+        );
         assert_eq!(
             editor.assigned_material_geometry(Some("materials/terrain.cygraph")),
             ["Terrain"]

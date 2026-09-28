@@ -8,6 +8,7 @@ The engine compiles VFX stage graphs, but the editor cannot open a VFX graph. Th
 
 - Add system, emitter, stage, and reusable module authoring to the shared editor graph canvas, with a catalogue obtained from the VFX compiler registry through editor backend services.
 - Add typed VFX parameters, data interfaces, renderer settings, CPU/GPU target selection, compiler diagnostics, engine-backed preview, debugging, transactions, MCP commands, save/reopen, and cook integration.
+- Expose system and emitter parameter defaults through scene effect instances and the generated Swift gameplay API, so one instance can override a value without changing the cooked system or other instances.
 - Add a vertex stage to material graphs with world-position offset, custom interpolants, and displacement, including geometry-source variant and unsupported-path reporting.
 - Make displaced geometry, shadows, and motion vectors agree, and verify the result with image and motion tests.
 

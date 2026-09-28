@@ -67,7 +67,8 @@ struct CullContext {
     // 2. Frustum, against the TIGHT bounds. The tree's fat bounds are an accelerator; this is the
     // answer.
     const Aabb& bounds = index.bounds()[slot];
-    if (!view.frustum.intersects(bounds)) {
+    const bool always_visible = (flags & kSpatialAlwaysVisible) != 0U;
+    if (!always_visible && !view.frustum.intersects(bounds)) {
         ++stats.rejected_by_frustum;
         return false;
     }
@@ -79,7 +80,7 @@ struct CullContext {
     const f32 view_limit = view.max_distance;
     const bool over_instance_limit = instance_limit > 0.0F && depth > instance_limit;
     const bool over_view_limit = view_limit > 0.0F && depth > view_limit;
-    if (over_instance_limit || over_view_limit) {
+    if (!always_visible && (over_instance_limit || over_view_limit)) {
         ++stats.rejected_by_range;
         return false;
     }
@@ -351,12 +352,14 @@ Status cull_shadow_casters(const SpatialIndex& index, const ShadowCullView& view
             continue;
         }
         const Aabb& bounds = index.bounds()[slot];
-        if (!view.shadow_frustum.intersects(bounds)) {
+        const bool always_visible = (flags & kSpatialAlwaysVisible) != 0U;
+        if (!always_visible && !view.shadow_frustum.intersects(bounds)) {
             ++stats.rejected_by_frustum;
             continue;
         }
-        if (view.tight && !casts_into_view(bounds, view.camera_frustum, view.light_direction,
-                                           view.sweep_distance)) {
+        if (!always_visible && view.tight &&
+            !casts_into_view(bounds, view.camera_frustum, view.light_direction,
+                             view.sweep_distance)) {
             ++stats.rejected_by_sweep;
             continue;
         }

@@ -152,6 +152,11 @@ ENTRIES: dict[str, Entry] = {
     "spawn_instantiate_many": Entry(("engine", "prefab", "parent", "poses", "count", "roots"),
                                      result="throwing"),
     "spawn_destroy": Entry(("engine", "root"), result="throwing"),
+    # 1.4: live scene VFX instances
+    "vfx_effect_parameter_set": Entry(("engine", "entity", "emitter", "parameter", "value"),
+                                      result="throwing"),
+    "vfx_effect_parameter_get": Entry(("engine", "entity", "emitter", "parameter", "into"),
+                                      result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

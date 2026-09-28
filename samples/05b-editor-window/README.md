@@ -162,7 +162,27 @@ Launch the live editor with `just run-editor-live --project samples/05b-editor-w
 `cy_material cook samples/05b-editor-window/project <artefact-dir> --world
 worlds/issue15-sway.cyworld`. The `committed sine sway material cooks and renders in its authored
 scene` test compiles that exact graph and submits the saved scene on the null renderer. The native
-pixel comparison with CPU displaced geometry remains a separate acceptance check.
+pixel comparison with CPU displaced geometry remains a separate acceptance check. The hosted
+material mesh has a second native check: it previews a timed sine offset at two Engine times and
+compares each image with the same mesh moved on the CPU. With no world open, the Material Graph
+panel's live Preview targets the first-light material mesh; with this world open, it targets the
+authored scene.
+
+On a host with a working Metal or Vulkan device, a desktop display, and Pillow installed in the
+Python environment, capture the live scene through the editor's MCP resource with:
+
+```sh
+python3 samples/05b-editor-window/mcp_window.py \
+  --world worlds/issue15-sway.cyworld \
+  --capture docs/design/images/issue15-sine-sway-mcp-preview.png
+```
+
+The capture command waits for a coloured Engine viewport, then saves the whole editor window. A
+neutral or black viewport fails without writing an image. The command launches the editor and
+runtime and does not synthesize mouse or keyboard input. A runtime that exits before opening its
+viewport sockets fails promptly and its process and log are closed. The native image tests still
+compare geometry, shadow, and motion against CPU-displaced references.
+
 
 ## VFX graph draft
 
@@ -208,6 +228,13 @@ engine VFX preview.
 
 The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
 machine without a Vulkan device it reports a skip.
+
+`project/effects/issue15_scoped_speed.cyvfxdoc` is a second two-emitter sample with independent
+`calm.speed` and `smoke.speed` defaults. A scene effect entity can reference it through
+`scene.vfx-effect.create`; the generated Inspector exposes each declared override. During Play,
+the sample `VfxSpeed` Swift behaviour sets and reads `calm.speed` on its own effect entity through
+ABI 1.4. `smoke.speed` and another scene entity retain their defaults. The
+`smoke.editor_script_runtime` test runs that Swift module against the Engine scene runtime.
 
 For a visible scene while inspecting the VFX Graph tab, launch the editor with
 `just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.

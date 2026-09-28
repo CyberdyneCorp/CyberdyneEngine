@@ -85,7 +85,7 @@ function(cy_vfx_declare_tests)
             "${tests_dir}/test_vfx_renderers.cpp"
             "${tests_dir}/test_vfx_in_shot.cpp"
             "${CMAKE_SOURCE_DIR}/samples/12-beauty/embers.cpp"
-        DEPENDENCIES cy::vfx)
+        DEPENDENCIES cy::vfx cy::scene)
     target_include_directories(cy_test_integration_vfx
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/samples/12-beauty")
     target_compile_definitions(cy_test_integration_vfx PRIVATE CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

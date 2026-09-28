@@ -736,7 +736,9 @@ void write_parameter_block(TextWriter& writer, Span<const ParameterDecl> paramet
         const TypeId type = vfx_type_from_name(parameter.type);
         writer.text(slang_type(type == kInvalidType ? static_cast<TypeId>(Float) : type));
         writer.text(" ");
-        write_identifier(writer, parameter.name.text());
+        const Name shader_name =
+            parameter.shader_name.is_empty() ? parameter.name : parameter.shader_name;
+        write_identifier(writer, shader_name.text());
         writer.text(";\n");
     }
     // UNPACKED FROM WORDS, NOT LAID OUT BY THE COMPILER. A `ConstantBuffer<CyVfxParams>` would put
@@ -754,7 +756,10 @@ void write_parameter_block(TextWriter& writer, Span<const ParameterDecl> paramet
         const u32 components =
             vfx_type_components(type == kInvalidType ? static_cast<TypeId>(Float) : type);
         writer.text("    cyVfxParams.");
-        write_identifier(writer, parameters[index].name.text());
+        const Name shader_name = parameters[index].shader_name.is_empty()
+                                     ? parameters[index].name
+                                     : parameters[index].shader_name;
+        write_identifier(writer, shader_name.text());
         writer.text(" = ");
         if (components > 1) {
             writer.text(slang_type(type));

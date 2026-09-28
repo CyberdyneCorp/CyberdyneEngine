@@ -62,6 +62,38 @@ command remains part of task 2.6.
 
 An isolated engine preview instance drives play, pause, restart, scrub, and time scale. The viewport displays the runtime result. Debug snapshots expose bounded per-emitter counts, budget state, event traffic, and one-particle attribute readback. Unsupported renderer kinds or target capabilities return named refusals.
 
+## Scene instance and gameplay parameters
+
+Issue #15 also requires system and emitter user parameters in the Inspector, persistent overrides
+on individual scene effect instances, and Swift gameplay access. Version 4 `.cyvfxdoc` now records
+emitter-local typed defaults; the Engine reader retains their scope, compiler resolves local names
+before system names, and runtime parameter updates address the emitter and effect handle. The
+editor panel and MCP commands edit these declarations through document history. Preview updates
+use `emitter:name` to reach a local parameter on the Engine instance. The scene now stores
+`cy::vfx::Effect` asset references and typed override fields per entity; MCP commands create and
+edit them through scene transactions, and the generated Inspector sees their schema. The Engine
+`SceneEffects` adapter loads two entities as independent instances and applies their saved values.
+The editor runtime host connects that adapter to saved scene loads, live updates, simulation, and
+sprite publication. ABI 1.4 appends typed live-effect set/get and generates matching Swift and Rust
+wrappers. A Swift behaviour uses it on its Play entity; a native scene test checks that another
+instance and emitter keep their values. The scene's built-in `Effect` template has not been
+registered as an ECS component; the explicit scene command creates the authoring component.
+
+Extend the editable VFX document with emitter-local typed declarations while preserving system
+parameters shared across emitters. Give emitter-local declarations stable, unambiguous identities
+through authoring, compilation, cooking, preview, and runtime lookup. A scene effect component
+references the cooked system and stores validated exposed-parameter overrides; the Inspector and
+MCP edit it through the same scene transaction. Runtime scene loading creates one Engine VFX
+instance per enabled effect entity, applies its overrides, and keeps its transform bound to the
+entity. Saving and reopening the scene must retain both the asset reference and overrides.
+
+Expose effect-instance parameter set and get through append-only `CyInterface` entries, then
+regenerate the Swift overlay rather than hand-writing a separate bridge. A Swift test module must
+set and read one instance while a second instance retains its value. Keep system parameter names
+compatible with existing cooked assets and reject unknown, non-exposed, wrong-type, or ambiguous
+emitter-local requests with named diagnostics. A parameter update must use the Engine instance's
+parameter words and must not invoke the VFX compiler.
+
 ## Vertex material stage
 
 The existing material graph gains an explicit vertex stage and typed outputs for world-position offset, custom interpolants, and displacement. Stage-aware nodes use the same canvas and backend catalogue. Compilation reports variants by geometry source. Unsupported paths, including virtual geometry where offset evaluation is unavailable, fail in both editor validation and cook. The same vertex expression drives the main, shadow, and previous-frame positions so motion vectors follow displacement.
@@ -101,29 +133,31 @@ before task 3.3 is complete.
 The compiler now walks the vertex offset expression and reports `vertex-stage-unsupported` if a
 texture sample or custom Slang node reaches it. Editor validation and material cooking consume the
 same compiler diagnostic and refuse the asset, while surface-only texture sampling stays valid.
-The material build producer now accepts an explicit comma-separated `geometry` option and passes
+The material build producer accepts an explicit comma-separated `geometry` option and passes
 its source set to the compiler; a virtual-geometry assignment with a vertex offset fails without
-an artefact. Propagating geometry assignments from the scene into editor validation and project
-build descriptions remains part of task 3.2.
+an artefact. Saved worlds classify a `.cyvg` mesh reference as the Engine's cooked CYVG geometry
+path, so editor requests and project cooking both carry `VirtualGeometry` for that assignment.
 The `cy_material cook` front end now accepts a repeated material-to-geometry assignment, passes
 each source set to that producer, and refuses assignments for materials missing from the cook
 inputs. `cy_material cook --world` now reads saved `.cyworld` assets through the engine reader,
-discovers live static mesh material references (including imported slots), and passes their
-`StaticMesh` assignment to the cook. The cook now lowers canonical `.cygraph` files through the
-registered engine graph nodes. Other geometry source kinds and their scene bindings remain in
-task 3.2.
+discovers live mesh material references (including imported slots), and passes `StaticMesh` or
+`VirtualGeometry` according to the referenced mesh asset. The cook lowers canonical `.cygraph`
+files through the registered engine graph nodes. It also discovers terrain-layer assignments.
 The editor backend now accepts a versioned material request envelope listing named geometry
 sources and passes those paths to the same compiler options used by cooking. Validate and Compile
 return the compiler's `vertex-geometry-unsupported` code for a vertex graph assigned to
-`VirtualGeometry`; the desktop sends `StaticMesh` when any mesh in the active scene uses the opened
-graph, including imported material slots. Compile results return those named sources to the editor
-for the variant report. Discovering other scene geometry sources and feeding their assignments into
-both editor validation and the build description remains open.
+`VirtualGeometry`; the desktop sends the active scene's `StaticMesh`, `VirtualGeometry`, and
+`Terrain` assignments, including imported material slots. Compile results return those named
+sources to the editor for the variant report. Other geometry paths need their renderer-specific
+scene bindings before saved worlds can assign them.
 Author requests carrying assigned geometry now run the same compiler check before returning a
 canonical graph. The desktop Save action and `material.graph.save` MCP command both derive the
-active scene's static-mesh assignment. The save and generated Inspector property sync join one
+active scene's geometry assignments. The save and generated Inspector property sync join one
 document transaction, so one undo restores both project files and scene fields. Assignments from
-other geometry sources remain open.
+other geometry sources are reported when their scene bindings exist.
+Live graph Preview sends the same assigned geometry envelope before applying its unsaved canvas
+to the authored scene. The Engine refuses an unsupported vertex path before the preview runtime
+receives a replacement graph; a supported assignment still previews without saving an asset.
 
 The sine sway example first needs numeric sine in the material vocabulary. `Sin` is appended to the material IR and graph operation enums, preserving existing operation identities. The text front end and engine-owned node palette both lower it to the same typed IR operation; the emitter writes Slang `sin` and constant folding uses the same radian operation. This arithmetic addition is shared by surface and future vertex expressions and does not itself enable vertex outputs.
 
@@ -145,7 +179,8 @@ shadow vertex evaluation;
 the generated sample colours faces by normal axis, while uncoloured vertices default to white.
 The material cook's saved-world discovery now matches the editor's terrain-layer assignment:
 live layers under `TerrainAuthoring` add a `Terrain` variant, including when a material is shared
-with a static mesh. Discovery of other non-static scene geometry sources remains in task 3.2. The authored scene frame now
+with a static mesh. CYVG mesh references and terrain layers now supply their named compiler paths
+through saved-world discovery. The authored scene frame now
 compiles vertex offsets and interpolants for its static meshes, including visible, depth, and
 shadow passes. The authored scene binds the weather-owned `wind` field. The first-light material
 preview now uses the same `WindFieldPreview` provider when a field graph is active. Its renderer

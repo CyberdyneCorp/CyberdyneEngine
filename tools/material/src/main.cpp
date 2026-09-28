@@ -25,6 +25,8 @@
 #include <cy/material/cook.h>
 #include <cy/scene/serialization/worldfile.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -234,6 +236,16 @@ void add_world_material(CookInputs& inputs, std::string_view material,
     inputs.geometry.push_back({std::string(material), std::string(geometry_source), false});
 }
 
+[[nodiscard]] std::string_view mesh_geometry_source(std::string_view mesh) {
+    // CYVG is the Engine's cooked virtual-geometry asset. The world names it through the same
+    // MeshRenderer.mesh asset reference as a static mesh; the material compiler needs its distinct
+    // path before the visibility renderer gains vertex-material evaluation.
+    std::string extension = std::filesystem::path(std::string(mesh)).extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char letter) { return static_cast<char>(std::tolower(letter)); });
+    return extension == ".cyvg" ? "VirtualGeometry" : "StaticMesh";
+}
+
 void collect_world_materials(const scene::serialization::World& world, CookInputs& inputs) {
     const auto* mesh_type = world_type_named(world, "MeshRenderer");
     const u64 mesh_field = mesh_type == nullptr ? 0 : world_field_named(world, *mesh_type, "mesh");
@@ -245,10 +257,12 @@ void collect_world_materials(const scene::serialization::World& world, CookInput
             continue;
         }
         const auto* mesh = node.find(mesh_type->file_type);
-        if (world_text_field(world, mesh, mesh_field).empty()) {
+        const std::string_view mesh_asset = world_text_field(world, mesh, mesh_field);
+        if (mesh_asset.empty()) {
             continue;
         }
-        add_world_material(inputs, world_text_field(world, mesh, material_field), "StaticMesh");
+        const std::string_view source = mesh_geometry_source(mesh_asset);
+        add_world_material(inputs, world_text_field(world, mesh, material_field), source);
         if (slots_type == nullptr) {
             continue;
         }
@@ -256,7 +270,7 @@ void collect_world_materials(const scene::serialization::World& world, CookInput
         for (const auto& field : slots_type->fields()) {
             if (world.text(field.name).starts_with("slot_")) {
                 add_world_material(inputs, world_text_field(world, slots, field.file_field),
-                                   "StaticMesh");
+                                   source);
             }
         }
     }

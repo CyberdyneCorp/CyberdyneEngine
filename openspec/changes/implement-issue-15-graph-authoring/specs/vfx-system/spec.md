@@ -32,6 +32,29 @@ Graph edits SHALL compile through `cy::vfx-compiler`; user parameter changes SHA
 - **WHEN** an author changes a user parameter and then changes a graph node
 - **THEN** only the graph change SHALL trigger compilation
 
+### Requirement: Authored parameters reach scene instances and Swift gameplay
+The editor SHALL author typed system parameters shared by emitters and typed emitter-local
+parameters. It SHALL expose their defaults and instance overrides in the Inspector, persist scene
+effect bindings and overrides through save/reopen and cook, and apply a changed override to only the
+selected running instance without recompilation. The engine SHALL expose parameter set and get for
+scene effect instances through its append-only C ABI and generated Swift overlay.
+
+#### Scenario: Two scene instances use different values
+- **WHEN** a scene places two instances of the same cooked VFX system and overrides an exposed
+  parameter on one instance
+- **THEN** only that instance SHALL use the override after save/reopen and runtime load; the other
+  instance SHALL retain the system or emitter default
+
+#### Scenario: Swift changes a live emitter parameter
+- **WHEN** Swift gameplay sets an exposed emitter-local parameter on one effect instance
+- **THEN** that instance SHALL update without recompiling, and a typed read through the same ABI
+  SHALL return the new value while another instance remains unchanged
+
+#### Scenario: Invalid integer parameter value
+- **WHEN** an author enters a fractional value or a value outside the signed 32-bit range for an
+  integer parameter default or scene instance override
+- **THEN** the editor SHALL refuse the value and preserve the previous authored value
+
 ### Requirement: VFX preview and debugging are engine-backed
 The editor SHALL provide play, pause, restart, scrub, and time-scale controls for an engine VFX preview. It SHALL report bounded per-emitter particle counts, budget/degradation state, event traffic, and one-particle attribute readback. VFX edits SHALL support undo/redo and equivalent MCP commands.
 

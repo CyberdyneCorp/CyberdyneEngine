@@ -17,8 +17,11 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/material/cook.h>
+#include <cy/rendering/virtual_geometry/asset.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
+
+#include "meshes.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -506,6 +509,41 @@ node 6 3 "demo" "Shared Layer"
         run("--geometry materials/moving_stone.cymat=VirtualGeometry", "world-unsupported");
     CY_CHECK_NE(refused, 0);
     CY_CHECK(failure.find("vertex-geometry-unsupported (VirtualGeometry)") != std::string::npos);
+
+    const rendering::vg::test::MeshData mesh = rendering::vg::test::icosphere(allocator(), 0);
+    rendering::vg::BuildOptions options;
+    options.policy.min_triangles = 8;
+    options.policy.target_triangles = 32;
+    options.policy.max_triangles = 32;
+    options.policy.max_vertices = 64;
+    options.policy.group_size = 4;
+    options.page_bytes = 4096;
+    options.resident_budget_bytes = 4096;
+    auto built = rendering::vg::build_geometry(mesh.source(), options, allocator());
+    CY_REQUIRE(built.has_value());
+    Array<u8> asset(allocator());
+    CY_REQUIRE(rendering::vg::encode_asset(*built, {}, asset).has_value());
+    CY_REQUIRE(rendering::vg::decode_asset(asset.span(), allocator()).has_value());
+    project.write("meshes/clustered.cyvg",
+                  {reinterpret_cast<const char*>(asset.data()), asset.size()});
+    project.write("worlds/virtual.cyworld", R"(cyworld 1
+type 1 runtime "MeshRenderer"
+  field 1 text "mesh" ""
+  field 2 text "material" ""
+type 2 authoring "ImportedMaterialSlots"
+  field 3 text "slot_0" ""
+node 0 - "demo" "Clustered"
+  component 1
+    field 1 "meshes/clustered.cyvg"
+    field 2 "materials/worn_metal.cymat"
+  component 2
+    field 3 "materials/moving_stone.cymat"
+)");
+    const auto [discovered, virtual_failure] =
+        run("--world worlds/virtual.cyworld", "world-discovered-virtual");
+    CY_CHECK_NE(discovered, 0);
+    CY_CHECK(virtual_failure.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+             std::string::npos);
 }
 
 CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {

@@ -166,6 +166,13 @@ struct EffectInstance {
     bool release_on_completion = false;
 };
 
+/// Current typed value of one exposed parameter on a playing effect.
+struct EffectParameterValue {
+    Name type;
+    f32 lanes[4] = {};
+    u32 count = 0;
+};
+
 /// What one step did.
 struct StepReport {
     u32 instances = 0;
@@ -217,6 +224,17 @@ public:
     [[nodiscard]] Status stop(EffectHandle handle, bool allow_completion) noexcept;
     [[nodiscard]] Status set_parameter(EffectHandle handle, Name parameter,
                                        Span<const f32> value) noexcept;
+    /// Override one emitter-local parameter on a playing effect instance.
+    [[nodiscard]] Status set_parameter(EffectHandle handle, Name emitter, Name parameter,
+                                       Span<const f32> value) noexcept;
+    [[nodiscard]] Expected<EffectParameterValue, Error> get_parameter(
+        EffectHandle handle, Name emitter, Name parameter) const noexcept;
+    [[nodiscard]] Expected<EffectParameterValue, Error> get_parameter(
+        EffectHandle handle, Name parameter) const noexcept {
+        return get_parameter(handle, Name{}, parameter);
+    }
+    /// Restore the compiled system's defaults before applying authored scene overrides.
+    [[nodiscard]] Status reset_parameters(EffectHandle handle) noexcept;
     [[nodiscard]] Status set_transform(EffectHandle handle, const Vec3& position) noexcept;
     [[nodiscard]] const EffectInstance* find(EffectHandle handle) const noexcept;
 

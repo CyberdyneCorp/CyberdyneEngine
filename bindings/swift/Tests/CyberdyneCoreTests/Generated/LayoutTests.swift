@@ -325,7 +325,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 664, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 680, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -409,6 +409,8 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_instantiate), 640, "CyInterface.spawn_instantiate offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_instantiate_many), 648, "CyInterface.spawn_instantiate_many offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.spawn_destroy), 656, "CyInterface.spawn_destroy offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.vfx_effect_parameter_set), 664, "CyInterface.vfx_effect_parameter_set offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.vfx_effect_parameter_get), 672, "CyInterface.vfx_effect_parameter_get offset")
     }
 
     func testModuleInitLayout() {
@@ -426,7 +428,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 664,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 680,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -472,8 +474,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 81)
+        XCTAssertEqual(ABI.entryNames.count, 83)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "spawn_destroy")
+        XCTAssertEqual(ABI.entryNames.last, "vfx_effect_parameter_get")
     }
 }

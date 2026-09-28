@@ -37,7 +37,9 @@ function(cy_material_cook_declare_tests)
         NAME material_cook
         KIND integration
         SOURCES "${tests_dir}/test_material_cook.cpp"
-        DEPENDENCIES cy::material-cook cy::build-graph)
+        DEPENDENCIES cy::material-cook cy::build-graph cy::rendering-virtual-geometry)
+    target_include_directories(cy_test_integration_material_cook PRIVATE
+                               "${CMAKE_SOURCE_DIR}/src/rendering/virtual_geometry/tests")
     target_compile_definitions(cy_test_integration_material_cook
                                PRIVATE CY_MATERIAL_BINARY="$<TARGET_FILE:cy_material>"
                                        CY_MATERIAL_GRAPH_SAMPLE="${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/materials/copper_clay.cygraph")

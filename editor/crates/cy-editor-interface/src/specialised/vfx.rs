@@ -10,7 +10,7 @@ use super::graph::GraphCanvas;
 use super::material::{graph_canvas_interchange, load_graph_canvas_interchange};
 use super::vfx_module::VfxModule;
 
-const VERSION: u32 = 3;
+const VERSION: u32 = 4;
 const MAX_ITEMS: u32 = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +161,15 @@ pub struct Parameter {
     pub exposed: bool,
 }
 
+/// An emitter-local parameter declaration, identified by emitter and parameter name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmitterParameter {
+    /// Name of the emitter that owns this declaration.
+    pub emitter: String,
+    /// Typed default and runtime exposure setting.
+    pub parameter: Parameter,
+}
+
 /// Versioned editable hierarchy for one VFX system.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VfxDocument {
@@ -170,6 +179,8 @@ pub struct VfxDocument {
     pub emitters: Vec<Emitter>,
     /// System parameters.
     pub parameters: Vec<Parameter>,
+    /// Parameters visible only to their named emitter.
+    pub emitter_parameters: Vec<EmitterParameter>,
     /// System event channels.
     pub channels: Vec<EventChannel>,
     /// Explicit paths for named reusable module assets.
@@ -185,6 +196,7 @@ impl VfxDocument {
             name,
             emitters: Vec::new(),
             parameters: Vec::new(),
+            emitter_parameters: Vec::new(),
             channels: Vec::new(),
             module_assets: Vec::new(),
         })
@@ -303,12 +315,7 @@ impl VfxDocument {
         }
         out.u32(count(self.parameters.len())?);
         for parameter in &self.parameters {
-            out.text(&parameter.name);
-            out.text(&parameter.kind);
-            for value in parameter.value {
-                out.u32(value.to_bits());
-            }
-            out.u8(u8::from(parameter.exposed));
+            write_parameter(&mut out, parameter);
         }
         out.u32(count(self.channels.len())?);
         for channel in &self.channels {
@@ -321,6 +328,11 @@ impl VfxDocument {
         for asset in &self.module_assets {
             out.text(&asset.name);
             out.text(&asset.path);
+        }
+        out.u32(count(self.emitter_parameters.len())?);
+        for entry in &self.emitter_parameters {
+            out.text(&entry.emitter);
+            write_parameter(&mut out, &entry.parameter);
         }
         Ok(out.finish())
     }
@@ -350,6 +362,11 @@ impl VfxDocument {
         for parameter in &mut semantic.parameters {
             if parameter.exposed {
                 parameter.value = [0.0; 4];
+            }
+        }
+        for entry in &mut semantic.emitter_parameters {
+            if entry.parameter.exposed {
+                entry.parameter.value = [0.0; 4];
             }
         }
         semantic.encode()
@@ -446,23 +463,7 @@ impl VfxDocument {
             });
         }
         for _ in 0..read_count(&mut input)? {
-            let name = input.text()?;
-            let kind = input.text()?;
-            let mut value = [0.0; 4];
-            for component in &mut value {
-                *component = f32::from_bits(input.u32()?);
-            }
-            let exposed = match input.u8()? {
-                0 => false,
-                1 => true,
-                _ => return Err(invalid("invalid parameter exposure")),
-            };
-            document.parameters.push(Parameter {
-                name,
-                kind,
-                value,
-                exposed,
-            });
+            document.parameters.push(read_parameter(&mut input)?);
         }
         if version >= 2 {
             for _ in 0..read_count(&mut input)? {
@@ -486,6 +487,14 @@ impl VfxDocument {
                 });
             }
         }
+        if version >= 4 {
+            for _ in 0..read_count(&mut input)? {
+                document.emitter_parameters.push(EmitterParameter {
+                    emitter: input.text()?,
+                    parameter: read_parameter(&mut input)?,
+                });
+            }
+        }
         if input.remaining() != 0 {
             return Err(invalid("trailing VFX document data"));
         }
@@ -497,6 +506,7 @@ impl VfxDocument {
         identifier(&self.name)?;
         count(self.emitters.len())?;
         count(self.parameters.len())?;
+        count(self.emitter_parameters.len())?;
         count(self.channels.len())?;
         count(self.module_assets.len())?;
         for (index, asset) in self.module_assets.iter().enumerate() {
@@ -509,74 +519,37 @@ impl VfxDocument {
                 return Err(invalid("duplicate VFX module asset mapping"));
             }
         }
-        for (emitter_index, emitter) in self.emitters.iter().enumerate() {
-            identifier(&emitter.name)?;
-            if self.emitters[..emitter_index]
-                .iter()
-                .any(|prior| prior.name == emitter.name)
-            {
-                return Err(invalid("duplicate VFX emitter"));
-            }
-            identifier(&emitter.renderer)?;
-            count(emitter.stages.len())?;
-            count(emitter.attributes.len())?;
-            if emitter.capacity == 0 {
-                return Err(invalid("emitter capacity must be positive"));
-            }
-            for (index, stage) in emitter.stages.iter().enumerate() {
-                if emitter.stages[..index]
-                    .iter()
-                    .any(|prior| prior.stage == stage.stage)
-                {
-                    return Err(invalid("duplicate emitter stage"));
-                }
-            }
-            for name in emitter.modules.iter().chain(&emitter.interfaces) {
-                identifier(name)?;
-            }
-            for (index, name) in emitter.interfaces.iter().enumerate() {
-                if emitter.interfaces[..index].contains(name) {
-                    return Err(invalid("duplicate VFX interface binding"));
-                }
-            }
-            for (attribute_index, attribute) in emitter.attributes.iter().enumerate() {
-                identifier(&attribute.name)?;
-                if emitter.attributes[..attribute_index]
-                    .iter()
-                    .any(|prior| prior.name == attribute.name)
-                {
-                    return Err(invalid("duplicate VFX attribute"));
-                }
-                if !matches!(
-                    attribute.kind.as_str(),
-                    "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
-                ) || !matches!(
-                    attribute.precision.as_str(),
-                    "Auto" | "Float32" | "Float16" | "Unorm8" | "Snorm16"
-                ) || !attribute.minimum.is_finite()
-                    || !attribute.maximum.is_finite()
-                    || !attribute.tolerance.is_finite()
-                    || attribute.minimum > attribute.maximum
-                    || attribute.tolerance < 0.0
-                {
-                    return Err(invalid("invalid typed VFX attribute"));
-                }
-            }
-        }
+        validate_emitters(&self.emitters)?;
         for (parameter_index, parameter) in self.parameters.iter().enumerate() {
-            identifier(&parameter.name)?;
+            validate_parameter(parameter)?;
             if self.parameters[..parameter_index]
                 .iter()
                 .any(|prior| prior.name == parameter.name)
             {
                 return Err(invalid("duplicate VFX parameter"));
             }
-            if !matches!(
-                parameter.kind.as_str(),
-                "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
-            ) || parameter.value.iter().any(|value| !value.is_finite())
+        }
+        for (index, entry) in self.emitter_parameters.iter().enumerate() {
+            identifier(&entry.emitter)?;
+            validate_parameter(&entry.parameter)?;
+            if !self
+                .emitters
+                .iter()
+                .any(|emitter| emitter.name == entry.emitter)
             {
-                return Err(invalid("invalid typed VFX parameter"));
+                return Err(invalid("VFX parameter names an unknown emitter"));
+            }
+            if self.emitter_parameters[..index].iter().any(|prior| {
+                prior.emitter == entry.emitter && prior.parameter.name == entry.parameter.name
+            }) {
+                return Err(invalid("duplicate emitter VFX parameter"));
+            }
+            if self
+                .parameters
+                .iter()
+                .any(|global| global.name == entry.parameter.name)
+            {
+                return Err(invalid("emitter VFX parameter shadows a system parameter"));
             }
         }
         for (channel_index, channel) in self.channels.iter().enumerate() {
@@ -595,8 +568,115 @@ impl VfxDocument {
     }
 }
 
+fn validate_emitters(emitters: &[Emitter]) -> Result<()> {
+    for (emitter_index, emitter) in emitters.iter().enumerate() {
+        identifier(&emitter.name)?;
+        if emitters[..emitter_index]
+            .iter()
+            .any(|prior| prior.name == emitter.name)
+        {
+            return Err(invalid("duplicate VFX emitter"));
+        }
+        identifier(&emitter.renderer)?;
+        count(emitter.stages.len())?;
+        count(emitter.attributes.len())?;
+        if emitter.capacity == 0 {
+            return Err(invalid("emitter capacity must be positive"));
+        }
+        for (index, stage) in emitter.stages.iter().enumerate() {
+            if emitter.stages[..index]
+                .iter()
+                .any(|prior| prior.stage == stage.stage)
+            {
+                return Err(invalid("duplicate emitter stage"));
+            }
+        }
+        for name in emitter.modules.iter().chain(&emitter.interfaces) {
+            identifier(name)?;
+        }
+        for (index, name) in emitter.interfaces.iter().enumerate() {
+            if emitter.interfaces[..index].contains(name) {
+                return Err(invalid("duplicate VFX interface binding"));
+            }
+        }
+        for (attribute_index, attribute) in emitter.attributes.iter().enumerate() {
+            identifier(&attribute.name)?;
+            if emitter.attributes[..attribute_index]
+                .iter()
+                .any(|prior| prior.name == attribute.name)
+            {
+                return Err(invalid("duplicate VFX attribute"));
+            }
+            if !matches!(
+                attribute.kind.as_str(),
+                "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
+            ) || !matches!(
+                attribute.precision.as_str(),
+                "Auto" | "Float32" | "Float16" | "Unorm8" | "Snorm16"
+            ) || !attribute.minimum.is_finite()
+                || !attribute.maximum.is_finite()
+                || !attribute.tolerance.is_finite()
+                || attribute.minimum > attribute.maximum
+                || attribute.tolerance < 0.0
+            {
+                return Err(invalid("invalid typed VFX attribute"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn invalid(reason: &str) -> Problem {
     Problem::new("read or write a VFX document", reason)
+}
+
+pub(super) fn validate_parameter(parameter: &Parameter) -> Result<()> {
+    identifier(&parameter.name)?;
+    if !matches!(
+        parameter.kind.as_str(),
+        "float" | "vec2" | "vec3" | "vec4" | "int" | "bool"
+    ) || parameter.value.iter().any(|value| !value.is_finite())
+    {
+        return Err(invalid("invalid typed VFX parameter"));
+    }
+    if parameter.kind == "int" {
+        let value = parameter.value[0];
+        if value.fract() != 0.0 || !(-2_147_483_648.0..2_147_483_648.0).contains(&value) {
+            return Err(invalid(
+                "integer VFX parameter must fit a signed 32-bit value",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn write_parameter(out: &mut Writer, parameter: &Parameter) {
+    out.text(&parameter.name);
+    out.text(&parameter.kind);
+    for value in parameter.value {
+        out.u32(value.to_bits());
+    }
+    out.u8(u8::from(parameter.exposed));
+}
+
+fn read_parameter(input: &mut Reader<'_>) -> Result<Parameter> {
+    let name = input.text()?;
+    let kind = input.text()?;
+    let mut value = [0.0; 4];
+    for component in &mut value {
+        *component = f32::from_bits(input.u32()?);
+    }
+    let exposed = match input.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(invalid("invalid parameter exposure")),
+    };
+    Ok(Parameter {
+        name,
+        kind,
+        value,
+        exposed,
+    })
 }
 
 fn without_layout(canvas: &str) -> String {
@@ -795,6 +875,66 @@ mod tests {
         );
         cy_editor_services::vfx_document::validate_source(&document.encode_text().unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn emitter_parameters_reopen_and_validate_their_scope() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        for name in ["smoke", "embers"] {
+            document.emitters.push(Emitter {
+                name: name.into(),
+                path: SimulationPath::GpuPreferred,
+                renderer: "Sprite".into(),
+                stages: Vec::new(),
+                modules: Vec::new(),
+                interfaces: Vec::new(),
+                capacity: 1024,
+                attributes: Vec::new(),
+            });
+            document.emitter_parameters.push(EmitterParameter {
+                emitter: name.into(),
+                parameter: Parameter {
+                    name: "speed".into(),
+                    kind: "float".into(),
+                    value: [2.0, 0.0, 0.0, 0.0],
+                    exposed: true,
+                },
+            });
+        }
+        let source = document.encode_text().unwrap();
+        assert_eq!(VfxDocument::decode_text(&source).unwrap(), document);
+        cy_editor_services::vfx_document::validate_source(&source).unwrap();
+
+        let signature = document.compile_signature().unwrap();
+        document.emitter_parameters[0].parameter.value[0] = 5.0;
+        assert_eq!(document.compile_signature().unwrap(), signature);
+        document.emitter_parameters[0].parameter.exposed = false;
+        assert_ne!(document.compile_signature().unwrap(), signature);
+
+        document.emitter_parameters[0].emitter = "unknown".into();
+        assert!(document.encode().is_err());
+        document.emitter_parameters[0].emitter = "embers".into();
+        assert!(document.encode().is_err());
+    }
+
+    #[test]
+    fn integer_parameter_defaults_refuse_fractional_and_out_of_range_values() {
+        let mut document = VfxDocument::new("sparks").unwrap();
+        document.parameters.push(Parameter {
+            name: "bursts".into(),
+            kind: "int".into(),
+            value: [2.0, 0.0, 0.0, 0.0],
+            exposed: true,
+        });
+        assert!(document.encode_text().is_ok());
+        for valid in [-2_147_483_648.0, 2_147_483_520.0] {
+            document.parameters[0].value[0] = valid;
+            assert!(document.encode_text().is_ok(), "refused {valid}");
+        }
+        for invalid in [2.5, 2_147_483_648.0, -2_147_483_904.0] {
+            document.parameters[0].value[0] = invalid;
+            assert!(document.encode_text().is_err(), "accepted {invalid}");
+        }
     }
 
     #[test]

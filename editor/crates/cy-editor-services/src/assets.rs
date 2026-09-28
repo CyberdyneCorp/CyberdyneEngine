@@ -1299,7 +1299,7 @@ fn assignment_kind(path: &str) -> Result<AssignmentKind> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     match extension.as_str() {
-        "cymesh" | "obj" | "fbx" | "gltf" | "glb" | "cyprim" => Ok(AssignmentKind::Mesh),
+        "cymesh" | "obj" | "fbx" | "gltf" | "glb" | "cyprim" | "cyvg" => Ok(AssignmentKind::Mesh),
         "cymat" | "cygraph" => Ok(AssignmentKind::Material),
         _ => Err(Problem::new(
             "assign an asset",
@@ -1756,6 +1756,18 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use super::*;
+
+    #[test]
+    fn cooked_virtual_geometry_can_be_assigned_to_a_mesh_instance() {
+        assert!(matches!(
+            assignment_kind("meshes/clustered.cyvg"),
+            Ok(AssignmentKind::Mesh)
+        ));
+        assert!(matches!(
+            assignment_kind("meshes/clustered.CYVG"),
+            Ok(AssignmentKind::Mesh)
+        ));
+    }
 
     fn temporary_project(name: &str) -> PathBuf {
         let nonce = SystemTime::now()

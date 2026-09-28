@@ -31,7 +31,21 @@ private enum SpinError: Error {
     case missingTransform
 }
 
+/// Sets one emitter-local parameter on the effect carried by the same scene entity.
+@Behaviour(name: "VfxSpeed", schema: 1)
+final class VfxSpeed: Behaviour {
+    override func onFixedUpdate(_ delta: Double) throws {
+        try VfxEffects.set(.f32(8), on: entity, parameter: "speed", emitter: "calm")
+        let current = try VfxEffects.get(from: entity, parameter: "speed", emitter: "calm")
+        guard current == .f32(8) else { throw VfxError.readback }
+    }
+}
+
+private enum VfxError: Error {
+    case readback
+}
+
 @GameModule
 enum EditorDemoGame: GameModule {
-    static let behaviours: [any BehaviourClass.Type] = [SpinCube.self]
+    static let behaviours: [any BehaviourClass.Type] = [SpinCube.self, VfxSpeed.self]
 }

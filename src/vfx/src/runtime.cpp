@@ -72,7 +72,10 @@ void read_parameter(const KernelContext& context, Name parameter, f32* destinati
         destination[component] = 0.0F;
     }
     for (usize index = 0; index < context.parameter_decls.size(); ++index) {
-        if (context.parameter_decls[index].name != parameter) {
+        const ParameterDecl& declared = context.parameter_decls[index];
+        const Name shader_name =
+            declared.shader_name.is_empty() ? declared.name : declared.shader_name;
+        if (shader_name != parameter) {
             continue;
         }
         const usize base = index * kSlotWidth;

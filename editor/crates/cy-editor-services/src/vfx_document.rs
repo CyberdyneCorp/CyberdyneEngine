@@ -158,8 +158,9 @@ fn names(input: &mut Reader<'_>) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<Vec<String>> {
-    identifier(input)?;
+fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<(String, Vec<String>)> {
+    let emitter = input.text()?;
+    identifier_text(&emitter)?;
     if input.u8()? > 1 {
         return Err(malformed());
     }
@@ -209,11 +210,12 @@ fn validate_emitter(input: &mut Reader<'_>, version: u32) -> Result<Vec<String>>
             }
         }
     }
-    Ok(modules)
+    Ok((emitter, modules))
 }
 
-fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
-    identifier(input)?;
+fn validate_parameter(input: &mut Reader<'_>) -> Result<String> {
+    let name = input.text()?;
+    identifier_text(&name)?;
     let kind = input.text()?;
     if !matches!(
         kind.as_str(),
@@ -229,26 +231,34 @@ fn validate_parameter(input: &mut Reader<'_>) -> Result<()> {
     if input.u8()? > 1 {
         return Err(malformed());
     }
-    Ok(())
+    Ok(name)
 }
 
 fn parse_payload(bytes: &[u8]) -> Result<ModulePlan> {
     let mut input = Reader::new(bytes);
     let version = input.u32()?;
-    if !(1..=3).contains(&version) {
+    if !(1..=4).contains(&version) {
         return Err(malformed());
     }
     identifier(&mut input)?;
     let mut module_names = Vec::new();
+    let mut emitter_names = std::collections::HashSet::new();
     for _ in 0..read_count(&mut input)? {
-        for name in validate_emitter(&mut input, version)? {
+        let (emitter, modules) = validate_emitter(&mut input, version)?;
+        if !emitter_names.insert(emitter) {
+            return Err(malformed());
+        }
+        for name in modules {
             if !module_names.contains(&name) {
                 module_names.push(name);
             }
         }
     }
+    let mut system_parameters = std::collections::HashSet::new();
     for _ in 0..read_count(&mut input)? {
-        validate_parameter(&mut input)?;
+        if !system_parameters.insert(validate_parameter(&mut input)?) {
+            return Err(malformed());
+        }
     }
     if version >= 2 {
         for _ in 0..read_count(&mut input)? {
@@ -283,6 +293,20 @@ fn parse_payload(bytes: &[u8]) -> Result<ModulePlan> {
                 "save a VFX document",
                 "a referenced module has no asset path",
             ));
+        }
+    }
+    if version >= 4 {
+        let mut local_parameters = std::collections::HashSet::new();
+        for _ in 0..read_count(&mut input)? {
+            let emitter = input.text()?;
+            identifier_text(&emitter)?;
+            let parameter = validate_parameter(&mut input)?;
+            if !emitter_names.contains(&emitter)
+                || system_parameters.contains(&parameter)
+                || !local_parameters.insert((emitter, parameter))
+            {
+                return Err(malformed());
+            }
         }
     }
     if input.remaining() != 0 {

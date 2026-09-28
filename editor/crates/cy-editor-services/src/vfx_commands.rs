@@ -223,7 +223,7 @@ fn preview_parameter() -> Command {
         .with(ParameterSpec::required(
             "name",
             ValueKind::Text,
-            "Authored parameter name.",
+            "System parameter name, or emitter:name for a local parameter.",
         ))
         .with(ParameterSpec::required(
             "values",

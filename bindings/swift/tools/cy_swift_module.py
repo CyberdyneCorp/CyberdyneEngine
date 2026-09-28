@@ -5,6 +5,9 @@
     cy_swift_module.py --work DIR --generation 0=<sources> --generation 1=<sources> --out DIR
     cy_swift_module.py --test            # `swift test` over bindings/swift
 
+Set CY_SWIFT_DISABLE_SANDBOX=1 when a containing development sandbox refuses SwiftPM's nested
+sandbox. Ordinary builds keep SwiftPM's default.
+
 --- WHY THIS EXISTS RATHER THAN A `swift build` IN A RECIPE ---------------------------------------
 
 Two things the ordinary command cannot do, and both are requirements rather than conveniences.
@@ -37,6 +40,7 @@ own directory would recompile the plugin every time, which is about twenty secon
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import shutil
 import subprocess
@@ -77,6 +81,8 @@ let package = Package(
 
 def swift(arguments: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
     """Run a Swift command through a login-shell environment that has the toolchain on PATH."""
+    if os.environ.get("CY_SWIFT_DISABLE_SANDBOX") == "1" and arguments[:2] == ["swift", "build"]:
+        arguments = [*arguments[:2], "--disable-sandbox", *arguments[2:]]
     command = ". " + SWIFTLY_ENV + " 2>/dev/null; " + " ".join(f"'{item}'" for item in arguments)
     return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
                           capture_output=True)

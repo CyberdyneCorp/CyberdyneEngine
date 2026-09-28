@@ -475,3 +475,18 @@ interfaces that cannot run on the selected simulation path; compilation still va
 binding. Sprite, Mesh, Ribbon, Beam and Trail have draw paths. Decal, Light and Volume remain
 unavailable with specific missing-pass reasons. Without an attached preview device the GPU target
 can still be authored and compiled, but runtime availability reports `NoDeviceInThisWorld`.
+
+## Authored scene effects
+
+Version 4 `.cyvfxdoc` sources declare emitter-local parameters alongside shared system values.
+The compiler gives each local value a distinct shader identity, and `SimulationWorld::set_parameter`
+accepts an emitter name when changing a live instance. Folded parameters refuse live updates.
+
+`SceneEffects` reads `cy::vfx::Effect` components from an Engine-loaded `.cyworld`, resolves each
+asset to a cooked `CompiledSystem`, starts one simulation instance per enabled entity, and applies
+its typed system and emitter overrides. It tracks the entity identity so transforms can follow
+later scene edits. The resolver supplies systems whose storage outlives the instances. The editor
+host loads project assets through this adapter, simulates the scene effects, and composites their
+particles with the live preview. Editing an override on the same entity preserves its playing
+handle and compiled system. ABI 1.3 gives Swift gameplay typed set/get for one Play effect entity;
+the editor script runtime test runs a Swift module against two independent Engine instances.

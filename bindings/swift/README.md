@@ -29,6 +29,12 @@ just generate-swift --check    fail if the committed overlay is stale, naming th
 The overlay is **committed**, so a consumer needs no generator. `integration.swift_overlay` runs the
 check under `just test-all`, on every machine, with or without a Swift toolchain.
 
+`VfxEffects.set(_:on:parameter:emitter:)` and `VfxEffects.get(from:parameter:emitter:)` use the
+generated ABI 1.4 entries to change or read an exposed parameter on one playing scene effect.
+Pass an empty emitter for a system parameter, or the owning emitter's name for a local parameter.
+The entity is the effect entity in the Play world. Values use `Value.f32`, `vec2`, `vec3`, `vec4`,
+`i64`, or `bool` according to the authored declaration; a mismatched type is refused.
+
 ## Writing a game
 
 ```swift

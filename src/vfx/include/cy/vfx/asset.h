@@ -124,6 +124,10 @@ struct ParameterDecl {
     f32 value[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     /// False means the compiler folds `value` into the generated code. See note 1 above.
     bool exposed = true;
+    /// Empty for a system parameter; otherwise the emitter that owns this declaration.
+    Name emitter;
+    /// Unique identifier used in generated shader code for an emitter parameter.
+    Name shader_name;
 };
 
 /// The storage encoding of one attribute. `Auto` asks the compiler; anything else is the explicit
@@ -271,6 +275,8 @@ public:
         return parameters_.span();
     }
     [[nodiscard]] const ParameterDecl* find_parameter(Name parameter) const noexcept;
+    /// Resolve an emitter declaration first, then a system declaration.
+    [[nodiscard]] const ParameterDecl* find_parameter(Name emitter, Name parameter) const noexcept;
 
     [[nodiscard]] Status declare_channel(const EventChannelDecl& decl) noexcept;
     [[nodiscard]] Span<const EventChannelDecl> channels() const noexcept {
