@@ -175,10 +175,10 @@ void write_header(const DecalTableInput& input, u32 lists_offset, u32 indices_of
     // is p - origin, which moves the origin's share into the constant — summed in double for the
     // reason `relative` gives.
     const Mat4& view = input.view;
-    const f64 constant =
-        -((static_cast<f64>(view.at(2, 0)) * input.origin.x) +
-          (static_cast<f64>(view.at(2, 1)) * input.origin.y) +
-          (static_cast<f64>(view.at(2, 2)) * input.origin.z) + static_cast<f64>(view.at(2, 3)));
+    const f64 constant = -((static_cast<f64>(view.at(2, 0)) * static_cast<f64>(input.origin.x)) +
+                           (static_cast<f64>(view.at(2, 1)) * static_cast<f64>(input.origin.y)) +
+                           (static_cast<f64>(view.at(2, 2)) * static_cast<f64>(input.origin.z)) +
+                           static_cast<f64>(view.at(2, 3)));
     header[18] = bits(-view.at(2, 0));
     header[19] = bits(-view.at(2, 1));
     header[20] = bits(-view.at(2, 2));

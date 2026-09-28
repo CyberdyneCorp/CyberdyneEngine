@@ -600,10 +600,10 @@ struct U32x3 {
 /// backend still compiles this file.
 struct Stage::Device {
     explicit Device(Allocator& allocator) noexcept
-        : aerial(allocator),
+        : decal_words(allocator),
+          aerial(allocator),
           sky_view(allocator),
           aerial_words(allocator),
-          decal_words(allocator),
           assembly(allocator) {}
 
     Expected<rhi::Device*, Error> handle = fail(ErrorCode::Unavailable, "not created");
