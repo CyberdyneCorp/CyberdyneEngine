@@ -181,7 +181,12 @@ frame (`cy/frame.slang`) reads no table.
 
 ## Volumetric fog: a valley haze
 
-*The before/after pictures are not captured yet: `just capture-volumetric-fog` and `just capture-world-fog` write them to `docs/design/images/` once the module builds.*
+![the valley haze on](../../docs/design/images/volumetric-fog-world-on.png)
+![the same frame with fog off](../../docs/design/images/volumetric-fog-world-off.png)
+
+Captured with `just capture-world-fog`: frame 60 of the day take, 11:56 with the sun near 24
+degrees. At the committed 1.5 km visibility and 60 m scale height the midday haze is slight: 237400
+of 518400 pixels change, by at most 21 of 255 and 1.4 on average. 0 validation errors in both takes.
 
 `--fog` fills a froxel volume — 96 by 54 columns and 64 slices out to the dome, four sub-steps a
 slice — with a height fog whose numbers are `frame.cypost`'s `fog-*` lines: a meteorological

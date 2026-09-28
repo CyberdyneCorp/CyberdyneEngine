@@ -34,7 +34,7 @@
 
 ## 6. The pictures and the records
 
-- [ ] 6.1 `just capture-volumetric-fog` and `just capture-world-fog`; publish the before/after images under `docs/design/images/`
+- [x] 6.1 `just capture-volumetric-fog` and `just capture-world-fog`; publish the before/after images under `docs/design/images/`
 - [x] 6.2 Map `Volumetric fog` in `tools/roadmap/requirements-coverage.toml` to the device cases, keeping the exemption's reasons for what is not built
 - [x] 6.3 Update the READMEs of `src/rendering/fog`, `src/rendering/post`, `src/rendering/forward`, `src/rendering/pipeline`, `src/rendering/shaders`, `samples/12-beauty` and `samples/10-world`
 - [x] 6.4 `openspec validate add-volumetric-fog --strict`

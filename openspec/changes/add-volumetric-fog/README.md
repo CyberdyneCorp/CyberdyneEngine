@@ -9,7 +9,12 @@ froxels behind it scatter no sunlight: the light shafts between the Colonnade's 
 In `samples/10-world` the same march writes the atmosphere's own froxel table with the fog
 composited in, so a morning mist lies in the valleys under the air that was already there.
 
-**Status: written, not yet built.** The fog shaders' embedded SPIR-V and MSL (`fog_spirv.h`,
-`fog_msl.h`) and the frame shader's regenerated headers are not committed, so `cy_rendering_fog`
-does not compile yet; the off reference, the device cases' mutation proofs and the pictures are
-open tasks (3.1, 4.2, 5.2, 5.4, 6.1). The requirement stays exempt until they are done.
+![the Colonnade through volumetric fog](../../../docs/design/images/volumetric-fog-beauty-on.png)
+![the same shot with fog off](../../../docs/design/images/volumetric-fog-beauty-off.png)
+
+**Status: built and run on Vulkan.** `render.volumetric_fog`, `unit.rendering_fog`,
+`integration.rendering_fog_march` and `integration.rendering_fog_air` pass in the debug and dev
+profiles, as do the frame suites the regenerated frame shader feeds. With fog off the frame is
+byte-identical to a reference drawn by the frame shader from before the change. Each device case was
+proved red by a shader mutation (`evidence/falsification.txt`). The Metal MSL is generated and not
+run. The pictures are `just capture-volumetric-fog` and `just capture-world-fog`.
