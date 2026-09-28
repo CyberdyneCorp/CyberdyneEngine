@@ -249,7 +249,7 @@ struct Build {
     if (Status sized = visited.resize(primary.size()); !sized) {
         return sized;
     }
-    std::ranges::fill(visited, 0);
+    std::ranges::fill(visited, u8{0});
     Array<NodeId> pending(allocator);
     if (primary.vertex_offset() != kInvalidNode) {
         if (Status added = pending.push_back(primary.vertex_offset()); !added) {
