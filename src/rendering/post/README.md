@@ -138,8 +138,8 @@ GPU.
 The gathers, the blurs, the histogram compute pass and the froxel volume itself are shaders, and
 they belong with the frame's passes. Bloom's downsample and upsample chain is the first of them to
 exist — see the section above — the metering histogram is the second, in
-`src/rendering/grading/`, and the depth of field gather the third, in
-`src/rendering/depth_of_field/`; the others do not yet.
+`src/rendering/grading/`, the depth of field gather the third, in `src/rendering/depth_of_field/`,
+and the froxel volume the fourth, in `src/rendering/fog/`; the others do not yet.
 
 Two stages of this chain are consumers of `src/rendering/temporal/` rather than implementations:
 `rendering-post-processing` says TAA "SHALL consume the temporal framework… It SHALL NOT implement
@@ -170,6 +170,15 @@ resolve applies the exposure, the tone curve and one lookup into a table `bake_d
 what a pre-tonemap table would want; `display_log_encode` spans the display range and is what the
 runtime's step-12 table uses. `bake_grading_lut` and `bake_display_lut` are the two bakes, and each
 has its own agreement test in `integration.render_post_bake`.
+
+## Volumetric fog on the device
+
+The fog stage's pass is in `src/rendering/fog/`, not here, and it calls this module's arithmetic
+rather than re-deriving it: the volume's slices are `froxel_slice_depth`, the medium's phase is
+`henyey_greenstein`, and every sub-step of the march is `integrate_froxel` — the same step
+`forward scattering brightens fog toward a light, and the integral conserves energy` pins here, now
+held to the single-scattering equation on a device by `render.volumetric_fog`.
+`PostChainConfig::volumetric_fog` switches the frame's `FramePassKind::VolumetricFog` stage on.
 
 ## Ambient occlusion on the device
 

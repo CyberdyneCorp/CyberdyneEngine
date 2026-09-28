@@ -10,6 +10,7 @@ and `rendering-culling-and-lod`.
 |---|---|---|
 | `graph/` | `cy::rendering-graph` | the render graph: barriers, aliasing, scheduling and semaphores, derived from declared reads and writes |
 | `contact_shadows/` | `cy::rendering-contact-shadows` | screen-space contact shadows on the device: a short trace toward the directional light through the prepass depth, into a target the forward pass reads as an addition to the shadow map's visibility, through `FrameStageDeclaration` |
+| `fog/` | `cy::rendering-fog` | volumetric fog and light shafts on the device: a froxel volume filled with a height fog and authored volumes, lit by the sun through the shadow map, integrated front to back into a texture the forward pass applies to every surface — or into the atmosphere's own table — through `FrameStageDeclaration` |
 | `selection/` | `cy::rendering-selection` | selection outlines and unit highlights: the marked objects drawn again into a mask with the frame's own geometry, and an edge pass over the tonemapped colour at `SelectionOutlines`, with the gameplay component that marks an entity |
 | `depth_of_field/` | `cy::rendering-depth-of-field` | depth of field on the device: the physical circle of confusion gathered as separate near and far fields at half resolution, composited before bloom at `DepthOfField` through `FrameStageDeclaration` |
 | `occlusion/` | `cy::rendering-occlusion` | ground-truth ambient occlusion on the device: the horizon search, the shared denoiser's cascade, and the target the forward pass samples through `FrameStageDeclaration` |

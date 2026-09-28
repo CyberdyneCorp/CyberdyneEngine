@@ -118,6 +118,11 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         // transient's view is recreated every frame.
         resources.contact_shadows = description.contact_shadows_target;
     }
+    if (description.features.volumetric_fog) {
+        // Always the producer's, for the contact shadows' reason: the opaque pass samples it
+        // through a texture-table slot.
+        resources.volumetric_fog = description.volumetric_fog_target;
+    }
     if (description.features.screen_space_gi) {
         request.name = "screen-space gi";
         request.format = description.color_format;
@@ -335,6 +340,13 @@ PassId declare_opaque(RenderGraph& graph, FrameState& state) noexcept {
     if (valid(resources.screen_space_gi)) {
         builder.read(resources.screen_space_gi, Access::FragmentSampledRead);
     }
+    if (valid(resources.volumetric_fog)) {
+        // A texture the opaque pass samples through the frame's table, or — for a caller that
+        // composites the fog into the atmosphere's own froxel table — a buffer it reads as one.
+        builder.read(resources.volumetric_fog, graph.resource(resources.volumetric_fog).is_texture
+                                                   ? Access::FragmentSampledRead
+                                                   : Access::FragmentStorageRead);
+    }
     attach(builder, description, FramePassKind::Opaque);
     return builder.id();
 }
@@ -432,6 +444,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "contact shadows";
         case FramePassKind::ScreenSpaceGi:
             return "screen-space gi";
+        case FramePassKind::VolumetricFog:
+            return "volumetric fog";
         case FramePassKind::Opaque:
             return "opaque";
         case FramePassKind::Sky:
@@ -572,6 +586,13 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
         stage(FramePassKind::ScreenSpaceGi, "screen-space gi",
               declare_screen_space(graph, state, "screen-space gi", resources_.screen_space_gi,
                                    FramePassKind::ScreenSpaceGi));
+    }
+
+    // Volumetric fog, after the shadow pass whose map it reads.
+    if (features.volumetric_fog) {
+        declare_produced_stage(graph, state, state.description->volumetric_fog_stage,
+                               FramePassKind::VolumetricFog, "volumetric fog",
+                               resources_.volumetric_fog);
     }
 }
 
@@ -766,6 +787,13 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                                      !valid(description.contact_shadows_target))) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: contact shadows need their producer's stage and target");
+    }
+    // NOR DOES THE FOG VOLUME, for the same reason: its producer owns the texture the opaque pass
+    // samples.
+    if (features.volumetric_fog && (description.volumetric_fog_stage.declare == nullptr ||
+                                    !valid(description.volumetric_fog_target))) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: volumetric fog needs its producer's stage and target");
     }
     // THE OUTLINE STAGE HAS NO SINGLE-PASS STAND-IN EITHER, and it reads the prepass depth: a
     // marked surface is "hidden" where the scene's depth is nearer than its own, and a frame with

@@ -18,7 +18,7 @@
 //
 // The consequence worth stating: a pass with no callback still declares its resources, and the
 // graph still derives every barrier around it. So a frame can be built, compiled and asserted on
-// with no device, no shaders and no draws — which is what `unit.forward_frame` does, and it is the
+// with no device, no shaders and no draws — which is what `unit.render_forward` does, and it is the
 // reason the pass order is a test rather than a diagram.
 //
 // ================================================================================================
@@ -110,6 +110,11 @@ struct FrameFeatures {
     bool virtual_geometry = false;
     /// 1, 2, 4 or 8. Above 1 the colour and depth are resolved before the screen-space passes.
     u32 msaa_samples = 1;
+    /// Volumetric fog: a froxel volume marched through the medium, lit through the directional
+    /// shadow map, which the opaque pass reads to attenuate and add to every surface —
+    /// `FramePassKind::VolumetricFog`. Off by default, and absent when off. Needs no prepass: the
+    /// volume is a function of the view and the shadow map, not of the depth.
+    bool volumetric_fog = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
@@ -140,6 +145,13 @@ enum class FramePassKind : u8 {
     /// refinement without placing it, and it reads what the other screen-space passes read.
     ContactShadows,
     ScreenSpaceGi,
+    /// Volumetric fog: the froxel volume filled, lit and integrated, declared by its producer
+    /// (`src/rendering/fog/`) through `FrameStageDeclaration` as the contact shadows are. It is
+    /// `rendering-post-processing`'s step 3, "volumetric fog composite", and it sits HERE rather
+    /// than after shading because a forward renderer composites fog per surface: the opaque pass
+    /// multiplies each surface by the volume's transmittance and adds its in-scattering. After the
+    /// shadow pass, whose map it reads, and before the opaque pass, which reads it.
+    VolumetricFog,
     Opaque,
     Sky,
     ScreenSpaceReflections,
@@ -282,6 +294,9 @@ struct FrameResources {
     /// stored complemented so that a cleared texel reads as "no surface". Only with
     /// `FrameFeatures::virtual_geometry`.
     ResourceId visibility = kInvalidResource;
+    /// The volumetric fog volume, imported by its producer. Only with
+    /// `FrameFeatures::volumetric_fog`.
+    ResourceId volumetric_fog = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -340,6 +355,11 @@ struct FrameDescription {
     /// reached as `source` and `FrameResources::depth_of_field` as `target`, which its last pass
     /// must write. No single-pass fallback, as for the outlines.
     FrameStageDeclaration depth_of_field_stage;
+    /// The volumetric fog volume and the producer that declares its pass. Like the contact shadows
+    /// there is no single-pass fallback: with `features.volumetric_fog` and no producer, `build()`
+    /// refuses rather than declaring a pass nothing records.
+    ResourceId volumetric_fog_target = kInvalidResource;
+    FrameStageDeclaration volumetric_fog_stage;
     /// The queue the cluster assignment runs on. Async compute where the device has one; the graph
     /// folds it onto graphics where it does not, from the same declarations.
     rhi::QueueKind cluster_queue = rhi::QueueKind::Graphics;

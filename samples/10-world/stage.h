@@ -216,6 +216,12 @@ public:
     /// its sun and applied to the ground's colour before the sun lights it. Off by default; off is
     /// the frame this program drew before decals, byte for byte.
     void set_ground_marker(bool on) noexcept { ground_marker_ = on; }
+    /// VOLUMETRIC FOG, before `stage_world`: a haze of the grade file's `fog-visibility` at sea
+    /// level, thinning by e every `fog-scale-height` above it, marched through `fog::FogPass` with
+    /// the atmosphere's own table composited in, and bound where the aerial perspective table was.
+    /// Off by default, and off is the frame this program drew before, byte for byte: no pass, and
+    /// binding 2 is the atmosphere's table as it was.
+    void set_fog(bool on) noexcept { fog_ = on; }
 
     void close() noexcept;
 
@@ -249,6 +255,8 @@ private:
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
     [[nodiscard]] Status create_frame() noexcept;
+    /// The fog march and its table, bound at set 0 binding 2. Only with `set_fog(true)`.
+    [[nodiscard]] Status create_fog(const World& world) noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
     /// Refill geometry and CPU-authored foliage streams. Device passes replace the terrain, sky,
     /// and water colour ranges before the opaque draw consumes them.
@@ -268,6 +276,14 @@ private:
     bool water_shading_ = true;
     bool ground_marker_ = false;
     u64 decal_bytes_ = 0;
+    /// `set_fog` and the medium the grade file commits. See `samples/10-world/frame.cypost`.
+    bool fog_ = false;
+    f32 fog_visibility_metres_ = 1500.0F;
+    f32 fog_scale_height_ = 60.0F;
+    f32 fog_albedo_ = 0.95F;
+    f32 fog_anisotropy_ = 0.7F;
+    /// This frame's fog table in the graph, or `kInvalidResource`.
+    rendering::ResourceId fog_table_ = rendering::kInvalidResource;
 
     /// The static half: terrain geometry, uploaded once.
     u32 terrain_vertices_ = 0;

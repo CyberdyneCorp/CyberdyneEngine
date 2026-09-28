@@ -276,6 +276,12 @@ struct alignas(16) FrameViewData {
     ///
     /// APPENDED, for the reason `material_textures` gives.
     u32 decal_control[4] = {kNoMaterialTexture, 0, 0, 0};
+    /// Volumetric fog. x: the set 0 texture slot holding `fog::FogPass`'s volume, or
+    /// `kNoMaterialTexture` — the default, and the unfogged frame every caller that predates the
+    /// field draws. yzw: reserved.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 volumetric_fog_control[4] = {kNoMaterialTexture, 0, 0, 0};
 };
 
 /// `soft_shadow_control[0]`'s bits, `cy/frame.slang`'s `kCySoftShadowPcss` and
@@ -283,8 +289,9 @@ struct alignas(16) FrameViewData {
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 528, "CyFrameData's std140 block is 528 bytes");
+static_assert(sizeof(FrameViewData) == 544, "CyFrameData's std140 block is 544 bytes");
 static_assert(offsetof(FrameViewData, decal_control) == 512);
+static_assert(offsetof(FrameViewData, volumetric_fog_control) == 528);
 static_assert(offsetof(FrameViewData, soft_shadow_control) == 432);
 static_assert(offsetof(FrameViewData, soft_shadow_shape) == 448);
 static_assert(offsetof(FrameViewData, occlusion_control) == 416);

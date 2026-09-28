@@ -69,6 +69,7 @@
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/decals/decal_table.h>
+#include <cy/rendering/fog/medium.h>
 #include <cy/rendering/post/effects.h>
 
 #include <string>
@@ -221,6 +222,19 @@ struct Shot {
     f32 dof_f_number = 1.4F;
     std::vector<std::pair<std::string, Vec3>> focus_targets;
 
+    /// The air, when a run switches volumetric fog on (`--fog on`): a height fog stated in the
+    /// units a weather report uses. `fog_visibility_metres` is the meteorological visibility at
+    /// and below `fog_base_height` — Koschmieder's `sigma_t = 3.912 / V` — and the density falls
+    /// by e every `fog_scale_height` metres above it. The albedo and the Henyey-Greenstein `g` are
+    /// those of haze droplets. `fog_far_metres` is how deep the froxel volume reaches: past it the
+    /// air is clear, so it is set beyond the deepest thing the camera sees.
+    f32 fog_visibility_metres = 0.0F;
+    f32 fog_base_height = 0.0F;
+    f32 fog_scale_height = 20.0F;
+    f32 fog_albedo = 0.95F;
+    f32 fog_anisotropy = 0.7F;
+    f32 fog_far_metres = 48.0F;
+
     std::vector<ShotMaterial> materials;
     std::vector<std::pair<std::string, std::string>> meshes;
     std::vector<Instance> instances;
@@ -329,6 +343,13 @@ public:
     /// applies the decals to each surface before the sun and the sky light it.
     void set_decals(bool enabled) noexcept { decals_ = enabled; }
 
+    /// VOLUMETRIC FOG, before `stage_shot`. Off — the default, and the published M11.c frame —
+    /// draws exactly the frame this program always drew. On switches the post chain's
+    /// `volumetric_fog` stage on, declares it through `fog::FogPass` — a froxel volume marched
+    /// through the shot's height fog, lit by the same sun through the same shadow map and by the
+    /// same sky term the surfaces are — and every scene and sky fragment is seen through it.
+    void set_fog(bool enabled, const Shot& shot) noexcept;
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -395,6 +416,7 @@ private:
     [[nodiscard]] Status create_decals(const Shot& shot) noexcept;
     /// Pack this frame's table — the assembly's ranks and lists — into the upload declared for it.
     [[nodiscard]] Status stage_decals(const Mat4& camera) noexcept;
+    [[nodiscard]] Status create_fog() noexcept;
     /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
     /// reads it.
     [[nodiscard]] bool has_prepass() const noexcept { return ambient_occlusion_ || soft_shadows_; }
@@ -430,6 +452,9 @@ private:
     u32 albedo_level_limit_ = 0;
     rendering::BloomSettings bloom_{};
     bool bloom_enabled_ = false;
+    bool fog_enabled_ = false;
+    rendering::fog::FogMedium fog_medium_{};
+    f32 fog_far_metres_ = 48.0F;
     const char* look_path_ = nullptr;
     bool dof_enabled_ = false;
     f32 dof_f_number_ = 1.4F;

@@ -1297,6 +1297,93 @@ capture-decals *args:
         "${images}/decals-beauty-off.png" "${images}/decals-beauty-on.png" \
         "${images}/decals-world-off.png" "${images}/decals-world-on.png"
 
+# Photograph the beauty shot with volumetric fog off and on. Usage: just capture-volumetric-fog [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-volumetric-fog *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-volumetric-fog: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-volumetric-fog"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    images=docs/design/images
+    for setting in off on; do
+        echo "==> capture     volumetric fog ${setting}"
+        manifest=()
+        if [ "${setting}" = on ]; then
+            manifest=(--manifest "${images}/volumetric-fog-beauty-on.manifest")
+        fi
+        "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+            --fog "${setting}" \
+            --still "${images}/volumetric-fog-beauty-${setting}.png" \
+            ${manifest[@]+"${manifest[@]}"} ${rest} | tee "${work}/${setting}.log"
+        if [ ! -f "${images}/volumetric-fog-beauty-${setting}.png" ]; then
+            echo "capture-volumetric-fog: no picture was written — no graphics device." >&2
+            exit 1
+        fi
+    done
+    python3 tools/docs/compare_volumetric_fog.py \
+        --off "${images}/volumetric-fog-beauty-off.png" \
+        --on "${images}/volumetric-fog-beauty-on.png" \
+        --reference "${images}/m11c-beauty-shot.png" \
+        --detail "${images}/volumetric-fog-beauty-detail.png"
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/volumetric-fog-beauty-off.png" "${images}/volumetric-fog-beauty-on.png" \
+        "${images}/volumetric-fog-beauty-detail.png"
+
+# Photograph samples/10-world's morning with and without the valley haze. Usage: just capture-world-fog [--profile <p>] [--width <n>] [--height <n>]
+capture-world-fog *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/10-world/cy_sample_world"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-world-fog: ${sample} was not built." >&2
+        exit 1
+    fi
+
+    # THE AERIAL PERSPECTIVE PAIR'S TAKE: one simulated day in 192 frames at 960x540, and frame 60,
+    # 11:56 on the take's clock, the sun at about 24 degrees.
+    # The sample draws only when it is given a frames directory; the take's frames are scratch.
+    images=docs/design/images
+    work="${build_dir}/world-fog"
+    mkdir -p "${images}"
+    trap 'rm -rf "${work}"' EXIT
+    for setting in off on; do
+        echo "==> capture     world fog ${setting}"
+        flags=()
+        if [ "${setting}" = on ]; then
+            flags=(--fog)
+        fi
+        rm -rf "${work}" && mkdir -p "${work}"
+        "${sample}" --width 960 --height 540 --seconds 24 --fps 8 --still-frame 60 \
+            --frames "${work}" --still "${images}/volumetric-fog-world-${setting}.png" \
+            ${flags[@]+"${flags[@]}"} ${rest}
+        rm -f "${images}/volumetric-fog-world-${setting}.png.manifest.txt"
+    done
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/volumetric-fog-world-off.png" "${images}/volumetric-fog-world-on.png"
+
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #
 # Task 8.1 is "one project — built, cooked, packaged and LAUNCHED FROM A SINGLE RECIPE", and the

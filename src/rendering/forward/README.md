@@ -87,6 +87,18 @@ because the opaque pass would sample an image nothing wrote. The feature derives
 prepass, whose normal lifts the trace off its surface. `src/rendering/contact_shadows/` is the
 producer.
 
+## A fourth, before shading: volumetric fog
+
+`FramePassKind::VolumetricFog` sits after the shadow pass and the screen-space passes and before the
+opaque pass: `rendering-post-processing`'s step 3, "volumetric fog composite", which a forward
+renderer composites per surface — the opaque pass multiplies each surface by the volume's
+transmittance and adds its in-scattering. The frame hands `ScreenSpaceStageInputs` to
+`FrameDescription::volumetric_fog_stage` with `target` set to the imported
+`volumetric_fog_target`, and the opaque pass declares the read: a sampled read of a texture, or a
+storage read of a buffer when a caller composites the fog into the atmosphere's table. It needs no
+prepass — the volume is a function of the view and the shadow map, not of the depth — and `build()`
+refuses the feature without a producer and a target. `src/rendering/fog/` is the producer.
+
 ## A third, after the tone curve: selection outlines
 
 `FramePassKind::SelectionOutlines` sits after the post-process and before the interface: an outline

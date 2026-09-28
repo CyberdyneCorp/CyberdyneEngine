@@ -13,6 +13,7 @@
 //                    --frames <dir> --frames-count <n>   a turntable, for the video
 //                    [--width 1920] [--height 1080] [--supersample 2]
 //                    [--bloom]                      the shot's bloom grade in the post chain
+//                    [--fog on|off]                 volumetric fog from the shot's `fog` lines
 //                    [--look <file.cygrade>]        a committed look, graded after the tone curve
 //                    [--depth-of-field <target>]    focused on a target the shot names
 //                    [--decals on|off]              the shot's `decal` lines, applied before
@@ -229,6 +230,13 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cy_sample_beauty: --decals is `on` or `off`\n");
         return 1;
     }
+    // VOLUMETRIC FOG. Off by default, which is the published M11.c frame; `on` is what
+    // `just capture-volumetric-fog` photographs beside it, with the shot's own `fog` lines.
+    const std::string fog = option(argc, argv, "--fog", "off");
+    if (fog != "on" && fog != "off") {
+        std::fprintf(stderr, "cy_sample_beauty: --fog is `on` or `off`\n");
+        return 1;
+    }
     // A CONTROL, not a quality setting: `--albedo-levels 1` photographs the shot with level 0 of
     // every albedo map's cooked chain and nothing beneath it. See `Stage::limit_albedo_levels`.
     const u32 albedo_levels = option_number(argc, argv, "--albedo-levels", 0);
@@ -309,6 +317,11 @@ int main(int argc, char** argv) {
     std::printf("decals        %s, %llu in the shot over %llu decal materials\n", decals.c_str(),
                 static_cast<unsigned long long>(shot.decals.size()),
                 static_cast<unsigned long long>(shot.decal_materials.size()));
+    stage.set_fog(fog == "on", shot);
+    std::printf(
+        "fog           %s, visibility %.0f m at %.2f m, scale height %.1f m, g %.2f\n", fog.c_str(),
+        static_cast<double>(shot.fog_visibility_metres), static_cast<double>(shot.fog_base_height),
+        static_cast<double>(shot.fog_scale_height), static_cast<double>(shot.fog_anisotropy));
     stage.limit_albedo_levels(albedo_levels);
     if (bloom) {
         stage.enable_bloom(shot);
