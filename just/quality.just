@@ -23,7 +23,11 @@ quality-format *paths:
         echo "quality-format: no C++ sources under $(just _cpp-roots {{paths}})"
         exit 0
     fi
-    "${formatter}" -i "${files[@]}"
+    # Through xargs, in as many batches as it takes: the engine tree is thousands of files, and one
+    # command line naming all of them overflows the system argument limit — about 32k characters on
+    # Windows, where the failure surfaces as "Argument list too long" from the formatter. NUL
+    # separators and -0 rather than -d, which BSD xargs on macOS does not have.
+    printf '%s\0' "${files[@]}" | xargs -0 "${formatter}" -i
     echo "quality-format: formatted ${#files[@]} file(s) with $("${formatter}" --version)"
 
 # Check formatting without modifying anything. Fails naming every file that differs.
@@ -41,7 +45,10 @@ quality-format-check *paths:
         exit 0
     fi
     echo "==> clang-format ${#files[@]} file(s)"
-    if ! "${formatter}" --dry-run -Werror "${files[@]}"; then
+    # Batched like `quality-format` above, and for the same reason. xargs answers 123 when any batch
+    # reported a difference, which is what this `if` is reading — an overflowing command line used to
+    # surface here as a formatting difference rather than as the tooling failure it was.
+    if ! printf '%s\0' "${files[@]}" | xargs -0 "${formatter}" --dry-run -Werror; then
         echo >&2
         echo "quality-format-check: formatting differs from .clang-format." >&2
         echo "  Fix it with: just quality-format" >&2
@@ -81,7 +88,12 @@ quality-lint *args:
     # CY_JOBS, or every core but two — `_jobs` in just/build.just says why — and each clang-tidy
     # inside the machine-wide job pool the compiles use, so a lint beside a build shares its cores.
     jobs="$(just _jobs)"
-    read -r -a slot <<< "$(just _job-slots)"
+    # `_job-slots` answers one argument per line so that a repository path containing a space
+    # survives; reading it with `read -a` off a single line would split it at that space.
+    slot=()
+    while IFS= read -r argument; do
+        slot[${#slot[@]}]="${argument}"
+    done < <(just _job-slots)
 
     echo "==> clang-tidy ${#files[@]} file(s) against ${database}"
     printf '%s\n' "${files[@]}" \
@@ -442,7 +454,10 @@ _lint-files database *paths:
     repository = os.getcwd()
     seen = set()
     for entry in json.load(open(database, encoding="utf-8")):
-        path = os.path.relpath(os.path.realpath(entry["file"]), repository)
+        # `roots` are forward-slash paths, and os.path.relpath answers in os.sep — which is a
+        # backslash on Windows, so every startswith() below missed and the recipe reported an
+        # empty compile database on a tree that had just built.
+        path = os.path.relpath(os.path.realpath(entry["file"]), repository).replace(os.sep, "/")
         if path.startswith(roots) and path not in seen:
             seen.add(path)
             print(path)
