@@ -715,7 +715,8 @@ def _bash() -> str:
 
 
 def _locked_build(root: pathlib.Path, tree: pathlib.Path, log: pathlib.Path, label: str,
-                  seconds: float, scratch: pathlib.Path) -> subprocess.Popen:
+                  seconds: float, scratch: pathlib.Path,
+                  environment: dict[str, str] | None = None) -> subprocess.Popen:
     """A fake build that takes the real lock, records when it held it, and releases it.
 
     Through a file rather than `bash -c`: Windows has no argv array, so a multi-line script handed
@@ -734,7 +735,7 @@ def _locked_build(root: pathlib.Path, tree: pathlib.Path, log: pathlib.Path, lab
     path = scratch / f"build-{label}.sh"
     path.write_text(script, encoding="utf-8", newline="\n")
     # as_posix(), because a Windows path handed to Git Bash loses its backslashes.
-    return subprocess.Popen([_bash(), path.as_posix()],
+    return subprocess.Popen([_bash(), path.as_posix()], env=environment,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
@@ -800,12 +801,32 @@ def two_builds_on_one_tree_take_turns(root: pathlib.Path) -> list[str]:
             reaper.kill()
             failures.append("a lock left by a dead owner was never reaped; the tree stays wedged")
 
+        # A lock naming ANOTHER host is stale whatever its PID: `actions/cache` restores one another
+        # runner left, and its PID may happen to match a live process here.
+        lock.mkdir()
+        (lock / "pid").write_text(f"{os.getpid()}@another-runner\n", encoding="utf-8")
+        foreign_log = work / "foreign"
+        foreign_log.touch()
+        foreigner = _locked_build(root, tree, foreign_log, "d", 0.05, work)
+        try:
+            if foreigner.wait(timeout=60) != 0:
+                failures.append(f"the build that met another host's lock failed: "
+                                f"{foreigner.stderr.read().strip()[:200]}")
+        except subprocess.TimeoutExpired:
+            foreigner.kill()
+            failures.append("a lock restored from another runner was never reaped, though its PID "
+                            "is live here")
+
         # A LIVE owner's lock is neither reaped nor deleted by the waiter. The owner has to be a
         # real shell, not a PID this process invents: under MSYS `kill -0` reads the shell's own
         # process table, in which a native Windows PID does not appear and would look dead.
+        # AS A HOSTED RUNNER, where GITHUB_ACTIONS is set: the lock once purged any lock on CI before
+        # waiting, which took a live owner's lock too, and so this check passed on every developer
+        # machine and failed on every runner.
+        hosted = {**os.environ, "GITHUB_ACTIONS": "true"}
         held_log = work / "held"
         held_log.touch()
-        owner = _locked_build(root, tree, held_log, "e", 2.0, work)
+        owner = _locked_build(root, tree, held_log, "e", 2.0, work, hosted)
         deadline = time.time() + 20
         while not (lock / "pid").is_file() and time.time() < deadline:
             time.sleep(0.02)
@@ -816,7 +837,7 @@ def two_builds_on_one_tree_take_turns(root: pathlib.Path) -> list[str]:
         holder = (lock / "pid").read_text(encoding="utf-8").strip()
         waiter_log = work / "waiter"
         waiter_log.touch()
-        waiter = _locked_build(root, tree, waiter_log, "f", 0.05, work)
+        waiter = _locked_build(root, tree, waiter_log, "f", 0.05, work, hosted)
         time.sleep(0.6)
         still = (lock / "pid").read_text(encoding="utf-8").strip() if (lock / "pid").is_file() else ""
         if still != holder:

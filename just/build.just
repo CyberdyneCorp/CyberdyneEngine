@@ -102,24 +102,33 @@ build-engine *args:
     lock_dir="${CY_BUILD_DIR:-build/${profile}}"
     mkdir -p "${lock_dir}"
     lock="${lock_dir}/.cy-build.lock.d"
-    # On CI, `actions/cache` restores `build/dev` verbatim — including a lock a prior job left on
-    # that job's runner. The reaping below tests `kill -0 <owner>` against the local process table,
-    # and on a fresh runner a foreign PID occasionally matches a live local process (short PIDs
-    # collide often), so the loop would wait for a process that has nothing to do with this build.
-    # GITHUB_ACTIONS is `true` on every hosted runner; there, forget a stashed lock before we try.
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        rm -rf "${lock}" "${lock_dir}/.cy-build.lock" "${lock_dir}/.cy-build.lock.pid"
-    fi
+    # THE OWNER IS A PID ON A HOST. On CI, `actions/cache` restores `build/dev` verbatim — including
+    # a lock a prior job left on ANOTHER runner, whose PID means nothing here and may even match a
+    # live local process. A lock naming another host is therefore stale by definition, and only one
+    # naming this host is judged by `kill -0`. This replaced a purge of any lock on CI before the
+    # loop, which also deleted a LIVE build's lock whenever two builds shared one runner's tree:
+    # `two builds on one tree take turns` failed on every hosted runner and passed everywhere else.
+    host="${HOSTNAME:-localhost}"
+    me="$$@${host}"
     announced=0
     while ! mkdir "${lock}" 2>/dev/null; do
         # An empty or absent pid file is a lock whose owner has not written its PID yet, which is a
-        # live owner mid-acquisition: wait rather than reap.
-        owner="$(cat "${lock}/pid" 2>/dev/null || true)"
-        if [[ "${owner}" =~ ^[0-9]+$ ]] && ! kill -0 "${owner}" 2>/dev/null; then
+        # live owner mid-acquisition: wait rather than reap. A bare PID (no host) is this host's.
+        holder="$(cat "${lock}/pid" 2>/dev/null || true)"
+        owner="${holder%%@*}"
+        owner_host="${holder#*@}"
+        [ "${owner_host}" != "${holder}" ] || owner_host="${host}"
+        stale=0
+        if [[ "${owner}" =~ ^[0-9]+$ ]]; then
+            if [ "${owner_host}" != "${host}" ] || ! kill -0 "${owner}" 2>/dev/null; then
+                stale=1
+            fi
+        fi
+        if [ "${stale}" -eq 1 ]; then
             # Re-read before removing: between the read above and here another waiter may have
             # reaped this lock and taken it, and deleting it then would hand the tree to two
-            # builds at once. Only remove a lock that still names the dead owner we found.
-            if [ "$(cat "${lock}/pid" 2>/dev/null || true)" = "${owner}" ]; then
+            # builds at once. Only remove a lock that still names the stale owner we found.
+            if [ "$(cat "${lock}/pid" 2>/dev/null || true)" = "${holder}" ]; then
                 rm -rf "${lock}"
             fi
             continue
@@ -130,11 +139,11 @@ build-engine *args:
         fi
         sleep 0.1
     done
-    echo "$$" > "${lock}/pid"
+    echo "${me}" > "${lock}/pid"
     # The ownership check prevents one build from deleting a lock another has acquired — on the
     # ordinary exit path, and on the reap path above.
     release_lock() {
-        [ "$(cat "${lock}/pid" 2>/dev/null || true)" != "$$" ] || rm -rf "${lock}"
+        [ "$(cat "${lock}/pid" 2>/dev/null || true)" != "${me}" ] || rm -rf "${lock}"
     }
     trap release_lock EXIT
 
