@@ -214,7 +214,8 @@ CY_TEST_CASE("the lookup starts at the eye and meets each column at its slices' 
     // And the transmittance falls, and the in-scattering grows, with distance along a ray.
     f32 last_t = 1.0F;
     f32 last_s = 0.0F;
-    for (f32 distance = 0.5F; distance < 60.0F; distance *= 1.3F) {
+    for (u32 step = 0; step < 19U; ++step) {
+        const f32 distance = 0.5F * std::pow(1.3F, static_cast<f32>(step));  // 0.5 m to 56 m
         const FogAtPoint fog = fog_at(span, extent, direction * distance);
         CY_CHECK_LE(fog.transmittance.x, last_t);
         CY_CHECK_GE(fog.in_scattering.x, last_s);

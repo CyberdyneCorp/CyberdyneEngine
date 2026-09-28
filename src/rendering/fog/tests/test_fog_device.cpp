@@ -577,25 +577,19 @@ struct Froxel {
 /// Whether the sun reaches `point` past every box in the scene, the floor slab included.
 [[nodiscard]] bool sun_reaches(FrameScene& scene, Vec3 point) noexcept {
     const Vec3 to_sun = sun_travel() * -1.0F;
-    for (const Aabb& box : scene.boxes()) {
-        if (std::isfinite(ray_aabb(point, to_sun, box))) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::none_of(scene.boxes(), [&](const Aabb& box) {
+        return std::isfinite(ray_aabb(point, to_sun, box));
+    });
 }
 
 /// Whether `point` is inside a box of the scene, the floor slab included. The shadow pass culls
 /// front faces, so the map holds each solid's far side and calls its inside lit; fog inside a solid
 /// is never in front of a surface, so no frame can show it either way.
 [[nodiscard]] bool inside_solid(FrameScene& scene, Vec3 point) noexcept {
-    for (const Aabb& box : scene.boxes()) {
-        if (point.x > box.min.x && point.x < box.max.x && point.y > box.min.y &&
-            point.y < box.max.y && point.z > box.min.z && point.z < box.max.z) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(scene.boxes(), [&](const Aabb& box) {
+        return point.x > box.min.x && point.x < box.max.x && point.y > box.min.y &&
+               point.y < box.max.y && point.z > box.min.z && point.z < box.max.z;
+    });
 }
 
 /// Whether the map covers `point` at all: inside its square and its depth range. Outside, the

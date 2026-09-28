@@ -63,7 +63,7 @@ CY_TEST_CASE("every fog volume shape is full inside, empty outside, and ramps ov
     volume.centre = Vec3{1.0F, 2.0F, 3.0F};
     volume.edge = 0.5F;
     struct Probe {
-        FogVolumeShape shape;
+        FogVolumeShape shape = FogVolumeShape::Box;
         Vec3 size;
         Vec3 inside;
         Vec3 on_edge;

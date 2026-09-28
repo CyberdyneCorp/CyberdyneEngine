@@ -212,7 +212,7 @@ Expected<FogConstants, Error> pack_fog_constants(const FogSettings& settings, co
     w[16] = word(medium.height.albedo, 0.0F);
     for (u32 index = 0; index < count; ++index) {
         const FogVolume& fog = medium.volumes[index];
-        Vec4* v = w + kFogConstantHeaderWords + (index * kFogVolumeWords);
+        Vec4* v = w + kFogConstantHeaderWords + (static_cast<usize>(index) * kFogVolumeWords);
         v[0] = word(fog.centre, static_cast<f32>(fog.shape));
         v[1] = word(fog.size, math::max(fog.edge, 0.0F));
         v[2] = word(fog.albedo, math::max(fog.extinction, 0.0F));
