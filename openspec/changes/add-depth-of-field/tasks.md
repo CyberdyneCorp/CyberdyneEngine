@@ -14,9 +14,10 @@
       (`render.depth_of_field`) written.
 - [ ] Run them green, and prove each image case red by a mutation applied and restored
       (md5-verified).
-- [ ] Write `src/rendering/depth_of_field/tests/references/depth_of_field_absent.png` with
-      `CY_RENDER_UPDATE_GOLDEN=1` (the frame shaders are main's at 8996cc35: this change touches
-      none of them) and hold the frame without the stage to it.
+- [x] Commit `src/rendering/depth_of_field/tests/references/depth_of_field_absent.png`: render.bloom's
+      `frame_scene_before_bloom.png` (md5 b8a26f4c2f82f4939e3dedda3b72199b) copied unchanged, drawn
+      before bloom and so before this module (this change touches no frame shader).
+- [ ] Hold the frame without the stage to it: the case in `render.depth_of_field` run green.
 - [x] `samples/12-beauty --depth-of-field`, the shot's focus targets, and
       `just capture-beauty-depth-of-field`.
 - [ ] Capture and publish the stills under `docs/design/images/`; check the comparison boxes in

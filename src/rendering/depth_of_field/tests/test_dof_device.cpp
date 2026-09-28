@@ -841,10 +841,11 @@ CY_TEST_CASE("with depth of field off the frame is the one drawn before the stag
         fixture.report_skip();
         return;
     }
-    // `references/depth_of_field_absent.png`: this scene with the stage absent, rendered with the
-    // frame shaders from before this module — it adds no shader to the frame and changes none, and
-    // the file is pixel-identical to render.bloom's `frame_scene_before_bloom.png`, drawn before
-    // bloom existed.
+    // `references/depth_of_field_absent.png` is render.bloom's `frame_scene_before_bloom.png`
+    // (md5 b8a26f4c2f82f4939e3dedda3b72199b), copied unchanged: `render.pipeline`'s capture of this
+    // scene from a build of the tree before bloom existed, and so before this module. The module
+    // adds no shader to the frame and changes none, so the frame without the stage must still be
+    // that frame. It is held to the golden rule, and byte for byte on the machine that wrote it.
     char path[1024];
     (void)std::snprintf(path, sizeof(path), "%s/references/depth_of_field_absent.png",
                         CY_DOF_TEST_DIR);
