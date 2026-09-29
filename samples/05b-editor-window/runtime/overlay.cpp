@@ -286,4 +286,9 @@ void draw_camera_marker(const Canvas& canvas, f32 x, f32 y) noexcept {
     line(canvas, x + 6.0F, y + 3.0F, x + 11.0F, y + 6.0F, 1.2F, colour);
 }
 
+void draw_thin_line(const Canvas& canvas, f32 from_x, f32 from_y, f32 to_x, f32 to_y,
+                    u32 colour) noexcept {
+    line(canvas, from_x, from_y, to_x, to_y, 0.6F, colour);
+}
+
 }  // namespace cy::sample::editor_window

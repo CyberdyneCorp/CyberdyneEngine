@@ -3228,3 +3228,114 @@ fn the_lighting_editor_bake_and_density_view_are_mcp_tools() {
         "{outside}"
     );
 }
+
+/// One MCP tool call, answering whether the server reported an error, and the reply's text.
+fn call_tool(
+    editor: &mut Editor,
+    id: u32,
+    name: &str,
+    arguments: &[(&str, &str)],
+) -> (bool, String) {
+    let replies = converse(&[INITIALIZE, &tool_call(id, name, arguments)], editor);
+    let failed = result(&replies, 1).get("isError") == &Json::Bool(true);
+    (failed, tool_text(&replies, 1))
+}
+
+/// Two entities with dynamic bodies, created over the wire.
+fn two_bodies_over_the_wire(
+    editor: &mut Editor,
+) -> (cy_editor_core::ids::NodeId, cy_editor_core::ids::NodeId) {
+    let mut bodies = Vec::new();
+    for id in 2..4 {
+        let (failed, text) = call_tool(editor, id, "scene.create-entity", &[]);
+        assert!(!failed, "{text}");
+        let node = editor
+            .selection
+            .get()
+            .nodes()
+            .next()
+            .expect("the created entity");
+        let (failed, text) = call_tool(
+            editor,
+            id + 10,
+            "scene.add-body",
+            &[("entity", &node.to_string())],
+        );
+        assert!(!failed, "{text}");
+        bodies.push(node);
+    }
+    (bodies[0], bodies[1])
+}
+
+/// The door's joint's upper limit, compared by bits: the values crossed the wire as text.
+fn upper_limit_is(editor: &Editor, door: cy_editor_core::ids::NodeId, expected: f32) -> bool {
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    cy_editor_services::joints::joint_of(document, door)
+        .is_some_and(|joint| joint.limit[1].to_bits() == expected.to_bits())
+}
+
+/// The physics panel's commands, driven over the wire as the panel drives them through the
+/// registry: two bodies, a hinge between them, a field changed, undo and redo in the one history,
+/// the joint removed and restored, and a physics debug layer shown in the viewport.
+#[test]
+fn physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/joints.cyworld").unwrap();
+    let (door, frame) = two_bodies_over_the_wire(&mut editor);
+    let door_text = door.to_string();
+    let entity = ("entity", door_text.as_str());
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        20,
+        "physics.joint.add",
+        &[entity, ("kind", "hinge"), ("target", &frame.to_string())],
+    );
+    assert!(!failed, "{text}");
+    assert!(upper_limit_is(&editor, door, -1.0), "a hinge starts free");
+
+    let set = [entity, ("field", "limit_max"), ("value", "0.5")];
+    let (failed, text) = call_tool(&mut editor, 21, "physics.joint.set", &set);
+    assert!(!failed, "{text}");
+    assert!(upper_limit_is(&editor, door, 0.5));
+
+    assert!(!call_tool(&mut editor, 22, "edit.undo", &[]).0);
+    assert!(
+        upper_limit_is(&editor, door, -1.0),
+        "undo takes back the one field"
+    );
+    assert!(!call_tool(&mut editor, 23, "edit.redo", &[]).0);
+    assert!(upper_limit_is(&editor, door, 0.5));
+
+    assert!(!call_tool(&mut editor, 24, "physics.joint.remove", &[entity]).0);
+    assert!(!upper_limit_is(&editor, door, 0.5), "the joint is gone");
+    assert!(!call_tool(&mut editor, 25, "edit.undo", &[]).0);
+    assert!(
+        upper_limit_is(&editor, door, 0.5),
+        "undo restores what was removed"
+    );
+
+    // A refusal comes back as a result the model can read, and changes nothing.
+    let negative = [entity, ("field", "break_force"), ("value", "-3")];
+    let (failed, text) = call_tool(&mut editor, 26, "physics.joint.set", &negative);
+    assert!(failed, "a negative break force is refused");
+    assert!(text.contains("negative"), "{text}");
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        27,
+        "viewport.physics.colliders",
+        &[("state", "on")],
+    );
+    assert!(!failed, "{text}");
+    assert!(
+        editor
+            .viewports
+            .focused()
+            .physics
+            .contains(cy_editor_viewport::PhysicsLayer::Colliders)
+    );
+}

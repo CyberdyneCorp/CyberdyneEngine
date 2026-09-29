@@ -181,9 +181,22 @@ fn quote(text: &str) -> String {
 
 // --- values ------------------------------------------------------------------------------------
 
+/// Where each node lands in the file, by the engine identity an entity reference holds.
+///
+/// An entity reference is WRITTEN AS A POSITION and held in memory as an identity, the same rule as
+/// the engine's `worldfile.cpp`. Identities do not survive a save: a node's is derived from its
+/// ordinal, the ordinal is its file position plus one on load, and a world that lost a node writes a
+/// dense file. A reference written as an identity would name nothing after the next open.
+type Positions = BTreeMap<u64, usize>;
+
+/// The word a reference is read from when it names no node.
+const NO_ENTITY: &str = "-";
+/// What a parsed reference holds between reading a position and knowing its node's identity.
+const UNRESOLVED_NONE: u64 = u64::MAX;
+
 /// Write a value's words, without its kind: the field's declared kind is what says how to read it
 /// back, so repeating it on every line would be a second source of truth per value.
-fn write_value(value: &Value) -> String {
+fn write_value(value: &Value, positions: &Positions) -> String {
     match value {
         Value::Nil => "nil".to_string(),
         Value::Bool(flag) => flag.to_string(),
@@ -202,7 +215,9 @@ fn write_value(value: &Value) -> String {
             }
             hex
         }
-        Value::Entity(entity) => entity.to_string(),
+        Value::Entity(entity) => positions
+            .get(entity)
+            .map_or_else(|| NO_ENTITY.to_string(), ToString::to_string),
     }
 }
 
@@ -241,7 +256,9 @@ fn read_value(line: &Line, first: usize, kind: ValueKind) -> Result<Value> {
         ValueKind::Quat => Value::Quat(read_floats::<4>(line, first)?),
         ValueKind::Text => Value::Text(line.word(first).to_string()),
         ValueKind::Bytes => Value::Bytes(read_bytes(line.word(first))),
-        ValueKind::Entity => Value::Entity(line.number_at(first, "an entity")?),
+        // A position until `Content::apply` knows which node sits there; see `Positions`.
+        ValueKind::Entity if line.word(first) == NO_ENTITY => Value::Entity(UNRESOLVED_NONE),
+        ValueKind::Entity => Value::Entity(line.number_at(first, "an entity position")?),
     })
 }
 
@@ -450,6 +467,11 @@ pub fn write_world(document: &Document) -> String {
         .enumerate()
         .map(|(position, node)| (*node, position))
         .collect();
+    let positions: Positions = nodes
+        .iter()
+        .enumerate()
+        .map(|(position, node)| (crate::mirror::engine_identity(*node), position))
+        .collect();
     for (position, node) in nodes.iter().enumerate() {
         let Some(state) = document.content().node(*node) else {
             continue;
@@ -477,7 +499,7 @@ pub fn write_world(document: &Document) -> String {
                 quote(&state.name)
             );
         }
-        write_components(state, &mut out);
+        write_components(state, &positions, &mut out);
     }
     out
 }
@@ -516,11 +538,20 @@ fn authored_order(content: &cy_editor_documents::content::DocumentContent) -> Ve
     ordered
 }
 
-fn write_components(state: &cy_editor_documents::content::NodeState, out: &mut String) {
+fn write_components(
+    state: &cy_editor_documents::content::NodeState,
+    positions: &Positions,
+    out: &mut String,
+) {
     for (component, fields) in &state.components {
         let _ = writeln!(out, "  component {}", component.as_u64());
         for (field, value) in fields {
-            let _ = writeln!(out, "    field {} {}", field.as_u64(), write_value(value));
+            let _ = writeln!(
+                out,
+                "    field {} {}",
+                field.as_u64(),
+                write_value(value, positions)
+            );
         }
     }
 }
@@ -615,12 +646,20 @@ impl Content {
     }
 
     fn apply(&self, document: &mut Document) -> Result<()> {
+        // Every node first, so an entity reference to a node written later has an identity to
+        // resolve to. A parent is always written before its child, so one pass creates them all.
         let mut created: Vec<NodeId> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let parent = node.parent.and_then(|index| created.get(index).copied());
-            let id = document.create_node(parent)?;
+            created.push(document.create_node(parent)?);
+        }
+        for (node, id) in self.nodes.iter().zip(created.iter().copied()) {
             for (component, fields) in &node.components {
-                document.add_component(id, *component, fields.clone())?;
+                let fields = fields
+                    .iter()
+                    .map(|(field, value)| (*field, resolve_entity(value, &created)))
+                    .collect();
+                document.add_component(id, *component, fields)?;
             }
             if !node.layer.is_empty() {
                 document.record(cy_editor_documents::Operation::SetLayer {
@@ -636,10 +675,22 @@ impl Content {
                     after: node.name.clone(),
                 })?;
             }
-            created.push(id);
         }
         Ok(())
     }
+}
+
+/// A parsed value with any entity position turned into the identity of the node created there.
+/// A position past the end names no node, and reads as none rather than as a stranger.
+fn resolve_entity(value: &Value, created: &[NodeId]) -> Value {
+    let Value::Entity(position) = value else {
+        return value.clone();
+    };
+    let node = usize::try_from(*position)
+        .ok()
+        .filter(|_| *position != UNRESOLVED_NONE)
+        .and_then(|index| created.get(index));
+    Value::Entity(node.map_or(0, |node| crate::mirror::engine_identity(*node)))
 }
 
 /// Whether a file's layers are being used as node names.
@@ -844,6 +895,80 @@ mod tests {
             })
             .expect("the second node is parented to the first");
         assert_eq!(document.content().node(child).unwrap().parent, Some(root));
+    }
+
+    /// The engine's `kReferencingWorld` in `test_worldfile.cpp`, byte for byte: the hinge names the
+    /// door by its position, and the anchor's reference names none.
+    const REFERENCING: &str = concat!(
+        "cyworld 1\n",
+        "type 1 runtime \"Joint\"\n",
+        "  field 1 entity \"target\" \"\"\n",
+        "node 0 - \"default\" \"Anchor\"\n",
+        "  component 1\n",
+        "    field 1 -\n",
+        "node 1 - \"default\" \"Door\"\n",
+        "node 2 - \"default\" \"Hinge\"\n",
+        "  component 1\n",
+        "    field 1 1\n",
+    );
+
+    fn reference_on(document: &Document, node: NodeId) -> u64 {
+        let state = document.content().node(node).expect("the node");
+        let fields = state.components.values().next().expect("one component");
+        match fields.values().next() {
+            Some(Value::Entity(identity)) => *identity,
+            other => panic!("an entity field, not {other:?}"),
+        }
+    }
+
+    fn nth(document: &Document, position: usize) -> NodeId {
+        authored_order(document.content())[position]
+    }
+
+    #[test]
+    fn an_entity_reference_is_read_as_the_identity_of_the_node_at_its_position() {
+        let document = loaded(REFERENCING);
+        let door = nth(&document, 1);
+        assert_eq!(
+            reference_on(&document, nth(&document, 2)),
+            crate::mirror::engine_identity(door)
+        );
+        assert_eq!(reference_on(&document, nth(&document, 0)), 0);
+        // And written back as the same positions, which is what the engine writes too.
+        assert_eq!(write_world(&document), REFERENCING);
+    }
+
+    #[test]
+    fn an_entity_reference_follows_its_node_when_a_save_renumbers_the_nodes() {
+        let mut document = loaded(REFERENCING);
+        let anchor = nth(&document, 0);
+        document
+            .with_transaction("Delete the anchor", Actor::human("designer"), |document| {
+                document.delete_node(anchor)
+            })
+            .unwrap();
+        let saved = write_world(&document);
+        let reopened = loaded(&saved);
+        // The door is now at position 0 and has a new identity; the hinge still names the door.
+        let door = nth(&reopened, 0);
+        assert_eq!(reopened.content().node(door).unwrap().name, "Door");
+        assert_eq!(
+            reference_on(&reopened, nth(&reopened, 1)),
+            crate::mirror::engine_identity(door)
+        );
+    }
+
+    #[test]
+    fn a_reference_to_a_node_that_is_gone_is_written_as_none() {
+        let mut document = loaded(REFERENCING);
+        let door = nth(&document, 1);
+        document
+            .with_transaction("Delete the door", Actor::human("designer"), |document| {
+                document.delete_node(door)
+            })
+            .unwrap();
+        let reopened = loaded(&write_world(&document));
+        assert_eq!(reference_on(&reopened, nth(&reopened, 1)), 0);
     }
 
     #[test]

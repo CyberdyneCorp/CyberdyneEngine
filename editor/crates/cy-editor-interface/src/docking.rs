@@ -272,6 +272,7 @@ impl Layout {
                 PanelId::new("editor-terrain").expect("a built-in panel identifier"),
                 PanelId::new("editor-lighting-and-lightmap-baking")
                     .expect("a built-in panel identifier"),
+                PanelId::new("physics").expect("a built-in panel identifier"),
                 PanelId::new("swift-workspace").expect("a built-in panel identifier"),
                 PanelId::new("script-graph").expect("a built-in panel identifier"),
                 PanelId::new("animation").expect("a built-in panel identifier"),

@@ -100,6 +100,8 @@ pub struct Viewport {
     pub attachment: CameraAttachment,
     /// How many times the same spot has been clicked, for cycling.
     pub cycle: ClickCycle,
+    /// The physics debug layers asked for over the frame. See [`crate::physics_view`].
+    pub physics: crate::physics_view::PhysicsOverlays,
 }
 
 impl Viewport {
@@ -125,6 +127,7 @@ impl Viewport {
                 state: Box::new(ViewState::new()),
             },
             cycle: ClickCycle::new(),
+            physics: crate::physics_view::PhysicsOverlays::NONE,
         }
     }
 

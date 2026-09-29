@@ -19,8 +19,9 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 11] = [
+const NEW_PANELS: [(&str, &str); 12] = [
     ("undo-history", "Undo"),
+    ("physics", "No world is open."),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
     ("agent-sessions", "No agent is connected."),
@@ -615,4 +616,176 @@ fn the_terrain_brush_field_fills_the_space_beside_the_controls() {
         field.width()
     );
     assert!(field.height() > 180.0, "{field:?}");
+}
+
+// --- The physics panel ------------------------------------------------------------------------------
+
+/// An open world with a door and a frame, each carrying a dynamic body, and the door selected.
+fn physics_harness() -> (
+    Harness,
+    cy_editor_core::ids::NodeId,
+    cy_editor_core::ids::NodeId,
+) {
+    use cy_editor_commands::Arguments;
+    use cy_editor_core::value::Value;
+
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/joints.cyworld")
+        .expect("a new world opens");
+    let mut nodes = Vec::new();
+    for _ in 0..2 {
+        harness
+            .registry
+            .invoke(
+                "scene.create-entity",
+                &harness.scope,
+                &mut harness.editor,
+                &Arguments::new(),
+            )
+            .expect("an entity");
+        let node = harness
+            .editor
+            .selection
+            .get()
+            .nodes()
+            .next()
+            .expect("the created entity is selected");
+        harness
+            .registry
+            .invoke(
+                "scene.add-body",
+                &harness.scope,
+                &mut harness.editor,
+                &Arguments::new().with("entity", Value::Text(node.to_string())),
+            )
+            .expect("a body");
+        nodes.push(node);
+    }
+    harness
+        .registry
+        .invoke(
+            "edit.select",
+            &harness.scope,
+            &mut harness.editor,
+            &Arguments::new().with("entity", Value::Text(nodes[0].to_string())),
+        )
+        .expect("select the door");
+    (harness, nodes[0], nodes[1])
+}
+
+#[test]
+fn the_physics_panel_toggles_an_engine_layer_through_its_registered_command() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = Harness::new();
+    let first = harness.frame("physics", size, Vec::new());
+    for label in [
+        "Physics",
+        "Undo",
+        "Redo",
+        "Viewport physics layers",
+        "Colliders",
+        "Joints",
+    ] {
+        assert!(
+            first.labels.iter().any(|drawn| drawn == label),
+            "the physics panel lacks {label:?}: {:?}",
+            first.labels
+        );
+    }
+    let toggled = harness.frame("physics", size, vec![click_named(&first, "Colliders")]);
+    assert!(
+        matches!(
+            toggled.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "viewport.physics.colliders"
+                    && arguments.text("state") == Some("on")
+        ),
+        "a layer is its command, not a flag the panel sets: {:?}",
+        toggled.intents
+    );
+}
+
+#[test]
+fn the_physics_panel_scopes_the_ragdoll_tool_in_its_diagnostics_area() {
+    let mut harness = Harness::new();
+    let evidence = harness.frame("physics", egui::vec2(900.0, 600.0), Vec::new());
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.contains("cannot load one yet")),
+        "the ragdoll limit is stated rather than an empty section: {:?}",
+        evidence.labels
+    );
+    assert!(evidence.labels.iter().any(|label| label == "▲"));
+}
+
+#[test]
+fn a_selected_body_is_offered_a_joint_and_the_add_is_one_registered_command() {
+    let size = egui::vec2(900.0, 700.0);
+    let (mut harness, door, _) = physics_harness();
+    let form = harness.frame("physics", size, Vec::new());
+    assert!(
+        form.labels.iter().any(|label| label == "Add joint"),
+        "{:?}",
+        form.labels
+    );
+    let added = harness.frame("physics", size, vec![click_named(&form, "Add joint")]);
+    let [Intent::Invoke(command, arguments)] = added.intents.as_slice() else {
+        panic!("one intent: {:?}", added.intents);
+    };
+    assert_eq!(command, "physics.joint.add");
+    assert_eq!(arguments.text("entity"), Some(door.to_string().as_str()));
+    assert_eq!(arguments.text("kind"), Some("hinge"));
+}
+
+#[test]
+fn a_joined_body_shows_the_fields_its_kind_reads_and_removes_through_the_command() {
+    use cy_editor_commands::Arguments;
+    use cy_editor_core::value::Value;
+
+    let size = egui::vec2(900.0, 900.0);
+    let (mut harness, door, frame) = physics_harness();
+    harness
+        .registry
+        .invoke(
+            "physics.joint.add",
+            &harness.scope,
+            &mut harness.editor,
+            &Arguments::new()
+                .with("entity", Value::Text(door.to_string()))
+                .with("kind", Value::Text("hinge".into()))
+                .with("target", Value::Text(frame.to_string())),
+        )
+        .expect("a hinge");
+    let evidence = harness.frame("physics", size, Vec::new());
+    for label in [
+        "Motor force cap",
+        "Minimum angle, in radians",
+        "Remove joint",
+    ] {
+        assert!(
+            evidence.labels.iter().any(|drawn| drawn == label),
+            "a hinge lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    assert!(
+        !evidence
+            .labels
+            .iter()
+            .any(|drawn| drawn == "Travel minimum"),
+        "a hinge offers six-axis fields it does not read"
+    );
+    let removed = harness.frame(
+        "physics",
+        size,
+        vec![click_named(&evidence, "Remove joint")],
+    );
+    assert!(matches!(
+        removed.intents.as_slice(),
+        [Intent::Invoke(command, _)] if command == "physics.joint.remove"
+    ));
 }

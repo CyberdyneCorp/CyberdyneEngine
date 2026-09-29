@@ -452,6 +452,11 @@ Status decode_gizmo_intent(Span<const u8> bytes, GizmoIntent& out) noexcept {
     u64 game_camera = 0;
     if (reader.u64_value(game_camera)) {
         intent.game_camera = game_camera;
+        // Optional after the camera choice, for the same reason as every field above it.
+        u32 overlays = 0;
+        if (reader.u32_value(overlays)) {
+            intent.physics_overlays = overlays;
+        }
     }
     out = std::move(intent);
     return ok();

@@ -92,11 +92,13 @@ produces.
 
 ## What is not here yet
 
-* **Authored joints.** `Joint` components whose descriptions name live body handles become solver
-  constraints on a capable backend, and are torn down before bodies. The reference backend keeps
-  them deferred by capability. The component currently stores runtime body handles rather than
-  persistent scene references, so an authoring tool must resolve endpoints after bodies are
-  created; prefab endpoint remapping still needs a scene-level representation.
+* **Prefab joint endpoints.** `Joint` components whose descriptions name live body handles become
+  solver constraints on a capable backend, and are torn down before bodies; the reference backend
+  keeps them deferred by capability. The component stores runtime body handles, so authoring
+  happens one level up: a world file's `Joint` names body B by entity reference and
+  `cy::gameplay::PlaySession` resolves both ends after the bodies exist
+  (`src/gameplay/play/include/cy/gameplay/play/joints.h`). Remapping endpoints inside a prefab
+  instance still needs a scene-level representation.
 * **The character controller.** `CharacterBody` is registered and counted the same way.
   `cy::physics::CharacterController` holds a pointer to the server and is not chunk-storable; who
   owns the controller object is a gameplay question this module cannot answer.

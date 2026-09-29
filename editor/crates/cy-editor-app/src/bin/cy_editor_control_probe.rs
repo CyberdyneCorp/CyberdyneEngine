@@ -65,6 +65,7 @@ fn main() {
         fov_y_radians: std::f32::consts::FRAC_PI_3,
         near: 0.1,
         game_camera: None,
+        physics_overlays: 0,
     };
     session
         .send(&Message::GizmoIntent {

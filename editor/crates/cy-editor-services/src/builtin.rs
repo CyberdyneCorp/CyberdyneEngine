@@ -58,6 +58,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
+    crate::joints::register(registry)?;
     // Shared painting gestures committed as stable terrain layers and non-destructive modifiers.
     crate::terrain::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
@@ -648,11 +649,13 @@ mod tests {
         // Lightmaps (issue #36) add the twentieth debug view, `viewport.view-mode.lightmap-density`
         // — the viewport's thirty-seven become thirty-eight — and `lighting.bake-lightmaps` and
         // `lighting.cancel-lightmap-bake` in `crate::lightmaps`.
+        // The physics tools add seven physics debug layers and hide-all in `crate::viewports`, and
+        // the three joint commands in `crate::joints`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 2
+            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

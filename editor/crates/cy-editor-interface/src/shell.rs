@@ -42,7 +42,7 @@ use crate::progress::ProgressSurface;
 ///
 /// The stable keys a layout stores. An agent reading `editor:window?panel=<kind>` is told this list
 /// when it names something else, so an unknown kind is distinguished from a hidden one.
-pub const BUILT_IN_PANEL_KINDS: [&str; 19] = [
+pub const BUILT_IN_PANEL_KINDS: [&str; 20] = [
     "hierarchy",
     "content-browser",
     "viewport",
@@ -51,6 +51,7 @@ pub const BUILT_IN_PANEL_KINDS: [&str; 19] = [
     "editor-materials",
     "editor-terrain",
     "editor-lighting-and-lightmap-baking",
+    "physics",
     "swift-workspace",
     "semantic-diff",
     "semantic-merge",
@@ -81,6 +82,7 @@ pub fn panel_title(panel: &PanelId) -> &str {
         "editor-vfx-graph" => "VFX Graph",
         "editor-terrain" => "Terrain",
         "editor-lighting-and-lightmap-baking" => "Lighting & Lightmaps",
+        "physics" => "Physics",
         "swift-workspace" => "Swift Workspace",
         "semantic-diff" => "Semantic Diff",
         "semantic-merge" => "Semantic Merge",

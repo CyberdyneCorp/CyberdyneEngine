@@ -120,6 +120,7 @@ mod tests {
             "editor-vfx-graph",
             "editor-terrain",
             "editor-lighting-and-lightmap-baking",
+            "physics",
             "script-graph",
             "animation",
             "console",

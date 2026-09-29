@@ -9,6 +9,7 @@
 
 #include <cy/core/math/scalar.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cy::physics {
@@ -46,6 +47,61 @@ void draw_query_shape(const ShapeDescription& shape, const Transform& transform,
 void draw_query_hit(Vec3 position, Vec3 normal, DebugDrawSink& sink) noexcept {
     sink.sphere(position, 0.035f, DebugColor::QueryResult);
     sink.line(position, position + normal * 0.2f, DebugColor::QueryResult);
+}
+
+void draw_angular_range(Vec3 origin, Vec3 axis, Vec3 reference, f32 min_angle, f32 max_angle,
+                        DebugDrawSink& sink) noexcept {
+    const Vec3 radius = reference * 0.25f;
+    sink.line(origin, origin + Quat::from_axis_angle(axis, min_angle) * radius,
+              DebugColor::ConstraintLimit);
+    sink.line(origin, origin + Quat::from_axis_angle(axis, max_angle) * radius,
+              DebugColor::ConstraintLimit);
+}
+
+void draw_constraint_limits(const ConstraintDescription& description, const Transform& anchor,
+                            DebugDrawSink& sink) noexcept {
+    const Vec3 origin = anchor.translation;
+    const Vec3 axis = anchor.right();
+    if (description.type == ConstraintType::Slider && description.limit.limited()) {
+        sink.line(origin + axis * description.limit.min, origin + axis * description.limit.max,
+                  DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Hinge && description.limit.limited()) {
+        draw_angular_range(origin, axis, anchor.up(), description.limit.min, description.limit.max,
+                           sink);
+    } else if (description.type == ConstraintType::Distance) {
+        sink.sphere(origin, description.min_distance, DebugColor::ConstraintLimit);
+        sink.sphere(origin, description.max_distance, DebugColor::ConstraintLimit);
+    } else if (description.type == ConstraintType::Cone ||
+               description.type == ConstraintType::SwingTwist) {
+        const f32 normal = description.type == ConstraintType::Cone
+                               ? std::max(description.swing_limit_y, description.swing_limit_z)
+                               : description.swing_limit_y;
+        const f32 plane =
+            description.type == ConstraintType::Cone ? normal : description.swing_limit_z;
+        draw_angular_range(origin, anchor.up(), axis, -normal, normal, sink);
+        draw_angular_range(origin, -anchor.forward(), axis, -plane, plane, sink);
+        if (description.type == ConstraintType::SwingTwist && description.twist_limit.limited()) {
+            draw_angular_range(origin, axis, anchor.up(), description.twist_limit.min,
+                               description.twist_limit.max, sink);
+        }
+    } else if (description.type == ConstraintType::SixDof) {
+        const Vec3 axes[] = {anchor.right(), anchor.up(), -anchor.forward()};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index];
+            if (limit.limited()) {
+                sink.line(origin + axes[index] * limit.min, origin + axes[index] * limit.max,
+                          DebugColor::ConstraintLimit);
+            }
+        }
+        const Vec3 references[] = {axes[1], axes[2], axes[0]};
+        for (u32 index = 0; index < 3; ++index) {
+            const AxisLimit& limit = description.dof_limits[index + 3];
+            if (limit.limited()) {
+                draw_angular_range(origin, axes[index], references[index], limit.min, limit.max,
+                                   sink);
+            }
+        }
+    }
 }
 
 }  // namespace
@@ -90,6 +146,14 @@ void DebugDrawSink::contact(Vec3 position, Vec3 normal, f32 penetration) noexcep
     if (penetration > 0.0f) {
         line(position, position - normal * penetration, DebugColor::Contact);
     }
+}
+
+void debug_draw_constraint(const ConstraintDescription& description, const Transform& frame_a,
+                           const Transform& frame_b, DebugDrawSink& sink) noexcept {
+    sink.sphere(frame_a.translation, 0.04f, DebugColor::Constraint);
+    sink.sphere(frame_b.translation, 0.04f, DebugColor::Constraint);
+    sink.line(frame_a.translation, frame_b.translation, DebugColor::Constraint);
+    draw_constraint_limits(description, frame_a, sink);
 }
 
 void debug_draw_query(const RayCastInput& input, const RayCastHit* hit,

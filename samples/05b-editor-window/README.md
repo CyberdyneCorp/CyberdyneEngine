@@ -93,6 +93,12 @@ display. It requires four things:
 - `city-blocks.cyworld` shows colour.
 - `scene.translate` changes the panel, and `edit.undo` restores it.
 Run with `--world worlds/city.cyworld`, it fails at the colour check, as it did before this fix.
+
+`mcp_physics.py` drives the physics tools (#29) the same way: it selects and frames a hinged door
+and fails unless the runtime reports frames carrying the engine-drawn joint gizmo, then plays,
+pauses and turns on the physics layers, and fails unless they change the paused frame. With
+`--shots docs/design/images` it writes `editor-physics-joint-gizmo.png` and
+`editor-physics-layers.png`.
 `smoke.editor_window` remains the test of real keyboard and pointer input.
 
 ## Material Graph cube

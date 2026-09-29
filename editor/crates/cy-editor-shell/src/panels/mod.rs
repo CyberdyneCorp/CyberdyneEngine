@@ -33,6 +33,7 @@ mod lighting;
 mod material_graph;
 use cy_editor_services::material_parameters;
 mod pending;
+mod physics;
 mod semantic_merge;
 mod settings;
 mod source;
@@ -288,6 +289,16 @@ pub struct Inputs {
     pub terrain_layer_material: String,
     /// Most recent painting-surface refusal.
     pub terrain_problem: Option<String>,
+    /// The kind the physics panel's Add joint button adds.
+    pub physics_new_kind: String,
+    /// The entity the next joint is joined to, or `None` for the world.
+    pub physics_new_target: Option<cy_editor_core::ids::NodeId>,
+    /// A joint field being dragged or typed, and its value so far. Committed as one
+    /// `physics.joint.set` when the gesture ends, so one drag is one undo entry.
+    pub physics_pending: Option<(
+        cy_editor_services::joints::JointField,
+        cy_editor_core::value::Value,
+    )>,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -395,6 +406,9 @@ impl Default for Inputs {
             terrain_layer_name: String::new(),
             terrain_layer_material: String::new(),
             terrain_problem: None,
+            physics_new_kind: "hinge".into(),
+            physics_new_target: None,
+            physics_pending: None,
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -517,6 +531,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "editor-lighting-and-lightmap-baking" => {
                     specialised::show::<lighting::LightingTool>(self, ui);
                 }
+                "physics" => physics::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

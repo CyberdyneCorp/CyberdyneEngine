@@ -28,18 +28,6 @@ cy::Allocator& allocator() noexcept {
     return cy::system_allocator(cy::MemoryDomain::Scripting);
 }
 
-std::string read_source(std::ifstream& input) {
-    input.seekg(0, std::ios::end);
-    const std::streamoff length = input.tellg();
-    if (length <= 0) {
-        return {};
-    }
-    std::string source(static_cast<std::size_t>(length), '\0');
-    input.seekg(0, std::ios::beg);
-    return input.read(source.data(), static_cast<std::streamsize>(source.size())) ? source
-                                                                                  : std::string{};
-}
-
 cy::u32 read_u32(const cy::u8* bytes) noexcept {
     return static_cast<cy::u32>(bytes[0]) | (static_cast<cy::u32>(bytes[1]) << 8U) |
            (static_cast<cy::u32>(bytes[2]) << 16U) | (static_cast<cy::u32>(bytes[3]) << 24U);
@@ -155,6 +143,18 @@ CY_TEST_CASE("editor_backend: catalogue crosses the ABI service unchanged") {
 }
 
 #if defined(CY_EDITOR_HAS_VFX)
+std::string read_source(std::ifstream& input) {
+    input.seekg(0, std::ios::end);
+    const std::streamoff length = input.tellg();
+    if (length <= 0) {
+        return {};
+    }
+    std::string source(static_cast<std::size_t>(length), '\0');
+    input.seekg(0, std::ios::beg);
+    return input.read(source.data(), static_cast<std::streamsize>(source.size())) ? source
+                                                                                  : std::string{};
+}
+
 void append_u32(std::vector<cy::u8>& bytes, cy::u32 value) {
     for (cy::u32 index = 0; index < 4; ++index) {
         bytes.push_back(static_cast<cy::u8>((value >> (index * 8)) & 0xffU));

@@ -71,4 +71,9 @@ void draw_direction_marker(const Canvas& canvas, f32 x, f32 y, f32 tip_x, f32 ti
 /// The camera body remains visible when its direction points straight into the editor camera.
 void draw_camera_marker(const Canvas& canvas, f32 x, f32 y) noexcept;
 
+/// A thin line of one colour (0xRRGGBB), the stroke every debug overlay is drawn with. Thin and
+/// opaque, per `editor-visual-language`: no glow, no halo, one pixel and a soft edge.
+void draw_thin_line(const Canvas& canvas, f32 from_x, f32 from_y, f32 to_x, f32 to_y,
+                    u32 colour) noexcept;
+
 }  // namespace cy::sample::editor_window
