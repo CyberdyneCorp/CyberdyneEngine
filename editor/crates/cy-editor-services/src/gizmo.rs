@@ -100,6 +100,12 @@ pub struct Request {
     /// The scene camera to render through, or `None` for the editor camera. Zero selects the first
     /// enabled scene camera.
     pub game_camera: Option<u64>,
+    /// The physics debug layers to draw over the frame, as `cy::physics::DebugDrawFlags` bits.
+    ///
+    /// INTENT like the camera: which layers to show, never where anything is. The runtime draws
+    /// them from its own physics world. Zero, which a runtime older than this field never reads,
+    /// asks for none.
+    pub physics_overlays: u32,
 }
 
 impl Request {
@@ -130,6 +136,7 @@ impl Request {
             },
             near: viewport.state.near,
             game_camera: viewport.attachment.game_camera(),
+            physics_overlays: viewport.physics.bits(),
         })
     }
 
@@ -159,6 +166,7 @@ impl Request {
         writer.f32(self.fov_y_radians);
         writer.f32(self.near);
         writer.u64(self.game_camera.unwrap_or(u64::MAX));
+        writer.u32(self.physics_overlays);
         writer.finish()
     }
 
@@ -198,6 +206,8 @@ impl Request {
             Ok(u64::MAX) | Err(_) => None,
             Ok(identity) => Some(identity),
         };
+        // Optional, like everything after the identities.
+        let physics_overlays = reader.u32().unwrap_or(0);
         Ok(Self {
             frame,
             mode,
@@ -211,6 +221,7 @@ impl Request {
             fov_y_radians,
             near,
             game_camera,
+            physics_overlays,
         })
     }
 }
@@ -433,6 +444,27 @@ mod tests {
             Request::decode(&request.encode()).unwrap().game_camera,
             Some(42)
         );
+    }
+
+    #[test]
+    fn the_physics_layers_a_viewport_asks_for_survive_the_intent_wire() {
+        use cy_editor_viewport::PhysicsLayer;
+        let mut viewport = showing(1016);
+        viewport.physics.set(PhysicsLayer::Colliders, true);
+        viewport.physics.set(PhysicsLayer::Contacts, true);
+        let request = Request::of_viewport(&viewport, Vec::new()).unwrap();
+        assert_eq!(request.physics_overlays, 0b11);
+        let encoded = request.encode();
+        assert_eq!(Request::decode(&encoded).unwrap().physics_overlays, 0b11);
+        // The field is last, so the engine's decoder reads it after the camera choice; a message
+        // that stops before it asks for no layers.
+        assert_eq!(
+            &encoded[encoded.len() - 4..],
+            &0b11_u32.to_le_bytes(),
+            "the layers are the message's last four bytes"
+        );
+        let older = &encoded[..encoded.len() - 4];
+        assert_eq!(Request::decode(older).unwrap().physics_overlays, 0);
     }
 
     #[test]

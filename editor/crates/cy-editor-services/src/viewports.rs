@@ -27,12 +27,15 @@
 //! names — so the Unity preset and this table cannot disagree about what `W` does.
 
 use cy_editor_commands::context::ViewportControls;
-use cy_editor_commands::{Command, CommandContext, EffectClass, Metadata, Outcome, Registry};
+use cy_editor_commands::{
+    Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, Registry,
+};
 use cy_editor_core::problem::{Problem, Result};
-use cy_editor_core::value::Value;
+use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_viewport::gizmo::{GizmoMode, GizmoRegistry, GizmoSpace, Pivot};
 use cy_editor_viewport::math::{Bounds, Vec3};
 use cy_editor_viewport::overlay::ViewPreset;
+use cy_editor_viewport::physics_view::{PhysicsLayer, PhysicsOverlays};
 use cy_editor_viewport::transport::TransportKind;
 use cy_editor_viewport::viewmode::{ALL_VIEW_MODES, ViewMode};
 use cy_editor_viewport::viewport::{Viewport, ViewportId, Viewports};
@@ -184,7 +187,18 @@ impl ViewportControls for ViewportService {
                 preset.apply(&viewport.navigator, &mut viewport.state);
                 Ok(format!("View: {}", preset.label()))
             }
-            other => Err(unknown_control(other, &self.controls())),
+            other => match PhysicsLayer::of_control(other) {
+                Some(layer) => {
+                    let on = parse_flag(control, value)?;
+                    self.focused_mut().physics.set(layer, on);
+                    Ok(format!(
+                        "Physics {}: {}",
+                        layer.label().to_lowercase(),
+                        if on { "shown" } else { "hidden" }
+                    ))
+                }
+                None => Err(unknown_control(other, &self.controls())),
+            },
         }
     }
 
@@ -197,7 +211,13 @@ impl ViewportControls for ViewportService {
             "snapping" => Some(viewport.snap.modes.grid.to_string()),
             "view-mode" => Some(viewport.state.view_mode.engine_name().to_string()),
             "view" => Some(ViewPreset::of_view(&viewport.state).id().to_string()),
-            _ => None,
+            other => PhysicsLayer::of_control(other).map(|layer| {
+                if viewport.physics.contains(layer) {
+                    "on".to_string()
+                } else {
+                    "off".to_string()
+                }
+            }),
         }
     }
 
@@ -221,11 +241,15 @@ impl ViewportControls for ViewportService {
                 next.apply(&viewport.navigator, &mut viewport.state);
                 Ok(format!("View: {}", next.label()))
             }
+            "hide-physics" => {
+                self.focused_mut().physics = PhysicsOverlays::NONE;
+                Ok("Physics layers hidden".to_string())
+            }
             other => Err(Problem::new(
                 format!("perform {other} on the viewport"),
                 "the viewport has no such action",
             )
-            .with_remedy("toggle-space, toggle-snapping or cycle-view")),
+            .with_remedy("toggle-space, toggle-snapping, cycle-view or hide-physics")),
         }
     }
 
@@ -278,6 +302,13 @@ impl ViewportControls for ViewportService {
                     .collect(),
             ),
         ]
+        .into_iter()
+        .chain(
+            PhysicsLayer::ALL
+                .iter()
+                .map(|layer| (layer.control(), vec!["on".to_string(), "off".to_string()])),
+        )
+        .collect()
     }
 }
 
@@ -336,6 +367,10 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     for mode in ALL_VIEW_MODES {
         registry.register(view_mode(mode))?;
     }
+    for layer in PhysicsLayer::ALL {
+        registry.register(physics_layer(layer))?;
+    }
+    registry.register(hide_physics())?;
     registry.register(toggle_space())?;
     registry.register(toggle_snapping())?;
     registry.register(frame_selection())?;
@@ -493,6 +528,58 @@ fn view_mode(mode: ViewMode) -> Command {
     )
 }
 
+fn physics_layer(layer: PhysicsLayer) -> Command {
+    Command::new(
+        Metadata::new(
+            layer.command_id(),
+            format!("Physics: {}", layer.label()),
+            "Viewport",
+            format!(
+                "Shows {} over the focused viewport's frame, drawn by the engine from its physics \
+                 world while a world plays or is paused. How to read it: {} Changes what is shown \
+                 and nothing in the project.",
+                layer.shows(),
+                layer.how_to_read()
+            ),
+            EffectClass::Read,
+        )
+        .with(ParameterSpec::optional(
+            "state",
+            ValueKind::Text,
+            "on to show the layer, off to hide it, toggle to flip it. Toggle when omitted.",
+            Value::Text("toggle".to_string()),
+        )),
+        move |context, arguments| {
+            let controls = controls(context)?;
+            let on = match arguments.text("state").unwrap_or("toggle").trim() {
+                "toggle" => controls.get(layer.control()).as_deref() != Some("on"),
+                other => parse_flag("state", other)?,
+            };
+            let summary = controls.set(layer.control(), if on { "on" } else { "off" })?;
+            Ok(Outcome::new(summary)
+                .with("layer", Value::Text(layer.id().to_string()))
+                .with("enabled", Value::Bool(on)))
+        },
+    )
+}
+
+fn hide_physics() -> Command {
+    Command::new(
+        Metadata::new(
+            "viewport.physics.hide-all",
+            "Physics: Hide All Layers",
+            "Viewport",
+            "Hides every physics debug layer in the focused viewport, leaving the frame as the game \
+             draws it. Changes what is shown and nothing in the project.",
+            EffectClass::Read,
+        ),
+        |context, _arguments| {
+            let summary = controls(context)?.perform("hide-physics")?;
+            Ok(Outcome::new(summary))
+        },
+    )
+}
+
 fn toggle_space() -> Command {
     Command::new(
         Metadata::new(
@@ -627,6 +714,51 @@ mod tests {
                 .expect("it invokes");
             assert_eq!(editor.viewports.focused().gizmo_mode, expected);
         }
+    }
+
+    #[test]
+    fn a_physics_layer_command_shows_hides_and_toggles_the_layer_the_engine_draws() {
+        use cy_editor_viewport::PhysicsLayer;
+        let (mut editor, registry) = editor();
+        editor
+            .open_document("worlds/city.cyworld")
+            .expect("a document");
+        let invoke = |editor: &mut Editor, id: &str, state: Option<&str>| {
+            let arguments = match state {
+                Some(state) => Arguments::new().with("state", Value::Text(state.to_string())),
+                None => Arguments::new(),
+            };
+            registry.invoke(id, &Scope::unrestricted(), editor, &arguments)
+        };
+        invoke(&mut editor, "viewport.physics.colliders", None).expect("toggle on");
+        invoke(&mut editor, "viewport.physics.contacts", Some("on")).expect("on");
+        let physics = editor.viewports.focused().physics;
+        assert!(physics.contains(PhysicsLayer::Colliders));
+        assert!(physics.contains(PhysicsLayer::Contacts));
+        assert_eq!(physics.bits(), 0b11, "the engine's DebugDrawFlags bits");
+
+        invoke(&mut editor, "viewport.physics.colliders", None).expect("toggle off");
+        invoke(&mut editor, "viewport.physics.contacts", Some("on")).expect("on is idempotent");
+        let physics = editor.viewports.focused().physics;
+        assert!(!physics.contains(PhysicsLayer::Colliders));
+        assert!(physics.contains(PhysicsLayer::Contacts));
+
+        let refused = invoke(&mut editor, "viewport.physics.contacts", Some("sometimes"))
+            .expect_err("a state that is not on, off or toggle");
+        assert!(refused.to_string().contains("on or off"), "{refused}");
+
+        invoke(&mut editor, "viewport.physics.hide-all", None).expect("hide all");
+        assert!(editor.viewports.focused().physics.is_empty());
+        for layer in PhysicsLayer::ALL {
+            let metadata = registry
+                .metadata(&layer.command_id())
+                .expect("every layer is a command");
+            assert_eq!(metadata.effect, EffectClass::Read, "{}", layer.command_id());
+        }
+        assert!(
+            !editor.documents.any_dirty(),
+            "a physics layer is a view, not an edit"
+        );
     }
 
     #[test]
