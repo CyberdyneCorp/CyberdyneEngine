@@ -36,6 +36,7 @@ enum class NavDebugFlags : u32 {
 class NavDebugSink {
 public:
     virtual ~NavDebugSink() = default;
+    /// The area is `NavMesh::effective_area`: an obstacle that marks a polygon recolours it.
     virtual void polygon(PolyRef, Span<const Vec3>, AreaType) noexcept {}
     virtual void tile(TileCoord, Aabb) noexcept {}
     virtual void adjacency(PolyRef, PolyRef, Vec3, Vec3) noexcept {}

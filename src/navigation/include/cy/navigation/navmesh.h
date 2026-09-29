@@ -320,6 +320,9 @@ public:
     [[nodiscard]] Span<const u32> poly_corners(PolyRef ref) const noexcept;
     [[nodiscard]] Span<const PolyRef> poly_neighbours(PolyRef ref) const noexcept;
     [[nodiscard]] Span<const Vec3> tile_vertices(u32 slot) const noexcept;
+    /// Every corner index of one tile, in storage order: what `NavPoly::first_corner` indexes.
+    /// Empty when the slot is not resident.
+    [[nodiscard]] Span<const u32> tile_corners(u32 slot) const noexcept;
     /// Every polygon of one tile, as references. Empty when the slot is not resident.
     [[nodiscard]] u32 tile_poly_count(u32 slot) const noexcept;
     [[nodiscard]] PolyRef tile_poly(u32 slot, u32 index) const noexcept;

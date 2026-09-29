@@ -7,6 +7,7 @@
 // four subtly different meshes and the differences would be the first suspect in every failure.
 
 #include <cy/core/memory/allocator.h>
+#include <cy/navigation/build.h>
 #include <cy/navigation/navmesh.h>
 #include <cy/test/test.h>
 
@@ -84,5 +85,52 @@ template <typename Walkable>
     CY_REQUIRE(published.has_value());
     return mesh;
 }
+
+/// Source triangles for a bake, with the per-triangle classification arrays `build_tile` reads.
+struct SourceGeometry {
+    Array<Vec3> vertices;
+    Array<u32> indices;
+    Array<u8> layer;
+    Array<u8> tag;
+    Array<AreaType> area;
+
+    explicit SourceGeometry(Allocator& allocator) noexcept
+        : vertices(allocator),
+          indices(allocator),
+          layer(allocator),
+          tag(allocator),
+          area(allocator) {}
+
+    [[nodiscard]] NavSourceGeometry geometry() const noexcept {
+        return NavSourceGeometry{vertices.span(), indices.span(), layer.span(), tag.span(),
+                                 area.span()};
+    }
+
+    void triangle(Vec3 a, Vec3 b, Vec3 c, AreaType kind = kAreaGround) noexcept {
+        const u32 base = static_cast<u32>(vertices.size());
+        CY_REQUIRE(vertices.push_back(a).has_value());
+        CY_REQUIRE(vertices.push_back(b).has_value());
+        CY_REQUIRE(vertices.push_back(c).has_value());
+        for (u32 offset = 0; offset < 3; ++offset) {
+            CY_REQUIRE(indices.push_back(base + offset).has_value());
+        }
+        CY_REQUIRE(layer.push_back(u8{0}).has_value());
+        CY_REQUIRE(tag.push_back(u8{0}).has_value());
+        CY_REQUIRE(area.push_back(kind).has_value());
+    }
+
+    /// Flat ground of `columns` x `rows` quads of `step` metres from (x0, z0), at height `y`,
+    /// wound so the normal points up.
+    void ground(f32 x0, f32 z0, u32 columns, u32 rows, f32 step, f32 y = 0.0F) noexcept {
+        for (u32 row = 0; row < rows; ++row) {
+            for (u32 column = 0; column < columns; ++column) {
+                const f32 x = x0 + (static_cast<f32>(column) * step);
+                const f32 z = z0 + (static_cast<f32>(row) * step);
+                triangle(Vec3{x, y, z}, Vec3{x + step, y, z + step}, Vec3{x + step, y, z});
+                triangle(Vec3{x, y, z}, Vec3{x, y, z + step}, Vec3{x + step, y, z + step});
+            }
+        }
+    }
+};
 
 }  // namespace cy::navigation::testing

@@ -2,13 +2,13 @@
 
 ## 1. Engine bake API (`src/navigation`)
 
-- [ ] 1.1 Add `NavBakeSettings` and `bake_tiles`. The bake tiles the source region, reports per-tile progress through an observer, reports empty tiles without failing, and supports cooperative cancellation.
-- [ ] 1.2 Add `tile_digest` and `mesh_tile_digest`. Test that a bake equals a direct `build_tile` for the same inputs, compared tile by tile, on both the Engine and the Recast back ends.
-- [ ] 1.3 Add `rebake_tiles` for a dirty region and the obstacle affected-tile report. Test that only the overlapping tiles change digest or salt.
-- [ ] 1.4 Assign NavArea volumes to triangles by centroid at build time, and build the world area-cost table. Test the area of a rebuilt tile and the path cost.
-- [ ] 1.5 Add `source_fingerprint` and the bake identity. Test that the fingerprint changes when geometry, a volume or a setting changes, and does not change when only an obstacle or a link does.
-- [ ] 1.6 Add the `.cynavmesh` codec. Test a round trip, and test that a corrupt tile, an unknown version and a truncated blob are refused.
-- [ ] 1.7 Report the effective area in `draw_navigation_mesh` polygons. Update `debug.h` and add a regression test for an obstacle-marked polygon.
+- [x] 1.1 Add `NavBakeSettings` and `bake_tiles`. The bake tiles the source region, reports per-tile progress through an observer, reports empty tiles without failing, and supports cooperative cancellation.
+- [x] 1.2 Add `tile_digest` and `mesh_tile_digest`. Test that a bake equals a direct `build_tile` for the same inputs, compared tile by tile, on both the Engine and the Recast back ends.
+- [x] 1.3 Add `rebake_tiles` for a dirty region and the obstacle affected-tile report. Test that only the overlapping tiles change digest or salt.
+- [x] 1.4 Assign NavArea volumes to triangles by centroid at build time, and build the world area-cost table. Test the area of a rebuilt tile and the path cost.
+- [x] 1.5 Add `source_fingerprint` and the bake identity. Test that the fingerprint changes when geometry, a volume or a setting changes, and does not change when only an obstacle or a link does.
+- [x] 1.6 Add the `.cynavmesh` codec. Test a round trip, and test that a corrupt tile, an unknown version and a truncated blob are refused.
+- [x] 1.7 Report the effective area in `draw_navigation_mesh` polygons. Update `debug.h` and add a regression test for an obstacle-marked polygon.
 
 ## 2. Engine editor service and cook (`src/editor_backend`, `tools/build`)
 

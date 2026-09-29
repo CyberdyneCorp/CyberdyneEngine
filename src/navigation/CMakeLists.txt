@@ -31,6 +31,8 @@
 # Sources are listed explicitly and never globbed: a file this list does not name is compiled by
 # nothing, which reads in a review exactly like a file that passes.
 set(cy_navigation_sources
+    src/bake.cpp
+    src/bake_codec.cpp
     src/build.cpp
     src/components.cpp
     src/crowd.cpp
@@ -40,6 +42,7 @@ set(cy_navigation_sources
     src/navmesh.cpp
     src/navigation2d.cpp
     src/query.cpp
+    src/tile_identity.cpp
     src/volume.cpp)
 
 # THE ONE TRANSLATION UNIT THAT NAMES AN `rc` SYMBOL, and it is compiled only when the option is on.

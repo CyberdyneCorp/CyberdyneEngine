@@ -14,16 +14,18 @@ The engine owns every navigation computation: voxelisation and tiling, tile dige
   - cell size maps to `cell_size`;
   - tile size maps to the `NavMesh` constructor argument;
   - backend maps to `NavBuildBackend` Recast or Engine. Automatic is not offered to authors, because the bake must name its back end.
-- `bake_tiles(allocator, settings, geometry, region, NavMesh&, NavBakeObserver*) -> Expected<NavBakeReport>`:
+- `NavBakeSource`: the geometry plus the surface volumes, the area volumes, the obstacles and the links, as the host gathers them for one navigation world.
+- `bake_tiles(allocator, settings, source, region, NavMesh&, NavBakeObserver*) -> Expected<NavBakeReport>`:
   - covers every tile coordinate `(x, z)` whose XZ bounds `[x*t, (x+1)*t]` overlap `region`, taking the Y range from the geometry;
   - calls `build_tile` for each tile and then `NavMesh::add_tile`;
   - a tile with no walkable cells is counted as empty and is not an error;
   - the observer receives `(done, total, coord)` after each tile, and its return value requests cooperative cancellation;
+  - a full bake also removes resident tiles outside the region, so the mesh holds exactly the region's non-empty tiles;
   - the report aggregates the `NavBuildReport` counters and lists the coordinates built, which the per-tile diagnostics use.
 - `rebake_tiles(..., dirty Aabb, ...)` rebuilds only the tiles that overlap `dirty` and returns their coordinates. `add_tile` replaces each tile and relinks its neighbours, and tiles outside the region keep their slot salt.
 - `tile_digest(const NavTileData&) -> u64` hashes the coordinate, the bounds, the vertices, the polygons (corner range, area, cost, centre) and the corners, in order. `NavBuildReport::duration_ns` is wall-clock time and is excluded. `mesh_tile_digest(const NavMesh&, slot)` computes the same value from a resident tile, so a baked mesh can be compared with a direct `build_tile` without copying.
 - **Codec.** `encode_nav_bake` and `decode_nav_bake` handle a versioned `.cynavmesh` blob. It holds the header (magic, version, settings, backend, source fingerprint, bake identity) followed by each tile's data and digest. Decoding re-derives each digest and refuses a mismatch.
-- `source_fingerprint(settings, geometry, surfaces, areas, producer_version) -> u64` hashes the vertices, the indices, the per-triangle layer, tag and area, the surface and area volumes, the settings and the back end. Obstacles and links are runtime overlays applied without a rebuild, so the fingerprint excludes them.
+- `source_fingerprint(settings, source, producer_version) -> u64` hashes the vertices, the indices, the per-triangle layer, tag and area, the surface and area volumes, the settings and the back end. Obstacles and links are runtime overlays applied without a rebuild, so the fingerprint excludes them.
 - **Bake identity.** `bake_identity = hash(source_fingerprint, ordered tile digests)`.
 
 ### Areas and cost painting
