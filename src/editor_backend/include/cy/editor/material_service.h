@@ -12,6 +12,8 @@ class SimulationWorld;
 
 namespace cy::editor {
 
+class TerrainPreview;
+
 /// One exact renderer binding named by a preview reload request.
 struct MaterialPreviewTarget {
     u8 entity[16] = {};
@@ -74,6 +76,9 @@ public:
     /// The effect currently simulated by this session, for the host's engine frame renderer.
     [[nodiscard]] static const vfx::SimulationWorld* vfx_preview_world(
         CyServiceSession session) noexcept;
+
+    /// The terrain this session last evaluated for `terrain.evaluate`, or null before the first.
+    [[nodiscard]] static const TerrainPreview* terrain_preview(CyServiceSession session) noexcept;
 
 private:
     Allocator* allocator_;

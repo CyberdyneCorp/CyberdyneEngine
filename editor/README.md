@@ -314,7 +314,8 @@ To add one, for example the animation editor:
    Prove each case red with a recorded mutation.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
-in the scaffold's diagnostics area.
+in the scaffold's diagnostics area. See [Terrain tools](#terrain-tools) for how its strokes reach
+the engine.
 
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no
@@ -330,6 +331,55 @@ The [material](../docs/design/images/editor-materials-canvas.png) and
 before the canvas moved. Graph gestures and timeline gestures come back to the host as
 one value per completed gesture (`CanvasFeedback::on_connect`/`on_move`, `TimelineEdit`), so the host
 turns one drag into one command and one undo entry.
+
+## Terrain tools
+
+The terrain panel sculpts (Raise, Lower, Smooth, Flatten), paints material layers and cuts holes,
+each with a radius, strength and falloff. The editor computes no terrain. It sends the stack to the
+engine's `cy::terrain` module and shows what the engine answers.
+
+- **One gesture is one transaction.** A drag across the brush field is one `terrain.stroke.commit`,
+  which adds one modifier child under the terrain root. Undo removes it. Modifiers can be disabled
+  and reordered, and every one is kept.
+- **The engine evaluates the stack.** `Editor::pump` sends the edited terrain's whole ordered stack
+  to the engine's `terrain.evaluate` (`crate::terrain_engine`) after every change, undo and redo
+  included. Only one evaluation is in flight at a time, and a stack is not sent twice. The engine
+  answers with heights, material texels, holes, triangle counts and the regions whose navigation
+  it marked stale. The payloads are specified in `src/editor_backend/include/cy/editor/
+  terrain_service.h`. Undo needs no inverse on the wire: the document restores the stack, and the
+  same stack evaluates to the same bytes.
+- **The panel draws the engine's answer.** The brush field shows the engine's surface: shaded
+  heights, tinted painted layers, holes see-through, and a thin warning outline around each stale
+  region. The status line gives the triangle and hole counts. Without a runtime it says that strokes
+  are recorded and will be evaluated when the engine connects. The hosted runtime draws the same
+  meshed surface in the viewport at the terrain root.
+- **Navigation is flagged, not rebaked.** The engine marks the reach of every modifier that is
+  added, removed or changed. The region stays stale until navigation is rebaked, which is #28's
+  job.
+- **Agents get the same tools.** `terrain.brush.apply` takes the stroke as numbers (`points` as
+  `"x y [pressure]; ..."` from 0 to 1, plus `radius`, `strength`, `falloff`, and `layer` for paint)
+  and records the same modifier a panel gesture would. `terrain.status` reports the engine's last
+  answer, with digests of its heights and weights.
+
+The [sculpted, painted and holed terrain](../docs/design/images/editor-terrain-tools.png) and the
+[paint tool](../docs/design/images/editor-terrain-paint.png) show a reply the engine produced.
+`crates/cy-editor-shell/tests/fixtures/` holds the engine's reply to the requests the editor sends
+for the scripted strokes. `panel_snapshots.rs` checks the requests on every run, and
+`integration.editor_backend_terrain` checks the reply. To regenerate them, run
+`CY_TERRAIN_FIXTURE=write` first on `cargo test -p cy-editor-shell --test panel_snapshots` and then
+on `ctest -R editor_backend_terrain`.
+
+The [viewport](../docs/design/images/editor-terrain-viewport.png) shows a raise with a hole cut
+through it, as the hosted runtime's Vulkan frame draws what the engine meshed. It is photographed by
+`smoke.editor_authored_frame_vulkan` when `CY_TERRAIN_VIEWPORT_SHOT` names a PNG path:
+`CY_TERRAIN_VIEWPORT_SHOT=<file>.png build/dev/cy_test_smoke_editor_authored_frame_vulkan
+--test-case='authored native frame draws the terrain*'`.
+
+What is not built yet:
+- Painted layers show in the panel but not in the viewport, because the engine's terrain surface
+  material is not yet bound on a device (`src/terrain/README.md`, "No shader").
+- A hole can be undone but cannot be filled with an eraser stroke.
+- The terrain's extent is fixed at 128 m by two engine tiles (`terrain_engine::TERRAIN_EXTENT_METRES`).
 
 ## The dependencies, and the rule they arrived under
 

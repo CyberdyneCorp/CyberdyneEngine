@@ -246,7 +246,13 @@ mod tests {
         for command in <super::super::terrain::TerrainTool as SpecialisedTool>::COMMANDS {
             let tool = cy_editor_agent::tool::project_one(&registry, command).unwrap();
             assert!(tool.exclusion.is_none(), "{command}");
-            assert_eq!(tool.effect, EffectClass::ReversibleMutation, "{command}");
+            // What the panel shows of the engine's answer is a read; everything else authors.
+            let expected = if command.ends_with(".status") {
+                EffectClass::Read
+            } else {
+                EffectClass::ReversibleMutation
+            };
+            assert_eq!(tool.effect, expected, "{command}");
         }
     }
 

@@ -18,7 +18,8 @@ and `test_producer.cpp` holds the refusal a second producer of `soil` gets.
 | `include/cy/terrain/deform.h` | The three deformation classes, the two delta channels, the overlay round trip and the bounded replication message |
 | `include/cy/terrain/meshing.h` | `mesh_tile()`: the grid, the level stitch, the holes, the fallback path and the cache key |
 | `include/cy/terrain/collision.h` | The collision heightfield physics takes, and the navigation surface derived from it with declared cost mappings |
-| `include/cy/terrain/stack.h` | The non-destructive modifier stack, its derivation key, its declared halo and the cook that flattens it |
+| `include/cy/terrain/stack.h` | The non-destructive modifier stack, its derivation key, its declared halo and the cook that flattens it; the editor's brush modifier (raise, lower, smooth, flatten, paint, hole) |
+| `include/cy/terrain/region.h` | An author's square region evaluated from the stack, stitched, meshed and collided: what the editor's terrain tools show |
 | `include/cy/terrain/system.h` | The `soil` producer claim, the declared consumption, the cooked field-tile loader, and the one call that propagates a deformation's invalidation |
 | `include/cy/terrain/cook.h` | `cy::terrain-cook`: a tile through `rendering::vg::build_geometry()`, and the surface material through the material compiler |
 
@@ -95,6 +96,24 @@ module for one to be.
   heightfield payload, while `ModifierStack::flatten()` produces runtime tiles into a store.
   Serialising evaluated tiles into a cell's `Terrain` channel is still
   `save-and-persistence`'s encoding.
+
+## The editor's brushes
+
+`ModifierKind::Brush` is how the editor's terrain tools (issue #29) enter the stack. A stroke is a
+list of dabs, each with a position and a pressure, plus a radius, strength and falloff shared by the
+stroke. A dab's weight is 1 inside `radius * (1 - falloff)`, eases smoothly to 0 at `radius`, and is
+0 beyond it. So a brush writes nothing outside the union of its discs, and `test_brush.cpp` checks
+that sample by sample against the stroke's own geometry. Raise and lower add or subtract
+`kBrushReliefMetres * strength * weight`. Flatten blends toward `Modifier::height`, which the
+editor backend reads from the ground under the stroke's first dab, as the modifiers beneath it
+leave it. Smooth runs Jacobi passes rather than erosion's in-place sweep, so each pass reaches one
+sample and a halo of radius plus passes is exact. Paint blends a layer into the bounded texel
+(`paint_texel`). A hole cuts the quads whose minimum corner the footprint covers.
+
+`evaluate_region()` is the whole authoring path. It flattens a region of tiles from the stack,
+stitches their shared boundaries, and runs `mesh_tile()` and `build_collision()` on each tile. So
+the triangles and hole samples it reports are the engine's own, and the joined mesh it returns is
+what the hosted viewport draws. `cy::editor-backend`'s `terrain.evaluate` is the only caller today.
 
 ## Suites
 

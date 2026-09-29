@@ -18,6 +18,11 @@ The first vertical slice supports:
   strings: project-relative `.cygraph` reference followed by `cymatcanvas` source;
 - `material.compile` — compiles the material family and returns its cook identity, source graph
   dependency identity, program count, and stable texture-asset dependency identities;
+- `terrain.evaluate` — the editor's terrain modifier stack, evaluated by `cy::terrain` over an
+  author's region. It answers with heights, material texels, holes, what meshing and collision left
+  open, and the regions whose navigation it marked stale since the last evaluation of that terrain.
+  `TerrainPreview` (`cy/editor/terrain_service.h`) holds the last region for the viewport host and
+  specifies the payloads;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
   generational handles, idempotent destruction, stale-handle diagnostics, exact entity/material-slot
   target acknowledgements, and typed bool/integer/float/vector/texture parameter updates bound to an

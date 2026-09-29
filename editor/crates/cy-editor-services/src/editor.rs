@@ -12,7 +12,7 @@
 
 use cy_editor_commands::{Arguments, CommandContext, Outcome, Registry, Scope};
 use cy_editor_core::Actor;
-use cy_editor_core::ids::DocumentId;
+use cy_editor_core::ids::{DocumentId, NodeId};
 use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
@@ -128,6 +128,8 @@ pub struct Editor {
     pub operations: OperationService,
     /// Engine-owned authoring catalogues and asynchronous service request state.
     pub backend: BackendServices,
+    /// What the engine's terrain module evaluated for the terrain being edited.
+    pub terrain: crate::terrain_engine::TerrainEngine,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
     /// What keeps the hosted runtime in step with the document, and what carries the engine's gizmo
@@ -215,6 +217,7 @@ impl Editor {
             notifications: NotificationService::new(),
             operations: OperationService::new(),
             backend: BackendServices::new(),
+            terrain: crate::terrain_engine::TerrainEngine::new(),
             runtime: RuntimeSession::none(),
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
@@ -712,6 +715,37 @@ impl Editor {
         }
     }
 
+    /// The terrain being edited: the selected terrain root, else the active world's first.
+    #[must_use]
+    pub fn edited_terrain(&self) -> Option<NodeId> {
+        let document = self.documents.get(self.workspace.active()?)?;
+        let is_terrain =
+            |node: NodeId| crate::terrain::TerrainStack::read(document, node).is_some();
+        self.selection
+            .get()
+            .nodes()
+            .find(|node| is_terrain(*node))
+            .or_else(|| {
+                document
+                    .content()
+                    .roots()
+                    .iter()
+                    .copied()
+                    .find(|node| is_terrain(*node))
+            })
+    }
+
+    /// The `terrain.evaluate` request for the edited terrain's current stack.
+    #[must_use]
+    pub fn edited_terrain_request(
+        &self,
+    ) -> Option<(NodeId, cy_editor_core::problem::Result<Vec<u8>>)> {
+        let terrain = self.edited_terrain()?;
+        let document = self.documents.get(self.workspace.active()?)?;
+        crate::terrain_engine::evaluation_request(document, terrain)
+            .map(|request| (terrain, request))
+    }
+
     /// One frame of the editor's own housekeeping.
     ///
     /// Everything here is bounded and non-blocking: drain what the runtime sent, forget settled
@@ -759,12 +793,25 @@ impl Editor {
                     problem,
                 ));
             }
+            if let Some(problem) = self.terrain.accept(message) {
+                self.notifications.post(Notification::error(
+                    "The engine refused the terrain",
+                    problem,
+                ));
+            }
             self.accept_reload_message(message);
             self.mirror.accept(message, self.viewports.focused());
         }
         if let Some(problem) = self.backend.maintain(&self.runtime) {
             self.notifications.post(Notification::error(
                 "The material backend is unavailable",
+                problem,
+            ));
+        }
+        let wanted = self.edited_terrain_request();
+        if let Some(problem) = self.terrain.maintain(&self.runtime, wanted) {
+            self.notifications.post(Notification::error(
+                "The terrain could not be sent to the engine",
                 problem,
             ));
         }
@@ -995,6 +1042,10 @@ impl Editor {
 impl CommandContext for Editor {
     fn active_document(&self) -> Option<DocumentId> {
         self.workspace.active()
+    }
+
+    fn terrain_status(&self) -> Outcome {
+        self.terrain.status()
     }
 
     fn document(&self, id: DocumentId) -> Option<&Document> {

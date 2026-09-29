@@ -5,11 +5,15 @@
 //! completed gesture creates one modifier child in one transaction; enable and order edits are also
 //! transactions. The encoded stroke is deliberately retained as authoring data instead of baking a
 //! heightmap, which keeps the stack non-destructive and gives Task 5.3 a versioned evaluation input.
+//!
+//! The editor never evaluates a stroke. [`crate::terrain_engine`] sends the ordered stack to the
+//! engine's `terrain.evaluate` after every change, undo and redo included, and shows what the
+//! engine's terrain module answered.
 
 use cy_editor_commands::{
     Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, Registry,
 };
-use cy_editor_core::brush::Stroke;
+use cy_editor_core::brush::{Brush, Sample, Stroke};
 use cy_editor_core::ids::{FieldId, NodeId, TypeId};
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
@@ -28,8 +32,10 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(create())?;
     registry.register(add_layer())?;
     registry.register(commit_stroke())?;
+    registry.register(apply_brush())?;
     registry.register(set_modifier_enabled())?;
     registry.register(move_modifier())?;
+    registry.register(status())?;
     Ok(())
 }
 
@@ -304,49 +310,163 @@ fn add_layer() -> Command {
     )
 }
 
+/// The tools a stroke can carry, in the order the panel lists them.
+pub const TOOLS: [&str; 6] = ["raise", "lower", "smooth", "flatten", "paint", "hole"];
+
 fn commit_stroke() -> Command {
     Command::new(
         Metadata::new(
             "terrain.stroke.commit",
             "Commit Terrain Stroke",
             "Terrain",
-            "Records one completed sculpt or material-paint gesture as one non-destructive modifier transaction.",
+            "Records one completed sculpt, material-paint or hole gesture as one non-destructive modifier transaction.",
             EffectClass::ReversibleMutation,
         )
         .with(required_text("terrain", "Stable identity of the terrain root."))
-        .with(required_text("tool", "One of raise, lower, smooth, flatten, or paint."))
+        .with(required_text("tool", "One of raise, lower, smooth, flatten, paint, or hole."))
         .with(ParameterSpec::optional("layer", ValueKind::Text, "Stable material-layer identity required by paint.", Value::Text(String::new())))
         .with(ParameterSpec::required("stroke", ValueKind::Bytes, "Versioned payload produced by the shared painting surface.")),
         |context, arguments| {
-            let document_id = active(context)?;
-            let terrain = node_argument(arguments, "terrain")?;
-            let tool = parse_tool(arguments.text("tool").unwrap_or_default())?;
-            let layer_text = arguments.text("layer").unwrap_or_default();
             let bytes = match arguments.get("stroke") { Some(Value::Bytes(bytes)) => bytes.clone(), _ => Vec::new() };
-            let stroke = Stroke::decode(&bytes)?;
-            let actor = context.actor();
-            let document = context.document_mut(document_id).ok_or_else(|| Problem::not_found("the active document"))?;
-            let bindings = Bindings::declare(document.schema_mut());
-            require_terrain(document, terrain, bindings)?;
-            let layer = validate_layer(document, bindings, terrain, tool, layer_text)?;
-            let order = count_children_with(document, terrain, bindings.modifier.component);
-            let modifier = document.with_transaction(format!("Terrain {} stroke", tool_label(tool)), actor, |document| {
-                let modifier = document.create_node(Some(terrain))?;
-                document.set_name(modifier, format!("{} stroke", tool_label(tool)))?;
-                document.add_component(modifier, bindings.modifier.component, vec![
+            commit(context, arguments, bytes)
+        },
+    )
+}
+
+/// The agent-facing form of a stroke: the same modifier, from numbers an MCP client can write.
+fn apply_brush() -> Command {
+    Command::new(
+        Metadata::new(
+            "terrain.brush.apply",
+            "Apply Terrain Brush",
+            "Terrain",
+            "Applies one raise, lower, smooth, flatten, paint or hole stroke through normalised points as one undoable modifier transaction, exactly as the panel's gesture does.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(required_text("terrain", "Stable identity of the terrain root."))
+        .with(required_text("tool", "One of raise, lower, smooth, flatten, paint, or hole."))
+        .with(required_text("points", "Dabs as \"x y [pressure]\" separated by semicolons, x and y from 0 to 1 across the terrain."))
+        .with(ParameterSpec::optional("layer", ValueKind::Text, "Stable material-layer identity required by paint.", Value::Text(String::new())))
+        .with(ParameterSpec::optional("radius", ValueKind::Float, "Dab radius in metres.", Value::Float(Brush::default().radius)))
+        .with(ParameterSpec::optional("strength", ValueKind::Float, "Strength from 0 to 1.", Value::Float(Brush::default().strength)))
+        .with(ParameterSpec::optional("falloff", ValueKind::Float, "Soft fraction of the radius from 0 to 1.", Value::Float(Brush::default().falloff))),
+        |context, arguments| {
+            let float = |name: &str, fallback: f32| match arguments.get(name) {
+                Some(Value::Float(value)) => *value,
+                _ => fallback,
+            };
+            let defaults = Brush::default();
+            let brush = Brush {
+                radius: float("radius", defaults.radius),
+                strength: float("strength", defaults.strength),
+                falloff: float("falloff", defaults.falloff),
+                spacing: defaults.spacing,
+            };
+            brush.validate()?;
+            let samples = parse_points(arguments.text("points").unwrap_or_default())?;
+            commit(context, arguments, Stroke { brush, samples }.encode())
+        },
+    )
+}
+
+/// Parse `"x y [pressure]; ..."` into validated samples.
+fn parse_points(text: &str) -> Result<Vec<Sample>> {
+    let refuse = |detail: &str| {
+        Problem::new("read terrain brush points", detail.to_string()).with_remedy(
+            "write points as \"x y\" or \"x y pressure\" separated by semicolons, each from 0 to 1",
+        )
+    };
+    let mut samples = Vec::new();
+    for point in text
+        .split(';')
+        .map(str::trim)
+        .filter(|point| !point.is_empty())
+    {
+        let numbers: Vec<f32> = point
+            .split([' ', ','])
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                part.parse::<f32>()
+                    .map_err(|_| refuse("a coordinate is not a number"))
+            })
+            .collect::<Result<_>>()?;
+        let (x, y, pressure) = match numbers.as_slice() {
+            [x, y] => (*x, *y, 1.0),
+            [x, y, pressure] => (*x, *y, *pressure),
+            _ => return Err(refuse("a point has neither two nor three numbers")),
+        };
+        samples.push(Sample::new(x, y, pressure)?);
+    }
+    if samples.is_empty() {
+        return Err(refuse("no points were given"));
+    }
+    Ok(samples)
+}
+
+/// One stroke, from either command, as one modifier child in one transaction.
+fn commit(
+    context: &mut dyn CommandContext,
+    arguments: &cy_editor_commands::Arguments,
+    bytes: Vec<u8>,
+) -> Result<Outcome> {
+    let document_id = active(context)?;
+    let terrain = node_argument(arguments, "terrain")?;
+    let tool = parse_tool(arguments.text("tool").unwrap_or_default())?;
+    let layer_text = arguments.text("layer").unwrap_or_default();
+    let stroke = Stroke::decode(&bytes)?;
+    let actor = context.actor();
+    let document = context
+        .document_mut(document_id)
+        .ok_or_else(|| Problem::not_found("the active document"))?;
+    let bindings = Bindings::declare(document.schema_mut());
+    require_terrain(document, terrain, bindings)?;
+    let layer = validate_layer(document, bindings, terrain, tool, layer_text)?;
+    let order = count_children_with(document, terrain, bindings.modifier.component);
+    let brush = stroke.brush;
+    let modifier = document.with_transaction(
+        format!("Terrain {} stroke", tool_label(tool)),
+        actor,
+        |document| {
+            let modifier = document.create_node(Some(terrain))?;
+            document.set_name(modifier, format!("{} stroke", tool_label(tool)))?;
+            document.add_component(
+                modifier,
+                bindings.modifier.component,
+                vec![
                     (bindings.modifier.kind, Value::Text(tool.to_string())),
                     (bindings.modifier.order, Value::Int(index_value(order)?)),
                     (bindings.modifier.enabled, Value::Bool(true)),
-                    (bindings.modifier.layer, Value::Text(layer.map_or_else(String::new, |id| id.to_string()))),
-                    (bindings.modifier.brush, Value::Vec4([stroke.brush.radius, stroke.brush.strength, stroke.brush.falloff, stroke.brush.spacing])),
+                    (
+                        bindings.modifier.layer,
+                        Value::Text(layer.map_or_else(String::new, |id| id.to_string())),
+                    ),
+                    (
+                        bindings.modifier.brush,
+                        Value::Vec4([brush.radius, brush.strength, brush.falloff, brush.spacing]),
+                    ),
                     (bindings.modifier.stroke, Value::Bytes(bytes)),
-                ])?;
-                Ok(modifier)
-            })?;
-            Ok(Outcome::new(format!("Committed terrain {} stroke", tool_label(tool)))
-                .with("modifier", Value::Text(modifier.to_string()))
-                .with("samples", Value::Int(index_value(stroke.samples.len())?)))
+                ],
+            )?;
+            Ok(modifier)
         },
+    )?;
+    Ok(
+        Outcome::new(format!("Committed terrain {} stroke", tool_label(tool)))
+            .with("modifier", Value::Text(modifier.to_string()))
+            .with("samples", Value::Int(index_value(stroke.samples.len())?)),
+    )
+}
+
+fn status() -> Command {
+    Command::new(
+        Metadata::new(
+            "terrain.status",
+            "Terrain Engine Status",
+            "Terrain",
+            "Reports what the engine last evaluated for the terrain: heights and weights digests, rendered triangles, holes in rendering and collision, and the regions whose navigation is stale.",
+            EffectClass::Read,
+        ),
+        |context, _| Ok(context.terrain_status()),
     )
 }
 
@@ -483,14 +603,14 @@ fn non_empty<'a>(value: Option<&'a str>, action: &str) -> Result<&'a str> {
 }
 
 fn parse_tool(tool: &str) -> Result<&str> {
-    match tool {
-        "raise" | "lower" | "smooth" | "flatten" | "paint" => Ok(tool),
-        _ => Err(Problem::new(
-            "commit a terrain stroke",
-            format!("tool {tool:?} is unsupported"),
-        )
-        .with_remedy("use raise, lower, smooth, flatten, or paint")),
+    if TOOLS.contains(&tool) {
+        return Ok(tool);
     }
+    Err(Problem::new(
+        "commit a terrain stroke",
+        format!("tool {tool:?} is unsupported"),
+    )
+    .with_remedy("use raise, lower, smooth, flatten, paint, or hole"))
 }
 
 fn tool_label(tool: &str) -> &str {
@@ -500,6 +620,7 @@ fn tool_label(tool: &str) -> &str {
         "smooth" => "Smooth",
         "flatten" => "Flatten",
         "paint" => "Paint",
+        "hole" => "Hole",
         _ => tool,
     }
 }
@@ -537,7 +658,7 @@ fn validate_layer(
         }
         return Err(Problem::new(
             "commit a sculpt stroke",
-            "sculpt tools do not take a material layer",
+            "sculpt and hole tools do not take a material layer",
         ));
     }
     let layer = parse_node(text)?
@@ -636,6 +757,10 @@ pub struct TerrainModifier {
     pub enabled: bool,
     /// Number of ordered points retained in the stroke payload.
     pub sample_count: usize,
+    /// The painted material layer, for paint.
+    pub layer: Option<NodeId>,
+    /// The versioned stroke payload, as the surface encoded it.
+    pub stroke: Vec<u8>,
 }
 
 impl TerrainStack {
@@ -699,6 +824,14 @@ impl TerrainStack {
                 ),
             ) {
                 let sample_count = Stroke::decode(bytes).map_or(0, |stroke| stroke.samples.len());
+                let layer = match document.content().field(
+                    *child,
+                    bindings.modifier.component,
+                    bindings.modifier.layer,
+                ) {
+                    Some(Value::Text(text)) => parse_node(text).ok().flatten(),
+                    _ => None,
+                };
                 modifiers.push((
                     *order,
                     TerrainModifier {
@@ -707,6 +840,8 @@ impl TerrainStack {
                         kind: kind.clone(),
                         enabled: *enabled,
                         sample_count,
+                        layer,
+                        stroke: bytes.clone(),
                     },
                 ));
             }
@@ -928,5 +1063,234 @@ mod tests {
         assert_eq!(stack.layers[0].material, "materials/grass.cymat");
         assert_eq!(stack.modifiers[0].kind, "paint");
         assert_eq!(stack.modifiers[0].sample_count, 1);
+    }
+
+    fn created(registry: &Registry, editor: &mut Editor) -> String {
+        invoke(registry, editor, "terrain.create", Arguments::new()).values["terrain"]
+            .as_text()
+            .unwrap()
+            .to_string()
+    }
+
+    fn request(editor: &Editor, terrain: &str) -> Vec<u8> {
+        let document = editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap();
+        crate::terrain_engine::evaluation_request(document, parse_node(terrain).unwrap().unwrap())
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_agent_brush_and_the_panel_stroke_record_the_same_modifier() {
+        let (mut editor, registry) = setup();
+        let terrain = created(&registry, &mut editor);
+        let stroke = Stroke {
+            brush: Brush {
+                radius: 12.0,
+                strength: 0.25,
+                falloff: 0.75,
+                spacing: Brush::default().spacing,
+            },
+            samples: vec![
+                Sample::new(0.1, 0.2, 1.0).unwrap(),
+                Sample::new(0.8, 0.7, 0.5).unwrap(),
+            ],
+        };
+        invoke(
+            &registry,
+            &mut editor,
+            "terrain.stroke.commit",
+            Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("tool", Value::Text("smooth".into()))
+                .with("stroke", Value::Bytes(stroke.encode())),
+        );
+        invoke(
+            &registry,
+            &mut editor,
+            "terrain.brush.apply",
+            Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("tool", Value::Text("smooth".into()))
+                .with("points", Value::Text("0.1 0.2; 0.8, 0.7, 0.5".into()))
+                .with("radius", Value::Float(12.0))
+                .with("strength", Value::Float(0.25))
+                .with("falloff", Value::Float(0.75)),
+        );
+        let stack = TerrainStack::read(
+            editor
+                .documents
+                .get(editor.workspace.active().unwrap())
+                .unwrap(),
+            parse_node(&terrain).unwrap().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stack.modifiers.len(), 2);
+        assert_eq!(stack.modifiers[0].kind, stack.modifiers[1].kind);
+        assert_eq!(stack.modifiers[0].stroke, stack.modifiers[1].stroke);
+        assert_eq!(stack.modifiers[0].sample_count, 2);
+    }
+
+    #[test]
+    fn brush_points_are_refused_when_they_are_not_on_the_surface() {
+        for bad in [
+            "",
+            "0.5",
+            "0.5 x",
+            "1.5 0.5",
+            "0.5 0.5 2",
+            "0.1 0.2 0.3 0.4",
+        ] {
+            assert!(parse_points(bad).is_err(), "{bad:?} must be refused");
+        }
+        assert_eq!(parse_points("0.5 0.25;").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn every_tool_is_one_modifier_and_undo_restores_the_engine_request_byte_for_byte() {
+        let (mut editor, registry) = setup();
+        let terrain = created(&registry, &mut editor);
+        let layer = invoke(
+            &registry,
+            &mut editor,
+            "terrain.layer.add",
+            Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("name", Value::Text("Rock".into()))
+                .with("material", Value::Text("materials/rock.cymat".into())),
+        )
+        .values["layer"]
+            .as_text()
+            .unwrap()
+            .to_string();
+        for tool in TOOLS {
+            let before = request(&editor, &terrain);
+            let mut arguments = Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("tool", Value::Text(tool.into()))
+                .with("points", Value::Text("0.3 0.3; 0.4 0.35".into()));
+            if tool == "paint" {
+                arguments = arguments.with("layer", Value::Text(layer.clone()));
+            }
+            invoke(&registry, &mut editor, "terrain.brush.apply", arguments);
+            let stroked = request(&editor, &terrain);
+            assert_ne!(
+                stroked, before,
+                "{tool} changes the stack the engine evaluates"
+            );
+            invoke(&registry, &mut editor, "edit.undo", Arguments::new());
+            assert_eq!(
+                request(&editor, &terrain),
+                before,
+                "undo of {tool} is exact"
+            );
+            invoke(&registry, &mut editor, "edit.redo", Arguments::new());
+            assert_eq!(
+                request(&editor, &terrain),
+                stroked,
+                "redo of {tool} is exact"
+            );
+        }
+        let stack = TerrainStack::read(
+            editor
+                .documents
+                .get(editor.workspace.active().unwrap())
+                .unwrap(),
+            parse_node(&terrain).unwrap().unwrap(),
+        )
+        .unwrap();
+        let kinds: Vec<&str> = stack.modifiers.iter().map(|m| m.kind.as_str()).collect();
+        assert_eq!(kinds, TOOLS);
+    }
+
+    #[test]
+    fn a_hole_takes_no_layer_and_paint_requires_one() {
+        let (mut editor, registry) = setup();
+        let terrain = created(&registry, &mut editor);
+        let arguments = |tool: &str, layer: &str| {
+            Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("tool", Value::Text(tool.into()))
+                .with("layer", Value::Text(layer.into()))
+                .with("points", Value::Text("0.5 0.5".into()))
+        };
+        let refused = |arguments: Arguments, editor: &mut Editor| {
+            registry
+                .invoke(
+                    "terrain.brush.apply",
+                    &Scope::unrestricted(),
+                    editor,
+                    &arguments,
+                )
+                .is_err()
+        };
+        assert!(refused(arguments("paint", ""), &mut editor));
+        assert!(refused(arguments("hole", &"1".repeat(32)), &mut editor));
+        assert!(!refused(arguments("hole", ""), &mut editor));
+    }
+
+    #[test]
+    fn disabled_and_moved_modifiers_travel_in_stack_order() {
+        let (mut editor, registry) = setup();
+        let terrain = created(&registry, &mut editor);
+        let apply = |editor: &mut Editor, tool: &str| {
+            invoke(
+                &registry,
+                editor,
+                "terrain.brush.apply",
+                Arguments::new()
+                    .with("terrain", Value::Text(terrain.clone()))
+                    .with("tool", Value::Text(tool.into()))
+                    .with("points", Value::Text("0.5 0.5".into())),
+            )
+            .values["modifier"]
+                .as_text()
+                .unwrap()
+                .to_string()
+        };
+        let raise = apply(&mut editor, "raise");
+        let _lower = apply(&mut editor, "lower");
+        invoke(
+            &registry,
+            &mut editor,
+            "terrain.modifier.set-enabled",
+            Arguments::new()
+                .with("modifier", Value::Text(raise.clone()))
+                .with("enabled", Value::Bool(false)),
+        );
+        invoke(
+            &registry,
+            &mut editor,
+            "terrain.modifier.move",
+            Arguments::new()
+                .with("modifier", Value::Text(raise))
+                .with("order", Value::Int(1)),
+        );
+        let bytes = request(&editor, &terrain);
+        let mut reader = cy_editor_core::codec::Reader::new(&bytes[4 + 16 + 12..]);
+        assert_eq!(reader.u32().unwrap(), 2);
+        let mut ops = Vec::new();
+        for _ in 0..2 {
+            let _id = reader.u128().unwrap();
+            let op = reader.u8().unwrap();
+            let enabled = reader.u8().unwrap();
+            let _layer = reader.u8().unwrap();
+            for _ in 0..3 {
+                reader.f32().unwrap();
+            }
+            let dabs = reader.u32().unwrap();
+            for _ in 0..dabs * 3 {
+                reader.f32().unwrap();
+            }
+            ops.push((op, enabled));
+        }
+        assert!(reader.is_empty());
+        assert_eq!(
+            ops,
+            [(1, 1), (0, 0)],
+            "lower first, then the disabled raise"
+        );
     }
 }

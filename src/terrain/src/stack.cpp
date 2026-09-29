@@ -1,8 +1,10 @@
 // The modifier stack: the generator, the fold, the declared halo, the derivation key and the cook
 // that flattens it. M10 task 2.2.
 
+#include <cy/terrain/material.h>
 #include <cy/terrain/stack.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 
@@ -124,8 +126,39 @@ const char* modifier_kind_name(ModifierKind kind) noexcept {
             return "sculpt";
         case ModifierKind::Hole:
             return "hole";
+        case ModifierKind::Brush:
+            return "brush";
     }
     return "unknown";
+}
+
+const char* brush_op_name(BrushOp op) noexcept {
+    switch (op) {
+        case BrushOp::Raise:
+            return "raise";
+        case BrushOp::Lower:
+            return "lower";
+        case BrushOp::Smooth:
+            return "smooth";
+        case BrushOp::Flatten:
+            return "flatten";
+        case BrushOp::Paint:
+            return "paint";
+        case BrushOp::Hole:
+            return "hole";
+    }
+    return "unknown";
+}
+
+f32 brush_falloff(f32 distance, f32 radius, f32 falloff) noexcept {
+    if (!(radius > 0.0F) || !(distance < radius)) {
+        return 0.0F;
+    }
+    const f32 hard = radius * (1.0F - clamp_f32(falloff, 0.0F, 1.0F));
+    if (distance <= hard) {
+        return 1.0F;
+    }
+    return smooth(clamp_f32((radius - distance) / (radius - hard), 0.0F, 1.0F));
 }
 
 TerrainBounds modifier_reach(const Modifier& modifier) noexcept {
@@ -138,6 +171,7 @@ ModifierStack::ModifierStack(Allocator& allocator, const TileLayout& layout, u64
       modifiers_(allocator),
       points_(allocator),
       samples_(allocator),
+      dabs_(allocator),
       decorations_(allocator) {}
 
 Expected<u32, Error> ModifierStack::add(const Modifier& modifier) noexcept {
@@ -201,6 +235,8 @@ Status ModifierStack::edit(u32 index, const Modifier& modifier) noexcept {
     updated.point_count = modifiers_[index].point_count;
     updated.first_sample = modifiers_[index].first_sample;
     updated.stamp_edge = modifiers_[index].stamp_edge;
+    updated.first_dab = modifiers_[index].first_dab;
+    updated.dab_count = modifiers_[index].dab_count;
     modifiers_[index] = updated;
     return ok();
 }
@@ -235,6 +271,54 @@ Status ModifierStack::add_sculpt(u32 index, u32 edge, Span<const f32> offsets) n
     return ok();
 }
 
+Status ModifierStack::add_brush(u32 index, Span<const BrushPoint> dabs) noexcept {
+    if (index >= modifiers_.size()) {
+        return fail(ErrorCode::OutOfRange, "terrain: no such modifier");
+    }
+    if (modifiers_[index].kind != ModifierKind::Brush || dabs.empty()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "terrain: brush dabs belong to a brush modifier and there must be one");
+    }
+    TerrainBounds bounds{dabs[0].x, dabs[0].z, dabs[0].x, dabs[0].z};
+    for (const BrushPoint& dab : dabs) {
+        if (!std::isfinite(dab.x) || !std::isfinite(dab.z) || !std::isfinite(dab.pressure) ||
+            dab.pressure < 0.0F || dab.pressure > 1.0F) {
+            return fail(ErrorCode::InvalidArgument,
+                        "terrain: a brush dab needs a finite position and a pressure in [0, 1]");
+        }
+        bounds.min_x = (dab.x < bounds.min_x) ? dab.x : bounds.min_x;
+        bounds.min_z = (dab.z < bounds.min_z) ? dab.z : bounds.min_z;
+        bounds.max_x = (dab.x > bounds.max_x) ? dab.x : bounds.max_x;
+        bounds.max_z = (dab.z > bounds.max_z) ? dab.z : bounds.max_z;
+    }
+    const auto first = static_cast<u32>(dabs_.size());
+    if (Status appended = dabs_.append(dabs); !appended) {
+        return appended;
+    }
+    modifiers_[index].first_dab = first;
+    modifiers_[index].dab_count = static_cast<u32>(dabs.size());
+    modifiers_[index].bounds = bounds;
+    return ok();
+}
+
+f32 ModifierStack::brush_weight(const Modifier& modifier, f64 x, f64 z) const noexcept {
+    if (modifier.kind != ModifierKind::Brush || !modifier_reach(modifier).contains(x, z)) {
+        return 0.0F;
+    }
+    f32 best = 0.0F;
+    const Span<const BrushPoint> dabs =
+        dabs_.span().subspan(modifier.first_dab, modifier.dab_count);
+    for (const BrushPoint& dab : dabs) {
+        const f64 dx = x - dab.x;
+        const f64 dz = z - dab.z;
+        const auto distance = static_cast<f32>(std::sqrt((dx * dx) + (dz * dz)));
+        const f32 weight =
+            brush_falloff(distance, modifier.radius, modifier.falloff) * dab.pressure;
+        best = (weight > best) ? weight : best;
+    }
+    return best;
+}
+
 Status ModifierStack::declare_decoration(u8 layer, bool suppresses) noexcept {
     for (u16& existing : decorations_.span()) {
         if (static_cast<u8>(existing & 0xFFU) == layer) {
@@ -267,12 +351,14 @@ u32 ModifierStack::halo_samples(const TileCoord& coord) const noexcept {
             continue;
         }
         u32 wanted = static_cast<u32>(std::ceil(modifier.radius / spacing));
-        if (modifier.kind == ModifierKind::Erosion) {
-            // An erosion pass reads one sample in every direction, so K passes need K samples of
-            // halo to be exact. A halo smaller than this produces a tile whose interior depends on
-            // where the tile boundary is — a seam, and the local form of the spike's second
-            // condition.
-            wanted = (wanted > modifier.iterations) ? wanted : modifier.iterations;
+        if (modifier.kind == ModifierKind::Erosion ||
+            (modifier.kind == ModifierKind::Brush && modifier.brush == BrushOp::Smooth)) {
+            // An erosion or smoothing pass reads one sample in every direction, so K passes need K
+            // samples of halo to be exact. A halo smaller than this produces a tile whose interior
+            // depends on where the tile boundary is — a seam, and the local form of the spike's
+            // second condition.
+            wanted = (modifier.kind == ModifierKind::Brush) ? wanted + modifier.iterations
+                                                            : std::max(wanted, modifier.iterations);
         }
         pad = (wanted > pad) ? wanted : pad;
     }
@@ -394,6 +480,23 @@ f32 ModifierStack::contribution(const Modifier& modifier, u32 index, f64 x, f64 
                                    : current + modifier.height;
             return current + ((target - current) * weight);
         }
+        case ModifierKind::Brush: {
+            const f32 weight =
+                clamp_f32(modifier.amplitude, 0.0F, 1.0F) * brush_weight(modifier, x, z);
+            switch (modifier.brush) {
+                case BrushOp::Raise:
+                    return current + (kBrushReliefMetres * weight);
+                case BrushOp::Lower:
+                    return current - (kBrushReliefMetres * weight);
+                case BrushOp::Flatten:
+                    return current + ((modifier.height - current) * weight);
+                case BrushOp::Smooth:
+                case BrushOp::Paint:
+                case BrushOp::Hole:
+                    return current;
+            }
+            return current;
+        }
         case ModifierKind::Erosion:
         case ModifierKind::Hole:
             // Handled in `apply()`: one reads a neighbourhood and the other writes no height.
@@ -402,10 +505,70 @@ f32 ModifierStack::contribution(const Modifier& modifier, u32 index, f64 x, f64 
     return current;
 }
 
+f64 ModifierStack::sample_x(const TileCoord& coord, const Padded& grid, u32 i) const noexcept {
+    const f64 spacing = layout_.tile_size(coord.level) / static_cast<f64>(kTileQuads);
+    const i64 sample = static_cast<i64>(i) - static_cast<i64>(grid.pad);
+    return layout_.origin_x +
+           (static_cast<f64>((static_cast<i64>(coord.x) * kTileQuads) + sample) * spacing);
+}
+
+f64 ModifierStack::sample_z(const TileCoord& coord, const Padded& grid, u32 j) const noexcept {
+    const f64 spacing = layout_.tile_size(coord.level) / static_cast<f64>(kTileQuads);
+    const i64 sample = static_cast<i64>(j) - static_cast<i64>(grid.pad);
+    return layout_.origin_z +
+           (static_cast<f64>((static_cast<i64>(coord.z) * kTileQuads) + sample) * spacing);
+}
+
+void ModifierStack::smooth_brush(const Modifier& modifier, const TileCoord& coord,
+                                 Padded& grid) const noexcept {
+    // JACOBI rather than the erosion pass's in-place sweep: every sample of a pass reads the
+    // previous pass's neighbours, so a pass reaches exactly one sample and the declared halo of
+    // radius-plus-passes is sufficient. Two rows of originals are all a pass needs to keep.
+    constexpr u32 kMaxEdge = kTileVerts + (2 * kTileQuads);
+    if (grid.edge < 3 || grid.edge > kMaxEdge) {
+        return;
+    }
+    f32 above[kMaxEdge];
+    f32 row[kMaxEdge];
+    const f32 strength = clamp_f32(modifier.amplitude, 0.0F, 1.0F);
+    const u32 passes = (modifier.iterations == 0) ? kBrushSmoothPasses : modifier.iterations;
+    for (u32 pass = 0; pass < passes; ++pass) {
+        for (u32 i = 0; i < grid.edge; ++i) {
+            above[i] = grid.at(i, 0);
+        }
+        for (u32 j = 1; j + 1 < grid.edge; ++j) {
+            for (u32 i = 0; i < grid.edge; ++i) {
+                row[i] = grid.at(i, j);
+            }
+            const f64 z = sample_z(coord, grid, j);
+            for (u32 i = 1; i + 1 < grid.edge; ++i) {
+                const f32 weight = strength * brush_weight(modifier, sample_x(coord, grid, i), z);
+                if (weight <= 0.0F) {
+                    continue;
+                }
+                const f32 mean = (row[i - 1] + row[i + 1] + above[i] + grid.at(i, j + 1)) * 0.25F;
+                grid.at(i, j) = row[i] + ((mean - row[i]) * weight);
+            }
+            for (u32 i = 0; i < grid.edge; ++i) {
+                above[i] = row[i];
+            }
+        }
+    }
+}
+
 void ModifierStack::apply(const Modifier& modifier, u32 index, const TileCoord& coord,
                           Padded& grid) const noexcept {
     if (modifier.kind == ModifierKind::Hole) {
         return;  // A hole changes no height. `evaluate()` marks the quads.
+    }
+    if (modifier.kind == ModifierKind::Brush) {
+        if (modifier.brush == BrushOp::Smooth) {
+            smooth_brush(modifier, coord, grid);
+            return;
+        }
+        if (modifier.brush == BrushOp::Paint || modifier.brush == BrushOp::Hole) {
+            return;  // Neither changes a height; `write_brush_material()` writes them.
+        }
     }
 
     const f64 spacing = layout_.tile_size(coord.level) / static_cast<f64>(kTileQuads);
@@ -443,8 +606,33 @@ void ModifierStack::apply(const Modifier& modifier, u32 index, const TileCoord& 
     }
 }
 
+void ModifierStack::write_brush_material(const Modifier& modifier, const TileCoord& coord,
+                                         TerrainTile& tile) const noexcept {
+    const f32 strength = clamp_f32(modifier.amplitude, 0.0F, 1.0F);
+    for (u32 j = 0; j < kTileTexels; ++j) {
+        for (u32 i = 0; i < kTileTexels; ++i) {
+            const TerrainPoint at = sample_position(layout_, coord, i, j);
+            const f32 weight = brush_weight(modifier, at.x, at.z);
+            if (weight <= 0.0F) {
+                continue;
+            }
+            if (modifier.brush == BrushOp::Hole) {
+                tile.set_hole(i, j, true);
+            } else {
+                paint_texel(tile.texel(i, j), modifier.layer, strength * weight);
+            }
+        }
+    }
+}
+
 void ModifierStack::write_material(const Modifier& modifier, const TileCoord& coord,
                                    TerrainTile& tile) const noexcept {
+    if (modifier.kind == ModifierKind::Brush) {
+        if (modifier.brush == BrushOp::Paint || modifier.brush == BrushOp::Hole) {
+            write_brush_material(modifier, coord, tile);
+        }
+        return;
+    }
     for (u32 j = 0; j < kTileTexels; ++j) {
         for (u32 i = 0; i < kTileTexels; ++i) {
             const TerrainPoint at = sample_position(layout_, coord, i, j);
@@ -542,6 +730,14 @@ u64 ModifierStack::derivation_key(const TileCoord& coord) const noexcept {
             const TerrainPoint& at = points_[modifier.first_point + point];
             key = hash_combine(key, static_cast<u64>(std::bit_cast<u64>(at.x)));
             key = hash_combine(key, static_cast<u64>(std::bit_cast<u64>(at.z)));
+        }
+        key = hash_combine(key, static_cast<u64>(modifier.brush));
+        key = hash_combine(key, static_cast<u64>(std::bit_cast<u32>(modifier.falloff)));
+        for (usize dab = 0; dab < modifier.dab_count; ++dab) {
+            const BrushPoint& at = dabs_[modifier.first_dab + dab];
+            key = hash_combine(key, static_cast<u64>(std::bit_cast<u64>(at.x)));
+            key = hash_combine(key, static_cast<u64>(std::bit_cast<u64>(at.z)));
+            key = hash_combine(key, static_cast<u64>(std::bit_cast<u32>(at.pressure)));
         }
         for (usize sample = 0;
              sample < static_cast<usize>(modifier.stamp_edge) * modifier.stamp_edge; ++sample) {
