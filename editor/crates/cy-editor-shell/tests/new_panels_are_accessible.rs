@@ -248,9 +248,15 @@ impl Harness {
             })
             .count();
         let click_targets = click_targets(&update);
+        let bounds = update
+            .nodes
+            .iter()
+            .filter_map(|(_, node)| Some((node.label()?.to_owned(), node.bounds()?)))
+            .collect();
         output.textures_delta.clear();
         FrameEvidence {
             labels,
+            bounds,
             actionable,
             shapes,
             click_targets,
@@ -295,6 +301,8 @@ fn test_vfx_catalogue() -> Vec<u8> {
 
 struct FrameEvidence {
     labels: Vec<String>,
+    /// Every labelled node's bounds, in points.
+    bounds: Vec<(String, egui::accesskit::Rect)>,
     actionable: usize,
     shapes: usize,
     click_targets: Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)>,
@@ -580,4 +588,26 @@ fn a_terrain_refusal_is_shown_in_the_specialised_diagnostics_area() {
         "the row carries its glyph as well as its colour: {:?}",
         refused.labels
     );
+}
+
+/// Regression: the terrain body laid its paint field out inside the horizontal row that holds the
+/// controls, so the heading, the hint and the field sat side by side and the field was squeezed
+/// into the strip left over at the right edge (about a sixth of the panel at 900 points).
+#[test]
+fn the_terrain_brush_field_fills_the_space_beside_the_controls() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let evidence = harness.frame("editor-terrain", size, Vec::new());
+    let (_, field) = evidence
+        .bounds
+        .iter()
+        .find(|(label, _)| label == "Terrain brush field")
+        .unwrap_or_else(|| panic!("no brush field in {:?}", evidence.labels));
+    let controls = 250.0_f64.min(f64::from(size.x) * 0.42);
+    assert!(
+        field.width() > (f64::from(size.x) - controls) * 0.8,
+        "the brush field is {:.0} points wide beside {controls:.0} points of controls",
+        field.width()
+    );
+    assert!(field.height() > 180.0, "{field:?}");
 }

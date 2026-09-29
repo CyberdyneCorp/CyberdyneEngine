@@ -297,6 +297,11 @@ fn snapshot(desk: &mut Desk, panel: &str, name: &str) {
         eprintln!("CY_PANEL_SNAPSHOTS is not set; not writing {name}");
         return;
     };
+    // One device at a time: the tests in this file run on parallel threads.
+    static ONE_DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _device = ONE_DEVICE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let ctx = egui::Context::default();
     let mut gpu = Gpu::new();
     // Two frames: the first lays out and measures, the second draws what a settled window shows.
@@ -360,4 +365,78 @@ fn terrain_panel_snapshots() {
         "editor-terrain",
         "editor-terrain-diagnostics.png",
     );
+}
+
+fn catalogue(identity: u32, name: &str, pin_type: &str) -> Vec<u8> {
+    let mut catalogue = cy_editor_core::codec::Writer::new();
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(identity);
+    catalogue.u32(1);
+    catalogue.text(name);
+    catalogue.u32(1);
+    catalogue.u32(9);
+    catalogue.u8(1);
+    catalogue.text("out");
+    catalogue.text(pin_type);
+    catalogue.u32(0);
+    catalogue.finish()
+}
+
+/// The two graph panels on the shared canvas, one node each: the pictures that show the canvas
+/// extraction left them as they were.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn graph_panel_snapshots() {
+    use cy_editor_interface::Domain;
+    use cy_editor_interface::specialised::graph::Layout;
+    use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
+
+    let mut desk = Desk::new();
+    desk.specialised
+        .install_material_catalogue(&catalogue(42, "material.future", "value"))
+        .expect("material catalogue");
+    desk.specialised
+        .open(Domain::Materials)
+        .expect("materials open")
+        .graph
+        .expect("a graph domain")
+        .add("material.future", Layout { x: 28.0, y: 34.0 })
+        .expect("a node");
+    snapshot(
+        &mut desk,
+        "editor-materials",
+        "editor-material-graph-canvas.png",
+    );
+
+    let mut desk = Desk::new();
+    desk.specialised
+        .install_vfx_catalogue(&catalogue(1001, "vfx.constant", "float"))
+        .expect("VFX catalogue");
+    let mut document = VfxDocument::new("sparks").expect("a document");
+    document.emitters.push(Emitter {
+        name: "smoke".into(),
+        path: SimulationPath::GpuPreferred,
+        renderer: "Sprite".into(),
+        stages: Vec::new(),
+        modules: Vec::new(),
+        interfaces: Vec::new(),
+        capacity: 1024,
+        attributes: Vec::new(),
+    });
+    desk.specialised
+        .start_vfx_document(document)
+        .expect("opens");
+    desk.specialised
+        .select_vfx_stage(0, Stage::Spawn)
+        .expect("a stage");
+    desk.specialised
+        .open(Domain::VfxGraph)
+        .expect("VFX opens")
+        .graph
+        .expect("a graph domain")
+        .add("vfx.constant", Layout { x: 28.0, y: 34.0 })
+        .expect("a node");
+    snapshot(&mut desk, "editor-vfx-graph", "editor-vfx-graph-canvas.png");
 }

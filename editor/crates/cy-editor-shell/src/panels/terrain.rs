@@ -100,9 +100,15 @@ impl SpecialisedTool for TerrainTool {
                 },
             );
             ui.separator();
-            ui.allocate_ui(egui::vec2(ui.available_width(), available.y), |ui| {
-                paint_field(inputs, shell, ui, terrain, surface, intents);
-            });
+            // Top-down explicitly: `allocate_ui` inherits the row's horizontal layout, which put
+            // the heading, the hint and the field side by side and squeezed the field.
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), available.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    paint_field(inputs, shell, ui, terrain, surface, intents);
+                },
+            );
         });
     }
 }
@@ -259,6 +265,9 @@ fn paint_field(
         (ui.available_height() - 24.0).max(180.0),
     );
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Terrain brush field")
+    });
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, theme::surface(shell.theme, Surface::Sunken));
     draw_grid(
