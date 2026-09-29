@@ -88,6 +88,12 @@ MUTATIONS = [
      '"Adds an ordered material layer with stable identity in one undoable transaction.",\n'
      "            EffectClass::IrreversibleMutation,",
      MCP_WIRE, "terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel"),
+    ("m26_terrain_field_squeezed_again", TERRAIN,
+     "                egui::Layout::top_down(egui::Align::Min),\n                |ui| {\n"
+     "                    paint_field(",
+     "                egui::Layout::left_to_right(egui::Align::Min),\n                |ui| {\n"
+     "                    paint_field(",
+     PANELS_TEST, "the_terrain_brush_field_fills_the_space_beside_the_controls"),
     ("m14_timeline_move_never_emitted", TIMELINE,
      "&& from.total_cmp(&to).is_ne()", "&& from.total_cmp(&to).is_eq()",
      LIB_SHELL, "dragging_a_key_is_one_move_on_release"),

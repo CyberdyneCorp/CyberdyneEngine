@@ -313,7 +313,20 @@ To add one, for example the animation editor:
    Prove each case red with a recorded mutation.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
-in the scaffold's diagnostics area. Graph gestures and timeline gestures come back to the host as
+in the scaffold's diagnostics area.
+
+`crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
+`Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no
+input. `editor:window?panel=<kind>` can only capture a front tab. Run it with
+`CY_PANEL_SNAPSHOTS=<directory> cargo test -p cy-editor-shell --test panel_snapshots -- --ignored`.
+The terrain panel [before](../docs/design/images/editor-terrain-before.png) and
+[after](../docs/design/images/editor-terrain-after.png) the port shows the brush field, which was
+squeezed into a strip at the right edge, now filling the space beside the controls. The
+[diagnostics area](../docs/design/images/editor-terrain-diagnostics-after.png) replaces the
+[refusal painted over the field](../docs/design/images/editor-terrain-diagnostics-before.png).
+The [material](../docs/design/images/editor-materials-canvas.png) and
+[VFX](../docs/design/images/editor-vfx-canvas.png) graph panels render pixel for pixel as they did
+before the canvas moved. Graph gestures and timeline gestures come back to the host as
 one value per completed gesture (`CanvasFeedback::on_connect`/`on_move`, `TimelineEdit`), so the host
 turns one drag into one command and one undo entry.
 
