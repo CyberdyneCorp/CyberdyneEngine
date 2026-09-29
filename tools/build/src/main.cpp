@@ -15,6 +15,11 @@
 //   install    --package          install a build into an installation root
 //   apply      --patch            apply a patch, optionally interrupted at a named stage
 //   verify     --install          every chunk the build in force names, re-digested
+//   lightmap   --description      bake one `cylightmap 1` level outside the graph, reporting
+//              --project --out    progress on stdout and stopping at a `cancel` line on stdin:
+//                                 the editor's `lighting.bake-lightmaps`
+
+#include "lightmap_producer.h"
 
 #include <cy/build/content_producers.h>
 #include <cy/build/description.h>
@@ -28,6 +33,8 @@
 #include <cy/ecs/world.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -35,6 +42,7 @@
 #include <ranges>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -540,10 +548,100 @@ void print_report(const BuildReport& report) {
     return corrupt == 0 ? 0 : 1;
 }
 
+// --- lightmap: the editor's bake command ---------------------------------------------------------
+//
+// THE PROTOCOL IS LINES, because its reader is the editor and an agent behind it, and neither
+// should need a parser to learn how far a bake got. On stdout:
+//
+//     progress <stage> <done> <total>          as `LightmapBakeProgress` reports it
+//     baked objects=<n> pages=<n> texels=<n> dilated=<n> rays=<n> bytes=<n> mips=<n>
+//           padding-short=<n> seconds=<s>
+//     cancelled
+//
+// and a failure on stderr, with exit status 1. A line `cancel` on stdin stops the bake at its next
+// step (status 3) and writes nothing: the output is written only by a bake that finished, through
+// `write_atomic`, so a cancelled one leaves the previous cooked lightmap where it was.
+
+constexpr int kLightmapCancelled = 3;
+
+[[nodiscard]] Status read_project_file(void* user, std::string_view name, Array<u8>& out) {
+    const std::string path = *static_cast<const std::string*>(user) + "/" + std::string(name);
+    return assets::fs::read_whole(path.c_str(), out);
+}
+
+void print_progress(void*, rendering::lightmap_bake::LightmapBakeStage stage, u32 done,
+                    u32 total) noexcept {
+    std::printf("progress %s %u %u\n", rendering::lightmap_bake::lightmap_bake_stage_name(stage),
+                done, total);
+    std::fflush(stdout);
+}
+
+/// Waits for `cancel` on stdin. Detached: it may still be blocked on a read when the bake ends,
+/// and the process exits under it.
+void watch_for_cancel(std::atomic<bool>& cancel) {
+    std::thread([&cancel] {
+        char line[64];
+        while (std::fgets(line, sizeof(line), stdin) != nullptr) {
+            if (std::strncmp(line, "cancel", 6) == 0) {
+                cancel.store(true);
+                return;
+            }
+        }
+    }).detach();
+}
+
+void print_baked(const LightmapJobReport& report, f64 seconds) {
+    const rendering::lightmap_bake::LightmapBakeReport& bake = report.bake;
+    std::printf(
+        "baked objects=%u pages=%u texels=%u dilated=%u rays=%llu bytes=%llu mips=%u "
+        "padding-short=%zu seconds=%.3f\n",
+        bake.objects, bake.pages, bake.texels_covered, bake.texels_dilated,
+        static_cast<unsigned long long>(bake.rays),
+        static_cast<unsigned long long>(report.device_bytes), report.mip_levels,
+        bake.padding_short.size(), seconds);
+    std::fflush(stdout);
+}
+
+[[nodiscard]] int command_lightmap(const Arguments& arguments) {
+    if (!arguments.has("description") || !arguments.has("out")) {
+        return fail("lightmap needs --description <level.cylightmap> and --out <file>");
+    }
+    const Expected<std::string, Error> document = read_text(arguments.value("description"));
+    if (!document) {
+        return fail("could not read the lightmap description", document.error());
+    }
+    static std::atomic<bool> cancel{false};
+    watch_for_cancel(cancel);
+    std::string project = arguments.value("project", ".");
+    const BundleSource files{&read_project_file, &project};
+    rendering::lightmap_bake::LightmapBakeProgress progress;
+    progress.report = &print_progress;
+    progress.cancel = &cancel;
+    Array<u8> payload(tool_allocator());
+    LightmapJobReport report;
+    const auto started = std::chrono::steady_clock::now();
+    if (Status baked = bake_lightmap_description(*document, files, &progress, payload, report);
+        !baked) {
+        if (report.bake.cancelled) {
+            std::printf("cancelled\n");
+            return kLightmapCancelled;
+        }
+        return fail(report.stage, baked.error());
+    }
+    const std::string out = arguments.value("out");
+    if (Status written = assets::fs::write_atomic(out.c_str(), payload.data(), payload.size());
+        !written) {
+        return fail("could not write the cooked lightmap", written.error());
+    }
+    print_baked(report,
+                std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count());
+    return 0;
+}
+
 [[nodiscard]] int usage() {
     std::fprintf(stderr,
                  "usage: cy_build <toolchain|build|explain|audit|determinism|patch|install|apply|"
-                 "verify> [--option value ...]\n");
+                 "verify|lightmap> [--option value ...]\n");
     return 2;
 }
 
@@ -577,6 +675,9 @@ int main(int argc, char** argv) {
     }
     if (arguments.command == "verify") {
         return command_verify(arguments);
+    }
+    if (arguments.command == "lightmap") {
+        return command_lightmap(arguments);
     }
     return usage();
 }

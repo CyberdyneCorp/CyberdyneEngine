@@ -7,8 +7,10 @@ Every specialised editor panel SHALL be drawn through one shared scaffold that o
 through the specialised-editor host, shows a standard header with undo and redo over the document's
 transaction history, and shows the editor's refusals in a diagnostics area rather than only on its
 canvas. Every command a specialised editor panel invokes SHALL be registered, SHALL be exposed as an
-agent tool without exclusion, and SHALL be either a read or a reversible mutation; the editor SHALL
-refuse to start, naming the command, when one is not.
+agent tool without exclusion, and SHALL be either a read or a reversible mutation, or — declared by
+the editor as such — a long operation whose only effect is outside every document (an external
+effect, such as a bake writing a cooked file); the editor SHALL refuse to start, naming the command,
+when one is not.
 
 #### Scenario: A panel command an agent cannot reach is refused
 - **WHEN** a specialised editor's panel invokes a command that is unregistered, excluded from agents, or irreversible

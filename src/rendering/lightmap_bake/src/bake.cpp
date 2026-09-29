@@ -91,6 +91,7 @@ using detail::TexelSurface;
     out.page_size = settings.atlas.page_size;
     out.pages = std::max(layout.pages, 1U);
     out.gutter_texels = layout.gutter_texels;
+    out.mip_levels = layout.mip_levels;
     if (Status sized = out.addresses.resize(scene.instances.size()); !sized) {
         return sized;
     }
@@ -175,10 +176,36 @@ struct TraceWorld {
     }
 };
 
-void trace_canvas(const detail::TraceContext& context, const LightmapBakeSettings& settings,
-                  Canvas& canvas, LightmapBakeReport& report) noexcept {
+/// Report a step, and say whether the bake may go on. Always true without a `progress`.
+[[nodiscard]] bool checkpoint(const LightmapBakeProgress* progress, LightmapBakeStage stage,
+                              u32 done, u32 total) noexcept {
+    if (progress == nullptr) {
+        return true;
+    }
+    if (progress->cancelled()) {
+        return false;
+    }
+    progress->step(stage, done, total);
+    return true;
+}
+
+[[nodiscard]] Status cancelled(LightmapBakeReport& report) noexcept {
+    report.cancelled = true;
+    return fail(ErrorCode::Unavailable, "the lightmap bake was cancelled");
+}
+
+/// Trace every surface texel. False when the bake was cancelled part way.
+[[nodiscard]] bool trace_canvas(const detail::TraceContext& context,
+                                const LightmapBakeSettings& settings, Canvas& canvas,
+                                LightmapBakeReport& report,
+                                const LightmapBakeProgress* progress) noexcept {
     const bool masked = !canvas.shadow.empty();
+    const auto total = static_cast<u32>(canvas.surfaces.size());
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
+        if (index % kProgressTexels == 0U &&
+            !checkpoint(progress, LightmapBakeStage::Trace, static_cast<u32>(index), total)) {
+            return false;
+        }
         TexelSurface& texel = canvas.surfaces[index];
         if (texel.state != TexelState::Surface) {
             continue;
@@ -197,6 +224,7 @@ void trace_canvas(const detail::TraceContext& context, const LightmapBakeSetting
         }
         report.texels_covered += 1U;
     }
+    return checkpoint(progress, LightmapBakeStage::Trace, total, total);
 }
 
 /// Every surface texel of an owner not in `active` becomes empty for the post-process: the
@@ -285,6 +313,22 @@ const char* lightmap_mode_name(LightmapMode mode) noexcept {
     return "unknown";
 }
 
+const char* lightmap_bake_stage_name(LightmapBakeStage stage) noexcept {
+    switch (stage) {
+        case LightmapBakeStage::Prepare:
+            return "prepare";
+        case LightmapBakeStage::Trace:
+            return "trace";
+        case LightmapBakeStage::Filter:
+            return "filter";
+        case LightmapBakeStage::Finish:
+            return "finish";
+        case LightmapBakeStage::Count:
+            break;
+    }
+    return "unknown";
+}
+
 u32 lightmap_planes(LightmapMode mode) noexcept {
     switch (mode) {
         case LightmapMode::Directional:
@@ -305,6 +349,7 @@ struct BakeRun {
     TraceWorld world;
     Canvas canvas;
     Array<detail::SeamEdge> seams;
+    const LightmapBakeProgress* progress = nullptr;
 };
 
 /// Everything after the packing and before the tracing: the tracer, the raster, the shadow mask's
@@ -352,8 +397,10 @@ struct BakeRun {
     context.lights = run.world.lights.span();
     context.stationary = run.world.stationary.span();
     context.settings = &settings;
-    trace_canvas(context, settings, run.canvas, report);
-
+    if (!trace_canvas(context, settings, run.canvas, report, run.progress) ||
+        !checkpoint(run.progress, LightmapBakeStage::Filter, 0, 1)) {
+        return cancelled(report);
+    }
     if (settings.denoise) {
         if (Status denoised =
                 detail::denoise_moments(run.canvas, settings.mode, settings.denoise_passes);
@@ -366,7 +413,7 @@ struct BakeRun {
     report.seam_samples = detail::reconcile_seams(
         run.canvas, seams, settings.seam_iterations, settings.reconcile_seams,
         report.seam_error_before, report.seam_error_after);
-    return ok();
+    return checkpoint(run.progress, LightmapBakeStage::Filter, 1, 1) ? ok() : cancelled(report);
 }
 
 [[nodiscard]] f32 half_rounded(f32 value) noexcept {
@@ -416,6 +463,29 @@ struct BakeRun {
     return ok();
 }
 
+/// What the frame needs besides the texels: which lights' direct term is baked, and the mip chain
+/// over the charts the rasteriser drew.
+[[nodiscard]] Status finish(const BakeRun& run, const LightmapScene& scene,
+                            const LightmapBakeSettings& settings, BakedLightmap& out) noexcept {
+    out.direct_lights.clear();
+    for (const gi::GiLight& light : scene.lights) {
+        if (detail::bakes_direct(light, settings.content)) {
+            if (Status pushed = out.direct_lights.push_back(light.id); !pushed) {
+                return pushed;
+            }
+        }
+    }
+    const Canvas& canvas = run.canvas;
+    Array<u32> charts;
+    if (Status sized = charts.resize(canvas.surfaces.size()); !sized) {
+        return sized;
+    }
+    for (usize index = 0; index < charts.size(); ++index) {
+        charts[index] = out.coverage[index] != 0U ? canvas.surfaces[index].chart : kNoChart;
+    }
+    return build_lightmap_mips(out, charts.span());
+}
+
 [[nodiscard]] Status seed_from(const BakeRun& run, const LightmapScene& scene,
                                const CacheSeedTargets* seeds, LightmapBakeReport& report) noexcept {
     // THE SEEDS, FROM THIS RUN'S TRACER AND CARDS. With the caller's own lights rather than the
@@ -432,9 +502,12 @@ struct BakeRun {
 }  // namespace
 
 Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& settings,
-                      const CacheSeedTargets* seeds, BakedLightmap& out,
-                      LightmapBakeReport& report) noexcept {
+                      const CacheSeedTargets* seeds, BakedLightmap& out, LightmapBakeReport& report,
+                      const LightmapBakeProgress* progress) noexcept {
     report = LightmapBakeReport();
+    if (!checkpoint(progress, LightmapBakeStage::Prepare, 0, 1)) {
+        return cancelled(report);
+    }
     if (settings.mode >= LightmapMode::Count) {
         return fail(ErrorCode::InvalidArgument, "an unknown lightmap mode");
     }
@@ -445,19 +518,27 @@ Status bake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& se
         return packed;
     }
     BakeRun run;
+    run.progress = progress;
     if (Status prepared = prepare(scene, settings, out, run, report); !prepared) {
         return prepared;
     }
     if (Status solved = solve(scene, settings, run, run.seams.span(), out, report); !solved) {
         return solved;
     }
+    if (!checkpoint(progress, LightmapBakeStage::Finish, 0, 1)) {
+        return cancelled(report);
+    }
     if (Status encoded = encode(run, settings, out); !encoded) {
         return encoded;
+    }
+    if (Status finished = finish(run, scene, settings, out); !finished) {
+        return finished;
     }
     if (Status seeded = seed_from(run, scene, seeds, report); !seeded) {
         return seeded;
     }
     report.rays = run.world.tracer.rays();
+    (void)checkpoint(progress, LightmapBakeStage::Finish, 1, 1);
     return ok();
 }
 
@@ -610,6 +691,9 @@ void copy_kept(const BakedLightmap& previous, const Canvas& canvas, const Array<
         return encoded;
     }
     copy_kept(previous, run.canvas, active, out);
+    if (Status finished = finish(run, scene, settings, out); !finished) {
+        return finished;
+    }
     report.incremental = true;
     report.rays = run.world.tracer.rays();
     return ok();
@@ -619,7 +703,8 @@ void copy_kept(const BakedLightmap& previous, const Canvas& canvas, const Array<
 
 Status rebake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& settings,
                         const BakedLightmap& previous, const LightmapRebakeRequest& request,
-                        BakedLightmap& out, LightmapBakeReport& report) noexcept {
+                        BakedLightmap& out, LightmapBakeReport& report,
+                        const LightmapBakeProgress* progress) noexcept {
     report = LightmapBakeReport();
     if (settings.mode >= LightmapMode::Count) {
         return fail(ErrorCode::InvalidArgument, "an unknown lightmap mode");
@@ -634,11 +719,13 @@ Status rebake_lightmaps(const LightmapScene& scene, const LightmapBakeSettings& 
         return packed;
     }
     BakeRun run;
+    run.progress = progress;
     if (Status prepared = prepare(scene, settings, out, run, report); !prepared) {
         return prepared;
     }
     if (const char* reason = layout_change(previous, out, settings, run.world); reason != nullptr) {
-        if (Status baked = bake_lightmaps(scene, settings, nullptr, out, report); !baked) {
+        if (Status baked = bake_lightmaps(scene, settings, nullptr, out, report, progress);
+            !baked) {
             return baked;
         }
         report.fallback = reason;

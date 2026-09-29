@@ -752,6 +752,7 @@ dependencies = [
  "cy-editor-sdk",
  "cy-editor-services",
  "cy-editor-testhost",
+ "cy-editor-viewport",
  "cy-editor-visual",
 ]
 

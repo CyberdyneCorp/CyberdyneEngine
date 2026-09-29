@@ -3112,6 +3112,123 @@ fn terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel() {
     assert_eq!(layers(&editor), 1);
 }
 
+/// A person at the interface who confirms whatever is asked.
+struct ConfirmEverything;
+
+impl cy_editor_agent::session::Confirmer for ConfirmEverything {
+    fn confirm(
+        &mut self,
+        _confirmation: &cy_editor_agent::session::Confirmation,
+    ) -> cy_editor_agent::session::Decision {
+        cy_editor_agent::session::Decision::Allow
+    }
+}
+
+/// `converse`, with external effects in scope and a person confirming them.
+fn converse_with_external_effects(lines: &[&str], editor: &mut Editor) -> Vec<Json> {
+    let sink = Sink::default();
+    let session = AgentSession::new(
+        AgentIdentity {
+            agent: "lighter".to_string(),
+            session: "s-1".to_string(),
+        },
+        "bake the level's lightmaps",
+        Scope::new(
+            "lighting",
+            DocumentScope::All,
+            [
+                EffectClass::Read,
+                EffectClass::ReversibleMutation,
+                EffectClass::ExternalEffect,
+            ],
+        )
+        .with_directory("game/"),
+        Budget::default(),
+        "r-1",
+        0,
+    );
+    let mut server = McpServer::new(sink.clone(), session);
+    serve(
+        lines.join("\n").as_bytes(),
+        &mut server,
+        editor,
+        &registry(),
+        &mut ConfirmEverything,
+    )
+    .expect("the conversation runs to the end of the input");
+    sink.replies()
+}
+
+fn tool_reply(replies: &[Json], index: usize) -> (String, bool) {
+    let reply = result(replies, index);
+    let text = match reply.get("content") {
+        Json::Array(items) => items
+            .first()
+            .and_then(|item| item.get("text").as_text())
+            .unwrap_or_default()
+            .to_string(),
+        other => panic!("content is not an array: {other:?}"),
+    };
+    (text, reply.get("isError") == &Json::Bool(true))
+}
+
+/// The lighting editor's panel invokes these three and nothing else
+/// (`cy-editor-shell`'s `LightingTool`); an agent reaches the same three here.
+#[test]
+fn the_lighting_editor_bake_and_density_view_are_mcp_tools() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lighting.bake-lightmaps","arguments":{"description":"game/levels/corner.cylightmap"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"lighting.cancel-lightmap-bake","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"viewport.view-mode.lightmap-density","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let tools = match result(&replies, 1).get("tools") {
+        Json::Array(items) => items.clone(),
+        other => panic!("tools is not an array: {other:?}"),
+    };
+    let described = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.get("name").as_text() == Some(name))
+            .and_then(|tool| tool.get("description").as_text())
+            .unwrap_or_else(|| panic!("{name} is not a tool"))
+            .to_string()
+    };
+    assert!(described("lighting.bake-lightmaps").contains("external-effect"));
+    assert!(described("lighting.cancel-lightmap-bake").contains("Effect: read"));
+    assert!(described("viewport.view-mode.lightmap-density").contains("Effect: read"));
+
+    // A bake writes a cooked file, so a connection must be granted external effects to start one.
+    let (refused, is_error) = tool_reply(&replies, 2);
+    assert!(is_error && refused.contains("external-effect"), "{refused}");
+    let (nothing, is_error) = tool_reply(&replies, 3);
+    assert!(
+        is_error && nothing.contains("no lightmap bake"),
+        "{nothing}"
+    );
+    let (view, is_error) = tool_reply(&replies, 4);
+    assert!(!is_error && view.contains("LightmapDensity"), "{view}");
+
+    // In scope and confirmed, the bake is still held to the connection's directory.
+    let replies = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lighting.bake-lightmaps","arguments":{"description":"elsewhere/corner.cylightmap"}}}"#,
+        ],
+        &mut editor,
+    );
+    let (outside, is_error) = tool_reply(&replies, 1);
+    assert!(
+        is_error && outside.contains("does not include it") && outside.contains("game/"),
+        "{outside}"
+    );
+}
+
 /// One MCP tool call, answering whether the server reported an error, and the reply's text.
 fn call_tool(
     editor: &mut Editor,

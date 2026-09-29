@@ -264,7 +264,18 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+| Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `viewport.view-mode.lightmap-density` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
+
+**Lighting & lightmaps.** The lighting and lightmap baking specialised editor opens onto a form: a
+level's `.cylightmap` description, an output, Bake, Cancel and the bake's progress, and the density
+view. `lighting.bake-lightmaps` runs the engine's bake as `cy_build lightmap` in an operation, so
+the progress surface shows the texels traced and its row's Cancel — or
+`lighting.cancel-lightmap-bake` — sends the tool its `cancel`; a cancelled bake writes nothing.
+`CY_BUILD` names the tool, or it is found as `build/<profile>/tools/build/cy_build` walking up from
+the project. `viewport.view-mode.lightmap-density` requests the engine's `LightmapDensity` debug view,
+which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); like every debug view, the
+editor-hosted runtime does not draw it yet, and it loads no cooked lightmap.
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
@@ -300,7 +311,8 @@ To add one, for example the animation editor:
    transaction, with `EffectClass::ReversibleMutation`, so `edit.undo` covers it and the MCP tool
    list carries it without further work (tools are a projection of the registry).
 3. Write one module in `crates/cy-editor-shell/src/panels/` with a type that implements
-   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes), `target`
+   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes; a long
+   operation that edits no document goes in `OPERATIONS` instead), `target`
    (resolve what is edited, or draw the empty state), `diagnostics` and `body`. The body draws on
    the session's shared surface and pushes `Intent::Invoke` for registered commands; it never
    mutates a document.
@@ -316,6 +328,12 @@ To add one, for example the animation editor:
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
 in the scaffold's diagnostics area. See [Terrain tools](#terrain-tools) for how its strokes reach
 the engine.
+
+`panels/lighting.rs` is the scaffold's one tool with an `OPERATIONS` list: a lightmap bake writes a
+cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document transaction,
+so there is nothing for undo to restore. `register_tool` holds each listed operation to being an
+external effect and an MCP tool with no exclusion — a document mutation listed there is refused,
+naming it, as is a bake listed in `COMMANDS`.
 
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no

@@ -29,6 +29,7 @@ use cy_editor_viewport::play::{PlayMode, PlayState};
 use crate::asset_catalogue::AssetCatalogueService;
 use crate::assets::{AssetImportService, ExternalImportCompletion};
 use crate::documents::{CloseDecision, CloseOutcome, DocumentService};
+use crate::lightmaps::LightmapBakeService;
 use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
@@ -149,6 +150,8 @@ pub struct Editor {
     /// the reason every other one is here: which importer ran, what it produced and what the cache
     /// said are things a panel shows and an agent asks about.
     pub imports: AssetImportService,
+    /// The project's lightmap bakes, run out of process as `cy_build lightmap`. Issue #36.
+    pub lightmaps: LightmapBakeService,
     /// Deterministic project files shown by the Content Browser.
     pub asset_catalogue: AssetCatalogueService,
     /// Project settings and per-user preferences, with distinct persistence surfaces.
@@ -222,6 +225,7 @@ impl Editor {
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
             imports: AssetImportService::new(project.root()),
+            lightmaps: LightmapBakeService::new(project.root()),
             asset_catalogue: AssetCatalogueService::new(project.root()),
             settings: SettingsService::default(),
             source_control: SourceControlService::default(),
@@ -256,6 +260,7 @@ impl Editor {
             self.documents.rooted_at(project.root());
         }
         self.imports.rooted_at(project.root());
+        self.lightmaps.rooted_at(project.root());
         self.asset_catalogue = AssetCatalogueService::new(project.root());
         self.sources = SourceWorkspaceService::new(project.root());
         self.source_language = SourceLanguageService::new(project.root());
@@ -272,6 +277,39 @@ impl Editor {
     pub fn with_importer(mut self, imports: AssetImportService) -> Self {
         self.imports = imports;
         self
+    }
+
+    /// Bake through something else — a test's recording double.
+    ///
+    /// After [`Editor::with_project`], for the reason [`Editor::with_importer`] gives.
+    #[must_use]
+    pub fn with_lightmap_baker(mut self, lightmaps: LightmapBakeService) -> Self {
+        self.lightmaps = lightmaps;
+        self
+    }
+
+    /// Start baking a level's lightmaps, returning the operation's stable request identity.
+    pub fn bake_lightmaps(&mut self, description: &str, output: &str) -> Result<u64> {
+        self.lightmaps
+            .start(&mut self.operations, description, output)
+    }
+
+    /// Ask a lightmap bake to stop: `request`, or the most recently started.
+    pub fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        let request = request.or(self.lightmaps.latest()).ok_or_else(|| {
+            Problem::new(
+                "cancel a lightmap bake",
+                "no lightmap bake has been started",
+            )
+        })?;
+        if self.operations.cancel(request) {
+            Ok(request)
+        } else {
+            Err(Problem::new(
+                "cancel a lightmap bake",
+                format!("no operation #{request} is running"),
+            ))
+        }
     }
 
     /// Queue an external source for staging and import, returning its stable request identity.
@@ -1086,6 +1124,14 @@ impl CommandContext for Editor {
 
     fn start_external_asset_import(&mut self, source: &str, destination: &str) -> Result<u64> {
         self.import_external(std::path::PathBuf::from(source), destination.to_string())
+    }
+
+    fn start_lightmap_bake(&mut self, description: &str, output: &str) -> Result<u64> {
+        self.bake_lightmaps(description, output)
+    }
+
+    fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        Editor::cancel_lightmap_bake(self, request)
     }
 
     fn settings(&mut self) -> Option<&mut dyn cy_editor_commands::SettingsHost> {

@@ -146,6 +146,27 @@ pub trait CommandContext {
         ))
     }
 
+    /// Start baking a level's lightmaps from its project-relative `.cylightmap` description into
+    /// `output` (project-relative; empty for the default), returning the operation's stable request
+    /// identity.
+    fn start_lightmap_bake(&mut self, description: &str, output: &str) -> Result<u64> {
+        let _ = (description, output);
+        Err(cy_editor_core::problem::Problem::new(
+            "bake lightmaps",
+            "this host has no lightmap bake service",
+        ))
+    }
+
+    /// Ask a running lightmap bake to stop — `request`, or the one most recently started — and
+    /// return the request it asked.
+    fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        let _ = request;
+        Err(cy_editor_core::problem::Problem::new(
+            "cancel a lightmap bake",
+            "this host has no lightmap bake service",
+        ))
+    }
+
     /// Project settings and per-user preferences, when this host exposes them.
     fn settings(&mut self) -> Option<&mut dyn SettingsHost> {
         None

@@ -54,6 +54,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Importing a source asset from inside the editor, and landing it in the world. See
     // `crate::assets`.
     crate::assets::register(registry)?;
+    crate::lightmaps::register(registry)?;
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
@@ -645,6 +646,9 @@ mod tests {
         // Scene actors add camera and light creation.
         // Material graphs add read, preview, save, draft save, and status commands; VFX drafts add read/save
         // and five engine preview commands; reusable modules add read/save.
+        // Lightmaps (issue #36) add the twentieth debug view, `viewport.view-mode.lightmap-density`
+        // — the viewport's thirty-seven become thirty-eight — and `lighting.bake-lightmaps` and
+        // `lighting.cancel-lightmap-bake` in `crate::lightmaps`.
         // The physics tools add seven physics debug layers and hide-all in `crate::viewports`, and
         // the three joint commands in `crate::joints`.
         // Terrain tools add the agent's brush, `terrain.brush.apply`, and `terrain.status`.
@@ -652,7 +656,7 @@ mod tests {
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2
+            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

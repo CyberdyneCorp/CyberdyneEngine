@@ -6,7 +6,8 @@ SH L1 planes, and cooked into a payload the build graph caches by content. The d
 seeds come from the same run.
 
 **Governed by**: `rendering-global-illumination` — "Lightmap baking", "UV2 and chart packing".
-OpenSpec change `add-lightmap-baking`. Issue #36, first slice (stages 1, 2 and 4).
+OpenSpec changes `add-lightmap-baking`, `add-lightmap-mobility-and-rebake` and
+`add-lightmap-frame-shadow-mask`. Issue #36.
 
 No device: every case in `tests/` runs headless, as `cy::rendering-gi`'s do. The frame half is
 `src/rendering/lightmaps/`.
@@ -18,7 +19,8 @@ No device: every case in `tests/` runs headless, as `cy::rendering-gi`'s do. The
 | `atlas.h` | `pack_atlas` — one rectangle per object in shared pages, sized from world area, the level's texel density and the object's resolution scale, on a block grid with a mip-safe gutter — and the one-word address a draw carries as `gi_address` |
 | `scene.h` | `LightmapScene` (meshes with UV2, materials with emission, opacity and alpha masks, instances, lights, sky), `MeshSceneTracer` — the level's triangles behind `gi::SceneTracer` and `gi::Occluder` — and `measure_uv2` |
 | `bake.h` | `bake_lightmaps`, the three encodings, `sample_lightmap` (the CPU reference the frame is held to) and `reference_ambient` (the ground truth the atlas is held to) |
-| `asset.h` | the cooked payload: half-float planes and per-instance addresses, byte-identical for an unchanged level |
+| `mips.h` | `build_lightmap_mips` — the levels the gutter and chart padding protect, filtered and dilated per chart — and `lightmap_level` / `shadow_mask_level` |
+| `asset.h` | the cooked payload: half-float planes and per-instance addresses, the shadow mask, the directly baked lights and the mip chain, byte-identical for an unchanged level |
 
 ## The pipeline
 
@@ -82,9 +84,10 @@ block grid and the gutter, and the address word.
 
 ## What it costs
 
-The corner `render.lightmaps` bakes — six boxes, 10 649 texels in one 256 page, 24 samples and one
-bounce — takes 0.9 s on one core of the development machine, and 512 KiB on the device as
-irradiance (1 MiB directional, 1.5 MiB SH L1). Most of the time is the path tracer's material
+The corner `render.lightmaps` bakes — six boxes, 10 180 texels in one 256 page, 24 samples and one
+bounce — takes 0.91 s on one core of the development machine (an M2 Max), and on the device, the
+one protected mip level included, 640 KiB as irradiance (1 280 KiB directional, 1 920 KiB SH L1),
+and the sun's shadow mask 320 KiB more. Most of the time is the path tracer's material
 lookup: a hit takes its material from the nearest surface card within a metre, and the bake builds
 cards at `surfel_spacing` (at most 1.2 m, so every hit finds one). Halving the spacing from 1 m to
 0.5 m tripled a room's bake.
@@ -130,9 +133,43 @@ the level instead. The default settings DO report shortfalls: the importer unwra
 metre with a two-texel padding, and a level bakes at 8 with two protected mips. That is the finding
 the check exists for.
 
+## The mip chain
+
+`BakedLightmap::mip_levels` is the layout's protected mip count, and every bake and rebake fills
+`mip_texels` and `mip_shadow_mask` with those levels (`build_lightmap_mips`, from the rasteriser's
+chart ids). A 2x2 box never straddles two objects at a protected level — rectangles are on the block
+grid — but it does straddle two charts of one object, whose padding was dilated half from each side.
+So a coarse texel takes one chart's mean, the chart most of its fine texels belong to; and a coarse
+padding texel belongs to the chart NEAREST its footprint at the base resolution and is dilated from
+it. With the padding `required_chart_gap` asks for, the nearest chart is the one whose taps reach the
+texel, and `integration.render_lightmap_mips` finds no tap at any covered texel's centre reading
+another chart at either protected level, for eight placements of the gap across the coarse grid,
+where a plain box chain gives 24 such taps. Every level is rounded through half precision before the
+next is filtered from it. The chain costs a third of the base.
+
+## The lights the frame must not shade twice
+
+`BakedLightmap::direct_lights` names every light whose direct term is in the texels — each `Static`
+light, and under `DirectAndIndirect` each light that is not `Movable` — so
+`lightmaps::write_lightmaps` can tell the frame not to shade it on a lightmapped surface. The
+frame's use of the shadow mask and of these lights is `src/rendering/lightmaps/`.
+
+## Progress and cancellation
+
+`bake_lightmaps` and `rebake_lightmaps` take an optional `LightmapBakeProgress`: a callback with the
+stage (`prepare`, `trace`, `filter`, `finish`) and, for the trace, the atlas texels done in steps of
+`kProgressTexels`; and a cancel flag read at every step, which stops the bake, sets
+`report.cancelled` and fails with `Unavailable`. An uncancelled bake with progress writes the bytes
+one without it writes. `cy_build lightmap` is the command line over it (`tools/build/README.md`).
+
+## The cooked payload, version 3
+
+After the version 2 shadow section: the directly baked lights' ids, the mip level count, and each
+level's planes then its mask. Versions 1 and 2 still decode, with no chain and no directly baked
+light — a version 2 level with a `Static` light must be re-cooked, or the frame shades that light
+twice. The `lightmap` producer's version is 3, so the build graph re-cooks every level.
+
 ## What is not here
 
-The frame's use of the shadow mask — the forward shader reading the mask plane for a stationary
-light's direct term — and the mask's upload; a device bake; mip levels in the uploaded atlas (the
-gutter is laid out for them); the editor's bake command and texel-density view. Each is exempt by
-name in `tools/roadmap/requirements-coverage.toml`.
+A device bake (the CPU path tracer stays the reference); per-region shadow-mask channels (a fifth
+stationary light is refused); the mask's seam reconciliation (see above).
