@@ -86,7 +86,8 @@ public:
     /// A flow-field cell's arrow, from `centre` along the XZ `direction`.
     void flow_arrow(Vec3 centre, Vec2 direction, f32 length, bool reachable) noexcept;
 
-    /// How many polygons were filled; a polygon with a corner behind the camera is skipped.
+    /// How many polygons were filled. A polygon partly behind the camera is clipped to the near
+    /// plane and filled; one wholly behind it is skipped.
     [[nodiscard]] u32 polygons_drawn() const noexcept { return polygons_drawn_; }
 
 private:

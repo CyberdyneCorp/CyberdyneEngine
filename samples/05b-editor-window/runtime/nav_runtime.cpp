@@ -831,7 +831,22 @@ Status NavigationDriver::document_changed(AuthoredNavigationSource& source) {
     return ok();
 }
 
+void NavigationDriver::queue_clear(u32 world) {
+    Writer writer;
+    writer.u32_(world);
+    queue_.push_back(Job{JobKind::Clear, world, std::move(writer.bytes)});
+}
+
 void NavigationDriver::queue_world_changes(const std::vector<NavWorldRecord>& next) {
+    // A world whose recorded bake went away (the first bake undone, or the world removed) must
+    // not keep answering queries on the mesh the service still holds for it.
+    for (const NavWorldRecord& held : worlds_) {
+        const auto now = std::ranges::find_if(
+            next, [&](const NavWorldRecord& record) { return record.world == held.world; });
+        if (held.bake_identity != 0 && (now == next.end() || now->bake_identity == 0)) {
+            queue_clear(held.world);
+        }
+    }
     for (const NavWorldRecord& record : next) {
         const auto previous = std::ranges::find_if(
             worlds_, [&](const NavWorldRecord& held) { return held.world == record.world; });
@@ -879,7 +894,7 @@ void NavigationDriver::pump() noexcept {
     current_ = std::move(queue_.front());
     queue_.pop_front();
     static constexpr const char* kOperations[] = {"navigation.status", "navigation.overlay.set",
-                                                  "navigation.update"};
+                                                  "navigation.update", "navigation.clear"};
     const u64 id = kInternalRequest | next_request_++;
     const CyServiceRequest request{sizeof(CyServiceRequest),
                                    1,
@@ -888,7 +903,12 @@ void NavigationDriver::pump() noexcept {
                                    current_.payload.data(),
                                    current_.payload.size()};
     if (service_->submit(session_, request) != CY_RESULT_OK) {
+        // Refused outright (the service already holds a busy refusal): keep the job and retry it
+        // on the next frame, as for a `navigation.busy` answer, rather than lose a restore or an
+        // update until the next document change.
         last_failure_ = "the navigation service refused the runtime's request";
+        queue_.push_front(std::move(current_));
+        backoff_ = true;
         return;
     }
     in_flight_ = id;
@@ -931,6 +951,10 @@ void NavigationDriver::finish_internal(const CyServiceEvent& event) {
     }
     if (current_.kind == JobKind::Restore) {
         restores_completed_ += 1;
+        return;
+    }
+    if (current_.kind == JobKind::Clear) {
+        clears_completed_ += 1;
         return;
     }
     if (current_.kind != JobKind::Update) {
@@ -1024,6 +1048,14 @@ void NavigationDriver::overlay_worlds(CyServiceSession navigation_session,
         }
         out.push_back(world);
     }
+}
+
+void draw_editor_navigation(const NavigationDriver& driver, CyServiceSession navigation_session,
+                            const NavOverlayView& view, const Canvas& canvas,
+                            std::vector<NavOverlayWorld>& worlds) {
+    driver.overlay_worlds(navigation_session, worlds);
+    draw_navigation_overlays(canvas, view,
+                             Span<const NavOverlayWorld>(worlds.data(), worlds.size()));
 }
 
 u32 drain_service_events(abi::EditorServiceBackend& service, CyServiceSession session,

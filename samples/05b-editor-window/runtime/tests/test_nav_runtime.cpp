@@ -16,15 +16,20 @@
 #include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
 #include <cy/navigation/bake.h>
+#include <cy/navigation/debug.h>
 #include <cy/navigation/tile_identity.h>
 #include <cy/scene/serialization/authoring_schema.h>
 #include <cy/scene/serialization/worldfile.h>
+#include <cy/servers/render/picking.h>
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
 #include <unistd.h>
 
+#include <algorithm>
+#include <array>
 #include <cinttypes>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -250,6 +255,9 @@ CY_TEST_CASE("editor runtime: baking the test map equals build_tile tile by tile
     Array<u32> worlds(allocator());
     CY_REQUIRE(runtime.source.worlds(worlds).has_value());
     CY_REQUIRE_EQ(worlds.size(), usize{1});
+    if (worlds.size() != 1) {
+        return;
+    }
     CY_CHECK_EQ(worlds[0], kMapWorld);
 
     // The material half of the composite binding still answers.
@@ -372,10 +380,15 @@ CY_TEST_CASE(
     }
     const Digests edited_digests = digests_of(runtime.mesh());
     for (const auto& [coord, digest] : original) {
+        const auto now = edited_digests.find(coord);
+        CY_CHECK(now != edited_digests.end());
+        if (now == edited_digests.end()) {
+            continue;  // `at` would abort in this exception-free build
+        }
         if (coord == std::pair<i32, i32>{0, 0}) {
-            CY_CHECK_NE(edited_digests.at(coord), digest);
+            CY_CHECK_NE(now->second, digest);
         } else {
-            CY_CHECK_EQ(edited_digests.at(coord), digest);
+            CY_CHECK_EQ(now->second, digest);
         }
     }
 
@@ -497,4 +510,321 @@ CY_TEST_CASE("editor runtime: the per-frame drain forwards every bake PROGRESS a
         CY_CHECK_EQ(forwarded.kinds.back(), static_cast<u32>(CY_SERVICE_EVENT_COMPLETED));
     }
     CY_CHECK_GE(frames, 5U);
+}
+
+namespace {
+
+/// A path query on the test map through the composite binding.
+struct MapPath {
+    std::string code;  // empty when answered
+    bool found = false;
+    bool partial = false;
+    f32 cost = 0.0F;
+};
+
+[[nodiscard]] MapPath map_path(Runtime& runtime, Vec3 start, Vec3 end) {
+    Payload payload;
+    payload.u32_(kMapWorld).vec3(start).vec3(end).vec3(Vec3{0.5F, 1.0F, 0.5F});
+    const Event done = runtime.request("navigation.path.query", payload);
+    MapPath out;
+    if (!done.is(CY_SERVICE_EVENT_COMPLETED)) {
+        out.code = done.code();
+        return out;
+    }
+    Decoder decoder(done.payload);
+    out.found = decoder.u8_() != 0;
+    out.partial = decoder.u8_() != 0;
+    (void)decoder.u8_();
+    out.cost = decoder.f32_();
+    return out;
+}
+
+/// A NavObstacle node over (12, 0, 12), appended the way the editor's `navigation.obstacle.add`
+/// writes one into the document.
+constexpr const char* kBlocker =
+    "node 7 - \"nav\" \"Blocker\"\n"
+    "  component 1\n"
+    "    field 1 0 0 0 1\n"
+    "    field 2 12 0 12\n"
+    "    field 3 1 1 1\n"
+    "  component 6\n"
+    "    field 50 1\n"
+    "    field 51 0 0 0\n"
+    "    field 52 1.5\n"
+    "    field 53 2\n"
+    "    field 54 63\n";
+
+}  // namespace
+
+CY_TEST_CASE(
+    "editor runtime: undoing the first bake drops the engine's mesh and refuses path queries") {
+    Runtime runtime;
+    runtime.sync(runtime.text);
+    const Baked first = runtime.bake();
+    CY_REQUIRE(first.decoded);
+    const std::string first_recorded = recorded(runtime.text, first.identity, first.fingerprint);
+    runtime.sync(first_recorded);
+    const Vec3 start{6.0F, 0.0F, 6.0F};
+    const Vec3 end{10.0F, 0.0F, 10.0F};
+    const MapPath baked = map_path(runtime, start, end);
+    CY_CHECK(baked.code.empty());
+    CY_CHECK(baked.found);
+
+    // Undo: the document records no bake again. The engine must follow it back to unbaked.
+    const u32 clears = runtime.driver->clears_completed();
+    runtime.sync(runtime.text);
+    CY_CHECK_EQ(runtime.driver->clears_completed(), clears + 1);
+    CY_CHECK(runtime.mesh() == nullptr);
+    CY_CHECK_EQ(map_path(runtime, start, end).code, "navigation.world.unbaked");
+
+    // Redo: the recorded identity comes back and its sidecar is reloaded.
+    runtime.sync(first_recorded);
+    CY_CHECK(runtime.mesh() != nullptr);
+    CY_CHECK(map_path(runtime, start, end).found);
+}
+
+CY_TEST_CASE(
+    "editor runtime: a NavObstacle added to the document blocks the path; removing it "
+    "restores the path") {
+    Runtime runtime;
+    runtime.sync(runtime.text);
+    const Baked baked = runtime.bake();
+    CY_REQUIRE(baked.decoded);
+    const Vec3 start{6.0F, 0.0F, 6.0F};
+    const Vec3 end{12.0F, 0.0F, 12.0F};
+    const MapPath open = map_path(runtime, start, end);
+    CY_REQUIRE(open.code.empty());
+    CY_REQUIRE(open.found);
+    CY_CHECK_FALSE(open.partial);
+
+    // The editor adds the obstacle: the runtime reads it from the synced document and marks the
+    // tile under it, rebuilding nothing.
+    const u32 before = runtime.driver->updates_completed();
+    runtime.sync(runtime.text + kBlocker);
+    CY_CHECK_EQ(runtime.driver->updates_completed(), before + 1);
+    CY_CHECK(runtime.driver->last_update().rebuilt.empty());
+    CY_CHECK_FALSE(runtime.driver->last_update().marked.empty());
+    const MapPath blocked = map_path(runtime, start, end);
+    CY_CHECK(blocked.code.empty());
+    CY_CHECK((!blocked.found || blocked.partial));
+
+    // Removing it (an undo) restores the path and its cost.
+    runtime.sync(runtime.text);
+    const MapPath restored = map_path(runtime, start, end);
+    CY_CHECK(restored.found);
+    CY_CHECK_FALSE(restored.partial);
+    CY_CHECK_EQ(restored.cost, open.cost);
+}
+
+CY_TEST_CASE(
+    "editor runtime: shrinking the surface leaves the mesh equal to a fresh bake of the "
+    "shrunk map") {
+    Runtime runtime;
+    runtime.sync(runtime.text);
+    const Baked baked = runtime.bake();
+    CY_REQUIRE(baked.decoded);
+    CY_REQUIRE_EQ(digests_of(runtime.mesh()).size(), usize{4});
+
+    // The surface shrinks to the z < 8 half: tiles (0, 1) and (1, 1) leave the surface region.
+    // The crate stays inside it, so the geometry's height range holds and the runtime takes the
+    // incremental path rather than a whole-surface rebuild.
+    const std::string shrunk =
+        edited(runtime.text, "    field 32 16 3 16\n", "    field 32 16 3 7\n");
+    runtime.sync(shrunk);
+    const Digests incremental = digests_of(runtime.mesh());
+
+    Runtime fresh;
+    fresh.sync(shrunk);
+    const Baked rebaked = fresh.bake();
+    CY_REQUIRE(rebaked.decoded);
+    const Digests full = digests_of(fresh.mesh());
+    CY_CHECK_EQ(full.size(), usize{2});
+    CY_CHECK(incremental == full);
+}
+
+namespace {
+
+/// Every walkable polygon of a mesh with its effective area, as the overlay is told about it.
+class PolygonList final : public nav::NavDebugSink {
+public:
+    struct Entry {
+        std::vector<Vec3> corners;
+        nav::AreaType area = 0;
+    };
+    void polygon(nav::PolyRef, Span<const Vec3> corners, nav::AreaType area) noexcept override {
+        entries.push_back(Entry{std::vector<Vec3>(corners.begin(), corners.end()), area});
+    }
+    std::vector<Entry> entries;
+};
+
+/// Whether `point` is inside the convex projected polygon of either winding.
+[[nodiscard]] bool inside_convex(const std::vector<Vec2>& polygon, Vec2 point) {
+    bool positive = false;
+    bool negative = false;
+    for (usize index = 0; index < polygon.size(); ++index) {
+        const Vec2 a = polygon[index];
+        const Vec2 b = polygon[(index + 1) % polygon.size()];
+        const f32 side = ((b.x - a.x) * (point.y - a.y)) - ((b.y - a.y) * (point.x - a.x));
+        positive = positive || side > 1e-3F;
+        negative = negative || side < -1e-3F;
+    }
+    return !(positive && negative);
+}
+
+/// The pixel an overlay polygon of `area` leaves on a cleared canvas.
+[[nodiscard]] std::array<u8, 3> area_pixel(nav::AreaType area) {
+    const u32 colour = nav_area_colour(area);
+    std::array<u8, 3> out{};
+    for (u32 channel = 0; channel < 3; ++channel) {
+        const f32 source = static_cast<f32>((colour >> (16U - (channel * 8U))) & 0xFFU);
+        out[channel] = static_cast<u8>(std::lround(source * 0.45F));
+    }
+    return out;
+}
+
+}  // namespace
+
+CY_TEST_CASE(
+    "editor runtime: the frame overlay over the baked test map covers its polygons in their "
+    "area colours") {
+    Runtime runtime;
+    runtime.sync(runtime.text);
+    const Baked baked = runtime.bake();
+    CY_REQUIRE(baked.decoded);
+    // The editor records the bake with the polygon overlay on, as the Navigation panel does.
+    const std::string shown = edited(runtime.text, "    field 19 0\n", "    field 19 1\n");
+    runtime.sync(recorded(shown, baked.identity, baked.fingerprint));
+    CyServiceSession navigation =
+        runtime.composite.child_session(runtime.session, runtime.navigation);
+
+    // The frame the runtime publishes, looking down on the map, through the call main.cpp makes.
+    constexpr u32 kSide = 128;
+    const NavOverlayView view = overhead_view(Vec3{8.0F, 20.0F, 8.0F}, kSide, kSide);
+    std::vector<u8> pixels(static_cast<usize>(kSide) * kSide * 4, u8{0});
+    const Canvas canvas{pixels.data(), kSide, kSide};
+    std::vector<NavOverlayWorld> scratch;
+    draw_editor_navigation(*runtime.driver, navigation, view, canvas, scratch);
+    CY_REQUIRE_EQ(scratch.size(), usize{1});
+
+    const nav::NavMesh* mesh = runtime.mesh();
+    CY_REQUIRE(mesh != nullptr);
+    if (mesh == nullptr) {
+        return;
+    }
+    PolygonList listed;
+    nav::draw_navigation_mesh(*mesh, nav::NavDebugFlags::Polygons, listed);
+    std::vector<std::vector<Vec2>> projected;
+    for (const PolygonList::Entry& entry : listed.entries) {
+        std::vector<Vec2> corners;
+        for (const Vec3 corner : entry.corners) {
+            Vec2 pixel;
+            CY_REQUIRE(render::project_to_pixel(view.view, corner - view.eye, pixel));
+            corners.push_back(pixel);
+        }
+        projected.push_back(std::move(corners));
+    }
+
+    // Every pixel centre inside exactly one projected polygon carries that polygon's area colour;
+    // every pixel centre outside all of them is untouched. Pixels on a shared edge may go either
+    // way and are not counted.
+    u32 inside = 0;
+    u32 wrong_colour = 0;
+    u32 outside_drawn = 0;
+    for (u32 y = 0; y < kSide; ++y) {
+        for (u32 x = 0; x < kSide; ++x) {
+            const Vec2 centre{static_cast<f32>(x) + 0.5F, static_cast<f32>(y) + 0.5F};
+            usize containing = 0;
+            usize which = 0;
+            for (usize index = 0; index < projected.size(); ++index) {
+                if (inside_convex(projected[index], centre)) {
+                    ++containing;
+                    which = index;
+                }
+            }
+            const u8* pixel = &pixels[((static_cast<usize>(y) * kSide) + x) * 4];
+            const bool drawn = pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0;
+            if (containing == 0) {
+                outside_drawn += drawn ? 1U : 0U;
+                continue;
+            }
+            if (containing != 1) {
+                continue;
+            }
+            ++inside;
+            const std::array<u8, 3> want = area_pixel(listed.entries[which].area);
+            const bool same = pixel[0] == want[0] && pixel[1] == want[1] && pixel[2] == want[2];
+            wrong_colour += same ? 0U : 1U;
+        }
+    }
+    CY_CHECK_GT(inside, (kSide * kSide) / 8U);
+    CY_CHECK_LE(wrong_colour, inside / 100U);
+    CY_CHECK_LE(outside_drawn, inside / 100U);
+
+    // The map's own areas, by where they are: open ground at the centre, mud (area 3) around
+    // (2, 0, 2), and the pillar's carved footprint around (4, 0, 12).
+    const auto colour_at = [&](Vec3 world) {
+        Vec2 pixel;
+        std::array<u8, 3> out{};
+        if (render::project_to_pixel(view.view, world - view.eye, pixel) && pixel.x >= 0.0F &&
+            pixel.y >= 0.0F && pixel.x < static_cast<f32>(kSide) &&
+            pixel.y < static_cast<f32>(kSide)) {
+            const usize at =
+                ((static_cast<usize>(pixel.y) * kSide) + static_cast<usize>(pixel.x)) * 4;
+            out = {pixels[at], pixels[at + 1], pixels[at + 2]};
+        }
+        return out;
+    };
+    // The colours are spelled out rather than taken from `nav_area_colour`, so a palette change
+    // shows here: ground cyan (0x28B4E6), area 3 violet (0xB464F0), and the obstacle's carved-out
+    // area 63
+    // (`kAreaNull`) red (0xE03C3C).
+    const auto at_alpha = [](u32 colour) {
+        std::array<u8, 3> out{};
+        for (u32 channel = 0; channel < 3; ++channel) {
+            const f32 source = static_cast<f32>((colour >> (16U - (channel * 8U))) & 0xFFU);
+            out[channel] = static_cast<u8>(std::lround(source * 0.45F));
+        }
+        return out;
+    };
+    CY_CHECK(colour_at(Vec3{8.0F, 0.0F, 8.0F}) == at_alpha(0x28B4E6U));
+    CY_CHECK(colour_at(Vec3{2.0F, 0.0F, 2.0F}) == at_alpha(0xB464F0U));
+    CY_CHECK(colour_at(Vec3{4.0F, 0.0F, 12.0F}) == at_alpha(0xE03C3CU));
+
+    // With the overlay flag cleared in the document, the same call draws nothing.
+    runtime.sync(recorded(runtime.text, baked.identity, baked.fingerprint));
+    std::ranges::fill(pixels, u8{0});
+    draw_editor_navigation(*runtime.driver, navigation, view, canvas, scratch);
+    CY_CHECK(std::ranges::all_of(pixels, [](u8 value) { return value == 0; }));
+}
+
+CY_TEST_CASE(
+    "editor runtime: a runtime request the service refuses at submit is kept and retried") {
+    Runtime runtime;
+    runtime.sync(runtime.text);
+    const Baked baked = runtime.bake();
+    CY_REQUIRE(baked.decoded);
+
+    // The editor has a bake in flight and a second request already refused as busy, so the
+    // service holds its one busy refusal and refuses the next submit outright.
+    Payload bake;
+    bake.u32_(kMapWorld).settings(runtime.settings());
+    const CyServiceRequest pending{
+        sizeof(CyServiceRequest), 1, 900, "navigation.bake", bake.bytes.data(), bake.bytes.size()};
+    CY_REQUIRE_EQ(runtime.composite.submit(runtime.session, pending), CY_RESULT_OK);
+    const CyServiceRequest refused{
+        sizeof(CyServiceRequest), 1, 901, "navigation.bake", bake.bytes.data(), bake.bytes.size()};
+    CY_REQUIRE_EQ(runtime.composite.submit(runtime.session, refused), CY_RESULT_OK);
+
+    // The crate moves: the runtime queues an update, and its first submit is refused.
+    const u32 before = runtime.driver->updates_completed();
+    runtime.reload(edited(runtime.text, "    field 2 12 0.5 4\n", "    field 2 12 0.5 5\n"));
+    CY_REQUIRE(runtime.driver->document_changed(runtime.source).has_value());
+    runtime.driver->pump();
+    CY_CHECK_FALSE(runtime.driver->idle());
+
+    // Once the editor's requests end, the kept update runs. (The editor's bake ran on the moved
+    // crate, so the update finds nothing left to rebuild; what matters is that it ran.)
+    runtime.settle();
+    CY_CHECK_EQ(runtime.driver->updates_completed(), before + 1);
+    CY_CHECK_EQ(runtime.driver->last_update().world, kMapWorld);
 }

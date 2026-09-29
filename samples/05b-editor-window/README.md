@@ -264,11 +264,18 @@ rebake, query and pick. The runtime only supplies the authored world, through
 - **Sidecar.** A finished bake is saved as `<project>/navigation/<bake identity>.cynavmesh`, a
   16-digit hex name. The file is content-addressed and is never rewritten. The world document
   records the identity on `NavigationWorld.bake_identity`. When that field changes, for example on
-  undo, the runtime asks the service to reload that sidecar, and the overlay redraws from it.
+  undo, the runtime asks the service to reload that sidecar, and the overlay redraws from it. When
+  the field goes back to zero (the first bake undone) the runtime sends `navigation.clear`, so the
+  undone mesh stops answering queries. Commit `project/navigation/*.cynavmesh` with the world: the
+  document names the bake but the sidecar is the bake, and a clone without it reports the sidecar
+  missing until the world is baked again.
 - **Live edits.** A document change reaches the runtime as a transaction or a synced snapshot. When
   it touches a Nav* component, or a mesh inside a surface, the runtime sends `navigation.update` in
-  process for the union of the old and new bounds. The service rebuilds only the tiles under that
-  region and re-applies obstacles and links without a rebuild. The next frame shows the result.
+  process for the union of the old and new bounds. The service rebuilds the tiles under that
+  region that the surfaces still cover, removes those they no longer cover, and re-applies
+  obstacles and links without a rebuild; after a stale restore or a height-range change it rebakes
+  the whole surface region instead, so the mesh always equals a fresh bake. A request the service
+  refuses at submit is kept and retried on the next frame. The next frame shows the result.
 - **Picking.** `navigation.point.pick` resolves a pixel against the view that the named frame was
   rendered with. The runtime keeps the last 64 frames. The pixel is in the rendered frame's pixels.
 
@@ -281,6 +288,10 @@ for every navigation world that has an accepted bake and a non-zero overlay flag
 - tile borders, off-mesh links and obstacle footprints;
 - the editor's last test path and, when one was requested, flow-field arrows.
 
+A polygon partly behind the camera (a tile-sized polygon seen from close to the ground) is clipped
+at the near plane rather than dropped. `draw_frame_overlays` draws it through
+`draw_editor_navigation` in `nav_runtime.h`, the call the image test on the test map drives.
+
 The overlay is drawn under the markers and the gizmo. Like the gizmo, it is not depth tested: it is
 drawn on top of the lit frame. It is a per-world toggle, not a debug view mode, and game-camera
 frames never carry it.
@@ -289,12 +300,17 @@ frames never carry it.
 `runtime/tests/data/nav_test_map.cyworld`. Its cases check that:
 
 - the overlay's covered pixels match the projected walkable polygons;
+- the frame's overlay call over the baked test map covers its polygons in their area colours
+  (ground, mud and the pillar's carved footprint);
+- a polygon partly behind the camera is clipped at the near plane;
 - the per-world toggle works;
 - the runtime bake equals `build_tile` tile by tile;
 - moving a mesh makes the bake stale and moving it back clears it;
 - an area edit rebuilds only its tile;
 - navmesh picking reports a hit and a miss;
-- an undone bake reloads its sidecar;
+- an undone bake reloads its sidecar, and undoing the first bake leaves the engine unbaked;
+- a NavObstacle added to the document blocks the path and removing it restores it;
+- shrinking the surface leaves the mesh equal to a fresh bake;
 - the per-frame drain forwards each PROGRESS event.
 
 ### Baking the navmesh in the editor

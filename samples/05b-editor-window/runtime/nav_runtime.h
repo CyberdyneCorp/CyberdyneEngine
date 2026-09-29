@@ -19,7 +19,9 @@
 //   `NavigationDriver` watches the synced document. When a Nav* component, or a mesh inside a
 //   surface, changes, it sends `navigation.update` for the union of the old and new bounds, in
 //   process; when the recorded bake identity changes (an undone bake) it sends `navigation.status`
-//   so the service reloads that sidecar; when a world's overlay flags change it sends
+//   so the service reloads that sidecar; when the document stops recording a bake for a world (the
+//   first bake undone, or the world removed) it sends `navigation.clear`, so no query answers on a
+//   mesh the document does not record; when a world's overlay flags change it sends
 //   `navigation.overlay.set`. It also keeps the editor's last test path and flow field per world
 //   for the overlay. The overlay itself is `nav_overlay.h`.
 //
@@ -187,7 +189,8 @@ public:
 
     /// Compares the bound world's navigation state with the last one seen and queues the requests
     /// that bring the service up to date: a restore when a recorded bake identity changed, an
-    /// overlay set when recorded flags changed, and an update per dirtied world.
+    /// overlay set when recorded flags changed, a clear when a world's recorded bake went away, and
+    /// an update per dirtied world.
     [[nodiscard]] Status document_changed(AuthoredNavigationSource& source);
     /// Starts a frame: a request the service answered `navigation.busy` may be retried again.
     void begin_frame() noexcept { backoff_ = false; }
@@ -207,6 +210,7 @@ public:
     [[nodiscard]] const NavUpdateResult& last_update() const noexcept { return last_update_; }
     [[nodiscard]] u32 updates_completed() const noexcept { return updates_completed_; }
     [[nodiscard]] u32 restores_completed() const noexcept { return restores_completed_; }
+    [[nodiscard]] u32 clears_completed() const noexcept { return clears_completed_; }
     [[nodiscard]] const std::string& last_failure() const noexcept { return last_failure_; }
 
     /// The worlds the frame draws: those whose document records an accepted bake, with the mesh and
@@ -215,7 +219,7 @@ public:
                         std::vector<NavOverlayWorld>& out) const;
 
 private:
-    enum class JobKind : u8 { Restore, Overlay, Update };
+    enum class JobKind : u8 { Restore, Overlay, Update, Clear };
     struct Job {
         JobKind kind = JobKind::Update;
         u32 world = 0;
@@ -234,6 +238,7 @@ private:
 
     void queue_update(u32 world, const Aabb& region);
     void queue_world_changes(const std::vector<NavWorldRecord>& next);
+    void queue_clear(u32 world);
     void finish_internal(const CyServiceEvent& event);
     void record_query(const Query& query, Span<const u8> payload);
 
@@ -251,8 +256,17 @@ private:
     NavUpdateResult last_update_;
     u32 updates_completed_ = 0;
     u32 restores_completed_ = 0;
+    u32 clears_completed_ = 0;
     std::string last_failure_;
 };
+
+/// The navigation half of an editor frame's overlays: every world whose document records a bake,
+/// drawn with its recorded overlay flags through the frame's own view and eye. `main.cpp`'s
+/// `draw_frame_overlays` calls exactly this for an editor camera's frame; the image test over the
+/// known test map (`test_nav_runtime.cpp`) drives the same call. `worlds` is the caller's scratch.
+void draw_editor_navigation(const NavigationDriver& driver, CyServiceSession navigation_session,
+                            const NavOverlayView& view, const Canvas& canvas,
+                            std::vector<NavOverlayWorld>& worlds);
 
 /// Receives an editor event the runtime forwards, for `drain_service_events`.
 using ServiceEventSink = void (*)(void* user, const CyServiceEvent& event);

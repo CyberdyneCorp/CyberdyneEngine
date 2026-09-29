@@ -130,6 +130,38 @@ void draw_line(const Canvas& canvas, Vec2 from, Vec2 to, u32 colour, f32 width) 
     return render::project_to_pixel(view.view, point - view.eye, out);
 }
 
+/// The view-space depth of a world point: negative in front of the camera, which looks down -Z.
+[[nodiscard]] f32 view_depth(const NavOverlayView& view, Vec3 point) noexcept {
+    const Vec3 relative = point - view.eye;
+    return (view.view.view_matrix * Vec4{relative.x, relative.y, relative.z, 1.0F}).z;
+}
+
+/// The part of a convex polygon in front of the near plane (Sutherland-Hodgman against that one
+/// plane). View-space depth is affine in world space, so the crossing is found by lerping the world
+/// corners. Returns the corner count written to `out`, which holds `kMaxClippedCorners`.
+constexpr usize kMaxClippedCorners = nav::kMaxPolyVertices + 1;
+[[nodiscard]] usize clip_to_near(const NavOverlayView& view, Span<const Vec3> corners,
+                                 Vec3* out) noexcept {
+    // The plane sits at the projection's near distance, or just in front of the eye for a view
+    // whose near distance is zero, so every kept corner projects.
+    const f32 limit = -std::max(view.view.desc.projection.near_plane, 1e-3F);
+    usize written = 0;
+    for (usize index = 0; index < corners.size(); ++index) {
+        const Vec3 a = corners[index];
+        const Vec3 b = corners[(index + 1) % corners.size()];
+        const f32 da = view_depth(view, a) - limit;
+        const f32 db = view_depth(view, b) - limit;
+        if (da <= 0.0F && written < kMaxClippedCorners) {
+            out[written++] = a;
+        }
+        if (((da <= 0.0F) != (db <= 0.0F)) && written < kMaxClippedCorners) {
+            const f32 t = da / (da - db);
+            out[written++] = a + ((b - a) * t);
+        }
+    }
+    return written;
+}
+
 void draw_path(NavCanvasSink& sink, Span<const Vec3> path) noexcept {
     for (usize index = 1; index < path.size(); ++index) {
         sink.path_segment(path[index - 1], path[index]);
@@ -197,12 +229,23 @@ void fill_convex_polygon(const Canvas& canvas, Span<const Vec2> corners, u32 col
 }
 
 void NavCanvasSink::polygon(nav::PolyRef, Span<const Vec3> corners, nav::AreaType area) noexcept {
-    Vec2 projected[nav::kMaxPolyVertices] = {};
-    const usize count = std::min<usize>(corners.size(), nav::kMaxPolyVertices);
-    for (usize index = 0; index < count; ++index) {
-        if (!project(view_, corners[index], projected[index])) {
-            return;  // a corner behind the camera: the polygon has no answer on this frame
+    // A polygon can span a whole tile, so with the camera close to the ground some corners lie
+    // behind it: the polygon is clipped to the near plane rather than dropped.
+    Vec3 clipped[kMaxClippedCorners] = {};
+    const usize kept = clip_to_near(
+        view_, corners.first(std::min<usize>(corners.size(), nav::kMaxPolyVertices)), clipped);
+    if (kept < 3) {
+        return;  // wholly behind the camera
+    }
+    Vec2 projected[kMaxClippedCorners] = {};
+    usize count = 0;
+    for (usize index = 0; index < kept; ++index) {
+        if (project(view_, clipped[index], projected[count])) {
+            ++count;
         }
+    }
+    if (count < 3) {
+        return;
     }
     fill_convex_polygon(canvas_, Span<const Vec2>(projected, count), nav_area_colour(area),
                         kPolygonAlpha);

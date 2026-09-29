@@ -244,9 +244,65 @@ CY_TEST_CASE("nav overlay draws tiles, links, obstacles, a path and flow arrows 
     // The pillar footprint's rim is drawn at its projected radius.
     Vec2 rim;
     CY_REQUIRE(render::project_to_pixel(view.view, Vec3{2.75F, 0.0F, 2.0F} - view.eye, rim));
+    // The rim must land inside the frame, with a column either side to look at.
+    const bool framed = rim.x >= 1.0F && rim.y >= 0.0F && rim.x < static_cast<f32>(kSide - 1) &&
+                        rim.y < static_cast<f32>(kSide);
+    CY_REQUIRE(framed);
+    if (!framed) {
+        return;  // `x - 1` would wrap on a u32 in this exception-free build
+    }
     const u32 x = static_cast<u32>(rim.x);
     const u32 y = static_cast<u32>(rim.y);
     const bool rim_drawn =
         frame.covered(x, y) || frame.covered(x - 1, y) || frame.covered(x + 1, y);
     CY_CHECK(rim_drawn);
+}
+
+CY_TEST_CASE("nav overlay clips a polygon at the near plane with the camera inside the tile") {
+    // An author's view: 1.5 m above the middle of a tile, looking north and down. A navmesh
+    // polygon may span the whole tile (Recast merges cells into large convex polygons), so this
+    // one does: two of its corners are behind the camera and have no projection.
+    NavOverlayView view = overhead_view(Vec3{4.0F, 1.5F, 4.0F}, kSide, kSide);
+    const Vec3 forward = normalize(Vec3{0.0F, -0.6F, -1.0F});
+    const Vec3 right = normalize(cross(forward, Vec3{0.0F, 1.0F, 0.0F}));
+    const Vec3 up = cross(right, forward);
+    view.view.desc.camera.rotation = Quat::from_basis(right, up, -forward);
+    view.view.refresh();
+    const Vec3 square[4] = {Vec3{0.0F, 0.0F, 0.0F}, Vec3{8.0F, 0.0F, 0.0F}, Vec3{8.0F, 0.0F, 8.0F},
+                            Vec3{0.0F, 0.0F, 8.0F}};
+    Vec2 ignored;
+    CY_REQUIRE_FALSE(render::project_to_pixel(view.view, square[2] - view.eye, ignored));
+
+    Frame frame;
+    NavCanvasSink sink(frame.canvas(), view);
+    sink.polygon(nav::PolyRef{}, Span<const Vec3>(square, 4), nav::kAreaGround);
+    CY_CHECK_EQ(sink.polygons_drawn(), 1U);
+
+    // The reference is independent of the projection: each pixel's ray meets the ground plane,
+    // and the pixel is expected covered when that point lies inside the square.
+    Coverage coverage;
+    for (u32 y = 0; y < kSide; ++y) {
+        for (u32 x = 0; x < kSide; ++x) {
+            const Ray ray = render::ray_through_pixel(view.view, static_cast<f32>(x) + 0.5F,
+                                                      static_cast<f32>(y) + 0.5F);
+            const Vec3 origin = ray.origin + view.eye;
+            bool expected = false;
+            if (ray.direction.y < -1e-4F) {
+                const Vec3 hit = origin + (ray.direction * (-origin.y / ray.direction.y));
+                expected = hit.x > 0.0F && hit.x < 8.0F && hit.z > 0.0F && hit.z < 8.0F;
+            }
+            count(coverage, expected, frame.covered(x, y));
+        }
+    }
+    // The ground in front of the camera fills the lower part of the frame.
+    CY_CHECK_GT(coverage.expected, (kSide * kSide) / 4U);
+    CY_CHECK_LE(coverage.mismatched, coverage.expected / 100U);
+
+    // A polygon wholly behind the camera draws nothing.
+    const Vec3 behind[3] = {Vec3{3.0F, 0.0F, 6.0F}, Vec3{5.0F, 0.0F, 6.0F}, Vec3{4.0F, 0.0F, 7.0F}};
+    Frame empty;
+    NavCanvasSink hidden(empty.canvas(), view);
+    hidden.polygon(nav::PolyRef{}, Span<const Vec3>(behind, 3), nav::kAreaGround);
+    CY_CHECK_EQ(hidden.polygons_drawn(), 0U);
+    CY_CHECK_EQ(compare(empty, {}).drawn, 0U);
 }

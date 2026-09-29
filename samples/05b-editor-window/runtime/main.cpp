@@ -1141,11 +1141,9 @@ void draw_navigation(Host& host, const Canvas& canvas) noexcept {
     if (host.nav_driver == nullptr || host.game_camera != ~u64{0}) {
         return;
     }
-    host.nav_driver->overlay_worlds(host.navigation_session, host.nav_overlays);
-    const NavOverlayView view{host.view, eye_of(host.camera)};
-    draw_navigation_overlays(
-        canvas, view,
-        Span<const NavOverlayWorld>(host.nav_overlays.data(), host.nav_overlays.size()));
+    draw_editor_navigation(*host.nav_driver, host.navigation_session,
+                           NavOverlayView{host.view, eye_of(host.camera)}, canvas,
+                           host.nav_overlays);
 }
 
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
@@ -1705,7 +1703,7 @@ int main(int argc, char** argv) {
         nav_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
         editor::NavigationService navigation_service(allocator, &nav_source);
         editor::CompositeEditorService composite_service(allocator);
-        const CyServiceSession service_session =
+        CyServiceSession service_session =
             open_services(composite_service, editor_service, navigation_service);
         NavigationDriver nav_driver(composite_service, service_session);
         host.options = options;
