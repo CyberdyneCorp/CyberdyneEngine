@@ -10,6 +10,7 @@
 - [x] 2.1 Add `SpecialisedTool` and `specialised::show` (header with Undo/Redo, target, diagnostics area, domain session, body).
 - [x] 2.2 Add `register_tool`/`register_specialised_tools`, refusing unregistered, agent-excluded and non-undoable panel commands; call it from `Application::new`.
 - [x] 2.3 Port Terrain onto the scaffold; test the empty state, the header's Undo, the diagnostics area, and terrain authoring with undo/redo over MCP.
+- [x] 2.4 Fix the terrain brush field squeezed by an inherited horizontal layout; add a regression test.
 
 ## 3. Timeline widget
 
@@ -19,6 +20,7 @@
 ## 4. Records
 
 - [x] 4.1 Document "Adding a specialised editor" in `editor/README.md`.
+- [x] 4.1a Render before/after panel snapshots offscreen (`tests/panel_snapshots.rs`) into `docs/design/images/editor-{terrain,materials,vfx}-*.png`.
 - [x] 4.2 Record the mutation proofs in `evidence/falsification.txt` (`evidence/mutate.py`).
 - [x] 4.3 Record in `tools/roadmap/requirements-coverage.toml` which tests answer the two added requirements. Every existing editor requirement is already answered, and the new ones can be mapped only once this change is archived into `openspec/specs/`.
 - [ ] 4.4 On archive, add those two `rust:` entries and rerun `just quality-requirements editor-architecture`.

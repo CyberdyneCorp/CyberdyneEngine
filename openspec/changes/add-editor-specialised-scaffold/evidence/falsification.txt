@@ -74,21 +74,21 @@ RESTORED md5 ok
 <   status(ui, shell, diagnostic.role, &diagnostic.message);
 >   let _ = (&ui, shell, diagnostic);
 FAILED  a_terrain_refusal_is_shown_in_the_specialised_diagnostics_area
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == m11_header_undo_is_redo: editor/crates/cy-editor-shell/src/panels/specialised.rs
 <   .push(Intent::Invoke("edit.undo".into(), Arguments::new()));
 >   .push(Intent::Invoke("edit.redo".into(), Arguments::new()));
 FAILED  the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == m12_terrain_empty_state_lost: editor/crates/cy-editor-shell/src/panels/terrain.rs
 <   if ui.button("Create terrain").clicked() {
 >   if ui.button("Create").clicked() {
 FAILED  the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
 RESTORED md5 ok
 
 == m13_terrain_layer_irreversible: editor/crates/cy-editor-services/src/terrain.rs
@@ -100,11 +100,22 @@ FAILED  terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s
 RESTORED md5 ok
 
+== m26_terrain_field_squeezed_again: editor/crates/cy-editor-shell/src/panels/terrain.rs
+<   egui::Layout::top_down(egui::Align::Min),
+<   |ui| {
+<   paint_field(
+>   egui::Layout::left_to_right(egui::Align::Min),
+>   |ui| {
+>   paint_field(
+FAILED  the_terrain_brush_field_fills_the_space_beside_the_controls
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+RESTORED md5 ok
+
 == m14_timeline_move_never_emitted: editor/crates/cy-editor-shell/src/panels/timeline.rs
 <   && from.total_cmp(&to).is_ne()
 >   && from.total_cmp(&to).is_eq()
 FAILED  panels::timeline::tests::dragging_a_key_is_one_move_on_release_and_leaves_the_surface_alone
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
 RESTORED md5 ok
 
 == m15_timeline_move_inverse_wrong: editor/crates/cy-editor-shell/src/panels/timeline.rs
@@ -135,7 +146,7 @@ RESTORED md5 ok
 >   }
 >   navigate(
 FAILED  panels::timeline::tests::escape_mid_drag_cancels_the_gesture_and_records_nothing
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == m18_timeline_zoom_loses_anchor: editor/crates/cy-editor-shell/src/panels/timeline.rs
@@ -154,15 +165,16 @@ RESTORED md5 ok
 
 == m20_timeline_delete_nothing: editor/crates/cy-editor-shell/src/panels/timeline.rs
 <   Selected::Key(track, key) => Some(TimelineEdit::RemoveKey { track, key }),
->   Selected::Key(..) => None,
-DID NOT COMPILE
+>   Selected::Key(..) => None::<TimelineEdit>,
+FAILED  panels::timeline::tests::a_selected_key_is_removed_by_delete
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
 RESTORED md5 ok
 
 == m21_timeline_trim_moves_start: editor/crates/cy-editor-shell/src/panels/timeline.rs
 <   Edge::End => *end = time,
 >   Edge::End => *start = time,
 FAILED  panels::timeline::tests::dragging_a_clip_end_is_one_trim_on_release
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == m22_timeline_ruler_inert: editor/crates/cy-editor-shell/src/panels/timeline.rs
@@ -193,4 +205,4 @@ FAILED  specialised::timeline::tests::a_removed_key_is_restored_with_the_same_id
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 156 filtered out; finished in 0.00s
 RESTORED md5 ok
 
-24 of 25 mutations killed.
+26 of 26 mutations killed.

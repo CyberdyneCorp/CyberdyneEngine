@@ -53,6 +53,29 @@ accessibility and a second convention for refusals. It now shows as a glyph-and-
 the scaffold's diagnostics area. The standard header adds the "Terrain" title above the brush
 controls. Every command and gesture is unchanged.
 
+### A layout bug found while porting Terrain
+
+The terrain body put its paint field inside `ui.allocate_ui` within the row that holds the controls.
+`allocate_ui` inherits the parent's horizontal layout, so the heading, the hint and the field sat
+side by side, and the field got the strip left over at the right edge: 98 points wide in a
+900-point panel. This is on `main` too (`docs/design/images/editor-terrain-before.png`). The field
+is now laid out top-down. It carries an accessible label, "Terrain brush field", and
+`the_terrain_brush_field_fills_the_space_beside_the_controls` checks its width.
+
+### Panel snapshots without a window
+
+`editor:window?panel=<kind>` captures a panel from the live window, but only the front tab, and no
+command selects a tab. `cy-editor-shell/tests/panel_snapshots.rs` (ignored by default) renders one
+panel through `Panels::ui` and the egui-wgpu renderer into an offscreen texture on any wgpu adapter.
+The material and VFX panels render pixel-identical before and after the canvas moved.
+
+## Found, not fixed here
+
+The status glyphs in `cy_editor_visual::colour::Semantic::glyph` (for example `✕` for Error) and the
+palette's `＋` are not in egui's default fonts, so they render as a missing-glyph box in the window
+and in the snapshots. The glyph table is part of the visual language and is shared by every panel,
+so it belongs in its own change.
+
 ## Not in this change
 
 Wave 1 tools, and any engine or bridge change. The timeline has no curve-value editing and no
