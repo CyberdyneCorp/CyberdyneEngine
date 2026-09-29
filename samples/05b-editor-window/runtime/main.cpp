@@ -71,7 +71,9 @@
 #if defined(CY_PHYSICS)
 #    include <cy/backends/physics/jolt/server.h>
 #endif
+#include <cy/editor/composite_service.h>
 #include <cy/editor/material_service.h>
+#include <cy/editor/navigation_service.h>
 #include <cy/editor/terrain_service.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
@@ -82,6 +84,8 @@
 #include "authored_frame.h"
 #include "layout_file.h"
 #include "material_runtime.h"
+#include "nav_overlay.h"
+#include "nav_runtime.h"
 #include "overlay.h"
 #include "physics_overlay.h"
 #include "pick_wire.h"
@@ -306,8 +310,20 @@ struct Host {
     /// reports is about the frames the editor actually received rather than about a second count.
     render::ViewportTransport transport{render::ViewportTransportKind::SharedTexture};
     runtime::EditorBridge* bridge = nullptr;
-    editor::MaterialService* editor_service = nullptr;
+    /// ONE BINDING, SEVERAL SERVICES (issue #28). Every editor request goes to `editor_service`, a
+    /// `CompositeEditorService` routing `material.`, `vfx.` and `preview.` to MaterialService and
+    /// `navigation.` to NavigationService. The two child sessions are kept for the children's own
+    /// accessors: the VFX preview world, and the navigation meshes and overlay flags the frame
+    /// draws.
+    abi::EditorServiceBackend* editor_service = nullptr;
     CyServiceSession service_session = nullptr;
+    editor::MaterialService* material_service = nullptr;
+    CyServiceSession material_session = nullptr;
+    CyServiceSession navigation_session = nullptr;
+    /// The navigation seam over the open world, and the runtime's own navigation requests.
+    AuthoredNavigationSource* nav_source = nullptr;
+    NavigationDriver* nav_driver = nullptr;
+    std::vector<NavOverlayWorld> nav_overlays;
     /// THE WORLD, and the whole of what M7's `EditorSession` used to stand in for. See
     /// `world_view.h`: there is no association here, because the runtime opened the same file the
     /// editor did and a node's identity is derived on both sides from the same two numbers.
@@ -623,6 +639,17 @@ void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
     }
 }
 
+/// A document change reached the world: bring the navigation meshes up to date with it (task 3.4).
+/// The update runs in process and the overlay shows it on the next frame the service answers in.
+void note_navigation_change(Host& host) noexcept {
+    if (host.nav_driver == nullptr || host.nav_source == nullptr) {
+        return;
+    }
+    if (Status noted = host.nav_driver->document_changed(*host.nav_source); !noted) {
+        report("navigation update", noted.error());
+    }
+}
+
 /// Apply what the editor committed, to THE WORLD, so the next frame is the world it authored.
 ///
 /// M7 applied a translation to a scene object it had associated with the identity in first-seen
@@ -654,6 +681,7 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
         }
     }
     host.transactions_applied += 1;
+    note_navigation_change(host);
     host.moves_applied += report.applied;
     host.nodes_created += report.created;
     host.nodes_deleted += report.deleted;
@@ -697,6 +725,7 @@ void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
     // entity the editor made exists here, whichever path brought it.
     host.nodes_created += synced->created;
     host.nodes_deleted += synced->deleted;
+    note_navigation_change(host);
     if (host.authored_frame != nullptr) {
         if (Status prepared = host.authored_frame->prepare_world(host.view_world->world());
             !prepared) {
@@ -917,16 +946,38 @@ void answer_service(Host& host, const runtime::EditorRequest& request) noexcept 
         const CyServiceRequest submitted{sizeof(CyServiceRequest), request.schema_version,
                                          request.request,          operation,
                                          request.payload.data(),   request.payload.size()};
+        if (host.nav_driver != nullptr) {
+            host.nav_driver->editor_request(request.request,
+                                            std::string_view(operation, request.operation.size()),
+                                            request.payload);
+        }
         (void)host.editor_service->submit(host.service_session, submitted);
     }
-    CyServiceEvent event{};
-    bool present = false;
-    if (host.editor_service->poll(host.service_session, event, present) == CY_RESULT_OK &&
-        present) {
-        (void)host.bridge->send_service_event(
-            event.request_id, static_cast<runtime::ServiceEventKind>(event.kind),
-            event.schema_version, {event.payload, event.payload_size});
+    // No poll here: `drain_service` answers every frame, so a request that takes several polls (a
+    // bake emits one PROGRESS per tile) keeps reporting after the message that started it.
+}
+
+void forward_service_event(void* user, const CyServiceEvent& event) {
+    auto& host = *static_cast<Host*>(user);
+    (void)host.bridge->send_service_event(
+        event.request_id, static_cast<runtime::ServiceEventKind>(event.kind), event.schema_version,
+        {event.payload, static_cast<usize>(event.payload_size)});
+}
+
+/// THE PER-FRAME DRAIN. Issue #28, task 3.2: until then the runtime polled once per request, which
+/// is enough for a service that answers in one poll and loses every PROGRESS event of one that does
+/// not. Each frame now lets the runtime's own navigation requests go out and forwards up to
+/// `kServiceEventsPerFrame` events, PROGRESS and terminal alike; a long bake is spread over frames
+/// rather than stalling one.
+constexpr u32 kServiceEventsPerFrame = 32;
+
+void drain_service(Host& host) noexcept {
+    if (host.editor_service == nullptr || host.service_session == nullptr ||
+        host.nav_driver == nullptr) {
+        return;
     }
+    (void)drain_service_events(*host.editor_service, host.service_session, *host.nav_driver,
+                               kServiceEventsPerFrame, &forward_service_event, &host);
 }
 
 void serve_editor(Host& host) noexcept {
@@ -1087,6 +1138,22 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
     }
 }
 
+[[nodiscard]] Vec3 eye_of(const first_light::Camera& camera) noexcept {
+    return Vec3{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
+                static_cast<f32>(camera.position[2])};
+}
+
+/// The navmesh of every world whose overlay is on, under the markers and the gizmo. Editor frames
+/// only: a game camera's frame carries no editor overlay.
+void draw_navigation(Host& host, const Canvas& canvas) noexcept {
+    if (host.nav_driver == nullptr || host.game_camera != ~u64{0}) {
+        return;
+    }
+    draw_editor_navigation(*host.nav_driver, host.navigation_session,
+                           NavOverlayView{host.view, eye_of(host.camera)}, canvas,
+                           host.nav_overlays);
+}
+
 /// The physics debug layers during play, and the selected node's authored joint while editing.
 ///
 /// Both come from the engine: the layers from the session's own physics world through
@@ -1094,10 +1161,7 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
 /// draws a simulated constraint with. While a world plays, the `Constraints` layer is the joint's
 /// view, so the authored gizmo is not drawn over it.
 void draw_physics(Host& host, const Canvas& canvas) noexcept {
-    const Vec3 eye{static_cast<f32>(host.camera.position[0]),
-                   static_cast<f32>(host.camera.position[1]),
-                   static_cast<f32>(host.camera.position[2])};
-    FrameDebugSink sink(canvas, host.view, eye);
+    FrameDebugSink sink(canvas, host.view, eye_of(host.camera));
     const bool simulating =
         host.play != nullptr && host.play->state() != gameplay::PlayState::Editing;
     if (simulating && host.physics_overlays != 0U && host.play->physics_server() != nullptr) {
@@ -1116,6 +1180,7 @@ void draw_physics(Host& host, const Canvas& canvas) noexcept {
 }
 
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
+    draw_navigation(host, canvas);
     draw_physics(host, canvas);
     if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
         for (const LightMarker& light : host.authored_frame->light_markers()) {
@@ -1177,7 +1242,7 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
         }
 #endif
         const editor::TerrainPreview* terrain =
-            editor::MaterialService::terrain_preview(host.service_session);
+            editor::MaterialService::terrain_preview(host.material_session);
         if (Status drawn =
                 host.authored_frame->set_terrain(terrain != nullptr ? terrain->snapshot() : nullptr,
                                                  terrain != nullptr ? terrain->generation() : 0);
@@ -1187,7 +1252,7 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
         }
         if (Status frame = host.authored_frame->render(
                 host.view_world->world(), host.camera, host.game_camera == ~u64{0},
-                host.editor_service->vfx_preview_world(host.service_session), time_seconds
+                host.material_service->vfx_preview_world(host.material_session), time_seconds
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
                 ,
                 host.scene_vfx != nullptr ? host.scene_vfx->world() : nullptr
@@ -1215,6 +1280,13 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
         texels = host.renderer->color_texels();
     }
     return true;
+}
+
+/// What `navigation.point.pick` resolves a pixel of frame `frame` against.
+void remember_navigation_frame(Host& host, u64 frame) {
+    if (host.nav_source != nullptr) {
+        host.nav_source->record_frame(frame, host.view, eye_of(host.camera));
+    }
 }
 
 /// Render one frame, composite the gizmo into it, and publish it.
@@ -1297,6 +1369,7 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     }
     host.layout.frame_id = *published;
     host.published_frame = *published;
+    remember_navigation_frame(host, *published);
     PickFrame pick_frame;
     pick_frame.identity = *published;
     pick_frame.view = host.view;
@@ -1446,12 +1519,56 @@ int run_host_loop(Host& host, const Options& options, u64 started) {
 
         host.publisher->service();
         serve_editor(host);
+        drain_service(host);
         const f32 phase = static_cast<f32>(elapsed * options.orbit);
         if (!publish_frame(host, phase - std::floor(phase), static_cast<f32>(elapsed))) {
             return 1;
         }
     }
     return 0;
+}
+
+/// The composite's routes: MaterialService keeps every prefix it served alone, and navigation
+/// joins.
+[[nodiscard]] Status route_services(editor::CompositeEditorService& composite,
+                                    editor::MaterialService& material,
+                                    editor::NavigationService& navigation) noexcept {
+    for (const std::string_view prefix : editor::kMaterialServicePrefixes) {
+        if (Status routed = composite.route(prefix, material); !routed) {
+            return routed;
+        }
+    }
+    return composite.route("navigation.", navigation);
+}
+
+/// The one session every editor request is served in, or null after saying why there is none.
+[[nodiscard]] CyServiceSession open_services(editor::CompositeEditorService& composite,
+                                             editor::MaterialService& material,
+                                             editor::NavigationService& navigation) noexcept {
+    if (Status routed = route_services(composite, material, navigation); !routed) {
+        report("editor service", routed.error());
+        return nullptr;
+    }
+    CyServiceSession session = nullptr;
+    if (composite.open(&session) != CY_RESULT_OK) {
+        report("editor service",
+               Error{ErrorCode::OutOfMemory, "the editor service session could not be created"});
+        return nullptr;
+    }
+    return session;
+}
+
+/// Hands the host its navigation seam and driver once there is a session to drive them through. A
+/// world opened with a recorded bake shows it from the first frame: the driver asks the service to
+/// reload that sidecar.
+void attach_navigation(Host& host, AuthoredNavigationSource& source,
+                       NavigationDriver& driver) noexcept {
+    if (host.service_session == nullptr) {
+        return;
+    }
+    host.nav_source = &source;
+    host.nav_driver = &driver;
+    note_navigation_change(host);
 }
 
 struct PlaySetup {
@@ -1630,11 +1747,14 @@ int main(int argc, char** argv) {
         editor::MaterialService editor_service(allocator, nullptr,
                                                view_world.loaded() ? &authored_preview : nullptr);
 #endif
-        CyServiceSession service_session = nullptr;
-        if (editor_service.open(&service_session) != CY_RESULT_OK) {
-            report("editor service", Error{ErrorCode::OutOfMemory,
-                                           "the material service session could not be created"});
-        }
+        // Issue #28: navigation authoring beside the material and VFX editors, behind one binding.
+        AuthoredNavigationSource nav_source(allocator, options.project);
+        nav_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
+        editor::NavigationService navigation_service(allocator, &nav_source);
+        editor::CompositeEditorService composite_service(allocator);
+        CyServiceSession service_session =
+            open_services(composite_service, editor_service, navigation_service);
+        NavigationDriver nav_driver(composite_service, service_session);
         host.options = options;
         host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
@@ -1651,13 +1771,19 @@ int main(int argc, char** argv) {
 #endif
         host.publisher = publisher->get();
         host.bridge = &bridge;
-        host.editor_service = &editor_service;
+        host.editor_service = &composite_service;
         host.service_session = service_session;
+        host.material_service = &editor_service;
+        host.material_session = composite_service.child_session(service_session, editor_service);
+        nav_source.bind_terrain(host.material_session);
+        host.navigation_session =
+            composite_service.child_session(service_session, navigation_service);
+        attach_navigation(host, nav_source, nav_driver);
         const u64 started = monotonic_nanos();
         exit_code = run_host_loop(host, options, started);
 
         print_report(host, view_world, bridge, started);
-        editor_service.close(service_session);
+        composite_service.close(service_session);
 
         // THE SESSION BEFORE THE SERVER. A session destroyed after the server it holds a world in
         // would call `destroy_body` on freed memory, which is exactly the shape M5.5's gate found

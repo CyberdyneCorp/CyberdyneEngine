@@ -719,10 +719,17 @@ impl EditorWindow {
                     .notifications
                     .post(Notification::info(outcome.summary.clone()));
             }
-            Err(problem) => self
-                .editor
-                .notifications
-                .post(Notification::error(problem.what.clone(), problem)),
+            Err(problem) => {
+                if id == crate::panels::navigation_baking::NAVIGATION_PICK_COMMAND {
+                    crate::panels::navigation_baking::pick_refused(
+                        &mut self.inputs.navigation,
+                        &problem.to_string(),
+                    );
+                }
+                self.editor
+                    .notifications
+                    .post(Notification::error(problem.what.clone(), problem));
+            }
         }
     }
 

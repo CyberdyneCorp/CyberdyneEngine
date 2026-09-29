@@ -34,6 +34,9 @@ still runs.
 |---|---|
 | Tiles, polygons, adjacency, obstacles, off-mesh links | `navmesh.h` |
 | Generation from source geometry, and the Recast boundary | `build.h` |
+| Baking a world: tiling, incremental rebakes, area volumes, obstacle tile reports | `bake.h` |
+| Tile digests, the source fingerprint and the bake identity | `tile_identity.h` |
+| The `.cynavmesh` saved-bake codec | `bake_codec.h` |
 | A\*, the funnel, simplification, corner rounding, the async queue | `query.h` |
 | Chunk-local tilemap polygons and planar path queries | `navigation2d.h` |
 | Sparse-voxel 3D paths and surface/volume query dispatch | `volume.h` |
@@ -73,6 +76,73 @@ obstacle footprints, corridors, paths, avoidance velocities and neighbour sets i
 counts, elapsed time, path length and repath rate. Passing it to `build_tile` additionally records
 voxelisation time per tile. These timing measurements are diagnostic wall time and must never feed
 deterministic path or simulation decisions.
+
+## Baking a navigation world
+
+`bake.h` is the loop above `build_tile`, and what the engine's editor service runs for issue #28.
+The editor never voxelises, tiles or hashes: it sends a request and records what comes back.
+
+- **Settings.** `NavBakeSettings` holds the authored values: agent radius, height, max slope and step
+  height, cell size and height, tile size, layers, tags and the back end. `build_params` maps them
+  onto `NavBuildParams` (step height is `agent_max_climb`), `agent_profile` onto the `AgentProfile`
+  for `NavMesh::set_profile`, and the tile size is the `NavMesh` constructor argument.
+  `validate_bake_settings` refuses `Automatic`: a saved bake names Engine or Recast.
+- **Sources.** `NavBakeSource` is the geometry plus the `NavMeshSurface` volumes (`NavSurfaceVolume`),
+  the `NavArea` volumes (`NavAreaVolume`), and the obstacles and links. `surface_region` is the union
+  of the including surfaces; excluding surfaces become `exclude_volumes`.
+- **Tiling.** `bake_tiles` visits every tile whose XZ extent `[x * t, (x + 1) * t]` overlaps the region,
+  by z then x, and calls `build_tile` with `bake_tile_bounds`: that extent, and the geometry's Y range
+  widened by the step height and a cell below and the agent height above. Each non-empty tile is
+  published with `NavMesh::add_tile`. A tile with no walkable cell is reported `empty` and is not an
+  error; any previous occupant is removed. A full bake also removes resident tiles outside the region.
+- **Progress and cancellation.** A `NavBakeObserver` is told `(done, total, tile)` after every tile and
+  answers `Continue` or `Cancel`. A cancelled bake returns its report with `cancelled` set and the
+  tiles it finished published.
+- **Report.** `NavBakeReport` sums the `NavBuildReport` counters (the triangle counters describe the
+  source, the rest are summed) and lists each tile's coordinate, polygon count, emptiness and digest.
+- **Incremental rebake.** `rebake_tiles` rebuilds only the tiles overlapping a dirty box, such as the
+  union of an edited volume's old and new bounds. Every other tile keeps its digest and slot salt.
+  `rebake_surface_tiles` is the incremental form of a bake over the surface region: of the tiles
+  under the dirty box it rebuilds those the surfaces cover and removes those they no longer cover.
+  It equals a full bake when the mesh was one, every change lies in the dirty box, and the
+  geometry's height range held; `bake.h` says why each condition matters.
+- **Recast seams.** The Recast back end voxelises a tile with a border of `walkableRadius + 3`
+  cells, so the agent-radius erosion does not carve a gap along every tile edge and paths cross
+  from tile to tile.
+- **Areas and costs.** `assign_triangle_areas` gives each triangle the area of the highest-`node` area
+  volume containing its centroid, or its own area. `area_costs` builds the world's `NavAreaCosts`:
+  uniform, with each volume's cost on its area. Cost is painted by placing area volumes.
+- **Obstacles.** `place_obstacle`, `move_obstacle` and `clear_obstacle` apply `NavMesh::add_obstacle`
+  and `remove_obstacle` without a rebuild, and report the resident tiles under the old footprint, the
+  new footprint, or both.
+
+### Tile digest, source fingerprint and bake identity
+
+`tile_identity.h` holds three 64-bit FNV-1a values over a fixed little-endian encoding, so they are
+the same on every host and can be stored (`hash_bytes` is seeded per process and cannot).
+
+- `tile_digest(NavTileData)` hashes the coordinate, bounds, vertices, polygons (first corner, corner
+  count, area, cost, centre) and the corner array. `NavBuildReport::duration_ns` is never part of it.
+  `mesh_tile_digest(NavMesh, slot)` computes the same value from a resident tile, so a bake can be
+  compared with a direct `build_tile` tile by tile.
+- `source_fingerprint(settings, source, producer_version)` hashes the vertices, indices, each
+  triangle's layer, tag and area (defaults filled in), the surface and area volumes, the settings,
+  the back end and the producer version. Obstacles and links are excluded: they are runtime overlays.
+  A saved fingerprint that differs from a recomputed one means the bake is stale.
+- `bake_identity(fingerprint, ordered digests)` names a bake. `mesh_bake_identity` computes it over a
+  mesh's resident tiles in `ordered_tile_slots` order (layer, z, x).
+
+### The `.cynavmesh` codec
+
+`encode_nav_bake` writes a versioned blob: the magic `CYNAVMSH`, the version, the settings, the
+source fingerprint and the bake identity, then each resident tile in coordinate order with its
+digest. `decode_nav_bake` re-derives every tile digest and the identity and refuses, with a reason
+in the error message, a bad magic, an unknown version, a truncated blob, trailing bytes, a polygon
+naming a corner or vertex the tile does not have, a digest mismatch or an identity mismatch.
+`install_nav_bake` publishes a decoded asset into a mesh of the same tile size.
+
+`draw_navigation_mesh` reports each polygon with `NavMesh::effective_area`, so an obstacle that marks
+polygons with an area recolours them on the overlay.
 
 ## Four properties the whole module is shaped by
 
@@ -147,6 +217,8 @@ path legitimately bends at a cell corner. A vertex shared by consecutive portals
 | Suite | Kind | What it holds |
 |---|---|---|
 | `unit.navigation` | unit | tiles, adjacency, stale references, obstacles, links, A\*, the funnel, budgets, partial paths, the async queue, the hierarchy, the components, and streaming |
+| `unit.navigation` (`test_bake_codec.cpp`) | unit | the `.cynavmesh` round trip and its refusals |
+| `integration.navigation_bake` | integration | the bake API: bake equals `build_tile` tile by tile on **both** back ends, empty tiles, cancellation, incremental rebakes, area volumes and costs, obstacle tile reports, the fingerprint and the identity |
 | `integration.navigation_build` | integration | generation over **both** back ends: erosion, the slope limit, the filters, the refusals |
 | `integration.navigation_crowd` | integration | avoidance, priority, tiers, determinism, **eight thousand agents** and teardown under load |
 | `integration.navigation_fields` | integration | flow-field generation, determinism, incremental regeneration, the reference-counted cache |

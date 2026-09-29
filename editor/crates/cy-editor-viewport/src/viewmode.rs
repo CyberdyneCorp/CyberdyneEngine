@@ -36,6 +36,10 @@
 //! showed an unlit frame would be worse than one that does not offer it: the user would report the
 //! renderer. [`PLANNED_VIEWS`] names them with the capability that owns each, so the gap is a list
 //! somebody can act on rather than a discovery.
+//!
+//! Navigation data is the one entry that is drawable today, but not as a view mode: each
+//! navigation world's overlay is composited over the lit frame and toggled per world with
+//! `navigation.overlay.set`, so it is not offered here as a whole-frame mode.
 
 /// A debug view the engine can draw.
 ///
@@ -328,6 +332,11 @@ pub const PLANNED_VIEWS: [(&str, &str); 6] = [
     ("Virtual texture feedback", "virtual-texturing"),
     ("Virtual texture residency", "residency"),
     ("Virtual shadow pages", "virtual-shadows"),
+    // Not a debug view mode: navigation data is drawn per navigation world by the runtime's
+    // overlay, composited over the lit frame and toggled with `navigation.overlay.set` (the
+    // Navigation panel's Overlays row). It stays listed because no `DebugViewMode` replaces the
+    // frame with it; see openspec change implement-issue-28-navigation-authoring, "Viewport
+    // overlay".
     ("Navigation data", "navigation"),
     ("Streaming region state", "world-partition-and-streaming"),
 ];

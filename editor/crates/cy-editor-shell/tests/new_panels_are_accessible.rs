@@ -19,7 +19,7 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 12] = [
+const NEW_PANELS: [(&str, &str); 13] = [
     ("undo-history", "Undo"),
     ("physics", "No world is open."),
     ("settings", "Apply"),
@@ -32,6 +32,7 @@ const NEW_PANELS: [(&str, &str); 12] = [
     ("editor-lighting-and-lightmap-baking", "Bake lightmaps"),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
+    ("editor-navigation-baking", "No world is open."),
 ];
 
 struct Harness {

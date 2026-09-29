@@ -42,7 +42,7 @@ use crate::progress::ProgressSurface;
 ///
 /// The stable keys a layout stores. An agent reading `editor:window?panel=<kind>` is told this list
 /// when it names something else, so an unknown kind is distinguished from a hidden one.
-pub const BUILT_IN_PANEL_KINDS: [&str; 20] = [
+pub const BUILT_IN_PANEL_KINDS: [&str; 21] = [
     "hierarchy",
     "content-browser",
     "viewport",
@@ -63,6 +63,7 @@ pub const BUILT_IN_PANEL_KINDS: [&str; 20] = [
     "settings",
     "source-control",
     "agent-sessions",
+    "editor-navigation-baking",
 ];
 
 /// The title a built-in panel shows, in the engine's own vocabulary.
@@ -94,6 +95,7 @@ pub fn panel_title(panel: &PanelId) -> &str {
         "settings" => "Settings",
         "source-control" => "Source Control",
         "agent-sessions" => "Agent Sessions",
+        "editor-navigation-baking" => "Navigation",
         other => other,
     }
 }

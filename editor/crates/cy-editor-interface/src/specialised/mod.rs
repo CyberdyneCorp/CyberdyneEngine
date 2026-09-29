@@ -29,8 +29,8 @@
 //!
 //! --- A DOMAIN THIS TREE CANNOT OPEN REFUSES BY NAME -------------------------------------------------
 //!
-//! Sixteen editors are named by the requirement and this tree can open the four whose authoring
-//! vocabulary this milestone declares. **The other twelve are registered and refuse**, naming
+//! Sixteen editors are named by the requirement and this tree can open the five whose authoring
+//! vocabulary this milestone declares. **The other eleven are registered and refuse**, naming
 //! themselves and the capability row that owes the vocabulary — because the alternative is the one
 //! outcome this project has decided is worse than a refutation. M11.b's own gate wrote it down:
 //!
@@ -772,7 +772,10 @@ impl SpecialisedEditors {
     pub fn can_open(&self, domain: Domain) -> bool {
         self.catalogues.contains_key(&domain)
             || !domain.track_kinds().is_empty()
-            || matches!(domain, Domain::Terrain | Domain::LightingAndLightmapBaking)
+            || matches!(
+                domain,
+                Domain::Terrain | Domain::LightingAndLightmapBaking | Domain::NavigationBaking
+            )
     }
 
     /// Every editor this tree can open, in the requirement's order.
@@ -1325,6 +1328,28 @@ mod tests {
     }
 
     #[test]
+    fn navigation_baking_opens_as_a_form_editor() {
+        let mut host = host();
+        let navigation = host
+            .open(Domain::NavigationBaking)
+            .expect("navigation baking opens");
+        assert_eq!(navigation.domain, Domain::NavigationBaking);
+        assert!(navigation.graph.is_none(), "a form editor has no graph");
+        assert!(
+            navigation.timeline.is_none(),
+            "a form editor has no timeline"
+        );
+        assert!(
+            navigation.painting.is_none(),
+            "a form editor has no painting"
+        );
+        assert_eq!(
+            host.region_occupant().map(|key| key.to_string()),
+            Some("editor-navigation-baking".to_string())
+        );
+    }
+
+    #[test]
     fn terrain_opens_the_shared_painting_surface() {
         let mut host = host();
         let terrain = host.open(Domain::Terrain).expect("terrain opens");
@@ -1397,8 +1422,11 @@ mod tests {
             host.region_occupant().map(|key| key.kind().to_owned()),
             Some("editor-lighting-and-lightmap-baking".to_owned())
         );
-        // Navigation baking is a form too, and still refuses: it has no engine bake to drive.
-        assert!(host.open(Domain::NavigationBaking).is_err());
+        // Navigation baking is a form too, but its own: it never opens onto the lightmap bake form.
+        let navigation = host
+            .open(Domain::NavigationBaking)
+            .expect("the navigation baking editor opens");
+        assert!(navigation.lighting.is_none());
     }
 
     #[test]

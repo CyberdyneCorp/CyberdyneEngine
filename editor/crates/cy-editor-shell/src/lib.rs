@@ -132,6 +132,7 @@ mod tests {
             "agent-sessions",
             "semantic-diff",
             "semantic-merge",
+            "editor-navigation-baking",
         ] {
             let panel = cy_editor_interface::PanelId::new(kind).expect("a built-in panel");
             labels.push(panel_title(&panel).to_string());

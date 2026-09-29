@@ -19,6 +19,13 @@
 #                   twenty-eight cells twice and compares every cell of the two, which is over the
 #                   unit tier's millisecond by construction rather than by accident.
 #
+#   navigation_bake
+#                   the bake API above build_tile: the tiling loop compared with direct build_tile
+#                   calls tile by tile over both back ends, empty tiles, cancellation, incremental
+#                   rebakes, area volumes and costs, obstacle affected-tile reports and the source
+#                   fingerprint. INTEGRATION — it voxelises. (The .cynavmesh codec is in the unit
+#                   suite: it round-trips fixture tiles and voxelises nothing.)
+#
 #   navigation_build
 #                   tile generation over both back ends: erosion by the agent radius, the slope
 #                   limit, the declared filters, and the refusals. INTEGRATION — it voxelises.
@@ -50,6 +57,7 @@ function(cy_navigation_declare_tests)
         NAME navigation
         KIND unit
         SOURCES
+            "${cy_navigation_tests_dir}/test_bake_codec.cpp"
             "${cy_navigation_tests_dir}/test_components.cpp"
             "${cy_navigation_tests_dir}/test_debug.cpp"
             "${cy_navigation_tests_dir}/test_hierarchy.cpp"
@@ -59,6 +67,12 @@ function(cy_navigation_declare_tests)
             "${cy_navigation_tests_dir}/test_query.cpp"
             "${cy_navigation_tests_dir}/test_volume.cpp"
         DEPENDENCIES cy::navigation cy::ecs cy::core-reflect)
+
+    cy_add_test(
+        NAME navigation_bake
+        KIND integration
+        SOURCES "${cy_navigation_tests_dir}/test_bake.cpp"
+        DEPENDENCIES cy::navigation)
 
     cy_add_test(
         NAME navigation_build

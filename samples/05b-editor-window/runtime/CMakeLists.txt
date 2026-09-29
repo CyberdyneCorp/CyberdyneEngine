@@ -58,6 +58,8 @@ cy_add_module(
         layout_file.cpp
         main.cpp
         material_runtime.cpp
+        nav_overlay.cpp
+        nav_runtime.cpp
         overlay.cpp
         physics_overlay.cpp
         pick_wire.cpp
@@ -76,6 +78,7 @@ cy_add_module(
         cy::servers-render
         cy::runtime-editor-bridge
         cy::editor-backend
+        cy::navigation
         cy::terrain
         cy::rendering-material-slang
         cy::shader

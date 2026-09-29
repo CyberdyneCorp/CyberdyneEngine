@@ -136,3 +136,46 @@ CY_TEST_CASE("path queue diagnostics count queries timing and path length") {
     CY_CHECK_GT(stats.query_time_ns, 0U);
     CY_CHECK_GT(stats.mean_path_length(), 9.0);
 }
+
+namespace {
+
+/// Counts the polygons the overlay reports with one area.
+struct AreaRecorder final : NavDebugSink {
+    AreaType watched = kAreaGround;
+    u32 matching = 0;
+    u32 total = 0;
+
+    void polygon(PolyRef, Span<const Vec3>, AreaType area) noexcept override {
+        ++total;
+        matching += (area == watched) ? 1U : 0U;
+    }
+};
+
+}  // namespace
+
+// Regression (issue #28, task 1.7): the overlay colours a polygon by the area a query sees, so an
+// obstacle that marks polygons with an area (rather than carving them) shows on the overlay.
+CY_TEST_CASE("navigation debug reports the effective area of an obstacle-marked polygon") {
+    constexpr AreaType kWater = 9;
+    NavMesh mesh = testing::single_tile_mesh(allocator());
+    NavObstacleShape marker;
+    marker.bounds = Aabb::from_min_max(Vec3{0.0F, -1.0F, 0.0F}, Vec3{2.0F, 1.0F, 2.0F});
+    marker.area = kWater;
+    Expected<ObstacleId, Error> id = mesh.add_obstacle(marker);
+    CY_REQUIRE(id.has_value());
+    if (!id.has_value()) {
+        return;
+    }
+
+    AreaRecorder marked;
+    marked.watched = kWater;
+    draw_navigation_mesh(mesh, NavDebugFlags::Polygons, marked);
+    CY_CHECK_EQ(marked.total, 16U);
+    CY_CHECK_EQ(marked.matching, 1U);
+
+    CY_REQUIRE(mesh.remove_obstacle(*id).has_value());
+    AreaRecorder cleared;
+    cleared.watched = kWater;
+    draw_navigation_mesh(mesh, NavDebugFlags::Polygons, cleared);
+    CY_CHECK_EQ(cleared.matching, 0U);
+}

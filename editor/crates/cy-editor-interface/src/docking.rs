@@ -270,6 +270,7 @@ impl Layout {
                 PanelId::new("editor-materials").expect("a built-in panel identifier"),
                 PanelId::new("editor-vfx-graph").expect("a built-in panel identifier"),
                 PanelId::new("editor-terrain").expect("a built-in panel identifier"),
+                PanelId::new("editor-navigation-baking").expect("a built-in panel identifier"),
                 PanelId::new("editor-lighting-and-lightmap-baking")
                     .expect("a built-in panel identifier"),
                 PanelId::new("physics").expect("a built-in panel identifier"),

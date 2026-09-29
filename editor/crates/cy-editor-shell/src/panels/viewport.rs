@@ -275,7 +275,12 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         outcomes.push(panels.inputs.interaction.handle(&mut context, event));
     }
     for outcome in outcomes {
-        report(outcome, panels.editor);
+        report(
+            outcome,
+            panels.editor,
+            &mut panels.inputs.navigation,
+            panels.intents,
+        );
     }
 }
 
@@ -299,7 +304,14 @@ fn published_gizmo(editor: &cy_editor_services::Editor) -> Option<cy_editor_view
 /// itself in the viewport's own corner rather than as a notification — `editor-ui-ux` requires that
 /// notifications not interrupt, and a toast per drag would be a wall of them. Only a refusal and an
 /// unanswerable pick are worth saying out loud.
-fn report(outcome: Outcome, editor: &mut cy_editor_services::Editor) {
+///
+/// An armed navigation pick takes the click instead of selection: see `navigation_baking`.
+fn report(
+    outcome: Outcome,
+    editor: &mut cy_editor_services::Editor,
+    navigation: &mut super::navigation_baking::NavigationInputs,
+    intents: &mut Vec<super::Intent>,
+) {
     match outcome {
         Outcome::Refused(problem) => {
             editor
@@ -307,10 +319,16 @@ fn report(outcome: Outcome, editor: &mut cy_editor_services::Editor) {
                 .post(Notification::error(problem.what.clone(), *problem));
         }
         Outcome::Pick(request, mode) => {
-            if let Err(problem) = editor.request_pick(*request, mode) {
-                editor
-                    .notifications
-                    .post(Notification::error(problem.what.clone(), problem));
+            match super::navigation_baking::armed_pick(navigation, editor, &request) {
+                super::navigation_baking::ArmedClick::Pick(intent) => intents.push(intent),
+                super::navigation_baking::ArmedClick::Held => {}
+                super::navigation_baking::ArmedClick::NotArmed => {
+                    if let Err(problem) = editor.request_pick(*request, mode) {
+                        editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
             }
         }
         Outcome::NothingToPick => editor.notifications.post(Notification::info(

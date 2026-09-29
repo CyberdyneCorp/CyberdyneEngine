@@ -3,6 +3,7 @@
 #include <cy/build/content_producers.h>
 
 #include "lightmap_producer.h"
+#include "navmesh_producer.h"
 
 #include <cy/build/graph.h>
 #include <cy/cook/pipeline.h>
@@ -341,6 +342,12 @@ Status add_content_producers(ProducerRegistry& registry, const ecs::World* world
     // package the runtime rejects at the build-schema check, in a place nobody would look.
     if (Status added = registry.add(Producer{"cook", kCookProducerVersion, produce_cook,
                                              /*distributable=*/false});
+        !added) {
+        return added;
+    }
+    // Distributable: the node reads one declared sidecar and verifies it; no registry, no clock.
+    if (Status added = registry.add(Producer{"navmesh", kNavmeshProducerVersion, produce_navmesh,
+                                             /*distributable=*/true});
         !added) {
         return added;
     }

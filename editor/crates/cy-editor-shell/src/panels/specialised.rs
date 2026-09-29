@@ -188,6 +188,7 @@ pub(crate) fn register_tool<T: SpecialisedTool>(registry: &mut Registry) -> Resu
 /// Every scaffolded tool, registered and checked. Called wherever the command registry is built.
 pub fn register_specialised_tools(registry: &mut Registry) -> Result<()> {
     register_tool::<super::terrain::TerrainTool>(registry)?;
+    register_tool::<super::navigation_baking::NavigationTool>(registry)?;
     register_tool::<super::lighting::LightingTool>(registry)?;
     command_parity(registry, super::physics::PANEL, super::physics::COMMANDS)
 }
@@ -406,6 +407,7 @@ mod tests {
     #[test]
     fn startup_checks_the_lighting_tool_and_refuses_a_bake_that_edits_a_document() {
         use super::super::lighting::LightingTool;
+        use super::super::navigation_baking::NavigationTool;
         use super::super::terrain::TerrainTool;
         // Every scaffolded tool's commands as stubs of the right class, except the bake.
         let mut registry = Registry::new();
@@ -414,6 +416,9 @@ mod tests {
         }
         for command in <LightingTool as SpecialisedTool>::COMMANDS {
             stub(&mut registry, command, EffectClass::Read);
+        }
+        for command in <NavigationTool as SpecialisedTool>::COMMANDS {
+            stub(&mut registry, command, EffectClass::ReversibleMutation);
         }
         stub(
             &mut registry,

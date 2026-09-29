@@ -208,6 +208,18 @@ quality-abi *args:
 quality-editor-mcp-client:
     @cd "{{root}}" && python3 samples/05b-editor-window/test_mcp_window.py
 
+# Check issue #28's acceptance runner refuses an empty Cargo filter and a native probe below its
+# assertion floor, and that the navigation docs it requires are present. Needs no build; the full
+# ledger is `python3 tools/issue28_acceptance.py` on a built tree.
+quality-issue28-ledger:
+    @cd "{{root}}" && python3 tools/test_issue28_acceptance.py && python3 tools/issue28_acceptance.py --check-docs
+
+# Run issue #28's native acceptance probes on the dev tree: the runner rebuilds the probed test
+# binaries first, then runs each probe's one doctest case with --no-skip against its assertion
+# floor. The Cargo probes' tests run in the editor job's `cargo test`.
+quality-issue28-native:
+    @cd "{{root}}" && python3 tools/issue28_acceptance.py --native-only
+
 # Check the engine's play-mode, live-edit-policy and specialised-editor tables against the editor's
 # and the specification's.
 quality-editor-contract *args:

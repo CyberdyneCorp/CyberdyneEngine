@@ -64,6 +64,8 @@ adds them by default:
 |---|---|---|---|
 | `import` | `Import` | one declared source, plus every input the importer DISCOVERS through `NodeContext::discover` | one bundle — the same encoding the derived-data cache stores |
 | `cook` | `Cook` | every declared authoring document, read into a `MemoryMount` the cook is given as its whole filesystem | one `.cypak` |
+| `lightmap` | `Cook` | a `cylightmap 1` description and its upstream mesh bundles | one cooked lightmap |
+| `navmesh` | `Cook` | one saved `.cynavmesh` sidecar and a `bake-identity` option naming the world's bake | the verified navigation mesh |
 
 It is a **separate target** from `cy_build_graph`, which links `cy::core-assets` and
 `cy::core-memory` and nothing else: the importer links ufbx and xatlas, the cook links the ECS and
@@ -85,6 +87,26 @@ Two limits, written down rather than discovered:
   so the world arrives through a process-wide pointer that `add_content_producers` sets. Two
   registries with two worlds in one process is not supported; making it so means per-producer state
   in `producer.h`.
+
+### The `navmesh` producer (issue #28)
+
+The engine's navigation service bakes a world and the runtime host saves it as
+`navigation/<bake identity>.cynavmesh`; the world document records that identity. A cook declares
+one node per navigation world:
+
+```text
+node "navmesh:level" cook "navmesh"
+  source "navigation/<identity>.cynavmesh"
+  output "derived/level.navmesh"
+  option "bake-identity" "<identity>"
+```
+
+`produce_navmesh` decodes the sidecar with `decode_nav_bake`, which re-derives every tile digest
+and the stored identity, and refuses a corrupt tile (`navmesh-sidecar`) or a sidecar whose identity
+is not the world's (`navmesh-identity`). The verified bytes are the output. The node key covers the
+sidecar's content digest, the identity option and `kNavmeshProducerVersion`, so a rebake or a
+producer version bump re-cooks, and an unchanged world is served from the store. Its cases are in
+`tests/test_navmesh_producer.cpp`, part of `integration.build_content`.
 
 ## Running it
 

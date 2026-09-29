@@ -105,6 +105,17 @@ public:
     config.maxVertsPerPoly = static_cast<int>(kMaxPolyVertices);
     config.detailSampleDist = params.detail_sample_distance * params.cell_size;
     config.detailSampleMaxError = params.detail_sample_max_error * params.cell_height;
+    // A tile is voxelised with a border of neighbouring cells, as Recast's own tiled builds are, so
+    // the agent-radius erosion sees the ground beyond the tile edge and does not carve a gap along
+    // every seam. rcBuildRegions discards the border and rcBuildContours shifts the result back to
+    // the tile's own bounds, so the polygons end exactly on the tile edge, where
+    // `NavMesh::add_tile` joins them to the neighbour's.
+    config.borderSize = config.walkableRadius + 3;
+    const f32 pad = static_cast<f32>(config.borderSize) * config.cs;
+    config.bmin[0] -= pad;
+    config.bmin[2] -= pad;
+    config.bmax[0] += pad;
+    config.bmax[2] += pad;
     rcCalcGridSize(config.bmin, config.bmax, config.cs, &config.width, &config.height);
     return config;
 }

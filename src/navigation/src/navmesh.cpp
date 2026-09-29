@@ -490,6 +490,11 @@ Span<const Vec3> NavMesh::tile_vertices(u32 slot) const noexcept {
     return (tile != nullptr) ? tile->vertices.span() : Span<const Vec3>{};
 }
 
+Span<const u32> NavMesh::tile_corners(u32 slot) const noexcept {
+    const Tile* tile = resident_tile(slot);
+    return (tile != nullptr) ? tile->corners.span() : Span<const u32>{};
+}
+
 u32 NavMesh::tile_poly_count(u32 slot) const noexcept {
     const Tile* tile = resident_tile(slot);
     return (tile != nullptr) ? static_cast<u32>(tile->polys.size()) : 0;

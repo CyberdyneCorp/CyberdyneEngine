@@ -20,7 +20,11 @@ The first vertical slice supports:
   dependency identity, program count, and stable texture-asset dependency identities;
 - `terrain.evaluate` — the editor's terrain modifier stack, evaluated by `cy::terrain` over an
   author's region. It answers with heights, material texels, holes, what meshing and collision left
-  open, and the regions whose navigation it marked stale since the last evaluation of that terrain.
+  open, and the regions whose navigation it marked stale since navigation was last baked. Those
+  regions are the navmesh's one stale flag: `navigation.status` reports a bake stale while they
+  exist, and a committed `navigation.bake` consumes them
+  (`MaterialService::terrain_navigation_rebaked`, called through the host's
+  `NavigationSourceRuntime::bake_committed`).
   `TerrainPreview` (`cy/editor/terrain_service.h`) holds the last region for the viewport host and
   specifies the payloads;
 - `preview.create`, `preview.destroy`, `preview.parameter.update`, and `preview.reload` — isolated
@@ -41,3 +45,55 @@ Hosts without that interface reject `preview.create` with `preview-runtime-unava
 the preview feature bit rather than reporting a protocol-only echo as a visible reload.
 `material.preview.set` uses a separate `MaterialAuthoringRuntime` host seam; it never writes the
 graph asset. Hosts without an authored scene reject it with `material.preview.unavailable`.
+
+## Navigation operations (issue #28)
+
+`NavigationService` (`include/cy/editor/navigation_service.h`) is the engine side of the
+navigation authoring editor. The engine runs the tiling loop, owns one `NavMesh` per navigation
+world, computes the source fingerprint and answers every query; the editor only sends requests and
+records what comes back. The runtime host supplies the data through the pure-virtual
+`NavigationSourceRuntime` seam: `worlds`, `gather` (world-space triangles with per-triangle layer,
+tag and area, plus the surface and area volumes), `obstacles`, `links`, `store_bake` /
+`load_bake` (the content-addressed `.cynavmesh` sidecar) and `pick_ray`.
+
+Every operation uses schema 1 and little-endian payloads. The settings block is seven `f32`
+(agent radius, agent height, max slope, step height, cell size, cell height, tile size), `u64`
+layers, `u64` tags and a `u8` back end (1 Engine, 2 Recast; Automatic is refused).
+
+| Operation | Request | Result |
+|---|---|---|
+| `navigation.bake` | `u32` world, settings | one PROGRESS per tile across polls (`u32` done, `u32` total, tile), then COMPLETED: `u32` world, `u64` fingerprint, `u64` bake identity, text sidecar path, report (six `u32` counters, `u64` duration, `u8` back end, `u32` tiles built, `u32` tiles empty), `u32` link failures, `u32` tile count and each tile (`i32` x, z, layer, `u32` polys, `u8` empty, `u64` digest) |
+| `navigation.status` | `u32` world, settings, `u64` saved identity, `u64` saved fingerprint | `u32` world, `u8` baked, `u8` stale, `u64` current fingerprint, `u64` saved fingerprint, `u64` identity, `u32` resident tiles, report, `u32` link failures, `u8` sidecar missing. A saved identity the session does not hold is restored from its sidecar through `load_bake`, with the area costs of the host's current sources, which is how an undone bake or a reopened world comes back. When `load_bake` finds no sidecar the answer is `baked = 0`, `sidecar missing = 1` and the current fingerprint, and the session holds no mesh for the world; a sidecar that does not decode fails with `navigation.bake.load-failed` |
+| `navigation.update` | `u32` world, dirty `Aabb` (six `f32`) | `u32` world, `u64` fingerprint, `u64` identity, rebuilt tiles and obstacle-marked tiles (each `u32` count plus `i32` x, z, layer), `u32` link failures. Tiles are rebuilt only when the recomputed fingerprint changed: the tiles under the dirty box that the surface region covers are rebuilt and those it no longer covers are removed (`rebake_surface_tiles`), unless the mesh was not current for the previous sources (a stale restore) or the geometry's height range moved, in which case the whole surface region is rebaked. Obstacles and links are re-synced from the seam without a rebuild |
+| `navigation.path.query` | `u32` world, start, end, extents (`Vec3` each) | `u8` found, `u8` partial, `u8` budget exceeded, `f32` cost, `u32` nodes expanded, `u32` points and each (`Vec3`, `u8` enters link) |
+| `navigation.flowfield.query` | `u32` world, target `Vec3`, region `Aabb`, `f32` cell | `u32` width, `u32` depth, `f32` cell, `u32` unreachable, per cell `f32` dx, `f32` dz, `u8` reachable (at most 65536 cells) |
+| `navigation.point.pick` | `u32` world, `u32` viewport, `u64` frame, `f32` x, `f32` y | `u8` hit, `Vec3` point, `u64` polygon, `f32` distance: the host's `pick_ray` intersected with the navmesh polygons |
+| `navigation.overlay.set` | `u32` world, `u32` `NavDebugFlags` bits | `u32` world, `u32` flags |
+| `navigation.clear` | `u32` world | `u32` world. Drops the world's mesh, so later queries answer `navigation.world.unbaked`; clearing a world with no mesh succeeds. The host sends it when the document stops recording a bake |
+
+A session has one pending request. A second request while one is pending is answered with a FAILED
+`navigation.busy` event, so every request still ends in exactly one terminal event. A cancelled
+bake ends in CANCELLED and leaves the world's previous mesh in place. Failure codes are stable:
+`<op>.unavailable` (no seam; the operations are then also absent from `capabilities.get`),
+`navigation.busy`, `navigation.request.malformed`, `navigation.schema.unsupported`,
+`navigation.operation.unsupported`, `navigation.settings.invalid`, `navigation.world.unknown`,
+`navigation.world.unbaked`, `navigation.world.limit`, `navigation.surface.missing`,
+`navigation.source.failed`, `navigation.bake.failed`, `navigation.bake.store-failed`,
+`navigation.bake.load-failed`, `navigation.update.failed`, `navigation.path.failed`,
+`navigation.flowfield.too-large`, `navigation.flowfield.failed`, `navigation.point.pick.ray-failed`
+and `navigation.overlay.invalid`. With a seam, `capabilities.get` sets feature bit
+`kNavigationFeature` (0x100).
+
+## One binding, several services
+
+The host binds exactly one `EditorServiceBackend`. `CompositeEditorService`
+(`include/cy/editor/composite_service.h`) is that backend when there are several: up to eight
+`(prefix, backend)` routes, longest-prefix routing, one child session per backend, round-robin
+polling, and a `capabilities.get` answered with the union of every child's list (duplicates
+removed, feature bits OR-ed). A child busy with this session's request is asked for its
+capabilities once it is idle. An operation no route matches fails with `operation-unsupported`.
+`child_session` hands a host the child session for a child's own accessors, such as
+`MaterialService::vfx_preview_world` or `NavigationService::mesh` and `overlay`. MaterialService
+is unchanged by it.
+
+The navigation and composite suites are `integration.editor_backend_navigation`.

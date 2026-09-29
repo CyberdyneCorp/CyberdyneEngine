@@ -3665,3 +3665,514 @@ fn terrain_paint_over_mcp_requires_a_layer_and_a_hole_refuses_one() {
         "the first layer is layer 1; 0 is the base"
     );
 }
+
+// --- Navigation authoring (issue #28) -------------------------------------------------------------
+
+/// Every `navigation.*` command `cy_editor_services::navmesh` registers.
+const NAVIGATION_TOOLS: [&str; 18] = [
+    "navigation.world.create",
+    "navigation.settings.get",
+    "navigation.settings.set",
+    "navigation.overlay.set",
+    "navigation.bake",
+    "navigation.bake.status",
+    "navigation.surface.add",
+    "navigation.surface.set",
+    "navigation.obstacle.add",
+    "navigation.obstacle.set",
+    "navigation.area.add",
+    "navigation.area.set",
+    "navigation.link.add",
+    "navigation.link.set",
+    "navigation.component.remove",
+    "navigation.path.query",
+    "navigation.flowfield.query",
+    "navigation.point.pick",
+];
+
+#[test]
+fn navigation_tools_are_projected_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        ],
+        &mut editor,
+    );
+    let Json::Array(tools) = result(&replies, 1).get("tools") else {
+        panic!("tools/list must contain the registry projection");
+    };
+    for command in NAVIGATION_TOOLS {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").as_text() == Some(command)),
+            "{command} must be available over MCP"
+        );
+    }
+}
+
+/// What the fake runtime saw before the navigation request it waited for.
+struct NavigationRequest {
+    request: cy_editor_protocol::RequestId,
+    payload: Vec<u8>,
+    synced: Vec<Message>,
+}
+
+/// Read what the editor sent until the service request `expected`, keeping world syncs.
+fn navigation_request(reader: &mut std::io::PipeReader, expected: &str) -> NavigationRequest {
+    let mut synced = Vec::new();
+    for _ in 0..64 {
+        let message = Message::decode(&read_frame(reader).unwrap().unwrap()).unwrap();
+        match message {
+            Message::ServiceRequest {
+                request,
+                operation,
+                payload,
+                schema_version,
+            } if operation == expected => {
+                assert_eq!(schema_version, 1);
+                return NavigationRequest {
+                    request,
+                    payload,
+                    synced,
+                };
+            }
+            Message::ServiceRequest { operation, .. } => {
+                assert!(
+                    !operation.starts_with("navigation."),
+                    "unexpected {operation} while waiting for {expected}"
+                );
+            }
+            message @ (Message::SyncWorld { .. } | Message::Apply { .. }) => synced.push(message),
+            _ => {}
+        }
+    }
+    panic!("the editor never asked the engine for {expected}");
+}
+
+fn reply_navigation(
+    writer: &mut std::io::PipeWriter,
+    request: cy_editor_protocol::RequestId,
+    kind: ServiceEventKind,
+    payload: Vec<u8>,
+) {
+    write_frame(
+        writer,
+        &Message::ServiceEvent {
+            request,
+            kind,
+            schema_version: 1,
+            payload,
+        }
+        .encode(),
+    )
+    .unwrap();
+}
+
+/// A `navigation.bake` COMPLETED payload for one non-empty tile, as `encode_completed` writes it.
+fn navigation_bake_completed(world: u32, identity: u64, fingerprint: u64) -> Vec<u8> {
+    let mut payload = Writer::new();
+    payload.u32(world);
+    payload.u64(fingerprint);
+    payload.u64(identity);
+    payload.text(&format!("navigation/{identity:016x}.cynavmesh"));
+    for counter in [12_u32, 0, 0, 40, 6, 14] {
+        payload.u32(counter);
+    }
+    payload.u64(1000);
+    payload.u8(1);
+    payload.u32(1);
+    payload.u32(0);
+    payload.u32(0);
+    payload.u32(1);
+    for coordinate in [0_u32, 0, 0] {
+        payload.u32(coordinate);
+    }
+    payload.u32(6);
+    payload.u8(0);
+    payload.u64(0xD1CE);
+    payload.finish()
+}
+
+fn navigation_path_answer(found: bool) -> Vec<u8> {
+    let mut payload = Writer::new();
+    payload.u8(u8::from(found));
+    payload.u8(0);
+    payload.u8(0);
+    payload.f32(if found { 11.5 } else { 0.0 });
+    payload.u32(7);
+    payload.u32(if found { 2 } else { 0 });
+    if found {
+        for point in [[1.0_f32, 0.0, 8.0], [15.0, 0.0, 8.0]] {
+            for lane in point {
+                payload.f32(lane);
+            }
+            payload.u8(0);
+        }
+    }
+    payload.finish()
+}
+
+fn recorded_bake_identity(editor: &Editor) -> u64 {
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    cy_editor_services::navmesh::NavmeshSettings::find(document, 1)
+        .map_or(0, |settings| settings.bake_identity)
+}
+
+fn active_history(editor: &Editor) -> Vec<String> {
+    editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap()
+        .history()
+        .entries()
+        .iter()
+        .map(|entry| entry.name.clone())
+        .collect()
+}
+
+fn pump_until(editor: &mut Editor, done: impl Fn(&Editor) -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !done(editor) && std::time::Instant::now() < deadline {
+        editor.pump();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        done(editor),
+        "the editor did not settle the engine's answer"
+    );
+}
+
+type Gesture = (&'static str, Vec<(&'static str, &'static str)>);
+
+/// The authoring gestures of criterion 4, before the bake.
+fn navigation_gestures() -> Vec<Gesture> {
+    vec![
+        ("navigation.world.create", vec![]),
+        (
+            "navigation.settings.set",
+            vec![("values", "agent_radius=0.25; tile_size=8; backend=engine")],
+        ),
+        (
+            "navigation.obstacle.add",
+            vec![("values", "shape.offset=4, 0, 4; shape.radius=1")],
+        ),
+        (
+            "navigation.overlay.set",
+            vec![("overlays", "polygons, obstacles")],
+        ),
+    ]
+}
+
+fn assert_tools_succeeded(replies: &[Json], indices: std::ops::RangeInclusive<usize>) {
+    for index in indices {
+        assert_eq!(
+            result(replies, index).get("isError"),
+            &Json::Bool(false),
+            "{}",
+            tool_text(replies, index)
+        );
+    }
+}
+
+/// The `navigation.bake` request the settings of criterion 4 produce: world 1, the edited radius
+/// and tile size, every layer and tag, the engine back end.
+fn edited_bake_request() -> Vec<u8> {
+    let mut expected = Writer::new();
+    expected.u32(1);
+    for value in [0.25_f32, 2.0, 45.0, 0.4, 0.3, 0.2, 8.0] {
+        expected.f32(value);
+    }
+    expected.u64(u64::MAX);
+    expected.u64(u64::MAX);
+    expected.u8(1);
+    expected.finish()
+}
+
+fn one_tile_progress() -> Vec<u8> {
+    let mut progress = Writer::new();
+    progress.u32(1);
+    progress.u32(1);
+    for field in [0_u32, 0, 0, 6] {
+        progress.u32(field);
+    }
+    progress.u8(0);
+    progress.u64(0xD1CE);
+    progress.finish()
+}
+
+/// After undoing the bake, the overlay and the obstacle: the settings edit is all that is left.
+fn assert_only_the_settings_edit_remains(editor: &Editor) {
+    use cy_editor_services::navmesh::NavmeshSettings;
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    let settings = NavmeshSettings::find(document, 1).unwrap();
+    assert!((settings.settings.agent_radius - 0.25).abs() < f32::EPSILON);
+    assert_eq!(settings.overlay, 0, "the overlay edit is undone");
+    assert_eq!(
+        document.content().nodes().count(),
+        1,
+        "the obstacle node is undone"
+    );
+}
+
+/// The history the desktop records for the same gestures, through the same registry.
+fn desktop_history(gestures: &[Gesture]) -> Vec<String> {
+    let mut desktop = Editor::new(Actor::human("designer"));
+    desktop.open_document("worlds/nav.cyworld").unwrap();
+    let registry = registry();
+    for (name, arguments) in gestures {
+        let arguments = arguments.iter().fold(
+            cy_editor_commands::registry::Arguments::new(),
+            |arguments, (key, value)| {
+                arguments.with(*key, cy_editor_core::value::Value::Text((*value).into()))
+            },
+        );
+        desktop
+            .invoke(&registry, name, &Scope::unrestricted(), &arguments)
+            .unwrap();
+    }
+    active_history(&desktop)
+}
+
+/// Run the gestures and a bake over MCP; the fake runtime answers the bake. Returns the history.
+fn author_and_bake_over_mcp(
+    editor: &mut Editor,
+    runtime_reader: &mut std::io::PipeReader,
+    runtime_writer: &mut std::io::PipeWriter,
+) -> Vec<String> {
+    let mut lines: Vec<String> = vec![INITIALIZE.to_string()];
+    for (id, (name, arguments)) in (2_u32..).zip(navigation_gestures()) {
+        lines.push(tool_call(id, name, &arguments));
+    }
+    lines.push(tool_call(9, "navigation.bake", &[]));
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let replies = converse(&lines, editor);
+    assert_tools_succeeded(&replies, 1..=5);
+    assert_eq!(active_history(editor).len(), 4, "one entry per gesture");
+
+    let bake = navigation_request(runtime_reader, "navigation.bake");
+    assert_eq!(
+        bake.payload,
+        edited_bake_request(),
+        "the bake carries the edited settings"
+    );
+    reply_navigation(
+        runtime_writer,
+        bake.request,
+        ServiceEventKind::Progress,
+        one_tile_progress(),
+    );
+    reply_navigation(
+        runtime_writer,
+        bake.request,
+        ServiceEventKind::Completed,
+        navigation_bake_completed(1, 0xBA4E_0001, 0xF1_0001),
+    );
+    pump_until(editor, |editor| {
+        recorded_bake_identity(editor) == 0xBA4E_0001
+    });
+    active_history(editor)
+}
+
+/// Issue #28 criterion 4: settings, component and bake edits undo and redo over MCP, one history
+/// entry each, and the history is the one the desktop produces for the same gestures.
+#[test]
+fn navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/nav.cyworld").unwrap();
+    let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let history = author_and_bake_over_mcp(&mut editor, &mut runtime_reader, &mut runtime_writer);
+    assert_eq!(
+        history.len(),
+        5,
+        "the completed bake is exactly one entry: {history:?}"
+    );
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    assert!(
+        document.history().entries()[4].actor.is_agent(),
+        "the bake is the agent's"
+    );
+
+    let undo = tool_call(10, "edit.undo", &[]);
+    let replies = converse(&[INITIALIZE, &undo], &mut editor);
+    assert_tools_succeeded(&replies, 1..=1);
+    assert_eq!(
+        recorded_bake_identity(&editor),
+        0,
+        "undo restores the unbaked identity"
+    );
+    let replies = converse(&[INITIALIZE, &undo, &undo], &mut editor);
+    assert_tools_succeeded(&replies, 1..=2);
+    assert_only_the_settings_edit_remains(&editor);
+
+    let redo = tool_call(11, "edit.redo", &[]);
+    let replies = converse(&[INITIALIZE, &redo, &redo, &redo], &mut editor);
+    assert_tools_succeeded(&replies, 1..=3);
+    assert_eq!(
+        recorded_bake_identity(&editor),
+        0xBA4E_0001,
+        "redo restores the bake"
+    );
+    assert_eq!(active_history(&editor), history);
+    assert_eq!(
+        desktop_history(&navigation_gestures()),
+        history[..4].to_vec()
+    );
+    drop(runtime_writer);
+}
+
+/// Every operation of every transaction the editor applied to the runtime's world.
+fn applied_operations(synced: &[Message]) -> Vec<cy_editor_documents::operation::Operation> {
+    synced
+        .iter()
+        .filter_map(|message| match message {
+            Message::Apply { transaction, .. } => Some(
+                cy_editor_documents::transaction::Transaction::decode(
+                    &mut cy_editor_core::codec::Reader::new(transaction),
+                )
+                .unwrap()
+                .operations,
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+/// The `navigation.path.query` request from (1, 0, 8) to (15, 0, 8) with the default extents.
+fn corridor_path_request() -> Vec<u8> {
+    let mut expected = Writer::new();
+    expected.u32(1);
+    for lane in [1.0_f32, 0.0, 8.0, 15.0, 0.0, 8.0, 1.0, 2.0, 1.0] {
+        expected.f32(lane);
+    }
+    expected.finish()
+}
+
+fn corridor_path_call(id: u32) -> String {
+    tool_call(
+        id,
+        "navigation.path.query",
+        &[("start", "1, 0, 8"), ("end", "15, 0, 8")],
+    )
+}
+
+/// Answer the path query the runtime was asked, and wait for the editor to hold the answer.
+fn answer_path(
+    editor: &mut Editor,
+    runtime_writer: &mut std::io::PipeWriter,
+    request: cy_editor_protocol::RequestId,
+    found: bool,
+) {
+    reply_navigation(
+        runtime_writer,
+        request,
+        ServiceEventKind::Completed,
+        navigation_path_answer(found),
+    );
+    pump_until(editor, |editor| {
+        editor
+            .navmesh
+            .path()
+            .is_some_and(|path| path.found == found)
+            && editor.navmesh.pending_request().is_none()
+    });
+}
+
+/// Issue #28 criterion 3, editor side: an obstacle added and removed over MCP reaches the engine
+/// as a synced component, and each test path after it is asked of the engine.
+#[test]
+fn navigation_obstacle_add_and_remove_reach_the_engine_over_mcp() {
+    use cy_editor_core::value::Value;
+    use cy_editor_documents::operation::Operation;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/nav.cyworld").unwrap();
+    let (mut runtime_reader, mut runtime_writer) = install_vfx_stage_catalogue(&mut editor);
+    let add = tool_call(
+        3,
+        "navigation.obstacle.add",
+        &[("values", "shape.offset=8, 0, 8; shape.radius=1.5")],
+    );
+    let create = tool_call(2, "navigation.world.create", &[]);
+    let replies = converse(
+        &[INITIALIZE, &create, &add, &corridor_path_call(4)],
+        &mut editor,
+    );
+    assert_tools_succeeded(&replies, 1..=3);
+    let node = editor
+        .selection
+        .get()
+        .nodes()
+        .next()
+        .expect("the new obstacle is selected");
+    let schema = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap()
+        .schema();
+    let obstacle = schema.type_named("NavObstacle").unwrap().id;
+    let offset = schema
+        .type_named("NavObstacle")
+        .unwrap()
+        .field_named("shape.offset")
+        .unwrap()
+        .id;
+
+    let blocked = navigation_request(&mut runtime_reader, "navigation.path.query");
+    assert_eq!(blocked.payload, corridor_path_request());
+    let added = applied_operations(&blocked.synced)
+        .into_iter()
+        .any(|operation| {
+            matches!(
+                operation,
+                Operation::AddComponent { node: at, component, after }
+                    if at == node
+                        && component == obstacle
+                        && after.contains(&(offset, Value::Vec3([8.0, 0.0, 8.0])))
+            )
+        });
+    assert!(
+        added,
+        "the engine received the NavObstacle before the path query"
+    );
+    answer_path(&mut editor, &mut runtime_writer, blocked.request, false);
+
+    let remove = tool_call(
+        5,
+        "navigation.component.remove",
+        &[("node", &node.to_string()), ("component", "obstacle")],
+    );
+    let replies = converse(&[INITIALIZE, &remove, &corridor_path_call(6)], &mut editor);
+    assert_tools_succeeded(&replies, 1..=2);
+    let restored = navigation_request(&mut runtime_reader, "navigation.path.query");
+    let removed = applied_operations(&restored.synced)
+        .into_iter()
+        .any(|operation| {
+            matches!(
+                operation,
+                Operation::RemoveComponent { node: at, component, .. }
+                    if at == node && component == obstacle
+            )
+        });
+    assert!(
+        removed,
+        "the engine received the removal before the second path query"
+    );
+    answer_path(&mut editor, &mut runtime_writer, restored.request, true);
+    let status = tool_call(7, "navigation.bake.status", &[]);
+    let replies = converse(&[INITIALIZE, &status], &mut editor);
+    assert!(tool_text(&replies, 1).contains("path_found"));
+    drop(runtime_writer);
+}

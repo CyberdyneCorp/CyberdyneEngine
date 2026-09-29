@@ -11,7 +11,8 @@
 //
 // It also owns the navigation stale flag. Every modifier that appears, disappears or changes marks
 // its reach dirty on a `terrain::TerrainNavigation`; the regions accumulate until navigation is
-// rebaked, which is issue #28's and not this service's.
+// rebaked. They are the navmesh's one stale flag: the navigation service reports a bake stale while
+// they exist and its committed bake clears them (`clear_stale_navigation`).
 //
 // REQUEST (schema 1), little-endian:
 //   u32 format = 1, u128 terrain, u32 tiles, f32 extent, f32 base_height, u32 modifier_count, then
@@ -62,6 +63,9 @@ public:
     [[nodiscard]] Span<const terrain::TerrainBounds> stale_navigation() const noexcept {
         return navigation_.dirty();
     }
+    /// Navigation was rebaked over the regions `stale_navigation()` named: they are no longer
+    /// stale. The modifiers already seen stay seen, so only a later change marks a region again.
+    void clear_stale_navigation() noexcept { navigation_.clear_dirty(); }
 
 private:
     struct Seen {

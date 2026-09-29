@@ -306,12 +306,32 @@ CY_TEST_CASE("terrain.evaluate: every edited region is flagged stale for navigat
     CY_CHECK(other.evaluate({brush}).stale.empty());
     CY_CHECK_EQ(other.evaluate({}).stale.size(), 4U);
 
-    // The engine keeps the stale set for the host, which #28's rebake will clear.
+    // The engine keeps the stale set for the host, which #28's rebake clears.
     const cy::editor::TerrainPreview* preview =
         cy::editor::MaterialService::terrain_preview(session.raw());
     CY_REQUIRE(preview != nullptr);
     CY_CHECK_EQ(preview->stale_navigation().size(), 2U);
     CY_CHECK_EQ(preview->generation(), two.generation);
+}
+
+CY_TEST_CASE("terrain.evaluate: a navigation rebake consumes the stale regions") {
+    Session session;
+    CY_CHECK_FALSE(cy::editor::MaterialService::terrain_navigation_stale(session.raw()));
+    (void)session.evaluate({});
+    const Stroke brush = stroke(7, kRaise);
+    CY_REQUIRE_EQ(session.evaluate({brush}).stale.size(), 4U);
+    CY_CHECK(cy::editor::MaterialService::terrain_navigation_stale(session.raw()));
+
+    cy::editor::MaterialService::terrain_navigation_rebaked(session.raw());
+    CY_CHECK_FALSE(cy::editor::MaterialService::terrain_navigation_stale(session.raw()));
+    // The same stack after the rebake is not stale again: nothing changed since.
+    CY_CHECK(session.evaluate({brush}).stale.empty());
+    // A later edit is: removing the stroke marks its reach once more.
+    CY_CHECK_EQ(session.evaluate({}).stale.size(), 4U);
+
+    // A session that never evaluated a terrain has nothing to consume.
+    cy::editor::MaterialService::terrain_navigation_rebaked(nullptr);
+    CY_CHECK_FALSE(cy::editor::MaterialService::terrain_navigation_stale(nullptr));
 }
 
 CY_TEST_CASE("terrain.evaluate: flatten levels toward the ground under its first dab") {

@@ -321,6 +321,13 @@ jobs:
             cy-build-${{ matrix.label }}-
       - name: Unit, integration and smoke
         run: just test-all
+      # Issue #28's acceptance ledger on the tree just built: each native probe runs its one doctest
+      # case with `--no-skip` against an assertion floor, after the runner rebuilds the probed
+      # binaries. The Cargo halves of the ledger run in the editor job's `cargo test`. It runs even
+      # when `just test-all` failed: main-owned failures elsewhere in the suite must not skip it.
+      - name: Issue 28 acceptance ledger, native probes
+        if: ${{ !cancelled() && matrix.label == 'linux-x86_64' }}
+        run: just quality-issue28-native
       - if: always()
         uses: actions/upload-artifact@v5
         with:
@@ -996,6 +1003,8 @@ jobs:
         run: just ci-check
       - name: Editor MCP capture client timeouts
         run: just quality-editor-mcp-client
+      - name: Issue 28 acceptance runner guards and docs
+        run: just quality-issue28-ledger
       # clang-tidy needs the flags every file is compiled with, so the build comes first.
       - name: Configure and build for the compile database
         run: just build-engine

@@ -363,6 +363,23 @@ impl TerrainEngine {
         self.evaluation.as_ref()
     }
 
+    /// Navigation was rebaked, and the engine consumed the regions its terrain flagged stale with
+    /// it: the navmesh's one stale flag is cleared here too, so `terrain.status` and the Navigation
+    /// panel agree without waiting for the next evaluation.
+    pub fn navigation_rebaked(&mut self) {
+        if let Some(evaluation) = self.evaluation.as_mut() {
+            evaluation.stale.clear();
+        }
+    }
+
+    /// Regions whose navigation the engine last flagged stale; empty before any evaluation.
+    #[must_use]
+    pub fn stale_navigation(&self) -> &[StaleRegion] {
+        self.evaluation
+            .as_ref()
+            .map_or(&[], |evaluation| evaluation.stale.as_slice())
+    }
+
     /// The terrain root the evaluation belongs to.
     #[must_use]
     pub const fn terrain(&self) -> Option<NodeId> {
@@ -473,10 +490,11 @@ fn failure(payload: &[u8]) -> Problem {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn reply(edge: u32, stale: &[[f32; 4]], height: u16, holes: &[usize]) -> Vec<u8> {
+    /// An engine reply with `stale` regions, for the suites that drive the terrain's engine side.
+    pub(crate) fn reply(edge: u32, stale: &[[f32; 4]], height: u16, holes: &[usize]) -> Vec<u8> {
         let mut writer = Writer::new();
         writer.u32(TERRAIN_EVALUATE_FORMAT);
         writer.u64(3);
@@ -529,6 +547,33 @@ mod tests {
             }]
         );
         assert!((evaluation.height(0, 0) - (-512.0 + 2048.0 * 16384.0 / 65535.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_navigation_rebake_clears_the_stale_regions_status_reports() {
+        let mut engine = TerrainEngine::new();
+        engine.navigation_rebaked();
+        assert!(
+            engine.stale_navigation().is_empty(),
+            "nothing evaluated yet"
+        );
+        engine.evaluation =
+            Some(TerrainEvaluation::decode(&reply(3, &[[1.0, 2.0, 3.0, 4.0]], 0, &[])).unwrap());
+        assert_eq!(engine.stale_navigation().len(), 1);
+        assert_eq!(
+            engine.status().values["navigation_stale"],
+            Value::Bool(true)
+        );
+        engine.navigation_rebaked();
+        assert!(engine.stale_navigation().is_empty());
+        assert_eq!(
+            engine.status().values["navigation_stale"],
+            Value::Bool(false)
+        );
+        assert!(
+            engine.evaluation().is_some(),
+            "only the stale flag is consumed"
+        );
     }
 
     #[test]

@@ -1252,6 +1252,16 @@ const TerrainPreview* MaterialService::terrain_preview(CyServiceSession session)
                : nullptr;
 }
 
+bool MaterialService::terrain_navigation_stale(CyServiceSession session) noexcept {
+    return session != nullptr && !session->terrain_preview.stale_navigation().empty();
+}
+
+void MaterialService::terrain_navigation_rebaked(CyServiceSession session) noexcept {
+    if (session != nullptr) {
+        session->terrain_preview.clear_stale_navigation();
+    }
+}
+
 CyResult MaterialService::open(CyServiceSession* out_session) noexcept {
     void* memory = allocator_->allocate(sizeof(CyServiceSession_T), alignof(CyServiceSession_T));
     if (memory == nullptr) {
