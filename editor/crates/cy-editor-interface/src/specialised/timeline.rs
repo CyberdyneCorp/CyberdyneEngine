@@ -670,6 +670,97 @@ impl TimelineSurface {
         })
     }
 
+    /// How long the sequence is, in seconds.
+    pub fn duration(&self) -> f64 {
+        self.duration
+    }
+
+    /// The frame rate stepping and snapping are defined against.
+    pub fn frame_rate(&self) -> f64 {
+        self.frame_rate
+    }
+
+    /// Move one key to another time, keeping its identity and value; answers where it was.
+    ///
+    /// Refused where another key already holds that time: two keys at one instant would make
+    /// [`TimelineSurface::sample`] answer whichever sorted first.
+    pub fn move_key(&mut self, id: TrackId, key: KeyId, time: f64) -> Result<f64> {
+        self.refuse_if_locked(id)?;
+        if !time.is_finite() {
+            return Err(Problem::new(
+                format!("move key {} to {time}", key.ordinal()),
+                "a time that is not a finite number has no place on the timeline",
+            )
+            .with_remedy("drop the key inside the sequence"));
+        }
+        let track = self.mutable(id)?;
+        if track
+            .keys
+            .iter()
+            .any(|other| other.id != key && same_time(other.time, time))
+        {
+            return Err(Problem::new(
+                format!("move key {} to {time}", key.ordinal()),
+                "another key on the track is already at that time",
+            )
+            .with_remedy("drop it between keys, or remove the other key first"));
+        }
+        let target = track
+            .keys
+            .iter_mut()
+            .find(|candidate| candidate.id == key)
+            .ok_or_else(|| Self::no_such_key(key))?;
+        let before = target.time;
+        target.time = time;
+        track
+            .keys
+            .sort_by(|left, right| left.time.total_cmp(&right.time));
+        Ok(before)
+    }
+
+    /// Remove one key and answer it whole, so that [`TimelineSurface::restore_key`] can put the
+    /// same identity back.
+    pub fn remove_key(&mut self, id: TrackId, key: KeyId) -> Result<Key> {
+        self.refuse_if_locked(id)?;
+        let track = self.mutable(id)?;
+        let index = track
+            .keys
+            .iter()
+            .position(|candidate| candidate.id == key)
+            .ok_or_else(|| Self::no_such_key(key))?;
+        Ok(track.keys.remove(index))
+    }
+
+    /// Put back a key [`TimelineSurface::remove_key`] answered, with its identity.
+    pub fn restore_key(&mut self, id: TrackId, key: Key) -> Result<()> {
+        self.refuse_if_locked(id)?;
+        let track = self.mutable(id)?;
+        if track
+            .keys
+            .iter()
+            .any(|other| other.id == key.id || same_time(other.time, key.time))
+        {
+            return Err(Problem::new(
+                format!("restore key {}", key.id.ordinal()),
+                "the track already holds that key, or another key at its time",
+            )
+            .with_remedy("undo the edit that took its place first"));
+        }
+        track.keys.push(key);
+        track
+            .keys
+            .sort_by(|left, right| left.time.total_cmp(&right.time));
+        Ok(())
+    }
+
+    fn no_such_key(key: KeyId) -> Problem {
+        Problem::new(
+            format!("act on key {}", key.ordinal()),
+            "the track holds no key with that identity",
+        )
+        .with_remedy("name a key that is on the track")
+    }
+
     fn kind_of(&self, id: TrackId) -> Result<TrackKind> {
         self.tracks
             .get(&id)
@@ -838,6 +929,41 @@ mod tests {
         assert!(
             surface.set_loop(Some((4.0, 2.0))).is_err(),
             "an inverted range was accepted"
+        );
+    }
+
+    #[test]
+    fn a_moved_key_keeps_its_identity_and_refuses_to_land_on_another() {
+        let mut surface = surface();
+        let track = surface.add_track(TrackKind::Property, "intensity");
+        let first = surface.key(track, 1.0, 0.0).expect("a key");
+        let second = surface.key(track, 2.0, 1.0).expect("a key");
+        assert!((surface.move_key(track, first, 3.0).expect("moves") - 1.0).abs() < 1e-9);
+        let keys = &surface.track(track).expect("the track").keys;
+        assert_eq!(
+            keys.iter().map(|key| key.id).collect::<Vec<_>>(),
+            vec![second, first],
+            "the moved key is re-sorted, not re-identified"
+        );
+        let before = surface.clone();
+        assert!(surface.move_key(track, first, 2.0).is_err());
+        assert_eq!(surface, before, "a refused move changes nothing");
+    }
+
+    #[test]
+    fn a_removed_key_is_restored_with_the_same_identity() {
+        let mut surface = surface();
+        let track = surface.add_track(TrackKind::Property, "intensity");
+        surface.key(track, 1.0, 0.0).expect("a key");
+        let before = surface.clone();
+        let key = surface.track(track).expect("the track").keys[0].id;
+        let removed = surface.remove_key(track, key).expect("removes");
+        assert!(surface.track(track).expect("the track").keys.is_empty());
+        surface.restore_key(track, removed).expect("restores");
+        assert_eq!(surface, before);
+        assert!(
+            surface.restore_key(track, removed).is_err(),
+            "restored twice"
         );
     }
 }

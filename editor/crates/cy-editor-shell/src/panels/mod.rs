@@ -38,6 +38,13 @@ mod source;
 mod source_control;
 pub mod specialised;
 mod terrain;
+// The shared timeline for the animation, sequencer and audio-cue editors #29 adds next; until one
+// of them draws it, only its tests do.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "no panel draws the shared timeline yet")
+)]
+mod timeline;
 mod vfx_graph;
 mod viewport;
 
