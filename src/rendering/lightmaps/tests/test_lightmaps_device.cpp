@@ -43,7 +43,11 @@
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
+#else
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/irradiance_volume.h>
 #include <cy/rendering/gi/proxy_scene.h>
@@ -102,6 +106,14 @@ Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Renderer);
 }
 
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+constexpr const char* kBackendName = "metal";
+constexpr rhi::BackendKind kBackend = rhi::BackendKind::Metal;
+#else
+constexpr const char* kBackendName = "vulkan";
+constexpr rhi::BackendKind kBackend = rhi::BackendKind::Vulkan;
+#endif
+
 void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
     if (severity == rhi::ValidationSeverity::Error && user != nullptr) {
         ++*static_cast<u32*>(user);
@@ -114,13 +126,17 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
 class DeviceFixture {
 public:
     DeviceFixture() noexcept : allocator_(system_allocator(MemoryDomain::Gpu)) {
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+        (void)rhi::metal::register_metal_backend();
+#else
         (void)rhi::vulkan::register_vulkan_backend();
+#endif
         (void)rhi::null::register_null_backend();
         rhi::DeviceDescription description;
         description.application_name = "cy_test_render_lightmaps";
         description.enable_validation = true;
         description.enable_synchronisation_validation = true;
-        device_ = rhi::create_device(allocator_, "vulkan", description, selection_);
+        device_ = rhi::create_device(allocator_, kBackendName, description, selection_);
         if (device_.has_value()) {
             device_.value()->set_validation_callback(&count_validation, &errors_);
         }
@@ -136,7 +152,7 @@ public:
 
     [[nodiscard]] bool has_gpu() const noexcept {
         return device_.has_value() &&
-               device_.value()->capabilities().backend() == rhi::BackendKind::Vulkan;
+               device_.value()->capabilities().backend() == kBackend;
     }
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] u32 validation_errors() const noexcept { return errors_; }
@@ -955,10 +971,22 @@ f64 correlation(const std::vector<f64>& a, const std::vector<f64>& b) {
 /// `references/lightmaps_absent.png`: the corner with no lightmap and no volume, drawn by the frame
 /// shader of 0f1dfd1 — a byte-for-byte copy of `render.light_probes`' reference, whose corner this
 /// suite rebuilds exactly.
+///
+/// ONE REFERENCE PER BACKEND: Metal's rasteriser and its compiled MSL round differently from
+/// Vulkan's, so the two frames are not the same bytes (62 956 of 129 600 pixels differ, by a step
+/// or two). `references/lightmaps_absent_metal.png` is the same corner drawn on the M2 Max by
+/// main's frame shaders at 1b7373a5, before the shadow mask reached the frame: the Metal leg holds
+/// the frame to it exactly as the Vulkan leg holds it to the other.
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+constexpr const char* kBeforeReference = "lightmaps_absent_metal.png";
+#else
+constexpr const char* kBeforeReference = "lightmaps_absent.png";
+#endif
+
 const char* before_reference_path() noexcept {
     static char storage[1024];
-    (void)std::snprintf(storage, sizeof(storage), "%s/references/lightmaps_absent.png",
-                        CY_LIGHTMAPS_TEST_DIR);
+    (void)std::snprintf(storage, sizeof(storage), "%s/references/%s", CY_LIGHTMAPS_TEST_DIR,
+                        kBeforeReference);
     return storage;
 }
 
@@ -1097,6 +1125,7 @@ CY_TEST_CASE("(c) no lightmap is the frame before lightmaps existed, byte for by
     CY_CHECK_EQ(differing(absent.pixels(), excluded.pixels()), usize{0});
     // The control: on, the picture changes, or the two above would be equal for want of a lightmap.
     CY_CHECK_GT(differing(absent.pixels(), on.pixels()), usize{1000});
+    save("lightmaps-absent.png", absent.pixels());
     check_against_before(absent.pixels());
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

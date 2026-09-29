@@ -1,6 +1,6 @@
 # src/rendering/lightmaps/tests/ — a baked lightmap in the frame, on a device.
 #
-#   lightmaps       KIND render, Vulkan only. `render.light_probes`' corner — the pipeline suites'
+#   lightmaps       KIND render, on Vulkan, and lightmaps_metal on Metal. `render.light_probes`' corner — the pipeline suites'
 #                   scene with a red wall, a back wall and two cubes — baked by
 #                   lightmap_bake::bake_lightmaps from the same boxes: the red wall bleeding onto
 #                   what is near it, the frame's term against the host's `sample_lightmap` pixel for
@@ -38,28 +38,40 @@ function(cy_lightmaps_declare_tests)
         SOURCES "${tests_dir}/test_lightmap_frame.cpp"
         DEPENDENCIES cy::rendering-lightmaps)
 
-    if(NOT CY_RENDERER_VULKAN)
-        return()
+    # ONE SOURCE, ONE LEG PER BACKEND, as src/rendering/pipeline/tests/ declares its device suite:
+    # `lightmaps` on Vulkan and `lightmaps_metal` on Metal (plain `lightmaps` in a Metal-only tree).
+    function(cy_lightmaps_device_suite name backend define)
+        set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+        cy_add_test(
+            NAME ${name}
+            KIND render
+            SOURCES
+                "${tests_dir}/test_lightmaps_device.cpp"
+                "${pipeline_tests}/frame_scene.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+            DEPENDENCIES cy::rendering-lightmaps cy::rendering-lightmap-bake
+                         cy::rendering-light-probes cy::rendering-gi cy::rendering-pipeline
+                         cy::rendering-particles cy::rhi-null ${backend})
+        set(target "cy_test_render_${name}")
+        target_include_directories(${target} PRIVATE "${tests_dir}" "${pipeline_tests}"
+                                                     "${CMAKE_SOURCE_DIR}/tests/render")
+        target_compile_definitions(${target}
+                                   PRIVATE ${define} CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+                                           CY_LIGHTMAPS_TEST_DIR="${tests_dir}")
+        set_tests_properties(render.${name} PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+    endfunction()
+
+    if(CY_RENDERER_VULKAN)
+        cy_lightmaps_device_suite(lightmaps cy::rhi-vulkan CY_TEST_LIGHTMAPS_VULKAN=1)
     endif()
-    set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
-    cy_add_test(
-        NAME lightmaps
-        KIND render
-        SOURCES
-            "${tests_dir}/test_lightmaps_device.cpp"
-            "${pipeline_tests}/frame_scene.cpp"
-            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
-        DEPENDENCIES cy::rendering-lightmaps cy::rendering-lightmap-bake cy::rendering-light-probes
-                     cy::rendering-gi cy::rendering-pipeline cy::rendering-particles cy::rhi-null
-                     cy::rhi-vulkan)
-    target_include_directories(cy_test_render_lightmaps
-                               PRIVATE "${tests_dir}" "${pipeline_tests}"
-                                       "${CMAKE_SOURCE_DIR}/tests/render")
-    target_compile_definitions(cy_test_render_lightmaps
-                               PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
-                                       CY_LIGHTMAPS_TEST_DIR="${tests_dir}")
-    set_tests_properties(render.lightmaps PROPERTIES
-                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+    if(APPLE AND CY_RENDERER_METAL)
+        if(CY_RENDERER_VULKAN)
+            cy_lightmaps_device_suite(lightmaps_metal cy::rhi-metal CY_TEST_LIGHTMAPS_METAL=1)
+        else()
+            cy_lightmaps_device_suite(lightmaps cy::rhi-metal CY_TEST_LIGHTMAPS_METAL=1)
+        endif()
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_lightmaps_declare_tests)
