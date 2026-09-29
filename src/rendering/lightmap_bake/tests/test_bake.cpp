@@ -13,11 +13,13 @@
 #include <cy/rendering/gi/system.h>
 #include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
+#include <cy/rendering/lightmap_bake/mips.h>
 #include <cy/test/test.h>
 
 #include "support.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -1087,13 +1089,15 @@ CY_TEST_CASE("the cooked lightmap carries the shadow mask, and a version 1 paylo
     CY_REQUIRE_EQ(decoded.shadow_lights.size(), 1U);
     CY_CHECK_EQ(decoded.shadow_lights[0], baked.lightmap.shadow_lights[0]);
 
-    // A version 1 payload is a version 2 one with no shadow section and the old version word.
+    // A version 1 payload is this one cut after the texels, with the old version word.
     const ShadowRoom movable(gi::LightMobility::Movable);
     const Baked plain = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
     CY_REQUIRE(encode_lightmap_asset(plain.lightmap, payload).has_value());
-    CY_REQUIRE(payload.size() > 12U);
+    const usize texel_bytes = plain.lightmap.texels.texels.size() * 8U;
+    const usize version_one_size = ((8U + plain.lightmap.addresses.size()) * 4U) + texel_bytes;
+    CY_REQUIRE(payload.size() > version_one_size);
     cy::Array<u8> old;
-    CY_REQUIRE(old.resize(payload.size() - 4U).has_value());  // drop "0 shadow channels"
+    CY_REQUIRE(old.resize(version_one_size).has_value());
     std::memcpy(old.data(), payload.data(), old.size());
     const u8 version_one[4] = {1, 0, 0, 0};
     std::memcpy(old.data() + 4, version_one, sizeof(version_one));
@@ -1276,4 +1280,208 @@ CY_TEST_CASE("an unwrap's chart padding is checked against the rectangle the atl
     BakedLightmap out;
     LightmapBakeReport report;
     CY_CHECK_FALSE(bake_lightmaps(scene, settings, nullptr, out, report).has_value());
+}
+
+// --- What the frame needs besides the texels (`add-lightmap-frame-shadow-mask`) -----------------
+
+CY_TEST_CASE("the bake names every light whose direct term it baked, and no other") {
+    const u64 light = 1;
+    // Which lights are named does not depend on the texels' quality: the cheapest bake there is.
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.trace.samples = 1;
+    settings.trace.bounces = 1;
+    settings.denoise = false;
+    settings.reconcile_seams = false;
+    const Baked as_static = bake(ShadowRoom(gi::LightMobility::Static).room.scene(), settings);
+    CY_REQUIRE_EQ(as_static.lightmap.direct_lights.size(), 1U);
+    CY_CHECK_EQ(as_static.lightmap.direct_lights[0], light);
+    CY_CHECK(as_static.lightmap.shadow_lights.empty());
+
+    const Baked stationary =
+        bake(ShadowRoom(gi::LightMobility::Stationary).room.scene(), settings);
+    CY_CHECK(stationary.lightmap.direct_lights.empty());
+    CY_CHECK_EQ(stationary.lightmap.shadow_lights.size(), 1U);
+
+    const Baked movable = bake(ShadowRoom(gi::LightMobility::Movable).room.scene(), settings);
+    CY_CHECK(movable.lightmap.direct_lights.empty());
+
+    // DirectAndIndirect bakes a stationary light's direct term too, so the frame must skip it.
+    LightmapBakeSettings everything = settings;
+    everything.content = LightmapContent::DirectAndIndirect;
+    const Baked all = bake(ShadowRoom(gi::LightMobility::Stationary).room.scene(), everything);
+    CY_REQUIRE_EQ(all.lightmap.direct_lights.size(), 1U);
+    CY_CHECK_EQ(all.lightmap.direct_lights[0], light);
+}
+
+namespace {
+
+/// The shadow room at a page size whose block protects one mip level.
+[[nodiscard]] LightmapBakeSettings mip_settings() {
+    LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    settings.atlas.page_size = 256;
+    settings.atlas.texel_density = 8.0F;
+    settings.trace.samples = 8;
+    return settings;
+}
+
+[[nodiscard]] bool same_chain(const BakedLightmap& a, const BakedLightmap& b) {
+    if (a.mip_levels != b.mip_levels) {
+        return false;
+    }
+    for (u32 level = 1; level <= a.mip_levels; ++level) {
+        if (!same_texels(lightmap_level(a, level), lightmap_level(b, level)) ||
+            !same_texels(shadow_mask_level(a, level), shadow_mask_level(b, level))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+CY_TEST_CASE("a bake fills the mip chain its padding protects, and the cooked lightmap carries it") {
+    const ShadowRoom room(gi::LightMobility::Stationary);
+    const LightmapBakeSettings settings = mip_settings();
+    const Baked first = bake(room.room.scene(), settings);
+    const Baked second = bake(room.room.scene(), settings);
+    const BakedLightmap& lightmap = first.lightmap;
+    CY_REQUIRE_EQ(lightmap.mip_levels, 1U);
+    const LightmapTexels& level = lightmap_level(lightmap, 1);
+    CY_CHECK_EQ(level.width, lightmap.texels.width / 2U);
+    CY_CHECK_EQ(level.height, lightmap.texels.height / 2U);
+    CY_CHECK_EQ(level.planes, 2U);
+    CY_CHECK_EQ(shadow_mask_level(lightmap, 1).texels.size(),
+                usize{level.width} * level.height);
+    CY_CHECK(same_chain(first.lightmap, second.lightmap));
+    // Every level-1 texel the floor's rectangle holds is lit by the floor, not the black between
+    // rectangles: a coarse texel is only ever filtered from its own rectangle.
+    AtlasPlacement floor;
+    CY_REQUIRE(decode_address(lightmap.addresses[kFloor], floor));
+    const u32 block = lightmap.page_size / kAddressBlocks / 2U;
+    u32 dark = 0;
+    for (u32 y = floor.block_y * block; y < (floor.block_y + floor.block_height) * block; ++y) {
+        for (u32 x = floor.block_x * block; x < (floor.block_x + floor.block_width) * block; ++x) {
+            dark += level.texels[level.index(0, x, y)].y <= 0.0F ? 1U : 0U;
+        }
+    }
+    CY_CHECK_EQ(dark, 0U);
+
+    cy::Array<u8> payload;
+    CY_REQUIRE(encode_lightmap_asset(lightmap, payload).has_value());
+    BakedLightmap decoded;
+    CY_REQUIRE(decode_lightmap_asset(payload.span(), decoded).has_value());
+    CY_CHECK(same_texels(decoded.texels, lightmap.texels));
+    CY_CHECK(same_chain(decoded, lightmap));
+    CY_CHECK_EQ(decoded.device_bytes(), lightmap.device_bytes());
+    CY_CHECK_EQ(decoded.shadow_mask_bytes(), lightmap.shadow_mask_bytes());
+
+    // A version 2 payload — no mip chain, no direct lights — still decodes, to the base alone.
+    const usize version3_bytes =
+        4U + (lightmap.direct_lights.size() * 8U) + 4U + (level.texels.size() * 8U) +
+        (shadow_mask_level(lightmap, 1).texels.size() * 8U);
+    cy::Array<u8> old;
+    CY_REQUIRE(old.resize(payload.size() - version3_bytes).has_value());
+    std::memcpy(old.data(), payload.data(), old.size());
+    const u8 version_two[4] = {2, 0, 0, 0};
+    std::memcpy(old.data() + 4, version_two, sizeof(version_two));
+    BakedLightmap from_old;
+    CY_REQUIRE(decode_lightmap_asset(old.span(), from_old).has_value());
+    CY_CHECK(same_texels(from_old.texels, lightmap.texels));
+    CY_CHECK(same_texels(from_old.shadow_mask, lightmap.shadow_mask));
+    CY_CHECK_EQ(from_old.mip_levels, 0U);
+    // And a version 3 payload cut short in its chain is refused rather than read past.
+    CY_CHECK_FALSE(decode_lightmap_asset({payload.data(), payload.size() - 8U}, decoded).has_value());
+}
+
+namespace {
+
+struct ProgressLog {
+    std::vector<LightmapBakeStage> stages;
+    std::vector<u32> done;
+    std::vector<u32> total;
+    std::atomic<bool> cancel{false};
+    /// Trace steps after which `cancel` is raised; zero never.
+    u32 cancel_after = 0;
+    u32 trace_steps = 0;
+
+    static void record(void* user, LightmapBakeStage stage, u32 done, u32 total) noexcept {
+        auto* log = static_cast<ProgressLog*>(user);
+        log->stages.push_back(stage);
+        log->done.push_back(done);
+        log->total.push_back(total);
+        if (stage == LightmapBakeStage::Trace && ++log->trace_steps == log->cancel_after) {
+            log->cancel.store(true);
+        }
+    }
+
+    [[nodiscard]] LightmapBakeProgress progress() {
+        LightmapBakeProgress out;
+        out.report = &ProgressLog::record;
+        out.user = this;
+        out.cancel = &cancel;
+        return out;
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("a bake reports its progress, and doing so changes none of its bytes") {
+    const ShadowRoom room(gi::LightMobility::Stationary);
+    const LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    const Baked quiet = bake(room.room.scene(), settings);
+    ProgressLog log;
+    const LightmapBakeProgress progress = log.progress();
+    Baked reported;
+    CY_REQUIRE(bake_lightmaps(room.room.scene(), settings, nullptr, reported.lightmap,
+                              reported.report, &progress)
+                   .has_value());
+    cy::Array<u8> a;
+    cy::Array<u8> b;
+    CY_REQUIRE(encode_lightmap_asset(quiet.lightmap, a).has_value());
+    CY_REQUIRE(encode_lightmap_asset(reported.lightmap, b).has_value());
+    CY_CHECK(std::ranges::equal(a, b));
+
+    CY_REQUIRE(log.stages.size() > 4U);
+    CY_CHECK_EQ(log.stages.front(), LightmapBakeStage::Prepare);
+    CY_CHECK_EQ(log.stages.back(), LightmapBakeStage::Finish);
+    CY_CHECK_EQ(log.done.back(), log.total.back());
+    // The stages arrive in order, and the trace counts up to every texel of the atlas.
+    u32 last_trace = 0;
+    u32 trace_total = 0;
+    for (usize at = 0; at < log.stages.size(); ++at) {
+        if (at > 0) {
+            CY_CHECK_LE(static_cast<u32>(log.stages[at - 1]), static_cast<u32>(log.stages[at]));
+        }
+        if (log.stages[at] == LightmapBakeStage::Trace) {
+            CY_CHECK_GE(log.done[at], last_trace);
+            last_trace = log.done[at];
+            trace_total = log.total[at];
+        }
+    }
+    CY_CHECK_EQ(last_trace, trace_total);
+    CY_CHECK_EQ(trace_total, quiet.lightmap.texels.width * quiet.lightmap.texels.height);
+    CY_CHECK_GE(log.trace_steps, trace_total / kProgressTexels);
+}
+
+CY_TEST_CASE("a cancelled bake stops at its next step and says it was cancelled") {
+    const ShadowRoom room(gi::LightMobility::Stationary);
+    ProgressLog log;
+    log.cancel_after = 3;
+    const LightmapBakeProgress progress = log.progress();
+    BakedLightmap out;
+    LightmapBakeReport report;
+    const cy::Status baked = bake_lightmaps(room.room.scene(), small_settings(LightmapMode::Irradiance),
+                                            nullptr, out, report, &progress);
+    CY_REQUIRE_FALSE(baked.has_value());
+    CY_CHECK_EQ(baked.error().code, cy::ErrorCode::Unavailable);
+    CY_CHECK(report.cancelled);
+    // Three trace steps ran and the fourth checkpoint stopped it: a few thousand texels, not the
+    // atlas.
+    CY_CHECK_EQ(log.trace_steps, 3U);
+    CY_CHECK_LE(report.texels_covered + report.texels_buried, 3U * kProgressTexels);
+    CY_CHECK(std::ranges::none_of(log.stages,
+                                  [](LightmapBakeStage stage) {
+                                      return stage == LightmapBakeStage::Filter ||
+                                             stage == LightmapBakeStage::Finish;
+                                  }));
 }

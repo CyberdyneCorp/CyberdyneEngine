@@ -80,7 +80,10 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/gi/bake.h>
 #include <cy/rendering/lightmap_bake/atlas.h>
+#include <cy/rendering/lightmap_bake/mips.h>
 #include <cy/rendering/lightmap_bake/scene.h>
+
+#include <atomic>
 
 namespace cy::rendering::lightmap_bake {
 
@@ -165,10 +168,35 @@ struct BakedLightmap {
     LightmapTexels shadow_mask;
     /// The `gi::GiLight::id` of each channel's light, in channel order.
     Array<u64> shadow_lights;
+    /// The `gi::GiLight::id` of every light whose DIRECT term at the receiver is in the texels:
+    /// each `Static` light, and under `LightmapContent::DirectAndIndirect` each light that is not
+    /// `Movable`. A lightmapped surface must not be shaded by these again, which is what
+    /// `lightmaps::write_lightmaps` tells the frame.
+    Array<u64> direct_lights;
+    /// The mip levels below the base that the gutter and the chart padding protect
+    /// (`AtlasLayout::mip_levels`), and the chain `build_lightmap_mips` filled for them: entry
+    /// `level - 1` holds level `level`, `width >> level` by `height >> level`.
+    u32 mip_levels = 0;
+    LightmapTexels mip_texels[kMaxLightmapMipLevels];
+    LightmapTexels mip_shadow_mask[kMaxLightmapMipLevels];
 
-    /// Bytes the texels occupy on the device as half floats.
+    /// Bytes the texels occupy on the device as half floats: every level of every plane.
     [[nodiscard]] u64 device_bytes() const noexcept {
-        return u64{texels.width} * texels.height * texels.planes * 8U;
+        u64 bytes = u64{texels.width} * texels.height * texels.planes * 8U;
+        for (u32 level = 0; level < mip_levels && level < kMaxLightmapMipLevels; ++level) {
+            const LightmapTexels& mip = mip_texels[level];
+            bytes += u64{mip.width} * mip.height * mip.planes * 8U;
+        }
+        return bytes;
+    }
+    /// Bytes the shadow mask occupies on the device, every level.
+    [[nodiscard]] u64 shadow_mask_bytes() const noexcept {
+        u64 bytes = u64{shadow_mask.width} * shadow_mask.height * shadow_mask.planes * 8U;
+        for (u32 level = 0; level < mip_levels && level < kMaxLightmapMipLevels; ++level) {
+            const LightmapTexels& mip = mip_shadow_mask[level];
+            bytes += u64{mip.width} * mip.height * mip.planes * 8U;
+        }
+        return bytes;
     }
 };
 
@@ -202,7 +230,51 @@ struct LightmapBakeReport {
     /// side was re-solved.
     u32 objects_rebaked = 0;
     u32 boundary_seams = 0;
+    /// True when `LightmapBakeProgress::cancel` stopped the bake.
+    bool cancelled = false;
 };
+
+/// The stages a bake reports its progress through, in the order it runs them.
+enum class LightmapBakeStage : u8 {
+    /// Packing, rasterising and the chart-padding check.
+    Prepare = 0,
+    /// Path tracing every covered texel: the stage that is nearly all of a bake's time.
+    Trace,
+    /// Denoising, dilation and the seam solve.
+    Filter,
+    /// The mip chain and the dynamic caches' seeds.
+    Finish,
+    Count,
+};
+
+[[nodiscard]] const char* lightmap_bake_stage_name(LightmapBakeStage stage) noexcept;
+
+/// A bake's progress and its cancellation, for a caller that runs it off the thread it draws on —
+/// the editor's bake command.
+///
+/// NEITHER CHANGES WHAT IS BAKED: a bake that reports progress and is never cancelled writes the
+/// bytes a bake with no `LightmapBakeProgress` writes.
+struct LightmapBakeProgress {
+    /// Called on the baking thread as work completes: `done` of `total` units of `stage`. The
+    /// trace stage counts atlas texels, in steps of `kProgressTexels`; the others count one unit.
+    void (*report)(void* user, LightmapBakeStage stage, u32 done, u32 total) noexcept = nullptr;
+    void* user = nullptr;
+    /// Read at every step: when it becomes true the bake stops, leaves its output unspecified, sets
+    /// `LightmapBakeReport::cancelled` and fails with `ErrorCode::Unavailable`.
+    const std::atomic<bool>* cancel = nullptr;
+
+    [[nodiscard]] bool cancelled() const noexcept {
+        return cancel != nullptr && cancel->load(std::memory_order_relaxed);
+    }
+    void step(LightmapBakeStage stage, u32 done, u32 total) const noexcept {
+        if (report != nullptr) {
+            report(user, stage, done, total);
+        }
+    }
+};
+
+/// Atlas texels between two progress reports, and two cancellation checks, of the trace stage.
+inline constexpr u32 kProgressTexels = 1024;
 
 /// The dynamic caches a bake seeds from the same run. Any may be null.
 struct CacheSeedTargets {
@@ -218,10 +290,13 @@ struct CacheSeedTargets {
 /// `seeds` may be null. When it names a surface cache and a radiance cache, both are seeded — and
 /// the reflection probes when named — by the same `gi::PathTracer` the texels were traced with,
 /// which is "the bake SHALL additionally produce seeds for the dynamic caches" from one run.
+///
+/// `progress` may be null; see `LightmapBakeProgress`.
 [[nodiscard]] Status bake_lightmaps(const LightmapScene& scene,
                                     const LightmapBakeSettings& settings,
                                     const CacheSeedTargets* seeds, BakedLightmap& out,
-                                    LightmapBakeReport& report) noexcept;
+                                    LightmapBakeReport& report,
+                                    const LightmapBakeProgress* progress = nullptr) noexcept;
 
 /// What moved since `previous` was baked.
 struct LightmapRebakeRequest {
@@ -243,7 +318,8 @@ struct LightmapRebakeRequest {
                                       const LightmapBakeSettings& settings,
                                       const BakedLightmap& previous,
                                       const LightmapRebakeRequest& request, BakedLightmap& out,
-                                      LightmapBakeReport& report) noexcept;
+                                      LightmapBakeReport& report,
+                                      const LightmapBakeProgress* progress = nullptr) noexcept;
 
 /// A stationary light's shadow mask at an atlas coordinate, bilinear: 1 for a light with no
 /// channel.
