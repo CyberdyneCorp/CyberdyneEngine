@@ -898,7 +898,6 @@ fn a_sculpt_stroke_with_a_layer_in_the_stack_names_no_layer_and_is_accepted() {
             .unwrap_or_else(|problem| panic!("{tool} stroke refused: {problem}"));
     }
 }
-}
 
 // --- The audio mixer (#29) -------------------------------------------------------------------------
 
