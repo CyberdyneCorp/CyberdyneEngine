@@ -163,6 +163,7 @@ pub struct NavmeshService {
     path: Option<NavPathResult>,
     flow_field: Option<NavFlowField>,
     pick: Option<NavPick>,
+    pick_answers: u64,
     query_failure: Option<(NavQuery, NavBakeFailure)>,
 }
 
@@ -192,6 +193,7 @@ impl NavmeshService {
             path: None,
             flow_field: None,
             pick: None,
+            pick_answers: 0,
             query_failure: None,
         }
     }
@@ -321,6 +323,10 @@ impl NavmeshService {
         kind: ServiceEventKind,
         payload: &[u8],
     ) -> Option<Problem> {
+        if query == NavQuery::Pick {
+            self.pick_answers += 1;
+            self.pick = None;
+        }
         let failure = match kind {
             ServiceEventKind::Completed => match self.store_answer(query, payload) {
                 Ok(()) => {
@@ -429,6 +435,14 @@ impl NavmeshService {
     #[must_use]
     pub const fn pick(&self) -> Option<&NavPick> {
         self.pick.as_ref()
+    }
+
+    /// How many `navigation.point.pick` requests have ended, answered or refused. A caller that
+    /// armed a pick compares it with the count it saw when it sent the request: a larger count
+    /// means [`NavmeshService::pick`] now holds that request's answer, or `None` when it failed.
+    #[must_use]
+    pub const fn pick_answers(&self) -> u64 {
+        self.pick_answers
     }
 
     /// The last query refusal.
@@ -934,6 +948,55 @@ mod tests {
         let status = rig.invoke("navigation.bake.status");
         assert_eq!(status.values["path_found"], Value::Bool(true));
         assert_eq!(rig.history(), 1, "a query records nothing");
+    }
+
+    fn pick(rig: &mut Rig) -> RequestId {
+        rig.editor
+            .invoke(
+                &rig.registry,
+                "navigation.point.pick",
+                &Scope::unrestricted(),
+                &Arguments::new()
+                    .with("frame", Value::Int(7))
+                    .with("x", Value::Float(10.0))
+                    .with("y", Value::Float(20.0)),
+            )
+            .unwrap();
+        rig.request(NAVIGATION_PICK_OPERATION).0
+    }
+
+    #[test]
+    fn every_ended_pick_is_counted_and_a_refused_one_leaves_no_stale_point() {
+        let mut rig = rig();
+        assert_eq!(rig.editor.navmesh.pick_answers(), 0);
+        let request = pick(&mut rig);
+        let mut answer = cy_editor_core::codec::Writer::new();
+        answer.u8(1);
+        for lane in [1.0_f32, 0.0, 2.0] {
+            answer.f32(lane);
+        }
+        answer.u64(9);
+        answer.f32(5.0);
+        let message = event(request, ServiceEventKind::Completed, answer.finish());
+        assert!(rig.settle(&message).is_none());
+        assert_eq!(rig.editor.navmesh.pick_answers(), 1);
+        assert_eq!(
+            rig.editor.navmesh.pick().map(|pick| pick.point),
+            Some([1.0, 0.0, 2.0])
+        );
+
+        let request = pick(&mut rig);
+        let refused = event(
+            request,
+            ServiceEventKind::Failed,
+            failure_payload("navigation.point.pick.ray-failed", "no frame"),
+        );
+        assert!(rig.settle(&refused).is_some());
+        assert_eq!(rig.editor.navmesh.pick_answers(), 2);
+        assert!(
+            rig.editor.navmesh.pick().is_none(),
+            "a refused pick left the previous point to be read as its answer"
+        );
     }
 
     #[test]

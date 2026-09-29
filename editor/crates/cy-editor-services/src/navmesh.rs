@@ -1035,7 +1035,7 @@ fn write_fields(
 }
 
 /// The overlay words and their `NavDebugFlags` bits.
-const OVERLAYS: [(&str, i64); 9] = [
+pub const OVERLAYS: [(&str, i64); 9] = [
     ("polygons", 1),
     ("tiles", 1 << 1),
     ("adjacency", 1 << 2),

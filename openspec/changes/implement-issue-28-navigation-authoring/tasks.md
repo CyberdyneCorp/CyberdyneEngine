@@ -35,10 +35,10 @@
 
 ## 5. Navigation panel and viewport modes (`cy-editor-interface`, `cy-editor-shell`)
 
-- [ ] 5.1 Open `Domain::NavigationBaking` as a form editor. Add the panel title, the built-in panel kind and the docking tab.
-- [ ] 5.2 Build the `panels/navigation_baking.rs` panel: world picker, settings, Bake progress and diagnostics, stale badge, overlay toggles, component add buttons, and test path and flow-field controls. The panel only pushes intents.
-- [ ] 5.3 Add the armed viewport pick mode for test-path endpoints and the two-point NavLink placement.
-- [ ] 5.4 Add accessibility coverage, show the Nav* types in the Inspector, and update the `PLANNED_VIEWS` navigation note.
+- [x] 5.1 Open `Domain::NavigationBaking` as a form editor. Add the panel title, the built-in panel kind and the docking tab.
+- [x] 5.2 Build the `panels/navigation_baking.rs` panel: world picker, settings, Bake progress and diagnostics, stale badge, overlay toggles, component add buttons, and test path and flow-field controls. The panel only pushes intents.
+- [x] 5.3 Add the armed viewport pick mode for test-path endpoints and the two-point NavLink placement.
+- [x] 5.4 Add accessibility coverage, show the Nav* types in the Inspector, and update the `PLANNED_VIEWS` navigation note.
 
 ## 6. Acceptance evidence and documentation
 

@@ -30,6 +30,7 @@ mod hierarchy;
 mod history;
 mod inspector;
 mod material_graph;
+pub mod navigation_baking;
 use cy_editor_services::material_parameters;
 mod pending;
 mod semantic_merge;
@@ -330,6 +331,8 @@ pub struct Inputs {
     /// document, it survives a frame, and it belongs to *this* window. The decisions it makes are
     /// `cy_editor_viewport::interaction`'s, which is tested with no toolkit at all.
     pub interaction: Box<cy_editor_viewport::Interaction>,
+    /// The Navigation panel's state, including the armed viewport pick.
+    pub navigation: navigation_baking::NavigationInputs,
 }
 
 impl Default for Inputs {
@@ -414,6 +417,7 @@ impl Default for Inputs {
             transform_entry: None,
             no_world: Box::new(cy_editor_documents::Document::new("worlds/none.cyworld")),
             interaction: Box::new(cy_editor_viewport::Interaction::new()),
+            navigation: navigation_baking::NavigationInputs::default(),
         }
     }
 }
@@ -513,6 +517,9 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "editor-materials" => material_graph::show(self, ui),
                 "editor-vfx-graph" => vfx_graph::show(self, ui),
                 "editor-terrain" => specialised::show::<terrain::TerrainTool>(self, ui),
+                "editor-navigation-baking" => {
+                    specialised::show::<navigation_baking::NavigationTool>(self, ui);
+                }
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

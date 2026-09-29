@@ -313,7 +313,10 @@ To add one, for example the animation editor:
    Prove each case red with a recorded mutation.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
-in the scaffold's diagnostics area.
+in the scaffold's diagnostics area. `panels/navigation_baking.rs` (`NavigationTool`, issue #28) is a form
+tool on the same frame: it opens no shared surface, reads the document and the engine's answers in
+`target`, and arms the viewport so the next click asks the engine for a navmesh point
+(`navigation.point.pick`) instead of selecting.
 
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no

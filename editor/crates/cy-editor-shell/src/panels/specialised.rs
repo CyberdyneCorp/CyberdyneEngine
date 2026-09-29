@@ -175,7 +175,8 @@ pub(crate) fn register_tool<T: SpecialisedTool>(registry: &mut Registry) -> Resu
 
 /// Every scaffolded tool, registered and checked. Called wherever the command registry is built.
 pub fn register_specialised_tools(registry: &mut Registry) -> Result<()> {
-    register_tool::<super::terrain::TerrainTool>(registry)
+    register_tool::<super::terrain::TerrainTool>(registry)?;
+    register_tool::<super::navigation_baking::NavigationTool>(registry)
 }
 
 fn parity(registry: &Registry, domain: Domain, commands: &[&str]) -> Result<()> {

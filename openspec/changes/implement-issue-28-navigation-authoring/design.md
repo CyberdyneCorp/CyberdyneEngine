@@ -103,16 +103,17 @@ Every mutation is one `with_transaction` per gesture.
 - add buttons for each component;
 - pick-start and pick-end and flow-field controls for the test path.
 
-It is wired by appending one entry each to:
+The panel is a `SpecialisedTool` (`NavigationTool`) drawn in the specialised-editor frame from #29's scaffold (`panels/specialised.rs`), which supplies the title, Undo/Redo over the document's history, the diagnostics area where the panel's refusals appear, and the startup check that every command the panel invokes is a registered, undoable or read-only MCP tool. It is wired by appending one entry each to:
 - `can_open`;
 - `panel_title` and `BUILT_IN_PANEL_KINDS`;
 - the docking tabs;
 - the `panels/mod.rs` module and dispatch arm, plus one `Inputs` field;
+- `register_specialised_tools`;
 - the accessibility test list.
 
 The file and module names use `navmesh` and `navigation_baking`, which keeps them apart from camera navigation (`cy-editor-viewport/src/navigation.rs`). Issue #29 owns `panels/*` and `specialised/*`, so the shared files receive only appended lines.
 
-**Viewport modes.** An armed pick mode in the panel's inputs makes the next viewport click invoke `navigation.point.pick` instead of selection. The panel uses it for the test path's start and end points and for the two endpoints of a NavLink (the two-point gizmo). A link placement records one `navigation.link.add` transaction. An MCP client passes world points directly.
+**Viewport modes.** An armed pick mode in the panel's inputs makes the next viewport click invoke `navigation.point.pick` instead of selection. The panel uses it for the test path's start and end points and for the two endpoints of a NavLink (the two-point gizmo). A link placement records one `navigation.link.add` transaction. An MCP client passes world points directly. The click is rescaled from the panel's pixels to the rendered frame's extent (a scale, not a projection), and the panel takes the answer only once `NavmeshService::pick_answers` has passed the count it saw when it sent the request, so a refused or late pick never reads an older point.
 
 **Inspector.** Once the schema declares the Nav* types, the generated Inspector shows and edits their fields as undoable transactions. MCP parity for these edits comes from the dedicated `navigation.*.set` commands, not from the Inspector path.
 

@@ -137,6 +137,43 @@ fake runtime, so they need neither an engine nor a device.
 | E8 | MCP `navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp` (criterion 4) | `navigation.bake` sends the default settings instead of the document's | `"the bake carries the edited settings"` |
 | E9 | `navmesh::tests::a_settings_edit_is_one_entry_and_undo_redo_restore_it`; the MCP criterion-4 test | `write_fields` records one transaction per field instead of one per gesture | `"one entry per gesture"` in both |
 
+## Navigation panel and viewport modes (tasks 5.1 to 5.4)
+
+These are the panel-side checks under criteria 3 and 4, plus the form-editor opening, the
+`SpecialisedTool` frame from #29's scaffold (header, diagnostics, MCP and undo parity), the
+accessible empty state, the armed viewport pick and the Inspector exposure. They run headless
+(egui with AccessKit, no device); engine answers to `navigation.point.pick` arrive as service
+events on a pipe-backed runtime session.
+
+- **Green:** in `editor/`, `cargo test -p cy-editor-interface -p cy-editor-shell -p cy-editor-viewport -p cy-editor-services`.
+  `cy-editor-interface` runs `specialised::tests::navigation_baking_opens_as_a_form_editor`;
+  `cy-editor-shell` runs `tests/navigation_baking_panel.rs` (10 tests), the scaffold's
+  `every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel` (which now registers `NavigationTool`) and
+  `new_panels_are_accessible` with `("editor-navigation-baking", "No world is open.")`;
+  `cy-editor-services` runs
+  `navmesh_service::tests::every_ended_pick_is_counted_and_a_refused_one_leaves_no_stale_point`.
+  `cargo fmt --check` is clean and
+  `cargo clippy -p cy-editor-interface -p cy-editor-shell -p cy-editor-viewport -p cy-editor-services --all-targets -- -D warnings`
+  passes.
+- **Red mutations.** Each was applied to the source, the named test run with `cargo test`, and the
+  source restored; the restored suites pass.
+
+| # | Check (test) | Mutation | Failing assertion |
+|---|---|---|---|
+| P1 | `navigation_baking_opens_as_a_form_editor` | `can_open` drops `\|\| domain == Domain::NavigationBaking` | `.expect("navigation baking opens")` |
+| P2 | `new_panels_are_accessible::every_new_panel_survives_the_theme_density_width_matrix_with_accessible_names` | the panel's empty state says "Nothing is open." | the harness finds no accessible "No world is open." for `editor-navigation-baking` |
+| P3 | `bake_settings_overlays_and_add_buttons_push_their_navigation_commands` | Bake pushes `navigation.bake` without its `world` | `assert_eq!(bake.get("world"), Some(&Value::Int(1)))` (got `None`) |
+| P4 | same test | `changed_settings` sends every setting, changed or not | `"the gesture sends exactly the edited setting"` |
+| P5 | `an_armed_viewport_click_picks_a_navmesh_point_instead_of_selecting` | `armed_pick` ignores every target but `LinkTo` | `expected one navigation.point.pick, got []` |
+| P6 | same test | `report` sends the armed click to `navigation.point.pick` and then also to `request_pick` | `"the armed click also went to selection picking"` |
+| P7 | `two_picks_in_link_mode_record_one_link_add` | the first link pick records a `navigation.link.add` of its own | `"one endpoint records nothing"` |
+| P8 | `picked_path_endpoints_feed_the_path_query` | `settle_pick` stops comparing `pick_answers` with the count at send time | `"the panel settled Pick start before the engine answered"` |
+| P9 | `the_inspector_shows_and_undoably_edits_a_nav_obstacle` | the `navigation.*.add` commands stop selecting the node they create | `"the Inspector does not show NavObstacle"` |
+| P10 | `panel_gestures_record_the_history_the_same_gestures_record_over_mcp` (criterion 4) | Apply settings sends only the first changed setting | `assert_eq!(from_panel.settings, from_agent.settings)` (`tile_size` 16 vs 8) |
+| P11 | `every_ended_pick_is_counted_and_a_refused_one_leaves_no_stale_point` | a refused pick keeps the previous answer in `NavmeshService::pick` | `"a refused pick left the previous point to be read as its answer"` |
+| P12 | `panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel` | `NavigationTool::COMMANDS` names a command nobody registers (`navigation.point.teleport`) | `.expect("parity holds for the shipped tools")` (the refusal names the command) |
+| P13 | `the_panel_draws_in_the_specialised_frame_with_its_problem_in_the_diagnostics_area` | `NavigationTool::diagnostics` drops the panel's problem | `"the problem is a readable diagnostics row"` |
+
 ## 1. Editor bake equals `build_tile`, tile by tile
 
 - **Probes:**
@@ -166,7 +203,9 @@ fake runtime, so they need neither an engine nor a device.
   - desktop and MCP navigation histories agreeing;
   - command unit tests.
 - **Mutations:** record the bake transaction on every pump (E1) or not at all (E2), send the default settings (E8), or split a settings gesture into one transaction per field (E9). The history-length, identity or payload assertion fails in each case.
-- **Status:** green with recorded red mutations (E1, E2, E8, E9 above).
+- **Status:** green with recorded red mutations (E1, E2, E8, E9 above). The desktop half of the parity
+  check, where the panel's gestures and the same commands sent as an agent sends them record the same
+  history and settings, is P10.
 
 ## 5. Stale bake detected after a geometry edit
 
