@@ -316,17 +316,18 @@ CY_TEST_CASE("terrain.evaluate: every edited region is flagged stale for navigat
 
 CY_TEST_CASE("terrain.evaluate: flatten levels toward the ground under its first dab") {
     Session session;
-    Stroke raise = stroke(1, kRaise);
-    raise.radius = 20.0F;
-    raise.strength = 1.0F;
-    raise.falloff = 1.0F;  // soft all the way in, so the hill has a slope under the flatten
-    raise.dabs = {{0.5F, 0.5F, 1.0F}};
-    const Reply hill = session.evaluate({raise});
+    // Not named `raise`: on non-x86 Linux doctest breaks into the debugger with raise(SIGTRAP).
+    Stroke mound = stroke(1, kRaise);
+    mound.radius = 20.0F;
+    mound.strength = 1.0F;
+    mound.falloff = 1.0F;  // soft all the way in, so the hill has a slope under the flatten
+    mound.dabs = {{0.5F, 0.5F, 1.0F}};
+    const Reply hill = session.evaluate({mound});
     Stroke flatten = stroke(2, kFlatten);
     flatten.strength = 1.0F;
     flatten.falloff = 0.0F;
     flatten.dabs = {{0.5F, 0.5F, 1.0F}, {0.56F, 0.5F, 1.0F}};
-    const Reply level = session.evaluate({raise, flatten});
+    const Reply level = session.evaluate({mound, flatten});
     const cy::u16 target = hill.height(64, 64);
     // Inside the flatten's hard disc every sample is the ground under its first dab.
     CY_CHECK_EQ(level.height(64, 64), target);
