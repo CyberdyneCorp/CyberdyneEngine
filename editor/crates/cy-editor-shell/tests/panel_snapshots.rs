@@ -824,8 +824,9 @@ fn audio_panel_snapshots() {
     };
     let project = std::env::temp_dir().join(format!("cy-audio-snapshot-{}", std::process::id()));
     std::fs::create_dir_all(project.join("audio/cues")).unwrap();
+    std::fs::create_dir_all(project.join("game/audio")).unwrap();
     std::fs::write(
-        project.join("audio/mixer.cymixer"),
+        project.join("game/audio/mixer.cymixer"),
         fixture("audio_mixer_v1.cymixer"),
     )
     .unwrap();
@@ -896,10 +897,7 @@ fn audio_panel_snapshots() {
                     "cue",
                     cy_editor_core::value::Value::Text("audio/cues/ping.cycue".into()),
                 )
-                .with(
-                    "at",
-                    cy_editor_core::value::Value::Vec3([3.0, 0.0, 0.0]),
-                ),
+                .with("at", cy_editor_core::value::Value::Vec3([3.0, 0.0, 0.0])),
         )
         .expect("audio.source.create");
     assert!(created.values.contains_key("entity"));

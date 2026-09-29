@@ -578,10 +578,17 @@ fn apply_sources(
     for (reference, source) in vfx_documents {
         let _ = project.put_source(&reference, source.as_deref());
     }
-    for (reference, source) in audio_assets {
+    restore_audio(project, audio_assets);
+}
+
+/// Put audio assets back, and send the engine the mixer the file now says. A mixer undone out of
+/// existence leaves the engine its Master-only graph, which is what a project without one plays.
+fn restore_audio(
+    project: &mut dyn cy_editor_commands::ProjectHost,
+    assets: Vec<(String, Option<String>)>,
+) {
+    for (reference, source) in assets {
         let _ = project.put_source(&reference, source.as_deref());
-        // The engine mixes what the file now says. A mixer undone out of existence leaves the
-        // engine its Master-only graph, which is what a project without one plays through.
         if reference.ends_with(".cymixer") {
             let restored = source.unwrap_or_else(|| crate::audio::Mixer::default().encode());
             let _ = project.audio_request(crate::audio::MIXER_APPLY, restored.into_bytes());

@@ -78,8 +78,7 @@ AudioRefusal state(const AudioAuthoring& audio, Array<u8>& reply) noexcept {
     return {};
 }
 
-AudioRefusal apply_mixer(AudioAuthoring& audio, Span<const u8> payload,
-                         Array<u8>& reply) noexcept {
+AudioRefusal apply_mixer(AudioAuthoring& audio, Span<const u8> payload, Array<u8>& reply) noexcept {
     const std::string_view text(reinterpret_cast<const char*>(payload.data()), payload.size());
     if (Status applied = audio.apply_mixer(text); !applied) {
         return refused("audio.mixer", applied.error().message);
@@ -103,8 +102,7 @@ bool read_placement(Reader& reader, PreviewPlacement& placement) noexcept {
            placement.max_distance > placement.min_distance;
 }
 
-AudioRefusal preview_cue(AudioAuthoring& audio, Span<const u8> payload,
-                         Array<u8>& reply) noexcept {
+AudioRefusal preview_cue(AudioAuthoring& audio, Span<const u8> payload, Array<u8>& reply) noexcept {
     Reader reader(payload);
     std::string_view name;
     std::string_view source;
@@ -142,8 +140,8 @@ AudioRefusal read_state(AudioAuthoring& audio, Span<const u8> payload, Array<u8>
 
 }  // namespace
 
-AudioRefusal answer_audio(AudioAuthoring* audio, std::string_view operation,
-                          Span<const u8> payload, Array<u8>& reply) noexcept {
+AudioRefusal answer_audio(AudioAuthoring* audio, std::string_view operation, Span<const u8> payload,
+                          Array<u8>& reply) noexcept {
     if (audio == nullptr || !audio->initialized()) {
         return refused("audio.unavailable", "this host has no editor audio server");
     }

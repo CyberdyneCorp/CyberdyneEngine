@@ -5,7 +5,7 @@
 //!
 //! | What | Where | Read by |
 //! |---|---|---|
-//! | the bus graph | `audio/mixer.cymixer` (`cymixer 1`) | `cy::editor::parse_mixer` |
+//! | the bus graph | `game/audio/mixer.cymixer` (`cymixer 1`) | `cy::editor::parse_mixer` |
 //! | a playable sound | `*.cycue` (`cycue 1`) | `cy::editor::parse_cue` |
 //! | a sound in the world | `cy::audio::AudioSource` on an entity | `cy::editor::read_emitters` |
 //!
@@ -25,7 +25,7 @@ use cy_editor_core::codec::{Reader, Writer};
 use cy_editor_core::problem::{Problem, Result};
 
 /// Where the project's mixer lives unless a command names another.
-pub const DEFAULT_MIXER: &str = "audio/mixer.cymixer";
+pub const DEFAULT_MIXER: &str = "game/audio/mixer.cymixer";
 /// Transaction kind prefix for a saved audio asset; the rest is its project path.
 pub const DOMAIN_PREFIX: &str = "audio_asset:";
 /// The scene component a sound-emitting entity carries, matched by name on the engine side.
@@ -79,6 +79,42 @@ pub fn validate_mixer_reference(reference: &str) -> Result<()> {
 /// Refuse anything but a project-relative `.cycue`.
 pub fn validate_cue_reference(reference: &str) -> Result<()> {
     validate_reference(reference, "cycue", "access an audio cue")
+}
+
+/// Every `.cycue` in the project, project-relative with `/` separators, in path order.
+///
+/// The same walk the engine makes at Play (`cy::editor::AudioAuthoring::start_play`): hidden
+/// directories and `build/` are skipped, so a cue the panel lists is one Swift can play.
+#[must_use]
+pub fn project_cues(root: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() {
+                if !name.starts_with('.') && name != "build" {
+                    stack.push(path);
+                }
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "cycue")
+                && let Ok(relative) = path.strip_prefix(root)
+            {
+                let parts: Vec<String> = relative
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect();
+                found.push(parts.join("/"));
+            }
+        }
+    }
+    found.sort_unstable();
+    found
 }
 
 /// Whether a bus or cue-bus name is one the engine accepts.
@@ -313,7 +349,10 @@ impl Mixer {
     fn validate_bus(&self, index: usize, bus: &Bus) -> Result<()> {
         let action = format!("validate audio bus {:?}", bus.name);
         if !valid_name(&bus.name) || self.buses[..index].iter().any(|b| b.name == bus.name) {
-            return Err(refuse(&action, "bus names are unique letters, digits, _ - ."));
+            return Err(refuse(
+                &action,
+                "bus names are unique letters, digits, _ - .",
+            ));
         }
         if index > 0 {
             let output = bus.output.as_deref().unwrap_or_default();
@@ -325,7 +364,10 @@ impl Mixer {
             return Err(refuse(&action, "a bus volume is from 0 to 4"));
         }
         if bus.sends.len() > MAX_SENDS || bus.effects.len() > MAX_EFFECTS {
-            return Err(refuse(&action, "a bus has at most four sends and eight effects"));
+            return Err(refuse(
+                &action,
+                "a bus has at most four sends and eight effects",
+            ));
         }
         for send in &bus.sends {
             if send.target == bus.name
@@ -407,10 +449,11 @@ impl Mixer {
         if let Some(user) = self.buses.iter().find(|bus| {
             bus.output.as_deref() == Some(name) || bus.sends.iter().any(|send| send.target == name)
         }) {
-            return Err(
-                refuse(ACTION, format!("{:?} still routes into {name:?}", user.name))
-                    .with_remedy("route that bus elsewhere first"),
-            );
+            return Err(refuse(
+                ACTION,
+                format!("{:?} still routes into {name:?}", user.name),
+            )
+            .with_remedy("route that bus elsewhere first"));
         }
         let index = self
             .buses
@@ -698,6 +741,10 @@ pub fn preview_payload(name: &str, cue: &str, placement: &Placement) -> Vec<u8> 
 
 /// One bus as the engine's graph holds it.
 #[derive(Clone, PartialEq, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "a field-for-field mirror of the engine's reply; each flag is its own bus state"
+)]
 pub struct BusState {
     /// Its name.
     pub name: String,
@@ -1086,15 +1133,25 @@ mod tests {
         assert!(mixer.edited(|mixer| mixer.set_volume("SFX", 5.0)).is_err());
         assert!(mixer.edited(|mixer| mixer.remove_bus("Reverb")).is_err());
         assert!(mixer.edited(|mixer| mixer.remove_bus(MASTER)).is_err());
-        assert!(mixer.edited(|mixer| mixer.add_bus("Music", MASTER)).is_err());
-        assert!(mixer.edited(|mixer| mixer.add_bus("bad name", MASTER)).is_err());
+        assert!(
+            mixer
+                .edited(|mixer| mixer.add_bus("Music", MASTER))
+                .is_err()
+        );
+        assert!(
+            mixer
+                .edited(|mixer| mixer.add_bus("bad name", MASTER))
+                .is_err()
+        );
         let reverb_free = mixer
             .edited(|mixer| mixer.set_send("SFX", "Reverb", 0.0))
             .unwrap();
         assert!(reverb_free.bus("SFX").unwrap().sends.is_empty());
-        assert!(reverb_free
-            .edited(|mixer| mixer.remove_bus("Reverb"))
-            .is_ok());
+        assert!(
+            reverb_free
+                .edited(|mixer| mixer.remove_bus("Reverb"))
+                .is_ok()
+        );
         assert_eq!(mixer, canonical_mixer(), "a refused edit changed nothing");
     }
 

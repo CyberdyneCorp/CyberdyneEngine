@@ -918,8 +918,10 @@ impl Project {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_nanos());
-        let path = std::env::temp_dir().join(format!("cy-shell-{name}-{}-{unique}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("cy-shell-{name}-{}-{unique}", std::process::id()));
         std::fs::create_dir_all(path.join("audio/cues")).unwrap();
+        std::fs::create_dir_all(path.join("game/audio")).unwrap();
         Self(path)
     }
 }
@@ -963,13 +965,16 @@ fn engine_answers(harness: &mut Harness, operation: &str, reply: Vec<u8>) {
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    assert!(!harness.editor.backend.audio.pending(), "the engine's reply was not taken");
+    assert!(
+        !harness.editor.backend.audio.pending(),
+        "the engine's reply was not taken"
+    );
 }
 
 /// A world, the canonical mixer on disk, a cue, the engine's vocabulary and its last state.
 fn audio_harness(project: &Project) -> Harness {
     std::fs::write(
-        project.0.join("audio/mixer.cymixer"),
+        project.0.join("game/audio/mixer.cymixer"),
         engine_audio("audio_mixer_v1.cymixer"),
     )
     .unwrap();
@@ -981,14 +986,21 @@ fn audio_harness(project: &Project) -> Harness {
     let mut harness = Harness::new();
     harness.editor = Editor::new(Actor::human("sound-designer"))
         .with_project(cy_editor_services::ProjectService::new(&project.0));
-    harness.editor.open_document("worlds/audio.cyworld").unwrap();
+    harness
+        .editor
+        .open_document("worlds/audio.cyworld")
+        .unwrap();
     harness.specialised.install_audio_vocabulary(
         cy_editor_services::audio::AudioVocabulary::decode(&engine_audio(
             "audio_capabilities_v1.wire",
         ))
         .unwrap(),
     );
-    engine_answers(&mut harness, "audio.state.get", engine_audio("audio_state_v1.wire"));
+    engine_answers(
+        &mut harness,
+        "audio.state.get",
+        engine_audio("audio_state_v1.wire"),
+    );
     harness
 }
 
@@ -1032,7 +1044,10 @@ fn the_audio_mixer_shows_the_engines_graph_and_levels() {
         "SFX mixed the preview, so its engine level is a number: {:?}",
         evidence.labels
     );
-    assert!(harness.inputs.audio.seen, "the window keeps the meters live while it is drawn");
+    assert!(
+        harness.inputs.audio.seen,
+        "the window keeps the meters live while it is drawn"
+    );
 }
 
 #[test]
@@ -1055,24 +1070,37 @@ fn mixer_gestures_are_the_registered_audio_commands() {
         other => panic!("one flag command, got {other:?}"),
     }
     let previewed = harness.frame(AUDIO, size, vec![click_named(&first, "Preview")]);
-    assert!(matches!(
-        previewed.intents.as_slice(),
-        [Intent::Invoke(command, arguments)]
-            if command == "audio.cue.preview"
-                && arguments.text("reference") == Some("audio/cues/ping.cycue")
-    ), "{:?}", previewed.intents);
+    assert!(
+        matches!(
+            previewed.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "audio.cue.preview"
+                    && arguments.text("reference") == Some("audio/cues/ping.cycue")
+        ),
+        "{:?}",
+        previewed.intents
+    );
     harness.inputs.audio.new_bus = "Voice".into();
     let ready = harness.frame(AUDIO, size, Vec::new());
     let added = harness.frame(AUDIO, size, vec![click_named(&ready, "Add bus")]);
-    assert!(matches!(
-        added.intents.as_slice(),
-        [Intent::Invoke(command, arguments)]
-            if command == "audio.bus.add" && arguments.text("name") == Some("Voice")
-    ), "{:?}", added.intents);
+    assert!(
+        matches!(
+            added.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "audio.bus.add" && arguments.text("name") == Some("Voice")
+        ),
+        "{:?}",
+        added.intents
+    );
     let selected = harness.frame(AUDIO, size, vec![click_named(&first, "SFX")]);
     assert!(selected.intents.is_empty());
     let chain = harness.frame(AUDIO, size, Vec::new());
-    for label in ["SFX sends", "→ Reverb", "SFX effect chain", "low-pass"] {
+    for label in [
+        "SFX sends",
+        "Send to Reverb",
+        "SFX effect chain",
+        "low-pass",
+    ] {
         assert!(
             chain.labels.iter().any(|drawn| drawn == label),
             "the selected bus lacks {label:?}: {:?}",
@@ -1088,7 +1116,10 @@ fn the_audio_mixer_empty_states_name_what_would_fill_them() {
     let mut harness = Harness::new();
     harness.editor = Editor::new(Actor::human("sound-designer"))
         .with_project(cy_editor_services::ProjectService::new(&project.0));
-    harness.editor.open_document("worlds/audio.cyworld").unwrap();
+    harness
+        .editor
+        .open_document("worlds/audio.cyworld")
+        .unwrap();
     let empty = harness.frame(AUDIO, size, Vec::new());
     let create = harness.frame(AUDIO, size, vec![click_named(&empty, "Create mixer")]);
     assert!(matches!(
@@ -1096,7 +1127,7 @@ fn the_audio_mixer_empty_states_name_what_would_fill_them() {
         [Intent::Invoke(command, _)] if command == "audio.mixer.create"
     ));
     std::fs::write(
-        project.0.join("audio/mixer.cymixer"),
+        project.0.join("game/audio/mixer.cymixer"),
         engine_audio("audio_mixer_v1.cymixer"),
     )
     .unwrap();

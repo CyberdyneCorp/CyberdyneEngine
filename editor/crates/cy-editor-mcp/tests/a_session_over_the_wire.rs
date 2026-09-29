@@ -4285,19 +4285,32 @@ fn settle_audio(editor: &mut Editor) {
 }
 
 fn last_audio_payload(asked: &Arc<Mutex<AudioAsked>>, operation: &str) -> Vec<u8> {
-    asked
-        .lock()
-        .unwrap()
+    let asked = asked.lock().unwrap();
+    let Some((_, payload)) = asked
         .requests
         .iter()
         .rev()
-        .find(|(asked, _)| asked == operation)
-        .map(|(_, payload)| payload.clone())
-        .unwrap_or_else(|| panic!("the engine was never sent {operation}"))
+        .find(|(sent, _)| sent == operation)
+    else {
+        panic!("the engine was never sent {operation}");
+    };
+    payload.clone()
 }
 
-fn structured(replies: &[Json], index: usize, key: &str) -> Json {
-    result(replies, index).get("structuredContent").get(key).clone()
+/// A structured result, which the wire carries as text.
+fn structured(replies: &[Json], index: usize, key: &str) -> String {
+    result(replies, index)
+        .get("structuredContent")
+        .get(key)
+        .as_text()
+        .unwrap_or_else(|| panic!("no {key} in the result"))
+        .to_owned()
+}
+
+fn structured_number(replies: &[Json], index: usize, key: &str) -> f64 {
+    structured(replies, index, key)
+        .parse()
+        .unwrap_or_else(|_| panic!("{key} is not a number"))
 }
 
 #[test]
@@ -4309,7 +4322,7 @@ fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
     let asked = audio_runtime_double(&mut editor);
 
     // The canonical mixer, authored call by call — the same text the engine's suite applies.
-    let authored = converse_within(
+    let authored = converse(
         &[
             INITIALIZE,
             &tool_call(2, "audio.bus.add", &[("name", "Music")]),
@@ -4325,7 +4338,6 @@ fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
             r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"audio.bus.send","arguments":{"from":"Reverb","to":"SFX","level":0.5}}}"#,
         ],
         &mut editor,
-        "audio/",
     );
     for index in 1..=9 {
         assert_eq!(
@@ -4338,7 +4350,7 @@ fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
     assert_eq!(result(&authored, 10).get("isError"), &Json::Bool(true));
     assert!(tool_text(&authored, 10).contains("cycle"));
     let canonical = engine_audio_fixture("audio_mixer_v1.cymixer");
-    let on_disk = std::fs::read(sandbox.0.join("audio/mixer.cymixer")).unwrap();
+    let on_disk = std::fs::read(sandbox.0.join("game/audio/mixer.cymixer")).unwrap();
     assert_eq!(
         String::from_utf8_lossy(&on_disk),
         String::from_utf8_lossy(&canonical),
@@ -4352,44 +4364,32 @@ fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
         "every save went to the engine, the last one last"
     );
     let status = converse(
-        &[
-            INITIALIZE,
-            &tool_call(12, "audio.status", &[]),
-        ],
+        &[INITIALIZE, &tool_call(12, "audio.status", &[])],
         &mut editor,
     );
     // The engine's numbers, not the editor's: decoded from the reply `unit` produced.
-    assert_eq!(structured(&status, 1, "backend").as_text(), Some("null"));
-    assert_eq!(structured(&status, 1, "bus.Music.volume"), Json::Number(0.5));
+    assert_eq!(structured(&status, 1, "backend"), "null");
+    assert!((structured_number(&status, 1, "bus.Music.volume") - 0.5).abs() < 1e-6);
     assert!(
-        structured(&status, 1, "bus.SFX.route")
-            .as_text()
-            .unwrap()
-            .contains("sends=[Reverb:0.3] effects=[low-pass]")
+        structured(&status, 1, "bus.SFX.route").contains("sends=[Reverb:0.3] effects=[low-pass]")
     );
 
     // Undo goes back one transaction, and the engine is sent what the file now says.
-    let undone = converse(
-        &[INITIALIZE, &tool_call(13, "edit.undo", &[])],
-        &mut editor,
-    );
+    let undone = converse(&[INITIALIZE, &tool_call(13, "edit.undo", &[])], &mut editor);
     assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
-    let reverted = std::fs::read_to_string(sandbox.0.join("audio/mixer.cymixer")).unwrap();
+    let reverted = std::fs::read_to_string(sandbox.0.join("game/audio/mixer.cymixer")).unwrap();
     assert!(!reverted.contains("effect SFX"), "{reverted}");
     settle_audio(&mut editor);
     assert_eq!(
         last_audio_payload(&asked, "audio.mixer.apply"),
         reverted.into_bytes()
     );
-    let redone = converse(
-        &[INITIALIZE, &tool_call(14, "edit.redo", &[])],
-        &mut editor,
-    );
+    let redone = converse(&[INITIALIZE, &tool_call(14, "edit.redo", &[])], &mut editor);
     assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
     settle_audio(&mut editor);
     assert_eq!(last_audio_payload(&asked, "audio.mixer.apply"), canonical);
     assert_eq!(
-        std::fs::read(sandbox.0.join("audio/mixer.cymixer")).unwrap(),
+        std::fs::read(sandbox.0.join("game/audio/mixer.cymixer")).unwrap(),
         canonical
     );
 }
@@ -4401,9 +4401,9 @@ fn a_cue_and_a_spatial_source_preview_through_the_engine_over_mcp() {
         Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
     editor.open_document("worlds/audio.cyworld").unwrap();
     let asked = audio_runtime_double(&mut editor);
-    std::fs::create_dir_all(sandbox.0.join("audio")).unwrap();
+    std::fs::create_dir_all(sandbox.0.join("game/audio")).unwrap();
     std::fs::write(
-        sandbox.0.join("audio/mixer.cymixer"),
+        sandbox.0.join("game/audio/mixer.cymixer"),
         engine_audio_fixture("audio_mixer_v1.cymixer"),
     )
     .unwrap();
@@ -4436,7 +4436,7 @@ fn a_cue_and_a_spatial_source_preview_through_the_engine_over_mcp() {
         engine_audio_fixture("audio_cue_v1.cycue")
     );
     assert_eq!(result(&saved, 2).get("isError"), &Json::Bool(false));
-    let entity = structured(&saved, 2, "entity").as_text().unwrap().to_owned();
+    let entity = structured(&saved, 2, "entity");
 
     // The viewport camera starts at the origin looking down -Z, so the request is exactly the one
     // the engine's suite submits: the source three metres to the listener's right.
@@ -4463,27 +4463,20 @@ fn a_cue_and_a_spatial_source_preview_through_the_engine_over_mcp() {
         &mut editor,
     );
     assert_eq!(
-        structured(&status, 1, "preview.cue").as_text(),
-        Some("audio/cues/ping.cycue")
+        structured(&status, 1, "preview.cue"),
+        "audio/cues/ping.cycue"
     );
-    assert_eq!(structured(&status, 1, "preview.playing"), Json::Bool(true));
-    let Json::Number(gain) = structured(&status, 1, "preview.gain") else {
-        panic!("the engine's gain is reported");
-    };
+    assert_eq!(structured(&status, 1, "preview.playing"), "true");
+    let gain = structured_number(&status, 1, "preview.gain");
     assert!((gain - 1.0 / 3.0).abs() < 1e-4, "{gain}");
-    let (Json::Number(left), Json::Number(right)) = (
-        structured(&status, 1, "preview.left"),
-        structured(&status, 1, "preview.right"),
-    ) else {
-        panic!("the engine's pan is reported");
-    };
+    let (left, right) = (
+        structured_number(&status, 1, "preview.left"),
+        structured_number(&status, 1, "preview.right"),
+    );
     assert!(right > 0.99 && left < 0.01);
 
     // Undo removes the source the preview played from, in the world's own history.
-    let undone = converse(
-        &[INITIALIZE, &tool_call(6, "edit.undo", &[])],
-        &mut editor,
-    );
+    let undone = converse(&[INITIALIZE, &tool_call(6, "edit.undo", &[])], &mut editor);
     assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
     let gone = converse(
         &[
@@ -4518,6 +4511,6 @@ fn play_reports_the_sources_the_engine_is_sounding() {
         &[INITIALIZE, &tool_call(4, "audio.status", &[])],
         &mut editor,
     );
-    assert_eq!(structured(&status, 1, "playing"), Json::Bool(true));
-    assert_eq!(structured(&status, 1, "play_voices"), Json::Number(1.0));
+    assert_eq!(structured(&status, 1, "playing"), "true");
+    assert_eq!(structured(&status, 1, "play_voices"), "1");
 }

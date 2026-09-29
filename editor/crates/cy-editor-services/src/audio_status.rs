@@ -35,7 +35,10 @@ pub fn outcome(requests: &AudioRequests) -> Outcome {
         .with("virtual_voices", whole(state.virtual_voices))
         .with("playing", Value::Bool(state.playing))
         .with("play_voices", whole(state.play_voices))
-        .with("buses", whole(u32::try_from(state.buses.len()).unwrap_or(u32::MAX)))
+        .with(
+            "buses",
+            whole(u32::try_from(state.buses.len()).unwrap_or(u32::MAX)),
+        )
         .with("cues", Value::Text(state.cues.join(", ")));
     for bus in &state.buses {
         let key = format!("bus.{}", bus.name);
@@ -46,7 +49,11 @@ pub fn outcome(requests: &AudioRequests) -> Outcome {
                 format!("{key}.route"),
                 Value::Text(format!(
                     "output={} mute={} solo={} bypass={} audible={} sends=[{}] effects=[{}]",
-                    if bus.output.is_empty() { "-" } else { &bus.output },
+                    if bus.output.is_empty() {
+                        "-"
+                    } else {
+                        &bus.output
+                    },
                     bus.mute,
                     bus.solo,
                     bus.bypass,

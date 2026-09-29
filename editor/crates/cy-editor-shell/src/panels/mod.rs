@@ -33,6 +33,7 @@ mod lighting;
 mod material_graph;
 pub mod navigation_baking;
 use cy_editor_services::material_parameters;
+pub mod audio_mixer;
 mod pending;
 mod physics;
 mod semantic_merge;
@@ -41,7 +42,6 @@ mod source;
 mod source_control;
 pub mod specialised;
 mod terrain;
-pub mod audio_mixer;
 // The shared timeline for the animation, sequencer and audio-cue editors #29 adds next; until one
 // of them draws it, only its tests do.
 #[cfg_attr(

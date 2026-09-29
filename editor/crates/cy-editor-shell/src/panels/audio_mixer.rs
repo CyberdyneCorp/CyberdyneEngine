@@ -50,7 +50,7 @@ impl Default for AudioInputs {
             bus: None,
             new_bus: String::new(),
             drag: None,
-            cue_reference: "audio/cues/new.cycue".into(),
+            cue_reference: "game/audio/cues/new.cycue".into(),
             cue_clip: "tone:440:0.5".into(),
             cue_bus: MASTER.into(),
             cue: None,
@@ -113,17 +113,14 @@ impl SpecialisedTool for AudioMixerTool {
                 "This project has no mixer yet. Everything plays through Master until it has one.",
             ));
             if ui.button("Create mixer").clicked() {
-                panels
-                    .intents
-                    .push(Intent::Invoke("audio.mixer.create".into(), Arguments::new()));
+                panels.intents.push(Intent::Invoke(
+                    "audio.mixer.create".into(),
+                    Arguments::new(),
+                ));
             }
             return None;
         };
-        let cues = project
-            .source_paths()
-            .into_iter()
-            .filter(|path| path.ends_with(".cycue"))
-            .collect();
+        let cues = cy_editor_services::audio::project_cues(project.root());
         let selected: Vec<_> = panels.editor.selection.get().nodes().collect();
         let source = panels
             .editor
@@ -245,7 +242,9 @@ fn bus_table(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
         .striped(true)
         .num_columns(8)
         .show(ui, |ui| {
-            for title in ["Bus", "Output", "Volume", "Mute", "Solo", "Bypass", "Level", ""] {
+            for title in [
+                "Bus", "Output", "Volume", "Mute", "Solo", "Bypass", "Level", "",
+            ] {
                 ui.label(secondary(frame.shell, title));
             }
             ui.end_row();
@@ -277,7 +276,11 @@ fn bus_row(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target, bus: &
                 .with("volume", Value::Float(volume)),
         );
     }
-    for (which, set) in [("mute", bus.mute), ("solo", bus.solo), ("bypass", bus.bypass)] {
+    for (which, set) in [
+        ("mute", bus.mute),
+        ("solo", bus.solo),
+        ("bypass", bus.bypass),
+    ] {
         let mut enabled = set;
         let name = format!("{which} {}", bus.name);
         let response = ui.checkbox(&mut enabled, "").on_hover_text(&name);
@@ -363,7 +366,11 @@ fn meter(
         Some(_) => format!("{:.1} dB", 20.0 * peak.log10()),
     };
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::ProgressIndicator, true, format!("{name} level"))
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ProgressIndicator,
+            true,
+            format!("{name} level"),
+        )
     });
     ui.label(numeric(shell, label));
 }
@@ -387,7 +394,7 @@ fn selected_bus(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
 fn sends(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer, bus: &Bus) {
     for send in &bus.sends {
         ui.horizontal(|ui| {
-            ui.label(format!("→ {}", send.target));
+            ui.label(format!("Send to {}", send.target));
             if let Some(level) = committed_drag(
                 ui,
                 &mut frame.inputs.audio.drag,
@@ -395,10 +402,18 @@ fn sends(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer, bus: &Bus)
                 send.level,
                 0.0..=1.0,
             ) {
-                invoke(frame, "audio.bus.send", send_arguments(bus, &send.target, level));
+                invoke(
+                    frame,
+                    "audio.bus.send",
+                    send_arguments(bus, &send.target, level),
+                );
             }
             if ui.small_button("Remove send").clicked() {
-                invoke(frame, "audio.bus.send", send_arguments(bus, &send.target, 0.0));
+                invoke(
+                    frame,
+                    "audio.bus.send",
+                    send_arguments(bus, &send.target, 0.0),
+                );
             }
         });
     }
@@ -410,7 +425,11 @@ fn sends(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer, bus: &Bus)
             other.name != bus.name && !bus.sends.iter().any(|send| send.target == other.name)
         }) {
             if ui.button(&candidate.name).clicked() {
-                invoke(frame, "audio.bus.send", send_arguments(bus, &candidate.name, 0.5));
+                invoke(
+                    frame,
+                    "audio.bus.send",
+                    send_arguments(bus, &candidate.name, 0.5),
+                );
                 ui.close();
             }
         }
@@ -437,8 +456,13 @@ fn effects(
             let mut edited = (effect.a, effect.b, effect.bypass);
             let key = format!("effect:{}:{index}", bus.name);
             if labels.is_none_or(|labels| !labels.label_a.is_empty())
-                && let Some(a) =
-                    committed_drag(ui, &mut frame.inputs.audio.drag, &format!("{key}:a"), effect.a, 0.0..=4.0)
+                && let Some(a) = committed_drag(
+                    ui,
+                    &mut frame.inputs.audio.drag,
+                    &format!("{key}:a"),
+                    effect.a,
+                    0.0..=4.0,
+                )
             {
                 edited.0 = a;
             }
@@ -455,22 +479,32 @@ fn effects(
             }
             ui.checkbox(&mut edited.2, "Bypass");
             if edited != (effect.a, effect.b, effect.bypass) {
-                invoke(frame, "audio.bus.effect.set", effect_arguments(bus, index, edited));
+                invoke(
+                    frame,
+                    "audio.bus.effect.set",
+                    effect_arguments(bus, index, edited),
+                );
             }
             if ui.small_button("Remove effect").clicked() {
                 invoke(
                     frame,
                     "audio.bus.effect.remove",
-                    Arguments::new()
-                        .with("bus", text(&bus.name))
-                        .with("index", Value::Int(i64::try_from(index).unwrap_or(i64::MAX))),
+                    Arguments::new().with("bus", text(&bus.name)).with(
+                        "index",
+                        Value::Int(i64::try_from(index).unwrap_or(i64::MAX)),
+                    ),
                 );
             }
         });
     }
     ui.menu_button("Add effect", |ui| {
         let kinds: Vec<(String, f32, f32)> = vocabulary.map_or_else(
-            || EFFECT_KINDS.iter().map(|kind| ((*kind).to_owned(), 1.0, 0.5)).collect(),
+            || {
+                EFFECT_KINDS
+                    .iter()
+                    .map(|kind| ((*kind).to_owned(), 1.0, 0.5))
+                    .collect()
+            },
             |vocabulary| {
                 vocabulary
                     .effects
@@ -499,7 +533,10 @@ fn effects(
 fn effect_arguments(bus: &Bus, index: usize, (a, b, bypass): (f32, f32, bool)) -> Arguments {
     Arguments::new()
         .with("bus", text(&bus.name))
-        .with("index", Value::Int(i64::try_from(index).unwrap_or(i64::MAX)))
+        .with(
+            "index",
+            Value::Int(i64::try_from(index).unwrap_or(i64::MAX)),
+        )
         .with("a", Value::Float(a))
         .with("b", Value::Float(b))
         .with("bypass", Value::Bool(bypass))
@@ -510,7 +547,10 @@ fn add_bus(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer) {
         ui.add(egui::TextEdit::singleline(&mut frame.inputs.audio.new_bus).hint_text("Bus name"));
         let name = frame.inputs.audio.new_bus.trim().to_owned();
         let valid = cy_editor_services::audio::valid_name(&name) && mixer.bus(&name).is_none();
-        if ui.add_enabled(valid, egui::Button::new("Add bus")).clicked() {
+        if ui
+            .add_enabled(valid, egui::Button::new("Add bus"))
+            .clicked()
+        {
             invoke(
                 frame,
                 "audio.bus.add",
@@ -526,7 +566,10 @@ fn add_bus(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer) {
 fn cues(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
     heading(ui, frame.shell, "Cues");
     if target.cues.is_empty() {
-        ui.label(secondary(frame.shell, "No cues yet. Save one below to preview it."));
+        ui.label(secondary(
+            frame.shell,
+            "No cues yet. Save one below to preview it.",
+        ));
     }
     for cue in &target.cues {
         ui.horizontal(|ui| {
@@ -534,7 +577,11 @@ fn cues(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
             if ui.selectable_label(chosen, cue).clicked() {
                 frame.inputs.audio.cue = Some(cue.clone());
             }
-            if ui.small_button("Preview").on_hover_text(format!("Play {cue}")).clicked() {
+            if ui
+                .small_button("Preview")
+                .on_hover_text(format!("Play {cue}"))
+                .clicked()
+            {
                 invoke(
                     frame,
                     "audio.cue.preview",
@@ -567,7 +614,10 @@ fn cues(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
 fn new_cue(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, mixer: &Mixer) {
     let audio = &mut frame.inputs.audio;
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(&mut audio.cue_reference).hint_text("audio/cues/hit.cycue"));
+        ui.add(
+            egui::TextEdit::singleline(&mut audio.cue_reference)
+                .hint_text("game/audio/cues/hit.cycue"),
+        );
         ui.add(egui::TextEdit::singleline(&mut audio.cue_clip).hint_text("tone:440:0.5 or a .wav"));
         egui::ComboBox::from_id_salt("audio-cue-bus")
             .selected_text(audio.cue_bus.clone())
@@ -596,7 +646,11 @@ fn source_range(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, source: &AudioSour
         ),
     ));
     let entity = source.entity.to_string();
-    let mut range = (source.min_distance, source.max_distance, source.attenuation.clone());
+    let mut range = (
+        source.min_distance,
+        source.max_distance,
+        source.attenuation.clone(),
+    );
     ui.horizontal(|ui| {
         ui.label("Full volume within");
         if let Some(min) = committed_drag(

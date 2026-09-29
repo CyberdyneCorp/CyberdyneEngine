@@ -42,7 +42,7 @@ The first vertical slice supports:
   `AudioAuthoring` reconciles the bus graph with a `cymixer 1` asset by bus name, so a gain change
   keeps its voices, and it refuses a cyclic, dangling or overlong mixer before touching the graph.
   It loads `cycue 1` cues from a generated tone or a 48 kHz WAV. At Play it applies the project's
-  `audio/mixer.cymixer`, names every project cue for ABI 1.3's `audio_find_cue`, and starts each
+  `game/audio/mixer.cymixer`, names every project cue for ABI 1.3's `audio_find_cue`, and starts each
   autoplaying `cy::audio::AudioSource`. `tests/data/audio_*` holds the wire the Rust editor's
   suites read and write.
 

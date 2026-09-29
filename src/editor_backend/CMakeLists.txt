@@ -62,7 +62,7 @@ if(CY_BUILD_TESTS)
             NAME editor_backend_audio
             KIND integration
             SOURCES "${tests_dir}/test_audio_service.cpp"
-            DEPENDENCIES cy::editor-backend cy::scene-serialization
+            DEPENDENCIES cy::editor-backend cy::scene-serialization cy::scene
             DEFINITIONS
                 "CY_AUDIO_WIRE_DIR=\"${tests_dir}/data\""
                 "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")

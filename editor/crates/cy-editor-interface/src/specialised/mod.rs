@@ -784,7 +784,10 @@ impl SpecialisedEditors {
     /// Install the audio vocabulary the engine's `audio.capabilities.get` answered: its effect
     /// kinds and attenuation models. Until one arrives the mixer editor refuses, naming `audio`,
     /// because a mixer whose effects the editor made up is one the engine may not have. Issue #29.
-    pub fn install_audio_vocabulary(&mut self, vocabulary: cy_editor_services::audio::AudioVocabulary) {
+    pub fn install_audio_vocabulary(
+        &mut self,
+        vocabulary: cy_editor_services::audio::AudioVocabulary,
+    ) {
         self.audio_vocabulary = Some(vocabulary);
     }
 
@@ -957,7 +960,9 @@ mod tests {
         let session = host
             .open(Domain::AudioBusesAndMixing)
             .expect("the mixer opens on the engine's vocabulary");
-        assert!(session.graph.is_none() && session.timeline.is_none() && session.painting.is_none());
+        assert!(
+            session.graph.is_none() && session.timeline.is_none() && session.painting.is_none()
+        );
         assert!(host.openable().contains(&Domain::AudioBusesAndMixing));
     }
 

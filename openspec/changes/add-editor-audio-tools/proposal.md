@@ -12,7 +12,7 @@ this host".
 
 ## What Changes
 
-- **A mixer asset and its editor.** `audio/mixer.cymixer` (`cymixer 1`) holds the bus graph: Master
+- **A mixer asset and its editor.** `game/audio/mixer.cymixer` (`cymixer 1`) holds the bus graph: Master
   first, each bus's output, gain, mute, solo, bypass, up to four sends and up to eight effects.
   The Audio Mixer panel is a `SpecialisedTool` on the scaffold from #59 and shows the graph as a
   table, with each bus's level as the engine measured it. Every edit (`audio.bus.add`, `.remove`,

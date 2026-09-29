@@ -28,6 +28,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// The `audio.*` request state [`crate::backend::BackendServices`] holds.
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "four independent latches of one connection's audio lifecycle"
+)]
 pub struct AudioRequests {
     wanted: bool,
     polling: bool,
@@ -146,7 +150,8 @@ impl AudioRequests {
 
     fn disconnect(&mut self) {
         if self.in_flight.take().is_some() || !self.queue.is_empty() {
-            self.problem = Some("the runtime disconnected before answering the audio request".into());
+            self.problem =
+                Some("the runtime disconnected before answering the audio request".into());
         }
         self.queue.clear();
         self.vocabulary_requested = false;
@@ -169,12 +174,18 @@ impl AudioRequests {
         if pending != request {
             return None;
         }
-        if matches!(kind, ServiceEventKind::Accepted | ServiceEventKind::Progress) {
+        if matches!(
+            kind,
+            ServiceEventKind::Accepted | ServiceEventKind::Progress
+        ) {
             return Some(None);
         }
         let operation = operation.clone();
         self.in_flight = None;
-        Some(self.settle(&operation, *kind, *schema_version, payload).err())
+        Some(
+            self.settle(&operation, *kind, *schema_version, payload)
+                .err(),
+        )
     }
 
     fn settle(

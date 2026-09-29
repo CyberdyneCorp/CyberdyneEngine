@@ -1849,7 +1849,10 @@ impl cy_editor_commands::ProjectHost for Editor {
     }
 
     fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {
-        let sent = self.backend.audio.request(&self.runtime, operation, payload)?;
+        let sent = self
+            .backend
+            .audio
+            .request(&self.runtime, operation, payload)?;
         Ok(sent.map_or(0, RequestId::as_u64))
     }
 

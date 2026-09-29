@@ -19,9 +19,9 @@ use cy_editor_documents::selection::Selection;
 use cy_editor_viewport::gizmo::TransformBinding;
 
 use crate::audio::{
-    ATTENUATION_MODELS, CUE_PREVIEW, Cue, DEFAULT_MIXER, EFFECT_KINDS, Effect, MIXER_APPLY,
-    Mixer, PREVIEW_STOP, Placement, SOURCE_COMPONENT, STATE_GET, preview_payload,
-    validate_cue_reference, validate_mixer_reference,
+    ATTENUATION_MODELS, CUE_PREVIEW, Cue, DEFAULT_MIXER, EFFECT_KINDS, Effect, MIXER_APPLY, Mixer,
+    PREVIEW_STOP, Placement, SOURCE_COMPONENT, STATE_GET, preview_payload, validate_cue_reference,
+    validate_mixer_reference,
 };
 use crate::authoring::within_scope;
 
@@ -90,14 +90,20 @@ fn mixer_reference() -> ParameterSpec {
     ParameterSpec::optional(
         "reference",
         ValueKind::Text,
-        "Project-relative .cymixer asset; the project's audio/mixer.cymixer when omitted.",
+        "Project-relative .cymixer asset; the project's game/audio/mixer.cymixer when omitted.",
         Value::Text(DEFAULT_MIXER.into()),
     )
 }
 
 fn mutation(id: &'static str, label: &'static str, description: &'static str) -> Metadata {
-    Metadata::new(id, label, CATEGORY, description, EffectClass::ReversibleMutation)
-        .with(mixer_reference())
+    Metadata::new(
+        id,
+        label,
+        CATEGORY,
+        description,
+        EffectClass::ReversibleMutation,
+    )
+    .with(mixer_reference())
 }
 
 fn read_class(id: &'static str, label: &'static str, description: &'static str) -> Metadata {
@@ -242,9 +248,12 @@ fn bus_add() -> Command {
         |context, arguments| {
             let name = text(arguments, "name").to_owned();
             let output = text(arguments, "output").to_owned();
-            edit_mixer(context, arguments, format!("Added audio bus {name}"), |mixer| {
-                mixer.add_bus(&name, &output)
-            })
+            edit_mixer(
+                context,
+                arguments,
+                format!("Added audio bus {name}"),
+                |mixer| mixer.add_bus(&name, &output),
+            )
         },
     )
 }
@@ -364,7 +373,7 @@ fn bus_send() -> Command {
         .with(ParameterSpec::required(
             "from",
             ValueKind::Text,
-            "The bus that sends.",
+            "The bus whose signal is sent.",
         ))
         .with(ParameterSpec::required(
             "to",
@@ -587,7 +596,7 @@ fn cue_save() -> Command {
         .with(ParameterSpec::optional(
             "looping",
             ValueKind::Bool,
-            "Loop until stopped.",
+            "Loop the clip until the voice is stopped.",
             Value::Bool(false),
         )),
         |context, arguments| {
@@ -641,12 +650,12 @@ fn send_preview(
     let host = host(context)?;
     let source = host.read_source(reference)?;
     Cue::decode(&source)?;
-    let request = host.audio_request(
-        CUE_PREVIEW,
-        preview_payload(reference, &source, placement),
-    )?;
-    Ok(Outcome::new(format!("Previewing {reference} in the engine"))
-        .with("request", Value::Text(request.to_string())))
+    let request =
+        host.audio_request(CUE_PREVIEW, preview_payload(reference, &source, placement))?;
+    Ok(
+        Outcome::new(format!("Previewing {reference} in the engine"))
+            .with("request", Value::Text(request.to_string())),
+    )
 }
 
 fn cue_preview() -> Command {
@@ -802,9 +811,10 @@ fn create_source(context: &mut dyn CommandContext, arguments: &Arguments) -> Res
         .active_document()
         .ok_or_else(|| Problem::new("create an audio source", "no world is open"))?;
     let actor = context.actor();
-    let name = std::path::Path::new(&cue)
-        .file_stem()
-        .map_or_else(|| "Audio Source".to_owned(), |stem| stem.to_string_lossy().into_owned());
+    let name = std::path::Path::new(&cue).file_stem().map_or_else(
+        || "Audio Source".to_owned(),
+        |stem| stem.to_string_lossy().into_owned(),
+    );
     let document = context
         .document_mut(document_id)
         .ok_or_else(|| Problem::not_found("the open world"))?;
@@ -900,13 +910,14 @@ impl AudioSource {
             return None;
         };
         let transform = TransformBinding::of_schema(schema)?;
-        let position = match document
-            .content()
-            .field(entity, transform.component, transform.translation)
-        {
-            Some(Value::Vec3(position)) => *position,
-            _ => [0.0; 3],
-        };
+        let position =
+            match document
+                .content()
+                .field(entity, transform.component, transform.translation)
+            {
+                Some(Value::Vec3(position)) => *position,
+                _ => [0.0; 3],
+            };
         Some(Self {
             entity,
             cue: cue.clone(),
@@ -997,7 +1008,12 @@ fn source_range() -> Command {
             document.with_transaction("Set Audio Source Range", actor, |document| {
                 document.set_field(entity, component.id, min_id, Value::Float(min))?;
                 document.set_field(entity, component.id, max_id, Value::Float(max))?;
-                document.set_field(entity, component.id, curve_id, Value::Text(attenuation.clone()))
+                document.set_field(
+                    entity,
+                    component.id,
+                    curve_id,
+                    Value::Text(attenuation.clone()),
+                )
             })?;
             Ok(Outcome::new(format!("Heard from {min} m to {max} m")))
         },

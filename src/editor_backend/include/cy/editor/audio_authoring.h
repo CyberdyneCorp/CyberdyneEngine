@@ -47,7 +47,7 @@ namespace cy::editor {
 inline constexpr std::string_view kAudioSourceComponent = "cy::audio::AudioSource";
 
 /// Where a project keeps its mixer, as `cy_editor_services::audio::DEFAULT_MIXER` says.
-inline constexpr std::string_view kProjectMixer = "audio/mixer.cymixer";
+inline constexpr std::string_view kProjectMixer = "game/audio/mixer.cymixer";
 
 /// One send of a mixer bus.
 struct MixerSend {
@@ -127,8 +127,8 @@ struct EmitterMarker {
     bool enabled = true;
 };
 
-/// Read every `cy::audio::AudioSource` in a world. A malformed source is refused by name rather than
-/// skipped, because a silent emitter is indistinguishable from a quiet one.
+/// Read every `cy::audio::AudioSource` in a world. A malformed source is refused by name rather
+/// than skipped, because a silent emitter is indistinguishable from a quiet one.
 [[nodiscard]] Expected<std::vector<EmitterMarker>, Error> read_emitters(
     const scene::serialization::World& world) noexcept;
 
@@ -170,9 +170,9 @@ public:
     /// Make `cymixer 1` text the graph, keeping each bus that keeps its name.
     [[nodiscard]] Status apply_mixer(const Mixer& mixer) noexcept;
 
-    /// Apply the project's `audio/mixer.cymixer`, when it has one. What the runtime does when it
-    /// starts and when Play starts, so the graph Play mixes through is the one on disk whether or
-    /// not an editor sent it.
+    /// Apply the project's `game/audio/mixer.cymixer`, when it has one. What the runtime does when
+    /// it starts and when Play starts, so the graph Play mixes through is the one on disk whether
+    /// or not an editor sent it.
     [[nodiscard]] Status apply_project_mixer() noexcept;
 
     /// Load or replace a cue under `name`, and name it for Swift.
@@ -232,7 +232,8 @@ private:
     [[nodiscard]] Status reconcile(const Mixer& mixer) noexcept;
     [[nodiscard]] Status configure_bus(const MixerBus& bus) noexcept;
     [[nodiscard]] const LoadedCue* find_cue(std::string_view name) const noexcept;
-    [[nodiscard]] Expected<const LoadedCue*, Error> cue_for_source(std::string_view reference) noexcept;
+    [[nodiscard]] Expected<const LoadedCue*, Error> cue_for_source(
+        std::string_view reference) noexcept;
     [[nodiscard]] Status render_clip(const Cue& cue, std::vector<f32>& samples,
                                      u32& channels) const noexcept;
     [[nodiscard]] Expected<ActiveVoice, Error> start_voice(const LoadedCue& cue,

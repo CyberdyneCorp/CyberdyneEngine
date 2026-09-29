@@ -15,11 +15,13 @@
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/host.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/registry.h>
 #include <cy/editor/audio_authoring.h>
 #include <cy/editor/audio_service.h>
 #include <cy/editor/material_service.h>
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/test/test.h>
+#include <cy_reflect_generated_scene.h>
 
 #include <algorithm>
 #include <cmath>
@@ -27,7 +29,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,7 +47,10 @@ cy::Allocator& allocator() noexcept {
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     CY_REQUIRE(input.good());
-    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    const auto size = static_cast<std::size_t>(std::filesystem::file_size(path));
+    std::string text(size, '\0');
+    CY_REQUIRE(input.read(text.data(), static_cast<std::streamsize>(size)).good());
+    return text;
 }
 
 std::filesystem::path wire(std::string_view name) {
@@ -249,9 +253,8 @@ struct Service {
 
     /// Submit and poll one request, keeping a copy of the event's payload.
     std::pair<u32, std::vector<u8>> call(const char* operation, const std::vector<u8>& payload) {
-        const CyServiceRequest submitted{sizeof(CyServiceRequest), 1,
-                                         request++,                operation,
-                                         payload.data(),           payload.size()};
+        const CyServiceRequest submitted{
+            sizeof(CyServiceRequest), 1, request++, operation, payload.data(), payload.size()};
         CY_REQUIRE_EQ(api->service_submit(&host, session, &submitted), CY_RESULT_OK);
         CyServiceEvent event{};
         bool present = false;
@@ -308,13 +311,15 @@ CY_TEST_CASE("editor audio: a mixer is refused whole when it would cycle, dangle
     CY_CHECK(refused("cymixer 1\nbus Music Master 1 0 0 0\nbus Master - 1 0 0 0\n"));
     CY_CHECK(refused(std::string(kMaster) + "bus Music Nowhere 1 0 0 0\n"));
     CY_CHECK(refused(std::string(kMaster) + "bus Music Master 5 0 0 0\n"));
-    CY_CHECK(refused(std::string(kMaster) + "bus Music Master 1 0 0 0\nbus Music Master 1 0 0 0\n"));
-    CY_CHECK(refused(std::string(kMaster) + "bus Music Master 1 0 0 0\neffect Music reverb 0 0 0\n"));
+    CY_CHECK(
+        refused(std::string(kMaster) + "bus Music Master 1 0 0 0\nbus Music Master 1 0 0 0\n"));
+    CY_CHECK(
+        refused(std::string(kMaster) + "bus Music Master 1 0 0 0\neffect Music reverb 0 0 0\n"));
     // A send back up the chain is the cycle the bus graph could only refuse half-way through.
-    CY_CHECK(refused(std::string(kMaster) +
-                     "bus A Master 1 0 0 0\nbus B A 1 0 0 0\nsend A B 0.5\n"));
-    CY_CHECK_FALSE(refused(std::string(kMaster) +
-                           "bus A Master 1 0 0 0\nbus B A 1 0 0 0\nsend B A 0.5\n"));
+    CY_CHECK(
+        refused(std::string(kMaster) + "bus A Master 1 0 0 0\nbus B A 1 0 0 0\nsend A B 0.5\n"));
+    CY_CHECK_FALSE(
+        refused(std::string(kMaster) + "bus A Master 1 0 0 0\nbus B A 1 0 0 0\nsend B A 0.5\n"));
 
     Service service;
     const auto [kind, payload] = service.call(
@@ -381,7 +386,8 @@ CY_TEST_CASE("editor audio: the editor's mixer sets the engine's gains, routes a
     CY_CHECK_EQ(removed.buses.size(), 2U);
 }
 
-CY_TEST_CASE("editor audio: previewing a cue starts an engine voice with the engine's attenuation") {
+CY_TEST_CASE(
+    "editor audio: previewing a cue starts an engine voice with the engine's attenuation") {
     Service service;
     (void)service.state("audio.mixer.apply", bytes_of(read_file(wire("audio_mixer_v1.cymixer"))));
     const std::string preview = read_file(wire("audio_cue_preview_v1.wire"));
@@ -402,19 +408,19 @@ CY_TEST_CASE("editor audio: previewing a cue starts an engine voice with the eng
     CY_CHECK_GT(mixed.bus("Reverb")->peak, 0.0F);
 
     // The nearer source is louder: the same cue at one metre mixes above the one at three.
-    const State near_source = service.state(
-        "audio.cue.preview",
-        preview_payload("audio/cues/ping.cycue", read_file(wire("audio_cue_v1.cycue")), true,
-                        {1.0F, 0.0F, 0.0F}));
+    const State near_source =
+        service.state("audio.cue.preview", preview_payload("audio/cues/ping.cycue",
+                                                           read_file(wire("audio_cue_v1.cycue")),
+                                                           true, {1.0F, 0.0F, 0.0F}));
     CY_CHECK(near(near_source.gain, 1.0F));
     const State near_mix = service.advance(0.1F);
     CY_CHECK_GT(near_mix.bus("SFX")->peak, mixed.bus("SFX")->peak * 2.0F);
 
     // Past the silence radius the engine's curve is zero, and so is the mix.
-    const State beyond = service.state(
-        "audio.cue.preview",
-        preview_payload("audio/cues/ping.cycue", read_file(wire("audio_cue_v1.cycue")), true,
-                        {60.0F, 0.0F, 0.0F}));
+    const State beyond =
+        service.state("audio.cue.preview", preview_payload("audio/cues/ping.cycue",
+                                                           read_file(wire("audio_cue_v1.cycue")),
+                                                           true, {60.0F, 0.0F, 0.0F}));
     CY_CHECK_EQ(beyond.gain, 0.0F);
     CY_CHECK(beyond.preview_playing);
     (void)service.advance(0.05F);
@@ -495,8 +501,8 @@ CY_TEST_CASE("editor audio: the vocabulary the mixer editor offers is the server
     for (u32 count = cursor.u32v(); count > 0; --count) {
         models.push_back(cursor.text());
     }
-    CY_CHECK_EQ(models, (std::vector<std::string>{"inverse", "inverse-square", "linear",
-                                                  "logarithmic"}));
+    CY_CHECK_EQ(models,
+                (std::vector<std::string>{"inverse", "inverse-square", "linear", "logarithmic"}));
     CY_CHECK(cursor.finished());
     // No mixing goes into this reply, so it is compared byte for byte.
     CY_CHECK(committed_reply("audio_capabilities_v1.wire", payload) ==
@@ -513,10 +519,11 @@ struct PlayProject {
         root = std::filesystem::path(CY_TEST_BINARY_DIR) / "editor-audio-play";
         std::filesystem::remove_all(root);
         std::filesystem::create_directories(root / "audio/cues");
+        std::filesystem::create_directories(root / "game/audio");
         std::ofstream(root / "audio/cues/hum.cycue")
             << "cycue 1\nclip tone:220:0.5\nbus Master\nlooping 1\n";
         std::ofstream(root / "audio/cues/boom.cycue") << "cycue 1\nclip tone:80:0.2\nbus Master\n";
-        std::ofstream(root / "audio/mixer.cymixer")
+        std::ofstream(root / "game/audio/mixer.cymixer")
             << "cymixer 1\nbus Master - 1 0 0 0\nbus Ambience Master 0.25 0 0 0\n";
         std::ofstream(root / "audio/cues/wind.cycue")
             << "cycue 1\nclip tone:300:0.5\nbus Ambience\nlooping 1\n";
@@ -564,11 +571,21 @@ node 1 - "audio" "Quiet"
     field 9 true
 )";
 
+/// Read a world and resolve it against the engine's scene types, as the runtime's world is.
+void load_world(std::string_view text, cy::scene::serialization::World& world) {
+    CY_REQUIRE(cy::scene::serialization::read_world(text, "worlds/audio.cyworld", world));
+    cy::reflect::TypeRegistry registry;
+    CY_REQUIRE(cy::reflect::register_scene_types(registry));
+    cy::scene::serialization::AuthoringSchema schema(allocator());
+    CY_REQUIRE(cy::scene::serialization::build_authoring_schema(registry, schema));
+    CY_REQUIRE(cy::scene::serialization::resolve_against(world, schema));
+}
+
 }  // namespace
 
 CY_TEST_CASE("editor audio: the world's sources are read with their attenuation radii") {
     cy::scene::serialization::World world(allocator());
-    CY_REQUIRE(cy::scene::serialization::read_world(kWorld, "worlds/audio.cyworld", world));
+    load_world(kWorld, world);
     const auto sources = cy::editor::read_emitters(world);
     CY_REQUIRE(sources.has_value());
     CY_REQUIRE_EQ(sources->size(), 2U);
@@ -583,17 +600,18 @@ CY_TEST_CASE("editor audio: the world's sources are read with their attenuation 
     CY_REQUIRE(field != std::string::npos);
     inverted.replace(field, std::string_view("field 6 30").size(), "field 6 0.5");
     cy::scene::serialization::World broken(allocator());
-    CY_REQUIRE(cy::scene::serialization::read_world(inverted, "worlds/audio.cyworld", broken));
+    load_world(inverted, broken);
     CY_CHECK_FALSE(cy::editor::read_emitters(broken).has_value());
 }
 
-CY_TEST_CASE("editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it") {
+CY_TEST_CASE(
+    "editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it") {
     PlayProject project;
     cy::editor::AudioAuthoring audio(allocator());
     CY_REQUIRE(audio.initialize());
     audio.set_project(project.root.string());
     cy::scene::serialization::World world(allocator());
-    CY_REQUIRE(cy::scene::serialization::read_world(kWorld, "worlds/audio.cyworld", world));
+    load_world(kWorld, world);
 
     CY_REQUIRE(audio.start_play(world));
     CY_CHECK(audio.playing());
@@ -648,12 +666,15 @@ CY_TEST_CASE("editor audio: Play starts the autoplay sources, Swift finds every 
 }
 
 CY_TEST_CASE("editor audio: a WAV clip is read from the project, and a wrong rate is refused") {
-    const std::filesystem::path root = std::filesystem::path(CY_TEST_BINARY_DIR) / "editor-audio-wav";
+    const std::filesystem::path root =
+        std::filesystem::path(CY_TEST_BINARY_DIR) / "editor-audio-wav";
     std::filesystem::create_directories(root / "sounds");
     const auto write_wav = [&](const char* name, u32 rate) {
         std::vector<u8> bytes;
-        const auto chunk = [&](std::string_view id) { bytes.insert(bytes.end(), id.begin(), id.end()); };
-        const u32 frames = 480;
+        const auto chunk = [&](std::string_view id) {
+            bytes.insert(bytes.end(), id.begin(), id.end());
+        };
+        const u32 frames = 4800;
         chunk("RIFF");
         append_u32(bytes, 36 + frames * 2);
         chunk("WAVE");
@@ -680,7 +701,8 @@ CY_TEST_CASE("editor audio: a WAV clip is read from the project, and a wrong rat
     audio.set_project(root.string());
     CY_REQUIRE(audio.load_cue("sounds/half.cycue", "cycue 1\nclip sounds/half.wav\n"));
     CY_REQUIRE(audio.preview("sounds/half.cycue", {}));
-    audio.pump(0.005F);
+    // Two blocks: the first ramps the voice's gain up from silence, the second is at full gain.
+    audio.pump(0.01F);
     const cy::u32 master = audio.server().buses().index_of(audio.server().buses().master());
     CY_CHECK(near(audio.server().bus_levels()[master].peak, 0.5F, 1e-3F));
     CY_CHECK_FALSE(audio.load_cue("sounds/slow.cycue", "cycue 1\nclip sounds/slow.wav\n"));

@@ -29,7 +29,8 @@ constexpr usize kMaxCues = 256;
 constexpr f32 kMaxBusVolume = 4.0F;
 constexpr u32 kToneChannels = 1;
 
-// --- Text -----------------------------------------------------------------------------------------
+// --- Text
+// -----------------------------------------------------------------------------------------
 
 /// Split one line on single spaces. Assets are written by the editor, so a doubled space is a
 /// malformed file rather than something to tolerate.
@@ -89,7 +90,8 @@ Error refuse(const char* message) noexcept {
     return Error{ErrorCode::InvalidArgument, message};
 }
 
-// --- The mixer asset ------------------------------------------------------------------------------
+// --- The mixer asset
+// ------------------------------------------------------------------------------
 
 MixerBus* bus_named(Mixer& mixer, std::string_view name) noexcept {
     for (MixerBus& bus : mixer.buses) {
@@ -251,7 +253,8 @@ Status check_acyclic(const Mixer& mixer) noexcept {
     return ok();
 }
 
-// --- The cue asset --------------------------------------------------------------------------------
+// --- The cue asset
+// --------------------------------------------------------------------------------
 
 Status parse_cue_number(std::string_view key, std::string_view value, Cue& cue) noexcept {
     f32 number = 0.0F;
@@ -337,7 +340,8 @@ Expected<std::string, Error> read_project_file(const std::string& project,
     return buffer.str();
 }
 
-// --- WAV --------------------------------------------------------------------------------------------
+// --- WAV
+// --------------------------------------------------------------------------------------------
 
 u32 le32(std::string_view bytes, usize at) noexcept {
     u32 value = 0;
@@ -402,7 +406,8 @@ Status decode_wav(std::string_view bytes, std::vector<f32>& samples, u32& channe
     return ok();
 }
 
-// --- Scene sources --------------------------------------------------------------------------------
+// --- Scene sources
+// --------------------------------------------------------------------------------
 
 const ser::WorldTypeDecl* source_type(const ser::World& world) noexcept {
     for (const ser::WorldTypeDecl& type : world.types()) {
@@ -457,7 +462,8 @@ Status validate_marker(const EmitterMarker& marker) noexcept {
     return ok();
 }
 
-// --- Encoding ---------------------------------------------------------------------------------------
+// --- Encoding
+// ---------------------------------------------------------------------------------------
 
 Status put_u8(Array<u8>& out, u8 value) noexcept {
     return out.push_back(value);
@@ -530,7 +536,8 @@ constexpr std::array<audio::AttenuationModel, 4> kModels = {
 
 std::string_view stem_of(std::string_view reference) noexcept {
     const usize slash = reference.rfind('/');
-    std::string_view file = slash == std::string_view::npos ? reference : reference.substr(slash + 1);
+    std::string_view file =
+        slash == std::string_view::npos ? reference : reference.substr(slash + 1);
     const usize dot = file.rfind('.');
     return dot == std::string_view::npos ? file : file.substr(0, dot);
 }
@@ -542,7 +549,8 @@ bool skipped_directory(const std::filesystem::path& path) noexcept {
 
 }  // namespace
 
-// --- Vocabulary -------------------------------------------------------------------------------------
+// --- Vocabulary
+// -------------------------------------------------------------------------------------
 
 audio::EffectKind effect_kind_named(std::string_view name) noexcept {
     for (const EffectVocabulary& effect : kEffects) {
@@ -624,8 +632,8 @@ Expected<std::vector<EmitterMarker>, Error> read_emitters(const ser::World& worl
             if (declared == nullptr) {
                 return make_unexpected(refuse("audio source: an undeclared field"));
             }
-            if (Status read = read_source_field(world, world.text(declared->name), field.value,
-                                                marker);
+            if (Status read =
+                    read_source_field(world, world.text(declared->name), field.value, marker);
                 !read) {
                 return make_unexpected(read.error());
             }
@@ -643,13 +651,11 @@ Expected<std::vector<EmitterMarker>, Error> read_emitters(const ser::World& worl
     return markers;
 }
 
-// --- AudioAuthoring ---------------------------------------------------------------------------------
+// --- AudioAuthoring
+// ---------------------------------------------------------------------------------
 
 AudioAuthoring::AudioAuthoring(Allocator& allocator, audio::AudioBackend* device) noexcept
-    : allocator_(&allocator),
-      device_(device),
-      server_(allocator),
-      adapter_(server_, allocator) {}
+    : allocator_(&allocator), device_(device), server_(allocator), adapter_(server_, allocator) {}
 
 AudioAuthoring::~AudioAuthoring() {
     server_.shutdown();
@@ -821,8 +827,9 @@ Status AudioAuthoring::configure_bus(const MixerBus& bus) noexcept {
 }
 
 void AudioAuthoring::stop_voices_on_dead_buses() noexcept {
-    // A voice's bus is fixed when it starts, so a mixer edit that removes the bus is the one place a
-    // voice can outlive it. Stopped rather than rerouted: which bus it belongs on is the author's.
+    // A voice's bus is fixed when it starts, so a mixer edit that removes the bus is the one place
+    // a voice can outlive it. Stopped rather than rerouted: which bus it belongs on is the
+    // author's.
     const auto orphaned = [this](const ActiveVoice& active) {
         if (server_.buses().alive(active.bus)) {
             return false;
@@ -904,7 +911,8 @@ Status AudioAuthoring::load_cue(std::string_view name, std::string_view text) no
         return named;
     }
     const auto existing = std::ranges::find_if(
-        cues_, [name](const std::unique_ptr<LoadedCue>& cue_slot) { return cue_slot->name == name; });
+        cues_,
+        [name](const std::unique_ptr<LoadedCue>& cue_slot) { return cue_slot->name == name; });
     if (existing != cues_.end()) {
         stop_preview();
         server_.destroy_clip((*existing)->clip);
@@ -1043,7 +1051,8 @@ Status AudioAuthoring::start_play(const ser::World& world) noexcept {
     std::error_code error;
     const std::filesystem::path root(project_);
     for (auto entry = std::filesystem::recursive_directory_iterator(root, error);
-         !error && entry != std::filesystem::recursive_directory_iterator(); entry.increment(error)) {
+         !error && entry != std::filesystem::recursive_directory_iterator();
+         entry.increment(error)) {
         if (entry->is_directory() && skipped_directory(entry->path())) {
             entry.disable_recursion_pending();
             continue;

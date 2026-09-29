@@ -361,7 +361,8 @@ impl EditorWindow {
         }
         self.audio_vocabulary_revision = revision;
         if let Some(vocabulary) = self.editor.backend.audio.vocabulary() {
-            self.specialised.install_audio_vocabulary(vocabulary.clone());
+            self.specialised
+                .install_audio_vocabulary(vocabulary.clone());
         }
     }
 

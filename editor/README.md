@@ -413,7 +413,7 @@ three through one `cy::audio::AudioServer` in the hosted runtime:
 
 | What | Where | Authored by |
 |---|---|---|
-| The bus graph | `audio/mixer.cymixer` (`cymixer 1`) | `audio.mixer.create`, `audio.bus.add`, `.remove`, `.volume`, `.flag`, `.route`, `.send`, `.effect.add`, `.effect.set`, `.effect.remove` |
+| The bus graph | `game/audio/mixer.cymixer` (`cymixer 1`) | `audio.mixer.create`, `audio.bus.add`, `.remove`, `.volume`, `.flag`, `.route`, `.send`, `.effect.add`, `.effect.set`, `.effect.remove` |
 | A playable sound | `*.cycue` (`cycue 1`) | `audio.cue.save` |
 | A sound in the world | `cy::audio::AudioSource` on an entity | `audio.source.create`, `audio.source.range`, or the Inspector |
 
