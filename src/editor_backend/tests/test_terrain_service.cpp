@@ -11,6 +11,7 @@
 #include <cy/editor/terrain_service.h>
 #include <cy/test/test.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -199,14 +200,11 @@ Stroke stroke(cy::u64 id, Op op) {
 
 /// Samples farther than the radius from every dab, in metres over the 128 m region.
 bool outside(const Stroke& brush, cy::u32 x, cy::u32 z) noexcept {
-    for (const Dab& dab : brush.dabs) {
+    return std::ranges::all_of(brush.dabs, [&](const Dab& dab) {
         const double dx = static_cast<double>(x) - (static_cast<double>(dab.x) * 128.0);
         const double dz = static_cast<double>(z) - (static_cast<double>(dab.z) * 128.0);
-        if (std::sqrt((dx * dx) + (dz * dz)) < static_cast<double>(brush.radius)) {
-            return false;
-        }
-    }
-    return true;
+        return std::sqrt((dx * dx) + (dz * dz)) >= static_cast<double>(brush.radius);
+    });
 }
 
 }  // namespace

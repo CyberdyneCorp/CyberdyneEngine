@@ -4,6 +4,7 @@
 #include <cy/terrain/material.h>
 #include <cy/terrain/stack.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 
@@ -356,9 +357,8 @@ u32 ModifierStack::halo_samples(const TileCoord& coord) const noexcept {
             // samples of halo to be exact. A halo smaller than this produces a tile whose interior
             // depends on where the tile boundary is — a seam, and the local form of the spike's
             // second condition.
-            wanted = (modifier.kind == ModifierKind::Brush)
-                         ? wanted + modifier.iterations
-                         : ((wanted > modifier.iterations) ? wanted : modifier.iterations);
+            wanted = (modifier.kind == ModifierKind::Brush) ? wanted + modifier.iterations
+                                                            : std::max(wanted, modifier.iterations);
         }
         pad = (wanted > pad) ? wanted : pad;
     }

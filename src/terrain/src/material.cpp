@@ -3,6 +3,7 @@
 
 #include <cy/terrain/material.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -205,7 +206,7 @@ void write_texel(const LayerBlend* merged, u32 keep, f32 kept, MaterialTexel& ou
 }  // namespace
 
 void paint_texel(MaterialTexel& texel, u8 layer, f32 amount) noexcept {
-    const f32 painted = (amount < 0.0F) ? 0.0F : ((amount > 1.0F) ? 1.0F : amount);
+    const f32 painted = std::clamp(amount, 0.0F, 1.0F);
     if (painted <= 0.0F) {
         return;
     }

@@ -8,6 +8,7 @@
 #include <cy/terrain/region.h>
 #include <cy/terrain/surface.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cy::terrain {
@@ -36,8 +37,8 @@ void stitch(const TerrainTile& tile, u32 tile_x, u32 tile_z, RegionSnapshot& out
     }
     for (u32 j = 0; j < kTileTexels; ++j) {
         for (u32 i = 0; i < kTileTexels; ++i) {
-            const usize at =
-                (static_cast<usize>((tile_z * kTileQuads) + j) * quads) + (tile_x * kTileQuads) + i;
+            const usize at = (static_cast<usize>((tile_z * kTileQuads) + j) * quads) +
+                             (static_cast<usize>(tile_x) * kTileQuads) + i;
             out.texels[at] = tile.texel(i, j);
             out.holes[at] = tile.hole(i, j) ? 1U : 0U;
         }
@@ -163,9 +164,8 @@ Expected<f32, Error> region_height_at(Allocator& allocator, const ModifierStack&
     const f64 limit = static_cast<f64>(region.tiles * kTileQuads);
     const f64 column = std::round(x / spacing);
     const f64 row = std::round(z / spacing);
-    const auto sample_x =
-        static_cast<u32>((column < 0.0) ? 0.0 : ((column > limit) ? limit : column));
-    const auto sample_z = static_cast<u32>((row < 0.0) ? 0.0 : ((row > limit) ? limit : row));
+    const auto sample_x = static_cast<u32>(std::clamp(column, 0.0, limit));
+    const auto sample_z = static_cast<u32>(std::clamp(row, 0.0, limit));
     // The last lattice line belongs to the previous tile's far edge, which holds the same value.
     const u32 tile_x =
         (sample_x == region.tiles * kTileQuads) ? region.tiles - 1 : sample_x / kTileQuads;

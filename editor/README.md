@@ -369,6 +369,12 @@ for the scripted strokes. `panel_snapshots.rs` checks the requests on every run,
 `CY_TERRAIN_FIXTURE=write` first on `cargo test -p cy-editor-shell --test panel_snapshots` and then
 on `ctest -R editor_backend_terrain`.
 
+The [viewport](../docs/design/images/editor-terrain-viewport.png) shows a raise with a hole cut
+through it, as the hosted runtime's Vulkan frame draws what the engine meshed. It is photographed by
+`smoke.editor_authored_frame_vulkan` when `CY_TERRAIN_VIEWPORT_SHOT` names a PNG path:
+`CY_TERRAIN_VIEWPORT_SHOT=<file>.png build/dev/cy_test_smoke_editor_authored_frame_vulkan
+--test-case='authored native frame draws the terrain*'`.
+
 What is not built yet:
 - Painted layers show in the panel but not in the viewport, because the engine's terrain surface
   material is not yet bound on a device (`src/terrain/README.md`, "No shader").

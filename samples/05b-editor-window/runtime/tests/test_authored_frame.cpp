@@ -22,7 +22,7 @@
 
 #include "authored_frame.h"
 #include "material_runtime.h"
-#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
 #    include "golden.h"
 #endif
 
@@ -436,6 +436,28 @@ std::vector<u8> terrain_request(bool hole) {
     return out;
 }
 
+constexpr u32 kTerrainShotWidth = 640;
+constexpr u32 kTerrainShotHeight = 360;
+
+// With CY_TERRAIN_VIEWPORT_SHOT naming a PNG path, photograph the sculpted and holed terrain as the
+// viewport draws it: how `docs/design/images/editor-terrain-viewport.png` is made.
+void write_terrain_shot(const AuthoredFrame& frame) {
+    const char* path = std::getenv("CY_TERRAIN_VIEWPORT_SHOT");
+    if (path == nullptr || path[0] == '\0') {
+        return;
+    }
+#if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
+    render_test::Image shot(allocator());
+    CY_REQUIRE(render_test::adopt(shot, frame.pixels(), kTerrainShotWidth, kTerrainShotHeight)
+                   .has_value());
+    CY_REQUIRE(render_test::write_png(path, shot).has_value());
+    std::fprintf(stderr, "wrote %s\n", path);
+#else
+    (void)frame;
+    std::fprintf(stderr, "CY_TERRAIN_VIEWPORT_SHOT: this build has no PNG encoder\n");
+#endif
+}
+
 // The terrain the engine evaluated for the editor draws at the terrain root, a hole it cut shows
 // the background through the surface, and withdrawing it draws nothing again.
 void check_editor_terrain(AuthoredFrame& frame) {
@@ -477,6 +499,7 @@ void check_editor_terrain(AuthoredFrame& frame) {
     CY_REQUIRE(frame.set_terrain(preview.snapshot(), preview.generation()));
     CY_REQUIRE(frame.render(world, view));
     CY_CHECK(differing_pixels(solid.span(), frame.pixels()) > 100);
+    write_terrain_shot(frame);
 
     CY_REQUIRE(frame.set_terrain(nullptr, 0));
     CY_REQUIRE(frame.render(world, view));
@@ -1358,7 +1381,7 @@ CY_TEST_CASE("authored native frame draws the terrain the engine evaluated for t
     }
     {
         AuthoredFrame frame(allocator(), *native);
-        CY_REQUIRE(frame.initialize(192, 128, CY_TEST_PROJECT));
+        CY_REQUIRE(frame.initialize(kTerrainShotWidth, kTerrainShotHeight, CY_TEST_PROJECT));
         check_editor_terrain(frame);
     }
     rhi::destroy_device(allocator(), native);

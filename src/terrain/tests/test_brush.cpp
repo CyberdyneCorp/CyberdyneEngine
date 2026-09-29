@@ -12,6 +12,7 @@
 
 #include <cy/terrain/region.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -80,14 +81,11 @@ void build(ModifierStack& stack, const Modifier* extra) {
 
 /// True when a position is at least the radius from every dab: outside the footprint.
 [[nodiscard]] bool outside(cy::f64 x, cy::f64 z) noexcept {
-    for (const BrushPoint& dab : kStroke) {
+    return std::ranges::all_of(kStroke, [&](const BrushPoint& dab) {
         const cy::f64 dx = x - dab.x;
         const cy::f64 dz = z - dab.z;
-        if (std::sqrt((dx * dx) + (dz * dz)) < static_cast<cy::f64>(kRadius)) {
-            return false;
-        }
-    }
-    return true;
+        return std::sqrt((dx * dx) + (dz * dz)) >= static_cast<cy::f64>(kRadius);
+    });
 }
 
 struct HeightDiff {
