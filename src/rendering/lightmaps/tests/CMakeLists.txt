@@ -10,8 +10,10 @@
 #                   byte-identical to the committed reference the frame shader drew before lightmaps
 #                   existed; and the baked lights, the mip chain and the density view — a
 #                   stationary light's direct term through its mask channel at any run-time
-#                   intensity, a static light not shaded twice, every level read back off the
-#                   device, a minified surface reading the chain. It compiles
+#                   intensity and through the darker of the mask and a bound real-time shadow map,
+#                   a static light not shaded twice, every level read back off the device, a
+#                   minified surface reading the chain; and the corner's frame time, measured and
+#                   printed rather than held to a budget. It compiles
 #                   src/rendering/pipeline/tests/frame_scene.cpp — the one scene — and
 #                   tests/render/golden.cpp for the PNG encoder.
 #
