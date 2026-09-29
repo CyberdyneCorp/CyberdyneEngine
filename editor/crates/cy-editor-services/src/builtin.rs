@@ -704,11 +704,13 @@ mod tests {
         // The physics tools add seven physics debug layers and hide-all in `crate::viewports`, and
         // the three joint commands in `crate::joints`.
         // Terrain tools add the agent's brush, `terrain.brush.apply`, and `terrain.status`.
+        // The audio tools add thirteen undoable mixer, cue and source commands and eight reads
+        // and engine requests in `crate::audio_commands`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2 + 18
+            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2 + 13 + 8 + 18
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();
