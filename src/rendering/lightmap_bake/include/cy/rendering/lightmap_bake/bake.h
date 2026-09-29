@@ -51,9 +51,8 @@
 // WHAT IS NOT HERE
 // ================================================================================================
 //
-// A device bake: the CPU path tracer stays the reference. And the frame's USE of the shadow mask —
-// the forward shader reading the mask plane for a stationary light's direct term — which is the
-// device half of `add-lightmap-mobility-and-rebake` and not in this module.
+// A device bake: the CPU path tracer stays the reference. The frame's USE of the shadow mask and of
+// `direct_lights` is `src/rendering/lightmaps/` and `cy/frame.slang`; this module has no device.
 //
 // ================================================================================================
 // LIGHT MOBILITY AND THE SHADOW MASK

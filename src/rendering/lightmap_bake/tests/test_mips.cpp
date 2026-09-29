@@ -32,6 +32,7 @@
 #include <cy/rendering/lightmap_bake/mips.h>
 #include <cy/test/test.h>
 
+#include <array>
 #include <vector>
 
 namespace {
@@ -54,24 +55,39 @@ struct Chart {
     Vec4 colour;
 };
 
-constexpr Chart kCharts[4] = {
-    {4, 4, 28, 28, Vec4{1.0F, 0.0F, 0.0F, 1.0F}},     // A, red
-    {36, 4, 60, 28, Vec4{0.0F, 1.0F, 0.0F, 1.0F}},    // B, green
-    {4, 36, 29, 60, Vec4{0.0F, 0.0F, 1.0F, 1.0F}},    // C, blue: ends at x = 28
-    {37, 36, 60, 60, Vec4{1.0F, 1.0F, 1.0F, 0.5F}},   // C, white: starts at x = 37
+/// Where rectangle C's two charts end and start: blue covers x in [4, blue_end), white
+/// [white_start, 60). The default is the gap the header describes; the sweep moves it across the
+/// coarse grids.
+struct Split {
+    u32 blue_end = 29;
+    u32 white_start = 37;
 };
 
-/// Which chart a texel of rectangle C is nearest, the way the bake's dilation leaves padding.
-[[nodiscard]] u32 nearest_in_c(u32 x) noexcept {
-    return x <= 32U ? 2U : 3U;
+using Charts = std::array<Chart, 4>;
+
+[[nodiscard]] Charts charts_for(Split split) noexcept {
+    return Charts{{
+        {4, 4, 28, 28, Vec4{1.0F, 0.0F, 0.0F, 1.0F}},                     // A, red
+        {36, 4, 60, 28, Vec4{0.0F, 1.0F, 0.0F, 1.0F}},                    // B, green
+        {4, 36, split.blue_end, 60, Vec4{0.0F, 0.0F, 1.0F, 1.0F}},        // C, blue
+        {split.white_start, 36, 60, 60, Vec4{1.0F, 1.0F, 1.0F, 0.5F}},    // C, white
+    }};
 }
 
-[[nodiscard]] u32 owner_at(u32 x, u32 y) noexcept {
+/// Which chart a texel of rectangle C is nearest, the way the bake's dilation leaves padding: the
+/// closer covered column, blue (the lower id) on a tie.
+[[nodiscard]] u32 nearest_in_c(Split split, u32 x) noexcept {
+    const u32 to_blue = x + 1U > split.blue_end ? x + 1U - split.blue_end : 0U;
+    const u32 to_white = split.white_start > x ? split.white_start - x : 0U;
+    return to_blue <= to_white ? 2U : 3U;
+}
+
+[[nodiscard]] u32 owner_at(Split split, u32 x, u32 y) noexcept {
     if (y < 32U) {
         return x < 32U ? 0U : (x < 64U ? 1U : kNoChart);
     }
     if (y < 64U && x < 64U) {
-        return nearest_in_c(x);
+        return nearest_in_c(split, x);
     }
     return kNoChart;
 }
@@ -83,8 +99,9 @@ constexpr Chart kCharts[4] = {
 struct HandAtlas {
     BakedLightmap lightmap;
     std::vector<u32> charts;
+    Charts layout;
 
-    HandAtlas() {
+    explicit HandAtlas(Split split = Split{}) : layout(charts_for(split)) {
         lightmap.mode = LightmapMode::Irradiance;
         lightmap.page_size = kPage;
         lightmap.pages = 1;
@@ -107,11 +124,11 @@ struct HandAtlas {
         for (u32 y = 0; y < kPage; ++y) {
             for (u32 x = 0; x < kPage; ++x) {
                 const usize at = (usize{y} * kPage) + x;
-                const u32 owner = owner_at(x, y);
-                const Vec4 colour = owner == kNoChart ? Vec4{} : kCharts[owner].colour;
+                const u32 owner = owner_at(split, x, y);
+                const Vec4 colour = owner == kNoChart ? Vec4{} : layout[owner].colour;
                 lightmap.texels.texels[at] = colour;
                 lightmap.shadow_mask.texels[at] = Vec4{colour.w, colour.z, colour.y, colour.x};
-                if (owner != kNoChart && covered_by(kCharts[owner], x, y)) {
+                if (owner != kNoChart && covered_by(layout[owner], x, y)) {
                     charts[at] = owner;
                 }
             }
@@ -125,9 +142,10 @@ struct HandAtlas {
 
 /// Taps at the centre of every covered texel of every chart, at `level` of `texels`, that do not
 /// return the chart's own value.
-[[nodiscard]] u32 bleeding_taps(const LightmapTexels& texels, u32 level, bool mask) {
+[[nodiscard]] u32 bleeding_taps(const Charts& layout, const LightmapTexels& texels, u32 level,
+                                bool mask) {
     u32 wrong = 0;
-    for (const Chart& chart : kCharts) {
+    for (const Chart& chart : layout) {
         const Vec4 expected =
             mask ? Vec4{chart.colour.w, chart.colour.z, chart.colour.y, chart.colour.x}
                  : chart.colour;
@@ -176,9 +194,9 @@ CY_TEST_CASE("every level of the chain reads only its own chart, where a box fil
         CY_CHECK_EQ(texels.width, kPage >> level);
         CY_CHECK_EQ(texels.height, kPage >> level);
         CY_CHECK_EQ(mask.width, kPage >> level);
-        const u32 chained = bleeding_taps(texels, level, false);
-        const u32 chained_mask = bleeding_taps(mask, level, true);
-        const u32 boxed = bleeding_taps(box, level, false);
+        const u32 chained = bleeding_taps(atlas.layout, texels, level, false);
+        const u32 chained_mask = bleeding_taps(atlas.layout, mask, level, true);
+        const u32 boxed = bleeding_taps(atlas.layout, box, level, false);
         CY_TEST_MESSAGE("level " << level << ": " << chained << " planes and " << chained_mask
                                  << " mask taps read another chart; a box filter, " << boxed);
         CY_CHECK_EQ(chained, 0U);
@@ -190,6 +208,30 @@ CY_TEST_CASE("every level of the chain reads only its own chart, where a box fil
         }
         box = box_level(box);
     }
+}
+
+CY_TEST_CASE("wherever the chart gap falls on the coarse grids, no tap reads the other chart") {
+    // The gap `required_chart_gap` asks for at two levels (eight texels) and one more, moved one
+    // texel at a time across a level-2 texel: which chart owns the coarse padding texel between the
+    // two depends on where the gap falls, and a tap from either side reaches it for some offset.
+    u32 layouts = 0;
+    for (const u32 gap : {8U, 9U}) {
+        for (u32 blue_end = 29; blue_end <= 32; ++blue_end) {
+            HandAtlas atlas(Split{blue_end, blue_end + gap});
+            CY_REQUIRE(
+                build_lightmap_mips(atlas.lightmap, {atlas.charts.data(), atlas.charts.size()})
+                    .has_value());
+            for (u32 level = 1; level <= kLevels; ++level) {
+                const u32 wrong =
+                    bleeding_taps(atlas.layout, lightmap_level(atlas.lightmap, level), level, false);
+                CY_TEST_MESSAGE("gap " << gap << " from x = " << blue_end << ", level " << level
+                                       << ": " << wrong << " taps read the other chart");
+                CY_CHECK_EQ(wrong, 0U);
+            }
+            layouts += 1U;
+        }
+    }
+    CY_CHECK_EQ(layouts, 8U);
 }
 
 CY_TEST_CASE("the chain is only as deep as the padding protects, and one chart per texel") {

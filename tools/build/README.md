@@ -102,7 +102,18 @@ $BUILD patch     --from <a> --to <b> --out <patch>
 $BUILD install   --install <dir> --package <file> --artefacts <store>
 $BUILD apply     --install <dir> --patch <file> --artefacts <store> [--crash-at <stage>]
 $BUILD verify    --install <dir> | --artefacts <store>
+$BUILD lightmap  --description <level.cylightmap> --project <dir> --out <file>
 ```
+
+`lightmap` bakes one `cylightmap 1` level OUTSIDE the graph, with the `lightmap` producer's own
+code (`bake_lightmap_description`), reading the meshes it names from the project's files: an
+import bundle, or a cooked mesh as `cy_import_cli` writes it into a project
+(`.cy/cooked/<id>.cyasset`). It is the editor's `lighting.bake-lightmaps`, and it speaks lines:
+`progress <stage> <done> <total>` as the bake reports it, then `baked objects=… pages=… texels=…
+dilated=… rays=… bytes=… mips=… padding-short=… seconds=…`; a line `cancel` on its stdin stops the
+bake at its next step, prints `cancelled` and exits **3** having written nothing — the output is
+written only by a bake that finished, atomically. `integration.build_lightmap_cli` drives it over a
+quad the real importer cooked.
 
 `build --audit` adds the per-file content audit (M11.d task 7.4): every file in the package with
 the chain from a **declared root** to the node that produced it and the project files that node read,

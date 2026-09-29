@@ -264,6 +264,17 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+| Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `viewport.view-mode.lightmap-density` |
+
+**Lighting & lightmaps.** The lighting and lightmap baking specialised editor opens onto a form: a
+level's `.cylightmap` description, an output, Bake, Cancel and the bake's progress, and the density
+view. `lighting.bake-lightmaps` runs the engine's bake as `cy_build lightmap` in an operation, so
+the progress surface shows the texels traced and its row's Cancel — or
+`lighting.cancel-lightmap-bake` — sends the tool its `cancel`; a cancelled bake writes nothing.
+`CY_BUILD` names the tool, or it is found as `build/<profile>/tools/build/cy_build` walking up from
+the project. `viewport.view-mode.lightmap-density` requests the engine's `LightmapDensity` debug view,
+which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); like every debug view, the
+editor-hosted runtime does not draw it yet, and it loads no cooked lightmap.
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.

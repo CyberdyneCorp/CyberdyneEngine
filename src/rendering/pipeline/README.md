@@ -207,6 +207,21 @@ regenerated for the longer block and the new interpolant; the fullscreen resolve
 entries came out byte-identical.
 `render.lightmaps` renders this module's scene with it.
 
+**The baked lights (`add-lightmap-frame-shadow-mask`).** Three more words appended, and the block is
+640 bytes: `lightmap_shadow_lights` (the index into `cyLights` of the light each shadow-mask channel
+shadows, `kNoLightmapLight` by default), `lightmap_direct_lights` (a 128-bit set over `cyLights`
+indices whose direct term the texels hold, zero by default) and `lightmap_debug` (the texel-density
+view, off by default); `lightmap_layout.w` is now the mask's slot, `kNoMaterialTexture` by default.
+On a lightmapped draw the forward fragment reads the mask once and the light loop takes
+`min(realtime visibility, mask channel)` for a stationary light and no direct term for a baked one;
+the lightmap and the mask are sampled with the implicit level of detail over the uploaded mip chain.
+On any other draw the light loop's arithmetic is the same, and `render.lightmaps_metal` (c) holds
+the Metal frame with no lightmap to a reference drawn on the M2 Max by main's frame shaders.
+`shaders/regenerate.py` runs every slangc invocation `cy/frame.slang`'s header lists and both
+embedders; it reproduces the committed headers byte for byte from the same source, except
+`kFrameResolveVertexSpirv`, whose two built-in variables the pinned slangc numbers in the other
+order (the subtraction is the same).
+
 ## What is measured and recorded rather than hidden
 
 * **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
