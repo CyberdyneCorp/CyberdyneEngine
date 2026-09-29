@@ -518,7 +518,10 @@ fn clip(
         egui::pos2(view.x_of(start, layout.lanes_left), row.top() + 4.0),
         egui::pos2(view.x_of(end, layout.lanes_left), row.bottom() - 4.0),
     );
-    if body.right() < layout.lanes_left || body.left() > layout.right {
+    let dragging =
+        matches!(view.drag, Some(Drag::Edge { section: dragged, .. }) if dragged == section.id);
+    // An edge dragged out of the lanes still has to see its release, or the trim is lost.
+    if (body.right() < layout.lanes_left || body.left() > layout.right) && !dragging {
         return;
     }
     let item = Selected::Section(track, section.id);
@@ -541,6 +544,9 @@ fn clip(
             egui::Sense::drag(),
         );
         trim_gesture(&grip, edge, track, section, layout, view, response);
+    }
+    if body.right() < layout.lanes_left || body.left() > layout.right {
+        return;
     }
     let lane = layout.row(0).x_range();
     let visible = egui::Rect::from_x_y_ranges(
@@ -653,7 +659,10 @@ fn key_diamond(
         _ => key.time,
     };
     let centre = egui::pos2(view.x_of(time, layout.lanes_left), row.center().y);
-    if centre.x < layout.lanes_left || centre.x > layout.right {
+    let visible = (layout.lanes_left..=layout.right).contains(&centre.x);
+    let dragging = matches!(view.drag, Some(Drag::Key { key: dragged, .. }) if dragged == key.id);
+    // A key dragged out of the lanes still has to see its release, or the move is lost.
+    if !visible && !dragging {
         return;
     }
     let hit = ui.interact(
@@ -693,6 +702,9 @@ fn key_diamond(
         response
             .edits
             .push(TimelineEdit::MoveKey { track, key, to });
+    }
+    if !visible {
+        return;
     }
     let selected = view.selection.contains(&item);
     let role = if selected {
@@ -993,6 +1005,45 @@ mod tests {
     }
 
     #[test]
+    fn a_key_dragged_out_of_the_lanes_is_still_one_move_on_release() {
+        let (surface, curve, key, ..) = surface();
+        // Scrolled half a second in, so the start of the sequence is left of the lanes.
+        let mut view = TimelineView {
+            scroll: 0.5,
+            ..TimelineView::default()
+        };
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        let grab = at(&view, lanes, 1.0, 0);
+        let mut edits = Vec::new();
+        edits.extend(frames.pointer(grab, Some(true), &surface, &mut view).edits);
+        for step in 1..=4 {
+            let to = grab - egui::vec2(30.0 * theme::points(step), 0.0);
+            edits.extend(frames.pointer(to, None, &surface, &mut view).edits);
+        }
+        let drop = grab - egui::vec2(120.0, 0.0);
+        edits.extend(frames.pointer(drop, Some(false), &surface, &mut view).edits);
+        edits.extend(frames.quiet(&surface, &mut view).0.edits);
+
+        let [
+            TimelineEdit::MoveKey {
+                track,
+                key: moved,
+                to,
+            },
+        ] = edits.as_slice()
+        else {
+            panic!("a release outside the lanes is still one move: {edits:?}");
+        };
+        assert_eq!((*track, *moved), (curve, key));
+        assert!(
+            to.abs() < 1e-9,
+            "the drag stops at the sequence start: {to}"
+        );
+        assert!(view.drag.is_none(), "the finished drag is not left pending");
+    }
+
+    #[test]
     fn escape_mid_drag_cancels_the_gesture_and_records_nothing() {
         let (surface, ..) = surface();
         let mut view = TimelineView::default();
@@ -1111,6 +1162,31 @@ mod tests {
             (end - 5.0).abs() < 0.02,
             "the end follows the pointer: {end}"
         );
+    }
+
+    #[test]
+    fn a_clip_edge_dragged_out_of_the_lanes_is_still_one_trim_on_release() {
+        let (surface, _, _, clips, clip) = surface();
+        let mut view = TimelineView {
+            scroll: 1.0,
+            ..TimelineView::default()
+        };
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        let grab = at(&view, lanes, 4.0, 1);
+        let mut edits = Vec::new();
+        edits.extend(frames.pointer(grab, Some(true), &surface, &mut view).edits);
+        for step in 1..=7 {
+            let to = grab - egui::vec2(50.0 * theme::points(step), 0.0);
+            edits.extend(frames.pointer(to, None, &surface, &mut view).edits);
+        }
+        let drop = grab - egui::vec2(350.0, 0.0);
+        edits.extend(frames.pointer(drop, Some(false), &surface, &mut view).edits);
+        let [TimelineEdit::TrimSection { track, section, .. }] = edits.as_slice() else {
+            panic!("a release outside the lanes is still one trim: {edits:?}");
+        };
+        assert_eq!((*track, *section), (clips, clip));
+        assert!(view.drag.is_none(), "the finished drag is not left pending");
     }
 
     #[test]

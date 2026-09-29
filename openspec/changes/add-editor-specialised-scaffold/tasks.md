@@ -16,6 +16,7 @@
 
 - [x] 3.1 Add `move_key`, `remove_key`, `restore_key`, `duration` and `frame_rate` to `TimelineSurface`, with identity tests.
 - [x] 3.2 Add `panels/timeline.rs`: ruler scrub, tracks, keys, clips, zoom, selection, Escape cancel, and invertible `TimelineEdit`s; drive each gesture through egui frames.
+- [x] 3.3 Fix a key or clip-edge drag released outside the lanes recording nothing and staying pending (the off-lane early return skipped the release); add regression tests.
 
 ## 4. Records
 

@@ -141,6 +141,12 @@ MUTATIONS = [
      ".any(|other| other.id == key.id || same_time(other.time, key.time))",
      ".any(|_| false)",
      LIB_MODEL, "a_removed_key_is_restored_with_the_same_identity"),
+    ("m27_timeline_key_release_off_lane_lost", TIMELINE,
+     "if !visible && !dragging {", "if !visible {",
+     LIB_SHELL, "a_key_dragged_out_of_the_lanes_is_still_one_move_on_release"),
+    ("m28_timeline_edge_release_off_lane_lost", TIMELINE,
+     "|| body.left() > layout.right) && !dragging {", "|| body.left() > layout.right) {",
+     LIB_SHELL, "a_clip_edge_dragged_out_of_the_lanes_is_still_one_trim_on_release"),
 ]
 
 
