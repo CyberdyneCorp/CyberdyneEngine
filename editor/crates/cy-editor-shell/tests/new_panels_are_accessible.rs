@@ -19,7 +19,7 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 13] = [
+const NEW_PANELS: [(&str, &str); 14] = [
     ("undo-history", "Undo"),
     ("physics", "No world is open."),
     ("settings", "Apply"),
