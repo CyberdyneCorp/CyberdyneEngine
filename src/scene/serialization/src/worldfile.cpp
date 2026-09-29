@@ -4,6 +4,7 @@
 #include <cy/core/serialize/text.h>
 #include <cy/scene/serialization/worldfile.h>
 
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 
@@ -762,8 +763,8 @@ void World::retarget_references(u64 from, u64 to) noexcept {
         for (WorldComponent& component : node.components()) {
             for (WorldField& field : component.fields()) {
                 if (field.value.kind == WorldValueKind::Entity &&
-                    field.value.integer == static_cast<i64>(from)) {
-                    field.value.integer = static_cast<i64>(to);
+                    std::bit_cast<u64>(field.value.integer) == from) {
+                    field.value.integer = std::bit_cast<i64>(to);
                 }
             }
         }
