@@ -122,7 +122,7 @@ AudioRefusal preview_cue(AudioAuthoring& audio, Span<const u8> payload, Array<u8
 }
 
 AudioRefusal read_state(AudioAuthoring& audio, Span<const u8> payload, Array<u8>& reply) noexcept {
-    if (payload.size() == 0) {
+    if (payload.empty()) {
         return state(audio, reply);
     }
     Reader reader(payload);

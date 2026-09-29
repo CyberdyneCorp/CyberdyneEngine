@@ -5,6 +5,7 @@
 #include <cy/servers/render/picking.h>
 
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace cy::sample::editor_window {
@@ -155,7 +156,7 @@ void perimeter(const Canvas& canvas, f32 centre_x, f32 centre_y, f32 radius, f32
     if (!(radius > 0.0F) || radius > kLargest) {
         return;
     }
-    const f32 circumference = 2.0F * 3.14159265F * radius;
+    const f32 circumference = 2.0F * std::numbers::pi_v<f32> * radius;
     const auto steps = static_cast<i32>(circumference * 2.0F) + 1;
     for (i32 step = 0; step < steps; ++step) {
         const f32 along = static_cast<f32>(step) * 0.5F;

@@ -77,7 +77,7 @@ CY_TEST_CASE("an audio source is drawn with a solid inner ring and a dashed oute
     const Canvas canvas{pixels.data(), kSide, kSide};
     draw_audio_source_marker(canvas, 80.0F, 80.0F, 20.0F, 60.0F);
     const auto green = [&](u32 x, u32 y) {
-        return pixels[((static_cast<cy::usize>(y) * kSide) + x) * 4 + 1];
+        return pixels[(((static_cast<cy::usize>(y) * kSide) + x) * 4) + 1];
     };
     CY_CHECK(green(100, 80) > 120);  // the inner ring, where attenuation starts
     CY_CHECK(green(80, 100) > 120);  // ...and it is solid all the way round

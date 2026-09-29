@@ -676,7 +676,7 @@ CY_TEST_CASE("editor audio: a WAV clip is read from the project, and a wrong rat
         };
         const u32 frames = 4800;
         chunk("RIFF");
-        append_u32(bytes, 36 + frames * 2);
+        append_u32(bytes, 36 + (frames * 2));
         chunk("WAVE");
         chunk("fmt ");
         append_u32(bytes, 16);

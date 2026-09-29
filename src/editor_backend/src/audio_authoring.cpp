@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <numbers>
 #include <sstream>
 #include <utility>
 
@@ -63,9 +64,8 @@ std::vector<std::string_view> lines_of(std::string_view text) {
 }
 
 bool parse_float(std::string_view word, f32& out) noexcept {
-    const char* last = word.data() + word.size();
-    const auto [end, error] = std::from_chars(word.data(), last, out);
-    return error == std::errc{} && end == last && std::isfinite(out);
+    const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), out);
+    return error == std::errc{} && end == word.data() + word.size() && std::isfinite(out);
 }
 
 bool parse_flag(std::string_view word, bool& out) noexcept {
@@ -366,7 +366,7 @@ struct WavFormat {
 /// PCM 16-bit or IEEE float 32-bit, mono or stereo, at the server's rate. What the editor preview
 /// needs, and no more: decoding is the asset system's job (src/servers/audio/README.md).
 Status decode_wav(std::string_view bytes, std::vector<f32>& samples, u32& channels) noexcept {
-    if (bytes.size() < 12 || bytes.substr(0, 4) != "RIFF" || bytes.substr(8, 4) != "WAVE") {
+    if (bytes.size() < 12 || !bytes.starts_with("RIFF") || bytes.substr(8, 4) != "WAVE") {
         return fail(ErrorCode::InvalidArgument, "audio cue: the clip is not a RIFF WAVE file");
     }
     WavFormat format;
@@ -863,7 +863,7 @@ Status AudioAuthoring::render_clip(const Cue& cue, std::vector<f32>& samples,
         for (usize frame = 0; frame < frames; ++frame) {
             const f32 edge = static_cast<f32>(std::min({frame, frames - 1 - frame, ramp})) /
                              static_cast<f32>(std::max<usize>(ramp, 1));
-            const f32 phase = 2.0F * 3.14159265F * hertz * static_cast<f32>(frame) /
+            const f32 phase = 2.0F * std::numbers::pi_v<f32> * hertz * static_cast<f32>(frame) /
                               static_cast<f32>(kSampleRate);
             samples[frame] = 0.5F * std::sin(phase) * std::min(edge, 1.0F);
         }
