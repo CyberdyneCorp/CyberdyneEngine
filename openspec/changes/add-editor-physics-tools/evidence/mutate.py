@@ -122,6 +122,9 @@ MUTATIONS = [
      '.with("kind", Value::Text(kind.keyword().to_string()))',
      '.with("kind", Value::Text(String::from("fixed")))',
      PANEL_TESTS, "a_selected_body_is_offered_a_joint"),
+    ("r21_committed_every_frame_of_a_drag", PANEL,
+     "        if finished\n", "        if true\n",
+     SHELL_LIB, "a_dragged_field_is_committed_once_when_the_drag_is_released"),
     # --- the engine ------------------------------------------------------------------------------
     ("c01_reference_read_off_by_one", "src/scene/serialization/src/worldfile.cpp",
      "editor_node_identity(world.document(), *position + 1U).low",

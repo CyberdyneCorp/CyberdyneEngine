@@ -459,15 +459,18 @@ mod tests {
     struct Frames {
         ctx: egui::Context,
         inputs: Inputs,
-        row: egui::Rect,
+        /// Where the drag value was drawn in the last frame, from the accessibility tree.
+        drag: Option<egui::Pos2>,
     }
 
     impl Frames {
         fn new() -> Self {
+            let ctx = egui::Context::default();
+            ctx.enable_accesskit();
             Self {
-                ctx: egui::Context::default(),
+                ctx,
                 inputs: Inputs::default(),
-                row: egui::Rect::NOTHING,
+                drag: None,
             }
         }
 
@@ -481,7 +484,7 @@ mod tests {
                 ..Default::default()
             };
             let mut commit = None;
-            let Self { ctx, inputs, row } = self;
+            let Self { ctx, inputs, drag } = self;
             let mut output = ctx.run_ui(raw, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     commit = field_row(
@@ -491,10 +494,27 @@ mod tests {
                         JointField::LimitMax,
                         committed,
                     );
-                    *row = ui.min_rect();
                 });
             });
             output.textures_delta.clear();
+            if let Some(update) = output.platform_output.accesskit_update.take() {
+                *drag = update
+                    .nodes
+                    .iter()
+                    .find(|(_, node)| node.role() == egui::accesskit::Role::SpinButton)
+                    .and_then(|(_, node)| node.bounds())
+                    .map(|bounds| {
+                        #[expect(
+                            clippy::cast_possible_truncation,
+                            reason = "a widget's bounds are a few hundred points"
+                        )]
+                        let centre = egui::pos2(
+                            ((bounds.x0 + bounds.x1) / 2.0) as f32,
+                            ((bounds.y0 + bounds.y1) / 2.0) as f32,
+                        );
+                        centre
+                    });
+            }
             commit
         }
 
@@ -522,12 +542,12 @@ mod tests {
         let committed = Value::Float(0.0);
         let mut frames = Frames::new();
         assert_eq!(frames.run(Vec::new(), &committed), None);
-        // The drag value is the last widget in the row, at its right end.
-        let grab = egui::pos2(frames.row.max.x - 6.0, frames.row.center().y);
+        let grab = frames.drag.expect("the row draws a drag value");
         let mut commits = Vec::new();
+        commits.extend(frames.pointer(grab, None, &committed));
         commits.extend(frames.pointer(grab, Some(true), &committed));
-        for step in 1..=5 {
-            let to = grab + egui::vec2(12.0 * f32::from(u8::try_from(step).unwrap()), 0.0);
+        for step in 1_u8..=5 {
+            let to = grab + egui::vec2(12.0 * f32::from(step), 0.0);
             commits.extend(frames.pointer(to, None, &committed));
         }
         assert!(
