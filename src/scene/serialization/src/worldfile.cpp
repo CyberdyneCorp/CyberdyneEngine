@@ -762,7 +762,7 @@ void World::retarget_references(u64 from, u64 to) noexcept {
         for (WorldComponent& component : node.components()) {
             for (WorldField& field : component.fields()) {
                 if (field.value.kind == WorldValueKind::Entity &&
-                    static_cast<u64>(field.value.integer) == from) {
+                    field.value.integer == static_cast<i64>(from)) {
                     field.value.integer = static_cast<i64>(to);
                 }
             }

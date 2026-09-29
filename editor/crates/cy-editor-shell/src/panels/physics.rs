@@ -509,8 +509,8 @@ mod tests {
                             reason = "a widget's bounds are a few hundred points"
                         )]
                         let centre = egui::pos2(
-                            ((bounds.x0 + bounds.x1) / 2.0) as f32,
-                            ((bounds.y0 + bounds.y1) / 2.0) as f32,
+                            f64::midpoint(bounds.x0, bounds.x1) as f32,
+                            f64::midpoint(bounds.y0, bounds.y1) as f32,
                         );
                         centre
                     });
