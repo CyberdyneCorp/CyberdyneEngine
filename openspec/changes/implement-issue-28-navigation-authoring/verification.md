@@ -1,11 +1,11 @@
 # Verification ledger
 
-This ledger records the executable evidence for issue #28. It is incomplete until every acceptance criterion has a green check and a recorded red mutation.
+This ledger records the executable evidence for issue #28. Every acceptance criterion has a green check and a recorded red mutation.
 
 - `python3 tools/issue28_acceptance.py --list` lists the criteria.
 - `python3 tools/issue28_acceptance.py` runs their probes and exits nonzero while any criterion is unverified.
 - Native probes run with `--no-skip`. Each has an assertion-count floor, so that a skip on a null device cannot pass.
-- The mutations below are the planned red checks. Each entry is filled in with the command, the failing assertion and the restoration once it has been executed.
+- Every mutation below was executed: applied to the source, shown red, and restored, with the restored probe shown green. None of them is committed.
 
 ## Engine bake API (tasks 1.1 to 1.7)
 
@@ -174,56 +174,131 @@ events on a pipe-backed runtime session.
 | P12 | `panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel` | `NavigationTool::COMMANDS` names a command nobody registers (`navigation.point.teleport`) | `.expect("parity holds for the shipped tools")` (the refusal names the command) |
 | P13 | `the_panel_draws_in_the_specialised_frame_with_its_problem_in_the_diagnostics_area` | `NavigationTool::diagnostics` drops the panel's problem | `"the problem is a readable diagnostics row"` |
 
+## Acceptance ledger (task 6.1 and 6.2)
+
+`tools/issue28_acceptance.py` holds one criterion per acceptance point of issue #28. Each criterion
+names its probes and the red mutation recorded for it. A native probe runs one doctest case with
+`--no-skip` and must report exactly one executed case and at least its assertion floor. A Cargo
+probe must execute at least one test. The runner exits nonzero while any criterion is unverified.
+
+- **Green:** `cmake --build build/dev --parallel 8`, then `python3 tools/issue28_acceptance.py`:
+  `verified 6/6 selected criteria`, exit 0. Floors against the counts measured on this tree:
+
+| Criterion | Probe | Assertions (floor) |
+|---|---|---|
+| 1 `bake` | `editor_backend: navigation bake equals build_tile tile by tile` | 4654 (1000) |
+| 1 `bake` | `editor runtime: baking the test map equals build_tile tile by tile` | 74 (40) |
+| 2 `overlay` | `nav overlay covers the projected walkable polygons` | 5255 (1000) |
+| 2 `overlay` | `nav overlay per-world toggle draws only the enabled world` | 10504 (10) |
+| 3 `obstacle` | `editor_backend: an obstacle added through the service blocks the path and removing it restores it` | 1195 (200) |
+| 3 `obstacle` | cargo `cy-editor-mcp navigation_obstacle_add_and_remove_reach_the_engine_over_mcp` | 1 test |
+| 4 `history` | cargo `cy-editor-mcp navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp`, `navigation_tools_are_projected_over_mcp`; `cy-editor-services completed_records_exactly_one_bake_transaction_and_undo_restores_the_identity`, `a_settings_edit_is_one_entry_and_undo_redo_restore_it`; `cy-editor-shell panel_gestures_record_the_history_the_same_gestures_record_over_mcp` | 1 test each |
+| 5 `stale` | `editor_backend: navigation status reports a stale bake after a source change` | 4642 (1000) |
+| 5 `stale` | `editor runtime: moving a mesh marks the navigation bake stale; moving it back clears the flag` | 71 (40) |
+| 6 `docs` | `openspec validate implement-issue-28-navigation-authoring --strict`; `python3 tools/issue28_acceptance.py --check-docs` | exit 0 |
+
+- **Red mutations through the ledger.** Each was applied, the tree rebuilt where it is C++, and
+  `python3 tools/issue28_acceptance.py --criterion <key>` run: it printed `UNVERIFIED` for the named
+  probes and `verified 0/1 selected criteria` with exit 1. The source was then restored with
+  `git checkout -- <file>` (or the saved copy for an uncommitted file), rebuilt, and the same command
+  printed `verified 1/1 selected criteria`.
+
+| # | Criterion | Mutation | Red probes and failing assertion |
+|---|---|---|---|
+| L1 | 1 `bake` | `navigation_service.cpp` `read_settings`: `settings.cell_size = reader.read_f32() * 1.01F;` | both probes. test_navigation_service.cpp `CHECK_EQ(baked.tiles[index].digest, expected)` and `CHECK_EQ(nav::mesh_tile_digest(*mesh, slot), expected)` (4 tiles each), `CHECK_EQ(baked.fingerprint, fingerprint)`, `CHECK_EQ(baked.identity, ...)`; test_nav_runtime.cpp lines 303, 308, 313, 315, the same four checks (runtime case: 10 of 74 assertions failed) |
+| L2 | 2 `overlay` | `nav_overlay.cpp` `NavCanvasSink::polygon` returns early on every second call | both probes. test_nav_overlay.cpp:175 `CHECK_LE(coverage.mismatched, coverage.expected / 100U)` (2178 vs 43); test_nav_overlay.cpp:207 `CHECK_GE(right_drawn.hit + (right_drawn.expected / 50U), right_drawn.expected)` |
+| L3a | 3 `obstacle` | `navigation_service.cpp` `sync_obstacles`: `wanted.clear();` after the seam's obstacles are gathered | service probe. test_navigation_service.cpp:372 and :392 `CHECK_EQ(marked, usize{1})`, :374 `CHECK((!blocked.found \|\| blocked.partial))`, :385 the direct `find_path` check (4 of 1195 failed) |
+| L3b | 3 `obstacle` | `navmesh.rs` `navigation.component.remove` replaces `remove_from(...)` with `let removed = false;` | MCP probe (exit 101). a_session_over_the_wire.rs:3615 `the engine received the removal before the second path query` |
+| L4 | 4 `history` | `navmesh_service.rs` `take_completed` returns `self.unrecorded.clone()` instead of `take()` | MCP undo and redo: a_session_over_the_wire.rs:3456 `undo restores the unbaked identity` (left 3125673985, right 0); one bake transaction: navmesh_service.rs:819 `a completion is recorded once` (left 3, right 2). The projection, settings and desktop-parity probes stay green, as they do not bake |
+| L5 | 5 `stale` | `navigation_service.cpp` `status` encodes the saved fingerprint as the current one (`encode_status(session, world, context, saved, saved)`) | both probes. test_navigation_service.cpp:415 `CHECK(stale.stale)`, :416 `CHECK_NE(stale.current, baked.fingerprint)`, :426 `CHECK(resized.stale)`; test_nav_runtime.cpp:344 `CHECK(runtime.stale(baked))` |
+| L6a | 6 `docs` | spec delta `specs/navigation/spec.md`: both scenarios of `Stale bake detection` deleted | strict OpenSpec: `✗ [ERROR] navigation/spec.md: ADDED "Stale bake detection" must include at least one scenario` |
+| L6b | 6 `docs` | `editor/README.md`: `### The Navigation panel` renamed to `### Navigation panel` | documentation: `missing: editor/README.md: ### The Navigation panel`, `issue #28 documentation: incomplete` |
+
+The first attempt at L6a deleted only one of the requirement's two scenarios. Strict validation
+still passed, because the requirement kept a scenario, so that mutation is not a red check. The
+recorded L6a deletes both.
+
+A first attempt at L5 left `current` unused, and `-Werror` refused the build. The runner then
+reported green from the binaries of the previous build. A mutation only counts when its build
+succeeds, and the recorded L5 builds.
+
 ## 1. Editor bake equals `build_tile`, tile by tile
 
-- **Probes:**
-  - `editor_backend: navigation bake equals build_tile tile by tile` (service over a fixture seam).
-  - `editor runtime: baking the test map equals build_tile tile by tile` (runtime seam over a `.cyworld` map).
-- **Planned mutation:** make `bake_tiles` skip the last tile coordinate, or perturb `cell_size` in the service's settings decode. The coordinate-set or digest assertion must fail.
-- **Status:** the engine-level probe (M1), the service probe (S1) and the runtime probe (R1a, R1b) are green with recorded red mutations.
+- **Probes:** `editor_backend: navigation bake equals build_tile tile by tile` (service over a
+  fixture seam) and `editor runtime: baking the test map equals build_tile tile by tile` (runtime
+  seam over a `.cyworld` map).
+- **Status:** verified. Red mutations M1 (engine), S1 (service), R1a and R1b (runtime), and L1
+  through the ledger.
 
 ## 2. Overlay walkable area matches the mesh (image test)
 
-- **Probe:** `nav overlay covers the projected walkable polygons` (CPU canvas, no device).
-- **Mutation:** make the sink skip every second polygon. The covered-pixel count falls outside the tolerance (R2 above). The per-world toggle has its own mutation (R7).
-- **Status:** green with a recorded red mutation.
+- **Probes:** `nav overlay covers the projected walkable polygons` and `nav overlay per-world toggle
+  draws only the enabled world` (CPU canvas, no device).
+- **Status:** verified. Red mutations R2, R7, and L2 through the ledger.
 
 ## 3. Obstacle through the editor blocks and restores a path
 
-- **Probes:**
-  - `editor_backend: an obstacle added through the service blocks the path and removing it restores it`.
-  - The MCP wire test `navigation obstacle add and remove reach the engine over mcp`.
-- **Planned mutation:** make the service ignore `NavObstacle` entries from the seam. The blocked-path assertion must fail.
-- **Status:** the service probe (S2) and the MCP wire probe (E7: the obstacle add and its removal reach the engine as synced component operations before each `navigation.path.query`) are green with recorded red mutations.
+- **Probes:** `editor_backend: an obstacle added through the service blocks the path and removing it
+  restores it`, and the MCP wire test `navigation_obstacle_add_and_remove_reach_the_engine_over_mcp`.
+- **Status:** verified. Red mutations S2, E7, and L3a and L3b through the ledger.
 
 ## 4. Undo/redo and MCP parity for bake, settings and component edits
 
-- **Probes:** cargo tests covering:
-  - navigation settings, component and bake edits undoing and redoing over MCP;
-  - desktop and MCP navigation histories agreeing;
-  - command unit tests.
-- **Mutations:** record the bake transaction on every pump (E1) or not at all (E2), send the default settings (E8), or split a settings gesture into one transaction per field (E9). The history-length, identity or payload assertion fails in each case.
-- **Status:** green with recorded red mutations (E1, E2, E8, E9 above). The desktop half of the parity
-  check, where the panel's gestures and the same commands sent as an agent sends them record the same
-  history and settings, is P10.
+- **Probes:** the MCP undo/redo and projection tests, the bake and settings transaction tests, and
+  the desktop-versus-MCP history test (P10).
+- **Status:** verified. Red mutations E1, E2, E8, E9, P10, and L4 through the ledger.
 
 ## 5. Stale bake detected after a geometry edit
 
-- **Probes:**
-  - `editor_backend: navigation status reports a stale bake after a source change`.
-  - `editor runtime: moving a mesh marks the navigation bake stale`.
-- **Planned mutation:** leave the source vertices out of `source_fingerprint`. The stale assertion must fail.
-- **Status:** the engine fingerprint (M8b), the service probe (S3: status stops recomputing the fingerprint) and the runtime probe (R3a, R3b) are green with recorded red mutations.
+- **Probes:** `editor_backend: navigation status reports a stale bake after a source change` and
+  `editor runtime: moving a mesh marks the navigation bake stale; moving it back clears the flag`.
+- **Status:** verified. Red mutations M8b (engine), S3 (service), R3a and R3b (runtime), and L5
+  through the ledger.
 
 ## 6. OpenSpec change validated with `--strict`, and docs
 
-- **Probe:** `openspec validate implement-issue-28-navigation-authoring --strict`, plus a docs check that the touched READMEs and the editor feature map mention the navigation editor.
-- **Planned mutation:** remove the Scenario from one requirement in a spec delta. Strict validation must fail.
-- **Status:** open.
+- **Probes:** `openspec validate implement-issue-28-navigation-authoring --strict`, and
+  `python3 tools/issue28_acceptance.py --check-docs`. The docs check requires the change's
+  artefacts, the runtime test map, `docs/guides/navigation.md` (whose editor feature map lists
+  Navigation as Implemented), and the navigation sections of `editor/README.md`,
+  `samples/05b-editor-window/README.md`, `src/navigation/README.md`,
+  `src/editor_backend/README.md`, `tools/build/README.md` and `docs/guides/README.md`.
+- **Status:** verified. Red mutations L6a and L6b.
 
 ## Runner self-checks
 
-- **Planned checks:** `tools/test_issue28_acceptance.py` checks the following:
-  - a Cargo filter that selects no tests is not reported as passed;
-  - a native probe below its assertion floor is not reported as passed.
-- **Planned mutation:** remove each guard. The matching unit test must fail.
+`python3 tools/test_issue28_acceptance.py` (8 tests), also run in CI by `just quality-issue28-ledger`
+in the `quality` job, which needs no build:
+
+- a Cargo filter that selects no tests is not reported as passed;
+- a native probe below its assertion floor, or one that executed no case, is not reported as passed;
+- a failing command is not passed;
+- every criterion has probes and a recorded red mutation, and every native probe runs with
+  `--no-skip`, has a floor and contains no comma (doctest splits filters on commas);
+- the docs check names each missing line, and the shipped docs are complete.
+
+| # | Mutation (`tools/issue28_acceptance.py`) | Failing test |
+|---|---|---|
+| G1 | the empty-filter guard `if executed == 0:` becomes `if executed < 0:` | `test_an_empty_cargo_filter_is_not_passed`: `(True, 'passed') != (False, 'Cargo filter selected no tests')` |
+| G2 | the floor guard `if count < probe.min_assertions:` becomes `if count < 0:` | `test_a_native_probe_below_its_assertion_floor_is_not_passed`: `(True, 'passed') != (False, 'only 2 assertions; needs 10')` |
+
+Both were restored from a saved copy, and the 8 tests pass again.
+
+## Cognitive complexity (task 6.3)
+
+Measured on the functions this change adds or edits, against the backend target of 15 and the
+frontend target of 8 to 12:
+
+- **C++** (`clang-tidy readability-function-cognitive-complexity` over the compile database, every
+  non-test `.cpp` the change touches): no changed function is above 15. The highest are
+  `path_query` (15) in `navigation_service.cpp`, `tiles_overlapping` (12) in `bake.cpp`, and
+  `dirty_regions`, `worlds`, `gather` (11 each) in `nav_runtime.cpp`, and `place_new_obstacles` and
+  `status` (11 each) in `navigation_service.cpp`. The `navmesh.cpp` functions above 15
+  (`rebuild_links` 31, `connect_within` 29, `find_nearest` 23, `closest_on_triangle` 19,
+  `connect_tile` 16) are unchanged from main; the change adds one accessor to that file.
+- **Rust** (`clippy::cognitive_complexity` with the threshold set per run): no function in
+  `navmesh.rs`, `navmesh_service.rs` or `nav_bake.rs` is above 12, and no function in
+  `panels/navigation_baking.rs` is above 8. `Editor::pump`, which gained the navigation settle call,
+  scores 13.
+- **Python** (`complexipy`): `missing_docs` 8, `main` 7, `probe_result` 7; everything else is
+  lower.

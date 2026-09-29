@@ -264,6 +264,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+| Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
@@ -794,3 +795,28 @@ last path, flow-field and pick answers. With `refresh=true` it asks the engine f
 The path, flow-field and pick queries return a request id, and their answers appear in
 `navigation.bake.status`. The engine serves one navigation request at a time, so a second request
 is refused locally while one is pending. A runtime disconnect fails the pending request.
+
+### The Navigation panel
+
+The Navigation tab (`editor-navigation-baking`, `panels/navigation_baking.rs`) is the desktop face
+of these commands. It reads the document and the engine's answers and only pushes
+`Intent::Invoke`, so every gesture is the same command an agent sends over MCP and records the same
+history:
+
+- **Navigation world.** Pick the world to edit, or create one.
+- **Agent and build settings.** Edit the profile and the build settings, then **Apply settings**.
+  Only the changed fields are sent, as one `navigation.settings.set`.
+- **Bake.** **Bake** sends `navigation.bake` and shows the per-tile progress, then the report or
+  the failure. **Check for changes** sends `navigation.bake.status refresh=true`. The badge reads
+  *Not baked*, *Up to date* or *Stale*.
+- **Overlays.** One checkbox per overlay flag (`navigation.overlay.set`). The engine draws the
+  overlay into the viewport frame.
+- **Components.** Add a surface, obstacle, area or link. **Place link in viewport** arms two
+  viewport clicks that become one `navigation.link.add`.
+- **Test path and Flow field.** **Pick start** and **Pick end** arm the viewport. The next click is
+  sent to the engine as `navigation.point.pick` instead of selecting, and the two points feed
+  `navigation.path.query`.
+
+The Nav* components also appear in the Inspector, where edits are undoable but desktop-only.
+[`docs/guides/navigation.md`](../docs/guides/navigation.md) walks through a session.
+`python3 tools/issue28_acceptance.py` runs the acceptance ledger for issue #28.

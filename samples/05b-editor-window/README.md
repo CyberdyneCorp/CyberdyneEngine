@@ -297,6 +297,20 @@ frames never carry it.
 - an undone bake reloads its sidecar;
 - the per-frame drain forwards each PROGRESS event.
 
+### Baking the navmesh in the editor
+
+1. `just run-editor-live --project samples/05b-editor-window/project --world worlds/city.cyworld`.
+2. In the **Navigation** tab, press **Create navigation world**, then **Add Nav Mesh Surface**, and
+   set the surface's bounds in the Inspector to cover the ground.
+3. Press **Bake**. The engine bakes tile by tile, saves `project/navigation/<identity>.cynavmesh`,
+   and draws the walkable polygons into the viewport frame.
+4. Move a mesh inside the surface: the runtime rebuilds only the tiles under it and the overlay
+   follows. **Check for changes** reports the recorded bake as stale.
+5. **Pick start** and **Pick end**, each followed by a viewport click, draw a test path.
+
+The same steps run over MCP with the `navigation.*` tools; see
+[`docs/guides/navigation.md`](../../docs/guides/navigation.md).
+
 ## Swift cube during Play
 
 Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and

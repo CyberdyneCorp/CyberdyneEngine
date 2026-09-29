@@ -42,6 +42,6 @@
 
 ## 6. Acceptance evidence and documentation
 
-- [ ] 6.1 Add `tools/issue28_acceptance.py` with one probe per acceptance criterion, a native assertion-count floor, and `--no-skip`. Add its unit tests and a quality recipe.
-- [ ] 6.2 Record a red mutation for each criterion in `verification.md`, with each mutation restored afterwards.
-- [ ] 6.3 Update the documentation: the READMEs for `src/navigation`, `src/editor_backend` and `tools/build`, the editor feature map and the runtime sample instructions. Run `openspec validate --strict`, and measure the cognitive complexity of changed functions.
+- [x] 6.1 Add `tools/issue28_acceptance.py` with one probe per acceptance criterion, a native assertion-count floor, and `--no-skip`. Add its unit tests and a quality recipe.
+- [x] 6.2 Record a red mutation for each criterion in `verification.md`, with each mutation restored afterwards.
+- [x] 6.3 Update the documentation: the READMEs for `src/navigation`, `src/editor_backend` and `tools/build`, the editor feature map and the runtime sample instructions. Run `openspec validate --strict`, and measure the cognitive complexity of changed functions.
