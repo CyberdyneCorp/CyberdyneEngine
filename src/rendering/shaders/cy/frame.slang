@@ -1087,7 +1087,24 @@ static const float3 kCyDensityOnTarget = float3(0.1, 0.9, 0.2);
 static const float3 kCyDensityOver = float3(1.0, 0.15, 0.1);
 static const float3 kCyDensityUnlit = float3(0.18, 0.18, 0.18);
 
+/// The frame's exposure, which the resolve applies to every pixel after this pass.
+float frameExposureStops()
+{
+#if defined(CY_FRAME_METAL)
+    return cyFrameGlobals.globals.exposureStops;
+#else
+    return cyGlobalSet.data.exposureStops;
+#endif
+}
+
+/// The view's colour, divided by the exposure the resolve will multiply it by, so the view reads
+/// the same under a 100 000 lux sun as in a cellar.
 float3 lightmapDensityColour(bool lightmapped, float2 uv, float3 relativePosition)
+{
+    return lightmapDensityHue(lightmapped, uv, relativePosition) * exp2(-frameExposureStops());
+}
+
+float3 lightmapDensityHue(bool lightmapped, float2 uv, float3 relativePosition)
 {
     if (!lightmapped)
     {
