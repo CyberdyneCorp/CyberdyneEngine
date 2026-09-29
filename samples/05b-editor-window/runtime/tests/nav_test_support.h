@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // What the navigation overlay and runtime suites share: a view looking straight down, built the
 // way the runtime builds the view of a frame (camera-relative, so the eye is carried separately).

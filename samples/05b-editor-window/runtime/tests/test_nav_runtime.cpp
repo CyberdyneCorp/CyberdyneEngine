@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The runtime host's navigation seam over a `.cyworld` map, through the composite binding the
 // runtime installs. Issue #28, tasks 3.1, 3.2 and 3.4 to 3.6, and acceptance criteria 1 and 5 of
 // `implement-issue-28-navigation-authoring`.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The editor-window runtime's side of navigation authoring. Issue #28, tasks 3.1, 3.2, 3.4 and 3.5
 // of `implement-issue-28-navigation-authoring`.

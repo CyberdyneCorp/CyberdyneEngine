@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The navigation overlay, rasterised by the engine into the frame it publishes. Issue #28, task
 // 3.3 of `implement-issue-28-navigation-authoring`.

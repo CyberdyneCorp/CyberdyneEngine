@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The navigation overlay, rasterised onto the frame canvas. See nav_overlay.h.
 
 #include "nav_overlay.h"

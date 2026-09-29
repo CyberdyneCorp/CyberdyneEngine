@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The navigation overlay against the polygons it draws, on the CPU canvas with no device. Issue
 // #28, task 3.3 and acceptance criterion 2 of `implement-issue-28-navigation-authoring`.
 //

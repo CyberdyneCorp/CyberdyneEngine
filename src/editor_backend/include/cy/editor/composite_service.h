@@ -17,6 +17,8 @@
 
 namespace cy::editor {
 
+/// Lets one editor-service binding serve several backends, routing each operation by the longest
+/// matching prefix and merging their `capabilities.get` answers.
 class CompositeEditorService final : public abi::EditorServiceBackend {
 public:
     /// The most routes one composite holds.
