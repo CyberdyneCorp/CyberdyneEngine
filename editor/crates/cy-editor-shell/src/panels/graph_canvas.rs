@@ -102,10 +102,6 @@ pub(super) fn catalogue_palette(canvas: &GraphCanvas, query: &str) -> Vec<Palett
 ///
 /// `script.emit_event` reads "Emit Event". The name itself stays the identity; this is only what a
 /// button shows.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the palette for the graph editors #29 adds next")
-)]
 pub(super) fn palette_label(type_name: &str) -> String {
     let local = type_name
         .split_once('.')

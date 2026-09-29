@@ -27,6 +27,9 @@ impl Application {
         cy_editor_services::builtin::register(&mut registry)?;
         cy_editor_interface::specialised::material_authoring_commands::register(&mut registry)?;
         cy_editor_interface::specialised::vfx_authoring_commands::register(&mut registry)?;
+        // Last, because it checks the commands every scaffolded editor panel invokes against
+        // everything registered above: each must be an undoable MCP tool.
+        cy_editor_shell::panels::specialised::register_specialised_tools(&mut registry)?;
         Ok(Self {
             editor: Editor::new(actor),
             registry,

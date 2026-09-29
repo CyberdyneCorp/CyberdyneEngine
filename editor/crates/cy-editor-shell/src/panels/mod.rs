@@ -36,6 +36,7 @@ mod semantic_merge;
 mod settings;
 mod source;
 mod source_control;
+pub mod specialised;
 mod terrain;
 mod vfx_graph;
 mod viewport;
@@ -504,7 +505,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "content-browser" => browser::show(self, ui),
                 "editor-materials" => material_graph::show(self, ui),
                 "editor-vfx-graph" => vfx_graph::show(self, ui),
-                "editor-terrain" => terrain::show(self, ui),
+                "editor-terrain" => specialised::show::<terrain::TerrainTool>(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

@@ -488,3 +488,96 @@ fn the_dock_reports_where_each_shown_panel_was_drawn() {
         .1;
     assert!(!viewport.intersects(hierarchy), "two panels share pixels");
 }
+
+/// A harness with an open world, one terrain root created through the registered command, and
+/// that root selected — which is what the terrain command itself leaves behind.
+fn terrain_harness() -> Harness {
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/terrain.cyworld")
+        .expect("a new world opens");
+    harness
+        .registry
+        .invoke(
+            "terrain.create",
+            &harness.scope,
+            &mut harness.editor,
+            &cy_editor_commands::Arguments::new(),
+        )
+        .expect("terrain.create is one transaction");
+    harness
+}
+
+#[test]
+fn the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/terrain.cyworld")
+        .unwrap();
+    let empty = harness.frame("editor-terrain", size, Vec::new());
+    for label in ["Terrain", "Create terrain", "Undo", "Redo"] {
+        assert!(
+            empty.labels.iter().any(|drawn| drawn == label),
+            "the scaffolded empty state lacks {label:?}: {:?}",
+            empty.labels
+        );
+    }
+    let created = harness.frame(
+        "editor-terrain",
+        size,
+        vec![click_named(&empty, "Create terrain")],
+    );
+    assert!(matches!(
+        created.intents.as_slice(),
+        [Intent::Invoke(command, _)] if command == "terrain.create"
+    ));
+
+    let mut harness = terrain_harness();
+    let first = harness.frame("editor-terrain", size, Vec::new());
+    for label in [
+        "Brush",
+        "Material layers",
+        "Modifier stack",
+        "Terrain surface",
+    ] {
+        assert!(
+            first.labels.iter().any(|drawn| drawn == label),
+            "the terrain body lacks {label:?}: {:?}",
+            first.labels
+        );
+    }
+    let undone = harness.frame("editor-terrain", size, vec![click_named(&first, "Undo")]);
+    assert!(
+        matches!(
+            undone.intents.as_slice(),
+            [Intent::Invoke(command, _)] if command == "edit.undo"
+        ),
+        "the header's Undo is the history's undo: {:?}",
+        undone.intents
+    );
+}
+
+#[test]
+fn a_terrain_refusal_is_shown_in_the_specialised_diagnostics_area() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let quiet = harness.frame("editor-terrain", size, Vec::new());
+    let refusal = "Paint requires a material layer.";
+    assert!(!quiet.labels.iter().any(|label| label.contains(refusal)));
+
+    harness.inputs.terrain_problem = Some(refusal.into());
+    let refused = harness.frame("editor-terrain", size, Vec::new());
+    assert!(
+        refused.labels.iter().any(|label| label == refusal),
+        "the refusal is a readable row, not paint on the canvas: {:?}",
+        refused.labels
+    );
+    assert!(
+        refused.labels.iter().any(|label| label == "✕"),
+        "the row carries its glyph as well as its colour: {:?}",
+        refused.labels
+    );
+}

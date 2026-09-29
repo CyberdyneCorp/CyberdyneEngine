@@ -3045,3 +3045,69 @@ fn assert_scene_effect_reopen(
         Some(&Value::Float(2.0))
     );
 }
+
+/// The terrain panel's commands, driven over the wire the way the panel drives them through the
+/// registry: create a root, add a layer, then undo and redo the layer in the one history.
+#[test]
+fn terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel() {
+    use cy_editor_services::terrain::TerrainStack;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/terrain.cyworld").unwrap();
+    let created = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terrain.create","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&created, 1).get("isError"), &Json::Bool(false));
+    let terrain = editor
+        .selection
+        .get()
+        .nodes()
+        .next()
+        .expect("terrain.create selects the root it created");
+    let layers = |editor: &Editor| {
+        let document = editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap();
+        TerrainStack::read(document, terrain)
+            .expect("the root is a terrain")
+            .layers
+            .len()
+    };
+    assert_eq!(layers(&editor), 0);
+
+    let add = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"terrain.layer.add","arguments":{{"terrain":"{terrain}","name":"Grass","material":"materials/grass.cymat"}}}}}}"#
+    );
+    let added = converse(&[INITIALIZE, &add], &mut editor);
+    assert_eq!(result(&added, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(layers(&editor), 1);
+
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(
+        layers(&editor),
+        0,
+        "undo removes the layer and keeps the root"
+    );
+
+    let redone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(layers(&editor), 1);
+}
