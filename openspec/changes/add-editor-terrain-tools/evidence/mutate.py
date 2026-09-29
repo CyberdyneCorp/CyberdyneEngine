@@ -23,6 +23,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 OUT = HERE / "falsification.txt"
 BUILD = ROOT / "build/dev"
+SHOTS = BUILD / "terrain-mutation-snapshots"
 
 PANEL = "editor/crates/cy-editor-shell/src/panels/terrain.rs"
 COMMANDS = "editor/crates/cy-editor-services/src/terrain.rs"
@@ -38,6 +39,8 @@ SHELL_LIB = ("rust", "cy-editor-shell", ["--lib"])
 PANELS = ("rust", "cy-editor-shell", ["--test", "new_panels_are_accessible"])
 SERVICES = ("rust", "cy-editor-services", ["--lib"])
 MCP = ("rust", "cy-editor-mcp", ["--test", "a_session_over_the_wire"])
+# The snapshot test is ignored by default: it needs a GPU adapter and a directory to write into.
+SNAPSHOTS = ("rust", "cy-editor-shell", ["--test", "panel_snapshots"], ["--ignored"])
 AUTHORING = ("cpp", "cy_test_integration_terrain_authoring", "integration.terrain_authoring")
 BACKEND = ("cpp", "cy_test_integration_editor_backend_terrain",
            "integration.editor_backend_terrain")
@@ -98,6 +101,9 @@ MUTATIONS = [
      "                self.evaluation = Some(evaluation);\n",
      "                let _ = evaluation;\n",
      MCP, "terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp"),
+    ("r15_snapshot_keeps_a_stale_texture", "editor/crates/cy-editor-shell/tests/panel_snapshots.rs",
+     "    desk.inputs.terrain_surface = None;\n", "",
+     SNAPSHOTS, "terrain_tools_snapshots"),
     ("c01_brush_reaches_past_its_radius", STACK,
      "brush_falloff(distance, modifier.radius, modifier.falloff)",
      "brush_falloff(distance, modifier.radius * 1.25F, modifier.falloff)",
@@ -168,10 +174,14 @@ def cargo_env():
     return env
 
 
-def run_rust(env, crate, target, pattern):
+def run_rust(env, crate, target, pattern, harness=()):
     jobs = env.get("CY_JOBS", "4")
     command = ["cargo", "test", "--manifest-path", str(ROOT / "editor/Cargo.toml"), "--jobs", jobs,
                "-p", crate, *target, pattern]
+    if harness:
+        command += ["--", *harness]
+        env = dict(env, CY_PANEL_SNAPSHOTS=str(SHOTS))
+        SHOTS.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=env)
     text = result.stdout + result.stderr
     failed = sorted(set(re.findall(r"^test (\S+) \.\.\. FAILED$", text, re.MULTILINE)))
@@ -220,7 +230,8 @@ def main(prefixes):
         path.write_text(source.replace(before, after), encoding="utf-8")
         try:
             if suite[0] == "rust":
-                code, failed, summary, compiled, text = run_rust(env, suite[1], suite[2], pattern)
+                code, failed, summary, compiled, text = run_rust(env, suite[1], suite[2], pattern,
+                                                                 *suite[3:])
             else:
                 code, failed, summary, compiled, text = run_cpp(env, *suite[1:])
         finally:

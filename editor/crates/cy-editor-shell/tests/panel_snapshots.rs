@@ -295,10 +295,11 @@ impl Gpu {
     }
 }
 
-fn snapshot(desk: &mut Desk, panel: &str, name: &str) {
+/// Draw `panel` in a fresh context and write it as `name`; answers its pixels when it was written.
+fn snapshot(desk: &mut Desk, panel: &str, name: &str) -> Option<Vec<u8>> {
     let Some(directory) = std::env::var_os("CY_PANEL_SNAPSHOTS").map(PathBuf::from) else {
         eprintln!("CY_PANEL_SNAPSHOTS is not set; not writing {name}");
-        return;
+        return None;
     };
     let _device = ONE_DEVICE
         .lock()
@@ -317,6 +318,7 @@ fn snapshot(desk: &mut Desk, panel: &str, name: &str) {
     image::save_buffer(&path, &pixels, SIZE[0], SIZE[1], image::ColorType::Rgba8)
         .expect("the snapshot is written");
     eprintln!("wrote {}", path.display());
+    Some(pixels)
 }
 
 /// A world with one terrain root and one material layer, both through registered commands.
@@ -622,9 +624,30 @@ fn terrain_tools_snapshots() {
     let (mut desk, _, _) = terrain_tools_desk();
     install_engine_reply(&mut desk);
     desk.inputs.terrain_tool = "hole".into();
-    snapshot(&mut desk, "editor-terrain", "editor-terrain-tools.png");
+    let tools = snapshot(&mut desk, "editor-terrain", "editor-terrain-tools.png");
+    // Each snapshot draws in a context of its own, which does not know the texture the panel
+    // uploaded into the last one; a window keeps one context and never drops its cache.
+    desk.inputs.terrain_surface = None;
     desk.inputs.terrain_tool = "paint".into();
-    snapshot(&mut desk, "editor-terrain", "editor-terrain-paint.png");
+    let paint = snapshot(&mut desk, "editor-terrain", "editor-terrain-paint.png");
+    for pixels in [tools, paint].into_iter().flatten() {
+        assert!(
+            lit_field_pixels(&pixels) > 100_000,
+            "the brush field shows the engine's surface, not an empty field"
+        );
+    }
+}
+
+/// Pixels in the terrain brush field lighter than the sunken background: the engine's grey
+/// surface covers most of the field, the grid lines alone a few thousand pixels.
+fn lit_field_pixels(pixels: &[u8]) -> usize {
+    let width = usize::try_from(SIZE[0]).expect("fits");
+    pixels
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(at, _)| (260..940).contains(&(at % width)) && (100..495).contains(&(at / width)))
+        .filter(|(_, rgba)| rgba[..3].iter().map(|&c| u32::from(c)).sum::<u32>() > 300)
+        .count()
 }
 
 fn catalogue(identity: u32, name: &str, pin_type: &str) -> Vec<u8> {
