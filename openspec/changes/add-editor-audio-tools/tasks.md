@@ -21,7 +21,9 @@
 
 - [x] 3.1 Rust cases in services, interface, shell and MCP; panel snapshots `docs/design/images/editor-audio-{mixer,source-range}.png`.
 - [x] 3.2 `samples/05b-editor-window/audio_window.py` against the real runtime; captures `docs/design/images/editor-audio-source-{viewport,window}.png`.
-- [x] 3.3 Mutation proofs in `evidence/falsification.txt` (`evidence/mutate.py`).
+- [x] 3.3 Mutation proofs in `evidence/falsification.txt` (`evidence/mutate.py`), and for every MCP
+  mixer and source tool's edit reaching the saved mixer or world (r14 to r22) in
+  `evidence/falsification-r14_route_tool_is_a_no_op.txt`.
 - [x] 3.4 `tools/roadmap/requirements-coverage.toml`: two `audio` requirements mapped; the four added requirements recorded for mapping on archive.
 - [x] 3.5 `editor/README.md`, `src/editor_backend/README.md`, `samples/05b-editor-window/README.md`.
 - [ ] 3.6 On archive, add the four `test:`/`rust:` entries recorded in the coverage file.

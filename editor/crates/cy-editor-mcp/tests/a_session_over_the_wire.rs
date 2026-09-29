@@ -4514,3 +4514,178 @@ fn play_reports_the_sources_the_engine_is_sounding() {
     assert_eq!(structured(&status, 1, "playing"), "true");
     assert_eq!(structured(&status, 1, "play_voices"), "1");
 }
+
+/// The mixer on disk, read back as the editor's own model.
+fn saved_mixer(sandbox: &Sandbox) -> cy_editor_services::audio::Mixer {
+    let text = std::fs::read_to_string(sandbox.0.join("game/audio/mixer.cymixer")).unwrap();
+    cy_editor_services::audio::Mixer::decode(&text).unwrap()
+}
+
+#[test]
+fn every_mixer_edit_tool_changes_the_saved_mixer() {
+    let sandbox = Sandbox::new("audio-edits");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/audio.cyworld").unwrap();
+    let asked = audio_runtime_double(&mut editor);
+
+    // Created from nothing: Master only, and a second create is refused.
+    let created = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "audio.mixer.create", &[]),
+            &tool_call(3, "audio.mixer.create", &[]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&created, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&created, 2).get("isError"), &Json::Bool(true));
+    let names: Vec<String> = saved_mixer(&sandbox)
+        .buses
+        .iter()
+        .map(|bus| bus.name.clone())
+        .collect();
+    assert_eq!(names, ["Master"]);
+
+    let edited = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "audio.bus.add", &[("name", "Music")]),
+            &tool_call(3, "audio.bus.add", &[("name", "Stems")]),
+            &tool_call(4, "audio.bus.add", &[("name", "Spare")]),
+            &tool_call(
+                5,
+                "audio.bus.route",
+                &[("name", "Stems"), ("output", "Music")],
+            ),
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"audio.bus.flag","arguments":{"name":"Music","flag":"mute","enabled":true}}}"#,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Music","kind":"gain","a":0.5,"b":0}}}"#,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Music","kind":"limiter","a":0.9,"b":0}}}"#,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"audio.bus.effect.set","arguments":{"bus":"Music","index":1,"a":0.7,"b":0,"bypass":true}}}"#,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"audio.bus.effect.remove","arguments":{"bus":"Music","index":0}}}"#,
+            &tool_call(11, "audio.bus.remove", &[("name", "Spare")]),
+            // Music still has Stems routed into it, so it stays.
+            &tool_call(12, "audio.bus.remove", &[("name", "Music")]),
+        ],
+        &mut editor,
+    );
+    for index in 1..=10 {
+        assert_eq!(
+            result(&edited, index).get("isError"),
+            &Json::Bool(false),
+            "{}",
+            tool_text(&edited, index)
+        );
+    }
+    assert_eq!(result(&edited, 11).get("isError"), &Json::Bool(true));
+
+    let mixer = saved_mixer(&sandbox);
+    assert!(mixer.bus("Spare").is_none(), "audio.bus.remove removed it");
+    let stems = mixer.bus("Stems").unwrap();
+    assert_eq!(stems.output.as_deref(), Some("Music"), "audio.bus.route");
+    let music = mixer.bus("Music").unwrap();
+    assert!(music.mute, "audio.bus.flag");
+    assert_eq!(music.effects.len(), 1, "audio.bus.effect.remove");
+    let limiter = &music.effects[0];
+    assert_eq!(limiter.kind, "limiter", "the first effect was removed");
+    assert!((limiter.a - 0.7).abs() < 1e-6, "audio.bus.effect.set");
+    assert!(limiter.bypass, "audio.bus.effect.set");
+
+    // One undo takes back the last successful edit: Spare returns.
+    let undone = converse(&[INITIALIZE, &tool_call(13, "edit.undo", &[])], &mut editor);
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    assert!(saved_mixer(&sandbox).bus("Spare").is_some());
+
+    // The read tools report the file, and the engine-facing ones reach the engine.
+    let on_disk = std::fs::read_to_string(sandbox.0.join("game/audio/mixer.cymixer")).unwrap();
+    let sent = converse(
+        &[
+            INITIALIZE,
+            &tool_call(14, "audio.mixer.read", &[]),
+            &tool_call(15, "audio.mixer.apply", &[]),
+            &tool_call(16, "audio.preview.stop", &[]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(structured(&sent, 1, "source"), on_disk);
+    assert_eq!(result(&sent, 2).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&sent, 3).get("isError"), &Json::Bool(false));
+    settle_audio(&mut editor);
+    assert_eq!(
+        last_audio_payload(&asked, "audio.mixer.apply"),
+        on_disk.into_bytes()
+    );
+    last_audio_payload(&asked, "audio.preview.stop");
+}
+
+#[test]
+fn a_sources_range_is_an_undoable_mcp_edit_of_the_world() {
+    use cy_editor_services::audio_commands::AudioSource;
+
+    let sandbox = Sandbox::new("audio-range");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/audio.cyworld").unwrap();
+    let _asked = audio_runtime_double(&mut editor);
+    let created = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"audio.source.create","arguments":{"cue":"audio/cues/ping.cycue","at":[3,0,0],"min_distance":1,"max_distance":50,"attenuation":"inverse"}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&created, 1).get("isError"),
+        &Json::Bool(false),
+        "{}",
+        tool_text(&created, 1)
+    );
+    let entity = structured(&created, 1, "entity");
+    let node = cy_editor_core::ids::NodeId::from_u128(u128::from_str_radix(&entity, 16).unwrap());
+    let source = |editor: &Editor| {
+        let active = editor.workspace.active().unwrap();
+        AudioSource::read(editor.documents.get(active).unwrap(), node).unwrap()
+    };
+
+    let ranged = converse(
+        &[
+            INITIALIZE,
+            &format!(
+                r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"audio.source.range","arguments":{{"entity":"{entity}","min_distance":2,"max_distance":20,"attenuation":"linear"}}}}}}"#
+            ),
+            // An inverted range is refused and changes nothing.
+            &format!(
+                r#"{{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"audio.source.range","arguments":{{"entity":"{entity}","min_distance":9,"max_distance":3}}}}}}"#
+            ),
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&ranged, 1).get("isError"),
+        &Json::Bool(false),
+        "{}",
+        tool_text(&ranged, 1)
+    );
+    assert_eq!(result(&ranged, 2).get("isError"), &Json::Bool(true));
+    let shaped = source(&editor);
+    assert_eq!(
+        (
+            shaped.min_distance,
+            shaped.max_distance,
+            shaped.attenuation.as_str()
+        ),
+        (2.0, 20.0, "linear")
+    );
+
+    let undone = converse(&[INITIALIZE, &tool_call(5, "edit.undo", &[])], &mut editor);
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let restored = source(&editor);
+    assert_eq!(
+        (
+            restored.min_distance,
+            restored.max_distance,
+            restored.attenuation.as_str()
+        ),
+        (1.0, 50.0, "inverse")
+    );
+}

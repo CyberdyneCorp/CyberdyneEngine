@@ -9,6 +9,7 @@ build tree (`build/dev`, or CY_BUILD_DIR) with CY_JOBS jobs and run it. A mutati
 tests notices is written as SURVIVED and makes the driver exit non-zero.
 
 Run from anywhere: python3 openspec/changes/add-editor-audio-tools/evidence/mutate.py
+Pass mutation names to run only those; the record then goes to falsification-<first name>.txt.
 Output: falsification.txt beside this file. Every C++ target is rebuilt unmutated at the end.
 """
 import hashlib
@@ -92,6 +93,38 @@ MUTATIONS = [
      "            || (domain == Domain::AudioBusesAndMixing && self.audio_vocabulary.is_some())",
      "            || domain == Domain::AudioBusesAndMixing",
      INTERFACE_LIB, "the_audio_mixer_opens_only_on_the_engines_vocabulary"),
+    # Each MCP tool's edit reaches the saved mixer or world, not only its outcome text.
+    ("r14_route_tool_is_a_no_op", COMMANDS,
+     "|mixer| mixer.route(&name, &output),", "|_mixer| Ok(()),",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r15_effect_remove_tool_is_a_no_op", COMMANDS,
+     "|mixer| mixer.remove_effect(&bus, position),", "|_mixer| Ok(()),",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r16_bus_remove_tool_is_a_no_op", COMMANDS,
+     "|mixer| mixer.remove_bus(&name),", "|_mixer| Ok(()),",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r17_flag_tool_is_a_no_op", COMMANDS,
+     "|mixer| mixer.set_flag(&name, &which, enabled),", "|_mixer| Ok(()),",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r18_effect_set_ignores_bypass", COMMANDS,
+     "                        effect.bypass = bypass;\n", "",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r19_create_overwrites_a_mixer", COMMANDS,
+     "                .is_some_and(|host| host.source_exists(reference))",
+     "                .is_some_and(|host| host.source_exists(reference) && false)",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r20_preview_stop_never_sent", COMMANDS,
+     "host(context)?.audio_request(PREVIEW_STOP, Vec::new())?;",
+     "host(context)?.audio_request(STATE_GET, Vec::new())?;",
+     MCP, "every_mixer_edit_tool_changes_the_saved_mixer"),
+    ("r21_source_range_ignores_curve", COMMANDS,
+     "                    Value::Text(attenuation.clone()),",
+     "                    Value::Text(\"inverse\".into()),",
+     MCP, "a_sources_range_is_an_undoable_mcp_edit_of_the_world"),
+    ("r22_source_range_is_a_no_op", COMMANDS,
+     "                document.set_field(entity, component.id, max_id, Value::Float(max))?;",
+     "                let _ = max_id;",
+     MCP, "a_sources_range_is_an_undoable_mcp_edit_of_the_world"),
     ("c01_engine_ignores_bus_gain", AUTHORING,
      "    if (Status set = graph.set_volume(handle, bus.volume); !set) {",
      "    if (Status set = graph.set_volume(handle, 1.0F); !set) {",
@@ -201,6 +234,9 @@ def record(lines, name, relative, before, after):
 
 def main():
     env = cargo_env()
+    chosen = sys.argv[1:]
+    mutations = [m for m in MUTATIONS if not chosen or m[0] in chosen]
+    out = OUT if not chosen else HERE / f"falsification-{chosen[0]}.txt"
     lines = [
         "Mutations that turn the editor audio tools' tests red (#29), Development profile. Each",
         "mutation was applied, its tests run, the file restored and md5-verified. Listed under",
@@ -209,7 +245,7 @@ def main():
     ]
     survived = []
     rebuild = set()
-    for name, relative, before, after, (kind, unit, target), pattern in MUTATIONS:
+    for name, relative, before, after, (kind, unit, target), pattern in mutations:
         path = ROOT / relative
         source = path.read_text(encoding="utf-8")
         if source.count(before) != 1:
@@ -247,8 +283,8 @@ def main():
     for unit in sorted(rebuild):
         subprocess.run(["ninja", "-C", str(BUILD), "-j", env.get("CY_JOBS", "4"), unit],
                        cwd=ROOT, check=True, capture_output=True)
-    lines.append(f"{len(MUTATIONS) - len(survived)} of {len(MUTATIONS)} mutations killed.")
-    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    lines.append(f"{len(mutations) - len(survived)} of {len(mutations)} mutations killed.")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return 1 if survived else 0
 
 

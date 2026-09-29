@@ -1,0 +1,68 @@
+Mutations that turn the editor audio tools' tests red (#29), Development profile. Each
+mutation was applied, its tests run, the file restored and md5-verified. Listed under
+each: the tests (Rust) or test cases (C++) that failed.
+
+== r14_route_tool_is_a_no_op: editor/crates/cy-editor-services/src/audio_commands.rs
+<   |mixer| mixer.route(&name, &output),
+>   |_mixer| Ok(()),
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 1.34s
+RESTORED md5 ok
+
+== r15_effect_remove_tool_is_a_no_op: editor/crates/cy-editor-services/src/audio_commands.rs
+<   |mixer| mixer.remove_effect(&bus, position),
+>   |_mixer| Ok(()),
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r16_bus_remove_tool_is_a_no_op: editor/crates/cy-editor-services/src/audio_commands.rs
+<   |mixer| mixer.remove_bus(&name),
+>   |_mixer| Ok(()),
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r17_flag_tool_is_a_no_op: editor/crates/cy-editor-services/src/audio_commands.rs
+<   |mixer| mixer.set_flag(&name, &which, enabled),
+>   |_mixer| Ok(()),
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r18_effect_set_ignores_bypass: editor/crates/cy-editor-services/src/audio_commands.rs
+<   effect.bypass = bypass;
+>   
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r19_create_overwrites_a_mixer: editor/crates/cy-editor-services/src/audio_commands.rs
+<   .is_some_and(|host| host.source_exists(reference))
+>   .is_some_and(|host| host.source_exists(reference) && false)
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r20_preview_stop_never_sent: editor/crates/cy-editor-services/src/audio_commands.rs
+<   host(context)?.audio_request(PREVIEW_STOP, Vec::new())?;
+>   host(context)?.audio_request(STATE_GET, Vec::new())?;
+FAILED  every_mixer_edit_tool_changes_the_saved_mixer
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r21_source_range_ignores_curve: editor/crates/cy-editor-services/src/audio_commands.rs
+<   Value::Text(attenuation.clone()),
+>   Value::Text("inverse".into()),
+FAILED  a_sources_range_is_an_undoable_mcp_edit_of_the_world
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r22_source_range_is_a_no_op: editor/crates/cy-editor-services/src/audio_commands.rs
+<   document.set_field(entity, component.id, max_id, Value::Float(max))?;
+>   let _ = max_id;
+FAILED  a_sources_range_is_an_undoable_mcp_edit_of_the_world
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+9 of 9 mutations killed.
