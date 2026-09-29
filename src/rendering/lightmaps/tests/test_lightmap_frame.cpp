@@ -118,12 +118,22 @@ CY_TEST_CASE("write_lightmaps names the frame's baked lights by their place in t
     CY_CHECK_EQ(view.lightmap_shadow_lights[1], 2U);
     CY_CHECK_EQ(view.lightmap_direct_lights[0], 1U);
 
-    // A baked light past the set's 128 bits is refused rather than shaded twice.
+    // A baked light past the set's 128 bits is refused rather than shaded twice, and the refusal
+    // writes nothing: a lightmap switched on over only the lights before 22 would shade 22 twice.
     std::vector<cy::u64> many(130, 99);
-    many[129] = 21;
+    many[0] = 21;
+    many[129] = 22;
+    cy::rendering::pipeline::FrameViewData refused;
+    const cy::rendering::pipeline::FrameViewData defaults;
     CY_CHECK_FALSE(
-        write_lightmaps(slots, lightmap, gi::GiMode::Baked, {many.data(), many.size()}, view)
+        write_lightmaps(slots, lightmap, gi::GiMode::Baked, {many.data(), many.size()}, refused)
             .has_value());
+    for (u32 word = 0; word < 4U; ++word) {
+        CY_CHECK_EQ(refused.lightmap_control[word], defaults.lightmap_control[word]);
+        CY_CHECK_EQ(refused.lightmap_layout[word], defaults.lightmap_layout[word]);
+        CY_CHECK_EQ(refused.lightmap_shadow_lights[word], defaults.lightmap_shadow_lights[word]);
+        CY_CHECK_EQ(refused.lightmap_direct_lights[word], defaults.lightmap_direct_lights[word]);
+    }
 }
 
 CY_TEST_CASE("the density view is one word and a target, and off by default") {

@@ -410,16 +410,18 @@ namespace {
     return pipeline::kNoLightmapLight;
 }
 
-[[nodiscard]] Status write_lights(const lightmap_bake::BakedLightmap& lightmap,
-                                  Span<const u64> frame_light_ids,
-                                  pipeline::FrameViewData& view) noexcept {
-    for (u32 word = 0; word < 4U; ++word) {
-        view.lightmap_shadow_lights[word] = pipeline::kNoLightmapLight;
-        view.lightmap_direct_lights[word] = 0;
-    }
+/// The two light words of the view block, built apart from it so a refusal leaves the view as it
+/// was.
+struct LightWords {
+    u32 shadow[4] = {pipeline::kNoLightmapLight, pipeline::kNoLightmapLight,
+                     pipeline::kNoLightmapLight, pipeline::kNoLightmapLight};
+    u32 direct[4] = {0, 0, 0, 0};
+};
+
+[[nodiscard]] Status build_lights(const lightmap_bake::BakedLightmap& lightmap,
+                                  Span<const u64> frame_light_ids, LightWords& words) noexcept {
     for (usize channel = 0; channel < lightmap.shadow_lights.size() && channel < 4U; ++channel) {
-        view.lightmap_shadow_lights[channel] =
-            frame_index_of(frame_light_ids, lightmap.shadow_lights[channel]);
+        words.shadow[channel] = frame_index_of(frame_light_ids, lightmap.shadow_lights[channel]);
     }
     for (const u64 id : lightmap.direct_lights) {
         const u32 index = frame_index_of(frame_light_ids, id);
@@ -431,7 +433,7 @@ namespace {
                         "write_lightmaps: a light whose direct term is baked is past the first 128 "
                         "of the frame's lights, and would be shaded twice");
         }
-        view.lightmap_direct_lights[index / 32U] |= 1U << (index % 32U);
+        words.direct[index / 32U] |= 1U << (index % 32U);
     }
     return ok();
 }
@@ -461,6 +463,12 @@ Status write_lightmaps(const LightmapSlots& slots, const lightmap_bake::BakedLig
     if (frame_ambient_source(mode, true, true) != AmbientSource::Lightmap) {
         return ok();
     }
+    // Every refusal comes before the first write: a refused view is the view as it was, never a
+    // lightmap switched on over half its baked lights.
+    LightWords lights;
+    if (Status built = build_lights(lightmap, frame_light_ids, lights); !built) {
+        return built;
+    }
     for (u32 plane = 0; plane < kMaxPlanes; ++plane) {
         view.lightmap_control[plane] =
             plane < planes ? slots.planes[plane] : pipeline::kNoMaterialTexture;
@@ -471,7 +479,11 @@ Status write_lightmaps(const LightmapSlots& slots, const lightmap_bake::BakedLig
     view.lightmap_layout[2] = lightmap.gutter_texels;
     view.lightmap_layout[3] =
         lightmap.shadow_lights.empty() ? pipeline::kNoMaterialTexture : slots.shadow_mask;
-    return write_lights(lightmap, frame_light_ids, view);
+    for (u32 word = 0; word < 4U; ++word) {
+        view.lightmap_shadow_lights[word] = lights.shadow[word];
+        view.lightmap_direct_lights[word] = lights.direct[word];
+    }
+    return ok();
 }
 
 void write_lightmap_density_view(f32 target_texels_per_metre,

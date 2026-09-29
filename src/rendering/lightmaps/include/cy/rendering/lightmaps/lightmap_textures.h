@@ -75,7 +75,9 @@ public:
     /// Copy the lightmap's planes to the device, in a device frame of its own: call it OUTSIDE the
     /// host's `begin_frame`/`end_frame`, as `ProbeVolumeTexture::upload` is. Recreates the textures
     /// when the atlas's size or encoding changed; copies nothing when `lightmap` is the one it last
-    /// copied, unchanged.
+    /// copied, unchanged. KNOWING THAT IS NOT FREE: it hashes every texel of every level of every
+    /// plane and of the mask, about half a second for a 2048 x 2048 SH L1 atlas with its mask and
+    /// chain on an M2 Max. Call it when a lightmap was baked or loaded, not every frame.
     [[nodiscard]] Status upload(const lightmap_bake::BakedLightmap& lightmap) noexcept;
 
     [[nodiscard]] u32 planes() const noexcept { return planes_; }
@@ -153,7 +155,7 @@ struct LightmapSlots {
 /// bake's `gi::GiLight::id`s. Fails with `InvalidArgument` when a plane has no slot, when a
 /// stationary light's mask has no slot, or when a light whose direct term is baked sits past the
 /// first `pipeline::kMaxLightmapDirectLights` of the frame's lights — shading it twice is the
-/// failure this refuses rather than draws.
+/// failure this refuses rather than draws. A refusal writes nothing: the view is left as it was.
 [[nodiscard]] Status write_lightmaps(const LightmapSlots& slots,
                                      const lightmap_bake::BakedLightmap& lightmap, gi::GiMode mode,
                                      Span<const u64> frame_light_ids,
