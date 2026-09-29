@@ -3,11 +3,17 @@ renderers on), macOS 27.0, Apple M2 Max, Apple clang, Xcode 27.0. The device sui
 render.lightmaps_metal, which runs on the M2 Max's Metal device; render.lightmaps (Vulkan) compiles
 and skips here, so nothing below claims a Vulkan result.
 
-Each mutation was applied, the named targets rebuilt (for a cy/frame.slang edit, frame_spirv.h and
-frame_msl.h regenerated first with src/rendering/pipeline/shaders/regenerate.py), the suites run,
-every touched file restored and md5-verified, and the targets rebuilt from the restored tree. Under
-each: the suites and the cases that failed. The runner is scratchpad tooling, not committed; each
-block names the file and the edit exactly.
+EVERY BLOCK BELOW IS A RERUN FROM SCRATCH, after the branch was rebased onto main 4fb1e998 (the
+specialised-editor scaffold, #59) and the lighting panel moved onto that scaffold. Each mutation was
+applied; for C++ and Slang the whole of build/dev was rebuilt (for a cy/frame.slang edit,
+frame_spirv.h and frame_msl.h regenerated first with src/rendering/pipeline/shaders/regenerate.py)
+and all six lightmap suites run (unit.render_lightmap_atlas, integration.render_lightmap_mips,
+integration.render_lightmap_bake, unit.lightmap_frame, render.lightmaps_metal,
+integration.build_lightmap_cli); for Rust, the six editor crates listed were tested with
+--no-fail-fast. Then every touched file was restored and md5-verified, build/dev rebuilt from the
+restored tree, and the regenerated shader headers checked unchanged. Under each block: only the
+suites that failed, and within a doctest suite only the cases with a failing assertion. The runner
+is scratchpad tooling, not committed; each block names the file and the edit exactly.
 
 WHAT THE RECORD CORRECTS:
 
@@ -15,53 +21,63 @@ WHAT THE RECORD CORRECTS:
   its first run: in the one hand-drawn atlas the gap between rectangle C's charts fell where the
   last fine texel's owner and the nearest agreed for every texel a tap reaches. The suite gained
   'wherever the chart gap falls on the coarse grids, no tap reads the other chart', eight
-  placements of the gap across a level-2 texel, and b02 is red.
+  placements of the gap across a level-2 texel, and b02 is red. (b01 and b03 now turn that case red
+  too; the first record ran them before it existed.)
 * b06, b07 and l05 first failed to COMPILE (-Werror, an unused parameter), which proves nothing;
   they were rewritten to keep every parameter used, and the blocks below are those runs.
 * r01, r02 and r03 first ran with a stale cy_build: c01 (the CLI ignores `cancel`) had rebuilt it
   and the first runner did not rebuild after restoring, so the real-tool Rust case failed for c01's
-  reason. The runner now rebuilds after every restore; the blocks below are the clean reruns, and
-  r02's commands-case failure in the first run did not recur.
-
-* b01, b03 and b04 ran before the sweep case existed, against the suite's first three cases; b02
-  is the mutation the sweep was added for.
+  reason. The runner rebuilds after every restore.
+* The first record's Rust runs stopped at the first failing crate (cargo test without
+  --no-fail-fast), so they listed fewer cases than fail; r03 and r04 below list them all. r04
+  (a misspelt engine name for the view mode) breaks the built-in registration itself, which is why
+  the application, script and journal cases fail with it.
+* r08 (the lighting tool dropped from startup's check) SURVIVED its first run: every case built its
+  registry from the shipped commands, where the bake is an external effect either way. The suite
+  gained 'startup_checks_the_lighting_tool_and_refuses_a_bake_that_edits_a_document', and r08 is
+  red.
+* r04 and r09 leave a cy-runtime-stub orphaned by a failing crash-recovery case
+  (the_editor_survives_the_runtime_being_killed_mid_session) holding the runner's pipe open; the
+  runner killed it. That case's clean-up on failure is main's, not this change's.
 
 THE FRAME WITH NO LIGHTMAP IS MAIN'S, BYTE FOR BYTE, on this device: render.lightmaps_metal (c)
 holds it to references/lightmaps_absent_metal.png, captured by this suite on the M2 Max with main's
 frame shaders (1b7373a5) before cy/frame.slang changed (md5 9e1f7003d58f51803b0e549dac82b03f,
-identical over three runs). s08 changes only the no-lightmap path and turns (c) red.
+identical over three runs); main's frame shaders are unchanged at 4fb1e998. s08 changes only the
+no-lightmap path and turns (c) red.
+
+SUMMARY: 33 mutations, 33 red after one strengthening (r08).
 
 == b01_mips_ignore_charts: src/rendering/lightmap_bake/src/mips.cpp
 <   charts[tap] = fine.genuine[fine.index(fx[tap], fy[tap])];
 >   charts[tap] = kNoChart;
-cy_test_integration_render_lightmap_mips:
+integration.render_lightmap_mips:
   TEST CASE:  every level of the chain reads only its own chart, where a box filter bleeds
-  test cases:  3 |  2 passed | 1 failed | 0 skipped
-cy_test_integration_render_lightmap_bake: passed
+  TEST CASE:  wherever the chart gap falls on the coarse grids, no tap reads the other chart
+  test cases:   4 |   2 passed | 2 failed | 0 skipped
 RESTORED md5 ok
 
 == b02_mips_owner_is_last_tap: src/rendering/lightmap_bake/src/mips.cpp
 <   owner = near.before(owner) ? near : owner;
 >   owner = near;
-cy_test_integration_render_lightmap_mips:
+integration.render_lightmap_mips:
   TEST CASE:  wherever the chart gap falls on the coarse grids, no tap reads the other chart
   test cases:   4 |   3 passed | 1 failed | 0 skipped
 RESTORED md5 ok
 
 == b03_mips_not_dilated: src/rendering/lightmap_bake/src/mips.cpp
 <   void dilate_level(Level& level, Span<const Rect> rects, u32 depth, Array<u8>& snapshot) noexcept {
->   return;
-cy_test_integration_render_lightmap_mips:
+>   (the same line, then `return;` as the body's first statement)
+integration.render_lightmap_mips:
   TEST CASE:  every level of the chain reads only its own chart, where a box filter bleeds
-  test cases:  3 |  2 passed | 1 failed | 0 skipped
-cy_test_integration_render_lightmap_bake: passed
+  TEST CASE:  wherever the chart gap falls on the coarse grids, no tap reads the other chart
+  test cases:   4 |   2 passed | 2 failed | 0 skipped
 RESTORED md5 ok
 
 == b04_mips_not_rounded: src/rendering/lightmap_bake/src/mips.cpp
 <   void round_level(Level& level) noexcept {
->   return;
-cy_test_integration_render_lightmap_mips: passed
-cy_test_integration_render_lightmap_bake:
+>   (the same line, then `return;` as the body's first statement)
+integration.render_lightmap_bake:
   TEST CASE:  a bake fills the mip chain its padding protects, and the cooked lightmap carries it
   test cases:  23 |  22 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -69,10 +85,10 @@ RESTORED md5 ok
 == b05_no_mip_levels: src/rendering/lightmap_bake/src/bake.cpp
 <   out.mip_levels = layout.mip_levels;
 >   out.mip_levels = 0;
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  a bake fills the mip chain its padding protects, and the cooked lightmap carries it
   test cases:  23 |  22 passed | 1 failed | 0 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (i) every level of the chain and of the mask reaches the device as the bake made it
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -80,10 +96,10 @@ RESTORED md5 ok
 == b06_direct_lights_unnamed: src/rendering/lightmap_bake/src/bake.cpp
 <   if (detail::bakes_direct(light, settings.content)) {
 >   if (detail::bakes_direct(light, settings.content) && false) {
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  the bake names every light whose direct term it baked, and no other
   test cases:  20 |  19 passed | 1 failed | 3 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (h) a static sun's direct term is in the texels, and the frame does not add it again
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -91,27 +107,27 @@ RESTORED md5 ok
 == b07_progress_silent: src/rendering/lightmap_bake/src/bake.cpp
 <   progress->step(stage, done, total);
 >   (void)stage; (void)done; (void)total;
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  a bake reports its progress, and doing so changes none of its bytes
   test cases:  22 |  21 passed | 1 failed | 1 skipped
-cy_build:
-  integration.build_lightmap_cli: AssertionError: no progress was reported
+integration.build_lightmap_cli:
+  AssertionError: no progress was reported
 RESTORED md5 ok
 
 == b08_cancel_ignored: src/rendering/lightmap_bake/src/bake.cpp
 <   if (progress->cancelled()) {
 >   if (false) {
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  a cancelled bake stops at its next step and says it was cancelled
   test cases:  23 |  22 passed | 1 failed | 0 skipped
-cy_build:
-  integration.build_lightmap_cli: AssertionError: a cancelled bake exited 0: ['progress finish 0 1', 'progress finish 1 1', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=13501199 bytes=1966080 mips=1 padding-short=0 seconds=16.980']
+integration.build_lightmap_cli:
+  AssertionError: a cancelled bake exited 0: ['progress finish 0 1', 'progress finish 1 1', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=13501199 bytes=1966080 mips=1 padding-short=0 seconds=16.944']
 RESTORED md5 ok
 
 == b09_asset_drops_chain: src/rendering/lightmap_bake/src/asset.cpp
 <   if (Status put = put_u32(out, lightmap.mip_levels); !put) {
 >   if (Status put = put_u32(out, 0U); !put) {
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  a bake fills the mip chain its padding protects, and the cooked lightmap carries it
   test cases:  23 |  22 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -119,7 +135,7 @@ RESTORED md5 ok
 == b10_version2_refused: src/rendering/lightmap_bake/src/asset.cpp
 <   if (version >= 3U) {
 >   if (version >= 2U) {
-cy_test_integration_render_lightmap_bake:
+integration.render_lightmap_bake:
   TEST CASE:  a bake fills the mip chain its padding protects, and the cooked lightmap carries it
   test cases:  23 |  22 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -127,10 +143,10 @@ RESTORED md5 ok
 == l01_frame_lights_unmatched: src/rendering/lightmaps/src/lightmap_textures.cpp
 <   return static_cast<u32>(index);
 >   return pipeline::kNoLightmapLight;
-cy_test_unit_lightmap_frame:
+unit.lightmap_frame:
   TEST CASE:  write_lightmaps names the frame's baked lights by their place in the frame
   test cases:  4 |  3 passed | 1 failed | 0 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (g) a stationary sun's direct term takes the baked shadow, at any intensity
   TEST CASE:  (h) a static sun's direct term is in the texels, and the frame does not add it again
   TEST CASE:  (k) a stationary point light's direct term takes its own mask channel, through the cluster lists
@@ -140,10 +156,10 @@ RESTORED md5 ok
 == l02_direct_bits_not_set: src/rendering/lightmaps/src/lightmap_textures.cpp
 <   view.lightmap_direct_lights[index / 32U] |= 1U << (index % 32U);
 >   (void)index;
-cy_test_unit_lightmap_frame:
+unit.lightmap_frame:
   TEST CASE:  write_lightmaps names the frame's baked lights by their place in the frame
   test cases:  4 |  3 passed | 1 failed | 0 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (h) a static sun's direct term is in the texels, and the frame does not add it again
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -151,10 +167,10 @@ RESTORED md5 ok
 == l03_mask_slot_not_written: src/rendering/lightmaps/src/lightmap_textures.cpp
 <   lightmap.shadow_lights.empty() ? pipeline::kNoMaterialTexture : slots.shadow_mask;
 >   pipeline::kNoMaterialTexture;
-cy_test_unit_lightmap_frame:
+unit.lightmap_frame:
   TEST CASE:  write_lightmaps names the frame's baked lights by their place in the frame
   test cases:  4 |  3 passed | 1 failed | 0 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (g) a stationary sun's direct term takes the baked shadow, at any intensity
   TEST CASE:  (k) a stationary point light's direct term takes its own mask channel, through the cluster lists
   test cases:  12 |  10 passed | 2 failed | 0 skipped
@@ -163,7 +179,7 @@ RESTORED md5 ok
 == l04_upload_one_level: src/rendering/lightmaps/src/lightmap_textures.cpp
 <   const u32 levels = lightmap.mip_levels + 1U;
 >   const u32 levels = 1U;
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (i) every level of the chain and of the mask reaches the device as the bake made it
   TEST CASE:  (l) a minified surface reads the coarser levels of the uploaded chain
   test cases:  12 |  10 passed | 2 failed | 0 skipped
@@ -172,10 +188,10 @@ RESTORED md5 ok
 == l05_density_view_not_written: src/rendering/lightmaps/src/lightmap_textures.cpp
 <   write_lightmap_density_view(target_texels_per_metre, view);
 >   (void)target_texels_per_metre; (void)view;
-cy_test_unit_lightmap_frame:
+unit.lightmap_frame:
   TEST CASE:  the density view is one word and a target, and off by default
   test cases:  4 |  3 passed | 1 failed | 0 skipped
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (j) the texel-density view colours each surface by the density its lightmap gives it
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -183,7 +199,7 @@ RESTORED md5 ok
 == s01_mask_channel_ignored: src/rendering/shaders/cy/frame.slang
 <   return mask[channel];
 >   return 1.0;
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (g) a stationary sun's direct term takes the baked shadow, at any intensity
   TEST CASE:  (k) a stationary point light's direct term takes its own mask channel, through the cluster lists
   test cases:  12 |  10 passed | 2 failed | 0 skipped
@@ -192,7 +208,7 @@ RESTORED md5 ok
 == s02_baked_direct_shaded_again: src/rendering/shaders/cy/frame.slang
 <   return 0.0;
 >   return 1.0;
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (h) a static sun's direct term is in the texels, and the frame does not add it again
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -200,7 +216,7 @@ RESTORED md5 ok
 == s03_directional_ignores_bake: src/rendering/shaders/cy/frame.slang
 <   visibility = min(visibility, bakedLightFactor(global, baked.mask));
 >   visibility = visibility;
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (g) a stationary sun's direct term takes the baked shadow, at any intensity
   TEST CASE:  (h) a static sun's direct term is in the texels, and the frame does not add it again
   test cases:  12 |  10 passed | 2 failed | 0 skipped
@@ -209,7 +225,7 @@ RESTORED md5 ok
 == s04_punctual_ignores_bake: src/rendering/shaders/cy/frame.slang
 <   sample.illuminance *= bakedLightFactor(index, baked.mask);
 >   sample.illuminance *= 1.0;
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (k) a stationary point light's direct term takes its own mask channel, through the cluster lists
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -217,7 +233,7 @@ RESTORED md5 ok
 == s05_lightmap_level_zero_only: src/rendering/shaders/cy/frame.slang
 <   let first = cyMaterialSampleTexture(cyFrame.lightmapControl.x, uv);
 >   let first = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.x, uv, 0.0);
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (l) a minified surface reads the coarser levels of the uploaded chain
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -225,7 +241,7 @@ RESTORED md5 ok
 == s06_mask_not_sampled: src/rendering/shaders/cy/frame.slang
 <   baked.mask = cyMaterialSampleTexture(cyFrame.lightmapLayout.w, uv);
 >   baked.mask = float4(1.0);
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (g) a stationary sun's direct term takes the baked shadow, at any intensity
   TEST CASE:  (k) a stationary point light's direct term takes its own mask channel, through the cluster lists
   test cases:  12 |  10 passed | 2 failed | 0 skipped
@@ -234,7 +250,7 @@ RESTORED md5 ok
 == s07_density_view_never_drawn: src/rendering/shaders/cy/frame.slang
 <   if (cyFrame.lightmapDebug.x == kCyLightmapDensityView)
 >   if (cyFrame.lightmapDebug.x == 7u)
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (j) the texel-density view colours each surface by the density its lightmap gives it
   test cases:  12 |  11 passed | 1 failed | 0 skipped
 RESTORED md5 ok
@@ -242,7 +258,7 @@ RESTORED md5 ok
 == s08_absent_frame_changed: src/rendering/shaders/cy/frame.slang
 <   if (cyFrame.lightmapDebug.x == kCyLightmapDensityView)
 >   if (cyFrame.lightmapDebug.x != 7u)
-cy_test_render_lightmaps_metal:
+render.lightmaps_metal:
   TEST CASE:  (a) a baked red wall bleeds onto the white surfaces near it, not those far away
   TEST CASE:  (b) the frame's lightmap term follows the host's sample_lightmap, pixel for pixel
   TEST CASE:  (c) no lightmap is the frame before lightmaps existed, byte for byte
@@ -257,43 +273,95 @@ RESTORED md5 ok
 == c01_cli_cancel_line_ignored: tools/build/src/main.cpp
 <   if (std::strncmp(line, "cancel", 6) == 0) {
 >   if (false) {
-cy_build:
-  integration.build_lightmap_cli: AssertionError: a cancelled bake exited 0: ['progress finish 0 1', 'progress finish 1 1', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=13501199 bytes=1966080 mips=1 padding-short=0 seconds=16.997']
+integration.build_lightmap_cli:
+  AssertionError: a cancelled bake exited 0: ['progress finish 0 1', 'progress finish 1 1', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=13501199 bytes=1966080 mips=1 padding-short=0 seconds=17.273']
 RESTORED md5 ok
 
 == r01_editor_never_sends_cancel: editor/crates/cy-editor-services/src/lightmaps.rs
 <   let _ = input.write_all(b"cancel\n");
 >   let _ = &mut input;
--p cy-editor-services lightmaps:::
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
   FAILED: lightmaps::tests::the_real_tool_bakes_and_cancels_when_one_is_built
 RESTORED md5 ok
 
 == r02_editor_drops_progress: editor/crates/cy-editor-services/src/lightmaps.rs
 <   Some(BakeLine::Progress(report)) => step(report),
 >   Some(BakeLine::Progress(_)) => {}
--p cy-editor-services lightmaps:::
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
   FAILED: lightmaps::tests::the_real_tool_bakes_and_cancels_when_one_is_built
 RESTORED md5 ok
 
 == r03_cancel_command_cancels_nothing: editor/crates/cy-editor-services/src/editor.rs
 <   if self.operations.cancel(request) {
 >   if true {
--p cy-editor-services lightmaps:::
-  FAILED: lightmaps::tests::the_commands_start_a_bake_and_cancel_it_through_the_registry
--p cy-editor-interface lighting:
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
   FAILED: specialised::lighting::tests::the_form_bakes_through_the_command_and_cancels_what_it_started
+  FAILED: lightmaps::tests::the_commands_start_a_bake_and_cancel_it_through_the_registry
 RESTORED md5 ok
 
 == r04_view_mode_misnamed: editor/crates/cy-editor-viewport/src/viewmode.rs
 <   ViewMode::LightmapDensity => "LightmapDensity",
 >   ViewMode::LightmapDensity => "LightmapDensty",
--p cy-editor-viewport:
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
+  FAILED: application::tests::a_runtime_that_is_not_listening_is_reported_and_is_not_fatal
+  FAILED: application::tests::an_application_starts_with_no_runtime_and_a_validated_registry
+  FAILED: script::tests::a_failing_line_names_itself_and_stops_the_script
+  FAILED: script::tests::an_argument_without_an_equals_sign_says_what_the_shape_is
+  FAILED: script::tests::a_session_runs_with_no_window_and_no_graphics_device
+  FAILED: script::tests::a_script_waits_until_the_runtime_confirms_each_play_state
+  FAILED: the_journal_survives_the_editor_stopping_and_recovers_what_was_unsaved
+  FAILED: the_editor_survives_the_runtime_being_killed_mid_session
+  FAILED: specialised::lighting::tests::the_density_view_is_the_engines_view_mode_command
+  FAILED: the_lighting_editor_bake_and_density_view_are_mcp_tools
+  FAILED: panels::lighting::tests::the_tool_lists_every_command_its_form_invokes
+  FAILED: panels::specialised::tests::the_lighting_tool_is_scaffolded_and_its_bake_is_its_one_operation
+  FAILED: panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
   FAILED: viewmode::tests::the_mode_list_matches_the_engines
 RESTORED md5 ok
 
 == r05_lighting_editor_refuses: editor/crates/cy-editor-interface/src/specialised/mod.rs
 <   || matches!(domain, Domain::Terrain | Domain::LightingAndLightmapBaking)
 >   || matches!(domain, Domain::Terrain)
--p cy-editor-interface:
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
   FAILED: specialised::tests::the_lighting_editor_opens_onto_its_form_and_no_other_surface
+  FAILED: every_new_panel_survives_the_theme_density_width_matrix_with_accessible_names
+RESTORED md5 ok
+
+== r06_operation_any_effect: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   if tool.effect != EffectClass::ExternalEffect {
+>   if false {
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
+  FAILED: panels::specialised::tests::an_operation_that_edits_a_document_or_hides_from_agents_is_refused
+RESTORED md5 ok
+
+== r07_lighting_declares_no_operation: editor/crates/cy-editor-shell/src/panels/lighting.rs
+<   const OPERATIONS: &'static [&'static str] = &[BAKE_COMMAND];
+>   const OPERATIONS: &'static [&'static str] = &[];
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
+  FAILED: panels::lighting::tests::the_tool_lists_every_command_its_form_invokes
+  FAILED: panels::specialised::tests::the_lighting_tool_is_scaffolded_and_its_bake_is_its_one_operation
+RESTORED md5 ok
+
+== r08_lighting_tool_not_registered: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   register_tool::<super::lighting::LightingTool>(registry)
+>   Ok(())
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
+  FAILED: panels::specialised::tests::startup_checks_the_lighting_tool_and_refuses_a_bake_that_edits_a_document
+RESTORED md5 ok
+
+== r09_bake_is_reversible: editor/crates/cy-editor-services/src/lightmaps.rs
+<   EffectClass::ExternalEffect,   (lighting.bake-lightmaps' metadata)
+>   EffectClass::ReversibleMutation,
+cargo test --no-fail-fast -p cy-editor-services -p cy-editor-interface -p cy-editor-viewport -p cy-editor-shell -p cy-editor-mcp -p cy-editor-app:
+  FAILED: application::tests::an_application_starts_with_no_runtime_and_a_validated_registry
+  FAILED: script::tests::an_argument_without_an_equals_sign_says_what_the_shape_is
+  FAILED: application::tests::a_runtime_that_is_not_listening_is_reported_and_is_not_fatal
+  FAILED: script::tests::a_failing_line_names_itself_and_stops_the_script
+  FAILED: script::tests::a_session_runs_with_no_window_and_no_graphics_device
+  FAILED: script::tests::a_script_waits_until_the_runtime_confirms_each_play_state
+  FAILED: the_journal_survives_the_editor_stopping_and_recovers_what_was_unsaved
+  FAILED: the_editor_survives_the_runtime_being_killed_mid_session
+  FAILED: the_lighting_editor_bake_and_density_view_are_mcp_tools
+  FAILED: panels::specialised::tests::the_lighting_tool_is_scaffolded_and_its_bake_is_its_one_operation
+  FAILED: panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
 RESTORED md5 ok

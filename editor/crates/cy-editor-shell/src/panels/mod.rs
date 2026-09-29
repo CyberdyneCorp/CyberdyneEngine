@@ -514,7 +514,9 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "editor-materials" => material_graph::show(self, ui),
                 "editor-vfx-graph" => vfx_graph::show(self, ui),
                 "editor-terrain" => specialised::show::<terrain::TerrainTool>(self, ui),
-                "editor-lighting-and-lightmap-baking" => lighting::show(self, ui),
+                "editor-lighting-and-lightmap-baking" => {
+                    specialised::show::<lighting::LightingTool>(self, ui);
+                }
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

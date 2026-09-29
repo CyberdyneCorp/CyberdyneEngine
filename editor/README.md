@@ -310,7 +310,8 @@ To add one, for example the animation editor:
    transaction, with `EffectClass::ReversibleMutation`, so `edit.undo` covers it and the MCP tool
    list carries it without further work (tools are a projection of the registry).
 3. Write one module in `crates/cy-editor-shell/src/panels/` with a type that implements
-   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes), `target`
+   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes; a long
+   operation that edits no document goes in `OPERATIONS` instead), `target`
    (resolve what is edited, or draw the empty state), `diagnostics` and `body`. The body draws on
    the session's shared surface and pushes `Intent::Invoke` for registered commands; it never
    mutates a document.
@@ -326,10 +327,11 @@ To add one, for example the animation editor:
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
 in the scaffold's diagnostics area.
 
-`panels/lighting.rs` is the one specialised panel outside the scaffold, on purpose: a lightmap bake
-writes a cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document
-transaction, so `register_tool`'s undo parity check would rightly refuse it. It still opens its
-domain through `SpecialisedEditors::open`, and its commands are MCP tools like any other.
+`panels/lighting.rs` is the scaffold's one tool with an `OPERATIONS` list: a lightmap bake writes a
+cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document transaction,
+so there is nothing for undo to restore. `register_tool` holds each listed operation to being an
+external effect and an MCP tool with no exclusion — a document mutation listed there is refused,
+naming it, as is a bake listed in `COMMANDS`.
 
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no

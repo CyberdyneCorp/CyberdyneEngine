@@ -99,6 +99,16 @@ baking specialised editor is a form over the two commands and the density view's
 the bake's state from the operation service by its request identity, so it cannot disagree with the
 footer.
 
+The panel is a `SpecialisedTool` on the shared scaffold `add-editor-specialised-scaffold` added
+(header, domain opened through the host, diagnostics area, MCP parity). The scaffold refuses any
+panel command that is not a read or a reversible mutation, which is right for authoring and wrong
+for a bake: an `ExternalEffect` that writes a cooked file has no document transaction for undo to
+restore. Rather than exempt the panel, the scaffold gains `SpecialisedTool::OPERATIONS`, a declared
+list that `register_tool` holds to exactly `ExternalEffect` and to an MCP tool with no exclusion; a
+document mutation listed there is refused by name, and the bake listed in `COMMANDS` still is. The
+scaffold change's requirement is widened in its own delta to say so. Over MCP the bake needs the
+connection to hold `external-effect` in its scope and a person's confirmation, like `project.build`.
+
 The texel-density view is an engine debug view (`editor-viewport-and-gizmos`: requested by the
 editor, not drawn by it): `DebugViewMode::LightmapDensity`, which `lightmaps::write_lightmap_debug_view`
 turns into the frame's `lightmap_debug` words. The frame measures the density rather than looking it

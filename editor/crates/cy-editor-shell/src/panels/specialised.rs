@@ -13,7 +13,10 @@
 //!   reported;
 //! * [`register_tool`], which proves that every command the tool's panel invokes is registered,
 //!   is projected as an MCP tool with no exclusion, and is undoable — so a button never has a
-//!   mutation an agent lacks, and never has one that bypasses the transaction history.
+//!   mutation an agent lacks, and never has one that bypasses the transaction history. The one
+//!   exception is declared, not inferred: a tool's [`SpecialisedTool::OPERATIONS`] are long
+//!   operations that change no document at all (a lightmap bake writes a cooked file), and each
+//!   must be an external effect and still an MCP tool with no exclusion.
 //!
 //! A tool mutates nothing itself. Its body pushes [`Intent::Invoke`] for registered commands, which
 //! the window applies after the frame; the command runs inside a document transaction.
@@ -69,6 +72,11 @@ pub(crate) trait SpecialisedTool {
     const TITLE: &'static str;
     /// Every registered command the panel invokes. [`register_tool`] checks each one.
     const COMMANDS: &'static [&'static str];
+    /// Registered commands the panel invokes that edit no document: long operations whose only
+    /// effect is outside the editor, such as a bake writing a cooked file. There is nothing for
+    /// undo to restore, so [`register_tool`] requires each to be `EffectClass::ExternalEffect`
+    /// instead, and still an MCP tool with no exclusion. Empty for a tool that only authors.
+    const OPERATIONS: &'static [&'static str] = &[];
 
     /// What the tool edits this frame, resolved before the domain is opened.
     type Target;
@@ -170,31 +178,43 @@ fn diagnostics_area(ui: &mut egui::Ui, shell: &Shell, diagnostics: &[ToolDiagnos
 /// from the agent projection, or is not an undoable mutation or a read.
 pub(crate) fn register_tool<T: SpecialisedTool>(registry: &mut Registry) -> Result<()> {
     T::register(registry)?;
-    parity(registry, T::DOMAIN, T::COMMANDS)
+    parity(registry, T::DOMAIN, T::COMMANDS)?;
+    operation_parity(registry, T::DOMAIN, T::OPERATIONS)
 }
 
 /// Every scaffolded tool, registered and checked. Called wherever the command registry is built.
 pub fn register_specialised_tools(registry: &mut Registry) -> Result<()> {
-    register_tool::<super::terrain::TerrainTool>(registry)
+    register_tool::<super::terrain::TerrainTool>(registry)?;
+    register_tool::<super::lighting::LightingTool>(registry)
+}
+
+/// The command's agent projection, refused by name when it is unregistered or excluded.
+fn agent_tool(
+    registry: &Registry,
+    action: &str,
+    command: &str,
+) -> Result<cy_editor_agent::tool::ToolDescriptor> {
+    let Some(tool) = cy_editor_agent::tool::project_one(registry, command) else {
+        return Err(Problem::new(
+            action,
+            format!("its panel invokes `{command}`, which no registration declares"),
+        )
+        .with_remedy("register the command before the tool, or drop it from the tool's lists"));
+    };
+    if let Some(reason) = &tool.exclusion {
+        return Err(Problem::new(
+            action,
+            format!("`{command}` is excluded from the agent interface: {reason}"),
+        )
+        .with_remedy("every authoring action needs an MCP tool that does the same thing"));
+    }
+    Ok(tool)
 }
 
 fn parity(registry: &Registry, domain: Domain, commands: &[&str]) -> Result<()> {
     let action = format!("register the {} editor", domain.spec_term());
     for command in commands {
-        let Some(tool) = cy_editor_agent::tool::project_one(registry, command) else {
-            return Err(Problem::new(
-                action,
-                format!("its panel invokes `{command}`, which no registration declares"),
-            )
-            .with_remedy("register the command before the tool, or drop it from COMMANDS"));
-        };
-        if let Some(reason) = tool.exclusion {
-            return Err(Problem::new(
-                action,
-                format!("`{command}` is excluded from the agent interface: {reason}"),
-            )
-            .with_remedy("every authoring action needs an MCP tool that does the same thing"));
-        }
+        let tool = agent_tool(registry, &action, command)?;
         if !matches!(
             tool.effect,
             EffectClass::Read | EffectClass::ReversibleMutation
@@ -207,6 +227,26 @@ fn parity(registry: &Registry, domain: Domain, commands: &[&str]) -> Result<()> 
                 ),
             )
             .with_remedy("author through a reversible command recorded as one transaction"));
+        }
+    }
+    Ok(())
+}
+
+fn operation_parity(registry: &Registry, domain: Domain, operations: &[&str]) -> Result<()> {
+    let action = format!("register the {} editor", domain.spec_term());
+    for command in operations {
+        let tool = agent_tool(registry, &action, command)?;
+        if tool.effect != EffectClass::ExternalEffect {
+            return Err(Problem::new(
+                action,
+                format!(
+                    "`{command}` is declared an operation outside every document, but it is {}",
+                    tool.effect.name()
+                ),
+            )
+            .with_remedy(
+                "list a command that edits a document in COMMANDS, where undo covers it",
+            ));
         }
     }
     Ok(())
@@ -234,6 +274,62 @@ mod tests {
             assert!(tool.exclusion.is_none(), "{command}");
             assert_eq!(tool.effect, EffectClass::ReversibleMutation, "{command}");
         }
+    }
+
+    #[test]
+    fn the_lighting_tool_is_scaffolded_and_its_bake_is_its_one_operation() {
+        use super::super::lighting::LightingTool;
+        let mut registry = builtin();
+        register_specialised_tools(&mut registry).expect("parity holds for the lighting tool");
+        for command in <LightingTool as SpecialisedTool>::COMMANDS {
+            let tool = cy_editor_agent::tool::project_one(&registry, command).unwrap();
+            assert!(tool.exclusion.is_none(), "{command}");
+            assert_eq!(tool.effect, EffectClass::Read, "{command}");
+        }
+        assert_eq!(
+            <LightingTool as SpecialisedTool>::OPERATIONS,
+            &["lighting.bake-lightmaps"]
+        );
+        let bake =
+            cy_editor_agent::tool::project_one(&registry, "lighting.bake-lightmaps").unwrap();
+        assert!(bake.exclusion.is_none());
+        assert_eq!(bake.effect, EffectClass::ExternalEffect);
+        // The bake is refused where an authoring command is expected: it is not undoable.
+        let problem = parity(
+            &registry,
+            Domain::LightingAndLightmapBaking,
+            &["lighting.bake-lightmaps"],
+        )
+        .unwrap_err();
+        assert!(problem.to_string().contains("outside undo"), "{problem}");
+    }
+
+    #[test]
+    fn an_operation_that_edits_a_document_or_hides_from_agents_is_refused() {
+        let reversible = single(EffectClass::ReversibleMutation, None);
+        let problem =
+            operation_parity(&reversible, Domain::Terrain, &["probe.author"]).unwrap_err();
+        assert!(
+            problem
+                .to_string()
+                .contains("declared an operation outside every document"),
+            "{problem}"
+        );
+
+        let excluded = single(
+            EffectClass::ExternalEffect,
+            Some("it opens a native chooser only a person can answer"),
+        );
+        let problem = operation_parity(&excluded, Domain::Terrain, &["probe.author"]).unwrap_err();
+        assert!(problem.to_string().contains("excluded"), "{problem}");
+
+        let problem =
+            operation_parity(&Registry::new(), Domain::Terrain, &["probe.author"]).unwrap_err();
+        assert!(problem.to_string().contains("`probe.author`"), "{problem}");
+
+        let external = single(EffectClass::ExternalEffect, None);
+        operation_parity(&external, Domain::Terrain, &["probe.author"])
+            .expect("an external effect with an MCP peer");
     }
 
     #[test]
@@ -269,6 +365,47 @@ mod tests {
             }))
             .unwrap();
         registry
+    }
+
+    /// Register `id` as a stub command of `effect`.
+    fn stub(registry: &mut Registry, id: &'static str, effect: EffectClass) {
+        let metadata = Metadata::new(
+            id,
+            "Stub",
+            "Stub",
+            "Stands in for a shipped command so a test can choose its effect class.",
+            effect,
+        );
+        registry
+            .register(Command::new(metadata, |_, _| {
+                Ok(cy_editor_commands::Outcome::new("Stubbed"))
+            }))
+            .unwrap();
+    }
+
+    #[test]
+    fn startup_checks_the_lighting_tool_and_refuses_a_bake_that_edits_a_document() {
+        use super::super::lighting::LightingTool;
+        use super::super::terrain::TerrainTool;
+        // Every scaffolded tool's commands as stubs of the right class, except the bake.
+        let mut registry = Registry::new();
+        for command in <TerrainTool as SpecialisedTool>::COMMANDS {
+            stub(&mut registry, command, EffectClass::ReversibleMutation);
+        }
+        for command in <LightingTool as SpecialisedTool>::COMMANDS {
+            stub(&mut registry, command, EffectClass::Read);
+        }
+        stub(
+            &mut registry,
+            "lighting.bake-lightmaps",
+            EffectClass::ReversibleMutation,
+        );
+        let problem = register_specialised_tools(&mut registry)
+            .expect_err("startup checks the lighting tool's operations too");
+        assert!(
+            problem.to_string().contains("`lighting.bake-lightmaps`"),
+            "{problem}"
+        );
     }
 
     #[test]
