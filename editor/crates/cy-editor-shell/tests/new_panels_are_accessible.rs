@@ -248,9 +248,11 @@ impl Harness {
             })
             .count();
         let click_targets = click_targets(&update);
+        let bounds = labelled_bounds(&update);
         output.textures_delta.clear();
         FrameEvidence {
             labels,
+            bounds,
             actionable,
             shapes,
             click_targets,
@@ -295,10 +297,20 @@ fn test_vfx_catalogue() -> Vec<u8> {
 
 struct FrameEvidence {
     labels: Vec<String>,
+    /// Every labelled node's bounds, in points.
+    bounds: Vec<(String, egui::accesskit::Rect)>,
     actionable: usize,
     shapes: usize,
     click_targets: Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)>,
     intents: Vec<Intent>,
+}
+
+fn labelled_bounds(update: &egui::accesskit::TreeUpdate) -> Vec<(String, egui::accesskit::Rect)> {
+    update
+        .nodes
+        .iter()
+        .filter_map(|(_, node)| Some((node.label()?.to_owned(), node.bounds()?)))
+        .collect()
 }
 
 fn click_targets(
@@ -487,4 +499,119 @@ fn the_dock_reports_where_each_shown_panel_was_drawn() {
         .unwrap()
         .1;
     assert!(!viewport.intersects(hierarchy), "two panels share pixels");
+}
+
+/// A harness with an open world, one terrain root created through the registered command, and
+/// that root selected — which is what the terrain command itself leaves behind.
+fn terrain_harness() -> Harness {
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/terrain.cyworld")
+        .expect("a new world opens");
+    harness
+        .registry
+        .invoke(
+            "terrain.create",
+            &harness.scope,
+            &mut harness.editor,
+            &cy_editor_commands::Arguments::new(),
+        )
+        .expect("terrain.create is one transaction");
+    harness
+}
+
+#[test]
+fn the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/terrain.cyworld")
+        .unwrap();
+    let empty = harness.frame("editor-terrain", size, Vec::new());
+    for label in ["Terrain", "Create terrain", "Undo", "Redo"] {
+        assert!(
+            empty.labels.iter().any(|drawn| drawn == label),
+            "the scaffolded empty state lacks {label:?}: {:?}",
+            empty.labels
+        );
+    }
+    let created = harness.frame(
+        "editor-terrain",
+        size,
+        vec![click_named(&empty, "Create terrain")],
+    );
+    assert!(matches!(
+        created.intents.as_slice(),
+        [Intent::Invoke(command, _)] if command == "terrain.create"
+    ));
+
+    let mut harness = terrain_harness();
+    let first = harness.frame("editor-terrain", size, Vec::new());
+    for label in [
+        "Brush",
+        "Material layers",
+        "Modifier stack",
+        "Terrain surface",
+    ] {
+        assert!(
+            first.labels.iter().any(|drawn| drawn == label),
+            "the terrain body lacks {label:?}: {:?}",
+            first.labels
+        );
+    }
+    let undone = harness.frame("editor-terrain", size, vec![click_named(&first, "Undo")]);
+    assert!(
+        matches!(
+            undone.intents.as_slice(),
+            [Intent::Invoke(command, _)] if command == "edit.undo"
+        ),
+        "the header's Undo is the history's undo: {:?}",
+        undone.intents
+    );
+}
+
+#[test]
+fn a_terrain_refusal_is_shown_in_the_specialised_diagnostics_area() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let quiet = harness.frame("editor-terrain", size, Vec::new());
+    let refusal = "Paint requires a material layer.";
+    assert!(!quiet.labels.iter().any(|label| label.contains(refusal)));
+
+    harness.inputs.terrain_problem = Some(refusal.into());
+    let refused = harness.frame("editor-terrain", size, Vec::new());
+    assert!(
+        refused.labels.iter().any(|label| label == refusal),
+        "the refusal is a readable row, not paint on the canvas: {:?}",
+        refused.labels
+    );
+    assert!(
+        refused.labels.iter().any(|label| label == "✕"),
+        "the row carries its glyph as well as its colour: {:?}",
+        refused.labels
+    );
+}
+
+/// Regression: the terrain body laid its paint field out inside the horizontal row that holds the
+/// controls, so the heading, the hint and the field sat side by side and the field was squeezed
+/// into the strip left over at the right edge (about a sixth of the panel at 900 points).
+#[test]
+fn the_terrain_brush_field_fills_the_space_beside_the_controls() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let evidence = harness.frame("editor-terrain", size, Vec::new());
+    let (_, field) = evidence
+        .bounds
+        .iter()
+        .find(|(label, _)| label == "Terrain brush field")
+        .unwrap_or_else(|| panic!("no brush field in {:?}", evidence.labels));
+    let controls = 250.0_f64.min(f64::from(size.x) * 0.42);
+    assert!(
+        field.width() > (f64::from(size.x) - controls) * 0.8,
+        "the brush field is {:.0} points wide beside {controls:.0} points of controls",
+        field.width()
+    );
+    assert!(field.height() > 180.0, "{field:?}");
 }

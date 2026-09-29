@@ -6,91 +6,124 @@ use cy_editor_core::ids::NodeId;
 use cy_editor_core::value::Value;
 use cy_editor_interface::Domain;
 use cy_editor_interface::shell::Shell;
+use cy_editor_interface::specialised::Session;
 use cy_editor_interface::specialised::painting::{PaintingSurface, Sample};
 use cy_editor_services::terrain::TerrainStack;
 use cy_editor_visual::colour::{Semantic, Surface};
 
+use super::specialised::{SpecialisedTool, ToolDiagnostic, ToolFrame};
 use super::{Inputs, Intent, Panels, heading, nothing_here, secondary};
 use crate::theme;
 
-pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
-    let Some(document_id) = panels.editor.workspace.active() else {
-        nothing_here(
-            ui,
-            panels.shell,
-            "No world is open.",
-            "Open a world before creating terrain authoring data.",
-        );
-        return;
-    };
-    let selected: Vec<NodeId> = panels.editor.selection.get().nodes().collect();
-    let target = panels
-        .editor
-        .documents
-        .get(document_id)
-        .and_then(|document| {
-            selected
-                .iter()
-                .find_map(|node| TerrainStack::read(document, *node).map(|stack| (*node, stack)))
-        });
-    let Some((terrain, stack)) = target else {
-        ui.heading("Terrain");
-        ui.label(secondary(
-            panels.shell,
-            "Create a terrain authoring root, then sculpt or paint it with stable modifiers.",
-        ));
-        if ui.button("Create terrain").clicked() {
-            panels
-                .intents
-                .push(Intent::Invoke("terrain.create".into(), Arguments::new()));
-        }
-        return;
-    };
+/// The terrain editor, drawn in the specialised-editor frame.
+pub(crate) struct TerrainTool;
 
-    if panels
-        .inputs
+impl SpecialisedTool for TerrainTool {
+    const DOMAIN: Domain = Domain::Terrain;
+    const TITLE: &'static str = "Terrain";
+    const COMMANDS: &'static [&'static str] = &[
+        "terrain.create",
+        "terrain.layer.add",
+        "terrain.stroke.commit",
+        "terrain.modifier.set-enabled",
+        "terrain.modifier.move",
+    ];
+
+    /// The selected terrain root and its authored stack.
+    type Target = (NodeId, TerrainStack);
+
+    fn target(panels: &mut Panels<'_>, ui: &mut egui::Ui) -> Option<Self::Target> {
+        let Some(document_id) = panels.editor.workspace.active() else {
+            nothing_here(
+                ui,
+                panels.shell,
+                "No world is open.",
+                "Open a world before creating terrain authoring data.",
+            );
+            return None;
+        };
+        let selected: Vec<NodeId> = panels.editor.selection.get().nodes().collect();
+        let target = panels
+            .editor
+            .documents
+            .get(document_id)
+            .and_then(|document| {
+                selected.iter().find_map(|node| {
+                    TerrainStack::read(document, *node).map(|stack| (*node, stack))
+                })
+            });
+        let Some((terrain, stack)) = target else {
+            ui.label(secondary(
+                panels.shell,
+                "Create a terrain authoring root, then sculpt or paint it with stable modifiers.",
+            ));
+            if ui.button("Create terrain").clicked() {
+                panels
+                    .intents
+                    .push(Intent::Invoke("terrain.create".into(), Arguments::new()));
+            }
+            return None;
+        };
+        keep_selected_layer(panels.inputs, &stack);
+        Some((terrain, stack))
+    }
+
+    fn diagnostics(inputs: &Inputs) -> Vec<ToolDiagnostic> {
+        inputs
+            .terrain_problem
+            .iter()
+            .map(ToolDiagnostic::error)
+            .collect()
+    }
+
+    fn body(
+        frame: &mut ToolFrame<'_>,
+        session: Session<'_>,
+        (terrain, stack): Self::Target,
+        ui: &mut egui::Ui,
+    ) {
+        let surface = session
+            .painting
+            .expect("terrain declares the shared painting surface");
+        let ToolFrame {
+            shell,
+            inputs,
+            intents,
+        } = frame;
+        let available = ui.available_size();
+        ui.horizontal(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(250.0_f32.min(available.x * 0.42), available.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    controls(inputs, shell, ui, terrain, &stack, surface, intents);
+                },
+            );
+            ui.separator();
+            // Top-down explicitly: `allocate_ui` inherits the row's horizontal layout, which put
+            // the heading, the hint and the field side by side and squeezed the field.
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), available.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    paint_field(inputs, shell, ui, terrain, surface, intents);
+                },
+            );
+        });
+    }
+}
+
+/// Keep the paint layer on one the stack still has, defaulting to its first.
+fn keep_selected_layer(inputs: &mut Inputs, stack: &TerrainStack) {
+    if inputs
         .terrain_layer
         .is_some_and(|selected| !stack.layers.iter().any(|layer| layer.id == selected))
     {
-        panels.inputs.terrain_layer = None;
+        inputs.terrain_layer = None;
     }
-    if panels.inputs.terrain_layer.is_none() {
-        panels.inputs.terrain_layer = stack.layers.first().map(|layer| layer.id);
+    if inputs.terrain_layer.is_none() {
+        inputs.terrain_layer = stack.layers.first().map(|layer| layer.id);
     }
-
-    let shell = &*panels.shell;
-    let inputs = &mut *panels.inputs;
-    let session = match panels.specialised.open(Domain::Terrain) {
-        Ok(session) => session,
-        Err(problem) => {
-            nothing_here(
-                ui,
-                shell,
-                "The terrain editor could not be opened.",
-                &problem.to_string(),
-            );
-            return;
-        }
-    };
-    let surface = session
-        .painting
-        .expect("terrain declares the shared painting surface");
-    let mut intents = Vec::new();
-    let available = ui.available_size();
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(
-            egui::vec2(250.0_f32.min(available.x * 0.42), available.y),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                controls(inputs, shell, ui, terrain, &stack, surface, &mut intents);
-            },
-        );
-        ui.separator();
-        ui.allocate_ui(egui::vec2(ui.available_width(), available.y), |ui| {
-            paint_field(inputs, shell, ui, terrain, surface, &mut intents);
-        });
-    });
-    panels.intents.extend(intents);
 }
 
 fn controls(
@@ -232,6 +265,9 @@ fn paint_field(
         (ui.available_height() - 24.0).max(180.0),
     );
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Terrain brush field")
+    });
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, theme::surface(shell.theme, Surface::Sunken));
     draw_grid(
@@ -292,15 +328,6 @@ fn paint_field(
             points,
             egui::Stroke::new(2.0, theme::role(shell.theme, Semantic::Selection)),
         ));
-    }
-    if let Some(problem) = &inputs.terrain_problem {
-        painter.text(
-            rect.left_top() + egui::vec2(10.0, 10.0),
-            egui::Align2::LEFT_TOP,
-            problem,
-            egui::FontId::proportional(12.0),
-            theme::role(shell.theme, Semantic::Error),
-        );
     }
 }
 

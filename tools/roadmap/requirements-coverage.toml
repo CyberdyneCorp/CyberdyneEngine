@@ -465,6 +465,14 @@ requirement = "Plugin architecture"
 evidence = "criterion:m11b:plugins"
 note = "the twenty-one extension points, the eight lifecycle phases, resolution and the lockfile, and an unload refused by name and count while instances are outstanding."
 
+# `openspec/changes/add-editor-specialised-scaffold` (#29 Wave 0) adds two requirements to this row.
+# They cannot be mapped until that change is archived, because an entry naming a requirement the
+# specification does not yet contain is stale. On archive, map them to:
+#   "Specialised editors share one panel scaffold"
+#     rust:cy-editor-shell::panels::specialised::tests::an_excluded_or_irreversible_panel_command_is_refused
+#   "Graph and timeline editors share one view each"
+#     rust:cy-editor-shell::panels::graph_canvas::tests::every_openable_graph_domain_hosts_its_declared_node_palette
+
 [[coverage]]
 row = "editor-architecture"
 requirement = "Specialised editors"

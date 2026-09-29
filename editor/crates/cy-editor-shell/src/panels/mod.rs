@@ -25,6 +25,7 @@
 mod agents;
 mod browser;
 mod diagnostics;
+mod graph_canvas;
 mod hierarchy;
 mod history;
 mod inspector;
@@ -35,7 +36,15 @@ mod semantic_merge;
 mod settings;
 mod source;
 mod source_control;
+pub mod specialised;
 mod terrain;
+// The shared timeline for the animation, sequencer and audio-cue editors #29 adds next; until one
+// of them draws it, only its tests do.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "no panel draws the shared timeline yet")
+)]
+mod timeline;
 mod vfx_graph;
 mod viewport;
 
@@ -503,7 +512,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "content-browser" => browser::show(self, ui),
                 "editor-materials" => material_graph::show(self, ui),
                 "editor-vfx-graph" => vfx_graph::show(self, ui),
-                "editor-terrain" => terrain::show(self, ui),
+                "editor-terrain" => specialised::show::<terrain::TerrainTool>(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

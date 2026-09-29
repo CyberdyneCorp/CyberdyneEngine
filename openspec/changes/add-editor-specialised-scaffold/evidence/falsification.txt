@@ -1,0 +1,222 @@
+Mutations that turn the specialised-editor scaffold's tests red (#29 Wave 0), Development
+profile. Each mutation was applied, its tests run, the file restored and md5-verified.
+Listed under each: the tests that failed.
+
+== m01_palette_grid_columns: editor/crates/cy-editor-shell/src/panels/graph_canvas.rs
+<   const PALETTE_COLUMNS: usize = 3;
+>   const PALETTE_COLUMNS: usize = 4;
+FAILED  panels::graph_canvas::tests::palette_slots_fill_a_three_column_grid_clear_of_the_header
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m02_palette_ignores_labels: editor/crates/cy-editor-shell/src/panels/graph_canvas.rs
+<   || label.contains(&query)
+>   || false
+FAILED  panels::graph_canvas::tests::a_catalogue_palette_searches_names_and_labels
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m03_palette_drops_a_declared_type: editor/crates/cy-editor-shell/src/panels/graph_canvas.rs
+<   .filter_map(|name| canvas.catalogue().get(name))
+>   .filter_map(|name| canvas.catalogue().get(name)).skip(1)
+FAILED  panels::graph_canvas::tests::every_openable_graph_domain_hosts_its_declared_node_palette
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m04_drag_release_not_reported: editor/crates/cy-editor-shell/src/panels/graph_canvas.rs
+<   } else if response.drag_stopped() && feedback.on_move.is_some() {
+>   } else if false && response.drag_stopped() && feedback.on_move.is_some() {
+FAILED  panels::graph_canvas::tests::dragging_a_node_header_reports_moves_and_one_finished_gesture
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m05_connection_not_routed: editor/crates/cy-editor-shell/src/panels/graph_canvas.rs
+<   let result = if let Some(connect) = on_connect {
+>   let result = if let Some(connect) = on_connect.filter(|_| false) {
+FAILED  panels::graph_canvas::tests::clicking_an_output_then_an_input_pin_routes_one_connection_to_the_host
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m06_parity_ignores_exclusion: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   if let Some(reason) = tool.exclusion {
+>   if let Some(reason) = tool.exclusion.filter(|_| false) {
+FAILED  panels::specialised::tests::an_excluded_or_irreversible_panel_command_is_refused
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m07_parity_admits_irreversible: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   EffectClass::Read | EffectClass::ReversibleMutation
+>   EffectClass::Read | EffectClass::ReversibleMutation | EffectClass::IrreversibleMutation
+FAILED  panels::specialised::tests::an_excluded_or_irreversible_panel_command_is_refused
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m08_parity_admits_unregistered: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   let Some(tool) = cy_editor_agent::tool::project_one(registry, command) else {
+>   let Some(tool) = cy_editor_agent::tool::project_one(registry, command) else {
+>   continue;
+>   };
+>   let Some(tool) = Some(tool) else {
+FAILED  panels::specialised::tests::a_panel_command_nobody_registered_is_refused_by_name
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m09_terrain_names_an_unregistered_command: editor/crates/cy-editor-shell/src/panels/terrain.rs
+<   "terrain.modifier.move",
+<   ];
+>   "terrain.modifier.reorder",
+>   ];
+FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m10_diagnostics_area_empty: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   status(ui, shell, diagnostic.role, &diagnostic.message);
+>   let _ = (&ui, shell, diagnostic);
+FAILED  a_terrain_refusal_is_shown_in_the_specialised_diagnostics_area
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m11_header_undo_is_redo: editor/crates/cy-editor-shell/src/panels/specialised.rs
+<   .push(Intent::Invoke("edit.undo".into(), Arguments::new()));
+>   .push(Intent::Invoke("edit.redo".into(), Arguments::new()));
+FAILED  the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== m12_terrain_empty_state_lost: editor/crates/cy-editor-shell/src/panels/terrain.rs
+<   if ui.button("Create terrain").clicked() {
+>   if ui.button("Create").clicked() {
+FAILED  the_terrain_tool_draws_in_the_specialised_frame_with_undo_over_its_transactions
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== m13_terrain_layer_irreversible: editor/crates/cy-editor-services/src/terrain.rs
+<   "Adds an ordered material layer with stable identity in one undoable transaction.",
+<   EffectClass::ReversibleMutation,
+>   "Adds an ordered material layer with stable identity in one undoable transaction.",
+>   EffectClass::IrreversibleMutation,
+FAILED  terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m26_terrain_field_squeezed_again: editor/crates/cy-editor-shell/src/panels/terrain.rs
+<   egui::Layout::top_down(egui::Align::Min),
+<   |ui| {
+<   paint_field(
+>   egui::Layout::left_to_right(egui::Align::Min),
+>   |ui| {
+>   paint_field(
+FAILED  the_terrain_brush_field_fills_the_space_beside_the_controls
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== m14_timeline_move_never_emitted: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   && from.total_cmp(&to).is_ne()
+>   && from.total_cmp(&to).is_eq()
+FAILED  panels::timeline::tests::dragging_a_key_is_one_move_on_release_and_leaves_the_surface_alone
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m15_timeline_move_inverse_wrong: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   Ok(TimelineEdit::MoveKey {
+<   track,
+<   key,
+<   to: from,
+>   Ok(TimelineEdit::MoveKey {
+>   track,
+>   key,
+>   to: to + 0.0 * from,
+FAILED  panels::timeline::tests::every_edit_is_undone_exactly_by_the_edit_it_answers
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m16_timeline_trim_inverse_is_new_range: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   let (start, end) = before.expect("trim refuses a section the track lacks");
+>   let _ = before;
+FAILED  panels::timeline::tests::every_edit_is_undone_exactly_by_the_edit_it_answers
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m17_timeline_escape_ignored: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   view.drag = None;
+<   }
+<   navigate(
+>   let _ = &view.drag;
+>   }
+>   navigate(
+FAILED  panels::timeline::tests::escape_mid_drag_cancels_the_gesture_and_records_nothing
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m18_timeline_zoom_loses_anchor: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   self.scroll = anchor - f64::from(anchor_x - left) / f64::from(self.pixels_per_second);
+>   self.scroll = anchor - f64::from(anchor_x - left) / 100.0;
+FAILED  panels::timeline::tests::zoom_keeps_the_time_under_the_pointer_and_stays_in_range
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m19_timeline_add_key_at_zero: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   let value = surface.sample(track.id, time).unwrap_or(0.0);
+>   let value = 0.0;
+FAILED  panels::timeline::tests::double_clicking_a_keyed_lane_adds_one_key_at_the_sampled_value
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m20_timeline_delete_nothing: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   Selected::Key(track, key) => Some(TimelineEdit::RemoveKey { track, key }),
+>   Selected::Key(..) => None::<TimelineEdit>,
+FAILED  panels::timeline::tests::a_selected_key_is_removed_by_delete
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== m21_timeline_trim_moves_start: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   Edge::End => *end = time,
+>   Edge::End => *start = time,
+FAILED  panels::timeline::tests::dragging_a_clip_end_is_one_trim_on_release
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== m22_timeline_ruler_inert: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   if scrub.clicked() || scrub.dragged() {
+>   if false {
+FAILED  panels::timeline::tests::clicking_the_ruler_scrubs_without_an_edit
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m23_timeline_x_ignores_scroll: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   left + points((time - self.scroll) * f64::from(self.pixels_per_second))
+>   left + points(time * f64::from(self.pixels_per_second))
+FAILED  panels::timeline::tests::time_and_x_are_inverse_at_any_zoom_and_scroll
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m24_model_move_onto_another_key: editor/crates/cy-editor-interface/src/specialised/timeline.rs
+<   .any(|other| other.id != key && same_time(other.time, time))
+>   .any(|other| other.id == key && same_time(other.time, time))
+FAILED  specialised::timeline::tests::a_moved_key_keeps_its_identity_and_refuses_to_land_on_another
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 156 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m25_model_restore_twice: editor/crates/cy-editor-interface/src/specialised/timeline.rs
+<   .any(|other| other.id == key.id || same_time(other.time, key.time))
+>   .any(|_| false)
+FAILED  specialised::timeline::tests::a_removed_key_is_restored_with_the_same_identity
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 156 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m27_timeline_key_release_off_lane_lost: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   if !visible && !dragging {
+>   if !visible {
+FAILED  panels::timeline::tests::a_key_dragged_out_of_the_lanes_is_still_one_move_on_release
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== m28_timeline_edge_release_off_lane_lost: editor/crates/cy-editor-shell/src/panels/timeline.rs
+<   || body.left() > layout.right) && !dragging {
+>   || body.left() > layout.right) {
+FAILED  panels::timeline::tests::a_clip_edge_dragged_out_of_the_lanes_is_still_one_trim_on_release
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 125 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+28 of 28 mutations killed.

@@ -19,7 +19,11 @@ use cy_editor_services::vfx_compile::VfxCompileDiagnostic;
 use cy_editor_services::vfx_preview::VfxPreviewAction;
 use cy_editor_services::{AssetCatalogueService, MaterialCatalogueState};
 
-use super::{Inputs, Intent, Panels, material_graph, nothing_here, secondary};
+use super::graph_canvas::{self, PaletteEntry, node_palette, palette_slot};
+// The VFX tests still name the canvas gesture types by the module they were first declared in.
+#[cfg(test)]
+use super::material_graph;
+use super::{Inputs, Intent, Panels, nothing_here, secondary};
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     let state = panels.editor.backend.vfx_catalogue_state();
@@ -146,7 +150,7 @@ fn canvas_area(
                     actions.saved,
                     actions.intents,
                 );
-                material_graph::graph_properties_with(
+                graph_canvas::graph_properties_with(
                     ui,
                     canvas,
                     assets,
@@ -215,14 +219,14 @@ fn draw_vfx_canvas(
     let mut connect_intents = Vec::new();
     let mut move_intents = Vec::new();
     let mut move_seen = false;
-    material_graph::draw_canvas(
+    graph_canvas::draw_canvas(
         ui,
         shell,
         canvas,
         state,
         "Empty VFX stage graph\nChoose a node from the engine catalogue",
         &mut inputs.vfx_link_source,
-        &mut material_graph::CanvasFeedback {
+        &mut graph_canvas::CanvasFeedback {
             link_problem: &mut inputs.vfx_link_problem,
             node_alerts: actions.node_alerts,
             on_connect: Some(&mut |canvas, connection| {
@@ -249,7 +253,7 @@ fn draw_vfx_canvas(
             actions.saved,
             &mut inputs.vfx_drag,
             &mut move_intents,
-            material_graph::GraphMovement {
+            graph_canvas::GraphMovement {
                 node,
                 at,
                 finished: true,
@@ -1955,7 +1959,7 @@ fn connect_nodes(
     canvas: &mut GraphCanvas,
     saved: Option<&SavedCanvas>,
     intents: &mut Vec<Intent>,
-    connection: &material_graph::GraphConnection,
+    connection: &graph_canvas::GraphConnection,
 ) -> Result<()> {
     let Some(saved) = saved else {
         return canvas.connect_identified(
@@ -2088,7 +2092,7 @@ fn move_node_gesture(
     saved: Option<&SavedCanvas>,
     drag: &mut Option<VfxDragState>,
     intents: &mut Vec<Intent>,
-    movement: material_graph::GraphMovement,
+    movement: graph_canvas::GraphMovement,
 ) -> Result<()> {
     if !movement.finished {
         if !movement.at.x.is_finite() || !movement.at.y.is_finite() {
@@ -2185,32 +2189,21 @@ fn palette(
     ));
     ui.add(egui::TextEdit::singleline(filter).hint_text("Search VFX nodes"));
     let query = filter.trim().to_ascii_lowercase();
-    let names: Vec<String> = canvas
+    let entries = canvas
         .catalogue()
         .type_names()
         .into_iter()
         .filter(|name| name.to_ascii_lowercase().contains(&query))
-        .map(ToOwned::to_owned)
+        .map(|name| PaletteEntry {
+            name: name.to_owned(),
+            label: name.strip_prefix("vfx.").unwrap_or(name).replace('_', " "),
+            hover: name.to_owned(),
+        })
         .collect();
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for name in names {
-            let label = name.strip_prefix("vfx.").unwrap_or(&name).replace('_', " ");
-            if ui
-                .button(format!("＋ {label}"))
-                .on_hover_text(&name)
-                .clicked()
-            {
-                let index = canvas.nodes().count();
-                let column = index % 3;
-                let row = index / 3;
-                let at = Layout {
-                    x: 28.0 + f32::from(u16::try_from(column).unwrap_or(u16::MAX)) * 224.0,
-                    y: 34.0 + f32::from(u16::try_from(row).unwrap_or(u16::MAX)) * 150.0,
-                };
-                let _ = add_palette_node(canvas, saved, intents, &name, at);
-            }
-        }
-    });
+    if let Some(name) = node_palette(ui, entries, true) {
+        let at = palette_slot(canvas.nodes().count());
+        let _ = add_palette_node(canvas, saved, intents, &name, at);
+    }
 }
 
 #[cfg(test)]

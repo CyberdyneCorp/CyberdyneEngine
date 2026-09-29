@@ -277,6 +277,59 @@ streaming, general cook/package/deploy and device installation, and specialised 
 without canonical authoring vocabularies remain open. The viewport continues to show an engine frame
 or an explicit reason that no frame is available.
 
+## Adding a specialised editor
+
+`cy_editor_interface::specialised` declares the sixteen specialised-editor domains and the shared
+surfaces they edit on: one graph canvas, one timeline surface, one painting surface. The shell has
+one piece of window code for each of those, and a new tool is built from them rather than beside
+them.
+
+| Piece | File | What it gives a tool |
+|---|---|---|
+| The panel scaffold | `crates/cy-editor-shell/src/panels/specialised.rs` | `SpecialisedTool`: the header (title, Undo, Redo over the active document's history), the domain opened through `SpecialisedEditors::open`, a diagnostics area, and `register_tool`, the MCP and undo parity check |
+| The node-graph canvas | `crates/cy-editor-shell/src/panels/graph_canvas.rs` | `draw_canvas`, the node property controls, and `node_palette`/`catalogue_palette`, which host any engine-declared vocabulary (`Domain::node_types` or a backend catalogue). The material and VFX graphs draw through it |
+| The timeline | `crates/cy-editor-shell/src/panels/timeline.rs` | `show` over a `TimelineSurface`: ruler and playhead scrub, tracks, keys and clips, zoom about the pointer, selection, Escape to cancel a drag, and `TimelineEdit`s that each answer their own inverse |
+
+To add one, for example the animation editor:
+
+1. Put the engine's vocabulary behind the domain: node types in `Domain::node_types` or a backend
+   catalogue, track kinds in `Domain::track_kinds`. A domain with neither refuses to open by name,
+   and that is correct until the engine owns the vocabulary.
+2. Register the authoring commands. Each mutation is one command that runs inside one document
+   transaction, with `EffectClass::ReversibleMutation`, so `edit.undo` covers it and the MCP tool
+   list carries it without further work (tools are a projection of the registry).
+3. Write one module in `crates/cy-editor-shell/src/panels/` with a type that implements
+   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes), `target`
+   (resolve what is edited, or draw the empty state), `diagnostics` and `body`. The body draws on
+   the session's shared surface and pushes `Intent::Invoke` for registered commands; it never
+   mutates a document.
+4. Route the kind in the `match` in `panels/mod.rs`
+   (`"editor-<spec term>" => specialised::show::<my_tool::MyTool>(self, ui)`) and add the type to
+   `register_specialised_tools`. `Application::new` calls that last, and startup is refused, naming
+   the command, if a panel command is unregistered, excluded from agents, or not undoable.
+5. Test it: a Rust case per acceptance point, an MCP case in
+   `crates/cy-editor-mcp/tests/a_session_over_the_wire.rs` that drives the same commands and
+   undoes them, and a frame in `crates/cy-editor-shell/tests/new_panels_are_accessible.rs`.
+   Prove each case red with a recorded mutation.
+
+`panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
+in the scaffold's diagnostics area.
+
+`crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
+`Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no
+input. `editor:window?panel=<kind>` can only capture a front tab. Run it with
+`CY_PANEL_SNAPSHOTS=<directory> cargo test -p cy-editor-shell --test panel_snapshots -- --ignored`.
+The terrain panel [before](../docs/design/images/editor-terrain-before.png) and
+[after](../docs/design/images/editor-terrain-after.png) the port shows the brush field, which was
+squeezed into a strip at the right edge, now filling the space beside the controls. The
+[diagnostics area](../docs/design/images/editor-terrain-diagnostics-after.png) replaces the
+[refusal painted over the field](../docs/design/images/editor-terrain-diagnostics-before.png).
+The [material](../docs/design/images/editor-materials-canvas.png) and
+[VFX](../docs/design/images/editor-vfx-canvas.png) graph panels render pixel for pixel as they did
+before the canvas moved. Graph gestures and timeline gestures come back to the host as
+one value per completed gesture (`CanvasFeedback::on_connect`/`on_move`, `TimelineEdit`), so the host
+turns one drag into one command and one undo entry.
+
 ## The dependencies, and the rule they arrived under
 
 Through M5 the workspace depended on nothing but the Rust standard library, and
