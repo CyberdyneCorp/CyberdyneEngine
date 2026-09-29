@@ -326,6 +326,11 @@ To add one, for example the animation editor:
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
 in the scaffold's diagnostics area.
 
+`panels/lighting.rs` is the one specialised panel outside the scaffold, on purpose: a lightmap bake
+writes a cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document
+transaction, so `register_tool`'s undo parity check would rightly refuse it. It still opens its
+domain through `SpecialisedEditors::open`, and its commands are MCP tools like any other.
+
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no
 input. `editor:window?panel=<kind>` can only capture a front tab. Run it with

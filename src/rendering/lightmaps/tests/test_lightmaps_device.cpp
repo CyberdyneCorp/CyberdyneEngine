@@ -639,6 +639,27 @@ void address_draws(Corner& corner, pipeline::FrameUpload& upload) noexcept {
     upload.draws = Span<const rendering::GpuDrawInstance>(corner.draws.data(), corner.draws.size());
 }
 
+/// The lightmap's planes, its shadow mask and — if asked for — the volume, bound to the frame's
+/// set 0, and the slots the lightmap's planes and mask landed in.
+[[nodiscard]] Status bind_frame_textures(Corner& corner,
+                                         lightmaps::LightmapSlots& lightmap_slots) noexcept {
+    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 2];
+    u32 count = 0;
+    for (u32 plane = 0; plane < corner.textures->planes(); ++plane) {
+        lightmap_slots.planes[plane] = kLightmapSlot + plane;
+        slots[count++] = corner.textures->slot(plane, kLightmapSlot + plane);
+    }
+    if (corner.textures->has_shadow_mask()) {
+        lightmap_slots.shadow_mask = kShadowMaskSlot;
+        slots[count++] = corner.textures->shadow_mask_slot(kShadowMaskSlot);
+    }
+    if (corner.options.volume) {
+        slots[count++] = corner.volume_texture->slot(kVolumeSlot);
+    }
+    return corner.scene->set_frame_textures(
+        Span<const pipeline::MaterialTextureSlot>(slots, count));
+}
+
 Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     auto* corner = static_cast<Corner*>(user);
     whiten(*corner, upload);
@@ -648,23 +669,8 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     if (!corner->attach) {
         return ok();
     }
-    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 2];
-    u32 count = 0;
     lightmaps::LightmapSlots lightmap_slots;
-    for (u32 plane = 0; plane < corner->textures->planes(); ++plane) {
-        lightmap_slots.planes[plane] = kLightmapSlot + plane;
-        slots[count++] = corner->textures->slot(plane, kLightmapSlot + plane);
-    }
-    if (corner->textures->has_shadow_mask()) {
-        lightmap_slots.shadow_mask = kShadowMaskSlot;
-        slots[count++] = corner->textures->shadow_mask_slot(kShadowMaskSlot);
-    }
-    if (corner->options.volume) {
-        slots[count++] = corner->volume_texture->slot(kVolumeSlot);
-    }
-    if (Status bound = corner->scene->set_frame_textures(
-            Span<const pipeline::MaterialTextureSlot>(slots, count));
-        !bound) {
+    if (Status bound = bind_frame_textures(*corner, lightmap_slots); !bound) {
         return bound;
     }
     if (corner->options.volume) {
@@ -697,6 +703,52 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
         address_draws(*corner, upload);
     }
     return ok();
+}
+
+/// The directional bake cut to its first plane — every level of it — with the same mask, lights
+/// and addresses: what `(e)` compares the directional encoding against.
+[[nodiscard]] std::unique_ptr<bake::BakedLightmap> first_plane_of(
+    const bake::BakedLightmap& source) {
+    auto out = std::make_unique<bake::BakedLightmap>();
+    out->mode = bake::LightmapMode::Irradiance;
+    out->page_size = source.page_size;
+    out->pages = source.pages;
+    out->gutter_texels = source.gutter_texels;
+    out->texels.width = source.texels.width;
+    out->texels.height = source.texels.height;
+    out->texels.planes = 1;
+    const usize count = usize{out->texels.width} * out->texels.height;
+    if (!out->texels.texels.append(Span<const Vec4>(source.texels.texels.data(), count))
+             .has_value() ||
+        !out->addresses.append(source.addresses.span()).has_value()) {
+        return nullptr;
+    }
+    // The same shadow mask, every level, and the same lights: the case compares the
+    // encodings, so everything else is the directional bake's own.
+    if (!copy_texels(source.shadow_mask, out->shadow_mask) ||
+        !out->shadow_lights.append(source.shadow_lights.span()).has_value() ||
+        !out->direct_lights.append(source.direct_lights.span()).has_value()) {
+        return nullptr;
+    }
+    for (u32 level = 0; level < source.mip_levels; ++level) {
+        if (!copy_texels(source.mip_shadow_mask[level], out->mip_shadow_mask[level])) {
+            return nullptr;
+        }
+    }
+    // And the first plane of every level of the chain, which the frame minifies into.
+    out->mip_levels = source.mip_levels;
+    for (u32 level = 0; level < source.mip_levels; ++level) {
+        const bake::LightmapTexels& mip = source.mip_texels[level];
+        bake::LightmapTexels& plane = out->mip_texels[level];
+        plane.width = mip.width;
+        plane.height = mip.height;
+        plane.planes = 1;
+        if (!plane.texels.append(Span<const Vec4>(mip.texels.data(), usize{mip.width} * mip.height))
+                 .has_value()) {
+            return nullptr;
+        }
+    }
+    return out;
 }
 
 /// One corner, the lightmap baked from its boxes, and the frame measured.
@@ -802,49 +854,9 @@ private:
             corner_.lightmap = probe_.get();
         }
         if (corner_.options.directional_as_irradiance) {
-            first_plane_ = std::make_unique<bake::BakedLightmap>();
-            first_plane_->mode = bake::LightmapMode::Irradiance;
-            first_plane_->page_size = baked->lightmap.page_size;
-            first_plane_->pages = baked->lightmap.pages;
-            first_plane_->gutter_texels = baked->lightmap.gutter_texels;
-            first_plane_->texels.width = baked->lightmap.texels.width;
-            first_plane_->texels.height = baked->lightmap.texels.height;
-            first_plane_->texels.planes = 1;
-            const usize count = usize{first_plane_->texels.width} * first_plane_->texels.height;
-            if (!first_plane_->texels.texels
-                     .append(Span<const Vec4>(baked->lightmap.texels.texels.data(), count))
-                     .has_value() ||
-                !first_plane_->addresses.append(baked->lightmap.addresses.span()).has_value()) {
+            first_plane_ = first_plane_of(baked->lightmap);
+            if (first_plane_ == nullptr) {
                 return false;
-            }
-            // The same shadow mask, every level, and the same lights: the case compares the
-            // encodings, so everything else is the directional bake's own.
-            if (!copy_texels(baked->lightmap.shadow_mask, first_plane_->shadow_mask) ||
-                !first_plane_->shadow_lights.append(baked->lightmap.shadow_lights.span())
-                     .has_value() ||
-                !first_plane_->direct_lights.append(baked->lightmap.direct_lights.span())
-                     .has_value()) {
-                return false;
-            }
-            for (u32 level = 0; level < baked->lightmap.mip_levels; ++level) {
-                if (!copy_texels(baked->lightmap.mip_shadow_mask[level],
-                                 first_plane_->mip_shadow_mask[level])) {
-                    return false;
-                }
-            }
-            // And the first plane of every level of the chain, which the frame minifies into.
-            first_plane_->mip_levels = baked->lightmap.mip_levels;
-            for (u32 level = 0; level < baked->lightmap.mip_levels; ++level) {
-                const bake::LightmapTexels& mip = baked->lightmap.mip_texels[level];
-                bake::LightmapTexels& out = first_plane_->mip_texels[level];
-                out.width = mip.width;
-                out.height = mip.height;
-                out.planes = 1;
-                if (!out.texels
-                         .append(Span<const Vec4>(mip.texels.data(), usize{mip.width} * mip.height))
-                         .has_value()) {
-                    return false;
-                }
             }
             corner_.lightmap = first_plane_.get();
         }
@@ -1253,6 +1265,23 @@ enum class MaskState : u8 { Neither, Shadowed, Lit };
     return shadowed ? MaskState::Shadowed : (lit ? MaskState::Lit : MaskState::Neither);
 }
 
+/// Whether the pixel at (x, y), not on the image's edge, is shadowed or lit and so are its eight
+/// neighbours, alike.
+[[nodiscard]] bool uniform_around(const std::vector<MaskState>& states, u32 x, u32 y) noexcept {
+    const MaskState centre = states[(usize{y} * kWidth) + x];
+    if (centre == MaskState::Neither) {
+        return false;
+    }
+    for (u32 dy = 0; dy < 3U; ++dy) {
+        for (u32 dx = 0; dx < 3U; ++dx) {
+            if (states[(usize{y + dy - 1U} * kWidth) + (x + dx - 1U)] != centre) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /// The floor pixels deep in the baked shadow and deep in the light: every pixel of their 3 x 3
 /// neighbourhood reads an exact mask of the same value at its centre. The neighbourhood is the
 /// margin for where the frame's pinned jitter actually samples the pixel, half a pixel away.
@@ -1266,14 +1295,7 @@ enum class MaskState : u8 { Neither, Shadowed, Lit };
     for (u32 y = 1; y + 1U < kHeight; ++y) {
         for (u32 x = 1; x + 1U < kWidth; ++x) {
             const usize index = (usize{y} * kWidth) + x;
-            bool uniform = states[index] != MaskState::Neither;
-            for (u32 dy = 0; dy < 3U && uniform; ++dy) {
-                for (u32 dx = 0; dx < 3U && uniform; ++dx) {
-                    uniform =
-                        states[(usize{y + dy - 1U} * kWidth) + (x + dx - 1U)] == states[index];
-                }
-            }
-            if (uniform) {
+            if (uniform_around(states, x, y)) {
                 (states[index] == MaskState::Shadowed ? out.shadowed : out.lit).push_back(index);
             }
         }

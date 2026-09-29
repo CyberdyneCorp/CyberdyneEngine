@@ -101,6 +101,28 @@ void add_layers(Level& level, LightmapTexels& texels) noexcept {
 
 // --- The base level's ownership ------------------------------------------------------------------
 
+/// The owner an unowned texel of `rect` takes at `ring`: the best neighbour inside the rectangle
+/// owned at a smaller distance, or none.
+[[nodiscard]] Nearest nearest_neighbour(const Level& level, const Rect& rect, u32 x, u32 y,
+                                        u32 ring) noexcept {
+    Nearest best;
+    for (i64 dy = -1; dy <= 1; ++dy) {
+        for (i64 dx = -1; dx <= 1; ++dx) {
+            const i64 nx = i64{x} + dx;
+            const i64 ny = i64{y} + dy;
+            if (!rect.contains(nx, ny)) {
+                continue;
+            }
+            const Nearest& other =
+                level.nearest[level.index(static_cast<u32>(nx), static_cast<u32>(ny))];
+            if (other.distance < ring && other.before(best)) {
+                best = Nearest{other.chart, ring};
+            }
+        }
+    }
+    return best;
+}
+
 /// One ring outward from every owned texel of `rect`. Returns whether it owned anything new.
 [[nodiscard]] bool grow_ring(Level& level, const Rect& rect, u32 ring) noexcept {
     bool grew = false;
@@ -109,21 +131,7 @@ void add_layers(Level& level, LightmapTexels& texels) noexcept {
             if (level.nearest[level.index(x, y)].chart != kNoChart) {
                 continue;
             }
-            Nearest best;
-            for (i64 dy = -1; dy <= 1; ++dy) {
-                for (i64 dx = -1; dx <= 1; ++dx) {
-                    const i64 nx = i64{x} + dx;
-                    const i64 ny = i64{y} + dy;
-                    if (!rect.contains(nx, ny)) {
-                        continue;
-                    }
-                    const Nearest& other =
-                        level.nearest[level.index(static_cast<u32>(nx), static_cast<u32>(ny))];
-                    if (other.distance < ring && other.before(best)) {
-                        best = Nearest{other.chart, ring};
-                    }
-                }
-            }
+            const Nearest best = nearest_neighbour(level, rect, x, y, ring);
             if (best.chart != kNoChart) {
                 level.nearest[level.index(x, y)] = best;
                 grew = true;
