@@ -1418,7 +1418,10 @@ enum class MaskState : u8 { Neither, Shadowed, Lit };
         shadowed = shadowed && mask == 0.0F;
         lit = lit && mask == 1.0F;
     }
-    return shadowed ? MaskState::Shadowed : (lit ? MaskState::Lit : MaskState::Neither);
+    if (shadowed) {
+        return MaskState::Shadowed;
+    }
+    return lit ? MaskState::Lit : MaskState::Neither;
 }
 
 /// Whether the pixel at (x, y), not on the image's edge, is shadowed or lit and so are its eight
@@ -2049,7 +2052,7 @@ struct DensityPicture {
             out.unlit.add(texel);
         }
     }
-    std::sort(wall_levels.begin(), wall_levels.end());
+    std::ranges::sort(wall_levels);
     out.checker_spread = wall_levels.empty() ? 0
                                              : wall_levels[(wall_levels.size() * 9U) / 10U] -
                                                    wall_levels[wall_levels.size() / 10U];
@@ -2307,7 +2310,7 @@ CY_TEST_CASE("(n) the frame's time without the lightmap, with it, and with its m
     f64 medians[kRuns] = {};
     for (u32 which = 0; which < kRuns; ++which) {
         std::vector<f64>& times = frames[which];
-        std::sort(times.begin(), times.end());
+        std::ranges::sort(times);
         medians[which] = times[times.size() / 2U];
         std::fprintf(stderr,
                      "(n) %s: median %.1f us, quartiles %.1f to %.1f us, over %u frames at %ux%u\n",

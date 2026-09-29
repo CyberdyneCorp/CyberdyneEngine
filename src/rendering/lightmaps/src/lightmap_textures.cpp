@@ -99,7 +99,7 @@ struct Fingerprint {
     }
     const lightmap_bake::LightmapTexels& texels = lightmap_bake::lightmap_level(lightmap, level);
     const usize plane = usize{texels.width} * texels.height;
-    return Span<const Vec4>(texels.texels.data() + (plane * texture), plane);
+    return {texels.texels.data() + (plane * texture), plane};
 }
 
 /// Every level of every texture the lightmap needs, texture after texture, in `recording`'s order.
@@ -299,7 +299,7 @@ Status LightmapTextures::recreate(u32 width, u32 height, u32 planes, bool masked
     height_ = height;
     mip_levels_ = levels;
     for (u32 texture = 0; texture < kMaxTextures; ++texture) {
-        if (texture >= planes && !(texture == kMaxPlanes && masked)) {
+        if (texture >= planes && (texture != kMaxPlanes || !masked)) {
             continue;
         }
         if (Status made = make_texture(texture); !made) {

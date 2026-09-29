@@ -84,7 +84,10 @@ using Charts = std::array<Chart, 4>;
 
 [[nodiscard]] u32 owner_at(Split split, u32 x, u32 y) noexcept {
     if (y < 32U) {
-        return x < 32U ? 0U : (x < 64U ? 1U : kNoChart);
+        if (x < 32U) {
+            return 0U;
+        }
+        return x < 64U ? 1U : kNoChart;
     }
     if (y < 64U && x < 64U) {
         return nearest_in_c(split, x);
