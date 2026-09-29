@@ -5,13 +5,14 @@
 The editor runs with `--mcp` beside the hosted runtime, exactly as `mcp_window.py` does, and every
 step is a registered command over the editor's own MCP interface; no input is synthesised. The world
 is written into the prepared project copy: a ground, a post with a motorised door hinged to it, a
-bob hanging from the world by a point joint, and a crate that falls.
+bob hanging from the world by a point joint, a crate that falls, and the camera and sun play uses.
 
-  1. The door is selected while authoring. The ENGINE draws its authored hinge — the anchor, the
-     axis and the limits — into the frame; the capture must differ from the same view unselected.
-  2. The collider, contact, joint and sleep layers are asked for with `viewport.physics.*` and play
-     is pressed. The engine draws them from the running physics world; the capture must differ from
-     the same view with no layers asked for.
+  1. The door is selected and framed while authoring. The ENGINE draws its authored hinge — the
+     anchor, the axis and the limits — into the frame; the runtime's report must count frames that
+     carried it (the transform gizmo also appears on selection, so a picture difference cannot).
+  2. Play is pressed and paused, and the collider, contact, joint and sleep layers are asked for
+     with `viewport.physics.*`. The engine draws them from the paused physics world; the capture
+     must differ from the same paused view with no layers asked for.
 
 Usage:
     python3 samples/05b-editor-window/mcp_physics.py --shots docs/design/images
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -66,6 +68,14 @@ type 6 runtime "Joint"
   field 18 float "limit_max" ""
   field 19 float "motor_velocity" ""
   field 20 float "motor_max_force" ""
+type 7 runtime "Camera"
+  field 21 float "projection.fov_y" ""
+  field 22 bool "enabled" ""
+type 8 runtime "LightSource"
+  field 23 int "kind" ""
+  field 24 float "intensity" ""
+  field 25 bool "enabled" ""
+  field 26 bool "casts_shadow" ""
 """
 
 
@@ -112,6 +122,31 @@ def joint(kind: str, target: str, anchor: str, axis: str, limits: str = "1 -1",
     ]) + "\n"
 
 
+#: The world's nodes in authored order; `node_id` relies on it.
+NODES = ("Ground", "Post", "Door", "Bob", "Crate", "Camera", "Sun")
+
+#: Play views the world through its camera, lit by its own lights, so the world has one of each.
+CAMERA = """node 5 - "physics" "Camera"
+  component 1
+    field 1 -0.1305262 0 0 0.9914449
+    field 2 0 3.5 10
+    field 3 1 1 1
+  component 7
+    field 21 0.9
+    field 22 true
+node 6 - "physics" "Sun"
+  component 1
+    field 1 -0.3826834 0 0 0.9238795
+    field 2 0 6 3
+    field 3 1 1 1
+  component 8
+    field 23 0
+    field 24 100000
+    field 25 true
+    field 26 true
+"""
+
+
 def world_text() -> str:
     return (
         HEADER
@@ -122,28 +157,46 @@ def world_text() -> str:
         + box(3, "Bob", (-4.2, 2.2, 0), (0.6, 0.6, 0.6), (0.08, 0.8, 0.78), "2")
         + joint("point", "-", "1.2 1.2 0", "1 0 0")
         + box(4, "Crate", (2.5, 4, 2.5), (1, 1, 1), (0.9, 0.3, 0.25), "5")
+        + CAMERA
     )
 
 
 def node_id(session: Session, name: str) -> str:
-    """The identity the hierarchy resource gives a node, by its name."""
-    for line in session.mcp.text("hierarchy:").splitlines():
-        words = line.split()
-        if name in words and words:
-            return words[0]
-    raise Failed(f"the hierarchy has no {name}")
+    """The identity the hierarchy resource gives a node, by its name.
+
+    The resource lists identities in authored order and prints no names, so the name is found by
+    its position in `world_text`, whose nodes are all roots.
+    """
+    identities = [line.split()[0] for line in session.mcp.text("hierarchy:").splitlines()
+                  if line.strip() and not line.startswith(" ")]
+    position = NODES.index(name)
+    if position >= len(identities):
+        raise Failed(f"the hierarchy has {len(identities)} root(s); {name} is node {position}")
+    return identities[position]
 
 
 def capture_gizmo(session: Session, shots: Path) -> str:
-    unselected = steady(session)
+    """The door selected and framed, so its hinge is drawn large enough to read.
+
+    Selecting also brings the transform gizmo, so a picture difference cannot prove the joint was
+    drawn; `joint_gizmo_frames` reads that from the runtime's own report after the session.
+    """
     session.mcp.tool("edit.select", {"entity": node_id(session, "Door")})
-    selected = steady(session)
-    changed = difference(unselected, selected)
-    expect(changed > CHANGED / 4,
-           f"selecting the hinged door changed the viewport by {changed:.2f}; no gizmo was drawn")
+    session.mcp.tool("viewport.frame-selection", {})
+    steady(session)
     whole, _ = session.mcp.capture("editor:window")
     whole.save(shots / "editor-physics-joint-gizmo.png")
-    return f"selecting the door changed the viewport by {changed:.2f}"
+    return "the door is selected and framed"
+
+
+def runtime_report(work: Path) -> tuple[int, int]:
+    """The segments the runtime drew for physics and the frames that carried a joint gizmo."""
+    log = (work / f"runtime-{Path(WORLD).stem}.log").read_text()
+    found = re.search(r"physics\s+overlays 0x[0-9a-f]+, (\d+) segment\(s\) drawn, (\d+) joint "
+                      r"gizmo frame\(s\)", log)
+    if found is None:
+        raise Failed("the runtime printed no physics report")
+    return int(found.group(1)), int(found.group(2))
 
 
 def capture_layers(session: Session, shots: Path) -> str:
@@ -205,6 +258,15 @@ def main() -> int:
     finally:
         if session is not None:
             session.close()
+    try:
+        segments, joint_frames = runtime_report(work)
+        expect(joint_frames > 0, "the runtime drew no frame with the selected door's joint")
+        expect(segments > 0, "the runtime drew no physics segment")
+    except Failed as problem:
+        print(f"editor-physics-mcp: {problem}", file=sys.stderr)
+        return 1
+    print(f"editor-physics-mcp: the runtime drew {segments} physics segment(s) and the joint in "
+          f"{joint_frames} frame(s)")
     print(f"editor-physics-mcp: wrote {shots / 'editor-physics-joint-gizmo.png'} and "
           f"{shots / 'editor-physics-layers.png'}")
     return 0

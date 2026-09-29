@@ -664,6 +664,17 @@ drag or a typed edit once, on release. Selecting the entity makes the runtime dr
 axis. At play `cy::gameplay::PlaySession` resolves both bodies and derives frame B so the anchors
 meet where the bodies were authored.
 
+![The engine drawing the selected door's authored hinge while editing: its anchor on the post, the
+vertical axis and the limit arms](../docs/design/images/editor-physics-joint-gizmo.png)
+
+![Play paused with the collider, contact, joint and sleep layers on: every collider, awake bodies in
+green, sleeping and static ones in grey, drawn by the engine from its physics
+world](../docs/design/images/editor-physics-layers.png)
+
+Both are taken through the editor's own MCP interface by
+`python3 samples/05b-editor-window/mcp_physics.py --shots docs/design/images`, which also fails
+unless the runtime reports frames carrying the joint gizmo and a paused frame the layers changed.
+
 Entity references in a `.cyworld` are written as the referenced node's **position** and resolved to
 an identity on load, on both sides, because a save that drops a node renumbers the file.
 
