@@ -24,6 +24,8 @@ ROOT = HERE.parents[3]
 OUT = HERE / "falsification.txt"
 BUILD = ROOT / "build/dev"
 SHOTS = BUILD / "terrain-mutation-snapshots"
+# A test that hangs under a mutation has not noticed it: it is recorded as SURVIVED.
+TIMEOUT = 900
 
 PANEL = "editor/crates/cy-editor-shell/src/panels/terrain.rs"
 COMMANDS = "editor/crates/cy-editor-services/src/terrain.rs"
@@ -121,7 +123,7 @@ MUTATIONS = [
      "decoded.modifier.height = 0.0F * target.value();",
      BACKEND, None),
     ("c05_paint_keeps_the_layers_beneath", MATERIAL,
-     "(static_cast<f32>(texel.weight[slot]) / 255.0F) *\n                                           (1.0F - painted)};",
+     "(static_cast<f32>(texel.weight[slot]) / 255.0F) * (1.0F - painted)};",
      "(static_cast<f32>(texel.weight[slot]) / 255.0F)};",
      AUTHORING, None),
     ("c06_hole_brush_cuts_nothing", STACK,
@@ -182,7 +184,11 @@ def run_rust(env, crate, target, pattern, harness=()):
         command += ["--", *harness]
         env = dict(env, CY_PANEL_SNAPSHOTS=str(SHOTS))
         SHOTS.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=env)
+    try:
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=env,
+                                timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return 0, [], f"TIMED OUT after {TIMEOUT} s", True, ""
     text = result.stdout + result.stderr
     failed = sorted(set(re.findall(r"^test (\S+) \.\.\. FAILED$", text, re.MULTILINE)))
     summary = re.findall(r"^test result: .*$", text, re.MULTILINE)
@@ -201,7 +207,11 @@ def run_cpp(env, target, suite, case=None):
                    "--output-on-failure"]
     else:
         command = [str(BUILD / target), f"--test-case={case}"]
-    result = subprocess.run(command, cwd=BUILD, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, cwd=BUILD, capture_output=True, text=True,
+                                timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return 0, [], f"TIMED OUT after {TIMEOUT} s", True, ""
     text = result.stdout + result.stderr
     failed = sorted(set(re.findall(r"TEST CASE:\s+(.+)$", text, re.MULTILINE)))
     if result.returncode != 0 and not failed:

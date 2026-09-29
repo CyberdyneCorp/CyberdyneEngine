@@ -3223,12 +3223,31 @@ fn physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel() {
     );
 }
 
+/// The frames the editor writes to the fake runtime, read on a thread of their own so a test can
+/// give up waiting instead of blocking on the pipe forever.
+fn runtime_frames(mut runtime_reader: std::io::PipeReader) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (sender, frames) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        while let Ok(Some(frame)) = read_frame(&mut runtime_reader) {
+            if sender.send(frame).is_err() {
+                break;
+            }
+        }
+    });
+    frames
+}
+
 /// The next `terrain.evaluate` the editor sent the fake runtime, skipping catalogue discovery.
+/// Fails, rather than hangs, when none arrives within five seconds.
 fn next_terrain_request(
-    runtime_reader: &mut std::io::PipeReader,
+    frames: &std::sync::mpsc::Receiver<Vec<u8>>,
 ) -> (cy_editor_protocol::RequestId, Vec<u8>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let frame = read_frame(runtime_reader).unwrap().unwrap();
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let frame = frames
+            .recv_timeout(left)
+            .expect("the editor sends terrain.evaluate within five seconds");
         if let Message::ServiceRequest {
             request,
             operation,
@@ -3331,8 +3350,9 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     let mut editor = Editor::new(Actor::human("designer"));
     editor.open_document("worlds/terrain.cyworld").unwrap();
     let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
-    let (mut runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
     editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let frames = runtime_frames(runtime_reader);
 
     let created = converse(
         &[
@@ -3345,7 +3365,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     let terrain = editor
         .edited_terrain()
         .expect("terrain.create selects its root");
-    let (request, before_stroke) = next_terrain_request(&mut runtime_reader);
+    let (request, before_stroke) = next_terrain_request(&frames);
     let mut header = Reader::new(&before_stroke);
     assert_eq!(header.u32().unwrap(), 1, "format");
     assert_eq!(header.u128().unwrap(), terrain.as_u128());
@@ -3361,7 +3381,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     );
     let raised = converse(&[INITIALIZE, &raise], &mut editor);
     assert_eq!(result(&raised, 1).get("isError"), &Json::Bool(false));
-    let (request, stroked) = next_terrain_request(&mut runtime_reader);
+    let (request, stroked) = next_terrain_request(&frames);
     assert_ne!(stroked, before_stroke);
     let mut body = Reader::new(&stroked[4 + 16 + 12..]);
     assert_eq!(body.u32().unwrap(), 1, "one modifier");
@@ -3403,7 +3423,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     );
     let holed = converse(&[INITIALIZE, &hole], &mut editor);
     assert_eq!(result(&holed, 1).get("isError"), &Json::Bool(false));
-    let (request, with_hole) = next_terrain_request(&mut runtime_reader);
+    let (request, with_hole) = next_terrain_request(&frames);
     let mut body = Reader::new(&with_hole[4 + 16 + 12..]);
     assert_eq!(body.u32().unwrap(), 2, "raise, then the hole above it");
     answer_terrain(
@@ -3433,7 +3453,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
         &mut editor,
     );
     assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
-    let (request, after_one_undo) = next_terrain_request(&mut runtime_reader);
+    let (request, after_one_undo) = next_terrain_request(&frames);
     assert_eq!(
         after_one_undo, stroked,
         "undoing the hole sends the raised stack again"
@@ -3466,7 +3486,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
         &mut editor,
     );
     assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
-    let (_, after_both) = next_terrain_request(&mut runtime_reader);
+    let (_, after_both) = next_terrain_request(&frames);
     assert_eq!(after_both, before_stroke);
 }
 
