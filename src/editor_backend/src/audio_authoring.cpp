@@ -9,8 +9,9 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
+#include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -63,9 +64,26 @@ std::vector<std::string_view> lines_of(std::string_view text) {
     return out;
 }
 
+/// A plain decimal: optional minus, digits, point and exponent. Apple's libc++ has no
+/// floating-point `std::from_chars`, so the digits go through `strtof`, which would otherwise also
+/// take leading blanks, a plus sign, hex, `inf` and `nan` that the asset format never writes. A
+/// value too large or too small for an `f32` is refused, as `from_chars` would.
 bool parse_float(std::string_view word, f32& out) noexcept {
-    const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), out);
-    return error == std::errc{} && end == word.data() + word.size() && std::isfinite(out);
+    constexpr usize kCapacity = 32;
+    if (word.empty() || word.size() >= kCapacity || word.front() == '+' ||
+        word.find_first_not_of("0123456789+-.eE") != std::string_view::npos) {
+        return false;
+    }
+    std::array<char, kCapacity> terminated{};
+    std::memcpy(terminated.data(), word.data(), word.size());
+    char* end = nullptr;
+    errno = 0;
+    const f32 value = std::strtof(terminated.data(), &end);
+    if (end != terminated.data() + word.size() || errno == ERANGE || !std::isfinite(value)) {
+        return false;
+    }
+    out = value;
+    return true;
 }
 
 bool parse_flag(std::string_view word, bool& out) noexcept {

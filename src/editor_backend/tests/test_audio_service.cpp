@@ -29,6 +29,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -328,6 +329,26 @@ CY_TEST_CASE("editor audio: a mixer is refused whole when it would cycle, dangle
     CY_CHECK_EQ(kind, static_cast<u32>(CY_SERVICE_EVENT_FAILED));
     CY_CHECK_EQ(failure_code(payload), "audio.mixer");
     CY_CHECK_EQ(service.audio.server().buses().size(), 1U);
+}
+
+CY_TEST_CASE("editor audio: an asset's numbers are plain decimals, read whole") {
+    const auto volume = [](std::string_view number) -> std::optional<f32> {
+        const auto cue = cy::editor::parse_cue("cycue 1\nclip tone:440:0.5\nvolume " +
+                                               std::string(number) + "\n");
+        return cue.has_value() ? std::optional<f32>(cue->volume) : std::nullopt;
+    };
+    CY_CHECK_EQ(volume("0.25").value_or(-1.0F), 0.25F);
+    CY_CHECK_EQ(volume("2").value_or(-1.0F), 2.0F);
+    CY_CHECK_EQ(volume("2.5e-1").value_or(-1.0F), 0.25F);
+    CY_CHECK_EQ(volume("-0").value_or(-1.0F), 0.0F);
+    for (const std::string_view malformed : {"", ".", "+1", " 1", "1 ", "1x", "0x1", "inf", "nan",
+                                             "1e", "1,5", "1e999", "1e-50", "1-2", "-"}) {
+        CY_CHECK_FALSE(volume(malformed).has_value());
+    }
+
+    const auto mixer = cy::editor::parse_mixer("cymixer 1\nbus Master - 0.75 0 0 0\n");
+    CY_REQUIRE(mixer.has_value());
+    CY_CHECK_EQ(mixer->buses.front().volume, 0.75F);
 }
 
 CY_TEST_CASE("editor audio: the editor's mixer sets the engine's gains, routes and effect chain") {
