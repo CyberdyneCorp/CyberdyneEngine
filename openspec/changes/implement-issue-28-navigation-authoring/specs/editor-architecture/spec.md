@@ -33,6 +33,10 @@ Every navigation authoring action SHALL be a command in the shared command regis
 - **THEN** the document and the history SHALL match the result of the same actions performed from the panel
 - **AND** undo SHALL restore the prior settings, components and bake identity
 
+#### Scenario: Undoing the first bake unbakes the engine
+- **WHEN** the first bake of a world is undone
+- **THEN** the engine SHALL drop the world's mesh, and path, flow-field and pick queries SHALL be refused as unbaked until the bake is redone
+
 #### Scenario: Failed bake records nothing
 - **WHEN** the engine reports a failed bake
 - **THEN** no transaction SHALL be recorded, and `navigation.bake.status` SHALL report the failure and its diagnostics

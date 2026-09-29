@@ -79,6 +79,37 @@ class AcceptanceLedgerTests(unittest.TestCase):
         probe = ledger.Probe("strict OpenSpec", ("openspec", "validate"))
         self.assertEqual(ledger.probe_result(probe, completed("", 1)), (False, "exit 1"))
 
+    def test_the_probed_binaries_are_built_before_they_are_run(self) -> None:
+        targets = ledger.native_targets(list(ledger.CRITERIA))
+        self.assertEqual(sorted(targets), sorted(set(targets)), "each binary is built once")
+        self.assertIn(ledger.SERVICE, targets)
+        self.assertIn(ledger.RUNTIME, targets)
+        command = ledger.build_command(targets)
+        self.assertEqual(command[:3], ("cmake", "--build", "build/dev"))
+        for target in targets:
+            self.assertIn(target, command)
+
+    def test_a_failed_build_leaves_every_native_probe_unverified(self) -> None:
+        criterion = ledger.Criterion(
+            "stale", "native only", (ledger.Probe("n", ("build/dev/stale-binary",), 1),), "M"
+        )
+        # The binary left over from an earlier build would pass; it must not be run.
+        real = ledger.run_probe
+        ledger.run_probe = lambda probe: True
+        try:
+            self.assertTrue(ledger.run_criterion(criterion, built=True))
+            self.assertFalse(ledger.run_criterion(criterion, built=False))
+        finally:
+            ledger.run_probe = real
+
+    def test_native_only_runs_no_cargo_or_openspec_probe(self) -> None:
+        criterion = ledger.Criterion(
+            "history", "a passing non-native probe", (ledger.Probe("c", ("true",)),), "M"
+        )
+        self.assertTrue(ledger.run_criterion(criterion))
+        # Native-only runs nothing here, and a criterion with nothing run is not passed.
+        self.assertFalse(ledger.run_criterion(criterion, native_only=True))
+
     def test_the_docs_check_names_each_missing_line(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)

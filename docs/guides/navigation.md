@@ -55,7 +55,31 @@ bake, is one undoable transaction.
    path to see it route around, or block it.
 
 Undo a bake with **Edit → Undo**. The world goes back to the previous bake identity, and the runtime
-reloads that bake's saved `.cynavmesh` sidecar.
+reloads that bake's saved `.cynavmesh` sidecar. Undoing the first bake leaves the world unbaked in
+the engine too: the runtime sends `navigation.clear`, and path, flow-field and pick queries answer
+`navigation.world.unbaked` until you redo or bake again.
+
+### Sidecars belong in version control
+
+The document records only the bake's identity; the navmesh itself is the content-addressed
+`navigation/<identity>.cynavmesh` next to the project. Commit those files with the world. A clone
+without them reopens with the badge reading *Sidecar missing: bake again to rebuild the navmesh*
+(`navigation.bake.status` reports `sidecar_missing=true` and `engine_baked=false`), and the engine
+holds no mesh for the world until someone bakes again.
+
+### Choosing a voxeliser
+
+Both back ends bake multi-tile worlds whose paths cross tile seams. **Recast** voxelises each tile
+with a border of `agent radius + 3` cells, so its erosion sees the ground past the tile edge and
+the polygons meet the neighbour tile's. **Engine** is the engine's own voxeliser. The two give
+different polygons for the same inputs; a bake records which one it used, and changing it makes
+the bake stale.
+
+### Costs are painted with volumes
+
+Area cost is authored with `NavArea` volumes: triangles whose centroid lies inside a volume take its
+area, and the volume's cost multiplies path cost across them. Painting cost directly onto
+polygons with a brush is not supported. Place and resize volumes instead.
 
 ## The same session over MCP
 
@@ -87,8 +111,12 @@ only when every probe passes:
 
 The mutations and the assertions they break are listed in the change's
 [verification ledger](../../openspec/changes/implement-issue-28-navigation-authoring/verification.md).
-`just quality-issue28-ledger` runs the runner's own unit tests and the documentation check, and
-needs no build.
+The runner builds the probed test binaries in `build/dev` before it runs them, so a probe never
+reports on a stale binary (`--no-build` skips that). `just quality-issue28-ledger` runs the runner's
+own unit tests and the documentation check, and needs no build. CI enforces the rest: the `test`
+job (linux-x86_64) runs `just quality-issue28-native` (the runner with `--native-only`) after
+`just test-all`,
+and the `editor` job's `cargo test` runs the Cargo probes' tests.
 
 | Criterion | Probes |
 |---|---|
@@ -105,3 +133,7 @@ needs no build.
   lit frame, without a depth test.
 - The Inspector edits the Nav* components undoably but has no MCP equivalent of its own. Agents use
   the `navigation.*.set` commands.
+- Cost painting with a brush. Costs come from `NavArea` volumes only.
+- The cook does not declare a `navmesh` node for a world with a `NavigationWorld` on its own: a
+  project's build graph names the node by hand, and the game runtime does not yet load the cooked
+  `.cynavmesh` into a game world. See the change's `tasks.md` (deferred items).

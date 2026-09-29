@@ -16,6 +16,14 @@ Incremental rebakes SHALL update the overlay on the next frame. The editor SHALL
 - **WHEN** the overlay draws a known navmesh onto a cleared canvas from a known view
 - **THEN** the set of covered pixels SHALL match the projected walkable polygons within a stated tolerance
 
+#### Scenario: Known map through the frame's overlay path
+- **WHEN** the runtime bakes its known test map and draws an editor frame's overlays with the recorded overlay flags
+- **THEN** each pixel inside one projected walkable polygon SHALL carry that polygon's area colour, and the ground, a painted area and an obstacle footprint SHALL show in their own colours
+
+#### Scenario: Polygon partly behind the camera
+- **WHEN** a walkable polygon has corners behind the camera
+- **THEN** the overlay SHALL draw the part in front of the near plane rather than drop the polygon
+
 #### Scenario: Per-world toggle
 - **WHEN** the overlay is disabled for one of two navigation worlds
 - **THEN** only the other world's navmesh SHALL be drawn

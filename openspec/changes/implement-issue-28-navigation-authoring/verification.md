@@ -196,6 +196,18 @@ probe must execute at least one test. The runner exits nonzero while any criteri
 | 5 `stale` | `editor_backend: navigation status reports a stale bake after a source change` | 4642 (1000) |
 | 5 `stale` | `editor runtime: moving a mesh marks the navigation bake stale; moving it back clears the flag` | 71 (40) |
 | 6 `docs` | `openspec validate implement-issue-28-navigation-authoring --strict`; `python3 tools/issue28_acceptance.py --check-docs` | exit 0 |
+| 1 `bake` | `editor runtime: shrinking the surface leaves the mesh equal to a fresh bake of the shrunk map` | 60 (40) |
+| 1 `bake` | `editor_backend: an update after restoring a stale bake rebuilds every changed tile*` | 4647 (1000) |
+| 1 `bake` | `editor_backend: an edit that changes the geometry's height range rebuilds every tile` | 4643 (1000) |
+| 2 `overlay` | `editor runtime: the frame overlay over the baked test map covers its polygons in their area colours` | 16433 (10000) |
+| 2 `overlay` | `nav overlay clips a polygon at the near plane with the camera inside the tile` | 6 (5) |
+| 3 `obstacle` | `editor runtime: a NavObstacle added to the document blocks the path; removing it restores the path` | 58 (40) |
+| 4 `history` | `editor runtime: undoing the first bake drops the engine's mesh and refuses path queries` | 60 (40) |
+| 4 `history` | `editor_backend: a restored bake keeps its area costs in a new session and on undo` | 1195 (1000) |
+| 5 `stale` | `editor_backend: navigation status restores a saved bake into a new session` (the missing-sidecar half) | 4643 (1000) |
+
+The rows after the `docs` row were added with the review fixes (section 7 of `tasks.md`); the
+runner printed `verified 6/6 selected criteria` with them.
 
 - **Red mutations through the ledger.** Each was applied, the tree rebuilt where it is C++, and
   `python3 tools/issue28_acceptance.py --criterion <key>` run: it printed `UNVERIFIED` for the named
@@ -220,40 +232,65 @@ recorded L6a deletes both.
 
 A first attempt at L5 left `current` unused, and `-Werror` refused the build. The runner then
 reported green from the binaries of the previous build. A mutation only counts when its build
-succeeds, and the recorded L5 builds.
+succeeds, and the recorded L5 builds. The runner now builds the probed binaries itself before it
+runs them (L7 and L8 below), so that false green cannot recur.
+
+| # | Criterion | Mutation | Red probes and failing assertion |
+|---|---|---|---|
+| L7 | 4 `history` | `restore_bake` drops `context.costs = nav::area_costs(sources.areas);` (F1), with no manual rebuild | the runner rebuilt the service binary; `an undone or reopened bake keeps its area costs` UNVERIFIED (test_navigation_service.cpp:683 and :693 `CHECK_EQ(... .cost, before.cost)`), `verified 0/1 selected criteria` |
+| L8 | 5 `stale` | a line that does not compile (`(void)undeclared_name;`) in `restore_bake` | `build: FAILED; every native probe is unverified`, all three probes `UNVERIFIED ... the probed binary did not build`, `verified 0/1 selected criteria` |
+
+Both were restored from a saved copy, and `--criterion history --criterion stale` printed
+`verified 2/2 selected criteria`.
 
 ## 1. Editor bake equals `build_tile`, tile by tile
 
 - **Probes:** `editor_backend: navigation bake equals build_tile tile by tile` (service over a
   fixture seam) and `editor runtime: baking the test map equals build_tile tile by tile` (runtime
   seam over a `.cyworld` map).
-- **Status:** verified. Red mutations M1 (engine), S1 (service), R1a and R1b (runtime), and L1
-  through the ledger.
+- **Also:** the live mesh after incremental updates equals a full bake (surface shrink, stale
+  restore, height-range change).
+- **Status:** verified. Red mutations M1 (engine), S1 (service), R1a and R1b (runtime), F2 to F4,
+  F11 and F12, and L1 through the ledger.
 
 ## 2. Overlay walkable area matches the mesh (image test)
 
 - **Probes:** `nav overlay covers the projected walkable polygons` and `nav overlay per-world toggle
-  draws only the enabled world` (CPU canvas, no device).
-- **Status:** verified. Red mutations R2, R7, and L2 through the ledger.
+  draws only the enabled world` (CPU canvas, no device); `editor runtime: the frame overlay over the
+  baked test map covers its polygons in their area colours`, which bakes `nav_test_map.cyworld`
+  and drives `draw_editor_navigation` (the call `main.cpp`'s `draw_frame_overlays` makes) with the
+  runtime's driver and navigation session; and `nav overlay clips a polygon at the near plane with
+  the camera inside the tile`.
+- **Not observed:** `main.cpp`'s own three-line `draw_navigation` (it passes `host.view` and
+  `eye_of(host.camera)`) runs only with a device; `tasks.md` 8.3.
+- **Status:** verified. Red mutations R2, R7, F8 to F10, and L2 through the ledger.
 
 ## 3. Obstacle through the editor blocks and restores a path
 
 - **Probes:** `editor_backend: an obstacle added through the service blocks the path and removing it
-  restores it`, and the MCP wire test `navigation_obstacle_add_and_remove_reach_the_engine_over_mcp`.
-- **Status:** verified. Red mutations S2, E7, and L3a and L3b through the ledger.
+  restores it`, the MCP wire test `navigation_obstacle_add_and_remove_reach_the_engine_over_mcp`,
+  and `editor runtime: a NavObstacle added to the document blocks the path; removing it restores
+  the path`, which goes from the document's NavObstacle text through `AuthoredNavigationSource::obstacles`
+  and the `NavigationDriver` update to a blocked path with no fake in between.
+- **Status:** verified. Red mutations S2, E7, F6, and L3a and L3b through the ledger.
 
 ## 4. Undo/redo and MCP parity for bake, settings and component edits
 
-- **Probes:** the MCP undo/redo and projection tests, the bake and settings transaction tests, and
-  the desktop-versus-MCP history test (P10).
-- **Status:** verified. Red mutations E1, E2, E8, E9, P10, and L4 through the ledger.
+- **Probes:** the MCP undo/redo and projection tests, the bake and settings transaction tests, the
+  desktop-versus-MCP history test (P10), `editor runtime: undoing the first bake drops the engine's
+  mesh and refuses path queries`, and `editor_backend: a restored bake keeps its area costs in a new
+  session and on undo`.
+- **Status:** verified. Red mutations E1, E2, E8, E9, P10, F1, F5, and L4 and L7 through the ledger.
 
 ## 5. Stale bake detected after a geometry edit
 
 - **Probes:** `editor_backend: navigation status reports a stale bake after a source change` and
   `editor runtime: moving a mesh marks the navigation bake stale; moving it back clears the flag`.
-- **Status:** verified. Red mutations M8b (engine), S3 (service), R3a and R3b (runtime), and L5
-  through the ledger.
+- **Also:** a recorded bake whose sidecar is missing is reported as unbaked with the sidecar
+  missing, not as a failure (`editor_backend: navigation status restores a saved bake into a new
+  session`).
+- **Status:** verified. Red mutations M8b (engine), S3 (service), R3a and R3b (runtime), F7, and L5
+  and L8 through the ledger.
 
 ## 6. OpenSpec change validated with `--strict`, and docs
 
@@ -267,7 +304,7 @@ succeeds, and the recorded L5 builds.
 
 ## Runner self-checks
 
-`python3 tools/test_issue28_acceptance.py` (8 tests), also run in CI by `just quality-issue28-ledger`
+`python3 tools/test_issue28_acceptance.py` (11 tests), also run in CI by `just quality-issue28-ledger`
 in the `quality` job, which needs no build:
 
 - a Cargo filter that selects no tests is not reported as passed;
@@ -275,14 +312,27 @@ in the `quality` job, which needs no build:
 - a failing command is not passed;
 - every criterion has probes and a recorded red mutation, and every native probe runs with
   `--no-skip`, has a floor and contains no comma (doctest splits filters on commas);
-- the docs check names each missing line, and the shipped docs are complete.
+- the docs check names each missing line, and the shipped docs are complete;
+- the probed binaries are all named in the build command, each once;
+- a failed build leaves every native probe unverified, even when a binary from an earlier build
+  would pass;
+- `--native-only` counts no Cargo or OpenSpec probe.
 
 | # | Mutation (`tools/issue28_acceptance.py`) | Failing test |
 |---|---|---|
 | G1 | the empty-filter guard `if executed == 0:` becomes `if executed < 0:` | `test_an_empty_cargo_filter_is_not_passed`: `(True, 'passed') != (False, 'Cargo filter selected no tests')` |
 | G2 | the floor guard `if count < probe.min_assertions:` becomes `if count < 0:` | `test_a_native_probe_below_its_assertion_floor_is_not_passed`: `(True, 'passed') != (False, 'only 2 assertions; needs 10')` |
 
-Both were restored from a saved copy, and the 8 tests pass again.
+| G3 | `run_criterion` ignores a failed build (`and not built` becomes `and not built and False`) | `test_a_failed_build_leaves_every_native_probe_unverified`: `True is not false` |
+| G4 | `build_command` names only the first probed binary | `test_the_probed_binaries_are_built_before_they_are_run`: `'cy_test_integration_editor_window_navigation' not found in (...)` |
+
+All four were restored from a saved copy, and the 11 tests pass again.
+
+**Where CI enforces the ledger.** The `quality` job runs the self-tests and the docs check. The
+`test` job, on linux-x86_64, runs `just quality-issue28-native` after `just test-all`: the runner
+rebuilds the probed binaries in `build/dev` and runs every native probe with `--no-skip` against
+its floor. The Cargo probes' tests run in the `editor` job's `cargo test`, and strict OpenSpec
+validation in the `spec validation` job.
 
 ## Cognitive complexity (task 6.3)
 
@@ -302,3 +352,52 @@ frontend target of 8 to 12:
   scores 13.
 - **Python** (`complexipy`): `missing_docs` 8, `main` 7, `probe_result` 7; everything else is
   lower.
+
+## Review fixes (tasks 7.1 to 7.14)
+
+The review of WP1 to WP6 found bugs and scope gaps; section 7 of `tasks.md` lists the fixes. Each
+bug has a regression test, and each test was shown red by the mutation below: applied to the
+source, the target rebuilt and the named case run with `-tc=` (or `cargo test <name>`), and the
+source restored. The restored suites pass.
+
+- **Green:** `cmake --build build/dev --parallel 8`, then
+  `ctest --test-dir build/dev -R "navigation|editor_backend|editor_window|build_content"`: 15 of 15
+  passed. `integration.navigation_bake` runs 16 cases (the Recast ones on this build),
+  `integration.editor_backend_navigation` 20, `integration.editor_window_navigation` 15 (5 overlay,
+  10 runtime). In `editor/`, `cargo test -p cy-editor-services -p cy-editor-shell -p cy-editor-mcp`
+  passes; `cargo fmt --check` is clean and
+  `cargo clippy -p cy-editor-services -p cy-editor-shell --all-targets -- -D warnings` passes.
+  `clang-format` (22.1.8) was run on every touched C++ file and `clang-tidy -p build/dev` reports
+  nothing on any C++ file the branch touches (it caught `misc-misplaced-const` on `main.cpp`'s
+  `service_session` from an earlier WP, fixed here).
+
+| # | Check (case) | Mutation | Failing assertion |
+|---|---|---|---|
+| F1 | `editor_backend: a restored bake keeps its area costs in a new session and on undo` | `restore_bake` leaves `context.costs` alone | test_navigation_service.cpp:683 `CHECK_EQ(after.cost, before.cost)` (new session), :693 `CHECK_EQ(undone.cost, before.cost)` (undo) |
+| F2 | `editor runtime: shrinking the surface leaves the mesh equal to a fresh bake of the shrunk map` | `rebuild_changed` calls `rebake_tiles` over the dirty box instead of `rebake_surface_tiles` | test_nav_runtime.cpp `CHECK(incremental == full)` |
+| F3 | `editor_backend: an update after restoring a stale bake rebuilds every changed tile, not only the dirty box` | `whole = context.current && !same_range(...)` (a stale restore no longer forces a whole rebake) | test_navigation_service.cpp:724 `CHECK(resident(session) == fresh(...))` |
+| F4 | `editor_backend: an edit that changes the geometry's height range rebuilds every tile` | the height-range half of `whole` is disabled | test_navigation_service.cpp:748 `CHECK(resident(fixture.session) == expected)` |
+| F5 | `editor runtime: undoing the first bake drops the engine's mesh and refuses path queries` | `queue_world_changes` stops queueing `navigation.clear` | `CHECK_EQ(clears_completed(), clears + 1)`, `CHECK(runtime.mesh() == nullptr)`, `CHECK_EQ(map_path(...).code, "navigation.world.unbaked")` |
+| F6 | `editor runtime: a NavObstacle added to the document blocks the path; removing it restores the path` | the runtime reads the obstacle radius from `shape.radii` | `CHECK((!blocked.found \|\| blocked.partial))` |
+| F7 | `editor_backend: navigation status restores a saved bake into a new session` | `restore_recorded` fails on a missing sidecar as on a corrupt one | `REQUIRE(absent.is(CY_SERVICE_EVENT_COMPLETED))`, `CHECK(lost.sidecar_missing)`, `CHECK_EQ(lost.current, baked.fingerprint)`, `CHECK(NavigationService::mesh(session, kWorld) == nullptr)` |
+| F8 | `nav overlay clips a polygon at the near plane with the camera inside the tile` | `NavCanvasSink::polygon` returns when any corner does not project (the old behaviour) | `CHECK_EQ(sink.polygons_drawn(), 1U)`, `CHECK_LE(coverage.mismatched, coverage.expected / 100U)` |
+| F9 | `editor runtime: the frame overlay over the baked test map covers its polygons in their area colours` | `nav_area_colour` shifts the palette by one | `CHECK(colour_at(Vec3{2, 0, 2}) == at_alpha(0xB464F0U))` |
+| F10 | same case | `draw_editor_navigation` draws with a zero eye | `CHECK_LE(wrong_colour, inside / 100U)` and all three colour checks |
+| F11 | `an incremental surface rebake after a surface shrinks equals a fresh bake` (test_bake.cpp) | `rebake_surface_tiles` never drops a tile the surface left | `CHECK_EQ(report->tiles_empty, 2U)`, `CHECK_FALSE(mesh.tile_resident(TileCoord{1, 0, 0}))`, `CHECK(resident_digests(mesh) == fresh_bake(...))` |
+| F12 | `an incremental surface rebake ignores a volume that reaches past the surface` | `rebake_surface_tiles` bakes every dirty tile, in the region or not | `CHECK_EQ(report->tiles_built, 1U)`, `CHECK_EQ(mesh.tile_count(), 1U)`, `CHECK(resident_digests(mesh) == fresh_bake(...))` |
+| F13 | `a two-tile Recast bake connects its tiles across the seam` | `build_recast.cpp` without the border (as on `origin/main`, where `borderSize` is never set) | the path across the seam is not found: `integration.navigation_bake` 15 of 16 cases pass |
+| F14 | `editor runtime: a runtime request the service refuses at submit is kept and retried` | `pump` drops the job when `submit` is refused (the old behaviour) | `CHECK_FALSE(runtime.driver->idle())`, `CHECK_EQ(updates_completed(), before + 1)` |
+| P14 | `a_refused_pick_is_not_settled_by_a_later_unrelated_answer` | `pick_refused` reads `awaiting` without taking it | navigation_baking.rs:949 `assert_eq!(inputs.awaiting, None)` |
+| P15 | `a_click_is_rescaled_only_with_the_frame_it_was_made_on` | `clicked_image` stops comparing frame ids | `assert!(clicked_image(&older, Some(&frame)).is_none())` |
+| E10 | `nav_bake::tests::a_status_answer_reports_a_missing_sidecar_apart_from_a_stale_bake` | `NavStatusReport::decode` ignores the trailing `u8` | the decode of the engine's payload fails (`unwrap` on a trailing byte) |
+
+**`just ci-check` on this tree.** It passes every stage except the recipe selftest's `an LTO link
+inside a saturated pool completes`, which reports "`cc` is not GCC; an LTO link's behaviour inside
+the pool cannot be checked" on this macOS host. The same case fails identically on a detached
+worktree of `origin/main` (4fb1e998), so it is the host, not this change. The workflow check
+(`check-workflows: clean`) passes with the new `quality-issue28-native` step.
+
+**Complexity after the fixes.** `status` rose to 16 with the missing-sidecar branch, so the restore
+moved into `restore_recorded`; no changed C++ function is now above 15 (`path_query` 15,
+`queue_world_changes` 14, `rebake_surface_tiles` 12). `convert_mesh` (18) in `build_recast.cpp` is
+unchanged from main; the change adds three lines to `recast_config`.

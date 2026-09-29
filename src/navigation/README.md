@@ -102,6 +102,13 @@ The editor never voxelises, tiles or hashes: it sends a request and records what
   source, the rest are summed) and lists each tile's coordinate, polygon count, emptiness and digest.
 - **Incremental rebake.** `rebake_tiles` rebuilds only the tiles overlapping a dirty box, such as the
   union of an edited volume's old and new bounds. Every other tile keeps its digest and slot salt.
+  `rebake_surface_tiles` is the incremental form of a bake over the surface region: of the tiles
+  under the dirty box it rebuilds those the surfaces cover and removes those they no longer cover.
+  It equals a full bake when the mesh was one, every change lies in the dirty box, and the
+  geometry's height range held; `bake.h` says why each condition matters.
+- **Recast seams.** The Recast back end voxelises a tile with a border of `walkableRadius + 3`
+  cells, so the agent-radius erosion does not carve a gap along every tile edge and paths cross
+  from tile to tile.
 - **Areas and costs.** `assign_triangle_areas` gives each triangle the area of the highest-`node` area
   volume containing its centroid, or its own area. `area_costs` builds the world's `NavAreaCosts`:
   uniform, with each volume's cost on its area. Cost is painted by placing area volumes.

@@ -45,3 +45,27 @@
 - [x] 6.1 Add `tools/issue28_acceptance.py` with one probe per acceptance criterion, a native assertion-count floor, and `--no-skip`. Add its unit tests and a quality recipe.
 - [x] 6.2 Record a red mutation for each criterion in `verification.md`, with each mutation restored afterwards.
 - [x] 6.3 Update the documentation: the READMEs for `src/navigation`, `src/editor_backend` and `tools/build`, the editor feature map and the runtime sample instructions. Run `openspec validate --strict`, and measure the cognitive complexity of changed functions.
+
+## 7. Review fixes
+
+- [x] 7.1 Restore a bake with the area costs of the current sources (`restore_bake`), so a reopened world or an undone bake keeps its NavArea multipliers. Regression: `editor_backend: a restored bake keeps its area costs in a new session and on undo`.
+- [x] 7.2 Add `rebake_surface_tiles`: an incremental rebuild clipped to the surface region, which removes the tiles a shrunk or moved surface no longer covers. Regressions: the two `incremental surface rebake` cases in `test_bake.cpp` and `editor runtime: shrinking the surface leaves the mesh equal to a fresh bake of the shrunk map`.
+- [x] 7.3 Rebake the whole surface region when the dirty box cannot vouch for the result (a stale restore, or a change in the geometry's height range), so the recorded fingerprint never names a hybrid mesh. Regressions: `editor_backend: an update after restoring a stale bake rebuilds every changed tile, not only the dirty box` and `editor_backend: an edit that changes the geometry's height range rebuilds every tile`.
+- [x] 7.4 Add `navigation.clear` and send it when a world's recorded bake goes from non-zero to zero, so undoing the first bake leaves the engine unbaked. Regressions: `editor_backend: navigation clear drops the mesh and refuses later queries` and `editor runtime: undoing the first bake drops the engine's mesh and refuses path queries`.
+- [x] 7.5 Voxelise Recast tiles with a `walkableRadius + 3` border so tiles connect across seams (`borderSize` was 0 on main, confirmed on `origin/main`). Regression: `a two-tile Recast bake connects its tiles across the seam`.
+- [x] 7.6 Build the probed test binaries before the ledger runs them (`--no-build` opts out), add `--native-only`, and run it in CI's test job (`just quality-issue28-native`, linux-x86_64).
+- [x] 7.7 Criterion 2 on the known test map: extract `draw_editor_navigation` from `main.cpp`'s `draw_frame_overlays` and drive it over the baked `nav_test_map.cyworld`, checking covered pixels and the ground, area and carved-footprint colours.
+- [x] 7.8 Criterion 3 end to end: a NavObstacle added by document text blocks the runtime's path and removing it restores it (`test_nav_runtime.cpp`).
+- [x] 7.9 Guard follow-on code after `CY_REQUIRE` in the navigation tests (exception-free build): `worlds[0]`, `std::map::at`, and the rim pixel's `x - 1`.
+- [x] 7.10 Report a missing sidecar from `navigation.status` as `baked = 0`, `sidecar missing = 1` and the current fingerprint instead of failing; decode it in `NavStatusReport`, show it in the panel, and document that sidecars are committed.
+- [x] 7.11 Keep a runtime request the service refuses at submit and retry it next frame. Regression: `editor runtime: a runtime request the service refuses at submit is kept and retried`.
+- [x] 7.12 Clip overlay polygons at the near plane instead of dropping them. Regression: `nav overlay clips a polygon at the near plane with the camera inside the tile`.
+- [x] 7.13 Clear the awaited pick when the shell's `navigation.point.pick` invoke is refused, and rescale a click only with the frame it was made on. Regressions: `a_refused_pick_is_not_settled_by_a_later_unrelated_answer` and `a_click_is_rescaled_only_with_the_frame_it_was_made_on`.
+- [x] 7.14 State in the guide that cost painting is by volumes only.
+
+## 8. Deferred
+
+- [ ] 8.1 Declare a `navmesh` node automatically for every world with a `NavigationWorld`, so the world's cook identity includes its navmesh without a hand-written node. Needs the world cook to enumerate a world's components; outside this change.
+- [ ] 8.2 Load the cooked `.cynavmesh` into a game world at runtime. Needs the game runtime's navigation bootstrap; outside this change.
+- [ ] 8.3 Observe `main.cpp`'s three-line `draw_navigation` wiring (the frame's `host.view` and `eye_of(host.camera)`) on a device. Everything below that call is covered by `draw_editor_navigation`'s image test; the wiring itself is the same view and eye `record_frame` hands the pick path.
+- [ ] 8.4 Release: push the branch, open the PR with a descriptive body, watch CI and merge. Not done in this session (no push was requested).
