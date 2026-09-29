@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 """Mutation driver for the #29 physics tools.
 
-Each mutation replaces one exact snippet (which must occur once), runs the tests that should notice,
+Each mutation keeps the file compiling (a helper left unused is an error under -Werror, so a call
+is disabled rather than deleted) and replaces one exact snippet (which must occur once), runs the tests that should notice,
 records which failed, restores the file and verifies its md5. A mutation none of its tests notices
 is written as SURVIVED and makes the driver exit non-zero. Output: falsification.txt beside this file.
 
@@ -135,10 +136,12 @@ MUTATIONS = [
      "    return writer.word_u64(static_cast<u64>(value.integer));",
      ctest("unit", "scene_serialization"), None),
     ("c03_constraint_limits_not_drawn", "src/servers/physics/src/debug.cpp",
-     "    draw_constraint_limits(description, frame_a, sink);", "",
+     "    draw_constraint_limits(description, frame_a, sink);",
+     "    if (false) { draw_constraint_limits(description, frame_a, sink); }",
      ctest("unit", "physics_server"), None),
     ("c04_jolt_draws_no_constraint", "src/backends/physics-jolt/src/jolt_server.cpp",
-     "            debug_draw_constraint(record.description, a, b, sink);", "",
+     "            debug_draw_constraint(record.description, a, b, sink);",
+     "            if (false) { debug_draw_constraint(record.description, a, b, sink); }",
      ctest("integration", "physics_jolt"), None),
     ("c05_intent_drops_the_layers", "src/servers/render/src/gizmo.cpp",
      "            intent.physics_overlays = overlays;", "            (void)overlays;",
@@ -164,7 +167,7 @@ MUTATIONS = [
      "    return placement;",
      ctest("unit", "editor_window_physics_overlay"), None),
     ("c12_joint_axis_not_drawn", RUNTIME,
-     "    if (has_axis(description.type)) {", "    if (false) {",
+     "    if (has_axis(description.type)) {", "    if (has_axis(description.type) && false) {",
      ctest("unit", "editor_window_physics_overlay"), None),
 ]
 

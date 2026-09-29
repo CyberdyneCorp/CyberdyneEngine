@@ -20,7 +20,7 @@
 ## 3. Records
 
 - [x] 3.1 Mutation proofs in `evidence/falsification.txt` (`evidence/mutate.py`).
-- [x] 3.2 Panel snapshot under `docs/design/images/editor-physics-*.png`.
+- [x] 3.2 Panel snapshots (`editor-physics-joint.png`, `editor-physics-empty.png`) and the engine-drawn viewport through MCP (`samples/05b-editor-window/mcp_physics.py`: `editor-physics-joint-gizmo.png`, `editor-physics-layers.png`) under `docs/design/images/`.
 - [x] 3.3 `editor/README.md`, `docs/guides/physics.md`, `src/physics/README.md` and `src/gameplay/play/README.md` updated.
 - [x] 3.4 Coverage: the view-mode exemption note updated; the requirements this change adds are listed for mapping on archive.
 - [ ] 3.5 On archive, map the added requirements and rerun `just quality-requirements`.
