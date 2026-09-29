@@ -455,6 +455,15 @@ those replies as the runtime's answers. The [mixer](../docs/design/images/editor
 and the [selected source](../docs/design/images/editor-audio-source-range.png) are rendered offscreen
 by `tests/panel_snapshots.rs` from those same engine replies.
 
+`python3 samples/05b-editor-window/audio_window.py` runs both ends at once, the real runtime and
+`cyberdyne-editor --mcp`, with nothing standing in for either. It authors a bus and a cue, places a
+source, captures the Editor view, previews the source from the camera, and plays and stops the
+world, checking the engine's answer each time. It needs a display and a Vulkan device, and exits 3
+without them. Its captures are the [viewport](../docs/design/images/editor-audio-source-viewport.png)
+with a source's rings, and the [whole window](../docs/design/images/editor-audio-source-window.png)
+with the source's `cy::audio::AudioSource` in the Inspector. On this machine it reported the
+`miniaudio` backend.
+
 ## The dependencies, and the rule they arrived under
 
 Through M5 the workspace depended on nothing but the Rust standard library, and
