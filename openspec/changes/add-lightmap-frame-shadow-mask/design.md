@@ -20,7 +20,19 @@ light — a light shadows one lightmap's mask channel 2 and another's channel 0 
 the lightmap's words. Four channel indices and a 128-bit set are 32 bytes appended to `CyFrameData`
 (592 → 640), which, being appended, leaves every other committed module's offsets where they were.
 
-**A static light past the 128th.** Refused by `write_lightmaps` rather than shaded twice.
+**A static light past the 128th.** Refused by `write_lightmaps` rather than shaded twice. The refusal
+writes nothing: the channel indices and the direct set are built apart from the view, and the view's
+lightmap words are written only after every check has passed. The first version wrote the lightmap's
+control and layout words, then failed partway through the direct set, which left the lightmap switched
+on with only the lights before the failing one excluded — the double counting the refusal exists to
+prevent, for any caller that drew the view anyway. `unit.lightmap_frame` holds a refused view to a
+default one.
+
+The cap is on the frame's light INDEX, not on the number of baked lights, so whether a large level is
+refused depends on where the caller puts its static lights in `AssemblyView::lights`. Nothing orders
+them first today; a level with more than 128 frame lights whose baked lights come late is refused for
+that frame. That is documented rather than fixed here: the fix is an ordering rule in the assembly (or
+a per-light flag in a wider light record), which is a change of its own.
 
 ## The frame
 
@@ -35,7 +47,14 @@ loop then asks `bakedLightFactor(index, mask)` of every light it shades:
 
 A directional light takes `min(realtime visibility, factor)`: the baked mask is the shadow of the
 static world, the shadow map (when one is bound) the shadow of everything, and the darker of the two
-counts an occluder both see once. A punctual light's sample is scaled by the factor before shading.
+counts an occluder both see once. `render.lightmaps` (m) holds that on the device. It renders the
+sun's real-time map through the frame's own shadow pass, hangs a movable box that no bake contains
+over the lit floor, and draws three frames of one scene: through the mask alone, through the map
+alone (the frame's sun matched to no baked light), and through both. Shading is monotonic in
+visibility and the frames differ in nothing else, so the frame through both must be, channel for
+channel, the darker of the other two. It is, at every pixel. A shader that ignored the map on a
+lightmapped surface leaves the movable box's shadow out (1 117 pixels the map alone darkens). One that
+multiplied the two terms is darker still where both are partial. A punctual light's sample is scaled by the factor before shading.
 Its intensity and colour stay the frame's, which is what makes a stationary light dimmed at run time
 keep its baked shadow.
 
@@ -46,7 +65,20 @@ mask channel and no baked light, so even an evaluated factor would be exactly on
 (c) holds the Metal frame to a reference drawn on the same machine by main's frame shaders.
 
 **Cost.** On a lightmapped pixel, one more texture read (the mask) and, per light, a bit test and four
-compares; nothing on any other pixel. It is not measured here: no case times the forward pass.
+compares; nothing on any other pixel. The planes and the mask are now sampled with the implicit
+level of detail over a mip chain. `render.lightmaps` (n) measures the corner, 480x270, three ways, one
+frame of each in turn over 96 frames: no lightmap; the lightmap with a static sun, so no mask; and the
+lightmap with a stationary sun through its mask. On the M2 Max the medians were 3 352.6, 3 340.4 and
+3 354.0 µs, with interquartile ranges of about 90 µs. The lightmap moved the median by −12.2 µs and
+its mask by +13.6 µs. At this size the change's cost is below what the measurement resolves.
+
+These are HOST-CLOCK times, from the start of a frame's recording to the device going idle, and not
+GPU times. The RHI does offer timestamp queries, but `rhi-metal`'s `write_timestamp` samples nothing
+on Apple silicon. The M2 Max supports counter sampling only at stage boundaries, and the backend
+opens an empty blit encoder to sample at, which Metal does not sample. Its own test passes on zeros.
+A plain-Metal probe also shows that a separate sampling encoder does not bracket the work encoded
+before it. That is #65. A GPU-only figure, and one at a production resolution, is still owed. The
+Vulkan leg prints the same measurement when it runs on the RTX machine.
 
 ## The mip chain
 
@@ -114,7 +146,9 @@ editor, not drawn by it): `DebugViewMode::LightmapDensity`, which `lightmaps::wr
 turns into the frame's `lightmap_debug` words. The frame measures the density rather than looking it
 up: texels per metre are the screen-space derivatives of the atlas coordinate over those of the
 position, so what it draws is what the frame samples. The colour is divided by the frame's exposure,
-so the view reads the same under any sun.
+so the view reads the same under any sun. `render.lightmaps` (j) holds the three colours: the back
+wall green at the level's target, and blue against four times it; the near cube red; the far cube
+grey. It also holds the view unchanged, to the byte, two stops brighter.
 
 ## Metal legs, and the reference
 

@@ -19,6 +19,18 @@ byte-identical to the frame drawn before the shadow mask reached it.
 - **AND** when the frame's light is not matched to the bake's, the same shadowed pixels SHALL be lit
   and SHALL change with the intensity
 
+#### Scenario: A stationary light takes the darker of its baked and real-time shadows
+- **WHEN** a level is baked with a `Stationary` light and drawn with that light's real-time shadow map
+  bound, and a movable object the bake never saw casts a shadow onto a lightmapped surface
+- **THEN** the movable object's shadow SHALL darken the lightmapped surface
+- **AND** every pixel SHALL be, channel for channel, the darker of the same frame drawn through the
+  mask alone and the same frame drawn through the shadow map alone
+
+#### Scenario: A lightmap the frame cannot describe is refused and changes nothing
+- **WHEN** a light whose direct term the lightmap holds sits past the lights the frame can name
+- **THEN** the lightmap SHALL be refused for that frame
+- **AND** the frame's view data SHALL be left exactly as it was, with no lightmap switched on
+
 #### Scenario: A static light is not counted twice
 - **WHEN** a level is baked with a `Static` light and drawn with and without that light in the frame
 - **THEN** every lightmapped pixel SHALL be the same in both frames

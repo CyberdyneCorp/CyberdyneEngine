@@ -16,3 +16,12 @@
 - [x] Keep every changed function within cognitive complexity 15 (`grow_ring`, and the device suite's `before_upload`, `attach` and `floor_shadow` split), and compile every changed translation unit with GCC 16 and the build's `-Werror` flags.
 - [x] Move the shadow-mask-in-the-frame, mip-chain and editor exemptions in `requirements-coverage.toml` to the new cases, keeping what is left exempt by name.
 - [x] Update the lightmaps, lightmap bake, pipeline and editor READMEs, and validate this change with `--strict`.
+
+Review follow-ups:
+
+- [x] Hold "the darker of that channel and any real-time shadow" to the device: `render.lightmaps` (m) renders and binds the sun's real-time shadow map, hangs a movable occluder no bake sees over the lit floor, and checks the frame through both shadows against the frames through each alone, channel for channel.
+- [x] Make `write_lightmaps` write nothing when it refuses: build the light words apart from the view and write them with the rest only when every check holds; `unit.lightmap_frame` checks the refused view against a default one.
+- [x] Hold the density view's under-target colour and its exposure compensation in `render.lightmaps` (j).
+- [x] Measure what the lightmap costs a frame, `render.lightmaps` (n): host-clock frame time, because `rhi-metal`'s timestamps sample nothing on Apple silicon (#65).
+- [x] Regenerate `src/rendering/selection`'s committed shaders, which import `cy.frame`, and compile their MSL with Apple's compiler.
+- [x] Declare `cy::rendering-lightmaps`' dependency on `cy::servers-render`, which its public header includes.

@@ -44,7 +44,8 @@ irradiance (Rgba16Sfloat), 1 280 KiB directional and 1 920 KiB SH L1, and the su
 
 1. Bake (or load a cooked `lightmap`, `decode_lightmap_asset`) and `LightmapTextures::upload` it
    outside the device frame: every plane and the shadow mask, every mip level. An unchanged
-   lightmap is not copied again.
+   lightmap is not copied again, but finding it unchanged hashes every texel, so call it when a
+   lightmap was baked or loaded rather than every frame.
 2. Put `textures.slot(plane, n)` for each plane — and `textures.shadow_mask_slot(m)` when
    `has_shadow_mask()` — in the frame's set 0 texture table, and call
    `write_lightmaps(slots, lightmap, mode, frame_light_ids, upload.view)` before the frame's upload,
@@ -78,6 +79,12 @@ lightmapped surface `cy/frame.slang` reads the mask once, at the ambient term's 
 - a **static** light's direct term is not shaded at all: it is in the texels;
 - every other light is shaded as it was.
 
+A lightmap the frame cannot describe is refused, and the refusal writes nothing. The frame can name
+a static light only among its first 128 lights (`pipeline::kMaxLightmapDirectLights`), and one past
+that fails `write_lightmaps` with `InvalidArgument`. The light words are built apart from the view,
+so a refused view still has no lightmap switched on over half its baked lights. Whether a level
+reaches that cap depends on where its caller puts the static lights in `AssemblyView::lights`.
+
 `render.lightmaps` holds it on the device, on the M2 Max's Metal leg:
 
 | Case | Measured on Metal |
@@ -85,11 +92,17 @@ lightmapped surface `cy/frame.slang` reads the mask once, at the ambient term's 
 | (g) the stationary sun, dimmed to 35% at run time | the 103 floor pixels deep in its baked shadow move by 0, the lit floor by −169; unmatched to the bake, the same shadowed pixels are lit and move by −171 |
 | (h) the static sun | adds nothing to any of 119 117 lightmapped pixels (worst 0), still lights the unlightmapped cube (worst 139), and the texels alone light the floor 324 brighter than an indirect-only bake |
 | (k) a stationary point light, the mask's second channel, through the cluster walk | its 899 shadowed floor pixels move by 0 dimmed to 30%, the lit floor by −56 |
+| (m) the stationary sun with its real-time shadow map bound, and a movable box no bake saw hanging over the floor | the frame through both shadows is, channel for channel, the darker of the frame through the mask alone and the frame through the map alone, at every pixel (worst 0); the map alone darkens 1 117 pixels past the mask, the box's shadow among them |
 | (c) no lightmap | byte-identical to `references/lightmaps_absent_metal.png`, the corner drawn by main's frame shaders on the same machine |
 
 | Stationary sun, baked shadow | The same frame, no baked shadow | Dimmed to 35% at run time |
 |---|---|---|
 | ![Mask](../../../docs/design/images/lightmaps-stationary-mask-metal.png) | ![No mask](../../../docs/design/images/lightmaps-stationary-no-mask-metal.png) | ![Dimmed](../../../docs/design/images/lightmaps-stationary-dimmed-metal.png) |
+
+(m), below, shows the baked mask and the real-time map together. The floating box has no lightmap
+and is in no bake, and only the map sees its shadow on the lightmapped floor.
+
+![The mask and the real-time map](../../../docs/design/images/lightmaps-stationary-realtime-metal.png)
 
 ## The mip chain
 
@@ -113,9 +126,29 @@ and every other surface flat grey. The density is measured, not looked up: texel
 screen-space derivatives of the atlas coordinate over those of the position. It is the engine half
 of the editor's `viewport.view-mode.lightmap-density`. (j): the back wall, baked at the level's
 density, is green (rgb 23 105 33); the near cube, at four times it, red (115 27 18); the
-unlightmapped cube grey (39 39 39).
+unlightmapped cube grey (39 39 39). The same wall measured against four times the target is blue
+(18 41 114). The colour is divided by the frame's exposure: two stops brighter, the view is the same
+to the byte.
 
 ![The density view](../../../docs/design/images/lightmaps-density-metal.png)
+
+## What it costs
+
+`render.lightmaps` (n) times the corner (480x270) three ways, one frame of each in turn over 96
+frames. On the M2 Max the median frame times were:
+
+| Configuration | Median frame time |
+|---|---|
+| No lightmap | 3 352.6 µs |
+| Lightmap, static sun, no mask | 3 340.4 µs |
+| Lightmap, stationary sun through its mask | 3 354.0 µs |
+
+The interquartile ranges are about 90 µs. At this size the lightmap's cost is below what the
+measurement resolves.
+
+These are host-clock times, measured from the start of a frame's recording until the device goes
+idle. They are not GPU times: `rhi-metal`'s timestamps sample nothing on Apple silicon (#65). A
+GPU-only figure at a production resolution is still owed.
 
 ## Two legs
 

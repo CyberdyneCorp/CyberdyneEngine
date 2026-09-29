@@ -20,6 +20,8 @@ as an operation outside every document rather than as an undoable command.
 - **WHEN** the lightmap density view is requested
 - **THEN** the engine's frame SHALL draw a surface at the level's density green, one at several times
   it red, and a surface with no lightmap grey
+- **AND** the same surface measured against a target several times its density SHALL be drawn blue
+- **AND** the view's colours SHALL be the same at any exposure
 
 #### Scenario: The lighting editor is a scaffolded tool whose bake is its declared operation
 - **WHEN** the editor registers its specialised editors
