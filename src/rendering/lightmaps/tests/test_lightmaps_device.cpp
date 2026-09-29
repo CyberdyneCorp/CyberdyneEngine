@@ -83,6 +83,7 @@ namespace {
 
 constexpr u32 kLightmapSlot = 116;  // three consecutive slots: 116, 117, 118
 constexpr u32 kVolumeSlot = 121;
+constexpr u32 kShadowMaskSlot = 119;
 constexpr f32 kFloorTop = -1.9F + 0.125F;
 constexpr f32 kBackWall = -9.0F;
 constexpr f32 kRedWall = -2.4F;
@@ -282,10 +283,13 @@ void place_box(u32 which, Vec3& centre, f32& half, void*) noexcept {
 constexpr Vec3 kFaceNormals[6] = {Vec3{1, 0, 0},  Vec3{-1, 0, 0}, Vec3{0, 1, 0},
                                   Vec3{0, -1, 0}, Vec3{0, 0, 1},  Vec3{0, 0, -1}};
 /// Each face's cell leaves this share of the cell on every side as chart padding. With the
-/// resolution scales `bake_corner` gives, it is at least one and a half texels on every box, which
-/// is what keeps a bilinear tap at a face's edge on its own face: at 0.06 the small cubes' cells
-/// were four texels wide with a quarter-texel of padding, and their edges read the next face.
-constexpr f32 kCellPadding = 0.1F;
+/// resolution scales `bake_corner` gives, two cells are at least `required_chart_gap` — four texels,
+/// two of the one mip level a 256 page protects — apart on every box, which is what keeps a
+/// bilinear tap at a face's edge on its own face at every level: at 0.06 the small cubes' cells
+/// were four texels wide with a quarter-texel of padding, and their edges read the next face; at
+/// 0.1 five boxes were short of the mip level's gap, and the directional encoding's level-1 taps at
+/// a far cube's edge read the next face's normal (two 8-bit steps in case (e)).
+constexpr f32 kCellPadding = 0.18F;
 
 [[nodiscard]] Vec3 face_tangent(Vec3 normal) noexcept {
     return std::fabs(normal.y) > 0.5F ? Vec3{1.0F, 0.0F, 0.0F} : Vec3{0.0F, 1.0F, 0.0F};
@@ -426,13 +430,25 @@ struct CornerBake {
     }
     std::fprintf(stderr,
                  "lightmaps: %s bake of the corner in %.2f s: %u objects, %u page(s) of %u, %u "
-                 "texels traced, %u dilated, %llu rays, %.1f KiB on the device\n",
+                 "texels traced, %u dilated, %llu rays, %.1f KiB on the device; %zu object(s) "
+                 "with charts closer than %u texels\n",
                  bake::lightmap_mode_name(mode), out->seconds, out->report.objects,
                  out->report.pages, out->lightmap.page_size, out->report.texels_covered,
                  out->report.texels_dilated, static_cast<unsigned long long>(out->report.rays),
-                 static_cast<double>(out->lightmap.device_bytes()) / 1024.0);
+                 static_cast<double>(out->lightmap.device_bytes()) / 1024.0,
+                 out->report.padding_short.size(), out->report.required_chart_gap);
+    // The mip chain's contract: every object's charts are as far apart as its levels need.
+    CY_CHECK(out->report.padding_short.empty());
     slot = std::move(out);
     return slot.get();
+}
+
+[[nodiscard]] bool copy_texels(const bake::LightmapTexels& from, bake::LightmapTexels& to) {
+    to.width = from.width;
+    to.height = from.height;
+    to.planes = from.planes;
+    to.texels.clear();
+    return to.texels.append(from.texels.span()).has_value();
 }
 
 // --- The run ------------------------------------------------------------------------------------
@@ -539,12 +555,16 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     if (!corner->attach) {
         return ok();
     }
-    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 1];
+    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 2];
     u32 count = 0;
-    rhi::BindlessIndex lightmap_slots[lightmaps::kMaxPlanes] = {};
+    lightmaps::LightmapSlots lightmap_slots;
     for (u32 plane = 0; plane < corner->textures->planes(); ++plane) {
-        lightmap_slots[plane] = kLightmapSlot + plane;
+        lightmap_slots.planes[plane] = kLightmapSlot + plane;
         slots[count++] = corner->textures->slot(plane, kLightmapSlot + plane);
+    }
+    if (corner->textures->has_shadow_mask()) {
+        lightmap_slots.shadow_mask = kShadowMaskSlot;
+        slots[count++] = corner->textures->shadow_mask_slot(kShadowMaskSlot);
     }
     if (corner->options.volume) {
         slots[count++] = corner->volume_texture->slot(kVolumeSlot);
@@ -560,9 +580,10 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     }
     const gi::GiMode mode =
         corner->options.lightmap == Lightmap::ProbeMode ? gi::GiMode::Probe : gi::GiMode::Baked;
+    const u64 frame_lights[1] = {corner->sun.stable_id};
     if (Status written = lightmaps::write_lightmaps(
-            Span<const rhi::BindlessIndex>(lightmap_slots, corner->textures->planes()),
-            *corner->lightmap, mode, upload.view);
+            lightmap_slots, *corner->lightmap, mode,
+            Span<const u64>(frame_lights, corner->options.frame_sun ? 1U : 0U), upload.view);
         !written) {
         return written;
     }
@@ -673,6 +694,36 @@ private:
                      .has_value() ||
                 !first_plane_->addresses.append(baked->lightmap.addresses.span()).has_value()) {
                 return false;
+            }
+            // The same shadow mask, every level, and the same lights: the case compares the
+            // encodings, so everything else is the directional bake's own.
+            if (!copy_texels(baked->lightmap.shadow_mask, first_plane_->shadow_mask) ||
+                !first_plane_->shadow_lights.append(baked->lightmap.shadow_lights.span())
+                     .has_value() ||
+                !first_plane_->direct_lights.append(baked->lightmap.direct_lights.span())
+                     .has_value()) {
+                return false;
+            }
+            for (u32 level = 0; level < baked->lightmap.mip_levels; ++level) {
+                if (!copy_texels(baked->lightmap.mip_shadow_mask[level],
+                                 first_plane_->mip_shadow_mask[level])) {
+                    return false;
+                }
+            }
+            // And the first plane of every level of the chain, which the frame minifies into.
+            first_plane_->mip_levels = baked->lightmap.mip_levels;
+            for (u32 level = 0; level < baked->lightmap.mip_levels; ++level) {
+                const bake::LightmapTexels& mip = baked->lightmap.mip_texels[level];
+                bake::LightmapTexels& out = first_plane_->mip_texels[level];
+                out.width = mip.width;
+                out.height = mip.height;
+                out.planes = 1;
+                if (!out.texels
+                         .append(Span<const Vec4>(mip.texels.data(),
+                                                  usize{mip.width} * mip.height))
+                         .has_value()) {
+                    return false;
+                }
             }
             corner_.lightmap = first_plane_.get();
         }
