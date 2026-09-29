@@ -417,6 +417,7 @@ pub struct SpecialisedEditors {
     lighting: lighting::LightingForm,
     active: Option<Domain>,
     catalogues: BTreeMap<Domain, Catalogue>,
+    audio_vocabulary: Option<cy_editor_services::audio::AudioVocabulary>,
 }
 
 impl SpecialisedEditors {
@@ -465,6 +466,7 @@ impl SpecialisedEditors {
             lighting: lighting::LightingForm::default(),
             active: None,
             catalogues,
+            audio_vocabulary: None,
         })
     }
 
@@ -776,6 +778,19 @@ impl SpecialisedEditors {
                 domain,
                 Domain::Terrain | Domain::LightingAndLightmapBaking | Domain::NavigationBaking
             )
+            || (domain == Domain::AudioBusesAndMixing && self.audio_vocabulary.is_some())
+    }
+
+    /// Install the audio vocabulary the engine's `audio.capabilities.get` answered: its effect
+    /// kinds and attenuation models. Until one arrives the mixer editor refuses, naming `audio`,
+    /// because a mixer whose effects the editor made up is one the engine may not have. Issue #29.
+    pub fn install_audio_vocabulary(&mut self, vocabulary: cy_editor_services::audio::AudioVocabulary) {
+        self.audio_vocabulary = Some(vocabulary);
+    }
+
+    /// The engine's audio vocabulary, once installed.
+    pub fn audio_vocabulary(&self) -> Option<&cy_editor_services::audio::AudioVocabulary> {
+        self.audio_vocabulary.as_ref()
     }
 
     /// Every editor this tree can open, in the requirement's order.
@@ -924,6 +939,26 @@ mod tests {
                 domain.spec_term()
             );
         }
+    }
+
+    #[test]
+    fn the_audio_mixer_opens_only_on_the_engines_vocabulary() {
+        let mut host = host();
+        let refusal = host
+            .open(Domain::AudioBusesAndMixing)
+            .expect_err("no engine has answered for its effects yet");
+        assert!(refusal.to_string().contains("`audio`"), "{refusal}");
+        let fixture = repository().join("src/editor_backend/tests/data/audio_capabilities_v1.wire");
+        let vocabulary = cy_editor_services::audio::AudioVocabulary::decode(
+            &std::fs::read(fixture).expect("the engine's vocabulary fixture"),
+        )
+        .expect("the engine's vocabulary decodes");
+        host.install_audio_vocabulary(vocabulary);
+        let session = host
+            .open(Domain::AudioBusesAndMixing)
+            .expect("the mixer opens on the engine's vocabulary");
+        assert!(session.graph.is_none() && session.timeline.is_none() && session.painting.is_none());
+        assert!(host.openable().contains(&Domain::AudioBusesAndMixing));
     }
 
     #[test]

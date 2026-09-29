@@ -590,6 +590,36 @@ pub trait ProjectHost {
     fn vfx_preview_status(&self) -> Outcome {
         Outcome::new("VFX preview unavailable")
     }
+
+    /// Save an audio asset (`.cymixer`, `.cycue`) in one undoable project transaction. A saved
+    /// mixer is also sent to the engine, so the graph it mixes is the one on disk.
+    fn audio_asset_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "save an audio asset",
+            "this host has no project to save it in",
+        ))
+    }
+
+    /// Send one `audio.*` operation to the engine. The request's identity, or `0` when it was
+    /// queued behind one still in flight.
+    fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {
+        let _ = (operation, payload);
+        Err(cy_editor_core::problem::Problem::new(
+            "use the engine's audio",
+            "this host has no engine audio service",
+        ))
+    }
+
+    /// The engine's last audio state, what is pending, and the last refusal.
+    fn audio_status(&self) -> Outcome {
+        Outcome::new("Engine audio unavailable")
+    }
+
+    /// Where a spatial preview is heard from: the focused viewport's camera position and forward.
+    fn audio_listener(&self) -> ([f32; 3], [f32; 3]) {
+        ([0.0; 3], [0.0, 0.0, -1.0])
+    }
 }
 
 /// Result of a fingerprint-guarded source write.

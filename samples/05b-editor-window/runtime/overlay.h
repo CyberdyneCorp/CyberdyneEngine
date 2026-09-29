@@ -76,4 +76,18 @@ void draw_camera_marker(const Canvas& canvas, f32 x, f32 y) noexcept;
 void draw_thin_line(const Canvas& canvas, f32 from_x, f32 from_y, f32 to_x, f32 to_y,
                     u32 colour) noexcept;
 
+/// How many pixels a sphere of `radius` metres centred `offset` from the camera spans on screen,
+/// measured along the camera's `right` so the ring is the sphere's silhouette at its centre rather
+/// than a projection that stretches toward the frame's edge. Zero when the centre is behind the
+/// camera. `offset` is camera-relative, as every position the renderer draws is.
+[[nodiscard]] f32 projected_radius(const render::View& view, Vec3 offset, Vec3 right,
+                                   f32 radius) noexcept;
+
+/// Draw an authored audio source: a speaker, a SOLID ring where its attenuation begins
+/// (`min_distance`) and a DASHED ring where it falls silent (`max_distance`). The radii are screen
+/// pixels the caller projected with the frame's own view; a radius of zero or less is not drawn.
+/// Solid against dashed rather than two colours, because colour is never the sole encoding.
+void draw_audio_source_marker(const Canvas& canvas, f32 x, f32 y, f32 inner_radius,
+                              f32 outer_radius) noexcept;
+
 }  // namespace cy::sample::editor_window

@@ -61,6 +61,9 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     crate::joints::register(registry)?;
     // Shared painting gestures committed as stable terrain layers and non-destructive modifiers.
     crate::terrain::register(registry)?;
+    // The mixer, cues and audio sources, and the engine previews over them. See
+    // `crate::audio_commands`.
+    crate::audio_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
@@ -543,7 +546,13 @@ fn apply_sources(
         })
         .collect();
     let vfx_documents = vfx_sources(transaction, forward);
-    if wanted.is_empty() && moves.is_empty() && graphs.is_empty() && vfx_documents.is_empty() {
+    let audio_assets = audio_sources(transaction, forward);
+    if wanted.is_empty()
+        && moves.is_empty()
+        && graphs.is_empty()
+        && vfx_documents.is_empty()
+        && audio_assets.is_empty()
+    {
         return;
     }
     let Some(project) = context.project() else {
@@ -569,6 +578,37 @@ fn apply_sources(
     for (reference, source) in vfx_documents {
         let _ = project.put_source(&reference, source.as_deref());
     }
+    for (reference, source) in audio_assets {
+        let _ = project.put_source(&reference, source.as_deref());
+        // The engine mixes what the file now says. A mixer undone out of existence leaves the
+        // engine its Master-only graph, which is what a project without one plays through.
+        if reference.ends_with(".cymixer") {
+            let restored = source.unwrap_or_else(|| crate::audio::Mixer::default().encode());
+            let _ = project.audio_request(crate::audio::MIXER_APPLY, restored.into_bytes());
+        }
+    }
+}
+
+fn audio_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+) -> Vec<(String, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => Some((
+                kind.strip_prefix(crate::audio::DOMAIN_PREFIX)?.to_owned(),
+                crate::project::decode_source(if forward { after } else { before }),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 fn vfx_sources(

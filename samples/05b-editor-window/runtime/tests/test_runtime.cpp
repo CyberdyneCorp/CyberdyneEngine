@@ -291,3 +291,22 @@ CY_TEST_CASE("a null canvas is a no-op rather than a crash") {
     draw_selection_marker(nothing, 1.0F, 1.0F, 4.0F);
     CY_CHECK(nothing.pixels == nullptr);
 }
+
+CY_TEST_CASE("an audio source's radius is projected to the pixels the frame's view gives it") {
+    // #29: the rings the viewport draws are the sphere the engine attenuates over. A 90 degree
+    // view 200 pixels tall puts one metre at ten metres on ten pixels; twice the radius is twice
+    // the ring; and a source behind the camera has no ring at all.
+    cy::render::View view;
+    view.desc.viewport = cy::render::ViewportRect{0, 0, 200, 200};
+    view.desc.projection.kind = cy::render::ProjectionKind::Perspective;
+    view.desc.projection.fov_y_radians = 1.57079633F;
+    view.desc.projection.near_plane = 0.1F;
+    view.desc.projection.far_plane = 0.0F;
+    view.refresh();
+    const cy::Vec3 right{1.0F, 0.0F, 0.0F};
+    const cy::Vec3 ahead{0.0F, 0.0F, -10.0F};
+    CY_CHECK_NEAR(projected_radius(view, ahead, right, 1.0F), 10.0F, 0.05F);
+    CY_CHECK_NEAR(projected_radius(view, ahead, right, 2.0F), 20.0F, 0.1F);
+    CY_CHECK_NEAR(projected_radius(view, ahead, right * 3.0F, 1.0F), 10.0F, 0.05F);
+    CY_CHECK_EQ(projected_radius(view, cy::Vec3{0.0F, 0.0F, 10.0F}, right, 1.0F), 0.0F);
+}

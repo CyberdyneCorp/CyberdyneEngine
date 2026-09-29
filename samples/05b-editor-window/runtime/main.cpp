@@ -92,12 +92,14 @@
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "scene_vfx_runtime.h"
 #endif
+#include "scene_audio.h"
 #include "script_runtime.h"
 #include "world_view.h"
 
 #include "renderer.h"
 #include "scene.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -264,6 +266,7 @@ struct PickFrame {
     std::vector<render::DrawItem> draws;
     std::vector<LightMarker> lights;
     std::vector<CameraMarker> cameras;
+    std::vector<editor::EmitterMarker> emitters;
 };
 
 class HostedMaterialPreview final : public editor::MaterialAuthoringRuntime {
@@ -332,6 +335,11 @@ struct Host {
     /// over M3's ring would be a simulation of a fixture, which is what this milestone ends.
     gameplay::PlaySession* play = nullptr;
     ScriptRuntime* scripts = nullptr;
+    /// #29: the mixer editor, cue preview and Play's audio, over one server. Never null in a
+    /// running host; its backend is null when no device opened, which every reply names.
+    SceneAudio* audio = nullptr;
+    /// When the previous frame's audio was pumped, so a frame mixes exactly the time it covered.
+    f32 audio_time = -1.0F;
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
     /// session that created one would create and destroy a whole backend per press of play.
@@ -572,6 +580,11 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     for (const CameraMarker& camera : frame.cameras) {
         if (hit(camera.identity, camera.position)) {
             return camera.identity;
+        }
+    }
+    for (const editor::EmitterMarker& source : frame.emitters) {
+        if (hit(source.identity, source.position)) {
+            return source.identity;
         }
     }
     return ~u64{0};
@@ -854,6 +867,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                         gameplay::play_mode_name(host.play_mode), resumed.error().message);
                     return;
                 }
+                host.audio->pause_play(false);
                 (void)std::snprintf(detail, sizeof(detail), "resumed");
                 break;
             }
@@ -883,25 +897,39 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                                 started.error().message);
                 return;
             }
+            // AUDIO DURING PLAY (#14's open task). After the scripts, so a behaviour's first
+            // `Audio.play` in its start finds the project's cues; a source that cannot play ends
+            // Play with the reason rather than playing a silent world.
+            if (Status sounding = host.audio->start_play(host.view_world->world()); !sounding) {
+                host.scripts->stop();
+                (void)host.play->stop();
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
+                                                sounding.error().message);
+                return;
+            }
             host.play_sessions += 1;
             host.play_bodies = host.play->report().bodies;
             (void)std::snprintf(detail, sizeof(detail),
                                 "%u entities, %u bodies, %u colliders; "
-                                "%u Swift behaviour(s); audio unavailable in this host",
+                                "%u Swift behaviour(s); audio: %u source(s) on %s",
                                 host.play->report().entities, host.play->report().bodies,
-                                host.play->report().colliders, host.scripts->count());
+                                host.play->report().colliders, host.scripts->count(),
+                                host.audio->play_voices(), host.audio->backend());
             break;
         }
         case gameplay::PlayState::Paused:
             if (Status paused = host.play->pause(); !paused) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", paused.error().message);
             } else {
+                host.audio->pause_play(true);
                 (void)std::snprintf(detail, sizeof(detail), "paused at tick %llu",
                                     static_cast<unsigned long long>(host.play->report().ticks));
             }
             break;
         case gameplay::PlayState::Editing: {
             const bool was_playing = host.play->state() != gameplay::PlayState::Editing;
+            host.audio->stop_play();
             host.scripts->stop();
             if (Status stopped = host.play->stop(); !stopped) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
@@ -1179,6 +1207,24 @@ void draw_physics(Host& host, const Canvas& canvas) noexcept {
     host.physics_segments += sink.drawn();
 }
 
+/// #29's spatial audio preview: every authored source, with its attenuation radii.
+void draw_audio_sources(Host& host, const Canvas& canvas) noexcept {
+    for (const editor::EmitterMarker& source : host.audio->markers(host.view_world->world())) {
+        Vec2 marker;
+        if (!source.enabled || !marker_pixel(host, source.position, marker)) {
+            continue;
+        }
+        const Vec3 eye{static_cast<f32>(host.camera.position[0]),
+                       static_cast<f32>(host.camera.position[1]),
+                       static_cast<f32>(host.camera.position[2])};
+        const Vec3 right = cross(host.camera.forward, host.camera.up);
+        draw_audio_source_marker(
+            canvas, marker.x, marker.y,
+            projected_radius(host.view, source.position - eye, right, source.min_distance),
+            projected_radius(host.view, source.position - eye, right, source.max_distance));
+    }
+}
+
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     draw_navigation(host, canvas);
     draw_physics(host, canvas);
@@ -1200,6 +1246,7 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
                 draw_actor_direction(host, canvas, camera.position, camera.forward, marker, true);
             }
         }
+        draw_audio_sources(host, canvas);
     }
     if (host.game_camera != ~u64{0} || host.anchored == WorldView::kNoObject ||
         host.layout.empty()) {
@@ -1321,6 +1368,10 @@ void remember_navigation_frame(Host& host, u64 frame) {
             (void)host.view_world->present(*host.scene);
         }
     }
+    // The mix follows the frame: what it covered, heard from the camera it was rendered from.
+    const f32 audio_seconds = host.audio_time < 0.0F ? 0.0F : time_seconds - host.audio_time;
+    host.audio_time = time_seconds;
+    host.audio->frame(std::clamp(audio_seconds, 0.0F, 0.25F), host.camera);
 
     Span<const u32> texels;
     if (!render_frame_texels(host, time_seconds, texels)) {
@@ -1382,6 +1433,7 @@ void remember_navigation_frame(Host& host, u64 frame) {
         const auto cameras = host.authored_frame->camera_markers();
         pick_frame.lights.assign(lights.begin(), lights.end());
         pick_frame.cameras.assign(cameras.begin(), cameras.end());
+        pick_frame.emitters = host.audio->markers(host.view_world->world());
     }
     host.pick_frames.push_back(std::move(pick_frame));
     if (host.pick_frames.size() > 64) {
@@ -1729,8 +1781,17 @@ int main(int argc, char** argv) {
         PlaySetup play;
         start_play_session(allocator, options, view_world, play);
 
+        // Before the scripts that borrow its Swift adapter, so it is destroyed after them.
+        SceneAudio audio(allocator, options.project);
+        if (Status sounding = audio.initialize(); !sounding) {
+            report("audio", sounding.error());
+            return 1;
+        }
+        std::fprintf(stdout, "%s: audio    backend=%s\n", kTag, audio.backend());
+
         Host host;
         ScriptRuntime scripts(allocator, options.project);
+        scripts.bind_audio(&audio.authoring()->adapter());
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
         scripts.bind_scene_vfx(view_world.loaded() ? &scene_vfx : nullptr);
 #endif
@@ -1751,6 +1812,7 @@ int main(int argc, char** argv) {
         AuthoredNavigationSource nav_source(allocator, options.project);
         nav_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
         editor::NavigationService navigation_service(allocator, &nav_source);
+        editor_service.set_audio(audio.authoring());
         editor::CompositeEditorService composite_service(allocator);
         CyServiceSession service_session =
             open_services(composite_service, editor_service, navigation_service);
@@ -1764,6 +1826,7 @@ int main(int argc, char** argv) {
         host.view_world = &view_world;
         host.play = play.session.get();
         host.scripts = &scripts;
+        host.audio = &audio;
         host.physics = play.server;
         host.renderer = &renderer;
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME

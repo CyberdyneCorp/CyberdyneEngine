@@ -2,6 +2,8 @@
 
 #include "overlay.h"
 
+#include <cy/servers/render/picking.h>
+
 #include <cmath>
 #include <utility>
 
@@ -141,6 +143,28 @@ void square(const Canvas& canvas, f32 centre_x, f32 centre_y, f32 half, u32 colo
         for (i32 x = first_x; x <= last_x; ++x) {
             blend(canvas, x, y, colour, 1.0F);
         }
+    }
+}
+
+/// A circle walked along its circumference rather than filled from its bounding box, so a source
+/// whose silence radius spans the frame costs its perimeter and not its area. `dash` > 0 draws
+/// that many pixels on, then as many off.
+void perimeter(const Canvas& canvas, f32 centre_x, f32 centre_y, f32 radius, f32 thickness,
+               u32 colour, f32 dash) noexcept {
+    constexpr f32 kLargest = 8192.0F;
+    if (!(radius > 0.0F) || radius > kLargest) {
+        return;
+    }
+    const f32 circumference = 2.0F * 3.14159265F * radius;
+    const auto steps = static_cast<i32>(circumference * 2.0F) + 1;
+    for (i32 step = 0; step < steps; ++step) {
+        const f32 along = static_cast<f32>(step) * 0.5F;
+        if (dash > 0.0F && std::fmod(along, dash * 2.0F) >= dash) {
+            continue;
+        }
+        const f32 angle = along / radius;
+        disc(canvas, centre_x + (radius * std::cos(angle)), centre_y + (radius * std::sin(angle)),
+             thickness * 0.5F, colour);
     }
 }
 
@@ -289,6 +313,34 @@ void draw_camera_marker(const Canvas& canvas, f32 x, f32 y) noexcept {
 void draw_thin_line(const Canvas& canvas, f32 from_x, f32 from_y, f32 to_x, f32 to_y,
                     u32 colour) noexcept {
     line(canvas, from_x, from_y, to_x, to_y, 0.6F, colour);
+}
+
+f32 projected_radius(const render::View& view, Vec3 offset, Vec3 right, f32 radius) noexcept {
+    Vec2 centre;
+    Vec2 edge;
+    if (!render::project_to_pixel(view, offset, centre) ||
+        !render::project_to_pixel(view, offset + (normalize(right) * radius), edge)) {
+        return 0.0F;
+    }
+    return length(Vec2{edge.x - centre.x, edge.y - centre.y});
+}
+
+void draw_audio_source_marker(const Canvas& canvas, f32 x, f32 y, f32 inner_radius,
+                              f32 outer_radius) noexcept {
+    if (canvas.pixels == nullptr) {
+        return;
+    }
+    // Teal: not the light's yellow, not the camera's blue, not an axis — a source is none of them.
+    constexpr u32 colour = 0x0056'D6C2U;
+    perimeter(canvas, x, y, inner_radius, 1.2F, colour, 0.0F);
+    perimeter(canvas, x, y, outer_radius, 1.2F, colour, 4.0F);
+    // The speaker: a body and a cone, then one wave.
+    square(canvas, x - 3.0F, y, 2.0F, colour);
+    line(canvas, x - 1.0F, y - 2.0F, x + 3.0F, y - 5.0F, 1.0F, colour);
+    line(canvas, x - 1.0F, y + 2.0F, x + 3.0F, y + 5.0F, 1.0F, colour);
+    line(canvas, x + 3.0F, y - 5.0F, x + 3.0F, y + 5.0F, 1.0F, colour);
+    line(canvas, x + 6.0F, y - 3.0F, x + 7.0F, y, 0.8F, colour);
+    line(canvas, x + 7.0F, y, x + 6.0F, y + 3.0F, 0.8F, colour);
 }
 
 }  // namespace cy::sample::editor_window

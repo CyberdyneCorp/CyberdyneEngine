@@ -24,7 +24,7 @@
 - [x] 3.3c Answer script-module reload requests in the hosted runtime and apply built Swift generations during Play; expose status and color Swift source in the workspace.
 - [x] 3.3d Exclude SwiftPM dependency checkouts from project source discovery and let the code editor fill its dock panel while retaining diagnostics.
 - [x] 3.3e Expose authored Swift export values in the ScriptBehaviour inspector and apply them to the Play instance; document the sample workflow.
-- [ ] 3.3b Connect project audio services to hosted Play where available and verify execution/status regressions.
+- [x] 3.3b Connect project audio services to hosted Play where available and verify execution/status regressions. Done by `add-editor-audio-tools` (#29): the hosted runtime's audio server, the project mixer and sources at Play, and the Swift audio binding.
 
 ## 4. Delivery
 

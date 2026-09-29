@@ -1,0 +1,8 @@
+cycue 1
+clip tone:660:0.5
+bus SFX
+volume 1
+pitch 1
+volume_variation 0
+pitch_variation 0
+looping 0

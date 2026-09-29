@@ -30,6 +30,7 @@ const NEW_PANELS: [(&str, &str); 13] = [
     ("editor-vfx-graph", "Engine catalogue"),
     ("editor-terrain", "No world is open."),
     ("editor-lighting-and-lightmap-baking", "Bake lightmaps"),
+    ("editor-audio-buses-and-mixing", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
     ("editor-navigation-baking", "No world is open."),
@@ -896,4 +897,216 @@ fn a_sculpt_stroke_with_a_layer_in_the_stack_names_no_layer_and_is_accepted() {
             .invoke(command, &harness.scope, &mut harness.editor, arguments)
             .unwrap_or_else(|problem| panic!("{tool} stroke refused: {problem}"));
     }
+}
+}
+
+// --- The audio mixer (#29) -------------------------------------------------------------------------
+
+/// The engine's own audio fixtures, which `cy_test_integration_editor_backend_audio` produced.
+fn engine_audio(name: &str) -> Vec<u8> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../src/editor_backend/tests/data")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// A project directory that removes itself.
+struct Project(std::path::PathBuf);
+
+impl Project {
+    fn new(name: &str) -> Self {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos());
+        let path = std::env::temp_dir().join(format!("cy-shell-{name}-{}-{unique}", std::process::id()));
+        std::fs::create_dir_all(path.join("audio/cues")).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Answer one audio request with an engine reply over a real session, the way the window does.
+fn engine_answers(harness: &mut Harness, operation: &str, reply: Vec<u8>) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    harness.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = harness
+        .editor
+        .backend
+        .audio
+        .request(&harness.editor.runtime, operation, Vec::new())
+        .unwrap()
+        .expect("nothing else is in flight");
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.editor.backend.audio.pending() && std::time::Instant::now() < deadline {
+        for message in harness.editor.runtime.pump(&mut notifications) {
+            assert!(harness.editor.backend.accept(&message).is_none());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(!harness.editor.backend.audio.pending(), "the engine's reply was not taken");
+}
+
+/// A world, the canonical mixer on disk, a cue, the engine's vocabulary and its last state.
+fn audio_harness(project: &Project) -> Harness {
+    std::fs::write(
+        project.0.join("audio/mixer.cymixer"),
+        engine_audio("audio_mixer_v1.cymixer"),
+    )
+    .unwrap();
+    std::fs::write(
+        project.0.join("audio/cues/ping.cycue"),
+        engine_audio("audio_cue_v1.cycue"),
+    )
+    .unwrap();
+    let mut harness = Harness::new();
+    harness.editor = Editor::new(Actor::human("sound-designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project.0));
+    harness.editor.open_document("worlds/audio.cyworld").unwrap();
+    harness.specialised.install_audio_vocabulary(
+        cy_editor_services::audio::AudioVocabulary::decode(&engine_audio(
+            "audio_capabilities_v1.wire",
+        ))
+        .unwrap(),
+    );
+    engine_answers(&mut harness, "audio.state.get", engine_audio("audio_state_v1.wire"));
+    harness
+}
+
+const AUDIO: &str = "editor-audio-buses-and-mixing";
+
+#[test]
+fn the_audio_mixer_shows_the_engines_graph_and_levels() {
+    let project = Project::new("mixer");
+    let mut harness = audio_harness(&project);
+    let evidence = harness.frame(AUDIO, egui::vec2(1000.0, 700.0), Vec::new());
+    for label in [
+        "Audio Mixer",
+        "Buses",
+        "Master",
+        "Music",
+        "SFX",
+        "Reverb",
+        "mute Music",
+        "solo SFX",
+        "SFX level",
+        "Cues",
+        "audio/cues/ping.cycue",
+        "Undo",
+    ] {
+        assert!(
+            evidence.labels.iter().any(|drawn| drawn == label),
+            "the mixer lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.starts_with("Engine mixer: null backend")),
+        "the backend is named, so a null mix is never mistaken for a device: {:?}",
+        evidence.labels
+    );
+    assert!(
+        evidence.labels.iter().any(|label| label.ends_with(" dB")),
+        "SFX mixed the preview, so its engine level is a number: {:?}",
+        evidence.labels
+    );
+    assert!(harness.inputs.audio.seen, "the window keeps the meters live while it is drawn");
+}
+
+#[test]
+fn mixer_gestures_are_the_registered_audio_commands() {
+    let project = Project::new("gestures");
+    let size = egui::vec2(1000.0, 700.0);
+    let mut harness = audio_harness(&project);
+    let first = harness.frame(AUDIO, size, Vec::new());
+    let muted = harness.frame(AUDIO, size, vec![click_named(&first, "mute Music")]);
+    match muted.intents.as_slice() {
+        [Intent::Invoke(command, arguments)] => {
+            assert_eq!(command, "audio.bus.flag");
+            assert_eq!(arguments.text("name"), Some("Music"));
+            assert_eq!(arguments.text("flag"), Some("mute"));
+            assert_eq!(
+                arguments.get("enabled"),
+                Some(&cy_editor_core::value::Value::Bool(true))
+            );
+        }
+        other => panic!("one flag command, got {other:?}"),
+    }
+    let previewed = harness.frame(AUDIO, size, vec![click_named(&first, "Preview")]);
+    assert!(matches!(
+        previewed.intents.as_slice(),
+        [Intent::Invoke(command, arguments)]
+            if command == "audio.cue.preview"
+                && arguments.text("reference") == Some("audio/cues/ping.cycue")
+    ), "{:?}", previewed.intents);
+    harness.inputs.audio.new_bus = "Voice".into();
+    let ready = harness.frame(AUDIO, size, Vec::new());
+    let added = harness.frame(AUDIO, size, vec![click_named(&ready, "Add bus")]);
+    assert!(matches!(
+        added.intents.as_slice(),
+        [Intent::Invoke(command, arguments)]
+            if command == "audio.bus.add" && arguments.text("name") == Some("Voice")
+    ), "{:?}", added.intents);
+    let selected = harness.frame(AUDIO, size, vec![click_named(&first, "SFX")]);
+    assert!(selected.intents.is_empty());
+    let chain = harness.frame(AUDIO, size, Vec::new());
+    for label in ["SFX sends", "→ Reverb", "SFX effect chain", "low-pass"] {
+        assert!(
+            chain.labels.iter().any(|drawn| drawn == label),
+            "the selected bus lacks {label:?}: {:?}",
+            chain.labels
+        );
+    }
+}
+
+#[test]
+fn the_audio_mixer_empty_states_name_what_would_fill_them() {
+    let project = Project::new("empty");
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = Harness::new();
+    harness.editor = Editor::new(Actor::human("sound-designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project.0));
+    harness.editor.open_document("worlds/audio.cyworld").unwrap();
+    let empty = harness.frame(AUDIO, size, Vec::new());
+    let create = harness.frame(AUDIO, size, vec![click_named(&empty, "Create mixer")]);
+    assert!(matches!(
+        create.intents.as_slice(),
+        [Intent::Invoke(command, _)] if command == "audio.mixer.create"
+    ));
+    std::fs::write(
+        project.0.join("audio/mixer.cymixer"),
+        engine_audio("audio_mixer_v1.cymixer"),
+    )
+    .unwrap();
+    let refused = harness.frame(AUDIO, size, Vec::new());
+    assert!(
+        refused
+            .labels
+            .iter()
+            .any(|label| label.contains("`audio` owes it")),
+        "without the engine's vocabulary the mixer refuses by name: {:?}",
+        refused.labels
+    );
 }

@@ -63,6 +63,7 @@ cy_add_module(
         overlay.cpp
         physics_overlay.cpp
         pick_wire.cpp
+        scene_audio.cpp
         script_runtime.cpp
         wind_field_preview.cpp
         world_view.cpp
@@ -80,6 +81,7 @@ cy_add_module(
         cy::editor-backend
         cy::navigation
         cy::terrain
+        cy::game-backend
         cy::rendering-material-slang
         cy::shader
         cy::gameplay-play
@@ -88,6 +90,14 @@ cy_add_module(
         cy::rhi
         cy::rhi-null
         ${CY_EDITOR_WINDOW_RHI})
+
+# The output device the editor's audio tools are heard through (#29). Without CY_AUDIO the runtime
+# still mixes, on the null backend, and says so.
+if(CY_AUDIO)
+    target_link_libraries(cy_editor_window_runtime PRIVATE cy::backends-audio-miniaudio)
+    target_compile_definitions(cy_editor_window_runtime PRIVATE
+                               CY_EDITOR_WINDOW_HAS_DEVICE_AUDIO=1)
+endif()
 
 if(CY_VFX)
     target_sources(cy_editor_window_runtime PRIVATE scene_vfx_runtime.cpp)

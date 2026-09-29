@@ -100,6 +100,7 @@ pub struct EditorWindow {
     /// A desktop save waits for engine authoring before it becomes a history transaction.
     material_save_pending: Option<(String, String)>,
     vfx_catalogue_revision: Revision,
+    audio_vocabulary_revision: Revision,
     /// Last project-backed VFX source seen by this window, including an undone creation.
     vfx_committed: Option<(String, Option<String>)>,
     /// Last project-backed reusable module source seen by this window.
@@ -199,6 +200,7 @@ impl EditorWindow {
             material_committed: None,
             material_save_pending: None,
             vfx_catalogue_revision: Revision::INITIAL,
+            audio_vocabulary_revision: Revision::INITIAL,
             vfx_committed: None,
             vfx_module_committed: None,
             documents: DocumentTabsViewModel::new(),
@@ -348,6 +350,18 @@ impl EditorWindow {
                 "The VFX catalogue is incompatible",
                 problem,
             ));
+        }
+    }
+
+    /// Install the engine's audio vocabulary into the mixer editor when it arrives. Issue #29.
+    fn sync_audio_vocabulary(&mut self) {
+        let revision = self.editor.backend.audio.vocabulary_revision();
+        if revision == self.audio_vocabulary_revision {
+            return;
+        }
+        self.audio_vocabulary_revision = revision;
+        if let Some(vocabulary) = self.editor.backend.audio.vocabulary() {
+            self.specialised.install_audio_vocabulary(vocabulary.clone());
         }
     }
 
@@ -1438,6 +1452,9 @@ impl EditorWindow {
                     .show_inside(ui, &mut panels);
                 dock::paint_tab_selection(ui.ctx(), dock, &panels.tab_rects, panels.shell.theme);
                 *drawn_panels = std::mem::take(&mut panels.panel_rects);
+                // The mixer's meters stay live while it is on screen, and only then.
+                let audio_seen = std::mem::take(&mut panels.inputs.audio.seen);
+                panels.editor.backend.audio.set_polling(audio_seen);
             });
     }
 
@@ -1534,6 +1551,7 @@ impl eframe::App for EditorWindow {
         self.finish_imports();
         self.sync_material_catalogue();
         self.sync_vfx_catalogue();
+        self.sync_audio_vocabulary();
         #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {

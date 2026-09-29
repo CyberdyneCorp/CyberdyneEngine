@@ -4176,3 +4176,348 @@ fn navigation_obstacle_add_and_remove_reach_the_engine_over_mcp() {
     assert!(tool_text(&replies, 1).contains("path_found"));
     drop(runtime_writer);
 }
+
+// --- Audio (#29) -----------------------------------------------------------------------------------
+
+/// The engine's audio fixtures: the bytes `cy_test_integration_editor_backend_audio` submits and
+/// the replies it produced. See `src/editor_backend/tests/test_audio_service.cpp`.
+fn engine_audio_fixture(name: &str) -> Vec<u8> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../src/editor_backend/tests/data")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// What the audio double was asked: every `audio.*` operation with its payload, and the plays.
+#[derive(Default)]
+struct AudioAsked {
+    requests: Vec<(String, Vec<u8>)>,
+    plays: Vec<String>,
+}
+
+/// A runtime that answers `audio.*` with the ENGINE'S OWN replies, byte for byte: the state after
+/// the canonical mixer and preview, and after Play started the world's sources.
+fn audio_runtime_double(editor: &mut Editor) -> Arc<Mutex<AudioAsked>> {
+    let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let asked = Arc::new(Mutex::new(AudioAsked::default()));
+    let recorded = Arc::clone(&asked);
+    let state = engine_audio_fixture("audio_state_v1.wire");
+    let playing = engine_audio_fixture("audio_state_play_v1.wire");
+    let vocabulary = engine_audio_fixture("audio_capabilities_v1.wire");
+    std::thread::spawn(move || {
+        let (mut reader, mut writer) = (runtime_reader, runtime_writer);
+        let mut sounding = false;
+        let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+            let mut asked = recorded.lock().unwrap();
+            Some(match message {
+                Message::ServiceRequest {
+                    request,
+                    operation,
+                    payload,
+                    ..
+                } => {
+                    let (kind, reply) = if operation == "audio.capabilities.get" {
+                        (ServiceEventKind::Completed, vocabulary.clone())
+                    } else if operation.starts_with("audio.") {
+                        let reply = if sounding { &playing } else { &state };
+                        (ServiceEventKind::Completed, reply.clone())
+                    } else {
+                        let mut failure = Writer::new();
+                        failure.u32(1);
+                        failure.text("operation-unsupported");
+                        failure.text("the audio double serves audio only");
+                        (ServiceEventKind::Failed, failure.finish())
+                    };
+                    if operation.starts_with("audio.") {
+                        asked.requests.push((operation, payload));
+                    }
+                    vec![Message::ServiceEvent {
+                        request,
+                        kind,
+                        schema_version: 1,
+                        payload: reply,
+                    }]
+                }
+                Message::Play {
+                    request,
+                    state,
+                    mode,
+                } => {
+                    sounding = state == "playing";
+                    asked.plays.push(state.clone());
+                    vec![Message::Playing {
+                        request,
+                        state,
+                        mode,
+                        detail: "1 entities; audio: 1 source(s) on null".into(),
+                    }]
+                }
+                Message::Apply { request, .. } | Message::SyncWorld { request, .. } => {
+                    vec![Message::Applied {
+                        request,
+                        frame: cy_editor_protocol::FrameId::from_raw(1),
+                        observed: Vec::new(),
+                    }]
+                }
+                _ => Vec::new(),
+            })
+        });
+    });
+    asked
+}
+
+/// Pump the editor until the double has answered everything the editor queued.
+fn settle_audio(editor: &mut Editor) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        editor.pump();
+        if !editor.backend.audio.pending() && editor.backend.audio.vocabulary().is_some() {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the audio requests were never answered"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn last_audio_payload(asked: &Arc<Mutex<AudioAsked>>, operation: &str) -> Vec<u8> {
+    asked
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .rev()
+        .find(|(asked, _)| asked == operation)
+        .map(|(_, payload)| payload.clone())
+        .unwrap_or_else(|| panic!("the engine was never sent {operation}"))
+}
+
+fn structured(replies: &[Json], index: usize, key: &str) -> Json {
+    result(replies, index).get("structuredContent").get(key).clone()
+}
+
+#[test]
+fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
+    let sandbox = Sandbox::new("audio-mixer");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/audio.cyworld").unwrap();
+    let asked = audio_runtime_double(&mut editor);
+
+    // The canonical mixer, authored call by call — the same text the engine's suite applies.
+    let authored = converse_within(
+        &[
+            INITIALIZE,
+            &tool_call(2, "audio.bus.add", &[("name", "Music")]),
+            &tool_call(3, "audio.bus.add", &[("name", "SFX")]),
+            &tool_call(4, "audio.bus.add", &[("name", "Reverb")]),
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"Music","volume":0.5}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"SFX","volume":0.8}}}"#,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"Reverb","volume":0.6}}}"#,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"audio.bus.send","arguments":{"from":"SFX","to":"Reverb","level":0.3}}}"#,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Master","kind":"limiter","a":0.95,"b":0}}}"#,
+            r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"SFX","kind":"low-pass","a":0,"b":0.5}}}"#,
+            // A send back into its own source is the cycle the engine would never finish mixing.
+            r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"audio.bus.send","arguments":{"from":"Reverb","to":"SFX","level":0.5}}}"#,
+        ],
+        &mut editor,
+        "audio/",
+    );
+    for index in 1..=9 {
+        assert_eq!(
+            result(&authored, index).get("isError"),
+            &Json::Bool(false),
+            "{}",
+            tool_text(&authored, index)
+        );
+    }
+    assert_eq!(result(&authored, 10).get("isError"), &Json::Bool(true));
+    assert!(tool_text(&authored, 10).contains("cycle"));
+    let canonical = engine_audio_fixture("audio_mixer_v1.cymixer");
+    let on_disk = std::fs::read(sandbox.0.join("audio/mixer.cymixer")).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&on_disk),
+        String::from_utf8_lossy(&canonical),
+        "the MCP-authored mixer is the text the engine's suite applies"
+    );
+
+    settle_audio(&mut editor);
+    assert_eq!(
+        last_audio_payload(&asked, "audio.mixer.apply"),
+        canonical,
+        "every save went to the engine, the last one last"
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(12, "audio.status", &[]),
+        ],
+        &mut editor,
+    );
+    // The engine's numbers, not the editor's: decoded from the reply `unit` produced.
+    assert_eq!(structured(&status, 1, "backend").as_text(), Some("null"));
+    assert_eq!(structured(&status, 1, "bus.Music.volume"), Json::Number(0.5));
+    assert!(
+        structured(&status, 1, "bus.SFX.route")
+            .as_text()
+            .unwrap()
+            .contains("sends=[Reverb:0.3] effects=[low-pass]")
+    );
+
+    // Undo goes back one transaction, and the engine is sent what the file now says.
+    let undone = converse(
+        &[INITIALIZE, &tool_call(13, "edit.undo", &[])],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let reverted = std::fs::read_to_string(sandbox.0.join("audio/mixer.cymixer")).unwrap();
+    assert!(!reverted.contains("effect SFX"), "{reverted}");
+    settle_audio(&mut editor);
+    assert_eq!(
+        last_audio_payload(&asked, "audio.mixer.apply"),
+        reverted.into_bytes()
+    );
+    let redone = converse(
+        &[INITIALIZE, &tool_call(14, "edit.redo", &[])],
+        &mut editor,
+    );
+    assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
+    settle_audio(&mut editor);
+    assert_eq!(last_audio_payload(&asked, "audio.mixer.apply"), canonical);
+    assert_eq!(
+        std::fs::read(sandbox.0.join("audio/mixer.cymixer")).unwrap(),
+        canonical
+    );
+}
+
+#[test]
+fn a_cue_and_a_spatial_source_preview_through_the_engine_over_mcp() {
+    let sandbox = Sandbox::new("audio-cue");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/audio.cyworld").unwrap();
+    let asked = audio_runtime_double(&mut editor);
+    std::fs::create_dir_all(sandbox.0.join("audio")).unwrap();
+    std::fs::write(
+        sandbox.0.join("audio/mixer.cymixer"),
+        engine_audio_fixture("audio_mixer_v1.cymixer"),
+    )
+    .unwrap();
+
+    let saved = converse_within(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "audio.cue.save",
+                &[
+                    ("reference", "audio/cues/ping.cycue"),
+                    ("clip", "tone:660:0.5"),
+                    ("bus", "SFX"),
+                ],
+            ),
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"audio.source.create","arguments":{"cue":"audio/cues/ping.cycue","at":[3,0,0],"min_distance":1,"max_distance":50,"attenuation":"inverse"}}}"#,
+        ],
+        &mut editor,
+        "audio/",
+    );
+    assert_eq!(
+        result(&saved, 1).get("isError"),
+        &Json::Bool(false),
+        "{}",
+        tool_text(&saved, 1)
+    );
+    assert_eq!(
+        std::fs::read(sandbox.0.join("audio/cues/ping.cycue")).unwrap(),
+        engine_audio_fixture("audio_cue_v1.cycue")
+    );
+    assert_eq!(result(&saved, 2).get("isError"), &Json::Bool(false));
+    let entity = structured(&saved, 2, "entity").as_text().unwrap().to_owned();
+
+    // The viewport camera starts at the origin looking down -Z, so the request is exactly the one
+    // the engine's suite submits: the source three metres to the listener's right.
+    let previewed = converse(
+        &[
+            INITIALIZE,
+            &tool_call(4, "audio.source.preview", &[("entity", &entity)]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&previewed, 1).get("isError"),
+        &Json::Bool(false),
+        "{}",
+        tool_text(&previewed, 1)
+    );
+    settle_audio(&mut editor);
+    assert_eq!(
+        last_audio_payload(&asked, "audio.cue.preview"),
+        engine_audio_fixture("audio_cue_preview_v1.wire")
+    );
+    let status = converse(
+        &[INITIALIZE, &tool_call(5, "audio.status", &[])],
+        &mut editor,
+    );
+    assert_eq!(
+        structured(&status, 1, "preview.cue").as_text(),
+        Some("audio/cues/ping.cycue")
+    );
+    assert_eq!(structured(&status, 1, "preview.playing"), Json::Bool(true));
+    let Json::Number(gain) = structured(&status, 1, "preview.gain") else {
+        panic!("the engine's gain is reported");
+    };
+    assert!((gain - 1.0 / 3.0).abs() < 1e-4, "{gain}");
+    let (Json::Number(left), Json::Number(right)) = (
+        structured(&status, 1, "preview.left"),
+        structured(&status, 1, "preview.right"),
+    ) else {
+        panic!("the engine's pan is reported");
+    };
+    assert!(right > 0.99 && left < 0.01);
+
+    // Undo removes the source the preview played from, in the world's own history.
+    let undone = converse(
+        &[INITIALIZE, &tool_call(6, "edit.undo", &[])],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let gone = converse(
+        &[
+            INITIALIZE,
+            &tool_call(7, "audio.source.preview", &[("entity", &entity)]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&gone, 1).get("isError"), &Json::Bool(true));
+}
+
+#[test]
+fn play_reports_the_sources_the_engine_is_sounding() {
+    let sandbox = Sandbox::new("audio-play");
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/audio.cyworld").unwrap();
+    let asked = audio_runtime_double(&mut editor);
+    let played = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "play.enter", &[]),
+            &tool_call(3, "audio.refresh", &[]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&played, 1).get("isError"), &Json::Bool(false));
+    assert_eq!(result(&played, 2).get("isError"), &Json::Bool(false));
+    settle_audio(&mut editor);
+    assert_eq!(asked.lock().unwrap().plays, ["playing"]);
+    let status = converse(
+        &[INITIALIZE, &tool_call(4, "audio.status", &[])],
+        &mut editor,
+    );
+    assert_eq!(structured(&status, 1, "playing"), Json::Bool(true));
+    assert_eq!(structured(&status, 1, "play_voices"), Json::Number(1.0));
+}
