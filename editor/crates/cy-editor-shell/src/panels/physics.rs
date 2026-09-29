@@ -49,10 +49,11 @@ pub(crate) const COMMANDS: &[&str] = &[
     "physics.joint.remove",
 ];
 
-/// Why a ragdoll profile cannot be set up from here yet, in the words the panel shows.
-pub(crate) const RAGDOLL_SCOPE: &str = "Ragdoll profiles are generated from a skeleton \
-    (cy::physics::ragdoll::Profile::generate), and this editor cannot load one yet: model import \
-    stops before step 7, importing skeletons. Profile setup arrives with skeleton import.";
+/// Why a ragdoll profile cannot be set up from here yet, in the words the panel shows:
+/// `cy::physics::ragdoll::Profile::generate` starts from a skeleton, and model import stops before
+/// step 7.
+pub(crate) const RAGDOLL_SCOPE: &str = "Ragdoll setup needs a skeleton, and this editor cannot load \
+    one yet: model import stops before step 7 (skeletons).";
 
 pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     header(panels, ui, TITLE);
