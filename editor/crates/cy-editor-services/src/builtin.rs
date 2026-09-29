@@ -708,10 +708,11 @@ mod tests {
         // and engine requests in `crate::audio_commands`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(
-            registry.len(),
-            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2 + 13 + 8 + 18
-        );
+        let earlier =
+            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2;
+        let audio = 13 + 8;
+        let navigation = 18;
+        assert_eq!(registry.len(), earlier + audio + navigation);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());
