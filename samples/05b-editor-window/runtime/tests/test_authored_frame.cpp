@@ -1335,7 +1335,6 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         const first_light::Camera view = camera();
 
         check_mesh_and_bounds(frame, worlds, view);
-        check_editor_terrain(frame);
         check_scene_camera(frame, worlds, view);
         check_point_light(frame, worlds, view);
         check_directional_light(frame, schema, view);
@@ -1345,6 +1344,22 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_graph_displacement_matches_cpu(schema, view);
         check_graph_motion_matches_cpu(schema, view);
 #endif
+    }
+    rhi::destroy_device(allocator(), native);
+}
+
+// A case and a frame of its own: the terrain's frames would otherwise advance the temporal history
+// the lighting and shadow checks above compare against.
+CY_TEST_CASE("authored native frame draws the terrain the engine evaluated for the editor") {
+    register_backend();
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
+    {
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(192, 128, CY_TEST_PROJECT));
+        check_editor_terrain(frame);
     }
     rhi::destroy_device(allocator(), native);
 }

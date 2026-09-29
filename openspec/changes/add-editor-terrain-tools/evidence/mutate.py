@@ -41,8 +41,11 @@ MCP = ("rust", "cy-editor-mcp", ["--test", "a_session_over_the_wire"])
 AUTHORING = ("cpp", "cy_test_integration_terrain_authoring", "integration.terrain_authoring")
 BACKEND = ("cpp", "cy_test_integration_editor_backend_terrain",
            "integration.editor_backend_terrain")
+# Only the terrain's own case: the suite's lighting case also compares motion vectors, which
+# differ by a few texels on some drivers whatever the terrain does.
 VIEWPORT = ("cpp", "cy_test_smoke_editor_authored_frame_vulkan",
-            "smoke.editor_authored_frame_vulkan")
+            "smoke.editor_authored_frame_vulkan",
+            "authored native frame draws the terrain the engine evaluated for the editor")
 
 # (name, file, before, after, suite, test filter for Rust)
 MUTATIONS = [
@@ -177,14 +180,18 @@ def run_rust(env, crate, target, pattern):
     return result.returncode, failed, summary[-1] if summary else "", compiled, text
 
 
-def run_cpp(env, target, suite):
+def run_cpp(env, target, suite, case=None):
     jobs = env.get("CY_JOBS", "4")
     built = subprocess.run(["cmake", "--build", str(BUILD), "--parallel", jobs, "--target", target],
                            cwd=ROOT, capture_output=True, text=True)
     if built.returncode != 0:
         return built.returncode, [], "", False, built.stdout + built.stderr
-    result = subprocess.run(["ctest", "--test-dir", str(BUILD), "-R", f"^{re.escape(suite)}$",
-                             "--output-on-failure"], cwd=ROOT, capture_output=True, text=True)
+    if case is None:
+        command = ["ctest", "--test-dir", str(BUILD), "-R", f"^{re.escape(suite)}$",
+                   "--output-on-failure"]
+    else:
+        command = [str(BUILD / target), f"--test-case={case}"]
+    result = subprocess.run(command, cwd=BUILD, capture_output=True, text=True)
     text = result.stdout + result.stderr
     failed = sorted(set(re.findall(r"TEST CASE:\s+(.+)$", text, re.MULTILINE)))
     if result.returncode != 0 and not failed:
@@ -215,7 +222,7 @@ def main(prefixes):
             if suite[0] == "rust":
                 code, failed, summary, compiled, text = run_rust(env, suite[1], suite[2], pattern)
             else:
-                code, failed, summary, compiled, text = run_cpp(env, suite[1], suite[2])
+                code, failed, summary, compiled, text = run_cpp(env, *suite[1:])
         finally:
             path.write_text(source, encoding="utf-8")
         restored = md5(path) == digest
