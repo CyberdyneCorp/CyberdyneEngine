@@ -511,6 +511,7 @@ impl NavmeshService {
         outcome
             .with("stale", Value::Bool(status.stale))
             .with("engine_baked", Value::Bool(status.baked))
+            .with("sidecar_missing", Value::Bool(status.sidecar_missing))
             .with("engine_identity", hex(status.identity))
             .with("current_fingerprint", hex(status.current_fingerprint))
             .with(

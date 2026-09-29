@@ -30,7 +30,7 @@ use cy_editor_services::Editor;
 use cy_editor_services::nav_bake::{NavBackend, NavPathResult, NavSettingsBlock, NavStatusReport};
 use cy_editor_services::navmesh::{NavmeshSettings, OVERLAYS, PLACEABLE};
 use cy_editor_services::navmesh_service::{NavBakeState, NavmeshService};
-use cy_editor_viewport::transport::FrameImage;
+use cy_editor_viewport::transport::{FrameImage, PresentedFrame};
 use cy_editor_viewport::{PickIntent, PickRequest};
 use cy_editor_visual::colour::Semantic;
 
@@ -175,24 +175,49 @@ fn frame_pixel(request: &PickRequest, image: Option<&FrameImage>, x: f32, y: f32
     [x * scale[0], y * scale[1]]
 }
 
+/// What an armed pick made of a viewport click.
+#[derive(Debug)]
+pub(super) enum ArmedClick {
+    /// No pick is armed: the click selects as usual.
+    NotArmed,
+    /// The click was taken but nothing was sent; the panel says why and the pick stays armed.
+    Held,
+    /// The `navigation.point.pick` to invoke.
+    Pick(Intent),
+}
+
+/// The image of the frame the click was made on: the stream keeps only its newest frame, so a
+/// click on an older one cannot be rescaled honestly and is refused instead.
+fn clicked_image<'a>(
+    request: &PickRequest,
+    latest: Option<&'a PresentedFrame>,
+) -> Option<&'a FrameImage> {
+    latest
+        .filter(|frame| frame.frame == request.frame)
+        .map(|frame| &frame.image)
+}
+
 /// When a navmesh pick is armed, the `navigation.point.pick` a viewport click becomes instead of
-/// a selection. `None` leaves the click to select as usual.
+/// a selection.
 pub(super) fn armed_pick(
     inputs: &mut NavigationInputs,
     editor: &Editor,
     request: &PickRequest,
-) -> Option<Intent> {
-    let target = inputs.armed?;
-    let PickIntent::Click { x, y } = request.intent else {
-        return None;
+) -> ArmedClick {
+    let Some(target) = inputs.armed else {
+        return ArmedClick::NotArmed;
     };
-    let image = editor
-        .viewports
-        .focused()
-        .stream
-        .latest()
-        .map(|frame| &frame.image);
-    let [x, y] = frame_pixel(request, image, x, y);
+    let PickIntent::Click { x, y } = request.intent else {
+        return ArmedClick::NotArmed;
+    };
+    let latest = editor.viewports.focused().stream.latest();
+    let Some(image) = clicked_image(request, latest) else {
+        inputs.problem = Some(
+            "The viewport showed a newer frame before the click was read; click again.".into(),
+        );
+        return ArmedClick::Held;
+    };
+    let [x, y] = frame_pixel(request, Some(image), x, y);
     inputs.armed = None;
     inputs.awaiting = Some((target, editor.navmesh.pick_answers()));
     let arguments = Arguments::new()
@@ -207,7 +232,20 @@ pub(super) fn armed_pick(
         )
         .with("x", Value::Float(x))
         .with("y", Value::Float(y));
-    Some(invoke("navigation.point.pick", arguments))
+    ArmedClick::Pick(invoke(NAVIGATION_PICK_COMMAND, arguments))
+}
+
+/// The command an armed click invokes.
+pub(crate) const NAVIGATION_PICK_COMMAND: &str = "navigation.point.pick";
+
+/// The pick's invoke was refused (another navigation request pending, no runtime): nothing is
+/// awaited any more, so a later, unrelated pick answer cannot place a point the user did not
+/// click. The pick is armed again for another click.
+pub(crate) fn pick_refused(inputs: &mut NavigationInputs, because: &str) {
+    if let Some((target, _)) = inputs.awaiting.take() {
+        inputs.armed = Some(target);
+        inputs.problem = Some(format!("The pick was not sent: {because}"));
+    }
 }
 
 /// Take the engine's answer to an awaited pick, once it has arrived.
@@ -590,6 +628,12 @@ fn freshness(
     }
     let report = report.filter(|report| report.world == current.world);
     match report {
+        Some(report) if report.sidecar_missing => status(
+            ui,
+            shell,
+            Semantic::Warning,
+            "Sidecar missing: bake again to rebuild the navmesh",
+        ),
         Some(report) if report.stale => status(
             ui,
             shell,
@@ -810,6 +854,7 @@ mod tests {
             "Not baked",
             "Up to date",
             "Stale: the sources changed since this bake",
+            "Sidecar missing: bake again to rebuild the navmesh",
             "Overlays",
             "Components",
             "Place link in viewport",
@@ -892,6 +937,53 @@ mod tests {
             bits(frame_pixel(&request, None, 100.0, 50.0)),
             bits([100.0, 50.0])
         );
+    }
+
+    #[test]
+    fn a_refused_pick_is_not_settled_by_a_later_unrelated_answer() {
+        let mut inputs = NavigationInputs {
+            awaiting: Some((PickTarget::PathStart, 0)),
+            ..NavigationInputs::default()
+        };
+        pick_refused(&mut inputs, "navigation.path.query is still pending");
+        assert_eq!(inputs.awaiting, None);
+        assert_eq!(inputs.armed, Some(PickTarget::PathStart));
+        assert!(inputs.problem.as_deref().unwrap().contains("still pending"));
+        // A pick answered for someone else (an MCP client) advances the count; with nothing
+        // awaited it places nothing.
+        let mut intents = Vec::new();
+        settle_pick(&mut inputs, &NavmeshService::new(), &mut intents);
+        assert_eq!(inputs.start, None);
+        assert!(intents.is_empty());
+        // Nothing awaited: a refusal of some other pick leaves the panel alone.
+        let mut idle = NavigationInputs::default();
+        pick_refused(&mut idle, "refused");
+        assert_eq!(idle, NavigationInputs::default());
+    }
+
+    #[test]
+    fn a_click_is_rescaled_only_with_the_frame_it_was_made_on() {
+        use cy_editor_protocol::FrameId;
+        use cy_editor_viewport::{PickIntent, ViewportId};
+        let frame = PresentedFrame::new(
+            FrameId::from_raw(3),
+            cy_editor_viewport::ViewState::default(),
+            FrameImage::Surface(1),
+            0,
+        );
+        let on = PickRequest::for_frame(
+            ViewportId::from_raw(0),
+            FrameId::from_raw(3),
+            PickIntent::Click { x: 1.0, y: 1.0 },
+        );
+        let older = PickRequest::for_frame(
+            ViewportId::from_raw(0),
+            FrameId::from_raw(2),
+            PickIntent::Click { x: 1.0, y: 1.0 },
+        );
+        assert!(clicked_image(&on, Some(&frame)).is_some());
+        assert!(clicked_image(&older, Some(&frame)).is_none());
+        assert!(clicked_image(&on, None).is_none());
     }
 
     #[test]

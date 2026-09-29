@@ -319,13 +319,16 @@ fn report(
                 .post(Notification::error(problem.what.clone(), *problem));
         }
         Outcome::Pick(request, mode) => {
-            if let Some(intent) = super::navigation_baking::armed_pick(navigation, editor, &request)
-            {
-                intents.push(intent);
-            } else if let Err(problem) = editor.request_pick(*request, mode) {
-                editor
-                    .notifications
-                    .post(Notification::error(problem.what.clone(), problem));
+            match super::navigation_baking::armed_pick(navigation, editor, &request) {
+                super::navigation_baking::ArmedClick::Pick(intent) => intents.push(intent),
+                super::navigation_baking::ArmedClick::Held => {}
+                super::navigation_baking::ArmedClick::NotArmed => {
+                    if let Err(problem) = editor.request_pick(*request, mode) {
+                        editor
+                            .notifications
+                            .post(Notification::error(problem.what.clone(), problem));
+                    }
+                }
             }
         }
         Outcome::NothingToPick => editor.notifications.post(Notification::info(

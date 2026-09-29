@@ -479,6 +479,10 @@ pub struct NavStatusReport {
     pub counters: NavBuildCounters,
     /// Links that could not snap.
     pub link_failures: u32,
+    /// Whether the document records a bake whose sidecar the engine could not find (a fresh
+    /// clone without the committed `.cynavmesh`, or a deleted file): the engine then holds no
+    /// mesh, and a rebake recovers the state.
+    pub sidecar_missing: bool,
 }
 
 impl NavStatusReport {
@@ -495,6 +499,7 @@ impl NavStatusReport {
             resident_tiles: input.u32()?,
             counters: NavBuildCounters::decode(&mut input)?,
             link_failures: input.u32()?,
+            sidecar_missing: flag(&mut input)?,
         };
         done(&input)?;
         Ok(report)
@@ -747,6 +752,36 @@ pub(crate) mod tests {
                 },
             ],
         }
+    }
+
+    /// The COMPLETED payload the engine's `encode_status` writes.
+    pub(crate) fn status_payload(sidecar_missing: bool) -> Vec<u8> {
+        let mut output = Writer::new();
+        output.u32(3);
+        output.u8(0);
+        output.u8(0);
+        output.u64(0x1234);
+        output.u64(0x5678);
+        output.u64(0);
+        output.u32(0);
+        put_counters(&mut output, &NavBuildCounters::default());
+        output.u32(0);
+        output.u8(u8::from(sidecar_missing));
+        output.finish()
+    }
+
+    #[test]
+    fn a_status_answer_reports_a_missing_sidecar_apart_from_a_stale_bake() {
+        let missing = NavStatusReport::decode(&status_payload(true)).unwrap();
+        assert!(missing.sidecar_missing);
+        assert!(!missing.baked);
+        assert!(!missing.stale);
+        assert_eq!(missing.current_fingerprint, 0x1234);
+        let present = NavStatusReport::decode(&status_payload(false)).unwrap();
+        assert!(!present.sidecar_missing);
+        let mut short = status_payload(false);
+        short.pop();
+        assert!(NavStatusReport::decode(&short).is_err());
     }
 
     #[test]
