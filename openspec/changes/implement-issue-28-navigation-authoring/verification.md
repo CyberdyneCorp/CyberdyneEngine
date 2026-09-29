@@ -74,19 +74,52 @@ node key`) check the graph's derivation key over the declared sidecar, the ident
 `kNavmeshProducerVersion`. The producer body cannot change that key, so no producer-side mutation
 applies; their guard is that the node declares the sidecar as a source.
 
+## Runtime host (tasks 3.1 to 3.6)
+
+These are the runtime-host checks under criteria 1, 2 and 5, plus the runtime's own contract:
+incremental updates, navmesh picking, sidecar reload on a recorded-identity change, and the
+per-frame drain. They run over `samples/05b-editor-window/runtime/tests/data/nav_test_map.cyworld`
+through the same `CompositeEditorService` binding the runtime installs (MaterialService plus
+NavigationService). They need no device: the overlay is drawn on a CPU canvas and the frame view
+is recorded directly.
+
+- **Green:** `cmake --build build/dev --parallel 8`, then
+  `ctest --test-dir build/dev -R editor_window_navigation --output-on-failure`.
+  `integration.editor_window_navigation` ran 9 cases (3 overlay, 6 runtime) with 17287 assertions.
+  `unit.editor_window_runtime`, `integration.editor_window_overlay`, the other `editor_window_*`
+  suites, `unit.editor_backend`, `integration.editor_backend_compile`,
+  `integration.editor_backend_navigation`, `smoke.editor_authored_frame_metal` and
+  `smoke.editor_material_metal` still pass with the runtime bound through the composite.
+- **Red mutations.** Each was applied to the source, the target rebuilt and the named case run
+  with `-tc=`, and the source restored; the restored suite passes.
+
+| # | Check (case) | Mutation | Failing assertion |
+|---|---|---|---|
+| R1a | `editor runtime: baking the test map equals build_tile tile by tile` (criterion 1) | `append_mesh` (nav_runtime.cpp) appends mesh-local positions instead of world-space ones | `CHECK_GT(baked.tiles[index].polys, 0U)`, `REQUIRE_NE(slot, 0xFFFFFFFFU)`, `CHECK_EQ(nav::mesh_tile_digest(*mesh, slot), digest)` |
+| R1b | same case | the service's settings decode reads `cell_size * 1.01` (navigation_service.cpp `read_settings`) | `CHECK_EQ(baked.tiles[index].digest, digest)`, `CHECK_EQ(baked.fingerprint, fingerprint)`, `CHECK_EQ(baked.identity, ...)`: 10 failures |
+| R2 | `nav overlay covers the projected walkable polygons` (criterion 2) | `NavCanvasSink::polygon` skips every second polygon | `CHECK_LE(coverage.mismatched, coverage.expected / 100U)` |
+| R3a | `editor runtime: moving a mesh marks the navigation bake stale; moving it back clears the flag` (criterion 5) | `append_mesh` ignores the node transform (as R1a) | `CHECK(runtime.stale(baked))`, `CHECK_FALSE(last_update().rebuilt.empty())`, and the restored-digest checks |
+| R3b | same case | the mesh contribution's digest leaves out its world bounds, so a move is not seen as a change | `CHECK_EQ(updates_completed(), before + 1)`, `CHECK_FALSE(last_update().rebuilt.empty())` |
+| R4a | `editor runtime: an area edit on the test map rebuilds only the affected tiles; reverting restores their digests` | `dirty_regions` ignores `NavArea` contributions | `REQUIRE_EQ(update.rebuilt.size(), usize{1})`, `CHECK_NE(edited_digests.at(coord), digest)` |
+| R4b | same case | the queued update widens the dirty box by one tile in x and z | `REQUIRE_EQ(update.rebuilt.size(), usize{1})`, `CHECK(update.rebuilt[0] == TileCoord{0, 0, 0})` |
+| R5 | `editor runtime: navigation.point.pick hits the navmesh and misses beyond it` | `pick_ray` leaves the ray at the camera-relative origin instead of the eye | `CHECK_NEAR(point.x, 8.0F, ...)`, `CHECK_NEAR(point.z, 8.0F, ...)`, `CHECK_NE(polygon, 0U)` |
+| R6 | `editor runtime: an undone bake reloads its sidecar and the overlay follows the recorded identity` | a restore is queued only for a world seen for the first time, not when its recorded identity changes | `CHECK_EQ(restores_completed(), restores + 1)` |
+| R7 | `nav overlay per-world toggle draws only the enabled world` | `draw_navigation_overlay` draws polygons whatever the world's flags | `CHECK_EQ(right_hidden.hit, 0U)`, `CHECK_LE(left_drawn.mismatched, ...)`, `CHECK_GT(right_drawn.drawn, left_drawn.drawn)` |
+| R8 | `editor runtime: the per-frame drain forwards every bake PROGRESS and one COMPLETED` | `drain_service_events` forwards only non-PROGRESS events | `REQUIRE_EQ(forwarded.kinds.size(), usize{5})` |
+
 ## 1. Editor bake equals `build_tile`, tile by tile
 
 - **Probes:**
   - `editor_backend: navigation bake equals build_tile tile by tile` (service over a fixture seam).
   - `editor runtime: baking the test map equals build_tile tile by tile` (runtime seam over a `.cyworld` map).
 - **Planned mutation:** make `bake_tiles` skip the last tile coordinate, or perturb `cell_size` in the service's settings decode. The coordinate-set or digest assertion must fail.
-- **Status:** the engine-level probe (M1) and the service probe (S1) are green with recorded red mutations. The runtime probe is still open.
+- **Status:** the engine-level probe (M1), the service probe (S1) and the runtime probe (R1a, R1b) are green with recorded red mutations.
 
 ## 2. Overlay walkable area matches the mesh (image test)
 
 - **Probe:** `nav overlay covers the projected walkable polygons` (CPU canvas, no device).
-- **Planned mutation:** make the sink skip every second polygon. The covered-pixel count must fall outside the tolerance.
-- **Status:** open.
+- **Mutation:** make the sink skip every second polygon. The covered-pixel count falls outside the tolerance (R2 above). The per-world toggle has its own mutation (R7).
+- **Status:** green with a recorded red mutation.
 
 ## 3. Obstacle through the editor blocks and restores a path
 
@@ -111,7 +144,7 @@ applies; their guard is that the node declares the sidecar as a source.
   - `editor_backend: navigation status reports a stale bake after a source change`.
   - `editor runtime: moving a mesh marks the navigation bake stale`.
 - **Planned mutation:** leave the source vertices out of `source_fingerprint`. The stale assertion must fail.
-- **Status:** the engine fingerprint (M8b) and the service probe (S3: status stops recomputing the fingerprint) are green with recorded red mutations. The runtime probe is still open.
+- **Status:** the engine fingerprint (M8b), the service probe (S3: status stops recomputing the fingerprint) and the runtime probe (R3a, R3b) are green with recorded red mutations.
 
 ## 6. OpenSpec change validated with `--strict`, and docs
 

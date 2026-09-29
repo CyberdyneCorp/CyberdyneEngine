@@ -1,0 +1,117 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+type 3 runtime "NavigationWorld"
+  field 10 int "world" ""
+  field 11 float "agent_radius" ""
+  field 12 float "agent_height" ""
+  field 13 float "max_slope" ""
+  field 14 float "step_height" ""
+  field 15 float "cell_size" ""
+  field 16 float "cell_height" ""
+  field 17 float "tile_size" ""
+  field 18 int "backend" ""
+  field 19 int "overlay" ""
+  field 20 int "bake_identity" ""
+  field 21 int "source_fingerprint" ""
+type 4 runtime "NavMeshSurface"
+  field 30 int "world" ""
+  field 31 vec3 "bounds.min" ""
+  field 32 vec3 "bounds.max" ""
+  field 33 bool "exclude" ""
+type 5 runtime "NavArea"
+  field 40 int "world" ""
+  field 41 vec3 "bounds.min" ""
+  field 42 vec3 "bounds.max" ""
+  field 43 int "area" ""
+  field 44 float "cost" ""
+type 6 runtime "NavObstacle"
+  field 50 int "world" ""
+  field 51 vec3 "shape.offset" ""
+  field 52 float "shape.radius" ""
+  field 53 float "shape.height" ""
+  field 54 int "area" ""
+type 7 runtime "NavLink"
+  field 60 int "world" ""
+  field 61 vec3 "from" ""
+  field 62 vec3 "to" ""
+  field 63 float "cost" ""
+  field 64 bool "bidirectional" ""
+node 0 - "nav" "Ground"
+  component 1
+    field 1 0 0 0 1
+    field 2 8 0 8
+    field 3 16 1 16
+  component 2
+    field 4 "nav_ground.cyprim"
+    field 5 ""
+node 1 - "nav" "Crate"
+  component 1
+    field 1 0 0 0 1
+    field 2 12 0.5 4
+    field 3 1 1 1
+  component 2
+    field 4 "nav_crate.cyprim"
+    field 5 ""
+node 2 - "nav" "Navigation"
+  component 3
+    field 10 1
+    field 11 0.25
+    field 12 2
+    field 13 45
+    field 14 0.4
+    field 15 0.25
+    field 16 0.2
+    field 17 8
+    field 18 1
+    field 19 0
+    field 20 0
+    field 21 0
+node 3 - "nav" "Surface"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 4
+    field 30 1
+    field 31 0 -1 0
+    field 32 16 3 16
+    field 33 false
+node 4 - "nav" "Mud"
+  component 1
+    field 1 0 0 0 1
+    field 2 2 0 2
+    field 3 1 1 1
+  component 5
+    field 40 1
+    field 41 -1 -1 -1
+    field 42 1 1 1
+    field 43 3
+    field 44 4
+node 5 - "nav" "Pillar"
+  component 1
+    field 1 0 0 0 1
+    field 2 4 0 12
+    field 3 1 1 1
+  component 6
+    field 50 1
+    field 51 0 0 0
+    field 52 0.75
+    field 53 2
+    field 54 63
+node 6 - "nav" "Jump"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 7
+    field 60 1
+    field 61 10 0 14
+    field 62 14 0 14
+    field 63 2
+    field 64 true

@@ -1,0 +1,6 @@
+cyprim 1
+shape plane
+name NavGround
+origin centre
+extent 1 1
+subdivisions 16 16

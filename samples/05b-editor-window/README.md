@@ -243,6 +243,60 @@ viewport appears black. The MCP `viewport:` resource captures the engine's rende
 it does not capture the graph panel. `--agent-scope operator` is needed for MCP writes under
 `effects/`, because the narrower `author` scope permits writes only under `game/`.
 
+## Navigation overlay and baked navmesh sidecar
+
+Issue #28. The runtime serves the editor's `navigation.*` requests (bake, status, incremental
+update, path and flow-field queries, navmesh picking, overlay flags) beside the material and VFX
+requests. It binds one `CompositeEditorService` that routes `material.`, `vfx.` and `preview.` to
+`MaterialService` and `navigation.` to `NavigationService`. Service events are drained every frame,
+up to 32 per frame, so a bake's per-tile PROGRESS events reach the editor as they happen, and a
+large bake is spread over several frames instead of stalling one. The engine does every bake,
+rebake, query and pick. The runtime only supplies the authored world, through
+`runtime/nav_runtime.{h,cpp}`:
+
+- **Geometry.** World-space triangles come from `MeshRenderer` nodes. Both `.cyprim` and cooked
+  meshes load, as they do for the frame. A mesh contributes to every navigation world that has an
+  including `NavMeshSurface` overlapping the mesh's world bounds.
+- **Components.** `NavigationWorld`, `NavMeshSurface`, `NavArea`, `NavObstacle` and `NavLink` are
+  read by name from the document. `nav_runtime.h` lists their fields. Surface and area bounds and
+  link endpoints are node-local. An obstacle's centre is the node's world translation plus
+  `shape.offset`, so the transform gizmo moves it.
+- **Sidecar.** A finished bake is saved as `<project>/navigation/<bake identity>.cynavmesh`, a
+  16-digit hex name. The file is content-addressed and is never rewritten. The world document
+  records the identity on `NavigationWorld.bake_identity`. When that field changes, for example on
+  undo, the runtime asks the service to reload that sidecar, and the overlay redraws from it.
+- **Live edits.** A document change reaches the runtime as a transaction or a synced snapshot. When
+  it touches a Nav* component, or a mesh inside a surface, the runtime sends `navigation.update` in
+  process for the union of the old and new bounds. The service rebuilds only the tiles under that
+  region and re-applies obstacles and links without a rebuild. The next frame shows the result.
+- **Picking.** `navigation.point.pick` resolves a pixel against the view that the named frame was
+  rendered with. The runtime keeps the last 64 frames. The pixel is in the rendered frame's pixels.
+
+**The overlay** (`runtime/nav_overlay.{h,cpp}`) is drawn by the engine into the published frame
+for every navigation world that has an accepted bake and a non-zero overlay flag. It is a
+`NavDebugSink` that rasterises onto the frame's CPU canvas with the frame's own view:
+
+- walkable polygons, filled with the colour of their *effective* area, so obstacle-marked polygons
+  show;
+- tile borders, off-mesh links and obstacle footprints;
+- the editor's last test path and, when one was requested, flow-field arrows.
+
+The overlay is drawn under the markers and the gizmo. Like the gizmo, it is not depth tested: it is
+drawn on top of the lit frame. It is a per-world toggle, not a debug view mode, and game-camera
+frames never carry it.
+
+`integration.editor_window_navigation` covers all of this without a device, using
+`runtime/tests/data/nav_test_map.cyworld`. Its cases check that:
+
+- the overlay's covered pixels match the projected walkable polygons;
+- the per-world toggle works;
+- the runtime bake equals `build_tile` tile by tile;
+- moving a mesh makes the bake stale and moving it back clears it;
+- an area edit rebuilds only its tile;
+- navmesh picking reports a hit and a miss;
+- an undone bake reloads its sidecar;
+- the per-frame drain forwards each PROGRESS event.
+
 ## Swift cube during Play
 
 Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and
@@ -515,7 +569,7 @@ Neither is in this artefact's files.
 | | |
 |---|---|
 | `window.py` | the artefact |
-| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world |
+| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world. Since issue #28 also the navigation seam (`nav_runtime.*`) and the navmesh overlay (`nav_overlay.*`) |
 | `one_world.py` | the M8.a probe: it speaks the editor's protocol to the runtime, creates an object, asks where the gizmo is and picks it there |
 | `project/` | a project with a world in it — three entities in `worlds/city.cyworld`, written by the engine's own authoring schema. Copied into the work directory on every run, so a run never edits it |
 | `CMakeLists.txt` | the CTest entry, and why the runtime is declared before the `CY_BUILD_TESTS` guard |

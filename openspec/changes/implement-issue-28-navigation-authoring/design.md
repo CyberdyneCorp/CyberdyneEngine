@@ -123,9 +123,11 @@ The file and module names use `navmesh` and `navigation_baking`, which keeps the
 - tile borders, links and obstacle footprints are drawn with `project_to_pixel`;
 - test paths are drawn as `path_segment` calls, and flow fields as arrows.
 
-`draw_frame_overlays` draws it for each navigation world whose overlay flag is set. The overlay is composited over the lit frame and is not depth-tested. It is a per-world toggle, not a `DebugViewMode`, so the `PLANNED_VIEWS` "Navigation data" entry's note is updated to point at this overlay.
+`draw_frame_overlays` draws it for each navigation world whose overlay flag is set. The flags are the ones the service holds, and the runtime keeps them in step with the document's `NavigationWorld.overlay` field by sending `navigation.overlay.set` when the field changes. A world whose document records no accepted bake (`bake_identity` zero) draws nothing, so undoing the first bake also hides its overlay. The overlay is composited over the lit frame and is not depth-tested. It is a per-world toggle, not a `DebugViewMode`, so the `PLANNED_VIEWS` "Navigation data" entry's note is updated to point at this overlay.
 
 ## Incremental updates
+
+The runtime keeps the view of each of its last 64 published frames, and `navigation.point.pick` resolves a pixel in that frame's rendered pixels against it.
 
 When a synced document change touches a NavObstacle, a NavArea, a NavMeshSurface or a MeshRenderer that lies inside a surface, the runtime computes a dirty region from the union of the old and new bounds and calls `navigation.update` in process. The overlay is redrawn on the next frame. Undo applies the reverse document change, so the same path restores the mesh.
 

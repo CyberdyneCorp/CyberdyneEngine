@@ -19,12 +19,12 @@
 
 ## 3. Runtime host (`samples/05b-editor-window/runtime`)
 
-- [ ] 3.1 Implement the host seam over the authored world. It gathers MeshRenderer triangles, the Nav* components by name, sidecar store and load, and the pick ray.
-- [ ] 3.2 Bind the composite backend. Drain service events every frame, so PROGRESS and terminal events reach the editor.
-- [ ] 3.3 Draw `NavDebugSink` overlays onto the frame canvas for each enabled navigation world. Add an image test on a known map that checks the covered pixels against the projected walkable polygons.
-- [ ] 3.4 Run incremental updates on synced Nav* and geometry changes, and redraw the overlay live. Add a test that only the affected tiles are rebuilt and that undo restores them.
-- [ ] 3.5 Resolve `navigation.point.pick` against the frame's pick view. Test a hit and a miss.
-- [ ] 3.6 Add a runtime test that bakes a `.cyworld` test map through the service and compares it with `build_tile` tile by tile. The same test detects a stale bake after a mesh moves.
+- [x] 3.1 Implement the host seam over the authored world. It gathers MeshRenderer triangles, the Nav* components by name, sidecar store and load, and the pick ray.
+- [x] 3.2 Bind the composite backend. Drain service events every frame, so PROGRESS and terminal events reach the editor.
+- [x] 3.3 Draw `NavDebugSink` overlays onto the frame canvas for each enabled navigation world. Add an image test on a known map that checks the covered pixels against the projected walkable polygons.
+- [x] 3.4 Run incremental updates on synced Nav* and geometry changes, and redraw the overlay live. Add a test that only the affected tiles are rebuilt and that undo restores them.
+- [x] 3.5 Resolve `navigation.point.pick` against the frame's pick view. Test a hit and a miss.
+- [x] 3.6 Add a runtime test that bakes a `.cyworld` test map through the service and compares it with `build_tile` tile by tile. The same test detects a stale bake after a mesh moves.
 
 ## 4. Editor services, commands and MCP (`cy-editor-services`)
 

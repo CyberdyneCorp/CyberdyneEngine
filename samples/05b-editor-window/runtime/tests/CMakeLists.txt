@@ -167,6 +167,27 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::servers-render)
 
+    # NAVIGATION AUTHORING, WITHOUT A DEVICE. Issue #28, tasks 3.1 to 3.6: the seam over a
+    # `.cyworld` map through the composite binding the runtime installs, the incremental updates and
+    # sidecar reloads a document sync triggers, navmesh picking against a recorded frame view, and
+    # the overlay's image test on the CPU canvas. INTEGRATION because every case voxelises a bake.
+    cy_add_test(
+        NAME editor_window_navigation
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_nav_overlay.cpp"
+            "${tests_dir}/test_nav_runtime.cpp"
+            "${tests_dir}/../nav_overlay.cpp"
+            "${tests_dir}/../nav_runtime.cpp"
+        DEPENDENCIES cy::editor-backend cy::navigation cy::import cy::core-assets
+                     cy::scene-serialization cy::scene cy::servers-render
+        DEFINITIONS
+            "CY_NAV_TEST_DATA=\"${tests_dir}/data\"")
+    target_include_directories(cy_test_integration_editor_window_navigation PRIVATE
+                               "${tests_dir}/.."
+                               "${CMAKE_SOURCE_DIR}/src/editor_backend/tests"
+                               "${CMAKE_SOURCE_DIR}/src/navigation/tests")
+
     # THE `--layout` FILE, and the per-frame rewrites that wedged the runtime on a busy disk. See
     # `layout_file.h`. `integration` because it writes a file, which is not a millisecond on a disk
     # that is busy — which is the very condition it was found under.
