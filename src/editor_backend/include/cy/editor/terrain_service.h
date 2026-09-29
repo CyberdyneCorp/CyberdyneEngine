@@ -34,8 +34,9 @@ namespace cy::editor {
 
 /// The request and reply format `terrain.evaluate` speaks.
 inline constexpr u32 kTerrainEvaluateFormat = 1;
-/// The most modifiers and dabs one request may carry.
+/// The most modifiers one request may carry.
 inline constexpr u32 kMaxTerrainModifiers = 4096;
+/// The most brush dabs one request may carry, summed over every stroke.
 inline constexpr u32 kMaxTerrainDabs = 1U << 20U;
 
 /// One session's terrain preview: the last evaluated region and the navigation it made stale.
