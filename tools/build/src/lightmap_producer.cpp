@@ -33,7 +33,10 @@
 // A light with no mobility word is stationary (`gi::LightMobility`'s default).
 //     material "white" <r g b> [emission <r g b>] [opacity <a>]
 //     instance "derived/room.bundle" "mesh/Room" "white" <scale> <12 floats, 3x4 row-major>
+//     instance ".cy/cooked/<id>.cyasset" "mesh" "white" <scale> <12 floats>
 //
+// A `.cyasset` path is one cooked mesh as `cy_import_cli` writes it into a project, its sub-asset
+// name unread: what the editor's bake command reads, outside the graph.
 // Every bundle an instance names must be the output of a declared upstream, which is what makes an
 // edited mesh invalidate the bake.
 
@@ -41,6 +44,7 @@
 
 #include "text.h"
 
+#include <cy/core/assets/cooked.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/import/gltf.h>
 #include <cy/import/pipeline.h>
@@ -195,8 +199,48 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     level.materials.push_back(material);
 }
 
-/// The mesh an instance names, read once per (bundle, sub-asset) out of the upstream bundle.
-[[nodiscard]] Expected<u32, Error> mesh_for(NodeContext& context, std::string_view bundle,
+/// Point a loaded mesh's bake view at its arrays and measure its unwrap.
+void view_mesh(LoadedMesh& loaded) {
+    const import::MeshData& data = loaded.data;
+    loaded.mesh.positions = {data.positions.data(), data.positions.size()};
+    loaded.mesh.normals = {data.normals.data(), data.normals.size()};
+    loaded.mesh.uv0 = {data.uvs.data(), data.uvs.size()};
+    loaded.mesh.uv2 = {data.uv2.data(), data.uv2.size()};
+    loaded.mesh.indices = {data.indices.data(), data.indices.size()};
+    bake::measure_uv2(loaded.mesh.uv2, loaded.mesh.indices, loaded.mesh.uv_coverage,
+                      loaded.mesh.uv_aspect);
+}
+
+/// One cooked mesh out of a `.cyasset` file — what `cy_import_cli` writes into a project's
+/// `.cy/cooked/`, one file per sub-asset.
+[[nodiscard]] Status read_cooked_asset(Span<const u8> bytes, import::MeshData& out) {
+    const Expected<Span<const u8>, Error> payload =
+        assets::read_cooked_payload(bytes.data(), bytes.size(), true);
+    if (!payload.has_value()) {
+        return make_unexpected(payload.error());
+    }
+    return import::read_cooked_mesh(payload.value(), out);
+}
+
+/// The mesh in an upstream import bundle's sub-asset `name`.
+[[nodiscard]] Status read_bundle_mesh(Span<const u8> bytes, std::string_view name,
+                                      import::MeshData& out) {
+    import::ImportResult result;
+    if (Status decoded = import::decode_import_bundle(bytes, result); !decoded) {
+        return decoded;
+    }
+    for (const import::SubAsset& asset : result.assets()) {
+        if (asset.view() == name) {
+            return import::read_cooked_mesh(
+                Span<const u8>(asset.payload.data(), asset.payload.size()), out);
+        }
+    }
+    return fail(ErrorCode::NotFound, "a lightmap instance names a sub-asset its bundle lacks");
+}
+
+/// The mesh an instance names, read once per (bundle, sub-asset): out of an upstream import bundle,
+/// or — for a path ending `.cyasset`, whose sub-asset name is not read — out of a cooked asset file.
+[[nodiscard]] Expected<u32, Error> mesh_for(const BundleSource& source, std::string_view bundle,
                                             std::string_view name, LevelDescription& level) {
     std::string key(bundle);
     key += '\n';
@@ -205,41 +249,24 @@ void parse_material(const text::Line& line, LevelDescription& level) {
         return found->second;
     }
     Array<u8> bytes(default_allocator());
-    if (Status read = context.read(bundle, bytes); !read) {
+    if (Status read = source.read(source.user, bundle, bytes); !read) {
         return make_unexpected(read.error());
     }
-    import::ImportResult result;
-    if (Status decoded =
-            import::decode_import_bundle(Span<const u8>(bytes.data(), bytes.size()), result);
-        !decoded) {
-        return make_unexpected(decoded.error());
+    LoadedMesh& loaded = level.meshes.emplace_back();
+    const Span<const u8> view(bytes.data(), bytes.size());
+    const Status parsed = bundle.ends_with(".cyasset") ? read_cooked_asset(view, loaded.data)
+                                                       : read_bundle_mesh(view, name, loaded.data);
+    if (!parsed) {
+        level.meshes.pop_back();
+        return make_unexpected(parsed.error());
     }
-    for (const import::SubAsset& asset : result.assets()) {
-        if (asset.view() != name) {
-            continue;
-        }
-        LoadedMesh& loaded = level.meshes.emplace_back();
-        if (Status parsed = import::read_cooked_mesh(
-                Span<const u8>(asset.payload.data(), asset.payload.size()), loaded.data);
-            !parsed) {
-            return make_unexpected(parsed.error());
-        }
-        const import::MeshData& data = loaded.data;
-        loaded.mesh.positions = {data.positions.data(), data.positions.size()};
-        loaded.mesh.normals = {data.normals.data(), data.normals.size()};
-        loaded.mesh.uv0 = {data.uvs.data(), data.uvs.size()};
-        loaded.mesh.uv2 = {data.uv2.data(), data.uv2.size()};
-        loaded.mesh.indices = {data.indices.data(), data.indices.size()};
-        bake::measure_uv2(loaded.mesh.uv2, loaded.mesh.indices, loaded.mesh.uv_coverage,
-                          loaded.mesh.uv_aspect);
-        const auto index = static_cast<u32>(level.meshes.size() - 1U);
-        level.mesh_names.emplace(std::move(key), index);
-        return index;
-    }
-    return fail(ErrorCode::NotFound, "a lightmap instance names a sub-asset its bundle lacks");
+    view_mesh(loaded);
+    const auto index = static_cast<u32>(level.meshes.size() - 1U);
+    level.mesh_names.emplace(std::move(key), index);
+    return index;
 }
 
-[[nodiscard]] Status parse_instance(NodeContext& context, const text::Line& line,
+[[nodiscard]] Status parse_instance(const BundleSource& source, const text::Line& line,
                                     LevelDescription& level) {
     if (line.words.size() != 17U) {
         return fail(ErrorCode::InvalidArgument,
@@ -249,7 +276,7 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     if (material == level.material_names.end()) {
         return fail(ErrorCode::InvalidArgument, "a lightmap instance names an undeclared material");
     }
-    Expected<u32, Error> mesh = mesh_for(context, line.word(1), line.word(2), level);
+    Expected<u32, Error> mesh = mesh_for(source, line.word(1), line.word(2), level);
     if (!mesh) {
         return make_unexpected(mesh.error());
     }
@@ -269,7 +296,7 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     return ok();
 }
 
-[[nodiscard]] Status parse(NodeContext& context, std::string_view document,
+[[nodiscard]] Status parse(const BundleSource& source, std::string_view document,
                            LevelDescription& level) {
     auto lines = text::read(document);
     if (!lines) {
@@ -288,7 +315,7 @@ void parse_material(const text::Line& line, LevelDescription& level) {
         } else if (key == "material") {
             parse_material(line, level);
         } else if (key == "instance") {
-            if (Status parsed = parse_instance(context, line, level); !parsed) {
+            if (Status parsed = parse_instance(source, line, level); !parsed) {
                 return parsed;
             }
         } else if (Status parsed = parse_setting(line, level); !parsed) {
@@ -298,7 +325,32 @@ void parse_material(const text::Line& line, LevelDescription& level) {
     return ok();
 }
 
+[[nodiscard]] Status read_upstream(void* user, std::string_view name, Array<u8>& out) {
+    return static_cast<NodeContext*>(user)->read(name, out);
+}
+
 }  // namespace
+
+Status bake_lightmap_description(std::string_view document, const BundleSource& source,
+                                 const rendering::lightmap_bake::LightmapBakeProgress* progress,
+                                 Array<u8>& payload, LightmapJobReport& report) {
+    auto level = std::make_unique<LevelDescription>();
+    if (Status parsed = parse(source, document, *level); !parsed) {
+        report.stage = "lightmap-description";
+        return parsed;
+    }
+    bake::BakedLightmap baked;
+    if (Status made = bake::bake_lightmaps(level->scene(), level->settings, nullptr, baked,
+                                           report.bake, progress);
+        !made) {
+        report.stage = "lightmap-bake";
+        return made;
+    }
+    report.device_bytes = baked.device_bytes() + baked.shadow_mask_bytes();
+    report.page_size = baked.page_size;
+    report.mip_levels = baked.mip_levels;
+    return bake::encode_lightmap_asset(baked, payload);
+}
 
 Status produce_lightmap(NodeContext& context) {
     const NodeDesc& node = context.node();
@@ -310,26 +362,16 @@ Status produce_lightmap(NodeContext& context) {
     if (Status read = context.read(node.sources.front(), bytes); !read) {
         return read;
     }
-    auto level = std::make_unique<LevelDescription>();
-    if (Status parsed = parse(
-            context, std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
-            *level);
-        !parsed) {
-        context.diagnose(Severity::Error, "lightmap-description", parsed.error().message,
-                         node.sources.front());
-        return parsed;
-    }
-    bake::BakedLightmap baked;
-    bake::LightmapBakeReport report;
-    if (Status made = bake::bake_lightmaps(level->scene(), level->settings, nullptr, baked, report);
-        !made) {
-        context.diagnose(Severity::Error, "lightmap-bake", made.error().message,
-                         node.sources.front());
-        return made;
-    }
+    const BundleSource upstream{&read_upstream, &context};
     Array<u8> payload(default_allocator());
-    if (Status encoded = bake::encode_lightmap_asset(baked, payload); !encoded) {
-        return encoded;
+    LightmapJobReport report;
+    if (Status baked = bake_lightmap_description(
+            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), upstream,
+            nullptr, payload, report);
+        !baked) {
+        context.diagnose(Severity::Error, report.stage, baked.error().message,
+                         node.sources.front());
+        return baked;
     }
     return context.write(node.outputs.front(), payload.data(), payload.size());
 }
