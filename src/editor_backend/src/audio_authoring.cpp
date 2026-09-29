@@ -712,8 +712,12 @@ Status AudioAuthoring::initialize() noexcept {
         return make_unexpected(listener.error());
     }
     listener_ = *listener;
-    bus_names_ = {"Master"};
-    bus_handles_ = {server_.buses().master()};
+    // Appended rather than brace-assigned: GCC 13 reports a one-element initializer list copied
+    // into a vector as an out-of-bounds memmove (-Warray-bounds) under optimisation plus TSan.
+    bus_names_.clear();
+    bus_names_.emplace_back("Master");
+    bus_handles_.clear();
+    bus_handles_.push_back(server_.buses().master());
     initialized_ = true;
     return ok();
 }
@@ -768,8 +772,10 @@ Status AudioAuthoring::reconcile(const Mixer& mixer) noexcept {
             (void)graph.remove_send(handle, graph.sends(handle)[0].target);
         }
     }
-    std::vector<std::string> names = {"Master"};
-    std::vector<audio::BusHandle> handles = {graph.master()};
+    std::vector<std::string> names;
+    names.emplace_back("Master");
+    std::vector<audio::BusHandle> handles;
+    handles.push_back(graph.master());
     for (usize index = 1; index < bus_names_.size(); ++index) {
         if (bus_named(mixer, bus_names_[index]) == nullptr) {
             (void)graph.destroy(bus_handles_[index]);
