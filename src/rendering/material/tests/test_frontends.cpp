@@ -96,6 +96,115 @@ CY_TEST_CASE("material_frontends: a graph and a text definition are one material
     CY_CHECK(graph_source.value().view() == text_source.value().view());
 }
 
+CY_TEST_CASE("material_frontends: sine node and text call emit the same shader operation") {
+    MaterialGraph graph(allocator(), Name::intern("sway"));
+    ParameterDecl phase;
+    phase.name = Name::intern("phase");
+    phase.type = ValueType::Float;
+    phase.default_value = Immediate::scalar(0.5F);
+    CY_REQUIRE(graph.declare_parameter(phase));
+    auto input = graph.add(GraphOp::Parameter, phase.name);
+    auto sine = graph.add(GraphOp::Sin);
+    auto tint =
+        graph.add(GraphOp::Constant, Name{}, ValueType::Vec3, Immediate{1.0F, 1.0F, 1.0F, 0.0F, 0});
+    auto scaled = graph.add(GraphOp::Multiply);
+    auto surface = graph.add(GraphOp::Emission);
+    CY_REQUIRE(input.has_value());
+    CY_REQUIRE(sine.has_value());
+    CY_REQUIRE(tint.has_value());
+    CY_REQUIRE(scaled.has_value());
+    CY_REQUIRE(surface.has_value());
+    CY_REQUIRE(graph.connect(input.value(), sine.value(), 0));
+    CY_REQUIRE(graph.connect(tint.value(), scaled.value(), 0));
+    CY_REQUIRE(graph.connect(sine.value(), scaled.value(), 1));
+    CY_REQUIRE(graph.connect(scaled.value(), surface.value(), 0));
+    CY_REQUIRE(graph.set_surface_output(surface.value()));
+
+    auto from_graph = lower_graph(graph, allocator());
+    CY_REQUIRE(from_graph.has_value());
+    ParseDiagnostic diagnostic(allocator());
+    auto from_text = parse_material(
+        "material sway { param phase : float = 0.5; "
+        "surface = emission((1.0, 1.0, 1.0) * sin(phase)); }",
+        allocator(), diagnostic);
+    CY_REQUIRE(from_text.has_value());
+    OptimiseReport graph_report(allocator());
+    OptimiseReport text_report(allocator());
+    auto graph_ir = optimise(from_graph.value(), PassSwitches{}, graph_report);
+    auto text_ir = optimise(from_text.value(), PassSwitches{}, text_report);
+    CY_REQUIRE(graph_ir.has_value());
+    CY_REQUIRE(text_ir.has_value());
+    CY_CHECK_EQ(graph_ir.value().digest(), text_ir.value().digest());
+
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = compile_material(from_graph.value(), options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const CompiledProgram* primary = compiled.value().find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    CY_CHECK(primary->source.view().find("sin(") != std::string_view::npos);
+
+    MaterialGraph vector_graph(allocator(), Name::intern("vector_sway"));
+    ParameterDecl vector_phase;
+    vector_phase.name = Name::intern("phase3");
+    vector_phase.type = ValueType::Vec3;
+    vector_phase.default_value = Immediate{0.5F, 0.25F, 0.0F, 0.0F, 0};
+    CY_REQUIRE(vector_graph.declare_parameter(vector_phase));
+    auto vector_input = vector_graph.add(GraphOp::Parameter, vector_phase.name, ValueType::Vec3);
+    auto vector_sine = vector_graph.add(GraphOp::Sin);
+    auto vector_surface = vector_graph.add(GraphOp::Emission);
+    CY_REQUIRE(vector_input.has_value());
+    CY_REQUIRE(vector_sine.has_value());
+    CY_REQUIRE(vector_surface.has_value());
+    CY_REQUIRE(vector_graph.connect(vector_input.value(), vector_sine.value(), 0));
+    CY_REQUIRE(vector_graph.connect(vector_sine.value(), vector_surface.value(), 0));
+    CY_REQUIRE(vector_graph.set_surface_output(vector_surface.value()));
+    auto vector_ir = lower_graph(vector_graph, allocator());
+    CY_REQUIRE(vector_ir.has_value());
+    ParseDiagnostic vector_diagnostic(allocator());
+    auto vector_text = parse_material(
+        "material vector_sway { param phase3 : float3 = (0.5, 0.25, 0.0); "
+        "surface = emission(sin(phase3)); }",
+        allocator(), vector_diagnostic);
+    CY_REQUIRE(vector_text.has_value());
+    OptimiseReport vector_graph_report(allocator());
+    OptimiseReport vector_text_report(allocator());
+    auto vector_graph_ir = optimise(vector_ir.value(), PassSwitches{}, vector_graph_report);
+    auto vector_text_ir = optimise(vector_text.value(), PassSwitches{}, vector_text_report);
+    CY_REQUIRE(vector_graph_ir.has_value());
+    CY_REQUIRE(vector_text_ir.has_value());
+    CY_CHECK_EQ(vector_graph_ir.value().digest(), vector_text_ir.value().digest());
+}
+
+CY_TEST_CASE("material_frontends: a graph vertex root lowers as a typed offset") {
+    MaterialGraph graph(allocator(), Name::intern("moving_stone"));
+    auto displacement = graph.add(GraphOp::Constant, Name{}, ValueType::Vec3,
+                                  Immediate{0.0F, 0.25F, 0.0F, 0.0F, 0});
+    CY_REQUIRE(displacement.has_value());
+    CY_REQUIRE(graph.set_vertex_offset_output(displacement.value()));
+    auto module = lower_graph(graph, allocator());
+    CY_REQUIRE(module.has_value());
+    CY_CHECK_NE(module.value().vertex_offset(), kInvalidNode);
+    CY_CHECK_EQ(module.value().node(module.value().vertex_offset()).type, ValueType::Vec3);
+    ParseDiagnostic diagnostic(allocator());
+    auto from_text = parse_material("material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }",
+                                    allocator(), diagnostic);
+    CY_REQUIRE(from_text.has_value());
+    CY_CHECK_EQ(module.value().digest(), from_text.value().digest());
+
+    MaterialGraph invalid(allocator(), Name::intern("bad_offset"));
+    auto scalar =
+        invalid.add(GraphOp::Constant, Name{}, ValueType::Float, Immediate::scalar(0.25F));
+    CY_REQUIRE(scalar.has_value());
+    CY_REQUIRE(invalid.set_vertex_offset_output(scalar.value()));
+    CY_CHECK_FALSE(lower_graph(invalid, allocator()).has_value());
+    ParseDiagnostic invalid_diagnostic(allocator());
+    CY_CHECK_FALSE(parse_material("material bad_offset { vertex_offset = 0.25; }", allocator(),
+                                  invalid_diagnostic)
+                       .has_value());
+}
+
 CY_TEST_CASE("material_frontends: provenance does not change the program") {
     // design.md §1.2 decision 4. The graph carries an origin on every value and the text carries
     // none, and the two programs are byte-identical — so attribution is genuinely a side table.

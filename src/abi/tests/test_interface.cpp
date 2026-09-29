@@ -105,6 +105,34 @@ struct ProbeService final : cy::abi::EditorServiceBackend {
     }
 };
 
+struct ProbeVfxEffects final : cy::abi::VfxEffectBackend {
+    CyEntity changed = CY_ENTITY_NULL;
+    float value = 0.0F;
+
+    CyResult set(CyEntity entity, const char* emitter, const char* parameter,
+                 const CyVar& given) noexcept override {
+        if (std::strcmp(emitter, "sparks") != 0 || std::strcmp(parameter, "speed") != 0 ||
+            given.type != CY_VAR_F32) {
+            return CY_RESULT_INVALID_ARGUMENT;
+        }
+        changed = entity;
+        value = given.payload.as_f32;
+        return CY_RESULT_OK;
+    }
+
+    CyResult get(CyEntity entity, const char* emitter, const char* parameter,
+                 CyVar& out) noexcept override {
+        if (entity != changed || std::strcmp(emitter, "sparks") != 0 ||
+            std::strcmp(parameter, "speed") != 0) {
+            return CY_RESULT_NOT_FOUND;
+        }
+        out = cy::abi::var_nil();
+        out.type = CY_VAR_F32;
+        out.payload.as_f32 = value;
+        return CY_RESULT_OK;
+    }
+};
+
 // A behaviour vtable a module would register. The entries are C functions with C linkage, because
 // that is what crosses the boundary; they count their own calls so a test can see that the engine
 // reached the module's code and not something that merely looked like it.
@@ -166,11 +194,36 @@ CY_TEST_CASE("an older engine refuses a newer module, naming both versions") {
     // `native-abi`'s "Older engine, newer module": null, and the loader can report both numbers.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR + 1) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
-    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.3") != nullptr);
+    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.4") != nullptr);
 
     // A different major is a different ABI and there is nothing to negotiate.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR + 1, 0) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
+}
+
+CY_TEST_CASE("VFX effect parameter entries dispatch one entity and refuse missing bindings") {
+    Bound bound;
+    const CyInterface& iface = table();
+    CyVar value = cy::abi::var_nil();
+    value.type = CY_VAR_F32;
+    value.payload.as_f32 = 3.5F;
+    CY_CHECK_EQ(iface.vfx_effect_parameter_set(&bound.host, 7, "sparks", "speed", &value),
+                CY_RESULT_UNAVAILABLE);
+
+    ProbeVfxEffects backend;
+    bound.host.bind_vfx_effects(&backend);
+    CY_REQUIRE_EQ(iface.vfx_effect_parameter_set(&bound.host, 7, "sparks", "speed", &value),
+                  CY_RESULT_OK);
+    CY_CHECK_EQ(backend.changed, 7U);
+    CyVar read{};
+    CY_REQUIRE_EQ(iface.vfx_effect_parameter_get(&bound.host, 7, "sparks", "speed", &read),
+                  CY_RESULT_OK);
+    CY_CHECK_EQ(read.type, CY_VAR_F32);
+    CY_CHECK_EQ(read.payload.as_f32, 3.5F);
+    CY_CHECK_EQ(iface.vfx_effect_parameter_get(&bound.host, 8, "sparks", "speed", &read),
+                CY_RESULT_NOT_FOUND);
+    CY_CHECK_EQ(iface.vfx_effect_parameter_set(&bound.host, 0, "sparks", "speed", &value),
+                CY_RESULT_INVALID_ARGUMENT);
 }
 
 CY_TEST_CASE("the editor service is asynchronous cancellable and request identified") {

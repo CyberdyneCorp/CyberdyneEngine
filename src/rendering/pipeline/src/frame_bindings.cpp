@@ -172,14 +172,13 @@ Status FrameBindings::write_sets(u32 frame_slot) noexcept {
         sets_[index] = *allocated;
     }
 
-    // SET 0 IS WRITTEN ONCE, WITH BOTH HALVES. M11.c task 3.7: the globals block at binding 0 and
-    // the material textures at binding 1 with their sampler at binding 2 — the arrangement that
-    // lets one pipeline have the frame's globals AND the global texture table, which a pipeline
-    // binding one set per index could not have while set 0 carried only the first of them.
+    // Set 0 carries the globals block, the material texture table and sampler, and the Engine
+    // environment-field table. A pipeline binds one set per index, so field materials need this
+    // table beside the frame globals rather than in a separate per-draw set.
     //
     // Every frame, because the set is allocated every frame; `kMaterialTextureSlots` writes is the
-    // ceiling and a frame with no material textures writes exactly one descriptor, as before.
-    rhi::DescriptorWrite globals[kMaterialTextureSlots + 2];
+    // ceiling and a frame with no material textures or fields writes globals and its sampler.
+    rhi::DescriptorWrite globals[kMaterialTextureSlots + kEnvironmentFieldSlots + 2];
     usize writes = 0;
     globals[writes++] =
         buffer_write(kGlobalBindingGlobals, rhi::DescriptorKind::UniformBuffer, slot.globals);
@@ -207,6 +206,13 @@ Status FrameBindings::write_sets(u32 frame_slot) noexcept {
         texture.texture_view = entry.view;
         texture.use = rhi::ImageUse::SampledRead;
         globals[writes++] = texture;
+    }
+    for (u32 index = 0; index < environment_field_count_; ++index) {
+        const EnvironmentFieldSlot& entry = environment_fields_[index];
+        rhi::DescriptorWrite field = buffer_write(kGlobalBindingEnvironmentFields,
+                                                  rhi::DescriptorKind::StorageBuffer, entry.image);
+        field.array_index = entry.slot;
+        globals[writes++] = field;
     }
     if (Status written = device.update_descriptor_set(
             sets_[kGlobalSet], Span<const rhi::DescriptorWrite>(globals, writes));
@@ -349,6 +355,40 @@ Status FrameBindings::set_material_textures(Span<const MaterialTextureSlot> slot
     return ok();
 }
 
+Status FrameBindings::set_environment_fields(Span<const EnvironmentFieldSlot> slots) noexcept {
+    if (!slots.empty() &&
+        (device_ == nullptr || device_->descriptor_model() != rhi::DescriptorModel::Bindless)) {
+        return fail(ErrorCode::Unsupported,
+                    "frame bindings: environment fields require a bindless device");
+    }
+    if (slots.size() > kEnvironmentFieldSlots) {
+        return fail(ErrorCode::OutOfRange,
+                    "frame bindings: more environment fields than set 0 declares slots for");
+    }
+    for (usize index = 0; index < slots.size(); ++index) {
+        const EnvironmentFieldSlot& entry = slots[index];
+        if (entry.slot >= kEnvironmentFieldSlots) {
+            return fail(ErrorCode::OutOfRange,
+                        "frame bindings: an environment field's slot is past what set 0 declares");
+        }
+        if (entry.image.is_null()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "frame bindings: an environment field has no image buffer to bind");
+        }
+        for (usize previous = 0; previous < index; ++previous) {
+            if (slots[previous].slot == entry.slot) {
+                return fail(ErrorCode::InvalidArgument,
+                            "frame bindings: two environment fields name the same slot");
+            }
+        }
+    }
+    environment_field_count_ = 0;
+    for (const EnvironmentFieldSlot& entry : slots) {
+        environment_fields_[environment_field_count_++] = entry;
+    }
+    return ok();
+}
+
 Status FrameBindings::reallocate_pass_set() noexcept {
     // A DESCRIPTOR SET A COMMAND BUFFER HAS ALREADY BOUND MAY NOT BE UPDATED, and this is the
     // second regression M11.c task 3.7 found in this layer rather than brought to it.
@@ -449,6 +489,8 @@ void FrameBindings::shutdown() noexcept {
     staged_light_bytes_ = 0;
     staged_draw_bytes_ = 0;
     uploads_ = 0;
+    material_texture_count_ = 0;
+    environment_field_count_ = 0;
     ready_ = false;
 }
 

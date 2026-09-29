@@ -991,12 +991,13 @@ float3 lightmapAmbient(uint address, float2 uv2, float3 normal)
     return first.rgb;
 }
 
-[shader("fragment")]
-public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
+/// Shared forward lighting for the standard material and a compiled scene material surface.
+/// The caller supplies a resolved surface; both paths keep the frame's decals, lights, lightmap,
+/// probes, AO and fog.
+public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
 {
     let draw = cyDrawInstances[input.drawIndex];
-    let instance = cyInstances[draw.instanceSlot];
-    var surface = surfaceOf(draw.material, instance.tint.rgb, input.uv);
+    var surface = resolved;
 
     var normal = normalize(input.normal);
     // DECALS CHANGE THE SURFACE BEFORE IT IS LIT, so the light loop, the shadow and the ambient
@@ -1057,4 +1058,12 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
         color = cyApplyFog(fog, color, input.relativePosition);
     }
     return float4(color, surface.opacity);
+}
+
+[shader("fragment")]
+public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
+{
+    let draw = cyDrawInstances[input.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    return cyShadeForward(surfaceOf(draw.material, instance.tint.rgb, input.uv), input);
 }

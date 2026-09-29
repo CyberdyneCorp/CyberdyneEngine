@@ -358,6 +358,50 @@ def swift_package_tests_cannot_be_silently_omitted(root: pathlib.Path) -> list[s
     return failures
 
 
+def swift_module_builds_hold_one_swiftpm_lock(root: pathlib.Path) -> list[str]:
+    """Two SwiftPM builds on one machine must not run at once.
+
+    Every package shares SwiftPM's per-user cache, and two builds resolving swift-syntax together
+    race on its prebuilts manifest. CI's linux-arm64 legs failed that way when Ninja built the
+    04-character and 13-rts-api game modules concurrently: "prebuilts/swift-syntax/...json already
+    exists in file system". The driver serialises its Swift commands on one lock; this case runs
+    a command through it and checks that the lock is held while the command runs.
+    """
+    if sys.platform == "win32":
+        return []
+    import fcntl
+    import importlib.util
+
+    path = root / "bindings" / "swift" / "tools" / "cy_swift_module.py"
+    spec = importlib.util.spec_from_file_location("cy_swift_module_under_test", path)
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    with tempfile.TemporaryDirectory() as scratch:
+        driver.SWIFTPM_LOCK = pathlib.Path(scratch) / "swiftpm.lock"
+        held = []
+        real_run = driver.subprocess.run
+
+        def probe_the_lock(*_args, **_kwargs):
+            with driver.SWIFTPM_LOCK.open("a") as other:
+                try:
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(other, fcntl.LOCK_UN)
+                    held.append(False)
+                except BlockingIOError:
+                    held.append(True)
+            return subprocess.CompletedProcess([], 0, "", "")
+
+        driver.subprocess.run = probe_the_lock
+        try:
+            driver.swift(["swift", "build"])
+        finally:
+            driver.subprocess.run = real_run
+    if held != [True]:
+        return ["cy_swift_module.py runs a Swift command without holding the SwiftPM lock, so "
+                "concurrent game-module builds race on SwiftPM's shared prebuilts cache"]
+    return []
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -671,7 +715,8 @@ def _bash() -> str:
 
 
 def _locked_build(root: pathlib.Path, tree: pathlib.Path, log: pathlib.Path, label: str,
-                  seconds: float, scratch: pathlib.Path) -> subprocess.Popen:
+                  seconds: float, scratch: pathlib.Path,
+                  environment: dict[str, str] | None = None) -> subprocess.Popen:
     """A fake build that takes the real lock, records when it held it, and releases it.
 
     Through a file rather than `bash -c`: Windows has no argv array, so a multi-line script handed
@@ -690,7 +735,7 @@ def _locked_build(root: pathlib.Path, tree: pathlib.Path, log: pathlib.Path, lab
     path = scratch / f"build-{label}.sh"
     path.write_text(script, encoding="utf-8", newline="\n")
     # as_posix(), because a Windows path handed to Git Bash loses its backslashes.
-    return subprocess.Popen([_bash(), path.as_posix()],
+    return subprocess.Popen([_bash(), path.as_posix()], env=environment,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
@@ -756,12 +801,32 @@ def two_builds_on_one_tree_take_turns(root: pathlib.Path) -> list[str]:
             reaper.kill()
             failures.append("a lock left by a dead owner was never reaped; the tree stays wedged")
 
+        # A lock naming ANOTHER host is stale whatever its PID: `actions/cache` restores one another
+        # runner left, and its PID may happen to match a live process here.
+        lock.mkdir()
+        (lock / "pid").write_text(f"{os.getpid()}@another-runner\n", encoding="utf-8")
+        foreign_log = work / "foreign"
+        foreign_log.touch()
+        foreigner = _locked_build(root, tree, foreign_log, "d", 0.05, work)
+        try:
+            if foreigner.wait(timeout=60) != 0:
+                failures.append(f"the build that met another host's lock failed: "
+                                f"{foreigner.stderr.read().strip()[:200]}")
+        except subprocess.TimeoutExpired:
+            foreigner.kill()
+            failures.append("a lock restored from another runner was never reaped, though its PID "
+                            "is live here")
+
         # A LIVE owner's lock is neither reaped nor deleted by the waiter. The owner has to be a
         # real shell, not a PID this process invents: under MSYS `kill -0` reads the shell's own
         # process table, in which a native Windows PID does not appear and would look dead.
+        # AS A HOSTED RUNNER, where GITHUB_ACTIONS is set: the lock once purged any lock on CI before
+        # waiting, which took a live owner's lock too, and so this check passed on every developer
+        # machine and failed on every runner.
+        hosted = {**os.environ, "GITHUB_ACTIONS": "true"}
         held_log = work / "held"
         held_log.touch()
-        owner = _locked_build(root, tree, held_log, "e", 2.0, work)
+        owner = _locked_build(root, tree, held_log, "e", 2.0, work, hosted)
         deadline = time.time() + 20
         while not (lock / "pid").is_file() and time.time() < deadline:
             time.sleep(0.02)
@@ -772,7 +837,7 @@ def two_builds_on_one_tree_take_turns(root: pathlib.Path) -> list[str]:
         holder = (lock / "pid").read_text(encoding="utf-8").strip()
         waiter_log = work / "waiter"
         waiter_log.touch()
-        waiter = _locked_build(root, tree, waiter_log, "f", 0.05, work)
+        waiter = _locked_build(root, tree, waiter_log, "f", 0.05, work, hosted)
         time.sleep(0.6)
         still = (lock / "pid").read_text(encoding="utf-8").strip() if (lock / "pid").is_file() else ""
         if still != holder:
@@ -1383,6 +1448,7 @@ def main() -> int:
         "Swift package tests cannot be silently omitted": (
             swift_package_tests_cannot_be_silently_omitted
         ),
+        "Swift module builds hold one SwiftPM lock": swift_module_builds_hold_one_swiftpm_lock,
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),

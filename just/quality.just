@@ -204,6 +204,10 @@ quality-abi *args:
 #   just quality-editor-contract             every contract against the tree
 #   just quality-editor-contract --selftest  prove the gate still refuses each break of it
 
+# Verify the editor MCP capture client's timeout and reply framing without a device.
+quality-editor-mcp-client:
+    @cd "{{root}}" && python3 samples/05b-editor-window/test_mcp_window.py
+
 # Check the engine's play-mode, live-edit-policy and specialised-editor tables against the editor's
 # and the specification's.
 quality-editor-contract *args:

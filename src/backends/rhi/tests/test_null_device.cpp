@@ -458,6 +458,33 @@ CY_TEST_CASE("the global texture table is nameable in a pipeline layout and is t
     }
 }
 
+CY_TEST_CASE("the global table accepts only bounded Engine field buffers at binding three") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+    cy::rhi::BufferDescription description;
+    description.name = "wind field image";
+    description.size = 64;
+    description.usage = cy::rhi::BufferUsage::Storage;
+    description.memory = cy::rhi::MemoryUse::Upload;
+    auto image = device.create_buffer(description);
+    CY_REQUIRE(image.has_value());
+    cy::rhi::DescriptorWrite write{};
+    write.binding = cy::rhi::kGlobalTableFieldBinding;
+    write.kind = cy::rhi::DescriptorKind::StorageBuffer;
+    write.buffer = *image;
+    write.buffer_range = description.size;
+    CY_CHECK(device.update_descriptor_set(device.global_texture_table(), {&write, 1}));
+    write.array_index = cy::rhi::kGlobalTableFieldSlots;
+    CY_CHECK_FALSE(device.update_descriptor_set(device.global_texture_table(), {&write, 1}));
+    write.array_index = 0;
+    write.kind = cy::rhi::DescriptorKind::UniformBuffer;
+    CY_CHECK_FALSE(device.update_descriptor_set(device.global_texture_table(), {&write, 1}));
+    write.kind = cy::rhi::DescriptorKind::StorageBuffer;
+    device.destroy_buffer(*image);
+    CY_CHECK_FALSE(device.update_descriptor_set(device.global_texture_table(), {&write, 1}));
+}
+
 CY_TEST_CASE("the global table reads through one sampler, and says so rather than replacing it") {
     // `cy/material.slang` declares `SamplerState cyMaterialSampler` — a scalar. A shader sampling
     // slot `i` has no second sampler to choose, so a device that quietly accepted a different one

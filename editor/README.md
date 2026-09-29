@@ -439,15 +439,75 @@ yet). The editor runtime resolves this authoring reference by name and draws its
 ## Catalogue-driven material properties
 
 The Material Graph does not identify node names to decide which widgets to draw. Catalogue schema
-2 describes each property by stable identity, kind, typed default, numeric constraints, enum
+3 describes each property by stable identity, kind, typed default, numeric constraints, enum
 choices, required asset kind, semantic role, compiler/runtime stage, graph domain and target
-capabilities. The shared graph canvas validates authored literals before mutation and retains values
-by node and property identity across compatible catalogue refreshes. Texture controls query the
-project asset catalogue for stable identities whose kind is `texture`; the compiled dependency list
-therefore contains asset identities rather than display paths.
+capabilities. It also carries each node's engine-owned surface/vertex stage mask; the surface
+palette hides vertex-only nodes. The Material Graph's Stage selector switches the palette between
+surface and vertex-compatible engine nodes. Both stages use the same saved canvas and its engine
+owned output roots. The shared graph canvas validates authored literals before
+mutation and retains values by node and property identity across compatible catalogue refreshes.
+Texture controls query the project asset catalogue for stable identities whose kind is `texture`;
+the compiled dependency list therefore contains asset identities rather than display paths.
 
-Schema-1 catalogues remain readable. Their combined textual constraint is migrated into the schema-2
-shape when decoded, so reconnecting an older runtime does not discard the graph being authored.
+Schema-1 and schema-2 catalogues remain readable. Schema 1's combined textual constraint is
+migrated into the typed property shape, and older catalogues leave stage compatibility unrestricted,
+so reconnecting an older runtime does not discard the graph being authored.
+The engine catalogue includes `material.sin`, a typed scalar/vector sine node shared with the
+text material front end. It is available for authored material arithmetic. The vertex palette offers
+`material.vertex_output` for an offset expression or scalar normal displacement, and typed `material.object_position`,
+`material.world_position`, `material.normal`, and `material.uv0` geometry inputs. World position
+uses the renderer's camera-relative world coordinates; object position uses the mesh's local
+coordinates. The hosted viewport binds both positions for visible and shadow vertex evaluation.
+`material.time` reads elapsed engine seconds from the first-light hosted preview frame in both stages, so a
+`material.sin` chain can animate an offset without a parameter edit or recompile. The shared
+`material.noise` node samples smooth scalar noise from a float3 position, so a world-position
+input can vary vertex motion spatially. `material.procedural_wind` samples a smooth animated float3
+vector from world position and engine time; multiply it by a scalar or vector amplitude before connecting
+it to the vertex offset. `material.vertex_color` reads the mesh vertex's linear RGB colour;
+the hosted compiled-material preview passes that attribute through to vertex and fragment graphs.
+Its generated mesh assigns a different colour to each face axis for a visible preview.
+The `displacement` pin accepts a scalar distance in metres; the engine combines it with any
+connected `offset` as `offset + normal * displacement` for visible and shadow vertex programs.
+The typed `wind` field node samples the Engine weather field in the authored scene and hosted
+material mesh previews. The material mesh renderer refreshes its weather image when the camera
+moves outside the preview region; other field names receive a named refusal. The sample project
+includes `materials/issue15_sway.cymatcanvas` and its Engine-authored `.cygraph` beside
+`worlds/issue15-sway.cyworld` for opening the time and sine vertex graph in a scene. Native pixel
+proof for displacement, shadow, and motion remains tracked by issue #15.
+Run `just test-issue15-acceptance` on a Mac with a working Metal device to verify the full issue
+#15 ledger locally, including its reference image and CPU-displaced pixel comparisons.
+When an opened graph is assigned to a mesh in the active scene, including an imported material
+slot, Validate, Compile, Save, and live Preview send its geometry source to the Engine material
+compiler. An ordinary mesh requests `StaticMesh`; a `.cyvg` mesh asset requests
+`VirtualGeometry`. A material assigned to a terrain layer sends `Terrain`; a material used by
+multiple sources requests each variant. A `.cyvg` asset can be assigned through the same mesh
+asset command used by the Inspector and MCP. The editor
+backend also accepts named geometry-source requests and reports the compiler's
+`vertex-geometry-unsupported` diagnostic for a vertex graph assigned to `VirtualGeometry`. A
+successful Compile result lists the named geometry sources whose variants were produced. A vertex
+graph assigned to a `.cyvg` mesh is refused before Save or live Preview replaces the scene graph.
+The desktop Save button and `material.graph.save` over MCP invoke the same registered command.
+Both send the active scene's mesh and terrain assignments to the engine, which refuses unsupported
+vertex paths before authoring the canonical graph. Saving a graph and syncing its generated
+Inspector fields form one undo step; undo and redo restore both graph files and scene fields.
+When that save comes from the open Material Graph, undo and redo also reload its canvas from the
+project source. Undoing a newly created graph clears the canvas; an unrelated history step leaves
+unsaved canvas edits alone.
+On an unchanged saved canvas, the desktop palette routes node add, connect, drag release, typed
+property edit, disconnect, and remove through `material.node.*` commands. The same commands are
+available over MCP, validate against the engine's material catalogue, and ask the engine to author
+each edit as one undoable save. Before a canonical graph exists, canvas gestures record the
+editable `.cymatcanvas` through `material.canvas.draft.save` as individual undo steps. This keeps
+incomplete graphs editable without asking the engine to author them. The canonical Save still
+validates the complete graph through the engine.
+The authored scene frame now compiles vertex offset and interpolant graphs for visible, depth,
+and shadow passes. A graph requiring an unbound environment field is refused before replacing the
+last valid preview. The Engine weather wind field is bound for scene and material-mesh previews.
+The scene viewport conservatively keeps vertex-graph meshes in view and shadow draw lists because
+their displaced bounds can extend beyond the source mesh. Large scenes with many such graphs may
+draw more meshes until authored displacement bounds are available.
+With no authored world open on the Metal host, live graph Preview applies to the first-light
+material mesh. With a world open, Preview applies to every scene mesh using that graph reference.
 
 ## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
 
@@ -519,3 +579,128 @@ real socket; `crates/cy-editor-services/tests/a_body_is_a_transaction.rs` holds 
 the golden names. What is on the far end is `cy::gameplay::PlaySession`, and what it guarantees —
 **stop restores the authored document byte for byte, verified rather than asserted** — is
 `src/gameplay/play/README.md`.
+
+## VFX graph authoring status
+
+The VFX Graph tab loads the engine's `vfx.catalogue.get` result into the same node canvas as the
+Material Graph. Its palette includes compiler-registered nodes and typed sample nodes generated
+from data-interface fields. The panel creates a saved system at the Document path through
+`vfx.document.create`, then adds emitters and selects each emitter's
+Spawn, Initialise, Update, Event, Render, or Compute stage. Stage selection snapshots the shared
+canvas and restores the selected stage; graph-tab switches preserve the active draft. The
+renderer and CPU/GPU selectors come from `vfx.authoring-capabilities.get`; missing Decal, Light,
+and Volume compositors appear with engine-provided reasons. GPU authoring is available while
+runtime readiness waits for an attached preview device. The
+**Save VFX draft** action writes a versioned `.cyvfxdoc` through the `vfx.document.save` command,
+so it participates in scene-document undo/redo and can be reopened through
+`vfx.document.read`. A scene document must be active for save history. This source is editable
+authoring data; the engine reads and cooks it for the runtime preview.
+After creation gives a system its project path, each desktop frame that changes its VFX
+canvas or metadata saves one document transaction automatically. The same applies to a saved
+module. Undo and redo reload the open graph from the project source; an unchanged frame does not
+add history. Edits saved through MCP refresh the desktop graph before its next frame is drawn, so
+the next desktop transaction starts from the current project source. Creation requires an active
+scene document and refuses to replace an existing system at the chosen path.
+`vfx.document.create` creates an empty named system at a project path through the same undoable
+transaction. It refuses to overwrite an existing system; agents can then add CPU and GPU emitters
+and stage nodes without seeding a source file outside the editor.
+The command palette, scripts, and MCP also expose `vfx.emitter.add`, `vfx.emitter.remove`,
+`vfx.emitter.configure`, `vfx.interface.bind`, `vfx.interface.unbind`, `vfx.node.add`,
+`vfx.node.move`, `vfx.node.connect`, `vfx.node.disconnect`, `vfx.node.remove`,
+`vfx.node.property.set`, and
+`vfx.parameter.set`. Each reads the saved system,
+applies one edit, and saves through the same undoable document transaction. Node placement,
+connections, and property changes require the live engine VFX catalogue; an unavailable catalogue
+or unknown node, pin, or property is refused by name.
+Clicking a palette node in a saved, unchanged system stage or module uses its matching
+`vfx.node.add` or `vfx.module.node.add` command, creating one undo entry and the same result as MCP.
+Editing a node property in that state uses `vfx.node.property.set` or
+`vfx.module.node.property.set` with the engine catalogue's property name.
+Connecting compatible pins uses `vfx.node.connect` or `vfx.module.node.connect`; the canvas
+validates the typed connection before the command is queued.
+**Remove selected node** uses `vfx.node.remove` or `vfx.module.node.remove` for a clean saved
+asset, removing its attached wires in one undoable edit.
+The selected node's wires appear as **Disconnect** actions and use `vfx.node.disconnect` or
+`vfx.module.node.disconnect` for clean saved assets.
+Dragging a node on a clean saved system stage or module previews its position locally, then sends
+one `vfx.node.move` or `vfx.module.node.move` command when the drag ends. That release adds one
+undo entry. A new draft without a saved project path keeps movement local until its first Save.
+If the open canvas has unsaved edits, palette insertion stays in that draft until Save so those
+edits are preserved; property, connection, removal, and disconnection edits follow the same rule.
+The panel's **Remove emitter** control retains the other emitters' stage graphs and selects
+the next available emitter; the edit is recorded in document history for a saved draft.
+**Add emitter** sends `vfx.emitter.add` for a saved system, selects the new Spawn stage after the
+command succeeds, and adds one undo entry. A new system without a saved path adds locally.
+`vfx.emitter.capacity.set`, `vfx.attribute.set` / `vfx.attribute.remove`, and
+`vfx.channel.set` / `vfx.channel.remove` provide the panel's particle storage and bounded event
+declarations through MCP with the same save and undo history. Invalid bounds or attribute types
+leave the saved document intact.
+`vfx.parameter.remove` removes a saved system parameter by name.
+`vfx.emitter.parameter.set` and `vfx.emitter.parameter.remove` edit typed defaults for one named
+emitter through the same undoable transaction. Two emitters may use the same local parameter name;
+the VFX compiler and runtime resolve it by emitter. Removing an emitter removes its local
+declarations too. The preview parameter command addresses a local declaration as
+`emitter:name`; a bare name addresses a system declaration.
+`scene.vfx-effect.create` adds a scene entity with a `.cyvfxdoc` asset reference and generated
+Inspector fields for every exposed system and emitter parameter. `scene.vfx-effect.parameter.set`
+changes one entity's typed override by its hexadecimal identity; both commands use the scene's
+undo history. Saving a `.cyworld` stores the asset path and each instance's values.
+Integer defaults and scene overrides must be whole numbers in the signed 32-bit range; invalid
+values are refused without changing the saved document or instance override.
+Interface names and renderer choices in saved commands are checked against the engine when the
+draft is compiled; the desktop pickers only offer entries reported by the attached engine.
+Reusable modules can be created and edited with `vfx.module.create`, `vfx.module.input.add`, and
+`vfx.module.dependency.add`, then linked to an emitter with `vfx.module.attach`. Each command saves
+one undoable change; creating a module refuses to replace an existing source at that path.
+`vfx.module.stage.set` changes a saved module's compatible stage through the same undo history;
+an unknown stage is refused without changing the file.
+`vfx.module.input.remove` and `vfx.module.dependency.remove` remove named declarations through
+the same history.
+The module graph also supports `vfx.module.node.add`, `vfx.module.node.move`, `vfx.module.node.connect`,
+`vfx.module.node.disconnect`, `vfx.module.node.remove`, and
+`vfx.module.node.property.set`. These commands use the live engine catalogue and save each
+canvas edit as an undoable module transaction. MCP wire tests save and reopen connected stage
+and module nodes, then exercise move, disconnect, remove, undo, and redo through this registry.
+Use `vfx.document.read` to inspect the saved source and `edit.undo` / `edit.redo` to reverse or
+reapply an edit. An open scene document is required for these transactions.
+The current draft payload records emitter capacity, typed particle attributes with range,
+tolerance, and precision, plus bounded system event channels. Existing version 1 draft payloads
+open with engine defaults (capacity 1024 and no attribute or channel declarations) and save as
+version 4 payloads. Version 2 drafts also reopen. Version 3 maps module names to explicit
+project-relative `.cyvfxmodule` paths. Version 4 adds emitter-local typed parameters while retaining
+the older fields. The `.cyvfxdoc` text envelope remains version 1.
+The VFX panel exposes those declarations in collapsible sections: typed system parameters with
+runtime exposure, emitter-local typed parameters, per-emitter capacity and particle attributes with precision controls, and event
+channels with event/depth limits and optional CPU readback. Invalid metadata edits leave the open
+draft intact. **Save VFX draft** records the resulting document through the project transaction
+command. Undo and redo of that command now refresh the open VFX document and stage canvas as well
+as the project file; undoing its creation closes the open draft until redo restores it. Direct
+history for a pathless draft begins with its first Save; the desktop New action creates a saved
+asset immediately, so subsequent edits are undoable. A separately saved `.cyvfxmodule`
+records one compatible stage, named typed inputs, dependency names, and a shared-canvas graph.
+`vfx.module.save` and `vfx.module.read` use the command registry shared with MCP; save requires an
+active scene document and supports undo/redo. The sample project includes
+`effects/shared_drag.cyvfxmodule`. The VFX panel creates a saved module at the Asset path through
+`vfx.module.create`, or opens an existing module on the shared canvas. It can edit the compatible
+stage, typed host inputs and dependencies, and save changes through `vfx.module.save`. It can
+attach a saved module to an emitter through an undoable document save;
+the attachment records its explicit project path. Creation, module saves, and attachments refresh when the
+scene history is undone or redone. A pathless local graph draft is saved as one transaction before
+its node edits can receive individual history entries.
+Opening or creating another module keeps unsaved changes in place; **Discard module edits**
+reopens its last saved source or closes a new module that has never been saved.
+Each referenced module needs an explicit path
+in the system document; the engine does not guess a file from its name. Compile and preview load
+the mapped project sources, validate typed inputs and dependency stages, reject missing sources
+and cycles, and compose the module graphs into the engine's emitter stages before cooking.
+Saved module content participates in automatic compile signatures; moving nodes on its
+canvas does not request a new cook.
+**Compile VFX** submits the current stage snapshots to the engine's `vfx.compile` service. The
+engine reads the document into `VfxSystemAsset`, resolves its registered nodes, and runs
+`compile_system`; the panel shows the last cook identity, per-emitter kernel and memory counts,
+derived layout, generated Slang, and node and pin diagnostics. Compilation does not install an
+effect in the preview world. A module reference without an asset mapping or source produces a
+named refusal; module assets must be saved to the project before a dependent draft can compile.
+The engine tags each compiler diagnostic with its emitter and stage. The panel lists that location;
+clicking it opens the stage and selects the offending node. The active canvas outlines that node
+in red and shows the compiler message on hover, even when another stage reuses the same node key.

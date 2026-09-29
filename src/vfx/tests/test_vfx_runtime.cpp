@@ -8,14 +8,23 @@
 #include "effects.h"
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/registry.h>
 #include <cy/ecs/firewall.h>
 #include <cy/test/test.h>
+#include <cy/vfx/authoring.h>
+#include <cy/vfx/catalogue.h>
+#include <cy/vfx/interfaces.h>
 #include <cy/vfx/runtime.h>
+#include <cy/vfx/scene_effects.h>
 #include <cy/vfx/world.h>
+#include <cy_reflect_generated_scene.h>
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <fstream>
+#include <string>
 
 using namespace cy;
 using namespace cy::vfx;
@@ -71,6 +80,183 @@ struct Cooked {
 }
 
 }  // namespace
+
+CY_TEST_CASE("two authored scene effects load independent exposed overrides into the engine") {
+    constexpr std::string_view source = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "cy::vfx::Effect"
+  field 4 text "asset" ""
+  field 5 bool "enabled" ""
+  field 6 float "system.intensity.float" ""
+node 0 - "fx" "Quiet"
+  component 1
+    field 1 0 0 0 1
+    field 2 1 2 3
+    field 3 1 1 1
+  component 2
+    field 4 "effects/plume.cyvfxdoc"
+    field 5 true
+    field 6 0.25
+node 1 - "fx" "Loud"
+  component 1
+    field 1 0 0 0 1
+    field 2 4 5 6
+    field 3 1 1 1
+  component 2
+    field 4 "effects/plume.cyvfxdoc"
+    field 5 true
+    field 6 1
+)";
+    scene::serialization::World scene(allocator());
+    CY_REQUIRE(scene::serialization::read_world(source, "worlds/effects.cyworld", scene));
+    reflect::TypeRegistry registry;
+    CY_REQUIRE(reflect::register_scene_types(registry));
+    scene::serialization::AuthoringSchema schema(allocator());
+    CY_REQUIRE(scene::serialization::build_authoring_schema(registry, schema));
+    CY_REQUIRE(scene::serialization::resolve_against(scene, schema));
+    Cooked cooked;
+    CY_REQUIRE(cooked.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    SceneEffects bindings(allocator());
+    const auto resolve = [](std::string_view asset,
+                            void* context) noexcept -> Expected<const CompiledSystem*, Error> {
+        if (asset != "effects/plume.cyvfxdoc") {
+            return fail(ErrorCode::NotFound, "unknown VFX system asset");
+        }
+        return *static_cast<const CompiledSystem* const*>(context);
+    };
+    const CompiledSystem* system = &*cooked;
+    const Status loaded = bindings.load(scene, world, resolve, static_cast<void*>(&system));
+    if (!loaded) {
+        std::fprintf(stderr, "scene binding refusal: %s\n", loaded.error().message);
+    }
+    CY_REQUIRE(loaded.has_value());
+    CY_CHECK_EQ(bindings.size(), 2U);
+    const EffectHandle quiet = bindings.find(scene.nodes()[0].identity);
+    const EffectHandle loud = bindings.find(scene.nodes()[1].identity);
+    CY_REQUIRE(quiet != kInvalidEffect);
+    CY_REQUIRE(loud != kInvalidEffect);
+    CY_CHECK_NE(quiet, loud);
+    CY_CHECK_EQ(world.find(quiet)->position.x, 1.0F);
+    CY_CHECK_EQ(world.find(loud)->position.x, 4.0F);
+    StepReport report;
+    for (u32 frame = 0; frame < 4; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report));
+    }
+    CY_REQUIRE(world.find(quiet) != nullptr);
+    CY_REQUIRE(world.find(loud) != nullptr);
+    CY_CHECK_EQ(world.find(loud)->live_particles, world.find(quiet)->live_particles * 4U);
+
+    std::string unknown(source);
+    const usize position = unknown.find("system.intensity.float");
+    CY_REQUIRE(position != std::string::npos);
+    unknown.replace(position, std::strlen("system.intensity.float"), "system.missing.float");
+    scene::serialization::World invalid(allocator());
+    CY_REQUIRE(scene::serialization::read_world(unknown, "worlds/effects.cyworld", invalid));
+    CY_REQUIRE(scene::serialization::resolve_against(invalid, schema));
+    CY_CHECK_FALSE(bindings.load(invalid, world, resolve, static_cast<void*>(&system)));
+    CY_CHECK_EQ(bindings.size(), 0U);
+}
+
+CY_TEST_CASE("the editor's two-emitter VFX draft cooks, plays and publishes particles") {
+    const std::string path =
+        std::string(CY_SOURCE_DIR) +
+        "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+    std::ifstream input(path);
+    CY_REQUIRE(input.good());
+    std::string source;
+    char byte = '\0';
+    while (input.get(byte)) {
+        source.push_back(byte);
+    }
+    CY_REQUIRE(input.eof());
+    CY_REQUIRE(!source.empty());
+    auto asset = read_authoring_document(source, allocator());
+    CY_REQUIRE(asset.has_value());
+
+    graph::NodeRegistry nodes(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(register_vfx_nodes(nodes).has_value());
+    CY_REQUIRE(register_builtin_interfaces(interfaces).has_value());
+    asset->resolve(nodes);
+    graph::DiagnosticSink diagnostics(allocator());
+    CompileReport cook(allocator());
+    auto compiled = compile_system(*asset, nodes, interfaces, CompileOptions{}, diagnostics, cook);
+    CY_REQUIRE(compiled.has_value());
+    CY_REQUIRE_EQ(compiled->emitters().size(), 2U);
+
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    EffectSpawn spawn;
+    spawn.position = Vec3{0.0F, 0.0F, -5.0F};
+    auto played = world.play(*compiled, spawn);
+    if (!played) {
+        std::fprintf(stderr, "sample play refused: %s\n", played.error().message);
+    }
+    CY_REQUIRE(played.has_value());
+    StepReport stepped;
+    for (u32 frame = 0; frame < 20; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, stepped).has_value());
+    }
+    CY_CHECK_GT(stepped.live_particles, 0U);
+    CY_CHECK_EQ(stepped.active_emitters, 2U);
+    CY_CHECK_EQ(stepped.cpu_emitters, 2U);
+    CY_CHECK_EQ(stepped.cpu_fallbacks, 1U);
+
+    Array<rendering::particles::ParticleInstance> particles(allocator());
+    PublishReport published;
+    CY_REQUIRE(
+        publish_sprites(world, Vec3{0.0F, 0.0F, 0.0F}, 128, particles, published).has_value());
+    CY_CHECK_EQ(published.particles, stepped.live_particles);
+    CY_CHECK_EQ(particles.size(), published.particles);
+    CY_CHECK_EQ(published.emitters, 2U);
+}
+
+CY_TEST_CASE("VFX target availability reports device prerequisites without changing CPU intent") {
+    const TargetAvailability no_device = target_availability(SimulationPath::GpuPreferred, nullptr);
+    CY_CHECK(no_device.compile_available);
+    CY_CHECK(!no_device.runtime_available);
+    CY_CHECK_EQ(no_device.reason, FallbackReason::NoDeviceInThisWorld);
+
+    DeviceCapability device;
+    CY_CHECK(target_availability(SimulationPath::GpuPreferred, &device).runtime_available);
+    device.compute = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DeviceLacksCompute);
+    device.compute = true;
+    device.indirect_dispatch = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DeviceLacksIndirectDispatch);
+    device.gpu_path_enabled = false;
+    CY_CHECK_EQ(target_availability(SimulationPath::GpuPreferred, &device).reason,
+                FallbackReason::DisabledByHost);
+    const TargetAvailability cpu = target_availability(SimulationPath::CpuRequired, nullptr);
+    CY_CHECK(cpu.runtime_available);
+    CY_CHECK_EQ(cpu.reason, FallbackReason::EffectRequiresCpu);
+}
+
+CY_TEST_CASE("reinitializing a VFX world discards its previous event and readback state") {
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    EventChannelDecl channel;
+    channel.name = Name::intern("old_channel");
+    channel.max_events_per_frame = 2;
+    CY_REQUIRE(world.events().declare(channel).has_value());
+    EventRecord event;
+    CY_REQUIRE(world.readback().publish(channel.name, {&event, 1}).has_value());
+    CY_CHECK_EQ(world.events().reports().size(), 1U);
+    CY_CHECK_EQ(world.readback().report().published, 1U);
+
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    CY_CHECK(world.events().reports().empty());
+    CY_CHECK_EQ(world.readback().report().published, 0U);
+    CY_REQUIRE(world.readback().begin_frame().has_value());
+    CY_CHECK(world.readback().available(channel.name).empty());
+}
 
 CY_TEST_CASE("an effect plays, spawns, ages and dies, and the step report says so") {
     Cooked cooked;

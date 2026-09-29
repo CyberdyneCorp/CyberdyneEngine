@@ -66,6 +66,14 @@ cy_add_module(
     # runtime never links this target.
     PRIVATE_DEPENDENCIES cy::rendering-lightmap-bake)
 
+# The `vfx` producer (issue #19) cooks `.cyvfxdoc` systems and discovers their `.cyvfxmodule`s.
+# It links the VFX COMPILER only — never `cy::vfx`, the runtime — and exists only where CY_VFX does.
+if(CY_VFX)
+    target_sources(cy_build_content PRIVATE src/vfx_producer.cpp)
+    target_link_libraries(cy_build_content PRIVATE cy::vfx-compiler)
+    target_compile_definitions(cy_build_content PUBLIC CY_BUILD_HAS_VFX=1)
+endif()
+
 cy_add_module(
     NAME cy_build
     LAYER tools

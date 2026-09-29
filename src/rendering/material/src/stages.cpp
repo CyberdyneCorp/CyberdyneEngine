@@ -137,6 +137,8 @@ Status dump_graph(const MaterialGraph& graph, Array<char>& out) noexcept {
     put_node_id(out, graph.surface_output());
     put(out, "\n  opacity <- ");
     put_node_id(out, graph.opacity_output());
+    put(out, "\n  vertex_offset <- ");
+    put_node_id(out, graph.vertex_offset_output());
     put(out, "\n");
 
     for (const GraphNode& node : graph.nodes()) {
@@ -201,11 +203,31 @@ Status dump_module(const Module& module, Array<char>& out) noexcept {
     put_node_id(out, module.surface());
     put(out, "\n  opacity <- ");
     put_node_id(out, module.opacity());
+    put(out, "\n  vertex_offset <- ");
+    put_node_id(out, module.vertex_offset());
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        put(out, "\n  vertex_interpolant ");
+        put(out, interpolant.name.text());
+        put(out, " : ");
+        put(out, value_type_name(interpolant.type));
+        put(out, " <- ");
+        put_node_id(out, interpolant.value);
+    }
     put(out, "\n");
 
-    const NodeId roots[] = {module.surface(), module.opacity()};
+    Array<NodeId> roots(module.allocator());
+    for (const NodeId root : {module.surface(), module.opacity(), module.vertex_offset()}) {
+        if (Status added = roots.push_back(root); !added) {
+            return added;
+        }
+    }
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        if (Status added = roots.push_back(interpolant.value); !added) {
+            return added;
+        }
+    }
     Array<NodeId> order(module.allocator());
-    if (Status walked = canonical_order(module, Span<const NodeId>(roots, 2), order); !walked) {
+    if (Status walked = canonical_order(module, roots.span(), order); !walked) {
         return walked;
     }
     for (const NodeId id : order) {

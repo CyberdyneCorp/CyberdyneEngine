@@ -61,9 +61,11 @@ cy_add_module(
         overlay.cpp
         pick_wire.cpp
         script_runtime.cpp
+        wind_field_preview.cpp
         world_view.cpp
     PRIVATE_DEPENDENCIES
         cy::rendering-pipeline
+        cy::weather
         cy::import
         cy::core-assets
         cy::sample-first-light
@@ -81,6 +83,12 @@ cy_add_module(
         cy::rhi
         cy::rhi-null
         ${CY_EDITOR_WINDOW_RHI})
+
+if(CY_VFX)
+    target_sources(cy_editor_window_runtime PRIVATE scene_vfx_runtime.cpp)
+    target_link_libraries(cy_editor_window_runtime PRIVATE cy::vfx cy::rendering-particles)
+    target_compile_definitions(cy_editor_window_runtime PRIVATE CY_EDITOR_WINDOW_HAS_VFX=1)
+endif()
 
 target_compile_definitions(
     cy_editor_window_runtime PRIVATE

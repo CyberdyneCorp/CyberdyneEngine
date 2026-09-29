@@ -57,6 +57,8 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/asset.cpp
+        src/authoring.cpp
+        src/catalogue.cpp
         src/compile.cpp
         src/emit_slang.cpp
         src/gpu_layout.cpp
@@ -77,10 +79,12 @@ cy_add_module(
     ALIAS cy::vfx
     TYPE STATIC
     SOURCES
+        src/authoring_capabilities.cpp
         src/budget.cpp
         src/events.cpp
         src/renderers.cpp
         src/runtime.cpp
+        src/scene_effects.cpp
         src/world.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
@@ -89,6 +93,7 @@ cy_add_module(
         cy::core-memory
         cy::ecs
         cy::rendering-particles
+        cy::scene-serialization
         cy::vfx-compiler)
 
 # gpu/ is a THIRD target and its own directory. See gpu/CMakeLists.txt for why it cannot be part of

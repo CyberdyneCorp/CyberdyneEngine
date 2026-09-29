@@ -77,6 +77,7 @@ pub fn panel_title(panel: &PanelId) -> &str {
         "inspector" => "Inspector",
         "script-graph" => "Script Graph",
         "editor-materials" => "Material Graph",
+        "editor-vfx-graph" => "VFX Graph",
         "editor-terrain" => "Terrain",
         "swift-workspace" => "Swift Workspace",
         "semantic-diff" => "Semantic Diff",

@@ -222,8 +222,16 @@ struct EdgeRecord {
     return static_cast<i32>(std::lround(value / kWeldQuantum));
 }
 
-[[nodiscard]] bool key_less(const i32 a[3], const i32 b[3]) noexcept {
-    return std::lexicographical_compare(a, a + 3, b, b + 3);
+/// Lexicographic order of two welded endpoints. Written out rather than as
+/// std::lexicographical_compare over pointers, whose libstdc++ loop the static analyzer misreads
+/// as reading one past a three-element array.
+[[nodiscard]] bool key_less(const i32 (&a)[3], const i32 (&b)[3]) noexcept {
+    for (u32 axis = 0; axis < 3; ++axis) {
+        if (a[axis] != b[axis]) {
+            return a[axis] < b[axis];
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] bool same_key(const EdgeRecord& a, const EdgeRecord& b) noexcept {

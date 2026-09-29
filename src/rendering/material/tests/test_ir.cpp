@@ -5,8 +5,11 @@
 // cases are that layer, and each one is a decision from §1.2 stated as a check.
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/material/compiler.h>
 #include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/ir.h>
+#include <cy/rendering/material/lowering.h>
+#include <cy/rendering/material/passes.h>
 #include <cy/test/test.h>
 
 #include <utility>
@@ -79,6 +82,160 @@ CY_TEST_CASE("material_ir: a commutative operand list is ordered by content, not
     CY_REQUIRE(wired_the_other.has_value());
     CY_CHECK_EQ(wired_one_way.value().digest(), wired_the_other.value().digest());
     CY_CHECK_EQ(wired_one_way.value().size(), wired_the_other.value().size());
+}
+
+CY_TEST_CASE("material_ir: vertex offset is typed, hashed, serialised and kept for shadows") {
+    Builder displaced(allocator(), Name::intern("vertex_offset_case"));
+    auto position = displaced.attribute(Name::intern("position"), ValueType::Vec3);
+    auto scalar = displaced.constant_float(1.0F);
+    CY_REQUIRE(position.has_value());
+    CY_REQUIRE(scalar.has_value());
+    CY_CHECK_FALSE(displaced.set_vertex_offset(scalar.value()).has_value());
+    CY_REQUIRE(displaced.set_vertex_offset(position.value()));
+    auto authored = displaced.finish();
+    CY_REQUIRE(authored.has_value());
+    CY_CHECK_NE(authored.value().vertex_offset(), kInvalidNode);
+
+    Builder plain(allocator(), Name::intern("vertex_offset_case"));
+    auto plain_position = plain.attribute(Name::intern("position"), ValueType::Vec3);
+    CY_REQUIRE(plain_position.has_value());
+    auto without_offset = plain.finish();
+    CY_REQUIRE(without_offset.has_value());
+    CY_CHECK_NE(authored.value().digest(), without_offset.value().digest());
+
+    Array<u8> bytes(allocator());
+    CY_REQUIRE(encode_module(authored.value(), bytes));
+    auto reopened = decode_module(bytes.span(), allocator());
+    CY_REQUIRE(reopened.has_value());
+    CY_CHECK_EQ(reopened.value().digest(), authored.value().digest());
+    CY_CHECK_NE(reopened.value().vertex_offset(), kInvalidNode);
+
+    OptimiseReport report(allocator());
+    auto optimised = optimise(reopened.value(), PassSwitches{}, report);
+    CY_REQUIRE(optimised.has_value());
+    CY_CHECK_NE(optimised.value().vertex_offset(), kInvalidNode);
+    auto vertex = emit_vertex_offset(optimised.value(), EmitOptions{});
+    CY_REQUIRE(vertex.has_value());
+    CY_CHECK(vertex.value().view().find(
+                 "float3 cy_material_vertex_offset_case_primary_high_vertex_offset") !=
+             std::string_view::npos);
+    CY_CHECK(vertex.value().view().find("result.offset = ctx.attributes.position") !=
+             std::string_view::npos);
+    DerivationOptions shadow;
+    shadow.kind = ProgramKind::Shadow;
+    auto derived = derive_program(optimised.value(), shadow);
+    CY_REQUIRE(derived.has_value());
+    CY_CHECK_EQ(derived.value().surface(), kInvalidNode);
+    CY_CHECK_NE(derived.value().vertex_offset(), kInvalidNode);
+    auto shadow_vertex = emit_vertex_offset(derived.value(), EmitOptions{});
+    CY_REQUIRE(shadow_vertex.has_value());
+    CY_CHECK(shadow_vertex.value().view().find("result.offset = ctx.attributes.position") !=
+             std::string_view::npos);
+
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = compile_material(authored.value(), options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const CompiledProgram* primary = compiled.value().find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    CY_CHECK_NE(primary->vertex_source.digest, 0U);
+    auto plain_compiled = compile_material(without_offset.value(), options, allocator());
+    CY_REQUIRE(plain_compiled.has_value());
+    CY_CHECK_NE(compiled.value().cook_key(), plain_compiled.value().cook_key());
+
+    options.derive_family = true;
+    auto family = compile_material(authored.value(), options, allocator());
+    CY_REQUIRE(family.has_value());
+    const CompiledProgram* shadow_program =
+        family.value().find(ProgramKind::Shadow, QualityTier::High);
+    CY_REQUIRE(shadow_program != nullptr);
+    CY_CHECK(shadow_program->absent);
+    CY_CHECK_NE(shadow_program->vertex_source.digest, 0U);
+}
+
+CY_TEST_CASE("material_ir: named vertex interpolants survive round trip and primary derivation") {
+    const Name name = Name::intern("interpolant_case");
+    const Name colour = Name::intern("tint");
+    const Name height = Name::intern("height");
+    Builder builder(allocator(), name);
+    auto position = builder.attribute(Name::intern("position"), ValueType::Vec3);
+    auto scalar = builder.constant_float(0.5F);
+    CY_REQUIRE(position.has_value());
+    CY_REQUIRE(scalar.has_value());
+    auto closure = builder.make(Op::Diffuse, Span<const NodeId>(&position.value(), 1));
+    CY_REQUIRE(closure.has_value());
+    CY_CHECK_FALSE(builder.set_vertex_interpolant(Name{}, position.value()).has_value());
+    CY_CHECK_FALSE(
+        builder.set_vertex_interpolant(Name::intern("bad-name"), position.value()).has_value());
+    CY_CHECK_FALSE(
+        builder.set_vertex_interpolant(Name::intern("position"), position.value()).has_value());
+    CY_CHECK_FALSE(builder.set_vertex_interpolant(colour, closure.value()).has_value());
+    CY_REQUIRE(builder.set_vertex_interpolant(colour, position.value()));
+    CY_REQUIRE(builder.set_vertex_interpolant(height, scalar.value()));
+    CY_CHECK_FALSE(builder.set_vertex_interpolant(colour, scalar.value()).has_value());
+    auto authored = builder.finish();
+    CY_REQUIRE(authored.has_value());
+
+    Builder reordered(allocator(), name);
+    auto second_position = reordered.attribute(Name::intern("position"), ValueType::Vec3);
+    auto second_scalar = reordered.constant_float(0.5F);
+    CY_REQUIRE(second_position.has_value());
+    CY_REQUIRE(second_scalar.has_value());
+    CY_REQUIRE(reordered.set_vertex_interpolant(height, second_scalar.value()));
+    CY_REQUIRE(reordered.set_vertex_interpolant(colour, second_position.value()));
+    auto same = reordered.finish();
+    CY_REQUIRE(same.has_value());
+    CY_CHECK_EQ(authored->digest(), same->digest());
+    Builder changed(allocator(), name);
+    auto normal = changed.attribute(Name::intern("normal"), ValueType::Vec3);
+    auto same_scalar = changed.constant_float(0.5F);
+    CY_REQUIRE(normal.has_value());
+    CY_REQUIRE(same_scalar.has_value());
+    CY_REQUIRE(changed.set_vertex_interpolant(colour, normal.value()));
+    CY_REQUIRE(changed.set_vertex_interpolant(height, same_scalar.value()));
+    auto different = changed.finish();
+    CY_REQUIRE(different.has_value());
+    CY_CHECK_NE(authored->digest(), different->digest());
+    CY_REQUIRE_EQ(authored->vertex_interpolants().size(), 2U);
+    CY_CHECK_EQ(authored->vertex_interpolants()[0].name, height);
+    CY_CHECK_EQ(authored->vertex_interpolants()[1].name, colour);
+
+    Array<u8> bytes(allocator());
+    CY_REQUIRE(encode_module(*authored, bytes));
+    auto reopened = decode_module(bytes.span(), allocator());
+    CY_REQUIRE(reopened.has_value());
+    CY_CHECK_EQ(reopened->digest(), authored->digest());
+    OptimiseReport report(allocator());
+    auto optimised = optimise(*reopened, PassSwitches{}, report);
+    CY_REQUIRE(optimised.has_value());
+    CY_REQUIRE_EQ(optimised->vertex_interpolants().size(), 2U);
+    auto visible = derive_program(*optimised, DerivationOptions{});
+    CY_REQUIRE(visible.has_value());
+    CY_CHECK_EQ(visible->vertex_interpolants().size(), 2U);
+    auto vertex = emit_vertex_offset(*visible, EmitOptions{});
+    CY_REQUIRE(vertex.has_value());
+    CY_CHECK(vertex->view().find("float height;") != std::string_view::npos);
+    CY_CHECK(vertex->view().find("float3 tint;") != std::string_view::npos);
+    CY_CHECK(vertex->view().find("result.tint = ctx.attributes.position") !=
+             std::string_view::npos);
+    CY_CHECK(vertex->view().find("result.height = 0.5") != std::string_view::npos);
+    DerivationOptions shadow;
+    shadow.kind = ProgramKind::Shadow;
+    auto silhouette = derive_program(*optimised, shadow);
+    CY_REQUIRE(silhouette.has_value());
+    CY_CHECK_EQ(silhouette->vertex_interpolants().size(), 0U);
+
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = compile_material(*authored, options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    CY_CHECK_FALSE(compiled->failed());
+    const CompiledProgram* program = compiled->find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    CY_CHECK(program->vertex_source.view().find("result.tint = ctx.attributes.position") !=
+             std::string_view::npos);
 }
 
 CY_TEST_CASE("material_ir: the program does not depend on node ids") {

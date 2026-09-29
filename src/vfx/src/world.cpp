@@ -6,6 +6,8 @@
 #include <cy/vfx/runtime.h>
 
 #include <algorithm>
+#include <cmath>
+#include <string_view>
 #include <utility>
 
 namespace cy::vfx {
@@ -20,6 +22,17 @@ constexpr f32 kDefaultHz[kImportanceCount] = {60.0F, 60.0F, 30.0F, 15.0F};
 /// second must not then simulate sixty steps of every effect and stall again — `vfx-system` does
 /// not name this and every fixed-step loop needs it.
 constexpr u32 kMaxSubsteps = 4;
+
+/// The float components a parameter of this declared type occupies: vec2-4, else one scalar.
+[[nodiscard]] u32 parameter_components(std::string_view type) noexcept {
+    if (type == "vec2") {
+        return 2U;
+    }
+    if (type == "vec3") {
+        return 3U;
+    }
+    return type == "vec4" ? 4U : 1U;
+}
 
 }  // namespace
 
@@ -193,6 +206,8 @@ Status SimulationWorld::initialize(const WorldDescription& description) noexcept
         !made) {
         return made;
     }
+    events_.reset();
+    readback_.reset();
     readback_.set_budget(description.readback_bytes_per_frame);
     instances_.clear();
     blocks_.clear();
@@ -440,16 +455,45 @@ Status SimulationWorld::release_instance(EffectInstance& instance) noexcept {
 
 Status SimulationWorld::set_parameter(EffectHandle handle, Name parameter,
                                       Span<const f32> value) noexcept {
+    return set_parameter(handle, Name{}, parameter, value);
+}
+
+Status SimulationWorld::reset_parameters(EffectHandle handle) noexcept {
+    for (const EffectInstance& instance : instances_) {
+        if (instance.handle == handle && instance.active && instance.system != nullptr) {
+            write_parameters(instance, {});
+            return ok();
+        }
+    }
+    return fail(ErrorCode::NotFound, "vfx: no playing effect has that handle");
+}
+
+Status SimulationWorld::set_parameter(EffectHandle handle, Name emitter, Name parameter,
+                                      Span<const f32> value) noexcept {
     for (EffectInstance& instance : instances_) {
         if (instance.handle != handle || !instance.active || instance.system == nullptr) {
             continue;
         }
         const Span<const ParameterDecl> declared = instance.system->parameters();
         for (usize index = 0; index < declared.size(); ++index) {
-            if (declared[index].name != parameter) {
+            if (declared[index].emitter != emitter || declared[index].name != parameter) {
                 continue;
             }
-            for (usize component = 0; component < value.size() && component < 4U; ++component) {
+            if (!declared[index].exposed) {
+                return fail(ErrorCode::InvalidArgument,
+                            "vfx: this parameter is folded and cannot change at runtime");
+            }
+            const std::string_view type = declared[index].type.text();
+            const usize count = parameter_components(type);
+            if (value.size() != count) {
+                return fail(ErrorCode::InvalidArgument, "vfx: parameter value has the wrong width");
+            }
+            for (f32 component : value) {
+                if (!std::isfinite(component)) {
+                    return fail(ErrorCode::InvalidArgument, "vfx: parameter value is not finite");
+                }
+            }
+            for (usize component = 0; component < count; ++component) {
                 const usize word = instance.parameter_base + (index * 4U) + component;
                 if (word < parameters_.size()) {
                     parameters_[word] = value[component];
@@ -460,6 +504,38 @@ Status SimulationWorld::set_parameter(EffectHandle handle, Name parameter,
         return fail(ErrorCode::NotFound, "vfx: this system declares no parameter of that name");
     }
     return fail(ErrorCode::NotFound, "vfx: no playing effect has that handle");
+}
+
+Expected<EffectParameterValue, Error> SimulationWorld::get_parameter(
+    EffectHandle handle, Name emitter, Name parameter) const noexcept {
+    const EffectInstance* instance = find(handle);
+    if (instance == nullptr || instance->system == nullptr) {
+        return fail(ErrorCode::NotFound, "vfx: no playing effect has that handle");
+    }
+    const Span<const ParameterDecl> declared = instance->system->parameters();
+    for (usize index = 0; index < declared.size(); ++index) {
+        const ParameterDecl& candidate = declared[index];
+        if (candidate.emitter != emitter || candidate.name != parameter) {
+            continue;
+        }
+        if (!candidate.exposed) {
+            return fail(ErrorCode::InvalidArgument,
+                        "vfx: this parameter is folded and cannot be read at runtime");
+        }
+        EffectParameterValue value;
+        value.type = candidate.type;
+        const std::string_view type = candidate.type.text();
+        value.count = parameter_components(type);
+        for (u32 component = 0; component < value.count; ++component) {
+            const usize word = instance->parameter_base + (index * 4U) + component;
+            if (word >= parameters_.size()) {
+                return fail(ErrorCode::Internal, "vfx: parameter block is incomplete");
+            }
+            value.lanes[component] = parameters_[word];
+        }
+        return value;
+    }
+    return fail(ErrorCode::NotFound, "vfx: this system declares no parameter of that name");
 }
 
 Status SimulationWorld::set_transform(EffectHandle handle, const Vec3& position) noexcept {

@@ -463,4 +463,14 @@ public struct Interface: @unchecked Sendable {
     public func spawnDestroy(engine: CyEngine, root: CyEntity) throws {
         try check(table.pointee.spawn_destroy(engine, root))
     }
+
+    @inlinable
+    public func vfxEffectParameterSet(engine: CyEngine, entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, value: UnsafePointer<CyVar>?) throws {
+        try check(table.pointee.vfx_effect_parameter_set(engine, entity, emitter, parameter, value))
+    }
+
+    @inlinable
+    public func vfxEffectParameterGet(engine: CyEngine, entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyVar>?) throws {
+        try check(table.pointee.vfx_effect_parameter_get(engine, entity, emitter, parameter, into))
+    }
 }

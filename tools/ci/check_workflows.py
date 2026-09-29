@@ -509,7 +509,9 @@ def pin_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
 # package that is missing degrades a feature, an X11 one stops the build.
 README_APT = re.compile(r"^sudo apt(?:-get)? install -y (?P<packages>.+?)$", re.MULTILINE)
 X11_PACKAGE = re.compile(r"^libx[a-z0-9.-]*-dev$")
-# The one paragraph of README.md this compares against. Named by its own comment rather than by
+# Where the Linux build prerequisites live: README.md until it was condensed, then the build guide.
+BUILD_GUIDE = "docs/guides/building.md"
+# The one paragraph of the build guide this compares against. Named by its own comment rather than by
 # position, so that inserting a section above it does not silently change what is checked — and so
 # that the Swift toolchain's apt line, which also installs a `libx*-dev` (libxml2-dev, which has
 # nothing to do with X11), is not mistaken for it.
@@ -527,8 +529,8 @@ def _packages(text: str) -> set[str]:
 
 
 def documented_dependencies(root: pathlib.Path) -> set[str]:
-    """The X11 development packages README.md tells a Linux developer to install."""
-    readme = root / "README.md"
+    """The X11 development packages the build guide tells a Linux developer to install."""
+    readme = root / BUILD_GUIDE
     if not readme.exists():
         return set()
     text = readme.read_text(encoding="utf-8")
@@ -543,8 +545,8 @@ def system_dependencies(root: pathlib.Path, workflows: list[pathlib.Path]) -> li
     """Every Linux job installs the documented X11 set, or the difference is named here."""
     documented = documented_dependencies(root)
     if not documented:
-        return ["README.md documents no X11 development packages, so the workflows cannot be "
-                "checked against it"]
+        return [f"{BUILD_GUIDE} documents no X11 development packages, so the workflows cannot "
+                "be checked against it"]
 
     problems = []
     for path in workflows:
@@ -558,7 +560,7 @@ def system_dependencies(root: pathlib.Path, workflows: list[pathlib.Path]) -> li
             if missing:
                 problems.append(
                     f"{path.name}:{command.line} installs {len(installed)} package(s) and omits "
-                    f"{', '.join(missing)}, which README.md names as a system library SDL3 builds "
+                    f"{', '.join(missing)}, which {BUILD_GUIDE} names as a system library SDL3 builds "
                     "against. Every Linux job failed at the SDL3 configure for exactly this reason "
                     "from M0 to M9"
                 )
@@ -576,12 +578,15 @@ SELFTEST_CASES = (
     ("- run: clang-tidy -p build/dev src/core/base/src/error.cpp", "runs clang-tidy directly"),
     ("- run: openspec validate --specs --strict", "runs openspec directly"),
     ("- run: ./scripts/build.sh", "is neither a recipe nor a tool install"),
+    ("- run: python3 samples/05b-editor-window/test_mcp_window.py",
+     "is neither a recipe nor a tool install"),
     ("- run: just build-engine && ninja -C build/dev", "runs ninja directly"),
     ("- run: just build-everything", "invokes recipe 'build-everything', which does not exist"),
 )
 
 SELFTEST_LEGAL = (
     "- run: just build-all",
+    "- run: just quality-editor-mcp-client",
     "- run: npm install -g @fission-ai/openspec",
     "- run: |\n          sudo apt-get update\n          sudo apt-get install -y ninja-build",
 )
@@ -676,7 +681,7 @@ def selftest(root: pathlib.Path) -> int:
         documented = sorted(documented_dependencies(root))
         if len(documented) < 2:
             failed += 1
-            print("fail README.md documents fewer than two X11 packages to check against",
+            print(f"fail {BUILD_GUIDE} documents fewer than two X11 packages to check against",
                   file=sys.stderr)
         else:
             scratch.write_text(
@@ -685,7 +690,7 @@ def selftest(root: pathlib.Path) -> int:
                 encoding="utf-8",
             )
             found = system_dependencies(root, [scratch])
-            if any("README.md names as a system library" in problem for problem in found):
+            if any(f"{BUILD_GUIDE} names as a system library" in problem for problem in found):
                 print(f"ok   rejected: a Linux job installing 1 of {len(documented)} documented "
                       "X11 packages")
             else:
@@ -954,7 +959,7 @@ def main() -> int:
         for gap in drift:
             print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
         for gap in system:
-            print(f"  {gap}\n      README.md's list is the one a developer is told to run.",
+            print(f"  {gap}\n      {BUILD_GUIDE}'s list is the one a developer is told to run.",
                   file=sys.stderr)
         for gap in cancellation:
             print(f"  {gap}\n      measured: 65 of this repository's first 66 runs were "

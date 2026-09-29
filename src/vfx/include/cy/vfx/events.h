@@ -90,6 +90,8 @@ public:
     EventRouter& operator=(const EventRouter&) = delete;
 
     [[nodiscard]] Status declare(const EventChannelDecl& decl) noexcept;
+    /// Drop declarations and pending events when an isolated world is restarted or reloaded.
+    void reset() noexcept;
     [[nodiscard]] const ChannelReport* report(Name channel) const noexcept;
     [[nodiscard]] Span<const ChannelReport> reports() const noexcept { return reports_.span(); }
 
@@ -160,6 +162,9 @@ public:
 
     ReadbackQueue(const ReadbackQueue&) = delete;
     ReadbackQueue& operator=(const ReadbackQueue&) = delete;
+
+    /// Drop pending and ready records when a preview world restarts.
+    void reset() noexcept;
 
     /// The per-frame byte budget. Zero disables readback entirely, which is a legitimate shipping
     /// configuration and is reported rather than silently ignored.

@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 3,
+    "minor": 4,
     "patch": 0
   },
   "functions": [
@@ -432,10 +432,20 @@
         "index": 81,
         "name": "spawn_destroy",
         "type": "CyResult(*)(CyEngine, CyEntity)"
+      },
+      {
+        "index": 82,
+        "name": "vfx_effect_parameter_set",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, const CyVar*)"
+      },
+      {
+        "index": 83,
+        "name": "vfx_effect_parameter_get",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, CyVar*)"
       }
     ],
     "name": "CyInterface",
-    "size": 664
+    "size": 680
   },
   "types": [
     {
@@ -2824,10 +2834,24 @@
           "offset": 656,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "vfx_effect_parameter_set",
+          "offset": 664,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, const CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "vfx_effect_parameter_get",
+          "offset": 672,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, CyVar*)"
         }
       ],
       "name": "CyInterface",
-      "size": 664
+      "size": 680
     },
     {
       "kind": "enum",

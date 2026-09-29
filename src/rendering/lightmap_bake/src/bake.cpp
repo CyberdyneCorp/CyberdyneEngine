@@ -519,7 +519,7 @@ namespace {
     if (Status sized = active.resize(scene.instances.size()); !sized) {
         return sized;
     }
-    std::fill(active.begin(), active.end(), u8{0});
+    std::ranges::fill(active, u8{0});
     Array<Aabb> dirty;
     for (usize at = 0; at < request.moved_instances.size(); ++at) {
         const u32 moved = request.moved_instances[at];
@@ -536,8 +536,8 @@ namespace {
             active[texel.owner] != 0U) {
             continue;
         }
-        if (std::any_of(dirty.begin(), dirty.end(),
-                        [&](const Aabb& box) { return inside(box, texel.position); })) {
+        if (std::ranges::any_of(dirty,
+                                [&](const Aabb& box) { return inside(box, texel.position); })) {
             active[texel.owner] = 1U;
         }
     }

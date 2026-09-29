@@ -293,6 +293,16 @@ public struct Engine: @unchecked Sendable {
     public func spawnDestroy(root: CyEntity) throws {
         try interface.spawnDestroy(engine: raw, root: root)
     }
+
+    @inlinable
+    public func vfxEffectParameterSet(entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, value: UnsafePointer<CyVar>?) throws {
+        try interface.vfxEffectParameterSet(engine: raw, entity: entity, emitter: emitter, parameter: parameter, value: value)
+    }
+
+    @inlinable
+    public func vfxEffectParameterGet(entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyVar>?) throws {
+        try interface.vfxEffectParameterGet(engine: raw, entity: entity, emitter: emitter, parameter: parameter, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

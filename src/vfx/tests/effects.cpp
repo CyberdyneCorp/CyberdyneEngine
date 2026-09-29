@@ -3,6 +3,7 @@
 
 #include "effects.h"
 
+#include <string>
 #include <utility>
 
 namespace cy::vfx_test {
@@ -77,6 +78,14 @@ NodeKey StageBuilder::sample(const char* interface_name, const char* field,
     const NodeKey key = add("vfx.sample");
     set_text(key, "interface", interface_name);
     set_text(key, "field", field);
+    wire(argument, key, "x");
+    return key;
+}
+
+NodeKey StageBuilder::sample_field(const char* interface_name, const char* field,
+                                   NodeKey argument) noexcept {
+    const std::string type = std::string("vfx.sample.") + interface_name + "." + field;
+    const NodeKey key = add(type.c_str());
     wire(argument, key, "x");
     return key;
 }

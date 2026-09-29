@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cy/backends/rhi-metal/backend.h>
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/null/null_device.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
 #include <cy/rendering/material/compiler.h>
@@ -9,7 +10,9 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "material_runtime.h"
+#include "wind_field_preview.h"
 
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -37,16 +40,21 @@ Allocator& allocator() noexcept {
 struct Device {
     rhi::BackendSelection selection;
     rhi::Device* handle = nullptr;
+    Error creation_error;
 
     Device() {
+        (void)rhi::null::register_null_backend();
         (void)rhi::metal::register_metal_backend();
         rhi::DeviceDescription description;
         description.application_name = "smoke.editor_material_metal";
         description.enable_validation = true;
         auto created =
             rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
-        CY_REQUIRE(created.has_value());
-        handle = *created;
+        if (created) {
+            handle = *created;
+        } else {
+            creation_error = created.error();
+        }
     }
 
     ~Device() {
@@ -55,11 +63,31 @@ struct Device {
             rhi::destroy_device(allocator(), handle);
         }
     }
+
+    [[nodiscard]] bool native_metal() const noexcept {
+        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal &&
+               !compatibility_path();
+    }
+    /// Why `native_metal()` is false, for the skip message.
+    [[nodiscard]] const char* unavailable_reason() const noexcept {
+        if (handle == nullptr) {
+            return creation_error.message;
+        }
+        return compatibility_path()
+                   ? "the device is on the compatibility path, with no global texture table"
+                   : selection.reason;
+    }
+    /// A Metal device without a global texture table (a paravirtual GPU, argument-buffer tier 1):
+    /// the hosted material mesh samples through that table, so these cases skip on it.
+    [[nodiscard]] bool compatibility_path() const noexcept {
+        return handle != nullptr && handle->capabilities().backend() == rhi::BackendKind::Metal &&
+               handle->global_texture_table().is_null();
+    }
 };
 
-rendering::material::CompiledMaterial compile_material() {
+rendering::material::CompiledMaterial compile_material(std::string_view source = kMaterial) {
     rendering::material::ParseDiagnostic diagnostics(allocator());
-    auto module = rendering::material::parse_material(kMaterial, allocator(), diagnostics);
+    auto module = rendering::material::parse_material(source, allocator(), diagnostics);
     CY_REQUIRE(module.has_value());
     rendering::material::CompileOptions options;
     options.derive_family = false;
@@ -67,6 +95,239 @@ rendering::material::CompiledMaterial compile_material() {
     auto compiled = rendering::material::compile_material(*module, options, allocator());
     CY_REQUIRE(compiled.has_value());
     return std::move(*compiled);
+}
+
+bool images_differ(Span<const u32> left, Span<const u32> right);
+Array<u32> copy_image(Span<const u32> source);
+
+CY_TEST_CASE("authored scene visible and shadow vertices compile from the same sine graph") {
+    constexpr std::string_view source = R"(
+material scene_sway {
+    attribute time_seconds : float;
+    attribute object_position : float3;
+    let sway = sin(time_seconds + object_position.x);
+    vertex_offset = (0.0, sway, 0.0);
+    surface = diffuse((0.7, 0.5, 0.2));
+    opacity = 1.0;
+}
+)";
+    auto material = compile_material(source);
+    const auto* program = material.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    const std::string_view text(unit.data(), unit.size());
+    CY_CHECK(text.find("cySceneMaterialVertex") != std::string_view::npos);
+    CY_CHECK(text.find("cySceneMaterialShadowVertex") != std::string_view::npos);
+    CY_CHECK(text.find("cySceneMaterialDepthVertex") != std::string_view::npos);
+    CY_CHECK(text.find("object_position = modelPosition") != std::string_view::npos);
+    CY_CHECK(text.find("time_seconds = timeSeconds") != std::string_view::npos);
+    CY_CHECK(text.find("sceneMaterialTime() - sceneMaterialDelta()") != std::string_view::npos);
+    CY_CHECK(text.find("previousInstance.row0 = cyMaterialPreviousTransform.row0") !=
+             std::string_view::npos);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
+    CY_CHECK_GT(stages->depth.bytes().size(), 0U);
+    CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("authored scene interpolants reach the compiled surface fragment") {
+    constexpr std::string_view source =
+        "material scene_tint { attribute object_position : float3; "
+        "attribute tint : float3; vertex_interpolant tint = object_position; "
+        "surface = diffuse(tint); opacity = 1.0; }";
+    auto material = compile_material(source);
+    const auto* program = material.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("vertex_tint : TEXCOORD5") != std::string_view::npos);
+    CY_CHECK(shader.find("output.vertex_tint = evaluated.material.tint") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.tint = input.vertex_tint") != std::string_view::npos);
+    CY_CHECK(shader.find("cyShadeForward(cyResolveSurface(compiled), frameInput)") !=
+             std::string_view::npos);
+    auto metal = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(metal.has_value());
+    CY_CHECK_GT(metal->visible.bytes().size(), 0U);
+    CY_CHECK_GT(metal->fragment.bytes().size(), 0U);
+    auto spirv = compile_scene_material_vertices(*program, allocator(), shader::Target::SpirV);
+    CY_REQUIRE(spirv.has_value());
+    CY_CHECK_GT(spirv->visible.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("a compiled vertex offset moves the hosted Metal material mesh") {
+    constexpr std::string_view plain_source =
+        "material vertex_sway { surface = diffuse((0.7, 0.5, 0.2)); opacity = 1.0; }";
+    constexpr std::string_view offset_source =
+        "material vertex_sway { surface = diffuse((0.7, 0.5, 0.2)); opacity = 1.0; "
+        "vertex_offset = (0.0, 2.0, 0.0); }";
+    Device device;
+    if (!device.native_metal()) {
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
+        CY_CHECK(expected_unavailable);
+        return;
+    }
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    scene_description.box_count = kWorldCapacity;
+    CY_REQUIRE(scene.build(scene_description));
+
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    WorldView world(allocator());
+    CY_REQUIRE(world.open(CY_SAMPLE_PROJECT, "worlds/city.cyworld", types));
+    CY_REQUIRE_EQ(world.present(scene), 3U);
+
+    first_light::Renderer renderer(allocator(), *device.handle);
+    first_light::RendererOptions options;
+    options.width = 160;
+    options.height = 90;
+    options.readback = true;
+    CY_REQUIRE(renderer.prepare(scene, options));
+
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto plain = compile_material(plain_source);
+    auto offset = compile_material(offset_source);
+    CY_REQUIRE_NE(plain.cook_key(), offset.cook_key());
+    CY_REQUIRE(runtime.publish(plain.cook_key(), plain));
+    CY_REQUIRE(runtime.publish(offset.cook_key(), offset));
+    constexpr u64 preview = 1;
+    CY_REQUIRE(runtime.create(preview));
+    const u64 entity = world.identity_of(1);
+    CY_REQUIRE_NE(entity, 0U);
+    editor::MaterialPreviewTarget target;
+    std::memcpy(target.entity, &entity, sizeof(entity));
+    target.material_slot = 0;
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    const first_light::Camera camera = world.framing(scene);
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    Array<u32> plain_image = copy_image(renderer.color_texels());
+
+    CY_REQUIRE(runtime.reload(preview, offset.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK(images_differ(plain_image.span(), renderer.color_texels()));
+    Array<u32> offset_image = copy_image(renderer.color_texels());
+
+    // A constant world-space offset must produce the same visible pixels and shadow as moving
+    // this exact object on the CPU with the otherwise identical material.
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    const u32 object = world.object_for(entity);
+    CY_REQUIRE(object < scene.objects_mutable().size());
+    scene.objects_mutable()[object].world_position[1] += 2.0;
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK_FALSE(images_differ(offset_image.span(), renderer.color_texels()));
+}
+
+// DEFERRED (issue #15, task 3.5): native Metal does not bind the environment-field table yet. Slang
+// lowers `cy.field`'s unbounded `cyEnvironmentFields[]` to a flexible array member that Metal
+// refuses, and neither Metal argument-buffer declaration (`CyFrameGlobalSet`, the editor texture
+// table) carries the device's field binding. Until it does, a wind graph must be refused at
+// publish while a plain material keeps rendering. When the table is bound, this case becomes the
+// image comparison it was written as: wind pixels differ from plain, and a moved camera refreshes.
+CY_TEST_CASE("native Metal refuses a weather wind material until its field table is bound") {
+    Device device;
+    if (!device.native_metal()) {
+        const bool unavailable =
+            device.handle == nullptr || device.selection.fell_back || device.compatibility_path();
+        CY_CHECK(unavailable);
+        return;
+    }
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    scene_description.box_count = kWorldCapacity;
+    CY_REQUIRE(scene.build(scene_description));
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    WorldView world(allocator());
+    CY_REQUIRE(world.open(CY_SAMPLE_PROJECT, "worlds/city.cyworld", types));
+    CY_REQUIRE_EQ(world.present(scene), 3U);
+    first_light::Renderer renderer(allocator(), *device.handle);
+    first_light::RendererOptions options;
+    options.width = 160;
+    options.height = 90;
+    options.readback = true;
+    CY_REQUIRE(renderer.prepare(scene, options));
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto plain = compile_material(
+        "material wind_sway { surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    auto wind = compile_material(
+        "material wind_sway { field wind : float3; vertex_offset = wind * 0.05; "
+        "surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    CY_REQUIRE(runtime.publish(plain.cook_key(), plain));
+    const Status refused = runtime.publish(wind.cook_key(), wind);
+    CY_REQUIRE_FALSE(refused);
+    CY_CHECK_EQ(refused.error().code, ErrorCode::InvalidArgument);
+    constexpr u64 preview = 2;
+    CY_REQUIRE(runtime.create(preview));
+    const u64 entity = world.identity_of(1);
+    CY_REQUIRE_NE(entity, 0U);
+    editor::MaterialPreviewTarget target;
+    std::memcpy(target.entity, &entity, sizeof(entity));
+    target.material_slot = 0;
+    CY_CHECK_FALSE(runtime.reload(preview, wind.cook_key(), {&target, 1}));
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    CY_CHECK(renderer.render(scene, world.framing(scene)).has_value());
+}
+
+CY_TEST_CASE("a compiled vertex colour shades the hosted Metal material mesh") {
+    Device device;
+    if (!device.native_metal()) {
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
+        CY_CHECK(expected_unavailable);
+        return;
+    }
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    scene_description.box_count = kWorldCapacity;
+    CY_REQUIRE(scene.build(scene_description));
+
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    WorldView world(allocator());
+    CY_REQUIRE(world.open(CY_SAMPLE_PROJECT, "worlds/city.cyworld", types));
+    CY_REQUIRE_EQ(world.present(scene), 3U);
+
+    first_light::Renderer renderer(allocator(), *device.handle);
+    first_light::RendererOptions options;
+    options.width = 160;
+    options.height = 90;
+    options.readback = true;
+    CY_REQUIRE(renderer.prepare(scene, options));
+
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto plain =
+        compile_material("material dyed { surface = diffuse((1.0, 1.0, 1.0)); opacity = 1.0; }");
+    auto coloured = compile_material(
+        "material dyed { attribute color0 : float3; surface = diffuse(color0); opacity = 1.0; }");
+    CY_REQUIRE(runtime.publish(plain.cook_key(), plain));
+    CY_REQUIRE(runtime.publish(coloured.cook_key(), coloured));
+    constexpr u64 preview = 2;
+    CY_REQUIRE(runtime.create(preview));
+    const u64 entity = world.identity_of(1);
+    CY_REQUIRE_NE(entity, 0U);
+    editor::MaterialPreviewTarget target;
+    std::memcpy(target.entity, &entity, sizeof(entity));
+    target.material_slot = 0;
+    const first_light::Camera camera = world.framing(scene);
+    CY_REQUIRE(runtime.reload(preview, plain.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    Array<u32> plain_image = copy_image(renderer.color_texels());
+
+    CY_REQUIRE(runtime.reload(preview, coloured.cook_key(), {&target, 1}));
+    CY_REQUIRE(renderer.render(scene, camera).has_value());
+    CY_CHECK(images_differ(plain_image.span(), renderer.color_texels()));
 }
 
 bool images_differ(Span<const u32> left, Span<const u32> right) {
@@ -89,8 +350,207 @@ Array<u32> copy_image(Span<const u32> source) {
 
 }  // namespace
 
+CY_TEST_CASE("the hosted material shader calls the compiled vertex offset") {
+    constexpr std::string_view source =
+        "material vertex_sway { surface = diffuse((0.7, 0.5, 0.2)); "
+        "vertex_offset = (0.0, 2.0, 0.0); }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    CY_REQUIRE_FALSE(primary->vertex_source.text.empty());
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find(primary->vertex_source.view()) != std::string_view::npos);
+    CY_CHECK(shader.find("let materialVertex = "
+                         "cy_material_vertex_sway_primary_high_vertex(ctx)") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("output.positionRelativeToCamera += materialVertex.offset") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("EditorVertexOutput output = editorMaterialVertexBase(input)") !=
+             std::string_view::npos);
+    CY_CHECK(
+        shader.find("let position = editorMaterialVertexBase(input).positionRelativeToCamera") !=
+        std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader carries a typed vertex colour to its surface") {
+    using namespace rendering::material;
+    Builder builder(allocator(), Name::intern("vertex_tint"));
+    auto colour = builder.attribute(Name::intern("color0"), ValueType::Vec3);
+    auto tint = builder.attribute(Name::intern("tint"), ValueType::Vec3);
+    CY_REQUIRE(colour.has_value());
+    CY_REQUIRE(tint.has_value());
+    const NodeId inputs[] = {tint.value()};
+    auto surface = builder.make(Op::Diffuse, {inputs, 1});
+    CY_REQUIRE(surface.has_value());
+    CY_REQUIRE(builder.set_surface(surface.value()));
+    CY_REQUIRE(builder.set_vertex_interpolant(Name::intern("tint"), colour.value()));
+    auto authored = builder.finish();
+    CY_REQUIRE(authored.has_value());
+    CompileOptions options;
+    options.derive_family = false;
+    options.derive_tiers = false;
+    auto compiled = rendering::material::compile_material(*authored, options, allocator());
+    CY_REQUIRE(compiled.has_value());
+    CY_CHECK_FALSE(compiled->failed());
+    const CompiledProgram* primary = compiled->find(ProgramKind::Primary, QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("[[vk::location(5)]] float3 vertex_tint : TEXCOORD5") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("result.tint = ctx.attributes.color0") != std::string_view::npos);
+    CY_CHECK(shader.find("output.vertex_tint = materialVertex.tint") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.tint = input.vertex_tint") != std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader binds object position before vertex evaluation") {
+    constexpr std::string_view source =
+        "material object_sway { attribute object_position : float3; "
+        "vertex_offset = object_position * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("output.objectPosition = input.position") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.object_position = output.objectPosition") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.object_position = input.objectPosition") !=
+             std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader binds mesh vertex colour in both stages") {
+    constexpr std::string_view source =
+        "material dyed { attribute color0 : float3; surface = diffuse(color0); "
+        "vertex_offset = color0 * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("[[vk::location(3)]] float4 color : COLOR0") != std::string_view::npos);
+    CY_CHECK(shader.find("output.color = input.color") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = output.color.rgb") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = input.color.rgb") != std::string_view::npos);
+    CY_CHECK(shader.find("ctx.attributes.color0 = object.baseColor") == std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader binds camera-relative world position") {
+    constexpr std::string_view source =
+        "material world_sway { attribute position : float3; "
+        "vertex_offset = position * 0.1; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    const usize binding = shader.find("ctx.attributes.position = output.positionRelativeToCamera");
+    const usize evaluation =
+        shader.find("let materialVertex = cy_material_world_sway_primary_high_vertex(ctx)");
+    CY_REQUIRE_NE(binding, std::string_view::npos);
+    CY_REQUIRE_NE(evaluation, std::string_view::npos);
+    CY_CHECK_LT(binding, evaluation);
+    CY_CHECK(shader.find("ctx.attributes.position = input.positionRelativeToCamera") !=
+             std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader samples engine time in vertex and fragment stages") {
+    constexpr std::string_view source =
+        "material time_sway { attribute time_seconds : float; "
+        "vertex_offset = (0.0, sin(time_seconds), 0.0); }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    constexpr std::string_view binding =
+        "ctx.attributes.time_seconds = editorFrame.frame.shadowControl.z";
+    const usize vertex = shader.find(binding);
+    const usize evaluation =
+        shader.find("let materialVertex = cy_material_time_sway_primary_high_vertex(ctx)");
+    CY_REQUIRE_NE(vertex, std::string_view::npos);
+    CY_REQUIRE_NE(evaluation, std::string_view::npos);
+    CY_CHECK_LT(vertex, evaluation);
+    CY_CHECK(shader.find(binding, evaluation) != std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted material shader gives typed wind a camera-relative field position") {
+    constexpr std::string_view source =
+        "material wind_sway { field wind : float3; vertex_offset = wind; "
+        "surface = diffuse(wind); opacity = 1.0; }";
+    auto compiled = compile_material(source);
+    const auto* primary = compiled.find(rendering::material::ProgramKind::Primary,
+                                        rendering::material::QualityTier::High);
+    CY_REQUIRE(primary != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_material_unit(*primary, unit));
+    const std::string_view shader(unit.data(), unit.size());
+    CY_CHECK(shader.find("import cy.field;") != std::string_view::npos);
+    const usize vertex_position =
+        shader.find("ctx.fieldPosition = output.positionRelativeToCamera");
+    const usize vertex_evaluation =
+        shader.find("let materialVertex = cy_material_wind_sway_primary_high_vertex(ctx)");
+    CY_REQUIRE_NE(vertex_position, std::string_view::npos);
+    CY_REQUIRE_NE(vertex_evaluation, std::string_view::npos);
+    CY_CHECK_LT(vertex_position, vertex_evaluation);
+    CY_CHECK(shader.find("ctx.fieldPosition = input.positionRelativeToCamera") !=
+             std::string_view::npos);
+    CY_CHECK(shader.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z)") !=
+             std::string_view::npos);
+}
+
+CY_TEST_CASE("the hosted wind preview compiles Engine field sampling before device binding") {
+    rhi::DeviceDescription description;
+    auto created = rhi::null::create_null_device(allocator(), description);
+    CY_REQUIRE(created.has_value());
+    struct NullOwner {
+        rhi::Device* handle;
+        ~NullOwner() { rhi::null::destroy_null_device(allocator(), handle); }
+    } device{*created};
+    first_light::Scene scene(allocator());
+    first_light::SceneDescription scene_description;
+    CY_REQUIRE(scene.build(scene_description));
+    first_light::Renderer renderer(allocator(), *device.handle);
+    CY_REQUIRE(renderer.prepare(scene, {}));
+    WindFieldPreview weather(allocator());
+    CY_REQUIRE(weather.initialize({0.0, 2.0, 0.0}));
+    const auto& image = weather.image();
+    CY_REQUIRE(
+        renderer.set_material_wind_field(image.words.span(), image.origin_x, image.origin_z));
+    WorldView world(allocator());
+    MetalMaterialRuntime runtime(allocator(), renderer, world);
+    auto material = compile_material(
+        "material wind_sway { field wind : float3; vertex_offset = wind * 0.05; "
+        "surface = diffuse((0.5, 0.5, 0.5)); opacity = 1.0; }");
+    const Status published = runtime.publish(material.cook_key(), material);
+    CY_CHECK_FALSE(published);
+    CY_CHECK_EQ(published.error().code, ErrorCode::InvalidArgument);
+    CY_CHECK(std::string_view(published.error().message).find("Metal renderer rejected") !=
+             std::string_view::npos);
+}
+
 CY_TEST_CASE("compiled materials bind, update and leave the exact Metal viewport object") {
     Device device;
+    if (!device.native_metal()) {
+        std::fprintf(stderr, "no Metal device: %s\n", device.unavailable_reason());
+        const bool expected_unavailable =
+            device.handle == nullptr ? device.creation_error.code == ErrorCode::Unavailable
+                                     : device.selection.fell_back || device.compatibility_path();
+        CY_CHECK(expected_unavailable);
+        return;
+    }
     first_light::Scene scene(allocator());
     first_light::SceneDescription scene_description;
     scene_description.box_count = kWorldCapacity;

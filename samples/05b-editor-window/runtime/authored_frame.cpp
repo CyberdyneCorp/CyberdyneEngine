@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include "authored_frame.h"
+#include "material_runtime.h"
+#include "wind_field_preview.h"
 
 #include <cy/core/assets/cooked.h>
 #include <cy/core/assets/file.h>
 #include <cy/core/math/projection.h>
+#include <cy/core/memory/hash.h>
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
 #include <cy/import/mesh.h>
@@ -18,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <string_view>
 
 namespace cy::sample::editor_window {
@@ -31,17 +35,99 @@ using namespace rendering::pipeline;
 Vec3 point(const Mat4& matrix, Vec3 model) noexcept;
 
 constexpr u32 kCapacity = 4096;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+constexpr u32 kVfxCapacity = 4096;
+#endif
 constexpr u32 kMaterialCapacity = 128;
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
-struct GraphColour {
-    Vec4 value;
-    std::string parameter;
-};
+/// Slang compacts entry-point MSL buffers even when their Vulkan sets are fixed. The Metal RHI
+/// binds argument buffers at set indices 0-3, followed by draw push constants at index 4.
+Status remap_scene_metal_buffer(std::string& source, std::string_view from,
+                                std::string_view to) noexcept {
+    const usize position = source.find(from);
+    if (position == std::string::npos ||
+        source.find(from, position + from.size()) != std::string::npos) {
+        return fail(ErrorCode::InvalidArgument, "scene material MSL buffer layout changed");
+    }
+    source.replace(position, from.size(), to.data(), to.size());
+    return ok();
+}
 
-Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
-                                                  Allocator& allocator) noexcept {
+Status unwrap_scene_metal_textures(std::string& source) noexcept {
+    constexpr std::string_view prefix = "(&kernelContext_";
+    constexpr std::string_view suffix = "->cyFrameGlobals_0->textures_0)->data_0[";
+    usize cursor = 0;
+    u32 replaced = 0;
+    usize end = source.find(suffix, cursor);
+    while (end != std::string::npos) {
+        const usize begin = source.rfind(prefix, end);
+        if (begin == std::string::npos) {
+            return fail(ErrorCode::InvalidArgument, "scene material MSL texture access changed");
+        }
+        const std::string context = source.substr(begin + 2, end - begin - 2);
+        if (context.find_first_not_of("kernelContext_0123456789") != std::string::npos ||
+            context.substr(0, sizeof("kernelContext_") - 1) != "kernelContext_") {
+            return fail(ErrorCode::InvalidArgument, "scene material MSL texture access changed");
+        }
+        const std::string direct = context + "->cyFrameGlobals_0->textures_0[";
+        source.replace(begin, end + suffix.size() - begin, direct);
+        cursor = begin + direct.size();
+        ++replaced;
+        end = source.find(suffix, cursor);
+    }
+    return replaced != 0
+               ? ok()
+               : fail(ErrorCode::InvalidArgument, "scene material MSL texture access missing");
+}
+
+Status fix_scene_metal_global_table(std::string& source) noexcept {
+    const auto replace = [&](std::string_view from, std::string_view to) -> Status {
+        return remap_scene_metal_buffer(source, from, to);
+    };
+    if (Status status =
+            replace("_Array_default_Texture2D128_0 textures_0;",
+                    "array<texture2d<float, access::sample>, 128> textures_0 [[id(1)]];");
+        !status) {
+        return status;
+    }
+    if (Status status = replace("CyGlobalsData_0 constant* globals_0;",
+                                "CyGlobalsData_0 constant* globals_0 [[id(0)]];");
+        !status) {
+        return status;
+    }
+    if (Status status = replace("sampler sampler_0;", "sampler sampler_0 [[id(129)]];"); !status) {
+        return status;
+    }
+    if (Status status = unwrap_scene_metal_textures(source); !status) {
+        return status;
+    }
+    if (Status status =
+            replace("CyFrameGlobalSet_default_0 constant* cyFrameGlobals_1 [[buffer(0)]]",
+                    "CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]]");
+        !status) {
+        return status;
+    }
+    return replace("cyFrameGlobals_0 = cyFrameGlobals_1;", "cyFrameGlobals_0 = &cyFrameGlobals_1;");
+}
+
+/// `CyMaterialFieldBinding` in the generated Slang prelude: a scalar followed by a float3. The
+/// buffer is separate from the material's authored parameter block so field origin changes do not
+/// depend on the graph compiler's parameter layout.
+struct alignas(16) SceneFieldBinding {
+    u32 slot = 0;
+    u32 padding[3] = {};
+    f32 camera_to_image[3] = {};
+    f32 trailing_padding = 0.0F;
+};
+static_assert(sizeof(SceneFieldBinding) == 32);
+static_assert(offsetof(SceneFieldBinding, camera_to_image) == 16);
+
+}  // namespace
+
+Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source, Allocator& allocator,
+                                                  bool allow_vertex) noexcept {
     graph::NodeRegistry registry(allocator);
     if (Status status = graph::material::register_material_nodes(registry); !status) {
         return make_unexpected(status.error());
@@ -55,7 +141,23 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
         return fail(ErrorCode::InvalidArgument, "authored frame: material graph has unknown nodes");
     }
     const graph::Graph& authored = *parsed;
-    if (authored.nodes().size() != 4 || authored.links().size() != 4) {
+    bool vertex = false;
+    for (const graph::GraphNode& node : authored.nodes()) {
+        if (node.type.text() == "material.vertex_output" ||
+            node.type.text() == "material.vertex_interpolant") {
+            vertex = true;
+        }
+    }
+    if (vertex && !allow_vertex) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene renderer has no vertex-stage material pass");
+    }
+    if (vertex) {
+        // The compiled fragment owns this graph's surface. The standard material table still
+        // needs a valid row for depth and draw setup, but its colour is not the shaded result.
+        return GraphColour{Vec4{1.0F, 1.0F, 1.0F, 1.0F}, {}, true};
+    }
+    if (!vertex && (authored.nodes().size() != 4 || authored.links().size() != 4)) {
         return fail(ErrorCode::Unsupported,
                     "authored frame: only constant-colour diffuse graphs are supported here");
     }
@@ -113,8 +215,11 @@ Expected<GraphColour, Error> graph_diffuse_colour(std::string_view source,
     }
     const graph::Literal* symbol = authored.property(colour, Name::intern("symbol"));
     return GraphColour{Vec4{value->value.x, value->value.y, value->value.z, 1.0F},
-                       parameter && symbol != nullptr ? std::string(symbol->text.text()) : ""};
+                       parameter && symbol != nullptr ? std::string(symbol->text.text()) : "",
+                       vertex};
 }
+
+namespace {
 
 u32 read_u32(const u8* bytes) noexcept {
     return static_cast<u32>(bytes[0]) | (static_cast<u32>(bytes[1]) << 8U) |
@@ -311,6 +416,24 @@ struct AuthoredFrame::Readback {
     rhi::BufferHandle buffer;
     u32 width = 0;
     u32 height = 0;
+    u32 row_length = 0;
+};
+
+struct AuthoredFrame::MaterialVariant {
+    u32 slot = 0;
+    std::string source;
+    rhi::ShaderModuleHandle depth_shader;
+    rhi::ShaderModuleHandle visible_shader;
+    rhi::ShaderModuleHandle shadow_shader;
+    rhi::ShaderModuleHandle fragment_shader;
+    rhi::GraphicsPipelineHandle depth_pipeline;
+    rhi::GraphicsPipelineHandle visible_pipeline;
+    rhi::GraphicsPipelineHandle shadow_pipeline;
+    rhi::BufferHandle parameters;
+    rhi::BufferHandle previous_transform;
+    rhi::BufferHandle field_parameters[rhi::kMaxFramesInFlight];
+    bool has_wind = false;
+    rhi::DescriptorSetHandle descriptor_set;
 };
 
 AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
@@ -320,16 +443,100 @@ AuthoredFrame::AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept
       index_(allocator),
       graph_(allocator),
       material_program_(allocator),
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+      vfx_records_(allocator),
+#endif
       texture_server_(allocator),
       transforms_(allocator),
       lights_(allocator),
-      pixels_(allocator) {}
+      pixels_(allocator),
+      motion_texels_(allocator) {
+}
+
+Status AuthoredFrame::create_material_variant_layout() noexcept {
+    const rhi::DescriptorBinding bindings[] = {
+        {0, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+        {1, rhi::DescriptorKind::UniformBuffer, 1, rhi::ShaderStage::Vertex, false},
+        {2, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+    };
+    rhi::DescriptorSetLayoutDescription set;
+    set.name = "editor scene material parameters";
+    set.bindings = bindings;
+    auto created_set = device_->create_descriptor_set_layout(set);
+    if (!created_set) {
+        return make_unexpected(created_set.error());
+    }
+    material_set_layout_ = *created_set;
+    const rhi::DescriptorSetLayoutHandle sets[] = {pipelines_.set_layout(0),
+                                                   pipelines_.set_layout(1),
+                                                   pipelines_.set_layout(2), material_set_layout_};
+    const rhi::PushConstantRange push{rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+                                      sizeof(DrawPush)};
+    rhi::PipelineLayoutDescription layout;
+    layout.name = "editor scene material pipeline";
+    layout.set_layouts = sets;
+    layout.push_constants = {&push, 1};
+    auto created_layout = device_->create_pipeline_layout(layout);
+    if (!created_layout) {
+        return make_unexpected(created_layout.error());
+    }
+    material_pipeline_layout_ = *created_layout;
+    return ok();
+}
+
+void AuthoredFrame::release_graph_variant(MaterialVariant& variant) noexcept {
+    for (rhi::GraphicsPipelineHandle pipeline :
+         {variant.depth_pipeline, variant.visible_pipeline, variant.shadow_pipeline}) {
+        if (!pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(pipeline);
+        }
+    }
+    for (rhi::ShaderModuleHandle shader : {variant.depth_shader, variant.visible_shader,
+                                           variant.shadow_shader, variant.fragment_shader}) {
+        if (!shader.is_null()) {
+            device_->destroy_shader_module(shader);
+        }
+    }
+    if (!variant.parameters.is_null()) {
+        device_->destroy_buffer(variant.parameters);
+    }
+    if (!variant.previous_transform.is_null()) {
+        device_->destroy_buffer(variant.previous_transform);
+    }
+    for (rhi::BufferHandle buffer : variant.field_parameters) {
+        if (!buffer.is_null()) {
+            device_->destroy_buffer(buffer);
+        }
+    }
+    variant = {};
+}
 
 Status AuthoredFrame::preview(std::string_view reference,
                               std::string_view canonical_graph) noexcept {
-    auto colour = graph_diffuse_colour(canonical_graph, *allocator_);
+    auto colour = graph_diffuse_colour(canonical_graph, *allocator_, true);
     if (!colour) {
         return make_unexpected(colour.error());
+    }
+    if (colour->vertex) {
+        auto compiled = compile_scene_graph_material(canonical_graph, *allocator_);
+        if (!compiled) {
+            return make_unexpected(compiled.error());
+        }
+        const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                             rendering::material::QualityTier::High);
+        if (program == nullptr || program->vertex_source.text.empty()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "authored scene preview has no vertex expression");
+        }
+        Array<char> unit(*allocator_);
+        const bool argument_buffer =
+            device_->capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
+        if (Status assembled = assemble_scene_material_vertex_unit(*program, unit, argument_buffer);
+            !assembled) {
+            return assembled;
+        }
     }
     preview_graph_ = std::make_pair(std::string(reference), std::string(canonical_graph));
     return ok();
@@ -337,6 +544,15 @@ Status AuthoredFrame::preview(std::string_view reference,
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+    for (MaterialVariant& variant : material_variants_) {
+        release_graph_variant(variant);
+    }
+    if (!wind_buffer_.is_null()) {
+        device_->destroy_buffer(wind_buffer_);
+    }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    vfx_renderer_.shutdown();
+#endif
     if (!shadow_view_.is_null()) {
         device_->destroy_texture_view(shadow_view_);
     }
@@ -352,20 +568,31 @@ AuthoredFrame::~AuthoredFrame() {
     if (!readback_.is_null()) {
         device_->destroy_buffer(readback_);
     }
+    if (!motion_readback_.is_null()) {
+        device_->destroy_buffer(motion_readback_);
+    }
     if (!output_.is_null()) {
         device_->destroy_texture(output_);
     }
     bindings_.shutdown();
+    if (!material_pipeline_layout_.is_null()) {
+        device_->destroy_pipeline_layout(material_pipeline_layout_);
+    }
+    if (!material_set_layout_.is_null()) {
+        device_->destroy_descriptor_set_layout(material_set_layout_);
+    }
     pipelines_.shutdown();
 }
 
-Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noexcept {
+Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, bool temporal,
+                                 bool capture_motion) noexcept {
     if (initialized_ || width == 0 || height == 0 || project == nullptr) {
         return fail(ErrorCode::InvalidArgument, "authored frame: invalid initialization");
     }
     width_ = width;
     height_ = height;
     project_ = project;
+    time_origin_ = std::chrono::steady_clock::now();
 
     AssemblyDescription description;
     description.width = width;
@@ -377,7 +604,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     description.max_draws = kCapacity * 16U;
     description.max_instances = kCapacity;
     description.gpu_culling = false;
-    description.post.temporal_antialiasing = true;
+    description.post.temporal_antialiasing = temporal;
     if (Status status = assembly_.initialize(description); !status) {
         return status;
     }
@@ -389,9 +616,12 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     setup.color_format = description.color_format;
     setup.depth_format = description.depth_format;
     setup.output_format = kOutputFormat;
-    setup.prepass_normal = true;
-    setup.prepass_velocity = true;
+    setup.prepass_normal = temporal;
+    setup.prepass_velocity = temporal;
     if (Status status = pipelines_.initialize(*device_, setup); !status) {
+        return status;
+    }
+    if (Status status = create_material_variant_layout(); !status) {
         return status;
     }
     Expected<ClusterGrid, Error> grid = make_cluster_grid(
@@ -407,6 +637,12 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
     if (Status status = recorder_.initialize(pipelines_, bindings_); !status) {
         return status;
     }
+    recorder_.set_draw_pipeline(&AuthoredFrame::select_material_pipeline, this);
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (Status status = vfx_renderer_.initialize(*device_, pipelines_, kVfxCapacity); !status) {
+        return status;
+    }
+#endif
     if (Status status = create_materials(); !status) {
         return status;
     }
@@ -439,6 +675,20 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project) noe
         return make_unexpected(buffer.error());
     }
     readback_ = *buffer;
+    if (temporal && capture_motion) {
+        const u64 row_length = ((u64{width} + 63U) / 64U) * 64U;
+        if (row_length > std::numeric_limits<u32>::max()) {
+            return fail(ErrorCode::OutOfRange, "authored frame: motion row is too wide");
+        }
+        motion_row_length_ = static_cast<u32>(row_length);
+        readback.name = "editor authored motion readback";
+        readback.size = u64{motion_row_length_} * height * sizeof(u32);
+        auto motion_buffer = device_->create_buffer(readback);
+        if (!motion_buffer) {
+            return make_unexpected(motion_buffer.error());
+        }
+        motion_readback_ = *motion_buffer;
+    }
 
     rhi::TextureDescription output;
     output.name = "editor authored frame output";
@@ -618,7 +868,7 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
     }
     const bool previewing = preview_graph_ && preview_graph_->first == reference;
     const std::string_view active = previewing ? std::string_view(preview_graph_->second) : saved;
-    auto colour = graph_diffuse_colour(active, *allocator_);
+    auto colour = graph_diffuse_colour(active, *allocator_, true);
     if (!colour) {
         return make_unexpected(colour.error());
     }
@@ -628,7 +878,7 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
         const ser::WorldValue* override = field_value(world, node, component, colour->parameter);
         bool inherited = false;
         if (previewing && override != nullptr && override->kind == ser::WorldValueKind::Vec3) {
-            auto original = graph_diffuse_colour(saved, *allocator_);
+            auto original = graph_diffuse_colour(saved, *allocator_, true);
             if (original && original->parameter == colour->parameter) {
                 inherited = std::abs(override->lanes[0] - original->value.x) < 0.0001F &&
                             std::abs(override->lanes[1] - original->value.y) < 0.0001F &&
@@ -639,16 +889,365 @@ Expected<u32, Error> AuthoredFrame::graph_material_slot(const ser::World& world,
             colour->value = Vec4{override->lanes[0], override->lanes[1], override->lanes[2], 1.0F};
         }
     }
+    sign_shading(key.data(), key.size());
+    sign_shading(active.data(), active.size());
+    sign_shading(colour->value.x);
+    sign_shading(colour->value.y);
+    sign_shading(colour->value.z);
+    sign_shading(colour->value.w);
     const StandardParameters ids;
     if (Status status = assembly_.materials().set_color(material_program_, slot,
                                                         ids.base_color_factor, colour->value);
         !status) {
         return make_unexpected(status.error());
     }
+    if (colour->vertex) {
+        if (Status status = prepare_graph_variant(slot, active); !status) {
+            return make_unexpected(status.error());
+        }
+    } else {
+        const auto previous = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& variant) { return variant.slot == slot; });
+        if (previous != material_variants_.end()) {
+            release_graph_variant(*previous);
+            material_variants_.erase(previous);
+            history_cut_ = true;
+        }
+    }
     if (new_slot) {
         material_slots_.emplace_back(key, slot);
     }
     return slot;
+}
+
+Status AuthoredFrame::ensure_wind_field() noexcept {
+    if (wind_ != nullptr && wind_->covers(field_camera_)) {
+        return ok();
+    }
+    if (device_->descriptor_model() != rhi::DescriptorModel::Bindless) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene wind graphs require bindless environment fields");
+    }
+    auto preview = std::make_unique<WindFieldPreview>(*allocator_);
+    if (Status prepared = preview->initialize(field_camera_); !prepared) {
+        return prepared;
+    }
+    const auto words = preview->image().words.span();
+    rhi::BufferDescription buffer;
+    buffer.name = "editor weather wind field image";
+    buffer.size = words.size() * sizeof(u32);
+    buffer.usage = rhi::BufferUsage::Storage;
+    buffer.memory = rhi::MemoryUse::Upload;
+    auto created = device_->create_buffer(buffer);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    void* mapped = device_->buffer_mapped_pointer(*created);
+    if (mapped == nullptr) {
+        device_->destroy_buffer(*created);
+        return fail(ErrorCode::Internal, "authored scene wind image is not mapped");
+    }
+    std::memcpy(mapped, words.data(), buffer.size);
+    if (!wind_buffer_.is_null()) {
+        if (Status idle = device_->wait_idle(); !idle) {
+            device_->destroy_buffer(*created);
+            return idle;
+        }
+        device_->destroy_buffer(wind_buffer_);
+    }
+    wind_buffer_ = *created;
+    wind_ = std::move(preview);
+    return ok();
+}
+
+Status AuthoredFrame::prepare_graph_variant(u32 slot, std::string_view source) noexcept {
+    const auto previous = std::ranges::find_if(
+        material_variants_,
+        [slot](const MaterialVariant& variant) { return variant.slot == slot; });
+    if (previous != material_variants_.end() && previous->source == source) {
+        return ok();
+    }
+    const rhi::ShaderFormat format = device_->capabilities().native_shader_format();
+    if (format != rhi::ShaderFormat::Msl && format != rhi::ShaderFormat::Spirv) {
+        return fail(ErrorCode::Unsupported,
+                    "authored scene vertex graphs require an MSL or SPIR-V shader path");
+    }
+    auto compiled = compile_scene_graph_material(source, *allocator_);
+    if (!compiled) {
+        return make_unexpected(compiled.error());
+    }
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    if (program == nullptr || program->vertex_source.text.empty()) {
+        return fail(ErrorCode::InvalidArgument, "authored scene material has no vertex expression");
+    }
+    bool has_wind = false;
+    for (const auto& field : program->module.nodes()) {
+        if (field.op != rendering::material::Op::Field) {
+            continue;
+        }
+        if (field.symbol != Name::intern("wind") ||
+            field.type != rendering::material::ValueType::Vec3) {
+            return fail(ErrorCode::Unsupported,
+                        "authored scene material requests an unbound environment field");
+        }
+        has_wind = true;
+    }
+    if (has_wind) {
+        if (Status prepared = ensure_wind_field(); !prepared) {
+            return prepared;
+        }
+    }
+    auto stages = compile_scene_material_vertices(
+        *program, *allocator_,
+        format == rhi::ShaderFormat::Msl ? shader::Target::Msl : shader::Target::SpirV);
+    if (!stages) {
+        return make_unexpected(stages.error());
+    }
+    MaterialVariant variant;
+    variant.slot = slot;
+    variant.has_wind = has_wind;
+    const auto create_shader = [&](const char* name, const char* entry, rhi::ShaderStage stage,
+                                   const shader::TargetArtefact& artefact,
+                                   rhi::ShaderModuleHandle& out) -> Status {
+        rhi::ShaderModuleDescription description;
+        description.name = name;
+        description.stage = stage;
+        std::string metal_source;
+        if (format == rhi::ShaderFormat::Msl) {
+            description.entry_point = entry;
+            metal_source.assign(reinterpret_cast<const char*>(artefact.bytes().data()),
+                                artefact.bytes().size());
+            for (const std::string_view field :
+                 {"positionRelativeToCamera_0", "direction_0", "color_0"}) {
+                const std::string from = "float3 " + std::string(field) + ";";
+                const std::string to = "packed_float3 " + std::string(field) + ";";
+                if (Status status = remap_scene_metal_buffer(metal_source, from, to); !status) {
+                    return status;
+                }
+            }
+            if (Status status = remap_scene_metal_buffer(metal_source, "uint3 dimensions_0;",
+                                                         "packed_uint3 dimensions_0;");
+                !status) {
+                return status;
+            }
+            if (Status status =
+                    remap_scene_metal_buffer(metal_source, "cyMaterialDraw_1 [[buffer(0)]]",
+                                             "cyMaterialDraw_1 [[buffer(3)]]");
+                !status) {
+                return status;
+            }
+            if (Status status =
+                    remap_scene_metal_buffer(metal_source, "cyFrameGlobals_1 [[buffer(2)]]",
+                                             "cyFrameGlobals_1 [[buffer(0)]]");
+                !status) {
+                return status;
+            }
+            if (stage == rhi::ShaderStage::Vertex) {
+                if (Status status = remap_scene_metal_buffer(metal_source, "cyDraw_1 [[buffer(3)]]",
+                                                             "cyDraw_1 [[buffer(4)]]");
+                    !status) {
+                    return status;
+                }
+            }
+            if (stage == rhi::ShaderStage::Fragment) {
+                if (Status status = fix_scene_metal_global_table(metal_source); !status) {
+                    return status;
+                }
+            }
+            description.native = {reinterpret_cast<const u8*>(metal_source.data()),
+                                  metal_source.size()};
+            description.native_format = format;
+        } else {
+            if (artefact.bytes().size() % sizeof(u32) != 0) {
+                return fail(ErrorCode::InvalidArgument,
+                            "authored scene vertex SPIR-V has an incomplete word");
+            }
+            description.entry_point = "main";
+            std::vector<u32> words(artefact.bytes().size() / sizeof(u32));
+            std::memcpy(words.data(), artefact.bytes().data(), artefact.bytes().size());
+            description.spirv = words;
+            auto created = device_->create_shader_module(description);
+            if (!created) {
+                return make_unexpected(created.error());
+            }
+            out = *created;
+            return ok();
+        }
+        auto created = device_->create_shader_module(description);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        out = *created;
+        return ok();
+    };
+    struct ShaderRequest {
+        const char* name;
+        const char* entry;
+        rhi::ShaderStage stage;
+        const shader::TargetArtefact* artefact;
+        rhi::ShaderModuleHandle* destination;
+    };
+    const ShaderRequest requests[] = {
+        {"scene material depth", "cySceneMaterialDepthVertex", rhi::ShaderStage::Vertex,
+         &stages->depth, &variant.depth_shader},
+        {"scene material visible", "cySceneMaterialVertex", rhi::ShaderStage::Vertex,
+         &stages->visible, &variant.visible_shader},
+        {"scene material shadow", "cySceneMaterialShadowVertex", rhi::ShaderStage::Vertex,
+         &stages->shadow, &variant.shadow_shader},
+        {"scene material surface", "cySceneMaterialFragment", rhi::ShaderStage::Fragment,
+         &stages->fragment, &variant.fragment_shader},
+    };
+    for (const ShaderRequest& request : requests) {
+        if (Status status = create_shader(request.name, request.entry, request.stage,
+                                          *request.artefact, *request.destination);
+            !status) {
+            release_graph_variant(variant);
+            return status;
+        }
+    }
+    const auto create_pipeline = [&](FramePipelineKind kind, rhi::ShaderModuleHandle shader,
+                                     rhi::GraphicsPipelineHandle& out) -> Status {
+        const rhi::ShaderModuleHandle fragment =
+            kind == FramePipelineKind::Opaque ? variant.fragment_shader : rhi::ShaderModuleHandle{};
+        auto created =
+            pipelines_.create_vertex_variant(kind, shader, material_pipeline_layout_, fragment);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        out = *created;
+        return ok();
+    };
+    for (const auto& pass : {std::pair{FramePipelineKind::Depth, &variant.depth_pipeline},
+                             std::pair{FramePipelineKind::Opaque, &variant.visible_pipeline},
+                             std::pair{FramePipelineKind::Shadow, &variant.shadow_pipeline}}) {
+        rhi::ShaderModuleHandle shader = variant.shadow_shader;
+        if (pass.first == FramePipelineKind::Depth) {
+            shader = variant.depth_shader;
+        } else if (pass.first == FramePipelineKind::Opaque) {
+            shader = variant.visible_shader;
+        }
+        if (Status status = create_pipeline(pass.first, shader, *pass.second); !status) {
+            release_graph_variant(variant);
+            return status;
+        }
+    }
+    rhi::BufferDescription buffer;
+    buffer.name = "editor scene material parameters";
+    buffer.size = rendering::kMaterialBlockBytes;
+    buffer.usage = rhi::BufferUsage::Uniform;
+    buffer.memory = rhi::MemoryUse::Upload;
+    auto created_buffer = device_->create_buffer(buffer);
+    if (!created_buffer) {
+        release_graph_variant(variant);
+        return make_unexpected(created_buffer.error());
+    }
+    variant.parameters = *created_buffer;
+    buffer.name = "editor scene previous object transform";
+    buffer.size = 3U * sizeof(Vec4);
+    auto previous_buffer = device_->create_buffer(buffer);
+    if (!previous_buffer) {
+        release_graph_variant(variant);
+        return make_unexpected(previous_buffer.error());
+    }
+    variant.previous_transform = *previous_buffer;
+    buffer.name = "editor scene field parameters";
+    buffer.size = sizeof(SceneFieldBinding);
+    for (u32 index = 0; index < device_->frames_in_flight(); ++index) {
+        auto field_buffer = device_->create_buffer(buffer);
+        if (!field_buffer) {
+            release_graph_variant(variant);
+            return make_unexpected(field_buffer.error());
+        }
+        variant.field_parameters[index] = *field_buffer;
+    }
+    auto* mapped_previous = device_->buffer_mapped_pointer(variant.previous_transform);
+    if (mapped_previous == nullptr) {
+        release_graph_variant(variant);
+        return fail(ErrorCode::Internal, "authored scene previous transform buffer is not mapped");
+    }
+    const InstanceTransform identity;
+    std::memcpy(mapped_previous, &identity, buffer.size);
+    auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(variant.parameters));
+    if (mapped == nullptr) {
+        release_graph_variant(variant);
+        return fail(ErrorCode::Internal, "authored scene material parameters are not mapped");
+    }
+    std::memset(mapped, 0, rendering::kMaterialBlockBytes);
+    for (const auto& declared : program->module.parameters()) {
+        const auto* parameter =
+            compiled->layout().find(rendering::parameter_id(declared.name.c_str()));
+        if (parameter == nullptr) {
+            continue;
+        }
+        const usize bytes = rendering::parameter_byte_size(parameter->kind);
+        if (parameter->offset + bytes > rendering::kMaterialBlockBytes) {
+            release_graph_variant(variant);
+            return fail(ErrorCode::OutOfRange, "authored scene material parameters exceed block");
+        }
+        if (parameter->kind == rendering::ParameterKind::Int) {
+            const i32 value = static_cast<i32>(declared.default_value.mask);
+            std::memcpy(mapped + parameter->offset, &value, sizeof(value));
+        } else {
+            std::memcpy(mapped + parameter->offset, &declared.default_value, bytes);
+        }
+    }
+    variant.source = source;
+    if (previous != material_variants_.end()) {
+        release_graph_variant(*previous);
+        *previous = std::move(variant);
+    } else {
+        material_variants_.push_back(std::move(variant));
+    }
+    history_cut_ = true;
+    return ok();
+}
+
+Status AuthoredFrame::bind_graph_variants(u32 frame_slot) noexcept {
+    for (MaterialVariant& variant : material_variants_) {
+        rhi::BufferHandle field_buffer = variant.field_parameters[frame_slot];
+        auto* field_bytes = static_cast<u8*>(device_->buffer_mapped_pointer(field_buffer));
+        if (field_bytes == nullptr) {
+            return fail(ErrorCode::Internal, "authored scene field parameters are not mapped");
+        }
+        SceneFieldBinding field_binding;
+        if (variant.has_wind) {
+            if (wind_ == nullptr) {
+                return fail(ErrorCode::Unavailable, "authored scene has no wind field image");
+            }
+            field_binding.slot = 0;
+            const f32 camera_to_image[3] = {
+                static_cast<f32>(field_camera_.x - wind_->image().origin_x),
+                static_cast<f32>(field_camera_.y),
+                static_cast<f32>(field_camera_.z - wind_->image().origin_z)};
+            std::memcpy(field_binding.camera_to_image, camera_to_image, sizeof(camera_to_image));
+        }
+        std::memcpy(field_bytes, &field_binding, sizeof(field_binding));
+        auto set = device_->allocate_descriptor_set(material_set_layout_, true);
+        if (!set) {
+            return make_unexpected(set.error());
+        }
+        variant.descriptor_set = *set;
+        rhi::DescriptorWrite writes[3];
+        writes[0].binding = 0;
+        writes[0].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[0].buffer = variant.parameters;
+        writes[0].buffer_range = rendering::kMaterialBlockBytes;
+        writes[1].binding = 1;
+        writes[1].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[1].buffer = variant.previous_transform;
+        writes[1].buffer_range = 3U * sizeof(Vec4);
+        writes[2].binding = 2;
+        writes[2].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[2].buffer = field_buffer;
+        writes[2].buffer_range = sizeof(SceneFieldBinding);
+        if (Status status = device_->update_descriptor_set(variant.descriptor_set, writes);
+            !status) {
+            return status;
+        }
+    }
+    return ok();
 }
 
 Expected<rhi::BindlessIndex, Error> AuthoredFrame::texture_slot(AssetId identity) noexcept {
@@ -772,7 +1371,11 @@ Status AuthoredFrame::resolve_meshes(const ser::World& world) noexcept {
         }
         added = true;
     }
-    return added ? upload_geometry() : ok();
+    if (added) {
+        history_cut_ = true;
+        return upload_geometry();
+    }
+    return ok();
 }
 
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
@@ -874,8 +1477,11 @@ Status AuthoredFrame::upload_geometry() noexcept {
 
 Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
                                       bool editor_lighting) noexcept {
+    shading_signature_ = 0;
+    sign_shading(editor_lighting);
     index_.reset();
     instances_.clear();
+    current_models_.clear();
     pivots_.clear();
     light_markers_.clear();
     camera_markers_.clear();
@@ -920,6 +1526,22 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
                 camera_markers_.push_back(CameraMarker{node.identity, origin, forward});
             }
             if (Status status = append_instance(world, node, matrices[row], eye); !status) {
+                return status;
+            }
+        }
+    }
+    if (current_models_.size() != previous_models_.size() ||
+        !std::equal(current_models_.begin(), current_models_.end(), previous_models_.begin(),
+                    [](const auto& current, const auto& previous) {
+                        return current.first == previous.first;
+                    })) {
+        history_cut_ = true;
+        for (usize row = 0; row < instances_.size(); ++row) {
+            const Instance& placed = instances_[row];
+            if (Status status =
+                    update_previous_transform(placed.identity, current_models_[row].second, eye,
+                                              {placed.materials.data(), placed.materials.size()});
+                !status) {
                 return status;
             }
         }
@@ -978,6 +1600,11 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         }
         instance.materials.push_back(*material);
     }
+    if (Status status = update_previous_transform(
+            node.identity, matrix, eye, {instance.materials.data(), instance.materials.size()});
+        !status) {
+        return status;
+    }
     SpatialEntry entry;
     entry.bounds = bounds;
     entry.stable_id = node.identity;
@@ -993,6 +1620,7 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
         return make_unexpected(inserted.error());
     }
     instances_.push_back(std::move(instance));
+    current_models_.emplace_back(node.identity, matrix);
     InstanceTransform transformed = relative_transform(matrix, eye);
     const ser::WorldValue* tint = field_value(world, node, "MeshRenderer", "tint");
     if (tint != nullptr && tint->kind == ser::WorldValueKind::Vec3) {
@@ -1000,7 +1628,47 @@ Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldN
             transformed.tint[channel] = tint->lanes[channel];
         }
     }
+    const Instance& placed = instances_.back();
+    sign_shading(placed.identity);
+    sign_shading(placed.mesh);
+    sign_shading(placed.materials.data(), placed.materials.size() * sizeof(u32));
+    for (u32 channel = 0; channel < 3; ++channel) {
+        sign_shading(transformed.tint[channel]);
+    }
     return transforms_.push_back(transformed);
+}
+
+void AuthoredFrame::sign_shading(const void* data, usize size) noexcept {
+    shading_signature_ = hash_combine(shading_signature_, hash_bytes(data, size));
+}
+
+Status AuthoredFrame::update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
+                                                Span<const u32> materials) noexcept {
+    Mat4 prior = matrix;
+    Vec3 prior_eye = eye;
+    if (has_previous_frame_ && !history_cut_) {
+        const auto found = std::ranges::find_if(
+            previous_models_, [identity](const auto& entry) { return entry.first == identity; });
+        if (found != previous_models_.end()) {
+            prior = found->second;
+            prior_eye = previous_eye_;
+        }
+    }
+    const InstanceTransform relative = relative_transform(prior, prior_eye);
+    for (u32 slot : materials) {
+        const auto variant = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& entry) { return entry.slot == slot; });
+        if (variant == material_variants_.end()) {
+            continue;
+        }
+        void* mapped = device_->buffer_mapped_pointer(variant->previous_transform);
+        if (mapped == nullptr) {
+            return fail(ErrorCode::Internal, "authored scene previous transform is not mapped");
+        }
+        std::memcpy(mapped, &relative, 3U * sizeof(Vec4));
+    }
+    return ok();
 }
 
 Span<const DrawSurface> AuthoredFrame::surfaces(const VisibleInstance& instance,
@@ -1046,26 +1714,132 @@ bool AuthoredFrame::geometry(const render::DrawItem& item, const GpuDrawInstance
     return true;
 }
 
+bool AuthoredFrame::select_material_pipeline(FramePipelineKind kind, const render::DrawItem&,
+                                             const GpuDrawInstance& instance, void* user,
+                                             DrawPipelineSelection& out) noexcept {
+    const auto& frame = *static_cast<const AuthoredFrame*>(user);
+    const auto found =
+        std::ranges::find_if(frame.material_variants_,
+                             [&](const MaterialVariant& v) { return v.slot == instance.material; });
+    if (found == frame.material_variants_.end()) {
+        return false;
+    }
+    switch (kind) {
+        case FramePipelineKind::Depth:
+            out.pipeline = found->depth_pipeline;
+            break;
+        case FramePipelineKind::Opaque:
+            out.pipeline = found->visible_pipeline;
+            break;
+        case FramePipelineKind::Shadow:
+            out.pipeline = found->shadow_pipeline;
+            break;
+        default:
+            return false;
+    }
+    out.layout = frame.material_pipeline_layout_;
+    out.material_set = found->descriptor_set;
+    out.vertex_streams = kForwardPassStreamCount;
+    return true;
+}
+
 void AuthoredFrame::readback(const PassContext& context, void* user) noexcept {
     const auto& read = *static_cast<const Readback*>(user);
     rhi::BufferTextureCopy region;
     region.texture_extent = rhi::Extent3D{read.width, read.height, 1};
+    region.buffer_row_length = read.row_length;
     context.commands->copy_texture_to_buffer(context.executor->texture(read.output), read.buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
 }
 
+void AuthoredFrame::record_motion_capture(Readback& motion) noexcept {
+    if (motion.output == kInvalidResource || motion.buffer.is_null()) {
+        return;
+    }
+    BufferRequest request;
+    request.name = "editor motion capture";
+    request.size = u64{motion.row_length} * motion.height * sizeof(u32);
+    request.extra_usage = rhi::BufferUsage::TransferDestination;
+    const ResourceId destination = graph_.import_buffer(request, motion.buffer);
+    graph_.add_pass("editor motion capture", rhi::QueueKind::Graphics)
+        .read(motion.output, rhi::Access::TransferRead)
+        .write(destination, rhi::Access::TransferWrite)
+        .record(&AuthoredFrame::readback, &motion);
+    graph_.add_pass("editor motion capture host", rhi::QueueKind::Graphics)
+        .read(destination, rhi::Access::HostRead)
+        .side_effect();
+}
+
+Status AuthoredFrame::copy_motion_readback(const Readback& motion) noexcept {
+    if (motion.output == kInvalidResource || motion.buffer.is_null()) {
+        motion_texels_.clear();
+        return ok();
+    }
+    if (Status resized = motion_texels_.resize(usize{motion.width} * motion.height); !resized) {
+        return resized;
+    }
+    const void* mapped = device_->buffer_mapped_pointer(motion.buffer);
+    if (mapped == nullptr) {
+        return fail(ErrorCode::Internal, "authored frame: motion readback not mapped");
+    }
+    const auto* rows = static_cast<const u8*>(mapped);
+    for (u32 row = 0; row < motion.height; ++row) {
+        std::memcpy(motion_texels_.data() + (usize{row} * motion.width),
+                    rows + (usize{row} * motion.row_length * sizeof(u32)),
+                    usize{motion.width} * sizeof(u32));
+    }
+    return ok();
+}
+
 Status AuthoredFrame::render(const ser::World& world, const first_light::Camera& camera,
-                             bool editor_lighting) noexcept {
+                             bool editor_lighting, const vfx::SimulationWorld* preview,
+                             std::optional<f32> time_seconds,
+                             const vfx::SimulationWorld* scene_vfx) noexcept {
     if (!initialized_) {
         return fail(ErrorCode::Unavailable, "authored frame: not initialized");
+    }
+    if (time_seconds.has_value() && !std::isfinite(*time_seconds)) {
+        return fail(ErrorCode::InvalidArgument, "authored frame: time must be finite");
     }
     if (Status status = resolve_meshes(world); !status) {
         return status;
     }
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
+    field_camera_ = world::WorldVec3d{camera.position[0], camera.position[1], camera.position[2]};
+    if (wind_ != nullptr && !wind_->covers(field_camera_)) {
+        if (Status refreshed = ensure_wind_field(); !refreshed) {
+            return refreshed;
+        }
+    }
     if (Status status = build_instances(world, eye, editor_lighting); !status) {
         return status;
+    }
+    for (const render::LightDescription& light : lights_) {
+        sign_shading(light.kind);
+        sign_shading(light.transform.rotation.x);
+        sign_shading(light.transform.rotation.y);
+        sign_shading(light.transform.rotation.z);
+        sign_shading(light.transform.rotation.w);
+        sign_shading(light.transform.translation.x);
+        sign_shading(light.transform.translation.y);
+        sign_shading(light.transform.translation.z);
+        sign_shading(light.color);
+        sign_shading(light.intensity);
+        sign_shading(light.range);
+        sign_shading(light.inner_cone_radians);
+        sign_shading(light.outer_cone_radians);
+        sign_shading(light.casts_shadow);
+        sign_shading(light.stable_id);
+    }
+    if (shading_signature_ != previous_shading_signature_) {
+        history_cut_ = true;
+    }
+    if (!wind_buffer_.is_null()) {
+        const EnvironmentFieldSlot field{0, wind_buffer_};
+        if (Status bound = bindings_.set_environment_fields({&field, 1}); !bound) {
+            return bound;
+        }
     }
     MaterialTextureSlot resident[kMaterialTextureSlots];
     const usize count =
@@ -1093,12 +1867,74 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (!begun) {
         return make_unexpected(begun.error());
     }
-    Status result = capture(*begun, camera, editor_lighting);
-    if (Status ended = device_->end_frame(); !ended && result) {
+    if (Status status = bind_graph_variants(*begun); !status) {
+        (void)device_->end_frame();
+        return status;
+    }
+    recorder_.clear_extensions();
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (Status prepared = prepare_vfx(*begun, preview, scene_vfx, eye); !prepared) {
+        (void)device_->end_frame();
+        return prepared;
+    }
+#else
+    (void)preview;
+    (void)scene_vfx;
+#endif
+    Status result = capture(*begun, camera, editor_lighting, time_seconds);
+    Status ended = device_->end_frame();
+    if (!result) {
+        return result;
+    }
+    if (!ended) {
         return ended;
     }
-    return result;
+    previous_models_ = current_models_;
+    previous_eye_ = eye;
+    previous_shading_signature_ = shading_signature_;
+    has_previous_frame_ = true;
+    history_cut_ = false;
+    return ok();
 }
+
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+Status AuthoredFrame::prepare_vfx(u32 slot, const vfx::SimulationWorld* preview,
+                                  const vfx::SimulationWorld* scene_vfx, Vec3 eye) noexcept {
+    vfx_renderer_.reset_report();
+    if (preview == nullptr && scene_vfx == nullptr) {
+        return ok();
+    }
+    vfx_records_.clear();
+    vfx_published_ = {};
+    if (scene_vfx != nullptr) {
+        if (Status published =
+                vfx::publish_sprites(*scene_vfx, eye, kVfxCapacity, vfx_records_, vfx_published_);
+            !published) {
+            return published;
+        }
+    }
+    if (preview != nullptr) {
+        Array<rendering::particles::ParticleInstance> preview_records(*allocator_);
+        vfx::PublishReport preview_report;
+        const u32 remaining = kVfxCapacity - static_cast<u32>(vfx_records_.size());
+        if (Status published =
+                vfx::publish_sprites(*preview, eye, remaining, preview_records, preview_report);
+            !published) {
+            return published;
+        }
+        if (Status appended = vfx_records_.append(preview_records.span()); !appended) {
+            return appended;
+        }
+        vfx_published_.particles += preview_report.particles;
+        vfx_published_.emitters += preview_report.emitters;
+        vfx_published_.dropped += preview_report.dropped;
+    }
+    if (Status uploaded = vfx_renderer_.upload(slot, vfx_records_.span()); !uploaded) {
+        return uploaded;
+    }
+    return recorder_.add_extension(vfx_renderer_.extension());
+}
+#endif
 
 Status AuthoredFrame::publish(const first_light::Camera& camera,
                               Array<render::GpuInstance>& instances,
@@ -1144,6 +1980,34 @@ bool AuthoredFrame::pivot_for(u64 identity, Vec3& pivot) const noexcept {
             pivot = entry.second;
             return true;
         }
+    }
+    return false;
+}
+
+bool AuthoredFrame::previous_material_transform(u64 identity,
+                                                InstanceTransform& out) const noexcept {
+    const auto placed = std::ranges::find_if(
+        instances_, [identity](const Instance& instance) { return instance.identity == identity; });
+    if (placed == instances_.end()) {
+        return false;
+    }
+    for (u32 slot : placed->materials) {
+        const auto variant = std::ranges::find_if(
+            material_variants_,
+            [slot](const MaterialVariant& entry) { return entry.slot == slot; });
+        if (variant == material_variants_.end()) {
+            continue;
+        }
+        const void* mapped = device_->buffer_mapped_pointer(variant->previous_transform);
+        if (mapped == nullptr) {
+            return false;
+        }
+        out = InstanceTransform{};
+        const auto* rows = static_cast<const u8*>(mapped);
+        std::memcpy(out.row0, rows, sizeof(out.row0));
+        std::memcpy(out.row1, rows + sizeof(Vec4), sizeof(out.row1));
+        std::memcpy(out.row2, rows + (2U * sizeof(Vec4)), sizeof(out.row2));
+        return true;
     }
     return false;
 }
@@ -1215,8 +2079,8 @@ first_light::Camera AuthoredFrame::framing(const first_light::Camera& fallback) 
     return camera;
 }
 
-Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
-                              bool editor_lighting) noexcept {
+Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool editor_lighting,
+                              std::optional<f32> time_seconds) noexcept {
     graph_.reset();
     const Vec3 eye{static_cast<f32>(camera.position[0]), static_cast<f32>(camera.position[1]),
                    static_cast<f32>(camera.position[2])};
@@ -1238,7 +2102,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     view.lights = lights_.span();
     view.sun_direction = Vec3{0.28F, 0.82F, 0.50F};
     // Edits can insert geometry into a previously empty history. Reset it for the editor frame.
-    view.cut = true;
+    view.cut = !has_previous_frame_ || history_cut_;
     TextureRequest output;
     output.name = "editor authored output";
     output.format = kOutputFormat;
@@ -1281,6 +2145,15 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
         return status;
     }
     GlobalsData globals;
+    const auto now = std::chrono::steady_clock::now();
+    globals.time_seconds =
+        time_seconds.value_or(std::chrono::duration<f32>(now - time_origin_).count());
+    // Vertex motion reconstructs the prior animation sample from this exact elapsed time.
+    // Clamping it makes the depth pass disagree with the previous visible frame after a slow
+    // frame or an explicit editor time step.
+    globals.delta_seconds = has_frame_time_ ? globals.time_seconds - previous_frame_time_ : 0.0F;
+    previous_frame_time_ = globals.time_seconds;
+    has_frame_time_ = true;
     globals.exposure_stops = -16.0F;
     FrameUpload data = upload_for(assembly_, report, projection * relative_view, relative_view,
                                   transforms_.span(), globals, material_offsets_);
@@ -1329,7 +2202,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     if (Status status = bindings_.upload(slot, data); !status) {
         return status;
     }
-    Readback read{assembly_.resources().output, readback_, width_, height_};
+    Readback read{assembly_.resources().output, readback_, width_, height_, 0};
     BufferRequest request;
     request.name = "editor authored capture";
     request.size = u64{width_} * height_ * sizeof(u32);
@@ -1342,10 +2215,16 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera,
     graph_.add_pass("editor capture host", rhi::QueueKind::Graphics)
         .read(destination, rhi::Access::HostRead)
         .side_effect();
+    Readback motion{assembly_.resources().velocity, motion_readback_, width_, height_,
+                    motion_row_length_};
+    record_motion_capture(motion);
     GraphExecutor executor(*allocator_, *device_);
     Status executed = assembly_.execute(executor, graph_, report);
     if (executed) {
         executed = device_->wait_idle();
+    }
+    if (executed) {
+        executed = copy_motion_readback(motion);
     }
     if (executed) {
         if (Status status = pixels_.resize(usize{width_} * height_); !status) {

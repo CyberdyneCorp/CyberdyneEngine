@@ -66,6 +66,16 @@ public:
                                         bool& out_has_event) noexcept = 0;
 };
 
+/// Optional live scene-effect binding supplied by the runtime that owns VFX simulation.
+class VfxEffectBackend {
+public:
+    virtual ~VfxEffectBackend() = default;
+    [[nodiscard]] virtual CyResult set(CyEntity entity, const char* emitter, const char* parameter,
+                                       const CyVar& value) noexcept = 0;
+    [[nodiscard]] virtual CyResult get(CyEntity entity, const char* emitter, const char* parameter,
+                                       CyVar& out_value) noexcept = 0;
+};
+
 /// One reflected field of a module-registered component, as the engine kept it.
 ///
 /// `name` is borrowed. The C header states the rule at the descriptor — a name must outlive the
@@ -176,6 +186,8 @@ struct CyEngine_T {
         editor_service = service;
     }
 
+    void bind_vfx_effects(cy::abi::VfxEffectBackend* effects) noexcept { vfx_effects = effects; }
+
     /// Register a behaviour type in the current generation. Re-registering a name that belongs to
     /// the current generation replaces the vtable; re-registering one from a *retired* generation
     /// appends a new record, so the old generation's instances keep resolving to the code that
@@ -209,6 +221,7 @@ struct CyEngine_T {
     /// field at a time; a backend left null makes its entries answer UNAVAILABLE. See
     /// cy/abi/game/services.h.
     cy::abi::game::GameServices game;
+    cy::abi::VfxEffectBackend* vfx_effects = nullptr;
     cy::Array<CyBehaviourType_T*> behaviours;
     cy::u32 generation = 0;
     /// Heap-backed `CyVar` payloads currently alive. Atomic because a value may be released on a

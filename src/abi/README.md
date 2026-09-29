@@ -43,6 +43,7 @@ line from a Swift behaviour arrived in the engine's log as `[error]` on a run th
 | `world_parent`, `world_set_parent`, `world_child_count`, `world_child` | An outliner. |
 | `world_chunks`, `CyChunk` | The bulk read. `Systems.swift` said it plainly: at 1.0 "NONE of them hands a module a chunk". |
 | `service_open` … `service_poll`, `CyServiceRequest`, `CyServiceEvent` | ABI 1.2's asynchronous, cancellable editor-service envelope. Payload schemas remain independently versioned. |
+| `vfx_effect_parameter_set`, `vfx_effect_parameter_get` | ABI 1.4's typed access to an exposed parameter on one playing scene effect entity. The runtime binds the VFX owner to the host; a build without VFX reports `UNAVAILABLE`. |
 
 **A component the engine registered is now reachable through every existing entry**, not only
 through the three above. `CyWorld_T::record_or_import` turns the engine's `reflect::TypeInfo` into

@@ -84,7 +84,8 @@ struct FrameConstants
     // rgb: the sun's colour times its intensity. w: the ambient term.
     float4 sunColorAndAmbient;
     // x: 1 when the shadow map is to be sampled, 0 when the sun casts no shadow. y: the normal
-    // offset applied before the shadow lookup, in camera-relative units. zw: unused.
+    // offset applied before the shadow lookup, in camera-relative units. z: elapsed engine seconds
+    // for authored material graphs. w: unused.
     float4 shadowControl;
 };
 

@@ -15,6 +15,7 @@
 // table, a device and a render graph, and the taxonomy names all of those as what does not belong
 // in `unit`.
 
+#include "../shaders/frame_spirv.h"
 #include "frame_scene.h"
 
 #include <cy/backends/rhi/backend.h>
@@ -73,7 +74,106 @@ private:
     return count;
 }
 
+struct PipelineProbe {
+    const FramePipelines* pipelines = nullptr;
+    u32 opaque_draws = 0;
+    u32 last_material = 0;
+};
+
+bool choose_opaque_variant(FramePipelineKind kind, const render::DrawItem&,
+                           const rendering::GpuDrawInstance& instance, void* user,
+                           DrawPipelineSelection& out) noexcept {
+    if (kind != FramePipelineKind::Opaque) {
+        return false;
+    }
+    auto& probe = *static_cast<PipelineProbe*>(user);
+    ++probe.opaque_draws;
+    probe.last_material = instance.material;
+    out.pipeline = probe.pipelines->pipeline(FramePipelineKind::Transparent);
+    out.layout = probe.pipelines->layout();
+    return true;
+}
+
+u32 bindings_of(Span<const rhi::null::RecordedCommand> commands,
+                rhi::GraphicsPipelineHandle pipeline) noexcept {
+    u32 count = 0;
+    for (const auto& command : commands) {
+        count += command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                         command.handle_bits == pipeline.bits()
+                     ? 1U
+                     : 0U;
+    }
+    return count;
+}
+
+bool choose_depth_with_uv(FramePipelineKind kind, const render::DrawItem&,
+                          const rendering::GpuDrawInstance&, void* user,
+                          DrawPipelineSelection& out) noexcept {
+    if (kind != FramePipelineKind::Depth) {
+        return false;
+    }
+    const auto& probe = *static_cast<const PipelineProbe*>(user);
+    out.pipeline = probe.pipelines->pipeline(FramePipelineKind::Depth);
+    out.layout = probe.pipelines->layout();
+    out.vertex_streams = 3;
+    return true;
+}
+
+u32 three_stream_bindings(Span<const rhi::null::RecordedCommand> commands) noexcept {
+    u32 count = 0;
+    for (const auto& command : commands) {
+        count +=
+            command.kind == rhi::null::CommandKind::BindVertexBuffers && command.b == 3U ? 1U : 0U;
+    }
+    return count;
+}
+
 }  // namespace
+
+CY_TEST_CASE("compiled material vertex shaders can use every scene geometry pass") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    const FramePipelines& frame = scene.pipelines();
+
+    rhi::ShaderModuleDescription description;
+    description.name = "material vertex variant";
+    description.stage = rhi::ShaderStage::Vertex;
+    description.entry_point = "main";
+    description.spirv = Span<const u32>(kFrameForwardVertexSpirv);
+    auto vertex = fixture.device().create_shader_module(description);
+    CY_REQUIRE(vertex.has_value());
+    const u32 standard_count = frame.created();
+    for (FramePipelineKind kind : {FramePipelineKind::Depth, FramePipelineKind::Opaque,
+                                   FramePipelineKind::Transparent, FramePipelineKind::Shadow}) {
+        auto variant = frame.create_vertex_variant(kind, *vertex, frame.layout());
+        CY_REQUIRE(variant.has_value());
+        CY_CHECK_FALSE(variant->is_null());
+        CY_CHECK_NE(variant->bits(), frame.pipeline(kind).bits());
+        fixture.device().destroy_graphics_pipeline(*variant);
+    }
+    CY_CHECK_EQ(frame.created(), standard_count);
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Resolve, *vertex, frame.layout()));
+
+    description.name = "material fragment variant";
+    description.stage = rhi::ShaderStage::Fragment;
+    description.spirv = Span<const u32>(kFrameForwardFragmentSpirv);
+    auto fragment = fixture.device().create_shader_module(description);
+    CY_REQUIRE(fragment.has_value());
+    for (FramePipelineKind kind : {FramePipelineKind::Opaque, FramePipelineKind::Transparent}) {
+        auto variant = frame.create_vertex_variant(kind, *vertex, frame.layout(), *fragment);
+        CY_REQUIRE(variant.has_value());
+        fixture.device().destroy_graphics_pipeline(*variant);
+    }
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Depth, *vertex, frame.layout(), *fragment));
+    CY_CHECK_FALSE(
+        frame.create_vertex_variant(FramePipelineKind::Shadow, *vertex, frame.layout(), *fragment));
+    fixture.device().destroy_shader_module(*fragment);
+    fixture.device().destroy_shader_module(*vertex);
+}
 
 CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks does not") {
     NullFixture fixture;
@@ -90,6 +190,49 @@ CY_TEST_CASE("the layer's sinks carry a record callback and an empty FrameSinks 
     // Six stages: Prepare, DepthPrepass, Opaque, Transparent, Temporal, PostProcess.
     auto& recorder = scene.recorder();
     CY_CHECK_EQ(attached_callbacks(recorder.sinks()), 6U);
+}
+
+CY_TEST_CASE("a prepared material pipeline can be selected for each opaque draw") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    auto& recorder = scene.recorder();
+    const auto variant = scene.pipelines().pipeline(FramePipelineKind::Transparent);
+    CY_REQUIRE_FALSE(variant.is_null());
+
+    rendering::assembly::AssemblyReport report;
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    const u32 standard_bindings = bindings_of(rhi::null::command_log(fixture.device()), variant);
+
+    PipelineProbe probe{&scene.pipelines()};
+    recorder.set_draw_pipeline(&choose_opaque_variant, &probe);
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK_EQ(probe.opaque_draws, scene.recorded().opaque_draws);
+    CY_CHECK_GT(probe.opaque_draws, 0U);
+    CY_CHECK_LT(probe.last_material, scene.assembly().materials().capacity());
+    CY_CHECK_GT(bindings_of(rhi::null::command_log(fixture.device()), variant), standard_bindings);
+}
+
+CY_TEST_CASE("a depth material variant can read the UV stream") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+    auto& recorder = scene.recorder();
+    rendering::assembly::AssemblyReport report;
+
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    const u32 standard = three_stream_bindings(rhi::null::command_log(fixture.device()));
+    PipelineProbe probe{&scene.pipelines()};
+    recorder.set_draw_pipeline(&choose_depth_with_uv, &probe);
+    rhi::null::clear_command_log(fixture.device());
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK_GT(scene.recorded().prepass_draws, 0U);
+    CY_CHECK_GT(three_stream_bindings(rhi::null::command_log(fixture.device())), standard);
 }
 
 CY_TEST_CASE(
@@ -222,6 +365,39 @@ CY_TEST_CASE("the ring turns over many frames and tears down with the device sti
     // does one, which is the contract every device-owning object in this tree states, and the
     // fixture's destructor does another.
     delete scene;
+}
+
+CY_TEST_CASE("the frame writes Engine field images at cy.field's global binding") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    FrameScene scene(allocator());
+    CY_REQUIRE(scene.build(fixture.device()).has_value());
+
+    rhi::BufferDescription description;
+    description.name = "field image descriptor probe";
+    description.size = 64;
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    auto image = fixture.device().create_buffer(description);
+    CY_REQUIRE(image.has_value());
+
+    const EnvironmentFieldSlot valid{3, *image};
+    const EnvironmentFieldSlot duplicate[] = {valid, valid};
+    const EnvironmentFieldSlot out_of_range{kEnvironmentFieldSlots, *image};
+    const EnvironmentFieldSlot missing{0, {}};
+    CY_CHECK_FALSE(scene.set_frame_fields({duplicate, 2}).has_value());
+    CY_CHECK_FALSE(scene.set_frame_fields({&out_of_range, 1}).has_value());
+    CY_CHECK_FALSE(scene.set_frame_fields({&missing, 1}).has_value());
+    CY_REQUIRE(scene.set_frame_fields({&valid, 1}).has_value());
+
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(scene.render(RecordMode::Callbacks, report).has_value());
+    fixture.device().destroy_buffer(*image);
+
+    // A stale handle is accepted by the setter, then rejected by the null device when set 0 is
+    // written. If write_sets ever omits binding 3, this negative control starts passing.
+    CY_CHECK_FALSE(scene.render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK(fixture.device().end_frame().has_value());
 }
 
 namespace {

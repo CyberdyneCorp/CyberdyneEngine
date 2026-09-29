@@ -123,9 +123,36 @@ void write_leaf(Writer& writer, const Node& node) noexcept {
             writer.text(node.symbol.text());
             return;
         case Op::Field:
+            if (node.type == ValueType::Int) {
+                writer.text("int(");
+            } else if (node.type == ValueType::Bool) {
+                writer.text("(");
+            }
             writer.text("cy_field_sample(ctx, CY_FIELD_");
             writer.text(node.symbol.text());
             writer.text(")");
+            switch (node.type) {
+                case ValueType::Float:
+                    writer.text(".x");
+                    break;
+                case ValueType::Vec2:
+                    writer.text(".xy");
+                    break;
+                case ValueType::Vec3:
+                    writer.text(".xyz");
+                    break;
+                case ValueType::Vec4:
+                    break;
+                case ValueType::Int:
+                    writer.text(".x)");
+                    break;
+                case ValueType::Bool:
+                    writer.text(".x != 0.0)");
+                    break;
+                default:
+                    writer.text(".x");
+                    break;
+            }
             return;
         default:
             writer.text("<leaf?>");
@@ -187,6 +214,12 @@ struct CallForm {
             return {"pow", nullptr};
         case Op::Saturate:
             return {"saturate", nullptr};
+        case Op::Sin:
+            return {"sin", nullptr};
+        case Op::Noise:
+            return {"cyMaterialNoise", nullptr};
+        case Op::ProceduralWind:
+            return {"cyMaterialProceduralWind", nullptr};
         case Op::Normalize:
             return {"normalize", nullptr};
         case Op::Lerp:
@@ -453,28 +486,10 @@ Status entry_point_name(Name material, ProgramKind kind, QualityTier tier,
 
 namespace {
 
-/// Write the function, from its signature to its closing brace.
-///
-/// A FUNCTION OF ITS OWN so that the `Writer` — which holds a pointer into `source.text` — cannot
-/// outlive any early return out of `emit_program`. The static analyser is right to object to a
-/// pointer into a local that is about to be returned by value, and splitting the two also keeps
-/// each half short enough to read.
-[[nodiscard]] Status write_program(const Module& module, const EmitOptions& options,
-                                   Span<const NodeId> order, Names& names,
-                                   GeneratedSource& source) noexcept {
-    Writer writer(source.text);
-    const bool preview = options.preview_root != kInvalidNode;
-    write_header(writer, module, options);
-    writer.text("void ");
-    Array<char> entry(module.allocator());
-    if (Status named = entry_point_name(module.name(), options.kind, options.tier, entry); !named) {
-        return named;
-    }
-    writer.text(std::string_view(entry.data(), entry.size()));
-    writer.text(preview ? "_preview" : "");
-    writer.text("(in CyMaterialContext ctx, inout CySurface surface) {\n");
-    source.body_begin = writer.size();
-
+/// The one SSA expression writer used by surface and vertex functions.
+[[nodiscard]] Status write_statements(Writer& writer, const Module& module,
+                                      const EmitOptions& options, Span<const NodeId> order,
+                                      Names& names, GeneratedSource& source) noexcept {
     u32 next = 0;
     bool hoist_marked = false;
     bool varying_marked = false;
@@ -491,7 +506,7 @@ namespace {
                 hoist_marked = true;
             }
             if (!uniform && hoist_marked && !varying_marked) {
-                writer.text("    // per pixel\n");
+                writer.text(options.vertex_stage ? "    // per vertex\n" : "    // per pixel\n");
                 varying_marked = true;
             }
         }
@@ -511,6 +526,28 @@ namespace {
         ++source.statements;
     }
     source.peak_live_values = next;
+    return ok();
+}
+
+[[nodiscard]] Status write_program(const Module& module, const EmitOptions& options,
+                                   Span<const NodeId> order, Names& names,
+                                   GeneratedSource& source) noexcept {
+    Writer writer(source.text);
+    const bool preview = options.preview_root != kInvalidNode;
+    write_header(writer, module, options);
+    writer.text("void ");
+    Array<char> entry(module.allocator());
+    if (Status named = entry_point_name(module.name(), options.kind, options.tier, entry); !named) {
+        return named;
+    }
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text(preview ? "_preview" : "");
+    writer.text("(in CyMaterialContext ctx, inout CySurface surface) {\n");
+    source.body_begin = writer.size();
+    if (Status written = write_statements(writer, module, options, order, names, source);
+        !written) {
+        return written;
+    }
 
     const NodeId surface_root = preview ? options.preview_root : module.surface();
     if (surface_root != kInvalidNode) {
@@ -533,6 +570,58 @@ namespace {
     // failure a writer has is both shorter to read and free of the question.
     if (!writer.status()) {
         return fail(ErrorCode::OutOfMemory, "the generated material source could not be grown");
+    }
+    return ok();
+}
+
+[[nodiscard]] Status write_vertex_program(const Module& module, const EmitOptions& options,
+                                          Span<const NodeId> order, Names& names,
+                                          GeneratedSource& source) noexcept {
+    Writer writer(source.text);
+    write_header(writer, module, options);
+    Array<char> entry(module.allocator());
+    if (Status named = entry_point_name(module.name(), options.kind, options.tier, entry); !named) {
+        return named;
+    }
+    writer.text("struct CyMaterialVertexResult {\n    float3 offset;\n");
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        writer.text("    ");
+        writer.text(slang_type(interpolant.type));
+        writer.text(" ");
+        writer.text(interpolant.name.text());
+        writer.text(";\n");
+    }
+    writer.text("};\nCyMaterialVertexResult ");
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text("_vertex(in CyMaterialContext ctx) {\n");
+    source.body_begin = writer.size();
+    if (Status written = write_statements(writer, module, options, order, names, source);
+        !written) {
+        return written;
+    }
+    writer.text("    CyMaterialVertexResult result;\n    result.offset = ");
+    if (module.vertex_offset() == kInvalidNode) {
+        writer.text("float3(0.0);\n");
+    } else {
+        write_operand(writer, module, names, module.vertex_offset());
+        writer.text(";\n");
+    }
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        writer.text("    result.");
+        writer.text(interpolant.name.text());
+        writer.text(" = ");
+        write_operand(writer, module, names, interpolant.value);
+        writer.text(";\n");
+    }
+    writer.text("    return result;\n");
+    source.body_end = writer.size();
+    writer.text("}\nfloat3 ");
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text("_vertex_offset(in CyMaterialContext ctx) {\n    return ");
+    writer.text(std::string_view(entry.data(), entry.size()));
+    writer.text("_vertex(ctx).offset;\n}\n");
+    if (!writer.status()) {
+        return fail(ErrorCode::OutOfMemory, "the generated vertex source could not be grown");
     }
     return ok();
 }
@@ -566,6 +655,51 @@ Expected<GeneratedSource, Error> emit_program(const Module& module,
     }
 
     if (Status written = write_program(module, options, order.span(), names, source); !written) {
+        return make_unexpected(written.error());
+    }
+    source.digest = hash_bytes(kHashSeed, source.text.data(), source.text.size());
+    return source;
+}
+
+Expected<GeneratedSource, Error> emit_vertex_offset(const Module& module,
+                                                    const EmitOptions& options) noexcept {
+    if (module.vertex_offset() == kInvalidNode && module.vertex_interpolants().empty()) {
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "this material has no vertex outputs", 0});
+    }
+    Allocator& allocator = module.allocator();
+    EmitOptions vertex_options = options;
+    vertex_options.vertex_stage = true;
+    GeneratedSource source(allocator);
+    Array<NodeId> order(allocator);
+    Array<NodeId> roots(allocator);
+    if (module.vertex_offset() != kInvalidNode) {
+        if (Status added = roots.push_back(module.vertex_offset()); !added) {
+            return make_unexpected(added.error());
+        }
+    }
+    for (const VertexInterpolant& interpolant : module.vertex_interpolants()) {
+        if (Status added = roots.push_back(interpolant.value); !added) {
+            return make_unexpected(added.error());
+        }
+    }
+    if (Status built =
+            build_order(module, vertex_options, roots.span(), order, source.hoisted_statements);
+        !built) {
+        return make_unexpected(built.error());
+    }
+    if (!vertex_options.canonical_order) {
+        order_by_node_id(order);
+    }
+    Names names;
+    if (Status sized = names.statement_index.resize(module.size()); !sized) {
+        return make_unexpected(sized.error());
+    }
+    for (u32& number : names.statement_index) {
+        number = kInvalidNode;
+    }
+    if (Status written = write_vertex_program(module, vertex_options, order.span(), names, source);
+        !written) {
         return make_unexpected(written.error());
     }
     source.digest = hash_bytes(kHashSeed, source.text.data(), source.text.size());

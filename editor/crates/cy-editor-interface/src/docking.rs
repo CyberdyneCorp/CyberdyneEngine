@@ -268,6 +268,7 @@ impl Layout {
             panel("viewport"),
             Node::tabs(vec![
                 PanelId::new("editor-materials").expect("a built-in panel identifier"),
+                PanelId::new("editor-vfx-graph").expect("a built-in panel identifier"),
                 PanelId::new("editor-terrain").expect("a built-in panel identifier"),
                 PanelId::new("swift-workspace").expect("a built-in panel identifier"),
                 PanelId::new("script-graph").expect("a built-in panel identifier"),

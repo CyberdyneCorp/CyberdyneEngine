@@ -47,6 +47,11 @@ namespace cy::vfx {
 
 using graph::Graph;
 using graph::NodeRegistry;
+class DataInterfaceRegistry;
+
+/// Stable renderer identity spelling shared by authored assets and runtime publications.
+inline constexpr u8 kAssetRendererCount = 8;
+[[nodiscard]] const char* asset_renderer_name(u8 kind) noexcept;
 
 /// The six stages `vfx-system`'s table declares. `Count` is the size of a per-stage array and never
 /// a stage.
@@ -119,6 +124,10 @@ struct ParameterDecl {
     f32 value[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     /// False means the compiler folds `value` into the generated code. See note 1 above.
     bool exposed = true;
+    /// Empty for a system parameter; otherwise the emitter that owns this declaration.
+    Name emitter;
+    /// Unique identifier used in generated shader code for an emitter parameter.
+    Name shader_name;
 };
 
 /// The storage encoding of one attribute. `Auto` asks the compiler; anything else is the explicit
@@ -154,6 +163,16 @@ struct EventChannelDecl {
     bool readback = false;
 };
 
+/// Explicit project source for a reusable VFX module identifier.
+struct ModuleAssetRef {
+    Name name;
+    Name path;
+    /// Set by `resolve_authoring_modules` once the module is composed into an emitter: its stage,
+    /// typed inputs, graph semantic digest and the digests of the modules it uses. Zero until then.
+    /// Neither the name nor the path is in it; `compile_system` folds it into the cook key.
+    u64 content_digest = 0;
+};
+
 /// One emitter: a name, six optional stage graphs, its attribute declarations, and the path it
 /// requires.
 class Emitter {
@@ -170,6 +189,7 @@ public:
     /// Give a stage its graph. A stage already set is replaced, which is what an editor does.
     [[nodiscard]] Status set_stage(Stage which, Graph&& graph) noexcept;
     [[nodiscard]] const Graph* stage(Stage which) const noexcept;
+    [[nodiscard]] Graph* stage(Stage which) noexcept;
     /// Resolve every stage graph's node types against `registry`. CyberGraph's load-time step: a
     /// node whose type the registry does not have keeps whatever body it was loaded with and is
     /// reported by `validate`, rather than being dropped. `compile_system` refuses an asset that
@@ -183,6 +203,14 @@ public:
         return attributes_.span();
     }
     [[nodiscard]] const AttributeDecl* find_attribute(Name attribute) const noexcept;
+
+    /// Interfaces explicitly bound by this emitter's authored document.
+    [[nodiscard]] Status bind_interface(Name interface_name) noexcept;
+    [[nodiscard]] Span<const Name> interfaces() const noexcept { return interfaces_.span(); }
+
+    [[nodiscard]] Status reference_module(Name module_name) noexcept;
+    [[nodiscard]] Span<const Name> modules() const noexcept { return modules_.span(); }
+    void clear_module_references() noexcept { modules_.clear(); }
 
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
     void set_path(SimulationPath path) noexcept { path_ = path; }
@@ -214,6 +242,8 @@ private:
     Name name_;
     Array<StageEntry> stages_;
     Array<AttributeDecl> attributes_;
+    Array<Name> interfaces_;
+    Array<Name> modules_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
     /// `RendererKind::Sprite`. See `set_renderer`.
     u8 renderer_ = 0;
@@ -237,6 +267,7 @@ public:
 
     [[nodiscard]] Status add_emitter(Emitter&& emitter) noexcept;
     [[nodiscard]] Span<const Emitter> emitters() const noexcept { return emitters_.span(); }
+    [[nodiscard]] Span<Emitter> edit_emitters() noexcept { return emitters_.span(); }
     [[nodiscard]] const Emitter* find_emitter(Name emitter) const noexcept;
 
     [[nodiscard]] Status declare_parameter(const ParameterDecl& decl) noexcept;
@@ -244,12 +275,22 @@ public:
         return parameters_.span();
     }
     [[nodiscard]] const ParameterDecl* find_parameter(Name parameter) const noexcept;
+    /// Resolve an emitter declaration first, then a system declaration.
+    [[nodiscard]] const ParameterDecl* find_parameter(Name emitter, Name parameter) const noexcept;
 
     [[nodiscard]] Status declare_channel(const EventChannelDecl& decl) noexcept;
     [[nodiscard]] Span<const EventChannelDecl> channels() const noexcept {
         return channels_.span();
     }
     [[nodiscard]] const EventChannelDecl* find_channel(Name channel) const noexcept;
+
+    [[nodiscard]] Status declare_module_asset(const ModuleAssetRef& reference) noexcept;
+    [[nodiscard]] Span<const ModuleAssetRef> module_assets() const noexcept {
+        return module_assets_.span();
+    }
+    [[nodiscard]] const ModuleAssetRef* find_module_asset(Name name) const noexcept;
+    /// Record the content digest of a mapped module once it has been resolved.
+    [[nodiscard]] Status record_module_digest(Name name, u64 digest) noexcept;
 
     [[nodiscard]] ImportanceClass importance() const noexcept { return importance_; }
     void set_importance(ImportanceClass importance) noexcept { importance_ = importance; }
@@ -264,6 +305,7 @@ private:
     Array<Emitter> emitters_;
     Array<ParameterDecl> parameters_;
     Array<EventChannelDecl> channels_;
+    Array<ModuleAssetRef> module_assets_;
     ImportanceClass importance_ = ImportanceClass::Ambient;
     ScalabilityPolicy scalability_;
 };
@@ -290,5 +332,10 @@ inline constexpr const char* kCurve = "curve";
 /// Register the built-in VFX node types. Idempotent: registering twice is refused by the registry
 /// itself, which is how a caller finds out it did.
 [[nodiscard]] Status register_vfx_nodes(NodeRegistry& registry) noexcept;
+
+/// Add typed sample nodes for every field in a data-interface registry. Call this after adding
+/// project interfaces so their fields reach the editor palette and the cook registry alike.
+[[nodiscard]] Status register_vfx_interface_nodes(NodeRegistry& registry,
+                                                  const DataInterfaceRegistry& interfaces) noexcept;
 
 }  // namespace cy::vfx

@@ -115,6 +115,26 @@ struct GeometrySource {
     }
 };
 
+/// A prepared material pipeline for one draw. Sets 0-2 must accept FrameBindings' frame sets;
+/// an optional set 3 carries that material's compiled parameters and requires a layout with that
+/// fourth set. The caller creates all of
+/// these objects before recording the frame and owns them until the GPU is finished with it.
+struct DrawPipelineSelection {
+    rhi::GraphicsPipelineHandle pipeline;
+    rhi::PipelineLayoutHandle layout;
+    rhi::DescriptorSetHandle material_set;
+    /// 0 keeps the pass default (shadow: position; depth: position, normal, previous position;
+    /// forward: position, normal, UV). Non-zero binds that many FORWARD streams, whatever the pass:
+    /// a graph vertex program reads normal or UV and evaluates its own previous position.
+    u8 vertex_streams = 0;
+};
+
+/// Return false to use the frame's standard pipeline. A true result must fill non-null pipeline
+/// and layout handles that match this pass's attachments and requested vertex streams.
+using DrawPipelineFn = bool (*)(FramePipelineKind kind, const render::DrawItem& item,
+                                const GpuDrawInstance& instance, void* user,
+                                DrawPipelineSelection& out) noexcept;
+
 class BloomRenderer;
 class FrameRecorder;
 
@@ -182,6 +202,10 @@ public:
     [[nodiscard]] Status initialize(FramePipelines& pipelines, FrameBindings& bindings) noexcept;
 
     void set_geometry(const GeometrySource& source) noexcept { geometry_ = source; }
+    void set_draw_pipeline(DrawPipelineFn select, void* user) noexcept {
+        draw_pipeline_ = select;
+        draw_pipeline_user_ = user;
+    }
     void set_shadow_targets(ResourceId color, ResourceId depth, u32 extent) noexcept {
         shadow_color_ = color;
         shadow_depth_ = depth;
@@ -191,6 +215,8 @@ public:
     [[nodiscard]] ResourceId shadow_depth() const noexcept { return shadow_depth_; }
     [[nodiscard]] u32 shadow_extent() const noexcept { return shadow_extent_; }
     [[nodiscard]] const GeometrySource& geometry() const noexcept { return geometry_; }
+    [[nodiscard]] DrawPipelineFn draw_pipeline() const noexcept { return draw_pipeline_; }
+    [[nodiscard]] void* draw_pipeline_user() const noexcept { return draw_pipeline_user_; }
 
     /// Attach the recorder for `FramePassKind::Bloom`. Required when the frame's post chain has
     /// bloom in it — `bind()` refuses the frame otherwise — and handed the assembly's
@@ -234,6 +260,8 @@ private:
     FramePipelines* pipelines_ = nullptr;
     FrameBindings* bindings_ = nullptr;
     GeometrySource geometry_;
+    DrawPipelineFn draw_pipeline_ = nullptr;
+    void* draw_pipeline_user_ = nullptr;
     BloomRenderer* bloom_ = nullptr;
     ResourceId shadow_color_ = kInvalidResource;
     ResourceId shadow_depth_ = kInvalidResource;

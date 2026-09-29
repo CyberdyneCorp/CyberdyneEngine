@@ -34,6 +34,7 @@ use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
 use crate::picking;
+use crate::primitives::{material_slots_of, mesh_of};
 use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
@@ -79,6 +80,38 @@ struct PendingGraphSave {
     source: String,
     document: DocumentId,
     actor: Actor,
+}
+
+fn material_geometry_payload(mut canvas: Vec<u8>, geometry: &[&str]) -> Result<Vec<u8>> {
+    if geometry.is_empty() {
+        return Ok(canvas);
+    }
+    if geometry
+        .iter()
+        .any(|name| name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+    {
+        return Err(Problem::new(
+            "submit a material geometry request",
+            "geometry source names must be nonempty identifiers",
+        ));
+    }
+    let mut request = format!("cymatrequest 1\ngeometry {}\n", geometry.join(",")).into_bytes();
+    request.append(&mut canvas);
+    Ok(request)
+}
+
+fn material_preview_payload(reference: &str, canvas: &str, geometry: &[&str]) -> Result<Vec<u8>> {
+    let source = material_geometry_payload(canvas.as_bytes().to_vec(), geometry)?;
+    let source = std::str::from_utf8(&source).map_err(|_| {
+        Problem::new(
+            "preview a material graph",
+            "the material request is not UTF-8",
+        )
+    })?;
+    let mut payload = cy_editor_core::codec::Writer::new();
+    payload.text(reference);
+    payload.text(source);
+    Ok(payload.finish())
 }
 
 /// The editor's authoritative state.
@@ -282,16 +315,149 @@ impl Editor {
             .request_material(&self.runtime, operation, canvas)
     }
 
+    /// Submit a material graph with its assigned geometry sources. The engine compiler owns the
+    /// source names and the unsupported-path diagnostic; this envelope only carries the selection.
+    pub fn request_material_for_geometry(
+        &mut self,
+        operation: MaterialOperation,
+        canvas: Vec<u8>,
+        geometry: &[&str],
+    ) -> Result<cy_editor_protocol::RequestId> {
+        if geometry.is_empty() {
+            return self.request_material(operation, canvas);
+        }
+        if !matches!(
+            operation,
+            MaterialOperation::Validate | MaterialOperation::Compile | MaterialOperation::Author
+        ) {
+            return Err(Problem::new(
+                "submit a material geometry request",
+                "geometry sources apply only to validation, compilation, and authoring",
+            ));
+        }
+        self.request_material(operation, material_geometry_payload(canvas, geometry)?)
+    }
+
+    /// Distinct geometry sources assigned to a material in the active scene.
+    pub fn assigned_material_geometry(&self, reference: Option<&str>) -> Vec<&'static str> {
+        let Some(reference) = reference else {
+            return Vec::new();
+        };
+        let Some(document) = self
+            .workspace
+            .active()
+            .and_then(|id| self.documents.get(id))
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
+        let mut static_mesh = false;
+        let mut virtual_geometry = false;
+        for node in document.content().nodes() {
+            let Some(mesh) = mesh_of(document, node) else {
+                continue;
+            };
+            if !material_slots_of(document, node)
+                .iter()
+                .any(|material| material == reference)
+            {
+                continue;
+            }
+            // CYVG is the Engine's cooked virtual-geometry format. An authored mesh reference to
+            // that format must reach its named compiler path, even though this viewport currently
+            // draws only static meshes.
+            if std::path::Path::new(&mesh)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("cyvg"))
+            {
+                virtual_geometry = true;
+            } else {
+                static_mesh = true;
+            }
+        }
+        if static_mesh {
+            sources.push("StaticMesh");
+        }
+        if virtual_geometry {
+            sources.push("VirtualGeometry");
+        }
+        let schema = document.schema();
+        if let (Some(terrain), Some(layer)) = (
+            schema.type_named("TerrainAuthoring"),
+            schema.type_named("TerrainMaterialLayer"),
+        ) && let Some(material) = layer.field_named("material")
+            && document.content().nodes().any(|node| {
+                let Some(parent) = document.content().node(node).and_then(|item| item.parent)
+                else {
+                    return false;
+                };
+                document.content().has_component(parent, terrain.id)
+                    && matches!(
+                        document.content().field(node, layer.id, material.id),
+                        Some(cy_editor_core::value::Value::Text(asset)) if asset == reference
+                    )
+            })
+        {
+            sources.push("Terrain");
+        }
+        sources
+    }
+
+    /// Ask the engine to compile an editable VFX document.
+    pub fn request_vfx_compile(&mut self, source: String) -> Result<cy_editor_protocol::RequestId> {
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend.request_vfx_compile(&self.runtime, bundled)
+    }
+
+    /// Load an unsaved VFX document into the engine's isolated preview world.
+    pub fn request_vfx_preview_load(
+        &mut self,
+        source: String,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        let bundled =
+            crate::vfx_document::bundle_source(source, |path| self.project.read_source(path))?;
+        self.backend
+            .request_vfx_preview_load(&self.runtime, bundled)
+    }
+
+    /// Control the engine VFX preview.
+    pub fn request_vfx_preview_action(
+        &mut self,
+        action: crate::vfx_preview::VfxPreviewAction,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_action(&self.runtime, action)
+    }
+
+    /// Advance the running VFX preview by one frame interval.
+    pub fn request_vfx_preview_step(
+        &mut self,
+        seconds: f32,
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_step(&self.runtime, seconds)
+    }
+
+    /// Change one exposed parameter in the engine instance without compiling.
+    pub fn request_vfx_preview_parameter(
+        &mut self,
+        name: &str,
+        values: &[f32],
+    ) -> Result<cy_editor_protocol::RequestId> {
+        self.backend
+            .request_vfx_preview_parameter(&self.runtime, name, values)
+    }
+
     /// Apply an unsaved canvas to the hosted authored scene without writing the graph asset.
     pub fn preview_material_graph(
         &mut self,
         reference: &str,
         canvas: &str,
     ) -> Result<cy_editor_protocol::RequestId> {
-        let mut payload = cy_editor_core::codec::Writer::new();
-        payload.text(reference);
-        payload.text(canvas);
-        self.request_material(MaterialOperation::Preview, payload.finish())
+        let geometry = self.assigned_material_geometry(Some(reference));
+        let payload = material_preview_payload(reference, canvas, &geometry)?;
+        self.request_material(MaterialOperation::Preview, payload)
     }
 
     /// Cooperatively cancel the currently pending material operation.
@@ -358,15 +524,37 @@ impl Editor {
                     after: crate::material_graph::encode_pair(Some(&graph), Some(&source)),
                 })
                 .map_err(|problem| problem.to_string())?;
-            document.commit().map_err(|problem| problem.to_string())?;
-            Ok(())
+            // Generated Inspector fields belong to the same save action. Their nested
+            // transactions join this one, so one undo restores both files and scene fields.
+            let property_sync =
+                crate::material_parameters::sync(self, &reference, prior.as_deref());
+            self.documents
+                .get_mut(pending.document)
+                .expect("checked above")
+                .commit()
+                .map_err(|problem| problem.to_string())?;
+            Ok(property_sync)
         });
         self.graph_save_status = match outcome {
-            Ok(()) => match crate::material_parameters::sync(self, &reference, prior.as_deref()) {
-                Ok(_) => format!("saved: {reference}"),
-                Err(problem) => format!("saved: {reference}; property sync failed: {problem}"),
-            },
-            Err(problem) => format!("failed: {problem}"),
+            Ok(Ok(_)) => {
+                self.notifications
+                    .post(Notification::info(format!("Saved {reference}")));
+                format!("saved: {reference}")
+            }
+            Ok(Err(problem)) => {
+                self.notifications.post(Notification::error(
+                    "Material saved; scene properties could not be synced",
+                    Problem::new("sync graph properties", problem.clone()),
+                ));
+                format!("saved: {reference}; property sync failed: {problem}")
+            }
+            Err(problem) => {
+                self.notifications.post(Notification::error(
+                    "Material save failed",
+                    Problem::new("save material graph", problem.clone()),
+                ));
+                format!("failed: {problem}")
+            }
         };
     }
 
@@ -1261,8 +1449,12 @@ impl cy_editor_commands::ProjectHost for Editor {
                 "no scene document is active for undo history",
             )
         })?;
-        let request =
-            self.request_material(MaterialOperation::Author, source.as_bytes().to_vec())?;
+        let sources = self.assigned_material_geometry(Some(reference));
+        let request = self.request_material_for_geometry(
+            MaterialOperation::Author,
+            source.as_bytes().to_vec(),
+            &sources,
+        )?;
         let id = request.as_u64();
         self.pending_graph_save = Some(PendingGraphSave {
             request: id,
@@ -1312,9 +1504,296 @@ impl cy_editor_commands::ProjectHost for Editor {
             self.backend.material_preview_state()
         )
     }
+
+    fn material_canvas_draft_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let (_, canvas_path) = crate::material_graph::paths(self.project.root(), reference)?;
+        if !source.starts_with("cymatcanvas 1\n") {
+            return Err(Problem::new(
+                "save a material canvas draft",
+                "expected cymatcanvas 1 source",
+            ));
+        }
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a material canvas draft",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let canvas_reference = canvas_path
+            .strip_prefix(self.project.root())
+            .map_err(|error| Problem::new("save a material canvas draft", error.to_string()))?
+            .to_string_lossy()
+            .into_owned();
+        let prior_source = self.project.read_source(&canvas_reference).ok();
+        if prior_source.as_deref() == Some(source) {
+            return Ok(());
+        }
+        let prior_graph = self.project.read_source(reference).ok();
+        self.project.put_source(&canvas_reference, Some(source))?;
+        let recorded = (|| -> Result<()> {
+            let document = self.documents.get_mut(document_id).ok_or_else(|| {
+                Problem::new(
+                    "save a material canvas draft",
+                    "the active scene document closed",
+                )
+            })?;
+            document.with_transaction(
+                format!("Edit material canvas {reference}"),
+                self.actor.clone(),
+                |document| {
+                    document.record(cy_editor_documents::operation::Operation::Domain {
+                        node: None,
+                        kind: format!("{}{reference}", crate::material_graph::GRAPH_DOMAIN_PREFIX),
+                        before: crate::material_graph::encode_pair(
+                            prior_graph.as_deref(),
+                            prior_source.as_deref(),
+                        ),
+                        after: crate::material_graph::encode_pair(
+                            prior_graph.as_deref(),
+                            Some(source),
+                        ),
+                    })
+                },
+            )
+        })();
+        if let Err(problem) = recorded {
+            self.project
+                .put_source(&canvas_reference, prior_source.as_deref())?;
+            return Err(problem);
+        }
+        Ok(())
+    }
+
+    fn material_graph_authored(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
+    fn vfx_document_read(&self, reference: &str) -> Result<String> {
+        crate::vfx_document::validate_reference(reference)?;
+        self.project.read_source(reference)
+    }
+
+    fn vfx_document_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::vfx_document::validate_reference(reference)?;
+        crate::vfx_document::validate_source(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a VFX document",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let document = self.documents.get_mut(document_id).ok_or_else(|| {
+            Problem::new("save a VFX document", "the active scene document closed")
+        })?;
+        document.begin(format!("Save VFX document {reference}"), self.actor.clone());
+        document.record(cy_editor_documents::operation::Operation::Domain {
+            node: None,
+            kind: format!("{}{}", crate::vfx_document::DOMAIN_PREFIX, reference),
+            before: crate::project::encode_source(prior.as_deref()),
+            after: crate::project::encode_source(Some(source)),
+        })?;
+        document.commit()?;
+        Ok(())
+    }
+
+    fn vfx_document_exists(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
+    fn vfx_catalogue(&self) -> Option<Vec<u8>> {
+        self.backend.vfx_catalogue().map(<[u8]>::to_vec)
+    }
+
+    fn material_catalogue(&self) -> Option<Vec<u8>> {
+        self.backend.material_catalogue().map(<[u8]>::to_vec)
+    }
+
+    fn vfx_module_read(&self, reference: &str) -> Result<String> {
+        crate::vfx_module::validate_reference(reference)?;
+        self.project.read_source(reference)
+    }
+
+    fn vfx_module_exists(&self, reference: &str) -> bool {
+        self.project.source_exists(reference)
+    }
+
+    fn vfx_module_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::vfx_module::validate_reference(reference)?;
+        crate::vfx_module::validate_source(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a VFX module",
+                "no scene document is active for undo history",
+            )
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let document = self
+            .documents
+            .get_mut(document_id)
+            .ok_or_else(|| Problem::new("save a VFX module", "the active scene document closed"))?;
+        document.begin(format!("Save VFX module {reference}"), self.actor.clone());
+        document.record(cy_editor_documents::operation::Operation::Domain {
+            node: None,
+            kind: format!("{}{}", crate::vfx_module::DOMAIN_PREFIX, reference),
+            before: crate::project::encode_source(prior.as_deref()),
+            after: crate::project::encode_source(Some(source)),
+        })?;
+        document.commit()?;
+        Ok(())
+    }
+
+    fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {
+        crate::vfx_document::validate_source(source)?;
+        self.request_vfx_preview_load(source.to_owned())
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_control(&mut self, action: &str, value: f32) -> Result<u64> {
+        let action = match action {
+            "play" => crate::vfx_preview::VfxPreviewAction::Play,
+            "pause" => crate::vfx_preview::VfxPreviewAction::Pause,
+            "restart" => crate::vfx_preview::VfxPreviewAction::Restart,
+            "scrub" => crate::vfx_preview::VfxPreviewAction::Scrub(value),
+            "time-scale" => crate::vfx_preview::VfxPreviewAction::TimeScale(value),
+            _ => {
+                return Err(Problem::new(
+                    "control VFX preview",
+                    "action must be play, pause, restart, scrub, or time-scale",
+                ));
+            }
+        };
+        self.request_vfx_preview_action(action)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_step(&mut self, seconds: f32) -> Result<u64> {
+        self.request_vfx_preview_step(seconds)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_parameter(&mut self, name: &str, values: &[f32]) -> Result<u64> {
+        self.request_vfx_preview_parameter(name, values)
+            .map(RequestId::as_u64)
+    }
+
+    fn vfx_preview_status(&self) -> Outcome {
+        use cy_editor_core::value::Value;
+
+        let mut result = Outcome::new("Engine VFX preview state")
+            .with("pending", Value::Bool(self.backend.vfx_preview_pending()));
+        if let Some(problem) = self.backend.vfx_preview_problem() {
+            result = result.with("problem", Value::Text(problem.to_owned()));
+        }
+        if let Some(state) = self.backend.vfx_preview_snapshot() {
+            result = result
+                .with("cook_key", Value::Text(state.cook_key.to_string()))
+                .with("playing", Value::Bool(state.playing))
+                .with("time_seconds", Value::Float(state.time_seconds))
+                .with("time_scale", Value::Float(state.time_scale))
+                .with(
+                    "live_particles",
+                    Value::Int(i64::from(state.live_particles)),
+                )
+                .with("spawned", Value::Int(i64::from(state.spawned)))
+                .with("killed", Value::Int(i64::from(state.killed)))
+                .with("cpu_fallbacks", Value::Int(i64::from(state.cpu_fallbacks)))
+                .with(
+                    "pool_used_bytes",
+                    Value::Text(state.pool_used_bytes.to_string()),
+                )
+                .with(
+                    "pool_total_bytes",
+                    Value::Text(state.pool_total_bytes.to_string()),
+                )
+                .with(
+                    "pool_shortfall_particles",
+                    Value::Int(i64::from(state.pool_shortfall_particles)),
+                )
+                .with(
+                    "pool_reduced_requests",
+                    Value::Int(i64::from(state.pool_reduced_requests)),
+                )
+                .with("events_raised", Value::Int(i64::from(state.events_raised)))
+                .with(
+                    "events_delivered",
+                    Value::Int(i64::from(state.events_delivered)),
+                )
+                .with(
+                    "events_dropped",
+                    Value::Int(i64::from(state.events_dropped)),
+                )
+                .with(
+                    "events_truncated",
+                    Value::Int(i64::from(state.events_truncated)),
+                )
+                .with(
+                    "readback_deferred",
+                    Value::Int(i64::from(state.readback_deferred)),
+                )
+                .with(
+                    "emitter_count",
+                    Value::Int(i64::try_from(state.emitters.len()).unwrap_or(i64::MAX)),
+                );
+            for (index, emitter) in state.emitters.iter().enumerate() {
+                result = result
+                    .with(
+                        format!("emitter_{index}_name"),
+                        Value::Text(emitter.name.clone()),
+                    )
+                    .with(
+                        format!("emitter_{index}_live"),
+                        Value::Int(i64::from(emitter.live)),
+                    );
+            }
+            if let Some(sample) = &state.sample {
+                result = result
+                    .with("sample_emitter", Value::Int(i64::from(sample.emitter)))
+                    .with("sample_slot", Value::Int(i64::from(sample.slot)))
+                    .with(
+                        "sample_attribute_count",
+                        Value::Int(i64::try_from(sample.attributes.len()).unwrap_or(i64::MAX)),
+                    );
+                for (index, attribute) in sample.attributes.iter().enumerate() {
+                    let mut lanes = [0.0; 4];
+                    lanes[..attribute.values.len()].copy_from_slice(&attribute.values);
+                    result = result
+                        .with(
+                            format!("sample_attribute_{index}_name"),
+                            Value::Text(attribute.name.clone()),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_lanes"),
+                            Value::Int(i64::try_from(attribute.values.len()).unwrap_or(i64::MAX)),
+                        )
+                        .with(
+                            format!("sample_attribute_{index}_values"),
+                            Value::Vec4(lanes),
+                        );
+                }
+            }
+        }
+        result
+    }
 }
 
 impl Editor {
+    /// Latest material graph save result, used to settle the desktop canvas after asynchronous
+    /// engine authoring completes.
+    pub fn material_graph_save_status(&self) -> &str {
+        &self.graph_save_status
+    }
+
     fn set_local_play_state(&mut self, state: PlayState) {
         // Every viewport, because play is a property of the runtime rather than of a panel: two
         // viewports showing different play states would describe two runtimes.
@@ -1332,8 +1811,156 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::{MaterialBinding, create_mesh_instance};
+    use cy_editor_core::value::{Value, ValueKind};
     use cy_editor_protocol::FrameId;
+    use cy_editor_viewport::gizmo::Transform3;
     use cy_editor_viewport::picking::PickCandidate;
+
+    #[test]
+    fn material_geometry_request_preserves_the_canvas_and_rejects_bad_names() {
+        let canvas = b"cymatcanvas 1\nmaterial sway\n".to_vec();
+        let payload =
+            material_geometry_payload(canvas.clone(), &["StaticMesh", "VirtualGeometry"]).unwrap();
+        assert_eq!(
+            payload,
+            [
+                b"cymatrequest 1\ngeometry StaticMesh,VirtualGeometry\n".as_slice(),
+                canvas.as_slice()
+            ]
+            .concat()
+        );
+        assert_eq!(
+            material_geometry_payload(canvas.clone(), &[]).unwrap(),
+            canvas
+        );
+        assert!(
+            material_geometry_payload(canvas.clone(), &["StaticMesh\nmaterial forged"]).is_err()
+        );
+        assert!(material_geometry_payload(canvas, &[""]).is_err());
+    }
+
+    #[test]
+    fn material_preview_carries_assigned_geometry_to_the_engine() {
+        let canvas = "cymatcanvas 1\nmaterial sway\n";
+        let payload = material_preview_payload(
+            "materials/sway.cygraph",
+            canvas,
+            &["StaticMesh", "VirtualGeometry"],
+        )
+        .unwrap();
+        let mut reader = cy_editor_core::codec::Reader::new(&payload);
+        assert_eq!(reader.text().unwrap(), "materials/sway.cygraph");
+        assert_eq!(
+            reader.text().unwrap(),
+            format!("cymatrequest 1\ngeometry StaticMesh,VirtualGeometry\n{canvas}")
+        );
+    }
+
+    #[test]
+    fn assigned_material_geometry_includes_meshes_and_terrain_layers() {
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/materials.cyworld").unwrap();
+        editor
+            .documents
+            .get_mut(id)
+            .unwrap()
+            .with_transaction("Assign material", Actor::human("designer"), |document| {
+                let mesh = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/box.cyprim",
+                    Transform3::default(),
+                )?;
+                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+                document.record(
+                    cy_editor_documents::operation::Operation::SetAssetReference {
+                        node: mesh,
+                        component: binding.component,
+                        field: binding.material,
+                        before: String::new(),
+                        after: "materials/shared.cygraph".into(),
+                    },
+                )?;
+
+                let terrain = document
+                    .schema_mut()
+                    .declare_type("TerrainAuthoring", false);
+                let layer = document
+                    .schema_mut()
+                    .declare_type("TerrainMaterialLayer", true);
+                let material = document.schema_mut().declare_field(
+                    layer,
+                    "material",
+                    ValueKind::Text,
+                    "Terrain layer material",
+                )?;
+                let root = document.create_node(None)?;
+                document.add_component(root, terrain, vec![])?;
+                let child = document.create_node(Some(root))?;
+                document.add_component(
+                    child,
+                    layer,
+                    vec![(material, Value::Text("materials/shared.cygraph".into()))],
+                )?;
+                let terrain_only = document.create_node(Some(root))?;
+                document.add_component(
+                    terrain_only,
+                    layer,
+                    vec![(material, Value::Text("materials/terrain.cygraph".into()))],
+                )?;
+                let orphan = document.create_node(None)?;
+                document.add_component(
+                    orphan,
+                    layer,
+                    vec![(material, Value::Text("materials/orphan.cygraph".into()))],
+                )?;
+                let clustered = create_mesh_instance(
+                    document,
+                    None,
+                    "meshes/stone.cyvg",
+                    Transform3::default(),
+                )?;
+                let binding = MaterialBinding::of_schema(document.schema()).unwrap();
+                document.record(
+                    cy_editor_documents::operation::Operation::SetAssetReference {
+                        node: clustered,
+                        component: binding.component,
+                        field: binding.material,
+                        before: String::new(),
+                        after: "materials/shared.cygraph".into(),
+                    },
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let geometry = editor.assigned_material_geometry(Some("materials/shared.cygraph"));
+        assert_eq!(geometry, ["StaticMesh", "VirtualGeometry", "Terrain"]);
+        let payload = material_geometry_payload(b"cymatcanvas 1\n".to_vec(), &geometry).unwrap();
+        assert!(
+            payload.starts_with(b"cymatrequest 1\ngeometry StaticMesh,VirtualGeometry,Terrain\n")
+        );
+        let preview =
+            material_preview_payload("materials/shared.cygraph", "cymatcanvas 1\n", &geometry)
+                .unwrap();
+        let mut reader = cy_editor_core::codec::Reader::new(&preview);
+        assert_eq!(reader.text().unwrap(), "materials/shared.cygraph");
+        assert!(
+            reader
+                .text()
+                .unwrap()
+                .starts_with("cymatrequest 1\ngeometry StaticMesh,VirtualGeometry,Terrain\n")
+        );
+        assert_eq!(
+            editor.assigned_material_geometry(Some("materials/terrain.cygraph")),
+            ["Terrain"]
+        );
+        assert!(
+            editor
+                .assigned_material_geometry(Some("materials/orphan.cygraph"))
+                .is_empty()
+        );
+    }
 
     #[test]
     fn an_editor_with_no_runtime_still_opens_and_edits_documents() {

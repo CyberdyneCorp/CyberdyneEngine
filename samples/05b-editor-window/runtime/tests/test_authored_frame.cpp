@@ -2,6 +2,7 @@
 // The editor's authored frame on the native device this host publishes from: Metal on Apple,
 // Vulkan on Linux. One file so both backends answer to the same pixel assertions.
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/null/null_device.h>
 #if defined(__APPLE__)
 #    include <cy/backends/rhi-metal/backend.h>
 #else
@@ -10,14 +11,30 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include <cy/editor/material_service.h>
+#endif
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
+#include "material_runtime.h"
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include "golden.h"
+#endif
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace cy;
 using namespace cy::sample::editor_window;
@@ -27,6 +44,69 @@ namespace first_light = cy::sample::first_light;
 namespace {
 
 constexpr std::string_view kEmpty = "cyworld 1\n";
+constexpr std::string_view kVertexGraph = R"(cygraph 1
+graph "offset" version 1
+capability
+deterministic true
+node 1 "material.vertex_output" v1 {
+}
+)";
+constexpr std::string_view kInterpolantGraph = R"(cygraph 1
+graph "interpolant" version 1
+capability
+deterministic true
+node 1 "material.vertex_interpolant" v1 {
+}
+)";
+constexpr std::string_view kSurfaceVertexGraph = R"(cygraph 1
+graph "scene_sway" version 1
+capability
+deterministic true
+node 1 "material.constant" v1 {
+    prop "type" : "name" = "float3"
+    prop "value" : "vec4" = (0.7, 0.5, 0.2, 0, 0)
+}
+node 2 "material.constant" v1 {
+    prop "type" : "name" = "float"
+    prop "value" : "vec4" = (1, 0, 0, 0, 0)
+}
+node 3 "material.diffuse" v1 {
+}
+node 4 "material.output" v1 {
+}
+node 5 "material.constant" v1 {
+    prop "type" : "name" = "float3"
+    prop "value" : "vec4" = (0, 0.25, 0, 0, 0)
+}
+node 6 "material.vertex_output" v1 {
+}
+link 1 "out" -> 3 "colour"
+link 2 "out" -> 3 "weight"
+link 2 "out" -> 4 "opacity"
+link 3 "out" -> 4 "surface"
+link 5 "out" -> 6 "offset"
+)";
+constexpr std::string_view kSceneInterpolantGraph = R"(cygraph 1
+graph "scene_interpolant" version 1
+capability
+deterministic true
+node 1 "material.object_position" v1 {
+}
+node 2 "material.vertex_interpolant" v1 {
+    prop "symbol" : "name" = "tint"
+}
+node 3 "material.attribute" v1 {
+    prop "symbol" : "name" = "tint"
+    prop "type" : "name" = "float3"
+}
+node 4 "material.diffuse" v1 {
+}
+node 5 "material.output" v1 {
+}
+link 1 "out" -> 2 "value"
+link 3 "out" -> 4 "colour"
+link 4 "out" -> 5 "surface"
+)";
 constexpr std::string_view kSphere = R"(cyworld 1
 type 1 runtime "Transform"
   field 1 quat "rotation" ""
@@ -198,12 +278,14 @@ Allocator& allocator() noexcept {
 
 #if defined(__APPLE__)
 constexpr const char* kBackend = "metal";
+constexpr rhi::BackendKind kNativeBackend = rhi::BackendKind::Metal;
 constexpr const char* kSuite = "smoke.editor_authored_frame_metal";
 void register_backend() noexcept {
     (void)rhi::metal::register_metal_backend();
 }
 #else
 constexpr const char* kBackend = "vulkan";
+constexpr rhi::BackendKind kNativeBackend = rhi::BackendKind::Vulkan;
 constexpr const char* kSuite = "smoke.editor_authored_frame_vulkan";
 void register_backend() noexcept {
     (void)rhi::vulkan::register_vulkan_backend();
@@ -460,21 +542,677 @@ void check_graph_material(AuthoredFrame& frame, const first_light::Camera& view)
                                          : default_red - restored_red) < 1000U);
 }
 
+/// A native device the authored frame can run on, or null after saying why there is none. These are
+/// skips, not failures: a runner with no driver for this backend, a selection that fell back to
+/// another backend, and a device on the compatibility path (a paravirtual Metal GPU has no global
+/// texture table), which `AuthoredFrame::initialize` refuses by design. A test that went on after
+/// such a device would index an empty frame, because CY_REQUIRE does not stop a test built without
+/// exceptions.
+rhi::Device* native_frame_device(const char* application) {
+    rhi::DeviceDescription description;
+    description.application_name = application;
+    description.enable_validation = true;
+    rhi::BackendSelection selection;
+    auto created = rhi::create_device(allocator(), kBackend, description, selection);
+    if (!created) {
+        std::fprintf(stderr, "no %s device: %s\n", kBackend, created.error().message);
+        CY_CHECK_EQ(created.error().code, ErrorCode::Unavailable);
+        return nullptr;
+    }
+    rhi::Device* device = *created;
+    const char* reason = nullptr;
+    if (device->capabilities().backend() != kNativeBackend) {
+        CY_CHECK(selection.fell_back);
+        reason = selection.reason;
+    } else if (device->global_texture_table().is_null()) {
+        reason = "the device is on the compatibility path, with no global texture table";
+    }
+    if (reason != nullptr) {
+        std::fprintf(stderr, "no usable %s device: selected '%s' because %s\n", kBackend,
+                     selection.selected, reason);
+        rhi::destroy_device(allocator(), device);
+        return nullptr;
+    }
+    return device;
+}
+
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+// Pixels whose largest channel difference exceeds `tolerance`. For TAA frames past the first: the
+// jitter moves the sample positions off the pixel centres, where a graph's shader offset and the
+// same offset baked into the model matrix round differently along a shadow edge (measured at up to
+// 3 levels with nothing moving), and the history clamp widens that on an edge that moved.
+usize differing_beyond(Span<const u32> before, Span<const u32> after, u32 tolerance) noexcept {
+    usize count = 0;
+    for (usize pixel = 0; pixel < before.size(); ++pixel) {
+        for (u32 shift = 0; shift < 32; shift += 8) {
+            const u32 lhs = (before[pixel] >> shift) & 0xFFU;
+            const u32 rhs = (after[pixel] >> shift) & 0xFFU;
+            if ((lhs > rhs ? lhs - rhs : rhs - lhs) > tolerance) {
+                ++count;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+std::string assigned_vertex_shadow_scene() {
+    const std::string typed = edited(kShadowScene, "  field 4 text \"mesh\" \"\"\n",
+                                     "  field 4 text \"mesh\" \"\"\n"
+                                     "  field 11 text \"material\" \"\"\n",
+                                     Occurrence::First);
+    return edited(
+        typed, "    field 4 \"content/beauty/meshes/block.cyprim\"\n    field 9 true\n",
+        "    field 4 \"content/beauty/meshes/block.cyprim\"\n"
+        "    field 11 \"samples/05b-editor-window/project/materials/copper_clay.cygraph\"\n"
+        "    field 9 true\n",
+        Occurrence::First);
+}
+
+std::string time_vertex_graph() {
+    const std::string with_nodes = edited(kSurfaceVertexGraph, "link 1 \"out\" -> 3 \"colour\"\n",
+                                          "node 7 \"material.time\" v1 {\n}\n"
+                                          "node 8 \"material.sin\" v1 {\n}\n"
+                                          "node 9 \"material.constant\" v1 {\n"
+                                          "    prop \"type\" : \"name\" = \"float3\"\n"
+                                          "    prop \"value\" : \"vec4\" = (0, 4, 0, 0, 0)\n}\n"
+                                          "node 10 \"material.multiply\" v1 {\n}\n"
+                                          "link 1 \"out\" -> 3 \"colour\"\n",
+                                          Occurrence::First);
+    return edited(with_nodes, "link 5 \"out\" -> 6 \"offset\"\n",
+                  "link 7 \"out\" -> 8 \"value\"\n"
+                  "link 9 \"out\" -> 10 \"a\"\n"
+                  "link 8 \"out\" -> 10 \"b\"\n"
+                  "link 10 \"out\" -> 6 \"offset\"\n",
+                  Occurrence::First);
+}
+
+// Two frames compared pixel for pixel, each on its own device: a device's global texture table has
+// one sampler and each frame's material table creates its own. The frames render in lockstep, so
+// they share TAA's free-running jitter index and their history.
+// One validated device, destroyed after everything declared after it in the owning struct.
+struct OwnedDevice {
+    rhi::Device* device = nullptr;
+
+    OwnedDevice() {
+        rhi::DeviceDescription description;
+        description.application_name = kSuite;
+        description.enable_validation = true;
+        rhi::BackendSelection selection;
+        auto created = rhi::create_device(allocator(), kBackend, description, selection);
+        CY_REQUIRE(created.has_value());
+        device = *created;
+    }
+    OwnedDevice(const OwnedDevice&) = delete;
+    OwnedDevice& operator=(const OwnedDevice&) = delete;
+    ~OwnedDevice() {
+        if (device != nullptr) {
+            rhi::destroy_device(allocator(), device);
+        }
+    }
+};
+
+struct FramePair {
+    // Members are destroyed in reverse: both frames before either device.
+    OwnedDevice graph_device;
+    OwnedDevice cpu_device;
+    AuthoredFrame graph{allocator(), *graph_device.device};
+    AuthoredFrame cpu{allocator(), *cpu_device.device};
+
+    FramePair() {
+        CY_REQUIRE(graph.initialize(192, 128, CY_TEST_PROJECT, true, true));
+        CY_REQUIRE(cpu.initialize(192, 128, CY_TEST_PROJECT, true, true));
+    }
+};
+
+// The graph's vertical offset must make the same visible mesh and shadow as moving the source
+// mesh on the CPU. Previewing a zero offset keeps the surface graph and material settings equal.
+void check_graph_displacement_matches_cpu(const ser::AuthoringSchema& schema,
+                                          const first_light::Camera& view) {
+    const std::string reference = "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+    const std::string assigned = assigned_vertex_shadow_scene();
+    const std::string raised =
+        edited(assigned, "    field 2 0 0 0\n", "    field 2 0 0.25 0\n", Occurrence::First);
+    ser::World source(allocator());
+    ser::World cpu_displaced(allocator());
+    read_resolved(assigned, schema, source);
+    read_resolved(raised, schema, cpu_displaced);
+
+    FramePair frames;
+    const std::string zero_offset =
+        edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
+    // Each frame's first render has no history, so the comparison is of the shading alone.
+    CY_REQUIRE(frames.graph.preview(reference, kSurfaceVertexGraph));
+    CY_REQUIRE(frames.cpu.preview(reference, zero_offset));
+    CY_REQUIRE(frames.graph.render(source, view));
+    CY_REQUIRE(frames.cpu.render(cpu_displaced, view));
+    CY_CHECK_LE(differing_pixels(frames.graph.pixels(), frames.cpu.pixels()), 32U);
+    // A preview change starts a new history, so the zero offset is again a first frame.
+    Array<u32> displaced(allocator());
+    CY_REQUIRE(displaced.append(frames.graph.pixels()));
+    CY_REQUIRE(frames.graph.preview(reference, zero_offset));
+    CY_REQUIRE(frames.graph.render(source, view));
+    CY_CHECK_GT(differing_pixels(displaced.span(), frames.graph.pixels()), 100U);
+}
+
+// The second frame's sine displacement equals the CPU's scene translation. TAA consumes the depth
+// pass's motion target, so matching the temporal image also checks the shader's previous-time
+// evaluation against the CPU reference.
+void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
+                                    const first_light::Camera& view) {
+    constexpr std::string_view reference =
+        "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+    const std::string assigned = assigned_vertex_shadow_scene();
+    const std::string& raised = assigned;
+    constexpr f32 second_time = 0.2F;        // Above the old 0.1 s motion clamp.
+    constexpr f32 cpu_offset = 0.79467732F;  // 4 * sin(0.2)
+    const std::string& graph_moved = assigned;
+    const std::string cpu_moved =
+        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.79467732 0\n", Occurrence::First);
+    ser::World graph_before(allocator());
+    ser::World cpu_before(allocator());
+    ser::World graph_after(allocator());
+    ser::World cpu_after(allocator());
+    read_resolved(assigned, schema, graph_before);
+    read_resolved(raised, schema, cpu_before);
+    read_resolved(graph_moved, schema, graph_after);
+    read_resolved(cpu_moved, schema, cpu_after);
+
+    FramePair frames;
+    AuthoredFrame& graph_frame = frames.graph;
+    AuthoredFrame& cpu_frame = frames.cpu;
+    const std::string sine_graph = time_vertex_graph();
+    CY_REQUIRE(graph_frame.preview(reference, sine_graph));
+    const std::string zero_offset =
+        edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
+    CY_REQUIRE(cpu_frame.preview(reference, zero_offset));
+
+    CY_REQUIRE(graph_frame.render(graph_before, view, true, nullptr, 0.0F));
+    CY_REQUIRE(cpu_frame.render(cpu_before, view, true, nullptr, 0.0F));
+    CY_CHECK_LE(differing_pixels(graph_frame.pixels(), cpu_frame.pixels()), 32U);
+    Array<u32> graph_first(allocator());
+    CY_REQUIRE(graph_first.append(graph_frame.pixels()));
+
+    CY_CHECK_EQ(cpu_offset, doctest::Approx(4.0F * std::sin(second_time)));
+    CY_REQUIRE(graph_frame.render(graph_after, view, true, nullptr, second_time));
+    CY_REQUIRE(cpu_frame.render(cpu_after, view, true, nullptr, second_time));
+    CY_CHECK_GT(differing_pixels(graph_first.span(), graph_frame.pixels()), 100U);
+    CY_CHECK_LE(differing_beyond(graph_frame.pixels(), cpu_frame.pixels(), 24U), 32U);
+    CY_REQUIRE_EQ(graph_frame.motion_texels().size(), graph_frame.pixels().size());
+    CY_REQUIRE_EQ(cpu_frame.motion_texels().size(), cpu_frame.pixels().size());
+    usize moving = 0;
+    for (u32 texel : graph_frame.motion_texels()) {
+        moving += static_cast<usize>(texel != 0);
+    }
+    CY_CHECK_GT(moving, 20U);
+    // The motion target is not jittered, so the shader's previous-time evaluation must reproduce
+    // the CPU's previous transform exactly.
+    CY_CHECK_EQ(differing_pixels(graph_frame.motion_texels(), cpu_frame.motion_texels()), 0U);
+}
+#endif
+
 }  // namespace
+
+CY_TEST_CASE("authored scene material path names unsupported vertex-stage outputs") {
+    std::ifstream source(CY_TEST_PROJECT
+                         "/samples/05b-editor-window/project/materials/copper_clay.cygraph");
+    CY_REQUIRE(source.good());
+    std::ostringstream contents;
+    contents << source.rdbuf();
+    const std::string surface = contents.str();
+    auto accepted = graph_diffuse_colour(surface, allocator());
+    CY_REQUIRE(accepted.has_value());
+
+    for (std::string_view graph : {kVertexGraph, kInterpolantGraph}) {
+        auto rejected = graph_diffuse_colour(graph, allocator());
+        CY_REQUIRE_FALSE(rejected.has_value());
+        CY_CHECK_EQ(rejected.error().code, ErrorCode::Unsupported);
+        CY_CHECK(std::string_view(rejected.error().message).find("vertex-stage material pass") !=
+                 std::string_view::npos);
+    }
+}
+
+CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
+    auto refused = graph_diffuse_colour(kSurfaceVertexGraph, allocator());
+    CY_REQUIRE_FALSE(refused.has_value());
+    auto colour = graph_diffuse_colour(kSurfaceVertexGraph, allocator(), true);
+    CY_REQUIRE(colour.has_value());
+    CY_CHECK(colour->vertex);
+    CY_CHECK_EQ(colour->value.x, doctest::Approx(1.0F));
+    CY_CHECK_EQ(colour->value.y, doctest::Approx(1.0F));
+    CY_CHECK_EQ(colour->value.z, doctest::Approx(1.0F));
+    auto compiled = compile_scene_graph_material(kSurfaceVertexGraph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->depth.bytes().size(), 0U);
+    CY_CHECK_GT(stages->shadow.bytes().size(), 0U);
+    auto spirv = compile_scene_material_vertices(*program, allocator(), shader::Target::SpirV);
+    CY_REQUIRE(spirv.has_value());
+    CY_CHECK_GT(spirv->visible.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->depth.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->shadow.bytes().size(), 0U);
+    CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+    auto animated = compile_scene_graph_material(time_vertex_graph(), allocator());
+    CY_REQUIRE(animated.has_value());
+    const auto* animated_program = animated->find(rendering::material::ProgramKind::Primary,
+                                                  rendering::material::QualityTier::High);
+    CY_REQUIRE(animated_program != nullptr);
+    auto animated_stages = compile_scene_material_vertices(*animated_program, allocator());
+    CY_REQUIRE(animated_stages.has_value());
+    CY_CHECK_GT(animated_stages->depth.bytes().size(), 0U);
+    Array<char> animated_unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*animated_program, animated_unit));
+    const std::string_view source(animated_unit.data(), animated_unit.size());
+    CY_CHECK(source.find("sin(") != std::string_view::npos);
+    const usize current = source.find("let current = sceneMaterialRelative(");
+    const usize previous = source.find("let previous = sceneMaterialRelative(");
+    const usize previous_point = source.find("let previousPoint =", previous);
+    CY_REQUIRE(current != std::string_view::npos);
+    CY_REQUIRE(previous != std::string_view::npos);
+    CY_REQUIRE(previous_point != std::string_view::npos);
+    CY_CHECK(source.substr(current, previous - current).find("sceneMaterialTime());") !=
+             std::string_view::npos);
+    CY_CHECK(source.substr(previous, previous_point - previous)
+                 .find("sceneMaterialTime() - sceneMaterialDelta());") != std::string_view::npos);
+#endif
+}
+
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("committed sine sway material cooks and renders in its authored scene") {
+    const std::string project = std::string(CY_TEST_PROJECT) + "/samples/05b-editor-window/project";
+    Array<u8> graph_bytes(allocator());
+    CY_REQUIRE(
+        assets::fs::read_whole((project + "/materials/issue15_sway.cygraph").c_str(), graph_bytes));
+    const std::string_view graph(reinterpret_cast<const char*>(graph_bytes.data()),
+                                 graph_bytes.size());
+    auto compiled = compile_scene_graph_material(graph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_scene_material_vertex_unit(*program, unit));
+    CY_CHECK(std::string_view(unit.data(), unit.size()).find("sin(") != std::string_view::npos);
+
+    Array<u8> world_bytes(allocator());
+    CY_REQUIRE(
+        assets::fs::read_whole((project + "/worlds/issue15-sway.cyworld").c_str(), world_bytes));
+    const std::string_view world_source(reinterpret_cast<const char*>(world_bytes.data()),
+                                        world_bytes.size());
+    ser::World world(allocator());
+    CY_REQUIRE(ser::read_world(world_source, "worlds/issue15-sway.cyworld", world));
+    std::string unassigned(world_source);
+    constexpr std::string_view assignment = "field 5 \"materials/issue15_sway.cygraph\"";
+    const usize at = unassigned.find(assignment);
+    CY_REQUIRE_NE(at, std::string::npos);
+    if (at == std::string::npos) {
+        return;
+    }
+    unassigned.replace(at, assignment.size(), "field 5 \"\"");
+    ser::World baseline(allocator());
+    CY_REQUIRE(ser::read_world(unassigned, "worlds/issue15-sway.cyworld", baseline));
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    ser::AuthoringSchema schema(allocator());
+    CY_REQUIRE(ser::build_authoring_schema(types, schema));
+    CY_REQUIRE(ser::resolve_against(world, schema));
+    CY_REQUIRE(ser::resolve_against(baseline, schema));
+
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "issue 15 committed sway scene";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(160, 90, project.c_str()));
+        CY_REQUIRE(frame.render(baseline, camera(), true, nullptr, 0.2F));
+        std::vector<u64> standard;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
+                standard.push_back(command.handle_bits);
+            }
+        }
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, camera(), true, nullptr, 0.2F));
+        usize graph_pipelines = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++graph_pipelines;
+            }
+        }
+        CY_CHECK_GE(graph_pipelines, 2U);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif
+
+CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragment") {
+    auto colour = graph_diffuse_colour(kSceneInterpolantGraph, allocator(), true);
+    CY_REQUIRE(colour.has_value());
+    CY_CHECK(colour->vertex);
+    auto compiled = compile_scene_graph_material(kSceneInterpolantGraph, allocator());
+    CY_REQUIRE(compiled.has_value());
+    const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                         rendering::material::QualityTier::High);
+    CY_REQUIRE(program != nullptr);
+    CY_REQUIRE_EQ(program->module.vertex_interpolants().size(), 1U);
+    auto stages = compile_scene_material_vertices(*program, allocator());
+    CY_REQUIRE(stages.has_value());
+    CY_CHECK_GT(stages->visible.bytes().size(), 0U);
+    CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
+}
+
+CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor animation time validation";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT, true, true));
+        ser::World empty(allocator());
+        CY_REQUIRE(ser::read_world(kEmpty, "worlds/empty.cyworld", empty).has_value());
+        const Status rendered =
+            frame.render(empty, camera(), true, nullptr, std::numeric_limits<f32>::infinity());
+        CY_REQUIRE_FALSE(rendered.has_value());
+        CY_CHECK_EQ(rendered.error().code, ErrorCode::InvalidArgument);
+        CY_REQUIRE(frame.render(empty, camera(), true, nullptr, 0.0F));
+        CY_CHECK_EQ(frame.motion_texels().size(), 64U * 64U);
+        usize copies = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            copies +=
+                static_cast<usize>(command.kind == rhi::null::CommandKind::CopyTextureToBuffer);
+        }
+        CY_CHECK_EQ(copies, 2U);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("authored scene binds weather wind for a vertex field graph") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor field preview validation";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(64, 64, CY_TEST_PROJECT));
+        const std::string field_graph =
+            edited(kSurfaceVertexGraph,
+                   "node 5 \"material.constant\" v1 {\n"
+                   "    prop \"type\" : \"name\" = \"float3\"\n"
+                   "    prop \"value\" : \"vec4\" = (0, 0.25, 0, 0, 0)\n}\n",
+                   "node 5 \"material.field\" v1 {\n"
+                   "    prop \"symbol\" : \"name\" = \"wind\"\n"
+                   "    prop \"type\" : \"name\" = \"float3\"\n}\n",
+                   Occurrence::First);
+        constexpr std::string_view reference =
+            "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        Array<u8> graph_bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(
+            (std::string(CY_TEST_PROJECT) + "/" + std::string(reference)).c_str(), graph_bytes));
+        const std::string graph_source(reinterpret_cast<const char*>(graph_bytes.data()),
+                                       graph_bytes.size());
+        CY_REQUIRE(frame.preview(reference, graph_source));
+        std::string unbound = field_graph;
+        const usize symbol = unbound.find("= \"wind\"");
+        CY_REQUIRE_NE(symbol, std::string::npos);
+        unbound.replace(symbol, std::string_view("= \"wind\"").size(), "= \"moisture\"");
+        const Status refused = frame.preview(reference, unbound);
+        CY_REQUIRE_FALSE(refused.has_value());
+        CY_CHECK_EQ(refused.error().code, ErrorCode::Unsupported);
+        CY_REQUIRE(frame.preview(reference, field_graph));
+        auto compiled = compile_scene_graph_material(field_graph, allocator());
+        CY_REQUIRE(compiled.has_value());
+        const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
+                                             rendering::material::QualityTier::High);
+        CY_REQUIRE(program != nullptr);
+        auto msl = compile_scene_material_vertices(*program, allocator(), shader::Target::Msl);
+        CY_REQUIRE(msl.has_value());
+        CY_CHECK_FALSE(msl->visible.bytes().empty());
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
+        reflect::TypeRegistry types;
+        CY_REQUIRE(reflect::register_scene_types(types));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(types, schema));
+        CY_REQUIRE(ser::resolve_against(world, schema).has_value());
+        CY_REQUIRE(frame.render(world, camera()));
+        auto moved = camera();
+        moved.position[0] += 1024.0;
+        CY_REQUIRE(frame.render(world, moved));
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+
+CY_TEST_CASE("authored scene selects compiled vertex pipelines for its graph material") {
+    (void)rhi::null::register_null_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "editor scene vertex graph null regression";
+    rhi::BackendSelection selection;
+    auto device = rhi::create_device(allocator(), rhi::kNullBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(160, 90, CY_TEST_PROJECT));
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(kGraphMaterial, "worlds/graph.cyworld", world).has_value());
+        reflect::TypeRegistry types;
+        CY_REQUIRE(reflect::register_scene_types(types));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(types, schema));
+        CY_REQUIRE(ser::resolve_against(world, schema).has_value());
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(world, view));
+        std::vector<u64> standard;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline) {
+                standard.push_back(command.handle_bits);
+            }
+        }
+        const std::string reference =
+            "samples/05b-editor-window/project/materials/copper_clay.cygraph";
+        CY_REQUIRE(frame.preview(reference, kSurfaceVertexGraph));
+        rhi::null::clear_command_log(**device);
+        const Status rendered = frame.render(world, view);
+        if (!rendered) {
+            std::fprintf(stderr, "scene vertex graph: %s\n", rendered.error().message);
+        }
+        CY_REQUIRE(rendered);
+        std::vector<u64> selected;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                selected.push_back(command.handle_bits);
+            }
+        }
+        CY_CHECK_GE(selected.size(), 2U);
+
+        const u64 identity = world.nodes()[0].identity;
+        rendering::pipeline::InstanceTransform previous;
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_CHECK_EQ(previous.tint[0], 1.0F);
+        CY_CHECK_EQ(previous.tint[1], 1.0F);
+        CY_CHECK_EQ(previous.tint[2], 1.0F);
+        CY_CHECK_EQ(previous.tint[3], 1.0F);
+        const std::string moved_source =
+            edited(kGraphMaterial, "field 2 0 0 0", "field 2 2 0 0", Occurrence::First);
+        ser::World moved(allocator());
+        CY_REQUIRE(ser::read_world(moved_source, "worlds/graph.cyworld", moved).has_value());
+        CY_REQUIRE(ser::resolve_against(moved, schema).has_value());
+        CY_REQUIRE(frame.render(moved, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_REQUIRE(frame.render(moved, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - view.position[0]));
+        first_light::Camera moved_view = view;
+        moved_view.position[0] += 1.0;
+        CY_REQUIRE(frame.render(moved, moved_view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - view.position[0]));
+        CY_REQUIRE(frame.render(moved, moved_view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(2.0 - moved_view.position[0]));
+
+        const std::string two_objects =
+            std::string(kGraphMaterial) + R"(node 1 - "test" "Second Block"
+  component 1
+    field 1 0 0 0 1
+    field 2 4 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+    field 5 "samples/05b-editor-window/project/materials/copper_clay.cygraph"
+)";
+        ser::World pair(allocator());
+        CY_REQUIRE(ser::read_world(two_objects, "worlds/graph.cyworld", pair).has_value());
+        CY_REQUIRE(ser::resolve_against(pair, schema).has_value());
+        CY_REQUIRE(frame.render(pair, view));
+        const u64 second_identity = pair.nodes()[1].identity;
+        CY_REQUIRE(frame.previous_material_transform(second_identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(4.0 - view.position[0]));
+        const std::string moved_pair_source =
+            edited(two_objects, "field 2 0 0 0", "field 2 2 0 0", Occurrence::First);
+        ser::World moved_pair(allocator());
+        CY_REQUIRE(
+            ser::read_world(moved_pair_source, "worlds/graph.cyworld", moved_pair).has_value());
+        CY_REQUIRE(ser::resolve_against(moved_pair, schema).has_value());
+        CY_REQUIRE(frame.render(moved_pair, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        CY_REQUIRE(frame.previous_material_transform(second_identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(4.0 - view.position[0]));
+
+        const std::string changed = edited(kSurfaceVertexGraph, "0.25", "0.75", Occurrence::First);
+        CY_REQUIRE(frame.preview(reference, changed));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, view));
+        CY_REQUIRE(frame.previous_material_transform(identity, previous));
+        CY_CHECK_EQ(previous.row0[3], doctest::Approx(-view.position[0]));
+        u32 rebuilt = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end() &&
+                std::ranges::find(selected, command.handle_bits) == selected.end()) {
+                ++rebuilt;
+            }
+        }
+        CY_CHECK_GE(rebuilt, 2U);
+
+        CY_REQUIRE(frame.preview(reference, kSceneInterpolantGraph));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, view));
+        u32 interpolated_draws = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++interpolated_draws;
+            }
+        }
+        CY_CHECK_GE(interpolated_draws, 2U);
+
+        std::ifstream saved_file(std::string(CY_TEST_PROJECT) + "/" + reference);
+        CY_REQUIRE(saved_file.good());
+        std::string saved;
+        for (char character; saved_file.get(character);) {
+            saved.push_back(character);
+        }
+        CY_REQUIRE(frame.preview(reference, saved));
+        rhi::null::clear_command_log(**device);
+        CY_REQUIRE(frame.render(world, view));
+        CY_CHECK_FALSE(frame.previous_material_transform(identity, previous));
+        u32 restored_variants = 0;
+        for (const auto& command : rhi::null::command_log(**device)) {
+            if (command.kind == rhi::null::CommandKind::BindGraphicsPipeline &&
+                std::ranges::find(standard, command.handle_bits) == standard.end()) {
+                ++restored_variants;
+            }
+        }
+        CY_CHECK_EQ(restored_variants, 0U);
+    }
+    rhi::destroy_device(allocator(), *device);
+}
+#endif
+
+// The saved issue 15 world must produce a visible native frame when opened directly.
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+CY_TEST_CASE("committed sine sway scene publishes mesh draws and nonblack native pixels") {
+    register_backend();
+    rhi::Device* native = native_frame_device("committed editor sine sway scene");
+    if (native == nullptr) {
+        return;
+    }
+
+    const std::string project = std::string(CY_TEST_PROJECT) + "/samples/05b-editor-window/project";
+    reflect::TypeRegistry types;
+    CY_REQUIRE(reflect::register_scene_types(types));
+    ser::AuthoringSchema schema(allocator());
+    CY_REQUIRE(ser::build_authoring_schema(types, schema));
+    {
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(192, 128, project.c_str()));
+        constexpr std::string_view reference = "worlds/issue15-sway.cyworld";
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole((project + "/" + std::string(reference)).c_str(), bytes));
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(
+            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), reference,
+            world));
+        CY_REQUIRE(ser::resolve_against(world, schema));
+        CY_REQUIRE(frame.prepare_world(world));
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(world, view, true, nullptr, 0.2F));
+        Array<render::GpuInstance> instances(allocator());
+        Array<render::DrawItem> draws(allocator());
+        CY_REQUIRE(frame.publish(view, instances, draws));
+        const usize visible = std::count_if(frame.pixels().begin(), frame.pixels().end(),
+                                            [](u32 pixel) { return (pixel & 0x00FF'FFFFU) != 0; });
+        const usize coloured =
+            std::count_if(frame.pixels().begin(), frame.pixels().end(), [](u32 pixel) {
+                const u32 red = pixel & 0xFFU;
+                const u32 green = (pixel >> 8U) & 0xFFU;
+                const u32 blue = (pixel >> 16U) & 0xFFU;
+                return std::max({red, green, blue}) - std::min({red, green, blue}) > 8U;
+            });
+        std::fprintf(stderr,
+                     "issue15-sway: %zu mesh instance(s), %zu draw(s), %zu nonblack, %zu coloured "
+                     "pixel(s)\n",
+                     instances.size(), draws.size(), visible, coloured);
+        CY_CHECK_GE(instances.size(), 2U);
+        CY_CHECK_GE(draws.size(), 2U);
+        CY_CHECK_GT(visible, 100U);
+        CY_CHECK_GT(coloured, 100U);
+    }
+    rhi::destroy_device(allocator(), native);
+}
+#endif
 
 // One device and one frame for every stage: the stages run in this order against the same frame,
 // so each one also shows the frame carries nothing over from the scene before it.
 CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed bounds") {
     register_backend();
-    rhi::DeviceDescription description;
-    description.application_name = kSuite;
-    description.enable_validation = true;
-    rhi::BackendSelection selection;
-    auto device = rhi::create_device(allocator(), kBackend, description, selection);
-    CY_REQUIRE(device.has_value());
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
 
     {
-        AuthoredFrame frame(allocator(), **device);
+        AuthoredFrame frame(allocator(), *native);
         const auto initialized = frame.initialize(192, 128, CY_TEST_PROJECT);
         if (!initialized) {
             std::fprintf(stderr, "AuthoredFrame initialize: %s\n", initialized.error().message);
@@ -495,6 +1233,138 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_directional_light(frame, schema, view);
         check_shadows(frame, schema, view);
         check_graph_material(frame, view);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+        check_graph_displacement_matches_cpu(schema, view);
+        check_graph_motion_matches_cpu(schema, view);
+#endif
+    }
+    rhi::destroy_device(allocator(), native);
+}
+
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
+    (void)rhi::metal::register_metal_backend();
+    rhi::DeviceDescription description;
+    description.application_name = "smoke.editor_vfx_preview_metal";
+    rhi::BackendSelection selection;
+    auto device =
+        rhi::create_device(allocator(), rhi::metal::kMetalBackendName, description, selection);
+    CY_REQUIRE(device.has_value());
+    if ((*device)->capabilities().backend() != rhi::BackendKind::Metal) {
+        std::fprintf(stderr, "no Metal device: selected '%s' because %s\n", selection.selected,
+                     selection.reason);
+        CY_CHECK(selection.fell_back);
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
+    if ((*device)->global_texture_table().is_null()) {
+        std::fprintf(stderr,
+                     "no usable Metal device: it is on the compatibility path, with no "
+                     "global texture table\n");
+        rhi::destroy_device(allocator(), *device);
+        return;
+    }
+    {
+        AuthoredFrame frame(allocator(), **device);
+        CY_REQUIRE(frame.initialize(640, 360, CY_TEST_PROJECT, false));
+        ser::World empty(allocator());
+        CY_REQUIRE(ser::read_world(kEmpty, "worlds/test.cyworld", empty).has_value());
+        const first_light::Camera view = camera();
+        CY_REQUIRE(frame.render(empty, view, false));
+        Array<u32> baseline(allocator());
+        CY_REQUIRE(baseline.append(frame.pixels()));
+
+        const std::string path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/project/effects/issue15_two_emitters.cyvfxdoc";
+        std::ifstream file(path);
+        CY_REQUIRE(file.good());
+        const std::string source(std::istreambuf_iterator<char>{file}, {});
+        editor::MaterialService service(allocator());
+        CyServiceSession session = nullptr;
+        CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+        u64 request_id = 1;
+        const auto call = [&](const char* operation, const std::vector<u8>& payload) {
+            const CyServiceRequest request{sizeof(CyServiceRequest),
+                                           1,
+                                           request_id++,
+                                           operation,
+                                           payload.data(),
+                                           payload.size()};
+            CY_REQUIRE_EQ(service.submit(session, request), CY_RESULT_OK);
+            CyServiceEvent event{};
+            bool present = false;
+            CY_REQUIRE_EQ(service.poll(session, event, present), CY_RESULT_OK);
+            CY_REQUIRE(present);
+            CY_REQUIRE_EQ(event.kind, static_cast<u32>(CY_SERVICE_EVENT_COMPLETED));
+        };
+        call("vfx.preview.load", {source.begin(), source.end()});
+        call("vfx.preview.control", {0});
+        f32 seconds = 1.0F / 30.0F;
+        u32 bits = 0;
+        std::memcpy(&bits, &seconds, sizeof(bits));
+        std::vector<u8> interval{static_cast<u8>(bits), static_cast<u8>(bits >> 8U),
+                                 static_cast<u8>(bits >> 16U), static_cast<u8>(bits >> 24U)};
+        for (u32 frame_index = 0; frame_index < 15; ++frame_index) {
+            call("vfx.preview.step", interval);
+        }
+        const vfx::SimulationWorld* preview = service.vfx_preview_world(session);
+        CY_REQUIRE(preview != nullptr);
+        CY_REQUIRE(frame.render(empty, view, false, preview));
+        CY_CHECK_GT(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 1U);
+        const auto records = frame.vfx_records();
+        CY_REQUIRE(!records.empty());
+        CY_CHECK_EQ(records[0].size, 0.22F);
+        CY_CHECK_GT(records[0].color[3], 0.0F);
+        usize changed = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            changed += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_GT(changed, 20U);
+        render_test::Image captured(allocator());
+        CY_REQUIRE(render_test::adopt(captured, frame.pixels(), 640, 360).has_value());
+        const std::string reference_path =
+            std::string(CY_TEST_PROJECT) +
+            "/samples/05b-editor-window/runtime/tests/references/issue15_two_emitters_metal.png";
+        const char* update = std::getenv("CY_RENDER_UPDATE_GOLDEN");
+        if (update != nullptr && update[0] != '\0' && update[0] != '0') {
+            CY_REQUIRE(render_test::write_png(reference_path.c_str(), captured).has_value());
+            std::fprintf(stderr, "Updated %s; inspect and commit the image.\n",
+                         reference_path.c_str());
+            CY_CHECK_FALSE(update != nullptr);  // A reference update cannot pass the test.
+        } else {
+            render_test::Image reference(allocator());
+            const Status read = render_test::read_png(reference_path.c_str(), reference);
+            if (!read) {
+                std::fprintf(stderr, "VFX reference %s: %s\n", reference_path.c_str(),
+                             read.error().message);
+            }
+            CY_REQUIRE(read.has_value());
+            const render_test::Comparison comparison = render_test::compare(reference, captured);
+            CY_REQUIRE(comparison.comparable);
+            if (comparison.differing != 0) {
+                (void)render_test::write_difference("issue15-two-emitters-metal-difference.png",
+                                                    reference, captured);
+                std::fprintf(stderr,
+                             "VFX image: %u differing texels, %u away from edges; worst channel "
+                             "delta %u at (%u, %u).\n",
+                             comparison.differing, comparison.differing_off_edge,
+                             comparison.max_channel_delta, comparison.worst_x, comparison.worst_y);
+            }
+            CY_CHECK_EQ(comparison.differing_off_edge, 0U);
+            CY_CHECK_LE(comparison.differing, comparison.edge_texels);
+        }
+        CY_REQUIRE(frame.render(empty, view, false));
+        CY_CHECK_EQ(frame.vfx_particle_report().particles, 0U);
+        CY_CHECK_EQ(frame.vfx_particle_report().draws, 0U);
+        usize residual = 0;
+        for (usize pixel = 0; pixel < baseline.size(); ++pixel) {
+            residual += static_cast<usize>(baseline[pixel] != frame.pixels()[pixel]);
+        }
+        CY_CHECK_EQ(residual, 0U);
+        service.close(session);
     }
     rhi::destroy_device(allocator(), *device);
 }
+#endif

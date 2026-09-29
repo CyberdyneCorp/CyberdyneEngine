@@ -98,6 +98,9 @@ public:
     [[nodiscard]] Expected<FrameReport, Error> render(const Scene& scene,
                                                       const Camera& camera) noexcept;
 
+    /// Set the elapsed engine time sampled by authored material graphs in the next frame.
+    void set_time_seconds(f32 seconds) noexcept { time_seconds_ = seconds; }
+
     /// The colour target of the last frame, as Rgba8Unorm texels, row-major from the top-left —
     /// which is the layout an image copy produces and the layout a PNG or a PPM wants. Empty when
     /// `RendererOptions::readback` is off, and empty on a backend that executes nothing.
@@ -110,8 +113,13 @@ public:
     /// already crossed the engine shader compiler; this method only creates RHI objects.
     [[nodiscard]] Status retain_material(u64 artefact, Span<const u8> vertex_msl,
                                          const char* vertex_entry, Span<const u8> fragment_msl,
-                                         const char* fragment_entry,
-                                         Span<const u8> parameters) noexcept;
+                                         const char* fragment_entry, Span<const u8> shadow_msl,
+                                         const char* shadow_entry, Span<const u8> parameters,
+                                         bool has_wind = false) noexcept;
+    /// Publish one Engine field image at the global table's wind slot. The image origin stays in
+    /// f64 until render() derives the camera-relative coordinates for each material.
+    [[nodiscard]] Status set_material_wind_field(Span<const u32> words, f64 origin_x,
+                                                 f64 origin_z) noexcept;
     [[nodiscard]] Status update_material(u64 artefact, Span<const u8> parameters) noexcept;
     /// Bind the retained program to one exact scene object. This sample has one section per object,
     /// so slot zero is the only representable material slot and every other slot is rejected.
@@ -155,6 +163,9 @@ private:
     rhi::BufferHandle constants_;
     rhi::BufferHandle checker_staging_;
     rhi::BufferHandle readback_buffer_;
+    rhi::BufferHandle wind_field_image_;
+    f64 wind_origin_x_ = 0.0;
+    f64 wind_origin_z_ = 0.0;
     rhi::TextureHandle albedo_;
     rhi::TextureViewHandle albedo_view_;
     /// A persistent texture rather than a graph transient, so that the descriptor set can be
@@ -179,6 +190,7 @@ private:
     struct MaterialState;
     MaterialState* materials_ = nullptr;
     u32 index_count_ = 0;
+    f32 time_seconds_ = 0.0F;
 };
 
 }  // namespace cy::sample::first_light

@@ -17,11 +17,16 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/material/cook.h>
+#include <cy/rendering/virtual_geometry/asset.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
+#include "meshes.h"
+
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -71,7 +76,7 @@ public:
         declare("materials/second.cymat");
     }
 
-    void declare(const std::string& source) {
+    void declare(const std::string& source, std::string_view geometry = {}) {
         NodeDesc node;
         node.kind = NodeKind::Shader;
         node.name = "material:" + source;
@@ -80,6 +85,9 @@ public:
         node.sources.push_back(source);
         node.outputs.push_back(source + ".cymatbin");
         node.options.push_back(NodeOption{"profile", "desktop"});
+        if (!geometry.empty()) {
+            node.options.push_back(NodeOption{"geometry", std::string(geometry)});
+        }
         CY_REQUIRE(graph_.add(std::move(node)).has_value());
     }
 
@@ -319,6 +327,311 @@ CY_TEST_CASE("material_cook: the bundle carries the IR, the programs and their c
         CY_CHECK_FALSE(material::decode_bundle(Span<const u8>(bundle.data(), length), allocator())
                            .has_value());
     }
+}
+
+CY_TEST_CASE("material_cook: virtual geometry refuses a vertex offset without an artefact") {
+    constexpr std::string_view source =
+        "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }";
+    const rendering::material::GeometrySourceKind geometry[] = {
+        rendering::material::GeometrySourceKind::VirtualGeometry};
+    material::CompileOptions options;
+    options.geometry_paths = {geometry, 1};
+    Array<u8> bundle(allocator());
+    Array<char> report(allocator());
+    CY_CHECK_FALSE(
+        material::cook_material(source, options, allocator(), bundle, report).has_value());
+    CY_CHECK(bundle.empty());
+    const std::string_view message(report.data(), report.size());
+    CY_CHECK(message.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+             std::string_view::npos);
+}
+
+CY_TEST_CASE("material_cook: build producer passes assigned geometry paths to the compiler") {
+    Project project;
+    constexpr std::string_view source =
+        "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }";
+    project.write("materials/moving_stone.cymat", source);
+    project.declare("materials/moving_stone.cymat", "StaticMesh,VirtualGeometry");
+    project.write("materials/moving_stone_static.cymat", source);
+    project.declare("materials/moving_stone_static.cymat", "StaticMesh");
+
+    BuildService service;
+    CY_REQUIRE(service.configure(project.config(project.path("artefacts"), project.path("cache")))
+                   .has_value());
+    auto report = service.build();
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_EQ(report->failed, 1U);
+    const NodeResult* node = result_for(*report, "material:materials/moving_stone.cymat");
+    CY_REQUIRE(node != nullptr);
+    CY_CHECK_EQ(node->outcome, NodeOutcome::Failed);
+    CY_CHECK(node->outputs.empty());
+    bool named_geometry = false;
+    for (const Diagnostic& diagnostic : node->diagnostics) {
+        if (diagnostic.code == "material-cook-failed" &&
+            diagnostic.message.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+                std::string::npos) {
+            named_geometry = true;
+        }
+    }
+    CY_CHECK(named_geometry);
+    const NodeResult* supported =
+        result_for(*report, "material:materials/moving_stone_static.cymat");
+    CY_REQUIRE(supported != nullptr);
+    CY_CHECK_EQ(supported->outcome, NodeOutcome::Ran);
+    CY_CHECK_EQ(supported->outputs.size(), 1U);
+}
+
+CY_TEST_CASE("material_cook: command line assigns geometry to the named material only") {
+    Project project;
+    project.write("materials/moving_stone.cymat",
+                  "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    const std::string log = project.path("cook.log");
+    const auto run = [&](std::string_view assignment, std::string_view output) {
+#if defined(_WIN32)
+        const std::string command = "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" +
+                                    project.sources() + "\" \"" +
+                                    project.path(std::string(output).c_str()) + "\" --geometry \"" +
+                                    std::string(assignment) +
+                                    "\" materials/moving_stone.cymat "
+                                    "materials/worn_metal.cymat >\"" +
+                                    log + "\" 2>&1\"";
+#else
+        const std::string command = "\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" +
+                                    project.sources() + "\" \"" +
+                                    project.path(std::string(output).c_str()) + "\" --geometry \"" +
+                                    std::string(assignment) +
+                                    "\" materials/moving_stone.cymat "
+                                    "materials/worn_metal.cymat >\"" +
+                                    log + "\" 2>&1";
+#endif
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+        const int exit = std::system(command.c_str());
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(log.c_str(), bytes).has_value());
+        return std::pair{exit, std::string(bytes.begin(), bytes.end())};
+    };
+
+    const auto [refused, failure] =
+        run("materials/moving_stone.cymat=VirtualGeometry", "unsupported");
+    CY_CHECK_NE(refused, 0);
+    CY_CHECK(failure.find("vertex-geometry-unsupported (VirtualGeometry)") != std::string::npos);
+    CY_CHECK(failure.find("material:materials/worn_metal.cymat") != std::string::npos);
+
+    const auto [accepted, success] = run("materials/moving_stone.cymat=StaticMesh", "supported");
+    CY_CHECK_EQ(accepted, 0);
+    CY_CHECK(success.find("ran 2, cached 0, rebuilt 0, failed 0") != std::string::npos);
+
+    const auto [missing, message] = run("materials/absent.cymat=StaticMesh", "missing");
+    CY_CHECK_NE(missing, 0);
+    CY_CHECK(message.find("geometry assignment has no material materials/absent.cymat") !=
+             std::string::npos);
+}
+
+CY_TEST_CASE("material_cook: saved world discovers graph and slot materials for engine cooking") {
+    Project project;
+    Array<u8> graph(allocator());
+    CY_REQUIRE(assets::fs::read_whole(CY_MATERIAL_GRAPH_SAMPLE, graph).has_value());
+    project.write("materials/graph.cygraph",
+                  {reinterpret_cast<const char*>(graph.data()), graph.size()});
+    project.write("materials/moving_stone.cymat",
+                  "material moving_stone { vertex_offset = (0.0, 0.25, 0.0); }");
+    project.write("materials/terrain_only.cymat",
+                  "material terrain_only { vertex_offset = (0.0, 0.1, 0.0); }");
+    project.write("worlds/materials.cyworld", R"(cyworld 1
+type 1 runtime "MeshRenderer"
+  field 1 text "mesh" ""
+  field 2 text "material" ""
+type 2 authoring "ImportedMaterialSlots"
+  field 3 text "slot_0" ""
+  field 4 text "slot_1" ""
+type 3 authoring "TerrainAuthoring"
+  field 5 text "source" ""
+type 4 authoring "TerrainMaterialLayer"
+  field 6 text "material" ""
+node 0 - "demo" "Graph"
+  component 1
+    field 1 "meshes/cube.cyprim"
+    field 2 "materials/graph.cygraph"
+  component 2
+    field 3 "materials/graph.cygraph"
+    field 4 "materials/worn_metal.cymat"
+node 1 - "demo" "Moving"
+  component 1
+    field 1 "meshes/stone.cyprim"
+    field 2 "materials/moving_stone.cymat"
+node 2 - "demo" "Unrendered"
+  component 1
+    field 1 ""
+    field 2 "materials/second.cymat"
+node 3 - "demo" "Terrain"
+  component 3
+    field 5 "heightmaps/terrain.cyheight"
+node 4 3 "demo" "Terrain Layer"
+  component 4
+    field 6 "materials/terrain_only.cymat"
+node 5 - "demo" "Orphan Layer"
+  component 4
+    field 6 "materials/second.cymat"
+node 6 3 "demo" "Shared Layer"
+  component 4
+    field 6 "materials/moving_stone.cymat"
+)");
+    const std::string log = project.path("world-cook.log");
+    const auto run = [&](std::string_view extra, std::string_view output) {
+#if defined(_WIN32)
+        const std::string command =
+            "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" + project.sources() + "\" \"" +
+            project.path(std::string(output).c_str()) + "\" --world worlds/materials.cyworld " +
+            std::string(extra) + " >\"" + log + "\" 2>&1\"";
+#else
+        const std::string command =
+            "\"" + std::string(CY_MATERIAL_BINARY) + "\" cook \"" + project.sources() + "\" \"" +
+            project.path(std::string(output).c_str()) + "\" --world worlds/materials.cyworld " +
+            std::string(extra) + " >\"" + log + "\" 2>&1";
+#endif
+        // NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
+        const int exit = std::system(command.c_str());
+        Array<u8> bytes(allocator());
+        CY_REQUIRE(assets::fs::read_whole(log.c_str(), bytes).has_value());
+        return std::pair{exit, std::string(bytes.begin(), bytes.end())};
+    };
+
+    const auto [cooked, report] = run("", "world-supported");
+    CY_CHECK_EQ(cooked, 0);
+    CY_CHECK(report.find("material:materials/graph.cygraph") != std::string::npos);
+    CY_CHECK(report.find("material:materials/worn_metal.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/moving_stone.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/terrain_only.cymat") != std::string::npos);
+    CY_CHECK(report.find("material:materials/second.cymat") == std::string::npos);
+    CY_CHECK(report.find("ran 4, cached 0, rebuilt 0, failed 0") != std::string::npos);
+
+    const auto [refused, failure] =
+        run("--geometry materials/moving_stone.cymat=VirtualGeometry", "world-unsupported");
+    CY_CHECK_NE(refused, 0);
+    CY_CHECK(failure.find("vertex-geometry-unsupported (VirtualGeometry)") != std::string::npos);
+
+    const rendering::vg::test::MeshData mesh = rendering::vg::test::icosphere(allocator(), 0);
+    rendering::vg::BuildOptions options;
+    options.policy.min_triangles = 8;
+    options.policy.target_triangles = 32;
+    options.policy.max_triangles = 32;
+    options.policy.max_vertices = 64;
+    options.policy.group_size = 4;
+    options.page_bytes = 4096;
+    options.resident_budget_bytes = 4096;
+    auto built = rendering::vg::build_geometry(mesh.source(), options, allocator());
+    CY_REQUIRE(built.has_value());
+    Array<u8> asset(allocator());
+    CY_REQUIRE(rendering::vg::encode_asset(*built, {}, asset).has_value());
+    CY_REQUIRE(rendering::vg::decode_asset(asset.span(), allocator()).has_value());
+    project.write("meshes/clustered.cyvg",
+                  {reinterpret_cast<const char*>(asset.data()), asset.size()});
+    project.write("worlds/virtual.cyworld", R"(cyworld 1
+type 1 runtime "MeshRenderer"
+  field 1 text "mesh" ""
+  field 2 text "material" ""
+type 2 authoring "ImportedMaterialSlots"
+  field 3 text "slot_0" ""
+node 0 - "demo" "Clustered"
+  component 1
+    field 1 "meshes/clustered.cyvg"
+    field 2 "materials/worn_metal.cymat"
+  component 2
+    field 3 "materials/moving_stone.cymat"
+)");
+    const auto [discovered, virtual_failure] =
+        run("--world worlds/virtual.cyworld", "world-discovered-virtual");
+    CY_CHECK_NE(discovered, 0);
+    CY_CHECK(virtual_failure.find("vertex-geometry-unsupported (VirtualGeometry)") !=
+             std::string::npos);
+}
+
+CY_TEST_CASE("material_cook: fragment sampling in a vertex graph leaves no artefact") {
+    constexpr std::string_view source = R"(
+material sampled_offset {
+    texture colour average (0.5, 0.5, 0.5, 1.0);
+    attribute uv0 : float2;
+    vertex_offset = sample(colour, uv0).xyz;
+}
+)";
+    material::CompileOptions options;
+    Array<u8> bundle(allocator());
+    Array<char> report(allocator());
+    CY_CHECK_FALSE(
+        material::cook_material(source, options, allocator(), bundle, report).has_value());
+    CY_CHECK(bundle.empty());
+    const std::string_view message(report.data(), report.size());
+    CY_CHECK(message.find("vertex-stage-unsupported") != std::string_view::npos);
+}
+
+CY_TEST_CASE("material_cook: vertex and shadow offset source survives the cooked bundle") {
+    constexpr std::string_view source =
+        "material moving_stone { "
+        "surface = diffuse((0.7, 0.7, 0.7)); "
+        "opacity = 1.0; "
+        "vertex_offset = (0.0, 0.25, 0.0); }";
+    material::CompileOptions options;
+    Array<u8> bytes(allocator());
+    Array<char> report(allocator());
+    CY_REQUIRE(material::cook_material(source, options, allocator(), bytes, report).has_value());
+    auto bundle = material::decode_bundle(bytes.span(), allocator());
+    CY_REQUIRE(bundle.has_value());
+    const material::CookedProgram* visible = nullptr;
+    const material::CookedProgram* shadow = nullptr;
+    for (const material::CookedProgram& program : bundle.value().programs) {
+        if (program.tier != rendering::material::QualityTier::High) {
+            continue;
+        }
+        if (program.kind == rendering::material::ProgramKind::Primary) {
+            visible = &program;
+        }
+        if (program.kind == rendering::material::ProgramKind::Shadow) {
+            shadow = &program;
+        }
+    }
+    CY_REQUIRE(visible != nullptr);
+    CY_REQUIRE(shadow != nullptr);
+    CY_CHECK_FALSE(visible->absent);
+    // Opaque shadow fragments are absent, but its displaced vertex program must remain.
+    CY_CHECK(shadow->absent);
+    CY_CHECK_NE(visible->vertex_digest, 0U);
+    CY_CHECK_NE(shadow->vertex_digest, 0U);
+    CY_CHECK(visible->vertex_source.find("_vertex_offset") != std::string_view::npos);
+    CY_CHECK(shadow->vertex_source.find("_vertex_offset") != std::string_view::npos);
+    CY_CHECK(visible->vertex_source.find("float3") != std::string_view::npos);
+
+    // Source identity still comes from the material IR, not the bundle's envelope version.
+    auto module = rendering::material::decode_module(bundle.value().ir, allocator());
+    CY_REQUIRE(module.has_value());
+    CY_CHECK_NE(module.value().vertex_offset(), rendering::material::kInvalidNode);
+}
+
+CY_TEST_CASE("material_cook: version one bundles remain readable without vertex source") {
+    constexpr u8 legacy[] = {
+        'C', 'Y', 'M', 'B',                // magic
+        1,   0,   0,   0,                  // bundle version
+        2,   0,   0,   0,                  // compiler version
+        0,   0,   0,   0,   0,   0, 0, 0,  // cook key
+        0,   0,   0,   0,                  // encoded IR length
+        1,   0,   0,   0,                  // program count
+        0,   0,   0,   0,                  // primary
+        0,   0,   0,   0,                  // high tier
+        7,   0,   0,   0,   0,   0, 0, 0,  // program digest
+        0,   0,   0,   0,                  // present
+        0,   0,   0,   0,                  // texture samples
+        0,   0,   0,   0,                  // arithmetic
+        0,   0,   0,   0,                  // closures
+        0,   0,   0,   0,                  // permutation count
+        0,   0,   0,   0,                  // full-screen milliseconds
+        1,   0,   0,   0,   'x',           // fragment source
+    };
+    auto bundle = material::decode_bundle({legacy, std::size(legacy)}, allocator());
+    CY_REQUIRE(bundle.has_value());
+    CY_CHECK_EQ(bundle.value().compiler_version, 2U);
+    CY_REQUIRE_EQ(bundle.value().programs.size(), 1U);
+    CY_CHECK_EQ(bundle.value().programs[0].source, "x");
+    CY_CHECK(bundle.value().programs[0].vertex_source.empty());
+    CY_CHECK_EQ(bundle.value().programs[0].vertex_digest, 0U);
 }
 
 // ================================================================================================

@@ -30,6 +30,7 @@ import base64
 import io
 import json
 import os
+import select
 import subprocess
 import sys
 import time
@@ -63,6 +64,19 @@ class Mcp:
     def __init__(self, process: subprocess.Popen) -> None:
         self.process = process
         self.next_id = 0
+        self.pending = b""
+
+    def reply_line(self, deadline: float) -> bytes | None:
+        while b"\n" not in self.pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                return None
+            chunk = os.read(self.process.stdout.fileno(), 65536)
+            if not chunk:
+                raise Failed("the editor closed its MCP stream")
+            self.pending += chunk
+        line, self.pending = self.pending.split(b"\n", 1)
+        return line
 
     def call(self, method: str, params: dict | None = None, seconds: float = 30.0) -> dict:
         self.next_id += 1
@@ -73,12 +87,12 @@ class Mcp:
         self.process.stdin.flush()
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            line = self.process.stdout.readline()
-            if not line:
-                raise Failed(f"the editor closed its MCP stream during {method}")
+            line = self.reply_line(deadline)
+            if line is None:
+                break
             try:
                 reply = json.loads(line)
-            except json.JSONDecodeError:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 continue  # the editor's own log lines share the stream's terminal, not its protocol
             if reply.get("id") == self.next_id:
                 if "error" in reply:
@@ -106,7 +120,7 @@ class Mcp:
         return text
 
     def capture(self, uri: str):
-        """Read a window address and decode it. Retries a budget refusal, which is a wait."""
+        """Read a window address, waiting for a frame when presentation is delayed."""
         from PIL import Image
 
         for _ in range(20):
@@ -117,7 +131,8 @@ class Mcp:
                 image = Image.open(io.BytesIO(base64.b64decode(entry["blob"]))).convert("RGB")
                 return image, result["contents"][1]["text"]
             text = result["content"][0]["text"]
-            expect("render" in text, f"{uri} was refused: {text}")
+            expect("render" in text or "presented no frame" in text,
+                   f"{uri} was refused: {text}")
             time.sleep(0.5)
         raise Failed(f"{uri} stayed over this connection's render budget")
 
@@ -151,33 +166,35 @@ class Session:
     def __init__(self, editor: Path, runtime: Path | None, root: Path, work: Path, world: str,
                  display: str) -> None:
         self.runtime = None
+        self.editor = None
+        self.log = None
         viewport = str(socket_path(work, "mcp-viewport.sock"))
         host = str(socket_path(work, "mcp-runtime.sock"))
         for path in (viewport, host):
             Path(path).unlink(missing_ok=True)
-        if runtime is not None:
-            self.log = open(work / f"runtime-{Path(world).stem}.log", "w")  # noqa: SIM115
-            self.runtime = subprocess.Popen(
-                [str(runtime), "--project", str(root), "--world", world, "--socket", viewport,
-                 "--host", host, "--width", "1280", "--height", "720", "--rate", "60",
-                 "--seconds", "600", "--no-validation"],
-                cwd=ROOT, stdout=self.log, stderr=subprocess.STDOUT, text=True,
+        try:
+            if runtime is not None:
+                self.log = open(work / f"runtime-{Path(world).stem}.log", "w")  # noqa: SIM115
+                self.runtime = subprocess.Popen(
+                    [str(runtime), "--project", str(root), "--world", world, "--socket", viewport,
+                     "--host", host, "--width", "1280", "--height", "720", "--rate", "60",
+                     "--seconds", "600", "--no-validation"],
+                    cwd=ROOT, stdout=self.log, stderr=subprocess.STDOUT, text=True,
+                )
+                wait_for_runtime(self.runtime, viewport, host)
+            arguments = [str(editor), "--open", world, "--mcp", "--agent-scope", "author"]
+            if runtime is not None:
+                arguments += ["--host", host]
+            self.editor = subprocess.Popen(
+                arguments, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True,
+                env=dict(os.environ, DISPLAY=display, CY_VIEWPORT_SOCKET=viewport),
             )
-            expect(
-                until(lambda: Path(viewport).exists() and Path(host).exists(), seconds=60.0,
-                      poll=0.2),
-                f"the runtime did not open {viewport} and {host}",
-            )
-        arguments = [str(editor), "--open", world, "--mcp", "--agent-scope", "author"]
-        if runtime is not None:
-            arguments += ["--host", host]
-        self.editor = subprocess.Popen(
-            arguments, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True,
-            env=dict(os.environ, DISPLAY=display, CY_VIEWPORT_SOCKET=viewport),
-        )
-        self.mcp = Mcp(self.editor)
-        self.mcp.initialise()
+            self.mcp = Mcp(self.editor)
+            self.mcp.initialise()
+        except Exception:
+            self.close()
+            raise
 
     def viewport(self):
         image, described = self.mcp.capture("editor:window?panel=viewport")
@@ -187,14 +204,28 @@ class Session:
         for process in (self.editor, self.runtime):
             if process is None:
                 continue
-            process.terminate()
+            if process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-        if self.runtime is not None:
+        if self.log is not None:
             self.log.close()
+
+
+def wait_for_runtime(process: subprocess.Popen, viewport: str, host: str) -> None:
+    def ready() -> bool:
+        return Path(viewport).exists() and Path(host).exists()
+
+    until(lambda: ready() or process.poll() is not None, seconds=60.0, poll=0.2)
+    if ready():
+        return
+    status = process.poll()
+    if status is not None:
+        raise Failed(f"the runtime exited with status {status} before opening its viewport sockets")
+    raise Failed(f"the runtime did not open {viewport} and {host}")
 
 
 def settle(read, predicate, seconds: float = 30.0):
@@ -294,6 +325,27 @@ def act_window(session: Session, shots: Path, report: Report) -> None:
                f"{described}; hierarchy: {where}")
 
 
+def capture_scene(session: Session, destination: Path) -> str:
+    """Save the live editor window after its MCP viewport shows an Engine scene."""
+    viewport, described = settle(
+        session.viewport, lambda r: chroma(r[0]) >= MIN_VIEWPORT_CHROMA)
+    measured = chroma(viewport)
+    expect(measured >= MIN_VIEWPORT_CHROMA,
+           f"the scene viewport is neutral (chroma {measured}); {described}")
+    whole, window_description = session.mcp.capture("editor:window")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    whole.save(destination)
+    return f"viewport chroma {measured}; {described}; {window_description}"
+
+
+def require_pillow() -> None:
+    try:
+        import PIL.Image  # noqa: F401
+    except ImportError as error:
+        raise Failed("Pillow is required for MCP image capture; install it in this Python "
+                     "environment") from error
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="dev")
@@ -302,14 +354,17 @@ def main() -> int:
     parser.add_argument("--work", default="")
     parser.add_argument("--world", default=DRAWABLE,
                         help="the drawable world for acts 2 and 3; worlds/city.cyworld must fail")
+    parser.add_argument("--capture", default="",
+                        help="save one live scene editor window through MCP instead of the smoke acts")
     parser.add_argument(
         "--display", default=os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY") or "")
     options = parser.parse_args()
-    if not options.display:
+    if not options.display and sys.platform != "darwin":
         print("editor-window-mcp: there is no display, and this reads a window; not run here.",
               file=sys.stderr)
         return 3
     try:
+        require_pillow()
         editor, runtime = binaries(options.profile, options.build, options.runtime)
     except (Failed, subprocess.CalledProcessError) as problem:
         print(f"editor-window-mcp: {problem}", file=sys.stderr)
@@ -325,6 +380,20 @@ def main() -> int:
     (root / EMPTY).write_text("cyworld 1\n")
     print(f"==> editor-window-mcp  profile={options.profile}  display={options.display}")
     print(f"    editor   {editor}\n    runtime  {runtime}\n    project  {root}")
+
+    if options.capture:
+        session = None
+        try:
+            session = Session(editor, runtime, root, work, options.world, options.display)
+            detail = capture_scene(session, Path(options.capture).resolve())
+            print(f"MCP capture: {options.capture} ({detail})")
+            return 0
+        except Failed as problem:
+            print(f"editor-window-mcp: {problem}", file=sys.stderr)
+            return 1
+        finally:
+            if session is not None:
+                session.close()
 
     report = Report()
     acts = [

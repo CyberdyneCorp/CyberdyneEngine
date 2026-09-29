@@ -136,6 +136,29 @@ rhi::GraphicsPipelineHandle FramePipelines::pipeline(FramePipelineKind kind) con
     return pipelines_[index];
 }
 
+Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::create_vertex_variant(
+    FramePipelineKind kind, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
+    rhi::ShaderModuleHandle fragment) const noexcept {
+    if (!ready_ || vertex.is_null() || layout.is_null()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "vertex variant requires a ready frame and shaders");
+    }
+    if (kind == FramePipelineKind::Shadow) {
+        if (!fragment.is_null()) {
+            return fail(ErrorCode::InvalidArgument, "shadow variant has a fixed fragment output");
+        }
+        return make_shadow_pipeline(*device_, vertex, layout, true);
+    }
+    if (kind != FramePipelineKind::Depth && kind != FramePipelineKind::Opaque &&
+        kind != FramePipelineKind::Transparent) {
+        return fail(ErrorCode::InvalidArgument, "vertex variant requires a geometry pass");
+    }
+    if (kind == FramePipelineKind::Depth && !fragment.is_null()) {
+        return fail(ErrorCode::InvalidArgument, "depth variant has a fixed fragment output");
+    }
+    return make_geometry_pipeline(*device_, setup_, kind, vertex, layout, true, fragment);
+}
+
 Status FramePipelines::create_modules(rhi::Device& device) noexcept {
     struct Request {
         const char* name;
@@ -217,10 +240,16 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
         view_binding(kGlobalBindingMaterialTextures, rhi::DescriptorKind::SampledTexture);
     material_textures.count = kMaterialTextureSlots;
     material_textures.partially_bound = device.descriptor_model() == rhi::DescriptorModel::Bindless;
+    rhi::DescriptorBinding environment_fields =
+        view_binding(kGlobalBindingEnvironmentFields, rhi::DescriptorKind::StorageBuffer);
+    environment_fields.count = kEnvironmentFieldSlots;
+    environment_fields.partially_bound =
+        device.descriptor_model() == rhi::DescriptorModel::Bindless;
     const rhi::DescriptorBinding globals[] = {
         view_binding(kGlobalBindingGlobals, rhi::DescriptorKind::UniformBuffer),
         material_textures,
         view_binding(kGlobalBindingMaterialSampler, rhi::DescriptorKind::Sampler),
+        environment_fields,
     };
     const rhi::DescriptorBinding view[] = {
         view_binding(kViewBindingFrame, rhi::DescriptorKind::UniformBuffer),
@@ -303,6 +332,21 @@ Status FramePipelines::create_layouts(rhi::Device& device) noexcept {
 
 Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const PipelineSetup& setup,
                                                 FramePipelineKind kind) noexcept {
+    auto created = make_geometry_pipeline(
+        device, setup, kind, kind == FramePipelineKind::Depth ? depth_vertex_ : forward_vertex_,
+        layout_, false);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    pipelines_[static_cast<u32>(kind)] = *created;
+    ++created_;
+    return ok();
+}
+
+Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipeline(
+    rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
+    rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout, bool graph_vertex,
+    rhi::ShaderModuleHandle fragment) const noexcept {
     const bool depth_only = kind == FramePipelineKind::Depth;
     const bool blended = kind == FramePipelineKind::Transparent;
 
@@ -332,8 +376,12 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     };
     static_assert(std::size(forward_bindings) == kForwardPassStreamCount);
     static_assert(std::size(depth_bindings) == kDepthPassStreamCount);
-    const rhi::VertexBinding* bindings = depth_only ? depth_bindings : forward_bindings;
-    const rhi::VertexAttribute* attributes = depth_only ? depth_attributes : forward_attributes;
+    // A GRAPH VERTEX VARIANT'S PREPASS TAKES THE FORWARD STREAMS: its graph may read the UVs, and
+    // it derives the previous position by evaluating the graph at the previous time, not from a
+    // stream.
+    const bool depth_streams = depth_only && !graph_vertex;
+    const rhi::VertexBinding* bindings = depth_streams ? depth_bindings : forward_bindings;
+    const rhi::VertexAttribute* attributes = depth_streams ? depth_attributes : forward_attributes;
     // THE DEPTH PIPELINE'S STREAMS ARE NOT THE FORWARD ONES, and the constants are
     // `frame_pipelines.h`'s so that the RECORDER binds the same number — which it did not between
     // `6514c3d` and M11.c task 3.7, and every depth draw in between fetched attribute 1 from a
@@ -345,7 +393,7 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     // the position and the packed normal and still leaves the UVs unbound. Its third binding is the
     // previous position, and for a rigid mesh that is the position buffer bound a second time: the
     // same bytes, fetched twice, and no UV read.
-    const usize stream_count = depth_only ? kDepthPassStreamCount : kForwardPassStreamCount;
+    const usize stream_count = depth_streams ? kDepthPassStreamCount : kForwardPassStreamCount;
 
     rhi::ColorAttachmentState colors[2];
     colors[0].format = depth_only ? rhi::Format::Rgba16Sfloat : setup.color_format;
@@ -362,9 +410,12 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
 
     rhi::GraphicsPipelineDescription description;
     description.name = frame_pipeline_kind_name(kind);
-    description.layout = layout_;
-    description.vertex_shader = depth_only ? depth_vertex_ : forward_vertex_;
-    description.fragment_shader = depth_only ? depth_fragment_ : forward_fragment_;
+    description.layout = layout;
+    description.vertex_shader = vertex;
+    description.fragment_shader = fragment.is_null() ? forward_fragment_ : fragment;
+    if (depth_only) {
+        description.fragment_shader = depth_fragment_;
+    }
     description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
     description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
     usize color_count = 1U;
@@ -397,9 +448,7 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     if (!created.has_value()) {
         return make_unexpected(created.error());
     }
-    pipelines_[static_cast<u32>(kind)] = *created;
-    ++created_;
-    return ok();
+    return *created;
 }
 
 Status FramePipelines::create_resolve_pipeline(rhi::Device& device,
@@ -434,18 +483,43 @@ Status FramePipelines::create_resolve_pipeline(rhi::Device& device,
 }
 
 Status FramePipelines::create_shadow_pipeline(rhi::Device& device) noexcept {
-    const rhi::VertexBinding binding{kPositionStream, kPositionStreamStride,
-                                     rhi::VertexInputRate::PerVertex};
-    const rhi::VertexAttribute attribute{0, kPositionStream, rhi::Format::Rgb32Sfloat, 0};
+    auto created = make_shadow_pipeline(device, shadow_vertex_, layout_, false);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    pipelines_[static_cast<u32>(FramePipelineKind::Shadow)] = *created;
+    ++created_;
+    return ok();
+}
+
+Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_shadow_pipeline(
+    rhi::Device& device, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
+    bool graph_vertex) const noexcept {
+    // A graph vertex variant takes the forward streams, which the recorder binds for it; the
+    // standard shadow pipeline reads the position alone.
+    const rhi::VertexBinding bindings[] = {
+        {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
+        {kNormalStream, kNormalStreamStride, rhi::VertexInputRate::PerVertex},
+        {kUvStream, kUvStreamStride, rhi::VertexInputRate::PerVertex},
+        {kLightmapUvStream, kLightmapUvStreamStride, rhi::VertexInputRate::PerVertex},
+    };
+    const rhi::VertexAttribute attributes[] = {
+        {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
+        {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
+        {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
+        {3, kLightmapUvStream, rhi::Format::Rg32Sfloat, 0},
+    };
+    static_assert(std::size(bindings) == kForwardPassStreamCount);
+    const usize stream_count = graph_vertex ? kForwardPassStreamCount : 1;
     rhi::ColorAttachmentState color;
     color.format = rhi::Format::R32Sfloat;
     rhi::GraphicsPipelineDescription description;
     description.name = "directional shadow depth";
-    description.layout = layout_;
-    description.vertex_shader = shadow_vertex_;
+    description.layout = layout;
+    description.vertex_shader = vertex;
     description.fragment_shader = shadow_fragment_;
-    description.vertex_bindings = Span<const rhi::VertexBinding>(&binding, 1);
-    description.vertex_attributes = Span<const rhi::VertexAttribute>(&attribute, 1);
+    description.vertex_bindings = Span<const rhi::VertexBinding>(bindings, stream_count);
+    description.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, stream_count);
     description.color_attachments = Span<const rhi::ColorAttachmentState>(&color, 1);
     description.depth_stencil.format = rhi::Format::D32Sfloat;
     description.depth_stencil.depth_test_enable = true;
@@ -459,9 +533,7 @@ Status FramePipelines::create_shadow_pipeline(rhi::Device& device) noexcept {
     if (!created) {
         return make_unexpected(created.error());
     }
-    pipelines_[static_cast<u32>(FramePipelineKind::Shadow)] = *created;
-    ++created_;
-    return ok();
+    return *created;
 }
 
 Status FramePipelines::create_temporal_pipeline(rhi::Device& device,

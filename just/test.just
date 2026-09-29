@@ -255,6 +255,15 @@ test-all *args:
         exit 1
     fi
 
+# Issue #15's full authoring ledger, including native VFX and displaced-material image checks.
+# Run on a Metal-capable macOS host; availability-only smoke results fail the ledger.
+test-issue15-acceptance:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-engine --profile dev
+    python3 tools/issue15_acceptance.py
+
 # Benchmarks, compared against benchmarks/baseline.json. Pass --record to rewrite it. A minute.
 test-bench *args:
     #!/usr/bin/env bash

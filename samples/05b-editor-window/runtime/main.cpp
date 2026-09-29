@@ -83,6 +83,9 @@
 #include "material_runtime.h"
 #include "overlay.h"
 #include "pick_wire.h"
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+#    include "scene_vfx_runtime.h"
+#endif
 #include "script_runtime.h"
 #include "world_view.h"
 
@@ -257,24 +260,40 @@ struct PickFrame {
     std::vector<CameraMarker> cameras;
 };
 
-class AuthoredMaterialPreview final : public editor::MaterialAuthoringRuntime {
+class HostedMaterialPreview final : public editor::MaterialAuthoringRuntime {
 public:
-    explicit AuthoredMaterialPreview(AuthoredFrame& frame) noexcept : frame_(&frame) {}
+    HostedMaterialPreview(AuthoredFrame* frame, MetalMaterialRuntime* mesh) noexcept
+        : frame_(frame), mesh_(mesh) {}
 
     [[nodiscard]] Status preview(std::string_view reference,
                                  std::string_view canonical_graph) noexcept override {
-        return frame_->preview(reference, canonical_graph);
+        if (frame_ != nullptr) {
+            return frame_->preview(reference, canonical_graph);
+        }
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        if (mesh_ != nullptr) {
+            return mesh_->preview_graph(canonical_graph);
+        }
+#endif
+        return fail(ErrorCode::Unavailable, "the material preview renderer is unavailable");
     }
 
 private:
     AuthoredFrame* frame_;
+    [[maybe_unused]] MetalMaterialRuntime* mesh_;
 };
 
 struct Host {
     Options options;
     AuthoredFrame* authored_frame = nullptr;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    SceneVfxRuntime* scene_vfx = nullptr;
+#endif
     first_light::Scene* scene = nullptr;
     first_light::Renderer* renderer = nullptr;
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+    MetalMaterialRuntime* material_runtime = nullptr;
+#endif
     viewport::Publisher* publisher = nullptr;
     /// M6'S CONTROL HALF, JOINED TO M7'S PIXEL HALF. `cy::render::ViewportTransport` records the
     /// frame's identity, the view state it was rendered with, and what it cost; its own header says
@@ -637,6 +656,15 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
             std::fprintf(stderr, "%s: authored scene: %s\n", kTag, prepared.error().message);
         }
     }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (host.scene_vfx != nullptr) {
+        if (Status loaded = host.scene_vfx->load(host.view_world->world()); !loaded) {
+            (void)host.bridge->send_rejected(request.request, loaded.error().message,
+                                             "check the scene VFX effect asset and parameters");
+            return;
+        }
+    }
+#endif
     if (report.applied > 0 && !host.change_pending) {
         // TASK 1.3, MEASURED. The next frame published is the one that carries this change; the
         // report says how many frames it actually took, worst case over the run.
@@ -669,6 +697,15 @@ void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
             return;
         }
     }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+    if (host.scene_vfx != nullptr) {
+        if (Status loaded = host.scene_vfx->load(host.view_world->world()); !loaded) {
+            (void)host.bridge->send_rejected(request.request, loaded.error().message,
+                                             "check the scene VFX effect asset and parameters");
+            return;
+        }
+    }
+#endif
     (void)host.bridge->send_applied(request.request, host.frames_published, {});
 }
 
@@ -1042,8 +1079,100 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
     }
 }
 
+void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
+    if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
+        for (const LightMarker& light : host.authored_frame->light_markers()) {
+            Vec2 marker;
+            if (marker_pixel(host, light.position, marker)) {
+                draw_light_marker(canvas, marker.x, marker.y, light.kind);
+                if (light.kind != render::LightKind::Point) {
+                    draw_actor_direction(host, canvas, light.position, light.forward, marker,
+                                         false);
+                }
+            }
+        }
+        for (const CameraMarker& camera : host.authored_frame->camera_markers()) {
+            Vec2 marker;
+            if (marker_pixel(host, camera.position, marker)) {
+                draw_camera_marker(canvas, marker.x, marker.y);
+                draw_actor_direction(host, canvas, camera.position, camera.forward, marker, true);
+            }
+        }
+    }
+    if (host.game_camera != ~u64{0} || host.anchored == WorldView::kNoObject ||
+        host.layout.empty()) {
+        return;
+    }
+    const u32 object = host.anchored;
+    Vec3 pivot{};
+    if (host.authored_frame == nullptr && object < host.scene->objects().size()) {
+        pivot = relative_position(host.scene->objects()[object], host.camera);
+    }
+    Vec3 world_pivot;
+    if (host.authored_frame != nullptr &&
+        host.authored_frame->pivot_for(host.anchored_identity, world_pivot)) {
+        pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
+                                   static_cast<f32>(host.camera.position[1]),
+                                   static_cast<f32>(host.camera.position[2])};
+    }
+    Vec2 marker{0.0F, 0.0F};
+    if (project_to_pixel(host.view, pivot, marker)) {
+        draw_selection_marker(canvas, marker.x, marker.y, 26.0F);
+    }
+    // Rebuild for this frame's camera before drawing and publishing the same handles.
+    host.layout = render::build_gizmo_layout(host.view, pivot, Quat::identity(), host.mode,
+                                             host.layout.frame_id);
+    draw_gizmo(canvas, host.layout, render::GizmoHandle::Count);
+}
+
+[[nodiscard]] bool render_frame_texels(Host& host, f32 time_seconds,
+                                       Span<const u32>& texels) noexcept {
+    if (host.authored_frame != nullptr) {
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+        if (host.scene_vfx != nullptr) {
+            const f32 seconds =
+                host.options.rate > 0.0 ? 1.0F / static_cast<f32>(host.options.rate) : 1.0F / 60.0F;
+            if (Status stepped = host.scene_vfx->step(host.view_world->world(), seconds);
+                !stepped) {
+                report("scene VFX", stepped.error());
+                return false;
+            }
+        }
+#endif
+        if (Status frame = host.authored_frame->render(
+                host.view_world->world(), host.camera, host.game_camera == ~u64{0},
+                host.editor_service->vfx_preview_world(host.service_session), time_seconds
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+                ,
+                host.scene_vfx != nullptr ? host.scene_vfx->world() : nullptr
+#endif
+            );
+            !frame) {
+            report("authored frame", frame.error());
+            return false;
+        }
+        texels = host.authored_frame->pixels();
+    } else {
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        if (Status prepared = host.material_runtime->prepare_frame(host.camera); !prepared) {
+            report("material wind field", prepared.error());
+            return false;
+        }
+#endif
+        host.renderer->set_time_seconds(time_seconds);
+        const Expected<first_light::FrameReport, Error> frame =
+            host.renderer->render(*host.scene, host.camera);
+        if (!frame) {
+            report("frame", frame.error());
+            return false;
+        }
+        texels = host.renderer->color_texels();
+    }
+    return true;
+}
+
 /// Render one frame, composite the gizmo into it, and publish it.
-[[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
+[[nodiscard]] bool publish_frame(Host& host, f32 phase, f32 time_seconds) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
     if (host.game_camera != ~u64{0} && host.authored_frame != nullptr) {
         (void)host.authored_frame->scene_camera(host.view_world->world(), host.game_camera,
@@ -1076,22 +1205,8 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
     }
 
     Span<const u32> texels;
-    if (host.authored_frame != nullptr) {
-        if (Status frame = host.authored_frame->render(host.view_world->world(), host.camera,
-                                                       host.game_camera == ~u64{0});
-            !frame) {
-            report("authored frame", frame.error());
-            return false;
-        }
-        texels = host.authored_frame->pixels();
-    } else {
-        const Expected<first_light::FrameReport, Error> frame =
-            host.renderer->render(*host.scene, host.camera);
-        if (!frame) {
-            report("frame", frame.error());
-            return false;
-        }
-        texels = host.renderer->color_texels();
+    if (!render_frame_texels(host, time_seconds, texels)) {
+        return false;
     }
     if (texels.empty()) {
         report("readback", Error{ErrorCode::Unavailable, "the renderer read back no pixels"});
@@ -1116,49 +1231,7 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
     // is the SAME layout, not a second computation: what a person aims at and what the editor
     // hit-tests came out of one call to `build_gizmo_layout`.
     const Canvas canvas{staging.pixels, staging.width, staging.height};
-    if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
-        for (const LightMarker& light : host.authored_frame->light_markers()) {
-            Vec2 marker;
-            if (marker_pixel(host, light.position, marker)) {
-                draw_light_marker(canvas, marker.x, marker.y, light.kind);
-                if (light.kind != render::LightKind::Point) {
-                    draw_actor_direction(host, canvas, light.position, light.forward, marker,
-                                         false);
-                }
-            }
-        }
-        for (const CameraMarker& camera : host.authored_frame->camera_markers()) {
-            Vec2 marker;
-            if (marker_pixel(host, camera.position, marker)) {
-                draw_camera_marker(canvas, marker.x, marker.y);
-                draw_actor_direction(host, canvas, camera.position, camera.forward, marker, true);
-            }
-        }
-    }
-    if (host.game_camera == ~u64{0} && host.anchored != WorldView::kNoObject &&
-        !host.layout.empty()) {
-        const u32 object = host.anchored;
-        Vec3 pivot{};
-        if (host.authored_frame == nullptr && object < host.scene->objects().size()) {
-            pivot = relative_position(host.scene->objects()[object], host.camera);
-        }
-        Vec3 world_pivot;
-        if (host.authored_frame != nullptr &&
-            host.authored_frame->pivot_for(host.anchored_identity, world_pivot)) {
-            pivot = world_pivot - Vec3{static_cast<f32>(host.camera.position[0]),
-                                       static_cast<f32>(host.camera.position[1]),
-                                       static_cast<f32>(host.camera.position[2])};
-        }
-        Vec2 marker{0.0F, 0.0F};
-        if (project_to_pixel(host.view, pivot, marker)) {
-            draw_selection_marker(canvas, marker.x, marker.y, 26.0F);
-        }
-        // Rebuilt for THIS frame's camera, and republished with it, so the drawn gizmo and the
-        // published one are the same handles even while the camera moves.
-        host.layout = render::build_gizmo_layout(host.view, pivot, Quat::identity(), host.mode,
-                                                 host.layout.frame_id);
-        draw_gizmo(canvas, host.layout, render::GizmoHandle::Count);
-    }
+    draw_frame_overlays(host, canvas);
 
     const Expected<u64, Error> published = host.publisher->publish();
     if (!published) {
@@ -1296,6 +1369,67 @@ void print_report(const Host& host, const WorldView& view_world,
     }
 }
 
+int run_host_loop(Host& host, const Options& options, u64 started) {
+    const u64 interval_nanos =
+        (options.rate > 0.0) ? static_cast<u64>(1'000'000'000.0 / options.rate) : 0;
+    u64 next_due = started;
+    while (g_stop == 0) {
+        const u64 now = monotonic_nanos();
+        const f64 elapsed = static_cast<f64>(now - started) / 1'000'000'000.0;
+        if (options.seconds > 0.0 && elapsed > options.seconds) {
+            break;
+        }
+        if (options.frames > 0 && host.frames_published >= options.frames) {
+            break;
+        }
+        if (interval_nanos > 0 && now < next_due) {
+            const u64 remaining = next_due - now;
+            timespec sleep{static_cast<time_t>(remaining / 1'000'000'000ULL),
+                           static_cast<long>(remaining % 1'000'000'000ULL)};
+            (void)::nanosleep(&sleep, nullptr);
+        }
+        // A run that fell behind starts its next interval from now, not a stale deadline.
+        const u64 base = (next_due > now) ? next_due : now;
+        next_due = ((interval_nanos > 0) ? base : now) + interval_nanos;
+
+        host.publisher->service();
+        serve_editor(host);
+        const f32 phase = static_cast<f32>(elapsed * options.orbit);
+        if (!publish_frame(host, phase - std::floor(phase), static_cast<f32>(elapsed))) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+struct PlaySetup {
+    const char* backend = "none";
+    physics::PhysicsServer* server = nullptr;
+    UniquePtr<gameplay::PlaySession> session;
+};
+
+void start_play_session(Allocator& allocator, const Options& options, WorldView& world,
+                        PlaySetup& play) {
+    if (!world.loaded()) {
+        return;
+    }
+    play.server = create_physics(allocator, options.physics, play.backend);
+    if (play.server == nullptr) {
+        report("physics", Error{ErrorCode::Unavailable,
+                                "no physics backend could be created; play is unavailable"});
+    } else {
+        Expected<UniquePtr<gameplay::PlaySession>, Error> made =
+            make_unique<gameplay::PlaySession>(allocator, allocator, world.world());
+        if (!made) {
+            report("play", made.error());
+        } else {
+            play.session = std::move(*made);
+        }
+    }
+    std::fprintf(stdout, "%s: play     backend=%s, session=%s\n", kTag, play.backend,
+                 play.session ? "ready" : "unavailable");
+}
+
 int main(int argc, char** argv) {
     (void)std::signal(SIGPIPE, SIG_IGN);
     (void)std::signal(SIGTERM, on_signal);
@@ -1364,6 +1498,9 @@ int main(int argc, char** argv) {
             }
         }
         AuthoredFrame authored_frame(allocator, *device.value());
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+        SceneVfxRuntime scene_vfx(allocator, options.project);
+#endif
         if (view_world.loaded()) {
             if (Status prepared =
                     authored_frame.initialize(options.width, options.height, options.project);
@@ -1375,6 +1512,16 @@ int main(int argc, char** argv) {
                 report("authored scene", prepared.error());
                 return 1;
             }
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+            if (Status initialized = scene_vfx.initialize(); !initialized) {
+                report("scene VFX", initialized.error());
+                return 1;
+            }
+            if (Status loaded = scene_vfx.load(view_world.world()); !loaded) {
+                report("scene VFX", loaded.error());
+                return 1;
+            }
+#endif
         }
 
         viewport::PublisherOptions publisher_options;
@@ -1410,39 +1557,24 @@ int main(int argc, char** argv) {
         // THE PLAY SESSION AND ITS SOLVER, created only when there is a world to play. Both are
         // owned here, outside the loop, and destroyed after it in the order task 4.4 is about: the
         // session lets its bodies and its physics world go, and only then does the server go.
-        const char* physics_backend = "none";
-        physics::PhysicsServer* physics_server = nullptr;
-        UniquePtr<gameplay::PlaySession> play;
-        if (view_world.loaded()) {
-            physics_server = create_physics(allocator, options.physics, physics_backend);
-            if (physics_server == nullptr) {
-                report("physics",
-                       Error{ErrorCode::Unavailable,
-                             "no physics backend could be created; play is unavailable"});
-            } else {
-                Expected<UniquePtr<gameplay::PlaySession>, Error> made =
-                    make_unique<gameplay::PlaySession>(allocator, allocator, view_world.world());
-                if (!made) {
-                    report("play", made.error());
-                } else {
-                    play = std::move(*made);
-                }
-            }
-            std::fprintf(stdout, "%s: play     backend=%s, session=%s\n", kTag, physics_backend,
-                         play ? "ready" : "unavailable");
-        }
+        PlaySetup play;
+        start_play_session(allocator, options, view_world, play);
 
         Host host;
         ScriptRuntime scripts(allocator, options.project);
-        AuthoredMaterialPreview authored_preview(authored_frame);
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+        scripts.bind_scene_vfx(view_world.loaded() ? &scene_vfx : nullptr);
+#endif
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
         MetalMaterialRuntime material_runtime(allocator, renderer, view_world);
-        // AuthoredFrame owns the visible scene pipeline. The first-light preview runtime
-        // cannot bind a material to its authored mesh identities; compilation remains available.
-        editor::MaterialService editor_service(allocator,
-                                               view_world.loaded() ? nullptr : &material_runtime,
-                                               view_world.loaded() ? &authored_preview : nullptr);
+        HostedMaterialPreview authored_preview(view_world.loaded() ? &authored_frame : nullptr,
+                                               view_world.loaded() ? nullptr : &material_runtime);
+        // AuthoredFrame owns the scene pipeline; the first-light renderer owns the no-world mesh.
+        editor::MaterialService editor_service(
+            allocator, view_world.loaded() ? nullptr : &material_runtime, &authored_preview);
 #else
+        HostedMaterialPreview authored_preview(view_world.loaded() ? &authored_frame : nullptr,
+                                               nullptr);
         editor::MaterialService editor_service(allocator, nullptr,
                                                view_world.loaded() ? &authored_preview : nullptr);
 #endif
@@ -1453,49 +1585,24 @@ int main(int argc, char** argv) {
         }
         host.options = options;
         host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
+#if defined(CY_EDITOR_WINDOW_HAS_VFX)
+        host.scene_vfx = view_world.loaded() ? &scene_vfx : nullptr;
+#endif
         host.scene = &scene;
         host.view_world = &view_world;
-        host.play = play.get();
+        host.play = play.session.get();
         host.scripts = &scripts;
-        host.physics = physics_server;
+        host.physics = play.server;
         host.renderer = &renderer;
+#if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME
+        host.material_runtime = &material_runtime;
+#endif
         host.publisher = publisher->get();
         host.bridge = &bridge;
         host.editor_service = &editor_service;
         host.service_session = service_session;
         const u64 started = monotonic_nanos();
-        const u64 interval_nanos =
-            (options.rate > 0.0) ? static_cast<u64>(1'000'000'000.0 / options.rate) : 0;
-        u64 next_due = started;
-        while (g_stop == 0) {
-            const u64 now = monotonic_nanos();
-            const f64 elapsed = static_cast<f64>(now - started) / 1'000'000'000.0;
-            if (options.seconds > 0.0 && elapsed > options.seconds) {
-                break;
-            }
-            if (options.frames > 0 && host.frames_published >= options.frames) {
-                break;
-            }
-            if (interval_nanos > 0 && now < next_due) {
-                const u64 remaining = next_due - now;
-                timespec sleep{static_cast<time_t>(remaining / 1'000'000'000ULL),
-                               static_cast<long>(remaining % 1'000'000'000ULL)};
-                (void)::nanosleep(&sleep, nullptr);
-            }
-            // The next deadline, measured from whichever is later: the deadline that was due, or
-            // now. A run that fell behind does not then sprint to catch up, which is what adding to
-            // a stale deadline would do.
-            const u64 base = (next_due > now) ? next_due : now;
-            next_due = ((interval_nanos > 0) ? base : now) + interval_nanos;
-
-            host.publisher->service();
-            serve_editor(host);
-            const f32 phase = static_cast<f32>(elapsed * options.orbit);
-            if (!publish_frame(host, phase - std::floor(phase))) {
-                exit_code = 1;
-                break;
-            }
-        }
+        exit_code = run_host_loop(host, options, started);
 
         print_report(host, view_world, bridge, started);
         editor_service.close(service_session);
@@ -1505,12 +1612,12 @@ int main(int argc, char** argv) {
         // one layer down. `PlaySession::~PlaySession` tears the bridge and the physics world down;
         // it deliberately does NOT stop play, because a destructor that wrote into the authored
         // world would put a restore on a path nobody asked for.
-        if (play && play->state() != gameplay::PlayState::Editing) {
+        if (play.session && play.session->state() != gameplay::PlayState::Editing) {
             scripts.stop();
-            (void)play->stop();
+            (void)play.session->stop();
         }
-        play.reset();
-        destroy_physics(allocator, physics_server, physics_backend);
+        play.session.reset();
+        destroy_physics(allocator, play.server, play.backend);
     }
 
     return exit_code;

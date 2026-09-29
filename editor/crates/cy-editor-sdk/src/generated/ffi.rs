@@ -624,7 +624,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 664 bytes, 8-byte aligned.
+/// `CyInterface` — 680 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -909,6 +909,26 @@ pub struct CyInterface {
     >,
     /// `CyResult(*)(CyEngine, CyEntity)` at byte 656.
     pub spawn_destroy: Option<unsafe extern "C" fn(CyEngine, CyEntity) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, const char*, const CyVar*)` at byte 664.
+    pub vfx_effect_parameter_set: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyEntity,
+            *const ::std::ffi::c_char,
+            *const ::std::ffi::c_char,
+            *const CyVar,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, const char*, CyVar*)` at byte 672.
+    pub vfx_effect_parameter_get: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyEntity,
+            *const ::std::ffi::c_char,
+            *const ::std::ffi::c_char,
+            *mut CyVar,
+        ) -> i32,
+    >,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1032,5 +1052,7 @@ impl CyInterface {
         spawn_instantiate: None,
         spawn_instantiate_many: None,
         spawn_destroy: None,
+        vfx_effect_parameter_set: None,
+        vfx_effect_parameter_get: None,
     };
 }

@@ -40,6 +40,12 @@ struct ObjectPush {
     f32 base_color[4] = {};
 };
 
+struct MaterialFieldBinding {
+    u32 slot = 0;
+    f32 camera_to_image[3] = {};
+};
+static_assert(sizeof(MaterialFieldBinding) == 16);
+
 static_assert(sizeof(ObjectPush) <= rhi::kMaxPushConstantBytes,
               "the push block must fit the portability limit every backend guarantees");
 static_assert(sizeof(ObjectPush) == kObjectPushBytes,
@@ -94,10 +100,14 @@ struct Renderer::PassState {
 struct Renderer::MaterialState {
     struct Program {
         u64 artefact = 0;
+        bool has_wind = false;
         rhi::ShaderModuleHandle vertex;
+        rhi::ShaderModuleHandle shadow_vertex;
         rhi::ShaderModuleHandle fragment;
         rhi::GraphicsPipelineHandle pipeline;
+        rhi::GraphicsPipelineHandle shadow_pipeline;
         rhi::BufferHandle parameters;
+        rhi::BufferHandle field_parameters;
         rhi::DescriptorSetHandle descriptor_set;
     };
 
@@ -123,24 +133,47 @@ struct Renderer::MaterialState {
 
 namespace {
 
-/// Bind everything both geometry passes bind, and draw every object. The two passes differ in their
-/// pipeline and their attachments and in nothing else, which is why this is one function: a shadow
-/// map that drew a different set of objects from the forward pass is the classic way to get a
-/// shadow with no caster.
-void draw_objects(const PassContext& context, Renderer::PassState& state,
-                  rhi::GraphicsPipelineHandle pipeline) noexcept {
-    context.commands->bind_graphics_pipeline(pipeline);
-    context.commands->bind_descriptor_sets(
-        state.layout, 0, Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+/// Bind the shared vertex and index buffers. AFTER a pipeline, every time one is bound: D3D12 takes
+/// the stride from the bound pipeline and drops a vertex-buffer bind that has none
+/// (`render.null_frame` holds every pass to that order).
+void bind_geometry(const PassContext& context, const Renderer::PassState& state) noexcept {
     const u64 offset = 0;
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
                                           Span<const u64>(&offset, 1));
     context.commands->bind_index_buffer(state.indices, 0, false);
+}
 
+/// Draw every caster with the same material vertex deformation as the visible pass.
+void draw_shadow_objects(const PassContext& context, Renderer::PassState& state) noexcept {
+    rhi::PipelineLayoutHandle layout = state.layout;
+    const void* bound = nullptr;
+    bool any_bound = false;
     for (u32 index = 0; index < state.object_count; ++index) {
+        const u64 artefact = index < state.materials->object_artefacts.size()
+                                 ? state.materials->object_artefacts[index]
+                                 : 0;
+        const auto* material = state.materials->find(artefact);
+        if (!any_bound || material != bound) {
+            if (material == nullptr) {
+                context.commands->bind_graphics_pipeline(state.shadow_pipeline);
+                context.commands->bind_descriptor_sets(
+                    state.layout, 0,
+                    Span<const rhi::DescriptorSetHandle>(&state.descriptor_set, 1));
+                layout = state.layout;
+            } else {
+                context.commands->bind_graphics_pipeline(material->shadow_pipeline);
+                const rhi::DescriptorSetHandle sets[] = {
+                    state.global_textures, material->descriptor_set, state.descriptor_set};
+                context.commands->bind_descriptor_sets(state.material_layout, 0, sets);
+                layout = state.material_layout;
+            }
+            bind_geometry(context, state);
+            bound = material;
+            any_bound = true;
+        }
         const ObjectPush& push = state.pushes[index];
         context.commands->push_constants(
-            state.layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
+            layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
             Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(ObjectPush)));
         context.commands->draw_indexed(state.objects[index].index_count, 1,
                                        state.objects[index].first_index, 0, 0);
@@ -168,11 +201,6 @@ rhi::PipelineLayoutHandle bind_forward_material(
 }
 
 void draw_forward_objects(const PassContext& context, Renderer::PassState& state) noexcept {
-    const u64 offset = 0;
-    context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state.vertices, 1),
-                                          Span<const u64>(&offset, 1));
-    context.commands->bind_index_buffer(state.indices, 0, false);
-
     // BIND ON A CHANGE OF MATERIAL, NOT PER OBJECT. The view travels in the descriptor-bound
     // uniform buffer and reaches every draw through memory, which is the late-latch seam
     // `render.xr_prerequisites` measures as one descriptor bind per pass. Rebinding per object
@@ -191,6 +219,7 @@ void draw_forward_objects(const PassContext& context, Renderer::PassState& state
                          ? bind_forward_material(context, state, state.forward_pipeline, nullptr)
                          : bind_forward_material(context, state, material->pipeline,
                                                  &material->descriptor_set);
+            bind_geometry(context, state);
             bound = material;
             any_bound = true;
         }
@@ -233,7 +262,7 @@ void record_shadow(const PassContext& context, void* user) noexcept {
     const auto extent = static_cast<f32>(kShadowMapExtent);
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, extent, extent, 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, kShadowMapExtent, kShadowMapExtent});
-    draw_objects(context, *state, state->shadow_pipeline);
+    draw_shadow_objects(context, *state);
     context.commands->end_rendering();
 }
 
@@ -333,7 +362,7 @@ Renderer::~Renderer() {
         device.destroy_sampler(albedo_sampler_);
     }
     for (const rhi::BufferHandle buffer :
-         {readback_buffer_, checker_staging_, constants_, indices_, vertices_}) {
+         {wind_field_image_, readback_buffer_, checker_staging_, constants_, indices_, vertices_}) {
         if (!buffer.is_null()) {
             device.destroy_buffer(buffer);
         }
@@ -348,14 +377,23 @@ void Renderer::destroy_material_runtime() noexcept {
         if (!program.pipeline.is_null()) {
             device_->destroy_graphics_pipeline(program.pipeline);
         }
+        if (!program.shadow_pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.shadow_pipeline);
+        }
         if (!program.fragment.is_null()) {
             device_->destroy_shader_module(program.fragment);
         }
         if (!program.vertex.is_null()) {
             device_->destroy_shader_module(program.vertex);
         }
+        if (!program.shadow_vertex.is_null()) {
+            device_->destroy_shader_module(program.shadow_vertex);
+        }
         if (!program.parameters.is_null()) {
             device_->destroy_buffer(program.parameters);
+        }
+        if (!program.field_parameters.is_null()) {
+            device_->destroy_buffer(program.field_parameters);
         }
     }
     if (checker_bindless_ != rhi::kInvalidBindlessIndex) {
@@ -473,11 +511,15 @@ Status Renderer::create_pipelines() noexcept {
     }
     set_layout_ = *layout;
 
-    const rhi::DescriptorBinding material_binding{0, rhi::DescriptorKind::UniformBuffer, 1,
-                                                  rhi::ShaderStage::Fragment, false};
+    const rhi::DescriptorBinding material_bindings[] = {
+        {0, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+        {1, rhi::DescriptorKind::UniformBuffer, 1,
+         rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, false},
+    };
     rhi::DescriptorSetLayoutDescription material_set;
     material_set.name = "first-light compiled material parameters";
-    material_set.bindings = {&material_binding, 1};
+    material_set.bindings = material_bindings;
     auto created_material_set = device_->create_descriptor_set_layout(material_set);
     if (!created_material_set.has_value()) {
         return make_unexpected(created_material_set.error());
@@ -789,14 +831,67 @@ void Renderer::write_frame_constants(const Scene& scene, const Camera& camera) n
     constants.sun_color_and_ambient[3] = sun.ambient;
     constants.shadow_control[0] = scene.description().sun_shadows ? 1.0F : 0.0F;
     constants.shadow_control[1] = sun.shadow_normal_offset;
+    constants.shadow_control[2] = time_seconds_;
     *block = constants;
+}
+
+Status Renderer::set_material_wind_field(Span<const u32> words, f64 origin_x,
+                                         f64 origin_z) noexcept {
+    if (words.empty() || !std::isfinite(origin_x) || !std::isfinite(origin_z)) {
+        return fail(ErrorCode::InvalidArgument, "first-light: the wind image or origin is invalid");
+    }
+    if (device_->descriptor_model() != rhi::DescriptorModel::Bindless ||
+        device_->global_texture_table().is_null()) {
+        return fail(ErrorCode::Unsupported,
+                    "first-light: wind materials require the global field table");
+    }
+    rhi::BufferDescription description;
+    description.name = "first-light weather wind image";
+    description.size = words.size() * sizeof(u32);
+    description.usage = rhi::BufferUsage::Storage;
+    description.memory = rhi::MemoryUse::Upload;
+    auto created = device_->create_buffer(description);
+    if (!created) {
+        return make_unexpected(created.error());
+    }
+    void* mapped = device_->buffer_mapped_pointer(*created);
+    if (mapped == nullptr) {
+        device_->destroy_buffer(*created);
+        return fail(ErrorCode::Internal, "first-light: the wind image is not mapped");
+    }
+    std::memcpy(mapped, words.data(), description.size);
+    if (Status idle = device_->wait_idle(); !idle) {
+        device_->destroy_buffer(*created);
+        return idle;
+    }
+    rhi::DescriptorWrite write{};
+    write.binding = rhi::kGlobalTableFieldBinding;
+    write.array_index = 0;
+    write.kind = rhi::DescriptorKind::StorageBuffer;
+    write.buffer = *created;
+    write.buffer_range = description.size;
+    if (Status updated =
+            device_->update_descriptor_set(device_->global_texture_table(), {&write, 1});
+        !updated) {
+        device_->destroy_buffer(*created);
+        return updated;
+    }
+    if (!wind_field_image_.is_null()) {
+        device_->destroy_buffer(wind_field_image_);
+    }
+    wind_field_image_ = *created;
+    wind_origin_x_ = origin_x;
+    wind_origin_z_ = origin_z;
+    return ok();
 }
 
 Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const char* vertex_entry,
                                  Span<const u8> fragment_msl, const char* fragment_entry,
-                                 Span<const u8> parameters) noexcept {
-    if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || vertex_entry == nullptr ||
-        fragment_entry == nullptr || parameters.size() > rendering::kMaterialBlockBytes) {
+                                 Span<const u8> shadow_msl, const char* shadow_entry,
+                                 Span<const u8> parameters, bool has_wind) noexcept {
+    if (artefact == 0 || vertex_msl.empty() || fragment_msl.empty() || shadow_msl.empty() ||
+        vertex_entry == nullptr || fragment_entry == nullptr || shadow_entry == nullptr ||
+        parameters.size() > rendering::kMaterialBlockBytes) {
         return fail(ErrorCode::InvalidArgument,
                     "first-light: a compiled material description is incomplete");
     }
@@ -815,6 +910,27 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
 
     MaterialState::Program program;
     program.artefact = artefact;
+    program.has_wind = has_wind;
+    const auto discard = [&] {
+        if (!program.parameters.is_null()) {
+            device_->destroy_buffer(program.parameters);
+        }
+        if (!program.field_parameters.is_null()) {
+            device_->destroy_buffer(program.field_parameters);
+        }
+        if (!program.shadow_pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.shadow_pipeline);
+        }
+        if (!program.pipeline.is_null()) {
+            device_->destroy_graphics_pipeline(program.pipeline);
+        }
+        for (const rhi::ShaderModuleHandle shader :
+             {program.shadow_vertex, program.fragment, program.vertex}) {
+            if (!shader.is_null()) {
+                device_->destroy_shader_module(shader);
+            }
+        }
+    };
     const auto create_shader = [&](const char* name, rhi::ShaderStage stage, Span<const u8> source,
                                    const char* entry, rhi::ShaderModuleHandle& out) -> Status {
         rhi::ShaderModuleDescription description;
@@ -838,15 +954,22 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     if (Status created = create_shader("editor material fragment", rhi::ShaderStage::Fragment,
                                        fragment_msl, fragment_entry, program.fragment);
         !created) {
-        device_->destroy_shader_module(program.vertex);
+        discard();
+        return created;
+    }
+    if (Status created = create_shader("editor material shadow vertex", rhi::ShaderStage::Vertex,
+                                       shadow_msl, shadow_entry, program.shadow_vertex);
+        !created) {
+        discard();
         return created;
     }
 
     const rhi::VertexBinding vertex_binding{0, sizeof(Vertex), rhi::VertexInputRate::PerVertex};
-    const rhi::VertexAttribute attributes[3] = {
+    const rhi::VertexAttribute attributes[4] = {
         {0, 0, rhi::Format::Rgb32Sfloat, 0},
         {1, 0, rhi::Format::Rgb32Sfloat, 12},
         {2, 0, rhi::Format::Rg32Sfloat, 24},
+        {3, 0, rhi::Format::Rgba32Sfloat, 32},
     };
     const rhi::ColorAttachmentState color{rhi::Format::Rgba8Unorm};
     rhi::GraphicsPipelineDescription pipeline;
@@ -863,11 +986,23 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     pipeline.depth_stencil.depth_write_enable = true;
     auto created_pipeline = device_->create_graphics_pipeline(pipeline);
     if (!created_pipeline.has_value()) {
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_pipeline.error());
     }
     program.pipeline = *created_pipeline;
+
+    rhi::GraphicsPipelineDescription shadow = pipeline;
+    shadow.name = "editor compiled material shadow";
+    shadow.vertex_shader = program.shadow_vertex;
+    shadow.fragment_shader = {};
+    shadow.color_attachments = {};
+    shadow.rasterisation.cull_mode = rhi::CullMode::Front;
+    auto created_shadow = device_->create_graphics_pipeline(shadow);
+    if (!created_shadow.has_value()) {
+        discard();
+        return make_unexpected(created_shadow.error());
+    }
+    program.shadow_pipeline = *created_shadow;
 
     rhi::BufferDescription block;
     block.name = "editor material parameter block";
@@ -876,46 +1011,68 @@ Status Renderer::retain_material(u64 artefact, Span<const u8> vertex_msl, const 
     block.memory = rhi::MemoryUse::Upload;
     auto created_buffer = device_->create_buffer(block);
     if (!created_buffer.has_value()) {
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_buffer.error());
     }
     program.parameters = *created_buffer;
+    if (has_wind) {
+        rhi::BufferDescription field_block;
+        field_block.name = "first-light material wind binding";
+        field_block.size = sizeof(MaterialFieldBinding);
+        field_block.usage = rhi::BufferUsage::Uniform;
+        field_block.memory = rhi::MemoryUse::Upload;
+        auto created_field = device_->create_buffer(field_block);
+        if (!created_field) {
+            discard();
+            return make_unexpected(created_field.error());
+        }
+        program.field_parameters = *created_field;
+    }
     auto created_set = device_->allocate_descriptor_set(material_set_layout_, false);
     if (!created_set.has_value()) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return make_unexpected(created_set.error());
     }
     program.descriptor_set = *created_set;
-    rhi::DescriptorWrite write{};
-    write.binding = 0;
-    write.kind = rhi::DescriptorKind::UniformBuffer;
-    write.buffer = program.parameters;
-    write.buffer_range = rendering::kMaterialBlockBytes;
-    if (Status updated = device_->update_descriptor_set(program.descriptor_set, {&write, 1});
+    rhi::DescriptorWrite writes[2]{};
+    writes[0].binding = 0;
+    writes[0].kind = rhi::DescriptorKind::UniformBuffer;
+    writes[0].buffer = program.parameters;
+    writes[0].buffer_range = rendering::kMaterialBlockBytes;
+    if (has_wind) {
+        writes[1].binding = 1;
+        writes[1].kind = rhi::DescriptorKind::UniformBuffer;
+        writes[1].buffer = program.field_parameters;
+        writes[1].buffer_range = sizeof(MaterialFieldBinding);
+    }
+    if (Status updated =
+            device_->update_descriptor_set(program.descriptor_set, {writes, has_wind ? 2U : 1U});
         !updated) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return updated;
     }
     auto* mapped = static_cast<u8*>(device_->buffer_mapped_pointer(program.parameters));
     if (mapped == nullptr) {
-        device_->destroy_buffer(program.parameters);
-        device_->destroy_graphics_pipeline(program.pipeline);
-        device_->destroy_shader_module(program.fragment);
-        device_->destroy_shader_module(program.vertex);
+        discard();
         return fail(ErrorCode::Internal,
                     "first-light: the material parameter buffer is not mapped");
     }
     std::memset(mapped, 0, rendering::kMaterialBlockBytes);
     std::memcpy(mapped, parameters.data(), parameters.size());
-    return materials_->programs.push_back(program);
+    if (has_wind) {
+        void* field = device_->buffer_mapped_pointer(program.field_parameters);
+        if (field == nullptr) {
+            discard();
+            return fail(ErrorCode::Internal,
+                        "first-light: the material wind binding is not mapped");
+        }
+        std::memset(field, 0, sizeof(MaterialFieldBinding));
+    }
+    if (Status retained = materials_->programs.push_back(program); !retained) {
+        discard();
+        return retained;
+    }
+    return ok();
 }
 
 Status Renderer::update_material(u64 artefact, Span<const u8> parameters) noexcept {
@@ -965,6 +1122,26 @@ void Renderer::unbind_material(u32 object, u32 material_slot, u64 artefact) noex
 Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& camera) noexcept {
     if (forward_pipeline_.is_null()) {
         return fail(ErrorCode::Unavailable, "first-light: prepare() was not called");
+    }
+    for (u64 artefact : materials_->object_artefacts) {
+        const MaterialState::Program* program = materials_->find(artefact);
+        if (program == nullptr || !program->has_wind) {
+            continue;
+        }
+        if (wind_field_image_.is_null()) {
+            return fail(ErrorCode::Unavailable,
+                        "first-light: a wind material has no Engine field image");
+        }
+        auto* binding = static_cast<MaterialFieldBinding*>(
+            device_->buffer_mapped_pointer(program->field_parameters));
+        if (binding == nullptr) {
+            return fail(ErrorCode::Internal,
+                        "first-light: the material wind binding is not mapped");
+        }
+        binding->slot = 0;
+        binding->camera_to_image[0] = static_cast<f32>(camera.position[0] - wind_origin_x_);
+        binding->camera_to_image[1] = static_cast<f32>(camera.position[1]);
+        binding->camera_to_image[2] = static_cast<f32>(camera.position[2] - wind_origin_z_);
     }
     rhi::Device& device = *device_;
     if (Expected<u32, Error> began = device.begin_frame(); !began.has_value()) {

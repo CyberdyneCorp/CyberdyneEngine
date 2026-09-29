@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 3u
+#define CY_ABI_MINOR 4u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1104,6 +1104,18 @@ typedef struct CyInterface {
     /* [N F] Destroy `root` and its whole subtree, children first, running each node's exit and
      * destroy callbacks. NOT_FOUND for an entity that is not alive. */
     CyResult (*spawn_destroy)(CyEngine engine, CyEntity root);
+    /* --- 1.4: live scene VFX instances ------------------------------------------------------- */
+
+    /* `entity` is the Play entity carrying the authored effect. `emitter` is empty for a system
+     * parameter and names the owning emitter for a local parameter. Names are borrowed, terminated
+     * UTF-8. Only exposed parameters can cross this boundary. The value tag must match the
+     * declaration's scalar or vector type; the engine copies the value during the call. */
+    CyResult (*vfx_effect_parameter_set)(CyEngine engine, CyEntity entity, const char* emitter,
+                                         const char* parameter, const CyVar* value);
+    /* Returns the current typed value from that one playing instance. The value is inline and
+     * carries no owned payload, so `var_release` is safe but unnecessary. */
+    CyResult (*vfx_effect_parameter_get)(CyEngine engine, CyEntity entity, const char* emitter,
+                                         const char* parameter, CyVar* out_value);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.

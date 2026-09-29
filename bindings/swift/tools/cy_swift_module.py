@@ -5,6 +5,9 @@
     cy_swift_module.py --work DIR --generation 0=<sources> --generation 1=<sources> --out DIR
     cy_swift_module.py --test            # `swift test` over bindings/swift
 
+Set CY_SWIFT_DISABLE_SANDBOX=1 when a containing development sandbox refuses SwiftPM's nested
+sandbox. Ordinary builds keep SwiftPM's default.
+
 --- WHY THIS EXISTS RATHER THAN A `swift build` IN A RECIPE ---------------------------------------
 
 Two things the ordinary command cannot do, and both are requirements rather than conveniences.
@@ -37,10 +40,14 @@ own directory would recompile the plugin every time, which is about twenty secon
 from __future__ import annotations
 
 import argparse
+import contextlib
+import getpass
+import os
 import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[1]
 REPOSITORY = PACKAGE.parents[1]
@@ -75,11 +82,37 @@ let package = Package(
 """
 
 
+# ONE SWIFTPM BUILD AT A TIME PER USER. Every package shares SwiftPM's per-user cache
+# (`~/.cache/org.swift.swiftpm`), and two builds resolving swift-syntax at once race on its
+# prebuilts manifest: the loser fails with "prebuilts/swift-syntax/... already exists in file
+# system". Ninja schedules the samples' game modules concurrently, so the lock is taken here, where
+# every caller passes through, rather than in each CMakeLists.
+SWIFTPM_LOCK = pathlib.Path(tempfile.gettempdir()) / f"cy-swiftpm-{getpass.getuser()}.lock"
+
+
+@contextlib.contextmanager
+def swiftpm_lock():
+    try:
+        import fcntl
+    except ImportError:  # No flock on Windows, where no sample builds a Swift module.
+        yield
+        return
+    with SWIFTPM_LOCK.open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def swift(arguments: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
     """Run a Swift command through a login-shell environment that has the toolchain on PATH."""
+    if os.environ.get("CY_SWIFT_DISABLE_SANDBOX") == "1" and arguments[:2] == ["swift", "build"]:
+        arguments = [*arguments[:2], "--disable-sandbox", *arguments[2:]]
     command = ". " + SWIFTLY_ENV + " 2>/dev/null; " + " ".join(f"'{item}'" for item in arguments)
-    return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
-                          capture_output=True)
+    with swiftpm_lock():
+        return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
+                              capture_output=True)
 
 
 def probe() -> int:

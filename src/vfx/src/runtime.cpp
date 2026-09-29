@@ -72,7 +72,10 @@ void read_parameter(const KernelContext& context, Name parameter, f32* destinati
         destination[component] = 0.0F;
     }
     for (usize index = 0; index < context.parameter_decls.size(); ++index) {
-        if (context.parameter_decls[index].name != parameter) {
+        const ParameterDecl& declared = context.parameter_decls[index];
+        const Name shader_name =
+            declared.shader_name.is_empty() ? declared.name : declared.shader_name;
+        if (shader_name != parameter) {
             continue;
         }
         const usize base = index * kSlotWidth;
@@ -459,34 +462,45 @@ bool device_dispatch_available() noexcept {
     return true;
 }
 
+TargetAvailability target_availability(SimulationPath path,
+                                       const DeviceCapability* device) noexcept {
+    if (path == SimulationPath::CpuRequired) {
+        return {true, true, FallbackReason::EffectRequiresCpu,
+                fallback_explanation(FallbackReason::EffectRequiresCpu)};
+    }
+    FallbackReason reason = FallbackReason::None;
+    if (device == nullptr || (device->gpu_path_enabled && device->compute &&
+                              device->indirect_dispatch && !device_dispatch_available())) {
+        reason = FallbackReason::NoDeviceInThisWorld;
+    } else if (!device->gpu_path_enabled) {
+        reason = FallbackReason::DisabledByHost;
+    } else if (!device->compute) {
+        reason = FallbackReason::DeviceLacksCompute;
+    } else if (!device->indirect_dispatch) {
+        reason = FallbackReason::DeviceLacksIndirectDispatch;
+    }
+    return {true, reason == FallbackReason::None, reason, fallback_explanation(reason)};
+}
+
 PathDecision decide_path(const CompiledEmitter& emitter,
                          const DeviceCapability& capability) noexcept {
     PathDecision decision;
+    const TargetAvailability availability = target_availability(emitter.path(), &capability);
     if (emitter.path() == SimulationPath::CpuRequired) {
         decision.path = ExecutionPath::Cpu;
-        decision.reason = FallbackReason::EffectRequiresCpu;
-        decision.explanation = fallback_explanation(decision.reason);
+        decision.reason = availability.reason;
+        decision.explanation = availability.explanation;
         decision.is_fallback = false;
         return decision;
     }
-    FallbackReason reason = FallbackReason::None;
-    if (!capability.gpu_path_enabled) {
-        reason = FallbackReason::DisabledByHost;
-    } else if (!capability.compute) {
-        reason = FallbackReason::DeviceLacksCompute;
-    } else if (!capability.indirect_dispatch) {
-        reason = FallbackReason::DeviceLacksIndirectDispatch;
-    } else if (!device_dispatch_available()) {
-        reason = FallbackReason::NoDeviceInThisWorld;
-    }
-    if (reason == FallbackReason::None) {
+    if (availability.runtime_available) {
         decision.path = ExecutionPath::Gpu;
-        decision.explanation = fallback_explanation(FallbackReason::None);
+        decision.explanation = availability.explanation;
         return decision;
     }
     decision.path = ExecutionPath::Cpu;
-    decision.reason = reason;
-    decision.explanation = fallback_explanation(reason);
+    decision.reason = availability.reason;
+    decision.explanation = availability.explanation;
     decision.is_fallback = true;
     return decision;
 }

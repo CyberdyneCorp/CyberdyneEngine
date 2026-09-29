@@ -67,6 +67,7 @@ function(cy_vfx_declare_tests)
         SOURCES
             "${tests_dir}/effects.cpp"
             "${tests_dir}/test_vfx_compiler.cpp"
+            "${tests_dir}/test_vfx_modules.cpp"
         DEPENDENCIES cy::vfx)
     target_include_directories(cy_test_integration_vfx_compiler PRIVATE "${tests_dir}")
     # Diagnostic dumps go where the run owns. A bare filename lands in the caller's working
@@ -84,9 +85,10 @@ function(cy_vfx_declare_tests)
             "${tests_dir}/test_vfx_renderers.cpp"
             "${tests_dir}/test_vfx_in_shot.cpp"
             "${CMAKE_SOURCE_DIR}/samples/12-beauty/embers.cpp"
-        DEPENDENCIES cy::vfx)
+        DEPENDENCIES cy::vfx cy::scene)
     target_include_directories(cy_test_integration_vfx
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/samples/12-beauty")
+    target_compile_definitions(cy_test_integration_vfx PRIVATE CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     if(NOT CY_RENDERER_VULKAN)
         return()
@@ -102,7 +104,8 @@ function(cy_vfx_declare_tests)
             "${CMAKE_SOURCE_DIR}/samples/12-beauty/embers.cpp"
             "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
         DEPENDENCIES cy::vfx cy::rendering-assembly cy::rendering-graph cy::rhi-null cy::rhi-vulkan
-        DEFINITIONS CY_RENDER_TEST_DIR="${CMAKE_SOURCE_DIR}/tests/render")
+        DEFINITIONS CY_RENDER_TEST_DIR="${CMAKE_SOURCE_DIR}/tests/render"
+                    CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_include_directories(cy_test_render_vfx
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render"
                                        "${CMAKE_SOURCE_DIR}/samples/12-beauty")

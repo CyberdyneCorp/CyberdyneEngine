@@ -73,7 +73,8 @@ struct PresentReport {
     bool surface_created = false;
     bool swapchain_created = false;
     u32 frames_presented = 0;
-    u32 validation_errors = 0;
+    /// The device's own count (`rhi::DeviceStatistics::validation_errors`), at its width.
+    u64 validation_errors = 0;
     /// What the frame's own plan was, from the executor's report. A presented frame that turned out
     /// to be one submit, three passes and two derived barriers is a claim a reader can check
     /// against the graph this sample declares; "it drew" on its own is not.

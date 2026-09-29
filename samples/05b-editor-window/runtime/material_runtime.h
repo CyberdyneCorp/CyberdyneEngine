@@ -1,13 +1,45 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cy/backends/shader/compiler.h>
 #include <cy/core/memory/array.h>
 #include <cy/editor/material_service.h>
+#include <cy/rendering/material/compiler.h>
 
 #include "renderer.h"
 #include "world_view.h"
 
+#include <memory>
+
 namespace cy::sample::editor_window {
+
+class WindFieldPreview;
+
+/// Assemble the engine-compiled surface and vertex sources into the hosted material program.
+[[nodiscard]] Status assemble_material_unit(const rendering::material::CompiledProgram& program,
+                                            Array<char>& unit) noexcept;
+
+/// Compile the graph's vertex expression against the authored scene frame's actual streams,
+/// transforms and descriptor convention. The returned MSL is retained for scene pipeline creation.
+struct SceneMaterialVertexArtefacts {
+    explicit SceneMaterialVertexArtefacts(Allocator& allocator) noexcept
+        : depth(allocator), visible(allocator), shadow(allocator), fragment(allocator) {}
+
+    shader::TargetArtefact depth;
+    shader::TargetArtefact visible;
+    shader::TargetArtefact shadow;
+    shader::TargetArtefact fragment;
+};
+
+[[nodiscard]] Status assemble_scene_material_vertex_unit(
+    const rendering::material::CompiledProgram& program, Array<char>& unit,
+    bool argument_buffer = true) noexcept;
+[[nodiscard]] Expected<SceneMaterialVertexArtefacts, Error> compile_scene_material_vertices(
+    const rendering::material::CompiledProgram& program, Allocator& allocator,
+    shader::Target target = shader::Target::Msl) noexcept;
+/// Parse and compile the editor's saved graph through the engine material front end.
+[[nodiscard]] Expected<rendering::material::CompiledMaterial, Error> compile_scene_graph_material(
+    std::string_view source, Allocator& allocator) noexcept;
 
 /// The Mac editor-preview adapter. It owns the retained compiler layouts and preview bindings;
 /// `first_light::Renderer` owns the Metal shader modules, pipelines, descriptor sets and buffers.
@@ -19,6 +51,9 @@ public:
 
     [[nodiscard]] Status publish(
         u64 artefact, const rendering::material::CompiledMaterial& material) noexcept override;
+    [[nodiscard]] Status prepare_frame(const first_light::Camera& camera) noexcept;
+    /// Apply an unsaved authored graph to the first-light material preview mesh.
+    [[nodiscard]] Status preview_graph(std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status create(u64 preview) noexcept override;
     [[nodiscard]] Status reload(
         u64 preview, u64 artefact,
@@ -39,6 +74,9 @@ private:
     WorldView* world_;
     Array<Program> programs_;
     Array<Preview> previews_;
+    std::unique_ptr<WindFieldPreview> wind_;
+    bool wind_requested_ = false;
+    u64 graph_preview_artefact_ = 0;
 };
 
 }  // namespace cy::sample::editor_window

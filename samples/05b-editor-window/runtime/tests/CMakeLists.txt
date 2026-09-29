@@ -33,6 +33,28 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
 
+    cy_add_test(
+        NAME editor_wind_field_preview
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_wind_field_preview.cpp"
+            "${tests_dir}/../wind_field_preview.cpp"
+        DEPENDENCIES cy::weather cy::environment)
+
+    if(CY_VFX)
+        cy_add_test(
+            NAME editor_scene_vfx
+            KIND integration
+            SOURCES
+                "${tests_dir}/test_scene_vfx_runtime.cpp"
+                "${tests_dir}/../scene_vfx_runtime.cpp"
+            DEPENDENCIES cy::vfx cy::scene cy::scene-serialization
+            DEFINITIONS
+                CY_EDITOR_WINDOW_HAS_VFX=1
+                "CY_SAMPLE_PROJECT=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project\"")
+        target_include_directories(cy_test_integration_editor_scene_vfx PRIVATE "${tests_dir}/..")
+    endif()
+
     # THE AUTHORED FRAME ON LINUX'S DEVICE TOO. Since PR #14 the hosted runtime draws every opened
     # world through `AuthoredFrame`, so the pixel assertions that prove it on Metal are the ones
     # that prove the Linux viewport. Issue #18: nothing ran them on Vulkan.
@@ -43,14 +65,28 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
+                "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
-                cy::sample-first-light cy::scene-serialization cy::scene
-                cy::rhi-vulkan
+                cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
+                cy::rendering-material-slang cy::shader
+                cy::weather
+                cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
-                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\""
+                # material_runtime.cpp mounts the staged shader tree whether or not Slang is built,
+                # as cy_editor_window_runtime does.
+                "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\"")
         target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                    "${tests_dir}/..")
+        if(CY_SHADER_SLANG)
+            target_link_libraries(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                  cy::shader-slang)
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                       CY_SHADER_SLANG=1)
+        endif()
     endif()
 
     if(APPLE AND CY_RENDERER_METAL AND CY_SHADER_SLANG)
@@ -60,14 +96,31 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
+                "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
-                cy::sample-first-light cy::scene-serialization cy::scene
-                cy::rhi-metal
+                cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
+                cy::rendering-material-slang cy::shader cy::shader-slang
+                cy::weather
+                cy::rhi-metal cy::rhi-null
             DEFINITIONS
-                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\"")
+                "CY_TEST_PROJECT=\"${CMAKE_SOURCE_DIR}\""
+                "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""
+                CY_SHADER_SLANG=1)
         target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
                                    "${tests_dir}/..")
+        if(CY_VFX)
+            target_sources(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                           "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
+            target_include_directories(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                       "${CMAKE_SOURCE_DIR}/tests/render")
+            target_link_libraries(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                  cy::vfx cy::rendering-particles cy::editor-backend)
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_metal PRIVATE
+                                       CY_EDITOR_WINDOW_HAS_VFX=1)
+        endif()
 
         cy_add_test(
             NAME editor_material_metal
@@ -75,10 +128,12 @@ function(cy_editor_window_runtime_declare_tests)
             SOURCES
                 "${tests_dir}/test_material_metal.cpp"
                 "${tests_dir}/../material_runtime.cpp"
+                "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang cy::rhi-metal
+                cy::rhi-null cy::weather
             DEFINITIONS
                 "CY_SAMPLE_PROJECT=\"${tests_dir}/../../project\""
                 "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\""
@@ -133,6 +188,8 @@ function(cy_editor_window_runtime_declare_tests)
         if(spin_swift_result EQUAL 0)
             set(spin_module_dir "${CMAKE_CURRENT_BINARY_DIR}/spin-module")
             set(spin_module "${spin_module_dir}/out/libCyGame_g1.so")
+            file(GLOB_RECURSE spin_package_sources CONFIGURE_DEPENDS
+                 "${CMAKE_SOURCE_DIR}/bindings/swift/Sources/*")
             add_custom_command(
                 OUTPUT "${spin_module}"
                 COMMAND "${Python3_EXECUTABLE}"
@@ -141,6 +198,7 @@ function(cy_editor_window_runtime_declare_tests)
                         --generation "1=${tests_dir}/../../project/game"
                 DEPENDS "${tests_dir}/../../project/game/SpinCube.swift"
                         "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                        ${spin_package_sources}
                 VERBATIM)
             add_custom_target(cy_editor_spin_module DEPENDS "${spin_module}")
             cy_add_test(
@@ -151,6 +209,15 @@ function(cy_editor_window_runtime_declare_tests)
                 DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
                              cy::scene-serialization cy::scene
                 DEFINITIONS "CY_SPIN_MODULE=\"${spin_module}\"")
+            if(CY_VFX)
+                target_sources(cy_test_smoke_editor_script_runtime PRIVATE
+                               "${tests_dir}/../scene_vfx_runtime.cpp")
+                target_link_libraries(cy_test_smoke_editor_script_runtime PRIVATE cy::vfx)
+                target_compile_definitions(
+                    cy_test_smoke_editor_script_runtime PRIVATE
+                    CY_EDITOR_WINDOW_HAS_VFX=1
+                    "CY_VFX_SAMPLE_PROJECT=\"${tests_dir}/../../project\"")
+            endif()
             add_dependencies(cy_test_smoke_editor_script_runtime cy_editor_spin_module)
             target_include_directories(cy_test_smoke_editor_script_runtime PRIVATE
                                        "${tests_dir}/..")

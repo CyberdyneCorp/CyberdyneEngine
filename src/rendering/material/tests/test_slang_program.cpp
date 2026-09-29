@@ -22,11 +22,13 @@
 #include <cy/backends/shader/source.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/core/memory/scope.h>
+#include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/slang_program.h>
 #include <cy/rendering/material/text.h>
 #include <cy/test/test.h>
 
 #include <cstdio>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -146,15 +148,16 @@ void print_diagnostics(const shader::DiagnosticLog& log) {
 /// Compile one Slang unit as the probe entry point, and say whether it succeeded.
 [[nodiscard]] bool compiles(StandardLibrary& library, SlangHandle& slang, const char* module_name,
                             std::string_view text, shader::DiagnosticLog& diagnostics,
-                            u32& out_words) {
+                            u32& out_words, const char* entry = kMaterialProbeEntryPoint,
+                            rhi::ShaderStage stage = rhi::ShaderStage::Compute) {
     auto generated = library.registry.add_generated(Name::intern(module_name),
                                                     Name::intern("material-compiler"), text);
     CY_REQUIRE(generated.has_value());
 
     shader::CompileRequest request;
     request.source = *generated;
-    request.entry_point = Name::intern(kMaterialProbeEntryPoint);
-    request.stage = rhi::ShaderStage::Compute;
+    request.entry_point = Name::intern(entry);
+    request.stage = stage;
     request.resolver = library.resolver();
 
     auto compiled = slang.handle->compile(request, diagnostics);
@@ -242,6 +245,23 @@ CY_TEST_CASE("the Metal prelude places material parameters in the requested argu
     CY_CHECK(text.find("ParameterBlock<CyMaterialDraw> cyMaterialDraw;") != std::string_view::npos);
     CY_CHECK(text.find("#define cyMaterialParameters cyMaterialDraw.parameters") !=
              std::string_view::npos);
+    CY_CHECK(text.find("cyMaterialPreviousTransform") == std::string_view::npos);
+
+    unit.clear();
+    options.scene_previous_transform = true;
+    CY_REQUIRE(emit_prelude(*module, options, unit).has_value());
+    const std::string_view scene(unit.data(), unit.size());
+    CY_CHECK(scene.find("ConstantBuffer<CyScenePreviousTransform> previousTransform") !=
+             std::string_view::npos);
+    CY_CHECK(scene.find("#define cyMaterialPreviousTransform cyMaterialDraw.previousTransform") !=
+             std::string_view::npos);
+
+    unit.clear();
+    options.argument_buffer = false;
+    CY_REQUIRE(emit_prelude(*module, options, unit).has_value());
+    CY_CHECK(std::string_view(unit.data(), unit.size())
+                 .find("[[vk::binding(5, 2)]]\nConstantBuffer<CyScenePreviousTransform>") !=
+             std::string_view::npos);
 }
 
 CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standard library") {
@@ -262,6 +282,146 @@ CY_TEST_CASE("the assembled unit compiles to SPIR-V against the engine's standar
     CY_REQUIRE(ok);
     CY_CHECK_GT(words, 5U);
     std::printf("worn_metal primary/high compiled to %u SPIR-V words\n", words);
+}
+
+CY_TEST_CASE("sine noise wind and colour compile in a generated vertex offset") {
+    CY_REQUIRE(shader::slang::slang_available());
+    ParseDiagnostic sink(current_allocator());
+    auto module = parse_material(
+        "material wind_sway { attribute time_seconds : float; attribute position : float3; "
+        "attribute color0 : float3; "
+        "vertex_offset = position * sin(time_seconds) + "
+        "(0.0, noise(position), 0.0) + procedural_wind(position, time_seconds) + color0 * 0.1; }",
+        current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    auto generated = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(generated.has_value());
+    Array<char> prelude(current_allocator());
+    CY_REQUIRE(emit_prelude(*module, PreludeOptions{}, prelude).has_value());
+    std::string source(prelude.data(), prelude.size());
+    source.append(generated->view());
+    source += R"(
+[[vk::binding(2, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
+    cyMaterialProbeOutput[id.x] = float4(offset, 1.0);
+}
+
+struct CyVertexProbeOutput { float4 position : SV_Position; };
+[shader("vertex")]
+CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.position = position;
+    ctx.attributes.color0 = color.rgb;
+    let offset = cy_material_wind_sway_primary_high_vertex_offset(ctx);
+    CyVertexProbeOutput output;
+    output.position = float4(position + offset, 1.0);
+    return output;
+}
+)";
+
+    StandardLibrary library;
+    SlangHandle slang;
+    shader::DiagnosticLog diagnostics(current_allocator());
+    u32 words = 0;
+    const bool ok =
+        compiles(library, slang, "material.wind_sway_vertex", source, diagnostics, words);
+    if (!ok) {
+        print_diagnostics(diagnostics);
+    }
+    CY_CHECK(ok);
+    CY_CHECK_GT(words, 16U);
+    shader::DiagnosticLog vertex_diagnostics(current_allocator());
+    u32 vertex_words = 0;
+    const bool vertex_ok =
+        compiles(library, slang, "material.wind_sway_vertex_stage", source, vertex_diagnostics,
+                 vertex_words, "cyVertexProbe", rhi::ShaderStage::Vertex);
+    if (!vertex_ok) {
+        print_diagnostics(vertex_diagnostics);
+    }
+    CY_CHECK(vertex_ok);
+    CY_CHECK_GT(vertex_words, 16U);
+}
+
+CY_TEST_CASE("a named vertex interpolant compiles in vertex and fragment Slang stages") {
+    CY_REQUIRE(shader::slang::slang_available());
+    ParseDiagnostic sink(current_allocator());
+    auto module = parse_material(
+        "material vertex_tint { attribute color0 : float3; attribute tint : float3; "
+        "vertex_interpolant tint = color0; surface = diffuse(tint); }",
+        current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    auto surface = emit_program(*module, EmitOptions{});
+    auto vertex = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(surface.has_value());
+    CY_REQUIRE(vertex.has_value());
+    Array<char> prelude(current_allocator());
+    CY_REQUIRE(emit_prelude(*module, PreludeOptions{}, prelude).has_value());
+    std::string source(prelude.data(), prelude.size());
+    source.append(surface->view());
+    source.append(vertex->view());
+    source += R"(
+struct CyVertexProbeOutput
+{
+    float4 position : SV_Position;
+    [[vk::location(0)]] float3 tint : TEXCOORD0;
+};
+[shader("vertex")]
+CyVertexProbeOutput cyVertexProbe(float3 position : POSITION, float4 color : COLOR0)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.color0 = color.rgb;
+    let evaluated = cy_material_vertex_tint_primary_high_vertex(ctx);
+    CyVertexProbeOutput output;
+    output.position = float4(position + evaluated.offset, 1.0);
+    output.tint = evaluated.tint;
+    return output;
+}
+[shader("fragment")]
+float4 cyFragmentProbe(CyVertexProbeOutput input) : SV_Target
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.tint = input.tint;
+    CySurface compiled = cyDefaultSurface();
+    cy_material_vertex_tint_primary_high(ctx, compiled);
+    return float4(cyResolveSurface(compiled).albedo, 1.0);
+}
+)";
+    StandardLibrary library;
+    SlangHandle slang;
+    shader::DiagnosticLog vertex_diagnostics(current_allocator());
+    u32 vertex_words = 0;
+    const bool vertex_ok =
+        compiles(library, slang, "material.vertex_tint_vertex", source, vertex_diagnostics,
+                 vertex_words, "cyVertexProbe", rhi::ShaderStage::Vertex);
+    if (!vertex_ok) {
+        print_diagnostics(vertex_diagnostics);
+    }
+    CY_CHECK(vertex_ok);
+    CY_CHECK_GT(vertex_words, 16U);
+    shader::DiagnosticLog fragment_diagnostics(current_allocator());
+    u32 fragment_words = 0;
+    const bool fragment_ok =
+        compiles(library, slang, "material.vertex_tint_fragment", source, fragment_diagnostics,
+                 fragment_words, "cyFragmentProbe", rhi::ShaderStage::Fragment);
+    if (!fragment_ok) {
+        print_diagnostics(fragment_diagnostics);
+    }
+    CY_CHECK(fragment_ok);
+    CY_CHECK_GT(fragment_words, 16U);
 }
 
 CY_TEST_CASE("a material with no textures, no attributes and no parameters still compiles") {
@@ -294,6 +454,8 @@ material flat_grey {
     CY_CHECK_EQ(report->attributes, 0U);
     CY_CHECK_EQ(report->textures, 0U);
     CY_CHECK_EQ(report->fields, 0U);
+    CY_CHECK(std::string_view(unit.data(), unit.size()).find("fieldPosition") ==
+             std::string_view::npos);
 
     shader::DiagnosticLog diagnostics(current_allocator());
     u32 words = 0;
@@ -303,6 +465,64 @@ material flat_grey {
         print_diagnostics(diagnostics);
     }
     CY_REQUIRE(ok);
+    CY_CHECK_GT(words, 5U);
+}
+
+CY_TEST_CASE("typed vertex fields sample the engine field table at the authored position") {
+    CY_REQUIRE(shader::slang::slang_available());
+    StandardLibrary library;
+    SlangHandle slang;
+    constexpr std::string_view kWind = R"(
+material field_wind {
+    field wind : float3;
+    vertex_offset = wind;
+    surface = diffuse((0.5, 0.5, 0.5));
+    opacity = 1.0;
+}
+)";
+    ParseDiagnostic sink(current_allocator());
+    Expected<Module, Error> module = parse_material(kWind, current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    Expected<GeneratedSource, Error> source = emit_vertex_offset(*module, EmitOptions{});
+    CY_REQUIRE(source.has_value());
+    Array<char> prelude(current_allocator());
+    Expected<PreludeReport, Error> report = emit_prelude(*module, PreludeOptions{}, prelude);
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_EQ(report->fields, 1U);
+    std::string text(prelude.data(), prelude.size());
+    text.append(source->view());
+    text += R"(
+[[vk::binding(1, 3)]] RWStructuredBuffer<float4> cyMaterialProbeOutput;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyMaterialProbe(uint3 id: SV_DispatchThreadID)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.fieldPosition = float3(0.0, 0.0, 0.0);
+    let offset = cy_material_field_wind_primary_high_vertex_offset(ctx);
+    cyMaterialProbeOutput[id.x] = float4(offset, 1.0);
+}
+)";
+    CY_CHECK(text.find("import cy.field;") != std::string_view::npos);
+    CY_CHECK(text.find("CyMaterialFieldBinding bindings[1];") != std::string_view::npos);
+    CY_CHECK(text.find("ConstantBuffer<CyMaterialFieldParameters> cyMaterialFields;") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cyMaterialFields.bindings[field]") != std::string_view::npos);
+    CY_CHECK(text.find("float3 at = ctx.fieldPosition + binding.cameraToImage;") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cyFieldSampleScene(binding.slot, at.x, at.y, at.z).value") !=
+             std::string_view::npos);
+    CY_CHECK(text.find("cy_field_sample(ctx, CY_FIELD_wind).xyz") != std::string_view::npos);
+
+    shader::DiagnosticLog diagnostics(current_allocator());
+    u32 words = 0;
+    const bool ok = compiles(library, slang, "material.field_wind", text, diagnostics, words);
+    if (!ok) {
+        print_diagnostics(diagnostics);
+    }
+    CY_CHECK(ok);
     CY_CHECK_GT(words, 5U);
 }
 

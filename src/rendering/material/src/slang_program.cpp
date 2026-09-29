@@ -130,8 +130,7 @@ void write_struct(Writer& writer, const char* name, const NameSet& members,
     writer.text("};\n\n");
 }
 
-void write_params(Writer& writer, const Module& module, u32 texture_count,
-                  u32 field_count) noexcept {
+void write_params(Writer& writer, const Module& module, u32 texture_count) noexcept {
     writer.text(
         "/// The material's own parameters, and the bindless slot each texture resolves to.\n");
     writer.text("struct CyMaterialParams\n{\n");
@@ -147,12 +146,7 @@ void write_params(Writer& writer, const Module& module, u32 texture_count,
         writer.number(texture_count);
         writer.text("];\n");
     }
-    if (field_count > 0) {
-        writer.text("    float fields[");
-        writer.number(field_count);
-        writer.text("];\n");
-    }
-    // ALWAYS PRESENT. A material with no parameters, no textures and no fields would otherwise
+    // ALWAYS PRESENT. A material with no parameters and no textures would otherwise
     // declare an empty struct, and an empty constant buffer is not a thing every back end accepts.
     writer.text("    uint cyMaterialSlotCount;\n");
     writer.text("};\n\n");
@@ -228,35 +222,75 @@ void write_accessors(Writer& writer, u32 texture_count, u32 field_count) noexcep
     }
     if (field_count > 0) {
         writer.text(
-            "/// A field sample. Scalar: see slang_program.h for why the type is not carried.\n"
-            "float cy_field_sample(CyMaterialContext ctx, uint field)\n"
+            "/// Resolve a field at the vertex's camera-relative position.\n"
+            "float4 cy_field_sample(CyMaterialContext ctx, uint field)\n"
             "{\n"
-            "    return ctx.params.fields[field];\n"
+            "    CyMaterialFieldBinding binding = cyMaterialFields.bindings[field];\n"
+            "    float3 at = ctx.fieldPosition + binding.cameraToImage;\n"
+            "    return cyFieldSampleScene(binding.slot, at.x, at.y, at.z).value;\n"
             "}\n\n");
     }
 }
 
-void write_context(Writer& writer, const PreludeOptions& options) noexcept {
+void write_context(Writer& writer, const PreludeOptions& options, u32 field_count) noexcept {
+    if (options.scene_previous_transform) {
+        writer.text(
+            "struct CyScenePreviousTransform\n{\n"
+            "    float4 row0;\n    float4 row1;\n    float4 row2;\n};\n\n");
+    }
     writer.text("struct CyMaterialContext\n{\n");
     writer.text("    CyMaterialParams params;\n");
     writer.text("    CyMaterialAttributes attributes;\n");
+    if (field_count > 0) {
+        writer.text("    float3 fieldPosition;\n");
+    }
     writer.text("};\n\n");
     if (options.argument_buffer) {
         writer.text("struct CyMaterialDraw\n{\n");
-        writer.text("    ConstantBuffer<CyMaterialParams> parameters;\n};\n");
+        writer.text("    ConstantBuffer<CyMaterialParams> parameters;\n");
+        if (options.scene_previous_transform) {
+            writer.text("    ConstantBuffer<CyScenePreviousTransform> previousTransform;\n");
+        }
+        if (field_count > 0) {
+            writer.text("    ConstantBuffer<CyMaterialFieldParameters> fieldParameters;\n");
+        }
+        writer.text("};\n");
         writer.text("[[vk::binding(");
         writer.number(options.material_binding);
         writer.text(", ");
         writer.number(options.material_set);
         writer.text(")]]\n");
         writer.text("ParameterBlock<CyMaterialDraw> cyMaterialDraw;\n");
-        writer.text("#define cyMaterialParameters cyMaterialDraw.parameters\n\n");
+        writer.text("#define cyMaterialParameters cyMaterialDraw.parameters\n");
+        if (options.scene_previous_transform) {
+            writer.text("#define cyMaterialPreviousTransform cyMaterialDraw.previousTransform\n");
+        }
+        if (field_count > 0) {
+            writer.text("#define cyMaterialFields cyMaterialDraw.fieldParameters\n");
+        }
+        writer.text("\n");
     } else {
         writer.text("[[vk::binding(");
         writer.number(options.material_binding);
         writer.text(", ");
         writer.number(options.material_set);
         writer.text(")]]\nConstantBuffer<CyMaterialParams> cyMaterialParameters;\n\n");
+        if (options.scene_previous_transform) {
+            writer.text("[[vk::binding(");
+            writer.number(options.material_binding + 1U);
+            writer.text(", ");
+            writer.number(options.material_set);
+            writer.text(
+                ")]]\nConstantBuffer<CyScenePreviousTransform> "
+                "cyMaterialPreviousTransform;\n\n");
+        }
+        if (field_count > 0) {
+            writer.text("[[vk::binding(");
+            writer.number(options.material_binding + (options.scene_previous_transform ? 2U : 1U));
+            writer.text(", ");
+            writer.number(options.material_set);
+            writer.text(")]]\nConstantBuffer<CyMaterialFieldParameters> cyMaterialFields;\n\n");
+        }
     }
 }
 
@@ -296,11 +330,24 @@ Expected<PreludeReport, Error> emit_prelude(const Module& module, const PreludeO
         "// library and why they are generated around the emitter's output rather than into it.\n"
         "// material: ");
     writer.text(module.name().text());
-    writer.text("\nimport cy.material;\n\n");
+    writer.text("\nimport cy.material;\n");
+    if (report.fields > 0) {
+        writer.text("import cy.field;\n");
+        writer.text(
+            "\nstruct CyMaterialFieldBinding\n{\n"
+            "    uint slot;\n"
+            "    float3 cameraToImage;\n"
+            "};\n\n");
+        writer.text("struct CyMaterialFieldParameters\n{\n    CyMaterialFieldBinding bindings[");
+        writer.number(report.fields);
+        writer.text("];\n};\n\n");
+    } else {
+        writer.text("\n");
+    }
 
-    write_params(writer, module, report.textures, report.fields);
+    write_params(writer, module, report.textures);
     write_struct(writer, "CyMaterialAttributes", attributes, "    uint cyAttributeCount;\n");
-    write_context(writer, options);
+    write_context(writer, options, report.fields);
     write_texture_slots(writer, module);
     write_slots(writer, "CY_FIELD_", fields);
     write_accessors(writer, report.textures, report.fields);

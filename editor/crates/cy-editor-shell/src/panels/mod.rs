@@ -30,13 +30,13 @@ mod history;
 mod inspector;
 mod material_graph;
 use cy_editor_services::material_parameters;
-pub(crate) use material_graph::finish_save as finish_material_save;
 mod pending;
 mod semantic_merge;
 mod settings;
 mod source;
 mod source_control;
 mod terrain;
+mod vfx_graph;
 mod viewport;
 
 use cy_editor_commands::{Arguments, Registry, Scope};
@@ -64,6 +64,16 @@ pub enum Intent {
     Invoke(String, Arguments),
     /// Open a document by asset path.
     OpenAsset(String),
+    /// Open an editable VFX authoring document through its registered read command.
+    OpenVfxDocument(String),
+    /// Create and open a saved VFX system through the registered command.
+    CreateVfxDocument(String, String),
+    /// Open a separately saved VFX module through its registered read command.
+    OpenVfxModule(String),
+    /// Create a saved VFX module after checking the current draft.
+    CreateVfxModule(String, cy_editor_interface::specialised::vfx::Stage, String),
+    /// Revert the open module to its last saved source, or close an unsaved new module.
+    DiscardVfxModuleChanges,
     /// Stage and import files selected outside the project.
     ImportExternal {
         /// Native paths supplied by the chooser or operating-system drop.
@@ -120,6 +130,25 @@ pub(crate) fn external_import_intent(
     }
 }
 
+/// Whether the VFX canvas appeared in the current frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum VfxCanvasVisibility {
+    /// The canvas was not drawn.
+    Hidden,
+    /// The canvas was drawn.
+    Visible,
+}
+
+/// Whether the open material canvas has a canonical engine graph or only a saved draft.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum MaterialCanvasState {
+    /// The canvas follows its canonical graph.
+    #[default]
+    Authored,
+    /// Canvas edits are recorded before a canonical graph can be authored.
+    Draft,
+}
+
 /// The text a person has typed into a panel's own field.
 ///
 /// Presentation state, and it lives beside the panels rather than in a view model for the reason
@@ -143,6 +172,8 @@ pub struct Inputs {
     pub browser_import_paths: String,
     /// Search text for the engine-owned material node palette.
     pub material_filter: String,
+    /// Stage whose engine-compatible nodes are offered in the material palette.
+    pub material_stage: u8,
     /// Output pin selected as the source of the next material connection.
     ///
     /// Node and pin identities are stored alongside readable metadata so a catalogue rename does
@@ -156,10 +187,87 @@ pub struct Inputs {
     pub material_name: String,
     /// Project asset opened into the canvas; independent of later scene selection.
     pub material_open_reference: Option<String>,
+    /// Local draft edits use source-only history until the canonical graph is authored.
+    pub material_canvas_state: MaterialCanvasState,
     /// Last semantic graph submitted for live scene preview.
     pub material_preview_source: Option<(String, String)>,
-    /// Authored graph waiting for its request-correlated canonical result.
-    pub material_save: Option<(u64, String, String)>,
+    /// Saved material node drag awaiting one history command at pointer release.
+    pub material_drag: Option<material_graph::MaterialDragState>,
+    /// Search text for the engine-owned VFX node palette.
+    pub vfx_filter: String,
+    /// Selected output pin for a VFX connection gesture.
+    pub vfx_link_source: Option<(u64, u32, String, String)>,
+    /// Last rejected VFX connection.
+    pub vfx_link_problem: Option<String>,
+    /// Saved-asset move held across drag frames so one release produces one undo entry.
+    pub vfx_drag: Option<vfx_graph::VfxDragState>,
+    /// Whether the VFX canvas was rendered this frame; hidden drags fall back to document save.
+    pub vfx_drag_seen: VfxCanvasVisibility,
+    /// Last rejected VFX property edit.
+    pub vfx_property_problem: Option<String>,
+    /// New VFX system name entered in the panel.
+    pub vfx_system_name: String,
+    /// New emitter name entered in the panel.
+    pub vfx_emitter_name: String,
+    /// Last refused VFX system or stage action.
+    pub vfx_document_problem: Option<String>,
+    /// Project-relative VFX document path for save and reopen.
+    pub vfx_reference: String,
+    /// Project-relative module path for create, save, and reopen.
+    pub vfx_module_reference: String,
+    /// Identifier for a new reusable module.
+    pub vfx_module_name: String,
+    /// Compatible stage for a new reusable module.
+    pub vfx_module_stage: cy_editor_interface::specialised::vfx::Stage,
+    /// New typed host input name and kind.
+    pub vfx_module_input_name: String,
+    /// Numeric type of the next module host input.
+    pub vfx_module_input_kind: String,
+    /// Name of another mapped module this module depends on.
+    pub vfx_module_dependency_name: String,
+    /// Emitter receiving the open module reference.
+    pub vfx_module_emitter: usize,
+    /// Backend renderer identity selected for the next emitter.
+    pub vfx_new_renderer: u8,
+    /// Backend simulation path selected for the next emitter.
+    pub vfx_new_path: u8,
+    /// New system parameter name.
+    pub vfx_parameter_name: String,
+    /// New system parameter type.
+    pub vfx_parameter_kind: String,
+    /// New parameter value lanes.
+    pub vfx_parameter_values: [f32; 4],
+    /// New parameter exposure flag.
+    pub vfx_parameter_exposed: bool,
+    /// New particle attribute name.
+    pub vfx_attribute_name: String,
+    /// New particle attribute type.
+    pub vfx_attribute_kind: String,
+    /// New attribute lower range bound.
+    pub vfx_attribute_minimum: f32,
+    /// New attribute upper range bound.
+    pub vfx_attribute_maximum: f32,
+    /// New attribute tolerance for precision selection.
+    pub vfx_attribute_tolerance: f32,
+    /// New attribute precision override.
+    pub vfx_attribute_precision: String,
+    /// New event channel name.
+    pub vfx_channel_name: String,
+    /// New event channel's per-frame event limit.
+    pub vfx_channel_events: u32,
+    /// New event channel's propagation depth limit.
+    pub vfx_channel_depth: u32,
+    /// New event channel's CPU readback flag.
+    pub vfx_channel_readback: bool,
+    /// Target time for the engine preview scrub control.
+    pub vfx_preview_scrub_seconds: f32,
+    /// Requested engine preview time scale.
+    pub vfx_preview_time_scale: f32,
+    /// Latest exposed parameter edit waiting for the engine preview request slot.
+    pub vfx_live_parameters: std::collections::VecDeque<(String, [f32; 4], usize)>,
+    /// Compiler-relevant bytes last submitted to the engine. Live parameter values and canvas
+    /// layout are excluded so those edits do not trigger a new cook.
+    pub vfx_compile_signature: Option<Vec<u8>>,
     /// Active terrain sculpt or paint tool keyword.
     pub terrain_tool: String,
     /// Stable material layer receiving paint gestures.
@@ -226,13 +334,52 @@ impl Default for Inputs {
             browser_import_open: false,
             browser_import_paths: String::new(),
             material_filter: String::new(),
+            material_stage: cy_editor_interface::specialised::material::SURFACE_STAGE,
             material_link_source: None,
             material_link_problem: None,
             material_property_problem: None,
             material_name: "editor_preview".into(),
             material_open_reference: None,
+            material_canvas_state: MaterialCanvasState::Authored,
             material_preview_source: None,
-            material_save: None,
+            material_drag: None,
+            vfx_filter: String::new(),
+            vfx_link_source: None,
+            vfx_link_problem: None,
+            vfx_drag: None,
+            vfx_drag_seen: VfxCanvasVisibility::Hidden,
+            vfx_property_problem: None,
+            vfx_system_name: "NewVfx".into(),
+            vfx_emitter_name: "Emitter0".into(),
+            vfx_document_problem: None,
+            vfx_reference: "effects/NewVfx.cyvfxdoc".into(),
+            vfx_module_reference: "effects/NewModule.cyvfxmodule".into(),
+            vfx_module_name: "NewModule".into(),
+            vfx_module_stage: cy_editor_interface::specialised::vfx::Stage::Update,
+            vfx_module_input_name: "velocity".into(),
+            vfx_module_input_kind: "vec3".into(),
+            vfx_module_dependency_name: String::new(),
+            vfx_module_emitter: 0,
+            vfx_new_renderer: 0,
+            vfx_new_path: 0,
+            vfx_parameter_name: "speed".into(),
+            vfx_parameter_kind: "float".into(),
+            vfx_parameter_values: [0.0; 4],
+            vfx_parameter_exposed: true,
+            vfx_attribute_name: "position".into(),
+            vfx_attribute_kind: "vec3".into(),
+            vfx_attribute_minimum: -100.0,
+            vfx_attribute_maximum: 100.0,
+            vfx_attribute_tolerance: 0.0,
+            vfx_attribute_precision: "Auto".into(),
+            vfx_channel_name: "on_death".into(),
+            vfx_channel_events: 1024,
+            vfx_channel_depth: 4,
+            vfx_channel_readback: false,
+            vfx_preview_scrub_seconds: 0.0,
+            vfx_preview_time_scale: 1.0,
+            vfx_live_parameters: std::collections::VecDeque::new(),
+            vfx_compile_signature: None,
             terrain_tool: "raise".into(),
             terrain_layer: None,
             terrain_layer_name: String::new(),
@@ -274,6 +421,10 @@ pub struct Panels<'frame> {
     pub shell: &'frame mut Shell,
     /// The one shared specialised-editor surface host.
     pub specialised: &'frame mut SpecialisedEditors,
+    /// Committed path of the open VFX system document.
+    pub saved_vfx_document_reference: Option<&'frame str>,
+    /// Committed path of the open module; independent of the editable Save/Open path field.
+    pub saved_vfx_module_reference: Option<&'frame str>,
     /// The hierarchy's presentation state.
     pub hierarchy: &'frame mut HierarchyViewModel,
     /// Attributed history for the active document.
@@ -351,6 +502,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "inspector" => inspector::show(self, ui),
                 "content-browser" => browser::show(self, ui),
                 "editor-materials" => material_graph::show(self, ui),
+                "editor-vfx-graph" => vfx_graph::show(self, ui),
                 "editor-terrain" => terrain::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),

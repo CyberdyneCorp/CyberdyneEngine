@@ -14,6 +14,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(read())?;
     registry.register(preview())?;
     registry.register(save())?;
+    registry.register(draft_save())?;
     registry.register(status())?;
     Ok(())
 }
@@ -92,6 +93,28 @@ fn save() -> Command {
             let request = host(context)?.material_graph_save(reference, source(arguments))?;
             Ok(Outcome::new("Material save requested; read material.graph.status for the result")
                 .with("request", Value::Text(request.to_string())))
+        },
+    )
+}
+
+fn draft_save() -> Command {
+    Command::new(
+        graph_metadata(
+            "material.canvas.draft.save",
+            "Save Material Canvas Draft",
+            "Records editable canvas source in scene undo history without authoring a canonical graph.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(ParameterSpec::required(
+            "source",
+            ValueKind::Text,
+            "Complete cymatcanvas 1 source text for the editable draft.",
+        )),
+        |context, arguments| {
+            let reference = reference(arguments);
+            within_scope(context, reference)?;
+            host(context)?.material_canvas_draft_save(reference, source(arguments))?;
+            Ok(Outcome::new(format!("Saved material canvas draft {reference}")))
         },
     )
 }

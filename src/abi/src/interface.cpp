@@ -899,6 +899,32 @@ static CyResult abi_service_poll(CyEngine engine_handle, CyServiceSession sessio
     return engine_handle->editor_service->poll(session, *out_event, *out_has_event);
 }
 
+static CyResult abi_vfx_effect_parameter_set(CyEngine engine, CyEntity entity, const char* emitter,
+                                             const char* parameter, const CyVar* value) {
+    if (engine == nullptr || entity == CY_ENTITY_NULL || parameter == nullptr ||
+        parameter[0] == '\0' || value == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "invalid VFX parameter request");
+    }
+    if (engine->vfx_effects == nullptr) {
+        return cy::abi::report(CY_RESULT_UNAVAILABLE, "no live VFX effects are bound");
+    }
+    return engine->vfx_effects->set(entity, emitter == nullptr ? "" : emitter, parameter, *value);
+}
+
+static CyResult abi_vfx_effect_parameter_get(CyEngine engine, CyEntity entity, const char* emitter,
+                                             const char* parameter, CyVar* out_value) {
+    if (engine == nullptr || entity == CY_ENTITY_NULL || parameter == nullptr ||
+        parameter[0] == '\0' || out_value == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "invalid VFX parameter request");
+    }
+    if (engine->vfx_effects == nullptr) {
+        return cy::abi::report(CY_RESULT_UNAVAILABLE, "no live VFX effects are bound");
+    }
+    *out_value = cy::abi::var_nil();
+    return engine->vfx_effects->get(entity, emitter == nullptr ? "" : emitter, parameter,
+                                    *out_value);
+}
+
 }  // extern "C"
 
 namespace {
@@ -1010,6 +1036,9 @@ const CyInterface kInterface = {
     &cy::abi::game::spawn_instantiate,
     &cy::abi::game::spawn_instantiate_many,
     &cy::abi::game::spawn_destroy,
+
+    &abi_vfx_effect_parameter_set,
+    &abi_vfx_effect_parameter_get,
 };
 
 }  // namespace
@@ -1028,7 +1057,7 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.3 and the module requires a later minor");
+                              "this engine exports ABI 1.4 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

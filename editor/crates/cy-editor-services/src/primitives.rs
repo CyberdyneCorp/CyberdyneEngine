@@ -49,7 +49,7 @@
 use cy_editor_commands::{
     Command, CommandContext, EffectClass, Metadata, Outcome, ParameterSpec, Registry,
 };
-use cy_editor_core::ids::{DocumentId, NodeId};
+use cy_editor_core::ids::{DocumentId, FieldId, NodeId, TypeId};
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::Document;
@@ -591,6 +591,54 @@ impl MaterialSlotsBinding {
     }
 }
 
+/// Add a transform to an existing scene node, declaring the standard schema when needed.
+///
+/// # Errors
+///
+/// Returns an error if a field has an incompatible type or the document rejects the edit.
+pub fn add_transform(document: &mut Document, node: NodeId, at: [f32; 3]) -> Result<()> {
+    let schema = document.schema_mut();
+    let component = if let Some(definition) = schema.type_named(TransformBinding::COMPONENT) {
+        definition.id
+    } else {
+        schema.declare_type(TransformBinding::COMPONENT, false)
+    };
+    let [translation, rotation, scale] = TransformBinding::FIELDS;
+    let translation = transform_field(schema, component, translation, ValueKind::Vec3)?;
+    let rotation = transform_field(schema, component, rotation, ValueKind::Quat)?;
+    let scale = transform_field(schema, component, scale, ValueKind::Vec3)?;
+    document.add_component(
+        node,
+        component,
+        vec![
+            (translation, Value::Vec3(at)),
+            (rotation, Value::Quat([0.0, 0.0, 0.0, 1.0])),
+            (scale, Value::Vec3([1.0, 1.0, 1.0])),
+        ],
+    )
+}
+
+fn transform_field(
+    schema: &mut DocumentSchema,
+    component: TypeId,
+    name: &str,
+    kind: ValueKind,
+) -> Result<FieldId> {
+    if let Some(field) = schema
+        .type_of(component)
+        .and_then(|definition| definition.field_named(name))
+    {
+        if field.kind != kind {
+            return Err(Problem::new(
+                "add a scene transform",
+                format!("field {name} has another value type"),
+            ));
+        }
+        return Ok(field.id);
+    }
+    schema.declare_field(component, name, kind, format!("Scene {name}"))
+}
+
 /// Create one mesh instance — a transform and a mesh reference — inside the open transaction.
 ///
 /// **The one function that builds a mesh instance, whatever produced the mesh.** A primitive calls
@@ -732,6 +780,14 @@ pub fn material_slots_of(document: &Document, node: NodeId) -> Vec<String> {
     let Some(binding) = MaterialSlotsBinding::of_schema(document.schema()) else {
         return material_of(document, node).into_iter().collect();
     };
+    if binding
+        .slots
+        .first()
+        .and_then(|field| document.content().field(node, binding.component, *field))
+        .is_none()
+    {
+        return material_of(document, node).into_iter().collect();
+    }
     let mut assets: Vec<String> = binding
         .slots
         .iter()

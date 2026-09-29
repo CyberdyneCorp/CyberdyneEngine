@@ -934,8 +934,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 664,
-    "CyInterface is not 664 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 680,
+    "CyInterface is not 680 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -1269,6 +1269,14 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, spawn_destroy) == 656,
     "CyInterface::spawn_destroy is not at byte 656"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, vfx_effect_parameter_set) == 664,
+    "CyInterface::vfx_effect_parameter_set is not at byte 664"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, vfx_effect_parameter_get) == 672,
+    "CyInterface::vfx_effect_parameter_get is not at byte 672"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -1315,7 +1323,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        81,
+        83,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

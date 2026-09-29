@@ -134,6 +134,13 @@ ENTRIES: dict[str, Entry] = {
                             doc="Cooperatively cancel an editor-service request."),
     "service_poll": Entry(("engine", "session", "event", "has_event"), result="fallible",
                           doc="Poll one editor-service event without blocking."),
+    # 1.3: live scene VFX instances
+    "vfx_effect_parameter_set": Entry(
+        ("engine", "entity", "emitter", "parameter", "value"), result="fallible",
+        doc="Set one exposed parameter on a playing scene effect entity."),
+    "vfx_effect_parameter_get": Entry(
+        ("engine", "entity", "emitter", "parameter", "into"), result="fallible",
+        doc="Read one exposed parameter from a playing scene effect entity."),
     # 1.3: the game services (`add-swift-game-api`)
     "time_get": Entry(("engine", "into"), result="fallible",
                        doc="Read the engine clock and the current update phase."),

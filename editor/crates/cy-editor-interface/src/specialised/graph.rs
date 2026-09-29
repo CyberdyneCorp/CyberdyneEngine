@@ -173,6 +173,20 @@ impl Property {
                 {
                     return Err(invalid("the value is not an ASCII identifier".into()));
                 }
+                if self.semantic == "vfx-literal" {
+                    let components: Vec<&str> = value.split_ascii_whitespace().collect();
+                    if !(1..=4).contains(&components.len()) {
+                        return Err(invalid(
+                            "the value needs one to four numeric components".into(),
+                        ));
+                    }
+                    for component in components {
+                        let parsed = component.parse::<f64>().map_err(|_| {
+                            invalid("every component must be a finite number".into())
+                        })?;
+                        self.validate_number(parsed, &invalid)?;
+                    }
+                }
             }
             PropertyKind::Bool => {
                 if !matches!(value, "true" | "false") {
@@ -251,6 +265,8 @@ pub struct NodeType {
     pub pins: Vec<Pin>,
     /// Properties rendered generically by clients.
     pub properties: Vec<Property>,
+    /// Domain-defined stage bits; zero means the catalogue did not restrict this node.
+    pub stage_mask: u8,
 }
 
 impl NodeType {
@@ -262,6 +278,7 @@ impl NodeType {
             name: name.into(),
             pins,
             properties: Vec::new(),
+            stage_mask: 0,
         }
     }
 
@@ -273,6 +290,7 @@ impl NodeType {
             name,
             pins,
             properties: Vec::new(),
+            stage_mask: 0,
         }
     }
 
@@ -281,6 +299,18 @@ impl NodeType {
     pub fn with_properties(mut self, properties: Vec<Property>) -> Self {
         self.properties = properties;
         self
+    }
+
+    /// Attach stage compatibility supplied by the engine catalogue.
+    #[must_use]
+    pub fn with_stage_mask(mut self, stage_mask: u8) -> Self {
+        self.stage_mask = stage_mask;
+        self
+    }
+
+    /// Whether a node may be authored in the given domain-defined stage.
+    pub fn supports_stage(&self, stage: u8) -> bool {
+        self.stage_mask == 0 || self.stage_mask & stage != 0
     }
 
     /// The pin of this name and direction, if the type has one.
@@ -742,6 +772,38 @@ impl GraphCanvas {
         self.links.iter()
     }
 
+    /// Remove one exact wire while keeping its endpoint nodes and other wires intact.
+    pub fn disconnect(
+        &mut self,
+        from: NodeKey,
+        from_pin: &str,
+        to: NodeKey,
+        to_pin: &str,
+    ) -> Result<()> {
+        let link = self
+            .links
+            .iter()
+            .find(|link| {
+                link.from == from
+                    && link.from_pin == from_pin
+                    && link.to == to
+                    && link.to_pin == to_pin
+            })
+            .cloned()
+            .ok_or_else(|| {
+                Problem::new(
+                    "disconnect graph nodes",
+                    format!(
+                        "no wire connects node {} {from_pin} to node {} {to_pin}",
+                        from.ordinal(),
+                        to.ordinal()
+                    ),
+                )
+            })?;
+        self.links.remove(&link);
+        Ok(())
+    }
+
     /// Remove a node and every wire that touched it.
     pub fn remove(&mut self, key: NodeKey) -> Result<()> {
         if self.nodes.remove(&key).is_none() {
@@ -990,6 +1052,23 @@ mod tests {
             domain: "test".into(),
             required_capabilities: 0,
             vector_lanes: 0,
+        }
+    }
+
+    #[test]
+    fn vfx_constant_property_accepts_one_to_four_finite_space_separated_components() {
+        let property = Property {
+            kind: PropertyKind::Text,
+            semantic: "vfx-literal".into(),
+            minimum: None,
+            maximum: None,
+            ..scalar_property("value")
+        };
+        for value in ["2", "0 0 0", "1 0.45 0.12 0.9"] {
+            property.validate_literal(value).unwrap();
+        }
+        for value in ["", "1 2 3 4 5", "NaN", "1 inf", "1,2", "bad"] {
+            assert!(property.validate_literal(value).is_err(), "{value:?}");
         }
     }
 

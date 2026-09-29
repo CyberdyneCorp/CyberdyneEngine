@@ -144,6 +144,50 @@ void record_extensions(FrameRecorder& recorder, const PassContext& context, Fram
     }
 }
 
+struct DrawBindingState {
+    rhi::GraphicsPipelineHandle pipeline;
+    rhi::PipelineLayoutHandle layout;
+    rhi::DescriptorSetHandle material_set;
+};
+
+[[nodiscard]] bool select_draw_pipeline(FrameRecorder& recorder, FramePipelineKind kind,
+                                        const render::DrawItem& item,
+                                        const GpuDrawInstance& instance,
+                                        DrawPipelineSelection& selected) noexcept {
+    selected = {recorder.pipelines()->pipeline(kind), recorder.pipelines()->layout(), {}};
+    if (recorder.draw_pipeline() == nullptr) {
+        return true;
+    }
+    DrawPipelineSelection candidate;
+    if (!recorder.draw_pipeline()(kind, item, instance, recorder.draw_pipeline_user(), candidate)) {
+        return true;
+    }
+    if (candidate.pipeline.is_null() || candidate.layout.is_null() ||
+        candidate.vertex_streams > kForwardPassStreamCount) {
+        return false;
+    }
+    selected = candidate;
+    return true;
+}
+
+void bind_draw_pipeline(FrameRecorder& recorder, rhi::CommandBuffer& commands,
+                        const DrawPipelineSelection& selected, DrawBindingState& bound) noexcept {
+    if (!(selected.pipeline == bound.pipeline)) {
+        commands.bind_graphics_pipeline(selected.pipeline);
+        bound.pipeline = selected.pipeline;
+    }
+    if (!(selected.layout == bound.layout)) {
+        commands.bind_descriptor_sets(selected.layout, 0, recorder.bindings()->sets());
+        bound.layout = selected.layout;
+        bound.material_set = {};
+    }
+    if (!selected.material_set.is_null() && !(selected.material_set == bound.material_set)) {
+        commands.bind_descriptor_sets(
+            selected.layout, 3, Span<const rhi::DescriptorSetHandle>(&selected.material_set, 1));
+        bound.material_set = selected.material_set;
+    }
+}
+
 /// The vertex buffers one geometry pass binds, in binding order.
 struct StreamSet {
     rhi::BufferHandle buffers[kForwardPassStreamCount];
@@ -206,7 +250,9 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
         return;
     }
     rhi::CommandBuffer& commands = *context.commands;
-    commands.bind_graphics_pipeline(recorder.pipelines()->pipeline(pipeline));
+    const rhi::GraphicsPipelineHandle pass_pipeline = recorder.pipelines()->pipeline(pipeline);
+    commands.bind_graphics_pipeline(pass_pipeline);
+    DrawBindingState bound{pass_pipeline, recorder.pipelines()->layout(), {}};
 
     // THREE STREAMS FOR THE DEPTH PASS, NOT ONE — position, the packed normal, and the previous
     // positions per-object motion is derived from (the position stream again, for a rigid mesh).
@@ -223,6 +269,11 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
     const bool depth_only = pipeline == FramePipelineKind::Depth;
     const StreamSet streams = streams_for(geometry, pipeline);
     streams.bind(commands, nullptr);
+    // A MATERIAL VARIANT THAT ASKS FOR STREAMS READS THE FORWARD ONES, whatever the pass: a graph
+    // vertex program may read the UVs, and it derives its previous position by evaluating the
+    // graph at the previous time rather than from `kPreviousPositionStream`.
+    const StreamSet forward = streams_for(geometry, FramePipelineKind::Opaque);
+    usize forward_bound = 0;
 
     rhi::BufferHandle bound_indices;
     bool offsets_moved = false;
@@ -237,15 +288,34 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
             ++recorder.mutable_report().skipped_draws;
             continue;
         }
-        // A DEFORMED MESH IN THE PREPASS reads two windows of one stream; everything else reads the
-        // streams from their start, as it always did. See `StreamSet::bind`.
-        const bool deformed = depth_only && draw.has_previous_vertices && !draw.indices.is_null();
-        if (deformed || offsets_moved) {
-            streams.bind(commands, deformed ? &draw : nullptr);
-            offsets_moved = deformed;
+        DrawPipelineSelection selected;
+        if (!select_draw_pipeline(recorder, pipeline, range.items[index], range.instances[index],
+                                  selected)) {
+            ++recorder.mutable_report().skipped_draws;
+            continue;
         }
+        if (selected.vertex_streams != 0) {
+            if (forward_bound != selected.vertex_streams) {
+                StreamSet requested = forward;
+                requested.count = selected.vertex_streams;
+                requested.bind(commands, nullptr);
+                forward_bound = selected.vertex_streams;
+                offsets_moved = false;
+            }
+        } else {
+            // A DEFORMED MESH IN THE PREPASS reads two windows of one stream; everything else reads
+            // the streams from their start, as it always did. See `StreamSet::bind`.
+            const bool deformed =
+                depth_only && draw.has_previous_vertices && !draw.indices.is_null();
+            if (deformed || offsets_moved || forward_bound != 0) {
+                streams.bind(commands, deformed ? &draw : nullptr);
+                offsets_moved = deformed;
+                forward_bound = 0;
+            }
+        }
+        bind_draw_pipeline(recorder, commands, selected, bound);
         const DrawPush push{index};
-        commands.push_constants(recorder.pipelines()->layout(),
+        commands.push_constants(selected.layout,
                                 rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
                                 Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
         if (draw.indices.is_null()) {

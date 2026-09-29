@@ -71,6 +71,10 @@ macOS, and `smoke.editor_authored_frame_vulkan` on Linux. Both authored-frame su
 `runtime/tests/test_authored_frame.cpp`. They cover empty-to-mesh rendering, transforms, lights,
 shadows, and material graph previews. `render.pipeline_metal` covers substitution of a material
 texture in the engine's forward frame.
+The authored-frame suite checks the selected RHI backend before making pixel assertions. If Metal
+or Vulkan is unavailable and the RHI falls back to `null`, it prints the selection reason and runs
+only its compiler and command-recording checks; a green result on that host is not native pixel
+verification.
 
 Because nodes without a mesh draw nothing, `smoke.editor_window` opens
 `project/worlds/city-blocks.cyworld`. It holds the same Pillar, Crate, and Marker as
@@ -81,7 +85,9 @@ viewport cannot draw (issue #18).
 
 `smoke.editor_window_mcp` checks the same viewport through MCP instead of synthesised input.
 `mcp_window.py` starts the editor with `--mcp` and reads `editor:window?panel=viewport`, so a
-person can keep using the display while it runs. It requires four things:
+person can keep using the display while it runs. Its MCP client bounds each reply wait, including
+an absent or incomplete JSON line; `test_mcp_window.py` checks these timeout cases without a
+display. It requires four things:
 - With no runtime, the viewport shows the editor's own sunken fill.
 - An empty world shows the engine's exact black frame, not that fill.
 - `city-blocks.cyworld` shows colour.
@@ -105,6 +111,16 @@ Editing a valid colour in the opened graph previews it on the Cube in the hosted
 without saving. A rejected or unsupported edit keeps the last valid viewport colour and shows a
 material diagnostic. Object colour overrides that differ from the saved graph default remain in
 control. **Save .cygraph** persists the graph and editable canvas; graph previews alone do not.
+The hosted Metal compiled-material path evaluates a graph's `vertex_offset` on the selected mesh
+and uses the same generated function for its shadow pass. The Metal image test compares a constant
+offset against moving the same mesh on the CPU. The authored scene frame also accepts an optional
+time value for deterministic vertex-animation previews; without it, the frame uses elapsed time.
+Its temporal test compares two frames of sine displacement with the same mesh translated on the
+CPU across a 0.2-second step, checking both the final image and the prepass motion texture. The
+material animation delta retains that full step so its previous-position evaluation matches the
+previous visible frame. Motion readback is enabled only
+for that inspection; ordinary editor frames do not allocate or copy it. The pixel comparison
+requires a native device.
 
 The cube's **Material: copper_clay** Inspector section exposes `albedo` as an object
 override. Changing it updates that cube in the authored viewport and saves with the
@@ -112,16 +128,120 @@ scene. **Sync graph properties** in the Inspector adds newly declared graph para
 to objects using the graph. Save the scene separately after editing object values.
 The authored scene renderer maps opaque Diffuse graphs with a constant or `float3`
 parameter colour to its standard material path, reloading the graph on subsequent
-frames. The Material Graph compiler can validate and save other graphs, but the
-authored scene renderer reports unsupported shapes until it can bind compiled shader
-variants. To regenerate a canonical graph outside the editor, run `cy_material author
-project/materials/copper_clay.cymatcanvas --graph
-project/materials/copper_clay.cygraph` from this sample directory.
+frames. A graph with vertex outputs uses compiled visible, depth, and shadow vertex programs and a
+compiled surface fragment. Custom `float` through `float4` interpolants can pass from the vertex
+graph to the surface graph. The scene mesh currently supplies position, normal, and UV0. A typed
+`wind` field node samples a deterministic image published by the Engine WeatherSystem; the image
+is bound once per frame and its origin is converted from the camera's world position before the
+material reads it. Other environment fields, vertex colour, and UV1 still receive a named refusal.
+The field image is republished when the viewport camera moves outside the preview region.
+The editor preview uses a clear-weather wind around the viewed scene until a weather component is
+authored in the world. To regenerate a canonical graph outside the editor, run `cy_material author
+project/materials/copper_clay.cymatcanvas --graph project/materials/copper_clay.cygraph` from this
+sample directory.
+The preview checks the compiled vertex source and its scene bindings before replacing the current
+graph. An unsupported environment field is refused immediately, and the last valid preview remains
+in the viewport.
 
 The [live scene capture](../../docs/design/images/editor-material-graph-scene-metal.png)
 shows the graph-colored Cube and its shadow on the Plane. The
 [node capture](../../docs/design/images/editor-material-graph-nodes-metal.png) shows the
 reopened four-node source and a successful engine compile.
+
+## Vertex graph sine sway
+
+Open `project/worlds/issue15-sway.cyworld` to see the **Sine Sway Cube** above a shadow receiver.
+Its material is `project/materials/issue15_sway.cygraph`, authored by the Engine from the adjacent
+`issue15_sway.cymatcanvas`. In the Material Graph panel, select the cube, open its graph, and choose
+the **Vertex** stage. The Time node feeds Sin, which scales an upward offset into Vertex Output;
+the Surface stage supplies the cube's diffuse colour. The authored scene reads Engine time for
+the offset and uses the graph's vertex function for visible, depth, and shadow passes.
+
+Launch the live editor with `just run-editor-live --project samples/05b-editor-window/project
+--world worlds/issue15-sway.cyworld`. The committed graph and world also cook through
+`cy_material cook samples/05b-editor-window/project <artefact-dir> --world
+worlds/issue15-sway.cyworld`. The `committed sine sway material cooks and renders in its authored
+scene` test compiles that exact graph and submits the saved scene on the null renderer. The native
+pixel comparison with CPU displaced geometry remains a separate acceptance check. The hosted
+material mesh has a second native check: it previews a timed sine offset at two Engine times and
+compares each image with the same mesh moved on the CPU. With no world open, the Material Graph
+panel's live Preview targets the first-light material mesh; with this world open, it targets the
+authored scene.
+
+On a host with a working Metal or Vulkan device, a desktop display, and Pillow installed in the
+Python environment, capture the live scene through the editor's MCP resource with:
+
+```sh
+python3 samples/05b-editor-window/mcp_window.py \
+  --world worlds/issue15-sway.cyworld \
+  --capture docs/design/images/issue15-sine-sway-mcp-preview.png
+```
+
+The capture command waits for a coloured Engine viewport, then saves the whole editor window. A
+neutral or black viewport fails without writing an image. The command launches the editor and
+runtime and does not synthesize mouse or keyboard input. A runtime that exits before opening its
+viewport sockets fails promptly and its process and log are closed. The native image tests still
+compare geometry, shadow, and motion against CPU-displaced references.
+
+
+## VFX graph draft
+
+`project/effects/issue15_two_emitters.cyvfxdoc` is an editable VFX draft with separate CPU and GPU
+emitters, Spawn and Initialise stage graph layouts, a typed system parameter, a bounded event
+channel, particle attributes for position, lifetime, size, colour and emission, and a `texture`
+data-interface binding on each emitter. The draft was
+saved, read, undone, and redone through the editor's MCP commands. The engine reader and compiler
+load this exact file in `unit.editor_backend`; they validate both execution paths and produce a
+two-emitter cook. `integration.vfx` also plays the exact cooked document and checks CPU execution,
+GPU-preferred fallback on a device-free world, and publication of both emitters' particles.
+The `committed_two_emitter_sample_can_be_authored_through_mcp_commands` wire test also rebuilds
+its declarations and both stage graphs from an empty project through MCP, then compares the saved
+graph facts with this file. Constant nodes accept one to four finite components separated by
+spaces, such as `0 0 0` for position and `1 0.45 0.12 0.9` for colour.
+In the VFX Graph panel, **Load preview** cooks the open draft and starts an isolated engine
+simulation. Play, Pause, Restart, Scrub, and Apply speed control that simulation. The panel reports
+live and per-emitter particle counts, recent spawn/kill counts, pool usage and shortfall, event
+traffic and overflow, CPU fallbacks, and up to 32 attributes from the first live particle. Editing
+the exposed `speed` parameter updates the running effect without cooking again.
+The graph panel now submits an engine compile when a stage node, connection, folded parameter, or
+other compiler-relevant declaration changes. Moving nodes on the canvas and changing the value of
+an exposed live parameter do not request another cook. **Compile VFX** remains available to retry
+or inspect the current graph explicitly; **Load preview** loads the edited draft into the running
+effect after a graph change.
+The hosted runtime also publishes the simulation's sprite particles through the engine's
+transparent frame pass. The authored Metal viewport test compares the same empty world before and
+after loading and stepping this exact draft, and checks that the VFX renderer draws live particles.
+It also compares the resulting 640×360 frame with the committed
+[Metal reference](runtime/tests/references/issue15_two_emitters_metal.png). Regenerate that image
+through `CY_RENDER_UPDATE_GOLDEN=1 ctest --test-dir build/dev -R '^smoke\.editor_authored_frame_metal$'`;
+the regeneration run fails by design so the new image must be inspected and committed separately.
+The same preview can be driven through MCP: call `vfx.preview.load` with the `.cyvfxdoc` source,
+wait for `vfx.preview.status` to report `pending = false`, call `vfx.preview.control` with
+`action = play`, then call `vfx.preview.step` with `seconds = 0.033333333` for each frame. The
+`viewport:` resource returns the rendered image. `vfx.preview.parameter.set` accepts a `Vec4`
+value and a lane count, and `vfx.preview.status` reports the engine's bounded counters and sampled
+attributes. The image below was captured from the live editor's MCP `viewport:` resource after
+15 steps of this draft in the spinning-cube world; the small orange sprite above the cube is the
+engine VFX preview.
+
+![Engine VFX preview captured through MCP](../../docs/design/images/issue15-vfx-mcp-preview.png)
+
+The Vulkan `render.vfx` suite contains a visible-versus-empty image check for this sample; on a
+machine without a Vulkan device it reports a skip.
+
+`project/effects/issue15_scoped_speed.cyvfxdoc` is a second two-emitter sample with independent
+`calm.speed` and `smoke.speed` defaults. A scene effect entity can reference it through
+`scene.vfx-effect.create`; the generated Inspector exposes each declared override. During Play,
+the sample `VfxSpeed` Swift behaviour sets and reads `calm.speed` on its own effect entity through
+ABI 1.4. `smoke.speed` and another scene entity retain their defaults. The
+`smoke.editor_script_runtime` test runs that Swift module against the Engine scene runtime.
+
+For a visible scene while inspecting the VFX Graph tab, launch the editor with
+`just run-editor-live --project samples/05b-editor-window/project --world worlds/spinning-cube.cyworld`.
+The default `worlds/city.cyworld` is an authoring fixture with transforms but no mesh assets, so its
+viewport appears black. The MCP `viewport:` resource captures the engine's rendered scene image;
+it does not capture the graph panel. `--agent-scope operator` is needed for MCP writes under
+`effects/`, because the narrower `author` scope permits writes only under `game/`.
 
 ## Swift cube during Play
 

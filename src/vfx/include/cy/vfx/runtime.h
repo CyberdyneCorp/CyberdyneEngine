@@ -104,6 +104,19 @@ struct DeviceCapability {
     bool gpu_path_enabled = true;
 };
 
+/// What the compiler and runtime can do for a requested simulation path on one device.
+/// A null device means the caller has not attached one, not that GPU compilation is unsupported.
+struct TargetAvailability {
+    bool compile_available = true;
+    bool runtime_available = false;
+    FallbackReason reason = FallbackReason::None;
+    const char* explanation = "";
+};
+
+/// Report compilation and device runtime support before an emitter selects its execution path.
+[[nodiscard]] TargetAvailability target_availability(SimulationPath path,
+                                                     const DeviceCapability* device) noexcept;
+
 struct PathDecision {
     ExecutionPath path = ExecutionPath::Gpu;
     FallbackReason reason = FallbackReason::None;

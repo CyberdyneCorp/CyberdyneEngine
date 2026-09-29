@@ -994,6 +994,8 @@ jobs:
         run: just release-test
       - name: The workflow itself
         run: just ci-check
+      - name: Editor MCP capture client timeouts
+        run: just quality-editor-mcp-client
       # clang-tidy needs the flags every file is compiled with, so the build comes first.
       - name: Configure and build for the compile database
         run: just build-engine
@@ -1480,7 +1482,11 @@ jobs:
     name: roadmap-status
     runs-on: ubuntu-24.04
     steps:
+      # The whole history: `m11d:port-touches-no-engine-layer` reads every commit since the rung
+      # opened (ebdf8d5), and a depth-1 clone makes the falsifiability sweep see it red in the tree.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: extractions/setup-just@v4
       # `just roadmap-test`'s falsifiability sweep runs every check the milestone gates depend on,
       # so this job needs the same tools those checks need: openspec for the spec queries,

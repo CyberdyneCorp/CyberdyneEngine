@@ -19,13 +19,14 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 9] = [
+const NEW_PANELS: [(&str, &str); 10] = [
     ("undo-history", "Undo"),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
     ("agent-sessions", "No agent is connected."),
     ("swift-workspace", "No Swift source is open."),
     ("editor-materials", "Engine catalogue"),
+    ("editor-vfx-graph", "Engine catalogue"),
     ("editor-terrain", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
@@ -68,6 +69,9 @@ impl Harness {
         specialised
             .install_material_catalogue(&test_material_catalogue())
             .expect("engine material catalogue");
+        specialised
+            .install_vfx_catalogue(&test_vfx_catalogue())
+            .expect("engine VFX catalogue");
         Self {
             editor: Editor::new(Actor::human("accessibility-auditor")),
             registry,
@@ -127,6 +131,8 @@ impl Harness {
                     scope,
                     shell,
                     specialised,
+                    saved_vfx_document_reference: None,
+                    saved_vfx_module_reference: None,
                     hierarchy,
                     history,
                     settings,
@@ -199,6 +205,8 @@ impl Harness {
                     scope,
                     shell,
                     specialised,
+                    saved_vfx_document_reference: None,
+                    saved_vfx_module_reference: None,
                     hierarchy,
                     history,
                     settings,
@@ -239,11 +247,14 @@ impl Harness {
                     || node.supports_action(egui::accesskit::Action::Focus)
             })
             .count();
+        let click_targets = click_targets(&update);
         output.textures_delta.clear();
         FrameEvidence {
             labels,
             actionable,
             shapes,
+            click_targets,
+            intents,
         }
     }
 }
@@ -265,10 +276,57 @@ fn test_material_catalogue() -> Vec<u8> {
     catalogue.finish()
 }
 
+fn test_vfx_catalogue() -> Vec<u8> {
+    let mut catalogue = Writer::new();
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u32(1001);
+    catalogue.u32(1);
+    catalogue.text("vfx.constant");
+    catalogue.u32(1);
+    catalogue.u32(1);
+    catalogue.u8(1);
+    catalogue.text("out");
+    catalogue.text("float");
+    catalogue.u32(0);
+    catalogue.finish()
+}
+
 struct FrameEvidence {
     labels: Vec<String>,
     actionable: usize,
     shapes: usize,
+    click_targets: Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)>,
+    intents: Vec<Intent>,
+}
+
+fn click_targets(
+    update: &egui::accesskit::TreeUpdate,
+) -> Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)> {
+    update
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.supports_action(egui::accesskit::Action::Click))
+        .filter_map(|(id, node)| {
+            node.label()
+                .map(|label| (label.to_owned(), update.tree_id, *id))
+        })
+        .collect()
+}
+
+fn click_named(evidence: &FrameEvidence, label: &str) -> egui::Event {
+    let (_, target_tree, target_node) = evidence
+        .click_targets
+        .iter()
+        .find(|(name, _, _)| name == label)
+        .unwrap_or_else(|| panic!("{label} has no click target: {:?}", evidence.click_targets));
+    egui::Event::AccessKitActionRequest(egui::accesskit::ActionRequest {
+        action: egui::accesskit::Action::Click,
+        target_tree: *target_tree,
+        target_node: *target_node,
+        data: None,
+    })
 }
 
 fn tab_event() -> egui::Event {
@@ -322,6 +380,80 @@ fn enabled_new_panel_actions_are_keyboard_focusable_without_pointer_input() {
             );
         }
     }
+}
+
+#[test]
+fn vfx_metadata_sections_are_visible_on_an_open_engine_catalogue() {
+    use cy_editor_interface::specialised::vfx::{Emitter, SimulationPath, Stage, VfxDocument};
+
+    let mut harness = Harness::new();
+    let mut document = VfxDocument::new("sparks").unwrap();
+    document.emitters.push(Emitter {
+        name: "smoke".into(),
+        path: SimulationPath::GpuPreferred,
+        renderer: "Sprite".into(),
+        stages: Vec::new(),
+        modules: Vec::new(),
+        interfaces: Vec::new(),
+        capacity: 1024,
+        attributes: Vec::new(),
+    });
+    harness.specialised.start_vfx_document(document).unwrap();
+    harness
+        .specialised
+        .select_vfx_stage(0, Stage::Spawn)
+        .unwrap();
+    let evidence = harness.frame("editor-vfx-graph", egui::vec2(900.0, 700.0), Vec::new());
+    for section in [
+        "System parameters",
+        "Event channels",
+        "Particle attributes",
+        "Reusable VFX module",
+    ] {
+        assert!(
+            evidence.labels.iter().any(|label| label.contains(section)),
+            "missing {section} in {:?}",
+            evidence.labels
+        );
+    }
+}
+
+#[test]
+fn vfx_creation_buttons_route_through_saved_commands() {
+    let mut harness = Harness::new();
+    let size = egui::vec2(900.0, 700.0);
+    let initial = harness.frame("editor-vfx-graph", size, Vec::new());
+    let created = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&initial, "New VFX system")],
+    );
+    assert_eq!(
+        created.intents,
+        [Intent::CreateVfxDocument(
+            harness.inputs.vfx_system_name.clone(),
+            harness.inputs.vfx_reference.clone(),
+        )]
+    );
+
+    let opened = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&created, "Reusable VFX module")],
+    );
+    let module = harness.frame(
+        "editor-vfx-graph",
+        size,
+        vec![click_named(&opened, "Create module")],
+    );
+    assert_eq!(
+        module.intents,
+        [Intent::CreateVfxModule(
+            harness.inputs.vfx_module_name.clone(),
+            harness.inputs.vfx_module_stage,
+            harness.inputs.vfx_module_reference.clone(),
+        )]
+    );
 }
 
 #[test]
