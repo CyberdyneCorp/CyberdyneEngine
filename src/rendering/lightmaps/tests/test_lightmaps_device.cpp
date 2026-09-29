@@ -607,8 +607,10 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
         !written) {
         return written;
     }
-    if (corner->options.density_view) {
-        lightmaps::write_lightmap_density_view(kTexelDensity, upload.view);
+    if (corner->options.density_view &&
+        !lightmaps::write_lightmap_debug_view(render::DebugViewMode::LightmapDensity,
+                                              kTexelDensity, upload.view)) {
+        return fail(ErrorCode::Internal, "the density view wrote nothing");
     }
     if (corner->options.lightmap != Lightmap::Unaddressed) {
         address_draws(*corner, upload);

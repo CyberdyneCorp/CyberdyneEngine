@@ -480,4 +480,13 @@ void write_lightmap_density_view(f32 target_texels_per_metre,
     std::memcpy(&view.lightmap_debug[1], &target_texels_per_metre, sizeof(f32));
 }
 
+bool write_lightmap_debug_view(render::DebugViewMode mode, f32 target_texels_per_metre,
+                               pipeline::FrameViewData& view) noexcept {
+    if (mode != render::DebugViewMode::LightmapDensity) {
+        return false;
+    }
+    write_lightmap_density_view(target_texels_per_metre, view);
+    return true;
+}
+
 }  // namespace cy::rendering::lightmaps

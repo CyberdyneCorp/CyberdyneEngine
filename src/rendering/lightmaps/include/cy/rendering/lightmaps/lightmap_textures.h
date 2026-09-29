@@ -52,6 +52,7 @@
 #include <cy/rendering/gi/scene.h>
 #include <cy/rendering/lightmap_bake/bake.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
+#include <cy/servers/render/types.h>
 
 namespace cy::rendering::lightmaps {
 
@@ -165,5 +166,12 @@ struct LightmapSlots {
 /// `viewport.view-mode.lightmap-density`. Needs `write_lightmaps` for the same frame.
 void write_lightmap_density_view(f32 target_texels_per_metre,
                                  pipeline::FrameViewData& view) noexcept;
+
+/// The engine half of a viewport's debug view, for the views this module draws: writes the
+/// density view's words for `render::DebugViewMode::LightmapDensity` and returns true; writes
+/// nothing and returns false for every other mode.
+[[nodiscard]] bool write_lightmap_debug_view(render::DebugViewMode mode,
+                                             f32 target_texels_per_metre,
+                                             pipeline::FrameViewData& view) noexcept;
 
 }  // namespace cy::rendering::lightmaps

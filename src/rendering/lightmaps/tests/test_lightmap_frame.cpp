@@ -134,4 +134,13 @@ CY_TEST_CASE("the density view is one word and a target, and off by default") {
     cy::f32 target = 0.0F;
     std::memcpy(&target, &view.lightmap_debug[1], sizeof(target));
     CY_CHECK_EQ(target, 2.5F);
+
+    // The viewport's debug view reaches the same words, and no other mode touches them.
+    cy::rendering::pipeline::FrameViewData other;
+    CY_CHECK_FALSE(
+        write_lightmap_debug_view(cy::render::DebugViewMode::Overdraw, 2.5F, other));
+    CY_CHECK_EQ(other.lightmap_debug[0], 0U);
+    CY_CHECK(
+        write_lightmap_debug_view(cy::render::DebugViewMode::LightmapDensity, 2.5F, other));
+    CY_CHECK_EQ(other.lightmap_debug[0], cy::rendering::pipeline::kLightmapDensityView);
 }

@@ -28,6 +28,7 @@ cy-editor-core = { path = "../cy-editor-core" }
 cy-editor-documents = { path = "../cy-editor-documents" }
 cy-editor-reflection = { path = "../cy-editor-reflection" }
 cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
 cy-editor-visual = { path = "../cy-editor-visual" }
 
 # The end-to-end proof that the inspector is generated rather than written: `tests/` builds a

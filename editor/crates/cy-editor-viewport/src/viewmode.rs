@@ -26,7 +26,7 @@
 //!
 //! --- WHAT THE SPECIFICATION NAMES AND THE ENGINE HAS NOT GOT YET ------------------------------------
 //!
-//! The requirement's list is longer than the engine's enum. Lightmap and GI probe visualisation,
+//! The requirement's list is longer than the engine's enum. GI probe visualisation,
 //! virtual texture feedback and residency, virtual shadow page views, physics colliders, navigation
 //! data, audio emitters and streaming region state are all named there and none of them exists in
 //! `DebugViewMode` today, because the subsystems that would draw them arrive at M6 and later.
@@ -81,10 +81,12 @@ pub enum ViewMode {
     ShadowCascades = 17,
     /// Instance bounding volumes.
     BoundingVolumes = 18,
+    /// Each lightmapped surface's lightmap texel density against the level's target.
+    LightmapDensity = 19,
 }
 
 /// Every mode, in the engine's order.
-pub const ALL_VIEW_MODES: [ViewMode; 19] = [
+pub const ALL_VIEW_MODES: [ViewMode; 20] = [
     ViewMode::Off,
     ViewMode::Albedo,
     ViewMode::Normals,
@@ -104,6 +106,7 @@ pub const ALL_VIEW_MODES: [ViewMode; 19] = [
     ViewMode::GiContribution,
     ViewMode::ShadowCascades,
     ViewMode::BoundingVolumes,
+    ViewMode::LightmapDensity,
 ];
 
 impl ViewMode {
@@ -137,6 +140,7 @@ impl ViewMode {
             ViewMode::GiContribution => "GiContribution",
             ViewMode::ShadowCascades => "ShadowCascades",
             ViewMode::BoundingVolumes => "BoundingVolumes",
+            ViewMode::LightmapDensity => "LightmapDensity",
         }
     }
 
@@ -176,6 +180,7 @@ impl ViewMode {
             ViewMode::GiContribution => "Indirect Light",
             ViewMode::ShadowCascades => "Shadow Cascades",
             ViewMode::BoundingVolumes => "Bounding Volumes",
+            ViewMode::LightmapDensity => "Lightmap Density",
         }
     }
 
@@ -202,6 +207,10 @@ impl ViewMode {
             ViewMode::GiContribution => "the indirect lighting alone, with direct light removed",
             ViewMode::ShadowCascades => "which shadow cascade shaded each pixel",
             ViewMode::BoundingVolumes => "the bounding volume culling and picking use",
+            ViewMode::LightmapDensity => {
+                "each lightmapped surface as a checker of its own lightmap texels, coloured by \
+                 the density the atlas gives it against the level's target"
+            }
         }
     }
 
@@ -292,6 +301,12 @@ impl ViewMode {
                 "A volume much larger than its object is why that object \
                                           is picked from far away and culled too late."
             }
+            ViewMode::LightmapDensity => {
+                "Green is on target; toward blue is half the density and below, toward red \
+                 twice it and above, and each checker cell is one lightmap texel. Grey has no \
+                 lightmap. Raise an object's resolution scale where its shadows are blocky, and \
+                 lower it where red spends texels nobody sees."
+            }
         }
     }
 }
@@ -303,8 +318,7 @@ impl ViewMode {
 /// see what is missing without reading a header comment. Each of these becomes a [`ViewMode`] when
 /// its capability arrives — and the entry is deleted from here in the same change, which is the
 /// property that keeps this list from becoming a lie.
-pub const PLANNED_VIEWS: [(&str, &str); 8] = [
-    ("Lightmap density", "rendering-global-illumination"),
+pub const PLANNED_VIEWS: [(&str, &str); 7] = [
     ("GI probe placement", "rendering-global-illumination"),
     ("Virtual texture feedback", "virtual-texturing"),
     ("Virtual texture residency", "residency"),

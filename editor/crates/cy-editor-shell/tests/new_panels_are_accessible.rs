@@ -19,7 +19,7 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 10] = [
+const NEW_PANELS: [(&str, &str); 11] = [
     ("undo-history", "Undo"),
     ("settings", "Apply"),
     ("source-control", "Refresh"),
@@ -28,6 +28,7 @@ const NEW_PANELS: [(&str, &str); 10] = [
     ("editor-materials", "Engine catalogue"),
     ("editor-vfx-graph", "Engine catalogue"),
     ("editor-terrain", "No world is open."),
+    ("editor-lighting-and-lightmap-baking", "Bake lightmaps"),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
 ];

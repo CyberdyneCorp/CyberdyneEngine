@@ -34,6 +34,7 @@ pub mod builtin;
 pub mod documents;
 pub mod editor;
 pub mod gizmo;
+pub mod lightmaps;
 pub mod manipulate;
 pub mod material_commands;
 pub mod material_graph;
@@ -79,6 +80,7 @@ pub use backend::{
 pub use cy_editor_sdk::HostingMode;
 pub use documents::{CloseDecision, CloseOutcome, DocumentService};
 pub use editor::{Editor, ReloadReport};
+pub use lightmaps::{LightmapBakeCompletion, LightmapBakeService};
 pub use mirror::{RuntimeMirror, engine_identity};
 pub use notifications::{Notification, NotificationService, Severity};
 pub use operations::OperationService;

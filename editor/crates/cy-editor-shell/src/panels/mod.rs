@@ -29,6 +29,7 @@ mod graph_canvas;
 mod hierarchy;
 mod history;
 mod inspector;
+mod lighting;
 mod material_graph;
 use cy_editor_services::material_parameters;
 mod pending;
@@ -513,6 +514,7 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "editor-materials" => material_graph::show(self, ui),
                 "editor-vfx-graph" => vfx_graph::show(self, ui),
                 "editor-terrain" => specialised::show::<terrain::TerrainTool>(self, ui),
+                "editor-lighting-and-lightmap-baking" => lighting::show(self, ui),
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),
                 "profiler" => diagnostics::profiler(self, ui),

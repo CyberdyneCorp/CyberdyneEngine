@@ -73,6 +73,7 @@ constexpr const char* kDebugViewModeNames[] = {
     "GiContribution",
     "ShadowCascades",
     "BoundingVolumes",
+    "LightmapDensity",
 };
 static_assert(sizeof(kDebugViewModeNames) / sizeof(kDebugViewModeNames[0]) == kDebugViewModeCount);
 
