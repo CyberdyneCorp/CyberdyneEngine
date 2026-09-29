@@ -12,7 +12,7 @@
 
 use cy_editor_commands::{Arguments, CommandContext, Outcome, Registry, Scope};
 use cy_editor_core::Actor;
-use cy_editor_core::ids::DocumentId;
+use cy_editor_core::ids::{DocumentId, NodeId};
 use cy_editor_core::observe::Revision;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
@@ -29,6 +29,7 @@ use cy_editor_viewport::play::{PlayMode, PlayState};
 use crate::asset_catalogue::AssetCatalogueService;
 use crate::assets::{AssetImportService, ExternalImportCompletion};
 use crate::documents::{CloseDecision, CloseOutcome, DocumentService};
+use crate::lightmaps::LightmapBakeService;
 use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
@@ -130,6 +131,8 @@ pub struct Editor {
     pub backend: BackendServices,
     /// The engine's navigation service: bake progress, results and query answers. Issue #28.
     pub navmesh: crate::navmesh_service::NavmeshService,
+    /// What the engine's terrain module evaluated for the terrain being edited.
+    pub terrain: crate::terrain_engine::TerrainEngine,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
     /// What keeps the hosted runtime in step with the document, and what carries the engine's gizmo
@@ -149,6 +152,8 @@ pub struct Editor {
     /// the reason every other one is here: which importer ran, what it produced and what the cache
     /// said are things a panel shows and an agent asks about.
     pub imports: AssetImportService,
+    /// The project's lightmap bakes, run out of process as `cy_build lightmap`. Issue #36.
+    pub lightmaps: LightmapBakeService,
     /// Deterministic project files shown by the Content Browser.
     pub asset_catalogue: AssetCatalogueService,
     /// Project settings and per-user preferences, with distinct persistence surfaces.
@@ -218,10 +223,12 @@ impl Editor {
             operations: OperationService::new(),
             backend: BackendServices::new(),
             navmesh: crate::navmesh_service::NavmeshService::new(),
+            terrain: crate::terrain_engine::TerrainEngine::new(),
             runtime: RuntimeSession::none(),
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
             imports: AssetImportService::new(project.root()),
+            lightmaps: LightmapBakeService::new(project.root()),
             asset_catalogue: AssetCatalogueService::new(project.root()),
             settings: SettingsService::default(),
             source_control: SourceControlService::default(),
@@ -256,6 +263,7 @@ impl Editor {
             self.documents.rooted_at(project.root());
         }
         self.imports.rooted_at(project.root());
+        self.lightmaps.rooted_at(project.root());
         self.asset_catalogue = AssetCatalogueService::new(project.root());
         self.sources = SourceWorkspaceService::new(project.root());
         self.source_language = SourceLanguageService::new(project.root());
@@ -272,6 +280,39 @@ impl Editor {
     pub fn with_importer(mut self, imports: AssetImportService) -> Self {
         self.imports = imports;
         self
+    }
+
+    /// Bake through something else — a test's recording double.
+    ///
+    /// After [`Editor::with_project`], for the reason [`Editor::with_importer`] gives.
+    #[must_use]
+    pub fn with_lightmap_baker(mut self, lightmaps: LightmapBakeService) -> Self {
+        self.lightmaps = lightmaps;
+        self
+    }
+
+    /// Start baking a level's lightmaps, returning the operation's stable request identity.
+    pub fn bake_lightmaps(&mut self, description: &str, output: &str) -> Result<u64> {
+        self.lightmaps
+            .start(&mut self.operations, description, output)
+    }
+
+    /// Ask a lightmap bake to stop: `request`, or the most recently started.
+    pub fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        let request = request.or(self.lightmaps.latest()).ok_or_else(|| {
+            Problem::new(
+                "cancel a lightmap bake",
+                "no lightmap bake has been started",
+            )
+        })?;
+        if self.operations.cancel(request) {
+            Ok(request)
+        } else {
+            Err(Problem::new(
+                "cancel a lightmap bake",
+                format!("no operation #{request} is running"),
+            ))
+        }
     }
 
     /// Queue an external source for staging and import, returning its stable request identity.
@@ -715,6 +756,37 @@ impl Editor {
         }
     }
 
+    /// The terrain being edited: the selected terrain root, else the active world's first.
+    #[must_use]
+    pub fn edited_terrain(&self) -> Option<NodeId> {
+        let document = self.documents.get(self.workspace.active()?)?;
+        let is_terrain =
+            |node: NodeId| crate::terrain::TerrainStack::read(document, node).is_some();
+        self.selection
+            .get()
+            .nodes()
+            .find(|node| is_terrain(*node))
+            .or_else(|| {
+                document
+                    .content()
+                    .roots()
+                    .iter()
+                    .copied()
+                    .find(|node| is_terrain(*node))
+            })
+    }
+
+    /// The `terrain.evaluate` request for the edited terrain's current stack.
+    #[must_use]
+    pub fn edited_terrain_request(
+        &self,
+    ) -> Option<(NodeId, cy_editor_core::problem::Result<Vec<u8>>)> {
+        let terrain = self.edited_terrain()?;
+        let document = self.documents.get(self.workspace.active()?)?;
+        crate::terrain_engine::evaluation_request(document, terrain)
+            .map(|request| (terrain, request))
+    }
+
     /// One frame of the editor's own housekeeping.
     ///
     /// Everything here is bounded and non-blocking: drain what the runtime sent, forget settled
@@ -762,6 +834,12 @@ impl Editor {
                     problem,
                 ));
             }
+            if let Some(problem) = self.terrain.accept(message) {
+                self.notifications.post(Notification::error(
+                    "The engine refused the terrain",
+                    problem,
+                ));
+            }
             self.accept_reload_message(message);
             if let Some(problem) = self.navmesh.accept(message) {
                 self.notifications.post(Notification::error(
@@ -774,6 +852,13 @@ impl Editor {
         if let Some(problem) = self.backend.maintain(&self.runtime) {
             self.notifications.post(Notification::error(
                 "The material backend is unavailable",
+                problem,
+            ));
+        }
+        let wanted = self.edited_terrain_request();
+        if let Some(problem) = self.terrain.maintain(&self.runtime, wanted) {
+            self.notifications.post(Notification::error(
+                "The terrain could not be sent to the engine",
                 problem,
             ));
         }
@@ -1007,6 +1092,10 @@ impl CommandContext for Editor {
         self.workspace.active()
     }
 
+    fn terrain_status(&self) -> Outcome {
+        self.terrain.status()
+    }
+
     fn document(&self, id: DocumentId) -> Option<&Document> {
         self.documents.get(id)
     }
@@ -1045,6 +1134,14 @@ impl CommandContext for Editor {
 
     fn start_external_asset_import(&mut self, source: &str, destination: &str) -> Result<u64> {
         self.import_external(std::path::PathBuf::from(source), destination.to_string())
+    }
+
+    fn start_lightmap_bake(&mut self, description: &str, output: &str) -> Result<u64> {
+        self.bake_lightmaps(description, output)
+    }
+
+    fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        Editor::cancel_lightmap_bake(self, request)
     }
 
     fn settings(&mut self) -> Option<&mut dyn cy_editor_commands::SettingsHost> {

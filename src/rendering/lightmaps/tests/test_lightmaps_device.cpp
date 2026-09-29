@@ -32,7 +32,11 @@
 //       alone and a surface without one takes the volume, as `gi::exclusion_for()` says;
 //   (e) the directional and SH L1 encodings draw the irradiance encoding's picture at the
 //       geometric normal, which is the only normal the frame has;
-//   (f) an unchanged lightmap is not uploaded again.
+//   (f) an unchanged lightmap is not uploaded again;
+//   (g)-(l) the baked lights, the mip chain and the density view, each case saying what it holds;
+//   (m) a stationary sun through the darker of its mask channel and a bound real-time shadow map,
+//       with a movable occluder only the map sees;
+//   (n) the frame's time without the lightmap, with it and with its mask — a measurement.
 //
 // Every frame is the SECOND frame of its scene with the temporal history cut, as in
 // `render.light_probes`, so the first frame — which the flat ambient is read from — never blends
@@ -43,12 +47,20 @@
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+#    include <cy/backends/rhi-metal/backend.h>
+#else
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#endif
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/irradiance_volume.h>
 #include <cy/rendering/gi/proxy_scene.h>
+#include <cy/rendering/graph/executor.h>
+#include <cy/rendering/graph/graph.h>
 #include <cy/rendering/light_probes/probe_volume_texture.h>
+#include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
+#include <cy/rendering/lightmap_bake/mips.h>
 #include <cy/rendering/lightmaps/lightmap_textures.h>
 #include <cy/test/test.h>
 
@@ -59,6 +71,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <numbers>
+#include <numeric>
 #include <vector>
 
 using namespace cy;
@@ -79,6 +93,10 @@ namespace {
 
 constexpr u32 kLightmapSlot = 116;  // three consecutive slots: 116, 117, 118
 constexpr u32 kVolumeSlot = 121;
+constexpr u32 kShadowMaskSlot = 119;
+constexpr u32 kShadowMapSlot = 120;
+/// The level's texel density, texels per metre: the bake's, and the density view's target.
+constexpr f32 kTexelDensity = 2.5F;
 constexpr f32 kFloorTop = -1.9F + 0.125F;
 constexpr f32 kBackWall = -9.0F;
 constexpr f32 kRedWall = -2.4F;
@@ -87,6 +105,17 @@ constexpr f32 kSunLux = 100000.0F;
 constexpr f32 kExposureShift = -2.18F;
 constexpr f32 kWhite = 0.8F;
 constexpr Vec3 kRed{0.85F, 0.08F, 0.06F};
+
+/// The real-time shadow map (m) binds: `render.volumetric_fog`'s orthographic box, 18 m across and
+/// 2048 texels, 8.8 mm a texel, turned to this corner's sun.
+constexpr f32 kShadowRadius = 9.0F;
+constexpr f32 kShadowNear = 0.1F;
+constexpr f32 kShadowFar = kShadowRadius * 4.0F;
+constexpr Vec3 kShadowCentre{0.5F, -1.8F, -6.5F};
+constexpr u32 kShadowExtent = 2048;
+/// A movable box over the lit floor, in no bake: the occluder only the real-time map sees.
+constexpr f32 kOccluderHalf = 0.35F;
+constexpr Vec3 kOccluderCentre{1.4F, kFloorTop + 1.5F, -5.2F};
 
 enum Box : u32 {
     kFloor = 0,
@@ -102,6 +131,14 @@ Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Renderer);
 }
 
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+constexpr const char* kBackendName = "metal";
+constexpr rhi::BackendKind kBackend = rhi::BackendKind::Metal;
+#else
+constexpr const char* kBackendName = "vulkan";
+constexpr rhi::BackendKind kBackend = rhi::BackendKind::Vulkan;
+#endif
+
 void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
     if (severity == rhi::ValidationSeverity::Error && user != nullptr) {
         ++*static_cast<u32*>(user);
@@ -114,13 +151,17 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
 class DeviceFixture {
 public:
     DeviceFixture() noexcept : allocator_(system_allocator(MemoryDomain::Gpu)) {
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+        (void)rhi::metal::register_metal_backend();
+#else
         (void)rhi::vulkan::register_vulkan_backend();
+#endif
         (void)rhi::null::register_null_backend();
         rhi::DeviceDescription description;
         description.application_name = "cy_test_render_lightmaps";
         description.enable_validation = true;
         description.enable_synchronisation_validation = true;
-        device_ = rhi::create_device(allocator_, "vulkan", description, selection_);
+        device_ = rhi::create_device(allocator_, kBackendName, description, selection_);
         if (device_.has_value()) {
             device_.value()->set_validation_callback(&count_validation, &errors_);
         }
@@ -135,8 +176,7 @@ public:
     DeviceFixture& operator=(const DeviceFixture&) = delete;
 
     [[nodiscard]] bool has_gpu() const noexcept {
-        return device_.has_value() &&
-               device_.value()->capabilities().backend() == rhi::BackendKind::Vulkan;
+        return device_.has_value() && device_.value()->capabilities().backend() == kBackend;
     }
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] u32 validation_errors() const noexcept { return errors_; }
@@ -231,45 +271,19 @@ Vec3 albedo_of(u32 box) noexcept {
     return box == kRedWallBox ? kRed : Vec3{kWhite, kWhite, kWhite};
 }
 
-void place_box(u32 which, Vec3& centre, f32& half, void*) noexcept {
-    switch (which) {
-        case kRedWallBox:
-            half = 3.0F;
-            centre = Vec3{kRedWall - half, kFloorTop + half, -7.0F};
-            return;
-        case kBackLeft:
-            half = 3.0F;
-            centre = Vec3{-1.5F, kFloorTop + half, kBackWall - half};
-            return;
-        case kBackRight:
-            half = 3.0F;
-            centre = Vec3{4.5F, kFloorTop + half, kBackWall - half};
-            return;
-        case kCubeNear:
-            half = 0.5F;
-            centre = Vec3{-1.6F, kFloorTop + half, -6.5F};
-            return;
-        case kCubeFar:
-            half = 0.5F;
-            centre = Vec3{3.2F, kFloorTop + half, -6.5F};
-            return;
-        default:
-            half = 0.3F;
-            centre = Vec3{0.0F, -40.0F, 40.0F};
-            return;
-    }
-}
-
 // --- The cube's lightmap coordinates ------------------------------------------------------------
 
 /// `pipeline_test::CubeMesh`'s faces, in its order, and the tangent it builds each from.
 constexpr Vec3 kFaceNormals[6] = {Vec3{1, 0, 0},  Vec3{-1, 0, 0}, Vec3{0, 1, 0},
                                   Vec3{0, -1, 0}, Vec3{0, 0, 1},  Vec3{0, 0, -1}};
 /// Each face's cell leaves this share of the cell on every side as chart padding. With the
-/// resolution scales `bake_corner` gives, it is at least one and a half texels on every box, which
-/// is what keeps a bilinear tap at a face's edge on its own face: at 0.06 the small cubes' cells
-/// were four texels wide with a quarter-texel of padding, and their edges read the next face.
-constexpr f32 kCellPadding = 0.1F;
+/// resolution scales `bake_corner` gives, two cells are at least `required_chart_gap` — four
+/// texels, two of the one mip level a 256 page protects — apart on every box, which is what keeps a
+/// bilinear tap at a face's edge on its own face at every level: at 0.06 the small cubes' cells
+/// were four texels wide with a quarter-texel of padding, and their edges read the next face; at
+/// 0.1 five boxes were short of the mip level's gap, and the directional encoding's level-1 taps at
+/// a far cube's edge read the next face's normal (two 8-bit steps in case (e)).
+constexpr f32 kCellPadding = 0.18F;
 
 [[nodiscard]] Vec3 face_tangent(Vec3 normal) noexcept {
     return std::fabs(normal.y) > 0.5F ? Vec3{1.0F, 0.0F, 0.0F} : Vec3{0.0F, 1.0F, 0.0F};
@@ -331,12 +345,30 @@ struct LightmappedCube {
                               Vec4{centre.x, centre.y, centre.z, 1.0F});
 }
 
-gi::GiLight gi_sun() noexcept {
+gi::GiLight gi_sun(gi::LightMobility mobility = gi::LightMobility::Stationary) noexcept {
     gi::GiLight light;
+    light.mobility = mobility;
     light.directional = true;
     light.direction = normalize(kSunTravel);
     light.intensity = kSunLux;
     light.id = 1;
+    return light;
+}
+
+/// A stationary lamp between the two cubes, low over the floor: they cast its shadows on the floor
+/// away from it. Its stable id is 2, the frame's second light and the mask's second channel.
+constexpr Vec3 kLampPosition{0.8F, kFloorTop + 1.3F, -6.5F};
+constexpr f32 kLampCandela = 150000.0F;
+constexpr f32 kLampRange = 14.0F;
+constexpr u64 kLampId = 2;
+
+gi::GiLight gi_lamp() noexcept {
+    gi::GiLight light;
+    light.position = kLampPosition;
+    light.intensity = kLampCandela;
+    light.range = kLampRange;
+    light.mobility = gi::LightMobility::Stationary;
+    light.id = kLampId;
     return light;
 }
 
@@ -349,9 +381,12 @@ struct CornerBake {
 };
 
 [[nodiscard]] const CornerBake* bake_corner(Span<const Aabb> boxes, Vec3 flat,
-                                            bake::LightmapMode mode) {
-    static std::unique_ptr<CornerBake> baked[3];
-    std::unique_ptr<CornerBake>& slot = baked[static_cast<u32>(mode)];
+                                            bake::LightmapMode mode, gi::LightMobility mobility,
+                                            bool lamp) {
+    static std::unique_ptr<CornerBake> baked[12];
+    const bool baked_direct = mobility == gi::LightMobility::Static;
+    std::unique_ptr<CornerBake>& slot =
+        baked[(static_cast<u32>(mode) * 4U) + (baked_direct ? 1U : 0U) + (lamp ? 2U : 0U)];
     if (slot != nullptr) {
         return slot.get();
     }
@@ -379,12 +414,12 @@ struct CornerBake {
         instance.id = box;
         instances.push_back(instance);
     }
-    const gi::GiLight sun = gi_sun();
+    const gi::GiLight lights[2] = {gi_sun(mobility), gi_lamp()};
     bake::LightmapScene scene;
     scene.meshes = {&mesh, 1};
     scene.materials = {materials.data(), materials.size()};
     scene.instances = {instances.data(), instances.size()};
-    scene.lights = {&sun, 1};
+    scene.lights = {lights, lamp ? 2U : 1U};
     scene.sky.zenith = flat;
     scene.sky.horizon = flat;
     scene.sky.ground = flat;
@@ -394,7 +429,7 @@ struct CornerBake {
     // One 256 page holds the corner; a 512 one was four fifths empty and every pass over the
     // atlas paid for the empty part.
     settings.atlas.page_size = 256;
-    settings.atlas.texel_density = 2.5F;
+    settings.atlas.texel_density = kTexelDensity;
     settings.trace.bounces = 1;
     settings.trace.samples = 24;
     settings.trace.max_distance_metres = 40.0F;
@@ -410,13 +445,73 @@ struct CornerBake {
     }
     std::fprintf(stderr,
                  "lightmaps: %s bake of the corner in %.2f s: %u objects, %u page(s) of %u, %u "
-                 "texels traced, %u dilated, %llu rays, %.1f KiB on the device\n",
+                 "texels traced, %u dilated, %llu rays, %.1f KiB on the device; %zu object(s) "
+                 "with charts closer than %u texels\n",
                  bake::lightmap_mode_name(mode), out->seconds, out->report.objects,
                  out->report.pages, out->lightmap.page_size, out->report.texels_covered,
                  out->report.texels_dilated, static_cast<unsigned long long>(out->report.rays),
-                 static_cast<double>(out->lightmap.device_bytes()) / 1024.0);
+                 static_cast<double>(out->lightmap.device_bytes()) / 1024.0,
+                 out->report.padding_short.size(), out->report.required_chart_gap);
+    // The mip chain's contract: every object's charts are as far apart as its levels need.
+    CY_CHECK(out->report.padding_short.empty());
     slot = std::move(out);
     return slot.get();
+}
+
+/// The mip probe: a 1024 page whose one rectangle is the whole page and belongs to the floor, so
+/// the floor's top face gets about twenty texels a metre and the far floor, seen at a grazing
+/// angle, minifies through several levels. The base level is the flat ambient's grey and every
+/// level below it red, so any pixel that reads a coarser level turns red — which it can only do if
+/// the frame samples with the implicit level of detail and the upload carried the chain.
+[[nodiscard]] std::unique_ptr<bake::BakedLightmap> mip_probe(Vec3 flat) {
+    auto probe = std::make_unique<bake::BakedLightmap>();
+    probe->mode = bake::LightmapMode::Irradiance;
+    probe->page_size = 1024;
+    probe->pages = 1;
+    bake::AtlasSettings atlas;
+    atlas.page_size = 1024;
+    atlas.mip_levels = 3;
+    probe->gutter_texels = bake::gutter_for(atlas);
+    probe->mip_levels = 3;
+    const f32 grey = (flat.x + flat.y + flat.z) / 3.0F;
+    const auto fill = [](bake::LightmapTexels& texels, u32 size, Vec4 value) {
+        texels.width = size;
+        texels.height = size;
+        texels.planes = 1;
+        if (!texels.texels.resize(usize{size} * size).has_value()) {
+            return false;
+        }
+        for (Vec4& texel : texels.texels) {
+            texel = value;
+        }
+        return true;
+    };
+    if (!fill(probe->texels, 1024, Vec4{grey, grey, grey, 1.0F})) {
+        return nullptr;
+    }
+    for (u32 level = 1; level <= probe->mip_levels; ++level) {
+        if (!fill(probe->mip_texels[level - 1U], 1024U >> level,
+                  Vec4{grey * 3.0F, 0.0F, 0.0F, 1.0F})) {
+            return nullptr;
+        }
+    }
+    const bake::AtlasPlacement whole{0, 0, 0, bake::kAddressBlocks, bake::kAddressBlocks, false};
+    for (u32 box = 0; box < kUsedBoxes; ++box) {
+        if (!probe->addresses
+                 .push_back(box == kFloor ? bake::encode_address(whole) : bake::kNoLightmapAddress)
+                 .has_value()) {
+            return nullptr;
+        }
+    }
+    return probe;
+}
+
+[[nodiscard]] bool copy_texels(const bake::LightmapTexels& from, bake::LightmapTexels& to) {
+    to.width = from.width;
+    to.height = from.height;
+    to.planes = from.planes;
+    to.texels.clear();
+    return to.texels.append(from.texels.span()).has_value();
 }
 
 // --- The run ------------------------------------------------------------------------------------
@@ -442,12 +537,36 @@ struct RunOptions {
     bool volume = false;
     /// Leave this box without a lightmap address.
     u32 unaddressed_box = ~0U;
+    /// What the bake takes the sun to be: its direct term stays the frame's (`Stationary`, with a
+    /// shadow-mask channel) or goes into the texels (`Static`).
+    gi::LightMobility sun_mobility = gi::LightMobility::Stationary;
+    /// The frame's sun intensity over the baked one: a stationary light moved at run time.
+    f32 sun_scale = 1.0F;
+    /// Tell the frame which of its lights the bake's sun is. Off, the frame's sun matches no baked
+    /// light: it is shaded as the frame before the shadow mask shaded it, with no baked shadow.
+    bool match_lights = true;
+    /// Draw the texel-density view instead of the lit frame.
+    bool density_view = false;
+    /// Bake and shade the stationary lamp too, at this share of its baked intensity.
+    bool lamp = false;
+    f32 lamp_scale = 1.0F;
+    /// Replace the bake by the mip probe: the floor alone, one flat colour at the base level and
+    /// another at every level below it.
+    bool mip_probe = false;
+    /// Render the sun's real-time shadow map and bind it, as `render.volumetric_fog` does.
+    bool shadow_map = false;
+    /// Hang the movable occluder over the lit floor. It is in no bake and has no lightmap.
+    bool occluder = false;
+    /// The density view's target, texels per metre, and a shift of the frame's exposure in stops.
+    f32 density_target = kTexelDensity;
+    f32 exposure_shift = 0.0F;
 };
 
 struct Corner {
     FrameScene* scene = nullptr;
     RunOptions options;
-    render::LightDescription sun;
+    /// The frame's lights: the sun, then the lamp.
+    render::LightDescription lights[2];
     std::vector<pipeline::InstanceTransform> instances;
     std::vector<u8> materials;
     std::vector<rendering::GpuDrawInstance> draws;
@@ -457,21 +576,117 @@ struct Corner {
     const gi::IrradianceVolume* volume = nullptr;
     Vec3 flat{0.0F, 0.0F, 0.0F};
     bool attach = false;
+    rhi::TextureHandle shadow_color;
+    rhi::TextureHandle shadow_depth;
+    rhi::TextureViewHandle shadow_view;
+    rendering::FrameResourceRead shadow_read[1] = {};
 };
+
+/// The corner's boxes where `render.light_probes` puts them; and, for a case that asks, the movable
+/// occluder in the first box past the baked ones.
+void place_box(u32 which, Vec3& centre, f32& half, void* user) noexcept {
+    const auto* corner = static_cast<const Corner*>(user);
+    if (which == kUsedBoxes && corner != nullptr && corner->options.occluder) {
+        half = kOccluderHalf;
+        centre = kOccluderCentre;
+        return;
+    }
+    switch (which) {
+        case kRedWallBox:
+            half = 3.0F;
+            centre = Vec3{kRedWall - half, kFloorTop + half, -7.0F};
+            return;
+        case kBackLeft:
+            half = 3.0F;
+            centre = Vec3{-1.5F, kFloorTop + half, kBackWall - half};
+            return;
+        case kBackRight:
+            half = 3.0F;
+            centre = Vec3{4.5F, kFloorTop + half, kBackWall - half};
+            return;
+        case kCubeNear:
+            half = 0.5F;
+            centre = Vec3{-1.6F, kFloorTop + half, -6.5F};
+            return;
+        case kCubeFar:
+            half = 0.5F;
+            centre = Vec3{3.2F, kFloorTop + half, -6.5F};
+            return;
+        default:
+            half = 0.3F;
+            centre = Vec3{0.0F, -40.0F, 40.0F};
+            return;
+    }
+}
 
 void configure_corner(rendering::assembly::AssemblyDescription& description, void*) noexcept {
     description.pin_jitter = true;
     description.post.ambient_occlusion = false;
 }
 
-Status before_assemble(rendering::RenderGraph&, rendering::assembly::AssemblyView& view,
-                       rendering::assembly::FrameSinks&, void* user) noexcept {
+/// The sun's orthographic shadow volume over the corner, camera-relative — the camera is at the
+/// origin — in the reversed-Z clip space the frame's `directionalShadowVisibility` reads.
+[[nodiscard]] Mat4 shadow_to_clip() noexcept {
+    const Vec3 travel = normalize(kSunTravel);
+    const Vec3 eye = kShadowCentre - (travel * (kShadowRadius * 2.0F));
+    const Mat4 view = look_at(eye, kShadowCentre, Vec3{0.0F, 0.0F, -1.0F});
+    const Mat4 projection = orthographic_reversed_z(-kShadowRadius, kShadowRadius, -kShadowRadius,
+                                                    kShadowRadius, kShadowNear, kShadowFar);
+    return projection * view;
+}
+
+/// The frame's shadow pass into the corner's map, and the opaque pass's read of it — what
+/// `render.volumetric_fog` declares.
+void declare_shadow_map(Corner& corner, rendering::RenderGraph& graph,
+                        rendering::assembly::AssemblyView& view,
+                        rendering::assembly::FrameSinks& sinks) noexcept {
+    rendering::TextureRequest request;
+    request.name = "lightmaps test shadow map";
+    request.format = rhi::Format::R32Sfloat;
+    request.width = kShadowExtent;
+    request.height = kShadowExtent;
+    view.shadow_color =
+        graph.import_texture(request, corner.shadow_color, rhi::ImageUse::Undefined);
+    request.name = "lightmaps test shadow depth";
+    request.format = rhi::Format::D32Sfloat;
+    view.shadow_depth =
+        graph.import_texture(request, corner.shadow_depth, rhi::ImageUse::Undefined);
+    pipeline::FrameRecorder& recorder = corner.scene->recorder();
+    recorder.set_shadow_targets(view.shadow_color, view.shadow_depth, kShadowExtent);
+    const auto shadow = static_cast<usize>(rendering::FramePassKind::Shadow);
+    sinks.passes[shadow] = recorder.sinks().passes[shadow];
+    const auto opaque = static_cast<usize>(rendering::FramePassKind::Opaque);
+    corner.shadow_read[0] =
+        rendering::FrameResourceRead{view.shadow_color, rhi::Access::FragmentSampledRead};
+    sinks.passes[opaque].reads = Span<const rendering::FrameResourceRead>(corner.shadow_read, 1);
+}
+
+Status before_assemble(rendering::RenderGraph& graph, rendering::assembly::AssemblyView& view,
+                       rendering::assembly::FrameSinks& sinks, void* user) noexcept {
     auto* corner = static_cast<Corner*>(user);
-    view.lights = corner->options.frame_sun ? Span<const render::LightDescription>(&corner->sun, 1)
-                                            : Span<const render::LightDescription>();
+    const u32 first = corner->options.frame_sun ? 0U : 1U;
+    const u32 end = corner->options.lamp ? 2U : 1U;
+    view.lights = Span<const render::LightDescription>(corner->lights + first, end - first);
     view.sun_direction = normalize(-kSunTravel);
     view.cut = true;
+    if (corner->options.shadow_map) {
+        declare_shadow_map(*corner, graph, view, sinks);
+    }
     return ok();
+}
+
+/// The frame's words for the map: its slot, the sun — the frame's first light — and its extent.
+void write_shadow_words(pipeline::FrameUpload& upload) noexcept {
+    const Mat4 to_clip = shadow_to_clip();
+    for (u32 row = 0; row < 4; ++row) {
+        for (u32 column = 0; column < 4; ++column) {
+            upload.view.shadow_to_clip[(row * 4U) + column] = to_clip.at(row, column);
+        }
+    }
+    upload.view.shadow_control[0] = kShadowMapSlot;
+    upload.view.shadow_control[1] = 0U;
+    upload.view.shadow_control[2] = kShadowExtent;
+    upload.view.shadow_control[3] = 1U;
 }
 
 void whiten(Corner& corner, pipeline::FrameUpload& upload) noexcept {
@@ -514,46 +729,128 @@ void address_draws(Corner& corner, pipeline::FrameUpload& upload) noexcept {
     upload.draws = Span<const rendering::GpuDrawInstance>(corner.draws.data(), corner.draws.size());
 }
 
-Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
-    auto* corner = static_cast<Corner*>(user);
-    whiten(*corner, upload);
-    upload.globals.exposure_stops += kExposureShift;
-    corner->flat = Vec3{upload.view.ambient_and_occlusion[0], upload.view.ambient_and_occlusion[1],
-                        upload.view.ambient_and_occlusion[2]};
-    if (!corner->attach) {
-        return ok();
-    }
-    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 1];
+/// The lightmap's planes, its shadow mask and — if asked for — the volume, bound to the frame's
+/// set 0, and the slots the lightmap's planes and mask landed in.
+[[nodiscard]] Status bind_frame_textures(Corner& corner,
+                                         lightmaps::LightmapSlots& lightmap_slots) noexcept {
+    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 3];
     u32 count = 0;
-    rhi::BindlessIndex lightmap_slots[lightmaps::kMaxPlanes] = {};
-    for (u32 plane = 0; plane < corner->textures->planes(); ++plane) {
-        lightmap_slots[plane] = kLightmapSlot + plane;
-        slots[count++] = corner->textures->slot(plane, kLightmapSlot + plane);
+    if (corner.options.shadow_map) {
+        slots[count++] = pipeline::MaterialTextureSlot{kShadowMapSlot, corner.shadow_view};
     }
-    if (corner->options.volume) {
-        slots[count++] = corner->volume_texture->slot(kVolumeSlot);
+    const u32 planes = corner.attach ? corner.textures->planes() : 0U;
+    for (u32 plane = 0; plane < planes; ++plane) {
+        lightmap_slots.planes[plane] = kLightmapSlot + plane;
+        slots[count++] = corner.textures->slot(plane, kLightmapSlot + plane);
     }
-    if (Status bound = corner->scene->set_frame_textures(
-            Span<const pipeline::MaterialTextureSlot>(slots, count));
-        !bound) {
-        return bound;
+    if (corner.attach && corner.textures->has_shadow_mask()) {
+        lightmap_slots.shadow_mask = kShadowMaskSlot;
+        slots[count++] = corner.textures->shadow_mask_slot(kShadowMaskSlot);
     }
-    if (corner->options.volume) {
-        light_probes::write_probe_volume(kVolumeSlot, *corner->volume,
-                                         corner->volume_texture->layout(), Vec3{}, upload.view);
+    if (corner.attach && corner.options.volume) {
+        slots[count++] = corner.volume_texture->slot(kVolumeSlot);
+    }
+    return corner.scene->set_frame_textures(
+        Span<const pipeline::MaterialTextureSlot>(slots, count));
+}
+
+/// The lightmap's words, lights and draw addresses, for a corner whose lightmap is attached.
+[[nodiscard]] Status write_corner_lightmap(Corner& corner, const lightmaps::LightmapSlots& slots,
+                                           pipeline::FrameUpload& upload) noexcept {
+    if (corner.options.volume) {
+        light_probes::write_probe_volume(kVolumeSlot, *corner.volume,
+                                         corner.volume_texture->layout(), Vec3{}, upload.view);
     }
     const gi::GiMode mode =
-        corner->options.lightmap == Lightmap::ProbeMode ? gi::GiMode::Probe : gi::GiMode::Baked;
+        corner.options.lightmap == Lightmap::ProbeMode ? gi::GiMode::Probe : gi::GiMode::Baked;
+    // The stable ids of the frame's lights in its own order — the ids the bake gave them, or,
+    // unmatched, ids no baked light has.
+    u64 frame_lights[2] = {};
+    u32 frame_count = 0;
+    for (u32 light = corner.options.frame_sun ? 0U : 1U; light < (corner.options.lamp ? 2U : 1U);
+         ++light) {
+        frame_lights[frame_count++] =
+            corner.options.match_lights ? corner.lights[light].stable_id : 900U + light;
+    }
     if (Status written = lightmaps::write_lightmaps(
-            Span<const rhi::BindlessIndex>(lightmap_slots, corner->textures->planes()),
-            *corner->lightmap, mode, upload.view);
+            slots, *corner.lightmap, mode, Span<const u64>(frame_lights, frame_count), upload.view);
         !written) {
         return written;
     }
-    if (corner->options.lightmap != Lightmap::Unaddressed) {
-        address_draws(*corner, upload);
+    if (corner.options.density_view &&
+        !lightmaps::write_lightmap_debug_view(render::DebugViewMode::LightmapDensity,
+                                              corner.options.density_target, upload.view)) {
+        return fail(ErrorCode::Internal, "the density view wrote nothing");
+    }
+    if (corner.options.lightmap != Lightmap::Unaddressed) {
+        address_draws(corner, upload);
     }
     return ok();
+}
+
+Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
+    auto* corner = static_cast<Corner*>(user);
+    whiten(*corner, upload);
+    upload.globals.exposure_stops += kExposureShift + corner->options.exposure_shift;
+    corner->flat = Vec3{upload.view.ambient_and_occlusion[0], upload.view.ambient_and_occlusion[1],
+                        upload.view.ambient_and_occlusion[2]};
+    if (corner->options.shadow_map) {
+        write_shadow_words(upload);
+    }
+    if (!corner->attach && !corner->options.shadow_map) {
+        return ok();
+    }
+    lightmaps::LightmapSlots lightmap_slots;
+    if (Status bound = bind_frame_textures(*corner, lightmap_slots); !bound) {
+        return bound;
+    }
+    return corner->attach ? write_corner_lightmap(*corner, lightmap_slots, upload) : ok();
+}
+
+/// The directional bake cut to its first plane — every level of it — with the same mask, lights
+/// and addresses: what `(e)` compares the directional encoding against.
+[[nodiscard]] std::unique_ptr<bake::BakedLightmap> first_plane_of(
+    const bake::BakedLightmap& source) {
+    auto out = std::make_unique<bake::BakedLightmap>();
+    out->mode = bake::LightmapMode::Irradiance;
+    out->page_size = source.page_size;
+    out->pages = source.pages;
+    out->gutter_texels = source.gutter_texels;
+    out->texels.width = source.texels.width;
+    out->texels.height = source.texels.height;
+    out->texels.planes = 1;
+    const usize count = usize{out->texels.width} * out->texels.height;
+    if (!out->texels.texels.append(Span<const Vec4>(source.texels.texels.data(), count))
+             .has_value() ||
+        !out->addresses.append(source.addresses.span()).has_value()) {
+        return nullptr;
+    }
+    // The same shadow mask, every level, and the same lights: the case compares the
+    // encodings, so everything else is the directional bake's own.
+    if (!copy_texels(source.shadow_mask, out->shadow_mask) ||
+        !out->shadow_lights.append(source.shadow_lights.span()).has_value() ||
+        !out->direct_lights.append(source.direct_lights.span()).has_value()) {
+        return nullptr;
+    }
+    for (u32 level = 0; level < source.mip_levels; ++level) {
+        if (!copy_texels(source.mip_shadow_mask[level], out->mip_shadow_mask[level])) {
+            return nullptr;
+        }
+    }
+    // And the first plane of every level of the chain, which the frame minifies into.
+    out->mip_levels = source.mip_levels;
+    for (u32 level = 0; level < source.mip_levels; ++level) {
+        const bake::LightmapTexels& mip = source.mip_texels[level];
+        bake::LightmapTexels& plane = out->mip_texels[level];
+        plane.width = mip.width;
+        plane.height = mip.height;
+        plane.planes = 1;
+        if (!plane.texels.append(Span<const Vec4>(mip.texels.data(), usize{mip.width} * mip.height))
+                 .has_value()) {
+            return nullptr;
+        }
+    }
+    return out;
 }
 
 /// One corner, the lightmap baked from its boxes, and the frame measured.
@@ -566,11 +863,19 @@ public:
         corner_.textures = &textures_;
         corner_.volume_texture = &volume_texture_;
         corner_.volume = &volume_;
-        corner_.sun.kind = render::LightKind::Directional;
-        corner_.sun.intensity = kSunLux;
-        corner_.sun.transform.rotation =
-            Quat::look_rotation(normalize(kSunTravel), Vec3{0.0F, 1.0F, 0.0F});
-        corner_.sun.stable_id = 1;
+        render::LightDescription& sun = corner_.lights[0];
+        sun.kind = render::LightKind::Directional;
+        sun.intensity = kSunLux * options.sun_scale;
+        sun.transform.rotation = Quat::look_rotation(normalize(kSunTravel), Vec3{0.0F, 1.0F, 0.0F});
+        sun.stable_id = 1;
+        render::LightDescription& lamp = corner_.lights[1];
+        lamp.kind = render::LightKind::Point;
+        // The frame takes a point light in lumens (`lighting::default_unit_for`), the bake in
+        // candela: the same lamp, 4 pi apart.
+        lamp.intensity = kLampCandela * 4.0F * std::numbers::pi_v<f32> * options.lamp_scale;
+        lamp.range = kLampRange;
+        lamp.transform.translation = kLampPosition;
+        lamp.stable_id = kLampId;
         FrameSceneHooks hooks;
         hooks.user = &corner_;
         hooks.configure = &configure_corner;
@@ -582,16 +887,24 @@ public:
         if (!built) {
             std::fprintf(stderr, "lightmaps: build failed: %s\n", built.error().message);
         }
-        ready_ = built.has_value();
+        ready_ = built.has_value() && (!options.shadow_map || create_shadow_map());
         scene_.set_read_back(true);
         textures_.initialize(fixture.device(), allocator());
         volume_texture_.initialize(fixture.device(), allocator());
     }
 
     ~CornerRun() {
+        (void)device_->wait_idle();
         if (!uv_buffer_.is_null()) {
-            (void)device_->wait_idle();
             device_->destroy_buffer(uv_buffer_);
+        }
+        if (!corner_.shadow_view.is_null()) {
+            device_->destroy_texture_view(corner_.shadow_view);
+        }
+        for (const rhi::TextureHandle texture : {corner_.shadow_color, corner_.shadow_depth}) {
+            if (!texture.is_null()) {
+                device_->destroy_texture(texture);
+            }
         }
     }
 
@@ -616,6 +929,20 @@ public:
         return true;
     }
 
+    /// One more frame of the scene `render` drew, with no readback, from the start of its
+    /// recording to the device going idle, on the host's clock.
+    [[nodiscard]] bool time_frame(f64& nanoseconds) {
+        scene_.set_read_back(false);
+        const auto started = std::chrono::steady_clock::now();
+        if (!render_once(report_) || !device_->wait_idle().has_value()) {
+            return false;
+        }
+        nanoseconds =
+            std::chrono::duration<f64, std::nano>(std::chrono::steady_clock::now() - started)
+                .count();
+        return true;
+    }
+
     [[nodiscard]] const std::vector<u32>& pixels() const { return pixels_; }
     [[nodiscard]] const rendering::assembly::AssemblyReport& report() const { return report_; }
     [[nodiscard]] FrameScene& scene() { return scene_; }
@@ -632,30 +959,59 @@ private:
         return rendered.has_value();
     }
 
+    /// The sun's map — a colour target the frame samples and its depth — as
+    /// `render.volumetric_fog` creates it.
+    [[nodiscard]] bool create_shadow_map() {
+        rhi::TextureDescription texture;
+        texture.name = "lightmaps test shadow map";
+        texture.format = rhi::Format::R32Sfloat;
+        texture.extent = rhi::Extent3D{kShadowExtent, kShadowExtent, 1};
+        texture.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
+        Expected<rhi::TextureHandle, Error> color = device_->create_texture(texture);
+        if (!color.has_value()) {
+            return false;
+        }
+        corner_.shadow_color = *color;
+        texture.name = "lightmaps test shadow depth";
+        texture.format = rhi::Format::D32Sfloat;
+        texture.usage = rhi::TextureUsage::DepthStencilAttachment;
+        Expected<rhi::TextureHandle, Error> depth = device_->create_texture(texture);
+        if (!depth.has_value()) {
+            return false;
+        }
+        corner_.shadow_depth = *depth;
+        rhi::TextureViewDescription view;
+        view.name = "lightmaps test shadow map";
+        view.texture = corner_.shadow_color;
+        Expected<rhi::TextureViewHandle, Error> made = device_->create_texture_view(view);
+        if (!made.has_value()) {
+            return false;
+        }
+        corner_.shadow_view = *made;
+        return true;
+    }
+
     /// The bake, the planes, the fourth stream and — if asked for — the volume.
     [[nodiscard]] bool attach() {
         const bake::LightmapMode mode = corner_.options.directional_as_irradiance
                                             ? bake::LightmapMode::Directional
                                             : corner_.options.mode;
-        const CornerBake* baked = bake_corner(scene_.boxes(), corner_.flat, mode);
+        const CornerBake* baked = bake_corner(scene_.boxes(), corner_.flat, mode,
+                                              corner_.options.sun_mobility, corner_.options.lamp);
         if (baked == nullptr) {
             return false;
         }
         corner_.lightmap = &baked->lightmap;
+        if (corner_.options.mip_probe) {
+            probe_ = mip_probe(corner_.flat);
+            if (probe_ == nullptr) {
+                return false;
+            }
+            corner_.lightmap = probe_.get();
+        }
         if (corner_.options.directional_as_irradiance) {
-            first_plane_ = std::make_unique<bake::BakedLightmap>();
-            first_plane_->mode = bake::LightmapMode::Irradiance;
-            first_plane_->page_size = baked->lightmap.page_size;
-            first_plane_->pages = baked->lightmap.pages;
-            first_plane_->gutter_texels = baked->lightmap.gutter_texels;
-            first_plane_->texels.width = baked->lightmap.texels.width;
-            first_plane_->texels.height = baked->lightmap.texels.height;
-            first_plane_->texels.planes = 1;
-            const usize count = usize{first_plane_->texels.width} * first_plane_->texels.height;
-            if (!first_plane_->texels.texels
-                     .append(Span<const Vec4>(baked->lightmap.texels.texels.data(), count))
-                     .has_value() ||
-                !first_plane_->addresses.append(baked->lightmap.addresses.span()).has_value()) {
+            first_plane_ = first_plane_of(baked->lightmap);
+            if (first_plane_ == nullptr) {
                 return false;
             }
             corner_.lightmap = first_plane_.get();
@@ -697,7 +1053,7 @@ private:
                 return false;
             }
         }
-        light_ = gi_sun();
+        light_ = gi_sun(corner_.options.sun_mobility);
         proxies_.set_lights(Span<const gi::GiLight>(&light_, 1));
         gi::IrradianceVolumeSettings settings;
         settings.origin = Vec3{-2.05F, kFloorTop + 0.3F, -8.7F};
@@ -729,6 +1085,7 @@ private:
     gi::BoxProxyScene proxies_;
     gi::GiLight light_{};
     std::unique_ptr<bake::BakedLightmap> first_plane_;
+    std::unique_ptr<bake::BakedLightmap> probe_;
     rhi::BufferHandle uv_buffer_;
     rendering::assembly::AssemblyReport report_{};
     std::vector<u32> pixels_;
@@ -955,10 +1312,22 @@ f64 correlation(const std::vector<f64>& a, const std::vector<f64>& b) {
 /// `references/lightmaps_absent.png`: the corner with no lightmap and no volume, drawn by the frame
 /// shader of 0f1dfd1 — a byte-for-byte copy of `render.light_probes`' reference, whose corner this
 /// suite rebuilds exactly.
+///
+/// ONE REFERENCE PER BACKEND: Metal's rasteriser and its compiled MSL round differently from
+/// Vulkan's, so the two frames are not the same bytes (62 956 of 129 600 pixels differ, by a step
+/// or two). `references/lightmaps_absent_metal.png` is the same corner drawn on the M2 Max by
+/// main's frame shaders at 1b7373a5, before the shadow mask reached the frame: the Metal leg holds
+/// the frame to it exactly as the Vulkan leg holds it to the other.
+#if defined(CY_TEST_LIGHTMAPS_METAL)
+constexpr const char* kBeforeReference = "lightmaps_absent_metal.png";
+#else
+constexpr const char* kBeforeReference = "lightmaps_absent.png";
+#endif
+
 const char* before_reference_path() noexcept {
     static char storage[1024];
-    (void)std::snprintf(storage, sizeof(storage), "%s/references/lightmaps_absent.png",
-                        CY_LIGHTMAPS_TEST_DIR);
+    (void)std::snprintf(storage, sizeof(storage), "%s/references/%s", CY_LIGHTMAPS_TEST_DIR,
+                        kBeforeReference);
     return storage;
 }
 
@@ -976,6 +1345,262 @@ void check_against_before(const std::vector<u32>& pixels) {
                  "(c) against the frame before lightmaps existed, byte for byte: %zu differ\n",
                  changed);
     CY_CHECK_EQ(changed, usize{0});
+}
+
+// --- The baked lights ---------------------------------------------------------------------------
+
+/// The baked sun's shadow-mask value at a surface point, read off the host at one mip level: the
+/// reference the frame's mask read is held to. The sun is channel 0, the lamp channel 1.
+[[nodiscard]] f32 host_mask(const bake::BakedLightmap& lightmap, Span<const Aabb> boxes,
+                            const Pixel& pixel, u32 level, u32 channel_index = 0) noexcept {
+    const Aabb& box = boxes[pixel.box];
+    const u32 face = face_of(box, pixel.point);
+    const Vec2 coordinate =
+        bake::atlas_coordinate(lightmap.addresses[pixel.box], uv2_of(box, pixel.point, face),
+                               lightmap.page_size, lightmap.gutter_texels);
+    const f32 scale = 1.0F / static_cast<f32>(1U << level);
+    const Vec4 mask =
+        bake::sample_plane(bake::shadow_mask_level(lightmap, level), 0, coordinate * scale);
+    const f32 channels[4] = {mask.x, mask.y, mask.z, mask.w};
+    return channels[channel_index & 3U];
+}
+
+[[nodiscard]] i32 brightness(u32 texel) noexcept {
+    return channel(texel, 0) + channel(texel, 1) + channel(texel, 2);
+}
+
+/// The atlas coordinate a surface pixel reads, in base texels.
+[[nodiscard]] Vec2 atlas_at(const bake::BakedLightmap& lightmap, Span<const Aabb> boxes,
+                            const Pixel& pixel) noexcept {
+    const Aabb& box = boxes[pixel.box];
+    const u32 face = face_of(box, pixel.point);
+    return bake::atlas_coordinate(lightmap.addresses[pixel.box], uv2_of(box, pixel.point, face),
+                                  lightmap.page_size, lightmap.gutter_texels);
+}
+
+/// The deepest mip level the frame's implicit level of detail can blend in at an interior pixel:
+/// from how far the atlas coordinate moves to the next pixel across and down, as the hardware's
+/// derivatives measure it.
+[[nodiscard]] u32 deepest_level(const Picture& picture, const bake::BakedLightmap& lightmap,
+                                Span<const Aabb> boxes, usize index) noexcept {
+    const Vec2 here = atlas_at(lightmap, boxes, picture.pixels[index]);
+    const Vec2 across = atlas_at(lightmap, boxes, picture.pixels[index + 1U]) - here;
+    const Vec2 down = atlas_at(lightmap, boxes, picture.pixels[index + kWidth]) - here;
+    const f32 footprint = std::max(length(across), length(down));
+    // Below a quarter of a level short of level 1, trilinear filtering reads level 0 alone.
+    return footprint < 1.6F
+               ? 0U
+               : std::min(lightmap.mip_levels, 1U + static_cast<u32>(std::log2(footprint)));
+}
+
+/// The floor's interior pixels the baked sun sees none of, and all of.
+struct FloorShadow {
+    std::vector<usize> shadowed;
+    std::vector<usize> lit;
+};
+
+enum class MaskState : u8 { Neither, Shadowed, Lit };
+
+/// Fully shadowed and fully lit texels are exact in the mask (`lightmap_bake/README.md`), so a
+/// bilinear read of four of them is exactly zero or exactly one — at every level the frame's
+/// implicit level of detail may blend in at this pixel.
+[[nodiscard]] MaskState mask_state(const Picture& picture, const bake::BakedLightmap& lightmap,
+                                   Span<const Aabb> boxes, usize index, u32 channel) noexcept {
+    const Pixel& pixel = picture.pixels[index];
+    if (!picture.interior[index] || pixel.surface != Surface::Floor) {
+        return MaskState::Neither;
+    }
+    bool shadowed = true;
+    bool lit = true;
+    const u32 deepest = deepest_level(picture, lightmap, boxes, index);
+    for (u32 level = 0; level <= deepest; ++level) {
+        const f32 mask = host_mask(lightmap, boxes, pixel, level, channel);
+        shadowed = shadowed && mask == 0.0F;
+        lit = lit && mask == 1.0F;
+    }
+    if (shadowed) {
+        return MaskState::Shadowed;
+    }
+    return lit ? MaskState::Lit : MaskState::Neither;
+}
+
+/// Whether the pixel at (x, y), not on the image's edge, is shadowed or lit and so are its eight
+/// neighbours, alike.
+[[nodiscard]] bool uniform_around(const std::vector<MaskState>& states, u32 x, u32 y) noexcept {
+    const MaskState centre = states[(usize{y} * kWidth) + x];
+    if (centre == MaskState::Neither) {
+        return false;
+    }
+    for (u32 dy = 0; dy < 3U; ++dy) {
+        for (u32 dx = 0; dx < 3U; ++dx) {
+            if (states[(usize{y + dy - 1U} * kWidth) + (x + dx - 1U)] != centre) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/// The floor pixels deep in the baked shadow and deep in the light: every pixel of their 3 x 3
+/// neighbourhood reads an exact mask of the same value at its centre. The neighbourhood is the
+/// margin for where the frame's pinned jitter actually samples the pixel, half a pixel away.
+[[nodiscard]] FloorShadow floor_shadow(const Picture& picture, const bake::BakedLightmap& lightmap,
+                                       Span<const Aabb> boxes, u32 channel = 0) {
+    std::vector<MaskState> states(picture.pixels.size(), MaskState::Neither);
+    for (usize index = 0; index < picture.pixels.size(); ++index) {
+        states[index] = mask_state(picture, lightmap, boxes, index, channel);
+    }
+    FloorShadow out;
+    for (u32 y = 1; y + 1U < kHeight; ++y) {
+        for (u32 x = 1; x + 1U < kWidth; ++x) {
+            const usize index = (usize{y} * kWidth) + x;
+            if (uniform_around(states, x, y)) {
+                (states[index] == MaskState::Shadowed ? out.shadowed : out.lit).push_back(index);
+            }
+        }
+    }
+    return out;
+}
+
+/// The mean brightness change from `a` to `b` over `pixels`, and the worst channel change.
+struct Change {
+    f64 mean = 0.0;
+    i32 worst = 0;
+};
+
+[[nodiscard]] Change change_over(const std::vector<u32>& a, const std::vector<u32>& b,
+                                 const std::vector<usize>& pixels) noexcept {
+    Change out;
+    for (const usize index : pixels) {
+        out.mean += static_cast<f64>(brightness(b[index]) - brightness(a[index]));
+        for (u32 which = 0; which < 3U; ++which) {
+            out.worst =
+                std::max(out.worst, std::abs(channel(a[index], which) - channel(b[index], which)));
+        }
+    }
+    out.mean /= static_cast<f64>(std::max<usize>(pixels.size(), 1));
+    return out;
+}
+
+// --- Reading a level back ----------------------------------------------------------------------
+
+struct LevelReadback {
+    rhi::TextureHandle texture;
+    rhi::BufferHandle buffer;
+    u32 level = 0;
+    u32 width = 0;
+    u32 height = 0;
+};
+
+void record_level_readback(const rendering::PassContext& context, void* user) noexcept {
+    const auto* readback = static_cast<const LevelReadback*>(user);
+    rhi::BufferTextureCopy region;
+    region.mip_level = static_cast<u16>(readback->level);
+    region.texture_extent = rhi::Extent3D{readback->width, readback->height, 1};
+    context.commands->copy_texture_to_buffer(readback->texture, readback->buffer,
+                                             Span<const rhi::BufferTextureCopy>(&region, 1));
+}
+
+/// One level of one of the lightmap's textures, as half floats, off the device.
+[[nodiscard]] bool read_level(rhi::Device& device, const lightmaps::LightmapTextures& textures,
+                              u32 plane, u32 width, u32 height, u32 level, std::vector<u16>& out) {
+    LevelReadback readback;
+    readback.texture = textures.texture(plane);
+    readback.level = level;
+    readback.width = width >> level;
+    readback.height = height >> level;
+    const u64 bytes = u64{readback.width} * readback.height * 4U * sizeof(u16);
+    rhi::BufferDescription description;
+    description.name = "lightmap level readback";
+    description.size = bytes;
+    description.usage = rhi::BufferUsage::TransferDestination;
+    description.memory = rhi::MemoryUse::Readback;
+    Expected<rhi::BufferHandle, Error> buffer = device.create_buffer(description);
+    if (!buffer.has_value()) {
+        return false;
+    }
+    readback.buffer = *buffer;
+    rendering::RenderGraph graph(allocator());
+    rendering::TextureRequest request;
+    request.name = "lightmap level";
+    request.format = rhi::Format::Rgba16Sfloat;
+    request.width = width;
+    request.height = height;
+    request.mip_levels = static_cast<u16>(textures.mip_levels());
+    const rendering::ResourceId image =
+        graph.import_texture(request, readback.texture, rhi::ImageUse::SampledRead);
+    rendering::BufferRequest destination_request;
+    destination_request.name = "lightmap level readback";
+    destination_request.size = bytes;
+    destination_request.extra_usage = rhi::BufferUsage::TransferDestination;
+    const rendering::ResourceId destination =
+        graph.import_buffer(destination_request, readback.buffer);
+    graph.add_pass("lightmap level readback", rhi::QueueKind::Graphics)
+        .read(image, rhi::Access::TransferRead)
+        .write(destination, rhi::Access::TransferWrite)
+        .record(&record_level_readback, &readback);
+    graph.add_pass("lightmap level host", rhi::QueueKind::Graphics)
+        .read(destination, rhi::Access::HostRead)
+        .side_effect();
+    bool read = device.begin_frame().has_value();
+    if (read) {
+        rendering::GraphExecutor executor(allocator(), device);
+        read = executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
+                   .has_value() &&
+               device.wait_idle().has_value();
+        executor.release();
+        read = device.end_frame().has_value() && read;
+    }
+    const auto* mapped = static_cast<const u16*>(device.buffer_mapped_pointer(readback.buffer));
+    if (read && mapped != nullptr) {
+        out.assign(mapped, mapped + (bytes / sizeof(u16)));
+    }
+    device.destroy_buffer(readback.buffer);
+    return read && mapped != nullptr;
+}
+
+[[nodiscard]] std::vector<u16> host_halves(Span<const Vec4> texels) {
+    std::vector<u16> out;
+    out.reserve(texels.size() * 4U);
+    for (const Vec4& texel : texels) {
+        for (const f32 value : {texel.x, texel.y, texel.z, texel.w}) {
+            out.push_back(bake::half_from_float(value));
+        }
+    }
+    return out;
+}
+
+/// How a frame lit through both shadows compares with the two frames lit through one each.
+struct DarkerOf {
+    /// Pixels where a channel of `both` is more than one step from the darker of the two.
+    u32 mismatched = 0;
+    i32 worst = 0;
+    /// Pixels the map darkens well past the mask, and the mask well past the map.
+    u32 map_darker = 0;
+    u32 mask_darker = 0;
+};
+
+/// Shading is monotonic in visibility, and the three frames differ in nothing else, so a frame
+/// that takes the darker of the two visibilities is — channel for channel — the darker of the two
+/// frames. A frame that multiplied them would be darker still wherever both are partial.
+[[nodiscard]] DarkerOf darker_of(const std::vector<u32>& both, const std::vector<u32>& mask_only,
+                                 const std::vector<u32>& map_only) noexcept {
+    DarkerOf out;
+    for (usize index = 0; index < both.size(); ++index) {
+        i32 worst = 0;
+        for (u32 which = 0; which < 3U; ++which) {
+            const i32 expected =
+                std::min(channel(mask_only[index], which), channel(map_only[index], which));
+            worst = std::max(worst, std::abs(channel(both[index], which) - expected));
+        }
+        out.mismatched += worst > 1 ? 1U : 0U;
+        out.worst = std::max(out.worst, worst);
+        const i32 by_mask = brightness(mask_only[index]);
+        const i32 by_map = brightness(map_only[index]);
+        out.map_darker += by_map + 20 < by_mask ? 1U : 0U;
+        out.mask_darker += by_mask + 20 < by_map ? 1U : 0U;
+    }
+    return out;
 }
 
 }  // namespace
@@ -1097,6 +1722,7 @@ CY_TEST_CASE("(c) no lightmap is the frame before lightmaps existed, byte for by
     CY_CHECK_EQ(differing(absent.pixels(), excluded.pixels()), usize{0});
     // The control: on, the picture changes, or the two above would be equal for want of a lightmap.
     CY_CHECK_GT(differing(absent.pixels(), on.pixels()), usize{1000});
+    save("lightmaps-absent.png", absent.pixels());
     check_against_before(absent.pixels());
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
@@ -1224,5 +1850,476 @@ CY_TEST_CASE("(f) an unchanged lightmap is not uploaded again") {
     CY_REQUIRE(textures.upload(lightmap).has_value());
     CY_CHECK_EQ(textures.uploads(), 2U);
     textures.shutdown();
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(g) a stationary sun's direct term takes the baked shadow, at any intensity") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // THE SCENARIO "Stationary light with shadow mask": the sun is stationary, so the bake holds
+    // its bounce and a mask channel, and the frame — with no shadow map bound — shades its direct
+    // term itself. The two cubes cast the only shadows on the visible floor.
+    RunOptions masked;
+    masked.lightmap = Lightmap::Enabled;
+    RunOptions unmasked = masked;  // the frame's sun matches no baked light: no baked shadow
+    unmasked.match_lights = false;
+    RunOptions dimmed = masked;  // moved in intensity at run time, nothing re-baked
+    dimmed.sun_scale = 0.35F;
+    RunOptions dimmed_unmasked = unmasked;
+    dimmed_unmasked.sun_scale = 0.35F;
+    CornerRun with_mask(fixture, masked);
+    CornerRun without_mask(fixture, unmasked);
+    CornerRun with_mask_dimmed(fixture, dimmed);
+    CornerRun without_mask_dimmed(fixture, dimmed_unmasked);
+    CY_REQUIRE(with_mask.render());
+    CY_REQUIRE(without_mask.render());
+    CY_REQUIRE(with_mask_dimmed.render());
+    CY_REQUIRE(without_mask_dimmed.render());
+    save("lightmaps-stationary-mask.png", with_mask.pixels());
+    save("lightmaps-stationary-no-mask.png", without_mask.pixels());
+    save("lightmaps-stationary-dimmed.png", with_mask_dimmed.pixels());
+
+    const Picture picture = classify_all(with_mask.scene());
+    const FloorShadow floor =
+        floor_shadow(picture, with_mask.lightmap(), with_mask.scene().boxes());
+    const Change masking_lit = change_over(without_mask.pixels(), with_mask.pixels(), floor.lit);
+    const Change masking_shadowed =
+        change_over(without_mask.pixels(), with_mask.pixels(), floor.shadowed);
+    const Change dimming_shadowed =
+        change_over(with_mask.pixels(), with_mask_dimmed.pixels(), floor.shadowed);
+    const Change dimming_lit =
+        change_over(with_mask.pixels(), with_mask_dimmed.pixels(), floor.lit);
+    const Change dimming_unmasked =
+        change_over(without_mask.pixels(), without_mask_dimmed.pixels(), floor.shadowed);
+    std::fprintf(stderr,
+                 "(g) floor: %zu pixels in the baked shadow, %zu fully lit. The mask moves the "
+                 "shadowed ones by %.1f (worst %d) and the lit ones by worst %d. Dimming the sun "
+                 "to 35%%: shadowed %.1f (worst %d), lit %.1f; with no mask the shadowed ones move "
+                 "%.1f\n",
+                 floor.shadowed.size(), floor.lit.size(), masking_shadowed.mean,
+                 masking_shadowed.worst, masking_lit.worst, dimming_shadowed.mean,
+                 dimming_shadowed.worst, dimming_lit.mean, dimming_unmasked.mean);
+    CY_REQUIRE(floor.shadowed.size() > 50U);
+    CY_REQUIRE(floor.lit.size() > 2000U);
+    // The mask is what shadows the floor: it darkens the shadowed pixels and leaves the lit ones.
+    CY_CHECK_LT(masking_shadowed.mean, -40.0);
+    CY_CHECK_EQ(masking_lit.worst, 0);
+    // Dimmed at run time, the lit floor dims and the shadowed floor — whose direct term the mask
+    // zeroed — does not move at all: the baked shadow held at the new intensity.
+    CY_CHECK_LT(dimming_lit.mean, -20.0);
+    CY_CHECK_EQ(dimming_shadowed.worst, 0);
+    // The control: without the mask the same pixels are lit, and dimming moves them.
+    CY_CHECK_LT(dimming_unmasked.mean, -20.0);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "(h) a static sun's direct term is in the texels, and the frame does not add it again") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // The far cube has no lightmap: it is the object the frame still lights.
+    RunOptions baked_sun;
+    baked_sun.lightmap = Lightmap::Enabled;
+    baked_sun.sun_mobility = gi::LightMobility::Static;
+    baked_sun.unaddressed_box = kCubeFar;
+    RunOptions no_frame_sun = baked_sun;
+    no_frame_sun.frame_sun = false;
+    RunOptions stationary_no_sun = no_frame_sun;
+    stationary_no_sun.sun_mobility = gi::LightMobility::Stationary;
+    CornerRun with_sun(fixture, baked_sun);
+    CornerRun without_sun(fixture, no_frame_sun);
+    CornerRun indirect_only(fixture, stationary_no_sun);
+    CY_REQUIRE(with_sun.render());
+    CY_REQUIRE(without_sun.render());
+    CY_REQUIRE(indirect_only.render());
+    save("lightmaps-static-sun.png", with_sun.pixels());
+
+    const Picture picture = classify_all(with_sun.scene());
+    std::vector<usize> lightmapped;
+    std::vector<usize> dynamic;
+    std::vector<usize> floor;
+    for (usize index = 0; index < picture.pixels.size(); ++index) {
+        const Pixel& pixel = picture.pixels[index];
+        if (!picture.interior[index] || pixel.surface == Surface::None || pixel.box >= kUsedBoxes) {
+            continue;
+        }
+        (pixel.box == kCubeFar ? dynamic : lightmapped).push_back(index);
+        if (pixel.surface == Surface::Floor) {
+            floor.push_back(index);
+        }
+    }
+    const Change frame_sun = change_over(without_sun.pixels(), with_sun.pixels(), lightmapped);
+    const Change dynamic_sun = change_over(without_sun.pixels(), with_sun.pixels(), dynamic);
+    const Change baked_direct = change_over(indirect_only.pixels(), without_sun.pixels(), floor);
+    std::fprintf(stderr,
+                 "(h) the frame's static sun moves %zu lightmapped pixels by worst %d and the far "
+                 "cube's %zu by %.1f (worst %d); the texels alone light the floor %.1f brighter "
+                 "than an indirect-only bake\n",
+                 lightmapped.size(), frame_sun.worst, dynamic.size(), dynamic_sun.mean,
+                 dynamic_sun.worst, baked_direct.mean);
+    CY_REQUIRE(lightmapped.size() > 5000U);
+    CY_REQUIRE(dynamic.size() > 100U);
+    // Not counted twice: the frame's sun adds nothing where its direct term is baked...
+    CY_CHECK_EQ(frame_sun.worst, 0);
+    // ...and still lights the surface that has no lightmap: its sunlit faces, which are a share
+    // of the far cube's pixels (its front faces the camera and not the sun).
+    CY_CHECK_GT(dynamic_sun.mean, 5.0);
+    CY_CHECK_GT(dynamic_sun.worst, 60);
+    // The texels do hold it.
+    CY_CHECK_GT(baked_direct.mean, 20.0);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "(i) every level of the chain and of the mask reaches the device as the bake made it") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    RunOptions lit;
+    lit.lightmap = Lightmap::Enabled;
+    lit.mode = bake::LightmapMode::Directional;
+    CornerRun on(fixture, lit);
+    CY_REQUIRE(on.render());
+    const bake::BakedLightmap& lightmap = on.lightmap();
+    lightmaps::LightmapTextures& textures = on.textures();
+    CY_REQUIRE(lightmap.mip_levels >= 1U);
+    CY_REQUIRE(textures.has_shadow_mask());
+    CY_CHECK_EQ(textures.mip_levels(), lightmap.mip_levels + 1U);
+    CY_CHECK_EQ(textures.device_bytes(), lightmap.device_bytes() + lightmap.shadow_mask_bytes());
+    const u32 width = lightmap.texels.width;
+    const u32 height = lightmap.texels.height;
+    u32 compared = 0;
+    for (u32 level = 0; level <= lightmap.mip_levels; ++level) {
+        for (u32 plane = 0; plane <= lightmaps::kMaxPlanes; ++plane) {
+            const bool mask = plane == lightmaps::kMaxPlanes;
+            if (!mask && plane >= lightmap.texels.planes) {
+                continue;
+            }
+            const bake::LightmapTexels& texels = mask ? bake::shadow_mask_level(lightmap, level)
+                                                      : bake::lightmap_level(lightmap, level);
+            const usize count = usize{texels.width} * texels.height;
+            const std::vector<u16> expected = host_halves(
+                Span<const Vec4>(texels.texels.data() + (mask ? 0U : count * plane), count));
+            std::vector<u16> device;
+            CY_REQUIRE(read_level(fixture.device(), textures, plane, width, height, level, device));
+            CY_CHECK(device == expected);
+            compared += 1U;
+        }
+    }
+    std::fprintf(stderr,
+                 "(i) %u levels of %u planes and the mask read back from the device, each the "
+                 "host's halves byte for byte; %.1f KiB on the device\n",
+                 lightmap.mip_levels + 1U, lightmap.texels.planes,
+                 static_cast<double>(textures.device_bytes()) / 1024.0);
+    CY_CHECK_EQ(compared, (lightmap.mip_levels + 1U) * (lightmap.texels.planes + 1U));
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+/// What the density view draws on the back wall (resolution scale 1), the near cube (scale 4) and
+/// the far cube, which has no lightmap.
+struct DensityPicture {
+    Tally wall;
+    Tally cube;
+    Tally unlit;
+    /// The spread of the wall's green between its 10th and 90th percentiles: the checker.
+    i32 checker_spread = 0;
+};
+
+[[nodiscard]] DensityPicture density_picture(CornerRun& run) {
+    const Picture picture = classify_all(run.scene());
+    DensityPicture out;
+    std::vector<i32> wall_levels;
+    for (usize index = 0; index < picture.pixels.size(); ++index) {
+        const Pixel& pixel = picture.pixels[index];
+        if (!picture.interior[index]) {
+            continue;
+        }
+        const u32 texel = run.pixels()[index];
+        if (pixel.surface == Surface::BackWall) {
+            out.wall.add(texel);
+            wall_levels.push_back(channel(texel, 1));
+        } else if (pixel.surface == Surface::CubeFront && pixel.box == kCubeNear) {
+            out.cube.add(texel);
+        } else if (pixel.box == kCubeFar && pixel.surface != Surface::None) {
+            out.unlit.add(texel);
+        }
+    }
+    std::ranges::sort(wall_levels);
+    out.checker_spread = wall_levels.empty() ? 0
+                                             : wall_levels[(wall_levels.size() * 9U) / 10U] -
+                                                   wall_levels[wall_levels.size() / 10U];
+    return out;
+}
+
+[[nodiscard]] Vec3 mean_of(const Tally& tally) noexcept {
+    const f64 count = static_cast<f64>(std::max(tally.count, 1U));
+    return Vec3{static_cast<f32>(tally.red / count), static_cast<f32>(tally.green / count),
+                static_cast<f32>(tally.blue / count)};
+}
+
+CY_TEST_CASE(
+    "(j) the texel-density view colours each surface by the density its lightmap gives it") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    RunOptions density;
+    density.lightmap = Lightmap::Enabled;
+    density.density_view = true;
+    density.unaddressed_box = kCubeFar;
+    // The same bake against four times the target: the wall is two octaves under it.
+    RunOptions demanding = density;
+    demanding.density_target = kTexelDensity * 4.0F;
+    // The same view two stops brighter: the view divides the exposure back out.
+    RunOptions brighter = density;
+    brighter.exposure_shift = 2.0F;
+    CornerRun view(fixture, density);
+    CornerRun under(fixture, demanding);
+    CornerRun exposed(fixture, brighter);
+    CY_REQUIRE(view.render());
+    CY_REQUIRE(under.render());
+    CY_REQUIRE(exposed.render());
+    save("lightmaps-density.png", view.pixels());
+    const DensityPicture at_target = density_picture(view);
+    const DensityPicture below = density_picture(under);
+    const Vec3 wall = mean_of(at_target.wall);
+    const Vec3 cube = mean_of(at_target.cube);
+    const Vec3 unlit = mean_of(at_target.unlit);
+    const Vec3 wall_under = mean_of(below.wall);
+    std::vector<usize> every_pixel(view.pixels().size());
+    std::iota(every_pixel.begin(), every_pixel.end(), usize{0});
+    const Change exposure = change_over(view.pixels(), exposed.pixels(), every_pixel);
+    std::fprintf(stderr,
+                 "(j) back wall (resolution scale 1) rgb %.0f %.0f %.0f, checker spread %d; near "
+                 "cube (scale 4) rgb %.0f %.0f %.0f; unlightmapped far cube rgb %.0f %.0f %.0f; "
+                 "the wall at four times the target rgb %.0f %.0f %.0f; two stops of exposure "
+                 "move a pixel by worst %d\n",
+                 static_cast<f64>(wall.x), static_cast<f64>(wall.y), static_cast<f64>(wall.z),
+                 at_target.checker_spread, static_cast<f64>(cube.x), static_cast<f64>(cube.y),
+                 static_cast<f64>(cube.z), static_cast<f64>(unlit.x), static_cast<f64>(unlit.y),
+                 static_cast<f64>(unlit.z), static_cast<f64>(wall_under.x),
+                 static_cast<f64>(wall_under.y), static_cast<f64>(wall_under.z), exposure.worst);
+    CY_REQUIRE(at_target.wall.count > 200U);
+    CY_REQUIRE(at_target.cube.count > 100U);
+    CY_REQUIRE(at_target.unlit.count > 100U);
+    CY_REQUIRE(below.wall.count > 200U);
+    // At the level's density the wall is green; the cube, baked at four times it, is red.
+    CY_CHECK_GT(wall.y, 2.0F * wall.x);
+    CY_CHECK_GT(wall.y, 2.0F * wall.z);
+    CY_CHECK_GT(cube.x, 2.0F * cube.y);
+    // Against four times the target the same wall is under it: blue.
+    CY_CHECK_GT(wall_under.z, 2.0F * wall_under.x);
+    CY_CHECK_GT(wall_under.z, 2.0F * wall_under.y);
+    // Each lightmap texel is a cell of the checker: the wall shows two levels, not one.
+    CY_CHECK_GT(at_target.checker_spread, 20);
+    // A surface with no lightmap is flat grey.
+    CY_CHECK_LT(std::fabs(unlit.x - unlit.y), (0.02F * unlit.x) + 1.0F);
+    CY_CHECK_LT(std::fabs(unlit.y - unlit.z), (0.02F * unlit.y) + 1.0F);
+    // The view's colours are the same at any exposure.
+    CY_CHECK_LE(exposure.worst, 1);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "(k) a stationary point light's direct term takes its own mask channel, through the "
+    "cluster lists") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // The lamp is the mask's SECOND channel but, with the sun left out of the frame, the frame's
+    // FIRST light, so the frame's words map one to the other; and it is a point light, so its
+    // direct term goes through the cluster walk, not the directional loop (g) holds.
+    RunOptions lit;
+    lit.lightmap = Lightmap::Enabled;
+    lit.lamp = true;
+    lit.frame_sun = false;  // the lamp is the frame's only light, index 0 against channel 1
+    RunOptions dimmed = lit;
+    dimmed.lamp_scale = 0.3F;
+    RunOptions unmatched = lit;
+    unmatched.match_lights = false;
+    RunOptions unmatched_dimmed = unmatched;
+    unmatched_dimmed.lamp_scale = 0.3F;
+    CornerRun full(fixture, lit);
+    CornerRun low(fixture, dimmed);
+    CornerRun plain(fixture, unmatched);
+    CornerRun plain_low(fixture, unmatched_dimmed);
+    CY_REQUIRE(full.render());
+    CY_REQUIRE(low.render());
+    CY_REQUIRE(plain.render());
+    CY_REQUIRE(plain_low.render());
+    save("lightmaps-stationary-lamp.png", full.pixels());
+    CY_REQUIRE_EQ(full.lightmap().shadow_lights.size(), 2U);
+    CY_CHECK_EQ(full.lightmap().shadow_lights[1], kLampId);
+
+    const Picture picture = classify_all(full.scene());
+    const FloorShadow lamp = floor_shadow(picture, full.lightmap(), full.scene().boxes(), 1U);
+    const Change dimming_shadowed = change_over(full.pixels(), low.pixels(), lamp.shadowed);
+    const Change dimming_lit = change_over(full.pixels(), low.pixels(), lamp.lit);
+    const Change unmatched_shadowed =
+        change_over(plain.pixels(), plain_low.pixels(), lamp.shadowed);
+    std::fprintf(stderr,
+                 "(k) floor: %zu pixels in the lamp's baked shadow, %zu in its full light. "
+                 "Dimming the lamp to 30%%: shadowed %.1f (worst %d), lit %.1f; unmatched to the "
+                 "bake, the shadowed ones move %.1f\n",
+                 lamp.shadowed.size(), lamp.lit.size(), dimming_shadowed.mean,
+                 dimming_shadowed.worst, dimming_lit.mean, unmatched_shadowed.mean);
+    CY_REQUIRE(lamp.shadowed.size() > 50U);
+    CY_REQUIRE(lamp.lit.size() > 1000U);
+    CY_CHECK_EQ(dimming_shadowed.worst, 0);
+    CY_CHECK_LT(dimming_lit.mean, -10.0);
+    CY_CHECK_LT(unmatched_shadowed.mean, -10.0);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(l) a minified surface reads the coarser levels of the uploaded chain") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    RunOptions probe;
+    probe.lightmap = Lightmap::Enabled;
+    probe.mip_probe = true;
+    probe.frame_sun = false;  // ambient only: the floor is albedo times the probe
+    CornerRun run(fixture, probe);
+    CY_REQUIRE(run.render());
+    save("lightmaps-mip-probe.png", run.pixels());
+    const Picture picture = classify_all(run.scene());
+    u32 near_floor = 0;
+    u32 near_red = 0;
+    u32 far_floor = 0;
+    u32 far_red = 0;
+    for (usize index = 0; index < picture.pixels.size(); ++index) {
+        const Pixel& pixel = picture.pixels[index];
+        if (!picture.interior[index] || pixel.surface != Surface::Floor) {
+            continue;
+        }
+        const u32 texel = run.pixels()[index];
+        const bool red = channel(texel, 0) > channel(texel, 1) + 20;
+        // Near: the floor within 4.5 m of the eye, the nearest the camera sees, where a pixel
+        // covers about a texel. Far: beyond 6.5 m, where the grazing floor covers several texels
+        // a pixel. Between the two the trilinear blend turns the floor from grey to red.
+        const f32 distance = length(pixel.point);
+        if (distance < 4.5F) {
+            ++near_floor;
+            near_red += red ? 1U : 0U;
+        } else if (distance > 6.5F) {
+            ++far_floor;
+            far_red += red ? 1U : 0U;
+        }
+    }
+    std::fprintf(stderr,
+                 "(l) the probe's coarser levels are red: %u of %u far floor pixels read them, %u "
+                 "of %u near ones\n",
+                 far_red, far_floor, near_red, near_floor);
+    CY_REQUIRE(far_floor > 500U);
+    CY_REQUIRE(near_floor > 100U);
+    // The far floor minifies into the chain; the near floor is magnified and reads level 0 alone.
+    CY_CHECK_GT(far_red, far_floor / 2U);
+    CY_CHECK_EQ(near_red, 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "(m) a stationary sun takes the darker of its mask channel and the real-time shadow map") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // THE SPEC'S "the darker of that channel and any real-time shadow the frame has for the light".
+    // The sun's real-time map is rendered and bound, and a movable box hangs over the lit floor: it
+    // is in no bake, so only the map sees its shadow, while the cubes' shadows are in both. Three
+    // frames of one scene: the mask alone (no map), the map alone (the frame's sun matches no baked
+    // light, so no mask), and both.
+    RunOptions both;
+    both.lightmap = Lightmap::Enabled;
+    both.shadow_map = true;
+    both.occluder = true;
+    RunOptions mask_only = both;
+    mask_only.shadow_map = false;
+    RunOptions map_only = both;
+    map_only.match_lights = false;
+    CornerRun with_both(fixture, both);
+    CornerRun with_mask(fixture, mask_only);
+    CornerRun with_map(fixture, map_only);
+    CY_REQUIRE(with_both.render());
+    CY_REQUIRE(with_mask.render());
+    CY_REQUIRE(with_map.render());
+    save("lightmaps-stationary-realtime.png", with_both.pixels());
+    save("lightmaps-stationary-realtime-map.png", with_map.pixels());
+    save("lightmaps-stationary-realtime-mask.png", with_mask.pixels());
+
+    const DarkerOf darker = darker_of(with_both.pixels(), with_mask.pixels(), with_map.pixels());
+    std::fprintf(stderr,
+                 "(m) the map darkens %u pixels past the mask and the mask %u past the map; the "
+                 "frame through both is the darker of the two at all but %u pixels (worst %d)\n",
+                 darker.map_darker, darker.mask_darker, darker.mismatched, darker.worst);
+    // The movable box's shadow is the map's alone: a frame that ignored the map on a lightmapped
+    // surface would leave it lit.
+    CY_REQUIRE(darker.map_darker > 500U);
+    // And the frame through both is, pixel for pixel, the darker of the two.
+    CY_CHECK_EQ(darker.mismatched, 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(n) the frame's time without the lightmap, with it, and with its mask") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // A MEASUREMENT, NOT A BUDGET, and not a GPU time: each frame from the start of its recording
+    // to the device going idle, on the host's clock. The same corner three ways — no lightmap; the
+    // lightmap with a static sun, so no mask; and the lightmap with a stationary sun, its mask
+    // sampled and its channel matched — one frame of each in turn, so a drift in the machine's
+    // clocks falls on all three alike. Every other pass is the same in the three, so the
+    // differences in the medians are what the lightmap costs, the host's share included.
+    constexpr u32 kFrames = 96;
+    constexpr u32 kRuns = 3;
+    RunOptions configurations[kRuns];
+    configurations[1].lightmap = Lightmap::Enabled;
+    configurations[1].sun_mobility = gi::LightMobility::Static;
+    configurations[2].lightmap = Lightmap::Enabled;
+    const char* names[kRuns] = {"no lightmap", "lightmap, static sun, no mask",
+                                "lightmap, stationary sun through its mask"};
+    std::vector<std::unique_ptr<CornerRun>> runs;
+    for (const RunOptions& options : configurations) {
+        runs.push_back(std::make_unique<CornerRun>(fixture, options));
+        CY_REQUIRE(runs.back()->render());
+    }
+    std::vector<f64> frames[kRuns];
+    for (u32 frame = 0; frame < kFrames; ++frame) {
+        for (u32 which = 0; which < kRuns; ++which) {
+            f64 nanoseconds = 0.0;
+            CY_REQUIRE(runs[which]->time_frame(nanoseconds));
+            frames[which].push_back(nanoseconds);
+        }
+    }
+    f64 medians[kRuns] = {};
+    for (u32 which = 0; which < kRuns; ++which) {
+        std::vector<f64>& times = frames[which];
+        std::ranges::sort(times);
+        medians[which] = times[times.size() / 2U];
+        std::fprintf(stderr,
+                     "(n) %s: median %.1f us, quartiles %.1f to %.1f us, over %u frames at %ux%u\n",
+                     names[which], medians[which] / 1000.0, times[times.size() / 4U] / 1000.0,
+                     times[(times.size() * 3U) / 4U] / 1000.0, kFrames, kWidth, kHeight);
+        CY_CHECK_GT(times.front(), 0.0);
+    }
+    std::fprintf(stderr,
+                 "(n) the lightmap moves the median by %+.1f us, and its mask by %+.1f us\n",
+                 (medians[1] - medians[0]) / 1000.0, (medians[2] - medians[1]) / 1000.0);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

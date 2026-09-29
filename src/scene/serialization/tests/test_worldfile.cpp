@@ -184,6 +184,80 @@ CY_TEST_CASE("a world written back is the same bytes") {
     CY_CHECK_EQ(produced, std::string_view(text));
 }
 
+// --- entity references -------------------------------------------------------------------------
+//
+// A reference to another node is written as that node's POSITION and held in memory as its
+// identity. `cy_editor_services::worldfile` does the same on the editor's side, with the same text.
+
+/// Three nodes: the last one's `Joint` names the second node, and the first one's names none.
+constexpr std::string_view kReferencingWorld =
+    "cyworld 1\n"
+    "type 1 runtime \"Joint\"\n"
+    "  field 1 entity \"target\" \"\"\n"
+    "node 0 - \"default\" \"Anchor\"\n"
+    "  component 1\n"
+    "    field 1 -\n"
+    "node 1 - \"default\" \"Door\"\n"
+    "node 2 - \"default\" \"Hinge\"\n"
+    "  component 1\n"
+    "    field 1 1\n";
+
+[[nodiscard]] u64 reference_on(const World& world, usize node) {
+    CY_REQUIRE(world.nodes()[node].components().size() == 1U);
+    const WorldComponent& component = world.nodes()[node].components()[0];
+    CY_REQUIRE(component.fields().size() == 1U);
+    CY_REQUIRE(component.fields()[0].value.kind == WorldValueKind::Entity);
+    return static_cast<u64>(component.fields()[0].value.integer);
+}
+
+CY_TEST_CASE("an entity reference is read as the identity of the node at its position") {
+    World world(test_allocator());
+    CY_REQUIRE(read_world(kReferencingWorld, kAssetPath, world));
+    CY_CHECK_EQ(reference_on(world, 2), world.nodes()[1].identity);
+    CY_CHECK_EQ(reference_on(world, 0), 0ULL);
+}
+
+CY_TEST_CASE("an entity reference is written back as the same position") {
+    // THE REGRESSION: the writer used to put the identity itself in the file, a full 64-bit hash,
+    // and the reader parsed that word as a signed integer — so a world holding any reference to a
+    // node whose identity had its top bit set was a world this build wrote and could not read.
+    World world(test_allocator());
+    CY_REQUIRE(read_world(kReferencingWorld, kAssetPath, world));
+    CY_REQUIRE((world.nodes()[1].identity >> 63U) == 1U);
+    Array<char> written(test_allocator());
+    CY_REQUIRE(write_world(world, written));
+    CY_CHECK_EQ(std::string_view(written.data(), written.size()), kReferencingWorld);
+    World again(test_allocator());
+    CY_REQUIRE(read_world(std::string_view(written.data(), written.size()), kAssetPath, again));
+    CY_CHECK_EQ(reference_on(again, 2), again.nodes()[1].identity);
+}
+
+CY_TEST_CASE("an entity reference follows its node when a save renumbers the nodes") {
+    World world(test_allocator());
+    CY_REQUIRE(read_world(kReferencingWorld, kAssetPath, world));
+    world.nodes()[0].live = false;
+    Array<char> written(test_allocator());
+    CY_REQUIRE(write_world(world, written));
+    World again(test_allocator());
+    CY_REQUIRE(read_world(std::string_view(written.data(), written.size()), kAssetPath, again));
+    CY_REQUIRE(again.nodes().size() == usize{2});
+    // The door moved from position 1 to position 0, so it has a new identity, and the hinge still
+    // names it rather than whatever now has the door's old identity.
+    CY_CHECK_EQ(again.text(again.nodes()[0].name), std::string_view("Door"));
+    CY_CHECK_EQ(reference_on(again, 1), again.nodes()[0].identity);
+}
+
+CY_TEST_CASE("a reference to a node that is gone is written as none") {
+    World world(test_allocator());
+    CY_REQUIRE(read_world(kReferencingWorld, kAssetPath, world));
+    world.nodes()[1].live = false;
+    Array<char> written(test_allocator());
+    CY_REQUIRE(write_world(world, written));
+    World again(test_allocator());
+    CY_REQUIRE(read_world(std::string_view(written.data(), written.size()), kAssetPath, again));
+    CY_CHECK_EQ(reference_on(again, 1), 0ULL);
+}
+
 CY_TEST_CASE("a world file this build cannot read is refused by name") {
     World world(test_allocator());
     CY_CHECK(!read_world("cydoc 1\n", kAssetPath, world));

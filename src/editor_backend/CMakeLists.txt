@@ -3,11 +3,12 @@ cy_add_module(
     LAYER abi
     ALIAS cy::editor-backend
     TYPE STATIC
-    SOURCES src/material_service.cpp src/navigation_service.cpp src/composite_service.cpp
+    SOURCES src/material_service.cpp src/terrain_service.cpp src/navigation_service.cpp
+            src/composite_service.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::navigation is layer 4 (scene) under this layer-6 service: the navigation service runs
     # the bake and the queries, and its header names the navigation types it exchanges.
-    PUBLIC_DEPENDENCIES cy::abi cy::graph-material cy::navigation)
+    PUBLIC_DEPENDENCIES cy::abi cy::graph-material cy::navigation cy::terrain)
 
 if(CY_VFX)
     target_link_libraries(cy_editor_backend PRIVATE cy::vfx)
@@ -43,6 +44,13 @@ if(CY_BUILD_TESTS)
             target_compile_definitions(cy_test_unit_editor_backend PRIVATE
                 CY_EDITOR_HAS_VFX=1 CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         endif()
+        cy_add_test(
+            NAME editor_backend_terrain
+            KIND integration
+            SOURCES "${tests_dir}/test_terrain_service.cpp"
+            DEPENDENCIES cy::editor-backend cy::terrain)
+        target_compile_definitions(cy_test_integration_editor_backend_terrain PRIVATE
+            CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         cy_add_test(
             NAME editor_backend_compile
             KIND integration

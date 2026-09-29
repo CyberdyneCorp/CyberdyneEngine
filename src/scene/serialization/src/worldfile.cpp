@@ -4,6 +4,7 @@
 #include <cy/core/serialize/text.h>
 #include <cy/scene/serialization/worldfile.h>
 
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 
@@ -156,6 +157,28 @@ void multiply_by_prime(EditorId& value) noexcept {
     return world.intern_blob(bytes.span(), out);
 }
 
+/// An entity reference: the POSITION of the node it names, or `-` for none.
+///
+/// Positions rather than identities, because identities do not survive a save: a node's identity is
+/// derived from its ordinal, the ordinal is its position plus one on load, and a world that had a
+/// node deleted writes a dense file (see `write_node_section`). A reference written as an identity
+/// would name nothing after the next load. The position is turned back into the identity the node
+/// at that position is given on this load, so in memory a reference is always an identity, which is
+/// what an editor transaction carries.
+[[nodiscard]] Status read_entity_value(const TextLine& line, usize first, const World& world,
+                                       WorldValue& out) noexcept {
+    if (line.word(first) == "-") {
+        out.integer = 0;
+        return ok();
+    }
+    const Expected<u64, Error> position = line.word_u64(first);
+    if (!position) {
+        return make_unexpected(position.error());
+    }
+    out.integer = static_cast<i64>(editor_node_identity(world.document(), *position + 1U).low);
+    return ok();
+}
+
 /// Read one value of a declared kind, starting at `first`.
 [[nodiscard]] Status read_value(const TextLine& line, usize first, WorldValueKind kind,
                                 World& world, WorldValue& out) noexcept {
@@ -183,8 +206,7 @@ void multiply_by_prime(EditorId& value) noexcept {
         case WorldValueKind::Bool:
             out.integer = (line.word(first) == "true") ? 1 : 0;
             return ok();
-        case WorldValueKind::Int:
-        case WorldValueKind::Entity: {
+        case WorldValueKind::Int: {
             const Expected<i64, Error> value = line.word_i64(first);
             if (!value) {
                 return make_unexpected(value.error());
@@ -192,6 +214,8 @@ void multiply_by_prime(EditorId& value) noexcept {
             out.integer = *value;
             return ok();
         }
+        case WorldValueKind::Entity:
+            return read_entity_value(line, first, world, out);
         case WorldValueKind::Float: {
             const Expected<f32, Error> value = word_f32(line, first);
             if (!value) {
@@ -216,9 +240,24 @@ void multiply_by_prime(EditorId& value) noexcept {
     return fail(ErrorCode::InvalidArgument, "a world field has a kind this build has not");
 }
 
+/// The position an entity reference is written as: where the node it names lands in the dense
+/// node section, or nothing when it names no live node. `positions` is `write_node_section`'s map
+/// from node index to written position. See `read_entity_value` for why positions.
+[[nodiscard]] Status write_entity_value(TextWriter& writer, const World& world,
+                                        const WorldValue& value,
+                                        Span<const u32> positions) noexcept {
+    const u64 identity = static_cast<u64>(value.integer);
+    const u32 index = identity == 0 ? WorldNode::kNoParent : world.index_of(identity);
+    if (index == WorldNode::kNoParent || index >= positions.size() ||
+        positions[index] == WorldNode::kNoParent) {
+        return writer.word("-");
+    }
+    return writer.word_u64(positions[index]);
+}
+
 /// Append one value's words to a line the writer has open.
-[[nodiscard]] Status write_value(TextWriter& writer, const World& world,
-                                 const WorldValue& value) noexcept {
+[[nodiscard]] Status write_value(TextWriter& writer, const World& world, const WorldValue& value,
+                                 Span<const u32> positions) noexcept {
     char buffer[serialize::kFloatTextCapacity] = {};
     const u32 lanes = lane_count(value.kind);
     if (lanes != 0) {
@@ -242,7 +281,7 @@ void multiply_by_prime(EditorId& value) noexcept {
         case WorldValueKind::Int:
             return writer.word_i64(value.integer);
         case WorldValueKind::Entity:
-            return writer.word_u64(static_cast<u64>(value.integer));
+            return write_entity_value(writer, world, value, positions);
         case WorldValueKind::Float: {
             const Expected<usize, Error> written =
                 serialize::format_f32(value.lanes[0], buffer, sizeof(buffer));
@@ -708,8 +747,27 @@ Expected<u32, Error> World::create_node_with_ordinal(u64 ordinal, u32 parent) no
 
 void World::reidentify() noexcept {
     for (WorldNode& node : nodes_) {
+        const u64 before = node.identity;
         node.full_identity = editor_node_identity(document_, node.ordinal);
         node.identity = node.full_identity.low;
+        if (before != 0 && before != node.identity) {
+            retarget_references(before, node.identity);
+        }
+    }
+}
+
+void World::retarget_references(u64 from, u64 to) noexcept {
+    // An entity reference holds an identity in memory (see `read_entity_value`), so a node whose
+    // identity changes takes every reference to it along rather than leaving them naming nothing.
+    for (WorldNode& node : nodes_) {
+        for (WorldComponent& component : node.components()) {
+            for (WorldField& field : component.fields()) {
+                if (field.value.kind == WorldValueKind::Entity &&
+                    std::bit_cast<u64>(field.value.integer) == from) {
+                    field.value.integer = std::bit_cast<i64>(to);
+                }
+            }
+        }
     }
 }
 
@@ -855,7 +913,7 @@ namespace {
 
 /// One node's components and their fields, at depth 1 and 2 under it.
 [[nodiscard]] Status write_components(const World& world, const WorldNode& node,
-                                      TextWriter& writer) noexcept {
+                                      Span<const u32> positions, TextWriter& writer) noexcept {
     for (const WorldComponent& component : node.components()) {
         if (Status began = writer.begin_line(1); !began) {
             return began;
@@ -879,7 +937,7 @@ namespace {
             if (Status number = writer.word_u64(field.file_field); !number) {
                 return number;
             }
-            if (Status value = write_value(writer, world, field.value); !value) {
+            if (Status value = write_value(writer, world, field.value, positions); !value) {
                 return value;
             }
             if (Status ended = writer.end_line(); !ended) {
@@ -942,7 +1000,7 @@ namespace {
         if (Status ended = writer.end_line(); !ended) {
             return ended;
         }
-        if (Status written = write_components(world, node, writer); !written) {
+        if (Status written = write_components(world, node, position.span(), writer); !written) {
             return written;
         }
     }

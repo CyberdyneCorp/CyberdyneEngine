@@ -50,6 +50,8 @@ bake, is one undoable transaction.
    completes, the panel shows the tile, polygon and link counts, and the viewport draws the
    walkable polygons.
 6. Move a mesh and press **Check for changes**. The badge reads *Stale* until you bake again.
+   A terrain stroke does the same without a check: the badge reads *Stale: the terrain changed
+   since this bake*, and the next bake clears the terrain's stale regions too.
 7. Under **Test path**, press **Pick start** and **Pick end** and click the viewport each time.
    The engine resolves each click onto the navmesh and draws the path. Add an obstacle over the
    path to see it route around, or block it.

@@ -3112,6 +3112,560 @@ fn terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel() {
     assert_eq!(layers(&editor), 1);
 }
 
+/// A person at the interface who confirms whatever is asked.
+struct ConfirmEverything;
+
+impl cy_editor_agent::session::Confirmer for ConfirmEverything {
+    fn confirm(
+        &mut self,
+        _confirmation: &cy_editor_agent::session::Confirmation,
+    ) -> cy_editor_agent::session::Decision {
+        cy_editor_agent::session::Decision::Allow
+    }
+}
+
+/// `converse`, with external effects in scope and a person confirming them.
+fn converse_with_external_effects(lines: &[&str], editor: &mut Editor) -> Vec<Json> {
+    let sink = Sink::default();
+    let session = AgentSession::new(
+        AgentIdentity {
+            agent: "lighter".to_string(),
+            session: "s-1".to_string(),
+        },
+        "bake the level's lightmaps",
+        Scope::new(
+            "lighting",
+            DocumentScope::All,
+            [
+                EffectClass::Read,
+                EffectClass::ReversibleMutation,
+                EffectClass::ExternalEffect,
+            ],
+        )
+        .with_directory("game/"),
+        Budget::default(),
+        "r-1",
+        0,
+    );
+    let mut server = McpServer::new(sink.clone(), session);
+    serve(
+        lines.join("\n").as_bytes(),
+        &mut server,
+        editor,
+        &registry(),
+        &mut ConfirmEverything,
+    )
+    .expect("the conversation runs to the end of the input");
+    sink.replies()
+}
+
+fn tool_reply(replies: &[Json], index: usize) -> (String, bool) {
+    let reply = result(replies, index);
+    let text = match reply.get("content") {
+        Json::Array(items) => items
+            .first()
+            .and_then(|item| item.get("text").as_text())
+            .unwrap_or_default()
+            .to_string(),
+        other => panic!("content is not an array: {other:?}"),
+    };
+    (text, reply.get("isError") == &Json::Bool(true))
+}
+
+/// The lighting editor's panel invokes these three and nothing else
+/// (`cy-editor-shell`'s `LightingTool`); an agent reaches the same three here.
+#[test]
+fn the_lighting_editor_bake_and_density_view_are_mcp_tools() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lighting.bake-lightmaps","arguments":{"description":"game/levels/corner.cylightmap"}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"lighting.cancel-lightmap-bake","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"viewport.view-mode.lightmap-density","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let tools = match result(&replies, 1).get("tools") {
+        Json::Array(items) => items.clone(),
+        other => panic!("tools is not an array: {other:?}"),
+    };
+    let described = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.get("name").as_text() == Some(name))
+            .and_then(|tool| tool.get("description").as_text())
+            .unwrap_or_else(|| panic!("{name} is not a tool"))
+            .to_string()
+    };
+    assert!(described("lighting.bake-lightmaps").contains("external-effect"));
+    assert!(described("lighting.cancel-lightmap-bake").contains("Effect: read"));
+    assert!(described("viewport.view-mode.lightmap-density").contains("Effect: read"));
+
+    // A bake writes a cooked file, so a connection must be granted external effects to start one.
+    let (refused, is_error) = tool_reply(&replies, 2);
+    assert!(is_error && refused.contains("external-effect"), "{refused}");
+    let (nothing, is_error) = tool_reply(&replies, 3);
+    assert!(
+        is_error && nothing.contains("no lightmap bake"),
+        "{nothing}"
+    );
+    let (view, is_error) = tool_reply(&replies, 4);
+    assert!(!is_error && view.contains("LightmapDensity"), "{view}");
+
+    // In scope and confirmed, the bake is still held to the connection's directory.
+    let replies = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lighting.bake-lightmaps","arguments":{"description":"elsewhere/corner.cylightmap"}}}"#,
+        ],
+        &mut editor,
+    );
+    let (outside, is_error) = tool_reply(&replies, 1);
+    assert!(
+        is_error && outside.contains("does not include it") && outside.contains("game/"),
+        "{outside}"
+    );
+}
+
+/// One MCP tool call, answering whether the server reported an error, and the reply's text.
+fn call_tool(
+    editor: &mut Editor,
+    id: u32,
+    name: &str,
+    arguments: &[(&str, &str)],
+) -> (bool, String) {
+    let replies = converse(&[INITIALIZE, &tool_call(id, name, arguments)], editor);
+    let failed = result(&replies, 1).get("isError") == &Json::Bool(true);
+    (failed, tool_text(&replies, 1))
+}
+
+/// Two entities with dynamic bodies, created over the wire.
+fn two_bodies_over_the_wire(
+    editor: &mut Editor,
+) -> (cy_editor_core::ids::NodeId, cy_editor_core::ids::NodeId) {
+    let mut bodies = Vec::new();
+    for id in 2..4 {
+        let (failed, text) = call_tool(editor, id, "scene.create-entity", &[]);
+        assert!(!failed, "{text}");
+        let node = editor
+            .selection
+            .get()
+            .nodes()
+            .next()
+            .expect("the created entity");
+        let (failed, text) = call_tool(
+            editor,
+            id + 10,
+            "scene.add-body",
+            &[("entity", &node.to_string())],
+        );
+        assert!(!failed, "{text}");
+        bodies.push(node);
+    }
+    (bodies[0], bodies[1])
+}
+
+/// The door's joint's upper limit, compared by bits: the values crossed the wire as text.
+fn upper_limit_is(editor: &Editor, door: cy_editor_core::ids::NodeId, expected: f32) -> bool {
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    cy_editor_services::joints::joint_of(document, door)
+        .is_some_and(|joint| joint.limit[1].to_bits() == expected.to_bits())
+}
+
+/// The physics panel's commands, driven over the wire as the panel drives them through the
+/// registry: two bodies, a hinge between them, a field changed, undo and redo in the one history,
+/// the joint removed and restored, and a physics debug layer shown in the viewport.
+#[test]
+fn physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/joints.cyworld").unwrap();
+    let (door, frame) = two_bodies_over_the_wire(&mut editor);
+    let door_text = door.to_string();
+    let entity = ("entity", door_text.as_str());
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        20,
+        "physics.joint.add",
+        &[entity, ("kind", "hinge"), ("target", &frame.to_string())],
+    );
+    assert!(!failed, "{text}");
+    assert!(upper_limit_is(&editor, door, -1.0), "a hinge starts free");
+
+    let set = [entity, ("field", "limit_max"), ("value", "0.5")];
+    let (failed, text) = call_tool(&mut editor, 21, "physics.joint.set", &set);
+    assert!(!failed, "{text}");
+    assert!(upper_limit_is(&editor, door, 0.5));
+
+    assert!(!call_tool(&mut editor, 22, "edit.undo", &[]).0);
+    assert!(
+        upper_limit_is(&editor, door, -1.0),
+        "undo takes back the one field"
+    );
+    assert!(!call_tool(&mut editor, 23, "edit.redo", &[]).0);
+    assert!(upper_limit_is(&editor, door, 0.5));
+
+    assert!(!call_tool(&mut editor, 24, "physics.joint.remove", &[entity]).0);
+    assert!(!upper_limit_is(&editor, door, 0.5), "the joint is gone");
+    assert!(!call_tool(&mut editor, 25, "edit.undo", &[]).0);
+    assert!(
+        upper_limit_is(&editor, door, 0.5),
+        "undo restores what was removed"
+    );
+
+    // A refusal comes back as a result the model can read, and changes nothing.
+    let negative = [entity, ("field", "break_force"), ("value", "-3")];
+    let (failed, text) = call_tool(&mut editor, 26, "physics.joint.set", &negative);
+    assert!(failed, "a negative break force is refused");
+    assert!(text.contains("negative"), "{text}");
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        27,
+        "viewport.physics.colliders",
+        &[("state", "on")],
+    );
+    assert!(!failed, "{text}");
+    assert!(
+        editor
+            .viewports
+            .focused()
+            .physics
+            .contains(cy_editor_viewport::PhysicsLayer::Colliders)
+    );
+}
+
+/// The frames the editor writes to the fake runtime, read on a thread of their own so a test can
+/// give up waiting instead of blocking on the pipe forever.
+fn runtime_frames(mut runtime_reader: std::io::PipeReader) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (sender, frames) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        while let Ok(Some(frame)) = read_frame(&mut runtime_reader) {
+            if sender.send(frame).is_err() {
+                break;
+            }
+        }
+    });
+    frames
+}
+
+/// The next `terrain.evaluate` the editor sent the fake runtime, skipping catalogue discovery.
+/// Fails, rather than hangs, when none arrives within five seconds.
+fn next_terrain_request(
+    frames: &std::sync::mpsc::Receiver<Vec<u8>>,
+) -> (cy_editor_protocol::RequestId, Vec<u8>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let frame = frames
+            .recv_timeout(left)
+            .expect("the editor sends terrain.evaluate within five seconds");
+        if let Message::ServiceRequest {
+            request,
+            operation,
+            payload,
+            ..
+        } = Message::decode(&frame).unwrap()
+            && operation == "terrain.evaluate"
+        {
+            return (request, payload);
+        }
+    }
+}
+
+/// An engine reply over a 3 x 3 lattice: `height` everywhere, holes where listed, one stale
+/// region per entry.
+fn terrain_reply(generation: u64, height: u16, holes: &[usize], stale: usize) -> Vec<u8> {
+    let mut reply = Writer::new();
+    reply.u32(1);
+    reply.u64(generation);
+    reply.u32(3);
+    reply.f32(128.0);
+    reply.f32(-512.0);
+    reply.f32(1536.0);
+    reply.u32(8 - 2 * u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(stale).unwrap());
+    for _ in 0..stale {
+        for value in [40.0_f32, 30.0, 90.0, 60.0] {
+            reply.f32(value);
+        }
+    }
+    for _ in 0..9 {
+        reply.u8((height & 0xFF) as u8);
+        reply.u8((height >> 8) as u8);
+    }
+    for _ in 0..4 {
+        for byte in [0_u8, 0, 0, 0, 255, 0, 0, 0] {
+            reply.u8(byte);
+        }
+    }
+    for quad in 0..4 {
+        reply.u8(u8::from(holes.contains(&quad)));
+    }
+    reply.finish()
+}
+
+fn answer_terrain(
+    editor: &mut Editor,
+    runtime_writer: &mut std::io::PipeWriter,
+    request: cy_editor_protocol::RequestId,
+    payload: Vec<u8>,
+) {
+    let generation = cy_editor_core::codec::Reader::new(&payload[4..])
+        .u64()
+        .unwrap();
+    write_frame(
+        runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while editor
+        .terrain
+        .evaluation()
+        .map(|evaluation| evaluation.generation)
+        != Some(generation)
+        && std::time::Instant::now() < deadline
+    {
+        editor.pump();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(
+        editor
+            .terrain
+            .evaluation()
+            .map(|evaluation| evaluation.generation),
+        Some(generation),
+        "the engine's terrain reply must arrive"
+    );
+}
+
+/// The brush tools over the wire: an agent sculpts and cuts a hole with `terrain.brush.apply`, the
+/// editor sends each resulting stack to the engine's `terrain.evaluate`, `terrain.status` reports
+/// what the engine answered, and `edit.undo` sends the engine the pre-stroke stack byte for byte.
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one conversation: stroke, status, hole, status, undo, status, undo, in order"
+)]
+fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
+    use cy_editor_core::codec::Reader;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/terrain.cyworld").unwrap();
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let frames = runtime_frames(runtime_reader);
+
+    let created = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terrain.create","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&created, 1).get("isError"), &Json::Bool(false));
+    let terrain = editor
+        .edited_terrain()
+        .expect("terrain.create selects its root");
+    let (request, before_stroke) = next_terrain_request(&frames);
+    let mut header = Reader::new(&before_stroke);
+    assert_eq!(header.u32().unwrap(), 1, "format");
+    assert_eq!(header.u128().unwrap(), terrain.as_u128());
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(1, 100, &[], 0),
+    );
+
+    let raise = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"raise","points":"0.4 0.3; 0.5 0.35 0.8","radius":8,"strength":0.8,"falloff":0.5}}}}}}"#
+    );
+    let raised = converse(&[INITIALIZE, &raise], &mut editor);
+    assert_eq!(result(&raised, 1).get("isError"), &Json::Bool(false));
+    let (request, stroked) = next_terrain_request(&frames);
+    assert_ne!(stroked, before_stroke);
+    let mut body = Reader::new(&stroked[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 1, "one modifier");
+    let _identity = body.u128().unwrap();
+    assert_eq!(body.u8().unwrap(), 0, "raise");
+    assert_eq!(body.u8().unwrap(), 1, "enabled");
+    assert_eq!(body.u8().unwrap(), 0, "a sculpt names no layer");
+    assert!((body.f32().unwrap() - 8.0).abs() < f32::EPSILON);
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(2, 140, &[], 1),
+    );
+
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let reported = result(&status, 1).get("structuredContent");
+    assert_eq!(reported.get("evaluated").as_text(), Some("true"));
+    assert_eq!(reported.get("generation").as_text(), Some("2"));
+    assert_eq!(reported.get("navigation_stale").as_text(), Some("true"));
+    assert_eq!(
+        reported.get("navigation_stale_regions").as_text(),
+        Some("40 30 90 60")
+    );
+    let raised_digest = reported
+        .get("heights_digest")
+        .as_text()
+        .unwrap()
+        .to_string();
+
+    let hole = format!(
+        r#"{{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"hole","points":"0.5 0.5"}}}}}}"#
+    );
+    let holed = converse(&[INITIALIZE, &hole], &mut editor);
+    assert_eq!(result(&holed, 1).get("isError"), &Json::Bool(false));
+    let (request, with_hole) = next_terrain_request(&frames);
+    let mut body = Reader::new(&with_hole[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 2, "raise, then the hole above it");
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(3, 140, &[1], 1),
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let reported = result(&status, 1).get("structuredContent");
+    assert_eq!(reported.get("collision_holes").as_text(), Some("1"));
+    assert_eq!(reported.get("rendered_hole_quads").as_text(), Some("1"));
+
+    // Undo both strokes over MCP: each sends the engine the stack as it was, and the last is the
+    // pre-stroke request byte for byte.
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let (request, after_one_undo) = next_terrain_request(&frames);
+    assert_eq!(
+        after_one_undo, stroked,
+        "undoing the hole sends the raised stack again"
+    );
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(4, 140, &[], 1),
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&status, 1)
+            .get("structuredContent")
+            .get("heights_digest")
+            .as_text(),
+        Some(raised_digest.as_str())
+    );
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let (_, after_both) = next_terrain_request(&frames);
+    assert_eq!(after_both, before_stroke);
+}
+
+/// Paint names its layer by order, and a sculpt or hole stroke naming one is refused.
+#[test]
+fn terrain_paint_over_mcp_requires_a_layer_and_a_hole_refuses_one() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/terrain.cyworld").unwrap();
+    converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terrain.create","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let terrain = editor.edited_terrain().unwrap();
+    let add = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"terrain.layer.add","arguments":{{"terrain":"{terrain}","name":"Rock","material":"materials/rock.cymat"}}}}}}"#
+    );
+    let added = converse(&[INITIALIZE, &add], &mut editor);
+    let layer = result(&added, 1)
+        .get("structuredContent")
+        .get("layer")
+        .as_text()
+        .unwrap()
+        .to_string();
+    let call = |id: u32, tool: &str, layer: &str| {
+        format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"{tool}","layer":"{layer}","points":"0.2 0.2"}}}}}}"#
+        )
+    };
+    let replies = converse(
+        &[
+            INITIALIZE,
+            &call(4, "paint", ""),
+            &call(5, "hole", &layer),
+            &call(6, "paint", &layer),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(true));
+    assert_eq!(result(&replies, 3).get("isError"), &Json::Bool(false));
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    let request = cy_editor_services::terrain_engine::evaluation_request(document, terrain)
+        .unwrap()
+        .unwrap();
+    let mut body = cy_editor_core::codec::Reader::new(&request[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 1);
+    let _identity = body.u128().unwrap();
+    assert_eq!(body.u8().unwrap(), 4, "paint");
+    assert_eq!(body.u8().unwrap(), 1, "enabled");
+    assert_eq!(
+        body.u8().unwrap(),
+        1,
+        "the first layer is layer 1; 0 is the base"
+    );
+}
+
 // --- Navigation authoring (issue #28) -------------------------------------------------------------
 
 /// Every `navigation.*` command `cy_editor_services::navmesh` registers.

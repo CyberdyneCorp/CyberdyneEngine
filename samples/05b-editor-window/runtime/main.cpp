@@ -74,6 +74,7 @@
 #include <cy/editor/composite_service.h>
 #include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
+#include <cy/editor/terrain_service.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
 #include <cy/servers/render/picking.h>
@@ -86,6 +87,7 @@
 #include "nav_overlay.h"
 #include "nav_runtime.h"
 #include "overlay.h"
+#include "physics_overlay.h"
 #include "pick_wire.h"
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "scene_vfx_runtime.h"
@@ -409,6 +411,11 @@ struct Host {
     /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
     /// counter above the switch the first time an editor pressed play.
     u64 received[static_cast<usize>(runtime::EditorMessage::SyncWorld) + 1] = {};
+    /// The physics debug layers the editor last asked for, as `cy::physics::DebugDrawFlags` bits,
+    /// and what drawing them and the selected joint's gizmo produced over the run.
+    u32 physics_overlays = 0;
+    u64 physics_segments = 0;
+    u64 joint_gizmos = 0;
     u64 unknown_messages = 0;
 };
 
@@ -479,6 +486,7 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.asked_height = intent.viewport_height;
     adopt_camera(host, intent);
     host.game_camera = intent.game_camera;
+    host.physics_overlays = intent.physics_overlays;
     // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
     // holds is the world the editor has open, so an identity either names a node in it or names
     // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
@@ -1146,8 +1154,34 @@ void draw_navigation(Host& host, const Canvas& canvas) noexcept {
                            host.nav_overlays);
 }
 
+/// The physics debug layers during play, and the selected node's authored joint while editing.
+///
+/// Both come from the engine: the layers from the session's own physics world through
+/// `PhysicsServer::debug_draw`, the joint from the authored world through the function the solver
+/// draws a simulated constraint with. While a world plays, the `Constraints` layer is the joint's
+/// view, so the authored gizmo is not drawn over it.
+void draw_physics(Host& host, const Canvas& canvas) noexcept {
+    FrameDebugSink sink(canvas, host.view, eye_of(host.camera));
+    const bool simulating =
+        host.play != nullptr && host.play->state() != gameplay::PlayState::Editing;
+    if (simulating && host.physics_overlays != 0U && host.play->physics_server() != nullptr) {
+        if (Status drawn = draw_physics_overlays(sink, *host.play->physics_server(),
+                                                 host.play->physics_world(), host.physics_overlays);
+            !drawn) {
+            report("physics overlay", drawn.error());
+        }
+    }
+    if (!simulating && host.game_camera == ~u64{0} && host.anchored_identity != 0 &&
+        host.view_world != nullptr && host.view_world->loaded() &&
+        draw_authored_joint(sink, host.view_world->world(), host.anchored_identity)) {
+        host.joint_gizmos += 1;
+    }
+    host.physics_segments += sink.drawn();
+}
+
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     draw_navigation(host, canvas);
+    draw_physics(host, canvas);
     if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
         for (const LightMarker& light : host.authored_frame->light_markers()) {
             Vec2 marker;
@@ -1207,6 +1241,15 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
             }
         }
 #endif
+        const editor::TerrainPreview* terrain =
+            editor::MaterialService::terrain_preview(host.material_session);
+        if (Status drawn =
+                host.authored_frame->set_terrain(terrain != nullptr ? terrain->snapshot() : nullptr,
+                                                 terrain != nullptr ? terrain->generation() : 0);
+            !drawn) {
+            report("editor terrain", drawn.error());
+            return false;
+        }
         if (Status frame = host.authored_frame->render(
                 host.view_world->world(), host.camera, host.game_camera == ~u64{0},
                 host.material_service->vfx_preview_world(host.material_session), time_seconds
@@ -1421,6 +1464,12 @@ void print_report(const Host& host, const WorldView& view_world,
                      static_cast<unsigned long long>(host.play_bodies),
                      host.play_restored_exactly ? "identical after every stop"
                                                 : "REBUILT FROM THE SNAPSHOT — see task 5.2");
+        std::fprintf(stdout,
+                     "%s: physics   overlays 0x%02x, %llu segment(s) drawn, %llu joint gizmo "
+                     "frame(s)\n",
+                     kTag, host.physics_overlays,
+                     static_cast<unsigned long long>(host.physics_segments),
+                     static_cast<unsigned long long>(host.joint_gizmos));
     }
     std::fprintf(stdout,
                  "%s: editor    %llu connection(s); hello %llu, ping %llu, gizmo-intent %llu, "
@@ -1484,7 +1533,7 @@ int run_host_loop(Host& host, const Options& options, u64 started) {
 [[nodiscard]] Status route_services(editor::CompositeEditorService& composite,
                                     editor::MaterialService& material,
                                     editor::NavigationService& navigation) noexcept {
-    for (const char* prefix : {"material.", "vfx.", "preview."}) {
+    for (const std::string_view prefix : editor::kMaterialServicePrefixes) {
         if (Status routed = composite.route(prefix, material); !routed) {
             return routed;
         }
@@ -1726,6 +1775,7 @@ int main(int argc, char** argv) {
         host.service_session = service_session;
         host.material_service = &editor_service;
         host.material_session = composite_service.child_session(service_session, editor_service);
+        nav_source.bind_terrain(host.material_session);
         host.navigation_session =
             composite_service.child_session(service_session, navigation_service);
         attach_navigation(host, nav_source, nav_driver);

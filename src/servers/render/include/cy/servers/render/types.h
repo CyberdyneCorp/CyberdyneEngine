@@ -245,6 +245,10 @@ enum class DebugViewMode : u8 {
     GiContribution,
     ShadowCascades,
     BoundingVolumes,
+    /// Every lightmapped surface as a checker of its own lightmap texels, coloured by the density
+    /// the atlas gives it against the level's target. Drawn by the forward frame
+    /// (`lightmaps::write_lightmap_density_view`).
+    LightmapDensity,
     Count,
 };
 

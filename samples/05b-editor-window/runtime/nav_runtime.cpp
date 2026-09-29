@@ -7,6 +7,7 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/hash.h>
 #include <cy/core/values/name.h>
+#include <cy/editor/material_service.h>
 #include <cy/import/gltf.h>
 #include <cy/import/mesh.h>
 #include <cy/import/primitive.h>
@@ -793,6 +794,14 @@ Status AuthoredNavigationSource::store_bake(u64 identity, Span<const u8> bytes,
 Status AuthoredNavigationSource::load_bake(u64 identity, Array<u8>& out) noexcept {
     const std::string path = sidecar_root_ + "/" + sidecar_name(identity);
     return assets::fs::read_whole(path.c_str(), out);
+}
+
+bool AuthoredNavigationSource::externally_stale(u32) noexcept {
+    return editor::MaterialService::terrain_navigation_stale(terrain_session_);
+}
+
+void AuthoredNavigationSource::bake_committed(u32) noexcept {
+    editor::MaterialService::terrain_navigation_rebaked(terrain_session_);
 }
 
 Expected<Ray, Error> AuthoredNavigationSource::pick_ray(u32, u64 frame, f32 x, f32 y) noexcept {

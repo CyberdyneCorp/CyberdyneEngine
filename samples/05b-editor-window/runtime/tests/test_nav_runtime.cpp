@@ -36,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -171,11 +172,12 @@ struct Runtime {
         CY_REQUIRE(ser::build_authoring_schema(registry, schema).has_value());
         reload(text);
         source.bind(&world);
-        CY_REQUIRE(composite.route("material.", material).has_value());
-        CY_REQUIRE(composite.route("preview.", material).has_value());
-        CY_REQUIRE(composite.route("vfx.", material).has_value());
+        for (const std::string_view prefix : kMaterialServicePrefixes) {
+            CY_REQUIRE(composite.route(prefix, material).has_value());
+        }
         CY_REQUIRE(composite.route("navigation.", navigation).has_value());
         CY_REQUIRE_EQ(composite.open(&session), CY_RESULT_OK);
+        source.bind_terrain(composite.child_session(session, material));
         driver = std::make_unique<NavigationDriver>(composite, session);
     }
     ~Runtime() {
@@ -859,4 +861,30 @@ CY_TEST_CASE(
     runtime.settle();
     CY_CHECK_EQ(runtime.driver->updates_completed(), before + 1);
     CY_CHECK_EQ(runtime.driver->last_update().world, kMapWorld);
+}
+
+CY_TEST_CASE(
+    "editor runtime: a terrain stroke flags the navmesh stale and the next bake clears it") {
+    Runtime runtime;
+    const Baked baked = runtime.bake();
+    CY_CHECK_FALSE(runtime.stale(baked));
+
+    // `terrain.evaluate` as the editor's terrain tools send it: an empty stack, then one raise.
+    const auto terrain = [](bool stroke) {
+        Payload out;
+        out.u32_(1).u64_(0x29).u64_(0).u32_(2).f32_(128.0F).f32_(0.0F).u32_(stroke ? 1U : 0U);
+        if (stroke) {
+            out.u64_(7).u64_(0).u8_(0).u8_(1).u8_(0).f32_(8.0F).f32_(0.8F).f32_(0.5F).u32_(1);
+            out.f32_(0.5F).f32_(0.5F).f32_(1.0F);
+        }
+        return out;
+    };
+    CY_REQUIRE(runtime.request("terrain.evaluate", terrain(false)).is(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(runtime.request("terrain.evaluate", terrain(true)).is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK(runtime.source.externally_stale(kMapWorld));
+    CY_CHECK(runtime.stale(baked));
+
+    const Baked rebaked = runtime.bake();
+    CY_CHECK_FALSE(runtime.source.externally_stale(kMapWorld));
+    CY_CHECK_FALSE(runtime.stale(rebaked));
 }

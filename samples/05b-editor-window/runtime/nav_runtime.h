@@ -122,6 +122,12 @@ public:
     [[nodiscard]] const scene::serialization::World* bound() const noexcept { return world_; }
     /// Where `navigation/<identity>.cynavmesh` is written and read; the project by default.
     void set_sidecar_root(std::string root) { sidecar_root_ = std::move(root); }
+    /// The MaterialService session whose `terrain.evaluate` flags navigation stale. The terrain
+    /// tools' stale regions are the one stale flag: every navigation world reports them, and a
+    /// committed bake of any world consumes them, because the terrain underlies every world.
+    void bind_terrain(CyServiceSession material_session) noexcept {
+        terrain_session_ = material_session;
+    }
 
     /// Remembers the view frame `frame` was rendered with, for `pick_ray`. The last 64 are kept.
     void record_frame(u64 frame, const render::View& view, Vec3 eye);
@@ -142,6 +148,8 @@ public:
     [[nodiscard]] Status load_bake(u64 identity, Array<u8>& out) noexcept override;
     [[nodiscard]] Expected<Ray, Error> pick_ray(u32 viewport, u64 frame, f32 x,
                                                 f32 y) noexcept override;
+    [[nodiscard]] bool externally_stale(u32 world) noexcept override;
+    void bake_committed(u32 world) noexcept override;
 
     /// Mesh loads that failed, so a missing asset is reported rather than silently unwalkable.
     [[nodiscard]] u32 mesh_failures() const noexcept { return mesh_failures_; }
@@ -163,6 +171,7 @@ private:
     std::string project_;
     std::string sidecar_root_;
     const scene::serialization::World* world_ = nullptr;
+    CyServiceSession terrain_session_ = nullptr;
     std::map<std::string, std::unique_ptr<LoadedMesh>> meshes_;
     std::deque<Frame> frames_;
     u32 mesh_failures_ = 0;

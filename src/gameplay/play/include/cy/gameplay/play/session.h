@@ -152,6 +152,13 @@ struct PlayReport {
     /// Nodes that carried a body component the bridge could act on.
     u32 bodies = 0;
     u32 colliders = 0;
+    /// Authored joints handed to the bridge, which creates the constraint when the backend has
+    /// constraints (`BridgeStatistics::joints_created` says whether it did).
+    u32 joints = 0;
+    /// Authored joints that could not be handed over: an unknown kind, a node with no body, or a
+    /// target that names no body in this session. Counted and skipped, as the bridge does with a
+    /// body it refuses, so one bad joint does not stop the rest of the world simulating.
+    u32 joints_refused = 0;
     /// Nodes whose declared body component this build does not know. Counted rather than dropped.
     u32 unknown_components = 0;
     u64 ticks = 0;
@@ -238,6 +245,10 @@ public:
     [[nodiscard]] ecs::World* world() noexcept { return world_.get(); }
     [[nodiscard]] scene::SceneTree* tree() noexcept { return tree_.get(); }
     [[nodiscard]] physics::PhysicsBridge* bridge() noexcept { return bridge_.get(); }
+    /// The solver and the world this session simulates in, for a caller that draws its debug
+    /// overlays. Null and a null handle outside a session.
+    [[nodiscard]] physics::PhysicsServer* physics_server() const noexcept { return server_; }
+    [[nodiscard]] physics::WorldHandle physics_world() const noexcept { return physics_world_; }
     [[nodiscard]] const determinism::SimulationClock& clock() const noexcept { return clock_; }
     /// The entity an authored node's identity is simulating as, or a null entity.
     [[nodiscard]] ecs::Entity entity_for(u64 identity) const noexcept;
@@ -298,6 +309,14 @@ private:
     [[nodiscard]] Status attach_physics(const scene::serialization::WorldNode& node,
                                         ecs::Entity entity) noexcept;
     [[nodiscard]] Status publish_placements() noexcept;
+    /// Hand every authored joint to the bridge, after the bodies exist. See joints.h.
+    [[nodiscard]] Status attach_joints() noexcept;
+    /// Hand one node's joint over, or count why not. A node with no joint is not an error.
+    [[nodiscard]] Status attach_joint(const Simulated& entry) noexcept;
+    /// Re-hand every joint that touches `identity`, after its body was rebuilt.
+    [[nodiscard]] Status rejoin(u64 identity) noexcept;
+    /// Where an entity is in the world, without scale, which is what a body is placed at.
+    [[nodiscard]] Transform body_placement(ecs::Entity entity) const noexcept;
     /// The `simulated_` entry for an authored identity, or null.
     [[nodiscard]] Simulated* simulated_for(u64 identity) noexcept;
     /// Remove the physics components this session added to an entity, if any.

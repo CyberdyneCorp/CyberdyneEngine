@@ -74,7 +74,7 @@ When a world records a bake whose asset the host cannot find, the navigation sta
 - **THEN** the navmesh producer's node key SHALL change
 
 ### Requirement: Stale bake detection
-The engine SHALL compute a source fingerprint over the bake inputs: source triangles, per-triangle layer, tag and area, surface and area volumes, the settings, the back end and the producer version. It SHALL store the fingerprint with the bake. The engine SHALL report a bake as stale when the fingerprint recomputed from the current sources differs from the stored one.
+The engine SHALL compute a source fingerprint over the bake inputs: source triangles, per-triangle layer, tag and area, surface and area volumes, the settings, the back end and the producer version. It SHALL store the fingerprint with the bake. The engine SHALL report a bake as stale when the fingerprint recomputed from the current sources differs from the stored one, or when the host reports navigation made stale outside those sources (the terrain tools' edited regions). A committed bake SHALL consume that host-reported flag.
 
 #### Scenario: Geometry edit makes the bake stale
 - **WHEN** a mesh that contributes to a baked world is moved or its geometry changes
@@ -83,3 +83,7 @@ The engine SHALL compute a source fingerprint over the bake inputs: source trian
 #### Scenario: Undone edit is not stale
 - **WHEN** that geometry edit is undone
 - **THEN** the navigation status SHALL report the bake as current
+
+#### Scenario: Terrain edits share the stale flag and a bake consumes it
+- **WHEN** a terrain stroke marks a navigation region stale and the world is then baked
+- **THEN** the navigation status SHALL report the bake as stale before that bake, the committed bake SHALL clear the terrain's stale regions, and the status after it SHALL report the bake as current

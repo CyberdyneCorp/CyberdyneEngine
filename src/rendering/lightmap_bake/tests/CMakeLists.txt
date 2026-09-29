@@ -3,6 +3,9 @@
 #   render_lightmap_atlas   the packer and the address word: shared pages, per-object resolution,
 #                           the block grid and the gutter, and the address round trip the frame
 #                           decodes. Arithmetic, so the unit budget.
+#   render_lightmap_mips    the mip chain over an atlas drawn by hand: every protected level reads
+#                           only its own chart where a plain box filter bleeds. Arithmetic,
+#                           but over a whole 512 page, which is past the unit budget.
 #   render_lightmap_bake    the bake over real rooms: atlas texels against the path tracer's ground
 #                           truth, directional and SH L1 keeping a normal map's response where
 #                           irradiance-only does not, seams, emissive light, alpha-tested and
@@ -33,6 +36,12 @@ function(cy_lightmap_bake_declare_tests)
         NAME render_lightmap_atlas
         KIND unit
         SOURCES "${tests_dir}/test_atlas.cpp"
+        DEPENDENCIES cy::rendering-lightmap-bake)
+
+    cy_add_test(
+        NAME render_lightmap_mips
+        KIND integration
+        SOURCES "${tests_dir}/test_mips.cpp"
         DEPENDENCIES cy::rendering-lightmap-bake)
 
     cy_add_test(

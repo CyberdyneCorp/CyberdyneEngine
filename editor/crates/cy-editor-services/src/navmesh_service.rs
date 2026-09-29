@@ -587,6 +587,8 @@ impl Editor {
         let Some((target, report)) = self.navmesh.take_completed() else {
             return;
         };
+        // The engine's bake consumed the terrain's stale regions when it committed.
+        self.terrain.navigation_rebaked();
         let recorded = self
             .documents
             .get_mut(target.document)
@@ -843,6 +845,50 @@ mod tests {
         );
         rig.invoke("edit.redo");
         assert_eq!(rig.recorded_identity(), 0xFFFF_0000_0000_0022);
+    }
+
+    /// Terrain edits and the navmesh share one stale flag: the engine's bake consumes the regions
+    /// the terrain flagged, and the editor's copy of them clears with the completed bake. A failed
+    /// bake consumes nothing.
+    #[test]
+    fn a_completed_bake_clears_the_navigation_the_terrain_flagged_stale() {
+        let mut rig = rig();
+        let terrain = cy_editor_core::ids::NodeId::from_u128(0x29);
+        assert!(
+            rig.editor
+                .terrain
+                .maintain(&rig.editor.runtime, Some((terrain, Ok(vec![1]))))
+                .is_none()
+        );
+        let (evaluation, _) = rig.request(crate::terrain_engine::TERRAIN_EVALUATE_OPERATION);
+        let stroked = crate::terrain_engine::tests::reply(3, &[[1.0, 2.0, 3.0, 4.0]], 0, &[]);
+        assert!(
+            rig.editor
+                .terrain
+                .accept(&event(evaluation, ServiceEventKind::Completed, stroked))
+                .is_none()
+        );
+        assert_eq!(rig.editor.terrain.stale_navigation().len(), 1);
+
+        let failed = rig.bake();
+        let refusal = failure_payload("navigation.surface.missing", "no including NavMeshSurface");
+        assert!(
+            rig.settle(&event(failed, ServiceEventKind::Failed, refusal))
+                .is_some()
+        );
+        assert_eq!(rig.editor.terrain.stale_navigation().len(), 1);
+
+        let baked = rig.bake();
+        let completed = completed_payload(&sample_report(1, 0x11));
+        assert!(
+            rig.settle(&event(baked, ServiceEventKind::Completed, completed))
+                .is_none()
+        );
+        assert!(rig.editor.terrain.stale_navigation().is_empty());
+        assert_eq!(
+            rig.editor.terrain.status().values["navigation_stale"],
+            Value::Bool(false)
+        );
     }
 
     #[test]

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "navigation_seam.h"
@@ -28,11 +29,12 @@ struct Services {
     CyServiceSession session = nullptr;
 
     Services() {
-        CY_REQUIRE(composite.route("material.", material).has_value());
-        CY_REQUIRE(composite.route("preview.", material).has_value());
-        CY_REQUIRE(composite.route("vfx.", material).has_value());
+        for (const std::string_view prefix : kMaterialServicePrefixes) {
+            CY_REQUIRE(composite.route(prefix, material).has_value());
+        }
         CY_REQUIRE(composite.route("navigation.", navigation).has_value());
         CY_REQUIRE_EQ(composite.open(&session), CY_RESULT_OK);
+        seam.terrain_session = composite.child_session(session, material);
     }
     ~Services() { composite.close(session); }
     Services(const Services&) = delete;
@@ -43,6 +45,27 @@ struct Services {
 
 [[nodiscard]] bool has(const std::vector<std::string>& names, const char* name) {
     return std::ranges::find(names, name) != names.end();
+}
+
+/// A `terrain.evaluate` request over a 128 m, two-tile terrain: no modifier, or one raise stroke.
+[[nodiscard]] Payload terrain_request(bool stroke) {
+    Payload out;
+    out.u32_(1).u64_(0x29).u64_(0).u32_(2).f32_(128.0F).f32_(0.0F).u32_(stroke ? 1U : 0U);
+    if (stroke) {
+        out.u64_(7).u64_(0).u8_(0).u8_(1).u8_(0);      // identity, raise, enabled, base
+        out.f32_(8.0F).f32_(0.8F).f32_(0.5F).u32_(1);  // radius, strength, falloff, dabs
+        out.f32_(0.05F).f32_(0.05F).f32_(1.0F);        // one dab over the square world
+    }
+    return out;
+}
+
+/// The `stale` byte of a `navigation.status` answer: u32 world, u8 baked, u8 stale, ...
+[[nodiscard]] bool reported_stale(const Event& status) {
+    CY_REQUIRE(status.is(CY_SERVICE_EVENT_COMPLETED));
+    Decoder decoder(status.payload);
+    (void)decoder.u32_();
+    CY_CHECK_EQ(decoder.u8_(), 1U);
+    return decoder.u8_() != 0;
 }
 
 }  // namespace
@@ -161,4 +184,44 @@ CY_TEST_CASE("composite: capabilities wait for a busy child and a route table re
     CY_REQUIRE_EQ(table.open(&open), CY_RESULT_OK);
     CY_CHECK_FALSE(table.route("navigation.", services.navigation).has_value());
     table.close(open);
+}
+
+CY_TEST_CASE("composite: terrain.evaluate reaches MaterialService through the one binding") {
+    // Regression: the runtime routed only material., vfx. and preview. to MaterialService, so the
+    // terrain tools' evaluation was refused as unsupported once navigation joined the binding.
+    Services services;
+    const Event evaluated =
+        call(services.composite, services.session, 1, "terrain.evaluate", terrain_request(false));
+    CY_CHECK(evaluated.is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK(MaterialService::terrain_preview(services.seam.terrain_session) != nullptr);
+}
+
+CY_TEST_CASE("composite: a terrain stroke makes the navmesh stale until navigation is rebaked") {
+    Services services;
+    square_world(services.seam);
+    CY_REQUIRE(call(services.composite, services.session, 1, "navigation.bake",
+                    bake_request(bake_settings()))
+                   .is(CY_SERVICE_EVENT_COMPLETED));
+    Payload status;
+    status.u32_(kWorld).settings(bake_settings()).u64_(0).u64_(0);
+    CY_CHECK_FALSE(
+        reported_stale(call(services.composite, services.session, 2, "navigation.status", status)));
+
+    CY_REQUIRE(
+        call(services.composite, services.session, 3, "terrain.evaluate", terrain_request(false))
+            .is(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(
+        call(services.composite, services.session, 4, "terrain.evaluate", terrain_request(true))
+            .is(CY_SERVICE_EVENT_COMPLETED));
+    CY_REQUIRE(MaterialService::terrain_navigation_stale(services.seam.terrain_session));
+    CY_CHECK(
+        reported_stale(call(services.composite, services.session, 5, "navigation.status", status)));
+
+    // One flag: the bake that navigation reports stale against is the one that clears the terrain.
+    CY_REQUIRE(call(services.composite, services.session, 6, "navigation.bake",
+                    bake_request(bake_settings()))
+                   .is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_FALSE(MaterialService::terrain_navigation_stale(services.seam.terrain_session));
+    CY_CHECK_FALSE(
+        reported_stale(call(services.composite, services.session, 7, "navigation.status", status)));
 }

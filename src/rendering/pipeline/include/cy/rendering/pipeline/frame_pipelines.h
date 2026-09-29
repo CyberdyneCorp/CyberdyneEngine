@@ -328,9 +328,31 @@ struct alignas(16) FrameViewData {
     /// APPENDED, for the reason `material_textures` gives.
     u32 lightmap_control[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture, 0};
     /// x: a page's side in texels. y: pages, stacked down the texture. z: the gutter, in texels.
-    /// w: reserved.
-    u32 lightmap_layout[4] = {0, 0, 0, 0};
+    /// w: the set 0 texture slot of the baked shadow mask, laid out like the planes, or
+    /// `kNoMaterialTexture`.
+    u32 lightmap_layout[4] = {0, 0, 0, kNoMaterialTexture};
+    /// The stationary lights the shadow mask shadows: channel c's light as an index into the
+    /// frame's lights (`AssemblyView::lights`' order), or `kNoLightmapLight`. Read only for a
+    /// lightmapped surface. `lightmaps::write_lightmaps` fills this and the two fields after it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 lightmap_shadow_lights[4] = {0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU};
+    /// The lights whose direct term the lightmap's texels already hold: a 128-bit set over frame
+    /// light indices, light i in bit i % 32 of word i / 32. A lightmapped surface does not shade
+    /// them again. Zero, the default, names none.
+    u32 lightmap_direct_lights[4] = {0, 0, 0, 0};
+    /// The lightmap texel-density view. x: `kLightmapDensityView` draws every surface as the
+    /// density its lightmap gives it against y (texels per metre, as `f32` bits) instead of lit.
+    /// Zero, the default, is the lit frame. zw: reserved.
+    u32 lightmap_debug[4] = {0, 0, 0, 0};
 };
+
+/// `lightmap_shadow_lights`' "no light has this channel" — `cy/frame.slang`'s `kCyNoLightmapLight`.
+inline constexpr u32 kNoLightmapLight = 0xFFFFFFFFU;
+/// `lightmap_debug[0]` for the texel-density view — `cy/frame.slang`'s `kCyLightmapDensityView`.
+inline constexpr u32 kLightmapDensityView = 1U;
+/// Frame lights `lightmap_direct_lights` can name.
+inline constexpr u32 kMaxLightmapDirectLights = 128;
 
 /// `motion_control[0]` when a frame carries no previous instance rows — `cy/frame.slang`'s
 /// `kCyNoPreviousInstances`.
@@ -341,7 +363,10 @@ inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 592, "CyFrameData's std140 block is 592 bytes");
+static_assert(sizeof(FrameViewData) == 640, "CyFrameData's std140 block is 640 bytes");
+static_assert(offsetof(FrameViewData, lightmap_shadow_lights) == 592);
+static_assert(offsetof(FrameViewData, lightmap_direct_lights) == 608);
+static_assert(offsetof(FrameViewData, lightmap_debug) == 624);
 static_assert(offsetof(FrameViewData, decal_control) == 512);
 static_assert(offsetof(FrameViewData, volumetric_fog_control) == 528);
 static_assert(offsetof(FrameViewData, motion_control) == 544);

@@ -223,8 +223,21 @@ public struct CyFrameData
     /// surface as it was whatever its draw's `giAddress` says.
     public uint4 lightmapControl;
     /// x: a page's side in texels. y: pages, stacked down the texture. z: the gutter around every
-    /// rectangle's interior, in texels. w: reserved.
+    /// rectangle's interior, in texels. w: the frame texture slot of the baked shadow mask, laid
+    /// out like the planes, or `kCyNoMaterialTexture`.
     public uint4 lightmapLayout;
+    /// The stationary lights the shadow mask shadows, appended for the reason `materialTextures`
+    /// gives: channel c's light, as an index into `cyLights`, or `kCyNoLightmapLight`. Read only
+    /// for a lightmapped surface.
+    public uint4 lightmapShadowLights;
+    /// The lights whose DIRECT term the lightmap's texels already hold — a 128-bit set over
+    /// indices into `cyLights`, light i in bit i % 32 of word i / 32. A lightmapped surface does
+    /// not shade them again. Zero, the default, names none.
+    public uint4 lightmapDirectLights;
+    /// The lightmap texel-density view. x: `kCyLightmapDensityView` draws every surface as the
+    /// density its lightmap gives it against y — the target, texels per metre, as float bits —
+    /// instead of lit. Zero, the default, is the lit frame. zw: reserved.
+    public uint4 lightmapDebug;
 };
 
 /// `motionControl.x` when the frame carries no previous instance rows.
@@ -259,6 +272,11 @@ public static const uint kCyLightmapNone = 0u;
 public static const uint kCyLightmapIrradiance = 1u;
 public static const uint kCyLightmapDirectional = 2u;
 public static const uint kCyLightmapShL1 = 3u;
+
+/// `lightmapShadowLights`: a channel no light has. `lightmaps::kNoLightmapLight` is the same number.
+public static const uint kCyNoLightmapLight = 0xFFFFFFFFu;
+/// `lightmapDebug.x`: the texel-density view. `lightmaps::kLightmapDensityView` is the same number.
+public static const uint kCyLightmapDensityView = 1u;
 
 /// `GpuDrawInstance` — 32 bytes, the per-draw indirection `first_instance` names.
 public struct CyDrawInstance
@@ -670,8 +688,46 @@ float directionalShadowVisibility(float3 relativePosition, float3 normal, float2
     return visible / 9.0;
 }
 
+/// What the lightmap says about the lights, for one surface: whether the surface is lightmapped at
+/// all, and its shadow mask, sampled once outside the light loop.
+struct CyBakedLights
+{
+    bool active;
+    float4 mask;
+};
+
+/// How much of one light's direct term a lightmapped surface still shades: none of a light whose
+/// direct term is in the texels, a stationary light's baked visibility, and all of any other.
+float bakedLightFactor(uint index, float4 mask)
+{
+    if (index < 128u && ((cyFrame.lightmapDirectLights[index >> 5u] >> (index & 31u)) & 1u) != 0u)
+    {
+        return 0.0;
+    }
+    for (uint channel = 0u; channel < 4u; ++channel)
+    {
+        if (cyFrame.lightmapShadowLights[channel] == index)
+        {
+            return mask[channel];
+        }
+    }
+    return 1.0;
+}
+
+/// A punctual light's sample, scaled by what the lightmap left of it. Unchanged, bit for bit, on a
+/// surface with no lightmap.
+LightSample bakedLightSample(uint index, float3 relativePosition, CyBakedLights baked)
+{
+    var sample = evaluateLight(cyLights[index], relativePosition);
+    if (baked.active)
+    {
+        sample.illuminance *= bakedLightFactor(index, baked.mask);
+    }
+    return sample;
+}
+
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
-                        float2 fragmentCentre, uint instanceFlags)
+                        float2 fragmentCentre, uint instanceFlags, CyBakedLights baked)
 {
     let pixel = uint2(fragmentCentre);
     float3 lit = float3(0.0);
@@ -694,11 +750,18 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
         // THE CONTACT TERM IS AN ADDITION TO THE MAP'S, NOT A REPLACEMENT: `virtual-shadows`'
         // "Contact and traced refinement". The darker of the two, so an occluder both see is not
         // counted twice and one only the trace sees still darkens the contact.
-        let visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
+        var visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
                              ? min(directionalShadowVisibility(relativePosition, normal,
                                                                fragmentCentre),
                                    contactShadowVisibility(fragmentCentre))
                              : 1.0;
+        // A STATIONARY SUN ON A LIGHTMAPPED SURFACE: the baked mask is its shadow from the static
+        // world, the map (when there is one) its shadow from everything, and the darker of the two
+        // counts an occluder both see once. A static sun's direct term is in the texels: zero.
+        if (baked.active)
+        {
+            visibility = min(visibility, bakedLightFactor(global, baked.mask));
+        }
         lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
     }
 
@@ -710,7 +773,7 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
             {
                 continue;  // already accumulated above
             }
-            let sample = evaluateLight(cyLights[index], relativePosition);
+            let sample = bakedLightSample(index, relativePosition, baked);
             lit += shadeSurfaceWithLight(surface, normal, viewDir, sample);
         }
         return lit;
@@ -729,7 +792,7 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
         {
             continue;
         }
-        let sample = evaluateLight(cyLights[index], relativePosition);
+        let sample = bakedLightSample(index, relativePosition, baked);
         lit += shadeSurfaceWithLight(surface, normal, viewDir, sample);
     }
     return lit;
@@ -969,26 +1032,96 @@ float2 lightmapCoordinate(uint address, float2 uv2)
 
 /// The ambient radiance the atlas holds for this surface, decoded by the encoding. `normal` is the
 /// shading normal: the directional and SH L1 encodings respond to it, irradiance does not.
-float3 lightmapAmbient(uint address, float2 uv2, float3 normal)
+///
+/// THE IMPLICIT LEVEL OF DETAIL: a minified surface reads the mip chain the atlas's gutter and
+/// chart padding were laid out for (`lightmap_bake::build_lightmap_mips`), which is filtered per
+/// chart so a coarse tap reads only its own. An atlas uploaded with one level reads level 0, as it
+/// always did. Called only under a draw-uniform branch, so the derivatives are defined.
+float3 lightmapAmbient(float2 uv, float3 normal)
 {
-    let uv = lightmapCoordinate(address, uv2);
-    let first = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.x, uv, 0.0);
+    let first = cyMaterialSampleTexture(cyFrame.lightmapControl.x, uv);
     let mode = cyFrame.lightmapControl.w;
     if (mode == kCyLightmapDirectional)
     {
-        let direction = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.y, uv, 0.0);
+        let direction = cyMaterialSampleTexture(cyFrame.lightmapControl.y, uv);
         let factor = max(0.0, 1.0 + dot(direction.xyz, normal)) / max(direction.w, 1.0e-3);
         return first.rgb * factor;
     }
     if (mode == kCyLightmapShL1)
     {
-        let green = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.y, uv, 0.0);
-        let blue = cyMaterialSampleTextureLevel(cyFrame.lightmapControl.z, uv, 0.0);
+        let green = cyMaterialSampleTexture(cyFrame.lightmapControl.y, uv);
+        let blue = cyMaterialSampleTexture(cyFrame.lightmapControl.z, uv);
         return float3(max(0.0, first.w + dot(first.xyz, normal)),
                       max(0.0, green.w + dot(green.xyz, normal)),
                       max(0.0, blue.w + dot(blue.xyz, normal)));
     }
     return first.rgb;
+}
+
+/// The lights a lightmapped surface's lightmap speaks for: its shadow mask, read at the atlas
+/// coordinate the ambient term reads, before the light loop so the read is in uniform control flow.
+CyBakedLights bakedLightsOf(bool lightmapped, float2 uv)
+{
+    CyBakedLights baked;
+    baked.active = lightmapped;
+    baked.mask = float4(1.0);
+    if (lightmapped && cyFrame.lightmapLayout.w != kCyNoMaterialTexture)
+    {
+        baked.mask = cyMaterialSampleTexture(cyFrame.lightmapLayout.w, uv);
+    }
+    return baked;
+}
+
+// --- The lightmap texel-density view ------------------------------------------------------------
+//
+// An engine debug view the editor requests (`editor-viewport-and-gizmos`: a view mode is "an engine
+// debug view requested by the editor, not editor-side drawing"). Every lightmapped surface is drawn
+// as a checker of its own lightmap texels, coloured by the density the atlas gives it against the
+// level's target: green on target, toward blue at half of it and below, toward red at twice it and
+// above. A surface with no lightmap is flat grey. The density is measured, not looked up: texels
+// per metre are the screen-space derivatives of the atlas coordinate over those of the position,
+// so what is drawn is what the frame actually samples.
+
+static const float3 kCyDensityUnder = float3(0.1, 0.25, 1.0);
+static const float3 kCyDensityOnTarget = float3(0.1, 0.9, 0.2);
+static const float3 kCyDensityOver = float3(1.0, 0.15, 0.1);
+static const float3 kCyDensityUnlit = float3(0.18, 0.18, 0.18);
+
+/// The frame's exposure, which the resolve applies to every pixel after this pass.
+float frameExposureStops()
+{
+#if defined(CY_FRAME_METAL)
+    return cyFrameGlobals.globals.exposureStops;
+#else
+    return cyGlobalSet.data.exposureStops;
+#endif
+}
+
+/// The view's colour, divided by the exposure the resolve will multiply it by, so the view reads
+/// the same under a 100 000 lux sun as in a cellar.
+float3 lightmapDensityColour(bool lightmapped, float2 uv, float3 relativePosition)
+{
+    return lightmapDensityHue(lightmapped, uv, relativePosition) * exp2(-frameExposureStops());
+}
+
+float3 lightmapDensityHue(bool lightmapped, float2 uv, float3 relativePosition)
+{
+    if (!lightmapped)
+    {
+        return kCyDensityUnlit;
+    }
+    let size = float2(float(cyFrame.lightmapLayout.x),
+                      float(cyFrame.lightmapLayout.x * cyFrame.lightmapLayout.y));
+    let texel = uv * size;
+    let texels = sqrt(dot(ddx(texel), ddx(texel)) + dot(ddy(texel), ddy(texel)));
+    let metres = sqrt(dot(ddx(relativePosition), ddx(relativePosition)) +
+                      dot(ddy(relativePosition), ddy(relativePosition)));
+    let target = max(asfloat(cyFrame.lightmapDebug.y), 1.0e-6);
+    let octaves = clamp(log2(max(texels / max(metres, 1.0e-9), 1.0e-9) / target), -1.0, 1.0);
+    let colour = octaves < 0.0 ? lerp(kCyDensityOnTarget, kCyDensityUnder, -octaves)
+                               : lerp(kCyDensityOnTarget, kCyDensityOver, octaves);
+    let cell = uint2(floor(texel));
+    return ((cell.x + cell.y) & 1u) == 0u ? colour : colour * 0.55;
 }
 
 /// Shared forward lighting for the standard material and a compiled scene material surface.
@@ -998,6 +1131,15 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
 {
     let draw = cyDrawInstances[input.drawIndex];
     var surface = resolved;
+    // A LIGHTMAPPED SURFACE: `lightmaps::write_lightmaps` set `lightmapControl.w` only under a mode
+    // `gi::exclusion_for()` admits lightmaps in. Uniform over the draw.
+    let lightmapped = draw.giAddress != 0u && cyFrame.lightmapControl.w != kCyLightmapNone;
+    let lightmapUv = lightmapped ? lightmapCoordinate(draw.giAddress, input.lightmapUv)
+                                 : float2(0.0);
+    if (cyFrame.lightmapDebug.x == kCyLightmapDensityView)
+    {
+        return float4(lightmapDensityColour(lightmapped, lightmapUv, input.relativePosition), 1.0);
+    }
 
     var normal = normalize(input.normal);
     // DECALS CHANGE THE SURFACE BEFORE IT IS LIT, so the light loop, the shadow and the ambient
@@ -1012,8 +1154,12 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
     // position. There is nowhere in this file to put a world-space camera, which is the point.
     let viewDir = normalize(-input.relativePosition);
 
+    // THE BAKED LIGHTS: a stationary light's direct term through its shadow-mask channel, and no
+    // direct term at all from a light whose direct term the texels hold. With no lightmap on the
+    // draw nothing here changes a bit of the light loop's arithmetic.
+    let baked = bakedLightsOf(lightmapped, lightmapUv);
     var color = accumulateLights(surface, input.relativePosition, normal, viewDir,
-                                 input.position.xy, draw.flags);
+                                 input.position.xy, draw.flags, baked);
     // AMBIENT OCCLUSION DARKENS THE AMBIENT TERM AND NOTHING ELSE. `rendering-post-processing`:
     // "AO SHALL modulate indirect lighting only; applying it to direct light SHALL be an explicitly
     // non-physical artistic option, off by default." The direct sum above is untouched unless that
@@ -1028,9 +1174,9 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
     // so it replaces the flat ambient as the volume does, and a surface without one is lit exactly
     // as before.
     var ambientRadiance = cyFrame.ambientAndOcclusion.rgb;
-    if (draw.giAddress != 0u && cyFrame.lightmapControl.w != kCyLightmapNone)
+    if (lightmapped)
     {
-        ambientRadiance = lightmapAmbient(draw.giAddress, input.lightmapUv, normal);
+        ambientRadiance = lightmapAmbient(lightmapUv, normal);
     }
     else if (cyFrame.probeVolumeControl.x != kCyNoMaterialTexture)
     {

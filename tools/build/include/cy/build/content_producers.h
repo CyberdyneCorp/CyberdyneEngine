@@ -71,7 +71,8 @@ inline constexpr u32 kCookProducerVersion = 1;
 inline constexpr u32 kVfxProducerVersion = 1;
 
 /// The `lightmap` producer: a level's bake description and its meshes in, a cooked lightmap out.
-inline constexpr u32 kLightmapProducerVersion = 2;
+/// Version 3: the payload carries the mip chain and the directly baked lights (asset version 3).
+inline constexpr u32 kLightmapProducerVersion = 3;
 
 /// The `navmesh` producer: a navigation world's saved `.cynavmesh` sidecar in, verified against
 /// the world's `bake-identity` option, and the cooked navigation mesh out. Issue #28.

@@ -19,6 +19,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/math/shapes.h>
 #include <cy/core/math/transform.h>
+#include <cy/servers/physics/constraints.h>
 #include <cy/servers/physics/handles.h>
 #include <cy/servers/physics/queries.h>
 #include <cy/servers/physics/shapes.h>
@@ -88,6 +89,16 @@ public:
     /// A contact: a point, its normal, and how deep the overlap is.
     virtual void contact(Vec3 position, Vec3 normal, f32 penetration) noexcept;
 };
+
+/// One constraint: both anchors, the line between them, and its limits drawn about anchor A.
+///
+/// `frame_a` and `frame_b` are the two joint frames in WORLD space — each body's placement times
+/// its `ConstraintDescription::frame_*`. A backend draws a simulated constraint through this, and
+/// an authoring tool draws a joint that has not been created yet through the same function, so a
+/// joint looks the same before play and during it. The limits follow `constraints.h`'s convention:
+/// the frame's local X is the hinge, slider and twist axis.
+void debug_draw_constraint(const ConstraintDescription& description, const Transform& frame_a,
+                           const Transform& frame_b, DebugDrawSink& sink) noexcept;
 
 /// Stateless query visualisation. The caller owns the input and result, so parallel const queries
 /// never write a shared "last query" buffer in the server. Null `hit` draws only the query shape.

@@ -37,7 +37,9 @@ cy_add_module(
     ALIAS cy::gameplay-play
     TYPE STATIC
     SOURCES
+        src/authored_fields.cpp
         src/driver.cpp
+        src/joints.cpp
         src/launcher.cpp
         src/mode.cpp
         src/session.cpp

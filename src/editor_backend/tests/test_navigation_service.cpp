@@ -440,6 +440,37 @@ CY_TEST_CASE("editor_backend: navigation status reports a stale bake after a sou
     CY_CHECK(resized.stale);
 }
 
+CY_TEST_CASE("editor_backend: a stale flag raised outside the sources is the bake's to consume") {
+    Fixture fixture;
+    square_world(fixture.seam);
+    const Completed baked = fixture.bake(1);
+    CY_CHECK_EQ(fixture.seam.bakes_committed, 1U);
+
+    // The terrain tools flag the navmesh stale; the fingerprint alone would call it current.
+    fixture.seam.external_stale = true;
+    const StatusReply flagged = fixture.status(2, baked);
+    CY_CHECK(flagged.stale);
+    CY_CHECK_EQ(flagged.current, baked.fingerprint);
+
+    // Bake consumes the flag: the next status is current and nothing else cleared it.
+    const Completed rebaked = fixture.bake(3);
+    CY_CHECK_EQ(fixture.seam.bakes_committed, 2U);
+    CY_CHECK_FALSE(fixture.seam.external_stale);
+    CY_CHECK_FALSE(fixture.status(4, rebaked).stale);
+
+    // A cancelled bake commits nothing, so it consumes nothing.
+    fixture.seam.external_stale = true;
+    CY_REQUIRE_EQ(submit(fixture.service, fixture.session, 5, "navigation.bake",
+                         bake_request(fixture.settings)),
+                  CY_RESULT_OK);
+    CY_REQUIRE_EQ(fixture.service.cancel(fixture.session, 5), CY_RESULT_OK);
+    const std::vector<Event> cancelled = drain(fixture.service, fixture.session, 5);
+    CY_REQUIRE_FALSE(cancelled.empty());
+    CY_CHECK(cancelled.back().is(CY_SERVICE_EVENT_CANCELLED));
+    CY_CHECK(fixture.seam.external_stale);
+    CY_CHECK_EQ(fixture.seam.bakes_committed, 2U);
+}
+
 CY_TEST_CASE("editor_backend: navigation status restores a saved bake into a new session") {
     Fixture first;
     square_world(first.seam);

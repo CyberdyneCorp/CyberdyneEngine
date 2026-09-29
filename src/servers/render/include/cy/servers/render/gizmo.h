@@ -188,6 +188,11 @@ struct GizmoIntent {
     f32 near_plane = 0.0F;
     /// UINT64_MAX selects the editor camera; zero selects the first enabled scene camera.
     u64 game_camera = ~u64{0};
+    /// The physics debug layers the editor asked to see over the frame, as the bits of
+    /// `cy::physics::DebugDrawFlags`. INTENT like the rest: the runtime draws them from its own
+    /// physics world, and zero, which is what an editor older than this field sends, draws none.
+    /// Carried as a plain bit set because this layer does not name the physics server.
+    u32 physics_overlays = 0;
 };
 
 /// Read what the editor sent.

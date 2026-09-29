@@ -40,6 +40,7 @@
 //! An empty canvas opened for `terrain` would be a specialised editor that exists in a screenshot.
 
 pub mod graph;
+pub mod lighting;
 pub mod material;
 pub mod material_authoring_commands;
 pub mod painting;
@@ -398,6 +399,8 @@ pub struct Session<'a> {
     pub timeline: Option<&'a mut TimelineSurface>,
     /// The one brush surface, where this editor authors spatial strokes.
     pub painting: Option<&'a mut PaintingSurface>,
+    /// The lighting form, where this editor is the lighting and lightmap baking editor.
+    pub lighting: Option<&'a mut lighting::LightingForm>,
 }
 
 /// The host: one graph canvas, one timeline, one painting surface, and the active editor.
@@ -411,6 +414,7 @@ pub struct SpecialisedEditors {
     vfx_module_active: bool,
     timeline: TimelineSurface,
     painting: PaintingSurface,
+    lighting: lighting::LightingForm,
     active: Option<Domain>,
     catalogues: BTreeMap<Domain, Catalogue>,
 }
@@ -458,6 +462,7 @@ impl SpecialisedEditors {
             vfx_module_active: false,
             timeline: TimelineSurface::new(1, 30.0)?,
             painting: PaintingSurface::new(1),
+            lighting: lighting::LightingForm::default(),
             active: None,
             catalogues,
         })
@@ -767,8 +772,10 @@ impl SpecialisedEditors {
     pub fn can_open(&self, domain: Domain) -> bool {
         self.catalogues.contains_key(&domain)
             || !domain.track_kinds().is_empty()
-            || domain == Domain::Terrain
-            || domain == Domain::NavigationBaking
+            || matches!(
+                domain,
+                Domain::Terrain | Domain::LightingAndLightmapBaking | Domain::NavigationBaking
+            )
     }
 
     /// Every editor this tree can open, in the requirement's order.
@@ -840,6 +847,7 @@ impl SpecialisedEditors {
             painting: surfaces
                 .contains(&Surface::Painting)
                 .then_some(&mut self.painting),
+            lighting: (domain == Domain::LightingAndLightmapBaking).then_some(&mut self.lighting),
         })
     }
 
@@ -1398,6 +1406,27 @@ mod tests {
             Some("editor-abilities-and-effects".to_owned()),
             "two specialised editors are drawn at once in a region that holds one"
         );
+    }
+
+    #[test]
+    fn the_lighting_editor_opens_onto_its_form_and_no_other_surface() {
+        let mut host = host();
+        assert!(host.can_open(Domain::LightingAndLightmapBaking));
+        let session = host
+            .open(Domain::LightingAndLightmapBaking)
+            .expect("the lighting and lightmap baking editor opens");
+        assert!(session.lighting.is_some(), "it opens onto the bake form");
+        assert!(session.graph.is_none() && session.timeline.is_none());
+        assert!(session.painting.is_none());
+        assert_eq!(
+            host.region_occupant().map(|key| key.kind().to_owned()),
+            Some("editor-lighting-and-lightmap-baking".to_owned())
+        );
+        // Navigation baking is a form too, but its own: it never opens onto the lightmap bake form.
+        let navigation = host
+            .open(Domain::NavigationBaking)
+            .expect("the navigation baking editor opens");
+        assert!(navigation.lighting.is_none());
     }
 
     #[test]

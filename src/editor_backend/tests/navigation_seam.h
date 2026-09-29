@@ -6,6 +6,7 @@
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/host.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
 #include <cy/navigation/bake.h>
 #include <cy/test/test.h>
@@ -58,6 +59,11 @@ public:
     Ray ray;
     bool ray_available = true;
     u32 gathers = 0;
+    /// A stale flag raised outside the gathered geometry, as a host's terrain tools raise one.
+    bool external_stale = false;
+    /// The MaterialService session whose terrain edits flag navigation stale, as the runtime binds.
+    CyServiceSession terrain_session = nullptr;
+    u32 bakes_committed = 0;
 
     Status worlds(Array<u32>& out) noexcept override { return out.push_back(kWorld); }
 
@@ -125,6 +131,16 @@ public:
             return make_unexpected(Error{ErrorCode::Unavailable, "no frame"});
         }
         return ray;
+    }
+
+    bool externally_stale(u32) noexcept override {
+        return external_stale || MaterialService::terrain_navigation_stale(terrain_session);
+    }
+
+    void bake_committed(u32) noexcept override {
+        ++bakes_committed;
+        external_stale = false;
+        MaterialService::terrain_navigation_rebaked(terrain_session);
     }
 };
 

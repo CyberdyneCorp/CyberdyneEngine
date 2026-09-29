@@ -305,18 +305,25 @@ pub(crate) struct NavigationView {
     bake: NavBakeState,
     busy: bool,
     status: Option<NavStatusReport>,
+    /// Terrain regions whose navigation the engine flagged stale since the last bake.
+    terrain_stale: usize,
     path: Option<String>,
     flow: Option<String>,
     query_failure: Option<String>,
 }
 
 impl NavigationView {
-    fn capture(worlds: Vec<NavmeshSettings>, service: &NavmeshService) -> Self {
+    fn capture(
+        worlds: Vec<NavmeshSettings>,
+        service: &NavmeshService,
+        terrain: &cy_editor_services::terrain_engine::TerrainEngine,
+    ) -> Self {
         Self {
             worlds,
             bake: service.bake_state().clone(),
             busy: service.pending_request().is_some(),
             status: service.status_report().cloned(),
+            terrain_stale: terrain.stale_navigation().len(),
             path: service.path().map(path_summary),
             flow: service.flow_field().map(|flow| {
                 format!(
@@ -395,7 +402,11 @@ impl SpecialisedTool for NavigationTool {
             }
             return None;
         }
-        Some(NavigationView::capture(worlds, &panels.editor.navmesh))
+        Some(NavigationView::capture(
+            worlds,
+            &panels.editor.navmesh,
+            &panels.editor.terrain,
+        ))
     }
 
     fn diagnostics(inputs: &Inputs) -> Vec<ToolDiagnostic> {
@@ -571,7 +582,8 @@ fn bake(
         }
     });
     bake_state(ui, shell, &view.bake);
-    freshness(ui, shell, view.status.as_ref(), current);
+    let (role, text) = freshness(view.status.as_ref(), view.terrain_stale, current);
+    status(ui, shell, role, &text);
 }
 
 fn bake_state(ui: &mut egui::Ui, shell: &Shell, state: &NavBakeState) {
@@ -615,37 +627,34 @@ fn bake_state(ui: &mut egui::Ui, shell: &Shell, state: &NavBakeState) {
     }
 }
 
-/// The stale badge: the engine's answer for this world, or what the document records.
+/// The stale badge: the engine's answer for this world, or what the document records. Terrain
+/// edits are the same stale flag: the engine flags their regions and the next bake consumes them.
 fn freshness(
-    ui: &mut egui::Ui,
-    shell: &Shell,
     report: Option<&NavStatusReport>,
+    terrain_stale: usize,
     current: &NavmeshSettings,
-) {
+) -> (Semantic, String) {
     if current.bake_identity == 0 {
-        status(ui, shell, Semantic::Neutral, "Not baked");
-        return;
+        return (Semantic::Neutral, "Not baked".into());
     }
     let report = report.filter(|report| report.world == current.world);
     match report {
-        Some(report) if report.sidecar_missing => status(
-            ui,
-            shell,
+        Some(report) if report.sidecar_missing => (
             Semantic::Warning,
-            "Sidecar missing: bake again to rebuild the navmesh",
+            "Sidecar missing: bake again to rebuild the navmesh".into(),
         ),
-        Some(report) if report.stale => status(
-            ui,
-            shell,
+        Some(report) if report.stale => (
             Semantic::Warning,
-            "Stale: the sources changed since this bake",
+            "Stale: the sources changed since this bake".into(),
         ),
-        Some(_) => status(ui, shell, Semantic::Live, "Up to date"),
-        None => status(
-            ui,
-            shell,
+        _ if terrain_stale > 0 => (
+            Semantic::Warning,
+            "Stale: the terrain changed since this bake".into(),
+        ),
+        Some(_) => (Semantic::Live, "Up to date".into()),
+        None => (
             Semantic::Neutral,
-            &format!("Baked: {} tiles; not checked yet", current.tile_count),
+            format!("Baked: {} tiles; not checked yet", current.tile_count),
         ),
     }
 }
@@ -854,6 +863,7 @@ mod tests {
             "Not baked",
             "Up to date",
             "Stale: the sources changed since this bake",
+            "Stale: the terrain changed since this bake",
             "Sidecar missing: bake again to rebuild the navmesh",
             "Overlays",
             "Components",
@@ -984,6 +994,52 @@ mod tests {
         assert!(clicked_image(&on, Some(&frame)).is_some());
         assert!(clicked_image(&older, Some(&frame)).is_none());
         assert!(clicked_image(&on, None).is_none());
+    }
+
+    #[test]
+    fn terrain_edits_since_a_bake_show_as_the_same_stale_badge() {
+        let baked = NavmeshSettings {
+            node: cy_editor_core::ids::NodeId::from_u128(1),
+            world: 1,
+            settings: NavSettingsBlock::DEFAULT,
+            overlay: 0,
+            bake_identity: 0x11,
+            source_fingerprint: 0x22,
+            tile_count: 4,
+            sidecar: String::new(),
+        };
+        let answer = |stale| NavStatusReport {
+            world: 1,
+            baked: true,
+            stale,
+            current_fingerprint: 0x22,
+            saved_fingerprint: 0x22,
+            identity: 0x11,
+            resident_tiles: 4,
+            counters: cy_editor_services::nav_bake::NavBuildCounters::default(),
+            link_failures: 0,
+            sidecar_missing: false,
+        };
+        let current = answer(false);
+        assert_eq!(
+            freshness(Some(&current), 0, &baked),
+            (Semantic::Live, "Up to date".into())
+        );
+        let terrain = (
+            Semantic::Warning,
+            "Stale: the terrain changed since this bake".to_string(),
+        );
+        assert_eq!(freshness(Some(&current), 2, &baked), terrain);
+        assert_eq!(freshness(None, 2, &baked), terrain);
+        assert_eq!(
+            freshness(Some(&answer(true)), 2, &baked).1,
+            "Stale: the sources changed since this bake"
+        );
+        let unbaked = NavmeshSettings {
+            bake_identity: 0,
+            ..baked
+        };
+        assert_eq!(freshness(None, 2, &unbaked).1, "Not baked");
     }
 
     #[test]

@@ -96,6 +96,14 @@ pub trait CommandContext {
         None
     }
 
+    /// What the engine last evaluated for the terrain being edited: digests of its heights and
+    /// weights, what rendering and collision left open, and where navigation is stale. The terrain
+    /// module is the engine's, so a context with no runtime answers that nothing was evaluated.
+    fn terrain_status(&self) -> Outcome {
+        Outcome::new("No terrain has been evaluated by the engine")
+            .with("evaluated", Value::Bool(false))
+    }
+
     /// The project around the documents: its source tree, its build, and the runtime that runs it.
     ///
     /// **Why this is separate from a document.** A `.swift` file is not a node graph, so nothing in
@@ -135,6 +143,27 @@ pub trait CommandContext {
         Err(cy_editor_core::problem::Problem::new(
             "import an external asset",
             "this host has no asynchronous import service",
+        ))
+    }
+
+    /// Start baking a level's lightmaps from its project-relative `.cylightmap` description into
+    /// `output` (project-relative; empty for the default), returning the operation's stable request
+    /// identity.
+    fn start_lightmap_bake(&mut self, description: &str, output: &str) -> Result<u64> {
+        let _ = (description, output);
+        Err(cy_editor_core::problem::Problem::new(
+            "bake lightmaps",
+            "this host has no lightmap bake service",
+        ))
+    }
+
+    /// Ask a running lightmap bake to stop — `request`, or the one most recently started — and
+    /// return the request it asked.
+    fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
+        let _ = request;
+        Err(cy_editor_core::problem::Problem::new(
+            "cancel a lightmap bake",
+            "this host has no lightmap bake service",
         ))
     }
 

@@ -89,6 +89,14 @@ public:
     /// The world-space ray under pixel (`x`, `y`) of `viewport`'s frame `frame`.
     [[nodiscard]] virtual Expected<Ray, Error> pick_ray(u32 viewport, u64 frame, f32 x,
                                                         f32 y) noexcept = 0;
+    /// Whether a source outside the gathered geometry has made `world`'s bake stale: the terrain
+    /// tools flag the regions their strokes reach. `navigation.status` reports it as stale.
+    [[nodiscard]] virtual bool externally_stale(u32 world) noexcept {
+        (void)world;
+        return false;
+    }
+    /// A `navigation.bake` of `world` committed: whatever `externally_stale` reported is consumed.
+    virtual void bake_committed(u32 world) noexcept { (void)world; }
 };
 
 /// Engine-owned navigation authoring backend. Each session keeps one context per navigation world

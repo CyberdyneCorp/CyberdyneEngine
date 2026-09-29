@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "authored_frame.h"
+
 #include "material_runtime.h"
 #include "wind_field_preview.h"
 
@@ -15,6 +16,7 @@
 #include <cy/import/texture.h>
 #include <cy/rendering/material/standard.h>
 #include <cy/servers/render/sort.h>
+#include <cy/terrain/region.h>
 
 #include <algorithm>
 #include <cmath>
@@ -320,6 +322,14 @@ bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat
 
 std::string mesh_reference(const ser::World& world, const ser::WorldNode& node) {
     return field_reference(world, node, "MeshRenderer", "mesh");
+}
+
+/// The reference the editor's evaluated terrain is kept under. Never a file: `resolve_meshes`
+/// loads what `MeshRenderer.mesh` names, and no node names this.
+constexpr std::string_view kTerrainMesh = "editor:terrain";
+
+bool is_terrain_root(const ser::World& world, const ser::WorldNode& node) noexcept {
+    return field_value(world, node, "TerrainAuthoring", "source") != nullptr;
 }
 
 [[nodiscard]] Expected<rhi::BufferHandle, Error> upload(rhi::Device& device, const char* name,
@@ -1378,6 +1388,47 @@ Status AuthoredFrame::resolve_meshes(const ser::World& world) noexcept {
     return ok();
 }
 
+Status AuthoredFrame::set_terrain(const terrain::RegionSnapshot* snapshot,
+                                  u64 generation) noexcept {
+    const auto found = std::ranges::find_if(
+        meshes_, [](const auto& mesh) { return mesh->reference == kTerrainMesh; });
+    if (snapshot == nullptr) {
+        if (found == meshes_.end()) {
+            return ok();
+        }
+        meshes_.erase(found);
+        terrain_generation_ = 0;
+        history_cut_ = true;
+        return upload_geometry();
+    }
+    if (found != meshes_.end() && generation == terrain_generation_) {
+        return ok();
+    }
+    auto mesh = std::make_unique<Mesh>();
+    mesh->reference = std::string(kTerrainMesh);
+    if (Status copied = mesh->data.positions.append(snapshot->positions.span()); !copied) {
+        return copied;
+    }
+    if (Status copied = mesh->data.normals.append(snapshot->normals.span()); !copied) {
+        return copied;
+    }
+    if (Status copied = mesh->data.indices.append(snapshot->indices.span()); !copied) {
+        return copied;
+    }
+    if (Status status = mesh->data.validate(); !status) {
+        return status;
+    }
+    mesh->bounds = mesh->data.bounds();
+    if (found != meshes_.end()) {
+        *found = std::move(mesh);
+    } else {
+        meshes_.push_back(std::move(mesh));
+    }
+    terrain_generation_ = generation;
+    history_cut_ = true;
+    return upload_geometry();
+}
+
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
     if (Status status = resolve_meshes(world); !status) {
         return status;
@@ -1564,7 +1615,10 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
 
 Status AuthoredFrame::append_instance(const ser::World& world, const ser::WorldNode& node,
                                       const Mat4& matrix, Vec3 eye) noexcept {
-    const std::string reference = mesh_reference(world, node);
+    std::string reference = mesh_reference(world, node);
+    if (reference.empty() && is_terrain_root(world, node)) {
+        reference = kTerrainMesh;
+    }
     if (reference.empty()) {
         return ok();
     }

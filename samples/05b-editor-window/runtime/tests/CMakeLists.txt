@@ -33,6 +33,18 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
 
+    # The physics debug layers and the joint gizmo, rasterised into a frame from the reference
+    # solver's own debug output and an authored world. No device, like the gizmo's case above.
+    cy_add_test(
+        NAME editor_window_physics_overlay
+        KIND unit
+        SOURCES
+            "${tests_dir}/test_physics_overlay.cpp"
+            "${tests_dir}/../overlay.cpp"
+            "${tests_dir}/../physics_overlay.cpp"
+        DEPENDENCIES cy::servers-render cy::physics-reference cy::gameplay-play
+                     cy::scene-serialization)
+
     cy_add_test(
         NAME editor_wind_field_preview
         KIND integration
@@ -80,7 +92,12 @@ function(cy_editor_window_runtime_declare_tests)
                 # as cy_editor_window_runtime does.
                 "CY_SHADER_STAGE_PARENT=\"${CMAKE_SOURCE_DIR}/src/rendering\"")
         target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
-                                   "${tests_dir}/..")
+                                   "${tests_dir}/.." "${CMAKE_SOURCE_DIR}/tests/render")
+        # The PNG encoder, for the terrain case's opt-in viewport photograph.
+        target_sources(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                       "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
+        target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                   CY_EDITOR_WINDOW_HAS_GOLDEN=1)
         if(CY_SHADER_SLANG)
             target_link_libraries(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                   cy::shader-slang)
@@ -119,7 +136,7 @@ function(cy_editor_window_runtime_declare_tests)
             target_link_libraries(cy_test_smoke_editor_authored_frame_metal PRIVATE
                                   cy::vfx cy::rendering-particles cy::editor-backend)
             target_compile_definitions(cy_test_smoke_editor_authored_frame_metal PRIVATE
-                                       CY_EDITOR_WINDOW_HAS_VFX=1)
+                                       CY_EDITOR_WINDOW_HAS_VFX=1 CY_EDITOR_WINDOW_HAS_GOLDEN=1)
         endif()
 
         cy_add_test(
@@ -245,7 +262,8 @@ function(cy_editor_window_runtime_declare_tests)
         endif()
     endif()
 
-    foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay
+    foreach(target cy_test_unit_editor_window_runtime cy_test_unit_editor_window_physics_overlay
+                   cy_test_integration_editor_window_overlay
                    cy_test_integration_editor_window_one_world
                    cy_test_integration_editor_window_layout_file)
         target_include_directories(${target} PRIVATE "${tests_dir}/..")

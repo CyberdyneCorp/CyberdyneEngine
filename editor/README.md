@@ -264,7 +264,19 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+| Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `viewport.view-mode.lightmap-density` |
+| Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 | Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
+
+**Lighting & lightmaps.** The lighting and lightmap baking specialised editor opens onto a form: a
+level's `.cylightmap` description, an output, Bake, Cancel and the bake's progress, and the density
+view. `lighting.bake-lightmaps` runs the engine's bake as `cy_build lightmap` in an operation, so
+the progress surface shows the texels traced and its row's Cancel — or
+`lighting.cancel-lightmap-bake` — sends the tool its `cancel`; a cancelled bake writes nothing.
+`CY_BUILD` names the tool, or it is found as `build/<profile>/tools/build/cy_build` walking up from
+the project. `viewport.view-mode.lightmap-density` requests the engine's `LightmapDensity` debug view,
+which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); like every debug view, the
+editor-hosted runtime does not draw it yet, and it loads no cooked lightmap.
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
@@ -300,7 +312,8 @@ To add one, for example the animation editor:
    transaction, with `EffectClass::ReversibleMutation`, so `edit.undo` covers it and the MCP tool
    list carries it without further work (tools are a projection of the registry).
 3. Write one module in `crates/cy-editor-shell/src/panels/` with a type that implements
-   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes), `target`
+   `SpecialisedTool`: `DOMAIN`, `TITLE`, `COMMANDS` (every command the panel invokes; a long
+   operation that edits no document goes in `OPERATIONS` instead), `target`
    (resolve what is edited, or draw the empty state), `diagnostics` and `body`. The body draws on
    the session's shared surface and pushes `Intent::Invoke` for registered commands; it never
    mutates a document.
@@ -314,10 +327,17 @@ To add one, for example the animation editor:
    Prove each case red with a recorded mutation.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
-in the scaffold's diagnostics area. `panels/navigation_baking.rs` (`NavigationTool`, issue #28) is a form
-tool on the same frame: it opens no shared surface, reads the document and the engine's answers in
-`target`, and arms the viewport so the next click asks the engine for a navmesh point
-(`navigation.point.pick`) instead of selecting.
+in the scaffold's diagnostics area. See [Terrain tools](#terrain-tools) for how its strokes reach
+the engine. `panels/navigation_baking.rs` (`NavigationTool`, issue #28) is a form tool on the same
+frame: it opens no shared surface, reads the document and the engine's answers in `target`, and arms
+the viewport so the next click asks the engine for a navmesh point (`navigation.point.pick`) instead
+of selecting.
+
+`panels/lighting.rs` is the scaffold's one tool with an `OPERATIONS` list: a lightmap bake writes a
+cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document transaction,
+so there is nothing for undo to restore. `register_tool` holds each listed operation to being an
+external effect and an MCP tool with no exclusion — a document mutation listed there is refused,
+naming it, as is a bake listed in `COMMANDS`.
 
 `crates/cy-editor-shell/tests/panel_snapshots.rs` renders a panel offscreen through the same
 `Panels::ui` and egui-wgpu renderer the window uses, on any wgpu adapter, with no window and no
@@ -333,6 +353,55 @@ The [material](../docs/design/images/editor-materials-canvas.png) and
 before the canvas moved. Graph gestures and timeline gestures come back to the host as
 one value per completed gesture (`CanvasFeedback::on_connect`/`on_move`, `TimelineEdit`), so the host
 turns one drag into one command and one undo entry.
+
+## Terrain tools
+
+The terrain panel sculpts (Raise, Lower, Smooth, Flatten), paints material layers and cuts holes,
+each with a radius, strength and falloff. The editor computes no terrain. It sends the stack to the
+engine's `cy::terrain` module and shows what the engine answers.
+
+- **One gesture is one transaction.** A drag across the brush field is one `terrain.stroke.commit`,
+  which adds one modifier child under the terrain root. Undo removes it. Modifiers can be disabled
+  and reordered, and every one is kept.
+- **The engine evaluates the stack.** `Editor::pump` sends the edited terrain's whole ordered stack
+  to the engine's `terrain.evaluate` (`crate::terrain_engine`) after every change, undo and redo
+  included. Only one evaluation is in flight at a time, and a stack is not sent twice. The engine
+  answers with heights, material texels, holes, triangle counts and the regions whose navigation
+  it marked stale. The payloads are specified in `src/editor_backend/include/cy/editor/
+  terrain_service.h`. Undo needs no inverse on the wire: the document restores the stack, and the
+  same stack evaluates to the same bytes.
+- **The panel draws the engine's answer.** The brush field shows the engine's surface: shaded
+  heights, tinted painted layers, holes see-through, and a thin warning outline around each stale
+  region. The status line gives the triangle and hole counts. Without a runtime it says that strokes
+  are recorded and will be evaluated when the engine connects. The hosted runtime draws the same
+  meshed surface in the viewport at the terrain root.
+- **Navigation is flagged, not rebaked.** The engine marks the reach of every modifier that is
+  added, removed or changed. The region stays stale until navigation is rebaked, which is #28's
+  job.
+- **Agents get the same tools.** `terrain.brush.apply` takes the stroke as numbers (`points` as
+  `"x y [pressure]; ..."` from 0 to 1, plus `radius`, `strength`, `falloff`, and `layer` for paint)
+  and records the same modifier a panel gesture would. `terrain.status` reports the engine's last
+  answer, with digests of its heights and weights.
+
+The [sculpted, painted and holed terrain](../docs/design/images/editor-terrain-tools.png) and the
+[paint tool](../docs/design/images/editor-terrain-paint.png) show a reply the engine produced.
+`crates/cy-editor-shell/tests/fixtures/` holds the engine's reply to the requests the editor sends
+for the scripted strokes. `panel_snapshots.rs` checks the requests on every run, and
+`integration.editor_backend_terrain` checks the reply. To regenerate them, run
+`CY_TERRAIN_FIXTURE=write` first on `cargo test -p cy-editor-shell --test panel_snapshots` and then
+on `ctest -R editor_backend_terrain`.
+
+The [viewport](../docs/design/images/editor-terrain-viewport.png) shows a raise with a hole cut
+through it, as the hosted runtime's Vulkan frame draws what the engine meshed. It is photographed by
+`smoke.editor_authored_frame_vulkan` when `CY_TERRAIN_VIEWPORT_SHOT` names a PNG path:
+`CY_TERRAIN_VIEWPORT_SHOT=<file>.png build/dev/cy_test_smoke_editor_authored_frame_vulkan
+--test-case='authored native frame draws the terrain*'`.
+
+What is not built yet:
+- Painted layers show in the panel but not in the viewport, because the engine's terrain surface
+  material is not yet bound on a device (`src/terrain/README.md`, "No shader").
+- A hole can be undone but cannot be filled with an eraser stroke.
+- The terrain's extent is fixed at 128 m by two engine tiles (`terrain_engine::TERRAIN_EXTENT_METRES`).
 
 ## The dependencies, and the rule they arrived under
 
@@ -636,6 +705,60 @@ real socket; `crates/cy-editor-services/tests/a_body_is_a_transaction.rs` holds 
 the golden names. What is on the far end is `cy::gameplay::PlaySession`, and what it guarantees —
 **stop restores the authored document byte for byte, verified rather than asserted** — is
 `src/gameplay/play/README.md`.
+
+## Physics tools: debug layers and joints (#29)
+
+The **Physics** panel (panel kind `physics`, beside the specialised editors) draws in the scaffold's
+frame — its header with Undo and Redo, its diagnostics area — and `register_specialised_tools`
+checks its commands with the same parity rule as a specialised tool (`command_parity`). It is not a
+seventeenth `Domain`: `editor-architecture` names no physics editor, and what it edits is entities
+and the viewport. The design is `openspec/changes/add-editor-physics-tools/design.md`.
+
+![The Physics panel with a hinge selected: the viewport layer toggles, the joint's kind and target,
+and only the fields a hinge reads](../docs/design/images/editor-physics-joint.png)
+
+**Debug layers.** `cy_editor_viewport::physics_view::PhysicsLayer` is `cy::physics::DebugDrawFlags`,
+bit for bit (a test reads `debug.h`). Each is a read command, `viewport.physics.<layer>` with
+`state=on|off|toggle`, plus `viewport.physics.hide-all`; the panel's checkboxes are callers of them.
+A viewport's layers go out in the gizmo request (`physics_overlays`, after the camera choice), and
+`cy_editor_window_runtime` draws them from the play session's physics world with
+`PhysicsServer::debug_draw`, projected through the frame's own view into the pixels it publishes.
+The editor draws nothing. The layers show the simulated world, so they appear while a world plays or
+is paused.
+
+**Joints.** A joint is a `Joint` component on the entity carrying body A, naming body B's entity
+(or none, for the world), with the anchor and axis in body A's unscaled frame. `physics.joint.add`,
+`physics.joint.set` (`field` and `value`, one field per transaction) and `physics.joint.remove` are
+reversible, so each is an MCP tool and `edit.undo` covers it; a change the engine would refuse at play
+is refused when it is made. The panel shows only the fields the selected kind reads and commits a
+drag or a typed edit once, on release. Selecting the entity makes the runtime draw the joint through
+`cy::physics::debug_draw_constraint` — the drawing Jolt uses for a simulated constraint — with its
+axis. At play `cy::gameplay::PlaySession` resolves both bodies and derives frame B so the anchors
+meet where the bodies were authored.
+
+![The engine drawing the selected door's authored hinge while editing: its anchor on the post, the
+vertical axis and the limit arms](../docs/design/images/editor-physics-joint-gizmo.png)
+
+![Play paused with the collider, contact, joint and sleep layers on: every collider, awake bodies in
+green, sleeping and static ones in grey, drawn by the engine from its physics
+world](../docs/design/images/editor-physics-layers.png)
+
+Both are taken through the editor's own MCP interface by
+`python3 samples/05b-editor-window/mcp_physics.py --shots docs/design/images`, which also fails
+unless the runtime reports frames carrying the joint gizmo and a paused frame the layers changed.
+
+Entity references in a `.cyworld` are written as the referenced node's **position** and resolved to
+an identity on load, on both sides, because a save that drops a node renumbers the file.
+
+**Ragdolls are not here yet.** `physics::ragdoll::Profile::generate` needs a skeleton and the editor
+cannot import one (model import stops before step 7), so the panel says so in its diagnostics area
+rather than opening an empty profile editor.
+
+Tests: `crates/cy-editor-services/tests/a_joint_is_a_transaction.rs`,
+`physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel` in
+`crates/cy-editor-mcp/tests/a_session_over_the_wire.rs`, the physics frames in
+`crates/cy-editor-shell/tests/new_panels_are_accessible.rs`, and on the engine side
+`integration.gameplay_joints` and `unit.editor_window_physics_overlay`.
 
 ## VFX graph authoring status
 

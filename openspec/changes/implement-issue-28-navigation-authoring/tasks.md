@@ -64,6 +64,7 @@
 - [x] 7.14 State in the guide that cost painting is by volumes only.
 - [x] 7.15 Run the ledger's CI step even when `just test-all` failed (`!cancelled()`); PR #64's first run skipped it behind main-owned failures. Regression: `test_ci_runs_the_native_probes_even_after_a_failed_suite`.
 - [x] 7.16 Keep the overlay image tests inside the Debug case budget: the `profiles` job's Debug run failed `the frame overlay over the baked test map ...` at 4159 ms of CPU against 4000 ms. The per-pixel scans now test a polygon only when its pixel bounds hold the centre; assertion counts are unchanged. Regression: the harness budget itself, checked with `CY_TEST_BUDGET_SCALE=0.5` on a Debug build.
+- [x] 7.17 One stale flag with the terrain tools (#63): `navigation.status` reports stale while `terrain.evaluate` holds stale regions (`NavigationSourceRuntime::externally_stale`), a committed bake consumes them (`bake_committed` → `MaterialService::terrain_navigation_rebaked`), the editor clears its copy on the completed bake and the Navigation panel's badge reads *Stale: the terrain changed since this bake*. The runtime routes every `kMaterialServicePrefixes` prefix, `terrain.` included, to MaterialService. Regressions: `composite: terrain.evaluate reaches MaterialService through the one binding`, `composite: a terrain stroke makes the navmesh stale until navigation is rebaked`, `editor runtime: a terrain stroke flags the navmesh stale and the next bake clears it`, `a_completed_bake_clears_the_navigation_the_terrain_flagged_stale`.
 
 ## 8. Deferred
 

@@ -103,7 +103,13 @@ costs one position-only draw per marked draw.
 
 Vulkan is built and tested (`render.selection_outlines`). Metal's MSL is generated and committed —
 the mask with `CY_FRAME_METAL` and `CY_MATERIAL_METAL_ARGUMENT_BUFFER`, as `cy/frame.slang` asks of
-every importer — and is not exercised on this host. D3D12 is not supported: no DXIL is embedded.
+every importer. D3D12 is not supported: no DXIL is embedded.
+
+The mask module imports `cy.frame`, so its committed SPIR-V and MSL are regenerated whenever
+`CyFrameData` changes. Adding the lightmap words (592 to 640 bytes, appended) regenerated both, and
+the MSL compiles and builds its functions with Apple's compiler on an M2 Max. MSL that compiles has
+not yet drawn an outline, though: `render.selection_outlines` given a Metal leg fails the same way
+on main as on that change. The mask comes back empty, and the reference is Vulkan's (#66).
 
 ## What it looks like
 

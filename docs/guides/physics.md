@@ -268,7 +268,8 @@ rest of the world.
 The bridge's limits today are in [`src/physics/README.md`](../../src/physics/README.md): one
 `Collider` and one `Trigger` per entity (compounds need a buffer component), `CharacterBody` is
 registered but the bridge does not create its controller, and `Joint` endpoints are runtime body
-handles rather than scene references.
+handles. A joint authored in a world names its bodies by entity reference, and the play session
+resolves them (section 6).
 
 ### In C++
 
@@ -611,6 +612,17 @@ motors change at run time with `set_constraint_motor`; swing-twist orientation d
 `set_constraint_orientation_motor`. In the ECS, a `Joint` component becomes a constraint when the
 backend supports constraints and its description names live body handles.
 
+**Authored in the editor**, a joint is a `Joint` component on body A's node in the `.cyworld`: its
+kind (the ten words `constraint_type_name` spells), body B's node as an entity reference or none for
+the world, the anchor and axis in body A's rotated, unscaled frame, and the fields the kind reads —
+`limit_min`/`limit_max` (the hinge angle, slider travel, swing-twist twist or distance span),
+`swing_y`/`swing_z`, six-axis `linear_*`/`angular_*`, `motor_velocity`/`motor_max_force`, `ratio`,
+`break_force`/`break_torque` and `collide_connected`. `PlaySession` creates the constraint after the
+bodies, with frame B derived so both anchors meet where the bodies were authored
+(`cy/gameplay/play/joints.h`). The editor writes it with `physics.joint.add`, `physics.joint.set`
+(one field, one undo step) and `physics.joint.remove`, which the Physics panel calls and an agent
+calls over MCP; selecting the entity draws the joint's anchors, axis and limits in the viewport.
+
 ### Ragdolls
 
 `src/physics/ragdoll/` (built with `CY_ANIMATION=ON`) generates a `ragdoll::Profile` from a finalized
@@ -629,6 +641,10 @@ delta, activation)` once; then `set_animation_target` before the step, `advance_
 `sample_pose` to read the blended model-space pose. `apply_hit(joint, impulse, recovery_seconds)`
 pushes one bone and blends it back. Destroy the ragdoll before its physics world. On the reference
 backend activation fails before allocating any body.
+
+The editor cannot set up a profile yet: `Profile::generate` needs a skeleton and model import stops
+before importing skeletons, so the Physics panel states the limit rather than offering an empty
+editor.
 
 ### Buoyancy
 
@@ -763,10 +779,19 @@ without touching the world. `statistics(world)` returns `StepStatistics`: body, 
 island counts, and `broad_phase_ns`, `narrow_phase_ns`, `solve_ns`, `total_ns`. On Jolt the phase
 counters are cumulative CPU time over concurrent jobs, so their sum can exceed `total_ns`.
 
-What is **not** there yet: the editor has no physics collider view mode. It is listed in
-`PLANNED_VIEWS` in `editor/crates/cy-editor-viewport/src/viewmode.rs` (`("Physics colliders",
-"physics")`), and the requirements coverage for view modes records it as unavailable. Jolt's own
-debug renderer and profiler are compiled out on purpose; use the sink and `StepStatistics`.
+`debug_draw_constraint(description, frame_a, frame_b, sink)` draws one constraint's anchors, the
+line between them and its limits from a description and two world frames. The Jolt backend draws a
+simulated constraint through it, and the editor's runtime draws an authored joint that does not
+exist yet through the same function.
+
+**In the editor**, every flag is a layer a viewport can ask for: the physics panel's checkboxes, or
+the commands `viewport.physics.colliders`, `.contacts`, `.constraints`, `.sleep-state`,
+`.velocities`, `.centres-of-mass`, `.broad-phase-bounds` and `viewport.physics.hide-all`. The bits
+travel in the gizmo intent (`GizmoIntent::physics_overlays`) and `cy_editor_window_runtime` hands
+them to `debug_draw` on the play session's world, projecting every primitive through the frame's own
+view (`samples/05b-editor-window/runtime/physics_overlay.h`). The layers draw the simulated world, so
+they appear while a world plays or is paused. Jolt's own debug renderer and profiler are compiled
+out on purpose; use the sink and `StepStatistics`.
 
 ### Common pitfalls
 

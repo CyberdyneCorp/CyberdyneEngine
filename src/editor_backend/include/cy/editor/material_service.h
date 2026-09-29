@@ -4,6 +4,7 @@
 #include <cy/abi/host.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/rendering/material/compiler.h>
+#include <array>
 #include <string_view>
 
 namespace cy::vfx {
@@ -11,6 +12,14 @@ class SimulationWorld;
 }
 
 namespace cy::editor {
+
+class TerrainPreview;
+
+/// Every operation prefix `MaterialService` serves. A host that routes one binding over several
+/// services (`CompositeEditorService`) routes each of these here, so an operation this service
+/// gains is not lost to a routing table that forgot it.
+inline constexpr std::array<std::string_view, 4> kMaterialServicePrefixes{"material.", "vfx.",
+                                                                          "preview.", "terrain."};
 
 /// One exact renderer binding named by a preview reload request.
 struct MaterialPreviewTarget {
@@ -74,6 +83,15 @@ public:
     /// The effect currently simulated by this session, for the host's engine frame renderer.
     [[nodiscard]] static const vfx::SimulationWorld* vfx_preview_world(
         CyServiceSession session) noexcept;
+
+    /// The terrain this session last evaluated for `terrain.evaluate`, or null before the first.
+    [[nodiscard]] static const TerrainPreview* terrain_preview(CyServiceSession session) noexcept;
+
+    /// Whether the terrain this session evaluated has navigation it flagged stale.
+    [[nodiscard]] static bool terrain_navigation_stale(CyServiceSession session) noexcept;
+    /// Navigation was rebaked: the terrain's stale regions are consumed. The one stale flag
+    /// terrain edits raise is the one a navigation bake clears.
+    static void terrain_navigation_rebaked(CyServiceSession session) noexcept;
 
 private:
     Allocator* allocator_;

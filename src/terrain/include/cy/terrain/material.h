@@ -94,6 +94,12 @@ private:
     Array<LayerOverflow> overflows_;
 };
 
+/// Blend `amount` (zero to one) of `layer` into a texel: its existing layers keep `1 - amount` of
+/// their share, a layer named twice is one layer, and the result keeps the `kMaxTexelLayers`
+/// strongest, renormalised to 255 exactly as the compositor writes them. Deterministic, so a
+/// re-evaluation of the same strokes produces the same bytes.
+void paint_texel(MaterialTexel& texel, u8 layer, f32 amount) noexcept;
+
 // --- Frequency separation
 // -------------------------------------------------------------------
 

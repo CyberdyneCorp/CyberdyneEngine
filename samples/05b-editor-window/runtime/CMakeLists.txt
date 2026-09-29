@@ -61,6 +61,7 @@ cy_add_module(
         nav_overlay.cpp
         nav_runtime.cpp
         overlay.cpp
+        physics_overlay.cpp
         pick_wire.cpp
         script_runtime.cpp
         wind_field_preview.cpp
@@ -78,6 +79,7 @@ cy_add_module(
         cy::runtime-editor-bridge
         cy::editor-backend
         cy::navigation
+        cy::terrain
         cy::rendering-material-slang
         cy::shader
         cy::gameplay-play

@@ -700,6 +700,7 @@ void accumulate(nav::NavBakeReport& into, const nav::NavBakeReport& tile) noexce
     if (!committed) {
         return failed(session, "navigation.source.failed", committed.error().message);
     }
+    call.runtime.bake_committed(context->world);
     return written(encode_completed(session.event_payload, *context,
                                     std::string_view(sidecar.data(), sidecar.size())));
 }
@@ -778,7 +779,7 @@ enum class RestoreFailure : u8 {
 /// u32 resident tiles, the last report, u32 link failures, u8 sidecar missing.
 [[nodiscard]] CyResult encode_status(NavigationSession& session, u32 world,
                                      const NavContext* context, u64 current, u64 saved,
-                                     bool sidecar_missing) noexcept {
+                                     bool sidecar_missing, bool externally_stale) noexcept {
     const bool baked = context != nullptr && context->mesh.get() != nullptr;
     Array<u8>& out = session.event_payload;
     out.clear();
@@ -786,8 +787,9 @@ enum class RestoreFailure : u8 {
     const nav::NavBakeReport& report = baked ? context->report : empty;
     const bool encoded =
         put_u32(out, world) && put_u8(out, baked ? u8{1} : u8{0}) &&
-        put_u8(out, (baked && current != saved) ? u8{1} : u8{0}) && put_u64(out, current) &&
-        put_u64(out, saved) && put_u64(out, baked ? context->identity : 0) &&
+        put_u8(out, (baked && (current != saved || externally_stale)) ? u8{1} : u8{0}) &&
+        put_u64(out, current) && put_u64(out, saved) &&
+        put_u64(out, baked ? context->identity : 0) &&
         put_u32(out, baked ? context->mesh->tile_count() : 0) && put_report(out, report) &&
         put_u32(out, baked ? context->link_failures : 0) &&
         put_u8(out, sidecar_missing ? u8{1} : u8{0});
@@ -859,7 +861,8 @@ CyResult status(Call& call) noexcept {
     if (saved == 0 && context != nullptr) {
         saved = context->fingerprint;
     }
-    return encode_status(session, world, context, current, saved, missing);
+    return encode_status(session, world, context, current, saved, missing,
+                         call.runtime.externally_stale(world));
 }
 
 // --- navigation.update ------------------------------------------------------------------------

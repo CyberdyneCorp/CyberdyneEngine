@@ -77,6 +77,17 @@ function(cy_build_declare_tests)
                          --compiler-id "${CMAKE_CXX_COMPILER_ID}")
         set_tests_properties(unit.build_symbols PROPERTIES LABELS "unit"
                              TIMEOUT "${CY_TEST_TIMEOUT_unit}")
+        # `integration.build_lightmap_cli` — `cy_build lightmap`, the editor's bake command, over a
+        # quad the real `cy_import_cli` cooked into a project: progress lines in stage order, the
+        # cooked lightmap written, and a `cancel` on stdin stopping the bake with nothing written.
+        if(TARGET cy_import_cli AND TARGET cy_build)
+            add_test(NAME integration.build_lightmap_cli
+                     COMMAND "${Python3_EXECUTABLE}" "${tests_dir}/test_lightmap_cli.py"
+                             --cy-build $<TARGET_FILE:cy_build>
+                             --cy-import $<TARGET_FILE:cy_import_cli>)
+            set_tests_properties(integration.build_lightmap_cli PROPERTIES LABELS "integration"
+                                 TIMEOUT "${CY_TEST_TIMEOUT_integration}")
+        endif()
     endif()
 
     if(NOT WIN32)
