@@ -12,10 +12,10 @@
 
 ## 2. Engine editor service and cook (`src/editor_backend`, `tools/build`)
 
-- [ ] 2.1 Add `NavigationSourceRuntime` and `NavigationService`. Implement the `navigation.*` operations, PROGRESS events per tile, stable failure codes and `capabilities.get` gating.
-- [ ] 2.2 Add `CompositeEditorService`. It routes by longest prefix, keeps one child session per backend and merges capabilities. Test it with MaterialService and NavigationService together.
-- [ ] 2.3 Add service tests: a bake equals `build_tile` tile by tile, an obstacle added through the service blocks a path and removing it restores the path, a stale status after a source change, cancellation, `navigation.busy`, and a missing seam.
-- [ ] 2.4 Add the `navmesh` cook producer and `kNavmeshProducerVersion`. Test identity validation, corrupt refusal, and a node key that changes on rebake.
+- [x] 2.1 Add `NavigationSourceRuntime` and `NavigationService`. Implement the `navigation.*` operations, PROGRESS events per tile, stable failure codes and `capabilities.get` gating.
+- [x] 2.2 Add `CompositeEditorService`. It routes by longest prefix, keeps one child session per backend and merges capabilities. Test it with MaterialService and NavigationService together.
+- [x] 2.3 Add service tests: a bake equals `build_tile` tile by tile, an obstacle added through the service blocks a path and removing it restores the path, a stale status after a source change, cancellation, `navigation.busy`, and a missing seam.
+- [x] 2.4 Add the `navmesh` cook producer and `kNavmeshProducerVersion`. Test identity validation, corrupt refusal, and a node key that changes on rebake.
 
 ## 3. Runtime host (`samples/05b-editor-window/runtime`)
 

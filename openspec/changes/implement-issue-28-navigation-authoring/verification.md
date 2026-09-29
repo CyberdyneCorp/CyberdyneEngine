@@ -41,13 +41,46 @@ regression. They run without an editor or a device.
 The effective-area behaviour in M10 was already in `debug.cpp` on main. The regression test and
 the `NavDebugSink::polygon` documentation now pin it down.
 
+## Engine editor service and cook (tasks 2.1 to 2.4)
+
+These are the service-boundary checks under criteria 1, 3 and 5, plus the service contract (progress,
+cancellation, busy, seam gating), the composite routing and the navmesh cook producer. They run
+without an editor or a device.
+
+- **Green:** `cmake --build build/dev --parallel 8`, then
+  `ctest --test-dir build/dev -R "editor_backend|build_content" --output-on-failure`.
+  `integration.editor_backend_navigation` ran 16 cases (12 service, 4 composite) with 49966
+  assertions; `integration.build_content` includes the 4 navmesh producer cases.
+  `unit.editor_backend` and `integration.editor_backend_compile` still pass, and
+  `src/editor_backend/src/material_service.cpp` is unchanged.
+- **Red mutations.** Each was applied to the source, the target rebuilt and the named case run
+  with `-tc=`, and the source restored; the restored suites pass.
+
+| # | Check (case) | Mutation | Failing assertion |
+|---|---|---|---|
+| S1 | `editor_backend: navigation bake equals build_tile tile by tile` (criterion 1) | the settings decode reads `cell_size * 1.01` (navigation_service.cpp `read_settings`) | `CHECK_EQ(baked.tiles[index].digest, expected)` and `CHECK_EQ(nav::mesh_tile_digest(*mesh, slot), expected)`: 10 failures |
+| S2 | `editor_backend: an obstacle added through the service blocks the path and removing it restores it` (criterion 3) | `sync_obstacles` drops the seam's obstacles after gathering them | `CHECK_EQ(marked, usize{1})`, `CHECK((!blocked.found \|\| blocked.partial))`, and the direct `find_path` check |
+| S3 | `editor_backend: navigation status reports a stale bake after a source change` (criterion 5) | `status` reuses the saved fingerprint instead of recomputing it from the seam | `CHECK(stale.stale)`, `CHECK_NE(stale.current, baked.fingerprint)`, `CHECK(resized.stale)` |
+| S4 | `editor_backend: a second navigation request while a bake is pending is busy` | `submit` accepts the second request without recording it for `navigation.busy` | `CHECK_EQ(busy.request, 21U)`, `CHECK_EQ(busy.code(), "navigation.busy")` |
+| S5 | `editor_backend: navigation without a seam is unavailable and not advertised` | `capabilities.get` counts the navigation operations with no seam | `CHECK_EQ(none.size(), usize{1})` and the payload's `decoder.done()` |
+| S6 | `editor_backend: navigation bake emits one PROGRESS per tile then one COMPLETED` | the tile step no longer marks its event as PROGRESS | `REQUIRE_EQ(events.size(), usize{5})` |
+| C1 | `composite: capabilities.get merges every child's operations` | only the first child's answer is absorbed | `CHECK(has(names, "navigation.bake"))`, `CHECK_NE(features & kNavigationFeature, 0U)` |
+| C2 | `composite: a material request succeeds while a navigation bake is pending` | `submit` refuses any request while a child has one in flight | `REQUIRE_EQ(accepted, CY_RESULT_OK)` |
+| P1 | `navmesh producer: a corrupt tile or an identity mismatch fails the node` | the identity comparison is skipped | `CHECK_FALSE(other->succeeded())`, `CHECK(diagnosed(..., "navmesh-identity"))` |
+| P2 | same case | a sidecar that fails to decode is written through | `CHECK_FALSE(refused->succeeded())`, `CHECK(diagnosed(..., "navmesh-sidecar"))` |
+
+The producer's key cases (`a rebake changes the node key`, `a producer version bump changes the
+node key`) check the graph's derivation key over the declared sidecar, the identity option and
+`kNavmeshProducerVersion`. The producer body cannot change that key, so no producer-side mutation
+applies; their guard is that the node declares the sidecar as a source.
+
 ## 1. Editor bake equals `build_tile`, tile by tile
 
 - **Probes:**
   - `editor_backend: navigation bake equals build_tile tile by tile` (service over a fixture seam).
   - `editor runtime: baking the test map equals build_tile tile by tile` (runtime seam over a `.cyworld` map).
 - **Planned mutation:** make `bake_tiles` skip the last tile coordinate, or perturb `cell_size` in the service's settings decode. The coordinate-set or digest assertion must fail.
-- **Status:** the engine-level probe is green and has a recorded red mutation (M1 above). The service and runtime probes are still open.
+- **Status:** the engine-level probe (M1) and the service probe (S1) are green with recorded red mutations. The runtime probe is still open.
 
 ## 2. Overlay walkable area matches the mesh (image test)
 
@@ -61,7 +94,7 @@ the `NavDebugSink::polygon` documentation now pin it down.
   - `editor_backend: an obstacle added through the service blocks the path and removing it restores it`.
   - The MCP wire test `navigation obstacle add and remove reach the engine over mcp`.
 - **Planned mutation:** make the service ignore `NavObstacle` entries from the seam. The blocked-path assertion must fail.
-- **Status:** open.
+- **Status:** the service probe is green and its red mutation is recorded (S2 above). The MCP wire probe is still open.
 
 ## 4. Undo/redo and MCP parity for bake, settings and component edits
 
@@ -78,7 +111,7 @@ the `NavDebugSink::polygon` documentation now pin it down.
   - `editor_backend: navigation status reports a stale bake after a source change`.
   - `editor runtime: moving a mesh marks the navigation bake stale`.
 - **Planned mutation:** leave the source vertices out of `source_fingerprint`. The stale assertion must fail.
-- **Status:** open.
+- **Status:** the engine fingerprint (M8b) and the service probe (S3: status stops recomputing the fingerprint) are green with recorded red mutations. The runtime probe is still open.
 
 ## 6. OpenSpec change validated with `--strict`, and docs
 

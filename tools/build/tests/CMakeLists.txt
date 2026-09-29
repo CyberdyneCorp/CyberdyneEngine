@@ -48,12 +48,14 @@ function(cy_build_declare_tests)
     # `build_content` is the real cooks as nodes (M7 task 1.4): it links cy::build-content, which is
     # where the importer and the cook join the graph. Integration for the same reason
     # `build_service` is — it writes a project, imports a glTF and rebuilds it. M11.e adds the
-    # lightmap bake as a node over an import node's bundle.
+    # lightmap bake as a node over an import node's bundle; issue #28 adds the navmesh producer over a
+    # saved navigation bake.
     cy_add_test(
         NAME build_content
         KIND integration
         SOURCES "${tests_dir}/test_build_content.cpp" "${tests_dir}/test_build_lightmap.cpp"
-        DEPENDENCIES cy::build-graph cy::build-content cy::rendering-lightmap-bake)
+                "${tests_dir}/test_navmesh_producer.cpp"
+        DEPENDENCIES cy::build-graph cy::build-content cy::rendering-lightmap-bake cy::navigation)
 
     # `build_patch` exercises the hard-interrupt property of `Installation::apply` by forking a
     # child process and killing it at each patch stage. `fork` with no `exec` is POSIX-only: the

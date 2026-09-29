@@ -49,8 +49,8 @@ class World;
 
 namespace cy::build {
 
-/// Register `import`, `cook` and, in a build with `CY_VFX`, `vfx`. `cy_build` calls this after
-/// `add_builtins()`.
+/// Register `import`, `lightmap`, `cook`, `navmesh` and, in a build with `CY_VFX`, `vfx`.
+/// `cy_build` calls this after `add_builtins()`.
 ///
 /// `world` is the component registry the cook emits blocks against, and may be null — in which case
 /// the `cook` producer registers and fails by name if a node asks for it, rather than silently not
@@ -72,6 +72,10 @@ inline constexpr u32 kVfxProducerVersion = 1;
 
 /// The `lightmap` producer: a level's bake description and its meshes in, a cooked lightmap out.
 inline constexpr u32 kLightmapProducerVersion = 2;
+
+/// The `navmesh` producer: a navigation world's saved `.cynavmesh` sidecar in, verified against
+/// the world's `bake-identity` option, and the cooked navigation mesh out. Issue #28.
+inline constexpr u32 kNavmeshProducerVersion = 1;
 
 }  // namespace cy::build
 

@@ -3,9 +3,11 @@ cy_add_module(
     LAYER abi
     ALIAS cy::editor-backend
     TYPE STATIC
-    SOURCES src/material_service.cpp
+    SOURCES src/material_service.cpp src/navigation_service.cpp src/composite_service.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::abi cy::graph-material)
+    # cy::navigation is layer 4 (scene) under this layer-6 service: the navigation service runs
+    # the bake and the queries, and its header names the navigation types it exchanges.
+    PUBLIC_DEPENDENCIES cy::abi cy::graph-material cy::navigation)
 
 if(CY_VFX)
     target_link_libraries(cy_editor_backend PRIVATE cy::vfx)
@@ -53,6 +55,16 @@ if(CY_BUILD_TESTS)
                 "${tests_dir}/test_vfx_preview_service.cpp")
             target_link_libraries(cy_test_integration_editor_backend_compile PRIVATE cy::vfx)
         endif()
+        # Issue #28: the navigation service over a fixture seam, and the composite that routes
+        # material.* and navigation.* through one binding. INTEGRATION because the bakes voxelise.
+        cy_add_test(
+            NAME editor_backend_navigation
+            KIND integration
+            SOURCES "${tests_dir}/test_navigation_service.cpp"
+                    "${tests_dir}/test_composite_service.cpp"
+            DEPENDENCIES cy::editor-backend cy::navigation)
+        target_include_directories(cy_test_integration_editor_backend_navigation PRIVATE
+            "${CMAKE_SOURCE_DIR}/src/navigation/tests")
     endfunction()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_editor_backend_declare_tests)
 endif()
