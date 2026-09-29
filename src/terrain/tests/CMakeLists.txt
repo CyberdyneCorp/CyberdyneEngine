@@ -13,9 +13,9 @@
 #                      and the painting, the page producer's invalidation, the deformation classes
 #                      and the delta's overlay round trip, and the modifier stack. Milliseconds
 #                      each, no thread and no I/O.
-#   terrain_authoring  integration: the modifier stack. One evaluation of one tile is a padded
-#                      77x77 lattice through four octaves of value noise — a hundred thousand
-#                      stream draws — and several cases evaluate a tile twice to compare. That is
+#   terrain_authoring  integration: the modifier stack and the editor's brushes over a region. One
+#                      evaluation of one tile is a padded 77x77 lattice through four octaves of
+#                      value noise — a hundred thousand stream draws — and several cases evaluate a tile twice to compare. That is
 #                      over the unit budget by design; making it cheaper would mean testing a
 #                      generator too small to have a halo worth checking.
 #   terrain_persistence integration: the overlay round trip and the replication message. Both deform
@@ -66,7 +66,7 @@ function(cy_terrain_declare_tests)
     cy_add_test(
         NAME terrain_authoring
         KIND integration
-        SOURCES "${cy_terrain_tests_dir}/test_stack.cpp"
+        SOURCES "${cy_terrain_tests_dir}/test_stack.cpp" "${cy_terrain_tests_dir}/test_brush.cpp"
         DEPENDENCIES cy::terrain)
 
     cy_add_test(

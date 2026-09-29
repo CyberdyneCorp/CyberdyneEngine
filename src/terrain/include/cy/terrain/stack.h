@@ -76,7 +76,45 @@ enum class ModifierKind : u8 {
     Sculpt,
     /// Cuts the surface away. A cave mouth, a pit, a building's interior footprint.
     Hole,
+    /// An editor brush gesture: raise, lower, smooth, flatten, paint or cut holes under a stroke of
+    /// dabs. Its footprint is the union of the dabs' discs and it writes nothing outside it.
+    Brush,
 };
+
+/// What a `ModifierKind::Brush` does under its footprint.
+enum class BrushOp : u8 {
+    /// Adds `kBrushReliefMetres * strength * weight`.
+    Raise = 0,
+    /// Subtracts the same.
+    Lower,
+    /// Blends each sample toward its four neighbours' mean, `iterations` Jacobi passes.
+    Smooth,
+    /// Blends toward `Modifier::height`.
+    Flatten,
+    /// Blends `Modifier::layer` into the material texels.
+    Paint,
+    /// Cuts the quads whose minimum corner the footprint covers.
+    Hole,
+};
+
+[[nodiscard]] const char* brush_op_name(BrushOp op) noexcept;
+
+/// Metres a raise or lower brush moves the surface at full strength, pressure and weight.
+inline constexpr f32 kBrushReliefMetres = 4.0F;
+/// The Jacobi passes a smooth brush runs when the author asks for none.
+inline constexpr u32 kBrushSmoothPasses = 4;
+
+/// One dab of a brush stroke, in absolute world metres.
+struct BrushPoint {
+    f64 x = 0.0;
+    f64 z = 0.0;
+    /// Input pressure, zero to one; it scales the dab's weight.
+    f32 pressure = 1.0F;
+};
+
+/// The weight of one dab at `distance` metres from its centre: one inside the hard core
+/// `radius * (1 - falloff)`, a smoothstep to zero at `radius`, and zero at and beyond it.
+[[nodiscard]] f32 brush_falloff(f32 distance, f32 radius, f32 falloff) noexcept;
 
 [[nodiscard]] const char* modifier_kind_name(ModifierKind kind) noexcept;
 
@@ -128,6 +166,15 @@ struct Modifier {
     /// grid spanning `bounds`. Set by `add_sculpt()`.
     u32 first_sample = 0;
     u32 stamp_edge = 0;
+
+    /// Brush: the operation. `amplitude` is the strength (zero to one), `radius` the dab radius,
+    /// `height` the flatten target, `layer` the painted layer and `iterations` the smooth passes.
+    BrushOp brush = BrushOp::Raise;
+    /// Brush: the soft fraction of the dab radius, zero (a hard disc) to one.
+    f32 falloff = 0.5F;
+    /// Brush dabs, as a range in the stack's dab pool. Set by `add_brush()`.
+    u32 first_dab = 0;
+    u32 dab_count = 0;
 };
 
 /// What one modifier's edit reaches, as a rectangle. `terrain` — "WHEN a road spline is moved, THEN
@@ -160,6 +207,12 @@ public:
     [[nodiscard]] Status add_spline(u32 index, Span<const TerrainPoint> points) noexcept;
     /// Attach a sculpt stamp: `edge * edge` offsets in metres, spanning the modifier's bounds.
     [[nodiscard]] Status add_sculpt(u32 index, u32 edge, Span<const f32> offsets) noexcept;
+    /// Attach a brush stroke's dabs to a `Brush` modifier, and set its bounds to the dabs' extent
+    /// so that its reach is exactly the dabs plus the declared radius.
+    [[nodiscard]] Status add_brush(u32 index, Span<const BrushPoint> dabs) noexcept;
+    /// The brush's weight at a position: the strongest dab's falloff times its pressure, before
+    /// strength. Zero outside the footprint, which is what bounds every brush edit.
+    [[nodiscard]] f32 brush_weight(const Modifier& modifier, f64 x, f64 z) const noexcept;
 
     /// Declare that a material layer suppresses other systems' placement. A declared mapping, so a
     /// foliage row asks a question rather than special-casing a road.
@@ -212,6 +265,11 @@ private:
                                    f32 current) const noexcept;
     void write_material(const Modifier& modifier, const TileCoord& coord,
                         TerrainTile& tile) const noexcept;
+    void write_brush_material(const Modifier& modifier, const TileCoord& coord,
+                              TerrainTile& tile) const noexcept;
+    void smooth(const Modifier& modifier, const TileCoord& coord, Padded& grid) const noexcept;
+    [[nodiscard]] f64 sample_x(const TileCoord& coord, const Padded& grid, u32 i) const noexcept;
+    [[nodiscard]] f64 sample_z(const TileCoord& coord, const Padded& grid, u32 j) const noexcept;
 
     TileLayout layout_;
     u64 seed_;
@@ -219,6 +277,7 @@ private:
     Array<Modifier> modifiers_;
     Array<TerrainPoint> points_;
     Array<f32> samples_;
+    Array<BrushPoint> dabs_;
     Array<u16> decorations_;  ///< layer in the low byte, suppression flag in bit 8
 };
 

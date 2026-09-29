@@ -788,3 +788,106 @@ fn a_joined_body_shows_the_fields_its_kind_reads_and_removes_through_the_command
         [Intent::Invoke(command, _)] if command == "physics.joint.remove"
     ));
 }
+
+fn pointer(position: egui::Pos2, pressed: Option<bool>) -> Vec<egui::Event> {
+    let mut events = vec![egui::Event::PointerMoved(position)];
+    if let Some(pressed) = pressed {
+        events.push(egui::Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    events
+}
+
+/// Drag across the brush field and return the intents of the frame the gesture finished in.
+fn drag_across_the_brush_field(harness: &mut Harness, size: egui::Vec2) -> Vec<Intent> {
+    let evidence = harness.frame("editor-terrain", size, Vec::new());
+    let (_, field) = evidence
+        .bounds
+        .iter()
+        .find(|(label, _)| label == "Terrain brush field")
+        .unwrap_or_else(|| panic!("no brush field in {:?}", evidence.labels));
+    let at = |fraction: f64| {
+        egui::pos2(
+            (field.x0 + field.width() * fraction) as f32,
+            (field.y0 + field.height() * 0.5) as f32,
+        )
+    };
+    harness.frame("editor-terrain", size, pointer(at(0.3), Some(true)));
+    harness.frame("editor-terrain", size, pointer(at(0.4), None));
+    harness.frame("editor-terrain", size, pointer(at(0.5), None));
+    harness
+        .frame("editor-terrain", size, pointer(at(0.5), Some(false)))
+        .intents
+}
+
+#[test]
+fn the_terrain_brush_offers_every_tool_the_engine_applies() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let evidence = harness.frame("editor-terrain", size, Vec::new());
+    for label in ["Raise", "Lower", "Smooth", "Flatten", "Paint", "Hole"] {
+        assert!(
+            evidence.labels.iter().any(|drawn| drawn == label),
+            "the brush lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.contains("No engine attached")),
+        "without a runtime the field says why it shows no engine surface: {:?}",
+        evidence.labels
+    );
+}
+
+/// Regression: the panel keeps the first material layer selected whenever the stack has one, and
+/// it sent that layer with every stroke — so once a layer existed every raise, lower, smooth and
+/// flatten gesture was refused with "sculpt tools do not take a material layer".
+#[test]
+fn a_sculpt_stroke_with_a_layer_in_the_stack_names_no_layer_and_is_accepted() {
+    let size = egui::vec2(900.0, 600.0);
+    let mut harness = terrain_harness();
+    let terrain = harness.editor.edited_terrain().expect("a terrain root");
+    harness
+        .registry
+        .invoke(
+            "terrain.layer.add",
+            &harness.scope,
+            &mut harness.editor,
+            &cy_editor_commands::Arguments::new()
+                .with(
+                    "terrain",
+                    cy_editor_core::value::Value::Text(terrain.to_string()),
+                )
+                .with("name", cy_editor_core::value::Value::Text("Rock".into()))
+                .with(
+                    "material",
+                    cy_editor_core::value::Value::Text("materials/rock.cymat".into()),
+                ),
+        )
+        .expect("a layer");
+
+    for (tool, names_layer) in [("raise", false), ("hole", false), ("paint", true)] {
+        harness.inputs.terrain_tool = tool.into();
+        let intents = drag_across_the_brush_field(&mut harness, size);
+        let [Intent::Invoke(command, arguments)] = intents.as_slice() else {
+            panic!("one gesture is one command: {intents:?}");
+        };
+        assert_eq!(command, "terrain.stroke.commit");
+        assert_eq!(
+            arguments.text("layer").is_some(),
+            names_layer,
+            "{tool} and its layer"
+        );
+        harness
+            .registry
+            .invoke(command, &harness.scope, &mut harness.editor, arguments)
+            .unwrap_or_else(|problem| panic!("{tool} stroke refused: {problem}"));
+    }
+}
