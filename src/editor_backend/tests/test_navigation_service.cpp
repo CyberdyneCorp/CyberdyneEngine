@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "navigation_seam.h"
@@ -86,6 +87,8 @@ struct StatusReply {
     u64 saved = 0;
     u64 identity = 0;
     u32 tiles = 0;
+    bool sidecar_missing = false;
+    bool decoded = false;
 };
 
 StatusReply read_status(const Event& event) {
@@ -98,6 +101,16 @@ StatusReply read_status(const Event& event) {
     out.saved = decoder.u64_();
     out.identity = decoder.u64_();
     out.tiles = decoder.u32_();
+    for (u32 counter = 0; counter < 6; ++counter) {
+        (void)decoder.u32_();
+    }
+    (void)decoder.u64_();
+    (void)decoder.u8_();
+    (void)decoder.u32_();
+    (void)decoder.u32_();
+    (void)decoder.u32_();  // link failures
+    out.sidecar_missing = decoder.u8_() != 0;
+    out.decoded = decoder.done();
     return out;
 }
 
@@ -340,11 +353,12 @@ CY_TEST_CASE("editor_backend: navigation without a seam is unavailable and not a
     Fixture fixture;
     const Event full = call(fixture.service, fixture.session, 4, "capabilities.get");
     const std::vector<std::string> names = capability_names(full, features);
-    CY_CHECK_EQ(names.size(), usize{8});
+    CY_CHECK_EQ(names.size(), usize{9});
     CY_CHECK_EQ(features, kNavigationFeature);
     for (const char* operation :
          {"navigation.bake", "navigation.status", "navigation.update", "navigation.path.query",
-          "navigation.flowfield.query", "navigation.point.pick", "navigation.overlay.set"}) {
+          "navigation.flowfield.query", "navigation.point.pick", "navigation.overlay.set",
+          "navigation.clear"}) {
         CY_CHECK(std::ranges::find(names, operation) != names.end());
     }
 }
@@ -447,9 +461,27 @@ CY_TEST_CASE("editor_backend: navigation status restores a saved bake into a new
     CY_REQUIRE(mesh != nullptr);
     CY_CHECK_EQ(mesh->tile_count(), 4U);
 
+    // A recorded bake whose sidecar the host cannot find (not committed, or deleted) is reported
+    // as unbaked with the sidecar missing and the current fingerprint, and the session drops the
+    // mesh it held rather than answer queries on a bake the document does not record.
     Payload missing;
     missing.u32_(kWorld).settings(first.settings).u64_(baked.identity + 1).u64_(1);
-    const Event refused = call(service, session, 3, "navigation.status", missing);
+    const Event absent = call(service, session, 3, "navigation.status", missing);
+    CY_REQUIRE(absent.is(CY_SERVICE_EVENT_COMPLETED));
+    const StatusReply lost = read_status(absent);
+    CY_CHECK(lost.decoded);
+    CY_CHECK_FALSE(lost.baked);
+    CY_CHECK(lost.sidecar_missing);
+    CY_CHECK_FALSE(lost.stale);
+    CY_CHECK_EQ(lost.current, baked.fingerprint);
+    CY_CHECK(NavigationService::mesh(session, kWorld) == nullptr);
+    CY_CHECK_FALSE(reply.sidecar_missing);
+
+    // A sidecar that is there but does not decode is still a failure, by name.
+    first.seam.sidecars[baked.identity + 2] = {1, 2, 3};
+    Payload corrupt;
+    corrupt.u32_(kWorld).settings(first.settings).u64_(baked.identity + 2).u64_(1);
+    const Event refused = call(service, session, 4, "navigation.status", corrupt);
     CY_CHECK_EQ(refused.code(), "navigation.bake.load-failed");
     service.close(session);
 }
@@ -583,4 +615,159 @@ CY_TEST_CASE(
         "navigation.surface.missing");
     CY_CHECK_EQ(call(fixture.service, fixture.session, 4, "navigation.teleport").code(),
                 "navigation.operation.unsupported");
+}
+
+namespace {
+
+/// A strip of mud across the corridor, at ten times the cost.
+nav::NavAreaVolume mud_strip(f32 cost) {
+    return nav::NavAreaVolume{9, box(6.0F, -1.0F, 10.0F, 5.0F), 5, cost};
+}
+
+/// Every resident tile's digest in `session`'s mesh of the world.
+std::vector<std::pair<std::pair<i32, i32>, u64>> resident(CyServiceSession session) {
+    std::vector<std::pair<std::pair<i32, i32>, u64>> out;
+    const nav::NavMesh* mesh = NavigationService::mesh(session, kWorld);
+    if (mesh == nullptr) {
+        return out;
+    }
+    for (u32 slot = 0; slot < mesh->tile_capacity(); ++slot) {
+        const nav::TileCoord coord = mesh->tile_coord(slot);
+        if (mesh->tile_slot(coord) == slot) {
+            out.push_back({{coord.x, coord.z}, nav::mesh_tile_digest(*mesh, slot)});
+        }
+    }
+    std::ranges::sort(out);
+    return out;
+}
+
+/// The digests a fresh bake of the seam's current sources produces.
+std::vector<std::pair<std::pair<i32, i32>, u64>> fresh(FixtureSeam& seam,
+                                                       const nav::NavBakeSettings& settings) {
+    NavigationService service(allocator(), &seam);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+    CY_CHECK(call(service, session, 1, "navigation.bake", bake_request(settings))
+                 .is(CY_SERVICE_EVENT_COMPLETED));
+    auto out = resident(session);
+    service.close(session);
+    return out;
+}
+
+}  // namespace
+
+CY_TEST_CASE("editor_backend: a restored bake keeps its area costs in a new session and on undo") {
+    Fixture fixture;
+    corridor_world(fixture.seam);
+    fixture.seam.areas.push_back(mud_strip(10.0F));
+    const Completed dear = fixture.bake(1);
+    const Vec3 start{2.0F, 0.0F, 2.0F};
+    const Vec3 end{14.0F, 0.0F, 2.0F};
+    const PathReply before = fixture.path(2, start, end);
+    CY_REQUIRE(before.found);
+
+    // Reopened in a new session: the sidecar comes back and the path costs what it did.
+    NavigationService service(allocator(), &fixture.seam);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+    Payload restore;
+    restore.u32_(kWorld).settings(fixture.settings).u64_(dear.identity).u64_(dear.fingerprint);
+    CY_REQUIRE(
+        call(service, session, 3, "navigation.status", restore).is(CY_SERVICE_EVENT_COMPLETED));
+    Payload query;
+    query.u32_(kWorld).vec3(start).vec3(end).vec3(Vec3{0.5F, 1.0F, 0.5F});
+    const Event reopened = call(service, session, 4, "navigation.path.query", query);
+    CY_REQUIRE(reopened.is(CY_SERVICE_EVENT_COMPLETED));
+    const PathReply after = read_path(reopened);
+    CY_CHECK(after.found);
+    CY_CHECK_EQ(after.cost, before.cost);
+    service.close(session);
+
+    // Undo: a cheaper rebake is replaced by the recorded one, and its costs come back with it.
+    fixture.seam.areas[0].cost = 1.0F;
+    const Completed cheap = fixture.bake(5);
+    CY_REQUIRE_NE(cheap.identity, dear.identity);
+    fixture.seam.areas[0].cost = 10.0F;
+    CY_CHECK_FALSE(fixture.status(6, dear).stale);
+    const PathReply undone = fixture.path(7, start, end);
+    CY_CHECK_EQ(undone.cost, before.cost);
+}
+
+CY_TEST_CASE(
+    "editor_backend: an update after restoring a stale bake rebuilds every changed tile, not only "
+    "the dirty box") {
+    Fixture first;
+    square_world(first.seam);
+    const Completed baked = first.bake(1);
+
+    // Between sessions the sources change far from where the next edit happens.
+    first.seam.areas.push_back(nav::NavAreaVolume{4, box(10.0F, 10.0F, 14.0F, 14.0F), 5, 3.0F});
+    NavigationService service(allocator(), &first.seam);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(service.open(&session), CY_RESULT_OK);
+    Payload restore;
+    restore.u32_(kWorld).settings(first.settings).u64_(baked.identity).u64_(baked.fingerprint);
+    const Event restored = call(service, session, 2, "navigation.status", restore);
+    CY_REQUIRE(restored.is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK(read_status(restored).stale);
+    // The change is real: a fresh bake of the new sources differs from the restored mesh.
+    CY_REQUIRE(resident(session) != fresh(first.seam, first.settings));
+
+    // An obstacle is placed in tile (0, 0): its box is all the host dirties.
+    first.seam.obstacle_list.push_back(nav::NavObstacleShape{});
+    first.seam.obstacle_list.back().bounds = box(2.0F, 2.0F, 3.0F, 3.0F);
+    Payload update;
+    update.u32_(kWorld).aabb(first.seam.obstacle_list.back().bounds);
+    CY_REQUIRE(
+        call(service, session, 3, "navigation.update", update).is(CY_SERVICE_EVENT_COMPLETED));
+    // The mud's tile (1, 1) is rebuilt too: the live mesh is a bake of one set of sources.
+    CY_CHECK(resident(session) == fresh(first.seam, first.settings));
+    service.close(session);
+}
+
+CY_TEST_CASE(
+    "editor_backend: an edit that changes the geometry's height range rebuilds every tile") {
+    // Recast quantises heights from the bottom of the build box, so there a new floor changes
+    // every tile; the engine back end samples exact heights and would not show it.
+    if (!nav::recast_available()) {
+        CY_TEST_MESSAGE("SKIP: this build has no Recast (CY_NAVIGATION is off)");
+        return;
+    }
+    Fixture fixture;
+    fixture.settings.backend = nav::NavBuildBackend::Recast;
+    square_world(fixture.seam);
+    (void)fixture.bake(1);
+    const auto flat = resident(fixture.session);
+
+    // A ledge below the ground in tile (1, 1) lowers every tile's build box.
+    fixture.seam.geometry.triangle(Vec3{12.0F, -1.3F, 12.0F}, Vec3{13.0F, -1.3F, 13.0F},
+                                   Vec3{13.0F, -1.3F, 12.0F});
+    const auto expected = fresh(fixture.seam, fixture.settings);
+    CY_REQUIRE_EQ(expected.size(), flat.size());
+    CY_REQUIRE(!expected.empty());
+    CY_CHECK_NE(expected.front().second, flat.front().second);  // tile (0, 0) changed
+    CY_REQUIRE(fixture.update(2, box(12.0F, 12.0F, 13.0F, 13.0F)).is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK(resident(fixture.session) == expected);
+}
+
+CY_TEST_CASE("editor_backend: navigation clear drops the mesh and refuses later queries") {
+    Fixture fixture;
+    corridor_world(fixture.seam);
+    (void)fixture.bake(1);
+    CY_REQUIRE(NavigationService::mesh(fixture.session, kWorld) != nullptr);
+    Payload clear;
+    clear.u32_(kWorld);
+    const Event cleared = call(fixture.service, fixture.session, 2, "navigation.clear", clear);
+    CY_CHECK(cleared.is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK(NavigationService::mesh(fixture.session, kWorld) == nullptr);
+    Payload query;
+    query.u32_(kWorld).vec3(Vec3{2.0F, 0.0F, 2.0F}).vec3(Vec3{14.0F, 0.0F, 2.0F});
+    query.vec3(Vec3{0.5F, 1.0F, 0.5F});
+    CY_CHECK_EQ(call(fixture.service, fixture.session, 3, "navigation.path.query", query).code(),
+                "navigation.world.unbaked");
+    // Clearing a world with no mesh is not an error.
+    CY_CHECK(call(fixture.service, fixture.session, 4, "navigation.clear", clear)
+                 .is(CY_SERVICE_EVENT_COMPLETED));
+    CY_CHECK_EQ(call(fixture.service, fixture.session, 5, "navigation.clear").code(),
+                "navigation.request.malformed");
 }

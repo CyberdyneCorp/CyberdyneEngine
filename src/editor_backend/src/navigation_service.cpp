@@ -115,6 +115,14 @@ struct NavContext {
     /// The identity of the bake the mesh was built or restored from: its sidecar's name.
     u64 sidecar = 0;
     u64 fingerprint = 0;
+    /// The mesh equals a full bake of the sources the service last gathered for this world, so a
+    /// dirty-box rebuild of the next edit brings it up to date. False after restoring a sidecar
+    /// the sources have since moved away from: the next update then rebuilds the whole surface.
+    bool current = false;
+    /// The Y range of the geometry the mesh was built from. Every tile's build box spans it, so a
+    /// change of range changes every tile and an update rebuilds the whole surface.
+    f32 floor = 0.0F;
+    f32 ceiling = 0.0F;
     u32 overlay = 0;
     u32 link_failures = 0;
     Array<nav::ObstacleId> obstacle_ids;
@@ -286,6 +294,37 @@ void destroy_contexts(NavigationSession& session, Allocator& allocator) noexcept
     }
     result = CY_RESULT_OK;
     return context;
+}
+
+/// Marks the context's mesh as a full bake of `source` under `settings`.
+void mark_current(NavContext& context, const nav::NavBakeSettings& settings,
+                  const nav::NavBakeSource& source) noexcept {
+    const Aabb span = nav::bake_tile_bounds(settings, source.geometry, nav::TileCoord{});
+    context.current = true;
+    context.floor = span.min.y;
+    context.ceiling = span.max.y;
+}
+
+/// Whether `source`'s geometry spans the same Y range the context's mesh was built over.
+[[nodiscard]] bool same_range(const NavContext& context, const nav::NavBakeSettings& settings,
+                              const nav::NavBakeSource& source) noexcept {
+    const Aabb span = nav::bake_tile_bounds(settings, source.geometry, nav::TileCoord{});
+    return span.min.y == context.floor && span.max.y == context.ceiling;
+}
+
+/// Drops the world's mesh and everything applied to it: the engine side of "no bake recorded".
+void drop_mesh(NavContext& context) noexcept {
+    context.mesh.reset();
+    context.identity = 0;
+    context.sidecar = 0;
+    context.fingerprint = 0;
+    context.current = false;
+    context.link_failures = 0;
+    context.costs = nav::NavAreaCosts::uniform();
+    context.obstacle_ids.clear();
+    context.obstacle_shapes.clear();
+    context.link_ids.clear();
+    clear_report(context.report);
 }
 
 // --- Obstacles and links ----------------------------------------------------------------------
@@ -593,6 +632,7 @@ void accumulate(nav::NavBakeReport& into, const nav::NavBakeReport& tile) noexce
     context.identity = identity;
     context.sidecar = identity;
     context.fingerprint = job.fingerprint;
+    mark_current(context, job.settings, job.sources.source());
     context.obstacle_ids.clear();
     context.obstacle_shapes.clear();
     context.link_ids.clear();
@@ -680,19 +720,31 @@ CyResult bake(Call& call) noexcept {
 
 // --- navigation.status ------------------------------------------------------------------------
 
-/// Installs the sidecar saved under `identity` as the world's mesh: how an undone bake comes back.
-[[nodiscard]] Status restore_bake(Call& call, u32 world, u64 identity) noexcept {
+/// Why a recorded bake could not be installed.
+enum class RestoreFailure : u8 {
+    None,
+    /// The host has no sidecar under the identity: not committed, or deleted.
+    Missing,
+    /// The sidecar is there but does not decode or install.
+    Corrupt,
+};
+
+/// Installs the sidecar saved under `identity` as the world's mesh: how an undone bake comes back,
+/// and how a world reopened in a new session gets its mesh. `sources` are the host's current
+/// sources, whose fingerprint is `current`: they set the area costs, and whether the mesh is
+/// current for them.
+[[nodiscard]] Status restore_bake(Call& call, NavContext& context, u64 identity,
+                                  const nav::NavBakeSource& sources, u64 current,
+                                  RestoreFailure& failure) noexcept {
+    failure = RestoreFailure::Missing;
     Array<u8> bytes(call.allocator);
     if (Status loaded = call.runtime.load_bake(identity, bytes); !loaded) {
         return loaded;
     }
+    failure = RestoreFailure::Corrupt;
     auto asset = nav::decode_nav_bake(call.allocator, bytes.span());
     if (!asset) {
         return make_unexpected(asset.error());
-    }
-    NavContext* context = context_for(call.session, call.allocator, world);
-    if (context == nullptr) {
-        return fail(ErrorCode::OutOfRange, "this session already holds sixteen navigation worlds");
     }
     const nav::NavBakeSettings settings = asset->settings;
     const u64 fingerprint = asset->source_fingerprint;
@@ -704,26 +756,29 @@ CyResult bake(Call& call) noexcept {
     if (Status installed = nav::install_nav_bake(std::move(*asset), *mesh); !installed) {
         return installed;
     }
-    context->mesh.take(mesh);
-    context->settings = settings;
-    context->identity = identity;
-    context->sidecar = identity;
-    context->fingerprint = fingerprint;
-    context->obstacle_ids.clear();
-    context->obstacle_shapes.clear();
-    context->link_ids.clear();
-    clear_report(context->report);
+    failure = RestoreFailure::None;
+    drop_mesh(context);
+    context.mesh.take(mesh);
+    context.settings = settings;
+    context.costs = nav::area_costs(sources.areas);
+    context.identity = identity;
+    context.sidecar = identity;
+    context.fingerprint = fingerprint;
+    if (fingerprint == current) {
+        mark_current(context, settings, sources);
+    }
     Array<nav::TileCoord> affected(call.allocator);
-    if (Status placed = sync_obstacles(call, *context, affected); !placed) {
+    if (Status placed = sync_obstacles(call, context, affected); !placed) {
         return placed;
     }
-    return sync_links(call, *context);
+    return sync_links(call, context);
 }
 
 /// u32 world, u8 baked, u8 stale, u64 current fingerprint, u64 saved fingerprint, u64 identity,
-/// u32 resident tiles, the last report, u32 link failures.
+/// u32 resident tiles, the last report, u32 link failures, u8 sidecar missing.
 [[nodiscard]] CyResult encode_status(NavigationSession& session, u32 world,
-                                     const NavContext* context, u64 current, u64 saved) noexcept {
+                                     const NavContext* context, u64 current, u64 saved,
+                                     bool sidecar_missing) noexcept {
     const bool baked = context != nullptr && context->mesh.get() != nullptr;
     Array<u8>& out = session.event_payload;
     out.clear();
@@ -734,8 +789,41 @@ CyResult bake(Call& call) noexcept {
         put_u8(out, (baked && current != saved) ? u8{1} : u8{0}) && put_u64(out, current) &&
         put_u64(out, saved) && put_u64(out, baked ? context->identity : 0) &&
         put_u32(out, baked ? context->mesh->tile_count() : 0) && put_report(out, report) &&
-        put_u32(out, baked ? context->link_failures : 0);
+        put_u32(out, baked ? context->link_failures : 0) &&
+        put_u8(out, sidecar_missing ? u8{1} : u8{0});
     return encoded ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
+}
+
+/// Installs the recorded bake `saved_identity` for `world` when the session holds another mesh (or
+/// none): an undone bake coming back, or a world reopened in a new session. On return `context`
+/// names the world's context, and `missing` says the host had no sidecar under the identity, in
+/// which case the context holds no mesh, so no query answers on a mesh the document does not
+/// record. A failure is written as the session's FAILED event.
+[[nodiscard]] CyResult restore_recorded(Call& call, u32 world, u64 saved_identity,
+                                        const NavSourceBuffers& sources, u64 current,
+                                        NavContext*& context, bool& missing) noexcept {
+    missing = false;
+    const bool restore = saved_identity != 0 && (context == nullptr || !context->mesh ||
+                                                 context->sidecar != saved_identity);
+    if (!restore) {
+        return CY_RESULT_OK;
+    }
+    context = context_for(call.session, call.allocator, world);
+    if (context == nullptr) {
+        return failed(call.session, "navigation.world.limit",
+                      "this session already holds sixteen navigation worlds");
+    }
+    RestoreFailure failure = RestoreFailure::None;
+    const Status restored =
+        restore_bake(call, *context, saved_identity, sources.source(), current, failure);
+    missing = failure == RestoreFailure::Missing;
+    if (!restored && !missing) {
+        return failed(call.session, "navigation.bake.load-failed", restored.error().message);
+    }
+    if (missing) {
+        drop_mesh(*context);
+    }
+    return CY_RESULT_OK;
 }
 
 CyResult status(Call& call) noexcept {
@@ -755,31 +843,34 @@ CyResult status(Call& call) noexcept {
     if (!world_known(call.runtime, call.allocator, world)) {
         return failed(session, "navigation.world.unknown", "the host declares no such world");
     }
-    const NavContext* held = find_context(session, world);
-    const bool restore =
-        saved_identity != 0 && (held == nullptr || !held->mesh || held->sidecar != saved_identity);
-    if (restore) {
-        if (Status restored = restore_bake(call, world, saved_identity); !restored) {
-            return failed(session, "navigation.bake.load-failed", restored.error().message);
-        }
-    }
     NavSourceBuffers sources(call.allocator);
     if (Status gathered = call.runtime.gather(world, sources); !gathered) {
         return failed(session, "navigation.source.failed", gathered.error().message);
     }
     const u64 current = nav::source_fingerprint(settings, sources.source(), kNavigationBakeVersion);
-    const NavContext* context = find_context(session, world);
+    NavContext* context = find_context(session, world);
+    bool missing = false;
+    if (const CyResult restored =
+            restore_recorded(call, world, saved_identity, sources, current, context, missing);
+        restored != CY_RESULT_OK || session.failed_event) {
+        return restored;
+    }
     u64 saved = saved_fingerprint;
     if (saved == 0 && context != nullptr) {
         saved = context->fingerprint;
     }
-    return encode_status(session, world, context, current, saved);
+    return encode_status(session, world, context, current, saved, missing);
 }
 
 // --- navigation.update ------------------------------------------------------------------------
 
-/// Rebuilds the tiles under `dirty` when the sources changed since the mesh was built. Obstacles
-/// and links do not enter the fingerprint, so an obstacle edit rebuilds nothing.
+/// Brings the mesh up to date with the host's sources when they changed since it was built.
+/// Obstacles and links do not enter the fingerprint, so an obstacle edit rebuilds nothing.
+///
+/// The tiles under `dirty` are enough only when the mesh was current before the edit and the
+/// geometry's Y range held (see `rebake_surface_tiles`). Otherwise the change reaches tiles the
+/// dirty box does not name, and the whole surface is rebuilt, so the mesh is never left a hybrid
+/// of two sources.
 [[nodiscard]] Status rebuild_changed(Call& call, NavContext& context, const Aabb& dirty,
                                      Array<nav::TileCoord>& rebuilt) noexcept {
     NavSourceBuffers sources(call.allocator);
@@ -790,10 +881,15 @@ CyResult status(Call& call) noexcept {
     const u64 fingerprint =
         nav::source_fingerprint(context.settings, source, kNavigationBakeVersion);
     if (fingerprint == context.fingerprint) {
+        mark_current(context, context.settings, source);
         return ok();
     }
+    const bool whole = !context.current || !same_range(context, context.settings, source);
     auto report =
-        nav::rebake_tiles(call.allocator, context.settings, source, dirty, *context.mesh, nullptr);
+        whole ? nav::bake_tiles(call.allocator, context.settings, source,
+                                nav::surface_region(source.surfaces), *context.mesh, nullptr)
+              : nav::rebake_surface_tiles(call.allocator, context.settings, source, dirty,
+                                          *context.mesh);
     if (!report) {
         return make_unexpected(report.error());
     }
@@ -809,6 +905,7 @@ CyResult status(Call& call) noexcept {
     context.fingerprint = fingerprint;
     context.identity = *identity;
     context.costs = nav::area_costs(source.areas);
+    mark_current(context, context.settings, source);
     return ok();
 }
 
@@ -1046,6 +1143,24 @@ CyResult overlay_set(Call& call) noexcept {
     return encoded ? CY_RESULT_OK : CY_RESULT_OUT_OF_MEMORY;
 }
 
+// --- navigation.clear -------------------------------------------------------------------------
+
+/// Drops the world's mesh: how the engine follows a document that no longer records a bake (the
+/// first bake undone, or the world removed). Clearing a world with no mesh succeeds.
+CyResult clear(Call& call) noexcept {
+    NavigationSession& session = call.session;
+    Reader reader = reader_of(session);
+    const u32 world = reader.read_u32();
+    if (!reader.complete()) {
+        return failed(session, "navigation.request.malformed", "navigation.clear takes a world");
+    }
+    if (NavContext* context = find_context(session, world); context != nullptr) {
+        drop_mesh(*context);
+    }
+    session.event_payload.clear();
+    return written(put_u32(session.event_payload, world));
+}
+
 // --- Dispatch ---------------------------------------------------------------------------------
 
 struct Operation {
@@ -1061,6 +1176,7 @@ constexpr Operation kOperations[] = {
     {"navigation.flowfield.query", flowfield_query},
     {"navigation.point.pick", point_pick},
     {"navigation.overlay.set", overlay_set},
+    {"navigation.clear", clear},
 };
 
 [[nodiscard]] const Operation* find_operation(std::string_view name) noexcept {
