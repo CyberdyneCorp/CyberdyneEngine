@@ -307,7 +307,7 @@ CY_TEST_CASE("a joint whose target has no body is counted as refused and the wor
 namespace {
 
 /// Where the bob is after two seconds of play on Jolt, with `joint` authored on it.
-[[nodiscard]] Vec3 bob_after_two_seconds(std::string_view joint, u32* created) {
+[[nodiscard]] Vec3 bob_after_two_seconds(std::string_view joint, u64* created) {
     Authored authored(joint);
     CY_REQUIRE(authored.started);
     const cy::Expected<physics::PhysicsServer*, cy::Error> made =
@@ -333,18 +333,18 @@ namespace {
 }  // namespace
 
 CY_TEST_CASE("an authored point joint holds the bob on its arm while it swings") {
-    u32 created = 0;
+    u64 created = 0;
     const Vec3 bob = bob_after_two_seconds(kPointJoint, &created);
-    CY_CHECK_EQ(created, 1U);
+    CY_CHECK_EQ(created, 1ULL);
     // A one-metre arm about (0, 5, 0): the bob swings below the anchor and never leaves the arm.
     const Vec3 arm{bob.x, bob.y - 5.0F, bob.z};
     CY_CHECK_NEAR(cy::length(arm), 1.0F, 0.05);
     CY_CHECK(bob.y > 3.9F);
 
     // The same world with no joint is the control: the bob falls about twenty metres.
-    u32 none = 0;
+    u64 none = 0;
     const Vec3 fallen = bob_after_two_seconds("", &none);
-    CY_CHECK_EQ(none, 0U);
+    CY_CHECK_EQ(none, 0ULL);
     CY_CHECK(fallen.y < -5.0F);
 }
 
