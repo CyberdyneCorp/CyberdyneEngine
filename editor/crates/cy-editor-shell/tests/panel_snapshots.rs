@@ -35,6 +35,9 @@ use egui_dock::TabViewer;
 
 const SIZE: [u32; 2] = [960, 540];
 
+/// One device at a time: the tests in this file run on parallel threads.
+static ONE_DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = pin!(future);
     let mut context = Context::from_waker(Waker::noop());
@@ -297,8 +300,6 @@ fn snapshot(desk: &mut Desk, panel: &str, name: &str) {
         eprintln!("CY_PANEL_SNAPSHOTS is not set; not writing {name}");
         return;
     };
-    // One device at a time: the tests in this file run on parallel threads.
-    static ONE_DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _device = ONE_DEVICE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

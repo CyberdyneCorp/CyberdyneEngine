@@ -248,11 +248,7 @@ impl Harness {
             })
             .count();
         let click_targets = click_targets(&update);
-        let bounds = update
-            .nodes
-            .iter()
-            .filter_map(|(_, node)| Some((node.label()?.to_owned(), node.bounds()?)))
-            .collect();
+        let bounds = labelled_bounds(&update);
         output.textures_delta.clear();
         FrameEvidence {
             labels,
@@ -307,6 +303,14 @@ struct FrameEvidence {
     shapes: usize,
     click_targets: Vec<(String, egui::accesskit::TreeId, egui::accesskit::NodeId)>,
     intents: Vec<Intent>,
+}
+
+fn labelled_bounds(update: &egui::accesskit::TreeUpdate) -> Vec<(String, egui::accesskit::Rect)> {
+    update
+        .nodes
+        .iter()
+        .filter_map(|(_, node)| Some((node.label()?.to_owned(), node.bounds()?)))
+        .collect()
 }
 
 fn click_targets(
