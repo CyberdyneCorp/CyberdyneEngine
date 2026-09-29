@@ -36,6 +36,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -577,7 +578,7 @@ void print_progress(void*, rendering::lightmap_bake::LightmapBakeStage stage, u3
 }
 
 /// Waits for `cancel` on stdin. Detached: it may still be blocked on a read when the bake ends,
-/// and the process exits under it.
+/// holding stdin's lock, which is why `main` ends a lightmap run with `std::_Exit`.
 void watch_for_cancel(std::atomic<bool>& cancel) {
     std::thread([&cancel] {
         char line[64];
@@ -677,7 +678,13 @@ int main(int argc, char** argv) {
         return command_verify(arguments);
     }
     if (arguments.command == "lightmap") {
-        return command_lightmap(arguments);
+        // `exit` locks every stdio stream to flush it, and the cancel watcher holds stdin's lock
+        // for as long as the editor keeps the pipe open, so returning would hang. Flush the output
+        // streams and end the process without that cleanup.
+        const int status = command_lightmap(arguments);
+        std::fflush(stdout);
+        std::fflush(stderr);
+        std::_Exit(status);
     }
     return usage();
 }
