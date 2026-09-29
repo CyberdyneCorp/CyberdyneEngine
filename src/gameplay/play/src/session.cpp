@@ -1,11 +1,14 @@
 // Play mode. See cy/gameplay/play/session.h for the argument, especially the three mechanisms that
 // make "stop restores exactly" a measurement rather than a claim.
 
+#include <cy/gameplay/play/joints.h>
 #include <cy/gameplay/play/session.h>
 #include <cy/scene/node.h>
 #include <cy/scene/propagation.h>
 
 #include <cstdio>
+
+#include "authored_fields.h"
 
 namespace cy::gameplay {
 namespace {
@@ -31,65 +34,11 @@ constexpr std::string_view kFieldExtent = "extent";
 constexpr std::string_view kFieldRadius = "radius";
 constexpr std::string_view kFieldHeight = "height";
 
-/// The declared type of a given name, or null.
-[[nodiscard]] const ser::WorldTypeDecl* type_named(const ser::World& world,
-                                                   std::string_view name) noexcept {
-    for (const ser::WorldTypeDecl& declared : world.types()) {
-        if (world.text(declared.name) == name) {
-            return &declared;
-        }
-    }
-    return nullptr;
-}
-
-/// One field of one component, found by the NAME the file gave it.
-[[nodiscard]] const ser::WorldValue* field_named(const ser::World& world,
-                                                 const ser::WorldTypeDecl& declared,
-                                                 const ser::WorldComponent& component,
-                                                 std::string_view name) noexcept {
-    for (const ser::WorldFieldDecl& field : declared.fields()) {
-        if (world.text(field.name) != name) {
-            continue;
-        }
-        if (const ser::WorldField* held = component.find(field.file_field); held != nullptr) {
-            return &held->value;
-        }
-        return nullptr;
-    }
-    return nullptr;
-}
-
-[[nodiscard]] f32 float_of(const ser::WorldValue* value, f32 fallback) noexcept {
-    if (value == nullptr) {
-        return fallback;
-    }
-    switch (value->kind) {
-        case ser::WorldValueKind::Float:
-            return value->lanes[0];
-        case ser::WorldValueKind::Double:
-            return static_cast<f32>(value->real);
-        case ser::WorldValueKind::Int:
-            return static_cast<f32>(value->integer);
-        default:
-            return fallback;
-    }
-}
-
-[[nodiscard]] Vec3 vec3_of(const ser::WorldValue* value, Vec3 fallback) noexcept {
-    if (value == nullptr || value->kind != ser::WorldValueKind::Vec3) {
-        return fallback;
-    }
-    return Vec3{value->lanes[0], value->lanes[1], value->lanes[2]};
-}
-
-[[nodiscard]] std::string_view text_of(const ser::World& world, const ser::WorldValue* value,
-                                       std::string_view fallback) noexcept {
-    if (value == nullptr || value->kind != ser::WorldValueKind::Text) {
-        return fallback;
-    }
-    const Span<const u8> bytes = world.blob(*value);
-    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
+using authored::field_named;
+using authored::float_of;
+using authored::text_of;
+using authored::type_named;
+using authored::vec3_of;
 
 /// The shape a `Collider` component's `shape` field names.
 [[nodiscard]] physics::ShapeDescription shape_of(const ser::World& world,
@@ -365,6 +314,10 @@ Status PlaySession::build(const PlayConfiguration& configuration) noexcept {
     if (Status synced = bridge_->sync(); !synced) {
         return synced;
     }
+    // Joints after the bodies, because a joint names two bodies and the handles exist only now.
+    if (Status joined = attach_joints(); !joined) {
+        return joined;
+    }
     report_.bodies = bridge_->tracked_bodies();
     return ok();
 }
@@ -453,6 +406,83 @@ Status PlaySession::attach_physics(const ser::WorldNode& node, ecs::Entity entit
         return ok();
     }
     return ok();
+}
+
+// --- Joints --------------------------------------------------------------------------------------
+
+Transform PlaySession::body_placement(ecs::Entity entity) const noexcept {
+    const auto* placed =
+        world_->get<scene::WorldTransform>(entity, tree_->components().world_transform);
+    Transform placement = placed != nullptr ? placed->value : Transform::identity();
+    // A solver body has no scale, and a joint frame is in the body's frame, not the node's.
+    placement.scale = Vec3{1.0F, 1.0F, 1.0F};
+    return placement;
+}
+
+Status PlaySession::attach_joint(const Simulated& entry) noexcept {
+    const Expected<AuthoredJoint, Error> joint =
+        authored_joint(*authored_, authored_->nodes()[entry.node]);
+    if (!joint) {
+        if (joint.error().code != ErrorCode::NotFound) {
+            ++report_.joints_refused;
+        }
+        return ok();
+    }
+    physics::Joint component;
+    component.description = joint->description;
+    component.description.body_a = bridge_->body_of(entry.entity);
+    const ecs::Entity target = joint->target == 0 ? ecs::Entity{} : entity_for(joint->target);
+    const physics::BodyHandle body_b =
+        target.valid() ? bridge_->body_of(target) : physics::BodyHandle{};
+    if (component.description.body_a.is_null() || (joint->target != 0 && body_b.is_null())) {
+        ++report_.joints_refused;
+        return ok();
+    }
+    component.description.body_b = body_b;
+    const Transform target_placement = target.valid() ? body_placement(target) : Transform{};
+    component.description.frame_b =
+        frame_on_target(body_placement(entry.entity), component.description.frame_a,
+                        target.valid() ? &target_placement : nullptr);
+    if (auto* held = world_->get_mut<physics::Joint>(entry.entity, components_.joint);
+        held != nullptr) {
+        held->description = component.description;
+    } else if (Status added = world_->add(entry.entity, components_.joint, &component); !added) {
+        return added;
+    }
+    ++report_.joints;
+    return ok();
+}
+
+Status PlaySession::attach_joints() noexcept {
+    const u32 before = report_.joints;
+    for (const Simulated& entry : simulated_) {
+        if (Status joined = attach_joint(entry); !joined) {
+            return joined;
+        }
+    }
+    if (report_.joints == before) {
+        return ok();
+    }
+    return bridge_->sync();
+}
+
+Status PlaySession::rejoin(u64 identity) noexcept {
+    // Both ends: the rebuilt node's own joint, and every joint whose target it is, because either
+    // one now names a body handle the bridge has destroyed.
+    for (const Simulated& entry : simulated_) {
+        const Expected<AuthoredJoint, Error> joint =
+            authored_joint(*authored_, authored_->nodes()[entry.node]);
+        if (!joint || (entry.identity != identity && joint->target != identity)) {
+            continue;
+        }
+        if (report_.joints > 0) {
+            --report_.joints;
+        }
+        if (Status joined = attach_joint(entry); !joined) {
+            return joined;
+        }
+    }
+    return bridge_->sync();
 }
 
 // --- Running -------------------------------------------------------------------------------------
@@ -552,6 +582,9 @@ Status PlaySession::reinitialize_physics(u64 identity) noexcept {
     if (Status synced = bridge_->sync(); !synced) {
         return synced;
     }
+    if (Status joined = rejoin(identity); !joined) {
+        return joined;
+    }
     report_.bodies = bridge_->tracked_bodies();
     return ok();
 }
@@ -596,6 +629,9 @@ Status PlaySession::recreate_entity(u64 identity) noexcept {
     }
     if (Status synced = bridge_->sync(); !synced) {
         return synced;
+    }
+    if (Status joined = rejoin(identity); !joined) {
+        return joined;
     }
     report_.bodies = bridge_->tracked_bodies();
     return ok();

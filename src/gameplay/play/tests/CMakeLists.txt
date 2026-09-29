@@ -63,6 +63,16 @@ function(cy_gameplay_play_declare_tests)
         DEPENDENCIES ${backends}
         DEFINITIONS ${backend_definitions})
 
+    # `gameplay_joints` integration. Joints authored in the editor: the component's names read back
+    # into a `ConstraintDescription`, handed to the bridge at play, and — on Jolt — a pendulum that
+    # holds its arm against the same world with no joint, which falls.
+    cy_add_test(
+        NAME gameplay_joints
+        KIND integration
+        SOURCES "${tests_dir}/test_joints.cpp"
+        DEPENDENCIES ${backends}
+        DEFINITIONS ${backend_definitions})
+
     # --- M11.b: the three play modes, and a live edit that reaches the world they carry ----------
     #
     # `editor_play`      integration. The three modes driven by ONE command stream, the refusal a
