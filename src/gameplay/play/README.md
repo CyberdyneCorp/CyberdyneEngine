@@ -28,6 +28,7 @@ the module above keeps its short list unchanged. `cy::servers-input` is not here
 | `mode.h` | `PlayMode`, its per-mode capabilities, and the refusal an unavailable mode produces |
 | `launcher.h` | `RuntimeProcess`: the second runtime process, launched, supervised, and driven over a versioned line protocol |
 | `driver.h` | `PlayDriver` and its two implementations — one command vocabulary, two localities |
+| `joints.h` | Joints authored in a world: the `Joint` component's names, `authored_joint`, and frame B derived so both anchors coincide in the authored pose |
 | `host/main.cpp` | `cy_play_runtime_host`, the binary the launcher starts. It *is* separate-process play |
 
 ## The three play modes, and the one rule that makes them worth naming
@@ -140,6 +141,15 @@ and the same strings in `a_body_is_a_transaction.rs`.
 
 The day those components are reflected, `attach_physics` becomes a lookup through `engine_type` and
 nothing else changes.
+
+**Joints are read the same way, after the bodies.** A `Joint` on body A's node names body B by
+entity reference (none is the world) and carries its kind, anchor and axis in body A's unscaled
+frame, and the limits, motor, ratio and break thresholds the kind reads — `joint_fields` in
+`joints.h`, `JointField` in `editor/crates/cy-editor-services/src/joints.rs`, and a golden pendulum
+in `tests/test_joints.cpp`. `build` syncs the bridge once so the bodies exist, resolves both handles,
+derives frame B, adds the ECS `Joint` and syncs again. A joint it cannot hand over is counted in
+`PlayReport::joints_refused` and the world plays without it; a live edit that rebuilds a body
+rejoins every joint touching it.
 
 ## What `gameplay-framework` asks for that is not here
 

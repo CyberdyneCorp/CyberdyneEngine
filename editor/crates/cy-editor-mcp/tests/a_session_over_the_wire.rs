@@ -3111,3 +3111,135 @@ fn terrain_authoring_is_an_undoable_mcp_peer_of_the_terrain_panel() {
     assert_eq!(result(&redone, 1).get("isError"), &Json::Bool(false));
     assert_eq!(layers(&editor), 1);
 }
+
+/// One MCP tool call, answering whether the server reported an error, and the reply's text.
+fn call_tool(
+    editor: &mut Editor,
+    id: u32,
+    name: &str,
+    arguments: &[(&str, &str)],
+) -> (bool, String) {
+    let replies = converse(&[INITIALIZE, &tool_call(id, name, arguments)], editor);
+    let failed = result(&replies, 1).get("isError") == &Json::Bool(true);
+    (failed, tool_text(&replies, 1))
+}
+
+/// The physics panel's commands, driven over the wire as the panel drives them through the
+/// registry: two bodies, a hinge between them, a field changed, undo and redo in the one history,
+/// the joint removed and restored, and a physics debug layer shown in the viewport.
+#[test]
+fn physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel() {
+    use cy_editor_services::joints::{self, JointKind};
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/joints.cyworld").unwrap();
+    let mut bodies = Vec::new();
+    for id in 2..4 {
+        let (failed, text) = call_tool(&mut editor, id, "scene.create-entity", &[]);
+        assert!(!failed, "{text}");
+        let node = editor
+            .selection
+            .get()
+            .nodes()
+            .next()
+            .expect("the created entity");
+        let (failed, text) = call_tool(
+            &mut editor,
+            id + 10,
+            "scene.add-body",
+            &[("entity", &node.to_string())],
+        );
+        assert!(!failed, "{text}");
+        bodies.push(node);
+    }
+    let (door, frame) = (bodies[0], bodies[1]);
+    let joint = |editor: &Editor| {
+        let document = editor
+            .documents
+            .get(editor.workspace.active().unwrap())
+            .unwrap();
+        joints::joint_of(document, door)
+    };
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        20,
+        "physics.joint.add",
+        &[
+            ("entity", &door.to_string()),
+            ("kind", "hinge"),
+            ("target", &frame.to_string()),
+        ],
+    );
+    assert!(!failed, "{text}");
+    assert_eq!(joint(&editor).expect("a joint").kind, JointKind::Hinge);
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        21,
+        "physics.joint.set",
+        &[
+            ("entity", &door.to_string()),
+            ("field", "limit_max"),
+            ("value", "0.5"),
+        ],
+    );
+    assert!(!failed, "{text}");
+    assert_eq!(joint(&editor).unwrap().limit[1], 0.5);
+
+    let (failed, _) = call_tool(&mut editor, 22, "edit.undo", &[]);
+    assert!(!failed);
+    assert_eq!(
+        joint(&editor).unwrap().limit[1],
+        -1.0,
+        "undo takes back the one field"
+    );
+    let (failed, _) = call_tool(&mut editor, 23, "edit.redo", &[]);
+    assert!(!failed);
+    assert_eq!(joint(&editor).unwrap().limit[1], 0.5);
+
+    let (failed, _) = call_tool(
+        &mut editor,
+        24,
+        "physics.joint.remove",
+        &[("entity", &door.to_string())],
+    );
+    assert!(!failed);
+    assert!(joint(&editor).is_none());
+    let (failed, _) = call_tool(&mut editor, 25, "edit.undo", &[]);
+    assert!(!failed);
+    assert_eq!(
+        joint(&editor).unwrap().limit[1],
+        0.5,
+        "undo restores what was removed"
+    );
+
+    // A refusal comes back as a result the model can read, and changes nothing.
+    let (failed, text) = call_tool(
+        &mut editor,
+        26,
+        "physics.joint.set",
+        &[
+            ("entity", &door.to_string()),
+            ("field", "break_force"),
+            ("value", "-3"),
+        ],
+    );
+    assert!(failed, "a negative break force is refused");
+    assert!(text.contains("negative"), "{text}");
+
+    let (failed, text) = call_tool(
+        &mut editor,
+        27,
+        "viewport.physics.colliders",
+        &[("state", "on")],
+    );
+    assert!(!failed, "{text}");
+    assert!(
+        editor
+            .viewports
+            .focused()
+            .physics
+            .contains(cy_editor_viewport::PhysicsLayer::Colliders)
+    );
+}
