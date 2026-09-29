@@ -107,6 +107,36 @@ is recorded directly.
 | R7 | `nav overlay per-world toggle draws only the enabled world` | `draw_navigation_overlay` draws polygons whatever the world's flags | `CHECK_EQ(right_hidden.hit, 0U)`, `CHECK_LE(left_drawn.mismatched, ...)`, `CHECK_GT(right_drawn.drawn, left_drawn.drawn)` |
 | R8 | `editor runtime: the per-frame drain forwards every bake PROGRESS and one COMPLETED` | `drain_service_events` forwards only non-PROGRESS events | `REQUIRE_EQ(forwarded.kinds.size(), usize{5})` |
 
+## Editor services, commands and MCP (tasks 4.1 to 4.4)
+
+These are the editor-side checks under criteria 3 and 4, plus the `NavmeshService` client contract
+(request-id matching, progress, completed, failed, disconnect). The MCP probes drive the real
+`McpServer` over the shared registry and answer the editor's service requests from a pipe-based
+fake runtime, so they need neither an engine nor a device.
+
+- **Green:** in `editor/`, `cargo test -p cy-editor-services -p cy-editor-commands -p cy-editor-mcp`.
+  `cy-editor-services` runs 27 navigation cases (`nav_bake`, `navmesh`, `navmesh_service`) and the
+  updated `every_built_in_command_satisfies_a_caller_that_cannot_see_the_interface` count (+18);
+  `a_session_over_the_wire` runs `navigation_tools_are_projected_over_mcp`,
+  `navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp` and
+  `navigation_obstacle_add_and_remove_reach_the_engine_over_mcp`. `cargo fmt --check` is clean and
+  `cargo clippy -p cy-editor-services -p cy-editor-commands -p cy-editor-mcp --all-targets -- -D warnings`
+  passes.
+- **Red mutations.** Each was applied to the source, the named test run with `cargo test`, and the
+  source restored; the restored suites pass.
+
+| # | Check (test) | Mutation | Failing assertion |
+|---|---|---|---|
+| E1 | `navmesh_service::tests::completed_records_exactly_one_bake_transaction_and_undo_restores_the_identity`; MCP `navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp` (criterion 4) | `take_completed` clones the completed bake instead of taking it, so every pump records it again | `assert_eq!(rig.history(), 2, "a completion is recorded once")`; over MCP `"undo restores the unbaked identity"` (a second bake entry is undone first) |
+| E2 | same two tests (criterion 4) | `settle_bake` never hands the completed bake to `finish_nav_bake` | `assert_eq!(rig.history(), 2, "one bake transaction")`; over MCP `pump_until` reports `the editor did not settle the engine's answer` |
+| E3 | `navmesh_service::tests::a_mismatched_request_id_is_ignored` | `accept` settles any service event while a request is pending, whatever its id | `assert_eq!(rig.editor.navmesh.pending_request(), Some(request))` |
+| E4 | `navmesh_service::tests::failed_records_nothing_and_keeps_the_diagnostics` | a FAILED bake also queues a report for `finish_nav_bake` | `assert_eq!(rig.history(), 1)` |
+| E5 | `navmesh_service::tests::disconnect_fails_the_pending_request` | `disconnect` fails the request but leaves it pending | `assert!(rig.editor.navmesh.pending_request().is_none())` |
+| E6 | `navmesh_service::tests::progress_updates_the_progress` | a decoded PROGRESS event is dropped | `assert_eq!(progress.map(..), Some((1, 3)))` |
+| E7 | MCP `navigation_obstacle_add_and_remove_reach_the_engine_over_mcp` (criterion 3, editor side) | `navigation.component.remove` records neither the component removal nor the node deletion | `"the engine received the removal before the second path query"` |
+| E8 | MCP `navigation_settings_component_and_bake_edits_undo_and_redo_over_mcp` (criterion 4) | `navigation.bake` sends the default settings instead of the document's | `"the bake carries the edited settings"` |
+| E9 | `navmesh::tests::a_settings_edit_is_one_entry_and_undo_redo_restore_it`; the MCP criterion-4 test | `write_fields` records one transaction per field instead of one per gesture | `"one entry per gesture"` in both |
+
 ## 1. Editor bake equals `build_tile`, tile by tile
 
 - **Probes:**
@@ -127,7 +157,7 @@ is recorded directly.
   - `editor_backend: an obstacle added through the service blocks the path and removing it restores it`.
   - The MCP wire test `navigation obstacle add and remove reach the engine over mcp`.
 - **Planned mutation:** make the service ignore `NavObstacle` entries from the seam. The blocked-path assertion must fail.
-- **Status:** the service probe is green and its red mutation is recorded (S2 above). The MCP wire probe is still open.
+- **Status:** the service probe (S2) and the MCP wire probe (E7: the obstacle add and its removal reach the engine as synced component operations before each `navigation.path.query`) are green with recorded red mutations.
 
 ## 4. Undo/redo and MCP parity for bake, settings and component edits
 
@@ -135,8 +165,8 @@ is recorded directly.
   - navigation settings, component and bake edits undoing and redoing over MCP;
   - desktop and MCP navigation histories agreeing;
   - command unit tests.
-- **Planned mutation:** record the bake transaction twice (or not at all) on Completed. The history-length assertion must fail.
-- **Status:** open.
+- **Mutations:** record the bake transaction on every pump (E1) or not at all (E2), send the default settings (E8), or split a settings gesture into one transaction per field (E9). The history-length, identity or payload assertion fails in each case.
+- **Status:** green with recorded red mutations (E1, E2, E8, E9 above).
 
 ## 5. Stale bake detected after a geometry edit
 

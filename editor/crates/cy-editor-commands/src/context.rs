@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 
 use cy_editor_core::Actor;
-use cy_editor_core::ids::DocumentId;
+use cy_editor_core::ids::{DocumentId, NodeId};
 use cy_editor_core::problem::Result;
 use cy_editor_core::value::Value;
 use cy_editor_documents::Document;
@@ -232,6 +232,43 @@ pub trait CommandContext {
         )
         .with_remedy("invoke this through the editor rather than a test double"))
     }
+
+    /// The engine's navigation service, for baking and navigation queries. Issue #28.
+    ///
+    /// `None` for a host with no runtime connection to ask, so a test double stays thirty lines
+    /// and a navigation command refuses with a remedy rather than panicking.
+    fn navmesh(&mut self) -> Option<&mut dyn NavmeshHost> {
+        None
+    }
+}
+
+/// What a navigation command asks of the engine's `navigation.*` service. Issue #28.
+///
+/// The engine bakes, fingerprints, searches and picks; a command only encodes a request and reads
+/// back what the service last answered. A bake's result becomes a document transaction in the
+/// host when it arrives, which is why [`NavmeshHost::bake`] names the node to record it on.
+pub trait NavmeshHost {
+    /// Send `navigation.bake` for the `NavigationWorld` on `node` of `document`, and return the
+    /// request identity. On COMPLETED the host records one transaction on that node; on FAILED it
+    /// records nothing and keeps the diagnostics.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached or another navigation request is pending.
+    fn bake(&mut self, document: DocumentId, node: NodeId, payload: Vec<u8>) -> Result<u64>;
+
+    /// Send one read request (`navigation.status`, `navigation.path.query`,
+    /// `navigation.flowfield.query` or `navigation.point.pick`) and return its request identity.
+    ///
+    /// # Errors
+    ///
+    /// When the operation is not a navigation read, no runtime is attached, or another navigation
+    /// request is pending.
+    fn query(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64>;
+
+    /// What the service knows: the pending request and its progress, the last bake report or
+    /// failure, and the last answer to each query.
+    fn status(&self) -> Outcome;
 }
 
 /// The mutation surface used by registered settings commands.

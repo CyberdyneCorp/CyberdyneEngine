@@ -63,6 +63,8 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
     crate::merge_commands::register(registry)?;
+    // Navigation authoring: the Nav* components, settings, bake and queries. See `crate::navmesh`.
+    crate::navmesh::register(registry)?;
     Ok(())
 }
 
@@ -644,11 +646,14 @@ mod tests {
         // Scene actors add camera and light creation.
         // Material graphs add read, preview, save, draft save, and status commands; VFX drafts add read/save
         // and five engine preview commands; reusable modules add read/save.
+        // Navigation authoring (issue #28) adds eighteen in `crate::navmesh`: world create, settings
+        // get/set, overlay set, bake and bake status, add and set for the four Nav* components,
+        // component remove, and path, flow-field and point-pick queries.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 18
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

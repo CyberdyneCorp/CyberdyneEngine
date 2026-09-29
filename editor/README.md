@@ -757,3 +757,37 @@ named refusal; module assets must be saved to the project before a dependent dra
 The engine tags each compiler diagnostic with its emitter and stage. The panel lists that location;
 clicking it opens the stage and selects the offending node. The active canvas outlines that node
 in red and shows the compiler message on hover, even when another stage reuses the same node key.
+
+## Navigation authoring commands (issue #28)
+
+`cy-editor-services/src/navmesh.rs` registers eighteen `navigation.*` commands through
+`builtin::register`, so the desktop, scripts and MCP share them. Navigation state is ordinary
+scene-document data: a `NavigationWorld` component holds the agent profile (radius, height, max
+slope, step height), the build settings (cell size, cell height, tile size, layer and tag masks,
+`engine` or `recast` back end), the overlay flags and the accepted bake (`bake_identity`,
+`source_fingerprint`, `tile_count`, `sidecar`). `NavMeshSurface`, `NavObstacle`, `NavArea` and
+`NavLink` use the engine's component names without the `cy.navigation.` namespace, with the field
+names `samples/05b-editor-window/runtime/nav_runtime.cpp` reads.
+`the_schema_matches_the_runtime_test_map` checks that contract against the runtime's own test map.
+
+| Class | Commands |
+|---|---|
+| Reversible (one transaction per call) | `navigation.world.create`, `navigation.settings.set`, `navigation.overlay.set`, `navigation.bake`, `navigation.{surface,obstacle,area,link}.add` and `.set`, `navigation.component.remove` |
+| Read | `navigation.settings.get`, `navigation.bake.status`, `navigation.path.query`, `navigation.flowfield.query`, `navigation.point.pick` |
+
+The `add`, `set` and `settings.set` commands take `values` as `field=value` pairs separated by `;`,
+for example `shape.offset=4, 0, 4; shape.radius=1`. Each value is parsed as its field's kind, so
+one gesture that changes several fields is still one undo entry. Settings the engine would refuse
+are refused before anything is recorded.
+
+The editor does not bake, hash geometry or cast rays. `navigation.bake` checks the settings, sends
+the engine's `navigation.bake` request and returns its request id. `NavmeshService`
+(`navmesh_service.rs`) matches the service events by request id and keeps the per-tile progress.
+On COMPLETED, `Editor::pump` records one transaction on the world that sets the bake identity,
+fingerprint, tile count and sidecar. Undoing that transaction restores the previous identity, and
+the runtime reloads that bake's sidecar. A FAILED bake records nothing. `navigation.bake.status`
+reports the pending request and its progress, the last report or failure diagnostics, and the
+last path, flow-field and pick answers. With `refresh=true` it asks the engine for the stale flag.
+The path, flow-field and pick queries return a request id, and their answers appear in
+`navigation.bake.status`. The engine serves one navigation request at a time, so a second request
+is refused locally while one is pending. A runtime disconnect fails the pending request.

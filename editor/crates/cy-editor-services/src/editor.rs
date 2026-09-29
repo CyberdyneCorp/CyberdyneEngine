@@ -128,6 +128,8 @@ pub struct Editor {
     pub operations: OperationService,
     /// Engine-owned authoring catalogues and asynchronous service request state.
     pub backend: BackendServices,
+    /// The engine's navigation service: bake progress, results and query answers. Issue #28.
+    pub navmesh: crate::navmesh_service::NavmeshService,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
     /// What keeps the hosted runtime in step with the document, and what carries the engine's gizmo
@@ -215,6 +217,7 @@ impl Editor {
             notifications: NotificationService::new(),
             operations: OperationService::new(),
             backend: BackendServices::new(),
+            navmesh: crate::navmesh_service::NavmeshService::new(),
             runtime: RuntimeSession::none(),
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
@@ -760,6 +763,12 @@ impl Editor {
                 ));
             }
             self.accept_reload_message(message);
+            if let Some(problem) = self.navmesh.accept(message) {
+                self.notifications.post(Notification::error(
+                    "The navigation request failed",
+                    problem,
+                ));
+            }
             self.mirror.accept(message, self.viewports.focused());
         }
         if let Some(problem) = self.backend.maintain(&self.runtime) {
@@ -769,6 +778,7 @@ impl Editor {
             ));
         }
         self.finish_graph_save();
+        self.finish_nav_bake();
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
             let pending = std::mem::take(&mut self.pending_reloads);
             if let Some((request, (module, generation))) = pending.into_iter().next_back() {
@@ -1072,6 +1082,10 @@ impl CommandContext for Editor {
 
     fn manipulate(&mut self, request: &cy_editor_commands::Manipulation) -> Result<String> {
         manipulate::apply(self, request)
+    }
+
+    fn navmesh(&mut self) -> Option<&mut dyn cy_editor_commands::NavmeshHost> {
+        Some(self)
     }
 }
 

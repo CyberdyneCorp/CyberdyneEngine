@@ -31,7 +31,14 @@ const PREVIEW_CREATE_OPERATION: &str = "preview.create";
 const PREVIEW_RELOAD_OPERATION: &str = "preview.reload";
 const PREVIEW_DESTROY_OPERATION: &str = "preview.destroy";
 const PREVIEW_PARAMETER_OPERATION: &str = "preview.parameter.update";
-const SERVICE_SCHEMA_VERSION: u32 = 1;
+// The engine's `navigation.*` operations (issue #28), sent by `crate::navmesh_service`. The wire of
+// each is in `src/editor_backend/README.md`, "Navigation operations".
+pub(crate) const NAVIGATION_BAKE_OPERATION: &str = "navigation.bake";
+pub(crate) const NAVIGATION_STATUS_OPERATION: &str = "navigation.status";
+pub(crate) const NAVIGATION_PATH_OPERATION: &str = "navigation.path.query";
+pub(crate) const NAVIGATION_FLOWFIELD_OPERATION: &str = "navigation.flowfield.query";
+pub(crate) const NAVIGATION_PICK_OPERATION: &str = "navigation.point.pick";
+pub(crate) const SERVICE_SCHEMA_VERSION: u32 = 1;
 
 /// Where the material catalogue request currently is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

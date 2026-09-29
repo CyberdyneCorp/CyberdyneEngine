@@ -28,10 +28,10 @@
 
 ## 4. Editor services, commands and MCP (`cy-editor-services`)
 
-- [ ] 4.1 Declare the NavigationWorld, NavMeshSurface, NavObstacle, NavArea and NavLink schema, the `NavmeshSettings` read model, and the settings, overlay and component commands, with one transaction per gesture.
-- [ ] 4.2 Add the `NavmeshService` client, decoding the bake progress, report and failure payloads. `navigation.bake` records one transaction on Completed. Add `navigation.bake.status` and the query commands.
-- [ ] 4.3 Add registration and command-count updates, backend unit tests, and command unit tests covering undo and redo.
-- [ ] 4.4 Add MCP wire tests with a pipe-based fake runtime. The tools must appear in `tools/list`. Settings, component and bake edits must undo and redo over MCP, matching the desktop history.
+- [x] 4.1 Declare the NavigationWorld, NavMeshSurface, NavObstacle, NavArea and NavLink schema, the `NavmeshSettings` read model, and the settings, overlay and component commands, with one transaction per gesture.
+- [x] 4.2 Add the `NavmeshService` client, decoding the bake progress, report and failure payloads. `navigation.bake` records one transaction on Completed. Add `navigation.bake.status` and the query commands.
+- [x] 4.3 Add registration and command-count updates, backend unit tests, and command unit tests covering undo and redo.
+- [x] 4.4 Add MCP wire tests with a pipe-based fake runtime. The tools must appear in `tools/list`. Settings, component and bake edits must undo and redo over MCP, matching the desktop history.
 
 ## 5. Navigation panel and viewport modes (`cy-editor-interface`, `cy-editor-shell`)
 

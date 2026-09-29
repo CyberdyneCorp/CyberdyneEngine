@@ -49,8 +49,8 @@ pub use assets::{
     ImportedSceneNode, ImportedSubAsset,
 };
 pub use context::{
-    AssetMove, CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, SettingsHost,
-    SourceControlHost, SourceWrite, ViewportControls,
+    AssetMove, CommandContext, Manipulation, ManipulationKind, NavmeshHost, Outcome, ProjectHost,
+    SettingsHost, SourceControlHost, SourceWrite, ViewportControls,
 };
 pub use metadata::{Availability, EffectClass, Metadata, ParameterSpec};
 pub use registry::{Arguments, Command, CommandId, Registry};
