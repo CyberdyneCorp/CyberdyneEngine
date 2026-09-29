@@ -46,6 +46,8 @@ if(CY_BUILD_TESTS)
             KIND integration
             SOURCES "${tests_dir}/test_terrain_service.cpp"
             DEPENDENCIES cy::editor-backend cy::terrain)
+        target_compile_definitions(cy_test_integration_editor_backend_terrain PRIVATE
+            CY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         cy_add_test(
             NAME editor_backend_compile
             KIND integration

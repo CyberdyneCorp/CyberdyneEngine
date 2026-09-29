@@ -76,6 +76,7 @@ cy_add_module(
         cy::servers-render
         cy::runtime-editor-bridge
         cy::editor-backend
+        cy::terrain
         cy::rendering-material-slang
         cy::shader
         cy::gameplay-play

@@ -267,7 +267,8 @@ private:
                         TerrainTile& tile) const noexcept;
     void write_brush_material(const Modifier& modifier, const TileCoord& coord,
                               TerrainTile& tile) const noexcept;
-    void smooth(const Modifier& modifier, const TileCoord& coord, Padded& grid) const noexcept;
+    void smooth_brush(const Modifier& modifier, const TileCoord& coord,
+                      Padded& grid) const noexcept;
     [[nodiscard]] f64 sample_x(const TileCoord& coord, const Padded& grid, u32 i) const noexcept;
     [[nodiscard]] f64 sample_z(const TileCoord& coord, const Padded& grid, u32 j) const noexcept;
 

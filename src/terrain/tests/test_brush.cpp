@@ -286,6 +286,9 @@ CY_TEST_CASE("a hole brush removes rendering and collision exactly where it cuts
     CY_CHECK_EQ(base.rendered_triangles - after.rendered_triangles, 2U * holes);
     // Collision reaches physics with the sentinel over the cut.
     CY_CHECK_GT(after.collision_holes, 0U);
+    // The joined render mesh is what meshing emitted, three indices per triangle.
+    CY_CHECK_EQ(after.indices.size(), static_cast<cy::usize>(after.rendered_triangles) * 3U);
+    CY_CHECK_EQ(after.positions.size(), after.normals.size());
 }
 
 CY_TEST_CASE("removing a stroke restores the region's heights, weights and holes byte for byte") {

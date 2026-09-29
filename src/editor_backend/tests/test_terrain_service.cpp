@@ -12,7 +12,10 @@
 #include <cy/test/test.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -197,9 +200,9 @@ Stroke stroke(cy::u64 id, Op op) {
 /// Samples farther than the radius from every dab, in metres over the 128 m region.
 bool outside(const Stroke& brush, cy::u32 x, cy::u32 z) noexcept {
     for (const Dab& dab : brush.dabs) {
-        const double dx = x - (dab.x * 128.0);
-        const double dz = z - (dab.z * 128.0);
-        if (std::sqrt((dx * dx) + (dz * dz)) < brush.radius) {
+        const double dx = static_cast<double>(x) - (static_cast<double>(dab.x) * 128.0);
+        const double dz = static_cast<double>(z) - (static_cast<double>(dab.z) * 128.0);
+        if (std::sqrt((dx * dx) + (dz * dz)) < static_cast<double>(brush.radius)) {
             return false;
         }
     }
@@ -252,8 +255,9 @@ CY_TEST_CASE("terrain.evaluate: the stack without a stroke answers the earlier b
         const Reply after = session.evaluate(stroked);
         const Reply undone = session.evaluate(base);
         CY_TEST_MESSAGE(static_cast<int>(op));
-        CY_CHECK((after.heights != before.heights) || (after.texels != before.texels) ||
-                 (after.holes != before.holes));
+        const bool changed = (after.heights != before.heights) || (after.texels != before.texels) ||
+                             (after.holes != before.holes);
+        CY_CHECK(changed);
         CY_CHECK(undone.heights == before.heights);
         CY_CHECK(undone.texels == before.texels);
         CY_CHECK(undone.holes == before.holes);
@@ -298,6 +302,11 @@ CY_TEST_CASE("terrain.evaluate: every edited region is flagged stale for navigat
     const Reply two = session.evaluate({far});
     CY_REQUIRE_EQ(two.stale.size(), 8U);
     CY_CHECK_EQ(two.stale[6], 128.0F);  // clipped to the region
+
+    // A stroke present at the first evaluation marks nothing; removing it marks its reach.
+    Session other;
+    CY_CHECK(other.evaluate({brush}).stale.empty());
+    CY_CHECK_EQ(other.evaluate({}).stale.size(), 4U);
 
     // The engine keeps the stale set for the host, which #28's rebake will clear.
     const cy::editor::TerrainPreview* preview =
@@ -357,4 +366,42 @@ CY_TEST_CASE("terrain.evaluate: a malformed request is refused by name and chang
     const Reply next = session.evaluate({stroke(1, kRaise)});
     CY_CHECK_EQ(next.generation, first.generation + 1);
     CY_CHECK(next.heights == first.heights);
+}
+
+namespace {
+
+std::vector<cy::u8> read_fixture(const std::string& path) {
+    std::ifstream input(path, std::ios::binary);
+    CY_REQUIRE(input.good());
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+}  // namespace
+
+// The editor's panel snapshots draw this reply: the engine's answer to the requests the editor
+// sends for its scripted strokes (`cy-editor-shell/tests/panel_snapshots.rs`, which checks the
+// requests). This case holds the committed reply to what the engine computes, so the picture cannot
+// drift from the engine. `CY_TERRAIN_FIXTURE=write` rewrites it instead.
+CY_TEST_CASE("terrain.evaluate: the committed panel fixture is what the engine answers") {
+    const std::string directory =
+        std::string(CY_SOURCE_DIR) + "/editor/crates/cy-editor-shell/tests/fixtures/";
+    Session session;
+    const CyServiceEvent before =
+        session.submit(read_fixture(directory + "terrain-tools-before.request"));
+    CY_REQUIRE_EQ(before.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    const CyServiceEvent after = session.submit(read_fixture(directory + "terrain-tools.request"));
+    CY_REQUIRE_EQ(after.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    const std::vector<cy::u8> reply(after.payload, after.payload + after.payload_size);
+    const Reply decoded = decode(after);
+    CY_CHECK_EQ(decoded.stale.size(), 4U);  // the last stroke, a hole, made its reach stale
+    CY_CHECK_GT(decoded.hole_quads, 0U);
+    const char* mode = std::getenv("CY_TERRAIN_FIXTURE");
+    if (mode != nullptr && std::string_view(mode) == "write") {
+        std::ofstream output(directory + "terrain-tools.reply", std::ios::binary);
+        output.write(reinterpret_cast<const char*>(reply.data()),
+                     static_cast<std::streamsize>(reply.size()));
+        CY_REQUIRE(output.good());
+        return;
+    }
+    CY_CHECK(read_fixture(directory + "terrain-tools.reply") == reply);
 }

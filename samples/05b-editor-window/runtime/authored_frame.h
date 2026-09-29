@@ -30,6 +30,10 @@ namespace cy::vfx {
 class SimulationWorld;
 }
 
+namespace cy::terrain {
+struct RegionSnapshot;
+}
+
 namespace cy::sample::editor_window {
 
 class WindFieldPreview;
@@ -71,6 +75,11 @@ public:
     [[nodiscard]] Status initialize(u32 width, u32 height, const char* project,
                                     bool temporal = true, bool capture_motion = false) noexcept;
     [[nodiscard]] Status prepare_world(const scene::serialization::World& world) noexcept;
+    /// The terrain the editor is authoring, as the engine's terrain module meshed it for
+    /// `terrain.evaluate`, drawn at every node carrying `TerrainAuthoring`. Null draws none; a
+    /// generation already uploaded costs nothing.
+    [[nodiscard]] Status set_terrain(const terrain::RegionSnapshot* snapshot,
+                                     u64 generation) noexcept;
     [[nodiscard]] Status preview(std::string_view reference,
                                  std::string_view canonical_graph) noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
@@ -199,6 +208,7 @@ private:
     Array<u32> motion_texels_;
 
     std::vector<std::unique_ptr<Mesh>> meshes_;
+    u64 terrain_generation_ = 0;
     std::vector<Instance> instances_;
     std::vector<std::pair<u64, Mat4>> current_models_;
     std::vector<std::pair<u64, Mat4>> previous_models_;

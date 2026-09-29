@@ -14,7 +14,9 @@
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include <cy/editor/material_service.h>
 #endif
+#include <cy/editor/terrain_service.h>
 #include <cy/scene/serialization/worldfile.h>
+#include <cy/terrain/region.h>
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
@@ -374,6 +376,111 @@ void resolve_base_worlds(BaseWorlds& worlds, const ser::AuthoringSchema& schema)
     CY_REQUIRE(ser::resolve_against(worlds.parented, schema).has_value());
     CY_REQUIRE(ser::resolve_against(worlds.lit, schema).has_value());
     CY_REQUIRE(ser::resolve_against(worlds.authored_camera, schema).has_value());
+}
+
+// The editor's terrain root: no mesh of its own, drawn from what the engine evaluated.
+constexpr std::string_view kTerrainRoot = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "TerrainAuthoring"
+  field 4 text "source" ""
+node 0 - "test" "Terrain"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 2
+    field 4 ""
+)";
+
+void put_u32(std::vector<u8>& out, u32 value) {
+    for (u32 byte = 0; byte < 4; ++byte) {
+        out.push_back(static_cast<u8>(value >> (byte * 8)));
+    }
+}
+
+void put_f32(std::vector<u8>& out, f32 value) {
+    u32 bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    put_u32(out, bits);
+}
+
+// A `terrain.evaluate` request: one 32 m region of one tile, a raise, and a hole when asked.
+std::vector<u8> terrain_request(bool hole) {
+    std::vector<u8> out;
+    put_u32(out, 1);
+    for (u32 word = 0; word < 4; ++word) {
+        put_u32(out, word == 0 ? 29U : 0U);
+    }
+    put_u32(out, 1);
+    put_f32(out, 32.0F);
+    put_f32(out, 0.0F);
+    put_u32(out, hole ? 2U : 1U);
+    for (u32 index = 0; index < (hole ? 2U : 1U); ++index) {
+        for (u32 word = 0; word < 4; ++word) {
+            put_u32(out, word == 0 ? index + 1 : 0U);
+        }
+        out.push_back(index == 0 ? 0 : 5);  // raise, then hole
+        out.push_back(1);
+        out.push_back(0);
+        put_f32(out, index == 0 ? 10.0F : 5.0F);
+        put_f32(out, 1.0F);
+        put_f32(out, 0.5F);
+        put_u32(out, 1);
+        put_f32(out, 0.5F);
+        put_f32(out, 0.5F);
+        put_f32(out, 1.0F);
+    }
+    return out;
+}
+
+// The terrain the engine evaluated for the editor draws at the terrain root, a hole it cut shows
+// the background through the surface, and withdrawing it draws nothing again.
+void check_editor_terrain(AuthoredFrame& frame) {
+    ser::World world(allocator());
+    CY_REQUIRE(ser::read_world(kTerrainRoot, "worlds/terrain.cyworld", world).has_value());
+    first_light::Camera view;
+    view.position[0] = 16.0;
+    view.position[1] = 24.0;
+    view.position[2] = 40.0;
+    view.forward = normalize(Vec3{0.0F, -0.8F, -1.0F});
+    view.up = Vec3{0.0F, 1.0F, 0.0F};
+    view.fov_y_radians = 0.9F;
+    view.near_plane = 0.1F;
+
+    CY_REQUIRE(frame.set_terrain(nullptr, 0));
+    CY_REQUIRE(frame.render(world, view));
+    Array<u32> blank(allocator());
+    CY_REQUIRE(blank.append(frame.pixels()));
+
+    editor::TerrainPreview preview(allocator());
+    Array<u8> reply(allocator());
+    const std::vector<u8> raised = terrain_request(false);
+    CY_REQUIRE(preview.evaluate({raised.data(), raised.size()}, reply));
+    CY_REQUIRE(frame.set_terrain(preview.snapshot(), preview.generation()));
+    CY_REQUIRE(frame.render(world, view));
+    CY_CHECK(differing_pixels(blank.span(), frame.pixels()) > 1000);
+    Array<render::GpuInstance> instances(allocator());
+    Array<render::DrawItem> draws(allocator());
+    CY_REQUIRE(frame.publish(view, instances, draws));
+    CY_REQUIRE_EQ(instances.size(), 1U);
+    CY_CHECK_EQ(instances[0].stable_id(), world.nodes()[0].identity);
+    CY_CHECK(instances[0].bounds_radius > 16.0F);
+    Array<u32> solid(allocator());
+    CY_REQUIRE(solid.append(frame.pixels()));
+
+    const std::vector<u8> holed = terrain_request(true);
+    CY_REQUIRE(preview.evaluate({holed.data(), holed.size()}, reply));
+    CY_REQUIRE(preview.snapshot()->rendered_hole_quads > 0U);
+    CY_REQUIRE(frame.set_terrain(preview.snapshot(), preview.generation()));
+    CY_REQUIRE(frame.render(world, view));
+    CY_CHECK(differing_pixels(solid.span(), frame.pixels()) > 100);
+
+    CY_REQUIRE(frame.set_terrain(nullptr, 0));
+    CY_REQUIRE(frame.render(world, view));
+    CY_CHECK(differing_pixels(blank.span(), frame.pixels()) < 16);
 }
 
 // A mesh draws, publishes its instance with its bounds, and follows its transform and its parent.
@@ -1228,6 +1335,7 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         const first_light::Camera view = camera();
 
         check_mesh_and_bounds(frame, worlds, view);
+        check_editor_terrain(frame);
         check_scene_camera(frame, worlds, view);
         check_point_light(frame, worlds, view);
         check_directional_light(frame, schema, view);

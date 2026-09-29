@@ -5,6 +5,8 @@
 //! brush field draws what the engine's terrain module evaluated for the document's stack
 //! (`Editor::terrain`), with the holes it cut and the regions whose navigation it flagged stale.
 
+use std::fmt::Write as _;
+
 use cy_editor_commands::Arguments;
 use cy_editor_core::ids::NodeId;
 use cy_editor_core::value::Value;
@@ -448,10 +450,12 @@ pub(crate) fn engine_summary(
     if evaluation.stale.is_empty() {
         (summary, Semantic::Live)
     } else {
-        summary.push_str(&format!(
-            ". Navigation stale in {} regions until it is rebaked",
-            evaluation.stale.len()
-        ));
+        let _ = write!(
+            summary,
+            ". Navigation stale in {} region{} until it is rebaked",
+            evaluation.stale.len(),
+            if evaluation.stale.len() == 1 { "" } else { "s" }
+        );
         (summary, Semantic::Warning)
     }
 }
@@ -467,6 +471,12 @@ const LAYER_TINTS: [[u8; 3]; 4] = [
 /// The engine's lattice as an image, one pixel per quad, rows along x: a hillshade lit from the
 /// north-west, tinted by each texel's painted layers, and transparent where a hole is cut so the
 /// field's sunken well shows through.
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "pixel arithmetic over a lattice of at most 1025 samples, clamped to 0..=255"
+)]
 pub(crate) fn surface_image(evaluation: &TerrainEvaluation) -> egui::ColorImage {
     let quads = (evaluation.edge - 1) as usize;
     let spacing = evaluation.extent / quads as f32;

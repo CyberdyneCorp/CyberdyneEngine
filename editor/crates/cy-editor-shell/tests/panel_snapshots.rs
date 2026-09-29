@@ -368,6 +368,265 @@ fn terrain_panel_snapshots() {
     );
 }
 
+/// The engine fixtures the terrain snapshots are drawn from. The requests are what the editor sends
+/// for [`terrain_tools_desk`]'s strokes; the reply is what `cy::editor-backend` answered for them,
+/// written by `integration.editor_backend_terrain` and checked by it on every run.
+const TERRAIN_FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+
+/// A request with its identities replaced by stable ones: the terrain is 0x29 and each modifier is
+/// its position in the stack, plus one. Identities are random per document; the engine uses them
+/// only to tell one modifier from another between evaluations.
+fn stable_identities(request: &[u8]) -> Vec<u8> {
+    let mut out = request.to_vec();
+    out[4..20].copy_from_slice(&0x29_u128.to_le_bytes());
+    let mut cursor = 4 + 16 + 12;
+    let count = u32::from_le_bytes(out[cursor..cursor + 4].try_into().expect("four bytes"));
+    cursor += 4;
+    for index in 0..count {
+        out[cursor..cursor + 16].copy_from_slice(&u128::from(index + 1).to_le_bytes());
+        cursor += 16 + 3 + 12;
+        let dabs = u32::from_le_bytes(out[cursor..cursor + 4].try_into().expect("four bytes"));
+        cursor += 4 + 12 * usize::try_from(dabs).expect("fits");
+    }
+    assert_eq!(cursor, out.len(), "the request is read to its end");
+    out
+}
+
+fn brush(
+    desk: &mut Desk,
+    terrain: &str,
+    tool: &str,
+    points: &str,
+    extra: &[(&str, cy_editor_core::value::Value)],
+) {
+    let mut arguments = Arguments::new()
+        .with(
+            "terrain",
+            cy_editor_core::value::Value::Text(terrain.into()),
+        )
+        .with("tool", cy_editor_core::value::Value::Text(tool.into()))
+        .with("points", cy_editor_core::value::Value::Text(points.into()));
+    for (name, value) in extra {
+        arguments = arguments.with(*name, value.clone());
+    }
+    desk.registry
+        .invoke(
+            "terrain.brush.apply",
+            &desk.scope,
+            &mut desk.editor,
+            &arguments,
+        )
+        .unwrap_or_else(|problem| panic!("{tool}: {problem}"));
+}
+
+/// Every tool but the hole, the last stroke [`terrain_tools_desk`] makes.
+fn paint_and_sculpt(
+    desk: &mut Desk,
+    terrain: &str,
+    grass: cy_editor_core::value::Value,
+    rock: cy_editor_core::value::Value,
+) {
+    use cy_editor_core::value::Value;
+
+    let firm = [
+        ("radius", Value::Float(26.0)),
+        ("strength", Value::Float(1.0)),
+        ("falloff", Value::Float(0.9)),
+    ];
+    brush(
+        desk,
+        terrain,
+        "raise",
+        "0.35 0.4; 0.45 0.42; 0.55 0.45",
+        &firm,
+    );
+    brush(desk, terrain, "raise", "0.3 0.45", &firm);
+    brush(
+        desk,
+        terrain,
+        "lower",
+        "0.72 0.7; 0.8 0.62",
+        &[
+            ("radius", Value::Float(14.0)),
+            ("strength", Value::Float(1.0)),
+        ],
+    );
+    brush(
+        desk,
+        terrain,
+        "smooth",
+        "0.35 0.4; 0.5 0.44",
+        &[
+            ("radius", Value::Float(12.0)),
+            ("strength", Value::Float(1.0)),
+        ],
+    );
+    brush(
+        desk,
+        terrain,
+        "paint",
+        "0.2 0.75; 0.35 0.8; 0.5 0.82",
+        &[
+            ("layer", grass),
+            ("radius", Value::Float(12.0)),
+            ("strength", Value::Float(0.9)),
+        ],
+    );
+    brush(
+        desk,
+        terrain,
+        "paint",
+        "0.42 0.38; 0.5 0.4",
+        &[
+            ("layer", rock),
+            ("radius", Value::Float(10.0)),
+            ("strength", Value::Float(0.8)),
+        ],
+    );
+    brush(
+        desk,
+        terrain,
+        "flatten",
+        "0.18 0.2; 0.26 0.2",
+        &[
+            ("radius", Value::Float(9.0)),
+            ("strength", Value::Float(1.0)),
+            ("falloff", Value::Float(0.3)),
+        ],
+    );
+}
+
+/// A terrain sculpted, painted and cut through `terrain.brush.apply`, and the engine requests for
+/// the stack before its last stroke and after it.
+fn terrain_tools_desk() -> (Desk, Vec<u8>, Vec<u8>) {
+    use cy_editor_core::value::Value;
+
+    let mut desk = terrain_desk();
+    let terrain = desk.editor.edited_terrain().expect("a terrain").to_string();
+    let rock = desk
+        .registry
+        .invoke(
+            "terrain.layer.add",
+            &desk.scope,
+            &mut desk.editor,
+            &Arguments::new()
+                .with("terrain", Value::Text(terrain.clone()))
+                .with("name", Value::Text("Rock".into()))
+                .with("material", Value::Text("materials/rock.cymat".into())),
+        )
+        .expect("a second layer")
+        .values["layer"]
+        .clone();
+    let stack = |desk: &Desk| {
+        cy_editor_services::terrain::TerrainStack::read(
+            desk.editor
+                .documents
+                .get(desk.editor.workspace.active().unwrap())
+                .unwrap(),
+            desk.editor.edited_terrain().unwrap(),
+        )
+        .unwrap()
+    };
+    let grass = Value::Text(stack(&desk).layers[0].id.to_string());
+    paint_and_sculpt(&mut desk, &terrain, grass, rock);
+    let before = stable_identities(&desk.editor.edited_terrain_request().unwrap().1.unwrap());
+    brush(
+        &mut desk,
+        &terrain,
+        "hole",
+        "0.62 0.3; 0.66 0.32",
+        &[("radius", Value::Float(5.0))],
+    );
+    let after = stable_identities(&desk.editor.edited_terrain_request().unwrap().1.unwrap());
+    (desk, before, after)
+}
+
+/// The committed engine requests are what the editor sends for the scripted strokes. With
+/// `CY_TERRAIN_FIXTURE=write` this writes them instead, for `integration.editor_backend_terrain` to
+/// answer.
+#[test]
+fn the_terrain_engine_fixture_requests_are_what_the_editor_sends() {
+    let (_desk, before, after) = terrain_tools_desk();
+    let directory = std::path::Path::new(TERRAIN_FIXTURES);
+    if std::env::var("CY_TERRAIN_FIXTURE").as_deref() == Ok("write") {
+        std::fs::create_dir_all(directory).expect("the fixture directory");
+        std::fs::write(directory.join("terrain-tools-before.request"), &before).expect("written");
+        std::fs::write(directory.join("terrain-tools.request"), &after).expect("written");
+        return;
+    }
+    assert_eq!(
+        std::fs::read(directory.join("terrain-tools-before.request")).expect("committed"),
+        before
+    );
+    assert_eq!(
+        std::fs::read(directory.join("terrain-tools.request")).expect("committed"),
+        after
+    );
+}
+
+/// Answer the editor's `terrain.evaluate` with the engine's committed reply, through the same
+/// service request and event the hosted runtime exchanges.
+fn install_engine_reply(desk: &mut Desk) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, read_frame, write_frame};
+
+    let reply = std::fs::read(std::path::Path::new(TERRAIN_FIXTURES).join("terrain-tools.reply"))
+        .expect("the engine reply is committed; see integration.editor_backend_terrain");
+    let (editor_reader, mut runtime_writer) = std::io::pipe().expect("a pipe");
+    let (mut runtime_reader, editor_writer) = std::io::pipe().expect("a pipe");
+    desk.editor.runtime = cy_editor_services::runtime::RuntimeSession::over(Session::over(
+        editor_reader,
+        editor_writer,
+    ));
+    desk.editor.pump();
+    let request = loop {
+        let frame = read_frame(&mut runtime_reader)
+            .expect("a frame")
+            .expect("a frame");
+        if let Message::ServiceRequest {
+            request, operation, ..
+        } = Message::decode(&frame).expect("a message")
+            && operation == "terrain.evaluate"
+        {
+            break request;
+        }
+    };
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .expect("the reply is written");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while desk.editor.terrain.evaluation().is_none() && std::time::Instant::now() < deadline {
+        desk.editor.pump();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        desk.editor.terrain.evaluation().is_some(),
+        "the engine's reply arrives"
+    );
+    // Keep the pipes open for the snapshot frames: a closed runtime reads as a disconnect.
+    std::mem::forget((runtime_reader, runtime_writer));
+}
+
+/// The finished terrain tools: the engine's sculpted, painted and holed surface in the brush field,
+/// with the region the last stroke made stale for navigation outlined.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn terrain_tools_snapshots() {
+    let (mut desk, _, _) = terrain_tools_desk();
+    install_engine_reply(&mut desk);
+    desk.inputs.terrain_tool = "hole".into();
+    snapshot(&mut desk, "editor-terrain", "editor-terrain-tools.png");
+    desk.inputs.terrain_tool = "paint".into();
+    snapshot(&mut desk, "editor-terrain", "editor-terrain-paint.png");
+}
+
 fn catalogue(identity: u32, name: &str, pin_type: &str) -> Vec<u8> {
     let mut catalogue = cy_editor_core::codec::Writer::new();
     catalogue.u32(1);

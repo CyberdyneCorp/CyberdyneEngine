@@ -519,8 +519,8 @@ f64 ModifierStack::sample_z(const TileCoord& coord, const Padded& grid, u32 j) c
            (static_cast<f64>((static_cast<i64>(coord.z) * kTileQuads) + sample) * spacing);
 }
 
-void ModifierStack::smooth(const Modifier& modifier, const TileCoord& coord,
-                           Padded& grid) const noexcept {
+void ModifierStack::smooth_brush(const Modifier& modifier, const TileCoord& coord,
+                                 Padded& grid) const noexcept {
     // JACOBI rather than the erosion pass's in-place sweep: every sample of a pass reads the
     // previous pass's neighbours, so a pass reaches exactly one sample and the declared halo of
     // radius-plus-passes is sufficient. Two rows of originals are all a pass needs to keep.
@@ -563,7 +563,7 @@ void ModifierStack::apply(const Modifier& modifier, u32 index, const TileCoord& 
     }
     if (modifier.kind == ModifierKind::Brush) {
         if (modifier.brush == BrushOp::Smooth) {
-            smooth(modifier, coord, grid);
+            smooth_brush(modifier, coord, grid);
             return;
         }
         if (modifier.brush == BrushOp::Paint || modifier.brush == BrushOp::Hole) {

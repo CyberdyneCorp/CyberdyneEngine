@@ -803,6 +803,10 @@ fn pointer(position: egui::Pos2, pressed: Option<bool>) -> Vec<egui::Event> {
 }
 
 /// Drag across the brush field and return the intents of the frame the gesture finished in.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "AccessKit reports bounds in f64 points; egui takes f32"
+)]
 fn drag_across_the_brush_field(harness: &mut Harness, size: egui::Vec2) -> Vec<Intent> {
     let evidence = harness.frame("editor-terrain", size, Vec::new());
     let (_, field) = evidence

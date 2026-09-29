@@ -3321,6 +3321,10 @@ fn answer_terrain(
 /// editor sends each resulting stack to the engine's `terrain.evaluate`, `terrain.status` reports
 /// what the engine answered, and `edit.undo` sends the engine the pre-stroke stack byte for byte.
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one conversation: stroke, status, hole, status, undo, status, undo, in order"
+)]
 fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     use cy_editor_core::codec::Reader;
 

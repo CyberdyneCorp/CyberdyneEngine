@@ -15,6 +15,7 @@
 // tile.
 
 #include <cy/core/base/expected.h>
+#include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/terrain/stack.h>
 #include <cy/terrain/tile.h>
@@ -58,9 +59,19 @@ struct RegionSnapshot {
     u32 rendered_hole_quads = 0;
     /// Collision samples `build_collision()` marked `physics::kHeightFieldHole`, over every tile.
     u32 collision_holes = 0;
+    /// What `mesh_tile()` emitted for every tile, joined into one mesh in region metres: the
+    /// geometry a viewport draws, holes already left out.
+    Array<Vec3> positions;
+    Array<Vec3> normals;
+    Array<u32> indices;
 
     explicit RegionSnapshot(Allocator& allocator) noexcept
-        : heights(allocator), texels(allocator), holes(allocator) {}
+        : heights(allocator),
+          texels(allocator),
+          holes(allocator),
+          positions(allocator),
+          normals(allocator),
+          indices(allocator) {}
 };
 
 /// Evaluate every tile of the region from the stack, then mesh and collide each one. The stack's

@@ -56,6 +56,25 @@ void stitch(const TerrainTile& tile, u32 tile_x, u32 tile_z, RegionSnapshot& out
     }
     out.rendered_triangles += report.triangles;
     out.rendered_hole_quads += report.hole_quads;
+    // Tile-local positions become region positions; the tile's own index list is kept.
+    const TerrainMesh& tile = mesh.value();
+    const auto base = static_cast<u32>(out.positions.size());
+    const Vec3 origin{static_cast<f32>(tile.bounds.min_x), 0.0F,
+                      static_cast<f32>(tile.bounds.min_z)};
+    for (usize vertex = 0; vertex < tile.positions.size(); ++vertex) {
+        if (Status pushed = out.positions.push_back(tile.positions[vertex] + origin); !pushed) {
+            return pushed;
+        }
+        const Vec3 normal = (vertex < tile.normals.size()) ? tile.normals[vertex] : Vec3{0, 1, 0};
+        if (Status pushed = out.normals.push_back(normal); !pushed) {
+            return pushed;
+        }
+    }
+    for (const u32 index : tile.indices.span()) {
+        if (Status pushed = out.indices.push_back(base + index); !pushed) {
+            return pushed;
+        }
+    }
     Expected<CollisionTile, Error> collision =
         build_collision(allocator, store, heights, coord, CollisionConfig{});
     if (!collision) {
