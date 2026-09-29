@@ -165,8 +165,9 @@ struct Reader {
 /// The version 3 section: the directly baked lights and the mip chain.
 [[nodiscard]] Status get_version3(Reader& reader, BakedLightmap& out) noexcept {
     u32 direct = 0;
-    if (!reader.take_u32(direct) || direct > 0xFFFFU || !reader.take_ids(direct, out.direct_lights) ||
-        !reader.take_u32(out.mip_levels) || out.mip_levels > kMaxLightmapMipLevels) {
+    if (!reader.take_u32(direct) || direct > 0xFFFFU ||
+        !reader.take_ids(direct, out.direct_lights) || !reader.take_u32(out.mip_levels) ||
+        out.mip_levels > kMaxLightmapMipLevels) {
         return malformed();
     }
     for (u32 level = 1; level <= out.mip_levels; ++level) {

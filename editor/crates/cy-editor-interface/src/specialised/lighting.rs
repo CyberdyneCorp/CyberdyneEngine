@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The lighting and lightmap baking editor: a form over the engine's bake and its density view.
 //!
 //! `editor-architecture` names "lighting and lightmap baking" among the specialised editors and

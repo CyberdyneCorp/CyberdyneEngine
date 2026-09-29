@@ -136,8 +136,8 @@ void add_layers(Level& level, LightmapTexels& texels) noexcept {
 /// Every base texel of every rectangle owned by its nearest chart.
 void own_base(Level& base, Span<const Rect> rects) noexcept {
     for (usize index = 0; index < base.genuine.size(); ++index) {
-        base.nearest[index] = base.genuine[index] == kNoChart ? Nearest{}
-                                                              : Nearest{base.genuine[index], 0U};
+        base.nearest[index] =
+            base.genuine[index] == kNoChart ? Nearest{} : Nearest{base.genuine[index], 0U};
     }
     for (const Rect& rect : rects) {
         for (u32 ring = 1; grow_ring(base, rect, ring); ++ring) {
@@ -279,7 +279,8 @@ void round_level(Level& level) noexcept {
         for (u32 y = 0; y < level.height; ++y) {
             for (u32 x = 0; x < level.width; ++x) {
                 Vec4& value = level.value(layer, x, y);
-                value = Vec4{rounded(value.x), rounded(value.y), rounded(value.z), rounded(value.w)};
+                value =
+                    Vec4{rounded(value.x), rounded(value.y), rounded(value.z), rounded(value.w)};
             }
         }
     }
@@ -328,9 +329,9 @@ void round_level(Level& level) noexcept {
         return fail(ErrorCode::InvalidArgument,
                     "a lightmap's mip levels go below the block its rectangles are aligned to");
     }
-    const bool mask_ok = lightmap.shadow_mask.texels.empty() ||
-                         (lightmap.shadow_mask.width == texels.width &&
-                          lightmap.shadow_mask.height == texels.height);
+    const bool mask_ok =
+        lightmap.shadow_mask.texels.empty() || (lightmap.shadow_mask.width == texels.width &&
+                                                lightmap.shadow_mask.height == texels.height);
     if (!mask_ok) {
         return fail(ErrorCode::InvalidArgument,
                     "a lightmap's shadow mask is not laid out like its texels");

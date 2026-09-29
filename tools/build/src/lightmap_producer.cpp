@@ -239,7 +239,8 @@ void view_mesh(LoadedMesh& loaded) {
 }
 
 /// The mesh an instance names, read once per (bundle, sub-asset): out of an upstream import bundle,
-/// or — for a path ending `.cyasset`, whose sub-asset name is not read — out of a cooked asset file.
+/// or — for a path ending `.cyasset`, whose sub-asset name is not read — out of a cooked asset
+/// file.
 [[nodiscard]] Expected<u32, Error> mesh_for(const BundleSource& source, std::string_view bundle,
                                             std::string_view name, LevelDescription& level) {
     std::string key(bundle);

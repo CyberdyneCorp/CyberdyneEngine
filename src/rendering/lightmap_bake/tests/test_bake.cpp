@@ -1297,8 +1297,7 @@ CY_TEST_CASE("the bake names every light whose direct term it baked, and no othe
     CY_CHECK_EQ(as_static.lightmap.direct_lights[0], light);
     CY_CHECK(as_static.lightmap.shadow_lights.empty());
 
-    const Baked stationary =
-        bake(ShadowRoom(gi::LightMobility::Stationary).room.scene(), settings);
+    const Baked stationary = bake(ShadowRoom(gi::LightMobility::Stationary).room.scene(), settings);
     CY_CHECK(stationary.lightmap.direct_lights.empty());
     CY_CHECK_EQ(stationary.lightmap.shadow_lights.size(), 1U);
 
@@ -1339,7 +1338,8 @@ namespace {
 
 }  // namespace
 
-CY_TEST_CASE("a bake fills the mip chain its padding protects, and the cooked lightmap carries it") {
+CY_TEST_CASE(
+    "a bake fills the mip chain its padding protects, and the cooked lightmap carries it") {
     const ShadowRoom room(gi::LightMobility::Stationary);
     const LightmapBakeSettings settings = mip_settings();
     const Baked first = bake(room.room.scene(), settings);
@@ -1350,8 +1350,7 @@ CY_TEST_CASE("a bake fills the mip chain its padding protects, and the cooked li
     CY_CHECK_EQ(level.width, lightmap.texels.width / 2U);
     CY_CHECK_EQ(level.height, lightmap.texels.height / 2U);
     CY_CHECK_EQ(level.planes, 2U);
-    CY_CHECK_EQ(shadow_mask_level(lightmap, 1).texels.size(),
-                usize{level.width} * level.height);
+    CY_CHECK_EQ(shadow_mask_level(lightmap, 1).texels.size(), usize{level.width} * level.height);
     CY_CHECK(same_chain(first.lightmap, second.lightmap));
     // Every level-1 texel the floor's rectangle holds is lit by the floor, not the black between
     // rectangles: a coarse texel is only ever filtered from its own rectangle.
@@ -1376,9 +1375,9 @@ CY_TEST_CASE("a bake fills the mip chain its padding protects, and the cooked li
     CY_CHECK_EQ(decoded.shadow_mask_bytes(), lightmap.shadow_mask_bytes());
 
     // A version 2 payload — no mip chain, no direct lights — still decodes, to the base alone.
-    const usize version3_bytes =
-        4U + (lightmap.direct_lights.size() * 8U) + 4U + (level.texels.size() * 8U) +
-        (shadow_mask_level(lightmap, 1).texels.size() * 8U);
+    const usize version3_bytes = 4U + (lightmap.direct_lights.size() * 8U) + 4U +
+                                 (level.texels.size() * 8U) +
+                                 (shadow_mask_level(lightmap, 1).texels.size() * 8U);
     cy::Array<u8> old;
     CY_REQUIRE(old.resize(payload.size() - version3_bytes).has_value());
     std::memcpy(old.data(), payload.data(), old.size());
@@ -1390,7 +1389,8 @@ CY_TEST_CASE("a bake fills the mip chain its padding protects, and the cooked li
     CY_CHECK(same_texels(from_old.shadow_mask, lightmap.shadow_mask));
     CY_CHECK_EQ(from_old.mip_levels, 0U);
     // And a version 3 payload cut short in its chain is refused rather than read past.
-    CY_CHECK_FALSE(decode_lightmap_asset({payload.data(), payload.size() - 8U}, decoded).has_value());
+    CY_CHECK_FALSE(
+        decode_lightmap_asset({payload.data(), payload.size() - 8U}, decoded).has_value());
 }
 
 namespace {
@@ -1470,8 +1470,9 @@ CY_TEST_CASE("a cancelled bake stops at its next step and says it was cancelled"
     const LightmapBakeProgress progress = log.progress();
     BakedLightmap out;
     LightmapBakeReport report;
-    const cy::Status baked = bake_lightmaps(room.room.scene(), small_settings(LightmapMode::Irradiance),
-                                            nullptr, out, report, &progress);
+    const cy::Status baked =
+        bake_lightmaps(room.room.scene(), small_settings(LightmapMode::Irradiance), nullptr, out,
+                       report, &progress);
     CY_REQUIRE_FALSE(baked.has_value());
     CY_CHECK_EQ(baked.error().code, cy::ErrorCode::Unavailable);
     CY_CHECK(report.cancelled);
@@ -1479,9 +1480,7 @@ CY_TEST_CASE("a cancelled bake stops at its next step and says it was cancelled"
     // atlas.
     CY_CHECK_EQ(log.trace_steps, 3U);
     CY_CHECK_LE(report.texels_covered + report.texels_buried, 3U * kProgressTexels);
-    CY_CHECK(std::ranges::none_of(log.stages,
-                                  [](LightmapBakeStage stage) {
-                                      return stage == LightmapBakeStage::Filter ||
-                                             stage == LightmapBakeStage::Finish;
-                                  }));
+    CY_CHECK(std::ranges::none_of(log.stages, [](LightmapBakeStage stage) {
+        return stage == LightmapBakeStage::Filter || stage == LightmapBakeStage::Finish;
+    }));
 }

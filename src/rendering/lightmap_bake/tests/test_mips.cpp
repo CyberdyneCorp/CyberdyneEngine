@@ -67,10 +67,10 @@ using Charts = std::array<Chart, 4>;
 
 [[nodiscard]] Charts charts_for(Split split) noexcept {
     return Charts{{
-        {4, 4, 28, 28, Vec4{1.0F, 0.0F, 0.0F, 1.0F}},                     // A, red
-        {36, 4, 60, 28, Vec4{0.0F, 1.0F, 0.0F, 1.0F}},                    // B, green
-        {4, 36, split.blue_end, 60, Vec4{0.0F, 0.0F, 1.0F, 1.0F}},        // C, blue
-        {split.white_start, 36, 60, 60, Vec4{1.0F, 1.0F, 1.0F, 0.5F}},    // C, white
+        {4, 4, 28, 28, Vec4{1.0F, 0.0F, 0.0F, 1.0F}},                   // A, red
+        {36, 4, 60, 28, Vec4{0.0F, 1.0F, 0.0F, 1.0F}},                  // B, green
+        {4, 36, split.blue_end, 60, Vec4{0.0F, 0.0F, 1.0F, 1.0F}},      // C, blue
+        {split.white_start, 36, 60, 60, Vec4{1.0F, 1.0F, 1.0F, 0.5F}},  // C, white
     }};
 }
 
@@ -114,9 +114,8 @@ struct HandAtlas {
             CY_REQUIRE(texels->texels.resize(usize{kPage} * kPage).has_value());
         }
         CY_REQUIRE(lightmap.shadow_lights.push_back(7).has_value());
-        const AtlasPlacement placements[3] = {{0, 0, 0, 8, 8, false},
-                                              {0, 8, 0, 8, 8, false},
-                                              {0, 0, 8, 16, 8, false}};
+        const AtlasPlacement placements[3] = {
+            {0, 0, 0, 8, 8, false}, {0, 8, 0, 8, 8, false}, {0, 0, 8, 16, 8, false}};
         for (const AtlasPlacement& placement : placements) {
             CY_REQUIRE(lightmap.addresses.push_back(encode_address(placement)).has_value());
         }
@@ -222,8 +221,8 @@ CY_TEST_CASE("wherever the chart gap falls on the coarse grids, no tap reads the
                 build_lightmap_mips(atlas.lightmap, {atlas.charts.data(), atlas.charts.size()})
                     .has_value());
             for (u32 level = 1; level <= kLevels; ++level) {
-                const u32 wrong =
-                    bleeding_taps(atlas.layout, lightmap_level(atlas.lightmap, level), level, false);
+                const u32 wrong = bleeding_taps(atlas.layout, lightmap_level(atlas.lightmap, level),
+                                                level, false);
                 CY_TEST_MESSAGE("gap " << gap << " from x = " << blue_end << ", level " << level
                                        << ": " << wrong << " taps read the other chart");
                 CY_CHECK_EQ(wrong, 0U);

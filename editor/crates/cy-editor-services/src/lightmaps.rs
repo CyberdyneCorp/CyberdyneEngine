@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Baking a level's lightmaps from inside the editor, with progress and cancellation.
 //!
 //! `rendering-global-illumination` — "Lightmap baking", and the "Lighting & lightmaps" row of the

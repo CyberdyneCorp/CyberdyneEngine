@@ -51,9 +51,9 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/irradiance_volume.h>
 #include <cy/rendering/gi/proxy_scene.h>
-#include <cy/rendering/light_probes/probe_volume_texture.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/light_probes/probe_volume_texture.h>
 #include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
 #include <cy/rendering/lightmap_bake/mips.h>
@@ -159,8 +159,7 @@ public:
     DeviceFixture& operator=(const DeviceFixture&) = delete;
 
     [[nodiscard]] bool has_gpu() const noexcept {
-        return device_.has_value() &&
-               device_.value()->capabilities().backend() == kBackend;
+        return device_.has_value() && device_.value()->capabilities().backend() == kBackend;
     }
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] u32 validation_errors() const noexcept { return errors_; }
@@ -290,8 +289,8 @@ void place_box(u32 which, Vec3& centre, f32& half, void*) noexcept {
 constexpr Vec3 kFaceNormals[6] = {Vec3{1, 0, 0},  Vec3{-1, 0, 0}, Vec3{0, 1, 0},
                                   Vec3{0, -1, 0}, Vec3{0, 0, 1},  Vec3{0, 0, -1}};
 /// Each face's cell leaves this share of the cell on every side as chart padding. With the
-/// resolution scales `bake_corner` gives, two cells are at least `required_chart_gap` — four texels,
-/// two of the one mip level a 256 page protects — apart on every box, which is what keeps a
+/// resolution scales `bake_corner` gives, two cells are at least `required_chart_gap` — four
+/// texels, two of the one mip level a 256 page protects — apart on every box, which is what keeps a
 /// bilinear tap at a face's edge on its own face at every level: at 0.06 the small cubes' cells
 /// were four texels wide with a quarter-texel of padding, and their edges read the next face; at
 /// 0.1 five boxes were short of the mip level's gap, and the directional encoding's level-1 taps at
@@ -398,8 +397,8 @@ struct CornerBake {
                                             bool lamp) {
     static std::unique_ptr<CornerBake> baked[12];
     const bool baked_direct = mobility == gi::LightMobility::Static;
-    std::unique_ptr<CornerBake>& slot = baked[(static_cast<u32>(mode) * 4U) +
-                                              (baked_direct ? 1U : 0U) + (lamp ? 2U : 0U)];
+    std::unique_ptr<CornerBake>& slot =
+        baked[(static_cast<u32>(mode) * 4U) + (baked_direct ? 1U : 0U) + (lamp ? 2U : 0U)];
     if (slot != nullptr) {
         return slot.get();
     }
@@ -678,20 +677,20 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     // unmatched, ids no baked light has.
     u64 frame_lights[2] = {};
     u32 frame_count = 0;
-    for (u32 light = corner->options.frame_sun ? 0U : 1U;
-         light < (corner->options.lamp ? 2U : 1U); ++light) {
+    for (u32 light = corner->options.frame_sun ? 0U : 1U; light < (corner->options.lamp ? 2U : 1U);
+         ++light) {
         frame_lights[frame_count++] =
             corner->options.match_lights ? corner->lights[light].stable_id : 900U + light;
     }
-    if (Status written = lightmaps::write_lightmaps(lightmap_slots, *corner->lightmap, mode,
-                                                    Span<const u64>(frame_lights, frame_count),
-                                                    upload.view);
+    if (Status written =
+            lightmaps::write_lightmaps(lightmap_slots, *corner->lightmap, mode,
+                                       Span<const u64>(frame_lights, frame_count), upload.view);
         !written) {
         return written;
     }
     if (corner->options.density_view &&
-        !lightmaps::write_lightmap_debug_view(render::DebugViewMode::LightmapDensity,
-                                              kTexelDensity, upload.view)) {
+        !lightmaps::write_lightmap_debug_view(render::DebugViewMode::LightmapDensity, kTexelDensity,
+                                              upload.view)) {
         return fail(ErrorCode::Internal, "the density view wrote nothing");
     }
     if (corner->options.lightmap != Lightmap::Unaddressed) {
@@ -713,8 +712,7 @@ public:
         render::LightDescription& sun = corner_.lights[0];
         sun.kind = render::LightKind::Directional;
         sun.intensity = kSunLux * options.sun_scale;
-        sun.transform.rotation =
-            Quat::look_rotation(normalize(kSunTravel), Vec3{0.0F, 1.0F, 0.0F});
+        sun.transform.rotation = Quat::look_rotation(normalize(kSunTravel), Vec3{0.0F, 1.0F, 0.0F});
         sun.stable_id = 1;
         render::LightDescription& lamp = corner_.lights[1];
         lamp.kind = render::LightKind::Point;
@@ -843,8 +841,7 @@ private:
                 out.height = mip.height;
                 out.planes = 1;
                 if (!out.texels
-                         .append(Span<const Vec4>(mip.texels.data(),
-                                                  usize{mip.width} * mip.height))
+                         .append(Span<const Vec4>(mip.texels.data(), usize{mip.width} * mip.height))
                          .has_value()) {
                     return false;
                 }
@@ -1182,7 +1179,6 @@ void check_against_before(const std::vector<u32>& pixels) {
     CY_CHECK_EQ(changed, usize{0});
 }
 
-
 // --- The baked lights ---------------------------------------------------------------------------
 
 /// The baked sun's shadow-mask value at a surface point, read off the host at one mip level: the
@@ -1224,7 +1220,9 @@ void check_against_before(const std::vector<u32>& pixels) {
     const Vec2 down = atlas_at(lightmap, boxes, picture.pixels[index + kWidth]) - here;
     const f32 footprint = std::max(length(across), length(down));
     // Below a quarter of a level short of level 1, trilinear filtering reads level 0 alone.
-    return footprint < 1.6F ? 0U : std::min(lightmap.mip_levels, 1U + static_cast<u32>(std::log2(footprint)));
+    return footprint < 1.6F
+               ? 0U
+               : std::min(lightmap.mip_levels, 1U + static_cast<u32>(std::log2(footprint)));
 }
 
 /// The floor's interior pixels the baked sun sees none of, and all of.
@@ -1271,8 +1269,8 @@ enum class MaskState : u8 { Neither, Shadowed, Lit };
             bool uniform = states[index] != MaskState::Neither;
             for (u32 dy = 0; dy < 3U && uniform; ++dy) {
                 for (u32 dx = 0; dx < 3U && uniform; ++dx) {
-                    uniform = states[(usize{y + dy - 1U} * kWidth) + (x + dx - 1U)] ==
-                              states[index];
+                    uniform =
+                        states[(usize{y + dy - 1U} * kWidth) + (x + dx - 1U)] == states[index];
                 }
             }
             if (uniform) {
@@ -1324,8 +1322,7 @@ void record_level_readback(const rendering::PassContext& context, void* user) no
 
 /// One level of one of the lightmap's textures, as half floats, off the device.
 [[nodiscard]] bool read_level(rhi::Device& device, const lightmaps::LightmapTextures& textures,
-                              u32 plane, u32 width, u32 height, u32 level,
-                              std::vector<u16>& out) {
+                              u32 plane, u32 width, u32 height, u32 level, std::vector<u16>& out) {
     LevelReadback readback;
     readback.texture = textures.texture(plane);
     readback.level = level;
@@ -1672,7 +1669,8 @@ CY_TEST_CASE("(g) a stationary sun's direct term takes the baked shadow, at any 
     save("lightmaps-stationary-dimmed.png", with_mask_dimmed.pixels());
 
     const Picture picture = classify_all(with_mask.scene());
-    const FloorShadow floor = floor_shadow(picture, with_mask.lightmap(), with_mask.scene().boxes());
+    const FloorShadow floor =
+        floor_shadow(picture, with_mask.lightmap(), with_mask.scene().boxes());
     const Change masking_lit = change_over(without_mask.pixels(), with_mask.pixels(), floor.lit);
     const Change masking_shadowed =
         change_over(without_mask.pixels(), with_mask.pixels(), floor.shadowed);
@@ -1704,7 +1702,8 @@ CY_TEST_CASE("(g) a stationary sun's direct term takes the baked shadow, at any 
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("(h) a static sun's direct term is in the texels, and the frame does not add it again") {
+CY_TEST_CASE(
+    "(h) a static sun's direct term is in the texels, and the frame does not add it again") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();
@@ -1763,7 +1762,8 @@ CY_TEST_CASE("(h) a static sun's direct term is in the texels, and the frame doe
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("(i) every level of the chain and of the mask reaches the device as the bake made it") {
+CY_TEST_CASE(
+    "(i) every level of the chain and of the mask reaches the device as the bake made it") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();
@@ -1792,8 +1792,8 @@ CY_TEST_CASE("(i) every level of the chain and of the mask reaches the device as
             const bake::LightmapTexels& texels = mask ? bake::shadow_mask_level(lightmap, level)
                                                       : bake::lightmap_level(lightmap, level);
             const usize count = usize{texels.width} * texels.height;
-            const std::vector<u16> expected = host_halves(Span<const Vec4>(
-                texels.texels.data() + (mask ? 0U : count * plane), count));
+            const std::vector<u16> expected = host_halves(
+                Span<const Vec4>(texels.texels.data() + (mask ? 0U : count * plane), count));
             std::vector<u16> device;
             CY_REQUIRE(read_level(fixture.device(), textures, plane, width, height, level, device));
             CY_CHECK(device == expected);
@@ -1809,7 +1809,8 @@ CY_TEST_CASE("(i) every level of the chain and of the mask reaches the device as
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("(j) the texel-density view colours each surface by the density its lightmap gives it") {
+CY_TEST_CASE(
+    "(j) the texel-density view colours each surface by the density its lightmap gives it") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();
@@ -1843,10 +1844,9 @@ CY_TEST_CASE("(j) the texel-density view colours each surface by the density its
         }
     }
     std::sort(wall_levels.begin(), wall_levels.end());
-    const i32 checker_spread = wall_levels.empty()
-                                   ? 0
-                                   : wall_levels[(wall_levels.size() * 9U) / 10U] -
-                                         wall_levels[wall_levels.size() / 10U];
+    const i32 checker_spread = wall_levels.empty() ? 0
+                                                   : wall_levels[(wall_levels.size() * 9U) / 10U] -
+                                                         wall_levels[wall_levels.size() / 10U];
     const auto mean = [](const Tally& tally, f64 total) {
         return total / static_cast<f64>(std::max(tally.count, 1U));
     };
@@ -1872,8 +1872,9 @@ CY_TEST_CASE("(j) the texel-density view colours each surface by the density its
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("(k) a stationary point light's direct term takes its own mask channel, through the "
-             "cluster lists") {
+CY_TEST_CASE(
+    "(k) a stationary point light's direct term takes its own mask channel, through the "
+    "cluster lists") {
     DeviceFixture fixture;
     if (!fixture.has_gpu()) {
         fixture.report_skip();

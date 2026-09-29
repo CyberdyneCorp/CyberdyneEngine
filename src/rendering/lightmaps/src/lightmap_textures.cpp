@@ -121,9 +121,9 @@ void plan_levels(const lightmap_bake::BakedLightmap& lightmap, bool masked,
     }
 }
 
-[[nodiscard]] Expected<rhi::BufferHandle, Error> stage(
-    rhi::Device& device, const lightmap_bake::BakedLightmap& lightmap,
-    const UploadRecording& recording) noexcept {
+[[nodiscard]] Expected<rhi::BufferHandle, Error> stage(rhi::Device& device,
+                                                       const lightmap_bake::BakedLightmap& lightmap,
+                                                       const UploadRecording& recording) noexcept {
     const StagedLevel& last = recording.levels[recording.level_count - 1U];
     rhi::BufferDescription description;
     description.name = "lightmap staging";

@@ -138,9 +138,8 @@ enum class AmbientSource : u8 {
 
 /// The frame's set 0 slots a lightmap is read through: one per plane, and the shadow mask's.
 struct LightmapSlots {
-    rhi::BindlessIndex planes[kMaxPlanes] = {pipeline::kNoMaterialTexture,
-                                             pipeline::kNoMaterialTexture,
-                                             pipeline::kNoMaterialTexture};
+    rhi::BindlessIndex planes[kMaxPlanes] = {
+        pipeline::kNoMaterialTexture, pipeline::kNoMaterialTexture, pipeline::kNoMaterialTexture};
     /// `kNoMaterialTexture` when the lightmap has no mask, or the caller bound none.
     rhi::BindlessIndex shadow_mask = pipeline::kNoMaterialTexture;
 };

@@ -121,9 +121,9 @@ CY_TEST_CASE("write_lightmaps names the frame's baked lights by their place in t
     // A baked light past the set's 128 bits is refused rather than shaded twice.
     std::vector<cy::u64> many(130, 99);
     many[129] = 21;
-    CY_CHECK_FALSE(write_lightmaps(slots, lightmap, gi::GiMode::Baked, {many.data(), many.size()},
-                                   view)
-                       .has_value());
+    CY_CHECK_FALSE(
+        write_lightmaps(slots, lightmap, gi::GiMode::Baked, {many.data(), many.size()}, view)
+            .has_value());
 }
 
 CY_TEST_CASE("the density view is one word and a target, and off by default") {
@@ -137,10 +137,8 @@ CY_TEST_CASE("the density view is one word and a target, and off by default") {
 
     // The viewport's debug view reaches the same words, and no other mode touches them.
     cy::rendering::pipeline::FrameViewData other;
-    CY_CHECK_FALSE(
-        write_lightmap_debug_view(cy::render::DebugViewMode::Overdraw, 2.5F, other));
+    CY_CHECK_FALSE(write_lightmap_debug_view(cy::render::DebugViewMode::Overdraw, 2.5F, other));
     CY_CHECK_EQ(other.lightmap_debug[0], 0U);
-    CY_CHECK(
-        write_lightmap_debug_view(cy::render::DebugViewMode::LightmapDensity, 2.5F, other));
+    CY_CHECK(write_lightmap_debug_view(cy::render::DebugViewMode::LightmapDensity, 2.5F, other));
     CY_CHECK_EQ(other.lightmap_debug[0], cy::rendering::pipeline::kLightmapDensityView);
 }

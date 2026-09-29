@@ -633,8 +633,8 @@ void print_baked(const LightmapJobReport& report, f64 seconds) {
         !written) {
         return fail("could not write the cooked lightmap", written.error());
     }
-    print_baked(report, std::chrono::duration<f64>(std::chrono::steady_clock::now() - started)
-                            .count());
+    print_baked(report,
+                std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count());
     return 0;
 }
 
