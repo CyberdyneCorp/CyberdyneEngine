@@ -9,7 +9,8 @@
 //! [`TimelineResponse`]: a playhead position to scrub to, and [`TimelineEdit`]s. Each edit is one
 //! completed gesture — a key drag is one [`TimelineEdit::MoveKey`] on release, not one per frame —
 //! and [`TimelineEdit::apply`] answers its exact inverse, which is what a host records to make the
-//! gesture one undoable transaction (and what an MCP command replays). Zoom, scroll and selection
+//! gesture one undoable transaction (and what an MCP command replays). Escape during a drag cancels
+//! it and records nothing. Zoom, scroll and selection
 //! are presentation state in [`TimelineView`] and are never transactions.
 
 use std::collections::BTreeSet;
@@ -305,6 +306,10 @@ pub(super) fn show(
     );
 
     let mut response = TimelineResponse::default();
+    if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+        // A cancelled gesture records nothing: the release that follows finds no drag to finish.
+        view.drag = None;
+    }
     navigate(ui, rect, &layout, view);
     response.scrub = ruler(ui, shell, &painter, &layout, surface, view);
     for (index, track) in tracks.iter().enumerate() {
@@ -984,6 +989,44 @@ mod tests {
         assert!(
             (to - 2.0).abs() < 0.02,
             "a hundred points at 100/s is a second: {to}"
+        );
+    }
+
+    #[test]
+    fn escape_mid_drag_cancels_the_gesture_and_records_nothing() {
+        let (surface, ..) = surface();
+        let mut view = TimelineView::default();
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        let grab = at(&view, lanes, 1.0, 0);
+        let mut edits = Vec::new();
+        edits.extend(frames.pointer(grab, Some(true), &surface, &mut view).edits);
+        for step in 1..=3 {
+            let to = grab + egui::vec2(25.0 * theme::points(step), 0.0);
+            edits.extend(frames.pointer(to, None, &surface, &mut view).edits);
+        }
+        let escape = egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: Some(egui::Key::Escape),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let held = grab + egui::vec2(75.0, 0.0);
+        edits.extend(
+            frames
+                .run(
+                    vec![egui::Event::PointerMoved(held), escape],
+                    &surface,
+                    &mut view,
+                )
+                .0
+                .edits,
+        );
+        edits.extend(frames.pointer(held, Some(false), &surface, &mut view).edits);
+        assert!(
+            edits.is_empty(),
+            "a cancelled drag is no transaction: {edits:?}"
         );
     }
 
