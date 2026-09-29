@@ -119,6 +119,7 @@ mod tests {
             "editor-materials",
             "editor-vfx-graph",
             "editor-terrain",
+            "physics",
             "script-graph",
             "animation",
             "console",

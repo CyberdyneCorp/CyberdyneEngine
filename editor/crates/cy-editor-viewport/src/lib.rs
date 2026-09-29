@@ -36,6 +36,7 @@
 //! | [`snapping`] | 4.3 | Grid, angle, scale and surface snapping; numeric entry with units and expressions |
 //! | [`viewmode`] | 4.4 | The engine's debug views, described well enough for a palette |
 //! | [`overlay`] | 4.4 | Overlays, the orientation widget, and what a capture contains |
+//! | [`physics_view`] | #29 | The engine's physics debug layers a viewport asks to see |
 //! | [`play`] | 4.4 | Editing while playing: what is unmistakable and what persists |
 //! | [`reconcile`] | 4.3 | Local prediction and the runtime's authoritative echo, keyed by frame |
 //! | [`budget`] | 4.5 | Cadence, degradation and what the user is told about it |
@@ -75,6 +76,7 @@ pub mod layout;
 pub mod math;
 pub mod navigation;
 pub mod overlay;
+pub mod physics_view;
 pub mod picking;
 pub mod play;
 pub mod reconcile;
@@ -91,6 +93,7 @@ pub use interaction::{Interaction, Outcome};
 pub use layout::{GizmoLayout, HandleSpot};
 pub use math::{Bounds, Quat, Ray, Vec3};
 pub use navigation::{Bindings, NavigationPreset, Navigator, ViewAxis};
+pub use physics_view::{PhysicsLayer, PhysicsOverlays};
 pub use picking::{PickIntent, PickRequest, PickResponse, SelectionMode};
 pub use reconcile::{Divergence, Prediction, Reconciler};
 pub use snapping::{SnapSettings, Unit};

@@ -27,9 +27,10 @@
 //! --- WHAT THE SPECIFICATION NAMES AND THE ENGINE HAS NOT GOT YET ------------------------------------
 //!
 //! The requirement's list is longer than the engine's enum. Lightmap and GI probe visualisation,
-//! virtual texture feedback and residency, virtual shadow page views, physics colliders, navigation
-//! data, audio emitters and streaming region state are all named there and none of them exists in
+//! virtual texture feedback and residency, virtual shadow page views, navigation data, audio
+//! emitters and streaming region state are all named there and none of them exists in
 //! `DebugViewMode` today, because the subsystems that would draw them arrive at M6 and later.
+//! Physics colliders are drawn by the engine as layers over any mode: [`crate::physics_view`].
 //!
 //! They are **absent rather than stubbed**. An editor that offered "virtual texture feedback" and
 //! showed an unlit frame would be worse than one that does not offer it: the user would report the
@@ -303,13 +304,16 @@ impl ViewMode {
 /// see what is missing without reading a header comment. Each of these becomes a [`ViewMode`] when
 /// its capability arrives — and the entry is deleted from here in the same change, which is the
 /// property that keeps this list from becoming a lie.
-pub const PLANNED_VIEWS: [(&str, &str); 8] = [
+///
+/// Physics colliders left this list when the engine's physics debug layers became requestable:
+/// they are overlays rather than a shading mode, so they are [`crate::physics_view`], not a
+/// [`ViewMode`].
+pub const PLANNED_VIEWS: [(&str, &str); 7] = [
     ("Lightmap density", "rendering-global-illumination"),
     ("GI probe placement", "rendering-global-illumination"),
     ("Virtual texture feedback", "virtual-texturing"),
     ("Virtual texture residency", "residency"),
     ("Virtual shadow pages", "virtual-shadows"),
-    ("Physics colliders", "physics"),
     ("Navigation data", "navigation"),
     ("Streaming region state", "world-partition-and-streaming"),
 ];

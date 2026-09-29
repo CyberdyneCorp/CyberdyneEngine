@@ -2763,61 +2763,6 @@ void draw_jolt_body(const JPH::Body& body, DebugDrawFlags flags, DebugDrawSink& 
     }
 }
 
-void draw_angular_range(Vec3 origin, Vec3 axis, Vec3 reference, f32 min_angle, f32 max_angle,
-                        DebugDrawSink& sink) noexcept {
-    const Vec3 radius = reference * 0.25f;
-    sink.line(origin, origin + Quat::from_axis_angle(axis, min_angle) * radius,
-              DebugColor::ConstraintLimit);
-    sink.line(origin, origin + Quat::from_axis_angle(axis, max_angle) * radius,
-              DebugColor::ConstraintLimit);
-}
-
-void draw_constraint_limits(const ConstraintDescription& description, const Transform& anchor,
-                            DebugDrawSink& sink) noexcept {
-    const Vec3 origin = anchor.translation;
-    const Vec3 axis = anchor.right();
-    if (description.type == ConstraintType::Slider && description.limit.limited()) {
-        sink.line(origin + axis * description.limit.min, origin + axis * description.limit.max,
-                  DebugColor::ConstraintLimit);
-    } else if (description.type == ConstraintType::Hinge && description.limit.limited()) {
-        draw_angular_range(origin, axis, anchor.up(), description.limit.min, description.limit.max,
-                           sink);
-    } else if (description.type == ConstraintType::Distance) {
-        sink.sphere(origin, description.min_distance, DebugColor::ConstraintLimit);
-        sink.sphere(origin, description.max_distance, DebugColor::ConstraintLimit);
-    } else if (description.type == ConstraintType::Cone ||
-               description.type == ConstraintType::SwingTwist) {
-        const f32 normal = description.type == ConstraintType::Cone
-                               ? std::max(description.swing_limit_y, description.swing_limit_z)
-                               : description.swing_limit_y;
-        const f32 plane =
-            description.type == ConstraintType::Cone ? normal : description.swing_limit_z;
-        draw_angular_range(origin, anchor.up(), axis, -normal, normal, sink);
-        draw_angular_range(origin, -anchor.forward(), axis, -plane, plane, sink);
-        if (description.type == ConstraintType::SwingTwist && description.twist_limit.limited()) {
-            draw_angular_range(origin, axis, anchor.up(), description.twist_limit.min,
-                               description.twist_limit.max, sink);
-        }
-    } else if (description.type == ConstraintType::SixDof) {
-        const Vec3 axes[] = {anchor.right(), anchor.up(), -anchor.forward()};
-        for (u32 index = 0; index < 3; ++index) {
-            const AxisLimit& limit = description.dof_limits[index];
-            if (limit.limited()) {
-                sink.line(origin + axes[index] * limit.min, origin + axes[index] * limit.max,
-                          DebugColor::ConstraintLimit);
-            }
-        }
-        const Vec3 references[] = {axes[1], axes[2], axes[0]};
-        for (u32 index = 0; index < 3; ++index) {
-            const AxisLimit& limit = description.dof_limits[index + 3];
-            if (limit.limited()) {
-                draw_angular_range(origin, axes[index], references[index], limit.min, limit.max,
-                                   sink);
-            }
-        }
-    }
-}
-
 }  // namespace
 
 Status JoltServer::debug_draw(WorldHandle world, DebugDrawFlags flags,
@@ -2852,10 +2797,7 @@ Status JoltServer::debug_draw(WorldHandle world, DebugDrawFlags flags,
                 }
                 b = state_b->transform * record.description.frame_b;
             }
-            sink.sphere(a.translation, 0.04f, DebugColor::Constraint);
-            sink.sphere(b.translation, 0.04f, DebugColor::Constraint);
-            sink.line(a.translation, b.translation, DebugColor::Constraint);
-            draw_constraint_limits(record.description, a, sink);
+            debug_draw_constraint(record.description, a, b, sink);
         }
     }
     if (has_flag(flags, DebugDrawFlags::Contacts)) {

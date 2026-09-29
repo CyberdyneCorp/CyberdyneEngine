@@ -33,6 +33,18 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
 
+    # The physics debug layers and the joint gizmo, rasterised into a frame from the reference
+    # solver's own debug output and an authored world. No device, like the gizmo's case above.
+    cy_add_test(
+        NAME editor_window_physics_overlay
+        KIND unit
+        SOURCES
+            "${tests_dir}/test_physics_overlay.cpp"
+            "${tests_dir}/../overlay.cpp"
+            "${tests_dir}/../physics_overlay.cpp"
+        DEPENDENCIES cy::servers-render cy::physics-reference cy::gameplay-play
+                     cy::scene-serialization)
+
     cy_add_test(
         NAME editor_wind_field_preview
         KIND integration
@@ -224,7 +236,8 @@ function(cy_editor_window_runtime_declare_tests)
         endif()
     endif()
 
-    foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay
+    foreach(target cy_test_unit_editor_window_runtime cy_test_unit_editor_window_physics_overlay
+                   cy_test_integration_editor_window_overlay
                    cy_test_integration_editor_window_one_world
                    cy_test_integration_editor_window_layout_file)
         target_include_directories(${target} PRIVATE "${tests_dir}/..")

@@ -146,7 +146,9 @@ struct WorldValue {
     WorldValueKind kind = WorldValueKind::Nil;
     /// `Float` uses lane 0; `Vec2`, `Vec3`, `Vec4` and `Quat` use as many as they name.
     f32 lanes[4] = {0.0F, 0.0F, 0.0F, 0.0F};
-    /// `Int`, `Entity` and `Bool` (0 or 1).
+    /// `Int`, `Entity` and `Bool` (0 or 1). An `Entity` holds the editor identity of the node it
+    /// names, or zero for none; the file writes it as that node's position, because identities do
+    /// not survive a save that renumbers the nodes.
     i64 integer = 0;
     /// `Double`.
     f64 real = 0.0;
@@ -337,8 +339,11 @@ public:
     /// editor allocated the ordinal, and re-deriving one here would invent a second identity.
     [[nodiscard]] Expected<u32, Error> create_node_with_ordinal(u64 ordinal, u32 parent) noexcept;
 
-    /// Adopt a document identity for `path`, recomputing every node's.
+    /// Adopt a document identity for `path`, recomputing every node's, and every entity
+    /// reference to a node whose identity changed.
     void reidentify() noexcept;
+    /// Point every entity reference that names `from` at `to` instead.
+    void retarget_references(u64 from, u64 to) noexcept;
 
     void set_next_ordinal(u64 ordinal) noexcept { next_ordinal_ = ordinal; }
 

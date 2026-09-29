@@ -237,6 +237,30 @@ CY_TEST_CASE("a gizmo intent can select the scene camera") {
     CY_CHECK_EQ(intent.game_camera, 42ULL);
 }
 
+CY_TEST_CASE("a gizmo intent carries the physics overlays the editor asked for") {
+    cy::Array<u8> bytes = encoded_intent(1016, 0, 0, 0, {});
+    auto append_number = [&bytes](u64 value, cy::usize width) {
+        for (cy::usize index = 0; index < width; ++index) {
+            CY_REQUIRE(bytes.push_back(static_cast<u8>((value >> (index * 8)) & 0xFFU)));
+        }
+    };
+    append_number(1280, 4);
+    append_number(720, 4);
+    for (u32 index = 0; index < 9; ++index) {
+        append_number(0, 4);
+    }
+    append_number(~u64{0}, 8);
+    GizmoIntent older;
+    CY_REQUIRE(decode_gizmo_intent(cy::Span<const u8>{bytes.data(), bytes.size()}, older));
+    CY_CHECK_EQ(older.physics_overlays, 0U);
+
+    append_number(0x21, 4);
+    GizmoIntent intent;
+    CY_REQUIRE(decode_gizmo_intent(cy::Span<const u8>{bytes.data(), bytes.size()}, intent));
+    CY_CHECK_EQ(intent.physics_overlays, 0x21U);
+    CY_CHECK_EQ(intent.game_camera, ~u64{0});
+}
+
 CY_TEST_CASE("an empty selection is a request and not an absence") {
     // "Draw nothing" has to be decodable, or a selection that became empty leaves the last gizmo on
     // the screen for ever.

@@ -57,6 +57,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
+    crate::joints::register(registry)?;
     // Shared painting gestures committed as stable terrain layers and non-destructive modifiers.
     crate::terrain::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
@@ -644,11 +645,13 @@ mod tests {
         // Scene actors add camera and light creation.
         // Material graphs add read, preview, save, draft save, and status commands; VFX drafts add read/save
         // and five engine preview commands; reusable modules add read/save.
+        // The physics tools add seven physics debug layers and hide-all in `crate::viewports`, and
+        // the three joint commands in `crate::joints`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         assert_eq!(
             registry.len(),
-            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2
+            8 + 37 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

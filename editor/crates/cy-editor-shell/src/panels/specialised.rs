@@ -131,7 +131,10 @@ pub(super) fn show<T: SpecialisedTool>(panels: &mut Panels<'_>, ui: &mut egui::U
 }
 
 /// The title, and Undo/Redo over the active document's history.
-fn header(panels: &mut Panels<'_>, ui: &mut egui::Ui, title: &str) {
+///
+/// Shared with the authoring panels that are not one of the sixteen domains (the physics panel),
+/// so every authoring surface undoes the same way.
+pub(super) fn header(panels: &mut Panels<'_>, ui: &mut egui::Ui, title: &str) {
     ui.horizontal(|ui| {
         ui.heading(title);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -158,7 +161,7 @@ fn header(panels: &mut Panels<'_>, ui: &mut egui::Ui, title: &str) {
 }
 
 /// Every diagnostic, glyph and word beside colour. Draws nothing when there are none.
-fn diagnostics_area(ui: &mut egui::Ui, shell: &Shell, diagnostics: &[ToolDiagnostic]) {
+pub(super) fn diagnostics_area(ui: &mut egui::Ui, shell: &Shell, diagnostics: &[ToolDiagnostic]) {
     for diagnostic in diagnostics {
         status(ui, shell, diagnostic.role, &diagnostic.message);
     }
@@ -175,11 +178,22 @@ pub(crate) fn register_tool<T: SpecialisedTool>(registry: &mut Registry) -> Resu
 
 /// Every scaffolded tool, registered and checked. Called wherever the command registry is built.
 pub fn register_specialised_tools(registry: &mut Registry) -> Result<()> {
-    register_tool::<super::terrain::TerrainTool>(registry)
+    register_tool::<super::terrain::TerrainTool>(registry)?;
+    command_parity(registry, super::physics::PANEL, super::physics::COMMANDS)
 }
 
 fn parity(registry: &Registry, domain: Domain, commands: &[&str]) -> Result<()> {
-    let action = format!("register the {} editor", domain.spec_term());
+    command_parity(
+        registry,
+        &format!("the {} editor", domain.spec_term()),
+        commands,
+    )
+}
+
+/// The same MCP and undo parity check, for an authoring panel that is not one of the sixteen
+/// specialised domains. Refuses exactly what [`register_tool`] refuses.
+pub(crate) fn command_parity(registry: &Registry, panel: &str, commands: &[&str]) -> Result<()> {
+    let action = format!("register {panel}");
     for command in commands {
         let Some(tool) = cy_editor_agent::tool::project_one(registry, command) else {
             return Err(Problem::new(

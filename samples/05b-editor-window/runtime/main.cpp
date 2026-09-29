@@ -82,6 +82,7 @@
 #include "layout_file.h"
 #include "material_runtime.h"
 #include "overlay.h"
+#include "physics_overlay.h"
 #include "pick_wire.h"
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "scene_vfx_runtime.h"
@@ -393,6 +394,11 @@ struct Host {
     /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
     /// counter above the switch the first time an editor pressed play.
     u64 received[static_cast<usize>(runtime::EditorMessage::SyncWorld) + 1] = {};
+    /// The physics debug layers the editor last asked for, as `cy::physics::DebugDrawFlags` bits,
+    /// and what drawing them and the selected joint's gizmo produced over the run.
+    u32 physics_overlays = 0;
+    u64 physics_segments = 0;
+    u64 joint_gizmos = 0;
     u64 unknown_messages = 0;
 };
 
@@ -463,6 +469,7 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     host.asked_height = intent.viewport_height;
     adopt_camera(host, intent);
     host.game_camera = intent.game_camera;
+    host.physics_overlays = intent.physics_overlays;
     // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
     // holds is the world the editor has open, so an identity either names a node in it or names
     // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
@@ -1079,7 +1086,36 @@ void draw_actor_direction(const Host& host, const Canvas& canvas, Vec3 position,
     }
 }
 
+/// The physics debug layers during play, and the selected node's authored joint while editing.
+///
+/// Both come from the engine: the layers from the session's own physics world through
+/// `PhysicsServer::debug_draw`, the joint from the authored world through the function the solver
+/// draws a simulated constraint with. While a world plays, the `Constraints` layer is the joint's
+/// view, so the authored gizmo is not drawn over it.
+void draw_physics(Host& host, const Canvas& canvas) noexcept {
+    const Vec3 eye{static_cast<f32>(host.camera.position[0]),
+                   static_cast<f32>(host.camera.position[1]),
+                   static_cast<f32>(host.camera.position[2])};
+    FrameDebugSink sink(canvas, host.view, eye);
+    const bool simulating =
+        host.play != nullptr && host.play->state() != gameplay::PlayState::Editing;
+    if (simulating && host.physics_overlays != 0U && host.play->physics_server() != nullptr) {
+        if (Status drawn = draw_physics_overlays(sink, *host.play->physics_server(),
+                                                 host.play->physics_world(), host.physics_overlays);
+            !drawn) {
+            report("physics overlay", drawn.error());
+        }
+    }
+    if (!simulating && host.game_camera == ~u64{0} && host.anchored_identity != 0 &&
+        host.view_world != nullptr && host.view_world->loaded() &&
+        draw_authored_joint(sink, host.view_world->world(), host.anchored_identity)) {
+        host.joint_gizmos += 1;
+    }
+    host.physics_segments += sink.drawn();
+}
+
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
+    draw_physics(host, canvas);
     if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
         for (const LightMarker& light : host.authored_frame->light_markers()) {
             Vec2 marker;
@@ -1345,6 +1381,12 @@ void print_report(const Host& host, const WorldView& view_world,
                      static_cast<unsigned long long>(host.play_bodies),
                      host.play_restored_exactly ? "identical after every stop"
                                                 : "REBUILT FROM THE SNAPSHOT — see task 5.2");
+        std::fprintf(stdout,
+                     "%s: physics   overlays 0x%02x, %llu segment(s) drawn, %llu joint gizmo "
+                     "frame(s)\n",
+                     kTag, host.physics_overlays,
+                     static_cast<unsigned long long>(host.physics_segments),
+                     static_cast<unsigned long long>(host.joint_gizmos));
     }
     std::fprintf(stdout,
                  "%s: editor    %llu connection(s); hello %llu, ping %llu, gizmo-intent %llu, "

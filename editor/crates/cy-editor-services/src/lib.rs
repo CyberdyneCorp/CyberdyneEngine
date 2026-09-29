@@ -34,6 +34,7 @@ pub mod builtin;
 pub mod documents;
 pub mod editor;
 pub mod gizmo;
+pub mod joints;
 pub mod manipulate;
 pub mod material_commands;
 pub mod material_graph;

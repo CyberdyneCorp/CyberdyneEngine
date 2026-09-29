@@ -264,6 +264,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
+| Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
@@ -632,6 +633,60 @@ real socket; `crates/cy-editor-services/tests/a_body_is_a_transaction.rs` holds 
 the golden names. What is on the far end is `cy::gameplay::PlaySession`, and what it guarantees —
 **stop restores the authored document byte for byte, verified rather than asserted** — is
 `src/gameplay/play/README.md`.
+
+## Physics tools: debug layers and joints (#29)
+
+The **Physics** panel (panel kind `physics`, beside the specialised editors) draws in the scaffold's
+frame — its header with Undo and Redo, its diagnostics area — and `register_specialised_tools`
+checks its commands with the same parity rule as a specialised tool (`command_parity`). It is not a
+seventeenth `Domain`: `editor-architecture` names no physics editor, and what it edits is entities
+and the viewport. The design is `openspec/changes/add-editor-physics-tools/design.md`.
+
+![The Physics panel with a hinge selected: the viewport layer toggles, the joint's kind and target,
+and only the fields a hinge reads](../docs/design/images/editor-physics-joint.png)
+
+**Debug layers.** `cy_editor_viewport::physics_view::PhysicsLayer` is `cy::physics::DebugDrawFlags`,
+bit for bit (a test reads `debug.h`). Each is a read command, `viewport.physics.<layer>` with
+`state=on|off|toggle`, plus `viewport.physics.hide-all`; the panel's checkboxes are callers of them.
+A viewport's layers go out in the gizmo request (`physics_overlays`, after the camera choice), and
+`cy_editor_window_runtime` draws them from the play session's physics world with
+`PhysicsServer::debug_draw`, projected through the frame's own view into the pixels it publishes.
+The editor draws nothing. The layers show the simulated world, so they appear while a world plays or
+is paused.
+
+**Joints.** A joint is a `Joint` component on the entity carrying body A, naming body B's entity
+(or none, for the world), with the anchor and axis in body A's unscaled frame. `physics.joint.add`,
+`physics.joint.set` (`field` and `value`, one field per transaction) and `physics.joint.remove` are
+reversible, so each is an MCP tool and `edit.undo` covers it; a change the engine would refuse at play
+is refused when it is made. The panel shows only the fields the selected kind reads and commits a
+drag or a typed edit once, on release. Selecting the entity makes the runtime draw the joint through
+`cy::physics::debug_draw_constraint` — the drawing Jolt uses for a simulated constraint — with its
+axis. At play `cy::gameplay::PlaySession` resolves both bodies and derives frame B so the anchors
+meet where the bodies were authored.
+
+![The engine drawing the selected door's authored hinge while editing: its anchor on the post, the
+vertical axis and the limit arms](../docs/design/images/editor-physics-joint-gizmo.png)
+
+![Play paused with the collider, contact, joint and sleep layers on: every collider, awake bodies in
+green, sleeping and static ones in grey, drawn by the engine from its physics
+world](../docs/design/images/editor-physics-layers.png)
+
+Both are taken through the editor's own MCP interface by
+`python3 samples/05b-editor-window/mcp_physics.py --shots docs/design/images`, which also fails
+unless the runtime reports frames carrying the joint gizmo and a paused frame the layers changed.
+
+Entity references in a `.cyworld` are written as the referenced node's **position** and resolved to
+an identity on load, on both sides, because a save that drops a node renumbers the file.
+
+**Ragdolls are not here yet.** `physics::ragdoll::Profile::generate` needs a skeleton and the editor
+cannot import one (model import stops before step 7), so the panel says so in its diagnostics area
+rather than opening an empty profile editor.
+
+Tests: `crates/cy-editor-services/tests/a_joint_is_a_transaction.rs`,
+`physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel` in
+`crates/cy-editor-mcp/tests/a_session_over_the_wire.rs`, the physics frames in
+`crates/cy-editor-shell/tests/new_panels_are_accessible.rs`, and on the engine side
+`integration.gameplay_joints` and `unit.editor_window_physics_overlay`.
 
 ## VFX graph authoring status
 

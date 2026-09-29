@@ -59,6 +59,7 @@ cy_add_module(
         main.cpp
         material_runtime.cpp
         overlay.cpp
+        physics_overlay.cpp
         pick_wire.cpp
         script_runtime.cpp
         wind_field_preview.cpp
