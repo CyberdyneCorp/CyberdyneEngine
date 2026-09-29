@@ -6,12 +6,18 @@
 // The reference backend is enough, because its `debug_draw` walks the same sink the Jolt one does.
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/registry.h>
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/servers/physics/reference/server.h>
+#include <cy/servers/render/picking.h>
 #include <cy/test/test.h>
+
+#include <cy_reflect_generated_scene.h>
 
 #include "physics_overlay.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <string_view>
 
 using cy::f32;
@@ -33,7 +39,7 @@ cy::Allocator& allocator() noexcept {
 constexpr u32 kWidth = 320;
 constexpr u32 kHeight = 180;
 
-constexpr cy::i32 kTolerance = 40;
+constexpr cy::i32 kTolerance = 12;
 
 /// An opaque black frame.
 struct Frame {
@@ -61,13 +67,15 @@ struct Frame {
         return count;
     }
 
-    /// Whether any pixel within `reach` of (x, y) is `colour` (0xRRGGBB), within the soft edge's
-    /// rounding: every channel within `kTolerance` of it.
+    /// Whether any pixel within `reach` of (x, y) is `colour` (0xRRGGBB) blended over the black
+    /// frame: every channel the same fraction of the colour's, and that fraction at least a third.
+    /// A one-pixel stroke on a half-pixel boundary is drawn at partial coverage, so an exact match
+    /// would only find strokes that happen to land on pixel centres.
     [[nodiscard]] bool has_colour_near(f32 x, f32 y, u32 reach, u32 colour) const noexcept {
-        const auto close = [](u8 have, u32 want) noexcept {
-            const i32 difference = static_cast<i32>(have) - static_cast<i32>(want & 0xFFU);
-            return difference <= kTolerance && difference >= -kTolerance;
-        };
+        const i32 want[3] = {static_cast<i32>((colour >> 16U) & 0xFFU),
+                             static_cast<i32>((colour >> 8U) & 0xFFU),
+                             static_cast<i32>(colour & 0xFFU)};
+        const i32 brightest = std::max({want[0], want[1], want[2]});
         for (u32 dy = 0; dy <= reach * 2; ++dy) {
             for (u32 dx = 0; dx <= reach * 2; ++dx) {
                 const auto px = static_cast<u32>(x) + dx - reach;
@@ -76,8 +84,17 @@ struct Frame {
                     continue;
                 }
                 const cy::usize index = ((static_cast<cy::usize>(py) * kWidth) + px) * 4;
-                if (close(pixels[index], colour >> 16U) && close(pixels[index + 1], colour >> 8U) &&
-                    close(pixels[index + 2], colour)) {
+                const i32 have[3] = {pixels[index], pixels[index + 1], pixels[index + 2]};
+                const i32 peak = std::max({have[0], have[1], have[2]});
+                if (peak * 3 < brightest) {
+                    continue;
+                }
+                bool matches = true;
+                for (u32 channel = 0; channel < 3; ++channel) {
+                    const i32 expected = (want[channel] * peak) / brightest;
+                    matches = matches && std::abs(have[channel] - expected) <= kTolerance;
+                }
+                if (matches) {
                     return true;
                 }
             }
@@ -266,17 +283,25 @@ constexpr std::string_view kHingedDoor =
 }  // namespace
 
 CY_TEST_CASE("a selected hinge is drawn at its anchor with its axis and its limits") {
+    // Resolved against the engine's schema, as the runtime's world is, so `Transform` is the
+    // engine's `LocalTransform` and the door is where the file puts it.
+    cy::reflect::TypeRegistry registry;
+    CY_REQUIRE(cy::reflect::register_scene_types(registry));
+    ser::AuthoringSchema schema(allocator());
+    CY_REQUIRE(ser::build_authoring_schema(registry, schema));
     ser::World world(allocator());
     CY_REQUIRE(ser::read_world(kHingedDoor, "worlds/door.cyworld", world));
+    CY_REQUIRE(ser::resolve_against(world, schema));
     Frame frame;
     const cy::render::View view = frame_view();
     FrameDebugSink sink(frame.canvas(), view, kEye);
     CY_REQUIRE(draw_authored_joint(sink, world, world.nodes()[1].identity));
     CY_CHECK(sink.drawn() > 0U);
-    // The anchor is one metre left of the door in its UNSCALED frame: world (0, 0, 0), even though
-    // the door is authored at scale two.
-    const cy::Vec2 anchor = pixel_of(view, Vec3{0.0F, 0.0F, 0.0F});
-    CY_CHECK(frame.has_colour_near(anchor.x, anchor.y, 3,
+    // The anchor is one metre left of the door in its UNSCALED frame, world (0, 0, 0), even though
+    // the door is authored at scale two; the line to the joined frame runs from there to the
+    // frame's origin at (-1, 0, 0).
+    const cy::Vec2 joined = pixel_of(view, Vec3{-0.6F, 0.0F, 0.0F});
+    CY_CHECK(frame.has_colour_near(joined.x, joined.y, 1,
                                    physics_colour(physics::DebugColor::Constraint)));
     // The authored axis is +Y, drawn up from the anchor in the limits' gold.
     const cy::Vec2 axis = pixel_of(view, Vec3{0.0F, 0.3F, 0.0F});
