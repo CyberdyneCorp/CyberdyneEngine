@@ -409,3 +409,25 @@ worktree of `origin/main` (4fb1e998), so it is the host, not this change. The wo
 moved into `restore_recorded`; no changed C++ function is now above 15 (`path_query` 15,
 `queue_world_changes` 14, `rebake_surface_tiles` 12). `convert_mesh` (18) in `build_recast.cpp` is
 unchanged from main; the change adds three lines to `recast_config`.
+
+## Debug case budget (task 7.16)
+
+PR #64's `profiles` job (Debug) failed `integration.editor_window_navigation`:
+`editor runtime: the frame overlay over the baked test map covers its polygons in their area colours`
+spent 4158.7 ms of CPU against its 4000 ms budget. Its per-pixel scan tested all 16384 pixel
+centres against every projected polygon, as did `compare` in `test_nav_overlay.cpp`.
+
+Both scans now skip a polygon whose pixel bounds do not hold the centre, which leaves every
+count and assertion unchanged (33948 assertions in the binary, as before). Local Debug build
+(`cmake --preset debug`, target `cy_test_integration_editor_window_navigation`, `-d` durations):
+
+| Case | Before | After |
+|---|---|---|
+| `editor runtime: the frame overlay over the baked test map ...` | 1.900 s | 0.282 s |
+| `nav overlay per-world toggle draws only the enabled world` | 0.860 s | 0.096 s |
+| `nav overlay covers the projected walkable polygons` | 0.292 s | 0.071 s |
+
+- **Green:** the Debug binary passes with `CY_TEST_BUDGET_SCALE=0.5` (half of every budget).
+- **Red:** before the change, the same run failed `nav overlay per-world toggle draws only the
+  enabled world` at 811 ms against its halved 500 ms budget, and CI's Debug run failed the frame
+  overlay case at full budget.

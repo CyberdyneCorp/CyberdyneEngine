@@ -671,6 +671,38 @@ public:
     return !(positive && negative);
 }
 
+/// A projected polygon with its pixel bounds, so the per-pixel scan tests only the polygons whose
+/// bounds hold the pixel centre (a debug build scans 16384 centres against every polygon).
+struct ProjectedPolygon {
+    std::vector<Vec2> corners;
+    Vec2 low{};
+    Vec2 high{};
+};
+
+[[nodiscard]] ProjectedPolygon bounded(std::vector<Vec2> corners) {
+    ProjectedPolygon out{std::move(corners), {}, {}};
+    if (out.corners.empty()) {
+        return out;
+    }
+    out.low = out.corners.front();
+    out.high = out.corners.front();
+    for (const Vec2 corner : out.corners) {
+        out.low = Vec2{std::min(out.low.x, corner.x), std::min(out.low.y, corner.y)};
+        out.high = Vec2{std::max(out.high.x, corner.x), std::max(out.high.y, corner.y)};
+    }
+    return out;
+}
+
+/// Whether `point` is inside the polygon: its bounds first, then the convex test.
+[[nodiscard]] bool inside_projected(const ProjectedPolygon& polygon, Vec2 point) {
+    constexpr f32 kSlack = 1e-3F;
+    if (point.x < polygon.low.x - kSlack || point.x > polygon.high.x + kSlack ||
+        point.y < polygon.low.y - kSlack || point.y > polygon.high.y + kSlack) {
+        return false;
+    }
+    return inside_convex(polygon.corners, point);
+}
+
 /// The pixel an overlay polygon of `area` leaves on a cleared canvas.
 [[nodiscard]] std::array<u8, 3> area_pixel(nav::AreaType area) {
     const u32 colour = nav_area_colour(area);
@@ -713,7 +745,7 @@ CY_TEST_CASE(
     }
     PolygonList listed;
     nav::draw_navigation_mesh(*mesh, nav::NavDebugFlags::Polygons, listed);
-    std::vector<std::vector<Vec2>> projected;
+    std::vector<ProjectedPolygon> projected;
     for (const PolygonList::Entry& entry : listed.entries) {
         std::vector<Vec2> corners;
         for (const Vec3 corner : entry.corners) {
@@ -721,7 +753,7 @@ CY_TEST_CASE(
             CY_REQUIRE(render::project_to_pixel(view.view, corner - view.eye, pixel));
             corners.push_back(pixel);
         }
-        projected.push_back(std::move(corners));
+        projected.push_back(bounded(std::move(corners)));
     }
 
     // Every pixel centre inside exactly one projected polygon carries that polygon's area colour;
@@ -736,7 +768,7 @@ CY_TEST_CASE(
             usize containing = 0;
             usize which = 0;
             for (usize index = 0; index < projected.size(); ++index) {
-                if (inside_convex(projected[index], centre)) {
+                if (inside_projected(projected[index], centre)) {
                     ++containing;
                     which = index;
                 }

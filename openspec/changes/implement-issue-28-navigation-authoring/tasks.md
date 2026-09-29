@@ -63,6 +63,7 @@
 - [x] 7.13 Clear the awaited pick when the shell's `navigation.point.pick` invoke is refused, and rescale a click only with the frame it was made on. Regressions: `a_refused_pick_is_not_settled_by_a_later_unrelated_answer` and `a_click_is_rescaled_only_with_the_frame_it_was_made_on`.
 - [x] 7.14 State in the guide that cost painting is by volumes only.
 - [x] 7.15 Run the ledger's CI step even when `just test-all` failed (`!cancelled()`); PR #64's first run skipped it behind main-owned failures. Regression: `test_ci_runs_the_native_probes_even_after_a_failed_suite`.
+- [x] 7.16 Keep the overlay image tests inside the Debug case budget: the `profiles` job's Debug run failed `the frame overlay over the baked test map ...` at 4159 ms of CPU against 4000 ms. The per-pixel scans now test a polygon only when its pixel bounds hold the centre; assertion counts are unchanged. Regression: the harness budget itself, checked with `CY_TEST_BUDGET_SCALE=0.5` on a Debug build.
 
 ## 8. Deferred
 

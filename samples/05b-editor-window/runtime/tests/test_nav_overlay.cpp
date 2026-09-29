@@ -112,9 +112,40 @@ public:
     return !(positive && negative);
 }
 
-[[nodiscard]] bool inside_any(const std::vector<std::vector<Vec2>>& polygons, Vec2 point) {
-    return std::ranges::any_of(
-        polygons, [point](const std::vector<Vec2>& polygon) { return inside(polygon, point); });
+/// A polygon's pixel bounds. The per-pixel scans test a polygon only when its bounds hold the
+/// pixel centre, which keeps a Debug build inside the case budget.
+struct Bounds {
+    Vec2 low{};
+    Vec2 high{};
+};
+
+[[nodiscard]] Bounds bounds_of(const std::vector<Vec2>& polygon) {
+    Bounds out;
+    if (polygon.empty()) {
+        return out;
+    }
+    out.low = polygon.front();
+    out.high = polygon.front();
+    for (const Vec2 corner : polygon) {
+        out.low = Vec2{std::min(out.low.x, corner.x), std::min(out.low.y, corner.y)};
+        out.high = Vec2{std::max(out.high.x, corner.x), std::max(out.high.y, corner.y)};
+    }
+    return out;
+}
+
+[[nodiscard]] bool within(const Bounds& bounds, Vec2 point) {
+    return point.x >= bounds.low.x && point.x <= bounds.high.x && point.y >= bounds.low.y &&
+           point.y <= bounds.high.y;
+}
+
+[[nodiscard]] bool inside_any(const std::vector<std::vector<Vec2>>& polygons,
+                              const std::vector<Bounds>& bounds, Vec2 point) {
+    for (usize index = 0; index < polygons.size(); ++index) {
+        if (within(bounds[index], point) && inside(polygons[index], point)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] f64 shoelace(const std::vector<Vec2>& polygon) {
@@ -145,10 +176,15 @@ void count(Coverage& coverage, bool expected, bool drawn) {
 
 [[nodiscard]] Coverage compare(const Frame& frame, const std::vector<std::vector<Vec2>>& polygons) {
     Coverage out;
+    std::vector<Bounds> bounds;
+    bounds.reserve(polygons.size());
+    for (const std::vector<Vec2>& polygon : polygons) {
+        bounds.push_back(bounds_of(polygon));
+    }
     for (u32 y = 0; y < kSide; ++y) {
         for (u32 x = 0; x < kSide; ++x) {
             const Vec2 centre{static_cast<f32>(x) + 0.5F, static_cast<f32>(y) + 0.5F};
-            count(out, inside_any(polygons, centre), frame.covered(x, y));
+            count(out, inside_any(polygons, bounds, centre), frame.covered(x, y));
         }
     }
     return out;
