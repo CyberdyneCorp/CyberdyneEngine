@@ -455,6 +455,100 @@ mod tests {
         assert_eq!(value_text(&Value::Bool(true)), "true");
     }
 
+    /// Frames of one `field_row`, with the pointer events a drag produces.
+    struct Frames {
+        ctx: egui::Context,
+        inputs: Inputs,
+        row: egui::Rect,
+    }
+
+    impl Frames {
+        fn new() -> Self {
+            Self {
+                ctx: egui::Context::default(),
+                inputs: Inputs::default(),
+                row: egui::Rect::NOTHING,
+            }
+        }
+
+        fn run(&mut self, events: Vec<egui::Event>, committed: &Value) -> Option<String> {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(600.0, 200.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut commit = None;
+            let Self { ctx, inputs, row } = self;
+            let mut output = ctx.run_ui(raw, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    commit = field_row(
+                        ui,
+                        inputs,
+                        JointKind::Hinge,
+                        JointField::LimitMax,
+                        committed,
+                    );
+                    *row = ui.min_rect();
+                });
+            });
+            output.textures_delta.clear();
+            commit
+        }
+
+        fn pointer(
+            &mut self,
+            at: egui::Pos2,
+            pressed: Option<bool>,
+            committed: &Value,
+        ) -> Option<String> {
+            let mut events = vec![egui::Event::PointerMoved(at)];
+            if let Some(pressed) = pressed {
+                events.push(egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            self.run(events, committed)
+        }
+    }
+
+    #[test]
+    fn a_dragged_field_is_committed_once_when_the_drag_is_released() {
+        let committed = Value::Float(0.0);
+        let mut frames = Frames::new();
+        assert_eq!(frames.run(Vec::new(), &committed), None);
+        // The drag value is the last widget in the row, at its right end.
+        let grab = egui::pos2(frames.row.max.x - 6.0, frames.row.center().y);
+        let mut commits = Vec::new();
+        commits.extend(frames.pointer(grab, Some(true), &committed));
+        for step in 1..=5 {
+            let to = grab + egui::vec2(12.0 * f32::from(u8::try_from(step).unwrap()), 0.0);
+            commits.extend(frames.pointer(to, None, &committed));
+        }
+        assert!(
+            commits.is_empty(),
+            "nothing is committed mid-drag: {commits:?}"
+        );
+        assert!(
+            frames.inputs.physics_pending.is_some(),
+            "the drag is held as pending while it lasts"
+        );
+        let release = grab + egui::vec2(60.0, 0.0);
+        commits.extend(frames.pointer(release, Some(false), &committed));
+        commits.extend(frames.run(Vec::new(), &committed));
+        let [text] = commits.as_slice() else {
+            panic!("one release is one commit: {commits:?}");
+        };
+        let value: f32 = text.parse().expect("a number");
+        assert!(value > 0.0, "the drag moved the value: {value}");
+        assert!(frames.inputs.physics_pending.is_none());
+    }
+
     #[test]
     fn every_field_a_kind_uses_has_a_label_a_person_can_read() {
         for kind in JointKind::ALL {

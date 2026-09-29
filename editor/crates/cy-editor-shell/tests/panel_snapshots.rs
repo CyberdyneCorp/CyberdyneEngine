@@ -441,3 +441,86 @@ fn graph_panel_snapshots() {
         .expect("a node");
     snapshot(&mut desk, "editor-vfx-graph", "editor-vfx-graph-canvas.png");
 }
+
+/// A door hinged to a frame, both named, with the collider and joint layers asked for: what the
+/// physics panel shows when a person selects the door.
+fn physics_desk() -> Desk {
+    use cy_editor_core::value::Value;
+
+    let mut desk = Desk::new();
+    desk.editor
+        .open_document("worlds/door.cyworld")
+        .expect("a world opens");
+    let invoke = |desk: &mut Desk, command: &str, arguments: Arguments| {
+        desk.registry
+            .invoke(command, &desk.scope, &mut desk.editor, &arguments)
+            .unwrap_or_else(|problem| panic!("{command}: {problem}"))
+    };
+    let mut nodes = Vec::new();
+    for name in ["Door", "Frame"] {
+        let created = invoke(&mut desk, "scene.create-entity", Arguments::new());
+        let node = created.values["entity"]
+            .as_text()
+            .expect("an id")
+            .to_owned();
+        invoke(
+            &mut desk,
+            "scene.rename-entity",
+            Arguments::new()
+                .with("entity", Value::Text(node.clone()))
+                .with("name", Value::Text(name.into())),
+        );
+        invoke(
+            &mut desk,
+            "scene.add-body",
+            Arguments::new().with("entity", Value::Text(node.clone())),
+        );
+        nodes.push(node);
+    }
+    invoke(
+        &mut desk,
+        "physics.joint.add",
+        Arguments::new()
+            .with("entity", Value::Text(nodes[0].clone()))
+            .with("kind", Value::Text("hinge".into()))
+            .with("target", Value::Text(nodes[1].clone()))
+            .with("anchor", Value::Vec3([-0.5, 0.0, 0.0]))
+            .with("axis", Value::Vec3([0.0, 1.0, 0.0])),
+    );
+    for (field, value) in [
+        ("limit_min", "-1.2"),
+        ("limit_max", "1.2"),
+        ("motor_max_force", "40"),
+    ] {
+        invoke(
+            &mut desk,
+            "physics.joint.set",
+            Arguments::new()
+                .with("entity", Value::Text(nodes[0].clone()))
+                .with("field", Value::Text(field.into()))
+                .with("value", Value::Text(value.into())),
+        );
+    }
+    invoke(
+        &mut desk,
+        "edit.select",
+        Arguments::new().with("entity", Value::Text(nodes[0].clone())),
+    );
+    for layer in ["colliders", "constraints"] {
+        invoke(
+            &mut desk,
+            &format!("viewport.physics.{layer}"),
+            Arguments::new().with("state", Value::Text("on".into())),
+        );
+    }
+    desk
+}
+
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn physics_panel_snapshots() {
+    let mut desk = physics_desk();
+    snapshot(&mut desk, "physics", "editor-physics-joint.png");
+    let mut empty = Desk::new();
+    snapshot(&mut empty, "physics", "editor-physics-empty.png");
+}

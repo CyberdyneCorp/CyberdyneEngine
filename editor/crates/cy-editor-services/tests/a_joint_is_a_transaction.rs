@@ -6,6 +6,13 @@
 //! of the engine's own header here rather than restated, and
 //! `src/gameplay/play/tests/test_joints.cpp` holds a golden world written with them.
 
+#![allow(
+    clippy::float_cmp,
+    reason = "a joint field asserts the EXACT value it was set to, through the command's text \
+              argument. An epsilon would hide a value the command adjusted, which is what these \
+              cases exist to catch."
+)]
+
 use cy_editor_commands::registry::{Arguments, Registry};
 use cy_editor_commands::scope::Scope;
 use cy_editor_core::Actor;
@@ -258,7 +265,7 @@ fn each_field_change_is_its_own_transaction_and_undoes_alone() {
     let spec = joints::joint_of(document(&editor), door).unwrap();
     assert_eq!(spec.limit, [-0.75, 1.25]);
     assert_eq!(spec.anchor, [0.0, 1.0, 0.0]);
-    assert_eq!(spec.motor[1], 40.0);
+    assert_eq!(spec.motor, [0.0, 40.0]);
     assert!(spec.collide_connected);
 
     invoke(&mut editor, &registry, "edit.undo", &Arguments::new());
@@ -267,7 +274,7 @@ fn each_field_change_is_its_own_transaction_and_undoes_alone() {
         !spec.collide_connected,
         "undo took back exactly the last field"
     );
-    assert_eq!(spec.motor[1], 40.0);
+    assert_eq!(spec.motor, [0.0, 40.0]);
 
     // Joined to the world by an empty target, and back to the frame.
     invoke(
