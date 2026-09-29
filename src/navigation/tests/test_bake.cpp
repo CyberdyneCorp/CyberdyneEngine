@@ -13,6 +13,8 @@
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <utility>
+#include <vector>
 
 #include "nav_fixture.h"
 
@@ -269,6 +271,9 @@ CY_TEST_CASE("an area volume edit rebakes only its tile and the others keep dige
         return;
     }
     CY_REQUIRE_EQ(report->tiles.size(), usize{1});
+    if (report->tiles.size() != 1) {
+        return;
+    }
     CY_CHECK(report->tiles[0].coord == coords[0]);
 
     const TileState rebuilt = state_of(mesh, coords[0]);
@@ -309,6 +314,9 @@ CY_TEST_CASE("area volumes assign their area to triangles by centroid, highest n
     Array<AreaType> areas(allocator());
     CY_REQUIRE(assign_triangle_areas(source, areas).has_value());
     CY_REQUIRE_EQ(areas.size(), usize{4});
+    if (areas.size() != 4) {
+        return;
+    }
     CY_CHECK_EQ(areas[0], AreaType{3});
     CY_CHECK_EQ(areas[1], AreaType{3});  // both contain it; node 7 beats node 2
     CY_CHECK_EQ(areas[2], AreaType{4});
@@ -519,8 +527,139 @@ CY_TEST_CASE("the bake identity names the fingerprint and the ordered tile diges
     const u64 fingerprint = source_fingerprint(bake, source_of(geometry), 1);
     const Expected<u64, Error> from_mesh = mesh_bake_identity(fingerprint, mesh);
     CY_REQUIRE(from_mesh.has_value());
+    if (!from_mesh.has_value()) {
+        return;
+    }
     CY_CHECK_EQ(*from_mesh, bake_identity(fingerprint, digests.span()));
     CY_CHECK_NE(bake_identity(fingerprint + 1, digests.span()), *from_mesh);
+    CY_REQUIRE_EQ(digests.size(), usize{4});
+    if (digests.size() != 4) {
+        return;
+    }
     const u64 swapped[4] = {digests[1], digests[0], digests[2], digests[3]};
     CY_CHECK_NE(bake_identity(fingerprint, Span<const u64>(swapped, 4)), *from_mesh);
+}
+
+CY_TEST_CASE("a two-tile Recast bake connects its tiles across the seam") {
+    if (!recast_available()) {
+        CY_TEST_MESSAGE("SKIP: this build has no Recast (CY_NAVIGATION is off)");
+        return;
+    }
+    const NavBakeSettings bake = settings(NavBuildBackend::Recast);
+    testing::SourceGeometry geometry(allocator());
+    geometry.ground(0.0F, 0.0F, 16, 4, 1.0F);  // a 4 m corridor along x, over tiles (0,0), (1,0)
+    NavMesh mesh = mesh_for(bake);
+    CY_REQUIRE(bake_tiles(allocator(), bake, source_of(geometry), box(0.0F, 0.0F, 16.0F, 4.0F),
+                          mesh, nullptr)
+                   .has_value());
+    CY_REQUIRE_EQ(mesh.tile_count(), 2U);
+
+    // The border is voxelised and discarded: every polygon stays inside its own tile, and the two
+    // tiles meet on the seam at x = 8.
+    for (u32 slot = 0; slot < mesh.tile_capacity(); ++slot) {
+        const TileCoord coord = mesh.tile_coord(slot);
+        if (mesh.tile_slot(coord) != slot) {
+            continue;
+        }
+        const f32 low = static_cast<f32>(coord.x) * kTile;
+        for (u32 index = 0; index < mesh.tile_poly_count(slot); ++index) {
+            Vec3 corners[kMaxPolyVertices] = {};
+            const u32 count =
+                mesh.poly_vertices(mesh.tile_poly(slot, index), corners, kMaxPolyVertices);
+            for (u32 corner = 0; corner < count; ++corner) {
+                CY_CHECK_GE(corners[corner].x, low - 0.01F);
+                CY_CHECK_LE(corners[corner].x, low + kTile + 0.01F);
+            }
+        }
+    }
+
+    PathFilter filter;
+    filter.node_budget = 8192;
+    PathCorridor corridor(allocator());
+    const PathResult path = find_path(mesh, Vec3{2.0F, 0.0F, 2.0F}, Vec3{14.0F, 0.0F, 2.0F},
+                                      Vec3{0.5F, 1.0F, 0.5F}, filter, corridor);
+    CY_CHECK(path.found);
+    CY_CHECK_FALSE(path.partial);
+}
+
+namespace {
+
+/// Every resident tile's digest, by coordinate.
+[[nodiscard]] std::vector<std::pair<TileCoord, u64>> resident_digests(const NavMesh& mesh) {
+    std::vector<std::pair<TileCoord, u64>> out;
+    for (u32 slot = 0; slot < mesh.tile_capacity(); ++slot) {
+        const TileCoord coord = mesh.tile_coord(slot);
+        if (mesh.tile_slot(coord) == slot) {
+            out.emplace_back(coord, mesh_tile_digest(mesh, slot));
+        }
+    }
+    std::ranges::sort(out, [](const auto& a, const auto& b) {
+        return a.first.z != b.first.z ? a.first.z < b.first.z : a.first.x < b.first.x;
+    });
+    return out;
+}
+
+/// The mesh a full bake of `source`'s surface region produces.
+[[nodiscard]] std::vector<std::pair<TileCoord, u64>> fresh_bake(const NavBakeSettings& bake,
+                                                                const NavBakeSource& source) {
+    NavMesh fresh = mesh_for(bake);
+    CY_REQUIRE(
+        bake_tiles(allocator(), bake, source, surface_region(source.surfaces), fresh, nullptr)
+            .has_value());
+    return resident_digests(fresh);
+}
+
+}  // namespace
+
+CY_TEST_CASE("an incremental surface rebake after a surface shrinks equals a fresh bake") {
+    const NavBakeSettings bake = settings(NavBuildBackend::Engine);
+    const testing::SourceGeometry geometry = square();
+    const NavSurfaceVolume whole{1, box(0.0F, 0.0F, 16.0F, 16.0F), false};
+    NavBakeSource source = source_of(geometry);
+    source.surfaces = Span<const NavSurfaceVolume>(&whole, 1);
+    NavMesh mesh = mesh_for(bake);
+    CY_REQUIRE(bake_tiles(allocator(), bake, source, surface_region(source.surfaces), mesh, nullptr)
+                   .has_value());
+    CY_REQUIRE_EQ(mesh.tile_count(), 4U);
+
+    // The surface shrinks to the west half. The host dirties the union of its old and new bounds.
+    const NavSurfaceVolume west{1, box(0.0F, 0.0F, 8.0F, 16.0F), false};
+    source.surfaces = Span<const NavSurfaceVolume>(&west, 1);
+    Expected<NavBakeReport, Error> report =
+        rebake_surface_tiles(allocator(), bake, source, merge(whole.bounds, west.bounds), mesh);
+    CY_REQUIRE(report.has_value());
+    if (!report.has_value()) {
+        return;
+    }
+    CY_CHECK_EQ(report->tiles_built, 2U);
+    CY_CHECK_EQ(report->tiles_empty, 2U);
+    CY_CHECK_FALSE(mesh.tile_resident(TileCoord{1, 0, 0}));
+    CY_CHECK_FALSE(mesh.tile_resident(TileCoord{1, 1, 0}));
+    CY_CHECK(resident_digests(mesh) == fresh_bake(bake, source));
+}
+
+CY_TEST_CASE("an incremental surface rebake ignores a volume that reaches past the surface") {
+    const NavBakeSettings bake = settings(NavBuildBackend::Engine);
+    testing::SourceGeometry geometry(allocator());
+    geometry.ground(0.0F, 0.0F, 24, 8, 1.0F);  // ground over three tiles along x
+    const NavSurfaceVolume surface{1, box(0.0F, 0.0F, 8.0F, 8.0F), false};
+    NavBakeSource source = source_of(geometry);
+    source.surfaces = Span<const NavSurfaceVolume>(&surface, 1);
+    NavMesh mesh = mesh_for(bake);
+    CY_REQUIRE(bake_tiles(allocator(), bake, source, surface_region(source.surfaces), mesh, nullptr)
+                   .has_value());
+    CY_REQUIRE_EQ(mesh.tile_count(), 1U);
+
+    // A mud volume from x = 4 to x = 20: its dirty box covers three tiles, the surface one.
+    const NavAreaVolume mud{2, box(4.0F, 0.0F, 20.0F, 8.0F), kMud, 3.0F};
+    source.areas = Span<const NavAreaVolume>(&mud, 1);
+    Expected<NavBakeReport, Error> report =
+        rebake_surface_tiles(allocator(), bake, source, mud.bounds, mesh);
+    CY_REQUIRE(report.has_value());
+    if (!report.has_value()) {
+        return;
+    }
+    CY_CHECK_EQ(report->tiles_built, 1U);
+    CY_CHECK_EQ(mesh.tile_count(), 1U);
+    CY_CHECK(resident_digests(mesh) == fresh_bake(bake, source));
 }

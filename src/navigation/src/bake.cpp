@@ -247,6 +247,32 @@ void accumulate(NavBuildReport& totals, const NavBuildReport& tile) noexcept {
     return ok();
 }
 
+/// Whether tile `coord` is one `tiles_overlapping(tile_size, region)` lists.
+[[nodiscard]] bool tile_in_region(f32 tile_size, const Aabb& region, TileCoord coord) noexcept {
+    if (region.is_empty() || coord.layer != 0) {
+        return false;
+    }
+    i32 first_x = 0;
+    i32 last_x = 0;
+    i32 first_z = 0;
+    i32 last_z = 0;
+    return tile_span(region.min.x, region.max.x, tile_size, first_x, last_x).has_value() &&
+           tile_span(region.min.z, region.max.z, tile_size, first_z, last_z).has_value() &&
+           coord.x >= first_x && coord.x <= last_x && coord.z >= first_z && coord.z <= last_z;
+}
+
+/// Removes the resident tile at `coord`, listing it in `report` as an empty tile with no digest.
+[[nodiscard]] Status drop_tile(NavMesh& mesh, TileCoord coord, NavBakeReport& report) noexcept {
+    if (!mesh.tile_resident(coord)) {
+        return ok();
+    }
+    if (Status removed = mesh.remove_tile(coord); !removed) {
+        return removed;
+    }
+    ++report.tiles_empty;
+    return report.tiles.push_back(NavBakeTile{coord, 0, true, 0});
+}
+
 }  // namespace
 
 Status validate_bake_settings(const NavBakeSettings& settings) noexcept {
@@ -397,6 +423,40 @@ Expected<NavBakeReport, Error> rebake_tiles(Allocator& allocator, const NavBakeS
                                             const NavBakeSource& source, const Aabb& dirty,
                                             NavMesh& mesh, NavBakeObserver* observer) noexcept {
     return bake_region(allocator, settings, source, dirty, mesh, observer, false);
+}
+
+Expected<NavBakeReport, Error> rebake_surface_tiles(Allocator& allocator,
+                                                    const NavBakeSettings& settings,
+                                                    const NavBakeSource& source, const Aabb& dirty,
+                                                    NavMesh& mesh) noexcept {
+    BakeInputs inputs(allocator);
+    if (Status prepared = prepare(settings, source, mesh, inputs); !prepared) {
+        return make_unexpected(prepared.error());
+    }
+    Array<TileCoord> coords(allocator);
+    if (Status listed_tiles = tiles_overlapping(settings.tile_size, dirty, coords); !listed_tiles) {
+        return make_unexpected(listed_tiles.error());
+    }
+    const Aabb region = surface_region(source.surfaces);
+    NavBakeReport report(allocator);
+    report.totals.backend = settings.backend;
+    for (const TileCoord& coord : coords.span()) {
+        if (!tile_in_region(settings.tile_size, region, coord)) {
+            if (Status dropped = drop_tile(mesh, coord, report); !dropped) {
+                return make_unexpected(dropped.error());
+            }
+            continue;
+        }
+        NavBakeTile baked;
+        if (Status done = bake_one(allocator, settings, inputs, coord, mesh, report, baked);
+            !done) {
+            return make_unexpected(done.error());
+        }
+        if (Status pushed = report.tiles.push_back(baked); !pushed) {
+            return make_unexpected(pushed.error());
+        }
+    }
+    return report;
 }
 
 Expected<NavObstacleChange, Error> place_obstacle(NavMesh& mesh,

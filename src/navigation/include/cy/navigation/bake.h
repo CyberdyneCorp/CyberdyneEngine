@@ -166,6 +166,22 @@ public:
                                                           const Aabb& dirty, NavMesh& mesh,
                                                           NavBakeObserver* observer) noexcept;
 
+/// The incremental counterpart of `bake_tiles` over `surface_region(source.surfaces)`, which is
+/// what an editor bake runs. Of the tiles overlapping `dirty`, it rebuilds those the surface region
+/// covers and removes the resident ones it no longer covers (a shrunk or moved surface); every
+/// other tile keeps its digest and slot salt. A removed tile is listed as empty, with a zero
+/// digest.
+///
+/// The result equals a full bake of the same sources when the mesh equalled a full bake of the
+/// previous sources, every change between the two lies inside `dirty`, and the geometry's Y range
+/// (which every tile's build box spans, see `bake_tile_bounds`) did not change. A caller that
+/// cannot vouch for all three runs `bake_tiles` over the surface region instead.
+[[nodiscard]] Expected<NavBakeReport, Error> rebake_surface_tiles(Allocator& allocator,
+                                                                  const NavBakeSettings& settings,
+                                                                  const NavBakeSource& source,
+                                                                  const Aabb& dirty,
+                                                                  NavMesh& mesh) noexcept;
+
 /// An obstacle edit and the resident tiles it touched: those overlapping the old footprint, the
 /// new one, or both. Nothing is voxelised, so every tile keeps its digest and salt.
 struct NavObstacleChange {
