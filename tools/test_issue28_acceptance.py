@@ -132,6 +132,17 @@ class AcceptanceLedgerTests(unittest.TestCase):
     def test_the_shipped_docs_are_complete(self) -> None:
         self.assertEqual(ledger.missing_docs(ledger.ROOT), [])
 
+    def test_ci_runs_the_native_probes_even_after_a_failed_suite(self) -> None:
+        # A plain `if:` implies success(), so any failing test in `just test-all` skipped the
+        # ledger step and CI never ran the native probes.
+        workflow = (ledger.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        step = workflow.split("- name: Issue 28 acceptance ledger, native probes", 1)
+        self.assertEqual(len(step), 2, "the ledger step is missing from ci.yml")
+        condition = step[1].splitlines()[1].strip()
+        self.assertTrue(condition.startswith("if:"), condition)
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("run: just quality-issue28-native", step[1].splitlines()[2])
+
 
 if __name__ == "__main__":
     unittest.main()

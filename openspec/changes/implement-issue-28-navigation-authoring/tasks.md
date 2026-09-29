@@ -62,6 +62,7 @@
 - [x] 7.12 Clip overlay polygons at the near plane instead of dropping them. Regression: `nav overlay clips a polygon at the near plane with the camera inside the tile`.
 - [x] 7.13 Clear the awaited pick when the shell's `navigation.point.pick` invoke is refused, and rescale a click only with the frame it was made on. Regressions: `a_refused_pick_is_not_settled_by_a_later_unrelated_answer` and `a_click_is_rescaled_only_with_the_frame_it_was_made_on`.
 - [x] 7.14 State in the guide that cost painting is by volumes only.
+- [x] 7.15 Run the ledger's CI step even when `just test-all` failed (`!cancelled()`); PR #64's first run skipped it behind main-owned failures. Regression: `test_ci_runs_the_native_probes_even_after_a_failed_suite`.
 
 ## 8. Deferred
 

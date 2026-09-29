@@ -115,7 +115,7 @@ The runner builds the probed test binaries in `build/dev` before it runs them, s
 reports on a stale binary (`--no-build` skips that). `just quality-issue28-ledger` runs the runner's
 own unit tests and the documentation check, and needs no build. CI enforces the rest: the `test`
 job (linux-x86_64) runs `just quality-issue28-native` (the runner with `--native-only`) after
-`just test-all`,
+`just test-all`, whether or not that suite passed,
 and the `editor` job's `cargo test` runs the Cargo probes' tests.
 
 | Criterion | Probes |

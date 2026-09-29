@@ -329,10 +329,18 @@ in the `quality` job, which needs no build:
 All four were restored from a saved copy, and the 11 tests pass again.
 
 **Where CI enforces the ledger.** The `quality` job runs the self-tests and the docs check. The
-`test` job, on linux-x86_64, runs `just quality-issue28-native` after `just test-all`: the runner
+`test` job, on linux-x86_64, runs `just quality-issue28-native` after `just test-all`, even when
+`just test-all` failed (`!cancelled()`), so main-owned failures cannot skip it: the runner
 rebuilds the probed binaries in `build/dev` and runs every native probe with `--no-skip` against
 its floor. The Cargo probes' tests run in the `editor` job's `cargo test`, and strict OpenSpec
 validation in the `spec validation` job.
+
+The step's condition is `!cancelled() && matrix.label == 'linux-x86_64'`. On PR #64's first CI run
+it was a plain `if:`, which implies `success()`, so the pre-existing main-owned failures in
+`just test-all` skipped it. `test_ci_runs_the_native_probes_even_after_a_failed_suite` pins the
+condition; mutation G5 (restoring the plain `if: matrix.label == 'linux-x86_64'`) turned it red
+(`'!cancelled()' not found in "if: matrix.label == 'linux-x86_64'"`), and the restored workflow
+passes the 12 tests.
 
 ## Cognitive complexity (task 6.3)
 
