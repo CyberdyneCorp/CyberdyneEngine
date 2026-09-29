@@ -875,9 +875,9 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
 #if defined(CY_EDITOR_HAS_VFX)
-    CY_CHECK_EQ(read_u32(event.payload + 4), 17U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 18U);
 #else
-    CY_CHECK_EQ(read_u32(event.payload + 4), 9U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 10U);
 #endif
 
     const CyServiceRequest too_new{sizeof(CyServiceRequest), 2, 2, "capabilities.get", nullptr, 0};

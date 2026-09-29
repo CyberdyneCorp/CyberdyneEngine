@@ -66,6 +66,7 @@ cy_add_module(
         src/deform.cpp
         src/material.cpp
         src/meshing.cpp
+        src/region.cpp
         src/stack.cpp
         src/surface.cpp
         src/system.cpp

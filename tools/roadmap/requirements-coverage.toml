@@ -34,6 +34,25 @@
 
 schema = 1
 
+# --- terrain --------------------------------------------------------------------------------------
+#
+# Mapped for #29's terrain tools, which added brush modifiers to the stack and hole brushes to the
+# editor. The other thirteen requirements of this row have not been read against the tree yet.
+
+[[coverage]]
+row = "terrain"
+requirement = "Terrain modifier stack"
+evidence = "test:integration.terrain_authoring"
+case = "inserting erosion beneath a sculpt preserves the sculpt and reapplies it above"
+note = "Sculpts are stamps kept by the stack, so a pass inserted beneath one reapplies it. The same suite pins the scoped road re-evaluation, determinism and the cook that flattens the stack. The editor's brush modifiers change only their footprint, and removing one restores the region byte for byte."
+
+[[coverage]]
+row = "terrain"
+requirement = "Terrain holes and decoration"
+evidence = "test:integration.terrain_authoring"
+case = "a hole brush removes rendering and collision exactly where it cuts"
+note = "A hole brush's cut quads are exactly the ones meshing omits, and collision marks hole samples over them. unit.terrain's 'a hole is not a surface, and every consumer agrees' covers queries. integration.terrain_geometry derives navigation from the holed collision, and terrain_authoring's road case covers decoration and foliage suppression."
+
 # --- navigation -----------------------------------------------------------------------------------
 #
 # Swept for M11.e task 6.1a. The four exemptions below are implementation gaps, not missing test
@@ -464,6 +483,15 @@ row = "editor-architecture"
 requirement = "Plugin architecture"
 evidence = "criterion:m11b:plugins"
 note = "the twenty-one extension points, the eight lifecycle phases, resolution and the lockfile, and an unload refused by name and count while instances are outstanding."
+
+# `openspec/changes/add-editor-terrain-tools` (#29, Terrain) adds one requirement to this row and two
+# to `terrain`. Map them on archive:
+#   editor-architecture "Terrain brushes are engine-evaluated, undoable and agent-reachable"
+#     rust:cy-editor-mcp::terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp
+#   terrain "Terrain brush modifiers"
+#     test:integration.terrain_authoring, case "raise and lower change only the stroke's footprint, in their own direction"
+#   terrain "Edited terrain marks navigation stale"
+#     test:integration.editor_backend_terrain, case "terrain.evaluate: every edited region is flagged stale for navigation"
 
 # `openspec/changes/add-editor-specialised-scaffold` (#29 Wave 0) adds two requirements to this row.
 # They cannot be mapped until that change is archived, because an entry naming a requirement the

@@ -72,6 +72,7 @@
 #    include <cy/backends/physics/jolt/server.h>
 #endif
 #include <cy/editor/material_service.h>
+#include <cy/editor/terrain_service.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
 #include <cy/servers/render/picking.h>
@@ -1175,6 +1176,15 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
             }
         }
 #endif
+        const editor::TerrainPreview* terrain =
+            editor::MaterialService::terrain_preview(host.service_session);
+        if (Status drawn =
+                host.authored_frame->set_terrain(terrain != nullptr ? terrain->snapshot() : nullptr,
+                                                 terrain != nullptr ? terrain->generation() : 0);
+            !drawn) {
+            report("editor terrain", drawn.error());
+            return false;
+        }
         if (Status frame = host.authored_frame->render(
                 host.view_world->world(), host.camera, host.game_camera == ~u64{0},
                 host.editor_service->vfx_preview_world(host.service_session), time_seconds

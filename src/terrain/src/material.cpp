@@ -3,6 +3,7 @@
 
 #include <cy/terrain/material.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -203,6 +204,35 @@ void write_texel(const LayerBlend* merged, u32 keep, f32 kept, MaterialTexel& ou
 }
 
 }  // namespace
+
+void paint_texel(MaterialTexel& texel, u8 layer, f32 amount) noexcept {
+    const f32 painted = std::clamp(amount, 0.0F, 1.0F);
+    if (painted <= 0.0F) {
+        return;
+    }
+    LayerBlend blends[kMaxTexelLayers + 1];
+    u32 count = 0;
+    for (u32 slot = 0; slot < kMaxTexelLayers; ++slot) {
+        if (texel.weight[slot] != 0) {
+            blends[count] =
+                LayerBlend{texel.layer[slot],
+                           (static_cast<f32>(texel.weight[slot]) / 255.0F) * (1.0F - painted)};
+            ++count;
+        }
+    }
+    blends[count] = LayerBlend{layer, painted};
+    ++count;
+    LayerBlend merged[kMaxTexelLayers + 1];
+    const u32 merged_count =
+        merge_blends(Span<const LayerBlend>(blends, count), merged, kMaxTexelLayers + 1);
+    sort_blends(merged, merged_count);
+    const u32 keep = (merged_count < kMaxTexelLayers) ? merged_count : kMaxTexelLayers;
+    f32 kept = 0.0F;
+    for (u32 index = 0; index < keep; ++index) {
+        kept += merged[index].weight;
+    }
+    write_texel(merged, keep, kept, texel);
+}
 
 Status LayerCompositor::compose(const TileCoord& tile, u32 texel_x, u32 texel_z,
                                 Span<const LayerBlend> blends, MaterialTexel& out) noexcept {

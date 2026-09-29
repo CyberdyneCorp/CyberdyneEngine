@@ -3339,3 +3339,329 @@ fn physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel() {
             .contains(cy_editor_viewport::PhysicsLayer::Colliders)
     );
 }
+
+/// The frames the editor writes to the fake runtime, read on a thread of their own so a test can
+/// give up waiting instead of blocking on the pipe forever.
+fn runtime_frames(mut runtime_reader: std::io::PipeReader) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (sender, frames) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        while let Ok(Some(frame)) = read_frame(&mut runtime_reader) {
+            if sender.send(frame).is_err() {
+                break;
+            }
+        }
+    });
+    frames
+}
+
+/// The next `terrain.evaluate` the editor sent the fake runtime, skipping catalogue discovery.
+/// Fails, rather than hangs, when none arrives within five seconds.
+fn next_terrain_request(
+    frames: &std::sync::mpsc::Receiver<Vec<u8>>,
+) -> (cy_editor_protocol::RequestId, Vec<u8>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let frame = frames
+            .recv_timeout(left)
+            .expect("the editor sends terrain.evaluate within five seconds");
+        if let Message::ServiceRequest {
+            request,
+            operation,
+            payload,
+            ..
+        } = Message::decode(&frame).unwrap()
+            && operation == "terrain.evaluate"
+        {
+            return (request, payload);
+        }
+    }
+}
+
+/// An engine reply over a 3 x 3 lattice: `height` everywhere, holes where listed, one stale
+/// region per entry.
+fn terrain_reply(generation: u64, height: u16, holes: &[usize], stale: usize) -> Vec<u8> {
+    let mut reply = Writer::new();
+    reply.u32(1);
+    reply.u64(generation);
+    reply.u32(3);
+    reply.f32(128.0);
+    reply.f32(-512.0);
+    reply.f32(1536.0);
+    reply.u32(8 - 2 * u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(holes.len()).unwrap());
+    reply.u32(u32::try_from(stale).unwrap());
+    for _ in 0..stale {
+        for value in [40.0_f32, 30.0, 90.0, 60.0] {
+            reply.f32(value);
+        }
+    }
+    for _ in 0..9 {
+        reply.u8((height & 0xFF) as u8);
+        reply.u8((height >> 8) as u8);
+    }
+    for _ in 0..4 {
+        for byte in [0_u8, 0, 0, 0, 255, 0, 0, 0] {
+            reply.u8(byte);
+        }
+    }
+    for quad in 0..4 {
+        reply.u8(u8::from(holes.contains(&quad)));
+    }
+    reply.finish()
+}
+
+fn answer_terrain(
+    editor: &mut Editor,
+    runtime_writer: &mut std::io::PipeWriter,
+    request: cy_editor_protocol::RequestId,
+    payload: Vec<u8>,
+) {
+    let generation = cy_editor_core::codec::Reader::new(&payload[4..])
+        .u64()
+        .unwrap();
+    write_frame(
+        runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while editor
+        .terrain
+        .evaluation()
+        .map(|evaluation| evaluation.generation)
+        != Some(generation)
+        && std::time::Instant::now() < deadline
+    {
+        editor.pump();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(
+        editor
+            .terrain
+            .evaluation()
+            .map(|evaluation| evaluation.generation),
+        Some(generation),
+        "the engine's terrain reply must arrive"
+    );
+}
+
+/// The brush tools over the wire: an agent sculpts and cuts a hole with `terrain.brush.apply`, the
+/// editor sends each resulting stack to the engine's `terrain.evaluate`, `terrain.status` reports
+/// what the engine answered, and `edit.undo` sends the engine the pre-stroke stack byte for byte.
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one conversation: stroke, status, hole, status, undo, status, undo, in order"
+)]
+fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
+    use cy_editor_core::codec::Reader;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/terrain.cyworld").unwrap();
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let frames = runtime_frames(runtime_reader);
+
+    let created = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terrain.create","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&created, 1).get("isError"), &Json::Bool(false));
+    let terrain = editor
+        .edited_terrain()
+        .expect("terrain.create selects its root");
+    let (request, before_stroke) = next_terrain_request(&frames);
+    let mut header = Reader::new(&before_stroke);
+    assert_eq!(header.u32().unwrap(), 1, "format");
+    assert_eq!(header.u128().unwrap(), terrain.as_u128());
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(1, 100, &[], 0),
+    );
+
+    let raise = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"raise","points":"0.4 0.3; 0.5 0.35 0.8","radius":8,"strength":0.8,"falloff":0.5}}}}}}"#
+    );
+    let raised = converse(&[INITIALIZE, &raise], &mut editor);
+    assert_eq!(result(&raised, 1).get("isError"), &Json::Bool(false));
+    let (request, stroked) = next_terrain_request(&frames);
+    assert_ne!(stroked, before_stroke);
+    let mut body = Reader::new(&stroked[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 1, "one modifier");
+    let _identity = body.u128().unwrap();
+    assert_eq!(body.u8().unwrap(), 0, "raise");
+    assert_eq!(body.u8().unwrap(), 1, "enabled");
+    assert_eq!(body.u8().unwrap(), 0, "a sculpt names no layer");
+    assert!((body.f32().unwrap() - 8.0).abs() < f32::EPSILON);
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(2, 140, &[], 1),
+    );
+
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let reported = result(&status, 1).get("structuredContent");
+    assert_eq!(reported.get("evaluated").as_text(), Some("true"));
+    assert_eq!(reported.get("generation").as_text(), Some("2"));
+    assert_eq!(reported.get("navigation_stale").as_text(), Some("true"));
+    assert_eq!(
+        reported.get("navigation_stale_regions").as_text(),
+        Some("40 30 90 60")
+    );
+    let raised_digest = reported
+        .get("heights_digest")
+        .as_text()
+        .unwrap()
+        .to_string();
+
+    let hole = format!(
+        r#"{{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"hole","points":"0.5 0.5"}}}}}}"#
+    );
+    let holed = converse(&[INITIALIZE, &hole], &mut editor);
+    assert_eq!(result(&holed, 1).get("isError"), &Json::Bool(false));
+    let (request, with_hole) = next_terrain_request(&frames);
+    let mut body = Reader::new(&with_hole[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 2, "raise, then the hole above it");
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(3, 140, &[1], 1),
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let reported = result(&status, 1).get("structuredContent");
+    assert_eq!(reported.get("collision_holes").as_text(), Some("1"));
+    assert_eq!(reported.get("rendered_hole_quads").as_text(), Some("1"));
+
+    // Undo both strokes over MCP: each sends the engine the stack as it was, and the last is the
+    // pre-stroke request byte for byte.
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let (request, after_one_undo) = next_terrain_request(&frames);
+    assert_eq!(
+        after_one_undo, stroked,
+        "undoing the hole sends the raised stack again"
+    );
+    answer_terrain(
+        &mut editor,
+        &mut runtime_writer,
+        request,
+        terrain_reply(4, 140, &[], 1),
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"terrain.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(
+        result(&status, 1)
+            .get("structuredContent")
+            .get("heights_digest")
+            .as_text(),
+        Some(raised_digest.as_str())
+    );
+    let undone = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&undone, 1).get("isError"), &Json::Bool(false));
+    let (_, after_both) = next_terrain_request(&frames);
+    assert_eq!(after_both, before_stroke);
+}
+
+/// Paint names its layer by order, and a sculpt or hole stroke naming one is refused.
+#[test]
+fn terrain_paint_over_mcp_requires_a_layer_and_a_hole_refuses_one() {
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/terrain.cyworld").unwrap();
+    converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terrain.create","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let terrain = editor.edited_terrain().unwrap();
+    let add = format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"terrain.layer.add","arguments":{{"terrain":"{terrain}","name":"Rock","material":"materials/rock.cymat"}}}}}}"#
+    );
+    let added = converse(&[INITIALIZE, &add], &mut editor);
+    let layer = result(&added, 1)
+        .get("structuredContent")
+        .get("layer")
+        .as_text()
+        .unwrap()
+        .to_string();
+    let call = |id: u32, tool: &str, layer: &str| {
+        format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"terrain.brush.apply","arguments":{{"terrain":"{terrain}","tool":"{tool}","layer":"{layer}","points":"0.2 0.2"}}}}}}"#
+        )
+    };
+    let replies = converse(
+        &[
+            INITIALIZE,
+            &call(4, "paint", ""),
+            &call(5, "hole", &layer),
+            &call(6, "paint", &layer),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&replies, 1).get("isError"), &Json::Bool(true));
+    assert_eq!(result(&replies, 2).get("isError"), &Json::Bool(true));
+    assert_eq!(result(&replies, 3).get("isError"), &Json::Bool(false));
+    let document = editor
+        .documents
+        .get(editor.workspace.active().unwrap())
+        .unwrap();
+    let request = cy_editor_services::terrain_engine::evaluation_request(document, terrain)
+        .unwrap()
+        .unwrap();
+    let mut body = cy_editor_core::codec::Reader::new(&request[4 + 16 + 12..]);
+    assert_eq!(body.u32().unwrap(), 1);
+    let _identity = body.u128().unwrap();
+    assert_eq!(body.u8().unwrap(), 4, "paint");
+    assert_eq!(body.u8().unwrap(), 1, "enabled");
+    assert_eq!(
+        body.u8().unwrap(),
+        1,
+        "the first layer is layer 1; 0 is the base"
+    );
+}

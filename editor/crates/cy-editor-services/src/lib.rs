@@ -56,6 +56,7 @@ pub mod source_control;
 pub mod source_language;
 pub mod source_workspace;
 pub mod terrain;
+pub mod terrain_engine;
 pub mod vfx_capabilities;
 pub mod vfx_commands;
 pub mod vfx_compile;

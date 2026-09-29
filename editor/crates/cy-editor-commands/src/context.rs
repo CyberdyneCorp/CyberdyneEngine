@@ -96,6 +96,14 @@ pub trait CommandContext {
         None
     }
 
+    /// What the engine last evaluated for the terrain being edited: digests of its heights and
+    /// weights, what rendering and collision left open, and where navigation is stale. The terrain
+    /// module is the engine's, so a context with no runtime answers that nothing was evaluated.
+    fn terrain_status(&self) -> Outcome {
+        Outcome::new("No terrain has been evaluated by the engine")
+            .with("evaluated", Value::Bool(false))
+    }
+
     /// The project around the documents: its source tree, its build, and the runtime that runs it.
     ///
     /// **Why this is separate from a document.** A `.swift` file is not a node graph, so nothing in

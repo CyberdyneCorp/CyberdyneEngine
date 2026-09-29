@@ -299,6 +299,10 @@ pub struct Inputs {
         cy_editor_services::joints::JointField,
         cy_editor_core::value::Value,
     )>,
+    /// The engine's refusal of the current terrain stack, mirrored for the diagnostics area.
+    pub terrain_engine_problem: Option<String>,
+    /// The engine's surface image, keyed by terrain and evaluation generation.
+    pub terrain_surface: Option<((cy_editor_core::ids::NodeId, u64), egui::TextureHandle)>,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -409,6 +413,8 @@ impl Default for Inputs {
             physics_new_kind: "hinge".into(),
             physics_new_target: None,
             physics_pending: None,
+            terrain_engine_problem: None,
+            terrain_surface: None,
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {

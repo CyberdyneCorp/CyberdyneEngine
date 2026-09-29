@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT
 //! The visible terrain editor built on the one shared painting surface.
+//!
+//! Every stroke is one `terrain.stroke.commit` transaction; nothing here computes a height. The
+//! brush field draws what the engine's terrain module evaluated for the document's stack
+//! (`Editor::terrain`), with the holes it cut and the regions whose navigation it flagged stale.
+
+use std::fmt::Write as _;
 
 use cy_editor_commands::Arguments;
 use cy_editor_core::ids::NodeId;
@@ -8,11 +14,12 @@ use cy_editor_interface::Domain;
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::Session;
 use cy_editor_interface::specialised::painting::{PaintingSurface, Sample};
-use cy_editor_services::terrain::TerrainStack;
+use cy_editor_services::terrain::{TOOLS, TerrainStack};
+use cy_editor_services::terrain_engine::{StaleRegion, TerrainEvaluation};
 use cy_editor_visual::colour::{Semantic, Surface};
 
 use super::specialised::{SpecialisedTool, ToolDiagnostic, ToolFrame};
-use super::{Inputs, Intent, Panels, heading, nothing_here, secondary};
+use super::{Inputs, Intent, Panels, heading, nothing_here, secondary, status};
 use crate::theme;
 
 /// The terrain editor, drawn in the specialised-editor frame.
@@ -27,10 +34,11 @@ impl SpecialisedTool for TerrainTool {
         "terrain.stroke.commit",
         "terrain.modifier.set-enabled",
         "terrain.modifier.move",
+        "terrain.status",
     ];
 
-    /// The selected terrain root and its authored stack.
-    type Target = (NodeId, TerrainStack);
+    /// The selected terrain root, its authored stack, and what the engine made of it.
+    type Target = (NodeId, TerrainStack, EngineView);
 
     fn target(panels: &mut Panels<'_>, ui: &mut egui::Ui) -> Option<Self::Target> {
         let Some(document_id) = panels.editor.workspace.active() else {
@@ -65,13 +73,15 @@ impl SpecialisedTool for TerrainTool {
             return None;
         };
         keep_selected_layer(panels.inputs, &stack);
-        Some((terrain, stack))
+        let view = engine_view(panels, ui.ctx(), terrain);
+        Some((terrain, stack, view))
     }
 
     fn diagnostics(inputs: &Inputs) -> Vec<ToolDiagnostic> {
         inputs
             .terrain_problem
             .iter()
+            .chain(inputs.terrain_engine_problem.iter())
             .map(ToolDiagnostic::error)
             .collect()
     }
@@ -79,7 +89,7 @@ impl SpecialisedTool for TerrainTool {
     fn body(
         frame: &mut ToolFrame<'_>,
         session: Session<'_>,
-        (terrain, stack): Self::Target,
+        (terrain, stack, view): Self::Target,
         ui: &mut egui::Ui,
     ) {
         let surface = session
@@ -106,7 +116,7 @@ impl SpecialisedTool for TerrainTool {
                 egui::vec2(ui.available_width(), available.y),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    paint_field(inputs, shell, ui, terrain, surface, intents);
+                    paint_field(inputs, shell, ui, terrain, surface, &view, intents);
                 },
             );
         });
@@ -137,13 +147,7 @@ fn controls(
 ) {
     ui.heading("Brush");
     ui.horizontal_wrapped(|ui| {
-        for (tool, label) in [
-            ("raise", "Raise"),
-            ("lower", "Lower"),
-            ("smooth", "Smooth"),
-            ("flatten", "Flatten"),
-            ("paint", "Paint"),
-        ] {
+        for (tool, label) in TOOLS.into_iter().zip(TOOL_LABELS) {
             ui.selectable_value(&mut inputs.terrain_tool, tool.into(), label);
         }
     });
@@ -253,6 +257,7 @@ fn paint_field(
     ui: &mut egui::Ui,
     terrain: NodeId,
     surface: &mut PaintingSurface,
+    view: &EngineView,
     intents: &mut Vec<Intent>,
 ) {
     ui.heading("Terrain surface");
@@ -260,6 +265,7 @@ fn paint_field(
         shell,
         "Drag to author one undoable non-destructive modifier. Escape cancels the gesture.",
     ));
+    status(ui, shell, view.role, &view.summary);
     let desired = egui::vec2(
         ui.available_width(),
         (ui.available_height() - 24.0).max(180.0),
@@ -270,10 +276,24 @@ fn paint_field(
     });
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, theme::surface(shell.theme, Surface::Sunken));
+    if let Some(texture) = &view.texture {
+        painter.image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
     draw_grid(
         &painter,
         rect,
         theme::role(shell.theme, Semantic::SecondaryText),
+    );
+    draw_stale(
+        &painter,
+        rect,
+        view,
+        theme::role(shell.theme, Semantic::Warning),
     );
 
     if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
@@ -304,7 +324,11 @@ fn paint_field(
                     .with("terrain", Value::Text(terrain.to_string()))
                     .with("tool", Value::Text(inputs.terrain_tool.clone()))
                     .with("stroke", Value::Bytes(stroke.encode()));
-                if let Some(layer) = inputs.terrain_layer {
+                // Only paint names a layer: `terrain.stroke.commit` refuses a layer on a sculpt or
+                // hole stroke, and the panel keeps a layer selected whenever the stack has one.
+                if inputs.terrain_tool == "paint"
+                    && let Some(layer) = inputs.terrain_layer
+                {
                     arguments = arguments.with("layer", Value::Text(layer.to_string()));
                 }
                 intents.push(Intent::Invoke("terrain.stroke.commit".into(), arguments));
@@ -331,6 +355,193 @@ fn paint_field(
     }
 }
 
+/// The panel's words for [`TOOLS`], in its order.
+const TOOL_LABELS: [&str; 6] = ["Raise", "Lower", "Smooth", "Flatten", "Paint", "Hole"];
+
+/// What the engine made of the edited terrain, ready to draw.
+pub(crate) struct EngineView {
+    /// The engine's surface as an image, when it has evaluated this terrain.
+    texture: Option<egui::TextureHandle>,
+    /// One line: what the engine last evaluated, or why nothing is shown.
+    summary: String,
+    /// How that line reads.
+    role: Semantic,
+    /// Regions whose navigation is stale, in metres, and the extent they are over.
+    stale: Vec<StaleRegion>,
+    extent: f32,
+}
+
+/// Resolve the engine's answer for `terrain`, uploading its image once per evaluation.
+fn engine_view(panels: &mut Panels<'_>, ctx: &egui::Context, terrain: NodeId) -> EngineView {
+    let engine = &panels.editor.terrain;
+    panels.inputs.terrain_engine_problem = engine.problem().map(str::to_owned);
+    let evaluation = engine
+        .evaluation()
+        .filter(|_| engine.terrain() == Some(terrain));
+    let wanted = panels
+        .editor
+        .edited_terrain_request()
+        .filter(|(edited, _)| *edited == terrain)
+        .and_then(|(_, request)| request.ok());
+    let current = engine.is_current(wanted.as_deref());
+    let connected = panels.editor.runtime.is_connected();
+    let (summary, role) = engine_summary(evaluation, connected, current);
+    let Some(evaluation) = evaluation else {
+        panels.inputs.terrain_surface = None;
+        return EngineView {
+            texture: None,
+            summary,
+            role,
+            stale: Vec::new(),
+            extent: 1.0,
+        };
+    };
+    let key = (terrain, evaluation.generation);
+    let texture = match &panels.inputs.terrain_surface {
+        Some((cached, texture)) if *cached == key => texture.clone(),
+        _ => {
+            let texture = ctx.load_texture(
+                "terrain-engine-surface",
+                surface_image(evaluation),
+                egui::TextureOptions::NEAREST,
+            );
+            panels.inputs.terrain_surface = Some((key, texture.clone()));
+            texture
+        }
+    };
+    EngineView {
+        texture: Some(texture),
+        summary,
+        role,
+        stale: evaluation.stale.clone(),
+        extent: evaluation.extent,
+    }
+}
+
+/// The status line: what the engine evaluated, whether it is still the document's stack, and why
+/// nothing is drawn when nothing is.
+pub(crate) fn engine_summary(
+    evaluation: Option<&TerrainEvaluation>,
+    connected: bool,
+    current: bool,
+) -> (String, Semantic) {
+    let Some(evaluation) = evaluation else {
+        return if connected {
+            (
+                "Waiting for the engine to evaluate the terrain.".into(),
+                Semantic::SecondaryText,
+            )
+        } else {
+            (
+                "No engine attached. Strokes are recorded; the engine evaluates them when it connects."
+                    .into(),
+                Semantic::SecondaryText,
+            )
+        };
+    };
+    let holes = evaluation.hole_count();
+    let mut summary = format!(
+        "Engine surface {}: {} triangles, {holes} holes cut from rendering and collision",
+        evaluation.generation, evaluation.rendered_triangles
+    );
+    if !current {
+        summary.push_str(" (updating)");
+    }
+    if evaluation.stale.is_empty() {
+        (summary, Semantic::Live)
+    } else {
+        let _ = write!(
+            summary,
+            ". Navigation stale in {} region{} until it is rebaked",
+            evaluation.stale.len(),
+            if evaluation.stale.len() == 1 { "" } else { "s" }
+        );
+        (summary, Semantic::Warning)
+    }
+}
+
+/// Layer tints, by layer order. Muted and distinct from the selection gold.
+const LAYER_TINTS: [[u8; 3]; 4] = [
+    [58, 157, 143],
+    [139, 127, 209],
+    [192, 105, 78],
+    [127, 163, 90],
+];
+
+/// The engine's lattice as an image, one pixel per quad, rows along x: a hillshade lit from the
+/// north-west, tinted by each texel's painted layers, and transparent where a hole is cut so the
+/// field's sunken well shows through.
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "pixel arithmetic over a lattice of at most 1025 samples, clamped to 0..=255"
+)]
+pub(crate) fn surface_image(evaluation: &TerrainEvaluation) -> egui::ColorImage {
+    let quads = (evaluation.edge - 1) as usize;
+    let spacing = evaluation.extent / quads as f32;
+    let mut pixels = Vec::with_capacity(quads * quads);
+    for z in 0..quads {
+        for x in 0..quads {
+            let at = z * quads + x;
+            if evaluation.holes[at] != 0 {
+                pixels.push(egui::Color32::TRANSPARENT);
+                continue;
+            }
+            let (x32, z32) = (x as u32, z as u32);
+            let dx = evaluation.height(x32 + 1, z32) - evaluation.height(x32, z32);
+            let dz = evaluation.height(x32, z32 + 1) - evaluation.height(x32, z32);
+            let normal = [-dx / spacing, 1.0, -dz / spacing];
+            let length = (normal[0] * normal[0] + 1.0 + normal[2] * normal[2]).sqrt();
+            let light = [-0.5_f32, 0.707, -0.5];
+            let lit = ((normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
+                / length)
+                .clamp(0.0, 1.0);
+            let grey = 70.0 + 150.0 * lit;
+            let mut colour = [grey; 3];
+            let texel = evaluation.texels[at];
+            for slot in 0..4 {
+                let (layer, weight) = (texel[slot], f32::from(texel[4 + slot]) / 255.0);
+                if layer == 0 || weight == 0.0 {
+                    continue;
+                }
+                let tint = LAYER_TINTS[usize::from(layer - 1) % LAYER_TINTS.len()];
+                for channel in 0..3 {
+                    let tinted = f32::from(tint[channel]) * (grey / 220.0) * 1.3;
+                    colour[channel] += (tinted - colour[channel]) * weight * 0.7;
+                }
+            }
+            pixels.push(egui::Color32::from_rgb(
+                colour[0].clamp(0.0, 255.0) as u8,
+                colour[1].clamp(0.0, 255.0) as u8,
+                colour[2].clamp(0.0, 255.0) as u8,
+            ));
+        }
+    }
+    egui::ColorImage::new([quads, quads], pixels)
+}
+
+/// A thin outline around each region whose navigation is stale.
+fn draw_stale(painter: &egui::Painter, rect: egui::Rect, view: &EngineView, colour: egui::Color32) {
+    let to_screen = |x: f32, z: f32| {
+        egui::pos2(
+            rect.left() + (x / view.extent) * rect.width(),
+            rect.top() + (z / view.extent) * rect.height(),
+        )
+    };
+    for region in &view.stale {
+        painter.rect_stroke(
+            egui::Rect::from_two_pos(
+                to_screen(region.min_x, region.min_z),
+                to_screen(region.max_x, region.max_z),
+            ),
+            0.0,
+            egui::Stroke::new(1.0, colour),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
 fn sample(rect: egui::Rect, position: egui::Pos2) -> Sample {
     Sample::new(
         ((position.x - rect.left()) / rect.width()).clamp(0.0, 1.0),
@@ -352,5 +563,79 @@ fn draw_grid(painter: &egui::Painter, rect: egui::Rect, colour: egui::Color32) {
             [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
             egui::Stroke::new(1.0, colour),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn evaluation(holes: Vec<u8>, texels: Vec<[u8; 8]>, stale: usize) -> TerrainEvaluation {
+        TerrainEvaluation {
+            generation: 4,
+            edge: 3,
+            extent: 128.0,
+            height_min: -512.0,
+            height_max: 1536.0,
+            rendered_triangles: 6,
+            rendered_hole_quads: 1,
+            collision_holes: 1,
+            stale: vec![
+                StaleRegion {
+                    min_x: 0.0,
+                    min_z: 0.0,
+                    max_x: 64.0,
+                    max_z: 64.0,
+                };
+                stale
+            ],
+            heights: vec![16384; 9],
+            texels,
+            holes,
+        }
+    }
+
+    #[test]
+    fn the_engine_surface_is_transparent_where_a_hole_is_cut_and_tinted_where_painted() {
+        let base = [0, 0, 0, 0, 255, 0, 0, 0];
+        let painted = [2, 0, 0, 0, 255, 0, 0, 0];
+        let image = surface_image(&evaluation(
+            vec![0, 1, 0, 0],
+            vec![base, base, painted, base],
+            0,
+        ));
+        assert_eq!(image.size, [2, 2]);
+        assert_eq!(image.pixels[1], egui::Color32::TRANSPARENT);
+        assert_eq!(image.pixels[0].a(), 255);
+        // Flat ground is one grey; the painted quad is not that grey.
+        let grey = image.pixels[0];
+        assert_eq!(grey.r(), grey.g());
+        assert_ne!(image.pixels[2], grey);
+        assert_eq!(image.pixels[3], grey);
+    }
+
+    #[test]
+    fn the_status_line_says_what_the_engine_evaluated_and_what_is_stale() {
+        let (summary, role) = engine_summary(None, false, false);
+        assert!(summary.contains("No engine attached"), "{summary}");
+        assert_eq!(role, Semantic::SecondaryText);
+        let (summary, _) = engine_summary(None, true, false);
+        assert!(summary.contains("Waiting for the engine"), "{summary}");
+
+        let base = [0, 0, 0, 0, 255, 0, 0, 0];
+        let clean = evaluation(vec![0, 1, 0, 0], vec![base; 4], 0);
+        let (summary, role) = engine_summary(Some(&clean), true, true);
+        assert!(summary.contains("6 triangles, 1 holes"), "{summary}");
+        assert!(!summary.contains("updating"), "{summary}");
+        assert_eq!(role, Semantic::Live);
+
+        let stale = evaluation(vec![0; 4], vec![base; 4], 2);
+        let (summary, role) = engine_summary(Some(&stale), true, false);
+        assert!(summary.contains("(updating)"), "{summary}");
+        assert!(
+            summary.contains("Navigation stale in 2 regions"),
+            "{summary}"
+        );
+        assert_eq!(role, Semantic::Warning);
     }
 }

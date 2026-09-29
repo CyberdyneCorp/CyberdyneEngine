@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <cy/editor/material_service.h>
+#include <cy/editor/terrain_service.h>
 
 #include <cy/graph/material/canvas.h>
 #include <cy/graph/material/lower_material.h>
@@ -117,7 +118,8 @@ struct VfxPreviewState {
 struct CyServiceSession_T {
     explicit CyServiceSession_T(cy::Allocator& allocator) noexcept
         : request_payload(allocator),
-          event_payload(allocator)
+          event_payload(allocator),
+          terrain_preview(allocator)
 #if defined(CY_EDITOR_HAS_VFX)
           ,
           vfx_preview(allocator)
@@ -138,6 +140,7 @@ struct CyServiceSession_T {
     cy::u64 preview_artefact[16] = {};
     cy::u32 preview_parameter_ids[16][32] = {};
     cy::u8 preview_parameter_types[16][32] = {};
+    cy::editor::TerrainPreview terrain_preview;
 #if defined(CY_EDITOR_HAS_VFX)
     VfxPreviewState vfx_preview;
 #endif
@@ -1098,6 +1101,7 @@ CyResult capabilities(CyServiceSession_T& session,
         "capabilities.get", "material.catalogue.get",   "material.validate",
         "material.compile", "material.author",          "preview.create",
         "preview.destroy",  "preview.parameter.update", "preview.reload",
+        "terrain.evaluate",
     };
 #if defined(CY_EDITOR_HAS_VFX)
     constexpr u32 vfx_operations = 8;
@@ -1195,6 +1199,20 @@ CyResult dispatch_material(CyServiceSession_T& session, std::string_view operati
     return failed(session, "operation-unsupported", "this backend does not support the operation");
 }
 
+CyResult dispatch_terrain(CyServiceSession_T& session, std::string_view operation) noexcept {
+    if (operation != "terrain.evaluate") {
+        return failed(session, "operation-unsupported",
+                      "this backend does not support the operation");
+    }
+    Array<u8> reply(session.event_payload.allocator());
+    if (Status evaluated = session.terrain_preview.evaluate(session.request_payload.span(), reply);
+        !evaluated) {
+        return failed(session, "terrain.evaluate", evaluated.error().message);
+    }
+    session.event_payload = std::move(reply);
+    return CY_RESULT_OK;
+}
+
 CyResult dispatch_preview(CyServiceSession_T& session, std::string_view operation,
                           cy::editor::MaterialPreviewRuntime* preview_runtime) noexcept {
     if (operation == "preview.create") {
@@ -1226,6 +1244,12 @@ const vfx::SimulationWorld* MaterialService::vfx_preview_world(CyServiceSession 
     (void)session;
 #endif
     return nullptr;
+}
+
+const TerrainPreview* MaterialService::terrain_preview(CyServiceSession session) noexcept {
+    return (session != nullptr && session->terrain_preview.snapshot() != nullptr)
+               ? &session->terrain_preview
+               : nullptr;
 }
 
 CyResult MaterialService::open(CyServiceSession* out_session) noexcept {
@@ -1317,6 +1341,8 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
     } else if (!session->cancelled && operation.starts_with("vfx.")) {
         result = dispatch_vfx(*session, operation, *allocator_);
 #endif
+    } else if (!session->cancelled && operation.starts_with("terrain.")) {
+        result = dispatch_terrain(*session, operation);
     } else if (!session->cancelled && operation.starts_with("preview.")) {
         result = dispatch_preview(*session, operation, preview_runtime_);
     } else if (!session->cancelled) {
