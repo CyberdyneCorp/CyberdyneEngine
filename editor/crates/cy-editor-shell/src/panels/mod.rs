@@ -25,6 +25,7 @@
 mod agents;
 mod browser;
 mod diagnostics;
+mod graph_canvas;
 mod hierarchy;
 mod history;
 mod inspector;
