@@ -66,6 +66,9 @@
 #if defined(__APPLE__)
 #    include <mach-o/dyld.h>
 #    include <mach-o/loader.h>
+#    include <mach/thread_status.h>
+#    include <pthread.h>
+#    include <sys/ucontext.h>
 #endif
 
 namespace cy::diag {
@@ -79,6 +82,9 @@ constexpr u32 kMaxFrames = 64;
 
 struct sigaction g_previous[kFaultCount];
 bool g_installed = false;
+/// The interrupted thread's `ucontext_t`, handed from the fault handler to the backtrace; null
+/// outside a fault, which is when `write_crash_report` is called by a test.
+void* g_fault_context = nullptr;
 // SIGSTKSZ is not a constant on glibc 2.34 and later, so the size is stated here.
 constexpr u32 kAlternateStackBytes = 65536;
 char g_alternate_stack[kAlternateStackBytes];
@@ -304,7 +310,8 @@ void append_hex(char* out, u32 capacity, u32& length, u64 value) noexcept {
     append_text(out, capacity, length, text);
 }
 
-void handle_fault(int number, siginfo_t* info, void* /*context*/) {
+void handle_fault(int number, siginfo_t* info, void* context) {
+    g_fault_context = context;
     CrashSignal signal{};
     signal.number = number;
     signal.code = (info != nullptr) ? info->si_code : 0;
@@ -321,6 +328,82 @@ void handle_fault(int number, siginfo_t* info, void* /*context*/) {
     // a debugger or a core dump still sees the original fault.
     platform_uninstall_crash_handler();
     ::raise(number);
+}
+
+#if defined(__APPLE__)
+/// The interrupted thread's frames, walked from the signal context through the frame-pointer chain.
+///
+/// WHY NOT backtrace(). Darwin's walks frame records only while they lie inside the CALLING
+/// thread's stack, and the fault handler runs on the alternate stack — so from here it stopped at
+/// once and every macOS report said "<no backtrace available on this platform>". Both Apple ABIs
+/// keep a frame pointer, so the chain is there: each record is {previous fp, return address}. The
+/// walk stays inside the faulting thread's stack bounds and only moves towards the stack's top, so
+/// a damaged chain ends the backtrace rather than the handler.
+u32 collect_apple_frames(const void* context, u64* frames, u32 capacity) noexcept {
+    if (context == nullptr || capacity == 0) {
+        return 0;
+    }
+    const auto* interrupted = static_cast<const ucontext_t*>(context);
+#    if defined(__arm64__) || defined(__aarch64__)
+    // Pointer authentication signs the saved return addresses; user-space addresses on Darwin fit
+    // in 47 bits, so the mask is what `ptrauth_strip` would leave.
+    constexpr u64 kAddressMask = 0x00007FFFFFFFFFFFULL;
+    const u64 pc = static_cast<u64>(arm_thread_state64_get_pc(interrupted->uc_mcontext->__ss));
+    u64 fp = static_cast<u64>(arm_thread_state64_get_fp(interrupted->uc_mcontext->__ss));
+#    elif defined(__x86_64__)
+    constexpr u64 kAddressMask = ~0ULL;
+    const u64 pc = interrupted->uc_mcontext->__ss.__rip;
+    u64 fp = interrupted->uc_mcontext->__ss.__rbp;
+#    else
+    return 0;
+#    endif
+    pthread_t self = ::pthread_self();
+    const auto top = reinterpret_cast<u64>(::pthread_get_stackaddr_np(self));
+    const u64 bottom = top - static_cast<u64>(::pthread_get_stacksize_np(self));
+
+    u32 count = 0;
+    frames[count++] = pc & kAddressMask;
+    while (count < capacity && fp >= bottom && fp + (2 * sizeof(u64)) <= top &&
+           (fp % sizeof(u64)) == 0) {
+        const auto* record = reinterpret_cast<const u64*>(fp);
+        const u64 next = record[0];
+        const u64 returned = record[1] & kAddressMask;
+        if (returned == 0) {
+            break;
+        }
+        frames[count++] = returned;
+        if (next <= fp) {
+            break;
+        }
+        fp = next;
+    }
+    return count;
+}
+#endif
+
+/// The frames to write: the interrupted thread's, from the context where the platform needs it.
+u32 collect_frames(u64* frames, u32 capacity) noexcept {
+#if defined(__APPLE__)
+    if (g_fault_context != nullptr) {
+        return collect_apple_frames(g_fault_context, frames, capacity);
+    }
+#endif
+#ifdef CY_DIAG_HAVE_EXECINFO
+    void* raw[kMaxFrames];
+    const int taken =
+        ::backtrace(raw, static_cast<int>(capacity < kMaxFrames ? capacity : kMaxFrames));
+    if (taken <= 0) {
+        return 0;
+    }
+    for (int index = 0; index < taken; ++index) {
+        frames[index] = reinterpret_cast<u64>(raw[index]);
+    }
+    return static_cast<u32>(taken);
+#else
+    (void)frames;
+    (void)capacity;
+    return 0;
+#endif
 }
 
 }  // namespace
@@ -406,17 +489,13 @@ u32 platform_write_module_table(i32 handle) noexcept {
 }
 
 u32 platform_write_backtrace(i32 handle) noexcept {
-#ifdef CY_DIAG_HAVE_EXECINFO
-    void* frames[kMaxFrames];
-    const int count = ::backtrace(frames, static_cast<int>(kMaxFrames));
-    if (count <= 0) {
-        return 0;
-    }
+    u64 frames[kMaxFrames];
+    const u32 count = collect_frames(frames, kMaxFrames);
     // One line per frame, written here rather than by backtrace_symbols_fd(): basename, offset
     // within the module, absolute address. `crash_inspect.py` reads the offset; the address is kept
     // because it is what a core file and a debugger agree with, and it names no file.
-    for (int index = 0; index < count; ++index) {
-        const auto address = reinterpret_cast<u64>(frames[index]);
+    for (u32 index = 0; index < count; ++index) {
+        const u64 address = frames[index];
         const ModuleEntry* module = module_for(address);
         char line[160];
         u32 length = 0;
@@ -431,11 +510,7 @@ u32 platform_write_backtrace(i32 handle) noexcept {
         append_text(line, sizeof(line), length, "\n");
         platform_write(handle, line, length);
     }
-    return static_cast<u32>(count);
-#else
-    (void)handle;
-    return 0;
-#endif
+    return count;
 }
 
 u32 platform_install_crash_handler() noexcept {
