@@ -10,6 +10,7 @@
 #include "platform_bits.h"
 
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 
@@ -144,6 +145,24 @@ LONG WINAPI handle_exception(EXCEPTION_POINTERS* pointers) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/// std::abort() on Windows is not a structured exception: the CRT raises SIGABRT and then ends the
+/// process with _exit(3), and the unhandled-exception filter above never runs. So abort is taken
+/// as a signal, as on POSIX. The CRT has reset the disposition to SIG_DFL by the time this runs,
+/// and returning lets abort() finish the process the way it would have.
+using AbortHandler = void (*)(int);
+AbortHandler g_previous_abort = SIG_DFL;
+
+void handle_abort(int number) {
+    CrashSignal signal{};
+    signal.number = number;
+    signal.description = "SIGABRT";
+    const i32 handle = platform_create_file_new(crash_report_path());
+    if (handle >= 0) {
+        write_crash_report_to_fd(handle, signal);
+        platform_close_file(handle);
+    }
+}
+
 /// `_mkdir` succeeded, or the directory is already there. The second half is asked of the file
 /// system rather than read from errno: `_mkdir("C:")` — the first prefix of every absolute path —
 /// fails with EACCES or ENOENT, not EEXIST, although the drive plainly exists.
@@ -273,8 +292,10 @@ u32 platform_install_crash_handler() noexcept {
         return 1;
     }
     g_previous = ::SetUnhandledExceptionFilter(&handle_exception);
+    const AbortHandler previous_abort = ::signal(SIGABRT, &handle_abort);
+    g_previous_abort = previous_abort == SIG_ERR ? SIG_DFL : previous_abort;
     g_installed = true;
-    return 1;
+    return previous_abort == SIG_ERR ? 1 : 2;
 }
 
 void platform_uninstall_crash_handler() noexcept {
@@ -283,6 +304,8 @@ void platform_uninstall_crash_handler() noexcept {
     }
     ::SetUnhandledExceptionFilter(g_previous);
     g_previous = nullptr;
+    (void)::signal(SIGABRT, g_previous_abort);
+    g_previous_abort = SIG_DFL;
     g_installed = false;
 }
 
