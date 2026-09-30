@@ -15,8 +15,11 @@
       and never ends the process".
 - [x] 1.7 Compile `cy_water` and its tests with FP contraction off. Regression: `unit.water` built
       with `-mfma` on x86-64, and on linux-arm64.
-- [x] 1.8 Find the editor where `just build-editor` puts it in `samples/08a-authoring`. Regression:
-      `smoke.authoring`.
+- [x] 1.8 Find the editor where `just build-editor` puts it in `samples/08a-authoring`, and its
+      `.exe` on Windows in `samples/05b-agent-authoring`. Regressions: `smoke.authoring`,
+      `smoke.agent_authoring`.
+- [x] 1.9 Capture the Windows module table at installation and write frames as module+offset.
+      Regression: `diagnostics.crash` on windows-x86_64, which names the fault as Windows does.
 
 ## 2. Tests that assumed the runner
 - [x] 2.1 Skip the PCG device suite loudly without a device, and the Metal device suites on the
@@ -31,6 +34,12 @@
 - [x] 2.7 Shard `smoke.shader_targets` into three cases (`shadertool::Options::shard/shards`) that fit
       the smoke budget on a hosted runner, together covering every entry point.
 - [x] 2.8 Bake the static-light identity case of `integration.render_lightmap_bake` at 16 samples.
+- [x] 2.9 Fault one call below `main` in the crash probe, so a walk of the faulting stack has three
+      frames on every platform.
+- [x] 2.10 Skip the Metal timestamp case where the device refuses timestamp counters as
+      `Unsupported`; take the fastest of five windows in the VFX per-particle cost case.
+- [x] 2.11 Report `smoke.authoring`'s absence (exit 3) as a CTest skip, and expect DXIL only on hosts
+      that have a DXC release.
 
 ## 3. CI
 - [x] 3.1 Build the editor in the test and agent jobs before the suites that drive it.

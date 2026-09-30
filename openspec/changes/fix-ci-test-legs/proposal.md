@@ -14,9 +14,10 @@ now carries the faulting thread's stack.
 
 - **Remote file serving on Windows.** `cy/core/assets/remote` gains a WinSock half behind the same
   calls as the POSIX one; `remote_serving_available()` is true on Windows.
-- **macOS crash backtraces.** The fault handler walks the interrupted thread's frame-pointer chain
-  from the signal context instead of calling `backtrace()`, which returns nothing on Darwin from the
-  alternate signal stack.
+- **Crash backtraces on macOS and Windows.** On macOS the fault handler walks the interrupted
+  thread's frame-pointer chain from the signal context instead of calling `backtrace()`, which
+  returns nothing on Darwin from the alternate signal stack. On Windows the handler captures the
+  module table at installation and writes each frame as module+offset, as the POSIX half does.
 - **Metal on a device that cannot make argument encoders** (the hosted runner's "Apple Paravirtual
   device") refuses a descriptor set as `Unsupported` instead of terminating the process with an
   uncaught NSException; the Metal device suites skip, saying why, on a device on the compatibility

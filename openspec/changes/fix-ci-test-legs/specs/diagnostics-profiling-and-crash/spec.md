@@ -24,6 +24,7 @@ allocation, locks, and subsystem re-entry where possible.
 - **THEN** the artefact SHALL be written without any tool attached
 
 #### Scenario: The stack trace is the faulting thread's on every desktop platform
-- **WHEN** a process faults on Linux or macOS and the handler runs on its alternate signal stack
-- **THEN** the artefact's backtrace SHALL list the interrupted thread's frames, each with its module
-  and offset, rather than stating that no backtrace is available
+- **WHEN** a process faults on Linux, macOS or Windows
+- **THEN** the artefact's backtrace SHALL list the faulting thread's frames, each with its module
+  basename and offset, and the module list SHALL name every module loaded when the handler
+  installed, rather than stating that no backtrace or no module table is available
