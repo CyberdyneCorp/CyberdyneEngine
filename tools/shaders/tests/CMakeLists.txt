@@ -30,7 +30,12 @@ function(cy_shader_targets_declare_tests)
     # HOW MANY TARGETS THIS BUILD MUST EMIT, so a run that silently lost DXC — the library is placed
     # beside libslang by `cy_place_dxc`, and a build of this suite alone would not otherwise run it
     # — cannot pass by comparing two targets and calling that every target.
-    if(CY_SHADER_DXIL)
+    #
+    # APPLE WITHOUT DXC IS THE ONE EXCEPTION. Slang fetches DXC as a prebuilt release for Linux and
+    # Windows only, so on macOS `cy__slang_place_dxc` finds nothing, says so at configure time, and
+    # declares no `cy_place_dxc`; there is no DXIL to expect there. Everywhere else DXIL on means
+    # three targets, whether or not the fetch worked, which is the case this count exists to catch.
+    if(CY_SHADER_DXIL AND (TARGET cy_place_dxc OR NOT APPLE))
         set(expected_targets 3)
     else()
         set(expected_targets 2)

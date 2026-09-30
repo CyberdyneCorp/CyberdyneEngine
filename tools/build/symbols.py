@@ -140,11 +140,21 @@ class Elf:
         return None
 
 
+def binary_format(path: Path) -> str:
+    """"ELF", "Mach-O", "PE" or "an unrecognised format", from the file's first bytes."""
+    with Path(path).open("rb") as handle:
+        magic = handle.read(4)
+    if magic == b"\x7fELF":
+        return "ELF"
+    if magic in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"):
+        return "Mach-O"
+    return "PE" if magic[:2] == b"MZ" else "an unrecognised format"
+
+
 def read_elf(path: Path) -> Elf:
     data = Path(path).read_bytes()
-    if data[:4] != b"\x7fELF":
-        kind = "Mach-O" if data[:4] in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe") else (
-            "PE" if data[:2] == b"MZ" else "an unrecognised format")
+    kind = binary_format(path)
+    if kind != "ELF":
         raise SymbolError(f"{path} is {kind}, not ELF: dSYM and PDB handling are the same checks "
                           "with other spellings, and this host produces neither")
     if data[4] != 2 or data[5] != 1:
