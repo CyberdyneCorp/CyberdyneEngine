@@ -215,6 +215,12 @@ narrowly-scoped suppression mechanism for third-party headers.
 - **WHEN** a dependency's headers produce warnings
 - **THEN** they SHALL be included as system headers so they do not fail the build
 
+#### Scenario: A dependency's macro warns where it is expanded
+- **WHEN** a dependency's macro raises a warning at its expansion site in engine code, where
+  including the dependency as a system header does not reach it
+- **THEN** the suppression SHALL be scoped to that macro's expansion and to compilers that know the
+  warning, and the project's warning flags SHALL NOT change
+
 ### Requirement: Build performance
 The build SHALL be structured for fast iteration: precompiled headers for stable core headers,
 unity builds as an option for clean builds, `ccache`/`sccache` support, and modules sized so a
@@ -304,6 +310,7 @@ benchmarks with regression detection.
 #### Scenario: Performance regression
 - **WHEN** a nightly benchmark regresses beyond a threshold
 - **THEN** it SHALL be reported with the commit range, so the cause can be bisected
+
 ### Requirement: Rust toolchain integration
 The build system SHALL integrate the **Rust toolchain** for the editor application and its
 supporting tools, alongside the C++ and Swift toolchains.
