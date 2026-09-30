@@ -39,6 +39,11 @@ CY_TRACE_CATEGORY(probe_category, "probe")
 CY_TRACE_NAME(probe_event, "probe.working")
 
 #if !defined(CY_PROBE_UBSAN)
+#    if defined(_MSC_VER)
+#        define CY_PROBE_NOINLINE __declspec(noinline)
+#    else
+#        define CY_PROBE_NOINLINE [[gnu::noinline]]
+#    endif
 /// The fault, one call below main, as an engine fault is. A store through an address the compiler
 /// cannot fold to a literal null, so the fault happens at run time rather than being diagnosed at
 /// compile time.
@@ -48,7 +53,7 @@ CY_TRACE_NAME(probe_event, "probe.working")
 /// nothing else, two frames, where glibc's backtrace() also lists the handler's own. The call keeps
 /// this function a non-leaf, so every ABI gives it a frame record the walk can follow to its
 /// caller.
-[[gnu::noinline]] void fault_at(const char* address) {
+CY_PROBE_NOINLINE void fault_at(const char* address) {
     (void)std::fflush(stdout);
     // The address is the point: this probe exists to fault at run time.
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
