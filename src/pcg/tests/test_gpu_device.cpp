@@ -53,13 +53,13 @@ public:
     }
     /// A Metal device with no global texture table — argument buffers below tier 2, the hosted
     /// macOS runner's paravirtual GPU — cannot make the argument encoder the kernel's set needs.
-    [[nodiscard]] bool compatibility_path() const noexcept {
 #if defined(CY_PCG_TEST_METAL)
+    [[nodiscard]] bool compatibility_path() const noexcept {
         return device_.has_value() && (*device_)->global_texture_table().is_null();
-#else
-        return false;
-#endif
     }
+#else
+    [[nodiscard]] static constexpr bool compatibility_path() noexcept { return false; }
+#endif
     void report_skip() const noexcept {
         if (compatibility_path()) {
             std::fprintf(stderr,
