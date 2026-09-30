@@ -33,6 +33,18 @@ public:
 
     [[nodiscard]] bool ok() const noexcept { return device_.has_value(); }
     [[nodiscard]] cy::rhi::Device& device() const noexcept { return **device_; }
+    /// A device with no global texture table — argument buffers below tier 2, which is what the
+    /// hosted macOS runner's "Apple Paravirtual device" has. It cannot make the argument encoders
+    /// descriptor sets are built from, so the cases that need one skip on it and say so.
+    [[nodiscard]] bool compatibility_path() const noexcept {
+        return ok() && device().global_texture_table().is_null();
+    }
+    void report_skip(const char* what) const noexcept {
+        std::fprintf(stderr,
+                     "SKIPPED %s: '%s' is on the compatibility path, with no global texture "
+                     "table\n",
+                     what, device().capabilities().device_name());
+    }
 
 private:
     cy::Allocator& allocator_;
@@ -280,6 +292,10 @@ fragment float4 readback_fragment() { return float4(1.0, 0.0, 0.0, 1.0); }
 CY_TEST_CASE("Metal Tier 2 argument buffers are shader-readable") {
     Fixture fixture;
     CY_REQUIRE(fixture.ok());
+    if (fixture.compatibility_path()) {
+        fixture.report_skip("tier 2 argument buffers");
+        return;
+    }
     cy::rhi::Device& device = fixture.device();
     CY_REQUIRE(device.capabilities().has(cy::rhi::Capability::Bindless));
 

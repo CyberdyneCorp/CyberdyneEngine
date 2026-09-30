@@ -10,6 +10,7 @@
 #include <cy/core/memory/domain.h>
 #include <cy/core/memory/system_allocator.h>
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -35,6 +36,18 @@ public:
     [[nodiscard]] bool ok() const noexcept { return device_.has_value(); }
     [[nodiscard]] cy::rhi::Device& device() const noexcept { return **device_; }
     [[nodiscard]] const cy::rhi::BackendSelection& selection() const noexcept { return selection_; }
+    /// A device with no global texture table — argument buffers below tier 2, which is what the
+    /// hosted macOS runner's "Apple Paravirtual device" has. It cannot make the argument encoders
+    /// descriptor sets are built from, so the cases that need one skip on it and say so.
+    [[nodiscard]] bool compatibility_path() const noexcept {
+        return ok() && device().global_texture_table().is_null();
+    }
+    void report_skip(const char* what) const noexcept {
+        std::fprintf(stderr,
+                     "SKIPPED %s: '%s' is on the compatibility path, with no global texture "
+                     "table\n",
+                     what, device().capabilities().device_name());
+    }
 
 private:
     cy::Allocator& allocator_;
@@ -54,6 +67,12 @@ CY_TEST_CASE("the Metal device names the hardware and argument-buffer tier that 
                     runtime.argument_buffer_tier,
                     "; Apple GPU family: ", runtime.apple_gpu_family ? 1 : 0);
     CY_CHECK(runtime.device_name[0] != '\0');
+    // The rest is the HARDWARE claim — tier 2, an Apple GPU family, GPU-driven rendering — which a
+    // device on the compatibility path cannot make. It has named itself above; that is the result.
+    if (fixture.compatibility_path()) {
+        fixture.report_skip("the Apple GPU's tier-2 claims");
+        return;
+    }
     CY_CHECK_EQ(runtime.argument_buffer_tier, 2U);
     CY_CHECK(runtime.apple_gpu_family);
 
@@ -298,9 +317,41 @@ CY_TEST_CASE("Metal creates native sampler states and enforces the device limit"
     CY_CHECK_FALSE(device.create_sampler(description));
 }
 
+CY_TEST_CASE("a descriptor set is allocated or refused, and never ends the process") {
+    // The paravirtual device raised an NSException out of `newArgumentEncoderWithArguments:`, and
+    // every suite that allocated a descriptor set on it died with SIGABRT. A device that cannot
+    // make the set refuses it as Unsupported; a tier-2 device makes it.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    cy::rhi::Device& device = fixture.device();
+    const cy::rhi::DescriptorBinding binding{
+        .binding = 0,
+        .kind = cy::rhi::DescriptorKind::StorageBuffer,
+        .count = 1,
+        .stages = cy::rhi::ShaderStage::Compute,
+    };
+    cy::rhi::DescriptorSetLayoutDescription layout_description;
+    layout_description.bindings = {&binding, 1};
+    const auto layout = device.create_descriptor_set_layout(layout_description);
+    CY_REQUIRE(layout);
+    const auto set = device.allocate_descriptor_set(*layout, false);
+    if (fixture.compatibility_path() && !set) {
+        CY_CHECK_EQ(set.error().code, cy::ErrorCode::Unsupported);
+        CY_TEST_MESSAGE("refused on '", device.capabilities().device_name(),
+                        "': ", set.error().message);
+    } else {
+        CY_CHECK(set.has_value());
+    }
+    device.destroy_descriptor_set_layout(*layout);
+}
+
 CY_TEST_CASE("Metal recycles per-frame command and descriptor pools after GPU completion") {
     Fixture fixture;
     CY_REQUIRE(fixture.ok());
+    if (fixture.compatibility_path()) {
+        fixture.report_skip("per-frame descriptor pools");
+        return;
+    }
     cy::rhi::Device& device = fixture.device();
 
     const cy::rhi::DescriptorBinding binding{
