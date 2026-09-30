@@ -113,7 +113,7 @@ inline constexpr char kCandidateMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_texture>
 using namespace metal;
 
-#line 37 "src/pcg/shaders/gpu_conformance.slang"
+#line 38 "src/pcg/shaders/gpu_conformance.slang"
 uint candidateMix_0(uint value_0)
 {
 
@@ -125,7 +125,7 @@ uint candidateMix_0(uint value_0)
 }
 
 
-#line 11
+#line 12
 struct CandidateParameters_0
 {
     uint seed_0;
@@ -149,28 +149,28 @@ struct CandidateSet_default_0
 };
 
 
-#line 27
+#line 28
 struct KernelContext_0
 {
     CandidateSet_default_0 constant* pcg_0;
 };
 
 
-#line 49
+#line 50
 [[kernel]] void pcgCandidates(uint3 invocation_0 [[thread_position_in_grid]], CandidateSet_default_0 constant* pcg_1 [[buffer(0)]])
 {
 
-#line 49
+#line 50
     thread KernelContext_0 kernelContext_0;
 
-#line 49
+#line 50
     (&kernelContext_0)->pcg_0 = pcg_1;
 
     uint slot_1 = invocation_0.x;
     if(slot_1 >= (pcg_1->parameters_0->count_0))
     {
 
-#line 53
+#line 54
         return;
     }
     uint identity_0 = candidateMix_0((pcg_1->parameters_0->seed_0) ^ (slot_1 * 2654435769U));
@@ -182,26 +182,26 @@ struct KernelContext_0
     (&candidate_0)->x_0 = identity_0 & 65535U;
     (&candidate_0)->z_0 = second_0 & 65535U;
 
-#line 62
+#line 63
     int _S3;
     if((density_0 & 65535U) < (pcg_1->parameters_0->densityThreshold_0))
     {
 
-#line 63
+#line 64
         _S3 = int(1);
 
-#line 63
+#line 64
     }
     else
     {
 
-#line 63
+#line 64
         _S3 = int(0);
 
-#line 63
+#line 64
     }
 
-#line 63
+#line 64
     (&candidate_0)->accepted_0 = uint(_S3);
     *((&kernelContext_0)->pcg_0->candidates_0+slot_1) = candidate_0;
     return;

@@ -6,7 +6,7 @@
 
 namespace cy::rendering::particles {
 
-/// cyStripVertex.metal, 6124 bytes.
+/// cyStripVertex.metal, 6550 bytes.
 inline constexpr char kStripVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -36,7 +36,7 @@ struct ClusterGrid_0
 };
 
 
-#line 112 "src/rendering/shaders/cy/frame.slang"
+#line 115 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameData_0
 {
     float4 relativeToClipRow0_0;
@@ -64,6 +64,20 @@ struct CyFrameData_0
     float4 shadowToClipRow2_0;
     float4 shadowToClipRow3_0;
     uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
 };
 
 
@@ -81,7 +95,7 @@ struct Light_0
 };
 
 
-#line 186 "src/rendering/shaders/cy/frame.slang"
+#line 282 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -116,7 +130,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 208
+#line 304
 struct KernelContext_0
 {
     CyStripVertex_0 device* cyStrips_0;
@@ -124,7 +138,7 @@ struct KernelContext_0
 };
 
 
-#line 263
+#line 359
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -306,13 +320,13 @@ struct CyStripOutput_0
 
 )cy_msl";
 
-/// cyStripFragment.metal, 757 bytes.
+/// cyStripFragment.metal, 756 bytes.
 inline constexpr char kStripFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 30 "src/rendering/shaders/cy/material.slang"
+#line 14 "src/rendering/shaders/cy/globals.slang"
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];

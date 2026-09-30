@@ -1237,7 +1237,6 @@ uint octahedral_encode_0(float3 unit_vector_0)
     return;
 }
 
-
 )cy_msl";
 
 }  // namespace cy::rendering::skinning
