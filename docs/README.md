@@ -16,6 +16,7 @@
 | [Guides index](guides/README.md) | Task-oriented walkthroughs for contributors |
 | [Building and running](guides/building.md) | Toolchains, Linux, the macOS Metal editor, iOS, CI targets |
 | [Animation in CyberEngine](guides/animation.md) | How characters are imported, animated, retargeted and skinned, and what is not built yet |
+| [Lighting authoring and lightmap baking](guides/lighting.md) | How lights, lightmap resolution and irradiance volumes are authored in the editor and baked by `cy_build lightmap` from the description the editor writes |
 | [Physics in CyberEngine](guides/physics.md) | How bodies are authored, stepped and queried through the engine's physics server and its Jolt backend |
 | [Swift gameplay in CyberEngine](guides/swift.md) | How a Swift game is written, built, hot-reloaded and tested against the C ABI, the 1.3 game services, and how the bindings stay in sync |
 | [Slang in CyberEngine](guides/slang.md) | How the engine's shaders are written, compiled, embedded and tested |

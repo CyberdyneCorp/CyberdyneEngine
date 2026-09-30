@@ -1,0 +1,289 @@
+Mutations that turn the lighting tools' tests red (#29, Lighting, on #68's bake pipeline),
+Development profile, GCC 13. Each mutation was applied, its tests run, the file restored
+and md5-verified. Listed under each: the tests that failed. r* are editor (Rust)
+mutations, c* engine (C++ and cy_build) ones.
+
+== r01_volume_edit_writes_nothing: editor/crates/cy-editor-services/src/lighting.rs
+<   for (field, value) in grid.values(fields) {
+<   document.set_field(volume, fields.component, field, value)?;
+>   for (field, value) in grid.values(fields).into_iter().take(0) {
+>   document.set_field(volume, fields.component, field, value)?;
+FAILED  lighting::tests::a_volume_is_placed_and_edited_in_one_transaction_each_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r02_mobility_ignores_the_choice: editor/crates/cy-editor-services/src/lighting.rs
+<   let value = Value::Text(mobility.keyword().to_string());
+>   let value = Value::Text(Mobility::Stationary.keyword().to_string());
+FAILED  lighting_authoring_is_undoable_over_mcp_with_the_same_commands_as_the_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r03_resolution_not_written: editor/crates/cy-editor-services/src/lighting.rs
+<   (fields.scale, Value::Float(scale)),
+>   (fields.scale, Value::Float(1.0)),
+FAILED  lighting::tests::resolution_is_authored_per_object_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r04_description_drops_mobility: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   let mobility = scene.mobility_of(node).unwrap_or_default().keyword();
+>   let mobility = crate::lighting::Mobility::default().keyword();
+FAILED  what_the_author_changes_is_what_the_description_says
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r05_description_drops_resolution: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   number(scene.resolution_of(node)),
+>   number(1.0),
+FAILED  the_description_is_the_authored_world_byte_for_byte
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r06_description_drops_volumes: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   .chain(volume_lines(document, binding, &scene))
+>   .chain(Vec::<String>::new())
+FAILED  the_description_is_the_authored_world_byte_for_byte
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r07_occluder_not_written: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   if !receives {
+<   line.push_str(" occluder");
+>   if !receives {
+>   line.push_str("");
+FAILED  the_description_is_the_authored_world_byte_for_byte
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r08_parents_ignored: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   chain.iter().rev().fold(IDENTITY, |outer, node| {
+>   chain.iter().take(1).fold(IDENTITY, |outer, node| {
+FAILED  lightmap_description::tests::a_child_is_written_where_its_parents_put_it
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r09_tint_dropped: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   let _ = write!(line, " tint {}", numbers(&tint));
+>   let _ = (&mut line, tint);
+FAILED  lightmap_description::tests::an_object_bakes_with_the_material_it_draws_and_its_tint
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r10_slot_ignored: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   let reference = slot.or(primary).unwrap_or_default().to_string();
+>   let reference = primary.or(slot).unwrap_or_default().to_string();
+FAILED  lightmap_description::tests::an_object_bakes_with_the_material_it_draws_and_its_tint
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r11_disabled_light_baked: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   field(document, node, LIGHT, "enabled"),
+<   Some(Value::Bool(false))
+>   field(document, node, LIGHT, "enabled"),
+>   Some(Value::Bool(false)) if false
+FAILED  lightmap_description::tests::a_disabled_light_is_not_baked_and_a_spot_bakes_as_a_point
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r12_always_rewritten: editor/crates/cy-editor-services/src/lightmap_description.rs
+<   if std::fs::read(path).is_ok_and(|held| held == text.as_bytes()) {
+>   if std::fs::read(path).is_ok_and(|held| held == text.as_bytes()) && false {
+FAILED  an_unchanged_world_rewrites_nothing
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.14s
+RESTORED md5 ok
+
+== r13_bake_skips_the_description: editor/crates/cy-editor-services/src/lightmaps.rs
+<   let rewritten = context.write_lightmap_description(&path, &text)?;
+>   let rewritten = !text.is_empty();
+FAILED  a_bake_with_no_description_bakes_the_world_as_it_is_now
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r14_cached_misread: editor/crates/cy-editor-services/src/lightmaps.rs
+<   cached: optional("cached") == 1,
+>   cached: false,
+FAILED  the_engine_bakes_what_was_authored_when_it_is_built
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.13s
+RESTORED md5 ok
+
+== r15_probe_validity_misread: editor/crates/cy-editor-services/src/lightmaps.rs
+<   valid: floats[21] > 0.5,
+>   valid: true,
+FAILED  lightmaps::tests::the_captured_probes_decode_as_the_engine_wrote_them
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r16_inspector_rows_gone: editor/crates/cy-editor-shell/src/panels/inspector.rs
+<   super::lighting::inspector_rows(panels, ui);
+>   
+FAILED  a_light_offers_its_mobility_in_the_lighting_tool_and_in_the_inspector
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r17_grid_keeps_a_stale_edit: editor/crates/cy-editor-shell/src/panels/lighting.rs
+<   .is_none_or(|(node, base, _)| node != volume.id || base != authored)
+>   .is_none_or(|(node, _, _)| node != volume.id)
+FAILED  the_selected_volume_grid_is_applied_as_one_command_and_undo_restages_it
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r18_finished_bake_not_collected: editor/crates/cy-editor-shell/src/panels/lighting.rs
+<   lighting.baked = LightingForm::baked(panels.editor, &completion);
+>   let _ = LightingForm::baked(panels.editor, &completion);
+FAILED  a_finished_bake_shows_what_it_made_and_the_probes_it_captured
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r19_engine_names_the_mode_differently: src/servers/render/src/types.cpp
+<   "GiProbes",
+>   "GIProbes",
+FAILED  viewmode::tests::the_mode_list_matches_the_engines
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 161 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== c01_interval_ignores_samples: src/rendering/lightmap_bake/src/bake.cpp
+<   const u32 interval = lightmap_progress_interval(settings.trace.samples);
+>   const u32 interval = kProgressTexels;
+FAILED  a many-sample bake sees a cancel within a second
+FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1525
+FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1568
+FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1569
+[doctest] test cases: 1 | 0 passed | 1 failed | 27 skipped
+RESTORED md5 ok
+
+== c02_volumes_not_captured: src/rendering/lightmap_bake/src/bake.cpp
+<   (void)volumes[index]->capture_all(context);
+>   (void)volumes[index];
+FAILED  the description's volume is captured by the bake's tracer, probe for probe
+FAILED  tools/build/tests/test_build_lightmap.cpp:551
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c03_capture_ignores_the_cancel: src/rendering/lightmap_bake/src/bake.cpp
+<   if (progress != nullptr && progress->cancelled()) {
+<   return cancelled(report);
+<   }
+<   if (volumes[index] != nullptr) {
+>   if (volumes[index] != nullptr) {
+FAILED  a capture cancelled between volumes leaves the rest uncaptured
+FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1684
+[doctest] test cases: 1 | 0 passed | 1 failed | 27 skipped
+RESTORED md5 ok
+
+== c04_probe_payload_drops_validity: src/rendering/lightmap_bake/src/probes.cpp
+<   if (Status put = put_f32(out, probe.validity); !put) {
+>   if (Status put = put_f32(out, 0.0F); !put) {
+FAILED  captured probes round-trip through their payload, and a short one is refused
+FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1723
+[doctest] test cases:  1 |  0 passed | 1 failed | 27 skipped
+RESTORED md5 ok
+
+== c05_light_id_ignored: tools/build/src/lightmap_producer.cpp
+<   light.id = *id;
+>   (void)*id;
+FAILED  the editor's description reads back as the world it was written from
+FAILED  tools/build/tests/test_build_lightmap.cpp:380
+FAILED  tools/build/tests/test_build_lightmap.cpp:384
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c06_instance_id_ignored: tools/build/src/lightmap_producer.cpp
+<   instance.id = *id;
+>   (void)*id;
+FAILED  the editor's description reads back as the world it was written from
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c07_occluder_ignored: tools/build/src/lightmap_producer.cpp
+<   instance.receives_lightmap = false;
+>   (void)instance;
+FAILED  the editor's description reads back as the world it was written from
+FAILED  tools/build/tests/test_build_lightmap.cpp:397
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c08_mobility_word_ignored: tools/build/src/lightmap_producer.cpp
+<   if (Status parsed = parse_mobility(line.word(at), light.mobility); !parsed) {
+>   gi::LightMobility ignored{};
+>   if (Status parsed = parse_mobility(line.word(at), ignored); !parsed) {
+FAILED  a light's mobility, as the editor wrote it, is what the engine bakes of it
+FAILED  tools/build/tests/test_build_lightmap.cpp:468
+FAILED  tools/build/tests/test_build_lightmap.cpp:469
+FAILED  tools/build/tests/test_build_lightmap.cpp:481
+FAILED  tools/build/tests/test_build_lightmap.cpp:494
+FAILED  tools/build/tests/test_build_lightmap.cpp:495
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c09_resolution_ignored: tools/build/src/lightmap_producer.cpp
+<   instance.resolution_scale = number(line, 4);
+>   instance.resolution_scale = 1.0F;
+FAILED  an object's resolution scale, as the editor wrote it, is its share of the atlas
+FAILED  tools/build/tests/test_build_lightmap.cpp:512
+FAILED  tools/build/tests/test_build_lightmap.cpp:514
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c10_key_ignores_what_it_read: tools/build/src/lightmap_producer.cpp
+<   inputs.upstreams.push_back(KeyedDigest{input.name, input.hash});
+>   (void)input;
+FAILED  an unchanged level keys the same, and any file it reads changes its key
+FAILED  tools/build/tests/test_build_lightmap.cpp:582
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c11_old_lights_renumbered: tools/build/src/lightmap_producer.cpp
+<   light.id = level.lights.size() + 1U;
+>   light.id = level.lights.size() + 7U;
+FAILED  a description written before identities and volumes reads as it did
+FAILED  tools/build/tests/test_build_lightmap.cpp:438
+FAILED  tools/build/tests/test_build_lightmap.cpp:440
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c12_empty_grid_accepted: tools/build/src/lightmap_producer.cpp
+<   if (!(volume.settings.spacing_metres > 0.0F) || probes == 0U || probes > kMaxVolumeProbes ||
+>   if (!(volume.settings.spacing_metres > 0.0F) || probes > kMaxVolumeProbes ||
+FAILED  a description written before identities and volumes reads as it did
+FAILED  tools/build/tests/test_build_lightmap.cpp:460
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c13_single_output_takes_volumes: tools/build/src/lightmap_producer.cpp
+<   if (report.volumes > 0U && node.outputs.size() < 2U) {
+>   if (report.volumes > 0U && node.outputs.size() < 1U) {
+FAILED  a lightmap node with a probe output captures the description's volumes
+FAILED  tools/build/tests/test_build_lightmap.cpp:632
+[doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
+RESTORED md5 ok
+
+== c14_cooked_albedo_ignored: tools/build/src/lightmap_producer.cpp
+<   out.albedo = Vec3{material.base_colour[0], material.base_colour[1], material.base_colour[2]};
+>   out.albedo = Vec3{0.5F, 0.5F, 0.5F};
+FAILED  AssertionError: a cooked material baked another colour
+AssertionError: a cooked material baked another colour
+RESTORED md5 ok
+
+== c15_tint_ignored: tools/build/src/lightmap_producer.cpp
+<   material.albedo = cwise_mul(material.albedo, triple(line, 5));
+>   (void)line;
+FAILED  AssertionError: a tint did not multiply the base colour
+AssertionError: a tint did not multiply the base colour
+RESTORED md5 ok
+
+== c16_never_cached: tools/build/src/main.cpp
+<   !cached.empty()) {
+>   cached.empty() && false) {
+FAILED  AssertionError: it baked again: ['progress prepare 0 1', 'progress trace 0 65536', 'progress trace 1024 65536', 'progress trace 2048 65536', 'progress trace 3072 65536', 'progress trace 4096 65536', 'progress trace 5120 65536', 'progress trace 6144 65536', 'progress trace 7168 65536', 'progress trace 8192 65536', 'progress trace 9216 65536', 'progress trace 10240 65536', 'progress trace 11264 65536', 'progress trace 12288 65536', 'progress trace 13312 65536', 'progress trace 14336 65536', 'progress trace 15360 65536', 'progress trace 16384 65536', 'progress trace 17408 65536', 'progress trace 18432 65536', 'progress trace 19456 65536', 'progress trace 20480 65536', 'progress trace 21504 65536', 'progress trace 22528 65536', 'progress trace 23552 65536', 'progress trace 24576 65536', 'progress trace 25600 65536', 'progress trace 26624 65536', 'progress trace 27648 65536', 'progress trace 28672 65536', 'progress trace 29696 65536', 'progress trace 30720 65536', 'progress trace 31744 65536', 'progress trace 32768 65536', 'progress trace 33792 65536', 'progress trace 34816 65536', 'progress trace 35840 65536', 'progress trace 36864 65536', 'progress trace 37888 65536', 'progress trace 38912 65536', 'progress trace 39936 65536', 'progress trace 40960 65536', 'progress trace 41984 65536', 'progress trace 43008 65536', 'progress trace 44032 65536', 'progress trace 45056 65536', 'progress trace 46080 65536', 'progress trace 47104 65536', 'progress trace 48128 65536', 'progress trace 49152 65536', 'progress trace 50176 65536', 'progress trace 51200 65536', 'progress trace 52224 65536', 'progress trace 53248 65536', 'progress trace 54272 65536', 'progress trace 55296 65536', 'progress trace 56320 65536', 'progress trace 57344 65536', 'progress trace 58368 65536', 'progress trace 59392 65536', 'progress trace 60416 65536', 'progress trace 61440 65536', 'progress trace 62464 65536', 'progress trace 63488 65536', 'progress trace 64512 65536', 'progress trace 65536 65536', 'progress filter 0 1', 'progress filter 1 1', 'progress finish 0 1', 'progress finish 1 1', 'progress probes 0 0', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=56429 bytes=1966080 mips=1 padding-short=0 volumes=0 probes=0 seconds=0.065 cached=0']
+AssertionError: it baked again: ['progress prepare 0 1', 'progress trace 0 65536', 'progress trace 1024 65536', 'progress trace 2048 65536', 'progress trace 3072 65536', 'progress trace 4096 65536', 'progress trace 5120 65536', 'progress trace 6144 65536', 'progress trace 7168 65536', 'progress trace 8192 65536', 'progress trace 9216 65536', 'progress trace 10240 65536', 'progress trace 11264 65536', 'progress trace 12288 65536', 'progress trace 13312 65536', 'progress trace 14336 65536', 'progress trace 15360 65536', 'progress trace 16384 65536', 'progress trace 17408 65536', 'progress trace 18432 65536', 'progress trace 19456 65536', 'progress trace 20480 65536', 'progress trace 21504 65536', 'progress trace 22528 65536', 'progress trace 23552 65536', 'progress trace 24576 65536', 'progress trace 25600 65536', 'progress trace 26624 65536', 'progress trace 27648 65536', 'progress trace 28672 65536', 'progress trace 29696 65536', 'progress trace 30720 65536', 'progress trace 31744 65536', 'progress trace 32768 65536', 'progress trace 33792 65536', 'progress trace 34816 65536', 'progress trace 35840 65536', 'progress trace 36864 65536', 'progress trace 37888 65536', 'progress trace 38912 65536', 'progress trace 39936 65536', 'progress trace 40960 65536', 'progress trace 41984 65536', 'progress trace 43008 65536', 'progress trace 44032 65536', 'progress trace 45056 65536', 'progress trace 46080 65536', 'progress trace 47104 65536', 'progress trace 48128 65536', 'progress trace 49152 65536', 'progress trace 50176 65536', 'progress trace 51200 65536', 'progress trace 52224 65536', 'progress trace 53248 65536', 'progress trace 54272 65536', 'progress trace 55296 65536', 'progress trace 56320 65536', 'progress trace 57344 65536', 'progress trace 58368 65536', 'progress trace 59392 65536', 'progress trace 60416 65536', 'progress trace 61440 65536', 'progress trace 62464 65536', 'progress trace 63488 65536', 'progress trace 64512 65536', 'progress trace 65536 65536', 'progress filter 0 1', 'progress filter 1 1', 'progress finish 0 1', 'progress finish 1 1', 'progress probes 0 0', 'baked objects=2 pages=1 texels=2312 dilated=576 rays=56429 bytes=1966080 mips=1 padding-short=0 volumes=0 probes=0 seconds=0.065 cached=0']
+RESTORED md5 ok
+
+== c17_stale_probes_kept: tools/build/src/main.cpp
+<   std::filesystem::remove(probes, ignored);
+>   (void)probes;
+FAILED  AssertionError: a stale probe file was left
+AssertionError: a stale probe file was left
+RESTORED md5 ok
+
+36 of 36 mutations killed.
