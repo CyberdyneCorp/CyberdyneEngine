@@ -346,7 +346,7 @@ private:
 
 }  // namespace
 
-TEST_CASE("the device advances the same population the CPU executor does") {
+CY_TEST_CASE("the device advances the same population the CPU executor does") {
     DeviceFixture gpu("cy_test_render_vfx_gpu");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -386,12 +386,12 @@ TEST_CASE("the device advances the same population the CPU executor does") {
     // THE POPULATION, EXACTLY. `reported_live` is the device's own arithmetic — survivors,
     // promotions and the grant — and `EffectInstance::live_particles` is the CPU executor's. Two
     // paths that disagreed about one particle would differ here by one.
-    CHECK_EQ(pass.report().reported_live, cpu.live());
-    CHECK_GT(cpu.live(), 0U);
+    CY_CHECK_EQ(pass.report().reported_live, cpu.live());
+    CY_CHECK_GT(cpu.live(), 0U);
     // THE RUN WAS LONG ENOUGH, checked rather than asserted in the comment above: a run in which
     // nothing died would make the liveness comparison a comparison of two full blocks.
-    CHECK_GT(cpu.last().killed, 0U);
-    CHECK_GT(pass.report().killed, 0U);
+    CY_CHECK_GT(cpu.last().killed, 0U);
+    CY_CHECK_GT(pass.report().killed, 0U);
 
     // THE LIVENESS ARRAY, SLOT FOR SLOT. This is what an atomic append would have made impossible
     // to assert: the two lists are the same list because both are built in ascending slot order.
@@ -405,7 +405,7 @@ TEST_CASE("the device advances the same population the CPU executor does") {
         const bool host_live = alive_cpu[slot] != 0;
         mismatches += device_live == host_live ? 0U : 1U;
     }
-    CHECK_EQ(mismatches, 0U);
+    CY_CHECK_EQ(mismatches, 0U);
 
     // THE ATTRIBUTE VALUES. Read out of the device's own block through the GPU layout, and out of
     // the world through `read_attribute`, which returns whatever the CPU pool holds at whatever
@@ -439,13 +439,13 @@ TEST_CASE("the device advances the same population the CPU executor does") {
                  "%.3e (%.2f steps of 1/255)\n",
                  compared, static_cast<double>(worst), static_cast<double>(worst_colour),
                  static_cast<double>(worst_colour * 255.0F));
-    CHECK_GT(compared, 0U);
-    CHECK_LT(worst, kValueTolerance);
-    CHECK_LT(worst_colour, kQuantisedTolerance);
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_GT(compared, 0U);
+    CY_CHECK_LT(worst, kValueTolerance);
+    CY_CHECK_LT(worst_colour, kQuantisedTolerance);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
-TEST_CASE("population and dispatch size come from the device, not from this process") {
+CY_TEST_CASE("population and dispatch size come from the device, not from this process") {
     DeviceFixture gpu("cy_test_render_vfx_gpu_indirect");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -480,16 +480,16 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
     CY_REQUIRE(gpu_step(pass, system, 0.0F, levers, {parameters.data(), parameters.size()}));
     CY_REQUIRE(run_frame(gpu, allocator(), pass, false));
     cpu.step();
-    CHECK_GE(pass.report().indirect_dispatches, 2U);
+    CY_CHECK_GE(pass.report().indirect_dispatches, 2U);
     CY_REQUIRE(pass.read_back_counts().has_value());
 
     // THE GRANT IS THE DEVICE'S. The Spawn kernel asked for a number, the compaction clamped it to
     // the free list it had just built, and the initialise dispatch covered exactly that many
     // threads — which is only true if its group count came from the argument buffer.
     const auto first = pass.report();
-    CHECK_GT(first.spawn_request, 0U);
-    CHECK_EQ(first.spawn_granted, first.spawned);
-    CHECK_LE(first.spawn_granted, first.free + first.spawn_granted);
+    CY_CHECK_GT(first.spawn_request, 0U);
+    CY_CHECK_EQ(first.spawn_granted, first.spawned);
+    CY_CHECK_LE(first.spawn_granted, first.free + first.spawn_granted);
     std::fprintf(stderr, "step 1: request %u, granted %u, spawned %u, free %u, live %u\n",
                  first.spawn_request, first.spawn_granted, first.spawned, first.free, first.live);
 
@@ -502,8 +502,8 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
         CY_REQUIRE(run_frame(gpu, allocator(), pass, false));
         cpu.step();
         CY_REQUIRE(pass.read_back_counts().has_value());
-        CHECK_LE(pass.report().reported_live, kCapacity);
-        CHECK_LE(pass.report().spawn_granted, pass.report().spawn_request);
+        CY_CHECK_LE(pass.report().reported_live, kCapacity);
+        CY_CHECK_LE(pass.report().spawn_granted, pass.report().spawn_request);
     }
     std::fprintf(stderr, "after 64 steps: live %u of %u, killed %u this step (cpu: %u live)\n",
                  pass.report().reported_live, kCapacity, pass.report().killed, cpu.live());
@@ -512,13 +512,13 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
     // advanced only part of its live list would be holding particles the CPU executor has already
     // retired, and the two counts would differ. `killed` is asserted beside it because a run in
     // which nothing died would make the population comparison a comparison of two full blocks.
-    CHECK_EQ(pass.report().reported_live, cpu.live());
-    CHECK_GT(cpu.live(), 0U);
-    CHECK_GT(pass.report().killed, 0U);
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_EQ(pass.report().reported_live, cpu.live());
+    CY_CHECK_GT(cpu.live(), 0U);
+    CY_CHECK_GT(pass.report().killed, 0U);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
-TEST_CASE("the particle-count lever bounds the population the device holds") {
+CY_TEST_CASE("the particle-count lever bounds the population the device holds") {
     DeviceFixture gpu("cy_test_render_vfx_gpu_budget");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -555,15 +555,15 @@ TEST_CASE("the particle-count lever bounds the population the device holds") {
     const u32 full = run(1.0F);
     const u32 quarter = run(0.25F);
     std::fprintf(stderr, "population at full quality %u, at a quarter cap %u\n", full, quarter);
-    CHECK_GT(full, 0U);
-    CHECK_LT(quarter, full);
+    CY_CHECK_GT(full, 0U);
+    CY_CHECK_LT(quarter, full);
     // EXACTLY THE CAP, not "about" it. The compaction lists a free slot only below the cap and
     // kills every live slot at or above it, so the population cannot settle one particle over.
-    CHECK_LE(quarter, kCapacity / 4U);
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_LE(quarter, kCapacity / 4U);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
-TEST_CASE("the cap reduces a block that is already full, not only one that is filling") {
+CY_TEST_CASE("the cap reduces a block that is already full, not only one that is filling") {
     DeviceFixture gpu("cy_test_render_vfx_gpu_shrink");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -596,7 +596,7 @@ TEST_CASE("the cap reduces a block that is already full, not only one that is fi
     }
     CY_REQUIRE(pass.read_back_counts().has_value());
     const u32 full = pass.report().reported_live;
-    CHECK_GT(full, kCapacity / 2U);
+    CY_CHECK_GT(full, kCapacity / 2U);
 
     // Now the controller reduces. Nothing else changes — the same pass, the same effect, the same
     // particles, one lever.
@@ -614,12 +614,12 @@ TEST_CASE("the cap reduces a block that is already full, not only one that is fi
     // IN ONE STEP, not over the population's lifetime. The compaction kills every slot at or above
     // the cap in the sub-step the cap moved, so the reduction is immediate — a cap that waited for
     // the particles to expire would hold no budget at all on the frame that was over it.
-    CHECK_GT(killed_by_the_cap, 0U);
-    CHECK_LE(after_one_step, kCapacity / 4U);
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_GT(killed_by_the_cap, 0U);
+    CY_CHECK_LE(after_one_step, kCapacity / 4U);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
-TEST_CASE("the GPU sort orders the live list back to front, and the lever removes it") {
+CY_TEST_CASE("the GPU sort orders the live list back to front, and the lever removes it") {
     DeviceFixture gpu("cy_test_render_vfx_gpu_sort");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -647,10 +647,10 @@ TEST_CASE("the GPU sort orders the live list back to front, and the lever remove
     }
     CY_REQUIRE(pass.read_back_counts().has_value());
     const u32 live = pass.report().live;
-    CHECK_GT(live, 1U);
+    CY_CHECK_GT(live, 1U);
     // THE COST IS REPORTABLE, which is half the requirement. log2(512) * (log2(512) + 1) / 2 = 45.
-    CHECK_EQ(pass.report().sort_passes, gpu_sort_passes(gpu_round_up_pow2(kCapacity)));
-    CHECK_EQ(pass.report().sort_passes, 45U);
+    CY_CHECK_EQ(pass.report().sort_passes, gpu_sort_passes(gpu_round_up_pow2(kCapacity)));
+    CY_CHECK_EQ(pass.report().sort_passes, 45U);
 
     auto indices = pass.read_back_indices();
     auto block = pass.read_back_particles();
@@ -676,7 +676,7 @@ TEST_CASE("the GPU sort orders the live list back to front, and the lever remove
         previous = current;
     }
     std::fprintf(stderr, "sorted %u live particles, %u pairs out of order\n", live, out_of_order);
-    CHECK_EQ(out_of_order, 0U);
+    CY_CHECK_EQ(out_of_order, 0U);
 
     // THE CONTROL, and it is the half that makes the check above mean something. Unsorted, the
     // compaction's own ascending-slot order survives — so the list is NOT distance-ordered, and
@@ -692,8 +692,8 @@ TEST_CASE("the GPU sort orders the live list back to front, and the lever remove
         CY_REQUIRE(run_frame(gpu, allocator(), unsorted, false));
     }
     CY_REQUIRE(unsorted.read_back_counts().has_value());
-    CHECK_EQ(unsorted.report().sort_passes, 0U);
-    CHECK_EQ(unsorted.report().dispatches, 4U);
+    CY_CHECK_EQ(unsorted.report().sort_passes, 0U);
+    CY_CHECK_EQ(unsorted.report().dispatches, 4U);
 
     auto plain = unsorted.read_back_indices();
     CY_REQUIRE(plain.has_value());
@@ -702,11 +702,11 @@ TEST_CASE("the GPU sort orders the live list back to front, and the lever remove
     for (u32 index = 1; index < plain_live; ++index) {
         ascending += (*plain)[index] > (*plain)[index - 1] ? 1U : 0U;
     }
-    CHECK_EQ(ascending, plain_live > 0 ? plain_live - 1U : 0U);
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_EQ(ascending, plain_live > 0 ? plain_live - 1U : 0U);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
-TEST_CASE(
+CY_TEST_CASE(
     "async compute is used where the device has a queue, and turning it off changes nothing") {
     CookedPlume cooked;
     const CompiledSystem& system = cooked.system.value();
@@ -759,26 +759,26 @@ TEST_CASE(
                  on_graphics);
     // THE DISABLE always holds: a pass told not to use the queue does not use it, whatever the
     // device has.
-    CHECK_EQ(graphics_queue, rhi::QueueKind::Graphics);
+    CY_CHECK_EQ(graphics_queue, rhi::QueueKind::Graphics);
     // THE GATE is asserted against what the device actually reports rather than against this
     // machine. `has_queue` is the gate `vfx-system` means by "where the device exposes an
     // asynchronous compute queue", and a pass that ignored it would fail this on any machine that
     // has one — which the reference machine does, so this line is exercised rather than skipped.
     if (device_has_async) {
         std::fprintf(stderr, "this device exposes an async compute queue and the pass used it\n");
-        CHECK_EQ(async_queue, rhi::QueueKind::AsyncCompute);
+        CY_CHECK_EQ(async_queue, rhi::QueueKind::AsyncCompute);
     } else {
         std::fprintf(stderr,
                      "this device exposes no async compute queue; the passes folded onto "
                      "graphics, which is the graph's own behaviour and not this module's\n");
-        CHECK_EQ(async_queue, rhi::QueueKind::Graphics);
+        CY_CHECK_EQ(async_queue, rhi::QueueKind::Graphics);
     }
     // THE SIMULATION IS THE SAME EITHER WAY. A queue is a scheduling decision and must not be a
     // semantic one; a cross-queue hazard the graph failed to order would show up here as a
     // population that moved.
-    CHECK_EQ(on_async, on_graphics);
-    CHECK_EQ(async_errors, 0U);
-    CHECK_EQ(graphics_errors, 0U);
+    CY_CHECK_EQ(on_async, on_graphics);
+    CY_CHECK_EQ(async_errors, 0U);
+    CY_CHECK_EQ(graphics_errors, 0U);
 }
 
 // THE CASE THAT KEEPS THE SKIP HONEST, and it runs in every build rather than in the ones that can
@@ -792,7 +792,7 @@ TEST_CASE(
 // whose static registration the linker dropped, which makes a build with a front end behave exactly
 // like a build without one. Before this case, that regression would have skipped five cases quietly
 // in dev and looked like a build-configuration difference.
-TEST_CASE("the kernel is compiled where there is a front end, and refused where there is not") {
+CY_TEST_CASE("the kernel is compiled where there is a front end, and refused where there is not") {
     DeviceFixture gpu("cy_test_render_vfx_gpu_kernel_source");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -810,23 +810,23 @@ TEST_CASE("the kernel is compiled where there is a front end, and refused where 
     // THE GENERATED SOURCE EXISTS EITHER WAY. `assemble_dispatch_unit` runs before the front end is
     // reached, so a build with no compiler still emits the kernel it cannot compile — which is what
     // makes the cooked-module path a cook of this exact text rather than of something else.
-    CHECK_GT(pass.generated_source().size(), 0U);
+    CY_CHECK_GT(pass.generated_source().size(), 0U);
 
     if constexpr (kKernelCompilerAvailable) {
-        CHECK(created.has_value());
+        CY_CHECK(created.has_value());
         if (!created.has_value()) {
             std::fprintf(stderr, "create refused on a build with a front end: %s\n",
                          created.error().message);
         }
     } else {
-        CHECK_FALSE(created.has_value());
+        CY_CHECK_FALSE(created.has_value());
         if (!created.has_value()) {
             // Unsupported and not InvalidArgument: the inputs were fine, the BUILD cannot do it.
-            CHECK_EQ(static_cast<int>(created.error().code),
-                     static_cast<int>(ErrorCode::Unsupported));
+            CY_CHECK_EQ(static_cast<int>(created.error().code),
+                        static_cast<int>(ErrorCode::Unsupported));
             // And the message names the way out, because a refusal that does not is a dead end.
-            CHECK(std::strstr(created.error().message, "GpuPassDescription::kernel") != nullptr);
+            CY_CHECK(std::strstr(created.error().message, "GpuPassDescription::kernel") != nullptr);
         }
     }
-    CHECK_EQ(gpu.validation_errors(), 0U);
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }

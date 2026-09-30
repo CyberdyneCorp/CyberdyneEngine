@@ -25,6 +25,12 @@
 #    include <ostream>
 #endif
 
+// doctest's short names (`TEST_CASE`, `CHECK_EQ`, ...) are the framework reached past the wrapper:
+// a case declared with them has no budget guard, and its `__COUNTER__` is outside the suppression
+// below. They are switched off, so such a test does not compile rather than passing quietly.
+#ifndef DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES
+#    define DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES
+#endif
 #include <doctest/doctest.h>
 
 #include <cstddef>

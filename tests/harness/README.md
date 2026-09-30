@@ -144,6 +144,11 @@ binary. Two did, under compilers no CI leg runs on Linux:
   that use it. The suppression applies only on a clang that knows the warning, and the project's
   flags do not change.
 
+Two suites, `render.vfx_gpu` and `render.material_binding`, used doctest's short names
+(`TEST_CASE`, `CHECK_EQ`) instead of the wrapper. Their cases had no budget guard, and their
+`__COUNTER__` was outside the suppression. They now use the `CY_*` macros, and `cy/test/test.h`
+defines `DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES`, so a test that uses a short name does not compile.
+
 `integration.harness_under_clang` compiles `probe/clang_warnings_probe.cpp` with every clang++ on
 PATH, under the project's warning options and `-Werror`. It skips on a host with no clang.
 
