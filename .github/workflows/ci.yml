@@ -319,6 +319,26 @@ jobs:
           restore-keys: |
             cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
             cy-build-${{ matrix.label }}-
+      # THE EDITOR, BUILT BEFORE THE SUITES THAT DRIVE IT. `integration.editor_session_selftest`,
+      # `smoke.agent_authoring` and `smoke.authoring` drive the desktop editor, and until this step
+      # nothing built it before them: the first two ran `just build-editor` themselves, from a cold
+      # cargo cache, inside CTest's 300-second timeout (the selftest took 222 s of it on Linux, and
+      # `smoke.agent_authoring` timed out on Windows), and the third, which is handed its binaries,
+      # found none. Building it here takes the compile out of every test's budget; the suites' own
+      # `just build-editor` is then an incremental no-op, and what they time is the session.
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
+        shell: bash
+      - uses: actions/cache@v5
+        with:
+          path: build/editor
+          key: cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
+            cy-editor-test-${{ matrix.label }}-
+      - name: The editor the session suites drive
+        run: just build-editor
+        shell: bash
       - name: Unit, integration and smoke
         run: just test-all
       # Issue #28's acceptance ledger on the tree just built: each native probe runs its one doctest
@@ -887,6 +907,10 @@ jobs:
           restore-keys: |
             cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-agent-
+      # Built before the suite for the reason the test job gives: the suite's own `just build-editor`
+      # from a cold cache ran out of CTest's 300-second timeout, and the timeout is for the session.
+      - name: The editor the agent drives
+        run: just build-editor
       - name: An agent composes, authors, is refused, and is told what it spent
         run: just test-smoke -R agent_authoring
       - name: The artefact runs through the workflow recipe
