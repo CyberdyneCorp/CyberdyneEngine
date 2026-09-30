@@ -1556,6 +1556,13 @@ void record_level_readback(const rendering::PassContext& context, void* user) no
         .read(image, rhi::Access::TransferRead)
         .write(destination, rhi::Access::TransferWrite)
         .record(&record_level_readback, &readback);
+    // The texture was imported as the frame samples it and the copy moved it to a transfer source;
+    // the graph does not put an import back, so this read does, as `LightmapTextures`' own
+    // residency pass does after its upload. Without it the next import's claim is false and a
+    // Vulkan device reports the frame sampling a level still laid out for the copy.
+    graph.add_pass("lightmap level residency", rhi::QueueKind::Graphics)
+        .read(image, rhi::Access::FragmentSampledRead)
+        .side_effect();
     graph.add_pass("lightmap level host", rhi::QueueKind::Graphics)
         .read(destination, rhi::Access::HostRead)
         .side_effect();
