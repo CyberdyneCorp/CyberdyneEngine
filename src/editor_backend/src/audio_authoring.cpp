@@ -673,7 +673,7 @@ Expected<std::vector<EmitterMarker>, Error> read_emitters(const ser::World& worl
 // ---------------------------------------------------------------------------------
 
 AudioAuthoring::AudioAuthoring(Allocator& allocator, audio::AudioBackend* device) noexcept
-    : allocator_(&allocator), device_(device), server_(allocator), adapter_(server_, allocator) {}
+    : device_(device), server_(allocator), adapter_(server_, allocator) {}
 
 AudioAuthoring::~AudioAuthoring() {
     server_.shutdown();

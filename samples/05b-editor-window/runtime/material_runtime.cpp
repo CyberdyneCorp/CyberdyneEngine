@@ -1162,6 +1162,7 @@ Status MetalMaterialRuntime::publish(
     return ok();
 #else
     (void)material;
+    (void)has_wind;
     return fail(ErrorCode::Unsupported,
                 "this runtime was built without the Slang front end required for live materials");
 #endif

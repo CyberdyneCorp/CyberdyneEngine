@@ -60,6 +60,22 @@ inline void keep(const T& value) {
 #    define CY_BENCH_UNIQUE(prefix) CY_BENCH_CONCAT(prefix, __LINE__)
 #endif
 
+// clang 22 reports `__COUNTER__` under -Wpedantic as a C2y extension, at the benchmark's line. The
+// two brackets below suppress it for the expansion of the declaring macros only, and only on a
+// clang that knows the warning — tests/harness/include/cy/test/test.h does the same for test cases.
+#if defined(__clang__) && defined(__has_warning)
+#    if __has_warning("-Wc2y-extensions")
+#        define CY_BENCH_COUNTER_BEGIN       \
+            _Pragma("clang diagnostic push") \
+                _Pragma("clang diagnostic ignored \"-Wc2y-extensions\"")
+#        define CY_BENCH_COUNTER_END _Pragma("clang diagnostic pop")
+#    endif
+#endif
+#ifndef CY_BENCH_COUNTER_BEGIN
+#    define CY_BENCH_COUNTER_BEGIN
+#    define CY_BENCH_COUNTER_END
+#endif
+
 /// The iteration count the runner chose for this run. The body loops over it.
 #define CY_BENCH_ITERATIONS cy_bench_iterations
 
@@ -77,14 +93,16 @@ inline void keep(const T& value) {
 ///         for (std::uint64_t i = 0; i < CY_BENCH_ITERATIONS; ++i) { … }
 ///         CY_BENCH_KEEP(result);
 ///     }
-#define CY_BENCHMARK(name, description)                                        \
-    CY_BENCHMARK_IMPL(name, description, ::cy::bench::kDefaultFirstIterations, \
-                      CY_BENCH_UNIQUE(cy_bench_body_), CY_BENCH_UNIQUE(cy_bench_registration_))
+#define CY_BENCHMARK(name, description)                                                           \
+    CY_BENCH_COUNTER_BEGIN CY_BENCHMARK_IMPL(                                                     \
+        name, description, ::cy::bench::kDefaultFirstIterations, CY_BENCH_UNIQUE(cy_bench_body_), \
+        CY_BENCH_UNIQUE(cy_bench_registration_)) CY_BENCH_COUNTER_END
 
 /// Declare a benchmark whose one iteration is expensive — milliseconds rather than nanoseconds —
 /// so the runner starts scaling from `first` iterations rather than from a thousand.
-#define CY_BENCHMARK_STARTING_AT(name, description, first)                       \
-    CY_BENCHMARK_IMPL(name, description, first, CY_BENCH_UNIQUE(cy_bench_body_), \
-                      CY_BENCH_UNIQUE(cy_bench_registration_))
+#define CY_BENCHMARK_STARTING_AT(name, description, first)         \
+    CY_BENCH_COUNTER_BEGIN CY_BENCHMARK_IMPL(                      \
+        name, description, first, CY_BENCH_UNIQUE(cy_bench_body_), \
+        CY_BENCH_UNIQUE(cy_bench_registration_)) CY_BENCH_COUNTER_END
 
 #endif  // CY_BENCH_BENCH_H

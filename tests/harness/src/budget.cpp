@@ -560,7 +560,7 @@ BudgetGuard::~BudgetGuard() {
             name_, static_cast<double>(cpu_ns) / 1e6, static_cast<unsigned long long>(cpu_ns),
             static_cast<double>(budget_ns) / 1e6, budget_ns, static_cast<double>(wall_ns) / 1e6,
             stall_ceiling_state(), quiet_host().reason);
-        DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
+        CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message) CY_TEST_COUNTER_END;
         return;
     }
 
@@ -616,7 +616,7 @@ BudgetGuard::~BudgetGuard() {
         std::fprintf(stderr, "cy::test: %s\n", message);
         return;
     }
-    DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
+    CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message) CY_TEST_COUNTER_END;
 }
 
 unsigned long long contended_cases() noexcept {
