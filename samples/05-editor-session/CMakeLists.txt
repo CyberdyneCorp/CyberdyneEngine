@@ -78,10 +78,12 @@ endif()
 
 set(CY_SESSION_DRIVER "${CMAKE_CURRENT_SOURCE_DIR}/session.py")
 
-# smoke.editor_session — the whole artefact. It builds the editor itself (a Cargo build of a
-# workspace with no third-party dependencies: 3.4 s cold, about 0.2 s warm) and is handed the
-# importer as a built target, because running `just build-tools` from inside a CTest run would
-# reconfigure the tree ctest is reading its own test list out of.
+# smoke.editor_session — the whole artefact. The editor is the `cy_editor` fixture's
+# (samples/editor_fixture.cmake), built before this entry starts and outside its budget: the
+# workspace stopped being "3.4 s cold" when it grew a window, a renderer and a GPU stack, and a cold
+# build inside the session spent the whole smoke timeout on a hosted runner. The importer is handed
+# in as a built target, because running `just build-tools` from inside a CTest run would reconfigure
+# the tree ctest is reading its own test list out of.
 #
 # The budget and the timeout come out of the taxonomy in tests/CMakeLists.txt rather than being
 # restated here, which is what bindings/swift/ and samples/04-character/ do: a budget copied into a
@@ -100,7 +102,7 @@ endif()
 
 add_test(NAME smoke.editor_session
          COMMAND "${Python3_EXECUTABLE}" "${CY_SESSION_DRIVER}"
-                 --build --profile "${CY_SESSION_PROFILE}"
+                 --profile "${CY_SESSION_PROFILE}"
                  --import-cli "$<TARGET_FILE:cy_import_cli>"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/session"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -115,9 +117,12 @@ set_tests_properties(smoke.editor_session PROPERTIES
 # noticed has stopped working" are different defects with different fixes.
 add_test(NAME integration.editor_session_selftest
          COMMAND "${Python3_EXECUTABLE}" "${CY_SESSION_DRIVER}" --selftest
-                 --build --profile "${CY_SESSION_PROFILE}"
+                 --profile "${CY_SESSION_PROFILE}"
                  --import-cli "$<TARGET_FILE:cy_import_cli>"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/session-selftest"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_tests_properties(integration.editor_session_selftest PROPERTIES
                      LABELS "integration" TIMEOUT "${CY_SESSION_TIMEOUT_INTEGRATION}")
+
+cy_sample_requires_editor("${CY_SESSION_PROFILE}"
+                          smoke.editor_session integration.editor_session_selftest)

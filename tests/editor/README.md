@@ -55,7 +55,7 @@ They are declared only where the artefact can actually run:
 * **on a Unix host**, because the live bridge is a Unix domain socket and `cy-runtime-stub` refuses
   to pretend otherwise;
 * **when `cargo` and `just` are both on the path**, because the session runs the real editor binary
-  and builds it if it is stale.
+  and the `cy_editor` fixture builds it if it is stale.
 
 Where one of those is missing the entries do not exist, the configure says so in one line, and the
 test list is visibly shorter — which is this tree's position throughout (`samples/04-character`
@@ -64,8 +64,15 @@ report green on exactly the machines least able to judge the claim.
 
 ## The cost, measured
 
-`smoke.editor_session` runs `just build-editor` first, which is a Cargo build of a workspace with no
-third-party dependencies: **3.4 s cold and about 0.2 s warm** on the development profile. It does
-not build the engine — the importer arrives as a CMake target dependency instead, because running
+`smoke.editor_session` no longer builds the editor itself. At M5 it ran `just build-editor` inside
+its own run, when that was a Cargo build of a workspace with no third-party dependencies (**3.4 s
+cold and about 0.2 s warm**). The workspace has since grown a window, a renderer and a GPU stack,
+and on a hosted runner with no cached editor the cold build spent the whole 300 s smoke budget before
+the session started — `agent` timed out on every run and `authorable` on some. The build is now
+`smoke.editor_build`, the setup of the `cy_editor` CTest fixture (`samples/editor_fixture.cmake`):
+it has a timeout of its own (`CY_EDITOR_BUILD_TIMEOUT`, 1800 s), CTest runs it first and adds it to
+any selection that needs it, and every entry that drives the editor requires it and passes no
+`--build`. `integration.editor_fixture` holds that shape against the configured tree. The session
+does not build the engine — the importer arrives as a CMake target dependency instead, because running
 `just build-tools` from inside a CTest run would reconfigure the tree ctest is reading its own test
 list out of.

@@ -851,22 +851,21 @@ def prepare(work: Path) -> Path:
 
 
 def editor_binary(profile: str) -> Path:
-    """Where `just build-editor --profile <profile>` puts the editor.
+    """Where `just build-editor --profile <profile>` put the editor, asked of the recipe that owns it.
 
-    Asked of the recipes rather than derived from the engine's build tree: cargo's target directory
-    is `_editor-target-dir` — `$CY_BUILD_DIR/editor`, or `build/editor` when CY_BUILD_DIR is unset —
-    and not `<build tree>/editor`. The two agree only under CY_BUILD_DIR, which is how the ledger
-    runs; everywhere else this looked in `build/dev/editor/`, found nothing, and reported an editor
-    that had been built as absent.
+    The editor is Cargo's, not CMake's, so it is NOT under the engine's build tree: it is under
+    `just _editor-target-dir`, in the directory `_cargo-profile` names. This read
+    `<build-dir>/editor/<profile>` with a hand-copied `dev -> development` mapping and a glob as the
+    fallback, so under a plain `build/<profile>` tree it looked where nothing was ever built, and in
+    `profile` and `release` it named Cargo directories that do not exist and then took whichever
+    profile's editor the glob sorted first. tools/ci/test_recipes.py holds this to the recipe.
+    Windows gives the binary an `.exe` suffix the recipe's name does not carry.
     """
-    def recipe(*arguments: str) -> str:
-        return subprocess.run(["just", *arguments], cwd=ROOT, capture_output=True, text=True,
-                              check=True).stdout.strip()
-
-    cargo_profile = recipe("_cargo-profile", profile)
-    directory = "debug" if cargo_profile == "dev" else cargo_profile
     name = "cyberdyne-editor.exe" if sys.platform == "win32" else "cyberdyne-editor"
-    return Path(recipe("_editor-target-dir")) / directory / name
+    return Path(subprocess.run(
+        ["just", "_editor-binary", profile, name],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.strip())
 
 
 def locate(profile: str, build: bool, build_dir: str, sample: str) -> dict:
@@ -877,10 +876,9 @@ def locate(profile: str, build: bool, build_dir: str, sample: str) -> dict:
     tree = Path(build_dir) if build_dir else ROOT / "build" / profile
     if not tree.is_absolute():
         tree = ROOT / tree
-    editor = editor_binary(profile)
     found_sample = Path(sample) if sample else tree / "samples/08a-authoring/cy_sample_authoring"
     return {
-        "editor": editor,
+        "editor": editor_binary(profile),
         "runtime": tree / "samples/05b-editor-window/runtime/cy_editor_window_runtime",
         "importer": tree / "tools/import/cy_import_cli",
         "sample": found_sample,

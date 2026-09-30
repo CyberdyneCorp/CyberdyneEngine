@@ -140,6 +140,50 @@ def editor_target_dir_honours_the_override(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def the_authoring_driver_finds_the_editor_the_recipe_built(root: pathlib.Path) -> list[str]:
+    """`samples/08a-authoring/authoring.py` looks for the editor where `just build-editor` put it.
+
+    It read `<build-dir>/editor/<profile>/cyberdyne-editor` with a hand-copied `dev -> development`
+    mapping and a glob as the fallback. Under an ordinary `build/<profile>` tree the editor is in
+    `build/editor/`, beside the engine trees rather than inside one, so `smoke.authoring` and `just
+    run-authoring` reported "cyberdyne-editor was not built" on every CI leg; and in `profile` and
+    `release` the directory it named (`profile/`, `release/`) is not the one Cargo writes
+    (`profiling/`, `shipping/`), so the glob handed it whichever profile's editor sorted first.
+    """
+    import importlib.util
+
+    failures = []
+    spec = importlib.util.spec_from_file_location(
+        "cy_authoring_driver", root / "samples" / "08a-authoring" / "authoring.py"
+    )
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+
+    saved = os.environ.get("CY_BUILD_DIR")
+    try:
+        for override in (None, "build/gate-profiles", "/tmp/cy-build"):
+            if override is None:
+                os.environ.pop("CY_BUILD_DIR", None)
+            else:
+                os.environ["CY_BUILD_DIR"] = override
+            for profile in ("debug", "dev", "profile", "release"):
+                expected = recipe(root, ["_editor-binary", profile, "cyberdyne-editor"], override)
+                # The tree CTest hands the driver as `--build-dir`, and `run-authoring`'s own.
+                tree = override or f"build/{profile}"
+                found = str(driver.locate(profile, False, tree, "")["editor"])
+                if found != expected:
+                    failures.append(
+                        f"CY_BUILD_DIR={override} --profile {profile}: the driver looks for the "
+                        f"editor at {found!r}, and `just build-editor` writes it to {expected!r}"
+                    )
+    finally:
+        if saved is None:
+            os.environ.pop("CY_BUILD_DIR", None)
+        else:
+            os.environ["CY_BUILD_DIR"] = saved
+    return failures
+
+
 def a_recipe_that_parses_flags_binds_them(root: pathlib.Path) -> list[str]:
     """`just` interpolates `{{args}}` as TEXT; it does not set `$@`.
 
@@ -1451,6 +1495,9 @@ def main() -> int:
         "Swift module builds hold one SwiftPM lock": swift_module_builds_hold_one_swiftpm_lock,
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
+        ),
+        "the authoring driver finds the editor the recipe built": (
+            the_authoring_driver_finds_the_editor_the_recipe_built
         ),
         "a build leaves two cores free by default": a_build_leaves_two_cores_free_by_default,
         "no recipe asks for every core": no_recipe_asks_for_every_core,

@@ -138,7 +138,7 @@ set_tests_properties(integration.editor_window_selftest PROPERTIES
 if(TARGET cy_editor_window_runtime)
 add_test(NAME smoke.editor_window
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/window.py"
-                 --build --profile "${CY_WINDOW_PROFILE}"
+                 --profile "${CY_WINDOW_PROFILE}"
                  --runtime "$<TARGET_FILE:cy_editor_window_runtime>"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/session"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -154,7 +154,7 @@ set_tests_properties(smoke.editor_window PROPERTIES
 # one (colour, a move, and its undo). `window.py` remains the proof of real input. Issue #18.
 add_test(NAME smoke.editor_window_mcp
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mcp_window.py"
-                 --build --profile "${CY_WINDOW_PROFILE}"
+                 --profile "${CY_WINDOW_PROFILE}"
                  --runtime "$<TARGET_FILE:cy_editor_window_runtime>"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/mcp-session"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -162,4 +162,7 @@ set_tests_properties(smoke.editor_window_mcp PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_WINDOW_TIMEOUT}"
                      SKIP_RETURN_CODE 3
                      RUN_SERIAL TRUE)
+# Both sessions drive the editor the `cy_editor` fixture built, outside their budgets.
+# samples/editor_fixture.cmake.
+cy_sample_requires_editor("${CY_WINDOW_PROFILE}" smoke.editor_window smoke.editor_window_mcp)
 endif()

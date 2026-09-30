@@ -83,8 +83,11 @@ endif()
 
 add_test(NAME smoke.agent_authoring
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/authoring.py"
-                 --build --profile "${CY_AGENT_PROFILE}"
+                 --profile "${CY_AGENT_PROFILE}"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/session"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_tests_properties(smoke.agent_authoring PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_AGENT_TIMEOUT}")
+# The editor is built by the `cy_editor` fixture before the session starts, not by the session inside
+# its budget: that cold build was what timed out the `agent` job. samples/editor_fixture.cmake.
+cy_sample_requires_editor("${CY_AGENT_PROFILE}" smoke.agent_authoring)
