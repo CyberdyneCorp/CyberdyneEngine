@@ -739,10 +739,12 @@ std::string assigned_vertex_shadow_scene() {
         Occurrence::First);
 }
 
+// A vertical offset of 4 * time. Linear on purpose: a GPU's sin is approximate (Vulkan leaves its
+// precision to the implementation), so a sine could not be matched texel for texel by the CPU's
+// correctly rounded reference, while 4 * 0.2 is exact in single precision on every device.
 std::string time_vertex_graph() {
     const std::string with_nodes = edited(kSurfaceVertexGraph, "link 1 \"out\" -> 3 \"colour\"\n",
                                           "node 7 \"material.time\" v1 {\n}\n"
-                                          "node 8 \"material.sin\" v1 {\n}\n"
                                           "node 9 \"material.constant\" v1 {\n"
                                           "    prop \"type\" : \"name\" = \"float3\"\n"
                                           "    prop \"value\" : \"vec4\" = (0, 4, 0, 0, 0)\n}\n"
@@ -750,9 +752,8 @@ std::string time_vertex_graph() {
                                           "link 1 \"out\" -> 3 \"colour\"\n",
                                           Occurrence::First);
     return edited(with_nodes, "link 5 \"out\" -> 6 \"offset\"\n",
-                  "link 7 \"out\" -> 8 \"value\"\n"
                   "link 9 \"out\" -> 10 \"a\"\n"
-                  "link 8 \"out\" -> 10 \"b\"\n"
+                  "link 7 \"out\" -> 10 \"b\"\n"
                   "link 10 \"out\" -> 6 \"offset\"\n",
                   Occurrence::First);
 }
@@ -825,8 +826,8 @@ void check_graph_displacement_matches_cpu(const ser::AuthoringSchema& schema,
     CY_CHECK_GT(differing_pixels(displaced.span(), frames.graph.pixels()), 100U);
 }
 
-// The second frame's sine displacement equals the CPU's scene translation. TAA consumes the depth
-// pass's motion target, so matching the temporal image also checks the shader's previous-time
+// The second frame's time-driven displacement equals the CPU's scene translation. TAA consumes the
+// depth pass's motion target, so matching the temporal image also checks the shader's previous-time
 // evaluation against the CPU reference.
 void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
                                     const first_light::Camera& view) {
@@ -834,11 +835,11 @@ void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
         "samples/05b-editor-window/project/materials/copper_clay.cygraph";
     const std::string assigned = assigned_vertex_shadow_scene();
     const std::string& raised = assigned;
-    constexpr f32 second_time = 0.2F;        // Above the old 0.1 s motion clamp.
-    constexpr f32 cpu_offset = 0.79467732F;  // 4 * sin(0.2)
+    constexpr f32 second_time = 0.2F;  // Above the old 0.1 s motion clamp.
+    constexpr f32 cpu_offset = 0.8F;   // 4 * 0.2, exact in f32
     const std::string& graph_moved = assigned;
     const std::string cpu_moved =
-        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.79467732 0\n", Occurrence::First);
+        edited(raised, "    field 2 0 0 0\n", "    field 2 0 0.8 0\n", Occurrence::First);
     ser::World graph_before(allocator());
     ser::World cpu_before(allocator());
     ser::World graph_after(allocator());
@@ -851,8 +852,8 @@ void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
     FramePair frames;
     AuthoredFrame& graph_frame = frames.graph;
     AuthoredFrame& cpu_frame = frames.cpu;
-    const std::string sine_graph = time_vertex_graph();
-    CY_REQUIRE(graph_frame.preview(reference, sine_graph));
+    const std::string time_graph = time_vertex_graph();
+    CY_REQUIRE(graph_frame.preview(reference, time_graph));
     const std::string zero_offset =
         edited(kSurfaceVertexGraph, "(0, 0.25, 0, 0, 0)", "(0, 0, 0, 0, 0)", Occurrence::First);
     CY_REQUIRE(cpu_frame.preview(reference, zero_offset));
@@ -863,7 +864,7 @@ void check_graph_motion_matches_cpu(const ser::AuthoringSchema& schema,
     Array<u32> graph_first(allocator());
     CY_REQUIRE(graph_first.append(graph_frame.pixels()));
 
-    CY_CHECK_EQ(cpu_offset, doctest::Approx(4.0F * std::sin(second_time)));
+    CY_CHECK_EQ(cpu_offset, 4.0F * second_time);
     CY_REQUIRE(graph_frame.render(graph_after, view, true, nullptr, second_time));
     CY_REQUIRE(cpu_frame.render(cpu_after, view, true, nullptr, second_time));
     CY_CHECK_GT(differing_pixels(graph_first.span(), graph_frame.pixels()), 100U);
@@ -939,7 +940,7 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     Array<char> animated_unit(allocator());
     CY_REQUIRE(assemble_scene_material_vertex_unit(*animated_program, animated_unit));
     const std::string_view source(animated_unit.data(), animated_unit.size());
-    CY_CHECK(source.find("sin(") != std::string_view::npos);
+    CY_CHECK(source.find("ctx.attributes.time_seconds = timeSeconds;") != std::string_view::npos);
     const usize current = source.find("let current = sceneMaterialRelative(");
     const usize previous = source.find("let previous = sceneMaterialRelative(");
     const usize previous_point = source.find("let previousPoint =", previous);

@@ -1110,10 +1110,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "the-shot-does-not-overclaim-the-editor"
-digest = "c5610a4291425bd4"
+digest = "1eebe925d00d7806"
 verdict = "proven against a built tree"
-mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
+mutation = "delete-lines 'none of the three committed canvases' in docs/design/beauty-shot.md (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build (exit 1: the provenance no longer says the shot's committed canvases did not go through the socket's material commands, so it reads as if they did), and green again once restored"
 
 [[proof]]
 ledger = "m11c"

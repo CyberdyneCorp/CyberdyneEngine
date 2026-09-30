@@ -121,8 +121,10 @@ The hosted Metal compiled-material path evaluates a graph's `vertex_offset` on t
 and uses the same generated function for its shadow pass. The Metal image test compares a constant
 offset against moving the same mesh on the CPU. The authored scene frame also accepts an optional
 time value for deterministic vertex-animation previews; without it, the frame uses elapsed time.
-Its temporal test compares two frames of sine displacement with the same mesh translated on the
-CPU across a 0.2-second step, checking both the final image and the prepass motion texture. The
+Its temporal test compares two frames of a time-driven displacement (`4 * time`) with the same mesh
+translated on the CPU across a 0.2-second step, checking both the final image and the prepass
+motion texture, which must match to the texel. The offset is linear rather than a sine because a
+GPU's `sin` is approximate while `4 * 0.2` is exact in single precision on every device. The
 material animation delta retains that full step so its previous-position evaluation matches the
 previous visible frame. Motion readback is enabled only
 for that inspection; ordinary editor frames do not allocate or copy it. The pixel comparison

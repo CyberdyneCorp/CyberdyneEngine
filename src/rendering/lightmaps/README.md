@@ -156,6 +156,36 @@ GPU-only figure at a production resolution is still owed.
 tree's development Mac only the Metal leg has a device; the Vulkan leg compiles and skips, and its
 cases — and its pinned reference, drawn by the Vulkan frame — need a run on the Linux RTX machine.
 
+**The first run there (RTX 5060, NVIDIA 580.95.05, 2026-09-30)** found two things. Thirteen of the
+fourteen cases pass, and (c)'s pinned reference matches byte for byte.
+
+- **(i) left the atlas laid out for a copy.** `read_level` imported a texture as sampled, copied one
+  level out and never put it back, so the next import's claim was false and Vulkan validation
+  reported six sampled reads of a level still in `TRANSFER_SRC_OPTIMAL`. Metal has no layouts,
+  which is why the Mac never saw it. The readback now ends on a sampled read, as `LightmapTextures`'
+  own upload does, and (i) runs with no validation error.
+- **(c) can lose the device on this driver.** Its fourth `CornerRun`'s second frame ends in
+  `vkDeviceWaitIdle` returning `VK_ERROR_DEVICE_LOST`, and the kernel logs Xid 109 (`CTX SWITCH
+  TIMEOUT`). It follows the device's history rather than the case: four lightmapped runs on one
+  device draw, as do two unlit runs followed by three lightmapped ones, while one unlit run
+  followed by three runs that bind a lightmap loses the device on the fourth. For two hours, with
+  the host's load average near 20, it did so on every run; once the host was quieter the whole
+  suite passed on the dev and debug trees and then lost the device on one run in three. An Xid 109
+  is the scheduler failing to switch away from a context, so how often it fires depends on what
+  else asks for the GPU.
+
+  With `VK_EXT_device_fault` the driver reports an invalid READ inside the VA of the frame's
+  transient depth image from two frames earlier, destroyed after the device had gone idle, and no
+  longer bound. The frame names that image nowhere: it passes no descriptor to the forward shader,
+  and the fault stays with the temporal pass's depth binding replaced and with transient aliasing
+  switched off. Keeping retired depth images alive is the only change that removes it. Core and
+  synchronisation validation report nothing up to the loss; GPU-assisted validation reports
+  nothing and the run draws; the same binary draws all four of (c)'s runs on this host's Intel UHD
+  770 (Mesa ANV 25.2.8) and on lavapipe. The evidence points at the NVIDIA driver's handling of a
+  destroyed depth attachment rather than at a use the engine makes of it, so (c) is left as it is
+  and nothing in it was relaxed. Recycling transient images across frames instead of destroying
+  them would avoid the pattern and is the candidate workaround.
+
 ## What is not here
 
 A streamed atlas; per-region mask channels (a fifth stationary light is refused by the bake); the

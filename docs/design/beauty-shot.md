@@ -281,17 +281,21 @@ generated program or the picture.
 
 **What is honestly missing from "authored through the editor".** The shot's materials were placed
 and wired on the editor's authoring MODEL by a program, `cy-author-material`, not by a person at a
-window and not over the control socket. The editor's command registry now carries four material
-commands, `material.graph.read`, `material.graph.preview`, `material.graph.save` and
-`material.graph.status` (`19a3f07`), so a material graph CAN be edited over the control socket: a
-client reads a project graph's `cymatcanvas 1` text, changes it, previews it in the hosted viewport
-and asks the engine to author and save it. What they exchange is a WHOLE canvas as text:
-none of them places a node or wires a pin, so a socket client edits a canvas the way it would edit
-a file, not node by node the way `samples/08a-authoring` drives a scene, and none of the three committed
-canvases went through them. `m11c:the-shot-does-not-overclaim-the-editor` checks these sentences
-against the editor's own registry: the day a `material.*` command outside `material.graph.*` is
-registered, or the registry and this paragraph disagree about which `material.graph.*` commands
-exist, it goes red and this caption is owed an update. What IS true, and was not true before this
-rung, is that `SpecialisedEditors::open(Domain::Materials)` succeeds at all: M11.c's spike measured
+window and not over the control socket, and none of the three committed canvases went through the
+socket's material commands. Those commands now exist. `19a3f07` registered four that exchange a
+WHOLE canvas as `cymatcanvas 1` text: `material.graph.read`, `material.graph.preview`,
+`material.graph.save` and `material.graph.status`. PR #17 (`1b7373a5`) added node-level editing
+over the same registry: `material.node.add` places a node from the engine's catalogue,
+`material.node.move` moves it, `material.node.connect` and `material.node.disconnect` wire and
+unwire two engine-typed pins, `material.node.remove` removes a node and its wires,
+`material.node.property.set` sets a typed property, and `material.canvas.draft.save` records a
+canvas that does not author yet as an undoable draft. So a socket client CAN now author a material
+node by node, the way `samples/08a-authoring` drives a scene; what this artefact does not claim is
+that its own materials were authored that way. `m11c:the-shot-does-not-overclaim-the-editor`
+checks these sentences against the editor's own registry: the day this paragraph names a material
+command the registry does not hold, or the registry holds one this paragraph does not name, or the
+paragraph stops saying the committed canvases did not go through them, it goes red and this caption
+is owed an update. What IS true, and was not true before this rung, is that
+`SpecialisedEditors::open(Domain::Materials)` succeeds at all: M11.c's spike measured
 it refusing with *"this build declares no authoring vocabulary for materials — `material-compiler`
 owes it"*, and that was junction 1 of six.
