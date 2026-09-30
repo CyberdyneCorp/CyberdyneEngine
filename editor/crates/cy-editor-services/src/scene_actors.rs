@@ -45,7 +45,12 @@ fn component(schema: &mut DocumentSchema, name: &str) -> TypeId {
     schema.declare_type(name, false)
 }
 
-fn place(document: &mut Document, node: NodeId, at: [f32; 3], rotation: [f32; 4]) -> Result<()> {
+pub(crate) fn place(
+    document: &mut Document,
+    node: NodeId,
+    at: [f32; 3],
+    rotation: [f32; 4],
+) -> Result<()> {
     let binding = if let Some(binding) = TransformBinding::of_schema(document.schema()) {
         binding
     } else {

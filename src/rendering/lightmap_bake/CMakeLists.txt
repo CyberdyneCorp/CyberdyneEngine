@@ -18,6 +18,7 @@ cy_add_module(
         src/atlas.cpp
         src/bake.cpp
         src/mips.cpp
+        src/probes.cpp
         src/postprocess.cpp
         src/raster.cpp
         src/scene.cpp

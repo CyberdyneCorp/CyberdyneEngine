@@ -201,8 +201,9 @@ struct TraceWorld {
                                 const LightmapBakeProgress* progress) noexcept {
     const bool masked = !canvas.shadow.empty();
     const auto total = static_cast<u32>(canvas.surfaces.size());
+    const u32 interval = lightmap_progress_interval(settings.trace.samples);
     for (usize index = 0; index < canvas.surfaces.size(); ++index) {
-        if (index % kProgressTexels == 0U &&
+        if (index % interval == 0U &&
             !checkpoint(progress, LightmapBakeStage::Trace, static_cast<u32>(index), total)) {
             return false;
         }
@@ -323,6 +324,8 @@ const char* lightmap_bake_stage_name(LightmapBakeStage stage) noexcept {
             return "filter";
         case LightmapBakeStage::Finish:
             return "finish";
+        case LightmapBakeStage::Probes:
+            return "probes";
         case LightmapBakeStage::Count:
             break;
     }
@@ -830,6 +833,82 @@ Vec3 sample_lightmap(const BakedLightmap& lightmap, u32 address, Vec2 uv2, Vec3 
             break;
     }
     return Vec3{first.x, first.y, first.z};
+}
+
+namespace {
+
+/// A capture ray's answer at the surface it met: that surface's outgoing radiance, path traced by
+/// a ray aimed back at the point from just in front of it. A Lambertian surface leaves the same
+/// radiance in every direction, so the ray's own direction does not matter, and the path tracer
+/// resolves the material, the emission and the bounces exactly as it does for a lightmap texel.
+class SurfaceRadiance final : public gi::RadianceLookup {
+public:
+    SurfaceRadiance(const gi::PathTracer& path, u32 bounces) noexcept
+        : path_(&path), bounces_(bounces) {}
+
+    [[nodiscard]] bool radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
+                                   u32& age_frames) const noexcept override {
+        constexpr f32 kLift = 0.01F;
+        u32 sequence = texel_sequence(0x51ED270BU, point_key(position));
+        radiance = path_->radiance(position + (normal * kLift), normal * -1.0F, bounces_,
+                                   kLift * 4.0F, sequence);
+        age_frames = 0;
+        return true;
+    }
+
+private:
+    /// A reproducible sequence per point, so a capture is a number rather than a draw.
+    [[nodiscard]] static usize point_key(Vec3 position) noexcept {
+        const auto quantise = [](f32 value) {
+            return static_cast<usize>(static_cast<i64>(std::floor(value * 1024.0F)));
+        };
+        return quantise(position.x) ^ (quantise(position.y) * 73856093U) ^
+               (quantise(position.z) * 19349663U);
+    }
+
+    const gi::PathTracer* path_;
+    u32 bounces_;
+};
+
+}  // namespace
+
+Status capture_irradiance_volumes(const LightmapScene& scene, const LightmapBakeSettings& settings,
+                                  Span<gi::IrradianceVolume* const> volumes, u64& rays,
+                                  LightmapBakeReport& report,
+                                  const LightmapBakeProgress* progress) noexcept {
+    rays = 0;
+    if (Status valid = validate(scene); !valid) {
+        return valid;
+    }
+    const auto total = static_cast<u32>(volumes.size());
+    if (!checkpoint(progress, LightmapBakeStage::Probes, 0, total)) {
+        return cancelled(report);
+    }
+    TraceWorld world;
+    if (Status built = world.build(scene, settings); !built) {
+        return built;
+    }
+    const gi::PathTracer path(world.tracer, world.surfels, world.lights.span(), scene.sky,
+                              &world.tracer);
+    const SurfaceRadiance radiance(path, settings.trace.bounces);
+    gi::VolumeCaptureContext context;
+    context.tracer = &world.tracer;
+    context.radiance = &radiance;
+    context.sky = scene.sky;
+    // The cancel is read before every probe (`context.stop`), so a cancel raised as one volume is
+    // reported stops the next before its first probe, and one raised inside a volume stops it
+    // there rather than after all of its probes.
+    context.stop = progress != nullptr ? progress->cancel : nullptr;
+    for (u32 index = 0; index < total; ++index) {
+        if (volumes[index] != nullptr && volumes[index]->capture_all(context).stopped) {
+            return cancelled(report);
+        }
+        rays = world.tracer.rays();
+        if (!checkpoint(progress, LightmapBakeStage::Probes, index + 1U, total)) {
+            return cancelled(report);
+        }
+    }
+    return ok();
 }
 
 }  // namespace cy::rendering::lightmap_bake

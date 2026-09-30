@@ -266,19 +266,49 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Swift Workspace | `source.write`, `source.delete`, `project.build`, `project.reload` |
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
-| Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `viewport.view-mode.lightmap-density` |
+| Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `lighting.write-lightmap-description`, `lighting.volume.create`, `lighting.volume.set`, `lighting.light.set-mobility`, `lighting.object.set-resolution`, `viewport.view-mode.lightmap-density`, `viewport.view-mode.gi-probes` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 | Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
 
-**Lighting & lightmaps.** The lighting and lightmap baking specialised editor opens onto a form: a
-level's `.cylightmap` description, an output, Bake, Cancel and the bake's progress, and the density
-view. `lighting.bake-lightmaps` runs the engine's bake as `cy_build lightmap` in an operation, so
-the progress surface shows the texels traced and its row's Cancel — or
-`lighting.cancel-lightmap-bake` — sends the tool its `cancel`; a cancelled bake writes nothing.
+**Lighting & lightmaps.** The lighting and lightmap baking specialised editor bakes the open world
+as it was authored. Its form holds the level settings (encoding, texel density, page size, samples,
+bounces), an optional description and an output, Bake, Cancel and the bake's progress; below it are
+the world's irradiance volumes with their probe grid, every light's mobility, and the density and
+probe views.
+
+- **Authoring is undoable and MCP-reachable.** `lighting.volume.create` and `lighting.volume.set`
+  place an `IrradianceVolume` (origin = its transform, spacing, probes per axis, rays per probe);
+  `lighting.light.set-mobility` sets `LightBakeMobility` (static, stationary, movable) on a light;
+  `lighting.object.set-resolution` sets `LightmapObject` (resolution scale, receives) on a placed
+  object. Each is one transaction. The Inspector shows the Mobility row for a selected light and the
+  Lightmap resolution row for a selected object, invoking the same commands. The three components
+  are authoring-only; the runtime world never receives them.
+- **The description is written from the world on every bake.** `lighting.bake-lightmaps` with no
+  `description` first writes the world's `.cylightmap` beside it (`worlds/x.cyworld` →
+  `worlds/x.cylightmap`; `cy_editor_services::lightmap_description`): every enabled light with its
+  mobility word, every placed mesh (`.cy/cooked/<id>.cyasset`, or a `.cyprim` source) with its
+  world transform, resolution scale and `occluder` when it receives no lightmap, the material it
+  draws with (`cooked`, times the renderer's tint), and every volume — each by its engine identity,
+  the id the runtime world knows it by. `lighting.write-lightmap-description` does only that step
+  and returns the text. The file is rewritten only when its bytes change, and it is never edited by
+  hand: the next bake replaces it. Naming a `description` bakes that file as it is.
+- **An unchanged world is not baked again.** `cy_build lightmap` keys the level with the build
+  graph's own derivation over the description and every file it reads and keeps the key beside
+  the output; a matching run reports `cached=1` and writes nothing.
+- **Progress and cancel.** The bake runs as `cy_build lightmap` in an operation, so the progress
+  surface shows the texels traced, then the volumes captured, and its row's Cancel — or
+  `lighting.cancel-lightmap-bake` — sends the tool its `cancel`; a cancelled bake writes nothing.
+  The trace checks for the cancel at an interval that shrinks with the samples per texel, so a
+  2048-sample bake stops within a fraction of a second.
+- **What it made.** The panel reports objects, pages, texels, volumes and probes, reads the captured
+  probes back from `<output>.cyprobes` and draws each one seen from above in its light (a cross for
+  a probe inside geometry, hollow where the bake has not captured yet).
+
 `CY_BUILD` names the tool, or it is found as `build/<profile>/tools/build/cy_build` walking up from
 the project. `viewport.view-mode.lightmap-density` requests the engine's `LightmapDensity` debug view,
-which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); like every debug view, the
-editor-hosted runtime does not draw it yet, and it loads no cooked lightmap.
+which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); `viewport.view-mode.gi-probes`
+requests `GiProbes`, which no frame draws yet. Like every debug view, the editor-hosted runtime does
+not draw them yet, and it loads no cooked lightmap.
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.
@@ -335,9 +365,10 @@ frame: it opens no shared surface, reads the document and the engine's answers i
 the viewport so the next click asks the engine for a navmesh point (`navigation.point.pick`) instead
 of selecting.
 
-`panels/lighting.rs` is the scaffold's one tool with an `OPERATIONS` list: a lightmap bake writes a
-cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`), not a document transaction,
-so there is nothing for undo to restore. `register_tool` holds each listed operation to being an
+`panels/lighting.rs` is the scaffold's one tool with an `OPERATIONS` list: a lightmap bake writes the
+world's description and a cooked file through `cy_build lightmap` (`EffectClass::ExternalEffect`),
+not a document transaction, so there is nothing for undo to restore. Its volume, mobility and
+resolution edits are ordinary `COMMANDS`, each an undoable transaction. `register_tool` holds each listed operation to being an
 external effect and an MCP tool with no exclusion — a document mutation listed there is refused,
 naming it, as is a bake listed in `COMMANDS`.
 

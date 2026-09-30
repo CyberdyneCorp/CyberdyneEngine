@@ -209,6 +209,10 @@ VolumeUpdateReport IrradianceVolume::capture_all(const VolumeCaptureContext& con
         return report;
     }
     for (usize index = 0; index < probes_.size(); ++index) {
+        if (context.stop != nullptr && context.stop->load(std::memory_order_relaxed)) {
+            report.stopped = true;
+            return report;
+        }
         staged[index] = probes_[index];
         capture_probe(staged[index], context, report.rays);
     }

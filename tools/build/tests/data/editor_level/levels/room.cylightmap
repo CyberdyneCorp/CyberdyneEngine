@@ -1,0 +1,13 @@
+cylightmap 1
+# Written from levels/room.cyworld by the editor on every bake request: an edit here is replaced.
+mode irradiance
+bounces 1
+samples 8
+density 4
+page 128
+material "m0" 0.5 0.5 0.5
+light point 0 2 0 1000 10 1 1 1 static id 8381449887243890699
+light directional -0 -0 -1 100000 1 1 1 movable id 13083581185696523244
+instance "assets/primitives/Crate.cyprim" "mesh" "m0" 1 1 0 0 1 0 1 0 0 0 0 1 0.5 id 3679318588791258154 occluder
+instance "assets/primitives/Floor.cyprim" "mesh" "m0" 2 1 0 0 0 0 1 0 0 0 0 1 0 id 17423931364048177225
+volume 17785712484149155789 -1 0.5 -1 1 3 2 3 32

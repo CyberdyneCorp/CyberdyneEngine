@@ -77,6 +77,11 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ));
     }
 
+    // Contextual lighting rows — a light's bake mobility, an object's lightmap resolution — beside
+    // the generated form, as the material sync action is: they invoke the lighting commands and
+    // replace no generated row.
+    super::lighting::inspector_rows(panels, ui);
+
     if panels.shell.inspector.catalogue().is_none() {
         nothing_here(
             ui,

@@ -18,9 +18,10 @@ No device: every case in `tests/` runs headless, as `cy::rendering-gi`'s do. The
 |---|---|
 | `atlas.h` | `pack_atlas` — one rectangle per object in shared pages, sized from world area, the level's texel density and the object's resolution scale, on a block grid with a mip-safe gutter — and the one-word address a draw carries as `gi_address` |
 | `scene.h` | `LightmapScene` (meshes with UV2, materials with emission, opacity and alpha masks, instances, lights, sky), `MeshSceneTracer` — the level's triangles behind `gi::SceneTracer` and `gi::Occluder` — and `measure_uv2` |
-| `bake.h` | `bake_lightmaps`, the three encodings, `sample_lightmap` (the CPU reference the frame is held to) and `reference_ambient` (the ground truth the atlas is held to) |
+| `bake.h` | `bake_lightmaps`, the three encodings, progress and cancellation, `capture_irradiance_volumes`, `sample_lightmap` (the CPU reference the frame is held to) and `reference_ambient` (the ground truth the atlas is held to) |
 | `mips.h` | `build_lightmap_mips` — the levels the gutter and chart padding protect, filtered and dilated per chart — and `lightmap_level` / `shadow_mask_level` |
 | `asset.h` | the cooked payload: half-float planes and per-instance addresses, the shadow mask, the directly baked lights and the mip chain, byte-identical for an unchanged level |
+| `probes.h` | the captured irradiance volumes a bake writes beside the atlas: each volume's identity, settings and probes, byte-identical for an unchanged level |
 
 ## The pipeline
 
@@ -158,9 +159,32 @@ frame's use of the shadow mask and of these lights is `src/rendering/lightmaps/`
 
 `bake_lightmaps` and `rebake_lightmaps` take an optional `LightmapBakeProgress`: a callback with the
 stage (`prepare`, `trace`, `filter`, `finish`) and, for the trace, the atlas texels done in steps of
-`kProgressTexels`; and a cancel flag read at every step, which stops the bake, sets
-`report.cancelled` and fails with `Unavailable`. An uncancelled bake with progress writes the bytes
-one without it writes. `cy_build lightmap` is the command line over it (`tools/build/README.md`).
+`lightmap_progress_interval(samples)`; and a cancel flag read at every step, which stops the bake,
+sets `report.cancelled` and fails with `Unavailable`. An uncancelled bake with progress writes the
+bytes one without it writes. `cy_build lightmap` is the command line over it
+(`tools/build/README.md`).
+
+The interval is bounded by work as well as by texels: at most `kProgressTexels` (1024) texels and at
+most `kProgressSamples` (1024 × 16) path-traced samples between two checks, so 256 texels at the
+default 64 samples and 8 at 2048. At a fixed 1024 texels a 2048-sample bake of the test room went
+6.7 seconds between checks, and a cancel waited that long; "a many-sample bake sees a cancel within
+a second" in `integration.render_lightmap_bake` holds the bound over the texels that are really
+traced after the cancel.
+
+`capture_irradiance_volumes` hands the same flag to every volume as `gi::VolumeCaptureContext::stop`,
+which `IrradianceVolume::capture_all` reads before every probe and, once raised, commits nothing.
+Read only between volumes, a cancel inside the editor's largest volume (4096 probes of 1024 rays)
+waited 6.1 seconds; "a volume capture sees a cancel within a second" holds that bound.
+
+## Irradiance volumes
+
+`capture_irradiance_volumes` captures `gi::IrradianceVolume`s over the level with the bake's own
+path tracer: a probe ray that meets a surface brings back that surface's path-traced outgoing
+radiance, with the same lights (less the `Movable` ones, as the lightmap), bounces and sky. It
+reports the `probes` stage, one unit per volume, and stops on the same cancel. `probes.h` is the
+payload a bake writes beside the atlas — each volume's identity, settings and probes exactly as the
+volume holds them — and `decode_probe_asset` reads it back; `cy_build lightmap` captures a
+description's `volume` lines into it.
 
 ## The cooked payload, version 3
 

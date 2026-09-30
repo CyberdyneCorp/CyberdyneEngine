@@ -39,6 +39,8 @@ pub mod documents;
 pub mod editor;
 pub mod gizmo;
 pub mod joints;
+pub mod lighting;
+pub mod lightmap_description;
 pub mod lightmaps;
 pub mod manipulate;
 pub mod material_commands;

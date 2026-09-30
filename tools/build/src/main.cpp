@@ -17,7 +17,8 @@
 //   verify     --install          every chunk the build in force names, re-digested
 //   lightmap   --description      bake one `cylightmap 1` level outside the graph, reporting
 //              --project --out    progress on stdout and stopping at a `cancel` line on stdin:
-//                                 the editor's `lighting.bake-lightmaps`
+//              [--probes]         the editor's `lighting.bake-lightmaps`; an unchanged level is
+//                                 not baked again
 
 #include "lightmap_producer.h"
 
@@ -556,12 +557,23 @@ void print_report(const BuildReport& report) {
 //
 //     progress <stage> <done> <total>          as `LightmapBakeProgress` reports it
 //     baked objects=<n> pages=<n> texels=<n> dilated=<n> rays=<n> bytes=<n> mips=<n>
-//           padding-short=<n> seconds=<s>
+//           padding-short=<n> volumes=<n> probes=<n> seconds=<s> cached=<0|1>
 //     cancelled
 //
 // and a failure on stderr, with exit status 1. A line `cancel` on stdin stops the bake at its next
-// step (status 3) and writes nothing: the output is written only by a bake that finished, through
+// step (status 3) and writes nothing: the outputs are written only by a bake that finished, through
 // `write_atomic`, so a cancelled one leaves the previous cooked lightmap where it was.
+//
+// A LEVEL THAT HAS NOT CHANGED IS NOT BAKED AGAIN. The editor rewrites the description from the
+// world on every bake request, so the request itself says nothing about whether anything changed.
+// After a bake, `<out>.cykey` records the level's key — `lightmap_level_key`, the build graph's own
+// derivation over the description and every file it read — and the `baked` line. A run whose key
+// matches, with its outputs still in place, bakes nothing and prints that line again with
+// `cached=1`.
+//
+// The captured irradiance volumes go to `--probes`, by default the output with its extension
+// replaced by `.cyprobes`; a level with no volumes removes a stale probe file rather than leaving
+// probes for volumes that no longer exist.
 
 constexpr int kLightmapCancelled = 3;
 
@@ -591,16 +603,84 @@ void watch_for_cancel(std::atomic<bool>& cancel) {
     }).detach();
 }
 
-void print_baked(const LightmapJobReport& report, f64 seconds) {
+/// The `baked` line's fields, less `cached`: what the key file keeps and a cached run repeats.
+[[nodiscard]] std::string baked_fields(const LightmapJobReport& report, f64 seconds) {
     const rendering::lightmap_bake::LightmapBakeReport& bake = report.bake;
-    std::printf(
-        "baked objects=%u pages=%u texels=%u dilated=%u rays=%llu bytes=%llu mips=%u "
-        "padding-short=%zu seconds=%.3f\n",
-        bake.objects, bake.pages, bake.texels_covered, bake.texels_dilated,
-        static_cast<unsigned long long>(bake.rays),
-        static_cast<unsigned long long>(report.device_bytes), report.mip_levels,
-        bake.padding_short.size(), seconds);
+    char line[512];
+    std::snprintf(line, sizeof(line),
+                  "baked objects=%u pages=%u texels=%u dilated=%u rays=%llu bytes=%llu mips=%u "
+                  "padding-short=%zu volumes=%u probes=%u seconds=%.3f",
+                  bake.objects, bake.pages, bake.texels_covered, bake.texels_dilated,
+                  static_cast<unsigned long long>(bake.rays),
+                  static_cast<unsigned long long>(report.device_bytes), report.mip_levels,
+                  bake.padding_short.size(), report.volumes, report.probes, seconds);
+    return line;
+}
+
+void print_baked(const std::string& fields, bool cached) {
+    std::printf("%s cached=%d\n", fields.c_str(), cached ? 1 : 0);
     std::fflush(stdout);
+}
+
+/// Where the captured volumes go: `--probes`, or the output with a `.cyprobes` extension.
+[[nodiscard]] std::string probes_path(const Arguments& arguments) {
+    if (arguments.has("probes")) {
+        return arguments.value("probes");
+    }
+    std::filesystem::path out(arguments.value("out"));
+    out.replace_extension(".cyprobes");
+    return out.string();
+}
+
+/// The key file's `baked` line when it records `key` and every output it names is still there;
+/// empty otherwise.
+[[nodiscard]] std::string cached_bake(const std::string& key_file, const std::string& key,
+                                      const std::string& out, const std::string& probes,
+                                      bool has_volumes) {
+    const Expected<std::string, Error> recorded = read_text(key_file);
+    std::error_code error;
+    if (!recorded || !std::filesystem::is_regular_file(out, error) ||
+        (has_volumes && !std::filesystem::is_regular_file(probes, error))) {
+        return {};
+    }
+    const std::string header = "cylightmapkey 1\nkey " + key + "\n";
+    if (!recorded->starts_with(header)) {
+        return {};
+    }
+    std::string line = recorded->substr(header.size());
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        line.pop_back();
+    }
+    return line.starts_with("baked ") ? line : std::string();
+}
+
+/// Write the outputs of a finished bake, then the key file that vouches for them.
+[[nodiscard]] int write_lightmap_outputs(const Arguments& arguments, const LightmapBakeOutput& out,
+                                         const LightmapJobReport& report, const std::string& key,
+                                         const std::string& fields) {
+    const std::string lightmap = arguments.value("out");
+    if (Status written =
+            assets::fs::write_atomic(lightmap.c_str(), out.payload.data(), out.payload.size());
+        !written) {
+        return fail("could not write the cooked lightmap", written.error());
+    }
+    const std::string probes = probes_path(arguments);
+    if (report.volumes > 0U) {
+        if (Status written =
+                assets::fs::write_atomic(probes.c_str(), out.probes.data(), out.probes.size());
+            !written) {
+            return fail("could not write the captured probes", written.error());
+        }
+    } else {
+        std::error_code ignored;
+        std::filesystem::remove(probes, ignored);
+    }
+    if (Status written =
+            write_text(lightmap + ".cykey", "cylightmapkey 1\nkey " + key + "\n" + fields + "\n");
+        !written) {
+        return fail("could not write the lightmap's key", written.error());
+    }
+    return 0;
 }
 
 [[nodiscard]] int command_lightmap(const Arguments& arguments) {
@@ -615,27 +695,43 @@ void print_baked(const LightmapJobReport& report, f64 seconds) {
     watch_for_cancel(cancel);
     std::string project = arguments.value("project", ".");
     const BundleSource files{&read_project_file, &project};
+    auto level = std::make_unique<LightmapLevel>();
+    if (Status parsed = read_lightmap_description(*document, files, *level); !parsed) {
+        return fail("lightmap-description", parsed.error());
+    }
+    const Expected<assets::DerivationKey, Error> derived = lightmap_level_key(*document, *level);
+    if (!derived) {
+        return fail("could not key the lightmap level", derived.error());
+    }
+    char key[assets::DerivationKey::kTextLength + 1] = {};
+    derived->format(key);
+    const std::string out = arguments.value("out");
+    if (const std::string cached =
+            cached_bake(out + ".cykey", key, out, probes_path(arguments), !level->volumes.empty());
+        !cached.empty()) {
+        print_baked(cached, true);
+        return 0;
+    }
     rendering::lightmap_bake::LightmapBakeProgress progress;
     progress.report = &print_progress;
     progress.cancel = &cancel;
-    Array<u8> payload(tool_allocator());
+    LightmapBakeOutput baked;
     LightmapJobReport report;
     const auto started = std::chrono::steady_clock::now();
-    if (Status baked = bake_lightmap_description(*document, files, &progress, payload, report);
-        !baked) {
+    if (Status made = bake_lightmap_level(*level, &progress, baked, report); !made) {
         if (report.bake.cancelled) {
             std::printf("cancelled\n");
             return kLightmapCancelled;
         }
-        return fail(report.stage, baked.error());
+        return fail(report.stage, made.error());
     }
-    const std::string out = arguments.value("out");
-    if (Status written = assets::fs::write_atomic(out.c_str(), payload.data(), payload.size());
-        !written) {
-        return fail("could not write the cooked lightmap", written.error());
+    const std::string fields = baked_fields(
+        report, std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count());
+    if (const int written = write_lightmap_outputs(arguments, baked, report, key, fields);
+        written != 0) {
+        return written;
     }
-    print_baked(report,
-                std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count());
+    print_baked(fields, false);
     return 0;
 }
 

@@ -56,6 +56,13 @@ function(cy_build_declare_tests)
         SOURCES "${tests_dir}/test_build_content.cpp" "${tests_dir}/test_build_lightmap.cpp"
                 "${tests_dir}/test_navmesh_producer.cpp"
         DEPENDENCIES cy::build-graph cy::build-content cy::rendering-lightmap-bake cy::navigation)
+    # The lightmap cases read a description through the producer's own parser and bake it outside
+    # the graph, as `cy_build lightmap` does: `lightmap_producer.h` is private to src/.
+    target_include_directories(cy_test_integration_build_content PRIVATE "${tests_dir}/../src")
+    # `data/editor_level/` is a level as the editor writes it: the Rust side compares its own output
+    # against the same files (`the_bake_is_of_the_authored_world.rs`).
+    target_compile_definitions(cy_test_integration_build_content
+                               PRIVATE CY_BUILD_TEST_DATA="${tests_dir}/data")
 
     # `build_patch` exercises the hard-interrupt property of `Installation::apply` by forking a
     # child process and killing it at each patch stage. `fork` with no `exec` is POSIX-only: the

@@ -78,6 +78,7 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/gi/bake.h>
+#include <cy/rendering/gi/irradiance_volume.h>
 #include <cy/rendering/lightmap_bake/atlas.h>
 #include <cy/rendering/lightmap_bake/mips.h>
 #include <cy/rendering/lightmap_bake/scene.h>
@@ -243,6 +244,8 @@ enum class LightmapBakeStage : u8 {
     Filter,
     /// The mip chain and the dynamic caches' seeds.
     Finish,
+    /// `capture_irradiance_volumes`: one unit per volume. Never reported by `bake_lightmaps`.
+    Probes,
     Count,
 };
 
@@ -255,7 +258,8 @@ enum class LightmapBakeStage : u8 {
 /// bytes a bake with no `LightmapBakeProgress` writes.
 struct LightmapBakeProgress {
     /// Called on the baking thread as work completes: `done` of `total` units of `stage`. The
-    /// trace stage counts atlas texels, in steps of `kProgressTexels`; the others count one unit.
+    /// trace stage counts atlas texels, in steps of `lightmap_progress_interval(samples)`; the
+    /// others count one unit.
     void (*report)(void* user, LightmapBakeStage stage, u32 done, u32 total) noexcept = nullptr;
     void* user = nullptr;
     /// Read at every step: when it becomes true the bake stops, leaves its output unspecified, sets
@@ -272,8 +276,27 @@ struct LightmapBakeProgress {
     }
 };
 
-/// Atlas texels between two progress reports, and two cancellation checks, of the trace stage.
+/// Most atlas texels between two progress reports, and two cancellation checks, of the trace
+/// stage.
 inline constexpr u32 kProgressTexels = 1024;
+/// Most path-traced samples between two reports of the trace stage: `kProgressTexels` texels at 16
+/// samples each, 256 at the default 64.
+inline constexpr u32 kProgressSamples = kProgressTexels * 16U;
+
+/// Atlas texels between two trace reports at `samples` per texel. Bounded by WORK as well as by
+/// texels, so a many-sample bake still reports, and sees a cancel, within about the time a default
+/// one takes: at a fixed 1024 texels a 2048-sample bake of a small room went 6.7 seconds between
+/// checks, and at 2048 samples this is 8.
+[[nodiscard]] constexpr u32 lightmap_progress_interval(u32 samples) noexcept {
+    if (samples == 0U) {
+        return kProgressTexels;
+    }
+    const u32 by_work = kProgressSamples / samples;
+    if (by_work < 1U) {
+        return 1U;
+    }
+    return by_work < kProgressTexels ? by_work : kProgressTexels;
+}
 
 /// The dynamic caches a bake seeds from the same run. Any may be null.
 struct CacheSeedTargets {
@@ -343,5 +366,19 @@ struct LightmapRebakeRequest {
                                        const LightmapBakeSettings& settings,
                                        Span<const Vec3> positions, Span<const Vec3> normals,
                                        Array<Vec3>& out) noexcept;
+
+// --- Irradiance volumes -------------------------------------------------------------------------
+
+/// Capture every volume over the level with the bake's own path tracer: a probe ray that meets a
+/// surface brings back that surface's path-traced outgoing radiance, with the same lights (less the
+/// `Movable` ones, as the lightmap), bounces and sky, in the frame's convention. A null entry is
+/// skipped. `rays` receives the tracer's ray count. Reports `LightmapBakeStage::Probes`, one unit
+/// per volume, and stops on `progress`'s cancel the way the bake does, setting
+/// `report.cancelled`: the cancel is read before every probe, and a stopped capture leaves the
+/// volume it was in, and those it had not reached, uncaptured.
+[[nodiscard]] Status capture_irradiance_volumes(
+    const LightmapScene& scene, const LightmapBakeSettings& settings,
+    Span<gi::IrradianceVolume* const> volumes, u64& rays, LightmapBakeReport& report,
+    const LightmapBakeProgress* progress = nullptr) noexcept;
 
 }  // namespace cy::rendering::lightmap_bake

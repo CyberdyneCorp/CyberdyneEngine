@@ -14,17 +14,21 @@
 #include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
 #include <cy/rendering/lightmap_bake/mips.h>
+#include <cy/rendering/lightmap_bake/probes.h>
 #include <cy/test/test.h>
 
 #include "support.h"
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <numbers>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -1483,4 +1487,284 @@ CY_TEST_CASE("a cancelled bake stops at its next step and says it was cancelled"
     CY_CHECK(std::ranges::none_of(log.stages, [](LightmapBakeStage stage) {
         return stage == LightmapBakeStage::Filter || stage == LightmapBakeStage::Finish;
     }));
+}
+
+// --- The editor's bake: cancel latency and irradiance volumes (`add-editor-lighting-tools`) -----
+
+namespace {
+
+/// Raises the cancel at the first trace report at or past atlas texel `raise_at`, and records
+/// when.
+struct LatencyProbe {
+    std::atomic<bool> cancel{false};
+    u32 raise_at = 0;
+    std::chrono::steady_clock::time_point raised;
+    u32 texels_at_cancel = 0;
+
+    static void record(void* user, LightmapBakeStage stage, u32 done, u32) noexcept {
+        auto* probe = static_cast<LatencyProbe*>(user);
+        if (stage == LightmapBakeStage::Trace && done >= probe->raise_at && !probe->cancel.load()) {
+            probe->texels_at_cancel = done;
+            probe->raised = std::chrono::steady_clock::now();
+            probe->cancel.store(true);
+        }
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("the trace's report interval shrinks as the samples per texel grow") {
+    CY_CHECK_EQ(lightmap_progress_interval(0), kProgressTexels);
+    CY_CHECK_EQ(lightmap_progress_interval(16), kProgressTexels);
+    CY_CHECK_EQ(lightmap_progress_interval(64), kProgressTexels / 4U);
+    CY_CHECK_EQ(lightmap_progress_interval(2048), 8U);
+    CY_CHECK_EQ(lightmap_progress_interval(1U << 20U), 1U);
+}
+
+// Regression: the trace checked its cancel every 1024 atlas texels whatever the sample count, so a
+// 2048-sample bake of this room went on for 6.7 seconds after the editor asked it to stop.
+CY_TEST_CASE("a many-sample bake sees a cancel within a second") {
+    const ShadowRoom room(gi::LightMobility::Stationary);
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    // Where the surface is: the first run of `kProgressTexels` atlas texels with real surface in
+    // it, so the texels after the cancel are texels the trace must work on.
+    settings.trace.samples = 1;
+    const Baked layout = bake(room.room.scene(), settings);
+    u32 block = 0;
+    u32 before = 0;
+    const auto covered = [&](u32 from, u32 to) {
+        return static_cast<u32>(std::count(layout.lightmap.coverage.begin() + from,
+                                           layout.lightmap.coverage.begin() + to, u8{1}));
+    };
+    const auto texels = static_cast<u32>(layout.lightmap.coverage.size());
+    while ((block + 1U) * kProgressTexels <= texels &&
+           covered(block * kProgressTexels, (block + 1U) * kProgressTexels) < 128U) {
+        ++block;
+    }
+    before = covered(0, block * kProgressTexels);
+    CY_REQUIRE((block + 1U) * kProgressTexels <= texels);
+
+    settings.trace.samples = 2048;
+    LatencyProbe probe;
+    probe.raise_at = block * kProgressTexels;
+    LightmapBakeProgress progress;
+    progress.report = &LatencyProbe::record;
+    progress.user = &probe;
+    progress.cancel = &probe.cancel;
+    BakedLightmap out;
+    LightmapBakeReport report;
+    const cy::Status baked =
+        bake_lightmaps(room.room.scene(), settings, nullptr, out, report, &progress);
+    const auto stopped = std::chrono::steady_clock::now();
+    CY_REQUIRE_FALSE(baked.has_value());
+    CY_REQUIRE(report.cancelled);
+    const f64 latency = std::chrono::duration<f64>(stopped - probe.raised).count();
+    const u32 after = report.texels_covered + report.texels_buried - before;
+    CY_TEST_MESSAGE("cancelled at texel "
+                    << probe.texels_at_cancel << " of a block with "
+                    << covered(block * kProgressTexels, (block + 1U) * kProgressTexels)
+                    << " surface texels; " << after << " traced after it, stopping " << latency
+                    << " s later");
+    CY_CHECK_EQ(probe.texels_at_cancel, block * kProgressTexels);
+    CY_CHECK_LE(after, lightmap_progress_interval(settings.trace.samples));
+    CY_CHECK_LT(latency, 1.0);
+}
+
+CY_TEST_CASE(
+    "a volume captured by the bake sees the room's light, and a movable light bakes none") {
+    gi::IrradianceVolumeSettings grid;
+    grid.origin = Vec3{-1.0F, -0.5F, -1.0F};
+    grid.spacing_metres = 1.0F;
+    grid.count_x = 3;
+    grid.count_y = 2;
+    grid.count_z = 3;
+    grid.rays_per_probe = 64;
+    LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
+    settings.trace.bounces = 1;
+
+    const auto capture = [&](gi::LightMobility mobility, gi::IrradianceVolume& volume) {
+        const ShadowRoom level(mobility);
+        CY_REQUIRE(volume.configure(grid).has_value());
+        gi::IrradianceVolume* volumes[] = {&volume};
+        u64 rays = 0;
+        LightmapBakeReport report;
+        ProgressLog log;
+        const LightmapBakeProgress progress = log.progress();
+        CY_REQUIRE(capture_irradiance_volumes(level.room.scene(), settings,
+                                              cy::Span<gi::IrradianceVolume* const>(volumes, 1),
+                                              rays, report, &progress)
+                       .has_value());
+        CY_CHECK_GT(rays, 0U);
+        CY_REQUIRE_FALSE(log.stages.empty());
+        CY_CHECK(std::ranges::all_of(log.stages, [](LightmapBakeStage stage) {
+            return stage == LightmapBakeStage::Probes;
+        }));
+        CY_CHECK_EQ(log.done.back(), 1U);
+    };
+    gi::IrradianceVolume lit;
+    capture(gi::LightMobility::Stationary, lit);
+    gi::IrradianceVolume dark;
+    capture(gi::LightMobility::Movable, dark);
+
+    f32 lit_total = 0.0F;
+    f32 dark_total = 0.0F;
+    u32 valid = 0;
+    for (u32 probe = 0; probe < lit.probe_count(); ++probe) {
+        lit_total += luminance(lit.probe_radiance(probe, Vec3{0.0F, -1.0F, 0.0F}));
+        dark_total += luminance(dark.probe_radiance(probe, Vec3{0.0F, -1.0F, 0.0F}));
+        valid += lit.probe(probe).validity > 0.5F ? 1U : 0U;
+    }
+    CY_TEST_MESSAGE("probes toward the floor: stationary lamp "
+                    << lit_total << ", movable lamp " << dark_total << "; " << valid << " of "
+                    << lit.probe_count() << " valid");
+    CY_CHECK_EQ(valid, lit.probe_count());
+    CY_CHECK_GT(lit_total, 0.0F);
+    CY_CHECK_LT(dark_total, 1.0e-4F * std::max(lit_total, 1.0e-3F));
+
+    // The capture stops on the bake's cancel, before it captures anything.
+    const ShadowRoom level(gi::LightMobility::Stationary);
+    gi::IrradianceVolume stopped;
+    CY_REQUIRE(stopped.configure(grid).has_value());
+    gi::IrradianceVolume* volumes[] = {&stopped};
+    ProgressLog log;
+    log.cancel.store(true);
+    const LightmapBakeProgress progress = log.progress();
+    LightmapBakeReport report;
+    u64 rays = 0;
+    const cy::Status cancelled = capture_irradiance_volumes(
+        level.room.scene(), settings, cy::Span<gi::IrradianceVolume* const>(volumes, 1), rays,
+        report, &progress);
+    CY_CHECK_FALSE(cancelled.has_value());
+    CY_CHECK(report.cancelled);
+    CY_CHECK_FALSE(stopped.probe(0).captured);
+}
+
+namespace {
+
+/// Raises the cancel once the first volume has been captured.
+struct VolumeCancel {
+    std::atomic<bool> cancel{false};
+
+    static void record(void* user, LightmapBakeStage stage, u32 done, u32) noexcept {
+        if (stage == LightmapBakeStage::Probes && done == 1U) {
+            static_cast<VolumeCancel*>(user)->cancel.store(true);
+        }
+    }
+};
+
+}  // namespace
+
+// Regression: the capture read the cancel only as it reported the next volume, after the callback
+// had run, so a cancel raised when one volume was reported captured one more.
+CY_TEST_CASE("a capture cancelled between volumes leaves the rest uncaptured") {
+    const ShadowRoom level(gi::LightMobility::Stationary);
+    gi::IrradianceVolumeSettings grid;
+    grid.origin = Vec3{-1.0F, -0.5F, -1.0F};
+    grid.count_x = 2;
+    grid.count_y = 1;
+    grid.count_z = 1;
+    grid.rays_per_probe = 16;
+    gi::IrradianceVolume first;
+    gi::IrradianceVolume second;
+    CY_REQUIRE(first.configure(grid).has_value());
+    CY_REQUIRE(second.configure(grid).has_value());
+    gi::IrradianceVolume* volumes[] = {&first, &second};
+    VolumeCancel stop;
+    LightmapBakeProgress progress;
+    progress.report = &VolumeCancel::record;
+    progress.user = &stop;
+    progress.cancel = &stop.cancel;
+    LightmapBakeReport report;
+    u64 rays = 0;
+    const cy::Status captured = capture_irradiance_volumes(
+        level.room.scene(), small_settings(LightmapMode::Irradiance),
+        cy::Span<gi::IrradianceVolume* const>(volumes, 2), rays, report, &progress);
+    CY_CHECK_FALSE(captured.has_value());
+    CY_CHECK(report.cancelled);
+    CY_CHECK(first.probe(0).captured);
+    CY_CHECK_FALSE(second.probe(0).captured);
+}
+
+// Regression: the capture read the cancel only between volumes, so a cancel raised inside one
+// volume waited for all of its probes: the editor's largest volume, 4096 probes of 1024 rays,
+// runs for seconds past the request.
+CY_TEST_CASE("a volume capture sees a cancel within a second") {
+    const ShadowRoom level(gi::LightMobility::Stationary);
+    gi::IrradianceVolumeSettings grid;
+    grid.origin = Vec3{-0.75F, -0.45F, -0.75F};
+    grid.spacing_metres = 0.1F;
+    grid.count_x = 16;
+    grid.count_y = 16;
+    grid.count_z = 16;
+    grid.rays_per_probe = 1024;
+    gi::IrradianceVolume volume;
+    CY_REQUIRE(volume.configure(grid).has_value());
+    gi::IrradianceVolume* volumes[] = {&volume};
+    std::atomic<bool> cancel{false};
+    LightmapBakeProgress progress;
+    progress.cancel = &cancel;
+    std::chrono::steady_clock::time_point raised;
+    std::thread raiser([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        raised = std::chrono::steady_clock::now();
+        cancel.store(true);
+    });
+    LightmapBakeReport report;
+    u64 rays = 0;
+    const cy::Status captured = capture_irradiance_volumes(
+        level.room.scene(), small_settings(LightmapMode::Irradiance),
+        cy::Span<gi::IrradianceVolume* const>(volumes, 1), rays, report, &progress);
+    const auto stopped = std::chrono::steady_clock::now();
+    raiser.join();
+    CY_REQUIRE_FALSE(captured.has_value());
+    CY_REQUIRE(report.cancelled);
+    const f64 latency = std::chrono::duration<f64>(stopped - raised).count();
+    CY_TEST_MESSAGE("the capture stopped " << latency << " s after the cancel");
+    CY_CHECK_LT(latency, 1.0);
+    // Nothing of the half-captured volume is committed.
+    CY_CHECK_FALSE(volume.probe(0).captured);
+}
+
+CY_TEST_CASE("captured probes round-trip through their payload, and a short one is refused") {
+    const ShadowRoom level(gi::LightMobility::Stationary);
+    gi::IrradianceVolumeSettings grid;
+    grid.origin = Vec3{-1.0F, -0.5F, -1.0F};
+    grid.count_x = 2;
+    grid.count_y = 2;
+    grid.count_z = 1;
+    grid.rays_per_probe = 32;
+    gi::IrradianceVolume volume;
+    CY_REQUIRE(volume.configure(grid).has_value());
+    gi::IrradianceVolume* volumes[] = {&volume};
+    u64 rays = 0;
+    LightmapBakeReport report;
+    CY_REQUIRE(
+        capture_irradiance_volumes(level.room.scene(), small_settings(LightmapMode::Irradiance),
+                                   cy::Span<gi::IrradianceVolume* const>(volumes, 1), rays, report)
+            .has_value());
+
+    const ProbeVolumeSource sources[] = {{0xABCDEF0123ULL, &volume}};
+    cy::Array<u8> payload;
+    CY_REQUIRE(encode_probe_asset({sources, 1}, payload).has_value());
+    BakedProbes decoded;
+    CY_REQUIRE(decode_probe_asset(payload.span(), decoded).has_value());
+    CY_REQUIRE_EQ(decoded.volumes.size(), 1U);
+    CY_CHECK_EQ(decoded.volumes[0].id, 0xABCDEF0123ULL);
+    CY_CHECK_EQ(decoded.volumes[0].settings.count_x, 2U);
+    CY_CHECK_EQ(decoded.volumes[0].settings.rays_per_probe, 32U);
+    CY_REQUIRE_EQ(decoded.probes.size(), static_cast<usize>(volume.probe_count()));
+    for (u32 index = 0; index < volume.probe_count(); ++index) {
+        const gi::VolumeProbe& captured = volume.probe(index);
+        const gi::VolumeProbe& read = decoded.probes[index];
+        const auto same_bits = [](f32 a, f32 b) {
+            return std::bit_cast<u32>(a) == std::bit_cast<u32>(b);
+        };
+        CY_CHECK(std::ranges::equal(captured.payload, read.payload, same_bits));
+        CY_CHECK(std::ranges::equal(captured.axis_distance, read.axis_distance, same_bits));
+        CY_CHECK_EQ(captured.validity, read.validity);
+        CY_CHECK_EQ(captured.position.x, read.position.x);
+    }
+    CY_CHECK_FALSE(decode_probe_asset({payload.data(), payload.size() - 4U}, decoded).has_value());
+    payload[4] = 9;
+    CY_CHECK_FALSE(decode_probe_asset(payload.span(), decoded).has_value());
 }

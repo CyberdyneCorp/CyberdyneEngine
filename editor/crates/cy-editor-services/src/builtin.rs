@@ -55,6 +55,9 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // `crate::assets`.
     crate::assets::register(registry)?;
     crate::lightmaps::register(registry)?;
+    // Irradiance volumes, per-object lightmap resolution and light mobility, as undoable document
+    // edits the lightmap bake's description is written from. See `crate::lighting`.
+    crate::lighting::register(registry)?;
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
@@ -706,13 +709,17 @@ mod tests {
         // Terrain tools add the agent's brush, `terrain.brush.apply`, and `terrain.status`.
         // The audio tools add thirteen undoable mixer, cue and source commands and eight reads
         // and engine requests in `crate::audio_commands`.
+        // The lighting tools add the GI probe debug view (thirty-nine viewport controls), the
+        // four authoring commands in `crate::lighting`, and `lighting.write-lightmap-description`
+        // beside the bake in `crate::lightmaps`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         let earlier =
             8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2;
         let audio = 13 + 8;
         let navigation = 18;
-        assert_eq!(registry.len(), earlier + audio + navigation);
+        let lighting = 1 + 4 + 1;
+        assert_eq!(registry.len(), earlier + audio + navigation + lighting);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

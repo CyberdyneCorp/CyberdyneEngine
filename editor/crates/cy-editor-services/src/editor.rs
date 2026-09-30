@@ -1224,6 +1224,10 @@ impl CommandContext for Editor {
         Editor::cancel_lightmap_bake(self, request)
     }
 
+    fn write_lightmap_description(&mut self, path: &str, text: &str) -> Result<bool> {
+        self.lightmaps.write_description(path, text)
+    }
+
     fn settings(&mut self) -> Option<&mut dyn cy_editor_commands::SettingsHost> {
         Some(self)
     }

@@ -249,6 +249,10 @@ enum class DebugViewMode : u8 {
     /// the atlas gives it against the level's target. Drawn by the forward frame
     /// (`lightmaps::write_lightmap_density_view`).
     LightmapDensity,
+    /// The irradiance volumes' probes, at their positions, in the light the lightmap bake captured
+    /// (`lightmap_bake/probes.h`). Requestable, so the editor can ask for it; no frame draws it
+    /// yet, and the editor's lighting panel shows the captured probes meanwhile.
+    GiProbes,
     Count,
 };
 
