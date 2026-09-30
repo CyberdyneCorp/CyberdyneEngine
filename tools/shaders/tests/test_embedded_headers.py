@@ -140,6 +140,12 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("declared but absent: src/pinned/pinned_spirv.h", output)
 
+    def test_a_group_that_does_not_compile_fails_naming_it(self) -> None:
+        (self.sandbox.root / "src/probe/probe.slang").unlink()
+        status, output = self.check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("group probe did not regenerate", output)
+
     def test_artifacts_hold_the_regenerated_text(self) -> None:
         write(self.sandbox.root / "src/probe/probe.slang", "float grown;")
         artifacts = pathlib.Path(self.directory.name) / "artifacts"

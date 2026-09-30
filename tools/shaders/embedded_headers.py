@@ -173,10 +173,15 @@ def check(manifest: Manifest, groups: list[Group], root: pathlib.Path, tools: To
     with tempfile.TemporaryDirectory(prefix="cy-shader-headers-") as directory:
         copy = pathlib.Path(directory)
         copy_tree(root, copy)
+        ran = []
         for group in groups:
-            print(f"==> {group.name}")
-            run_group(group, copy, tools)
-        stale = stale_headers(groups, root, copy)
+            print(f"==> {group.name}", flush=True)
+            try:
+                run_group(group, copy, tools)
+                ran.append(group)
+            except subprocess.CalledProcessError as error:
+                problems.append(f"group {group.name} did not regenerate: {error}")
+        stale = stale_headers(ran, root, copy)
         problems += [f"stale: {header} (group {group})" for header, group in stale]
         if artifacts is not None and stale:
             keep_regenerated([header for header, _ in stale], copy, artifacts)
@@ -192,7 +197,7 @@ def check(manifest: Manifest, groups: list[Group], root: pathlib.Path, tools: To
 
 def regenerate(groups: list[Group], root: pathlib.Path, tools: Tools) -> int:
     for group in groups:
-        print(f"==> {group.name}")
+        print(f"==> {group.name}", flush=True)
         run_group(group, root, tools)
     return 0
 
