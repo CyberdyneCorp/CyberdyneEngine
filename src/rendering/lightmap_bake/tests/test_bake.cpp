@@ -914,11 +914,12 @@ struct ShadowRoom {
     static std::optional<Baked> baked[3];
     const auto slot = static_cast<usize>(mobility);
     CY_REQUIRE(slot < 3U);
-    if (!baked[slot]) {
+    std::optional<Baked>& held = baked[slot];
+    if (!held.has_value()) {
         const ShadowRoom room(mobility);
-        baked[slot] = bake(room.room.scene(), small_settings(LightmapMode::Irradiance));
+        return held.emplace(bake(room.room.scene(), small_settings(LightmapMode::Irradiance)));
     }
-    return *baked[slot];
+    return held.value();
 }
 
 /// Whether atlas texel `index` lies in the rectangle `address` names.
