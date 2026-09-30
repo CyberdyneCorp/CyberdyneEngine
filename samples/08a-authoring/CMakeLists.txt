@@ -114,5 +114,9 @@ add_test(NAME smoke.authoring
                  --build-dir "${CMAKE_BINARY_DIR}"
                  --no-window
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+# SKIP_RETURN_CODE 3 is the driver's "n/a": the editor or the engine runtime it drives is absent,
+# or the runtime could not open a Vulkan device (the hosted runners have none), and the session
+# cannot be judged here. samples/05b-editor-window reports the same absence the same way. A session
+# that ran and fell short exits 1 and fails.
 set_tests_properties(smoke.authoring PROPERTIES
-                     LABELS "smoke" TIMEOUT "${CY_AUTHORING_TIMEOUT}")
+                     LABELS "smoke" TIMEOUT "${CY_AUTHORING_TIMEOUT}" SKIP_RETURN_CODE 3)

@@ -31,11 +31,17 @@ function(cy_shader_targets_declare_tests)
     # beside libslang by `cy_place_dxc`, and a build of this suite alone would not otherwise run it
     # — cannot pass by comparing two targets and calling that every target.
     #
-    # APPLE WITHOUT DXC IS THE ONE EXCEPTION. Slang fetches DXC as a prebuilt release for Linux and
-    # Windows only, so on macOS `cy__slang_place_dxc` finds nothing, says so at configure time, and
-    # declares no `cy_place_dxc`; there is no DXIL to expect there. Everywhere else DXIL on means
-    # three targets, whether or not the fetch worked, which is the case this count exists to catch.
-    if(CY_SHADER_DXIL AND (TARGET cy_place_dxc OR NOT APPLE))
+    # A HOST WITH NO DXC RELEASE IS THE ONE EXCEPTION. Slang fetches DXC as a prebuilt release for
+    # Windows and x86-64 Linux only, so on macOS and on arm64 Linux `cy__slang_place_dxc` finds
+    # nothing, says so at configure time, and declares no `cy_place_dxc`; there is no DXIL to expect
+    # there. On a host that has a release, DXIL on means three targets whether or not the fetch
+    # worked, which is the case this count exists to catch.
+    set(dxc_release_host OFF)
+    if(WIN32 OR (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND
+                 CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"))
+        set(dxc_release_host ON)
+    endif()
+    if(CY_SHADER_DXIL AND (TARGET cy_place_dxc OR dxc_release_host))
         set(expected_targets 3)
     else()
         set(expected_targets 2)
