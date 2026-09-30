@@ -484,7 +484,11 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
     }
     std::fprintf(out, "\n");
 
+    const u32 shards = options.shards == 0 ? 1U : options.shards;
     for (usize index = 0; index < modules.size(); ++index) {
+        if (index % shards != options.shard) {
+            continue;
+        }
         const Module& module = modules.at(index);
         const std::vector<EntryPoint> entries = entry_points_of(module.text, index);
         if (entries.empty()) {

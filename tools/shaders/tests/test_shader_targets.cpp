@@ -36,7 +36,16 @@
 
 using namespace cy;
 
-CY_TEST_CASE("every entry point under src/rendering compiles for every target this build emits") {
+namespace {
+
+/// THREE SHARDS, ONE CASE EACH. The whole set is about 190 compilations, and as one case it spent
+/// 30.09 s of CPU on a hosted linux-x86_64 runner against the smoke budget of 30 s. Each shard
+/// loads every module — imports resolve as in a whole run — and compiles the entry points of every
+/// third one, so the three cases together are exactly the whole set, with every check below
+/// applied to each third.
+constexpr u32 kShards = 3;
+
+void compile_shard(u32 shard) {
     std::error_code moved;
     std::filesystem::current_path(CY_SOURCE_DIR, moved);
     CY_REQUIRE_FALSE(moved);
@@ -44,12 +53,18 @@ CY_TEST_CASE("every entry point under src/rendering compiles for every target th
     const std::string_view roots[] = {"src/rendering"};
     shadertool::Options options;
     options.roots = Span<const std::string_view>(roots, 1);
+    options.shard = shard;
+    options.shards = kShards;
 
     auto report =
         shadertool::build_shader_set(system_allocator(MemoryDomain::Assets), options, stdout);
     CY_REQUIRE(report.has_value());
-    // A floor, so a run that found nothing — a moved directory, an emptied glob — cannot pass.
-    CY_CHECK_GE(report->entry_points, 30U);
+    if (!report) {
+        return;
+    }
+    // A floor, so a run that found nothing — a moved directory, an emptied glob, a shard that
+    // selects no module — cannot pass. The whole set had 63 entry points when this was split.
+    CY_CHECK_GE(report->entry_points, 10U);
     CY_CHECK_GT(report->comparisons, 0U);
     // Every entry point produced an artefact for every target this build is configured to emit. A
     // build whose DXC did not load would otherwise compare two targets and pass.
@@ -57,4 +72,18 @@ CY_TEST_CASE("every entry point under src/rendering compiles for every target th
     CY_CHECK_EQ(report->failures, 0U);
     CY_CHECK_EQ(report->disagreements, 0U);
     CY_CHECK_EQ(report->target_refusals, 0U);
+}
+
+}  // namespace
+
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: first third") {
+    compile_shard(0);
+}
+
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: second third") {
+    compile_shard(1);
+}
+
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: last third") {
+    compile_shard(2);
 }
