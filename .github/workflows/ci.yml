@@ -336,9 +336,11 @@ jobs:
           restore-keys: |
             cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-editor-test-${{ matrix.label }}-
+      # NOT `shell: bash`. On Windows that is Git Bash, which puts its own /usr/bin first on PATH,
+      # and its coreutils `link` then answers for MSVC's link.exe: every build script failed with
+      # "/usr/bin/link: extra operand". The default shell keeps MSVC's PATH as msvc-dev-cmd left it.
       - name: The editor the session suites drive
         run: just build-editor
-        shell: bash
       - name: Unit, integration and smoke
         run: just test-all
       # Issue #28's acceptance ledger on the tree just built: each native probe runs its one doctest
