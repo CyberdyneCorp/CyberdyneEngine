@@ -278,23 +278,35 @@ CY_TEST_CASE("a cache is destroyed with requests in flight, in a loop, under a r
         vg::GeometryCache cache(options, allocator);
         CY_REQUIRE(cache.register_asset(0, cooked.asset).has_value());
 
+        // The owner services only once the reader is RUNNING, and the reader makes one last pass
+        // after it is told to stop. A created thread is not a scheduled one: on a hosted Windows
+        // runner every one of the 200 readers started after its owner had finished, read nothing,
+        // and the case measured no concurrency while its loop reported 200 cycles of it.
+        std::atomic<bool> running{false};
         std::atomic<bool> stop{false};
         std::atomic<u64> reads{0};
-        std::thread reader([&cache, &stop, &reads, pages = cooked.asset.pages.size()]() noexcept {
-            u64 local = 0;
-            while (!stop.load(std::memory_order_relaxed)) {
-                for (u32 page = 0; page < pages; ++page) {
-                    local += cache.resident(0, page) ? 1U : 0U;
-                    local += cache.lookup(0, page).generation;
+        std::thread reader(
+            [&cache, &running, &stop, &reads, pages = cooked.asset.pages.size()]() noexcept {
+                u64 local = 0;
+                running.store(true, std::memory_order_release);
+                bool last = false;
+                while (!last) {
+                    last = stop.load(std::memory_order_acquire);
+                    for (u32 page = 0; page < pages; ++page) {
+                        local += cache.resident(0, page) ? 1U : 0U;
+                        local += cache.lookup(0, page).generation;
+                    }
                 }
-            }
-            reads.store(local, std::memory_order_relaxed);
-        });
+                reads.store(local, std::memory_order_relaxed);
+            });
+        while (!running.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
 
         for (u32 frame = 0; frame < 8; ++frame) {
             CY_REQUIRE(cache.service(requests.span(), 1.0 + frame).has_value());
         }
-        stop.store(true, std::memory_order_relaxed);
+        stop.store(true, std::memory_order_release);
         reader.join();
         observed += reads.load(std::memory_order_relaxed);
         // The cache is destroyed here, after the join and with the last frame's admissions still

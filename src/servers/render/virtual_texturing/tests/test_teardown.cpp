@@ -247,45 +247,56 @@ CY_TEST_CASE("feedback never blocks a frame: writers progress while the resolver
     constexpr u32 kMaxRounds = 4'000;
 
     std::atomic<bool> stop{false};
+    std::atomic<u32> running{0};
     std::atomic<u64> completed{0};
     std::atomic<u64> worst_nanoseconds{0};
     std::thread writers[kWriters];
 
     for (u32 index = 0; index < kWriters; ++index) {
-        writers[index] = std::thread([&feedback, &stop, &completed, &worst_nanoseconds, index]() {
-            VirtualAddress address;
-            address.texture = index;
-            u32 tile = 0;
-            u64 local_worst = 0;
-            u64 local_completed = 0;
-            while (!stop.load(std::memory_order_acquire)) {
-                address.tile_x = static_cast<cy::u16>(tile++ % 512);
-                const auto started = std::chrono::steady_clock::now();
-                feedback.record(address.encode());
-                const auto elapsed =
-                    static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                         std::chrono::steady_clock::now() - started)
-                                         .count());
-                local_worst = (elapsed > local_worst) ? elapsed : local_worst;
-                ++local_completed;
-                if ((local_completed % kPublishEvery) == 0) {
-                    completed.fetch_add(kPublishEvery, std::memory_order_relaxed);
+        writers[index] =
+            std::thread([&feedback, &stop, &running, &completed, &worst_nanoseconds, index]() {
+                running.fetch_add(1, std::memory_order_release);
+                VirtualAddress address;
+                address.texture = index;
+                u32 tile = 0;
+                u64 local_worst = 0;
+                u64 local_completed = 0;
+                while (!stop.load(std::memory_order_acquire)) {
+                    address.tile_x = static_cast<cy::u16>(tile++ % 512);
+                    const auto started = std::chrono::steady_clock::now();
+                    feedback.record(address.encode());
+                    const auto elapsed =
+                        static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::steady_clock::now() - started)
+                                             .count());
+                    local_worst = (elapsed > local_worst) ? elapsed : local_worst;
+                    ++local_completed;
+                    if ((local_completed % kPublishEvery) == 0) {
+                        completed.fetch_add(kPublishEvery, std::memory_order_relaxed);
+                    }
                 }
-            }
-            completed.fetch_add(local_completed % kPublishEvery, std::memory_order_relaxed);
-            u64 published = worst_nanoseconds.load(std::memory_order_relaxed);
-            while (local_worst > published &&
-                   !worst_nanoseconds.compare_exchange_weak(published, local_worst,
-                                                            std::memory_order_relaxed)) {
-                // compare_exchange_weak refreshes `published` on failure; the loop retries.
-            }
-        });
+                completed.fetch_add(local_completed % kPublishEvery, std::memory_order_relaxed);
+                u64 published = worst_nanoseconds.load(std::memory_order_relaxed);
+                while (local_worst > published &&
+                       !worst_nanoseconds.compare_exchange_weak(published, local_worst,
+                                                                std::memory_order_relaxed)) {
+                    // compare_exchange_weak refreshes `published` on failure; the loop retries.
+                }
+            });
     }
 
     // At least `kMinRounds`, and not before the writers have got somewhere: the main thread is fast
     // enough to finish its own loop before a writer has been scheduled, and a case that stopped
     // there would measure nothing while reporting success. `kMaxRounds` bounds the case's own CPU,
     // which the integration suite budgets at one second.
+    //
+    // THE RESOLVER WAITS FOR EVERY WRITER TO BE RUNNING. A thread that has been created has not
+    // necessarily been scheduled: on a hosted three-core runner all `kMaxRounds` rounds finished
+    // before any writer had recorded once, and the case failed with 0 records — contention that
+    // never happened, reported as a writer that could not progress.
+    while (running.load(std::memory_order_acquire) < kWriters) {
+        std::this_thread::yield();
+    }
     cy::Array<FeedbackRequest> requests;
     u32 rounds = 0;
     while (rounds < kMinRounds ||
