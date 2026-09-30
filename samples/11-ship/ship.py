@@ -247,6 +247,16 @@ def act_symbols(tools: Tools, report: Report) -> None:
     """Task 7.5: the binary that ships is stripped, and the symbols that belong to it are archived
     under its build identity — proved to belong to it, not assumed to."""
     print("\n==> Act 1c — the binary is stripped, its symbols archived by build identity")
+    # THE SPLIT IS ELF'S. dSYM and PDB archiving are M11.e's task 7.6, so on a Mach-O or PE host
+    # this act is a claim the machine cannot evaluate — reported as such, never as a pass, and not
+    # as a failure of the package either. CI archives the bundle from the Linux legs only.
+    kind = symbols.binary_format(tools.sample)
+    if kind != "ELF":
+        report.not_evaluated(
+            "the shipped binary's symbols and the reproducibility bundle",
+            f"{tools.sample.name} is {kind}: splitting and archiving symbols is implemented for "
+            "ELF only, and dSYM and PDB are M11.e task 7.6")
+        return
     manifest = (tools.work / "base.cypackage").read_text()
     build = re.search(r"^build (\S+)$", manifest, re.MULTILINE)
     expect(build is not None, "the package manifest names no build")
@@ -487,7 +497,9 @@ def act_content(tools: Tools, report: Report, platform: str, bytes_before: int) 
     # 3 is "it drew and tripped validation", which act 2 has already recorded as a gap. This act is
     # about whether the CONTENT reached the installation, and it must not re-report the same defect
     # as a second, different failure.
-    expect(relaunched.returncode in (0, 3), f"the relaunch failed:\n{relaunched.stdout}")
+    expect(relaunched.returncode in (0, 3),
+           f"the relaunch failed with status {relaunched.returncode}:\n{relaunched.stdout}"
+           f"{relaunched.stderr}")
     card = CARD.search(relaunched.stdout)
     expect(card is not None, f"the relaunch printed no card line:\n{relaunched.stdout}")
     expect(int(card.group(5)) > bytes_before,

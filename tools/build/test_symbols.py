@@ -99,6 +99,16 @@ def cases(work: Path) -> None:
     text.write_text("#!/bin/sh\n")
     refused("a file that is not ELF", "not ELF", lambda: symbols.read_elf(text))
 
+    # The format is what a driver asks before it splits: smoke.ship on a Mach-O or PE host reports
+    # the symbol act as not evaluated on that answer rather than failing inside `split`.
+    formats = {"ELF": probe, "an unrecognised format": text}
+    for magic, kind in ((b"\xcf\xfa\xed\xfe", "Mach-O"), (b"MZ\x90\x00", "PE")):
+        formats[kind] = work / f"probe.{kind}"
+        formats[kind].write_bytes(magic + bytes(60))
+    for kind, path in formats.items():
+        if symbols.binary_format(path) != kind:
+            raise AssertionError(f"{path} read as {symbols.binary_format(path)}, not {kind}")
+
 
 def check_configuration(flags: str, compiler_id: str) -> None:
     """A configuration that ships must compile WITH debug information, or `split` has nothing to

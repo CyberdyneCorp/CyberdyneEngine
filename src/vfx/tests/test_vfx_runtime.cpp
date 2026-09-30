@@ -596,11 +596,20 @@ CY_TEST_CASE(
         const u32 live = report.live_particles;
         CY_REQUIRE(live > 0U);
 
-        const u64 before = thread_cpu_ns();
-        for (u32 frame = 0; frame < 30U; ++frame) {
-            CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+        // THE FASTEST OF FIVE WINDOWS, not one. Thread CPU time on a shared virtual machine still
+        // counts the cycles a noisy neighbour's cache traffic costs this thread: one 30-step window
+        // on the hosted macOS runner read 2.4 times the smaller population's cost where the next
+        // run read under 2. Noise only ever adds, so the minimum is the step's own cost, and the
+        // bound below is unchanged.
+        u64 elapsed = ~0ULL;
+        for (u32 window = 0; window < 5U; ++window) {
+            const u64 before = thread_cpu_ns();
+            for (u32 frame = 0; frame < 30U; ++frame) {
+                CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+            }
+            const u64 spent = thread_cpu_ns() - before;
+            elapsed = spent < elapsed ? spent : elapsed;
         }
-        const u64 elapsed = thread_cpu_ns() - before;
         per_particle[which] = static_cast<f64>(elapsed) / (30.0 * static_cast<f64>(live));
         std::fprintf(stderr, "population %u: %u live, %.1f ns a particle a step\n",
                      populations[which], live, per_particle[which]);

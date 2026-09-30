@@ -26,6 +26,7 @@
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -329,6 +330,10 @@ CY_TEST_CASE("the cook runs as a graph node and produces a package") {
     CY_REQUIRE(add_content_producers(producers, &world).has_value());
 
     BuildGraph graph;
+    // The scratch path goes into a quoted word, where a backslash is an escape: a Windows temporary
+    // directory written as it is lost every separator (`C:\Users\...` read as `C:Users...`), so the
+    // cook was handed a directory that did not exist. The generic form has no backslash to escape.
+    const std::string scratch = std::filesystem::path(project.path("scratch")).generic_string();
     const std::string description = std::string("cybuild 1\n") +
                                     "node \"cook:level\" cook \"cook\" 1\n"
                                     "  source \"assets/level.cyscene\"\n"
@@ -336,7 +341,7 @@ CY_TEST_CASE("the cook runs as a graph node and produces a package") {
                                     "  option \"source\" \"assets\"\n"
                                     "  option \"variant\" \"desktop\"\n"
                                     "  option \"scratch\" \"" +
-                                    project.path("scratch") + "\"\n";
+                                    scratch + "\"\n";
     CY_REQUIRE(assets::fs::create_directories(project.path("scratch").c_str()).has_value());
     CY_REQUIRE(read_description(description, graph, &producers).has_value());
 

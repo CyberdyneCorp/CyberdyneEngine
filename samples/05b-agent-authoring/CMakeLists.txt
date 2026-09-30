@@ -23,6 +23,16 @@ if(NOT CY_BUILD_TESTS)
     return()
 endif()
 
+# NOT A UNIX HOST, NOT DECLARED — samples/05-editor-session's rule, for its reason. The agent's play
+# acts attach `cy-runtime-stub` over the live bridge, a Unix domain socket, and on Windows the stub
+# has no socket to listen on; the artefact exits 2 there rather than reporting acts it did not run.
+# A registered test that could only fail, or only skip, would say nothing about the claim.
+if(NOT UNIX)
+    message(STATUS "samples/05b-agent-authoring: not a Unix host, so the live bridge's socket does "
+                   "not exist; the agent artefact is not registered")
+    return()
+endif()
+
 # --- Where the artefact cannot run, and why that is an absence rather than a skip ------------------
 #
 # `cargo` builds the editor the session drives and `just` is how it is built. Where one of these is

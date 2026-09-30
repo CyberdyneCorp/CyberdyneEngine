@@ -1,18 +1,16 @@
 // The Windows half of the crash path.
 //
-// UNVERIFIED. It was written against the documented behaviour of SetUnhandledExceptionFilter,
-// CaptureStackBackTrace and the CRT's low-level I/O, and it has never been compiled or run: the
-// machine this milestone was implemented on is Linux, and M0's CI does not exist yet (task 2.4.x).
-// It is here because leaving the platform out entirely would hide the shape of the port; treat the
-// first Windows build as a review of this file.
+// Run by the windows-x86_64 CI test leg: `diagnostics.crash` reads back what it writes.
 //
 // The constraint is the same as the POSIX side: the filter runs in a damaged process, so it
 // allocates nothing, formats nothing, and writes through a raw handle. Symbol resolution is
 // deliberately absent — SymFromAddr loads DbgHelp and allocates — so the report carries module
-// bases and offsets, and symbolicates later against the archived PDBs.
+// bases and offsets, captured at installation, and symbolicates later against the archived PDBs.
 
 #include "platform_bits.h"
 
+#include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 
@@ -22,12 +20,110 @@
 #include <fcntl.h>
 #include <io.h>
 #include <process.h>
+#include <psapi.h>
 #include <sys/stat.h>
+
+#pragma comment(lib, "psapi.lib")
 
 namespace cy::diag {
 namespace {
 
 constexpr u32 kMaxFrames = 64;
+
+// --- The module table, as the POSIX half keeps it ------------------------------------------------
+//
+// Captured at installation, where the loader may be asked, and read-only afterwards, so the filter
+// touches no loader lock. Basenames only: the loader's path names the build machine's directories.
+constexpr u32 kMaxModules = 96;
+constexpr u32 kModuleNameCapacity = 64;
+
+struct ModuleEntry {
+    u64 base = 0;
+    u64 end = 0;
+    char name[kModuleNameCapacity] = {};
+};
+
+ModuleEntry g_modules[kMaxModules];
+u32 g_module_count = 0;
+
+void copy_basename(char* out, u32 capacity, const char* path) noexcept {
+    const char* name = path;
+    for (const char* cursor = path; *cursor != '\0'; ++cursor) {
+        if (*cursor == '\\' || *cursor == '/') {
+            name = cursor + 1;
+        }
+    }
+    u32 length = 0;
+    for (; name[length] != '\0' && length + 1 < capacity; ++length) {
+        out[length] = name[length];
+    }
+    out[length] = '\0';
+}
+
+void capture_module_table() noexcept {
+    g_module_count = 0;
+    HMODULE handles[kMaxModules] = {};
+    DWORD needed = 0;
+    const HANDLE process = ::GetCurrentProcess();
+    if (::EnumProcessModules(process, handles, sizeof(handles), &needed) == 0) {
+        return;
+    }
+    const u32 listed = static_cast<u32>(needed / sizeof(HMODULE));
+    for (u32 index = 0; index < listed && index < kMaxModules; ++index) {
+        MODULEINFO info{};
+        if (::GetModuleInformation(process, handles[index], &info, sizeof(info)) == 0) {
+            continue;
+        }
+        char path[MAX_PATH] = {};
+        if (::GetModuleFileNameA(handles[index], path, MAX_PATH) == 0) {
+            continue;
+        }
+        ModuleEntry& entry = g_modules[g_module_count++];
+        entry.base = reinterpret_cast<u64>(info.lpBaseOfDll);
+        entry.end = entry.base + info.SizeOfImage;
+        copy_basename(entry.name, kModuleNameCapacity, path);
+    }
+}
+
+const ModuleEntry* module_for(u64 address) noexcept {
+    for (u32 index = 0; index < g_module_count; ++index) {
+        if (address >= g_modules[index].base && address < g_modules[index].end) {
+            return &g_modules[index];
+        }
+    }
+    return nullptr;
+}
+
+void append_text(char* out, u32 capacity, u32& length, const char* text) noexcept {
+    for (const char* cursor = text; *cursor != '\0' && length + 1 < capacity; ++cursor) {
+        out[length++] = *cursor;
+    }
+    out[length] = '\0';
+}
+
+void append_decimal(char* out, u32 capacity, u32& length, u64 value) noexcept {
+    char digits[24];
+    u32 index = sizeof(digits);
+    digits[--index] = '\0';
+    do {
+        digits[--index] = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0 && index > 0);
+    append_text(out, capacity, length, digits + index);
+}
+
+/// Sixteen nibbles, always, so every address has the one shape `crash_inspect.py` matches.
+void append_hex(char* out, u32 capacity, u32& length, u64 value) noexcept {
+    static const char kDigits[] = "0123456789abcdef";
+    char text[19];
+    text[0] = '0';
+    text[1] = 'x';
+    for (u32 index = 0; index < 16; ++index) {
+        text[2 + index] = kDigits[(value >> (60U - (index * 4U))) & 0xFU];
+    }
+    text[18] = '\0';
+    append_text(out, capacity, length, text);
+}
 
 LPTOP_LEVEL_EXCEPTION_FILTER g_previous = nullptr;
 bool g_installed = false;
@@ -49,6 +145,35 @@ LONG WINAPI handle_exception(EXCEPTION_POINTERS* pointers) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/// std::abort() on Windows is not a structured exception: the CRT raises SIGABRT and then ends the
+/// process with _exit(3), and the unhandled-exception filter above never runs. So abort is taken
+/// as a signal, as on POSIX. The CRT has reset the disposition to SIG_DFL by the time this runs,
+/// and returning lets abort() finish the process the way it would have.
+using AbortHandler = void (*)(int);
+AbortHandler g_previous_abort = SIG_DFL;
+
+void handle_abort(int number) {
+    CrashSignal signal{};
+    signal.number = number;
+    signal.description = "SIGABRT";
+    const i32 handle = platform_create_file_new(crash_report_path());
+    if (handle >= 0) {
+        write_crash_report_to_fd(handle, signal);
+        platform_close_file(handle);
+    }
+}
+
+/// `_mkdir` succeeded, or the directory is already there. The second half is asked of the file
+/// system rather than read from errno: `_mkdir("C:")` — the first prefix of every absolute path —
+/// fails with EACCES or ENOENT, not EEXIST, although the drive plainly exists.
+bool made_or_present(const char* directory) noexcept {
+    if (::_mkdir(directory) == 0 || errno == EEXIST) {
+        return true;
+    }
+    const DWORD attributes = ::GetFileAttributesA(directory);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
 }  // namespace
 
 u32 platform_process_id() noexcept {
@@ -68,12 +193,12 @@ bool platform_make_directories(const char* path) noexcept {
         }
         const char separator = *cursor;
         *cursor = '\0';
-        if (::_mkdir(buffer) != 0 && errno != EEXIST) {
+        if (!made_or_present(buffer)) {
             return false;
         }
         *cursor = separator;
     }
-    return ::_mkdir(buffer) == 0 || errno == EEXIST;
+    return made_or_present(buffer);
 }
 
 void platform_default_crash_directory(char* buffer, u32 capacity) noexcept {
@@ -118,58 +243,59 @@ i64 platform_write(i32 handle, const void* data, usize bytes) noexcept {
 }
 
 u32 platform_write_module_table(i32 handle) noexcept {
-    // NOT IMPLEMENTED HERE, AND SAID RATHER THAN FAKED. The POSIX half captures the table with
-    // dl_iterate_phdr() at installation so the artefact can carry a basename instead of the
-    // loader's absolute path; the Windows equivalent is EnumProcessModules() plus
-    // GetModuleFileNameA() in the same place, and this file has never been compiled — see the
-    // header comment. Writing nothing keeps the property that matters (`crash_report.cpp` prints
-    // "<no module table on this platform>" and the frames below carry no path either); what is
-    // missing is the name beside each offset, not the redaction.
-    (void)handle;
-    return 0;
+    for (u32 index = 0; index < g_module_count; ++index) {
+        char line[160];
+        u32 length = 0;
+        append_text(line, sizeof(line), length, "  ");
+        append_text(line, sizeof(line), length, g_modules[index].name);
+        append_text(line, sizeof(line), length, " base=");
+        append_hex(line, sizeof(line), length, g_modules[index].base);
+        append_text(line, sizeof(line), length, "\n");
+        platform_write(handle, line, length);
+    }
+    return g_module_count;
 }
 
 u32 platform_write_backtrace(i32 handle) noexcept {
     void* frames[kMaxFrames];
     const USHORT count =
         ::CaptureStackBackTrace(0, static_cast<DWORD>(kMaxFrames), frames, nullptr);
+    // The POSIX line: basename, offset within the module, absolute address. A frame in no captured
+    // module keeps the address alone, which `crash_inspect.py`'s pattern allows for.
     for (USHORT index = 0; index < count; ++index) {
-        // `  #<n> pc=0x…`: the POSIX line without the module half, because there is no table to
-        // resolve it against. `crash_inspect.py`'s frame pattern makes that half optional for
-        // exactly this case rather than requiring a `<unknown>+0x0` that claims an offset.
-        char line[40];
+        const auto address = reinterpret_cast<u64>(frames[index]);
+        const ModuleEntry* module = module_for(address);
+        char line[160];
         u32 length = 0;
-        line[length++] = ' ';
-        line[length++] = ' ';
-        line[length++] = '#';
-        if (index >= 10) {
-            line[length++] = static_cast<char>('0' + (index / 10));
+        append_text(line, sizeof(line), length, "  #");
+        append_decimal(line, sizeof(line), length, index);
+        append_text(line, sizeof(line), length, " ");
+        if (module != nullptr) {
+            append_text(line, sizeof(line), length, module->name);
+            append_text(line, sizeof(line), length, "+");
+            append_hex(line, sizeof(line), length, address - module->base);
+            append_text(line, sizeof(line), length, " ");
         }
-        line[length++] = static_cast<char>('0' + (index % 10));
-        line[length++] = ' ';
-        line[length++] = 'p';
-        line[length++] = 'c';
-        line[length++] = '=';
-        line[length++] = '0';
-        line[length++] = 'x';
-        const u64 address = reinterpret_cast<u64>(frames[index]);
-        static const char digits[] = "0123456789abcdef";
-        for (u32 nibble = 0; nibble < 16; ++nibble) {
-            line[length++] = digits[(address >> (60u - (nibble * 4u))) & 0xFu];
-        }
-        line[length++] = '\n';
+        append_text(line, sizeof(line), length, "pc=");
+        append_hex(line, sizeof(line), length, address);
+        append_text(line, sizeof(line), length, "\n");
         platform_write(handle, line, length);
     }
     return static_cast<u32>(count);
 }
 
 u32 platform_install_crash_handler() noexcept {
+    // Before the idempotence guard, as on POSIX: reinstalling is how a module loaded since the
+    // first installation gets into the table.
+    capture_module_table();
     if (g_installed) {
         return 1;
     }
     g_previous = ::SetUnhandledExceptionFilter(&handle_exception);
+    const AbortHandler previous_abort = ::signal(SIGABRT, &handle_abort);
+    g_previous_abort = previous_abort == SIG_ERR ? SIG_DFL : previous_abort;
     g_installed = true;
-    return 1;
+    return previous_abort == SIG_ERR ? 1 : 2;
 }
 
 void platform_uninstall_crash_handler() noexcept {
@@ -178,6 +304,8 @@ void platform_uninstall_crash_handler() noexcept {
     }
     ::SetUnhandledExceptionFilter(g_previous);
     g_previous = nullptr;
+    (void)::signal(SIGABRT, g_previous_abort);
+    g_previous_abort = SIG_DFL;
     g_installed = false;
 }
 

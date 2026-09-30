@@ -9,6 +9,7 @@
 
 #if defined(__linux__) || defined(__APPLE__)
 #    define CY_ASSETS_POSIX_SOCKETS 1
+#    define CY_ASSETS_WINSOCK 0
 #    include <arpa/inet.h>
 #    include <fcntl.h>
 #    include <netinet/in.h>
@@ -17,9 +18,25 @@
 #    include <sys/socket.h>
 #    include <unistd.h>
 #    include <cerrno>
+#elif defined(_WIN32)
+#    define CY_ASSETS_POSIX_SOCKETS 0
+#    define CY_ASSETS_WINSOCK 1
+#    ifndef WIN32_LEAN_AND_MEAN
+#        define WIN32_LEAN_AND_MEAN
+#    endif
+#    ifndef NOMINMAX
+#        define NOMINMAX
+#    endif
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+#    include <climits>
+#    include <cstdint>
+#    pragma comment(lib, "Ws2_32.lib")
 #else
 #    define CY_ASSETS_POSIX_SOCKETS 0
+#    define CY_ASSETS_WINSOCK 0
 #endif
+#define CY_ASSETS_SOCKETS (CY_ASSETS_POSIX_SOCKETS || CY_ASSETS_WINSOCK)
 
 namespace cy::assets {
 namespace {
@@ -131,7 +148,176 @@ void encode(const Header& header, u8* out) noexcept {
     }
 }
 
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
+
+// --- The socket layer, once per platform ---------------------------------------------------------
+//
+// Everything below this block is written once against these few calls. A handle is kept as an
+// `int` on both platforms, because that is the type the public members hold: WinSock's `SOCKET`
+// is a kernel handle value, which fits, and `stored()` maps `INVALID_SOCKET` onto -1 so that the
+// members' "negative is closed" test means the same thing everywhere — `net::UdpTransport` keeps
+// its socket the same way.
+
+#    if CY_ASSETS_WINSOCK
+using PollEntry = WSAPOLLFD;
+
+[[nodiscard]] SOCKET native(int handle) noexcept {
+    return static_cast<SOCKET>(static_cast<std::intptr_t>(handle));
+}
+[[nodiscard]] int stored(SOCKET handle) noexcept {
+    return handle == INVALID_SOCKET ? -1 : static_cast<int>(static_cast<std::intptr_t>(handle));
+}
+/// WSAStartup once per process, before the first socket, and WSACleanup at exit.
+void start_sockets() noexcept {
+    struct Lifetime {
+        Lifetime() noexcept {
+            WSADATA data{};
+            (void)::WSAStartup(MAKEWORD(2, 2), &data);
+        }
+        ~Lifetime() { (void)::WSACleanup(); }
+    };
+    static const Lifetime lifetime;
+    (void)lifetime;
+}
+[[nodiscard]] int socket_error() noexcept {
+    return ::WSAGetLastError();
+}
+[[nodiscard]] bool interrupted() noexcept {
+    return ::WSAGetLastError() == WSAEINTR;
+}
+[[nodiscard]] int open_stream() noexcept {
+    start_sockets();
+    return stored(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+}
+[[nodiscard]] i64 send_some(int socket, const u8* bytes, usize size) noexcept {
+    const int chunk = static_cast<int>(size < static_cast<usize>(INT_MAX) ? size : INT_MAX);
+    return ::send(native(socket), reinterpret_cast<const char*>(bytes), chunk, 0);
+}
+[[nodiscard]] i64 receive_some(int socket, u8* bytes, usize size) noexcept {
+    const int chunk = static_cast<int>(size < static_cast<usize>(INT_MAX) ? size : INT_MAX);
+    return ::recv(native(socket), reinterpret_cast<char*>(bytes), chunk, 0);
+}
+void close_native(int socket) noexcept {
+    (void)::closesocket(native(socket));
+}
+[[nodiscard]] bool set_blocking(int socket, bool blocking) noexcept {
+    u_long nonblocking = blocking ? 0U : 1U;
+    return ::ioctlsocket(native(socket), FIONBIO, &nonblocking) == 0;
+}
+void set_no_delay(int socket) noexcept {
+    const BOOL one = TRUE;
+    (void)::setsockopt(native(socket), IPPROTO_TCP, TCP_NODELAY,
+                       reinterpret_cast<const char*>(&one), sizeof(one));
+}
+/// WinSock takes the receive deadline in milliseconds, as a DWORD rather than a timeval.
+void set_receive_deadline(int socket, u32 seconds) noexcept {
+    const DWORD milliseconds = seconds * 1000U;
+    (void)::setsockopt(native(socket), SOL_SOCKET, SO_RCVTIMEO,
+                       reinterpret_cast<const char*>(&milliseconds), sizeof(milliseconds));
+}
+/// Not SO_REUSEADDR: on Windows it lets a second socket take a port that is already bound, which
+/// is the opposite of what it means on POSIX. SO_EXCLUSIVEADDRUSE is the POSIX meaning.
+void set_address_reuse(int socket) noexcept {
+    const BOOL one = TRUE;
+    (void)::setsockopt(native(socket), SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                       reinterpret_cast<const char*>(&one), sizeof(one));
+}
+[[nodiscard]] bool bind_to(int socket, const sockaddr_in& address) noexcept {
+    return ::bind(native(socket), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) ==
+           0;
+}
+[[nodiscard]] bool connect_to(int socket, const sockaddr_in& address) noexcept {
+    return ::connect(native(socket), reinterpret_cast<const sockaddr*>(&address),
+                     sizeof(address)) == 0;
+}
+[[nodiscard]] bool listen_on(int socket) noexcept {
+    return ::listen(native(socket), 8) == 0;
+}
+[[nodiscard]] bool bound_address(int socket, sockaddr_in& address) noexcept {
+    int size = sizeof(address);
+    return ::getsockname(native(socket), reinterpret_cast<sockaddr*>(&address), &size) == 0;
+}
+[[nodiscard]] int accept_one(int listener) noexcept {
+    return stored(::accept(native(listener), nullptr, nullptr));
+}
+void watch(PollEntry& entry, int socket) noexcept {
+    entry.fd = native(socket);
+    entry.events = POLLIN;
+}
+[[nodiscard]] int watched_socket(const PollEntry& entry) noexcept {
+    return stored(entry.fd);
+}
+[[nodiscard]] int poll_sockets(PollEntry* entries, usize count, u32 timeout_ms) noexcept {
+    return ::WSAPoll(entries, static_cast<ULONG>(count), static_cast<INT>(timeout_ms));
+}
+#    else
+using PollEntry = pollfd;
+
+[[nodiscard]] int socket_error() noexcept {
+    return errno;
+}
+[[nodiscard]] bool interrupted() noexcept {
+    return errno == EINTR;
+}
+[[nodiscard]] int open_stream() noexcept {
+    return ::socket(AF_INET, SOCK_STREAM, 0);
+}
+[[nodiscard]] i64 send_some(int socket, const u8* bytes, usize size) noexcept {
+    return ::send(socket, bytes, size, MSG_NOSIGNAL);
+}
+[[nodiscard]] i64 receive_some(int socket, u8* bytes, usize size) noexcept {
+    return ::recv(socket, bytes, size, 0);
+}
+void close_native(int socket) noexcept {
+    (void)::close(socket);
+}
+[[nodiscard]] bool set_blocking(int socket, bool blocking) noexcept {
+    const int flags = ::fcntl(socket, F_GETFL, 0);
+    if (flags < 0) {
+        return false;
+    }
+    return ::fcntl(socket, F_SETFL, blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK)) == 0;
+}
+void set_no_delay(int socket) noexcept {
+    int one = 1;
+    (void)::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+}
+void set_receive_deadline(int socket, u32 seconds) noexcept {
+    timeval deadline{};
+    deadline.tv_sec = static_cast<decltype(deadline.tv_sec)>(seconds);
+    (void)::setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &deadline, sizeof(deadline));
+}
+void set_address_reuse(int socket) noexcept {
+    int one = 1;
+    (void)::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+}
+[[nodiscard]] bool bind_to(int socket, const sockaddr_in& address) noexcept {
+    return ::bind(socket, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
+}
+[[nodiscard]] bool connect_to(int socket, const sockaddr_in& address) noexcept {
+    return ::connect(socket, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
+}
+[[nodiscard]] bool listen_on(int socket) noexcept {
+    return ::listen(socket, 8) == 0;
+}
+[[nodiscard]] bool bound_address(int socket, sockaddr_in& address) noexcept {
+    socklen_t size = sizeof(address);
+    return ::getsockname(socket, reinterpret_cast<sockaddr*>(&address), &size) == 0;
+}
+[[nodiscard]] int accept_one(int listener) noexcept {
+    return ::accept(listener, nullptr, nullptr);
+}
+void watch(PollEntry& entry, int socket) noexcept {
+    entry.fd = socket;
+    entry.events = POLLIN;
+}
+[[nodiscard]] int watched_socket(const PollEntry& entry) noexcept {
+    return entry.fd;
+}
+[[nodiscard]] int poll_sockets(PollEntry* entries, usize count, u32 timeout_ms) noexcept {
+    return ::poll(entries, static_cast<nfds_t>(count), static_cast<int>(timeout_ms));
+}
+#    endif
 
 /// Loop until every byte is written. A stream socket may take fewer than it was given, and treating
 /// that as an error is how a transport comes to work on the loopback and fail on a network.
@@ -139,9 +325,9 @@ void encode(const Header& header, u8* out) noexcept {
     const auto* cursor = static_cast<const u8*>(bytes);
     usize remaining = size;
     while (remaining > 0) {
-        const ssize_t written = ::send(socket, cursor, remaining, MSG_NOSIGNAL);
+        const i64 written = send_some(socket, cursor, remaining);
         if (written < 0) {
-            if (errno == EINTR) {
+            if (interrupted()) {
                 continue;
             }
             return false;
@@ -157,9 +343,9 @@ void encode(const Header& header, u8* out) noexcept {
     auto* cursor = static_cast<u8*>(bytes);
     usize remaining = size;
     while (remaining > 0) {
-        const ssize_t got = ::recv(socket, cursor, remaining, 0);
+        const i64 got = receive_some(socket, cursor, remaining);
         if (got < 0) {
-            if (errno == EINTR) {
+            if (interrupted()) {
                 continue;
             }
             return false;
@@ -175,27 +361,26 @@ void encode(const Header& header, u8* out) noexcept {
 
 void close_socket(int& socket) noexcept {
     if (socket >= 0) {
-        (void)::close(socket);
+        close_native(socket);
         socket = -1;
     }
 }
 
-#endif  // CY_ASSETS_POSIX_SOCKETS
+#endif  // CY_ASSETS_SOCKETS
 
-#if !CY_ASSETS_POSIX_SOCKETS
+#if !CY_ASSETS_SOCKETS
 /// Only ever reached on a platform with no socket layer; on one that has it, every caller is
 /// compiled out and so is this.
 [[nodiscard]] Status unsupported_here() noexcept {
     return fail(ErrorCode::Unsupported,
-                "this build has no socket layer, so no file can be served or fetched over one; "
-                "see the note on Windows in cy/core/assets/remote.h");
+                "this build has no socket layer, so no file can be served or fetched over one");
 }
 #endif
 
 }  // namespace
 
 bool remote_serving_available() noexcept {
-    return CY_ASSETS_POSIX_SOCKETS != 0;
+    return CY_ASSETS_SOCKETS != 0;
 }
 
 RemoteAddress parse_remote_address(const char* text) noexcept {
@@ -264,13 +449,13 @@ SocketFileProvider::~SocketFileProvider() {
 }
 
 void SocketFileProvider::disconnect() noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     close_socket(socket_);
 #endif
 }
 
 Status SocketFileProvider::connect(const char* address_text) noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     const RemoteAddress address = parse_remote_address(address_text);
     if (!address.valid()) {
         return fail(ErrorCode::InvalidArgument,
@@ -278,17 +463,17 @@ Status SocketFileProvider::connect(const char* address_text) noexcept {
     }
     disconnect();
 
-    const int handle = ::socket(AF_INET, SOCK_STREAM, 0);
+    const int handle = open_stream();
     if (handle < 0) {
-        return fail(ErrorCode::Io, "a socket could not be created", errno);
+        return fail(ErrorCode::Io, "a socket could not be created", socket_error());
     }
 
     sockaddr_in target{};
     target.sin_family = AF_INET;
     target.sin_port = htons(address.port);
     target.sin_addr.s_addr = htonl(address.ipv4);
-    if (::connect(handle, reinterpret_cast<const sockaddr*>(&target), sizeof(target)) != 0) {
-        const int failure = errno;
+    if (!connect_to(handle, target)) {
+        const int failure = socket_error();
         int scoped = handle;
         close_socket(scoped);
         return fail(ErrorCode::Unavailable, "the host did not accept the connection", failure);
@@ -296,8 +481,7 @@ Status SocketFileProvider::connect(const char* address_text) noexcept {
 
     // Every message is one request and one reply, so Nagle's algorithm has nothing to coalesce and
     // costs a round trip's worth of latency per fetch.
-    int one = 1;
-    (void)::setsockopt(handle, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    set_no_delay(handle);
 
     socket_ = handle;
     return ok();
@@ -308,7 +492,7 @@ Status SocketFileProvider::connect(const char* address_text) noexcept {
 }
 
 Status SocketFileProvider::send_all(const void* bytes, usize size) noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     if (!write_all(socket_, bytes, size)) {
         return transport_failure("the connection to the host failed while sending a request");
     }
@@ -321,7 +505,7 @@ Status SocketFileProvider::send_all(const void* bytes, usize size) noexcept {
 }
 
 Status SocketFileProvider::receive_all(void* bytes, usize size) noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     if (!read_all(socket_, bytes, size)) {
         return transport_failure("the connection to the host failed while reading a reply");
     }
@@ -501,7 +685,7 @@ FileServingHost::~FileServingHost() {
 }
 
 void FileServingHost::close() noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     for (int& client : clients_) {
         close_socket(client);
         ++stats_.connections_closed;
@@ -513,22 +697,21 @@ void FileServingHost::close() noexcept {
 }
 
 Status FileServingHost::open(u16 port, bool loopback_only) noexcept {
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
     close();
 
-    const int handle = ::socket(AF_INET, SOCK_STREAM, 0);
+    const int handle = open_stream();
     if (handle < 0) {
-        return fail(ErrorCode::Io, "a listening socket could not be created", errno);
+        return fail(ErrorCode::Io, "a listening socket could not be created", socket_error());
     }
-    int one = 1;
-    (void)::setsockopt(handle, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    set_address_reuse(handle);
 
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
     address.sin_addr.s_addr = htonl(loopback_only ? INADDR_LOOPBACK : INADDR_ANY);
-    if (::bind(handle, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
-        const int failure = errno;
+    if (!bind_to(handle, address)) {
+        const int failure = socket_error();
         int scoped = handle;
         close_socket(scoped);
         return fail(ErrorCode::Unavailable, "that port could not be bound", failure);
@@ -537,25 +720,23 @@ Status FileServingHost::open(u16 port, bool loopback_only) noexcept {
     // every waiting connection in a loop, and on a blocking listener the call that finds nothing
     // waiting does not return — it parks the serving thread until somebody else connects, which is
     // a host that answers one client and then wedges. The loop and this flag are one mechanism.
-    const int flags = ::fcntl(handle, F_GETFL, 0);
-    if (flags < 0 || ::fcntl(handle, F_SETFL, flags | O_NONBLOCK) != 0) {
-        const int failure = errno;
+    if (!set_blocking(handle, false)) {
+        const int failure = socket_error();
         int scoped = handle;
         close_socket(scoped);
         return fail(ErrorCode::Io, "the listening socket could not be made non-blocking", failure);
     }
 
-    if (::listen(handle, 8) != 0) {
-        const int failure = errno;
+    if (!listen_on(handle)) {
+        const int failure = socket_error();
         int scoped = handle;
         close_socket(scoped);
         return fail(ErrorCode::Io, "the socket could not be listened on", failure);
     }
 
     sockaddr_in bound{};
-    socklen_t bound_size = sizeof(bound);
-    if (::getsockname(handle, reinterpret_cast<sockaddr*>(&bound), &bound_size) != 0) {
-        const int failure = errno;
+    if (!bound_address(handle, bound)) {
+        const int failure = socket_error();
         int scoped = handle;
         close_socket(scoped);
         return fail(ErrorCode::Io, "the bound port could not be read back", failure);
@@ -571,29 +752,27 @@ Status FileServingHost::open(u16 port, bool loopback_only) noexcept {
 #endif
 }
 
-#if CY_ASSETS_POSIX_SOCKETS
+#if CY_ASSETS_SOCKETS
 
 Status FileServingHost::accept_pending() noexcept {
     for (;;) {
-        const int client = ::accept(listener_, nullptr, nullptr);
+        const int client = accept_one(listener_);
         if (client < 0) {
-            if (errno == EINTR) {
+            if (interrupted()) {
                 continue;
             }
-            // EAGAIN is "nothing waiting", which is the ordinary outcome of a poll round in which
-            // the listener was not the socket that was ready.
+            // EAGAIN (WSAEWOULDBLOCK) is "nothing waiting", which is the ordinary outcome of a
+            // poll round in which the listener was not the socket that was ready.
             return ok();
         }
-        int one = 1;
-        (void)::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        set_no_delay(client);
 
-        // Darwin inherits O_NONBLOCK from the listening socket on an accepted connection. The
-        // protocol reader deliberately blocks, with the deadline below, once poll says a message
-        // has begun: a header and its path may arrive in separate packets. Clear the inherited
-        // flag explicitly so the second read does not mistake EAGAIN for a closed peer.
-        const int client_flags = ::fcntl(client, F_GETFL, 0);
-        if (client_flags < 0 || ::fcntl(client, F_SETFL, client_flags & ~O_NONBLOCK) != 0) {
-            const int failure = errno;
+        // An accepted connection inherits the listener's non-blocking mode on Darwin and on
+        // Windows. The protocol reader deliberately blocks, with the deadline below, once poll says
+        // a message has begun: a header and its path may arrive in separate packets. Clear the
+        // inherited mode explicitly so the second read does not mistake EAGAIN for a closed peer.
+        if (!set_blocking(client, true)) {
+            const int failure = socket_error();
             int scoped = client;
             close_socket(scoped);
             return fail(ErrorCode::Io, "an accepted socket could not be made blocking", failure);
@@ -603,9 +782,7 @@ Status FileServingHost::accept_pending() noexcept {
         // one has begun to arrive. A peer that sends half a header and stops would otherwise hold
         // the serving thread for ever — which is a denial of service that costs the client nothing,
         // and the loopback is not a reason to leave it open.
-        timeval deadline{};
-        deadline.tv_sec = 5;
-        (void)::setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &deadline, sizeof(deadline));
+        set_receive_deadline(client, 5);
         if (Status added = clients_.push_back(client); !added) {
             int scoped = client;
             close_socket(scoped);
@@ -778,26 +955,25 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
     // One descriptor for the listener and one per client, on the stack: a serving round that
     // allocated would allocate on every tick of an editor that is serving nothing.
     constexpr usize kMaxWatched = 32;
-    pollfd watched[kMaxWatched] = {};
+    PollEntry watched[kMaxWatched] = {};
     usize count = 0;
-    watched[count].fd = listener_;
-    watched[count].events = POLLIN;
+    watch(watched[count], listener_);
     ++count;
     for (const int client : clients_) {
         if (count == kMaxWatched) {
             break;
         }
-        watched[count].fd = client;
-        watched[count].events = POLLIN;
+        watch(watched[count], client);
         ++count;
     }
 
-    const int ready = ::poll(watched, static_cast<nfds_t>(count), static_cast<int>(timeout_ms));
+    const int ready = poll_sockets(watched, count, timeout_ms);
     if (ready < 0) {
-        if (errno == EINTR) {
+        if (interrupted()) {
             return u32{0};
         }
-        return fail(ErrorCode::Io, "the serving round could not wait on its sockets", errno);
+        return fail(ErrorCode::Io, "the serving round could not wait on its sockets",
+                    socket_error());
     }
     if (ready == 0) {
         return u32{0};
@@ -819,7 +995,7 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
         if (events == 0) {
             continue;
         }
-        const int socket = watched[index].fd;
+        const int socket = watched_socket(watched[index]);
         usize slot = clients_.size();
         for (usize search = 0; search < clients_.size(); ++search) {
             if (clients_[search] == socket) {
@@ -843,7 +1019,7 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
     return served;
 }
 
-#else  // CY_ASSETS_POSIX_SOCKETS
+#else  // CY_ASSETS_SOCKETS
 
 Status FileServingHost::accept_pending() noexcept {
     return unsupported_here();
@@ -864,6 +1040,6 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
     return make_unexpected(unsupported_here().error());
 }
 
-#endif  // CY_ASSETS_POSIX_SOCKETS
+#endif  // CY_ASSETS_SOCKETS
 
 }  // namespace cy::assets

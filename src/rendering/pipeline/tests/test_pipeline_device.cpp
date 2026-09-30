@@ -105,7 +105,8 @@ public:
     DeviceFixture(const DeviceFixture&) = delete;
     DeviceFixture& operator=(const DeviceFixture&) = delete;
 
-    [[nodiscard]] bool has_gpu() const noexcept {
+    /// The requested backend answered — the device may still be one these cases cannot draw on.
+    [[nodiscard]] bool has_backend() const noexcept {
         return device_.has_value() &&
 #if defined(CY_TEST_PIPELINE_METAL)
                device_.value()->capabilities().backend() == rhi::BackendKind::Metal;
@@ -113,10 +114,26 @@ public:
                device_.value()->capabilities().backend() == rhi::BackendKind::Vulkan;
 #endif
     }
+    [[nodiscard]] bool has_gpu() const noexcept { return has_backend() && !compatibility_path(); }
+    /// A Metal device with no global texture table: argument buffers below tier 2, which is what
+    /// the hosted macOS runner's paravirtual GPU has. The native path these cases draw through
+    /// binds descriptor sets that device refuses, so they skip on it and say so.
+    [[nodiscard]] bool compatibility_path() const noexcept {
+        return has_backend() &&
+               device_.value()->capabilities().backend() == rhi::BackendKind::Metal &&
+               device_.value()->global_texture_table().is_null();
+    }
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] u32 validation_errors() const noexcept { return errors_; }
 
     void report_skip() const noexcept {
+        if (compatibility_path()) {
+            std::fprintf(stderr,
+                         "no usable Metal device: '%s' is on the compatibility path, with no "
+                         "global texture table\n",
+                         device_.value()->capabilities().device_name());
+            return;
+        }
         std::fprintf(stderr,
                      "no requested graphics device on this machine; the backend selected was '%s' "
                      "because %s\n",

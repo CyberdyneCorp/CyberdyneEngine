@@ -254,6 +254,23 @@ struct MetalContext {
 
 namespace {
 
+/// `newArgumentEncoderWithArguments:`, or nil on a device that cannot make one.
+///
+/// A DEVICE THAT CANNOT RAISES RATHER THAN ANSWERING NIL. On the hosted macOS runner's "Apple
+/// Paravirtual device", Metal forwards the call to `-newArgumentEncoderWithLayout:`, which that
+/// device class does not implement, and the unrecognised selector is an NSException: uncaught, it
+/// terminated every process that allocated a descriptor set. Caught here, it is a device that
+/// refuses, and the caller reports that as `Unsupported` like any other refusal.
+id<MTLArgumentEncoder> new_argument_encoder(id<MTLDevice> device,
+                                            NSArray<MTLArgumentDescriptor*>* arguments) noexcept {
+    @try {
+        return [device newArgumentEncoderWithArguments:arguments];
+    } @catch (NSException* refused) {
+        (void)refused;
+        return nil;
+    }
+}
+
 class MetalCommandBuffer;
 
 class MetalBarrierRecorder final : public BarrierRecorder {
@@ -1960,8 +1977,7 @@ public:
         if (layout == nullptr) {
             return fail(ErrorCode::NotFound, "allocate_descriptor_set(): stale layout handle");
         }
-        id<MTLArgumentEncoder> encoder =
-            [device_ newArgumentEncoderWithArguments:layout->arguments];
+        id<MTLArgumentEncoder> encoder = new_argument_encoder(device_, layout->arguments);
         if (encoder == nil) {
             return fail(ErrorCode::Unsupported,
                         "Metal could not create an argument encoder for the descriptor layout");

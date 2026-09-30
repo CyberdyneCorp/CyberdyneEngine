@@ -850,6 +850,25 @@ def prepare(work: Path) -> Path:
     return project
 
 
+def editor_binary(profile: str) -> Path:
+    """Where `just build-editor --profile <profile>` puts the editor.
+
+    Asked of the recipes rather than derived from the engine's build tree: cargo's target directory
+    is `_editor-target-dir` — `$CY_BUILD_DIR/editor`, or `build/editor` when CY_BUILD_DIR is unset —
+    and not `<build tree>/editor`. The two agree only under CY_BUILD_DIR, which is how the ledger
+    runs; everywhere else this looked in `build/dev/editor/`, found nothing, and reported an editor
+    that had been built as absent.
+    """
+    def recipe(*arguments: str) -> str:
+        return subprocess.run(["just", *arguments], cwd=ROOT, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    cargo_profile = recipe("_cargo-profile", profile)
+    directory = "debug" if cargo_profile == "dev" else cargo_profile
+    name = "cyberdyne-editor.exe" if sys.platform == "win32" else "cyberdyne-editor"
+    return Path(recipe("_editor-target-dir")) / directory / name
+
+
 def locate(profile: str, build: bool, build_dir: str, sample: str) -> dict:
     """The four binaries this artefact drives, built first unless the caller supplied them."""
     if build:
@@ -858,11 +877,7 @@ def locate(profile: str, build: bool, build_dir: str, sample: str) -> dict:
     tree = Path(build_dir) if build_dir else ROOT / "build" / profile
     if not tree.is_absolute():
         tree = ROOT / tree
-    cargo = {"dev": "development"}.get(profile, profile)
-    editor = tree / "editor" / cargo / "cyberdyne-editor"
-    if not editor.exists():
-        found = sorted(tree.glob("editor/*/cyberdyne-editor"))
-        editor = found[0] if found else editor
+    editor = editor_binary(profile)
     found_sample = Path(sample) if sample else tree / "samples/08a-authoring/cy_sample_authoring"
     return {
         "editor": editor,

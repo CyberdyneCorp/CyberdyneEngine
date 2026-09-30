@@ -55,6 +55,8 @@
 // function, in the one binary that needs it — the alternative is a `Platform` call that would exist
 // solely so that this file could avoid an `#ifdef`, and `Platform` reports facts about CHILDREN.
 #if defined(_WIN32)
+#    include <fcntl.h>
+#    include <io.h>
 #    include <windows.h>
 #else
 #    include <unistd.h>
@@ -345,6 +347,12 @@ private:
 }  // namespace
 
 int main(int argument_count, char** arguments) {
+#if defined(_WIN32)
+    // The protocol's line ending is one '\n'. The CRT's text mode writes "\r\n" for it, and the
+    // launcher, which splits on '\n', would then read every reply with a '\r' on the end — "ok\r"
+    // is not "ok", and the separate-process leg refused every command it had just been answered.
+    (void)::_setmode(::_fileno(stdout), _O_BINARY);
+#endif
     const Arguments parsed = parse(argument_count, arguments);
     if (!parsed.valid) {
         std::fprintf(stderr, "cy_play_runtime_host: %s\n", parsed.complaint);

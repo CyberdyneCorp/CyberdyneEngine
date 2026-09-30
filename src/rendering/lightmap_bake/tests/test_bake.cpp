@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstring>
 #include <numbers>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -901,6 +902,26 @@ struct ShadowRoom {
     }
 };
 
+/// The shadow room's irradiance bake at `small_settings`, once per light mobility for the whole
+/// binary.
+///
+/// SHARED BECAUSE A BAKE IS A FUNCTION OF ITS INPUTS — "a bake reports its progress, and doing so
+/// changes none of its bytes" and the rebake cases hold that byte for byte — and because each costs
+/// about 0.27 s of the 1 s integration budget here, 0.5 s on the hosted macOS runner, where cases
+/// that baked the same room two or three times over went past the budget. A case that asks a
+/// question of a FRESH bake (progress, cancellation, rebake) still makes its own.
+[[nodiscard]] const Baked& shadow_room_irradiance(gi::LightMobility mobility) {
+    static std::optional<Baked> baked[3];
+    const auto slot = static_cast<usize>(mobility);
+    CY_REQUIRE(slot < 3U);
+    std::optional<Baked>& held = baked[slot];
+    if (!held.has_value()) {
+        const ShadowRoom room(mobility);
+        return held.emplace(bake(room.room.scene(), small_settings(LightmapMode::Irradiance)));
+    }
+    return held.value();
+}
+
 /// Whether atlas texel `index` lies in the rectangle `address` names.
 [[nodiscard]] bool in_rectangle(const BakedLightmap& lightmap, u32 address, usize index) {
     AtlasPlacement placement;
@@ -950,7 +971,7 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
     const ShadowRoom stationary(gi::LightMobility::Stationary);
     const LightmapScene scene = stationary.room.scene();
     const LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
-    const Baked baked = bake(scene, settings);
+    const Baked& baked = shadow_room_irradiance(gi::LightMobility::Stationary);
     const u64 light = stationary.room.lights.front().id;
 
     CY_REQUIRE_EQ(baked.lightmap.shadow_lights.size(), 1U);
@@ -991,24 +1012,6 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
                                         << luminance(truth[0]));
     CY_CHECK_LT(std::fabs(luminance(texel) - luminance(truth[0])), 0.25F * luminance(truth[0]));
 
-    // A Static bake of the same room adds exactly the direct term: the difference between the two
-    // texels is the light's shadowed direct term at the point, over pi (a texel holds E / pi).
-    const ShadowRoom as_static(gi::LightMobility::Static);
-    const Baked static_baked = bake(as_static.room.scene(), settings);
-    const Vec3 static_texel = sample_lightmap(static_baked.lightmap,
-                                              static_baked.lightmap.addresses[kFloor], lit, normal);
-    MeshSceneTracer occluder;
-    CY_REQUIRE(occluder.build(scene).has_value());
-    const f32 direct =
-        luminance(gi::shaded_direct(cy::Span<const gi::GiLight>(stationary.room.lights.data(), 1),
-                                    stationary.floor_point(lit), normal, &occluder)) /
-        std::numbers::pi_v<f32>;
-    const f32 added = luminance(static_texel) - luminance(texel);
-    CY_TEST_MESSAGE("static adds " << added << " over stationary; the direct term over pi is "
-                                   << direct);
-    CY_CHECK_GT(direct, 0.1F * luminance(texel));
-    CY_CHECK_LT(std::fabs(added - direct), 0.15F * direct);
-
     // The runtime's half: the light's unshadowed direct term, at whatever intensity the frame gives
     // it, times the baked mask, is the path tracer's shadowed direct term — in the shadow and out
     // of it, and at three times the baked intensity with nothing re-baked.
@@ -1029,9 +1032,34 @@ CY_TEST_CASE("a stationary light bakes its indirect light and a shadow mask, not
     }
 }
 
+CY_TEST_CASE("a static light bakes the stationary light's texels plus its shadowed direct term") {
+    // A Static bake of the same room adds exactly the direct term: the difference between the two
+    // texels is the light's shadowed direct term at the point, over pi (a texel holds E / pi).
+    const ShadowRoom stationary(gi::LightMobility::Stationary);
+    const LightmapScene scene = stationary.room.scene();
+    const Vec3 normal{0.0F, 1.0F, 0.0F};
+    const Vec2 lit = ShadowRoom::lit_uv();
+    const Baked& baked = shadow_room_irradiance(gi::LightMobility::Stationary);
+    const Vec3 texel =
+        sample_lightmap(baked.lightmap, baked.lightmap.addresses[kFloor], lit, normal);
+    const Baked& static_baked = shadow_room_irradiance(gi::LightMobility::Static);
+    const Vec3 static_texel = sample_lightmap(static_baked.lightmap,
+                                              static_baked.lightmap.addresses[kFloor], lit, normal);
+    MeshSceneTracer occluder;
+    CY_REQUIRE(occluder.build(scene).has_value());
+    const f32 direct =
+        luminance(gi::shaded_direct(cy::Span<const gi::GiLight>(stationary.room.lights.data(), 1),
+                                    stationary.floor_point(lit), normal, &occluder)) /
+        std::numbers::pi_v<f32>;
+    const f32 added = luminance(static_texel) - luminance(texel);
+    CY_TEST_MESSAGE("static adds " << added << " over stationary; the direct term over pi is "
+                                   << direct);
+    CY_CHECK_GT(direct, 0.1F * luminance(texel));
+    CY_CHECK_LT(std::fabs(added - direct), 0.15F * direct);
+}
+
 CY_TEST_CASE("a movable light bakes nothing, not even its bounce") {
-    const ShadowRoom movable(gi::LightMobility::Movable);
-    const Baked baked = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
+    const Baked& baked = shadow_room_irradiance(gi::LightMobility::Movable);
     CY_CHECK(baked.lightmap.shadow_lights.empty());
     CY_CHECK(baked.lightmap.shadow_mask.texels.empty());
     // A closed room with a black sky and no emission: with its only light movable, nothing is left.
@@ -1039,14 +1067,17 @@ CY_TEST_CASE("a movable light bakes nothing, not even its bounce") {
     CY_TEST_MESSAGE("movable-only room: mean texel luminance " << mean);
     CY_CHECK_LT(mean, 1.0e-5F);
 
-    const ShadowRoom stationary(gi::LightMobility::Stationary);
-    const Baked lit = bake(stationary.room.scene(), small_settings(LightmapMode::Irradiance));
+    const Baked& lit = shadow_room_irradiance(gi::LightMobility::Stationary);
     CY_CHECK_GT(mean_luminance(lit.lightmap.texels), 100.0F * std::max(mean, 1.0e-7F));
 }
 
 CY_TEST_CASE("a static light bakes exactly what DirectAndIndirect baked before mobility existed") {
     const ShadowRoom as_static(gi::LightMobility::Static);
-    const LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    // HALF THE SAMPLES OF THE OTHER CASES. The claim is that two spellings bake the same bytes, and
+    // any sample count asks it; this case bakes twice, and at 32 samples it spent 1091 ms of CPU
+    // on the hosted macOS runner against the integration budget of 1000 ms.
+    LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    settings.trace.samples = 16;
     const Baked static_baked = bake(as_static.room.scene(), settings);
 
     // The pre-mobility spelling: every light's direct term through the content switch.
@@ -1082,8 +1113,7 @@ CY_TEST_CASE("a fifth stationary light is refused by name") {
 }
 
 CY_TEST_CASE("the cooked lightmap carries the shadow mask, and a version 1 payload still decodes") {
-    const ShadowRoom stationary(gi::LightMobility::Stationary);
-    const Baked baked = bake(stationary.room.scene(), small_settings(LightmapMode::Irradiance));
+    const Baked& baked = shadow_room_irradiance(gi::LightMobility::Stationary);
     cy::Array<u8> payload;
     CY_REQUIRE(encode_lightmap_asset(baked.lightmap, payload).has_value());
     BakedLightmap decoded;
@@ -1094,8 +1124,7 @@ CY_TEST_CASE("the cooked lightmap carries the shadow mask, and a version 1 paylo
     CY_CHECK_EQ(decoded.shadow_lights[0], baked.lightmap.shadow_lights[0]);
 
     // A version 1 payload is this one cut after the texels, with the old version word.
-    const ShadowRoom movable(gi::LightMobility::Movable);
-    const Baked plain = bake(movable.room.scene(), small_settings(LightmapMode::Irradiance));
+    const Baked& plain = shadow_room_irradiance(gi::LightMobility::Movable);
     CY_REQUIRE(encode_lightmap_asset(plain.lightmap, payload).has_value());
     const usize texel_bytes = plain.lightmap.texels.texels.size() * 8U;
     const usize version_one_size = ((8U + plain.lightmap.addresses.size()) * 4U) + texel_bytes;
@@ -1432,7 +1461,7 @@ struct ProgressLog {
 CY_TEST_CASE("a bake reports its progress, and doing so changes none of its bytes") {
     const ShadowRoom room(gi::LightMobility::Stationary);
     const LightmapBakeSettings settings = small_settings(LightmapMode::Irradiance);
-    const Baked quiet = bake(room.room.scene(), settings);
+    const Baked& quiet = shadow_room_irradiance(gi::LightMobility::Stationary);
     ProgressLog log;
     const LightmapBakeProgress progress = log.progress();
     Baked reported;

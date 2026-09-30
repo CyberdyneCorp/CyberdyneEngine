@@ -37,6 +37,30 @@ using namespace cy::diag;
 namespace {
 CY_TRACE_CATEGORY(probe_category, "probe")
 CY_TRACE_NAME(probe_event, "probe.working")
+
+#if !defined(CY_PROBE_UBSAN)
+#    if defined(_MSC_VER)
+#        define CY_PROBE_NOINLINE __declspec(noinline)
+#    else
+#        define CY_PROBE_NOINLINE [[gnu::noinline]]
+#    endif
+/// The fault, one call below main, as an engine fault is. A store through an address the compiler
+/// cannot fold to a literal null, so the fault happens at run time rather than being diagnosed at
+/// compile time.
+///
+/// ITS OWN FRAME, AND A CALL BEFORE THE STORE. A backtrace walked from the faulting context — the
+/// macOS path — sees the stack the program had: a fault in `main` itself is `main` and `start` and
+/// nothing else, two frames, where glibc's backtrace() also lists the handler's own. The call keeps
+/// this function a non-leaf, so every ABI gives it a frame record the walk can follow to its
+/// caller.
+CY_PROBE_NOINLINE void fault_at(const char* address) {
+    (void)std::fflush(stdout);
+    // The address is the point: this probe exists to fault at run time.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    auto* target = reinterpret_cast<volatile int*>(std::strtoull(address, nullptr, 0));
+    *target = 1;
+}
+#endif
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -94,14 +118,8 @@ int main(int argc, char** argv) {
     std::printf("mode-not-available\n");
     return 0;
 #else
-    // A real fault: a store through an address the compiler cannot fold to a literal null, so the
-    // fault happens at run time rather than being diagnosed at compile time.
-    const char* address = (argc > 3) ? argv[3] : "0";
-    // The address is the point: this probe exists to fault at run time, so the compiler must not
-    // be able to fold it to a literal null.
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    auto* target = reinterpret_cast<volatile int*>(std::strtoull(address, nullptr, 0));
-    *target = 1;
+    // A real fault.
+    fault_at((argc > 3) ? argv[3] : "0");
     return 0;
 #endif
 }

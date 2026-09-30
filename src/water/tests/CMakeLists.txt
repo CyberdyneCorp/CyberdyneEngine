@@ -86,6 +86,17 @@ function(cy_water_declare_tests)
         KIND integration
         SOURCES "${cy_water_tests_dir}/test_streaming.cpp"
         DEPENDENCIES cy::water cy::world)
+
+    # The expected values are the model's own arithmetic written out again, so they are compiled
+    # with contraction off for the reason src/water/CMakeLists.txt gives for the module.
+    foreach(suite IN ITEMS unit_water integration_water_foam integration_water_ocean_parallel
+                           integration_water_shoreline integration_water_streaming)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(cy_test_${suite} PRIVATE -ffp-contract=off)
+        elseif(MSVC)
+            target_compile_options(cy_test_${suite} PRIVATE /fp:precise)
+        endif()
+    endforeach()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_water_declare_tests)

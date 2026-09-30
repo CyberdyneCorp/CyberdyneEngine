@@ -136,7 +136,7 @@ struct Listing {
 CY_TEST_CASE("this build has a socket layer") {
     // Stated as a case rather than assumed by the ones below: on a platform with no socket half
     // every case here would be vacuous, and a suite that passes vacuously is the defect this
-    // project has paid for nine times. On Windows this case fails and says what is missing.
+    // project has paid for nine times. Windows answered false here until its WinSock half existed.
     CY_CHECK(remote_serving_available());
 }
 

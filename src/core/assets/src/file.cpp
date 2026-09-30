@@ -100,6 +100,33 @@ int win32_flags(FileMode mode) noexcept {
     }
     return _O_RDONLY | _O_BINARY;
 }
+
+/// ReadFile at `offset` until `size` bytes or the end of the file, whichever comes first.
+Expected<usize, Error> read_at_overlapped(HANDLE native, u64 offset, void* destination,
+                                          usize size) noexcept {
+    auto* cursor = static_cast<u8*>(destination);
+    usize total = 0;
+    while (total < size) {
+        const u64 at = offset + total;
+        OVERLAPPED overlapped = {};
+        overlapped.Offset = static_cast<DWORD>(at & 0xFFFFFFFFULL);
+        overlapped.OffsetHigh = static_cast<DWORD>((at >> 32) & 0xFFFFFFFFULL);
+        const DWORD chunk = static_cast<DWORD>(std::min<usize>(size - total, 0x40000000U));
+        DWORD got = 0;
+        if (!::ReadFile(native, cursor + total, chunk, &got, &overlapped)) {
+            if (::GetLastError() == ERROR_HANDLE_EOF) {
+                break;
+            }
+            errno = EIO;
+            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be read"));
+        }
+        if (got == 0) {
+            break;
+        }
+        total += static_cast<usize>(got);
+    }
+    return total;
+}
 #endif
 
 /// A counter that makes two concurrent atomic writes to one path pick different temporaries.
@@ -251,36 +278,26 @@ Expected<usize, Error> File::read_at(u64 offset, void* destination, usize size) 
     if (handle_ < 0) {
         return fail(ErrorCode::InvalidArgument, "read_at on a file that is not open");
     }
-    // MSVC has no pread; use ReadFile with an OVERLAPPED offset via the underlying HANDLE. This is
-    // atomic with respect to concurrent read_ats on the same file: OVERLAPPED lets the kernel do
-    // the seek, and no shared cursor is disturbed.
+    // MSVC has no pread; use ReadFile with an OVERLAPPED offset via the underlying HANDLE. Each
+    // call names its own offset, so concurrent read_ats on the same file do not race each other.
+    //
+    // THE CURSOR IS PUT BACK BY HAND. On a handle opened without FILE_FLAG_OVERLAPPED — which is
+    // every handle `_open` returns — ReadFile still reads at the OVERLAPPED offset but then leaves
+    // the file pointer after what it read, so a read_at would move the cursor that `read` and
+    // `tell` see. pread's contract, and this function's, is that it does not.
     const HANDLE native = reinterpret_cast<HANDLE>(::_get_osfhandle(handle_));
     if (native == INVALID_HANDLE_VALUE) {
         return make_unexpected(from_errno(ErrorCode::Io, "the file handle is invalid"));
     }
-    auto* cursor = static_cast<u8*>(destination);
-    usize total = 0;
-    while (total < size) {
-        const u64 at = offset + total;
-        OVERLAPPED overlapped = {};
-        overlapped.Offset = static_cast<DWORD>(at & 0xFFFFFFFFULL);
-        overlapped.OffsetHigh = static_cast<DWORD>((at >> 32) & 0xFFFFFFFFULL);
-        const DWORD chunk = static_cast<DWORD>(std::min<usize>(size - total, 0x40000000U));
-        DWORD got = 0;
-        if (!::ReadFile(native, cursor + total, chunk, &got, &overlapped)) {
-            const DWORD gle = ::GetLastError();
-            if (gle == ERROR_HANDLE_EOF) {
-                break;
-            }
-            errno = EIO;
-            return make_unexpected(from_errno(ErrorCode::Io, "the file could not be read"));
-        }
-        if (got == 0) {
-            break;
-        }
-        total += static_cast<usize>(got);
+    const __int64 kept_position = ::_lseeki64(handle_, 0, SEEK_CUR);
+    if (kept_position < 0) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file position could not be read"));
     }
-    return total;
+    const Expected<usize, Error> read = read_at_overlapped(native, offset, destination, size);
+    if (::_lseeki64(handle_, kept_position, SEEK_SET) != kept_position) {
+        return make_unexpected(from_errno(ErrorCode::Io, "the file position could not be kept"));
+    }
+    return read;
 #else
     (void)offset;
     (void)destination;

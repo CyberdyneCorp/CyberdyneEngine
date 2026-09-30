@@ -214,9 +214,15 @@ Status Card::parse(std::string_view document) noexcept {
     usize cursor = 0;
     while (cursor <= document.size()) {
         const usize newline = document.find('\n', cursor);
-        const std::string_view line = document.substr(
+        std::string_view line = document.substr(
             cursor, newline == std::string_view::npos ? std::string_view::npos : newline - cursor);
         cursor = (newline == std::string_view::npos) ? document.size() + 1 : newline + 1;
+        // A card saved on Windows ends its lines "\r\n"; the '\r' is not part of the last word.
+        // Without this `cycard 1\r` was not `cycard 1`, and smoke.ship's edited card — written by
+        // Python in text mode on the Windows leg — did not parse.
+        if (line.ends_with('\r')) {
+            line.remove_suffix(1);
+        }
 
         const Words words = split(line);
         // `Words::at` answers a default (null-data) view past `count`, so the keyword is bound once
