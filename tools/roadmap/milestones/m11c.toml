@@ -1549,7 +1549,7 @@ note = "The caption stops saying what the frame is doing on the material's behal
 
 [[criterion]]
 id = "the-shot-does-not-overclaim-the-editor"
-describe = "the artefact says exactly how much of the editor it went through, and the check ASKS THE EDITOR. `cyberdyne-editor --list-commands` prints the registry a control socket can drive. M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed and authored the shot's materials on the editor's authoring MODEL from a program, and registered no `material.*` command; `19a3f07` then registered `material.graph.{read,preview,save,status}`, which carry a whole canvas as text and place no node. So a material can be edited over the control socket as text but not authored node by node the way `samples/08a-authoring` authors a scene, and the provenance says that, naming exactly the `material.graph.*` commands the registry holds. The day the registry gains a `material.*` command outside `material.graph.*`, or it and the provenance disagree about which `material.graph.*` commands exist, this goes red and the caption is owed an update"
+describe = "the artefact says exactly how much of the editor it went through, and the check ASKS THE EDITOR. `cyberdyne-editor --list-commands` prints the registry a control socket can drive. M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed and authored the shot's materials on the editor's authoring MODEL from a program, and registered no `material.*` command; `19a3f07` then registered `material.graph.{read,preview,save,status}`, which carry a whole canvas as text, and PR #17 added node-level editing: `material.node.{add,move,connect,disconnect,remove,property.set}` and `material.canvas.draft.save`. So a material CAN now be authored node by node over the control socket, but the shot's three committed canvases did not go through it, and the provenance says both, naming exactly the `material.*` commands the registry holds. The day the provenance names a material command the registry does not hold, the registry holds one the provenance does not name, or the provenance stops saying the committed canvases did not go through them, this goes red and the caption is owed an update"
 source = "tasks 6.1a and 7.3, editor-architecture, editor-agent-interface, design.md section 7"
 kind = "command"
 run = '''
@@ -1565,29 +1565,24 @@ total=$(grep -c '^[a-z][a-z.-]*(' "$listing" || true)
 test "${total:-0}" -ge 20 || { echo "the registry listed ${total:-0} command(s); this is not the listing this check reads"; exit 1; }
 echo "the editor's registry lists $total command(s)"
 commands=$(grep -oE '^material\.[a-z._-]+' "$listing" | sort -u || true)
-beyond=$(printf '%s\n' "$commands" | grep -v '^material\.graph\.' | grep . || true)
-if [ -n "$beyond" ]; then
-    printf '%s\n' "$beyond" | head -5
-    echo "the editor registers material command(s) outside material.graph.*, so a material may now be"
-    echo "authored node by node over the control socket and docs/design/beauty-shot.md's statement that"
-    echo "the socket carries only a whole canvas as text is out of date."
-    exit 1
-fi
-named=$(grep -oE '`material\.graph\.[a-z_-]+`' docs/design/beauty-shot.md | tr -d '`' | sort -u || true)
+named=$(grep -oE '`material\.[a-z._-]*[a-z_-]`' docs/design/beauty-shot.md | tr -d '`' | sort -u || true)
 if [ "$commands" != "$named" ]; then
     echo "the editor registers: ${commands:-no material command}" | tr '\n' ' '; echo
-    echo "the provenance names: ${named:-no material.graph.* command}" | tr '\n' ' '; echo
-    echo "docs/design/beauty-shot.md and the editor's registry disagree about the material commands"
+    echo "the provenance names: ${named:-no material command}" | tr '\n' ' '; echo
+    echo "docs/design/beauty-shot.md and the editor's registry disagree about the material commands:"
+    echo "the caption either claims a command the editor does not have or is silent about one it has"
     exit 1
 fi
+echo "the provenance names exactly the material commands the registry holds:" $commands
+prose=$(tr '\n' ' ' < docs/design/beauty-shot.md | tr -s ' ')
 if [ -n "$commands" ]; then
-    echo "the only material commands are the whole-canvas ones the provenance names:" $commands
-    grep -q 'none of them places a node' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer says the material commands cannot place a node"; exit 1; }
+    grep -q 'none of the three committed canvases went through the socket' <<< "$prose" || { echo "the provenance no longer says the shot's committed canvases did not go through the socket's material commands, so it reads as if they did"; exit 1; }
+    grep -q 'what this artefact does not claim is that its own materials were authored that way' <<< "$prose" || { echo "the provenance no longer separates what the editor can do from how this artefact was authored"; exit 1; }
 else
     echo "none of them is material.*: a material cannot be authored over the control socket"
 fi
 grep -q 'honestly missing' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer states what is missing from \"authored through the editor\""; exit 1; }
-grep -q 'control socket' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer names the surface the materials cannot be authored over"; exit 1; }
+grep -q 'control socket' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer names the surface the materials were not authored over"; exit 1; }
 echo "and the provenance says so, in the section that says what the artefact is not"
 '''
 ci_job = "milestone-m11c"
@@ -1595,8 +1590,8 @@ ci_job = "milestone-m11c"
 [criterion.falsifies]
 mutate = "delete-lines"
 target = "docs/design/beauty-shot.md"
-token = "honestly missing"
-note = "The caption stops naming the half of \"authored through the editor\" this rung did not build, and the artefact then reads as if a person placed the nodes in a window. The claim would be unfalsifiable by a reader, which is exactly what the provenance exists to prevent."
+token = "none of the three committed canvases"
+note = "The caption stops saying the shot's own canvases did not go through the control socket's material commands, and now that those commands can place a node the artefact then reads as if its materials were authored node by node over the socket. That is the overclaim this criterion exists to refuse."
 
 [[criterion]]
 id = "the-cooked-header-cannot-claim-a-compression-that-did-not-happen"
