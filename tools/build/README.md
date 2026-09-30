@@ -64,7 +64,7 @@ adds them by default:
 |---|---|---|---|
 | `import` | `Import` | one declared source, plus every input the importer DISCOVERS through `NodeContext::discover` | one bundle — the same encoding the derived-data cache stores |
 | `cook` | `Cook` | every declared authoring document, read into a `MemoryMount` the cook is given as its whole filesystem | one `.cypak` |
-| `lightmap` | `Cook` | a `cylightmap 1` description and its upstream mesh bundles | one cooked lightmap |
+| `lightmap` | `Cook` | a `cylightmap 1` description and its upstream mesh bundles | one cooked lightmap, and the captured irradiance volumes when the node declares a second output |
 | `navmesh` | `Cook` | one saved `.cynavmesh` sidecar and a `bake-identity` option naming the world's bake | the verified navigation mesh |
 
 It is a **separate target** from `cy_build_graph`, which links `cy::core-assets` and
@@ -124,18 +124,38 @@ $BUILD patch     --from <a> --to <b> --out <patch>
 $BUILD install   --install <dir> --package <file> --artefacts <store>
 $BUILD apply     --install <dir> --patch <file> --artefacts <store> [--crash-at <stage>]
 $BUILD verify    --install <dir> | --artefacts <store>
-$BUILD lightmap  --description <level.cylightmap> --project <dir> --out <file>
+$BUILD lightmap  --description <level.cylightmap> --project <dir> --out <file> [--probes <file>]
 ```
 
 `lightmap` bakes one `cylightmap 1` level OUTSIDE the graph, with the `lightmap` producer's own
-code (`bake_lightmap_description`), reading the meshes it names from the project's files: an
-import bundle, or a cooked mesh as `cy_import_cli` writes it into a project
-(`.cy/cooked/<id>.cyasset`). It is the editor's `lighting.bake-lightmaps`, and it speaks lines:
-`progress <stage> <done> <total>` as the bake reports it, then `baked objects=… pages=… texels=…
-dilated=… rays=… bytes=… mips=… padding-short=… seconds=…`; a line `cancel` on its stdin stops the
-bake at its next step, prints `cancelled` and exits **3** having written nothing — the output is
-written only by a bake that finished, atomically. `integration.build_lightmap_cli` drives it over a
-quad the real importer cooked.
+code (`read_lightmap_description`, `bake_lightmap_level`), reading the files it names from the
+project: an import bundle, a cooked mesh or material as `cy_import_cli` writes it into a project
+(`.cy/cooked/<id>.cyasset`), or a `.cyprim` primitive source, generated and unwrapped as the
+importer would. It is the editor's `lighting.bake-lightmaps`, and it speaks lines:
+`progress <stage> <done> <total>` as the bake reports it (`prepare`, `trace`, `filter`, `finish`,
+then `probes`), then `baked objects=… pages=… texels=… dilated=… rays=… bytes=… mips=…
+padding-short=… volumes=… probes=… seconds=… cached=…`; a line `cancel` on its stdin stops the bake
+at its next step, prints `cancelled` and exits **3** having written nothing — the outputs are
+written only by a bake that finished, atomically.
+
+The description is what the editor writes from the open world (`editor/README.md`, "Lighting &
+lightmaps"), and every line added for it is optional, so a description written before them reads
+as it did: `id <n>` after a `light` or an `instance` names the scene object (the cooked lightmap's
+shadow-mask channels and directly baked lights carry light ids); `occluder` after an instance
+gives it no lightmap; `material "<name>" cooked "<path>" [tint <r g b>]` takes the albedo and
+emission from a cooked material; and `volume <id> <ox oy oz> <spacing> <cx cy cz> <rays>` is an
+irradiance volume, captured after the atlas with the bake's own tracer
+(`lightmap_bake::capture_irradiance_volumes`) into `<out>` with a `.cyprobes` extension, or
+`--probes` (`lightmap_bake/probes.h`). A level with no volume removes a stale probe file.
+
+**An unchanged level is not baked again.** After a bake, `<out>.cykey` records the level's key —
+`lightmap_level_key`, the graph's own `derivation_key` over the producer and its version (4), the
+toolchain, the description and every file the description made it read — and the `baked` line. A
+run whose key matches, with its outputs in place, bakes nothing and repeats that line with
+`cached=1`. The editor rewrites the description on every bake request, so this is what makes a
+bake of an unchanged world free. `integration.build_lightmap_cli` drives all of it over a quad the
+real importer cooked, and bakes `tests/data/editor_level/` — a level exactly as the editor writes
+it, which the editor's own tests compare their output against byte for byte.
 
 `build --audit` adds the per-file content audit (M11.d task 7.4): every file in the package with
 the chain from a **declared root** to the node that produced it and the project files that node read,
