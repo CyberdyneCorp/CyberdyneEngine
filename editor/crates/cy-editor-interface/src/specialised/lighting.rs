@@ -7,10 +7,11 @@
 //!
 //! - `lighting.bake-lightmaps` runs the engine's bake (`cy_build lightmap`) as an operation, so its
 //!   progress and its cancel are the unified progress surface's, and an agent reaches the same bake
-//!   through the same command;
-//! - `viewport.view-mode.lightmap-density` asks the ENGINE to draw the density view
-//!   (`editor-viewport-and-gizmos`: "an engine debug view requested by the editor, not editor-side
-//!   drawing").
+//!   through the same command. With no description named it bakes the open world, writing the
+//!   world's `.cylightmap` from the document first, so the form's level settings are all it needs;
+//! - `viewport.view-mode.lightmap-density` and `viewport.view-mode.gi-probes` ask the ENGINE to draw
+//!   the density and probe views (`editor-viewport-and-gizmos`: "an engine debug view requested by
+//!   the editor, not editor-side drawing").
 //!
 //! The running bake is read off the operation service by its request identity, so the form cannot
 //! disagree with the footer about how far it has got.
@@ -20,12 +21,23 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::progress::OperationState;
 use cy_editor_core::value::Value;
 use cy_editor_services::Editor;
+use cy_editor_services::lightmap_description::LevelSettings;
+use cy_editor_services::lightmaps::{self, CapturedVolume, LightmapBakeOutcome};
 use cy_editor_viewport::viewmode::ViewMode;
 
 /// The command a bake is started with.
 pub const BAKE_COMMAND: &str = "lighting.bake-lightmaps";
 /// The command a running bake is stopped with.
 pub const CANCEL_COMMAND: &str = "lighting.cancel-lightmap-bake";
+
+/// What a finished bake made, as the form shows it.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Baked {
+    /// What `cy_build lightmap` reported.
+    pub outcome: LightmapBakeOutcome,
+    /// The irradiance volumes it captured, read back from `<output>.cyprobes`.
+    pub probes: Vec<CapturedVolume>,
+}
 
 /// What the form shows about the bake the editor most recently started.
 #[derive(Clone, PartialEq, Debug)]
@@ -51,28 +63,39 @@ impl BakeStatus {
 /// The form's inputs.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct LightingForm {
-    /// The level's project-relative `.cylightmap` description.
+    /// A project-relative `.cylightmap` description to bake as it is; empty bakes the open world.
     pub description: String,
     /// Where the cooked lightmap goes, project-relative; empty for the service's default.
     pub output: String,
+    /// The level settings the open world's description is written with.
+    pub settings: LevelSettings,
 }
 
 impl LightingForm {
-    /// The invocation the Bake button makes.
+    /// The invocation the Bake button makes: the named description, or the open world with the
+    /// form's level settings.
     ///
     /// # Errors
     ///
-    /// When no description is named, so the button can say why it did nothing.
-    pub fn bake(&self) -> Result<(&'static str, Arguments)> {
+    /// When no description is named and no world is open, so the button can say why it did
+    /// nothing.
+    pub fn bake(&self, world_open: bool) -> Result<(&'static str, Arguments)> {
         let description = self.description.trim();
-        if description.is_empty() {
-            return Err(
-                Problem::new("bake lightmaps", "no level description is named")
-                    .with_remedy("name the level's .cylightmap description, project-relative"),
-            );
-        }
-        let mut arguments =
-            Arguments::new().with("description", Value::Text(description.to_string()));
+        let mut arguments = if description.is_empty() {
+            if !world_open {
+                return Err(Problem::new("bake lightmaps", "no world is open")
+                    .with_remedy("open a world, or name a level's .cylightmap description"));
+            }
+            let settings = &self.settings;
+            Arguments::new()
+                .with("mode", Value::Text(settings.mode.to_string()))
+                .with("samples", Value::Int(i64::from(settings.samples)))
+                .with("bounces", Value::Int(i64::from(settings.bounces)))
+                .with("density", Value::Float(settings.density))
+                .with("page", Value::Int(i64::from(settings.page)))
+        } else {
+            Arguments::new().with("description", Value::Text(description.to_string()))
+        };
         if !self.output.trim().is_empty() {
             arguments = arguments.with("output", Value::Text(self.output.trim().to_string()));
         }
@@ -95,6 +118,22 @@ impl LightingForm {
     #[must_use]
     pub fn density_view() -> String {
         ViewMode::LightmapDensity.command_id()
+    }
+
+    /// The command the probe view button invokes: the engine's view mode.
+    #[must_use]
+    pub fn probe_view() -> String {
+        ViewMode::GiProbes.command_id()
+    }
+
+    /// What the bake `request` made, once it has ended: its outcome and the probes it captured.
+    /// `None` while it runs, and for a bake that was cancelled or failed.
+    #[must_use]
+    pub fn baked(editor: &Editor, completion: &lightmaps::LightmapBakeCompletion) -> Option<Baked> {
+        let outcome = completion.result.as_ref().ok()?.clone()?;
+        let probes =
+            lightmaps::read_probes(editor.lightmaps.root(), &outcome.output).unwrap_or_default();
+        Some(Baked { outcome, probes })
     }
 
     /// The bake the editor most recently started, read off the operation service.
@@ -179,10 +218,16 @@ mod tests {
         cy_editor_services::builtin::register(&mut registry).unwrap();
 
         let mut form = LightingForm::default();
-        assert!(form.bake().is_err(), "no description, no bake");
+        assert!(
+            form.bake(false).is_err(),
+            "no description and no world, no bake"
+        );
+        let (_, world) = form.bake(true).expect("the open world bakes");
+        assert!(world.get("description").is_none(), "{world:?}");
+        assert_eq!(world.get("samples"), Some(&Value::Int(64)));
         assert!(LightingForm::status(&editor).is_none());
         form.description = "levels/corner.cylightmap".into();
-        let (command, arguments) = form.bake().unwrap();
+        let (command, arguments) = form.bake(false).unwrap();
         editor
             .invoke(&registry, command, &Scope::unrestricted(), &arguments)
             .unwrap();
@@ -223,5 +268,8 @@ mod tests {
             registry.metadata(&command).is_some(),
             "the density view is a registered view mode"
         );
+        let probes = LightingForm::probe_view();
+        assert_eq!(probes, "viewport.view-mode.gi-probes");
+        assert!(registry.metadata(&probes).is_some());
     }
 }

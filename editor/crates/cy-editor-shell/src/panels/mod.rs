@@ -305,6 +305,8 @@ pub struct Inputs {
     pub terrain_engine_problem: Option<String>,
     /// The engine's surface image, keyed by terrain and evaluation generation.
     pub terrain_surface: Option<((cy_editor_core::ids::NodeId, u64), egui::TextureHandle)>,
+    /// The lighting editor's staged edits and the last bake's result.
+    pub lighting: lighting::LightingInputs,
     /// The audio mixer's selection and fields.
     pub audio: audio_mixer::AudioInputs,
     /// The console's command line.
@@ -421,6 +423,7 @@ impl Default for Inputs {
             physics_pending: None,
             terrain_engine_problem: None,
             terrain_surface: None,
+            lighting: lighting::LightingInputs::default(),
             audio: audio_mixer::AudioInputs::default(),
             console: String::new(),
             settings_filter: String::new(),

@@ -21,6 +21,17 @@
 //! it, for the reason [`crate::assets::ImportRunner`] is a trait: a test supplies a double and holds
 //! the command's own behaviour — refusals, progress, cancellation — with no engine built, and
 //! `integration.build_lightmap_cli` holds the real tool to the protocol from the engine's side.
+//!
+//! --- THE OPEN WORLD IS WHAT IS BAKED --------------------------------------------------------------
+//!
+//! `lighting.bake-lightmaps` with no `description` bakes the active world: it first writes the
+//! world's `.cylightmap` beside it ([`crate::lightmap_description`]) — lights with their mobility,
+//! placed meshes with their resolution, irradiance volumes, every one by its engine identity — and
+//! then bakes that. The file is regenerated on every request and rewritten only when its bytes
+//! change, and `cy_build lightmap` keys the level by the build graph's own derivation over it and
+//! every file it reads, so baking an unchanged world bakes nothing (`cached=1` on the `baked`
+//! line). The volumes are captured into `<output>.cyprobes`, which [`read_probes`] reads back for
+//! the panel's probe view.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write as _};
@@ -39,14 +50,17 @@ use cy_editor_core::value::{Value, ValueKind};
 
 use crate::OperationService;
 use crate::assets::COOKED_DIRECTORY;
+use crate::lightmap_description::{self, LevelSettings};
 
 /// The bake's stages, in the order `cy_build lightmap` reports them, with the share of a bake's
 /// time each takes: the trace is nearly all of it (`lightmap_bake/README.md`, "What it costs").
-const STAGES: [(&str, f32, f32); 4] = [
+/// The irradiance volumes' capture comes last, after the atlas.
+const STAGES: [(&str, f32, f32); 5] = [
     ("prepare", 0.0, 0.05),
-    ("trace", 0.05, 0.90),
-    ("filter", 0.90, 0.97),
-    ("finish", 0.97, 1.0),
+    ("trace", 0.05, 0.85),
+    ("filter", 0.85, 0.90),
+    ("finish", 0.90, 0.93),
+    ("probes", 0.93, 1.0),
 ];
 
 /// One progress report from the bake.
@@ -68,8 +82,9 @@ impl BakeStep {
             return 0.0;
         };
         #[allow(clippy::cast_precision_loss)]
+        // A stage with nothing to do — `probes 0 0` for a level with no volumes — is done.
         let within = if self.total == 0 {
-            0.0
+            1.0
         } else {
             (self.done.min(self.total) as f32) / (self.total as f32)
         };
@@ -84,6 +99,10 @@ impl BakeStep {
             "prepare" => "packing and rasterising the atlas".to_string(),
             "filter" => "denoising, dilating and stitching seams".to_string(),
             "finish" => "building the mip chain and encoding".to_string(),
+            "probes" => format!(
+                "capturing irradiance volume {} of {}",
+                self.done, self.total
+            ),
             other => other.to_string(),
         }
     }
@@ -106,8 +125,15 @@ pub struct LightmapBakeOutcome {
     pub mips: u32,
     /// Objects whose charts are closer together than the protected mip levels need.
     pub padding_short: u32,
+    /// Irradiance volumes captured, and their probes.
+    pub volumes: u32,
+    /// Probes across every volume.
+    pub probes: u32,
     /// Wall-clock seconds the bake took.
     pub seconds: f64,
+    /// True when nothing had changed since the last bake of this level, so nothing was baked and
+    /// the outputs already in place were kept.
+    pub cached: bool,
 }
 
 /// One line of `cy_build lightmap`'s output, parsed.
@@ -160,6 +186,13 @@ pub fn outcome_of(output: &str, fields: &BTreeMap<String, String>) -> Result<Lig
                 )
             })
     }
+    // Absent from a tool that predates volumes and the level key: none, and baked.
+    let optional = |name: &str| {
+        fields
+            .get(name)
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0)
+    };
     Ok(LightmapBakeOutcome {
         output: output.to_string(),
         objects: field(fields, "objects")?,
@@ -168,8 +201,102 @@ pub fn outcome_of(output: &str, fields: &BTreeMap<String, String>) -> Result<Lig
         device_bytes: field(fields, "bytes")?,
         mips: field(fields, "mips")?,
         padding_short: field(fields, "padding-short")?,
+        volumes: optional("volumes"),
+        probes: optional("probes"),
         seconds: field(fields, "seconds")?,
+        cached: optional("cached") == 1,
     })
+}
+
+// --- The captured probes -------------------------------------------------------------------------
+
+/// One probe the bake captured, as the Lighting panel draws it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct CapturedProbe {
+    /// World position, metres.
+    pub position: [f32; 3],
+    /// Mean radiance over the sphere: the SH payload's constant term times `Y00`.
+    pub radiance: [f32; 3],
+    /// False for a probe inside geometry, which the frame gives no weight.
+    pub valid: bool,
+}
+
+/// One irradiance volume the bake captured.
+#[derive(Clone, PartialEq, Debug)]
+pub struct CapturedVolume {
+    /// The volume's engine identity, as its `volume` line named it.
+    pub id: u64,
+    /// Probes along x, y and z.
+    pub counts: [u32; 3],
+    /// Every probe, x fastest, then y, then z.
+    pub probes: Vec<CapturedProbe>,
+}
+
+/// `lightmap_bake/probes.h`'s magic, "CYPV", and the version this reads.
+const PROBES_MAGIC: u32 = 0x5650_5943;
+const PROBES_VERSION: u32 = 1;
+/// The SH L0 basis constant, `1 / (2 sqrt(pi))`.
+const Y00: f32 = 0.282_094_8;
+
+/// Decode a probe payload as `cy_build lightmap` writes it (`lightmap_bake/probes.h`).
+///
+/// # Errors
+///
+/// When the bytes are not a version 1 probe payload, or end early.
+pub fn decode_probes(bytes: &[u8]) -> Result<Vec<CapturedVolume>> {
+    let refuse = |why: &str| Problem::new("read the captured probes", why.to_string());
+    let mut words = bytes
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]));
+    let mut next = || words.next().ok_or_else(|| refuse("the payload ends early"));
+    if !bytes.len().is_multiple_of(4) || next()? != PROBES_MAGIC || next()? != PROBES_VERSION {
+        return Err(refuse("not a version 1 probe payload"));
+    }
+    let count = next()?;
+    let mut volumes = Vec::new();
+    for _ in 0..count {
+        let id = u64::from(next()?) | (u64::from(next()?) << 32);
+        // Origin and spacing: the panel places probes by their own positions.
+        for _ in 0..4 {
+            next()?;
+        }
+        let counts = [next()?, next()?, next()?];
+        let _rays = next()?;
+        let probes = next()?;
+        let mut captured = Vec::new();
+        for _ in 0..probes {
+            let mut floats = [0.0_f32; 22];
+            for float in &mut floats {
+                *float = f32::from_bits(next()?);
+            }
+            captured.push(CapturedProbe {
+                position: [floats[0], floats[1], floats[2]],
+                radiance: [floats[3] * Y00, floats[4] * Y00, floats[5] * Y00],
+                valid: floats[21] > 0.5,
+            });
+        }
+        volumes.push(CapturedVolume {
+            id,
+            counts,
+            probes: captured,
+        });
+    }
+    if next().is_ok() {
+        return Err(refuse("the payload is longer than its volumes"));
+    }
+    Ok(volumes)
+}
+
+/// The probes a bake into `output` captured, read from the project; empty when it captured none.
+///
+/// # Errors
+///
+/// When the file is there and is not a probe payload.
+pub fn read_probes(root: &Path, output: &str) -> Result<Vec<CapturedVolume>> {
+    match std::fs::read(root.join(LightmapBakeService::probes_output(output))) {
+        Ok(bytes) => decode_probes(&bytes),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// How a bake is actually run.
@@ -404,6 +531,12 @@ impl LightmapBakeService {
         self.baker.describe()
     }
 
+    /// The project the bakes read and write.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// The bake most recently started.
     #[must_use]
     pub const fn latest(&self) -> Option<u64> {
@@ -418,6 +551,37 @@ impl LightmapBakeService {
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("level");
         format!("{COOKED_DIRECTORY}/lightmaps/{stem}.lightmap")
+    }
+
+    /// Where a bake into `output` puts the irradiance volumes it captured: `cy_build lightmap`'s
+    /// default, the output with a `.cyprobes` extension.
+    #[must_use]
+    pub fn probes_output(output: &str) -> String {
+        Path::new(output)
+            .with_extension("cyprobes")
+            .to_string_lossy()
+            .replace('\\', "/")
+    }
+
+    /// Write a level's generated description at `path` (project-relative), leaving a file that
+    /// already holds exactly `text` untouched. True when it was written.
+    ///
+    /// # Errors
+    ///
+    /// When `path` is not a project-relative `.cylightmap`, or the file cannot be written.
+    pub fn write_description(&self, path: &str, text: &str) -> Result<bool> {
+        Self::inside_project(path, "write the lightmap description")?;
+        if Path::new(path)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            != Some(lightmap_description::EXTENSION)
+        {
+            return Err(Problem::new(
+                "write the lightmap description",
+                format!("{path:?} is not a .cylightmap path"),
+            ));
+        }
+        lightmap_description::write_if_changed(&self.root.join(path), text)
     }
 
     /// Start baking `description` into `output` (both project-relative; an empty `output` is
@@ -468,21 +632,30 @@ impl LightmapBakeService {
         self.completed_rx.try_iter().collect()
     }
 
+    fn inside_project(path: &str, action: &str) -> Result<()> {
+        let candidate = Path::new(path);
+        if path.is_empty()
+            || candidate.is_absolute()
+            || candidate
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Err(Problem::new(
+                action.to_string(),
+                format!("{path:?} is not a path inside the project"),
+            )
+            .with_remedy("name a project-relative .cylightmap description and output"));
+        }
+        Ok(())
+    }
+
     fn check(&self, description: &str, output: &str) -> Result<()> {
         let refuse = |because: String| {
             Err(Problem::new(format!("bake {description}"), because)
                 .with_remedy("name a project-relative .cylightmap description and output"))
         };
         for path in [description, output] {
-            let candidate = Path::new(path);
-            if path.is_empty()
-                || candidate.is_absolute()
-                || candidate
-                    .components()
-                    .any(|part| matches!(part, std::path::Component::ParentDir))
-            {
-                return refuse(format!("{path:?} is not a path inside the project"));
-            }
+            Self::inside_project(path, &format!("bake {description}"))?;
         }
         if Path::new(description)
             .extension()
@@ -500,7 +673,8 @@ impl LightmapBakeService {
 
 // --- The commands --------------------------------------------------------------------------------
 
-/// Register `lighting.bake-lightmaps` and `lighting.cancel-lightmap-bake`.
+/// Register `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake` and
+/// `lighting.write-lightmap-description`.
 ///
 /// # Errors
 ///
@@ -508,7 +682,108 @@ impl LightmapBakeService {
 pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(bake_lightmaps())?;
     registry.register(cancel_lightmap_bake())?;
+    registry.register(write_lightmap_description())?;
     Ok(())
+}
+
+/// The level settings a world's description is written with, as command parameters.
+fn level_parameters(metadata: Metadata) -> Metadata {
+    let defaults = LevelSettings::default();
+    metadata
+        .with(ParameterSpec::optional(
+            "mode",
+            ValueKind::Text,
+            "With no description: how texels store light, irradiance, directional or sh-l1.",
+            Value::Text(defaults.mode.to_string()),
+        ))
+        .with(ParameterSpec::optional(
+            "samples",
+            ValueKind::Int,
+            "With no description: path-traced samples per texel, 1 to 4096.",
+            Value::Int(i64::from(defaults.samples)),
+        ))
+        .with(ParameterSpec::optional(
+            "bounces",
+            ValueKind::Int,
+            "With no description: bounces per path, 0 to 8.",
+            Value::Int(i64::from(defaults.bounces)),
+        ))
+        .with(ParameterSpec::optional(
+            "density",
+            ValueKind::Float,
+            "With no description: lightmap texels per metre, above 0 and at most 64.",
+            Value::Float(defaults.density),
+        ))
+        .with(ParameterSpec::optional(
+            "page",
+            ValueKind::Int,
+            "With no description: texels along an atlas page side, a power of two from 128 to \
+             4096.",
+            Value::Int(i64::from(defaults.page)),
+        ))
+}
+
+/// What writing the active world's description did.
+struct WrittenDescription {
+    path: String,
+    text: String,
+    rewritten: bool,
+}
+
+/// Write the active world's `.cylightmap` beside it, from the document as it is now.
+fn write_world_description(
+    context: &mut dyn CommandContext,
+    arguments: &Arguments,
+) -> Result<WrittenDescription> {
+    const ACTION: &str = "write the world's lightmap description";
+    let settings = LevelSettings::from_arguments(arguments)?;
+    let id = context.active_document().ok_or_else(|| {
+        Problem::new(ACTION, "no world is open")
+            .with_remedy("open a world, or name a .cylightmap description")
+    })?;
+    let document = context
+        .document(id)
+        .ok_or_else(|| Problem::not_found("the world"))?;
+    let world = document.assets().first().cloned().ok_or_else(|| {
+        Problem::new(ACTION, "the world has no file in the project")
+            .with_remedy("save the world into the project first")
+    })?;
+    let path = lightmap_description::description_path(&world);
+    let text = lightmap_description::write(document, &world, &settings);
+    within_scope(context, &path)?;
+    let rewritten = context.write_lightmap_description(&path, &text)?;
+    Ok(WrittenDescription {
+        path,
+        text,
+        rewritten,
+    })
+}
+
+fn write_lightmap_description() -> Command {
+    Command::new(
+        level_parameters(Metadata::new(
+            "lighting.write-lightmap-description",
+            "Write Lightmap Description",
+            "Lighting",
+            "Writes the active world's .cylightmap bake description beside it, from the world as \
+             it is now: every enabled light with its mobility, every placed mesh with its drawn \
+             material and lightmap resolution, and every irradiance volume, each by its engine \
+             identity. Rewrites the file only when its bytes change. Returns the path and the \
+             text; lighting.bake-lightmaps with no description does this first.",
+            EffectClass::ExternalEffect,
+        )),
+        |context, arguments: &Arguments| {
+            let written = write_world_description(context, arguments)?;
+            Ok(Outcome::new(if written.rewritten {
+                format!("Wrote {}", written.path)
+            } else {
+                format!("{} is already up to date", written.path)
+            })
+            .with("description", Value::Text(written.path))
+            .with("rewritten", Value::Bool(written.rewritten))
+            .with("text", Value::Text(written.text)))
+        },
+    )
 }
 
 fn within_scope(context: &dyn CommandContext, path: &str) -> Result<()> {
@@ -533,21 +808,26 @@ fn within_scope(context: &dyn CommandContext, path: &str) -> Result<()> {
 
 fn bake_lightmaps() -> Command {
     Command::new(
-        Metadata::new(
+        level_parameters(Metadata::new(
             "lighting.bake-lightmaps",
             "Bake Lightmaps",
             "Lighting",
-            "Bakes a level's lightmaps from its project-relative .cylightmap description with the \
-             engine's path tracer, off the interface thread. Returns as soon as the bake is \
-             queued, with a request identity the progress surface and \
-             lighting.cancel-lightmap-bake use; the operation reports the texels traced. A \
-             cancelled bake writes nothing, leaving the previous cooked lightmap in place.",
+            "Bakes a level's lightmaps and irradiance volumes with the engine's path tracer, off \
+             the interface thread. With no description it bakes the active world: it writes the \
+             world's .cylightmap beside it first (as lighting.write-lightmap-description does), so \
+             the bake is of the lights, mobility, resolution and volumes as authored, and an \
+             unchanged world is not baked again. Returns as soon as the bake is queued, with a \
+             request identity the progress surface and lighting.cancel-lightmap-bake use; the \
+             operation reports the texels traced. A cancelled bake writes nothing, leaving the \
+             previous cooked lightmap in place.",
             EffectClass::ExternalEffect,
-        )
-        .with(ParameterSpec::required(
+        ))
+        .with(ParameterSpec::optional(
             "description",
             ValueKind::Text,
-            "The level's project-relative .cylightmap description.",
+            "A project-relative .cylightmap description to bake as it is; the active world when \
+             omitted.",
+            Value::Text(String::new()),
         ))
         .with(ParameterSpec::optional(
             "output",
@@ -557,18 +837,24 @@ fn bake_lightmaps() -> Command {
             Value::Text(String::new()),
         )),
         |context, arguments: &Arguments| {
-            let description = arguments.text("description").unwrap_or_default().trim();
-            if description.is_empty() {
-                return Err(Problem::new("bake lightmaps", "no description was given"));
-            }
-            within_scope(context, description)?;
+            let named = arguments.text("description").unwrap_or_default().trim();
+            let (description, rewritten) = if named.is_empty() {
+                let written = write_world_description(context, arguments)?;
+                (written.path, Some(written.rewritten))
+            } else {
+                (named.to_string(), None)
+            };
+            within_scope(context, &description)?;
             let output = arguments.text("output").unwrap_or_default().trim();
-            let request = context.start_lightmap_bake(description, output)?;
-            Ok(
+            let request = context.start_lightmap_bake(&description, output)?;
+            let mut outcome =
                 Outcome::new(format!("Queued the lightmap bake of {description} as #{request}"))
                     .with("request", Value::Int(i64::try_from(request).unwrap_or(i64::MAX)))
-                    .with("description", Value::Text(description.to_string())),
-            )
+                    .with("description", Value::Text(description));
+            if let Some(rewritten) = rewritten {
+                outcome = outcome.with("rewritten", Value::Bool(rewritten));
+            }
+            Ok(outcome)
         },
     )
 }
@@ -654,6 +940,44 @@ mod tests {
         assert!(outcome_of("out.lightmap", &fields).is_err());
     }
 
+    /// A probe payload as `lightmap_bake/probes.h` lays it out, one volume of `probes`.
+    fn payload(probes: &[([f32; 3], f32, f32)]) -> Vec<u8> {
+        let mut words: Vec<u32> = vec![PROBES_MAGIC, PROBES_VERSION, 1, 0x89AB_CDEF, 0x0123];
+        for float in [1.0_f32, 2.0, 3.0, 0.5] {
+            words.push(float.to_bits());
+        }
+        let count = u32::try_from(probes.len()).unwrap();
+        words.extend([count, 1, 1, 64, count]);
+        for (position, constant, validity) in probes {
+            let mut floats = [0.0_f32; 22];
+            floats[..3].copy_from_slice(position);
+            floats[3] = *constant;
+            floats[21] = *validity;
+            words.extend(floats.map(f32::to_bits));
+        }
+        words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn the_captured_probes_decode_as_the_engine_wrote_them() {
+        let bytes = payload(&[([1.0, 2.0, 3.0], 2.0, 1.0), ([1.5, 2.0, 3.0], 0.0, 0.0)]);
+        let volumes = decode_probes(&bytes).unwrap();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].id, 0x0123_89AB_CDEF);
+        assert_eq!(volumes[0].counts, [2, 1, 1]);
+        assert_eq!(
+            volumes[0].probes[1].position.map(f32::to_bits),
+            [1.5_f32, 2.0, 3.0].map(f32::to_bits)
+        );
+        assert!((volumes[0].probes[0].radiance[0] - 2.0 * Y00).abs() < 1.0e-6);
+        assert!(volumes[0].probes[0].valid);
+        assert!(!volumes[0].probes[1].valid, "a probe inside geometry");
+        // Short, long, or not probes at all: refused rather than read past.
+        assert!(decode_probes(&bytes[..bytes.len() - 4]).is_err());
+        assert!(decode_probes(&[bytes.clone(), vec![0; 4]].concat()).is_err());
+        assert!(decode_probes(b"CYLM").is_err());
+    }
+
     #[test]
     fn progress_is_the_traces_share_of_the_bake() {
         let step = |stage: &str, done, total| BakeStep {
@@ -663,8 +987,11 @@ mod tests {
         };
         assert!(step("prepare", 0, 1).fraction().abs() < 1.0e-6);
         assert!((step("trace", 0, 100).fraction() - 0.05).abs() < 1.0e-6);
-        assert!((step("trace", 50, 100).fraction() - 0.475).abs() < 1.0e-6);
-        assert!((step("finish", 1, 1).fraction() - 1.0).abs() < 1.0e-6);
+        assert!((step("trace", 50, 100).fraction() - 0.45).abs() < 1.0e-6);
+        assert!((step("finish", 1, 1).fraction() - 0.93).abs() < 1.0e-6);
+        // The volumes come last; a level with none reports an empty stage, which is done.
+        assert!((step("probes", 1, 2).fraction() - 0.965).abs() < 1.0e-6);
+        assert!((step("probes", 0, 0).fraction() - 1.0).abs() < 1.0e-6);
         assert!(step("trace", 10, 100).describe().contains("10 of 100"));
     }
 
@@ -715,7 +1042,10 @@ mod tests {
                 device_bytes: 1024,
                 mips: 1,
                 padding_short: 0,
+                volumes: 0,
+                probes: 0,
                 seconds: 0.01,
+                cached: false,
             }))
         }
     }

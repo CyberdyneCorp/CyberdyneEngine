@@ -26,10 +26,12 @@
 //!
 //! --- WHAT THE SPECIFICATION NAMES AND THE ENGINE HAS NOT GOT YET ------------------------------------
 //!
-//! The requirement's list is longer than the engine's enum. GI probe visualisation,
-//! virtual texture feedback and residency, virtual shadow page views, navigation data, audio
-//! emitters and streaming region state are all named there and none of them exists in
-//! `DebugViewMode` today, because the subsystems that would draw them arrive at M6 and later.
+//! The requirement's list is longer than the engine's enum. Virtual texture feedback and
+//! residency, virtual shadow page views, navigation data, audio emitters and streaming region
+//! state are all named there and none of them exists in `DebugViewMode` today, because the
+//! subsystems that would draw them arrive at M6 and later. GI probes joined the enum with the
+//! lighting tools: the lightmap bake captures each irradiance volume's probes beside the atlas, and
+//! the Lighting panel draws them from that file while no frame does yet.
 //! Physics colliders are drawn by the engine as layers over any mode: [`crate::physics_view`].
 //!
 //! They are **absent rather than stubbed**. An editor that offered "virtual texture feedback" and
@@ -88,10 +90,12 @@ pub enum ViewMode {
     BoundingVolumes = 18,
     /// Each lightmapped surface's lightmap texel density against the level's target.
     LightmapDensity = 19,
+    /// Each irradiance-volume probe, in the light the bake captured.
+    GiProbes = 20,
 }
 
 /// Every mode, in the engine's order.
-pub const ALL_VIEW_MODES: [ViewMode; 20] = [
+pub const ALL_VIEW_MODES: [ViewMode; 21] = [
     ViewMode::Off,
     ViewMode::Albedo,
     ViewMode::Normals,
@@ -112,6 +116,7 @@ pub const ALL_VIEW_MODES: [ViewMode; 20] = [
     ViewMode::ShadowCascades,
     ViewMode::BoundingVolumes,
     ViewMode::LightmapDensity,
+    ViewMode::GiProbes,
 ];
 
 impl ViewMode {
@@ -146,6 +151,7 @@ impl ViewMode {
             ViewMode::ShadowCascades => "ShadowCascades",
             ViewMode::BoundingVolumes => "BoundingVolumes",
             ViewMode::LightmapDensity => "LightmapDensity",
+            ViewMode::GiProbes => "GiProbes",
         }
     }
 
@@ -186,6 +192,7 @@ impl ViewMode {
             ViewMode::ShadowCascades => "Shadow Cascades",
             ViewMode::BoundingVolumes => "Bounding Volumes",
             ViewMode::LightmapDensity => "Lightmap Density",
+            ViewMode::GiProbes => "GI Probes",
         }
     }
 
@@ -216,6 +223,7 @@ impl ViewMode {
                 "each lightmapped surface as a checker of its own lightmap texels, coloured by \
                  the density the atlas gives it against the level's target"
             }
+            ViewMode::GiProbes => "each irradiance-volume probe, in the light the bake captured",
         }
     }
 
@@ -312,6 +320,10 @@ impl ViewMode {
                  lightmap. Raise an object's resolution scale where its shadows are blocky, and \
                  lower it where red spends texels nobody sees."
             }
+            ViewMode::GiProbes => {
+                "A probe drawn dark in a lit room is inside geometry or sees only a movable \
+                 light; move the volume or change the light's mobility and bake again."
+            }
         }
     }
 }
@@ -327,8 +339,7 @@ impl ViewMode {
 /// Physics colliders left this list when the engine's physics debug layers became requestable:
 /// they are overlays rather than a shading mode, so they are [`crate::physics_view`], not a
 /// [`ViewMode`].
-pub const PLANNED_VIEWS: [(&str, &str); 6] = [
-    ("GI probe placement", "rendering-global-illumination"),
+pub const PLANNED_VIEWS: [(&str, &str); 5] = [
     ("Virtual texture feedback", "virtual-texturing"),
     ("Virtual texture residency", "residency"),
     ("Virtual shadow pages", "virtual-shadows"),
@@ -428,7 +439,7 @@ mod tests {
     #[test]
     fn the_discriminant_is_the_engines_and_survives_a_capture() {
         for (index, mode) in ALL_VIEW_MODES.iter().enumerate() {
-            let index = u32::try_from(index).expect("nineteen modes");
+            let index = u32::try_from(index).expect("twenty-one modes");
             assert_eq!(*mode as u32, index);
             assert_eq!(ViewMode::from_index(index), Some(*mode));
         }

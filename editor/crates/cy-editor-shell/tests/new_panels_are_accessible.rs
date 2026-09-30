@@ -1140,3 +1140,373 @@ fn the_audio_mixer_empty_states_name_what_would_fill_them() {
         refused.labels
     );
 }
+
+// --- Lighting --------------------------------------------------------------------------------------
+
+const LIGHTING: &str = "editor-lighting-and-lightmap-baking";
+
+fn invoke(harness: &mut Harness, id: &str, arguments: &cy_editor_commands::Arguments) -> String {
+    let outcome = harness
+        .registry
+        .invoke(id, &harness.scope, &mut harness.editor, arguments)
+        .unwrap_or_else(|problem| panic!("{id}: {problem}"));
+    outcome
+        .values
+        .values()
+        .find_map(|value| value.as_text().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// A world with a light and an irradiance volume, both through registered commands.
+fn lighting_harness() -> Harness {
+    use cy_editor_commands::Arguments;
+    use cy_editor_core::value::Value;
+
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/lighting.cyworld")
+        .unwrap();
+    invoke(
+        &mut harness,
+        "scene.create-light",
+        &Arguments::new().with("kind", Value::Text("point".into())),
+    );
+    invoke(
+        &mut harness,
+        "lighting.volume.create",
+        &Arguments::new()
+            .with("count_x", Value::Int(3))
+            .with("count_y", Value::Int(2))
+            .with("count_z", Value::Int(3)),
+    );
+    harness
+}
+
+fn has(evidence: &FrameEvidence, label: &str) -> bool {
+    evidence.labels.iter().any(|drawn| drawn == label)
+}
+
+fn lighting_scene(harness: &Harness) -> cy_editor_services::lighting::LightingScene {
+    cy_editor_services::lighting::LightingScene::read(
+        harness
+            .editor
+            .documents
+            .get(harness.editor.workspace.active().unwrap())
+            .unwrap(),
+    )
+}
+
+#[test]
+fn the_lighting_tool_opens_in_the_specialised_frame_and_every_button_is_a_command() {
+    use cy_editor_core::value::Value;
+
+    let size = egui::vec2(960.0, 900.0);
+    let mut harness = Harness::new();
+    harness
+        .editor
+        .open_document("worlds/empty.cyworld")
+        .unwrap();
+    let empty = harness.frame(LIGHTING, size, Vec::new());
+    for label in [
+        "Lighting & Lightmaps",
+        "Undo",
+        "Redo",
+        "Bake lightmaps",
+        "Irradiance volumes",
+        "Add irradiance volume",
+        "Light mobility",
+        "Texel density",
+        "Show lightmap density",
+        "Probes",
+        "Show GI probes",
+    ] {
+        assert!(
+            has(&empty, label),
+            "the lighting tool lacks {label:?}: {:?}",
+            empty.labels
+        );
+    }
+    let added = harness.frame(
+        LIGHTING,
+        size,
+        vec![click_named(&empty, "Add irradiance volume")],
+    );
+    assert!(
+        matches!(added.intents.as_slice(), [Intent::Invoke(command, _)] if command == "lighting.volume.create"),
+        "{:?}",
+        added.intents
+    );
+    // With no description named, the button bakes the open world with the form's settings.
+    let baked = harness.frame(LIGHTING, size, vec![click_named(&empty, "Bake lightmaps")]);
+    let Some(Intent::Invoke(command, arguments)) = baked.intents.first() else {
+        panic!("Bake lightmaps pushed nothing: {:?}", baked.intents);
+    };
+    assert_eq!(command, "lighting.bake-lightmaps");
+    assert_eq!(arguments.get("description"), None);
+    assert_eq!(arguments.get("samples"), Some(&Value::Int(64)));
+    let probes = harness.frame(LIGHTING, size, vec![click_named(&empty, "Show GI probes")]);
+    assert!(
+        matches!(probes.intents.as_slice(), [Intent::Invoke(command, _)] if command == "viewport.view-mode.gi-probes"),
+        "{:?}",
+        probes.intents
+    );
+}
+
+#[test]
+fn the_selected_volume_grid_is_applied_as_one_command_and_undo_restages_it() {
+    let size = egui::vec2(960.0, 900.0);
+    let mut harness = lighting_harness();
+    let first = harness.frame(LIGHTING, size, Vec::new());
+    assert!(
+        has(&first, "Apply grid"),
+        "the selected volume shows its grid: {:?}",
+        first.labels
+    );
+    assert!(
+        first
+            .labels
+            .iter()
+            .any(|label| label.contains("3×2×3 probes")),
+        "{:?}",
+        first.labels
+    );
+    // Stage an edit and apply it: one intent, carrying the whole grid.
+    let volume = harness.inputs.lighting.grid.expect("the grid is staged").0;
+    if let Some((_, _, edit)) = harness.inputs.lighting.grid.as_mut() {
+        edit.counts[0] = 5;
+    }
+    let staged = harness.frame(LIGHTING, size, Vec::new());
+    let applied = harness.frame(LIGHTING, size, vec![click_named(&staged, "Apply grid")]);
+    let [Intent::Invoke(command, arguments)] = applied.intents.as_slice() else {
+        panic!("one command per apply: {:?}", applied.intents);
+    };
+    assert_eq!(command, "lighting.volume.set");
+    assert_eq!(
+        arguments.get("count_x"),
+        Some(&cy_editor_core::value::Value::Int(5))
+    );
+    harness
+        .registry
+        .invoke(command, &harness.scope, &mut harness.editor, arguments)
+        .unwrap();
+    let after = harness.frame(LIGHTING, size, Vec::new());
+    assert!(
+        after
+            .labels
+            .iter()
+            .any(|label| label.contains("5×2×3 probes"))
+    );
+    // Undo through the header: the document's grid goes back, and the staged grid follows it.
+    let undo = harness.frame(LIGHTING, size, vec![click_named(&after, "Undo")]);
+    let [Intent::Invoke(command, arguments)] = undo.intents.as_slice() else {
+        panic!("{:?}", undo.intents);
+    };
+    assert_eq!(command, "edit.undo");
+    harness
+        .registry
+        .invoke(command, &harness.scope, &mut harness.editor, arguments)
+        .unwrap();
+    let _ = harness.frame(LIGHTING, size, Vec::new());
+    let (node, base, edit) = harness.inputs.lighting.grid.expect("still staged");
+    assert_eq!(node, volume);
+    assert_eq!(base.counts, [3, 2, 3]);
+    assert_eq!(
+        edit, base,
+        "an undo restages the grid rather than keeping a stale edit"
+    );
+}
+
+#[test]
+fn a_light_offers_its_mobility_in_the_lighting_tool_and_in_the_inspector() {
+    use cy_editor_documents::selection::Selection;
+
+    let size = egui::vec2(960.0, 900.0);
+    let mut harness = lighting_harness();
+    let panel = harness.frame(LIGHTING, size, Vec::new());
+    assert!(has(&panel, "Point Light"), "{:?}", panel.labels);
+    assert!(
+        has(&panel, "Stationary"),
+        "the default mobility is shown: {:?}",
+        panel.labels
+    );
+
+    let light = lighting_scene(&harness).lights[0].id;
+    let mut selection = Selection::new();
+    selection.add_node(light);
+    harness.editor.selection.set(selection);
+    let inspector = harness.frame("inspector", size, Vec::new());
+    assert!(has(&inspector, "Mobility"), "{:?}", inspector.labels);
+    assert!(has(&inspector, "Stationary"), "{:?}", inspector.labels);
+    assert!(
+        !has(&inspector, "Lightmap resolution"),
+        "a light owns no lightmap row: {:?}",
+        inspector.labels
+    );
+}
+
+#[test]
+fn a_placed_object_offers_its_lightmap_resolution_in_the_inspector() {
+    use cy_editor_documents::selection::Selection;
+
+    let size = egui::vec2(960.0, 900.0);
+    let mut harness = lighting_harness();
+    invoke(
+        &mut harness,
+        "scene.create-camera",
+        &cy_editor_commands::Arguments::new(),
+    );
+    let camera = harness.editor.selection.get().nodes().next().unwrap();
+    let mut selection = Selection::new();
+    selection.add_node(camera);
+    harness.editor.selection.set(selection);
+    let inspector = harness.frame("inspector", size, Vec::new());
+    assert!(
+        has(&inspector, "Lightmap resolution"),
+        "{:?}",
+        inspector.labels
+    );
+    assert!(!has(&inspector, "Mobility"), "{:?}", inspector.labels);
+}
+
+/// A bake double: writes a probe payload for one volume as `cy_build lightmap` would, and reports
+/// what it made.
+struct CapturingBaker {
+    volume: u64,
+}
+
+impl cy_editor_services::lightmaps::LightmapBaker for CapturingBaker {
+    fn describe(&self) -> String {
+        "a capturing double".into()
+    }
+
+    fn bake(
+        &self,
+        root: &std::path::Path,
+        _: &str,
+        output: &str,
+        _: &mut dyn FnMut(cy_editor_services::lightmaps::BakeStep),
+        _: &cy_editor_core::progress::Cancellation,
+    ) -> cy_editor_core::problem::Result<Option<cy_editor_services::lightmaps::LightmapBakeOutcome>>
+    {
+        let mut words: Vec<u32> = vec![
+            0x5650_5943,
+            1,
+            1,
+            (self.volume & 0xFFFF_FFFF) as u32,
+            (self.volume >> 32) as u32,
+        ];
+        words.extend([0.0_f32, 0.0, 0.0, 1.0].map(f32::to_bits));
+        words.extend([3, 2, 3, 64, 18]);
+        for probe in 0..18_u8 {
+            let mut floats = [0.0_f32; 22];
+            floats[..3].copy_from_slice(&[
+                f32::from(probe % 3),
+                f32::from(probe / 9),
+                f32::from((probe / 3) % 3),
+            ]);
+            floats[3] = 1.0;
+            floats[21] = if probe == 4 { 0.0 } else { 1.0 };
+            words.extend(floats.map(f32::to_bits));
+        }
+        let probes = cy_editor_services::lightmaps::LightmapBakeService::probes_output(output);
+        std::fs::create_dir_all(root.join(&probes).parent().unwrap()).unwrap();
+        std::fs::write(
+            root.join(probes),
+            words
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap();
+        Ok(Some(cy_editor_services::lightmaps::LightmapBakeOutcome {
+            output: output.into(),
+            objects: 3,
+            pages: 1,
+            texels: 400,
+            device_bytes: 1024,
+            mips: 0,
+            padding_short: 0,
+            volumes: 1,
+            probes: 18,
+            seconds: 0.1,
+            cached: false,
+        }))
+    }
+}
+
+#[test]
+fn a_finished_bake_shows_what_it_made_and_the_probes_it_captured() {
+    use cy_editor_core::progress::OperationState;
+    use cy_editor_core::value::Value;
+
+    let size = egui::vec2(960.0, 900.0);
+    let mut harness = lighting_harness();
+    let root = std::env::temp_dir().join(format!("cy-lighting-panel-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let volume =
+        cy_editor_services::mirror::engine_identity(lighting_scene(&harness).volumes[0].id);
+    harness.editor.lightmaps = cy_editor_services::lightmaps::LightmapBakeService::with_baker(
+        &root,
+        std::sync::Arc::new(CapturingBaker { volume }),
+    );
+    let before = harness.frame(LIGHTING, size, Vec::new());
+    assert!(
+        has(
+            &before,
+            "Not captured yet: hollow probes are where the bake will capture."
+        ),
+        "{:?}",
+        before.labels
+    );
+    let started = harness
+        .registry
+        .invoke(
+            "lighting.bake-lightmaps",
+            &harness.scope,
+            &mut harness.editor,
+            &cy_editor_commands::Arguments::new(),
+        )
+        .unwrap();
+    let Some(Value::Int(request)) = started.values.get("request").cloned() else {
+        panic!("{started:?}");
+    };
+    // The world's description was written before the bake was queued.
+    assert!(root.join("worlds/lighting.cylightmap").is_file());
+    let operation = harness
+        .editor
+        .operations
+        .all()
+        .iter()
+        .find(|operation| operation.id() == u64::try_from(request).unwrap())
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        operation.block_until_settled(std::time::Duration::from_secs(10)),
+        OperationState::Completed
+    );
+    let evidence = harness.frame(LIGHTING, size, Vec::new());
+    assert!(
+        evidence.labels.iter().any(|label| label
+            .contains("3 object(s) on 1 page(s), 400 texels, 1 volume(s) of 18 probes")),
+        "{:?}",
+        evidence.labels
+    );
+    assert!(
+        !has(
+            &evidence,
+            "Not captured yet: hollow probes are where the bake will capture."
+        ),
+        "the captured probes replace the authored grid: {:?}",
+        evidence.labels
+    );
+    let captured = harness
+        .inputs
+        .lighting
+        .baked
+        .as_ref()
+        .expect("the bake was collected");
+    assert_eq!(captured.probes[0].probes.len(), 18);
+    assert!(!captured.probes[0].probes[4].valid);
+    std::fs::remove_dir_all(&root).ok();
+}

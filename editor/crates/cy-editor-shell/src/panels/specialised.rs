@@ -299,23 +299,35 @@ mod tests {
     }
 
     #[test]
-    fn the_lighting_tool_is_scaffolded_and_its_bake_is_its_one_operation() {
+    fn the_lighting_tool_is_scaffolded_and_its_bake_and_description_are_its_operations() {
         use super::super::lighting::LightingTool;
         let mut registry = builtin();
         register_specialised_tools(&mut registry).expect("parity holds for the lighting tool");
         for command in <LightingTool as SpecialisedTool>::COMMANDS {
             let tool = cy_editor_agent::tool::project_one(&registry, command).unwrap();
             assert!(tool.exclusion.is_none(), "{command}");
-            assert_eq!(tool.effect, EffectClass::Read, "{command}");
+            // The volume, mobility and resolution edits author the document; the cancel, the view
+            // modes and the selection are reads.
+            let authors = command.starts_with("lighting.") && !command.contains("cancel");
+            let expected = if authors {
+                EffectClass::ReversibleMutation
+            } else {
+                EffectClass::Read
+            };
+            assert_eq!(tool.effect, expected, "{command}");
         }
         assert_eq!(
             <LightingTool as SpecialisedTool>::OPERATIONS,
-            &["lighting.bake-lightmaps"]
+            &[
+                "lighting.bake-lightmaps",
+                "lighting.write-lightmap-description"
+            ]
         );
-        let bake =
-            cy_editor_agent::tool::project_one(&registry, "lighting.bake-lightmaps").unwrap();
-        assert!(bake.exclusion.is_none());
-        assert_eq!(bake.effect, EffectClass::ExternalEffect);
+        for operation in <LightingTool as SpecialisedTool>::OPERATIONS {
+            let tool = cy_editor_agent::tool::project_one(&registry, operation).unwrap();
+            assert!(tool.exclusion.is_none(), "{operation}");
+            assert_eq!(tool.effect, EffectClass::ExternalEffect, "{operation}");
+        }
         // The bake is refused where an authoring command is expected: it is not undoable.
         let problem = parity(
             &registry,

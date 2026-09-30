@@ -909,3 +909,174 @@ fn audio_panel_snapshots() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+
+/// The room [`lighting_desk`] bakes, authored through the registered commands.
+fn author_room(desk: &mut Desk) {
+    use cy_editor_core::value::Value;
+
+    let invoke = |desk: &mut Desk, id: &str, arguments: Arguments| {
+        desk.registry
+            .invoke(id, &desk.scope, &mut desk.editor, &arguments)
+            .unwrap_or_else(|problem| panic!("{id}: {problem}"))
+    };
+    let floor = invoke(
+        desk,
+        "scene.create-primitive",
+        Arguments::new()
+            .with("shape", Value::Text("plane".into()))
+            .with("name", Value::Text("Floor".into()))
+            .with("extent", Value::Vec3([4.0, 1.0, 4.0])),
+    )
+    .values["entity"]
+        .as_text()
+        .unwrap()
+        .to_owned();
+    invoke(
+        desk,
+        "lighting.object.set-resolution",
+        Arguments::new()
+            .with("entity", Value::Text(floor))
+            .with("scale", Value::Float(2.0)),
+    );
+    invoke(
+        desk,
+        "scene.create-primitive",
+        Arguments::new()
+            .with("shape", Value::Text("box".into()))
+            .with("name", Value::Text("Crate".into()))
+            .with("origin", Value::Text("base".into()))
+            .with("at", Value::Vec3([1.0, 0.0, 0.5])),
+    );
+    let lamp = invoke(
+        desk,
+        "scene.create-light",
+        Arguments::new()
+            .with("kind", Value::Text("point".into()))
+            .with("at", Value::Vec3([0.0, 2.0, 0.0])),
+    )
+    .values["entity"]
+        .as_text()
+        .unwrap()
+        .to_owned();
+    invoke(
+        desk,
+        "lighting.light.set-mobility",
+        Arguments::new()
+            .with("entity", Value::Text(lamp))
+            .with("mobility", Value::Text("static".into())),
+    );
+    invoke(
+        desk,
+        "lighting.volume.create",
+        Arguments::new()
+            .with("at", Value::Vec3([-1.5, 0.5, -1.5]))
+            .with("count_x", Value::Int(4))
+            .with("count_y", Value::Int(2))
+            .with("count_z", Value::Int(4))
+            .with("rays", Value::Int(64)),
+    );
+}
+
+/// A room authored through the registered commands — a floor at twice the level's density, a crate
+/// that only occludes, a static lamp and an irradiance volume — in a project of its own, baked by
+/// the real `cy_build` the tree built. `None` when no `cy_build` is built near this crate.
+fn lighting_desk(project: &std::path::Path) -> Option<Desk> {
+    use cy_editor_core::progress::OperationState;
+    use cy_editor_core::value::Value;
+    use cy_editor_services::lightmaps::{CliLightmapBaker, LightmapBakeService, LightmapBaker};
+
+    let baker = CliLightmapBaker::found_near(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    if baker.describe().starts_with("no cy_build") {
+        eprintln!("no cy_build built near this crate; not drawing the lighting panel");
+        return None;
+    }
+    std::fs::create_dir_all(project).unwrap();
+    std::fs::write(project.join("project.json"), "{}").unwrap();
+    let mut desk = Desk::new();
+    desk.editor = Editor::new(Actor::human("designer"))
+        .with_project(cy_editor_services::project::ProjectService::new(project));
+    desk.editor.lightmaps = LightmapBakeService::with_baker(project, std::sync::Arc::new(baker));
+    // A world whose schema carries a Transform, as an opened `.cyworld` does.
+    let mut document = cy_editor_documents::Document::new("worlds/room.cyworld");
+    let transform = document.schema_mut().declare_type("Transform", false);
+    for (name, kind) in [
+        ("translation", cy_editor_core::value::ValueKind::Vec3),
+        ("rotation", cy_editor_core::value::ValueKind::Quat),
+        ("scale", cy_editor_core::value::ValueKind::Vec3),
+    ] {
+        document
+            .schema_mut()
+            .declare_field(transform, name, kind, "part of a transform")
+            .expect("a fresh schema");
+    }
+    let world = desk.editor.documents.insert(document);
+    desk.editor.workspace.opened(world);
+    author_room(&mut desk);
+    let invoke = |desk: &mut Desk, id: &str, arguments: Arguments| {
+        desk.registry
+            .invoke(id, &desk.scope, &mut desk.editor, &arguments)
+            .unwrap_or_else(|problem| panic!("{id}: {problem}"))
+    };
+    let started = invoke(
+        &mut desk,
+        "lighting.bake-lightmaps",
+        Arguments::new()
+            .with("mode", Value::Text("irradiance".into()))
+            .with("samples", Value::Int(16))
+            .with("density", Value::Float(8.0)),
+    );
+    let Some(Value::Int(request)) = started.values.get("request").cloned() else {
+        panic!("{started:?}");
+    };
+    let operation = desk
+        .editor
+        .operations
+        .all()
+        .iter()
+        .find(|operation| operation.id() == u64::try_from(request).unwrap())
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        operation.block_until_settled(std::time::Duration::from_mins(2)),
+        OperationState::Completed
+    );
+    Some(desk)
+}
+
+#[test]
+#[ignore = "needs a GPU adapter and a built cy_build; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn lighting_panel_snapshots() {
+    let project = std::env::temp_dir().join(format!("cy-lighting-snapshot-{}", std::process::id()));
+    let Some(mut desk) = lighting_desk(&project) else {
+        return;
+    };
+    snapshot(
+        &mut desk,
+        "editor-lighting-and-lightmap-baking",
+        "editor-lighting-baked.png",
+    );
+    let light = cy_editor_services::lighting::LightingScene::read(
+        desk.editor
+            .documents
+            .get(desk.editor.workspace.active().unwrap())
+            .unwrap(),
+    )
+    .lights[0]
+        .id;
+    let mut selection = cy_editor_documents::selection::Selection::new();
+    selection.add_node(light);
+    desk.editor.selection.set(selection);
+    // The window describes the Inspector from the open world's schema every frame; do it here.
+    let document = desk
+        .editor
+        .documents
+        .get(desk.editor.workspace.active().unwrap())
+        .unwrap();
+    desk.shell
+        .describe_with(cy_editor_reflection::Catalogue::of_document(
+            document.schema(),
+        ));
+    desk.shell.inspector.refresh(&desk.editor);
+    snapshot(&mut desk, "inspector", "editor-lighting-inspector.png");
+    std::fs::remove_dir_all(&project).ok();
+}

@@ -4689,3 +4689,188 @@ fn a_sources_range_is_an_undoable_mcp_edit_of_the_world() {
         (1.0, 50.0, "inverse")
     );
 }
+
+// --- Lighting authoring (`add-editor-lighting-tools`) --------------------------------------------
+
+/// One `tools/call` with a raw JSON arguments object, for numbers and booleans.
+fn call_json(id: u32, name: &str, arguments: &str) -> String {
+    format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"{name}","arguments":{arguments}}}}}"#
+    )
+}
+
+fn lighting_scene(editor: &Editor) -> cy_editor_services::lighting::LightingScene {
+    cy_editor_services::lighting::LightingScene::read(
+        editor
+            .documents
+            .get(editor.workspace.active().expect("a world is open"))
+            .expect("the active world"),
+    )
+}
+
+/// The lighting editor's panel and Inspector rows invoke these; an agent reaches the same edits
+/// here, and undo takes them back in the same order.
+#[test]
+fn lighting_authoring_is_undoable_over_mcp_with_the_same_commands_as_the_panel() {
+    use cy_editor_services::lighting::Mobility;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("game/worlds/lit.cyworld").unwrap();
+    let created = converse(
+        &[
+            INITIALIZE,
+            &call_json(2, "scene.create-light", r#"{"kind":"point"}"#),
+            &call_json(
+                3,
+                "lighting.volume.create",
+                r#"{"at":[1,2,3],"count_x":2,"count_y":2,"count_z":2}"#,
+            ),
+        ],
+        &mut editor,
+    );
+    assert!(
+        tool_text(&created, 1).contains("Created Point Light"),
+        "{}",
+        tool_text(&created, 1)
+    );
+    assert!(tool_text(&created, 2).contains("Created irradiance volume"));
+    let scene = lighting_scene(&editor);
+    let lamp = scene.lights[0].id.to_string();
+    let volume = scene.volumes[0].id.to_string();
+    assert!(
+        scene.volumes[0]
+            .origin
+            .iter()
+            .zip([1.0, 2.0, 3.0])
+            .all(|(got, want)| (got - want).abs() < f32::EPSILON)
+    );
+
+    let edited = converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "lighting.light.set-mobility",
+                &format!(r#"{{"entity":"{lamp}","mobility":"movable"}}"#),
+            ),
+            &call_json(
+                3,
+                "lighting.object.set-resolution",
+                &format!(r#"{{"entity":"{lamp}","scale":2.5}}"#),
+            ),
+            &call_json(
+                4,
+                "lighting.volume.set",
+                &format!(
+                    r#"{{"volume":"{volume}","spacing":0.5,"count_x":3,"count_y":3,"count_z":3,"rays":16}}"#
+                ),
+            ),
+            &call_json(
+                5,
+                "lighting.light.set-mobility",
+                &format!(r#"{{"entity":"{lamp}","mobility":"fixed"}}"#),
+            ),
+        ],
+        &mut editor,
+    );
+    assert_eq!(result(&edited, 4).get("isError"), &Json::Bool(true));
+    assert!(tool_text(&edited, 4).contains("static, stationary, or movable"));
+    let scene = lighting_scene(&editor);
+    let lamp_node = scene.lights[0].id;
+    assert_eq!(scene.mobility_of(lamp_node), Some(Mobility::Movable));
+    assert!((scene.resolution_of(lamp_node) - 2.5).abs() < f32::EPSILON);
+    assert_eq!(scene.volumes[0].counts, [3, 3, 3]);
+
+    // Undos over the wire take the edits back, newest first.
+    let undone = converse(
+        &[
+            INITIALIZE,
+            &call_json(2, "edit.undo", "{}"),
+            &call_json(3, "edit.undo", "{}"),
+        ],
+        &mut editor,
+    );
+    assert!(result(&undone, 2).get("isError") != &Json::Bool(true));
+    let scene = lighting_scene(&editor);
+    assert_eq!(scene.volumes[0].counts, [2, 2, 2]);
+    assert!((scene.resolution_of(lamp_node) - 1.0).abs() < f32::EPSILON);
+    assert_eq!(scene.mobility_of(lamp_node), Some(Mobility::Movable));
+    converse(&[INITIALIZE, &call_json(2, "edit.undo", "{}")], &mut editor);
+    assert_eq!(
+        lighting_scene(&editor).mobility_of(lamp_node),
+        Some(Mobility::Stationary)
+    );
+}
+
+/// An agent writes the open world's description as the panel's bake does — what it authored over
+/// the wire is what the file says — and only inside the directories its connection may touch.
+#[test]
+fn the_world_description_is_written_over_mcp_from_what_was_authored() {
+    let root = std::env::temp_dir().join(format!(
+        "cy-mcp-lighting-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("project.json"), "{}").unwrap();
+    let mut editor = Editor::new(Actor::human("designer")).with_project(ProjectService::new(&root));
+    let world = editor.documents.insert(cy_editor_documents::Document::new(
+        "game/worlds/lit.cyworld",
+    ));
+    editor.workspace.opened(world);
+    let replies = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            &call_json(2, "scene.create-light", r#"{"kind":"point","at":[0,2,0]}"#),
+        ],
+        &mut editor,
+    );
+    assert!(tool_text(&replies, 1).contains("Created Point Light"));
+    let lamp = lighting_scene(&editor).lights[0].id.to_string();
+    let replies = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "lighting.light.set-mobility",
+                &format!(r#"{{"entity":"{lamp}","mobility":"static"}}"#),
+            ),
+            &call_json(
+                3,
+                "lighting.write-lightmap-description",
+                r#"{"samples":16}"#,
+            ),
+        ],
+        &mut editor,
+    );
+    let (written, is_error) = tool_reply(&replies, 2);
+    assert!(!is_error, "{written}");
+    assert!(written.contains("game/worlds/lit.cylightmap"), "{written}");
+    let text = std::fs::read_to_string(root.join("game/worlds/lit.cylightmap")).unwrap();
+    assert!(text.starts_with("cylightmap 1\n"), "{text}");
+    assert!(text.contains("samples 16\n"), "{text}");
+    assert!(text.contains("light point 0 2 0 "), "{text}");
+    assert!(text.contains(" static id "), "{text}");
+
+    // A world outside the connection's directory is not written.
+    let elsewhere = editor.documents.insert(cy_editor_documents::Document::new(
+        "other/worlds/lit.cyworld",
+    ));
+    editor.workspace.opened(elsewhere);
+    let replies = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            &call_json(2, "lighting.write-lightmap-description", "{}"),
+        ],
+        &mut editor,
+    );
+    let (outside, is_error) = tool_reply(&replies, 1);
+    assert!(
+        is_error && outside.contains("does not include it"),
+        "{outside}"
+    );
+    assert!(!root.join("other/worlds/lit.cylightmap").exists());
+    std::fs::remove_dir_all(&root).ok();
+}

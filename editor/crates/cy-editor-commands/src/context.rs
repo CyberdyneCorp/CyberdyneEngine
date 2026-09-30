@@ -157,6 +157,16 @@ pub trait CommandContext {
         ))
     }
 
+    /// Write a level's generated `.cylightmap` description at `path` (project-relative), leaving a
+    /// file that already holds exactly `text` untouched; true when it was written.
+    fn write_lightmap_description(&mut self, path: &str, text: &str) -> Result<bool> {
+        let _ = (path, text);
+        Err(cy_editor_core::problem::Problem::new(
+            "write the lightmap description",
+            "this host has no lightmap bake service",
+        ))
+    }
+
     /// Ask a running lightmap bake to stop — `request`, or the one most recently started — and
     /// return the request it asked.
     fn cancel_lightmap_bake(&mut self, request: Option<u64>) -> Result<u64> {
