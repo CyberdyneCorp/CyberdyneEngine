@@ -506,6 +506,13 @@ CY_TEST_CASE("Metal timestamp queries resolve GPU counter samples") {
     query_description.kind = cy::rhi::QueryKind::Timestamp;
     query_description.count = 2;
     const auto queries = device.create_query_pool(query_description);
+    // A device with no timestamp counter set refuses the pool by name — the hosted runner's
+    // paravirtual GPU does — and there is nothing to sample on it. Any other refusal is a failure.
+    if (!queries && queries.error().code == cy::ErrorCode::Unsupported) {
+        std::fprintf(stderr, "SKIPPED timestamp queries on '%s': %s\n",
+                     device.capabilities().device_name(), queries.error().message);
+        return;
+    }
     CY_REQUIRE(queries);
 
     cy::rhi::BufferDescription buffer_description;
