@@ -13,6 +13,7 @@
 
 #include "platform_bits.h"
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 
@@ -49,6 +50,17 @@ LONG WINAPI handle_exception(EXCEPTION_POINTERS* pointers) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/// `_mkdir` succeeded, or the directory is already there. The second half is asked of the file
+/// system rather than read from errno: `_mkdir("C:")` — the first prefix of every absolute path —
+/// fails with EACCES or ENOENT, not EEXIST, although the drive plainly exists.
+bool made_or_present(const char* directory) noexcept {
+    if (::_mkdir(directory) == 0 || errno == EEXIST) {
+        return true;
+    }
+    const DWORD attributes = ::GetFileAttributesA(directory);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
 }  // namespace
 
 u32 platform_process_id() noexcept {
@@ -68,12 +80,12 @@ bool platform_make_directories(const char* path) noexcept {
         }
         const char separator = *cursor;
         *cursor = '\0';
-        if (::_mkdir(buffer) != 0 && errno != EEXIST) {
+        if (!made_or_present(buffer)) {
             return false;
         }
         *cursor = separator;
     }
-    return ::_mkdir(buffer) == 0 || errno == EEXIST;
+    return made_or_present(buffer);
 }
 
 void platform_default_crash_directory(char* buffer, u32 capacity) noexcept {

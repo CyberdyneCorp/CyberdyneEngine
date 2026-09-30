@@ -105,6 +105,16 @@ function(cy_add_test)
     set_tests_properties(${arg_KIND}.${arg_NAME} PROPERTIES
         LABELS "${arg_KIND}"
         TIMEOUT ${CY_TEST_TIMEOUT_${arg_KIND}})
+
+    # WINDOWS HAS NO RPATH. Slang is the one shared library a suite links, and on Linux and macOS
+    # the binary finds it through the RUNPATH CMake writes. A Windows loader searches the
+    # executable's own directory and PATH instead, and Slang's DLLs (slang.dll forwards to
+    # slang-compiler.dll, with DXC placed beside them) stay in Slang's build directory — so every
+    # suite that linked the front end exited 0xC0000135, "a DLL was not found", before main().
+    if(WIN32 AND TARGET slang)
+        set_property(TEST ${arg_KIND}.${arg_NAME} APPEND PROPERTY
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:slang>")
+    endif()
 endfunction()
 
 add_subdirectory(harness)
