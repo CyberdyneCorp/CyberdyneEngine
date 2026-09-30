@@ -31,11 +31,10 @@
 //
 // --- ONE ARCHITECTURE, ONE OPERATING SYSTEM -----------------------------------------------------
 //
-// The socket half is POSIX and is compiled on Linux and macOS, exactly as `net::UdpTransport`'s is.
-// On every other platform `connect()` and `open()` return `Unsupported` rather than failing to
-// link, `remote_serving_available()` answers false, and **Windows is reported unverified** — this
-// machine has one operating system and nothing here has run on another. The Windows implementation
-// is WinSock with the same protocol; it is deliberately not written blind.
+// The socket half is compiled on Linux and macOS over POSIX sockets and on Windows over WinSock,
+// behind one set of calls in remote.cpp, exactly as `net::UdpTransport`'s is. On any other platform
+// `connect()` and `open()` return `Unsupported` rather than failing to link, and
+// `remote_serving_available()` answers false.
 //
 // --- THE PROTOCOL, IN ONE PARAGRAPH -------------------------------------------------------------
 //
@@ -60,8 +59,8 @@
 
 namespace cy::assets {
 
-/// True when this build has a socket implementation. False on Windows, where `open()` and
-/// `connect()` refuse rather than pretending.
+/// True when this build has a socket implementation: POSIX sockets or WinSock. False elsewhere,
+/// where `open()` and `connect()` refuse rather than pretending.
 [[nodiscard]] bool remote_serving_available() noexcept;
 
 /// "CYRF" — Cyberdyne remote files. First four bytes of every message in both directions.
