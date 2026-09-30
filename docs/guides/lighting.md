@@ -57,8 +57,9 @@ from. The description is never edited by hand: the next bake replaces it.
   every file it reads; a matching key reports `cached=1` and writes nothing.
 - **Cancel.** The panel's Cancel, the progress surface's, or `lighting.cancel-lightmap-bake` stops
   the tool at its next check. The trace checks at an interval bounded by samples as well as texels,
-  so even a 2048-sample bake stops within a fraction of a second, and a cancelled bake leaves the
-  previous outputs in place.
+  so even a 2048-sample bake stops within a fraction of a second; the volume capture reads the
+  cancel before every probe, so the largest volume does too. A cancelled bake leaves the previous
+  outputs in place.
 - **What it made.** The panel reads the probes back from `x.cyprobes` and draws them seen from
   above, each in its light; `viewport.view-mode.lightmap-density` and `viewport.view-mode.gi-probes`
   request the engine's debug views.
@@ -67,7 +68,7 @@ from. The description is never edited by hand: the next bake replaces it.
 
 | Suite | Holds |
 |---|---|
-| `integration.render_lightmap_bake` | the progress interval, a 2048-sample bake stopping within a second of its cancel, volume capture (a movable light leaves the probes dark), the probe payload round trip |
+| `integration.render_lightmap_bake` | the progress interval, a 2048-sample bake stopping within a second of its cancel, volume capture (a movable light leaves the probes dark, a cancel inside a volume lands within a second), the probe payload round trip |
 | `integration.build_content` | `tools/build/tests/data/editor_level/` — a level exactly as the editor writes it — reads back as the world it came from; mobility and resolution change the bake; the written probes equal a direct capture; the key; old descriptions |
 | `integration.build_lightmap_cli` | the command line: progress, cancel, `cached=1` for an unchanged level, the editor's level with its probes, cooked materials |
 | `cargo test -p cy-editor-services --test the_bake_is_of_the_authored_world` | the editor writes that fixture byte for byte; authoring changes the description; the real tool bakes what was authored |

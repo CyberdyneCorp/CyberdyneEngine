@@ -69,6 +69,8 @@
 #include <cy/rendering/gi/lighting.h>
 #include <cy/rendering/gi/scene.h>
 
+#include <atomic>
+
 namespace cy::rendering::gi {
 
 /// When probes are re-captured. See the header comment.
@@ -112,6 +114,10 @@ struct VolumeCaptureContext {
     SkyTerm sky{};
     /// The update count, recorded on each probe so the stalest can be found.
     u64 frame = 0;
+    /// Read by `capture_all` before every probe: once true it stops, commits nothing and sets
+    /// `VolumeUpdateReport::stopped`. A large volume is thousands of probes of up to a thousand
+    /// rays each, so a bake's cancel cannot wait for the whole volume.
+    const std::atomic<bool>* stop = nullptr;
 };
 
 /// One probe.
@@ -134,6 +140,8 @@ struct VolumeUpdateReport {
     u32 queue_depth = 0;
     u32 invalid_probes = 0;
     u64 rays = 0;
+    /// `capture_all` saw `VolumeCaptureContext::stop` and committed nothing.
+    bool stopped = false;
 };
 
 /// What a query found.
@@ -173,7 +181,8 @@ public:
     [[nodiscard]] Status configure(const IrradianceVolumeSettings& settings) noexcept;
     [[nodiscard]] const IrradianceVolumeSettings& settings() const noexcept { return settings_; }
 
-    /// The bake: every probe, staged and committed together. Clears the queue.
+    /// The bake: every probe, staged and committed together. Clears the queue. Stops before any
+    /// probe once `context.stop` is raised, leaving the volume as it was.
     VolumeUpdateReport capture_all(const VolumeCaptureContext& context) noexcept;
 
     /// Queue the probes whose cells touch `region`. Returns how many were newly queued.

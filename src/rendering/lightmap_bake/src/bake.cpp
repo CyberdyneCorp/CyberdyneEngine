@@ -895,14 +895,13 @@ Status capture_irradiance_volumes(const LightmapScene& scene, const LightmapBake
     context.tracer = &world.tracer;
     context.radiance = &radiance;
     context.sky = scene.sky;
+    // The cancel is read before every probe (`context.stop`), so a cancel raised as one volume is
+    // reported stops the next before its first probe, and one raised inside a volume stops it
+    // there rather than after all of its probes.
+    context.stop = progress != nullptr ? progress->cancel : nullptr;
     for (u32 index = 0; index < total; ++index) {
-        // Read before each volume, so a cancel raised as the previous one was reported stops the
-        // capture here rather than after one more volume.
-        if (progress != nullptr && progress->cancelled()) {
+        if (volumes[index] != nullptr && volumes[index]->capture_all(context).stopped) {
             return cancelled(report);
-        }
-        if (volumes[index] != nullptr) {
-            (void)volumes[index]->capture_all(context);
         }
         rays = world.tracer.rays();
         if (!checkpoint(progress, LightmapBakeStage::Probes, index + 1U, total)) {

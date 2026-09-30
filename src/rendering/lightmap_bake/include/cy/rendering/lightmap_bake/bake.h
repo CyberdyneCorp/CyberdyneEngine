@@ -374,7 +374,8 @@ struct LightmapRebakeRequest {
 /// `Movable` ones, as the lightmap), bounces and sky, in the frame's convention. A null entry is
 /// skipped. `rays` receives the tracer's ray count. Reports `LightmapBakeStage::Probes`, one unit
 /// per volume, and stops on `progress`'s cancel the way the bake does, setting
-/// `report.cancelled`; a stopped capture leaves the volumes it had not reached uncaptured.
+/// `report.cancelled`: the cancel is read before every probe, and a stopped capture leaves the
+/// volume it was in, and those it had not reached, uncaptured.
 [[nodiscard]] Status capture_irradiance_volumes(
     const LightmapScene& scene, const LightmapBakeSettings& settings,
     Span<gi::IrradianceVolume* const> volumes, u64& rays, LightmapBakeReport& report,

@@ -28,6 +28,7 @@
 #include <cstring>
 #include <numbers>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -1682,6 +1683,46 @@ CY_TEST_CASE("a capture cancelled between volumes leaves the rest uncaptured") {
     CY_CHECK(report.cancelled);
     CY_CHECK(first.probe(0).captured);
     CY_CHECK_FALSE(second.probe(0).captured);
+}
+
+// Regression: the capture read the cancel only between volumes, so a cancel raised inside one
+// volume waited for all of its probes: the editor's largest volume, 4096 probes of 1024 rays,
+// runs for seconds past the request.
+CY_TEST_CASE("a volume capture sees a cancel within a second") {
+    const ShadowRoom level(gi::LightMobility::Stationary);
+    gi::IrradianceVolumeSettings grid;
+    grid.origin = Vec3{-0.75F, -0.45F, -0.75F};
+    grid.spacing_metres = 0.1F;
+    grid.count_x = 16;
+    grid.count_y = 16;
+    grid.count_z = 16;
+    grid.rays_per_probe = 1024;
+    gi::IrradianceVolume volume;
+    CY_REQUIRE(volume.configure(grid).has_value());
+    gi::IrradianceVolume* volumes[] = {&volume};
+    std::atomic<bool> cancel{false};
+    LightmapBakeProgress progress;
+    progress.cancel = &cancel;
+    std::chrono::steady_clock::time_point raised;
+    std::thread raiser([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        raised = std::chrono::steady_clock::now();
+        cancel.store(true);
+    });
+    LightmapBakeReport report;
+    u64 rays = 0;
+    const cy::Status captured = capture_irradiance_volumes(
+        level.room.scene(), small_settings(LightmapMode::Irradiance),
+        cy::Span<gi::IrradianceVolume* const>(volumes, 1), rays, report, &progress);
+    const auto stopped = std::chrono::steady_clock::now();
+    raiser.join();
+    CY_REQUIRE_FALSE(captured.has_value());
+    CY_REQUIRE(report.cancelled);
+    const f64 latency = std::chrono::duration<f64>(stopped - raised).count();
+    CY_TEST_MESSAGE("the capture stopped " << latency << " s after the cancel");
+    CY_CHECK_LT(latency, 1.0);
+    // Nothing of the half-captured volume is committed.
+    CY_CHECK_FALSE(volume.probe(0).captured);
 }
 
 CY_TEST_CASE("captured probes round-trip through their payload, and a short one is refused") {

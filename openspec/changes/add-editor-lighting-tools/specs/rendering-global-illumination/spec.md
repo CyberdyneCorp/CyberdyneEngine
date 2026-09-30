@@ -29,3 +29,9 @@ after it is cancelled.
 - **WHEN** a bake at 2048 samples per texel is cancelled while it traces real surface
 - **THEN** it SHALL trace no more than one interval of texels after the cancel and stop within a
   second
+
+#### Scenario: An irradiance volume capture stops within a second
+- **WHEN** the bake's capture of a 4096-probe, 1024-ray irradiance volume is cancelled part way
+  through the volume
+- **THEN** it SHALL stop within a second, reading the cancel before every probe, and commit none of
+  that volume's probes

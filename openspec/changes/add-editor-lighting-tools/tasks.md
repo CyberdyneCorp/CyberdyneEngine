@@ -3,7 +3,7 @@
 ## 1. Engine
 
 - [x] 1.1 `lightmap_progress_interval(samples)` on `LightmapBakeProgress`: the trace checks at most 1024 texels and 1024 × 16 samples apart; a 2048-sample bake stops within a second of its cancel.
-- [x] 1.2 `capture_irradiance_volumes` over the bake's tracer, reporting the `probes` stage and stopping on the cancel before each volume (a regression case: it read the cancel only after the next volume was captured); a movable light leaves the probes dark.
+- [x] 1.2 `capture_irradiance_volumes` over the bake's tracer, reporting the `probes` stage and stopping on the cancel before every probe through `gi::VolumeCaptureContext::stop` (two regression cases: it read the cancel only after the next volume was captured, and then only between volumes, so a cancel inside the editor's largest volume took 6.1 s to land); a movable light leaves the probes dark.
 - [x] 1.3 `lightmap_bake/probes.h`: the probe payload, encoded and decoded, refusing short and foreign payloads.
 - [x] 1.4 `cylightmap 1` additions: `id`, `occluder`, `cooked` materials with `tint`, `.cyprim` instances, `volume` lines; old descriptions read as before; bad ids and grids refused by name.
 - [x] 1.5 The `lightmap` producer (version 4) writes the probes to an optional second output, and refuses volumes on a node without one.

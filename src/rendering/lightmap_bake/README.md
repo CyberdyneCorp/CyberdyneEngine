@@ -171,6 +171,11 @@ default 64 samples and 8 at 2048. At a fixed 1024 texels a 2048-sample bake of t
 a second" in `integration.render_lightmap_bake` holds the bound over the texels that are really
 traced after the cancel.
 
+`capture_irradiance_volumes` hands the same flag to every volume as `gi::VolumeCaptureContext::stop`,
+which `IrradianceVolume::capture_all` reads before every probe and, once raised, commits nothing.
+Read only between volumes, a cancel inside the editor's largest volume (4096 probes of 1024 rays)
+waited 6.1 seconds; "a volume capture sees a cancel within a second" holds that bound.
+
 ## Irradiance volumes
 
 `capture_irradiance_volumes` captures `gi::IrradianceVolume`s over the level with the bake's own

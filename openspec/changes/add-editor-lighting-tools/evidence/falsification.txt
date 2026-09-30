@@ -153,22 +153,19 @@ FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1569
 RESTORED md5 ok
 
 == c02_volumes_not_captured: src/rendering/lightmap_bake/src/bake.cpp
-<   (void)volumes[index]->capture_all(context);
->   (void)volumes[index];
+<   if (volumes[index] != nullptr && volumes[index]->capture_all(context).stopped) {
+>   if (volumes[index] != nullptr && false) {
 FAILED  the description's volume is captured by the bake's tracer, probe for probe
 FAILED  tools/build/tests/test_build_lightmap.cpp:551
 [doctest] test cases:  1 |  0 passed | 1 failed | 20 skipped
 RESTORED md5 ok
 
 == c03_capture_ignores_the_cancel: src/rendering/lightmap_bake/src/bake.cpp
-<   if (progress != nullptr && progress->cancelled()) {
-<   return cancelled(report);
-<   }
-<   if (volumes[index] != nullptr) {
->   if (volumes[index] != nullptr) {
+<   context.stop = progress != nullptr ? progress->cancel : nullptr;
+>   context.stop = nullptr;
 FAILED  a capture cancelled between volumes leaves the rest uncaptured
-FAILED  src/rendering/lightmap_bake/tests/test_bake.cpp:1684
-[doctest] test cases: 1 | 0 passed | 1 failed | 27 skipped
+FAILED  a volume capture sees a cancel within a second (stopped 6.37 s after the cancel)
+[doctest] test cases:  2 | 0 passed | 2 failed | 27 skipped
 RESTORED md5 ok
 
 == c04_probe_payload_drops_validity: src/rendering/lightmap_bake/src/probes.cpp
