@@ -39,6 +39,9 @@ add_subdirectory(04-character)
 # killed. samples/05-editor-session/session.py is the artefact and `just run-editor-session` is the
 # recipe; this directory contributes the two CTest entries that run it, which is also where task
 # 6.3's headless editor tests are declared. Its CMakeLists.txt says why it is shaped that way.
+# The editor the next four directories drive, built once as a CTest fixture rather than inside each
+# timed session. editor_fixture.cmake says why the difference cost three CI jobs.
+include("${CMAKE_CURRENT_SOURCE_DIR}/editor_fixture.cmake")
 add_subdirectory(05-editor-session)
 # M5.5's artefacts are TWO, and the split is the point rather than a convenience: a person operating
 # a window and an agent authoring through the same editor cannot be demonstrated by one program, and
@@ -178,3 +181,21 @@ add_subdirectory(13-rts-api)
 # by the engine's `SelectionOutlines` stage. Like every capture here it needs a graphics device and
 # has no CTest entry; `render.selection_outlines` is the suite.
 add_subdirectory(13-rts-selection)
+
+# THE FIXTURE'S SHAPE, CHECKED AGAINST THE CONFIGURED TREE. Every entry that drives the editor must
+# require `cy_editor` and pass no `--build`, or the editor's cold build is back inside a session's
+# smoke budget — which is how `agent` and `authorable` timed out. Declared here, after every sample
+# directory, because it reads the whole tree's test list; and only where the fixture was declared,
+# since without cargo and just no editor entry exists to check. editor_fixture.cmake has the story.
+get_property(CY_EDITOR_FIXTURE_DECLARED GLOBAL PROPERTY CY_EDITOR_FIXTURE_PROFILE)
+find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+if(CY_BUILD_TESTS AND CY_EDITOR_FIXTURE_DECLARED AND Python3_Interpreter_FOUND)
+    get_directory_property(CY_EDITOR_FIXTURE_TIMEOUT DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_integration)
+    add_test(NAME integration.editor_fixture
+             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/ci/editor_fixture.py"
+                     --build-dir "${CMAKE_BINARY_DIR}" --ctest "${CMAKE_CTEST_COMMAND}"
+             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(integration.editor_fixture PROPERTIES
+                         LABELS "integration" TIMEOUT "${CY_EDITOR_FIXTURE_TIMEOUT}")
+endif()

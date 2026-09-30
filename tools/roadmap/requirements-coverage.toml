@@ -3430,3 +3430,14 @@ requirement = "Audio components and playback"
 evidence = "test:integration.editor_backend_audio"
 case = "editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it"
 note = "An authored cy::audio::AudioSource plays spatialised at its transform when Play starts and stops when it ends, and ABI 1.3's audio_find_cue and audio_play reach a project cue by name with no handle kept by gameplay. Velocity-driven Doppler and effect volumes are not exercised here."
+
+# --- testing-and-quality --------------------------------------------------------------------------
+#
+# Mapped when the editor's build moved out of the sessions that drive it and into the `cy_editor`
+# CTest fixture. The row's other requirements have not been read against the tree yet.
+
+[[coverage]]
+row = "testing-and-quality"
+requirement = "Test taxonomy"
+evidence = "gate:build-and-test"
+note = "The kinds and their budgets are data in tests/CMakeLists.txt (cy_add_test compiles the per-case budget in and gives CTest the kind's timeout), and `just test-all`, which this gate runs, selects every suite by its label. The requirement's clause that building what a test drives is a fixture rather than part of its budget is held by integration.editor_fixture (tools/ci/editor_fixture.py), which that run includes: every editor-driving entry must require the cy_editor fixture and pass no --build."

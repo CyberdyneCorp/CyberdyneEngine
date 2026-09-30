@@ -103,8 +103,11 @@ endif()
 
 # THE SMOKE ENTRY RUNS THE WHOLE ARTEFACT, both halves, and reports the acts it cannot reach on this
 # machine rather than passing. `--binaries` hands the driver what this configuration just built, so
-# nothing here builds anything and the test reports on the tree under test. `--no-window` leaves out
-# the photograph, which is the one act that needs a display; `just run-authoring` takes it.
+# the driver builds nothing and the test reports on the tree under test. The editor is not a CMake
+# target: it is the `cy_editor` fixture's (samples/editor_fixture.cmake), built for this profile
+# before the entry starts. Until it was, nothing on a CI leg built one and this entry failed there
+# with "cyberdyne-editor was not built". `--no-window` leaves out the photograph, which is the one
+# act that needs a display; `just run-authoring` takes it.
 add_test(NAME smoke.authoring
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/authoring.py"
                  --profile "${CY_AUTHORING_PROFILE}"
@@ -120,3 +123,4 @@ add_test(NAME smoke.authoring
 # that ran and fell short exits 1 and fails.
 set_tests_properties(smoke.authoring PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_AUTHORING_TIMEOUT}" SKIP_RETURN_CODE 3)
+cy_sample_requires_editor("${CY_AUTHORING_PROFILE}" smoke.authoring)

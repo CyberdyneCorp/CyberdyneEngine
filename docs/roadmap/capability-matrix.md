@@ -1656,6 +1656,10 @@ Rust toolchain (the `editor` job does, and they are different jobs), restores no
 target cache, and the repository pins Rust 1.95.0 in `rust-toolchain.toml` — so a hosted runner pays
 a rustup download and 386 crate downloads on fewer cores inside that budget. Unverified in CI, and
 the honest reading is that it is marginal rather than safe.
+*Resolved after M11.d.* It was not marginal: `agent` timed out on every run and `authorable` on
+some, both still compiling crates at 300 s. The build moved out of the sessions into
+`smoke.editor_build`, the setup of the `cy_editor` CTest fixture, with a timeout of its own; the
+sessions' budgets are unchanged (`samples/editor_fixture.cmake`, held by `integration.editor_fixture`).
 
 **7 · A public write path one file away from `content.rs` is invisible to the test that exists to
 forbid it.** `document_content_has_no_public_mutator_that_does_not_take_a_write_token` scans exactly
