@@ -593,7 +593,8 @@ def editor_binary(profile: str, build: bool) -> Path:
         ["just", "_editor-target-dir"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.strip()
     directory = "debug" if cargo_profile == "dev" else cargo_profile
-    binary = Path(target) / directory / "cyberdyne-editor"
+    name = "cyberdyne-editor.exe" if sys.platform == "win32" else "cyberdyne-editor"
+    binary = Path(target) / directory / name
     if not binary.is_file():
         raise Failed(
             f"no editor at {binary}. Build it with: just build-editor --profile {profile}"

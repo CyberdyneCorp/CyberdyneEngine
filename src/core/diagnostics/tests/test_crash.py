@@ -69,7 +69,10 @@ def check(report: str, mode: str) -> int:
         if needle not in report:
             print(f"missing {needle!r}: {why}", file=sys.stderr)
             failures += 1
-    if mode == "segv" and "SIGSEGV" not in report:
+    # The fault by the platform's own name for it: a signal on POSIX, a structured exception on
+    # Windows, where the same store is an access violation and there is no SIGSEGV to name.
+    fault_name = "EXCEPTION_ACCESS_VIOLATION" if sys.platform == "win32" else "SIGSEGV"
+    if mode == "segv" and fault_name not in report:
         print("the signal is not named in the report", file=sys.stderr)
         failures += 1
     if mode == "assert":

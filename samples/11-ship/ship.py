@@ -497,7 +497,9 @@ def act_content(tools: Tools, report: Report, platform: str, bytes_before: int) 
     # 3 is "it drew and tripped validation", which act 2 has already recorded as a gap. This act is
     # about whether the CONTENT reached the installation, and it must not re-report the same defect
     # as a second, different failure.
-    expect(relaunched.returncode in (0, 3), f"the relaunch failed:\n{relaunched.stdout}")
+    expect(relaunched.returncode in (0, 3),
+           f"the relaunch failed with status {relaunched.returncode}:\n{relaunched.stdout}"
+           f"{relaunched.stderr}")
     card = CARD.search(relaunched.stdout)
     expect(card is not None, f"the relaunch printed no card line:\n{relaunched.stdout}")
     expect(int(card.group(5)) > bytes_before,
