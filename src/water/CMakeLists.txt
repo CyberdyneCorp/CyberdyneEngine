@@ -59,6 +59,18 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-jobs cy::core-math cy::core-memory
                         cy::environment cy::world)
 
+# THE OCEAN PATCH IS EXACT IN BITS, so multiply and add stay separate on every target, as they do in
+# cy_pcg. `evaluate_rows` inlines the wave trains that `evaluate_displacement()` evaluates out of
+# line, and every ring vertex is promised bit-identical to the latter; with contraction on, GCC
+# fuses a different set of multiply-adds in each place on arm64, and 95 vertices of a 0.3 m patch
+# came out one rounding apart on the linux-arm64 leg. The tests' expected values are compiled the
+# same way (src/water/tests/CMakeLists.txt).
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(cy_water PRIVATE -ffp-contract=off)
+elseif(MSVC)
+    target_compile_options(cy_water PRIVATE /fp:precise)
+endif()
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
