@@ -1,0 +1,521 @@
+# SPDX-License-Identifier: MIT
+# Every committed embedded-shader header and how to reproduce it. Read by
+# tools/shaders/embedded_headers.py; `just quality-shader-headers` fails when a header here is not
+# what its sources produce, or when a header matching `patterns` is neither in a group nor excluded.
+#
+# A group is one set of headers produced together. Its `compile` steps run slangc from `cwd`
+# (repository-relative, default the root) with the named entry, stage and target — `spirv` is
+# SPIR-V 1.5, `metal` is MSL — writing `out` into a scratch directory the `run` commands see as
+# `{scratch}`. The `run` commands then run from the root; `{python}`, `{slangc}` and
+# `{clang_format}` name the tools. Every header is formatted with clang-format afterwards, which is
+# what the format gate would do to it anyway.
+#
+# The paths slangc is given are part of the output: Slang writes them into the MSL's #line
+# directives, so a group that compiled from its shader directory has to keep doing so.
+
+patterns = ["src/**/*_spirv.h", "src/**/*_msl.h", "src/**/*_dxil.h", "src/**/*_embedded.h",
+            "samples/**/*_spirv.h", "samples/**/*_msl.h", "samples/**/*_dxil.h",
+            "tests/**/*_spirv.h", "tests/**/*_msl.h", "tests/**/*_dxil.h",
+            "src/backends/shader/tests/fixtures/spirv_probe.h"]
+
+# --- Headers a regenerate.py beside the sources produces on its own --------------------------------
+
+[[group]]
+name = "fog"
+headers = ["src/rendering/fog/src/fog_spirv.h", "src/rendering/fog/src/fog_msl.h"]
+run = [["{python}", "src/rendering/fog/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "frame"
+headers = ["src/rendering/pipeline/shaders/frame_spirv.h", "src/rendering/pipeline/shaders/frame_msl.h"]
+run = [["{python}", "src/rendering/pipeline/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "gi_gpu"
+headers = ["src/rendering/gi_gpu/src/gi_gpu_spirv.h", "src/rendering/gi_gpu/src/gi_gpu_msl.h"]
+run = [["{python}", "src/rendering/gi_gpu/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "selection"
+headers = ["src/rendering/selection/src/selection_spirv.h", "src/rendering/selection/src/selection_msl.h"]
+run = [["{python}", "src/rendering/selection/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "motion_blur"
+headers = ["src/rendering/motion_blur/src/motion_blur_spirv.h", "src/rendering/motion_blur/src/motion_blur_msl.h"]
+run = [["{python}", "src/rendering/motion_blur/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "grading"
+headers = ["src/rendering/grading/src/grading_spirv.h", "src/rendering/grading/src/grading_msl.h"]
+run = [["{python}", "src/rendering/grading/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "contact_shadows"
+headers = ["src/rendering/contact_shadows/src/contact_spirv.h", "src/rendering/contact_shadows/src/contact_msl.h"]
+run = [["{python}", "src/rendering/contact_shadows/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "depth_of_field"
+headers = ["src/rendering/depth_of_field/src/dof_spirv.h", "src/rendering/depth_of_field/src/dof_msl.h"]
+run = [["{python}", "src/rendering/depth_of_field/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "occlusion"
+headers = ["src/rendering/occlusion/src/occlusion_spirv.h", "src/rendering/occlusion/src/occlusion_msl.h"]
+run = [["{python}", "src/rendering/occlusion/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
+name = "bloom"
+headers = ["src/rendering/pipeline/shaders/bloom_spirv.h",
+           "src/rendering/pipeline/shaders/bloom_msl.h"]
+run = [["{python}", "src/rendering/pipeline/shaders/embed_bloom.py", "{slangc}"]]
+
+# --- Headers assembled from slangc invocations and an embed script ---------------------------------
+
+[[group]]
+name = "particles"
+headers = ["src/rendering/particles/shaders/particle_spirv.h",
+           "src/rendering/particles/shaders/particle_msl.h"]
+source = "src/rendering/shaders/cy/particle.slang"
+include = ["src/rendering/shaders"]
+metal_args = ["-D", "CY_FRAME_METAL=1", "-D", "CY_MATERIAL_METAL_ARGUMENT_BUFFER=1"]
+compile = [
+    ["spirv", "vertex", "cyParticleVertex", "issue15-particle-vertex.spv"],
+    ["spirv", "fragment", "cyParticleFragment", "issue15-particle-fragment.spv"],
+    ["metal", "vertex", "cyParticleVertex", "issue15-particle-vertex.metal"],
+    ["metal", "fragment", "cyParticleFragment", "issue15-particle-fragment.metal"],
+]
+run = [
+    ["{python}", "src/rendering/particles/shaders/embed_spirv.py",
+     "src/rendering/particles/shaders/particle_spirv.h",
+     "kParticleVertexSpirv={scratch}/issue15-particle-vertex.spv",
+     "kParticleFragmentSpirv={scratch}/issue15-particle-fragment.spv"],
+    ["{python}", "src/rendering/particles/shaders/embed_msl.py",
+     "src/rendering/particles/shaders/particle_msl.h",
+     "kParticleVertexMsl={scratch}/issue15-particle-vertex.metal",
+     "kParticleFragmentMsl={scratch}/issue15-particle-fragment.metal"],
+]
+
+[[group]]
+name = "strips"
+headers = ["src/rendering/particles/shaders/strip_spirv.h",
+           "src/rendering/particles/shaders/strip_msl.h"]
+source = "src/rendering/shaders/cy/strip.slang"
+include = ["src/rendering/shaders"]
+metal_args = ["-D", "CY_FRAME_METAL=1", "-D", "CY_MATERIAL_METAL_ARGUMENT_BUFFER=1"]
+compile = [
+    ["spirv", "vertex", "cyStripVertex", "cyStripVertex.spv"],
+    ["spirv", "fragment", "cyStripFragment", "cyStripFragment.spv"],
+    ["metal", "vertex", "cyStripVertex", "cyStripVertex.metal"],
+    ["metal", "fragment", "cyStripFragment", "cyStripFragment.metal"],
+]
+run = [
+    ["{python}", "src/rendering/particles/shaders/embed_spirv.py", "--source", "cy/strip.slang",
+     "src/rendering/particles/shaders/strip_spirv.h",
+     "kStripVertexSpirv={scratch}/cyStripVertex.spv",
+     "kStripFragmentSpirv={scratch}/cyStripFragment.spv"],
+    ["{python}", "src/rendering/particles/shaders/embed_msl.py",
+     "src/rendering/particles/shaders/strip_msl.h",
+     "kStripVertexMsl={scratch}/cyStripVertex.metal",
+     "kStripFragmentMsl={scratch}/cyStripFragment.metal"],
+]
+
+[[group]]
+name = "skinning"
+headers = ["src/rendering/skinning/src/skin_spirv.h", "src/rendering/skinning/src/skin_msl.h"]
+source = "src/rendering/skinning/shaders/skin.slang"
+compile = [
+    ["spirv", "compute", "skin_vertices", "skin.spv"],
+    ["metal", "compute", "skin_vertices", "skin.metal"],
+]
+run = [
+    ["{python}", "src/rendering/skinning/shaders/embed_spirv.py",
+     "src/rendering/skinning/src/skin_spirv.h", "kSkinVerticesSpirv={scratch}/skin.spv"],
+    ["{python}", "src/rendering/skinning/shaders/embed_msl.py",
+     "src/rendering/skinning/src/skin_msl.h", "{scratch}/skin.metal"],
+]
+
+[[group]]
+name = "gpu_culling"
+headers = ["src/rendering/gpu_culling/src/gpu_cull_spirv.h"]
+source = "src/rendering/gpu_culling/shaders/gpu_cull.slang"
+include = ["src/rendering/hzb/shaders"]
+compile = [
+    ["spirv", "compute", "cull_instances", "gpu_cull_instances.spv"],
+    ["spirv", "compute", "compact_draws", "gpu_cull_compact.spv"],
+]
+run = [
+    ["{python}", "src/rendering/gpu_culling/shaders/embed_spirv.py",
+     "src/rendering/gpu_culling/src/gpu_cull_spirv.h",
+     "kGpuCullInstancesSpirv={scratch}/gpu_cull_instances.spv",
+     "kGpuCullCompactSpirv={scratch}/gpu_cull_compact.spv"],
+]
+
+[[group]]
+name = "hzb"
+headers = ["src/rendering/hzb/src/hzb_spirv.h"]
+source = "src/rendering/hzb/shaders/hzb_reduce.slang"
+compile = [["spirv", "compute", "hzb_reduce", "hzb_reduce.spv"]]
+run = [
+    ["{python}", "src/rendering/hzb/shaders/embed_spirv.py", "src/rendering/hzb/src/hzb_spirv.h",
+     "kHzbReduceSpirv={scratch}/hzb_reduce.spv"],
+]
+
+[[group]]
+name = "virtual_texturing"
+headers = ["src/rendering/virtual_texturing/src/vt_frame_spirv.h"]
+source = "src/rendering/virtual_texturing/shaders/vt_frame.slang"
+compile = [
+    ["spirv", "compute", "record_feedback", "vt_record_feedback.spv"],
+    ["spirv", "compute", "resolve_feedback", "vt_resolve_feedback.spv"],
+    ["spirv", "compute", "sample_pages", "vt_sample_pages.spv"],
+]
+run = [
+    ["{python}", "src/rendering/virtual_texturing/shaders/embed_spirv.py",
+     "src/rendering/virtual_texturing/src/vt_frame_spirv.h",
+     "kVtRecordSpirv={scratch}/vt_record_feedback.spv",
+     "kVtResolveSpirv={scratch}/vt_resolve_feedback.spv",
+     "kVtSampleSpirv={scratch}/vt_sample_pages.spv"],
+]
+
+[[group]]
+name = "virtual_geometry_traversal"
+headers = ["src/rendering/virtual_geometry/shaders/vg_spirv.h"]
+source = "src/rendering/virtual_geometry/shaders/vg_traversal.slang"
+include = ["src/rendering/hzb/shaders"]
+compile = [
+    ["spirv", "compute", "vgReset", "vg_reset.spv"],
+    ["spirv", "compute", "vgInstanceCull", "vg_instance_cull.spv"],
+    ["spirv", "compute", "vgPrepare", "vg_prepare.spv"],
+    ["spirv", "compute", "vgTraverse", "vg_traverse.spv"],
+]
+run = [
+    ["{python}", "src/rendering/virtual_geometry/shaders/embed_spirv.py",
+     "src/rendering/virtual_geometry/shaders/vg_spirv.h",
+     "kVgResetSpirv={scratch}/vg_reset.spv", "kVgInstanceCullSpirv={scratch}/vg_instance_cull.spv",
+     "kVgPrepareSpirv={scratch}/vg_prepare.spv", "kVgTraverseSpirv={scratch}/vg_traverse.spv"],
+]
+
+[[group]]
+name = "virtual_geometry_visbuffer"
+headers = ["src/rendering/virtual_geometry/shaders/vg_visbuffer_spirv.h"]
+source = "src/rendering/virtual_geometry/shaders/vg_visbuffer.slang"
+compile = [
+    ["spirv", "compute", "vgVisClear", "vg_vis_clear.spv"],
+    ["spirv", "compute", "vgVisPrepare", "vg_vis_prepare.spv"],
+    ["spirv", "compute", "vgVisRaster", "vg_vis_raster.spv"],
+    ["spirv", "compute", "vgVisUnpack", "vg_vis_unpack.spv"],
+    ["spirv", "compute", "vgVisClassify", "vg_vis_classify.spv"],
+    ["spirv", "compute", "vgVisScan", "vg_vis_scan.spv"],
+    ["spirv", "compute", "vgVisScatter", "vg_vis_scatter.spv"],
+    ["spirv", "compute", "vgVisResolve", "vg_vis_resolve.spv"],
+    ["spirv", "compute", "vgVisHwPrepare", "vg_vis_hw_prepare.spv"],
+    ["spirv", "compute", "vgVisHwUnpack", "vg_vis_hw_unpack.spv"],
+    ["spirv", "vertex", "vgVisHwVertex", "vg_vis_hw_vertex.spv"],
+    ["spirv", "fragment", "vgVisHwFragment", "vg_vis_hw_fragment.spv"],
+]
+run = [
+    ["{python}", "src/rendering/virtual_geometry/shaders/embed_spirv.py",
+     "src/rendering/virtual_geometry/shaders/vg_visbuffer_spirv.h",
+     "kVgVisClearSpirv={scratch}/vg_vis_clear.spv",
+     "kVgVisPrepareSpirv={scratch}/vg_vis_prepare.spv",
+     "kVgVisRasterSpirv={scratch}/vg_vis_raster.spv",
+     "kVgVisUnpackSpirv={scratch}/vg_vis_unpack.spv",
+     "kVgVisClassifySpirv={scratch}/vg_vis_classify.spv",
+     "kVgVisScanSpirv={scratch}/vg_vis_scan.spv",
+     "kVgVisScatterSpirv={scratch}/vg_vis_scatter.spv",
+     "kVgVisResolveSpirv={scratch}/vg_vis_resolve.spv",
+     "kVgVisHwPrepareSpirv={scratch}/vg_vis_hw_prepare.spv",
+     "kVgVisHwUnpackSpirv={scratch}/vg_vis_hw_unpack.spv",
+     "kVgVisHwVertexSpirv={scratch}/vg_vis_hw_vertex.spv",
+     "kVgVisHwFragmentSpirv={scratch}/vg_vis_hw_fragment.spv"],
+]
+
+[[group]]
+name = "vfx_support"
+headers = ["src/vfx/gpu/src/vfx_support_spirv.h", "src/vfx/gpu/src/vfx_support_msl.h"]
+source = "src/vfx/gpu/shaders/vfx_support.slang"
+compile = [
+    ["spirv", "compute", "vfx_reset", "vfx_reset.spv"],
+    ["spirv", "compute", "vfx_compact", "vfx_compact.spv"],
+    ["spirv", "compute", "vfx_sort", "vfx_sort.spv"],
+    ["metal", "compute", "vfx_reset", "vfx_reset.metal"],
+    ["metal", "compute", "vfx_compact", "vfx_compact.metal"],
+    ["metal", "compute", "vfx_sort", "vfx_sort.metal"],
+]
+run = [
+    ["{python}", "src/vfx/gpu/shaders/embed_spirv.py", "src/vfx/gpu/src/vfx_support_spirv.h",
+     "kVfxResetSpirv={scratch}/vfx_reset.spv", "kVfxCompactSpirv={scratch}/vfx_compact.spv",
+     "kVfxSortSpirv={scratch}/vfx_sort.spv"],
+    ["{python}", "src/vfx/gpu/shaders/embed_msl.py", "src/vfx/gpu/src/vfx_support_msl.h",
+     "kVfxResetMsl={scratch}/vfx_reset.metal", "kVfxCompactMsl={scratch}/vfx_compact.metal",
+     "kVfxSortMsl={scratch}/vfx_sort.metal"],
+]
+
+[[group]]
+name = "pcg"
+headers = ["src/pcg/shaders/gpu_conformance_embedded.h"]
+source = "src/pcg/shaders/gpu_conformance.slang"
+compile = [
+    ["spirv", "compute", "pcgCandidates", "pcg_gpu.spv"],
+    ["metal", "compute", "pcgCandidates", "pcg_gpu.metal"],
+]
+run = [
+    ["{python}", "src/pcg/shaders/embed.py", "src/pcg/shaders/gpu_conformance_embedded.h",
+     "{scratch}/pcg_gpu.spv", "{scratch}/pcg_gpu.metal"],
+]
+
+[[group]]
+name = "shader_reflection_probe"
+headers = ["src/backends/shader/tests/fixtures/spirv_probe.h"]
+source = "src/backends/shader/tests/fixtures/probe.slang"
+compile = [
+    ["spirv", "vertex", "probeVertex", "probe_vertex.spv"],
+    ["spirv", "fragment", "probeFragment", "probe_fragment.spv"],
+    ["spirv", "compute", "probeCompute", "probe_compute.spv"],
+]
+run = [
+    ["{python}", "src/backends/shader/tests/fixtures/embed_spirv.py",
+     "src/backends/shader/tests/fixtures/spirv_probe.h",
+     "kProbeVertexSpirv={scratch}/probe_vertex.spv",
+     "kProbeFragmentSpirv={scratch}/probe_fragment.spv",
+     "kProbeComputeSpirv={scratch}/probe_compute.spv"],
+]
+
+[[group]]
+name = "render_test_conventions"
+headers = ["tests/render/shaders/conventions_spirv.h"]
+cwd = "tests/render/shaders"
+source = "conventions.slang"
+compile = [
+    ["spirv", "vertex", "conventionVertex", "cv.spv"],
+    ["spirv", "fragment", "conventionFragment", "cf.spv"],
+]
+run = [
+    ["{python}", "tests/render/shaders/embed_spirv.py", "--source", "conventions.slang",
+     "tests/render/shaders/conventions_spirv.h", "kConventionVertexSpirv={scratch}/cv.spv",
+     "kConventionFragmentSpirv={scratch}/cf.spv"],
+]
+
+[[group]]
+name = "render_test_field_probe"
+headers = ["tests/render/shaders/field_probe_spirv.h"]
+cwd = "tests/render/shaders"
+source = "field_probe.slang"
+include = ["../../../src/rendering/shaders"]
+compile = [
+    ["spirv", "compute", "sampleFieldBound", "field_probe_bound.spv"],
+    ["spirv", "compute", "sampleFieldBindless", "field_probe_bindless.spv"],
+]
+spirv_args = ["-fvk-use-entrypoint-name"]
+run = [
+    ["{python}", "tests/render/shaders/embed_spirv.py", "--source", "field_probe.slang",
+     "tests/render/shaders/field_probe_spirv.h",
+     "kFieldProbeBoundSpirv={scratch}/field_probe_bound.spv",
+     "kFieldProbeBindlessSpirv={scratch}/field_probe_bindless.spv"],
+]
+
+[[group]]
+name = "render_test_material_probe"
+headers = ["tests/render/shaders/material_probe_spirv.h"]
+cwd = "tests/render/shaders"
+source = "material_probe.slang"
+include = ["../../../src/rendering/shaders"]
+compile = [
+    ["spirv", "vertex", "materialProbeVertex", "material_probe_vertex.spv"],
+    ["spirv", "fragment", "materialProbeFragment", "material_probe_fragment.spv"],
+]
+run = [
+    ["{python}", "tests/render/shaders/embed_spirv.py", "--source", "material_probe.slang",
+     "tests/render/shaders/material_probe_spirv.h",
+     "kMaterialProbeVertexSpirv={scratch}/material_probe_vertex.spv",
+     "kMaterialProbeFragmentSpirv={scratch}/material_probe_fragment.spv"],
+]
+
+[[group]]
+name = "render_test_sky_frame"
+headers = ["tests/render/shaders/sky_frame_spirv.h"]
+cwd = "tests/render/shaders"
+source = "sky_frame.slang"
+compile = [
+    ["spirv", "vertex", "skyFrameVertex", "sky_frame_vertex.spv"],
+    ["spirv", "fragment", "skyFrameFragment", "sky_frame_fragment.spv"],
+]
+run = [
+    ["{python}", "tests/render/shaders/embed_spirv.py", "--source", "sky_frame.slang",
+     "tests/render/shaders/sky_frame_spirv.h",
+     "kSkyFrameVertexSpirv={scratch}/sky_frame_vertex.spv",
+     "kSkyFrameFragmentSpirv={scratch}/sky_frame_fragment.spv"],
+]
+
+[[group]]
+name = "render_test_view_probe"
+headers = ["tests/render/shaders/view_probe_spirv.h"]
+cwd = "tests/render/shaders"
+source = "view_probe.slang"
+compile = [
+    ["spirv", "vertex", "viewVertex", "view_vertex.spv"],
+    ["spirv", "vertex", "baselineVertex", "baseline_vertex.spv"],
+    ["spirv", "fragment", "viewFragment", "view_fragment.spv"],
+]
+run = [
+    ["{python}", "tests/render/shaders/embed_spirv.py", "--source", "view_probe.slang",
+     "tests/render/shaders/view_probe_spirv.h",
+     "kViewProbeMultiviewVertexSpirv={scratch}/view_vertex.spv",
+     "kViewProbeBaselineVertexSpirv={scratch}/baseline_vertex.spv",
+     "kViewProbeFragmentSpirv={scratch}/view_fragment.spv"],
+]
+
+[[group]]
+name = "sample_animated_character"
+headers = ["samples/09b-animated-character/shaders/character_spirv.h"]
+cwd = "samples/09b-animated-character/shaders"
+source = "character.slang"
+compile = [
+    ["spirv", "vertex", "characterVertex", "character_vertex.spv"],
+    ["spirv", "fragment", "characterFragment", "character_fragment.spv"],
+]
+run = [
+    ["{python}", "samples/09b-animated-character/shaders/embed_spirv.py",
+     "samples/09b-animated-character/shaders/character_spirv.h",
+     "kCharacterVertexSpirv={scratch}/character_vertex.spv",
+     "kCharacterFragmentSpirv={scratch}/character_fragment.spv"],
+]
+
+[[group]]
+name = "sample_first_light"
+headers = ["samples/03-first-light/shaders/first_light_spirv.h",
+           "samples/03-first-light/shaders/first_light_msl.h"]
+source = "samples/03-first-light/shaders/first_light.slang"
+compile = [
+    ["spirv", "vertex", "shadowVertex", "shadow.spv"],
+    ["spirv", "vertex", "forwardVertex",
+     "samples.03-first-light.shaders.first_light.forwardVertex.spv"],
+    ["spirv", "fragment", "forwardFragment",
+     "samples.03-first-light.shaders.first_light.forwardFragment.spv"],
+    ["metal", "vertex", "shadowVertex", "shadow.metal"],
+    ["metal", "vertex", "forwardVertex",
+     "samples.03-first-light.shaders.first_light.forwardVertex.metal"],
+    ["metal", "fragment", "forwardFragment",
+     "samples.03-first-light.shaders.first_light.forwardFragment.metal"],
+]
+run = [
+    ["{python}", "samples/03-first-light/shaders/embed_spirv.py",
+     "samples/03-first-light/shaders/first_light_spirv.h",
+     "kFirstLightShadowVertexSpirv={scratch}/shadow.spv",
+     "kFirstLightForwardVertexSpirv={scratch}/samples.03-first-light.shaders.first_light.forwardVertex.spv",
+     "kFirstLightForwardFragmentSpirv={scratch}/samples.03-first-light.shaders.first_light.forwardFragment.spv"],
+    ["{python}", "samples/03-first-light/shaders/embed_msl.py",
+     "samples/03-first-light/shaders/first_light_msl.h",
+     "kFirstLightShadowVertexMsl={scratch}/shadow.metal",
+     "kFirstLightForwardVertexMsl={scratch}/samples.03-first-light.shaders.first_light.forwardVertex.metal",
+     "kFirstLightForwardFragmentMsl={scratch}/samples.03-first-light.shaders.first_light.forwardFragment.metal"],
+]
+
+[[group]]
+name = "sample_world"
+headers = ["samples/10-world/shaders/world_spirv.h", "samples/10-world/shaders/world_msl.h"]
+source = "samples/10-world/shaders/world.slang"
+include = ["src/rendering/shaders"]
+compile = [
+    ["spirv", "vertex", "worldVertex", "world_vertex.spv"],
+    ["spirv", "fragment", "worldFragment", "world_fragment.spv"],
+    ["metal", "vertex", "worldVertex", "world_vertex.metal"],
+    ["metal", "fragment", "worldFragment", "world_fragment.metal"],
+]
+run = [
+    ["{python}", "samples/10-world/shaders/embed_spirv.py", "samples/10-world/shaders/world_spirv.h",
+     "kWorldVertexSpirv={scratch}/world_vertex.spv",
+     "kWorldFragmentSpirv={scratch}/world_fragment.spv"],
+    ["{python}", "samples/10-world/shaders/embed_msl.py", "samples/10-world/shaders/world_msl.h",
+     "kWorldVertexMsl={scratch}/world_vertex.metal",
+     "kWorldFragmentMsl={scratch}/world_fragment.metal"],
+]
+
+[[group]]
+name = "sample_water"
+headers = ["samples/10-world/shaders/water_spirv.h", "samples/10-world/shaders/water_msl.h"]
+cwd = "samples/10-world/shaders"
+source = "water.slang"
+include = ["../../../src/rendering/shaders"]
+compile = [
+    ["spirv", "vertex", "waterVertex", "water_vertex.spv"],
+    ["spirv", "fragment", "waterFragment", "water_fragment.spv"],
+    ["metal", "vertex", "waterVertex", "water_vertex.metal"],
+    ["metal", "fragment", "waterFragment", "water_fragment.metal"],
+]
+run = [
+    ["{python}", "samples/10-world/shaders/embed_spirv.py", "samples/10-world/shaders/water_spirv.h",
+     "kWaterVertexSpirv={scratch}/water_vertex.spv",
+     "kWaterFragmentSpirv={scratch}/water_fragment.spv"],
+    ["{python}", "samples/10-world/shaders/embed_msl.py", "samples/10-world/shaders/water_msl.h",
+     "kWaterVertexMsl={scratch}/water_vertex.metal",
+     "kWaterFragmentMsl={scratch}/water_fragment.metal"],
+]
+
+[[group]]
+name = "sample_world_visual"
+headers = ["samples/10-world/shaders/world_visual_spirv.h",
+           "samples/10-world/shaders/world_visual_msl.h"]
+source = "samples/10-world/shaders/world_visual.slang"
+include = ["src/rendering/shaders"]
+compile = [
+    ["spirv", "compute", "shadeTerrain", "shadeTerrain.spv"],
+    ["spirv", "compute", "shadeClouds", "shadeClouds.spv"],
+    ["spirv", "compute", "evolveFoam", "evolveFoam.spv"],
+    ["metal", "compute", "shadeTerrain", "shadeTerrain.metal"],
+    ["metal", "compute", "shadeClouds", "shadeClouds.metal"],
+    ["metal", "compute", "evolveFoam", "evolveFoam.metal"],
+]
+run = [
+    ["{python}", "samples/10-world/shaders/embed_spirv.py",
+     "samples/10-world/shaders/world_visual_spirv.h",
+     "kWorldShadeTerrainSpirv={scratch}/shadeTerrain.spv",
+     "kWorldShadeCloudsSpirv={scratch}/shadeClouds.spv",
+     "kWorldEvolveFoamSpirv={scratch}/evolveFoam.spv"],
+    ["{python}", "samples/10-world/shaders/embed_msl.py",
+     "samples/10-world/shaders/world_visual_msl.h",
+     "kWorldShadeTerrainMsl={scratch}/shadeTerrain.metal",
+     "kWorldShadeCloudsMsl={scratch}/shadeClouds.metal",
+     "kWorldEvolveFoamMsl={scratch}/evolveFoam.metal"],
+]
+
+# The iOS kernel's Slang is the VFX compiler's output for the mobile effect, and the app refuses the
+# MSL at startup when that source's hash (shaders/mobile_vfx_kernel.h) differs. What this checks is
+# the other half: that the header embeds the committed .metal.
+[[group]]
+name = "sample_ship_ios_vfx"
+headers = ["samples/11-ship/ios/shaders/mobile_vfx_msl.h"]
+run = [
+    ["{python}", "src/vfx/gpu/shaders/embed_msl.py", "--title",
+     "the iOS spark-plume simulation kernel", "samples/11-ship/ios/shaders/mobile_vfx_msl.h",
+     "kMobileVfxMsl=samples/11-ship/ios/shaders/mobile_vfx.metal"],
+]
+
+# --- Headers that are deliberately not regenerated -------------------------------------------------
+
+[[excluded]]
+header = "samples/03-first-light/shaders/first_light_dxil.h"
+reason = "DXIL needs DXC (CY_SHADER_DXIL); .github/workflows/m11d5-dxil.yml regenerates it on Windows"
+
+[[excluded]]
+header = "tests/render/world_before_aerial_perspective_spirv.h"
+reason = "pinned to world_spirv.h at 1fe6446; its value is that it does not follow world.slang"
+
+[[excluded]]
+header = "tests/render/world_before_cloud_shadows_spirv.h"
+reason = "pinned to world_spirv.h at 2614fb0; its value is that it does not follow world.slang"
+
+[[excluded]]
+header = "tests/render/water_before_aerial_perspective_spirv.h"
+reason = "pinned to water_spirv.h at 8996cc35; its value is that it does not follow water.slang"

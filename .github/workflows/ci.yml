@@ -1036,6 +1036,17 @@ jobs:
         run: just build-engine
       - name: Static analysis
         run: just quality-lint
+      # The build above staged the dev tree's slangc, which is the compiler the committed
+      # embedded-shader headers are checked against. A stale header fails naming its group, and
+      # the regenerated text is kept as an artefact for a machine whose slangc orders SPIR-V ids
+      # differently (a clang-built one does).
+      - name: Embedded shader headers are current
+        run: just quality-shader-headers
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: regenerated-shader-headers
+          path: build/dev/shader-headers
       # The other half of the layer rule, and the half quality-layers cannot reach: the project
       # graph's rejections are configure-time failures over fixture projects, so they are registered
       # as a CTest test rather than run by a recipe of their own. The `project-graph` gate declares
