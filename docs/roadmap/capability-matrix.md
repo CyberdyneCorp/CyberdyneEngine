@@ -63,7 +63,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`virtual-shadows`](../../openspec/specs/virtual-shadows/spec.md) | 20 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`residency`](../../openspec/specs/residency/spec.md) | 8 |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
 | [`rendering-forward-clustered`](../../openspec/specs/rendering-forward-clustered/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
-| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
+| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 14 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-materials-and-shading`](../../openspec/specs/rendering-materials-and-shading/spec.md) | 9 |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  | M7 |
 | [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 13 |  |  |  | S |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
@@ -234,7 +234,7 @@ for all six because every M11 row arrives at its rung already at Working or Seed
 | **M11.c** · Image | 3 | 21 | planned as fifteen rows and 232 requirements, `material-compiler` and `shader-system` first; re-judged at its gate to the three rows with no exemption — `denoising`, `ray-tracing-infrastructure`, `rendering-culling-and-lod` — and the other twelve moved to M11.e | **an art-directed beauty shot**, authored through the editor M11.b finished |
 | **M11.d** · Desktop | 4 | 58 | the RHI interface settled on Vulkan and null, a native `Platform` and `DisplayServer`, the core rows the port audits — `ecs-core` Complete, the other five moved to M11.e at its gate — the build and quality gates | `samples/11-ship` on desktop |
 | **M11.d.5** · Backends | 1 | 12 | Metal native and D3D12 from nothing — **inserted by M11.d's spike**, because neither compiles on the Linux host this project works on | **one scene, three backends, the same picture** |
-| **M11.e** · Ship | 21 | 325 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record, the twelve renderer rows M11.c moved here with their 56 exemptions, and the five core rows M11.d moved here with their unmapped requirements | every remaining row Complete or deferred with a re-entry point |
+| **M11.e** · Ship | 21 | 326 | mobile and cross-compilation, the full CI matrix, distribution, the sweep, the 1.0 record, the twelve renderer rows M11.c moved here with their 56 exemptions, and the five core rows M11.d moved here with their unmapped requirements | every remaining row Complete or deferred with a re-entry point |
 
 **M11.e's four rows were the smallest count on the ladder and not the smallest rung.** It now plans twenty-one: twelve moved from M11.c, and five — `core-assets-and-io`,
 `core-jobs-and-concurrency`, `core-memory-and-containers`, `engine-architecture` and
