@@ -61,6 +61,9 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     crate::joints::register(registry)?;
     // Shared painting gestures committed as stable terrain layers and non-destructive modifiers.
     crate::terrain::register(registry)?;
+    // The mixer, cues and audio sources, and the engine previews over them. See
+    // `crate::audio_commands`.
+    crate::audio_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
@@ -543,7 +546,13 @@ fn apply_sources(
         })
         .collect();
     let vfx_documents = vfx_sources(transaction, forward);
-    if wanted.is_empty() && moves.is_empty() && graphs.is_empty() && vfx_documents.is_empty() {
+    let audio_assets = audio_sources(transaction, forward);
+    if wanted.is_empty()
+        && moves.is_empty()
+        && graphs.is_empty()
+        && vfx_documents.is_empty()
+        && audio_assets.is_empty()
+    {
         return;
     }
     let Some(project) = context.project() else {
@@ -569,6 +578,44 @@ fn apply_sources(
     for (reference, source) in vfx_documents {
         let _ = project.put_source(&reference, source.as_deref());
     }
+    restore_audio(project, audio_assets);
+}
+
+/// Put audio assets back, and send the engine the mixer the file now says. A mixer undone out of
+/// existence leaves the engine its Master-only graph, which is what a project without one plays.
+fn restore_audio(
+    project: &mut dyn cy_editor_commands::ProjectHost,
+    assets: Vec<(String, Option<String>)>,
+) {
+    for (reference, source) in assets {
+        let _ = project.put_source(&reference, source.as_deref());
+        if reference.ends_with(".cymixer") {
+            let restored = source.unwrap_or_else(|| crate::audio::Mixer::default().encode());
+            let _ = project.audio_request(crate::audio::MIXER_APPLY, restored.into_bytes());
+        }
+    }
+}
+
+fn audio_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+) -> Vec<(String, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => Some((
+                kind.strip_prefix(crate::audio::DOMAIN_PREFIX)?.to_owned(),
+                crate::project::decode_source(if forward { after } else { before }),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 fn vfx_sources(
@@ -657,12 +704,15 @@ mod tests {
         // The physics tools add seven physics debug layers and hide-all in `crate::viewports`, and
         // the three joint commands in `crate::joints`.
         // Terrain tools add the agent's brush, `terrain.brush.apply`, and `terrain.status`.
+        // The audio tools add thirteen undoable mixer, cue and source commands and eight reads
+        // and engine requests in `crate::audio_commands`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(
-            registry.len(),
-            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2 + 18
-        );
+        let earlier =
+            8 + 38 + 3 + 7 + 2 + 1 + 3 + 6 + 7 + 2 + 6 + 5 + 2 + 5 + 7 + 2 + 8 + 3 + 2 + 2;
+        let audio = 13 + 8;
+        let navigation = 18;
+        assert_eq!(registry.len(), earlier + audio + navigation);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

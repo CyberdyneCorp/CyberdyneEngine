@@ -787,6 +787,85 @@ impl Editor {
             .map(|request| (terrain, request))
     }
 
+    /// Save an audio asset as one undoable transaction on the active scene's history, and send a
+    /// mixer to the engine when one is attached. Issue #29.
+    fn save_audio_asset(&mut self, reference: &str, source: &str) -> Result<()> {
+        let is_mixer = reference.ends_with(".cymixer");
+        if is_mixer {
+            crate::audio::validate_mixer_reference(reference)?;
+            crate::audio::Mixer::decode(source)?;
+        } else {
+            crate::audio::validate_cue_reference(reference)?;
+            crate::audio::Cue::decode(source)?;
+        }
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save an audio asset",
+                "no scene document is active for undo history",
+            )
+            .with_remedy("open a world; audio edits undo in its history")
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        self.project.put_source(reference, Some(source))?;
+        let recorded = (|| {
+            let document = self.documents.get_mut(document_id).ok_or_else(|| {
+                Problem::new("save an audio asset", "the active scene document closed")
+            })?;
+            document.begin(format!("Save audio {reference}"), self.actor.clone());
+            document.record(cy_editor_documents::operation::Operation::Domain {
+                node: None,
+                kind: format!("{}{reference}", crate::audio::DOMAIN_PREFIX),
+                before: crate::project::encode_source(prior.as_deref()),
+                after: crate::project::encode_source(Some(source)),
+            })?;
+            document.commit()
+        })();
+        if let Err(problem) = recorded {
+            let _ = self.project.put_source(reference, prior.as_deref());
+            return Err(problem);
+        }
+        if is_mixer && self.runtime.is_connected() {
+            self.backend.audio.request(
+                &self.runtime,
+                crate::audio::MIXER_APPLY,
+                source.as_bytes().to_vec(),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Send the project's mixer to an engine that has not had it since it connected.
+    fn send_project_mixer(&mut self) {
+        if !self.runtime.is_connected() || !self.backend.audio.needs_mixer() {
+            return;
+        }
+        if !self.project.source_exists(crate::audio::DEFAULT_MIXER) {
+            self.backend.audio.mixer_absent();
+            return;
+        }
+        let sent = self
+            .project
+            .read_source(crate::audio::DEFAULT_MIXER)
+            .and_then(|source| {
+                self.backend.audio.request(
+                    &self.runtime,
+                    crate::audio::MIXER_APPLY,
+                    source.into_bytes(),
+                )
+            });
+        if let Err(problem) = sent {
+            self.backend.audio.mixer_absent();
+            self.notifications.post(Notification::error(
+                "The project's mixer could not be sent to the engine",
+                problem,
+            ));
+        }
+    }
+
     /// One frame of the editor's own housekeeping.
     ///
     /// Everything here is bounded and non-blocking: drain what the runtime sent, forget settled
@@ -862,6 +941,7 @@ impl Editor {
                 problem,
             ));
         }
+        self.send_project_mixer();
         self.finish_graph_save();
         self.finish_nav_bake();
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
@@ -1762,6 +1842,31 @@ impl cy_editor_commands::ProjectHost for Editor {
         })?;
         document.commit()?;
         Ok(())
+    }
+
+    fn audio_asset_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        self.save_audio_asset(reference, source)
+    }
+
+    fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {
+        let sent = self
+            .backend
+            .audio
+            .request(&self.runtime, operation, payload)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn audio_status(&self) -> cy_editor_commands::Outcome {
+        crate::audio_status::outcome(&self.backend.audio)
+    }
+
+    fn audio_listener(&self) -> ([f32; 3], [f32; 3]) {
+        let camera = self.viewports.focused().state.camera;
+        let forward = camera.forward();
+        (
+            [camera.position.x, camera.position.y, camera.position.z],
+            [forward.x, forward.y, forward.z],
+        )
     }
 
     fn vfx_preview_load(&mut self, source: &str) -> Result<u64> {

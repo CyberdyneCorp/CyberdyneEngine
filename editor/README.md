@@ -177,8 +177,10 @@ authored world and Editor view. The hosted runtime loads a built project Swift m
 has a `ScriptBehaviour` component with a text `class` field naming a registered `@Behaviour`.
 It calls `onFixedUpdate` after physics during Play, pauses it with the simulation, and restores
 authored transforms on Stop. Run `project.build` and wait for completion before Play; a missing
-module or unknown behaviour is reported as a Play refusal. Audio is still unavailable in this
-host and is reported separately. The Editor's studio fill is omitted from
+module or unknown behaviour is reported as a Play refusal. Play also sounds the world: the runtime
+applies the project's mixer, starts every autoplaying `cy::audio::AudioSource`, and binds its audio
+server to Swift's `Audio`; the Play detail names the sources and the backend (see "The audio
+tools" below). The Editor's studio fill is omitted from
 Game rendering, so authored lights determine its illumination.
 Disabling the last authored light removes its illumination in both views; its Editor handle remains
 selectable so it can be enabled again. Rotating a directional or spot light changes where it shines.
@@ -402,6 +404,65 @@ What is not built yet:
   material is not yet bound on a device (`src/terrain/README.md`, "No shader").
 - A hole can be undone but cannot be filled with an eraser stroke.
 - The terrain's extent is fixed at 128 m by two engine tiles (`terrain_engine::TERRAIN_EXTENT_METRES`).
+
+## The audio tools
+
+The Audio Mixer (`editor-audio-buses-and-mixing`, `panels/audio_mixer.rs`) is the second tool on the
+specialised scaffold. It edits two project assets and one scene component, and the engine plays all
+three through one `cy::audio::AudioServer` in the hosted runtime:
+
+| What | Where | Authored by |
+|---|---|---|
+| The bus graph | `game/audio/mixer.cymixer` (`cymixer 1`) | `audio.mixer.create`, `audio.bus.add`, `.remove`, `.volume`, `.flag`, `.route`, `.send`, `.effect.add`, `.effect.set`, `.effect.remove` |
+| A playable sound | `*.cycue` (`cycue 1`) | `audio.cue.save` |
+| A sound in the world | `cy::audio::AudioSource` on an entity | `audio.source.create`, `audio.source.range`, or the Inspector |
+
+Every edit is one undoable transaction in the open world's history and an MCP tool of the same
+name. A mixer edit validates the whole graph first, so a route or send that would close a cycle is
+refused before it is saved. A saved mixer is sent to the engine (`audio.mixer.apply`), and an undo
+sends the text the file returned to. The engine keeps every bus that keeps its name, so a gain
+change does not interrupt what is playing.
+
+The panel shows what the engine answered, not what it sent: each bus's gain, routing and effect
+chain as the engine's graph holds them, and each bus's last-block peak as a meter with its value in
+dB. The line above the table names the backend, so a mix on the null backend is never mistaken for
+a silent device. While the panel is on screen the editor asks for the state four times a second.
+The panel refuses to open until the engine has answered `audio.capabilities.get`, because the
+effects it offers are the engine's.
+
+`audio.cue.preview` plays a saved cue through the mixer. `audio.source.preview` plays a source's cue
+at its position, heard from the focused viewport's camera. `audio.status` reports the engine's last
+answer: `backend`, `active_voices`, `playing`, `play_voices`, `bus.<name>.volume`,
+`bus.<name>.peak`, `bus.<name>.route`, and `preview.gain`, `preview.left` and `preview.right` for a
+spatial preview. `audio.refresh` asks for a new one. With no output device, `seconds` advances the
+engine's mix first, which is how the tests measure a level.
+
+In the Editor view the runtime draws each enabled source as a teal speaker, with a solid ring where
+its attenuation starts (`min_distance`) and a dashed ring where it falls silent (`max_distance`).
+Both rings are projected with the frame's own view. Clicking the speaker selects the source, and the
+panel then shows its range and **Preview from the camera**. Game view draws no rings.
+
+The runtime opens the miniaudio output device under `CY_AUDIO`. Where no device opens, it mixes on
+the null backend and says so on stderr, and the panel's backend line reads `null`. A clip is
+`tone:<hertz>:<seconds>`, or a project-relative 48 kHz WAV (16-bit PCM or 32-bit float, mono or
+stereo). Decoding other formats is still the asset system's job (`src/servers/audio/README.md`).
+
+The contract between the two sides is one set of files, `src/editor_backend/tests/data/audio_*`. The
+mixer, cue and preview request are what this workspace encodes, and its tests compare them byte for
+byte. The engine's suite (`integration.editor_backend_audio`) submits those same bytes, reads the
+result out of the `AudioServer`, and writes the state and vocabulary replies. The MCP tests replay
+those replies as the runtime's answers. The [mixer](../docs/design/images/editor-audio-mixer.png)
+and the [selected source](../docs/design/images/editor-audio-source-range.png) are rendered offscreen
+by `tests/panel_snapshots.rs` from those same engine replies.
+
+`python3 samples/05b-editor-window/audio_window.py` runs both ends at once, the real runtime and
+`cyberdyne-editor --mcp`, with nothing standing in for either. It authors a bus and a cue, places a
+source, captures the Editor view, previews the source from the camera, and plays and stops the
+world, checking the engine's answer each time. It needs a display and a Vulkan device, and exits 3
+without them. Its captures are the [viewport](../docs/design/images/editor-audio-source-viewport.png)
+with a source's rings, and the [whole window](../docs/design/images/editor-audio-source-window.png)
+with the source's `cy::audio::AudioSource` in the Inspector. On this machine it reported the
+`miniaudio` backend.
 
 ## The dependencies, and the rule they arrived under
 

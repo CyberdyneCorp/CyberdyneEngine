@@ -32,6 +32,20 @@ The first vertical slice supports:
   target acknowledgements, and typed bool/integer/float/vector/texture parameter updates bound to an
   applied artefact generation.
 
+- `audio.capabilities.get`, `audio.mixer.apply`, `audio.cue.preview`, `audio.preview.stop` and
+  `audio.state.get` — the editor's audio tools (#29), answered from the host's
+  `cy::editor::AudioAuthoring` (`include/cy/editor/audio_authoring.h`) once the host calls
+  `MaterialService::set_audio`. Without one they fail with `audio.unavailable`. Every operation
+  except the vocabulary answers with the audio server's state after the request: each bus's gain,
+  routing, effect chain and last-block peak and RMS, the voices, Play's sources, the loaded cues, and
+  the last preview's distance, attenuation gain and pan. `audio_service.h` gives the payloads.
+  `AudioAuthoring` reconciles the bus graph with a `cymixer 1` asset by bus name, so a gain change
+  keeps its voices, and it refuses a cyclic, dangling or overlong mixer before touching the graph.
+  It loads `cycue 1` cues from a generated tone or a 48 kHz WAV. At Play it applies the project's
+  `game/audio/mixer.cymixer`, names every project cue for ABI 1.3's `audio_find_cue`, and starts each
+  autoplaying `cy::audio::AudioSource`. `tests/data/audio_*` holds the wire the Rust editor's
+  suites read and write.
+
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of
 the live message framing.

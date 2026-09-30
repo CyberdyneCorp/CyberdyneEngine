@@ -63,3 +63,30 @@ CY_TEST_CASE("drawing outside the frame is clipped rather than corrupting memory
     const cy::usize centre = ((cy::usize{12} * kAcross) + 12U) * 4U;
     CY_CHECK(pixels[centre] > 0);
 }
+
+CY_TEST_CASE("an audio source is drawn with a solid inner ring and a dashed outer ring") {
+    // #29: the viewport's spatial audio preview. The caller projects min_distance and
+    // max_distance to pixels; this draws them. Integration for the reason above: the outer ring is
+    // walked along its perimeter, which is several hundred discs.
+    constexpr u32 kSide = 160;
+    cy::Array<u8> pixels;
+    CY_REQUIRE(pixels.resize(static_cast<cy::usize>(kSide) * kSide * 4));
+    for (cy::usize index = 0; index < pixels.size(); ++index) {
+        pixels[index] = (index % 4 == 3) ? 0xFF : 0;
+    }
+    const Canvas canvas{pixels.data(), kSide, kSide};
+    draw_audio_source_marker(canvas, 80.0F, 80.0F, 20.0F, 60.0F);
+    const auto green = [&](u32 x, u32 y) {
+        return pixels[(((static_cast<cy::usize>(y) * kSide) + x) * 4) + 1];
+    };
+    CY_CHECK(green(100, 80) > 120);  // the inner ring, where attenuation starts
+    CY_CHECK(green(80, 100) > 120);  // ...and it is solid all the way round
+    CY_CHECK(green(139, 80) > 120);  // the outer ring's first dash
+    CY_CHECK(green(139, 86) < 40);   // ...and the gap after it: dashed, not solid
+    CY_CHECK(green(80, 120) < 40);   // nothing between the two radii
+    CY_CHECK(green(77, 80) > 120);   // the speaker at the source itself
+    // Teal, which is neither the light's yellow nor the camera's blue.
+    const cy::usize at = ((cy::usize{80} * kSide) + 100U) * 4U;
+    CY_CHECK(pixels[at + 1] > pixels[at]);
+    CY_CHECK(pixels[at + 2] > pixels[at]);
+}

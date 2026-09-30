@@ -1,0 +1,196 @@
+Mutations that turn the editor audio tools' tests red (#29), Development profile. Each
+mutation was applied, its tests run, the file restored and md5-verified. Listed under
+each: the tests (Rust) or test cases (C++) that failed.
+
+== r01_mixer_admits_a_cycle: editor/crates/cy-editor-services/src/audio.rs
+<   if self.has_cycle() {
+>   if false && self.has_cycle() {
+FAILED  audio::tests::an_edit_that_would_cycle_or_dangle_is_refused_and_leaves_the_mixer_alone
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r02_mixer_writes_unit_gain: editor/crates/cy-editor-services/src/audio.rs
+<   bus.volume,
+>   1.0_f32,
+FAILED  audio::tests::the_editors_mixer_is_the_text_the_engine_applies
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r03_state_ignores_engine_gain: editor/crates/cy-editor-services/src/audio.rs
+<   volume: reader.f32()?,
+>   volume: { let _ = reader.f32()?; 1.0 },
+FAILED  audio::tests::the_engines_state_reply_decodes_to_what_its_mixer_applied
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r04_cues_listing_skips_directories: editor/crates/cy-editor-services/src/audio.rs
+<   if !name.starts_with('.') && name != "build" {
+>   if false {
+FAILED  the_audio_mixer_shows_the_engines_graph_and_levels
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r05_save_not_undoable: editor/crates/cy-editor-services/src/editor.rs
+<   kind: format!("{}{reference}", crate::audio::DOMAIN_PREFIX),
+>   kind: format!("unrecorded:{reference}"),
+FAILED  the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r06_save_not_sent_to_engine: editor/crates/cy-editor-services/src/editor.rs
+<   if is_mixer && self.runtime.is_connected() {
+>   if false && is_mixer && self.runtime.is_connected() {
+FAILED  the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 39 filtered out; finished in 5.03s
+RESTORED md5 ok
+
+== r07_listener_ignores_camera: editor/crates/cy-editor-services/src/editor.rs
+<   [forward.x, forward.y, forward.z],
+>   [0.0, 0.0, 1.0],
+FAILED  a_cue_and_a_spatial_source_preview_through_the_engine_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r08_undo_not_sent_to_engine: editor/crates/cy-editor-services/src/builtin.rs
+<   let _ = project.audio_request(crate::audio::MIXER_APPLY, restored.into_bytes());
+>   let _ = restored;
+FAILED  the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.09s
+RESTORED md5 ok
+
+== r09_panel_flag_inverted: editor/crates/cy-editor-shell/src/panels/audio_mixer.rs
+<   .with("enabled", Value::Bool(enabled)),
+>   .with("enabled", Value::Bool(!enabled)),
+FAILED  mixer_gestures_are_the_registered_audio_commands
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r10_meter_hides_engine_level: editor/crates/cy-editor-shell/src/panels/audio_mixer.rs
+<   Some(_) => format!("{:.1} dB", 20.0 * peak.log10()),
+>   Some(_) => "no engine level".to_owned(),
+FAILED  the_audio_mixer_shows_the_engines_graph_and_levels
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r11_panel_invokes_an_unregistered_command: editor/crates/cy-editor-shell/src/panels/audio_mixer.rs
+<   "audio.source.preview",
+<   ];
+>   "audio.source.play",
+>   ];
+FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r12_source_range_irreversible: editor/crates/cy-editor-services/src/audio_commands.rs
+<   and its curve between, as one undoable transaction.",
+<   EffectClass::ReversibleMutation,
+>   and its curve between, as one undoable transaction.",
+>   EffectClass::IrreversibleMutation,
+FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r13_mixer_opens_without_engine_vocabulary: editor/crates/cy-editor-interface/src/specialised/mod.rs
+<   || (domain == Domain::AudioBusesAndMixing && self.audio_vocabulary.is_some())
+>   || domain == Domain::AudioBusesAndMixing
+FAILED  specialised::tests::the_audio_mixer_opens_only_on_the_engines_vocabulary
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 157 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== c01_engine_ignores_bus_gain: src/editor_backend/src/audio_authoring.cpp
+<   if (Status set = graph.set_volume(handle, bus.volume); !set) {
+>   if (Status set = graph.set_volume(handle, 1.0F); !set) {
+FAILED  editor audio: the editor's mixer sets the engine's gains, routes and effect chain
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c02_engine_admits_a_cycle: src/editor_backend/src/audio_authoring.cpp
+<   if (Status acyclic = check_acyclic(mixer); !acyclic) {
+>   if (Status acyclic = check_acyclic(Mixer{}); !acyclic) {
+FAILED  editor audio: a mixer is refused whole when it would cycle, dangle or overload
+[doctest] test cases:  1 |  0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c03_removed_bus_keeps_its_voice: src/editor_backend/src/audio_authoring.cpp
+<   stop_voices_on_dead_buses();
+>   (void)0;
+FAILED  editor audio: the editor's mixer sets the engine's gains, routes and effect chain
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c04_preview_gain_is_not_the_curve: src/editor_backend/src/audio_authoring.cpp
+<   report.gain = audio::attenuation_gain(attenuation, report.distance);
+>   report.gain = 1.0F;
+FAILED  editor audio: previewing a cue starts an engine voice with the engine's attenuation
+[doctest] test cases:    1 |    0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c05_play_ignores_autoplay: src/editor_backend/src/audio_authoring.cpp
+<   if (!source.enabled || !source.autoplay) {
+>   if (!source.enabled) {
+FAILED  editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c06_stop_leaves_play_sounding: src/editor_backend/src/audio_authoring.cpp
+<   for (const ActiveVoice& active : play_voices_) {
+<   (void)server_.stop(active.voice);
+>   for (const ActiveVoice& active : play_voices_) {
+>   (void)active;
+FAILED  editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c07_play_ignores_project_mixer: src/editor_backend/src/audio_authoring.cpp
+<   if (Status mixed = apply_project_mixer(); !mixed) {
+>   if (Status mixed = ok(); !mixed) {
+FAILED  editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c08_cues_not_named_for_swift: src/editor_backend/src/audio_authoring.cpp
+<   if (Status named = adapter_.add_cue(Name::intern(stem_of(name)), *created); !named) {
+>   if (Status named = adapter_.add_cue(Name::intern(std::string(stem_of(name)) + ".misnamed"), *created);
+>   !named) {
+FAILED  editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c09_wav_rate_unchecked: src/editor_backend/src/audio_authoring.cpp
+<   format.rate != AudioAuthoring::kSampleRate ||
+>   
+FAILED  editor audio: a WAV clip is read from the project, and a wrong rate is refused
+[doctest] test cases: 1 | 0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c10_source_radii_unchecked: src/editor_backend/src/audio_authoring.cpp
+<   if (!(marker.min_distance > 0.0F) || !(marker.max_distance > marker.min_distance) ||
+>   if (!(marker.min_distance > 0.0F) ||
+FAILED  editor audio: the world's sources are read with their attenuation radii
+[doctest] test cases:  1 |  0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c11_service_has_no_audio: src/editor_backend/src/material_service.cpp
+<   result = dispatch_audio(*session, operation, audio_);
+>   result = dispatch_audio(*session, operation, nullptr);
+FAILED  editor audio: a mixer is refused whole when it would cycle, dangle or overload
+FAILED  editor audio: the editor's mixer sets the engine's gains, routes and effect chain
+[doctest] test cases:  2 |  0 passed | 2 failed | 6 skipped
+RESTORED md5 ok
+
+== c12_silence_ring_not_dashed: samples/05b-editor-window/runtime/overlay.cpp
+<   perimeter(canvas, x, y, outer_radius, 1.2F, colour, 4.0F);
+>   perimeter(canvas, x, y, outer_radius, 1.2F, colour, 0.0F);
+FAILED  an audio source is drawn with a solid inner ring and a dashed outer ring
+[doctest] test cases: 1 | 0 passed | 1 failed | 1 skipped
+RESTORED md5 ok
+
+== c13_ring_ignores_radius: samples/05b-editor-window/runtime/overlay.cpp
+<   !render::project_to_pixel(view, offset + (normalize(right) * radius), edge)) {
+>   !render::project_to_pixel(view, offset + (normalize(right) * (radius * 0.0F + 1.0F)),
+>   edge)) {
+FAILED  an audio source's radius is projected to the pixels the frame's view gives it
+[doctest] test cases: 1 | 0 passed | 1 failed | 11 skipped
+RESTORED md5 ok
+
+26 of 26 mutations killed.

@@ -1,0 +1,8 @@
+cymixer 1
+bus Master - 1 0 0 0
+bus Music Master 0.5 0 0 0
+bus SFX Master 0.8 0 0 0
+bus Reverb Master 0.6 0 0 0
+send SFX Reverb 0.3
+effect Master limiter 0.95 0 0
+effect SFX low-pass 0 0.5 0

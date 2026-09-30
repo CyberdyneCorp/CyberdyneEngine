@@ -513,6 +513,23 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 #     returns early and passes when build/dev holds no cy_build and cy_import_cli, which is always
 #     so in CI's editor job. The engine side of the protocol is integration.build_lightmap_cli.
 
+# `openspec/changes/add-editor-audio-tools` (#29, the audio tools) adds three requirements to this
+# row and one to `editor-viewport-and-gizmos`. As with the scaffold above, they are mapped on
+# archive, not before:
+#   "Audio buses and mixing editor"
+#     test:integration.editor_backend_audio, case "editor audio: the editor's mixer sets the
+#     engine's gains, routes and effect chain"; and
+#     rust:cy-editor-mcp::a_session_over_the_wire::the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine
+#   "Audio cue preview"
+#     test:integration.editor_backend_audio, case "editor audio: previewing a cue starts an engine
+#     voice with the engine's attenuation"
+#   "Audio during editor play"
+#     test:integration.editor_backend_audio, case "editor audio: Play starts the autoplay sources,
+#     Swift finds every cue, Stop ends it"
+#   "Spatial audio preview" (editor-viewport-and-gizmos)
+#     test:integration.editor_window_overlay, case "an audio source is drawn with a solid inner ring
+#     and a dashed outer ring"
+
 [[coverage]]
 row = "editor-architecture"
 requirement = "Specialised editors"
@@ -3374,3 +3391,22 @@ row = "native-abi"
 requirement = "ABI compatibility testing"
 evidence = "gate:abi"
 note = "`just quality-abi` diffs cy_abi.h against src/abi/abi_baseline.json; ABI 1.3 passed it as `compatible` against main's baseline (new types and 38 appended entries, nothing reordered, removed or re-typed) before the baseline was regenerated, and `just quality-abi --selftest` breaks each rule on purpose."
+
+# --- audio ----------------------------------------------------------------------------------------
+#
+# Two requirements the editor's audio tools (#29) exercise through the engine's own server. The
+# rest of the row is answered by the audio suites once someone reads it end to end.
+
+[[coverage]]
+row = "audio"
+requirement = "Bus graph"
+evidence = "test:integration.editor_backend_audio"
+case = "editor audio: a mixer is refused whole when it would cycle, dangle or overload"
+note = "A mixer whose send closes a cycle is refused before the bus graph is touched, and the graph still holds only Master afterwards; the companion case applies a mixer with a 30 % reverb send and reads the send, the effect chain and the gains back out of cy::audio::BusGraph."
+
+[[coverage]]
+row = "audio"
+requirement = "Audio components and playback"
+evidence = "test:integration.editor_backend_audio"
+case = "editor audio: Play starts the autoplay sources, Swift finds every cue, Stop ends it"
+note = "An authored cy::audio::AudioSource plays spatialised at its transform when Play starts and stops when it ends, and ABI 1.3's audio_find_cue and audio_play reach a project cue by name with no handle kept by gameplay. Velocity-driven Doppler and effect volumes are not exercised here."

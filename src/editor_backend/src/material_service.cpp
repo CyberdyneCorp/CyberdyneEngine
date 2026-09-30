@@ -2,6 +2,7 @@
 #include <cy/editor/material_service.h>
 #include <cy/editor/terrain_service.h>
 
+#include <cy/editor/audio_service.h>
 #include <cy/graph/material/canvas.h>
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
@@ -1094,6 +1095,14 @@ CyResult preview_parameter_update(CyServiceSession_T& session,
     return CY_RESULT_OK;
 }
 
+CyResult dispatch_audio(CyServiceSession_T& session, std::string_view operation,
+                        cy::editor::AudioAuthoring* audio) noexcept {
+    const cy::editor::AudioRefusal refusal = cy::editor::answer_audio(
+        audio, operation, {session.request_payload.data(), session.request_payload.size()},
+        session.event_payload);
+    return refusal.refused() ? failed(session, refusal.code, refusal.detail) : CY_RESULT_OK;
+}
+
 CyResult capabilities(CyServiceSession_T& session,
                       const cy::editor::MaterialPreviewRuntime* preview_runtime,
                       const cy::editor::MaterialAuthoringRuntime* authoring_runtime) noexcept {
@@ -1355,6 +1364,8 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = dispatch_terrain(*session, operation);
     } else if (!session->cancelled && operation.starts_with("preview.")) {
         result = dispatch_preview(*session, operation, preview_runtime_);
+    } else if (!session->cancelled && operation.starts_with("audio.")) {
+        result = dispatch_audio(*session, operation, audio_);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");

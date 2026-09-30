@@ -229,6 +229,7 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     host_.bind_vfx_effects(scene_vfx_ != nullptr ? this : nullptr);
 #endif
+    game_backend::bind(host_, audio_);
     Expected<UniquePtr<abi::BehaviourRuntime>, Error> runtime =
         make_unique<abi::BehaviourRuntime>(*allocator_, *allocator_, host_);
     if (!runtime) {
@@ -286,6 +287,7 @@ void ScriptRuntime::stop() noexcept {
     runtime_.reset();
     host_.bind_world(nullptr);
     host_.bind_vfx_effects(nullptr);
+    game_backend::bind(host_, nullptr);
     play_ = nullptr;
     authored_ = nullptr;
     binding_.reset();

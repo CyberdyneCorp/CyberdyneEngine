@@ -806,3 +806,106 @@ fn physics_panel_snapshots() {
     let mut empty = Desk::new();
     snapshot(&mut empty, "physics", "editor-physics-empty.png");
 }
+
+/// The audio mixer over the engine's own fixtures: the canonical mixer, a cue, the engine's
+/// vocabulary and the state it reported after previewing that cue through SFX. #29.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn audio_panel_snapshots() {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+
+    let fixture = |name: &str| {
+        std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../src/editor_backend/tests/data")
+                .join(name),
+        )
+        .expect("the engine's audio fixture")
+    };
+    let project = std::env::temp_dir().join(format!("cy-audio-snapshot-{}", std::process::id()));
+    std::fs::create_dir_all(project.join("audio/cues")).unwrap();
+    std::fs::create_dir_all(project.join("game/audio")).unwrap();
+    std::fs::write(
+        project.join("game/audio/mixer.cymixer"),
+        fixture("audio_mixer_v1.cymixer"),
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("audio/cues/ping.cycue"),
+        fixture("audio_cue_v1.cycue"),
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("audio/cues/hum.cycue"),
+        "cycue 1\nclip tone:220:0.5\nbus Music\nlooping 1\n",
+    )
+    .unwrap();
+
+    let mut desk = Desk::new();
+    desk.editor = Editor::new(Actor::human("sound-designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project));
+    desk.editor.open_document("worlds/audio.cyworld").unwrap();
+    desk.specialised.install_audio_vocabulary(
+        cy_editor_services::audio::AudioVocabulary::decode(&fixture("audio_capabilities_v1.wire"))
+            .unwrap(),
+    );
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    desk.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = desk
+        .editor
+        .backend
+        .audio
+        .request(&desk.editor.runtime, "audio.state.get", Vec::new())
+        .unwrap()
+        .unwrap();
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: fixture("audio_state_v1.wire"),
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    while desk.editor.backend.audio.pending() {
+        for message in desk.editor.runtime.pump(&mut notifications) {
+            let _ = desk.editor.backend.accept(&message);
+        }
+        std::thread::yield_now();
+    }
+    desk.inputs.audio.bus = Some("SFX".into());
+    desk.inputs.audio.cue = Some("audio/cues/ping.cycue".into());
+    snapshot(
+        &mut desk,
+        "editor-audio-buses-and-mixing",
+        "editor-audio-mixer.png",
+    );
+
+    let created = desk
+        .registry
+        .invoke(
+            "audio.source.create",
+            &desk.scope,
+            &mut desk.editor,
+            &Arguments::new()
+                .with(
+                    "cue",
+                    cy_editor_core::value::Value::Text("audio/cues/ping.cycue".into()),
+                )
+                .with("at", cy_editor_core::value::Value::Vec3([3.0, 0.0, 0.0])),
+        )
+        .expect("audio.source.create");
+    assert!(created.values.contains_key("entity"));
+    desk.inputs.audio.bus = None;
+    snapshot(
+        &mut desk,
+        "editor-audio-buses-and-mixing",
+        "editor-audio-source-range.png",
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

@@ -27,6 +27,10 @@
 
 pub mod asset_catalogue;
 pub mod assets;
+pub mod audio;
+pub mod audio_commands;
+pub mod audio_requests;
+pub mod audio_status;
 pub mod authoring;
 pub mod backend;
 pub mod bodies;

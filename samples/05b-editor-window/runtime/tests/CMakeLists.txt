@@ -245,7 +245,7 @@ function(cy_editor_window_runtime_declare_tests)
                 SOURCES "${tests_dir}/test_script_runtime.cpp"
                         "${tests_dir}/../script_runtime.cpp"
                 DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
-                             cy::scene-serialization cy::scene
+                             cy::scene-serialization cy::scene cy::game-backend
                 DEFINITIONS "CY_SPIN_MODULE=\"${spin_module}\"")
             if(CY_VFX)
                 target_sources(cy_test_smoke_editor_script_runtime PRIVATE

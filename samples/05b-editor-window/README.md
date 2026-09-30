@@ -357,7 +357,10 @@ Play again also loads the newest successful build.
 The Swift source list shows project scripts and hides SwiftPM's `.build` checkout and generated
 package files. The code area grows with the Swift Workspace panel while keeping diagnostics below it.
 The runtime refuses Play with a specific message if the scene names a script but no built module
-exists. Audio remains unavailable in this sample host.
+exists. Play sounds the world through the runtime's audio server: the project's mixer, every
+autoplaying `cy::audio::AudioSource`, and Swift's `Audio.play`. The Play detail names the sources and
+the backend (`miniaudio`, or `null` where no output device opened). See `editor/README.md`, "The
+audio tools".
 Stop older sample runtimes when switching projects: each active host continues rendering even
 without an attached editor and can delay the visible viewport on the same GPU.
 

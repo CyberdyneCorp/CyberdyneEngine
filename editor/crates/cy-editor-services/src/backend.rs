@@ -272,6 +272,8 @@ pub struct BackendServices {
     preview_targets: Vec<MaterialPreviewTarget>,
     preview_state: MaterialPreviewState,
     connected: bool,
+    /// The `audio.*` operations: see `crate::audio_requests`.
+    pub audio: crate::audio_requests::AudioRequests,
 }
 
 impl Default for BackendServices {
@@ -302,6 +304,7 @@ impl Default for BackendServices {
             preview_targets: vec![MaterialPreviewTarget { entity: 0, slot: 0 }],
             preview_state: MaterialPreviewState::Idle,
             connected: false,
+            audio: crate::audio_requests::AudioRequests::default(),
         }
     }
 }
@@ -317,7 +320,19 @@ impl BackendServices {
     pub fn maintain(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
         if !runtime.is_connected() {
             self.disconnect();
+            let _ = self.audio.maintain(runtime);
             return None;
+        }
+        // Only once discovery is done, so a runtime's first answers stay in the order they always
+        // had; and only once something asked for audio, so nothing audio reaches a runtime that
+        // no panel, command or agent has asked about.
+        if self.connected
+            && self.catalogue_request.is_none()
+            && self.vfx_catalogue_request.is_none()
+            && self.vfx_capabilities_request.is_none()
+            && let Some(problem) = self.audio.maintain(runtime)
+        {
+            return Some(problem);
         }
         if self.connected {
             if self.catalogue_request.is_none() && !self.vfx_catalogue_requested {
@@ -432,6 +447,9 @@ impl BackendServices {
         else {
             return None;
         };
+        if let Some(outcome) = self.audio.accept(message) {
+            return outcome;
+        }
         if Some(*request) == self.catalogue_request {
             return self.accept_catalogue(*kind, *schema_version, payload);
         }

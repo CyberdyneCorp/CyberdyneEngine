@@ -14,12 +14,13 @@ class SimulationWorld;
 namespace cy::editor {
 
 class TerrainPreview;
+class AudioAuthoring;
 
 /// Every operation prefix `MaterialService` serves. A host that routes one binding over several
 /// services (`CompositeEditorService`) routes each of these here, so an operation this service
 /// gains is not lost to a routing table that forgot it.
-inline constexpr std::array<std::string_view, 4> kMaterialServicePrefixes{"material.", "vfx.",
-                                                                          "preview.", "terrain."};
+inline constexpr std::array<std::string_view, 5> kMaterialServicePrefixes{
+    "material.", "vfx.", "preview.", "terrain.", "audio."};
 
 /// One exact renderer binding named by a preview reload request.
 struct MaterialPreviewTarget {
@@ -93,10 +94,15 @@ public:
     /// terrain edits raise is the one a navigation bake clears.
     static void terrain_navigation_rebaked(CyServiceSession session) noexcept;
 
+    /// Serve the `audio.*` operations from the host's audio server (see audio_service.h). Without
+    /// one they are refused with `audio.unavailable`. `audio` is borrowed.
+    void set_audio(AudioAuthoring* audio) noexcept { audio_ = audio; }
+
 private:
     Allocator* allocator_;
     MaterialPreviewRuntime* preview_runtime_;
     MaterialAuthoringRuntime* authoring_runtime_;
+    AudioAuthoring* audio_ = nullptr;
 };
 
 }  // namespace cy::editor

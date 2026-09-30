@@ -8,7 +8,9 @@ A quad is imported with a lightmap unwrap by the real `cy_import_cli` into a pro
   * the progress lines arrive in stage order and the trace counts up to its total;
   * the `baked` line names what was baked, and the cooked lightmap is written;
   * a `cancel` line on stdin, sent as soon as the trace reports, stops the bake: `cancelled`, exit
-    status 3, and no output file — the previous cooked lightmap, where there is one, is untouched.
+    status 3, and no output file — the previous cooked lightmap, where there is one, is untouched;
+  * the tool exits, refused or finished, while its stdin is still open: the editor holds the pipe
+    open for a `cancel` it may never send, and glibc's `exit` once waited on the watcher's lock.
 
 Usage: test_lightmap_cli.py --cy-build <cy_build> --cy-import <cy_import_cli>
 """
@@ -88,6 +90,25 @@ def bake(cy_build: str, project: pathlib.Path, description: str, out: str,
     return status, lines, time.monotonic() - started
 
 
+def exits_with_stdin_open(cy_build: str, project: pathlib.Path, description: str,
+                          out: str) -> int:
+    """The exit status of a run whose stdin stays open until it ends, as the editor's does."""
+    child = subprocess.Popen(
+        [cy_build, "lightmap", "--description", str(project / description), "--project",
+         str(project), "--out", str(project / out)],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        return child.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait()
+        raise AssertionError(f"`cy_build lightmap` on {description} did not exit while its stdin "
+                             "was open") from None
+    finally:
+        assert child.stdin is not None
+        child.stdin.close()
+
+
 def check_progress(lines: list[str]) -> None:
     progress = [line.split() for line in lines if line.startswith("progress ")]
     assert progress, "no progress was reported"
@@ -110,6 +131,15 @@ def main() -> int:
         (project / "levels").mkdir()
         (project / "levels/level.cylightmap").write_text(level(bundle, 8))
         (project / "levels/slow.cylightmap").write_text(level(bundle, 4096))
+        (project / "levels/malformed.cylightmap").write_text("not a description\n")
+
+        status = exits_with_stdin_open(args.cy_build, project, "levels/malformed.cylightmap",
+                                       ".cy/cooked/malformed.lightmap")
+        assert status == 1, f"a malformed description exited {status}"
+        status = exits_with_stdin_open(args.cy_build, project, "levels/level.cylightmap",
+                                       ".cy/cooked/open.lightmap")
+        assert status == 0, f"a bake with stdin open exited {status}"
+        print("refused and finished runs exit with stdin open")
 
         status, lines, seconds = bake(args.cy_build, project, "levels/level.cylightmap",
                                       ".cy/cooked/level.lightmap", False)
