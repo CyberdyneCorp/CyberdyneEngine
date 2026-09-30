@@ -33,7 +33,9 @@
 - [x] 2.6 Pass the cook test's scratch path in generic form.
 - [x] 2.7 Shard `smoke.shader_targets` into three cases (`shadertool::Options::shard/shards`) that fit
       the smoke budget on a hosted runner, together covering every entry point.
-- [x] 2.8 Bake the static-light identity case of `integration.render_lightmap_bake` at 16 samples.
+- [x] 2.8 Bake the static-light identity case of `integration.render_lightmap_bake` at 16 samples,
+      share the shadow room's irradiance bake per light mobility across the cases that ask the same
+      question of it, and split the stationary case's Static comparison into a case of its own.
 - [x] 2.9 Fault one call below `main` in the crash probe, so a walk of the faulting stack has three
       frames on every platform.
 - [x] 2.10 Skip the Metal timestamp case where the device refuses timestamp counters as
