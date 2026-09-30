@@ -28,6 +28,9 @@
 - [x] 2.4 Expect two shader targets on macOS, where Slang fetches no DXC.
 - [x] 2.5 Put Slang's DLL directory on the Windows test PATH.
 - [x] 2.6 Pass the cook test's scratch path in generic form.
+- [x] 2.7 Shard `smoke.shader_targets` into three cases (`shadertool::Options::shard/shards`) that fit
+      the smoke budget on a hosted runner, together covering every entry point.
+- [x] 2.8 Bake the static-light identity case of `integration.render_lightmap_bake` at 16 samples.
 
 ## 3. CI
 - [x] 3.1 Build the editor in the test and agent jobs before the suites that drive it.

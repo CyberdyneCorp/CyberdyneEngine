@@ -29,6 +29,8 @@ now carries the faulting thread's stack.
 - **Tests that assumed the runner:** the PCG device suite skips loudly without a device; the two
   concurrency teardown cases wait for their threads to be running; `smoke.ship` reports its ELF-only
   symbol act as not evaluated on Mach-O and PE; `smoke.shader_targets` expects two targets on macOS,
-  where Slang fetches no DXC; `smoke.authoring` finds the editor where `just build-editor` puts it.
+  where Slang fetches no DXC, and runs as three shards that each fit the smoke budget;
+  `smoke.authoring` finds the editor where `just build-editor` puts it; the static-light identity
+  case of the lightmap bake bakes at 16 samples.
 - **CI:** the test and agent jobs build the editor before the suites that drive it, so no test pays
   for a cold cargo build inside its CTest timeout.
