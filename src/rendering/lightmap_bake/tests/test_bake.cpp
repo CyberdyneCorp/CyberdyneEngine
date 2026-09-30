@@ -1046,7 +1046,11 @@ CY_TEST_CASE("a movable light bakes nothing, not even its bounce") {
 
 CY_TEST_CASE("a static light bakes exactly what DirectAndIndirect baked before mobility existed") {
     const ShadowRoom as_static(gi::LightMobility::Static);
-    const LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    // HALF THE SAMPLES OF THE OTHER CASES. The claim is that two spellings bake the same bytes, and
+    // any sample count asks it; this case bakes twice, and at 32 samples it spent 1091 ms of CPU
+    // on the hosted macOS runner against the integration budget of 1000 ms.
+    LightmapBakeSettings settings = small_settings(LightmapMode::Directional);
+    settings.trace.samples = 16;
     const Baked static_baked = bake(as_static.room.scene(), settings);
 
     // The pre-mobility spelling: every light's direct term through the content switch.
