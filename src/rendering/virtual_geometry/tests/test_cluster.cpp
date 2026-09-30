@@ -43,10 +43,10 @@ CY_TEST_CASE("a world error projects to the pixels the projection says it does")
     vg::ErrorSphere sphere;
     sphere.center = Vec3{0.0F, 0.0F, -1.0F};
     sphere.radius = 0.0F;
-    // The comparison is spelled in DOUBLE on purpose: `CY_CHECK_NEAR` wraps `doctest::Approx`,
-    // which takes a double, so an f32 argument is promoted — and clang's `-Wdouble-promotion`,
-    // which this tree builds with as an error, reports the promotion the macro caused. Casting at
-    // the call site says what is happening rather than leaving a warning for the next compiler.
+    // The comparison is spelled in DOUBLE: `CY_CHECK_NEAR` wrapped `doctest::Approx` when this was
+    // written, which takes a double, so an f32 argument was promoted and clang's
+    // `-Wdouble-promotion` reported it. The harness converts explicitly now; the casts are kept
+    // because they are harmless and say the comparison is made in double.
     CY_CHECK_NEAR(static_cast<f64>(vg::project_error(view, 1.0F, sphere)), 500.0, 0.01);
     CY_CHECK_NEAR(static_cast<f64>(vg::project_error(view, 0.5F, sphere)), 250.0, 0.01);
 

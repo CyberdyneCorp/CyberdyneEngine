@@ -59,6 +59,12 @@ configure time by `tests/CMakeLists.txt` and again at run time by
 `-fno-exceptions`, aborts the process, taking the rest of the binary's cases with it. Guard
 preconditions with it; assert results with `CY_CHECK`.
 
+`CY_CHECK_NEAR(value, expected, tolerance)` is an ABSOLUTE comparison: it passes when
+`|value - expected| <= tolerance`. Where the error that is acceptable is a fraction of the quantity,
+write `CY_CHECK_NEAR_REL(value, expected, fraction)`, which passes when the difference is at most
+`fraction * max(|value|, |expected|)`, and say at the call site why. (Until the fix-check-near-absolute
+change the plain macro was doctest's `Approx::epsilon`, which is relative.)
+
 ## Running
 
 ```

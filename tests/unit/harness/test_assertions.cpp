@@ -4,6 +4,7 @@
 #include <cy/test/test.h>
 
 #include <cstdint>
+#include <limits>
 
 namespace {
 
@@ -37,6 +38,48 @@ CY_TEST_CASE("harness: a requirement guards what follows it") {
 CY_TEST_CASE("harness: a floating-point comparison states its tolerance") {
     const double third = 1.0 / 3.0;
     CY_CHECK_NEAR(third * 3.0, 1.0, 1e-12);
+    CY_CHECK_NEAR(1000.25F, 1000.0F, 0.25F);
+    CY_CHECK_NEAR_REL(1000.5, 1000.0, 1e-3);
+}
+
+// CY_CHECK_NEAR expands to `(value) == cy::test::near(expected, tolerance)`, so asserting on that
+// expression is asserting on the macro. These are the regressions for the macro having been
+// doctest's Approx, whose epsilon is relative: `tolerance * (1 + max(|value|, |expected|))`.
+CY_TEST_CASE("harness: CY_CHECK_NEAR's tolerance is absolute, and Approx's was not") {
+    // A thousand metres off by half a metre, against a tolerance of a hundredth. The old macro
+    // accepted it — shown here with the exact expression it expanded to — and the new one refuses.
+    CY_CHECK(1000.5 == doctest::Approx(1000.0).epsilon(0.01));
+    CY_CHECK_FALSE(1000.5 == cy::test::near(1000.0, 0.01));
+
+    // Below one the relative epsilon still admitted up to twice the tolerance.
+    CY_CHECK(0.515 == doctest::Approx(0.5).epsilon(0.01));
+    CY_CHECK_FALSE(0.515 == cy::test::near(0.5, 0.01));
+
+    // The tolerance is inclusive, on either side, in float as in double.
+    CY_CHECK(1.25 == cy::test::near(1.0, 0.25));
+    CY_CHECK(0.75 == cy::test::near(1.0, 0.25));
+    CY_CHECK(-1.5F == cy::test::near(-1.0F, 0.5F));
+    CY_CHECK_FALSE(1.2500001 == cy::test::near(1.0, 0.25));
+}
+
+CY_TEST_CASE("harness: a near comparison refuses NaN and admits an exact infinity") {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    CY_CHECK_FALSE(nan == cy::test::near(0.0, 1e30));
+    CY_CHECK_FALSE(0.0 == cy::test::near(nan, 1e30));
+    CY_CHECK_FALSE(nan == cy::test::near_relative(1.0, 1.0));
+    CY_CHECK(inf == cy::test::near(inf, 0.0));
+    CY_CHECK_FALSE(inf == cy::test::near(1e300, 1e300));
+    CY_CHECK(2.0 == cy::test::near(2.0, 0.0));
+}
+
+CY_TEST_CASE("harness: CY_CHECK_NEAR_REL scales its tolerance by the larger magnitude") {
+    CY_CHECK(1010.0 == cy::test::near_relative(1000.0, 0.01));
+    CY_CHECK_FALSE(1010.5 == cy::test::near_relative(1000.0, 0.01));
+    CY_CHECK(-990.0 == cy::test::near_relative(-1000.0, 0.01));
+    // No `1 +` in the scale: relative to zero only zero is close.
+    CY_CHECK_FALSE(1e-9 == cy::test::near_relative(0.0, 0.5));
+    CY_CHECK(0.0 == cy::test::near_relative(0.0, 0.0));
 }
 
 CY_TEST_CASE("harness: a subcase re-enters the case with fresh state") {

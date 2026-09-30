@@ -27,9 +27,9 @@
 
 namespace {
 
-/// An absolute comparison against zero. `CY_CHECK_NEAR` is relative (doctest's `Approx::epsilon`
-/// scales by the larger magnitude), so against an expected value of exactly 0 it degenerates into
-/// requiring exact equality. Several assertions below genuinely want "within a tolerance of zero".
+/// An absolute comparison against zero, written before `CY_CHECK_NEAR` was absolute: it was
+/// doctest's `Approx::epsilon` then, which scales by the larger magnitude. `CY_CHECK_NEAR(x, 0, t)`
+/// now means the same thing.
 [[nodiscard]] bool near_zero(cy::f32 value, cy::f32 tolerance) {
     return std::fabs(value) <= tolerance;
 }
