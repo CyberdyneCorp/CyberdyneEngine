@@ -1,0 +1,287 @@
+Mutations that turn the gameplay graph editor's tests red (#29, visual scripting),
+Development profile. Each mutation was applied, its tests run, the file restored and
+md5-verified. Listed under each: the tests (Rust) or test cases (C++) that failed.
+
+== c01_every_handler_starts_at_the_first_block: src/graph/src/event_script.cpp
+<   handler.block = blocks[index];
+>   handler.block = blocks[0];
+FAILED  event graph: each event starts its own handler in one shared program
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c02_a_new_event_keeps_the_old_wait: src/graph/src/lower_script.cpp
+<   state.set_resume_block(kNoBlock);
+<   return run_blocks(program, state, host, start, instruction_budget);
+>   return run_blocks(program, state, host, start, instruction_budget);
+FAILED  event graph: each event starts its own handler in one shared program
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c03_native_handler_starts_at_the_entry: src/graph/src/lower_script_native.cpp
+<   return run_steps(program, state, host, program.block_starts()[start], instruction_budget);
+>   return run_steps(program, state, host, program.entry_step(), instruction_budget);
+FAILED  event graph: each event starts its own handler in one shared program
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c04_any_name_of_the_kind_is_declared: src/graph/src/event_script.cpp
+<   if (!declared.family && declared.name == name) {
+>   if (!declared.family) {
+FAILED  event graph: an undeclared, misused or unnamed external is an error on its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c05_a_name_of_another_kind_is_accepted: src/graph/src/event_script.cpp
+<   if (declared.kind != kind) {
+>   if (declared.kind != kind && false) {
+FAILED  event graph: an undeclared, misused or unnamed external is an error on its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c06_capabilities_unchecked: src/graph/src/event_script.cpp
+<   !has_capability(graph.granted(), declared->capability)) {
+>   false) {
+FAILED  event graph: a call outside the graph's capabilities is an error on its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c07_pin_types_unchecked: src/graph/src/event_script.cpp
+<   if (source->type == target->type || registry.converts(source->type, target->type)) {
+>   if (true) {
+FAILED  event graph: a wire between different pin types names both ends and both types
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c08_duplicate_events_accepted: src/graph/src/event_script.cpp
+<   if (earlier != nullptr) {
+>   if (false) {
+FAILED  event graph: a graph with no event, an unnamed event, or two of one is refused
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c09_unreachable_nodes_unreported: src/graph/src/event_script.cpp
+<   report(sink, Severity::Warning, "script.node.unreachable", node.key,
+>   (void)sink;
+>   (void)node.key;
+>   if (false) report(sink, Severity::Warning, "script.node.unreachable", node.key,
+FAILED  event graph: a node no event reaches is a warning and the graph still compiles
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c10_listing_loses_the_node: src/graph/src/event_script.cpp
+<   static_cast<unsigned long long>(site != nullptr ? site->node : 0)
+>   static_cast<unsigned long long>(site != nullptr ? 0 : 0)
+FAILED  event graph: the listing shows each instruction and the node it came from
+[doctest] test cases:  1 |  0 passed | 1 failed | 45 skipped
+RESTORED md5 ok
+
+== c11_native_call_drops_its_arguments: src/graph/src/lower_script_native.cpp
+<   frame.registers[step.dst] = frame.host->call(external, arguments_of(step, frame));
+>   frame.registers[step.dst] = frame.host->call(external, {});
+FAILED  graph behaviours: the bytecode and native back ends move and sound tick for tick
+[doctest] test cases:    1 |   0 passed |   1 failed | 7 skipped
+RESTORED md5 ok
+
+== c12_cue_plays_at_the_origin: src/game_backend/src/graph_behaviours.cpp
+<   play.position[0] = position.x;
+>   play.position[0] = 0.0F;
+FAILED  graph behaviours: an ordered unit moves to the target and plays its cue on arrival
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c13_arrival_is_immediate: src/game_backend/src/graph_behaviours.cpp
+<   return loaded.waits[index].verb == Verb::Arrived && !current_->moving;
+>   return loaded.waits[index].verb == Verb::Arrived;
+FAILED  graph behaviours: an ordered unit moves to the target and plays its cue on arrival
+[doctest] test cases:   1 |   0 passed |   1 failed | 7 skipped
+RESTORED md5 ok
+
+== c14_the_step_ignores_the_frame: src/game_backend/src/graph_behaviours.cpp
+<   const f32 step = speed * dt;
+>   const f32 step = speed + (dt * 0.0F);
+FAILED  graph behaviours: an ordered unit moves to the target and plays its cue on arrival
+[doctest] test cases:  1 |  0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c15_a_waiting_unit_ignores_new_orders: src/game_backend/src/graph_behaviours.cpp
+<   if (handler == nullptr) {
+>   if (handler == nullptr || instance.status == GraphInstanceStatus::Waiting) {
+FAILED  graph behaviours: a newer order replaces the one the unit is still carrying out
+[doctest] test cases:   1 |   0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c16_any_cue_binds: src/game_backend/src/graph_behaviours.cpp
+<   } else if (audio_->find_cue(binding.cue_name.c_str(), binding.cue) != CY_RESULT_OK) {
+>   } else if (false) {
+FAILED  graph behaviours: a cue the project lacks is refused on the node that plays it
+[doctest] test cases: 1 | 0 passed | 1 failed | 7 skipped
+RESTORED md5 ok
+
+== c17_catalogue_offers_the_tick_entry: src/editor_backend/src/script_service.cpp
+<   constexpr std::string_view kExcludedTypes[] = {"script.entry"};
+>   constexpr std::string_view kExcludedTypes[] = {"script.none"};
+FAILED  editor script: the catalogue is the engine's script vocabulary and declared names
+[doctest] test cases:   1 |   0 passed | 1 failed | 6 skipped
+RESTORED md5 ok
+
+== c18_diagnostics_lose_their_severity: src/editor_backend/src/script_service.cpp
+<   out.u8v(severity_of(diagnostic.severity))
+>   out.u8v(static_cast<u8>(severity_of(diagnostic.severity) & 0U))
+FAILED  editor script: a misspelled function is refused on the node that names it
+[doctest] test cases:  1 |  0 passed | 1 failed | 6 skipped
+RESTORED md5 ok
+
+== c19_raise_drops_its_arguments: src/editor_backend/src/script_service.cpp
+<   play->raise(entity, Name::intern(event), Span<const f32>(arguments, count));
+>   play->raise(entity, Name::intern(event), Span<const f32>());
+FAILED  editor script: the editor's raise reaches Play's graph and the state reports it
+[doctest] test cases:   1 |   0 passed | 1 failed | 6 skipped
+RESTORED md5 ok
+
+== c20_service_does_not_route_script: src/editor_backend/src/material_service.cpp
+<   result = dispatch_script(*session, operation, scripts_);
+>   result = dispatch_script(*session, std::string_view("script.none"), scripts_);
+FAILED  editor script: the material service routes script.* and lists it
+[doctest] test cases:  1 |  0 passed | 1 failed | 6 skipped
+RESTORED md5 ok
+
+== c21_play_attaches_nothing: samples/05b-editor-window/runtime/graph_runtime.cpp
+<   if (reference.empty()) {
+>   if (true) {
+FAILED  the editor's unit-command graph moves and sounds as its Swift twin does, tick for tick
+[doctest] test cases:    1 |    0 passed |   1 failed | 1 skipped
+RESTORED md5 ok
+
+== c22_the_graph_rounds_differently: src/game_backend/src/graph_behaviours.cpp
+<   position.x += dx / distance * step;
+>   position.x += dx * step / distance;
+FAILED  the editor's unit-command graph moves and sounds as its Swift twin does, tick for tick
+[doctest] test cases:    1 |    0 passed |  1 failed | 1 skipped
+RESTORED md5 ok
+
+== r01_floats_not_written_as_the_engine_writes_them: editor/crates/cy-editor-services/src/script_graph.rs
+<   trim_fraction(&format!("{wide:.decimals$}"))
+>   format!("{value}")
+FAILED  script_graph::tests::floats_are_written_as_c_writes_them_with_nine_significant_digits
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r02_properties_not_in_name_order: editor/crates/cy-editor-services/src/script_graph.rs
+<   properties.sort_by(|a, b| a.name.cmp(&b.name));
+>   
+FAILED  script_graph::tests::a_graph_built_in_any_order_writes_the_engines_order
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r03_empty_name_not_the_zero_tuple: editor/crates/cy-editor-services/src/script_graph.rs
+<   Self::Text(_) => out.push_str("(0, 0, 0, 0, 0)"),
+>   Self::Text(_) => out.push_str("\"\""),
+FAILED  script_graph::tests::a_graph_built_in_any_order_writes_the_engines_order
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r04_raise_drops_its_arguments: editor/crates/cy-editor-services/src/script_graph.rs
+<   out.u32(u32::try_from(count).unwrap_or(3));
+>   out.u32(0);
+FAILED  script_graph::tests::the_raise_is_the_bytes_the_engines_suite_submits
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 251 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r05_save_not_undoable: editor/crates/cy-editor-services/src/editor.rs
+<   kind: format!("{}{reference}", crate::script_graph::DOMAIN_PREFIX),
+>   kind: format!("unrecorded:{reference}"),
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r06_undo_does_not_restore_the_file: editor/crates/cy-editor-services/src/builtin.rs
+<   for (reference, source) in vfx_documents.into_iter().chain(script_graphs) {
+>   let _ = script_graphs;
+>   for (reference, source) in vfx_documents {
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.02s
+RESTORED md5 ok
+
+== r07_added_nodes_lack_the_engines_defaults: editor/crates/cy-editor-interface/src/specialised/script_authoring_commands.rs
+<   canvas.set_property_by_identity(node, identity, default)?;
+>   let _ = (node, identity, default);
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r08_attach_is_a_no_op: editor/crates/cy-editor-services/src/script_commands.rs
+<   document.add_component(node, component, vec![(field, value)])
+>   {
+>   let _ = (component, field, value);
+>   Ok(())
+>   }
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r09_raise_names_no_entity: editor/crates/cy-editor-services/src/script_commands.rs
+<   crate::mirror::engine_identity(entity),
+>   0,
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.02s
+RESTORED md5 ok
+
+== r10_a_report_forgets_what_it_compiled: editor/crates/cy-editor-services/src/script_requests.rs
+<   (queued.source.clone(), report)
+>   (String::new(), report)
+FAILED  the_gameplay_graph_panel_offers_the_engines_events_and_shows_what_it_compiled
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.02s
+RESTORED md5 ok
+
+== r11_capture_drops_unknown_nodes: editor/crates/cy-editor-interface/src/specialised/script.rs
+<   .filter(|node| catalogue.get(&node.type_name).is_none())
+>   .filter(|_| false)
+FAILED  specialised::script::tests::a_node_the_catalogue_lacks_is_kept_with_its_wires
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r12_catalogue_never_marked_ready: editor/crates/cy-editor-interface/src/specialised/mod.rs
+<   self.script_catalogue_ready = true;
+>   self.script_catalogue_ready = false;
+FAILED  the_gameplay_graph_panel_offers_the_engines_events_and_shows_what_it_compiled
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r13_a_diagnostic_row_selects_nothing: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   let _ = canvas.select([key]);
+>   let _ = key;
+FAILED  an_engine_diagnostic_is_on_its_node_and_selects_it
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r14_the_palette_is_empty: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   graph_canvas::node_palette(ui, entries, true)
+>   graph_canvas::node_palette(ui, Vec::new(), true)
+FAILED  gameplay_graph_gestures_are_the_registered_script_commands
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r15_compile_asked_every_frame: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   || asked
+>   
+FAILED  a_graph_the_engine_has_not_compiled_is_sent_to_it_once
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.15s
+RESTORED md5 ok
+
+== r17_opening_refuses_a_value_the_palette_would: editor/crates/cy-editor-interface/src/specialised/script.rs
+<   Some(declared) => canvas.restore_property_by_identity(
+>   Some(declared) => canvas.set_property_by_identity(
+FAILED  specialised::script::tests::a_value_the_palette_would_refuse_still_opens_and_is_kept
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r16_panel_invokes_an_unregistered_command: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   "script.refresh",
+<   ];
+>   "script.reload",
+>   ];
+FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 142 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+39 of 39 mutations killed.

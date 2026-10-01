@@ -347,12 +347,8 @@ fn toolbar(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
 }
 
 fn compile_line(target: &Target) -> (Semantic, String) {
-    if !target.connected {
-        return (
-            Semantic::Warning,
-            "Not compiled: no runtime is attached, and the editor does not compile graphs".into(),
-        );
-    }
+    // The engine's answer about this exact text stays true without a runtime; only the absence
+    // of one is worth saying when there is no answer.
     match &target.report {
         Some((true, report)) if report.compiled => (
             Semantic::Live,
@@ -375,6 +371,10 @@ fn compile_line(target: &Target) -> (Semantic, String) {
                 "Does not compile: {} error(s), each on its node",
                 report.errors().count()
             ),
+        ),
+        _ if !target.connected => (
+            Semantic::Warning,
+            "Not compiled: no runtime is attached, and the editor does not compile graphs".into(),
         ),
         _ if target.pending => (Semantic::Active, "Compiling…".into()),
         _ => (Semantic::Neutral, "Not compiled yet".into()),
