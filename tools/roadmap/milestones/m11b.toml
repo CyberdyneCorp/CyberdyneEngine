@@ -906,9 +906,14 @@ kind = "command"
 run = "just quality-requirements gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and-actions"
 ci_job = "milestone-m11b"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just quality-requirements` over the eight gameplay rows reports 0 of 183 requirements mapped to a test, a gate or a recorded exemption. `sequencing-and-cinematics` (31), `animation-and-skinning` (30) and `camera-system` (28) carry no named blocker, which was M11.b's own stated risk: nothing has refused them because nothing has read them. M11.e's `every-requirement-maps` is the criterion that sweeps this."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+# WHAT TURNS THIS RED IS A SUITE GOING MISSING, NOT THE MAP BEING EDITED, as with
+# m11c:material-compiler-at-complete-grade. `unit.input_actions` answers eighteen of these rows'
+# requirements; renaming the `cy_add_test` that declares it leaves those entries naming a suite that
+# is not there, which `requirements.py` reports as "answered by something that is not there".
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/servers/input/tests/CMakeLists.txt"
+token = "input_actions"
 
 [[criterion]]
 id = "editor-at-complete-grade"

@@ -350,10 +350,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "network-at-complete-grade"
-digest = "8f637a6c1ce6c505"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 row(s) map to a test, a gate or a recorded exemption"
+digest = "486d4b968e142d3a"
+verdict = "proven"
+mutation = "rename-token 'networking_core' in src/networking/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -550,10 +550,10 @@ detail = "as m1:four-profiles, the same check byte for byte: red under mutation 
 [[proof]]
 ledger = "m11b"
 criterion = "gameplay-at-complete-grade"
-digest = "edb0e2bfbec8b42b"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and- … 0 of 183 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
+digest = "feddbcd23f702e81"
+verdict = "proven"
+mutation = "rename-token 'input_actions' in src/servers/input/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"

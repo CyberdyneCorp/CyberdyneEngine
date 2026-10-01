@@ -1192,11 +1192,16 @@ kind = "command"
 run = "just quality-requirements networking-and-replication replay-and-rollback simulation-and-determinism"
 ci_job = "milestone-m11a"
 
-# --- Section 11: the record, the tiers, and the next rung ------------------------------------------
+# WHAT TURNS THIS RED IS A SUITE GOING MISSING, NOT THE MAP BEING EDITED, as with
+# m11c:material-compiler-at-complete-grade. `unit.networking_core` answers seven of these rows'
+# requirements; renaming the `cy_add_test` that declares it leaves those entries naming a suite that
+# is not there, which `requirements.py` reports as "answered by something that is not there".
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/networking/tests/CMakeLists.txt"
+token = "networking_core"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11a to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just quality-requirements networking-and-replication replay-and-rollback simulation-and-determinism` reports 0 of 67 requirements across 3 rows mapped to a test, a gate or a recorded exemption — `simulation-and-determinism` alone prints all twenty of its requirements unanswered by title. `tools/roadmap/requirements-coverage.toml` names seven rows in the whole repository and none of these three is one of them. The recipe exists and works — it was written at M11.a precisely so this criterion would stop failing for a missing recipe and start failing for its subject — and its subject is that nothing has read these three specifications end to end. M11.e's `every-requirement-maps` is the criterion that sweeps this, so that is the rung."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+# --- Section 11: the record, the tiers, and the next rung ------------------------------------------
 
 [[criterion]]
 id = "roadmap-tiers"
