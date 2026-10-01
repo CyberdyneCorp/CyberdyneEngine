@@ -553,6 +553,24 @@ handle) so a query in `onFixedUpdate` replays exactly, the whole count for the s
 of each distinct query shape creates it, so do that on the game thread or through `prewarm()` at
 load.
 
+ABI 1.5 added writes to bodies and character controllers (`add-swift-m12-gaps`):
+
+| Swift | Entry | Phases |
+|---|---|---|
+| `RigidBody(entity).applyForce(_:)`, `.applyTorque(_:)` | `physics_apply_force`, `physics_apply_torque` — accumulated for the next step | fixed, none |
+| `RigidBody(entity).applyImpulse(_:at:)` | `physics_apply_impulse` — now, at a world point or the centre of mass | fixed, none |
+| `RigidBody(entity).setVelocity(linear:angular:)`, `.velocity` | `physics_set_velocity` (a nil half is kept), `physics_get_velocity` | writes fixed, none; the read any |
+| `CharacterController.create(on:_:)`, `.destroy()` | `character_create`, `character_destroy` | fixed, none |
+| `CharacterController(entity).move(velocity:jump:)` | `character_move` — one step of the fixed delta | fixed only |
+| `CharacterController(entity).state` | `character_state` | any |
+
+`PhysicsBodyAdapter` (`physics_backend.h`) maps an entity to its body through the same
+`EntityBodies` the queries use, refuses a write to a body that cannot move instead of ignoring it,
+and wakes the body on a force or a torque. `CharacterAdapter` (`character_backend.h`) owns one
+`CharacterController` per entity, whose kinematic body carries the entity so a ray cast names the
+character; it is an `EntityBodies` itself, for ignore lists. Both answer `.unavailable` during the
+step in every build. `samples/13-rts-api`'s scout walks a hero and kicks a crate with them.
+
 ---
 
 ## 6. Characters, joints, ragdolls and buoyancy

@@ -2,8 +2,10 @@
 
 A tutorial for a gameplay programmer, and for the engine contributor who extends what gameplay can
 reach: how a Swift game is put together, built, loaded and hot-reloaded; the behaviour and system
-models; the ABI 1.3 game services (time, input, camera, physics queries, navigation, audio,
-spawning) with the real API; a walk through the Swift-only RTS sample; and the bindings underneath,
+models, with systems scheduled by the engine and the tree callbacks it drives; the game services of
+ABI 1.3 and 1.5 (time, input, camera, physics queries, forces and impulses, character controllers,
+navigation, audio, spawning) with the real API; a walk through the Swift-only RTS sample; and the
+bindings underneath,
 including how to add an ABI entry end to end without breaking a module that already shipped.
 
 **Governed by**: [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) (the package,
@@ -12,17 +14,19 @@ packaging) and [`native-abi`](../../openspec/specs/native-abi/spec.md) (the flat
 versioned table, module entry, handles, marshalling, errors, reload, the compatibility gate, the
 Rust SDK overlay). The game services were added by the open change
 [`add-swift-game-api`](../../openspec/changes/add-swift-game-api/design.md), whose design is the
-per-entry reference for phases, determinism, ownership and errors. The module READMEs linked below
+per-entry reference for phases, determinism, ownership and errors; ABI 1.5's scheduled systems, tree
+callbacks, node paths, bodies and characters by
+[`add-swift-m12-gaps`](../../openspec/changes/add-swift-m12-gaps/design.md). The module READMEs linked below
 are the detailed reference; this guide is the route through them.
 
 | Where | What |
 |---|---|
 | [`bindings/swift/`](../../bindings/swift/README.md) | The `CyberdyneKit` Swift package a game depends on: four targets, the tests, the module builder |
-| [`src/abi/`](../../src/abi/README.md) | The C ABI: `cy_abi.h`, the interface table, the module loader, hot reload, the 1.3 thunks |
-| [`src/game_backend/`](../../src/game_backend/include/cy/game_backend/) | The adapters behind the 1.3 entries: input, camera, physics queries, navigation, audio, spawn |
+| [`src/abi/`](../../src/abi/README.md) | The C ABI: `cy_abi.h`, the interface table, the module loader, hot reload, the game thunks, `ScriptSystems` |
+| [`src/game_backend/`](../../src/game_backend/include/cy/game_backend/) | The adapters behind the game entries: input, camera, physics queries and bodies, characters, navigation, audio, spawn, and the scene bridge |
 | [`tools/abi/`](../../tools/abi/README.md) | The ABI description and its compatibility gate |
 | [`tools/gen/swift/`](../../tools/gen/swift/README.md), [`tools/gen/rust/`](../../tools/gen/rust/README.md) | The Swift overlay generator and the editor's Rust SDK generator |
-| [`samples/13-rts-api`](../../samples/13-rts-api/README.md) | An RTS written only in Swift, through ABI 1.3 |
+| [`samples/13-rts-api`](../../samples/13-rts-api/README.md) | An RTS written only in Swift, through ABI 1.3 and 1.5 |
 | [`samples/05b-editor-window/project`](../../samples/05b-editor-window/project/) | The editor project whose `game/SpinCube.swift` runs when you press Play |
 
 ![The editor's Inspector showing the SpinCube node's ScriptBehaviour component, with its class field
@@ -371,12 +375,23 @@ shape changes (section 8). `Behaviour` holds `entity` (a handle, never an owning
 | `onUpdate(_ delta: Double)` | `frame_update` (ABI 1.3), from `BehaviourRuntime::frame_update` | frame (`U`) |
 | `onDestroy()` | `destroy` | none |
 | `onAfterReload(restored:)`, `onMigrate(_:_:)` | `deserialize`, during a reload | none |
-| `onEnterTree`, `onReady`, `onEnable`, `onDisable`, `onExitTree` | **nothing yet**: declared, recorded, and reachable only through `Behaviour.dispatch(_:delta:)` | |
+| `onEnterTree`, `onReady`, `onEnable`, `onDisable`, `onExitTree` | the vtable's `enter_tree` … `exit_tree` (ABI 1.5), from the scene tree's `pump()` through `ScriptSceneBridge` — for a behaviour attached to a **node** | the pump's (`N` in a frame loop) |
 
 Only what a class writes is registered. The `@Behaviour` macro reads the class body and emits
 `behaviourCallbacks`, a `CallbackSet`; `BehaviourBridge.swift` then sets `vtable.frame_update` only
-for a class that declared `onUpdate`, so a behaviour without one is never scheduled for a frame —
-`swift-scripting`'s "Unimplemented callback costs nothing" decided at registration. (It is decided at
+for a class that declared `onUpdate`, and each tree entry only for a class that declared that
+callback, so a behaviour without one is never called for it — `swift-scripting`'s "Unimplemented
+callback costs nothing" decided at registration.
+
+**The tree callbacks need a node.** A host makes every Swift behaviour type a scene behaviour of the
+same name (`ScriptSceneBridge::sync_types()`, after loading and after each reload) and attaches one to
+a node with `ScriptSceneBridge::attach(node, "Commander")`, or by naming it as a prefab node's
+`behaviour` — `onCreate` runs at once. The scene tree's pump then delivers `onEnterTree` parent first
+and once per attachment, `onReady` child first, `onExitTree` child first, and `onEnable`/`onDisable`
+when the node's effective enablement changes (published by propagation); destroying the node runs
+`onExitTree` then `onDestroy`. A behaviour created on a bare entity with `BehaviourRuntime::create`
+has no tree and gets none of the five. `samples/13-rts-api` attaches its `Commander` and `Scout` to
+`/Level/Commander` and `/Level/Scout`. (It is decided at
 compile time because Swift on Linux has no portable way to ask whether a subclass overrode a method,
 and the runtime lookups that exist were measured returning a retired generation's metadata.)
 
@@ -412,8 +427,25 @@ instance's `deserialize`, so the authored value lands in the property. It handle
 and text; vector fields are not applied yet. Editing the value in the Inspector writes the world;
 save it and press Play again to apply it.
 
-`@Node("path")` exists and always reads nil: there is no node entry in the table, and nothing calls
-its `resolve(_:)` (`Export.swift` says so).
+`@Node("path")` declares a node reference, resolved by the engine at `onReady` (ABI 1.5): before
+the bridge calls `onReady` it resolves every `@Node` the class declares through `node_find`, relative
+to the behaviour's own node (`Camera`, `./Rig/Arm`, `../Barracks`) or absolute from the root
+(`/Level/Player`). A path that does not resolve leaves the property nil and logs a warning naming
+the behaviour and the path; it never traps. The property's type is what the node is read as:
+`Entity`, or any `NodeResolvable`. A class with an `@Node` registers `ready` even if it does not
+override `onReady`. `SceneTree.find(_:from:)` is the same lookup, callable in any phase.
+
+```swift
+@Behaviour(name: "Commander", schema: 1)
+final class Commander: Behaviour {
+    @Node("../Barracks") var barracks: Entity?
+
+    override func onReady() throws {
+        guard let barracks else { return Log.warning("this level has no barracks") }
+        // …
+    }
+}
+```
 
 ---
 
@@ -484,44 +516,67 @@ as long as that layout is.
 through `var_make_string` / `var_make_bytes` and released after the call, so no engine allocation
 outlives it.
 
-### Systems: the model, and what is missing
+### Systems: scheduled by the engine
 
 A system is a function whose query **is** its access declaration:
 
 ```swift
 @System(stage: .simulation)
-func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
+func trainUnits(_ query: Query<Write<Veterancy>>, _ chunks: ChunkSource) {
+    chunks.forEachChunk(matching: type(of: query).access) { chunk in
+        guard let veterancy = chunk.array(Veterancy.self) else { return }
+        for index in 0..<chunk.count { veterancy[index].ticks += 1 }
+    }
+}
+
+@GameModule
+enum RtsGame: GameModule {
+    static let components: [any Component.Type] = [Veterancy.self]
+    static let behaviours: [any BehaviourClass.Type] = [Commander.self]
+    static let systems: [any SystemRegistration.Type] = [__CySystem_trainUnits.self]
+}
 ```
 
-`@System` expands to a `__CySystem_applyGravity` enum with a `descriptor` and a `register()` that
-"A game calls it from `GameModule.initialize(at:)`" (the doc comment `SystemMacro.swift` emits,
-pinned by `MacroExpansionTests.swift`). The macro
-refuses a query that reads and writes the same component, a first parameter that is not a
-`Query<...>`, and any parameter other than the query and a `ChunkSource` — so `Res<...>` is
-diagnosed rather than accepted. `Systems.conflictingPairs(in:)` applies the scheduler's rule (a
-write conflicts with any other access to the same name; two reads never conflict). The inner loop
-indexes `ChunkView.array(_:)`, a borrowed `UnsafeMutableBufferPointer<T>`, with no `CyVar` and no
-per-entity call; `EscapeGuard` logs a use after the iteration ended.
+`@System` expands to a `__CySystem_<name>` enum conforming to `SystemRegistration`, with a
+`descriptor` and a `register()`. The macro refuses a query that reads and writes the same
+component, a first parameter that is not a `Query<...>`, and any parameter other than the query and
+a `ChunkSource` — so `Res<...>` is diagnosed rather than accepted.
 
-**The engine does not run Swift systems yet.** There is no `register_system` entry, so
-`Systems.registered` stays on the module side, and nothing in `CyberdyneKit` conforms to
-`ChunkSource`. `Systems.run(stage:over:)` exists for the package's tests, which supply their own
-source (`ArrayChunkSource` in `SystemModelTests.swift`). ABI 1.1 did add `world_chunks` and
-`CyChunk` — one component's column per chunk, with an epoch to validate against `borrow_valid` — and
-`CyberdyneCore` exposes it as `World.chunks(component:into:capacity:count:)`, so a `ChunkSource`
-over it is writable; it is not written, and scheduling against native systems needs the missing
-entry. `Systems.swift`'s header comment still says 1.0 has no chunk entry; the model it describes is
-otherwise accurate.
+**The engine schedules it (ABI 1.5).** `GameModule`'s default `initialize(at: .scene)` registers
+`components`, then `behaviours`, then `systems`. Registering a system in a bound module calls
+`register_system`: each term of the query becomes a `CySystemAccess` (the component resolved by name
+in the world, which is why components come first; an unregistered component or a `Res<...>` term
+throws before the engine is asked), the stage is the attribute's. The host installs registered
+systems into its `ecs::Schedule` with `cy::abi::ScriptSystems::install(schedule)`, where they sit
+beside native systems and are **ordered by the same conflict rules** — a Swift `Write<Velocity>`
+and a native read of `Velocity` in one stage are ordered; two readers are not. The host runs each
+stage with `ScriptSystems::run(schedule, stage, jobs)`, which sets the phase for the stage (`F` for
+`.preSimulation` … `.postSimulation`, `U` for `.frame` … `.ui`, `N` for `.render`).
+
+When the stage runs, the body gets an `EngineChunkSource`: one `world_chunks` call per component the
+query reads or writes, joined by archetype, so a `ChunkView` carries every column of one chunk and
+the inner loop indexes `ChunkView.array(_:)` — a borrowed `UnsafeMutableBufferPointer<T>` — with no
+`CyVar` and no per-entity call. Archetypes holding a `Without<...>` component are skipped. While a
+body runs the world is iterating, so a structural call (create, destroy, add or remove a component)
+throws `.unavailable`; every view is invalidated when the body returns (`EscapeGuard` logs a later
+use). A body may run on a job worker beside non-conflicting systems: it must not touch behaviour
+state.
+
+A hot reload keeps every scheduled system where it is and runs the new image's code. A reload that
+changes a system's stage or access is refused — the schedule cannot re-order a system under a
+running game — and the previous generation keeps running. `Systems.run(stage:over:)` and
+`Systems.conflictingPairs(in:)` remain for the package's own tests.
 
 ### Which to use
 
 `swift-scripting` states the guidance: behaviours suit hand-authored gameplay objects, systems suit
 bulk data, and both may be used in one project. In this tree today:
 
-* **Behaviours** are the only model the engine drives. Use them for anything with identity and a
-  lifecycle: a commander, a spawner, a camera controller, a door.
+* **Behaviours** for anything with identity and a lifecycle: a commander, a spawner, a camera
+  controller, a door. Attach them to nodes to get the tree callbacks and `@Node`.
 * **Typed accessors** are the hot path within a behaviour: one type check and the field's bytes.
-* **Systems** are worth writing only against the tests until the engine can schedule them.
+* **Systems** for the same thing done to every unit: veterancy, upkeep, cooldowns. One call per
+  chunk rather than one per unit, ordered against native systems by their declarations.
 
 ---
 
@@ -660,6 +715,45 @@ Queries throw `.unavailable` while the physics step runs. The first use of a new
 it, so do that on the game thread. The C++ side and the ordering rules are in
 [the physics guide](physics.md#5-queries).
 
+### Forces, impulses and velocities (ABI 1.5)
+
+```swift
+let crate = RigidBody(crateEntity)
+try crate.applyImpulse(Vec3(x: 0, y: 0, z: 100))            // now; `at:` a point, or the centre
+try crate.applyForce(Vec3(x: 40, y: 0, z: 0))                // accumulated for the next step
+try crate.applyTorque(Vec3(x: 0, y: 5, z: 0))
+try crate.setVelocity(linear: Vec3(x: 0, y: 0, z: 0))        // the angular half is kept
+let speed = try crate.velocity.linear
+```
+
+`RigidBody(entity)` addresses the body the entity owns, through the host's entity-to-body map. The
+writes are simulation: `onFixedUpdate` or initialisation, refused in `onUpdate`; `velocity` is
+readable everywhere. An entity with no body throws `.notFound`; a static body, or a kinematic one
+under a force or an impulse, throws `.invalidArgument` — the server would ignore the push. Every
+call throws `.unavailable` during the physics step. Within a fixed step writes apply in call order.
+
+### Character controllers (ABI 1.5)
+
+```swift
+hero = Entity(bits: world.createEntity())
+try CharacterController.create(on: hero, .init(radius: 0.4, layer: 2, start: Pose(position: p)))
+
+override func onFixedUpdate(_ delta: Double) throws {
+    let character = CharacterController(hero)
+    try character.move(velocity: Vec3(x: 2, y: 0, z: 0), jump: wantsJump ? 4 : nil)
+    if try character.state.isGrounded { … }
+}
+```
+
+The engine's `cy::physics::CharacterController`: a capsule moved by collide-and-slide with slopes,
+stairs, a ceiling, pushing and moving platforms, identical over every physics backend. A nil field of
+the `Description` is the engine's default (0.3 m by 1.8 m, 45° slopes, 0.35 m steps). `move` is one
+fixed step — fixed update only, using the engine's fixed delta, so stair behaviour cannot depend on
+the frame rate — and the `state` (`ground`, `groundEntity`, `position`, `velocity`, `groundNormal`,
+`platformVelocity`, `touchingCeiling`, `touchingWall`, `steppedUp`) reads back at once. The
+character's kinematic body carries the entity, so `Physics.raycast` names it, and ignore lists can
+skip it. `create` and `destroy` are `onFixedUpdate` or initialisation.
+
 ### Navigation
 
 ```swift
@@ -754,21 +848,27 @@ engine failure reaches Swift as `CyberdyneError.status(Status, message:)` carryi
 
 The end-to-end proof of ABI 1.3: a camera that the keys and the screen edges pan, a unit picked under
 the pointer, sent to a clicked ground point, heard arriving, and a new unit built with a key. Every
-decision is Swift calling the engine; the C++ host binds six adapters and builds the level, and does
-not carry a single value between the game and a server.
+decision is Swift calling the engine; the C++ host binds the adapters and builds the level, and does
+not carry a single value between the game and a server. ABI 1.5 adds four more: the `Commander` and a
+`Scout` are attached to level nodes, so the tree's pump drives their `onEnterTree`/`onReady` and
+resolves their `@Node` paths; `trainUnits` is a `@System` the engine's scheduler runs every fixed
+tick, ordered against a native reader of the same column; the scout walks a hero with a character
+controller; and it kicks a crate with an impulse.
 
 ```sh
 just run-sample rts-api
+just run-sample rts-api --no-systems      # the scheduler's control: trainUnits never runs
 ctest --test-dir build/dev -R rts_api_sample --output-on-failure    # integration.rts_api_sample
 ```
 
 | File | What it holds |
 |---|---|
-| `game/Game.swift` | the `@GameModule` (section 2) |
-| `game/Contract.swift` | content names, two collision layers, the `RtsReport` component |
-| `game/Commander.swift` | the squad, the selection, the orders, the build key |
+| `game/Game.swift` | the `@GameModule` (section 2), and the `trainUnits` system |
+| `game/Contract.swift` | content names, the collision layers, the report components, `Veterancy` |
+| `game/Commander.swift` | the squad, the selection, the orders, the build key, its tree callbacks |
+| `game/Scout.swift` | a character-controlled hero, and a kicked crate |
 | `game/RtsCamera.swift` | panning |
-| `host/` | servers, adapters, the level, agent bodies, the scripted player |
+| `host/` | servers, adapters, the scene bridge, the schedule, the level, bodies, the scripted player |
 
 ### The contract: names and layers
 
@@ -956,8 +1056,12 @@ behaviour — which is why the sample as written does not call it.
 pan moved the camera about +6 m and the edge pan about -6 m; the clicked entity is the one the game
 selected; one order was issued and the unit arrived within its arrival distance while the other did
 not move; one arrival, one accepted cue, one voice; the build key made a third worker; none of it
-happens with `--no-behaviours`; two runs print the same report. It was proven red by breaking
-`physics_raycast` and `audio_play`. The README's known limits apply: the navigation funnel walks a
+happens with `--no-behaviours`; two runs print the same report. ABI 1.5's half: `onEnterTree` and
+`onReady` reached the commander exactly once and both `@Node` paths resolved; `trainUnits` ran on all
+420 fixed ticks and the scheduler ordered it after the native reader; the hero walked about 4 m,
+jumped and stands on the ground; the crate left at 5 m/s; `--no-systems` runs no system and changes
+nothing else. It was proven red by breaking `physics_raycast` and `audio_play`, and the 1.5 half by
+the mutations recorded in `openspec/changes/add-swift-m12-gaps/evidence/`. The README's known limits apply: the navigation funnel walks a
 staircase off a cell row, and the click-to-order hand-off is in-process (single-player; a lockstep
 RTS needs the `gameplay_submit_command` append `design.md` names).
 
@@ -1021,10 +1125,10 @@ Suppose a game needs a new service verb. The steps, in order, with the file each
 
 1. **Header.** Append the entry at the end of `CyInterface`, below the marker
    `Append new entries below this line. Never above it, never between.` and after
-   `spawn_destroy`, under a `/* --- 1.4: … --- */` comment. Give it its `[N F U]` phase list and
+   `character_state`, under a `/* --- 1.6: … --- */` comment. Give it its `[N F U]` phase list and
    whatever ownership rule is its own. Return `CyResult`; take `CyEngine` first so the generator
    puts it on `Engine`. A new struct begins with `uint32_t struct_size`, uses only fixed-width
-   members, and gets a `CY_ABI_STATIC_ASSERT` on its size. Increment `CY_ABI_MINOR` to `4u`.
+   members, and gets a `CY_ABI_STATIC_ASSERT` on its size. Increment `CY_ABI_MINOR` to `6u`.
 2. **Backend seam.** Add the method to the service's abstract backend in
    `src/abi/include/cy/abi/game/<service>.h` (or a new backend pointer on `GameServices` in
    `services.h`), and implement it in the adapter in `src/game_backend/`.
@@ -1040,10 +1144,10 @@ Suppose a game needs a new service verb. The steps, in order, with the file each
 4. **Table.** Add `&cy::abi::game::<entry>` at the **same position** at the end of `kInterface` in
    `src/abi/src/interface.cpp`. The initialiser is positional: an entry in the wrong place is a
    compile error only when the neighbouring signatures differ. Update the version in
-   `cy_get_interface`'s refusal message, which spells `"this engine exports ABI 1.3 …"` literally,
-   and the checks that pin 1.3: `test_interface.cpp` looks for `"1.3"` in that message, and
-   `test_game_services.cpp` asserts `abi_minor == 3U` and that `spawn_destroy` is the table's last
-   entry (`offsetof(CyInterface, spawn_destroy) + sizeof(void*) == sizeof(CyInterface)`).
+   `cy_get_interface`'s refusal message, which spells `"this engine exports ABI 1.5 …"` literally,
+   and the checks that pin it: `test_interface.cpp` looks for `"1.5"` in that message, and
+   `test_game_services.cpp` asserts `abi_minor >= 5U` and that `character_state` is the table's last
+   entry (`offsetof(CyInterface, character_state) + sizeof(void*) == sizeof(CyInterface)`).
 5. **Baseline.** `just quality-abi` now reports the change as compatible but the committed
    description stale, and fails; `just quality-abi --update` rewrites `abi_baseline.json`, which is
    committed with the change.
@@ -1259,10 +1363,10 @@ callback, and the instance is disabled.
 Recorded in `bindings/swift/README.md` ("What is thinner than `swift-scripting` asks for") and the
 specs; listed here so a game does not plan around them:
 
-* **Engine-scheduled Swift systems.** No `register_system` entry and no `ChunkSource` over
-  `world_chunks` (section 4).
-* **The tree callbacks.** `onEnterTree`, `onReady`, `onEnable`, `onDisable`, `onExitTree` are not
-  driven; `@Node(path)` is always nil.
+* **`Res<...>` in a system.** No entry reads a resource, so a system's query may name components
+  only; a resource term is refused at registration.
+* **Tree callbacks on a bare entity.** Only a behaviour attached to a scene node gets
+  `onEnterTree` … `onExitTree`; one created on a plain entity has no tree.
 * **Animation.** No skeleton, clip, parameter, event or root-motion call crosses the ABI; see
   [the animation guide](animation.md#not-built-yet).
 * **Game services in the editor's Play**, and `onUpdate` there (section 2).
@@ -1270,8 +1374,6 @@ specs; listed here so a game does not plan around them:
   to it and it has no custom executor tying it to the simulation thread; no entry is asynchronous;
   and a task still running in a retired generation after a reload is unmeasured. Do not start
   `Task`s from behaviours.
-* **A character controller, forces or impulses from Swift.** Physics is queries only.
-  `samples/04-character` drives its character through components its host carries.
 * **Lockstep commands** (`gameplay_submit_command`), **split-screen cameras** (`camera_active` is
   the primary view only), and **cooked `EntityTemplate` prefabs** through `spawn_*`.
 * **A shipping configuration.** Static linking and no dynamic load are specified and untried.

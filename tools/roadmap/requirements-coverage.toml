@@ -3438,6 +3438,50 @@ requirement = "ABI compatibility testing"
 evidence = "gate:abi"
 note = "`just quality-abi` diffs cy_abi.h against src/abi/abi_baseline.json; ABI 1.3 passed it as `compatible` against main's baseline (new types and 38 appended entries, nothing reordered, removed or re-typed) before the baseline was regenerated, and `just quality-abi --selftest` breaks each rule on purpose."
 
+# Mapped by `add-swift-m12-gaps` (ABI 1.5): the requirements its cases answer.
+
+[[coverage]]
+row = "native-abi"
+requirement = "Callbacks into modules"
+evidence = "test:unit.abi"
+case = "a script system runs in its stage's phase and cannot change the world's structure"
+note = "The system-callback half: `CySystemDesc.run` is a function pointer with the module's `user_data`, cy_abi.h states that it may run on a job worker in its stage's phase and must stay within its declared access, and the case shows the engine holding the world iterating while it runs, so a structural entry answers UNAVAILABLE. The unload half is the reload model's (images are retired, never unloaded): `integration.abi_reload`'s `after a reload the scheduled system runs the new image's code, in the same slot` shows a scheduled callback resolving to the current generation, never a retired one."
+
+[[coverage]]
+row = "native-abi"
+requirement = "Hot reload"
+evidence = "test:integration.abi_reload"
+case = "a reload that moves a scheduled system to another stage is refused"
+note = "ABI 1.5's addition to the incompatible-reload cases: a new module that registers an existing scheduled system in another stage is refused with ReloadFailure::SystemChanged, the abandoned generation's system records are dropped, and the system keeps running the previous image's code in its original place (its step, 1, not the moved image's 1000)."
+
+# --- swift-scripting ------------------------------------------------------------------------------
+#
+# Mapped by `add-swift-m12-gaps`. The other requirements of this row have not been read against the
+# tree yet.
+
+[[coverage]]
+row = "swift-scripting"
+requirement = "System programming model"
+evidence = "test:unit.abi"
+case = "a script system is ordered against a native one by the same conflict rules"
+note = "The 'Swift system is scheduled like a native one' scenario at the boundary: a module system declaring write access and a native system declaring read access to one component in one stage are ordered, two readers are not. The Swift half (the query's terms crossing as component ids, the body run over world_chunks joined by archetype) is SystemEngineTests.swift in integration.swift_package, and end to end integration.rts_api_sample's `trainUnits` runs on every fixed tick, ordered after the native roll, and not at all under --no-systems. 'Bulk iteration does not marshal' is the same EngineChunkSource: one world_chunks call per component, no CyVar."
+
+[[coverage]]
+row = "swift-scripting"
+requirement = "Behaviour programming model"
+evidence = "test:integration.rts_api_sample"
+case = "samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system, a hero, a push"
+note = "A Swift behaviour on a scene node receives the lifecycle `scene-graph-and-nodes` defines through ABI 1.5's vtable entries (onEnterTree and onReady exactly once each), and 'Node reference resolution' is the same case: both @Node paths resolved before onReady read them. The engine-side order for every tree callback (enter parent-first, ready child-first, disable/enable, exit then destroy child-first) is integration.game_backend_scene's `a script on a node is created at once and gets the tree callbacks in tree order`, and an unresolvable path reading nil is TreeCallbackTests.swift. The Inspector scenario is not answered here."
+
+# --- scene-graph-and-nodes ------------------------------------------------------------------------
+
+[[coverage]]
+row = "scene-graph-and-nodes"
+requirement = "Node lifecycle callbacks"
+evidence = "test:unit.scene"
+case = "a node created under one attached in the same frame enters the tree once"
+note = "Regression found by add-swift-m12-gaps: each node created under an in-tree parent queues its own subtree event, so a child built in the same frame as its parent was in two events and received onEnterTree twice. An `entered` flag per instance, cleared on exit, keeps it once per attachment; `onReady runs child-first, exactly once per attachment` in the same suite is the bottom-up scenario."
+
 # --- audio ----------------------------------------------------------------------------------------
 #
 # Two requirements the editor's audio tools (#29) exercise through the engine's own server. The

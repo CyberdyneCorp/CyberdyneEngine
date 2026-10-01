@@ -115,6 +115,29 @@ Tests: `unit.abi` (`test_game_physics.cpp`, `test_game_navigation.cpp`, against 
 `integration.game_backend_physics` (reference server) / `integration.game_backend_navigation` (a real
 mesh, queue and crowd).
 
+## What ABI 1.5 adds, and why
+
+`add-swift-m12-gaps`. M12's RTS needs three things 1.4 could not give a Swift game: systems the
+engine schedules, the tree callbacks and `@Node`, and physics beyond queries. 1.5 appends eleven
+entries and five `CyBehaviourVTable` members; the per-entry reference is
+`openspec/changes/add-swift-m12-gaps/design.md`.
+
+| Entries | Phases | Behind them | Notes |
+|---|---|---|---|
+| `register_system` | N | the host's system registry; `cy::abi::ScriptSystems` (`include/cy/abi/systems.h`) | One record per name per generation. `ScriptSystems::install(schedule)` adds one `ecs::Schedule` entry per name with the declared access, so the scheduler orders it against native systems by `jobs::AccessSet`'s rules; the entry resolves the current generation's record on every run, so a reload changes what runs without touching the schedule. A later generation that changes a system's stage or access is refused (UNSUPPORTED) and so is its reload (`ReloadFailure::SystemChanged`). `ScriptSystems::run` sets the stage's phase once; the world is held iterating while a body runs. |
+| `node_find` | N F U | `cy::abi::game::SceneBackend`, implemented by `cy::game_backend::ScriptSceneBridge` over `SceneTree` | Relative to a node, or absolute. NOT_FOUND leaves the output alone. |
+| `physics_apply_force`, `physics_apply_impulse`, `physics_apply_torque`, `physics_set_velocity` | N F | `PhysicsBodyBackend`, implemented by `PhysicsBodyAdapter` | A body that cannot move is INVALID_ARGUMENT rather than silently ignored; force and torque wake the body; UNAVAILABLE during the step. |
+| `physics_get_velocity` | N F U | as above | Either output may be null. |
+| `character_create`, `character_destroy` | N F | `CharacterBackend`, implemented by `CharacterAdapter` over `cy::physics::CharacterController` | One per entity; zero fields are the description's defaults; the body carries the entity. |
+| `character_move` | F | as above | One step of the clock's fixed delta, applied at the call. |
+| `character_state` | N F U | as above | `struct_size` both ways. |
+| vtable `enter_tree`, `ready`, `enable`, `disable`, `exit_tree` | the pump's | `BehaviourRuntime::tree_callback`, called by `ScriptSceneBridge` from the scene tree's pump | Through the creating generation's vtable; null for a module compiled before 1.5. |
+
+Tests: `unit.abi` (`test_game_systems.cpp`, `test_game_scene.cpp`, `test_game_bodies.cpp`,
+`test_game_character.cpp`, the 1.5 layouts and table shape), `integration.abi_reload` (a C module's
+system run through the scheduler, rebound by a reload, and a reload that moves it refused), and
+`integration.game_backend_bodies` / `_character` / `_scene` against the real servers and tree.
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved
