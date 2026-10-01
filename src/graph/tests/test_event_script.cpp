@@ -377,3 +377,25 @@ CY_TEST_CASE("event graph: the listing shows each instruction and the node it ca
     CY_CHECK(text.find("; node 4") != std::string::npos);
     CY_CHECK(text.find("; node 6") != std::string::npos);
 }
+
+CY_TEST_CASE("event graph: a muted node's external is checked, since a muted value still lowers") {
+    // Regression: muting skips a node on an execution chain, but a muted data node still feeds the
+    // pins it is wired to, so its name reached the program unchecked.
+    GraphBuilder builder;
+    builder.order().prop(2, "query", "secret.world_state");
+    CY_REQUIRE(builder.graph.mute(2, true).has_value());
+    const std::vector<Diagnostic> found = refused(builder);
+    const Diagnostic* undeclared = coded(found, "script.external.unknown");
+    CY_REQUIRE(undeclared != nullptr);
+    CY_CHECK_EQ(undeclared->node, 2U);
+    CY_CHECK_EQ(undeclared->detail, Name::intern("secret.world_state"));
+
+    GraphBuilder ungranted;
+    ungranted.order();
+    CY_REQUIRE(ungranted.graph.mute(2, true).has_value());
+    ungranted.graph.revoke(Capability::ReadWorld);
+    const std::vector<Diagnostic> missing_found = refused(ungranted);
+    const Diagnostic* missing = coded(missing_found, "script.capability.missing");
+    CY_REQUIRE(missing != nullptr);
+    CY_CHECK_EQ(missing->node, 2U);
+}

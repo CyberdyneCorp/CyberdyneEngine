@@ -27,3 +27,7 @@ SHALL NOT look a name up while a program runs.
 #### Scenario: A misspelled function is a compile error on its node
 - **WHEN** a graph calls a function its host did not declare
 - **THEN** compilation SHALL fail with a diagnostic naming that node and that name
+
+#### Scenario: A muted node's name is still checked
+- **WHEN** a muted data node names something its host did not declare, or needs a capability the graph was not granted
+- **THEN** compilation SHALL fail with a diagnostic on that node, because a muted value still lowers into the pins it is wired to

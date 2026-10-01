@@ -341,8 +341,10 @@ Expected<EventProgram, Error> compile_event_graph(const Graph& graph, const Node
     for (const Link& link : graph.links()) {
         check_link(graph, registry, link, sink);
     }
+    // Muted nodes too: muting skips a node on an execution chain, but a muted data node (a query,
+    // a field read) still lowers into whatever its value is wired to.
     for (const GraphNode& node : graph.nodes()) {
-        if (const ExternalUse* use = external_use(node.type); use != nullptr && !node.muted) {
+        if (const ExternalUse* use = external_use(node.type); use != nullptr) {
             check_external(graph, node, *use, externals, sink);
         }
     }
