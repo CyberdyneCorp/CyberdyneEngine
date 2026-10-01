@@ -7,6 +7,8 @@
 
 #include <utility>
 
+#include "script_build.h"
+
 namespace cy::graph::script {
 
 /// Write access to a `ScriptProgram`, which has none in public.
@@ -290,19 +292,14 @@ void step_external(const ScriptProgram& program, const Instruction& instruction,
 
 }  // namespace
 
-Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& state,
-                                    ScriptHost& host, u32 instruction_budget) noexcept {
-    if (program.blocks().empty()) {
-        return RunOutcome::Finished;
-    }
-    BlockId block = state.suspended() ? state.resume_block() : program.entry();
-    if (state.suspended()) {
-        if (Status restored = state.restore(program); !restored) {
-            return make_unexpected(restored.error());
-        }
-        state.set_resume_block(kNoBlock);
-    }
+namespace {
 
+/// The register machine's loop, from `block` until a return, a suspension or the budget. Shared by
+/// `execute` (entry or resume point) and `execute_from` (an event handler's block).
+[[nodiscard]] Expected<RunOutcome, Error> run_blocks(const ScriptProgram& program,
+                                                     ScriptState& state, ScriptHost& host,
+                                                     BlockId block,
+                                                     u32 instruction_budget) noexcept {
     u32 executed = 0;
     while (block != kNoBlock) {
         if (block >= program.blocks().size()) {
@@ -352,6 +349,33 @@ Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& s
         block = next;
     }
     return RunOutcome::Finished;
+}
+
+}  // namespace
+
+Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& state,
+                                    ScriptHost& host, u32 instruction_budget) noexcept {
+    if (program.blocks().empty()) {
+        return RunOutcome::Finished;
+    }
+    BlockId block = state.suspended() ? state.resume_block() : program.entry();
+    if (state.suspended()) {
+        if (Status restored = state.restore(program); !restored) {
+            return make_unexpected(restored.error());
+        }
+        state.set_resume_block(kNoBlock);
+    }
+    return run_blocks(program, state, host, block, instruction_budget);
+}
+
+Expected<RunOutcome, Error> execute_from(const ScriptProgram& program, ScriptState& state,
+                                         ScriptHost& host, BlockId start,
+                                         u32 instruction_budget) noexcept {
+    if (start >= program.blocks().size()) {
+        return make_unexpected(invalid("this handler begins at a block that is not in its program"));
+    }
+    state.set_resume_block(kNoBlock);
+    return run_blocks(program, state, host, start, instruction_budget);
 }
 
 // --- Compilation ------------------------------------------------------------------------------
@@ -1141,11 +1165,27 @@ Expected<ScriptProgram, Error> ProgramBuilder::build(const Graph& graph,
     return program;
 }
 
+Expected<ScriptProgram, Error> build_script_program(const Graph& graph,
+                                                    const NodeRegistry& registry,
+                                                    Span<const NodeKey> roots,
+                                                    Array<BlockId>& blocks,
+                                                    DiagnosticSink& sink) noexcept {
+    return ProgramBuilder::build(graph, registry, roots, blocks, sink);
+}
+
 Status register_script_nodes(NodeRegistry& registry) noexcept {
     (void)kExecIn;
     const PinDesc entry_pins[] = {pin("then", "exec", PinDirection::Output, true)};
     if (Status added =
             register_node(registry, "script.entry", Span<const PinDesc>(entry_pins, 1), false);
+        !added) {
+        return added;
+    }
+    // An event graph's entry points: one per event the graph answers, named by its `event`
+    // property. Same pins as `script.entry`; `compile_event_graph` (event_script.h) is what reads
+    // them, and `compile_script` ignores them.
+    if (Status added =
+            register_node(registry, "script.on_event", Span<const PinDesc>(entry_pins, 1), false);
         !added) {
         return added;
     }

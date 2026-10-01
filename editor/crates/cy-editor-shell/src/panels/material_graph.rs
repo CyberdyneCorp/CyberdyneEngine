@@ -215,6 +215,7 @@ fn draw_material_canvas(
         "Empty material graph\nChoose a node from the engine catalogue",
         &mut inputs.material_link_source,
         &mut CanvasFeedback {
+            unwired_inputs: true,
             link_problem: &mut inputs.material_link_problem,
             node_alerts: &[],
             on_connect: Some(&mut connect),

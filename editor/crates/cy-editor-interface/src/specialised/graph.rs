@@ -836,6 +836,15 @@ impl GraphCanvas {
     /// a node whose type the loaded catalogue no longer declares — which is what a catalogue
     /// switched underneath authored content looks like.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        self.diagnostics_reporting(true)
+    }
+
+    /// [`Self::diagnostics`], optionally without the unwired-input warnings.
+    ///
+    /// A domain whose unwired data input is a defined value — a gameplay graph reads zero from one
+    /// — leaves them out, so its canvas shows the engine compiler's diagnostics rather than a
+    /// warning on every optional argument.
+    pub fn diagnostics_reporting(&self, unwired_inputs: bool) -> Vec<Diagnostic> {
         let mut found = Vec::new();
         for node in self.nodes.values() {
             let Some(node_type) = self.catalogue.get(&node.type_name) else {
@@ -852,7 +861,7 @@ impl GraphCanvas {
                 continue;
             };
             for pin in &node_type.pins {
-                if pin.direction != PinDirection::Input {
+                if !unwired_inputs || pin.direction != PinDirection::Input {
                     continue;
                 }
                 let wired = self

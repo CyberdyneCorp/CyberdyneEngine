@@ -73,10 +73,6 @@ pub(super) fn node_palette(
 ///
 /// This is what a graph domain whose vocabulary is [`cy_editor_interface::Domain::node_types`]
 /// gets without writing a palette of its own.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the palette for the graph editors #29 adds next")
-)]
 pub(super) fn catalogue_palette(canvas: &GraphCanvas, query: &str) -> Vec<PaletteEntry> {
     let query = query.trim().to_ascii_lowercase();
     canvas
@@ -284,6 +280,9 @@ type MoveHandler<'a> =
 pub(super) struct CanvasFeedback<'a> {
     pub link_problem: &'a mut Option<String>,
     pub node_alerts: &'a [(u64, String)],
+    /// Whether an unwired input is worth a warning. False for a domain where it reads a defined
+    /// value, so the canvas carries the engine's diagnostics instead.
+    pub unwired_inputs: bool,
     pub on_connect: Option<&'a mut ConnectionHandler<'a>>,
     pub on_move: Option<&'a mut MoveHandler<'a>>,
 }
@@ -413,6 +412,7 @@ pub(super) fn draw_canvas(
         canvas,
         rect,
         feedback.link_problem.as_deref(),
+        feedback.unwired_inputs,
     ) {
         let _ = canvas.select([key]);
     }
@@ -768,8 +768,9 @@ fn draw_diagnostics(
     canvas: &GraphCanvas,
     canvas_rect: egui::Rect,
     gesture_problem: Option<&str>,
+    unwired_inputs: bool,
 ) -> Option<NodeKey> {
-    let diagnostics = canvas.diagnostics();
+    let diagnostics = canvas.diagnostics_reporting(unwired_inputs);
     let shown = diagnostics
         .len()
         .min(if gesture_problem.is_some() { 2 } else { 3 });
@@ -1235,6 +1236,7 @@ mod tests {
                 &mut canvas,
                 &mut pending,
                 &mut CanvasFeedback {
+                    unwired_inputs: true,
                     link_problem: &mut problem,
                     node_alerts: &[],
                     on_connect: None,
@@ -1296,6 +1298,7 @@ mod tests {
                 &mut canvas,
                 &mut pending,
                 &mut CanvasFeedback {
+                    unwired_inputs: true,
                     link_problem: &mut problem,
                     node_alerts: &[],
                     on_connect: Some(&mut on_connect),

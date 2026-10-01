@@ -67,6 +67,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // The mixer, cues and audio sources, and the engine previews over them. See
     // `crate::audio_commands`.
     crate::audio_commands::register(registry)?;
+    crate::script_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;

@@ -789,6 +789,46 @@ impl Editor {
 
     /// Save an audio asset as one undoable transaction on the active scene's history, and send a
     /// mixer to the engine when one is attached. Issue #29.
+    /// Save a gameplay graph as one transaction in the open world's history. Issue #29.
+    fn save_script_graph(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::script_graph::validate_reference(reference)?;
+        crate::script_graph::ScriptGraph::decode(source)?;
+        let document_id = self.workspace.active().ok_or_else(|| {
+            Problem::new(
+                "save a gameplay graph",
+                "no scene document is active for undo history",
+            )
+            .with_remedy("open a world; gameplay graph edits undo in its history")
+        })?;
+        let prior = if self.project.source_exists(reference) {
+            Some(self.project.read_source(reference)?)
+        } else {
+            None
+        };
+        if prior.as_deref() == Some(source) {
+            return Ok(());
+        }
+        self.project.put_source(reference, Some(source))?;
+        let recorded = (|| {
+            let document = self.documents.get_mut(document_id).ok_or_else(|| {
+                Problem::new("save a gameplay graph", "the active scene document closed")
+            })?;
+            document.begin(format!("Save gameplay graph {reference}"), self.actor.clone());
+            document.record(cy_editor_documents::operation::Operation::Domain {
+                node: None,
+                kind: format!("{}{reference}", crate::script_graph::DOMAIN_PREFIX),
+                before: crate::project::encode_source(prior.as_deref()),
+                after: crate::project::encode_source(Some(source)),
+            })?;
+            document.commit()
+        })();
+        if let Err(problem) = recorded {
+            let _ = self.project.put_source(reference, prior.as_deref());
+            return Err(problem);
+        }
+        Ok(())
+    }
+
     fn save_audio_asset(&mut self, reference: &str, source: &str) -> Result<()> {
         let is_mixer = reference.ends_with(".cymixer");
         if is_mixer {
@@ -1850,6 +1890,40 @@ impl cy_editor_commands::ProjectHost for Editor {
 
     fn audio_asset_save(&mut self, reference: &str, source: &str) -> Result<()> {
         self.save_audio_asset(reference, source)
+    }
+
+    fn script_graph_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        self.save_script_graph(reference, source)
+    }
+
+    fn script_catalogue(&mut self) -> Option<Vec<u8>> {
+        self.backend.script.want();
+        self.backend.script.catalogue().map(<[u8]>::to_vec)
+    }
+
+    fn script_compile(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let sent = self
+            .backend
+            .script
+            .compile(&self.runtime, reference, source)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_raise(&mut self, payload: Vec<u8>) -> Result<u64> {
+        let sent = self.backend.script.raise(&self.runtime, payload)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_refresh(&mut self) -> Result<u64> {
+        let sent = self.backend.script.refresh(&self.runtime)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_status(&self, reference: &str) -> cy_editor_commands::Outcome {
+        let current = (!reference.is_empty() && self.project.source_exists(reference))
+            .then(|| self.project.read_source(reference).ok())
+            .flatten();
+        crate::script_commands::status_outcome(&self.backend.script, reference, current.as_deref())
     }
 
     fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {

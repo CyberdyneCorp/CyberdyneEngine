@@ -101,6 +101,22 @@ pauses and turns on the physics layers, and fails unless they change the paused 
 `editor-physics-layers.png`.
 `smoke.editor_window` remains the test of real keyboard and pointer input.
 
+## Gameplay graphs during Play (#29)
+
+A node with a `ScriptGraph` component runs the project `.cyscript` its `graph` field names during
+Play. `runtime/graph_runtime.cpp` compiles each graph once when Play starts, after the audio has named
+the project's cues, attaches every such node to its graph's shared program
+(`cy::game_backend::GraphBehaviours`), and ticks the graph system after the Swift behaviours. A graph
+that does not compile, or plays a cue the project lacks, refuses Play with the node and the reason;
+the Play detail counts the graph instances. The editor raises events on a node's graphs
+(`script.event.raise`) and reads back each instance and every cue (`script.state.get`).
+
+`project/game/CommandedUnit.swift` is the Swift twin of the editor's unit-command graph: on its
+order, move to the target, then play `unit.arrived` where it stopped. `smoke.editor_graph_equivalence`
+(`runtime/tests/test_graph_equivalence.cpp`) runs both through this runtime's glue and requires the
+same position on every tick and the same cue on the same tick. It is declared wherever a Swift
+toolchain is, Linux included.
+
 ## Material Graph cube
 
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,

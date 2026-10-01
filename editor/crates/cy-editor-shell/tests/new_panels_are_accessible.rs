@@ -19,7 +19,7 @@ use cy_editor_visual::colour::Mode;
 use cy_editor_visual::density::Density;
 use egui_dock::TabViewer;
 
-const NEW_PANELS: [(&str, &str); 14] = [
+const NEW_PANELS: [(&str, &str); 15] = [
     ("undo-history", "Undo"),
     ("physics", "No world is open."),
     ("settings", "Apply"),
@@ -31,6 +31,7 @@ const NEW_PANELS: [(&str, &str); 14] = [
     ("editor-terrain", "No world is open."),
     ("editor-lighting-and-lightmap-baking", "Bake lightmaps"),
     ("editor-audio-buses-and-mixing", "No world is open."),
+    ("editor-gameplay-and-utility-graphs", "No world is open."),
     ("semantic-diff", "Compare"),
     ("semantic-merge", "Compare"),
     ("editor-navigation-baking", "No world is open."),
@@ -1509,4 +1510,194 @@ fn a_finished_bake_shows_what_it_made_and_the_probes_it_captured() {
     assert_eq!(captured.probes[0].probes.len(), 18);
     assert!(!captured.probes[0].probes[4].valid);
     std::fs::remove_dir_all(&root).ok();
+}
+
+// --- The gameplay graph editor (#29, visual scripting) ---------------------------------------------
+
+const GRAPH: &str = "editor-gameplay-and-utility-graphs";
+const UNIT_GRAPH: &str = "game/scripts/unit_command.cyscript";
+
+/// Answer one `script.*` request with an engine reply over a real session, the way the window does.
+fn engine_answers_script(
+    harness: &mut Harness,
+    send: impl FnOnce(&mut Editor) -> cy_editor_protocol::RequestId,
+    reply: Vec<u8>,
+) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    harness.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = send(&mut harness.editor);
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.editor.backend.script.pending() && std::time::Instant::now() < deadline {
+        for message in harness.editor.runtime.pump(&mut notifications) {
+            assert!(harness.editor.backend.accept(&message).is_none());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        !harness.editor.backend.script.pending(),
+        "the engine's reply was not taken"
+    );
+}
+
+/// A world, `source` as the unit graph, the engine's catalogue, and its compile of that source.
+fn graph_harness(project: &Project, source: &str, compiled: &str) -> Harness {
+    std::fs::create_dir_all(project.0.join("game/scripts")).unwrap();
+    std::fs::write(project.0.join(UNIT_GRAPH), source).unwrap();
+    let mut harness = Harness::new();
+    harness.editor = Editor::new(Actor::human("designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project.0));
+    harness.editor.open_document("worlds/units.cyworld").unwrap();
+    harness
+        .specialised
+        .install_script_catalogue(&engine_audio("script_catalogue_v1.wire"))
+        .unwrap();
+    let source = source.to_owned();
+    engine_answers_script(
+        &mut harness,
+        |editor| {
+            editor
+                .backend
+                .script
+                .compile(&editor.runtime, UNIT_GRAPH, &source)
+                .unwrap()
+                .expect("nothing else is in flight")
+        },
+        engine_audio(compiled),
+    );
+    harness
+}
+
+fn unit_graph() -> String {
+    String::from_utf8(engine_audio("script_unit_command_v1.cyscript")).unwrap()
+}
+
+#[test]
+fn the_gameplay_graph_panel_offers_the_engines_events_and_shows_what_it_compiled() {
+    let project = Project::new("graph");
+    let mut harness = graph_harness(&project, &unit_graph(), "script_compile_v1.wire");
+    let evidence = harness.frame(GRAPH, egui::vec2(1100.0, 760.0), Vec::new());
+    for label in ["Gameplay Graph", "＋ On Event", "＋ Call", "＋ Wait", "Undo"] {
+        assert!(
+            has(&evidence, label),
+            "the panel lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    // Events, not a tick: the engine's palette has no per-frame entry point to offer.
+    assert!(!has(&evidence, "＋ Entry"), "{:?}", evidence.labels);
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.starts_with("Compiled: ") && label.contains("unit.command")),
+        "{:?}",
+        evidence.labels
+    );
+    assert!(harness.inputs.script.seen);
+}
+
+#[test]
+fn an_engine_diagnostic_is_on_its_node_and_selects_it() {
+    let project = Project::new("diagnostic");
+    let misspelled = unit_graph().replace("unit.move_to", "unit.mvoe_to");
+    let mut harness = graph_harness(&project, &misspelled, "script_compile_error_v1.wire");
+    let size = egui::vec2(1100.0, 760.0);
+    let evidence = harness.frame(GRAPH, size, Vec::new());
+    let row = evidence
+        .labels
+        .iter()
+        .find(|label| label.contains("node 4 — script.external.unknown"))
+        .unwrap_or_else(|| panic!("no diagnostic row on node 4: {:?}", evidence.labels))
+        .clone();
+    assert!(row.contains("unit.mvoe_to"), "{row}");
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.starts_with("Does not compile: 1 error(s)")),
+        "{:?}",
+        evidence.labels
+    );
+    let _ = harness.frame(GRAPH, size, vec![click_named(&evidence, &row)]);
+    let session = harness
+        .specialised
+        .open(cy_editor_interface::Domain::GameplayAndUtilityGraphs)
+        .unwrap();
+    let selected: Vec<u64> = session
+        .graph
+        .expect("a graph domain")
+        .selection()
+        .iter()
+        .map(|key| key.ordinal())
+        .collect();
+    assert_eq!(selected, vec![4], "the row selects the node it is about");
+}
+
+#[test]
+fn gameplay_graph_gestures_are_the_registered_script_commands() {
+    let project = Project::new("graph-gestures");
+    let mut harness = graph_harness(&project, &unit_graph(), "script_compile_v1.wire");
+    let size = egui::vec2(1100.0, 760.0);
+    let first = harness.frame(GRAPH, size, Vec::new());
+    let added = harness.frame(GRAPH, size, vec![click_named(&first, "＋ Call")]);
+    assert!(
+        matches!(
+            added.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "script.node.add"
+                    && arguments.text("node_type") == Some("script.call")
+                    && arguments.text("reference") == Some(UNIT_GRAPH)
+        ),
+        "{:?}",
+        added.intents
+    );
+    let compiled = harness.frame(GRAPH, size, vec![click_named(&first, "Compile")]);
+    assert!(
+        matches!(
+            compiled.intents.as_slice(),
+            [Intent::Invoke(command, _)] if command == "script.graph.compile"
+        ),
+        "{:?}",
+        compiled.intents
+    );
+}
+
+#[test]
+fn a_graph_the_engine_has_not_compiled_is_sent_to_it_once() {
+    let project = Project::new("graph-compile");
+    let mut harness = graph_harness(&project, &unit_graph(), "script_compile_v1.wire");
+    // The author changes the graph outside the panel; the panel asks the engine about it, once.
+    std::fs::write(
+        project.0.join(UNIT_GRAPH),
+        unit_graph().replace("unit.command", "unit.ordered"),
+    )
+    .unwrap();
+    let size = egui::vec2(1100.0, 760.0);
+    let first = harness.frame(GRAPH, size, Vec::new());
+    assert!(
+        matches!(
+            first.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "script.graph.compile" && arguments.text("reference") == Some(UNIT_GRAPH)
+        ),
+        "{:?}",
+        first.intents
+    );
+    let second = harness.frame(GRAPH, size, Vec::new());
+    assert!(second.intents.is_empty(), "{:?}", second.intents);
 }

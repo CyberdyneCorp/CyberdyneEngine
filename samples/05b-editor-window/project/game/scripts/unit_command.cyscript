@@ -1,0 +1,33 @@
+cygraph 1
+graph "unit_command" version 1
+capability read_world write_world audio
+deterministic true
+node 1 "script.on_event" v1 {
+    prop "event" : "name" = "unit.command"
+}
+node 2 "script.query" v1 {
+    prop "query" : "name" = "event.x"
+}
+node 3 "script.query" v1 {
+    prop "query" : "name" = "event.z"
+}
+node 4 "script.call" v1 {
+    prop "function" : "name" = "unit.move_to"
+}
+node 5 "script.wait" v1 {
+    prop "reason" : "name" = "unit.arrived"
+}
+node 6 "script.emit_event" v1 {
+    prop "event" : "name" = "cue.unit.arrived"
+}
+link 2 "value" -> 4 "arg0"
+link 3 "value" -> 4 "arg1"
+link 1 "then" -> 4 "in"
+link 4 "then" -> 5 "in"
+link 5 "then" -> 6 "in"
+layout 1 at 16 16
+layout 2 at 16 110
+layout 3 at 16 200
+layout 4 at 230 16
+layout 5 at 444 16
+layout 6 at 444 150

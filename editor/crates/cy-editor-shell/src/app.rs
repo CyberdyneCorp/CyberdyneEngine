@@ -101,6 +101,7 @@ pub struct EditorWindow {
     material_save_pending: Option<(String, String)>,
     vfx_catalogue_revision: Revision,
     audio_vocabulary_revision: Revision,
+    script_catalogue_revision: Revision,
     /// Last project-backed VFX source seen by this window, including an undone creation.
     vfx_committed: Option<(String, Option<String>)>,
     /// Last project-backed reusable module source seen by this window.
@@ -201,6 +202,7 @@ impl EditorWindow {
             material_save_pending: None,
             vfx_catalogue_revision: Revision::INITIAL,
             audio_vocabulary_revision: Revision::INITIAL,
+            script_catalogue_revision: Revision::INITIAL,
             vfx_committed: None,
             vfx_module_committed: None,
             documents: DocumentTabsViewModel::new(),
@@ -348,6 +350,24 @@ impl EditorWindow {
         if let Err(problem) = self.specialised.install_vfx_catalogue(payload) {
             self.editor.notifications.post(Notification::error(
                 "The VFX catalogue is incompatible",
+                problem,
+            ));
+        }
+    }
+
+    /// Install the engine's gameplay graph vocabulary when it arrives. Issue #29.
+    fn sync_script_catalogue(&mut self) {
+        let revision = self.editor.backend.script.catalogue_revision();
+        if revision == self.script_catalogue_revision {
+            return;
+        }
+        self.script_catalogue_revision = revision;
+        let Some(payload) = self.editor.backend.script.catalogue() else {
+            return;
+        };
+        if let Err(problem) = self.specialised.install_script_catalogue(payload) {
+            self.editor.notifications.post(Notification::error(
+                "The gameplay graph catalogue is incompatible",
                 problem,
             ));
         }
@@ -1456,6 +1476,9 @@ impl EditorWindow {
                 // The mixer's meters stay live while it is on screen, and only then.
                 let audio_seen = std::mem::take(&mut panels.inputs.audio.seen);
                 panels.editor.backend.audio.set_polling(audio_seen);
+                // So do Play's gameplay graphs while the graph panel is on screen.
+                let script_seen = std::mem::take(&mut panels.inputs.script.seen);
+                panels.editor.backend.script.set_polling(script_seen);
             });
     }
 
@@ -1553,6 +1576,7 @@ impl eframe::App for EditorWindow {
         self.sync_material_catalogue();
         self.sync_vfx_catalogue();
         self.sync_audio_vocabulary();
+        self.sync_script_catalogue();
         #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {

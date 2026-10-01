@@ -550,6 +550,24 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 #     test:integration.editor_window_overlay, case "an audio source is drawn with a solid inner ring
 #     and a dashed outer ring"
 
+# `openspec/changes/add-editor-visual-scripting` (#29 Wave 2, the first visual scripting slice) adds
+# one requirement to this row and two to `visual-scripting`. Map them on archive, not before:
+#   "Gameplay and utility graphs editor"
+#     rust:cy-editor-mcp::a_session_over_the_wire::a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+#     (and cy-editor-shell's an_engine_diagnostic_is_on_its_node_and_selects_it); the play half is
+#     test:smoke.editor_graph_equivalence, case "the editor's unit-command graph moves and sounds as
+#     its Swift twin does, tick for tick"
+#   visual-scripting "Event graphs compile to one program with a handler table"
+#     test:integration.graph_compiler, case "event graph: each event starts its own handler in one
+#     shared program" (and "event graph: a wait suspends, and a newer event discards the suspension")
+#   visual-scripting "The host declares what a graph may name"
+#     test:integration.graph_compiler, case "event graph: an undeclared, misused or unnamed external
+#     is an error on its node"
+# The existing visual-scripting requirements this slice moves but does not close — "Execution
+# backends" (no per-build-configuration selection), "Events, not tick" (no declared per-tick event),
+# "Compiler-grade diagnostics" (no path, no unused-output or loop warnings), "Function and node
+# metadata" (no purity, determinism or thread-safety metadata) — stay unmapped until they are.
+
 [[coverage]]
 row = "editor-architecture"
 requirement = "Specialised editors"

@@ -4,7 +4,7 @@
 #include <cy/abi/host.h>
 #include <cy/abi/module.h>
 #include <cy/core/memory/ownership.h>
-#include <cy/game_backend/audio_backend.h>
+#include <cy/abi/game/audio.h>
 #include <cy/gameplay/play/session.h>
 #include <cy/scene/serialization/worldfile.h>
 
@@ -33,9 +33,10 @@ public:
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     void bind_scene_vfx(SceneVfxRuntime* runtime) noexcept { scene_vfx_ = runtime; }
 #endif
-    /// What ABI 1.3's `audio_*` entries reach during Play: the editor's own audio server, so a
-    /// Swift behaviour plays the cues and buses the author sees in the mixer. Null: unavailable.
-    void bind_audio(game_backend::AudioAdapter* audio) noexcept { audio_ = audio; }
+    /// What ABI 1.3's `audio_*` entries reach during Play: the editor's own audio server's
+    /// adapter, so a Swift behaviour plays the cues and buses the author sees in the mixer — and
+    /// the same adapter the gameplay graphs play through. Null: unavailable.
+    void bind_audio(abi::game::AudioBackend* audio) noexcept { audio_ = audio; }
 
 private:
     [[nodiscard]] CyResult set(CyEntity entity, const char* emitter, const char* parameter,
@@ -54,7 +55,7 @@ private:
     std::vector<u64> identities_;
     gameplay::PlaySession* play_ = nullptr;
     const scene::serialization::World* authored_ = nullptr;
-    game_backend::AudioAdapter* audio_ = nullptr;
+    abi::game::AudioBackend* audio_ = nullptr;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     SceneVfxRuntime* scene_vfx_ = nullptr;
 #endif

@@ -326,26 +326,13 @@ Expected<NativeProgram, Error> compile_native(const ScriptProgram& program,
     return native;
 }
 
-Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptState& state,
-                                           ScriptHost& host, u32 instruction_budget) noexcept {
-    if (program.steps().empty()) {
-        return RunOutcome::Finished;
-    }
-    u32 step_index = program.entry_step();
-    if (state.suspended()) {
-        if (state.resume_block() >= program.block_starts().size()) {
-            return invalid("this instance resumes in a block that is not in its program");
-        }
-        step_index = program.block_starts()[state.resume_block()];
-        if (Status restored = state.restore(program.source()); !restored) {
-            return make_unexpected(restored.error());
-        }
-        state.set_resume_block(kNoBlock);
-    }
-    if (step_index == kNoStep) {
-        return invalid("this program has no entry block");
-    }
+namespace {
 
+/// The native walk from `step_index`. Shared by `execute_native` and `execute_native_from`.
+[[nodiscard]] Expected<RunOutcome, Error> run_steps(const NativeProgram& program,
+                                                    ScriptState& state, ScriptHost& host,
+                                                    u32 step_index,
+                                                    u32 instruction_budget) noexcept {
     NativeFrame frame;
     frame.program = &program.source();
     frame.state = &state;
@@ -370,6 +357,40 @@ Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptS
         step_index = frame.next;
     }
     return RunOutcome::Finished;
+}
+
+}  // namespace
+
+Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptState& state,
+                                           ScriptHost& host, u32 instruction_budget) noexcept {
+    if (program.steps().empty()) {
+        return RunOutcome::Finished;
+    }
+    u32 step_index = program.entry_step();
+    if (state.suspended()) {
+        if (state.resume_block() >= program.block_starts().size()) {
+            return invalid("this instance resumes in a block that is not in its program");
+        }
+        step_index = program.block_starts()[state.resume_block()];
+        if (Status restored = state.restore(program.source()); !restored) {
+            return make_unexpected(restored.error());
+        }
+        state.set_resume_block(kNoBlock);
+    }
+    if (step_index == kNoStep) {
+        return invalid("this program has no entry block");
+    }
+    return run_steps(program, state, host, step_index, instruction_budget);
+}
+
+Expected<RunOutcome, Error> execute_native_from(const NativeProgram& program, ScriptState& state,
+                                                ScriptHost& host, BlockId start,
+                                                u32 instruction_budget) noexcept {
+    if (start >= program.block_starts().size() || program.block_starts()[start] == kNoStep) {
+        return invalid("this handler begins at a block that is not in its program");
+    }
+    state.set_resume_block(kNoBlock);
+    return run_steps(program, state, host, program.block_starts()[start], instruction_budget);
 }
 
 }  // namespace cy::graph::script
