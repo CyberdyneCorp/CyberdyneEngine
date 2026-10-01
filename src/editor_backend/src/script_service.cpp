@@ -7,6 +7,7 @@
 #include <cy/graph/event_script.h>
 #include <cy/graph/text.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -78,12 +79,8 @@ constexpr u32 kCatalogueVersion = 1;
 }
 
 [[nodiscard]] bool excluded(std::string_view type) noexcept {
-    for (const std::string_view excluded_type : kExcludedTypes) {
-        if (excluded_type == type) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(
+        kExcludedTypes, [type](std::string_view excluded_type) { return excluded_type == type; });
 }
 
 /// Writes a payload and keeps the first failure, so an encoder checks once.
@@ -106,7 +103,7 @@ public:
     [[nodiscard]] Status status() const noexcept { return status_; }
 
 private:
-    Out& keep(Status result) noexcept {
+    Out& keep(const Status& result) noexcept {
         if (status_ && !result) {
             status_ = result;
         }
@@ -235,7 +232,7 @@ void encode_not_compiled(Out& out, u64 semantic) noexcept {
     return ScriptRefusal{code, detail};
 }
 
-[[nodiscard]] ScriptRefusal answered(Status status) noexcept {
+[[nodiscard]] ScriptRefusal answered(const Status& status) noexcept {
     return status ? ScriptRefusal{} : refused("script.reply", "the reply could not be encoded");
 }
 

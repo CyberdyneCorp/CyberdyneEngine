@@ -4,6 +4,7 @@
 
 #include <cy/graph/event_script.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <utility>
 
@@ -172,8 +173,8 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
     if (declared == nullptr) {
         bool other_kind = false;
         for (u32 kind = 0; kind < static_cast<u32>(ExternalKind::Count); ++kind) {
-            other_kind = other_kind ||
-                         find_external(externals, name.text(), static_cast<ExternalKind>(kind));
+            other_kind = other_kind || find_external(externals, name.text(),
+                                                     static_cast<ExternalKind>(kind)) != nullptr;
         }
         error(sink, other_kind ? "script.external.kind" : "script.external.unknown", node.key,
               other_kind ? "this name is declared, but not as what this node uses it as"
@@ -190,12 +191,7 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
 }
 
 [[nodiscard]] bool contains(const Array<NodeKey>& keys, NodeKey key) noexcept {
-    for (const NodeKey existing : keys) {
-        if (existing == key) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(keys, [key](NodeKey existing) { return existing == key; });
 }
 
 /// The nodes a handler reaches: down every execution wire, and up every data wire into a reached
