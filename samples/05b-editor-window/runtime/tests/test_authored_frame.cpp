@@ -903,6 +903,22 @@ CY_TEST_CASE("authored scene material path names unsupported vertex-stage output
     }
 }
 
+#if !(defined(CY_SHADER_SLANG) && CY_SHADER_SLANG)
+// Profile and Shipping carry no Slang compiler, which shader-system requires. Without it the
+// scene's vertex stages cannot be compiled, so the runtime must refuse them and name the front end
+// it lacks rather than return empty stages.
+namespace {
+void check_vertex_stages_refused_without_slang(
+    const rendering::material::CompiledProgram& program) {
+    for (const shader::Target target : {shader::Target::Msl, shader::Target::SpirV}) {
+        auto stages = compile_scene_material_vertices(program, allocator(), target);
+        CY_REQUIRE_FALSE(stages.has_value());
+        CY_CHECK(std::string_view(stages.error().message).find("Slang") != std::string_view::npos);
+    }
+}
+}  // namespace
+#endif
+
 CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     auto refused = graph_diffuse_colour(kSurfaceVertexGraph, allocator());
     CY_REQUIRE_FALSE(refused.has_value());
@@ -917,6 +933,7 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     const auto* program = compiled->find(rendering::material::ProgramKind::Primary,
                                          rendering::material::QualityTier::High);
     CY_REQUIRE(program != nullptr);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
     auto stages = compile_scene_material_vertices(*program, allocator());
     CY_REQUIRE(stages.has_value());
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);
@@ -928,7 +945,6 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     CY_CHECK_GT(spirv->depth.bytes().size(), 0U);
     CY_CHECK_GT(spirv->shadow.bytes().size(), 0U);
     CY_CHECK_GT(spirv->fragment.bytes().size(), 0U);
-#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
     auto animated = compile_scene_graph_material(time_vertex_graph(), allocator());
     CY_REQUIRE(animated.has_value());
     const auto* animated_program = animated->find(rendering::material::ProgramKind::Primary,
@@ -951,6 +967,8 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
              std::string_view::npos);
     CY_CHECK(source.substr(previous, previous_point - previous)
                  .find("sceneMaterialTime() - sceneMaterialDelta());") != std::string_view::npos);
+#else
+    check_vertex_stages_refused_without_slang(*program);
 #endif
 }
 
@@ -1036,10 +1054,14 @@ CY_TEST_CASE("authored scene graph lowers an interpolant into its forward fragme
                                          rendering::material::QualityTier::High);
     CY_REQUIRE(program != nullptr);
     CY_REQUIRE_EQ(program->module.vertex_interpolants().size(), 1U);
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
     auto stages = compile_scene_material_vertices(*program, allocator());
     CY_REQUIRE(stages.has_value());
     CY_CHECK_GT(stages->visible.bytes().size(), 0U);
     CY_CHECK_GT(stages->fragment.bytes().size(), 0U);
+#else
+    check_vertex_stages_refused_without_slang(*program);
+#endif
 }
 
 CY_TEST_CASE("authored frame refuses nonfinite material animation time") {
