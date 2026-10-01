@@ -247,7 +247,7 @@ final class SystemMacroTests: XCTestCase {
             expandedSource: """
                 func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
 
-                public enum __CySystem_applyGravity {
+                public enum __CySystem_applyGravity: SystemRegistration {
                     public static let descriptor = SystemDescriptor(
                         name: "applyGravity", stage: .simulation, access: Query<Write<Velocity>, Read<Mass>>.access)
 

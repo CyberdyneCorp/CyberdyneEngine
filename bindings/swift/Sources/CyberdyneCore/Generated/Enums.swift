@@ -124,6 +124,20 @@ public enum NavQueryState: UInt32, Sendable, CaseIterable {
     case cancelled = 3
 }
 
+/// `CyAccessMode`: what a scheduled system declares about one component.
+public enum AccessMode: UInt32, Sendable, CaseIterable {
+    case read = 0
+    case write = 1
+    case exclude = 2
+}
+
+/// `CyGroundState`: what a character controller is standing on.
+public enum GroundState: UInt32, Sendable, CaseIterable {
+    case grounded = 0
+    case steepSlope = 1
+    case inAir = 2
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

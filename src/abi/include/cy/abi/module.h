@@ -157,7 +157,13 @@ enum class ReloadFailure : u8 {
     TypeNotRegistered,  ///< a live instance's behaviour type is not in the new image
     SchemaTooNew,       ///< the new module's schema predates the blob — "Incompatible reload"
     RestoreFailed,      ///< `deserialize` reported a failure that is not a schema ordering problem
+    /// The new module re-registered a scheduled system with another stage or access (ABI 1.5). A
+    /// running schedule cannot re-order a system, so the previous generation is kept.
+    SystemChanged,
 };
+
+/// The tree callbacks ABI 1.5 appended to `CyBehaviourVTable`, in `scene-graph-and-nodes`' order.
+enum class TreeCallback : u8 { EnterTree, Ready, Enable, Disable, ExitTree };
 
 [[nodiscard]] const char* reload_failure_name(ReloadFailure failure) noexcept;
 
@@ -212,6 +218,12 @@ public:
     /// One variable-rate frame over every live instance that registered a `frame_update` (ABI 1.3).
     /// Runs in CY_PHASE_FRAME_UPDATE and records `dt` as the host clock's frame delta.
     void frame_update(f32 dt) noexcept;
+
+    /// One tree callback on the instance in `slot`, through the vtable of the generation that
+    /// created it (ABI 1.5). The scene tree's pump decides when — see
+    /// `cy::game_backend::ScriptSceneBridge` — and this does not touch the phase, so the callback
+    /// runs in the pump caller's. True when the instance is live and implements the callback.
+    bool tree_callback(u32 slot, TreeCallback callback) noexcept;
 
     /// THE RELOAD. `library_path` MUST be a different file from the current one — see the header
     /// comment, item 3. Returns a report; on failure the previous generation is still live and

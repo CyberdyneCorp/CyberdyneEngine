@@ -102,6 +102,8 @@ const char* reload_failure_name(ReloadFailure failure) noexcept {
             return "the new module's schema predates the saved state";
         case ReloadFailure::RestoreFailed:
             return "an instance refused to restore";
+        case ReloadFailure::SystemChanged:
+            return "a scheduled system changed its stage or access";
     }
     return "unknown";
 }
@@ -333,6 +335,39 @@ void BehaviourRuntime::frame_update(f32 dt) noexcept {
     }
 }
 
+bool BehaviourRuntime::tree_callback(u32 slot, TreeCallback callback) noexcept {
+    if (slot >= instances_.size() || instances_[slot].instance == nullptr) {
+        return false;
+    }
+    const BehaviourInstance& live = instances_[slot];
+    const CyBehaviourVTable& vtable = live.record->vtable;
+    // A module compiled before 1.5 registered a shorter vtable, and the host's copy left all five
+    // null — so this is "not implemented", not "unsafe to read".
+    void (*function)(CyInstance, void*) = nullptr;
+    switch (callback) {
+        case TreeCallback::EnterTree:
+            function = vtable.enter_tree;
+            break;
+        case TreeCallback::Ready:
+            function = vtable.ready;
+            break;
+        case TreeCallback::Enable:
+            function = vtable.enable;
+            break;
+        case TreeCallback::Disable:
+            function = vtable.disable;
+            break;
+        case TreeCallback::ExitTree:
+            function = vtable.exit_tree;
+            break;
+    }
+    if (function == nullptr) {
+        return false;
+    }
+    function(live.instance, vtable.user_data);
+    return true;
+}
+
 Expected<u32, Error> BehaviourRuntime::quiesce_and_save(Array<SavedInstance>& saved,
                                                         Array<u8>& blobs) noexcept {
     for (u32 slot = 0; slot < instances_.size(); ++slot) {
@@ -463,8 +498,21 @@ Expected<ReloadReport, Error> BehaviourRuntime::reload(const char* library_path)
     }
 
     // 4. Every live type must exist in the new generation, with a schema that does not predate the
-    //    blob. This is the last point at which the old generation can still be kept, so both checks
-    //    happen here rather than being discovered halfway through restoring.
+    //    blob, and no scheduled system may have changed its declaration (ABI 1.5). This is the last
+    //    point at which the old generation can still be kept, so every check happens here rather
+    //    than being discovered halfway through restoring.
+    if (host_.refused_systems != 0) {
+        images_.pop_back();
+        host_.abandon_generation();
+        init_ = previous_init;
+        report.failure = ReloadFailure::SystemChanged;
+        report.detail = "register_system";
+        report.generation = host_.generation;
+        emit_diagnosticf(DiagnosticSeverity::Error, "abi",
+                         "reload refused: %s; the previous generation is still live",
+                         reload_failure_name(report.failure));
+        return report;
+    }
     for (const SavedInstance& entry : saved) {
         CyBehaviourType record = host_.find_behaviour(entry.type_name);
         if (record == nullptr) {

@@ -337,6 +337,16 @@ void BehaviourRegistry::set_ready(u32 instance, bool ready) noexcept {
     }
 }
 
+bool BehaviourRegistry::entered(u32 instance) const noexcept {
+    return instance < instances_.size() && instances_[instance].entered;
+}
+
+void BehaviourRegistry::set_entered(u32 instance, bool entered) noexcept {
+    if (instance < instances_.size()) {
+        instances_[instance].entered = entered;
+    }
+}
+
 bool BehaviourRegistry::enabled_state(u32 instance) const noexcept {
     return instance < instances_.size() && instances_[instance].enabled;
 }
@@ -487,6 +497,7 @@ bool BehaviourRegistry::invoke(SceneTree& tree, Node node, BehaviourCallback cal
     context.state = instances_[instance].state;
     context.delta = delta;
     context.commands = commands;
+    context.user = entry->desc.user;
     function(context);
     return true;
 }

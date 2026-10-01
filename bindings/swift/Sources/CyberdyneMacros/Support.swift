@@ -104,3 +104,15 @@ func hasAttribute(_ named: String, on attributes: AttributeListSyntax) -> Bool {
             || attribute.attributeName.trimmedDescription.hasPrefix("\(named)(")
     }
 }
+
+/// The first attribute of this name on a declaration, or nil. The attribute's name is matched as
+/// `hasAttribute` matches it; its arguments are the caller's to read.
+func attribute(_ named: String, on attributes: AttributeListSyntax) -> AttributeSyntax? {
+    for element in attributes {
+        guard case .attribute(let attribute) = element,
+            attribute.attributeName.trimmedDescription == named
+        else { continue }
+        return attribute
+    }
+    return nil
+}

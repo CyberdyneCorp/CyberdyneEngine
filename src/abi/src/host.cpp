@@ -4,6 +4,7 @@
 
 #include <cy/abi/errors.h>
 #include <cy/core/base/assert.h>
+#include <cy/core/jobs/access.h>
 #include <cy/core/memory/ownership.h>
 #include <cy/ecs/world.h>
 
@@ -283,13 +284,26 @@ cy::Expected<CyComponentTypeId, cy::Error> CyWorld_T::register_component(
 }
 
 CyEngine_T::CyEngine_T(cy::Allocator& abi_allocator) noexcept
-    : allocator(abi_allocator), behaviours(abi_allocator) {}
+    : allocator(abi_allocator), behaviours(abi_allocator), systems(abi_allocator) {}
+
+namespace {
+
+void release_system(cy::Allocator& allocator, cy::abi::SystemRecord* record) noexcept {
+    record->~SystemRecord();
+    allocator.deallocate(static_cast<void*>(record), sizeof(cy::abi::SystemRecord),
+                         alignof(cy::abi::SystemRecord));
+}
+
+}  // namespace
 
 CyEngine_T::~CyEngine_T() {
     for (cy::abi::BehaviourRecord* record : behaviours) {
         record->~CyBehaviourType_T();
         allocator.deallocate(static_cast<void*>(record), sizeof(cy::abi::BehaviourRecord),
                              alignof(cy::abi::BehaviourRecord));
+    }
+    for (cy::abi::SystemRecord* record : systems) {
+        release_system(allocator, record);
     }
 }
 
@@ -309,6 +323,20 @@ void CyEngine_T::abandon_generation() noexcept {
     }
     // Shrinking cannot fail: `resize` only reallocates when it grows.
     (void)behaviours.resize(kept);
+
+    // The abandoned generation's systems go with it, so a refused reload leaves the previous
+    // generation's registrations as the ones every scheduled system resolves to.
+    kept = 0;
+    for (cy::abi::SystemRecord* record : systems) {
+        if (record->generation != generation) {
+            systems[kept] = record;
+            ++kept;
+            continue;
+        }
+        release_system(allocator, record);
+    }
+    (void)systems.resize(kept);
+    refused_systems = 0;
     if (generation > 0) {
         --generation;
     }
@@ -367,6 +395,136 @@ cy::abi::BehaviourRecord* CyEngine_T::find_behaviour(const char* name) noexcept 
         return nullptr;
     }
     for (cy::abi::BehaviourRecord* record : behaviours) {
+        if (record->generation == generation && std::strcmp(record->name, name) == 0) {
+            return record;
+        }
+    }
+    return nullptr;
+}
+
+// --- ABI 1.5: scheduled systems
+// --------------------------------------------------------------------
+
+namespace cy::abi {
+
+bool SystemRecord::same_declaration(CyStage other_stage,
+                                    Span<const CySystemAccess> other) const noexcept {
+    if (other_stage != stage || other.size() != access.size()) {
+        return false;
+    }
+    // Order-insensitive: a module that lists the same terms in another order declared the same
+    // thing. Components are unique within one list (checked at registration), so counting matches
+    // is equality.
+    for (const CySystemAccess& wanted : other) {
+        bool found = false;
+        for (const CySystemAccess& have : access) {
+            found = found || (have.component == wanted.component && have.mode == wanted.mode);
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace cy::abi
+
+namespace {
+
+/// Everything about a `CySystemDesc` that can be checked without the host's registry.
+cy::Status check_system_desc(const CySystemDesc& desc, const CyWorld_T* world) noexcept {
+    if (desc.name == nullptr || desc.name[0] == '\0' || desc.run == nullptr) {
+        return cy::fail(cy::ErrorCode::InvalidArgument, "a system needs a name and a run function");
+    }
+    if (desc.stage > CY_STAGE_RENDER) {
+        return cy::fail(cy::ErrorCode::InvalidArgument, "the system names no CyStage");
+    }
+    if (desc.access_count > cy::jobs::AccessSet::kMaxEntries) {
+        return cy::fail(cy::ErrorCode::InvalidArgument,
+                        "a system declares more access terms than the scheduler holds (32)");
+    }
+    if (desc.access_count > 0 && desc.access == nullptr) {
+        return cy::fail(cy::ErrorCode::InvalidArgument, "access is null with a non-zero count");
+    }
+    if (world == nullptr) {
+        return cy::fail(cy::ErrorCode::Unavailable,
+                        "no world is bound, so a system's components cannot be resolved");
+    }
+    for (cy::u32 index = 0; index < desc.access_count; ++index) {
+        const CySystemAccess& term = desc.access[index];
+        if (term.mode > CY_ACCESS_EXCLUDE) {
+            return cy::fail(cy::ErrorCode::InvalidArgument, "an access term names no CyAccessMode");
+        }
+        if (!world->world.components().registered(term.component)) {
+            return cy::fail(cy::ErrorCode::InvalidArgument,
+                            "an access term names a component the bound world does not have");
+        }
+        for (cy::u32 earlier = 0; earlier < index; ++earlier) {
+            if (desc.access[earlier].component == term.component) {
+                return cy::fail(cy::ErrorCode::InvalidArgument,
+                                "a component is declared twice in one system's access");
+            }
+        }
+    }
+    return cy::ok();
+}
+
+}  // namespace
+
+cy::Status CyEngine_T::register_system(const CySystemDesc& desc) noexcept {
+    if (cy::Status checked = check_system_desc(desc, world); !checked) {
+        return checked;
+    }
+    const cy::Span<const CySystemAccess> access(desc.access, desc.access_count);
+    const auto stage = static_cast<CyStage>(desc.stage);
+
+    // The most recent registration of this name, from any generation. In this generation it is
+    // replaced; in an earlier one it is what a reload must not contradict.
+    cy::abi::SystemRecord* latest = nullptr;
+    for (cy::abi::SystemRecord* record : systems) {
+        if (std::strcmp(record->name, desc.name) == 0 &&
+            (latest == nullptr || record->generation >= latest->generation)) {
+            latest = record;
+        }
+    }
+    if (latest != nullptr && latest->generation != generation &&
+        !latest->same_declaration(stage, access)) {
+        ++refused_systems;
+        return cy::fail(cy::ErrorCode::Unsupported,
+                        "a reload changed a scheduled system's stage or access; a running schedule "
+                        "cannot re-order it, so the reload is refused");
+    }
+
+    cy::abi::SystemRecord* record = latest;
+    if (record == nullptr || record->generation != generation) {
+        cy::Expected<cy::UniquePtr<cy::abi::SystemRecord>, cy::Error> allocated =
+            cy::make_unique<cy::abi::SystemRecord>(allocator, allocator);
+        if (!allocated) {
+            return cy::make_unexpected(allocated.error());
+        }
+        if (cy::Status reserved = systems.reserve(systems.size() + 1); !reserved) {
+            return reserved;
+        }
+        record = allocated.value().release();
+        (void)systems.push_back(record);
+    }
+    record->access.clear();
+    if (cy::Status copied = record->access.append(access); !copied) {
+        return copied;
+    }
+    record->name = desc.name;
+    record->stage = stage;
+    record->run = desc.run;
+    record->user_data = desc.user_data;
+    record->generation = generation;
+    return cy::ok();
+}
+
+const cy::abi::SystemRecord* CyEngine_T::find_system(const char* name) const noexcept {
+    if (name == nullptr) {
+        return nullptr;
+    }
+    for (const cy::abi::SystemRecord* record : systems) {
         if (record->generation == generation && std::strcmp(record->name, name) == 0) {
             return record;
         }

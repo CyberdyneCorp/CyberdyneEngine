@@ -2119,4 +2119,292 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Schedule a module system into a stage by its access list.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn register_system(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CySystemDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .register_system
+            .ok_or(CallError::Missing("register_system"))?;
+        let raw = unsafe { entry(engine, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Resolve a node path, relative to a node or absolute.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn node_find(
+        &self,
+        engine: ffi::CyEngine,
+        from: ffi::CyEntity,
+        path: *const ::std::ffi::c_char,
+        into: *mut ffi::CyEntity,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .node_find
+            .ok_or(CallError::Missing("node_find"))?;
+        let raw = unsafe { entry(engine, from, path, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Add a force at a body's centre of mass for the next step.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn physics_apply_force(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        force: *const f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .physics_apply_force
+            .ok_or(CallError::Missing("physics_apply_force"))?;
+        let raw = unsafe { entry(engine, entity, force) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Apply an impulse to a body, at a point or its centre.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn physics_apply_impulse(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        impulse: *const f32,
+        point: *const f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .physics_apply_impulse
+            .ok_or(CallError::Missing("physics_apply_impulse"))?;
+        let raw = unsafe { entry(engine, entity, impulse, point) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Add a torque to a body for the next step.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn physics_apply_torque(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        torque: *const f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .physics_apply_torque
+            .ok_or(CallError::Missing("physics_apply_torque"))?;
+        let raw = unsafe { entry(engine, entity, torque) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Replace a body's linear and or angular velocity.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn physics_set_velocity(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        linear: *const f32,
+        angular: *const f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .physics_set_velocity
+            .ok_or(CallError::Missing("physics_set_velocity"))?;
+        let raw = unsafe { entry(engine, entity, linear, angular) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Read a body's linear and angular velocity.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn physics_get_velocity(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        linear: *mut f32,
+        angular: *mut f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .physics_get_velocity
+            .ok_or(CallError::Missing("physics_get_velocity"))?;
+        let raw = unsafe { entry(engine, entity, linear, angular) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Give an entity a capsule character controller.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn character_create(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        desc: *const ffi::CyCharacterDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .character_create
+            .ok_or(CallError::Missing("character_create"))?;
+        let raw = unsafe { entry(engine, entity, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Remove an entity's character controller and its body.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn character_destroy(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .character_destroy
+            .ok_or(CallError::Missing("character_destroy"))?;
+        let raw = unsafe { entry(engine, entity) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Move a character by one fixed step.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn character_move(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        input: *const ffi::CyCharacterInput,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .character_move
+            .ok_or(CallError::Missing("character_move"))?;
+        let raw = unsafe { entry(engine, entity, input) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Read what a character's last move produced.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn character_state(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut ffi::CyCharacterState,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .character_state
+            .ok_or(CallError::Missing("character_state"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

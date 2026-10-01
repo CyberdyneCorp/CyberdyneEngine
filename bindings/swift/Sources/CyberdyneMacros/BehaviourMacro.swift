@@ -15,6 +15,9 @@
 //                        than reflection, deliberately: `Mirror` and `_typeByName` are process-
 //                        global name lookups, and the hot-reload spike measured one of those
 //                        returning a RETIRED generation's metadata with two images resident.
+//   nodePaths,           the `@Node(path)` properties, read out of the class body for the same
+//   nodeReferences       reason: the bridge resolves them at `ready` (ABI 1.5) by asking each
+//                        wrapper, and it learns which wrappers exist from here, not from `Mirror`.
 
 import SwiftSyntax
 import SwiftSyntaxMacros
@@ -43,14 +46,44 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
         let schema = options["schema"]?.trimmedDescription ?? "1"
         let exported = exportedProperties(of: classDecl, in: context)
         let implemented = implementedCallbacks(of: classDecl)
+        let nodes = nodeProperties(of: classDecl)
 
-        return [
+        var members: [DeclSyntax] = [
             "public static let behaviourName: String = \"\(raw: name)\"",
             "public static let behaviourSchema: UInt32 = \(raw: schema)",
             "public static let behaviourCallbacks: CallbackSet = [\(raw: implemented.joined(separator: ", "))]",
             "public static let exportedNames: [String] = [\(raw: exported.map { "\"\($0)\"" }.joined(separator: ", "))]",
             storageAccessor(exported),
         ]
+        // Only a class that HAS `@Node` properties gets these; every other one keeps
+        // `BehaviourClass`'s empty defaults, so its expansion is what it was before 1.5.
+        if !nodes.isEmpty {
+            members.append(
+                "public static let nodePaths: [String] = [\(raw: nodes.map(\.path).joined(separator: ", "))]"
+            )
+            members.append(
+                "public func nodeReferences() -> [any NodeReference] { [\(raw: nodes.map { "_\($0.name)" }.joined(separator: ", "))] }"
+            )
+        }
+        return members
+    }
+
+    /// The `@Node(path)` properties, in declaration order: each one's name and its path argument as
+    /// written (a string literal, quotes included).
+    static func nodeProperties(of declaration: ClassDeclSyntax) -> [(name: String, path: String)] {
+        var found: [(name: String, path: String)] = []
+        for member in declaration.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                let attribute = attribute("Node", on: variable.attributes),
+                let path = attribute.arguments?.as(LabeledExprListSyntax.self)?.first?.expression
+            else { continue }
+            for binding in variable.bindings {
+                if let identifier = binding.pattern.as(IdentifierPatternSyntax.self) {
+                    found.append((identifier.identifier.text, path.trimmedDescription))
+                }
+            }
+        }
+        return found
     }
 
     public static func expansion(

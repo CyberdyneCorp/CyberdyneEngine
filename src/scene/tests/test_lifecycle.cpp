@@ -122,6 +122,29 @@ CY_TEST_CASE("onReady runs child-first, exactly once per attachment") {
     CY_CHECK_EQ(g_log.count, 0U);
 }
 
+CY_TEST_CASE("a node created under one attached in the same frame enters the tree once") {
+    // Regression: each node created under an in-tree parent queues its own subtree event, so a
+    // parent and a child built under the root before one pump are in TWO events — the parent's
+    // subtree and the child's own — and the child used to receive `onEnterTree` from both.
+    g_log.clear();
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    const auto type = fixture.tree.behaviours().add(fixture.world, tracer());
+    CY_REQUIRE(type.has_value());
+    cy::scene::Node parent = make_child(fixture.tree, fixture.tree.root(), "Parent");
+    const cy::scene::Node child = make_child(fixture.tree, parent, "Child");
+    CY_REQUIRE(fixture.tree.behaviours().attach(fixture.tree, parent, *type).has_value());
+    CY_REQUIRE(fixture.tree.behaviours().attach(fixture.tree, child, *type).has_value());
+    g_log.clear();
+
+    CY_REQUIRE(fixture.tree.pump().has_value());
+    CY_REQUIRE_EQ(g_log.count, 4U);
+    CY_CHECK(g_log.at(0, "onEnterTree", parent.name()));
+    CY_CHECK(g_log.at(1, "onEnterTree", child.name()));
+    CY_CHECK(g_log.at(2, "onReady", child.name()));
+    CY_CHECK(g_log.at(3, "onReady", parent.name()));
+}
+
 CY_TEST_CASE("leaving and re-entering the tree fires exit and ready again") {
     g_log.clear();
     Fixture fixture;

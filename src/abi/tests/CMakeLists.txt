@@ -67,6 +67,15 @@ cy_abi_test_module(cy_abi_test_module_v2 CY_TEST_MODULE_SCHEMA=2)
 cy_abi_test_module(cy_abi_test_module_refuse CY_TEST_MODULE_SCHEMA=1 CY_TEST_MODULE_REFUSE=1)
 # schema 2 under another type name, so a live instance has nowhere to go.
 cy_abi_test_module(cy_abi_test_module_renamed CY_TEST_MODULE_SCHEMA=2 CY_TEST_MODULE_RENAMED=1)
+# ABI 1.5: a scheduled system, `counter.tick`, writing `Ticks` in the Simulation stage. Two images
+# that declare it identically but step by different amounts, so a test can see which image's code
+# ran after a reload; and a third that moves it to the Frame stage, which a reload must refuse.
+cy_abi_test_module(cy_abi_test_module_system_a CY_TEST_MODULE_SCHEMA=1
+                   CY_TEST_MODULE_SYSTEM_STAGE=CY_STAGE_SIMULATION CY_TEST_MODULE_SYSTEM_STEP=1)
+cy_abi_test_module(cy_abi_test_module_system_b CY_TEST_MODULE_SCHEMA=1
+                   CY_TEST_MODULE_SYSTEM_STAGE=CY_STAGE_SIMULATION CY_TEST_MODULE_SYSTEM_STEP=100)
+cy_abi_test_module(cy_abi_test_module_system_moved CY_TEST_MODULE_SCHEMA=1
+                   CY_TEST_MODULE_SYSTEM_STAGE=CY_STAGE_FRAME CY_TEST_MODULE_SYSTEM_STEP=1000)
 
 function(cy_abi_declare_tests)
     get_property(tests_dir GLOBAL PROPERTY CY_ABI_TESTS_DIR)
@@ -90,7 +99,8 @@ function(cy_abi_declare_tests)
     # one file per service group so the change's implementers edit disjoint files. A group's file is
     # compiled when it exists; test_game_services.cpp — the shared rules — always is.
     set(game_sources "${tests_dir}/test_game_services.cpp")
-    foreach(group IN ITEMS time input camera physics navigation audio spawn)
+    foreach(group IN ITEMS time input camera physics navigation audio spawn systems scene bodies
+                           character)
         if(EXISTS "${tests_dir}/test_game_${group}.cpp")
             list(APPEND game_sources "${tests_dir}/test_game_${group}.cpp")
         endif()
@@ -118,13 +128,18 @@ function(cy_abi_declare_tests)
             "CY_ABI_TEST_MODULE_V1=\"$<TARGET_FILE:cy_abi_test_module_v1>\""
             "CY_ABI_TEST_MODULE_V2=\"$<TARGET_FILE:cy_abi_test_module_v2>\""
             "CY_ABI_TEST_MODULE_REFUSE=\"$<TARGET_FILE:cy_abi_test_module_refuse>\""
-            "CY_ABI_TEST_MODULE_RENAMED=\"$<TARGET_FILE:cy_abi_test_module_renamed>\"")
+            "CY_ABI_TEST_MODULE_RENAMED=\"$<TARGET_FILE:cy_abi_test_module_renamed>\""
+            "CY_ABI_TEST_MODULE_SYSTEM_A=\"$<TARGET_FILE:cy_abi_test_module_system_a>\""
+            "CY_ABI_TEST_MODULE_SYSTEM_B=\"$<TARGET_FILE:cy_abi_test_module_system_b>\""
+            "CY_ABI_TEST_MODULE_SYSTEM_MOVED=\"$<TARGET_FILE:cy_abi_test_module_system_moved>\"")
 
     # The suite opens those libraries by path, so they must exist before it runs. Nothing links them,
     # so nothing else would order them.
     add_dependencies(cy_test_integration_abi_reload
                      cy_abi_test_module_v1 cy_abi_test_module_v2
-                     cy_abi_test_module_refuse cy_abi_test_module_renamed)
+                     cy_abi_test_module_refuse cy_abi_test_module_renamed
+                     cy_abi_test_module_system_a cy_abi_test_module_system_b
+                     cy_abi_test_module_system_moved)
 
     # M5 task 1.1: the same modules, reloaded WITHOUT the loop stopping. Separate from abi_reload
     # because it asks a different question — abi_reload asks whether the sequence is correct, this

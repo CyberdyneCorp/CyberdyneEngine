@@ -272,6 +272,75 @@ static int32_t counter_deserialize(CyInstance instance, const uint8_t* buffer, u
     return CY_RESULT_OK;
 }
 
+/* --- A scheduled system (ABI 1.5), in the builds that define CY_TEST_MODULE_SYSTEM_STAGE
+ * ----------
+ *
+ * `counter.tick` writes the `Ticks` component it registers, adding CY_TEST_MODULE_SYSTEM_STEP to
+ * every row through `world_chunks`. The step differs between builds, so a test can tell from the
+ * world alone which image's code a scheduled system ran — the question a hot reload of a system
+ * has to answer correctly.
+ */
+#    ifdef CY_TEST_MODULE_SYSTEM_STAGE
+#        ifndef CY_TEST_MODULE_SYSTEM_STEP
+#            define CY_TEST_MODULE_SYSTEM_STEP 1
+#        endif
+
+typedef struct Ticks {
+    int64_t value;
+} Ticks;
+
+static CyComponentTypeId g_ticks = CY_COMPONENT_TYPE_INVALID;
+
+static void counter_tick(CyEngine engine, CyWorld world, void* user_data) {
+    CyChunk chunks[8];
+    uint32_t count = 0;
+    uint32_t chunk_index;
+    uint32_t row;
+    (void)engine;
+    (void)user_data;
+    if (g_interface->world_chunks(world, g_ticks, chunks, 8, &count) != CY_RESULT_OK) {
+        return;
+    }
+    for (chunk_index = 0; chunk_index < count; ++chunk_index) {
+        Ticks* rows = (Ticks*)chunks[chunk_index].data;
+        for (row = 0; row < chunks[chunk_index].entity_count; ++row) {
+            rows[row].value += CY_TEST_MODULE_SYSTEM_STEP;
+        }
+    }
+}
+
+static void register_tick_system(CyEngine engine) {
+    static const CyFieldDesc fields[] = {
+        {(uint32_t)sizeof(CyFieldDesc), CY_VAR_I64, 0, (uint32_t)sizeof(int64_t), "value"}};
+    CyComponentTypeDesc component;
+    CySystemAccess access;
+    CySystemDesc system;
+    CyWorld world = g_interface->engine_world(engine);
+    if (world == NULL) {
+        return;
+    }
+    memset(&component, 0, sizeof(component));
+    component.struct_size = (uint32_t)sizeof(component);
+    component.size = (uint32_t)sizeof(Ticks);
+    component.alignment = (uint32_t)sizeof(int64_t);
+    component.field_count = 1;
+    component.name = "Ticks";
+    component.fields = fields;
+    g_ticks = g_interface->world_register_component(world, &component);
+
+    access.component = g_ticks;
+    access.mode = CY_ACCESS_WRITE;
+    memset(&system, 0, sizeof(system));
+    system.struct_size = (uint32_t)sizeof(system);
+    system.stage = (uint32_t)CY_TEST_MODULE_SYSTEM_STAGE;
+    system.name = "counter.tick";
+    system.access = &access;
+    system.access_count = 1;
+    system.run = &counter_tick;
+    (void)g_interface->register_system(engine, &system);
+}
+#    endif
+
 /* --- Entry points -------------------------------------------------------------------------------
  */
 
@@ -292,6 +361,9 @@ static void module_initialize(CyEngine engine, CyInitLevel level, void* user_dat
     vtable.deserialize = &counter_deserialize;
     vtable.user_data = NULL;
     (void)g_interface->register_behaviour(engine, CY_TEST_MODULE_TYPE_NAME, &vtable);
+#    ifdef CY_TEST_MODULE_SYSTEM_STAGE
+    register_tick_system(engine);
+#    endif
 }
 
 static void module_shutdown(CyEngine engine, CyInitLevel level, void* user_data) {

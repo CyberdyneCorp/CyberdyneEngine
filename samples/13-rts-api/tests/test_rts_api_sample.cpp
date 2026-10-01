@@ -12,7 +12,16 @@
 //   the build key spawned        input_action_state, spawn_resolve, spawn_instantiate,
 //   nav_agent_configure
 //
-// and the negative control: the same host with no `Commander` does none of it.
+// and, at ABI 1.5:
+//
+//   the tree reached Swift       the scene tree's pump -> enter_tree, ready; @Node -> node_find
+//   a Swift system was scheduled register_system; ScriptSystems ran `trainUnits` every fixed tick,
+//                                ordered against a native reader of the same column
+//   the hero walked and jumped   character_create, character_move, character_state
+//   the crate was kicked         physics_apply_impulse, physics_get_velocity
+//
+// and the negative controls: the same host with no behaviours does none of the behaviour work, and
+// the same host with the systems left out of the schedule never runs `trainUnits`.
 
 #include <cy/test/test.h>
 
@@ -56,10 +65,15 @@ struct Run {
     std::string order;
     std::string audio;
     std::string spawn;
+    std::string tree;
+    std::string system;
+    std::string hero;
+    std::string body;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
-               !audio.empty() && !spawn.empty();
+               !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
+               !hero.empty() && !body.empty();
     }
 };
 
@@ -73,6 +87,10 @@ struct Run {
     run.order = line_with(run.process.output, "rts order ");
     run.audio = line_with(run.process.output, "rts audio ");
     run.spawn = line_with(run.process.output, "rts spawn ");
+    run.tree = line_with(run.process.output, "rts tree ");
+    run.system = line_with(run.process.output, "rts system ");
+    run.hero = line_with(run.process.output, "rts hero ");
+    run.body = line_with(run.process.output, "rts body ");
     return run;
 }
 
@@ -92,7 +110,7 @@ CY_TEST_CASE("samples/13-rts-api: a Swift RTS selects, orders, hears and builds 
     CY_REQUIRE_EQ(run.process.exit_code, 0);
     CY_REQUIRE(run.parsed());
 
-    CY_CHECK_EQ(number_after(run.module, "behaviours="), 1.0);
+    CY_CHECK_EQ(number_after(run.module, "behaviours="), 2.0);  // the commander and the scout
     CY_CHECK_EQ(number_after(run.module, "missed_aims="), 0.0);
 
     // The camera: 30 frames of D at the game's 12 m/s is +6 m, 30 frames against the left edge is
@@ -127,6 +145,60 @@ CY_TEST_CASE("samples/13-rts-api: a Swift RTS selects, orders, hears and builds 
     CY_CHECK_EQ(number_after(run.spawn, "units="), 3.0);
 }
 
+CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system, a hero, a push") {
+    const Run run = run_sample("");
+    report_if_broken(run);
+    CY_REQUIRE(run.process.ran);
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+
+    // The commander is a node: the pump delivered onEnterTree and onReady exactly once, and both
+    // @Node paths resolved against the level before onReady read them.
+    CY_CHECK_EQ(number_after(run.tree, "entered="), 1.0);
+    CY_CHECK_EQ(number_after(run.tree, "readied="), 1.0);
+    CY_CHECK_EQ(number_after(run.tree, "barracks="), 1.0);
+    CY_CHECK_EQ(number_after(run.tree, "crate_found="), 1.0);
+
+    // `trainUnits` is a Swift system the ENGINE ran: once per fixed tick (420 frames, one tick
+    // each), over every unit's Veterancy column; the native roll that reads the column saw three
+    // units, the first of which has served every tick but the one the roll ran before; and the
+    // scheduler ordered the two by their declarations.
+    CY_CHECK_EQ(number_after(run.system, "installed="), 1.0);
+    CY_CHECK_EQ(number_after(run.system, "runs="), 420.0);
+    CY_CHECK_EQ(number_after(run.system, "rows="), 3.0);
+    CY_CHECK_EQ(number_after(run.system, "most="), 419.0);
+    CY_CHECK_EQ(number_after(run.system, "ordered="), 1.0);
+
+    // The hero walked 120 ticks at 2 m/s from x = 4 (about 4 m), jumped once (it was airborne),
+    // and stands on the ground at the end (CY_GROUND_GROUNDED is 0).
+    CY_CHECK(number_after(run.hero, "x=") > 7.5);
+    CY_CHECK(number_after(run.hero, "x=") < 8.5);
+    CY_CHECK_EQ(number_after(run.hero, "airborne="), 1.0);
+    CY_CHECK_EQ(number_after(run.hero, "ground="), 0.0);
+
+    // One 100 N s impulse on a 20 kg crate: 5 m/s at once, and it slid along +Z.
+    CY_CHECK_EQ(number_after(run.body, "kicks="), 1.0);
+    CY_CHECK(number_after(run.body, "crate_speed=") > 4.5);
+    CY_CHECK(number_after(run.body, "crate_moved=") > 0.5);
+}
+
+CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, none of them runs") {
+    const Run control = run_sample(" --no-systems");
+    report_if_broken(control);
+    CY_REQUIRE(control.process.ran);
+    CY_REQUIRE_EQ(control.process.exit_code, 0);
+    CY_REQUIRE(control.parsed());
+
+    // Registered with the engine, never installed: the scheduler is what runs `trainUnits`, so
+    // without it nothing serves a tick — and nothing else changed.
+    CY_CHECK_EQ(number_after(control.system, "installed="), 0.0);
+    CY_CHECK_EQ(number_after(control.system, "runs="), 0.0);
+    CY_CHECK_EQ(number_after(control.system, "rows="), 3.0);
+    CY_CHECK_EQ(number_after(control.system, "most="), 0.0);
+    CY_CHECK_EQ(number_after(control.tree, "readied="), 1.0);
+    CY_CHECK_EQ(number_after(control.body, "kicks="), 1.0);
+}
+
 CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides nothing") {
     const Run control = run_sample(" --no-behaviours");
     report_if_broken(control);
@@ -143,6 +215,14 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.audio, "peak_voices="), 0.0);
     CY_CHECK_EQ(number_after(control.spawn, "workers="), 0.0);
     CY_CHECK_EQ(number_after(control.spawn, "agents="), 0.0);
+    // No tree callback reached anything, no hero walked, the crate was never pushed, and the
+    // scheduled system — registered by the module, installed by the host — had no unit to train.
+    CY_CHECK_EQ(number_after(control.tree, "entered="), 0.0);
+    CY_CHECK_EQ(number_after(control.tree, "readied="), 0.0);
+    CY_CHECK_EQ(number_after(control.hero, "x="), 0.0);
+    CY_CHECK_EQ(number_after(control.body, "kicks="), 0.0);
+    CY_CHECK(number_after(control.body, "crate_moved=") < 0.01);
+    CY_CHECK_EQ(number_after(control.system, "rows="), 0.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
@@ -154,4 +234,7 @@ CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
     CY_CHECK_EQ(first.order, second.order);
     CY_CHECK_EQ(first.audio, second.audio);
     CY_CHECK_EQ(first.spawn, second.spawn);
+    CY_CHECK_EQ(first.system, second.system);
+    CY_CHECK_EQ(first.hero, second.hero);
+    CY_CHECK_EQ(first.body, second.body);
 }

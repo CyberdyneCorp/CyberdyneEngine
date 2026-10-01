@@ -1,4 +1,4 @@
-# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3
+# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3 and 1.5
 
 The end-to-end proof of `add-swift-game-api`. A Swift behaviour runs a small RTS: a camera the
 keyboard and the screen edges pan, a unit picked under the pointer, sent to a clicked ground point,
@@ -9,17 +9,25 @@ between the game and a server.
 ```
 just run-sample rts-api                    420 frames of scripted play, headless, then the report
 just run-sample rts-api --no-behaviours    the negative control: the same host with no game
-ctest -R rts_api_sample                    the test: the claims below, the control, and two runs
+just run-sample rts-api --no-systems       the scheduler's control: Swift systems never installed
+ctest -R rts_api_sample                    the test: the claims below, the controls, and two runs
 ```
+
+ABI 1.5 (`add-swift-m12-gaps`) adds four things the game does, each through the engine rather
+than the host: the commander and a scout are behaviours on level NODES, so the scene tree's pump
+drives their `onEnterTree` and `onReady` and resolves their `@Node` paths; `trainUnits` is a Swift
+`@System` the engine's scheduler runs every fixed tick, ordered against a native system reading the
+same column; the scout walks a hero with a character controller and jumps once; and it kicks a
+crate with an impulse.
 
 ## What is here
 
 | | |
 |---|---|
-| `game/` | **The game.** `Commander.swift` (the squad, the selection, the orders, the build key), `RtsCamera.swift` (panning), `Contract.swift` (content names, two collision layers, one report component), `Game.swift` (the module's entry points). |
-| `host/rts_host.*` | Servers, the six adapters bound on the ABI host, the Swift module, and the frame loop. |
-| `host/level.*` | Content built in code: the ground, a navigation tile, the worker prefab, the arrival click, the input actions. |
-| `host/units.*` | Plumbing for navigation agents: an agent's position is its scene node, and it has a kinematic capsule on collision layer 1. |
+| `game/` | **The game.** `Commander.swift` (the squad, the selection, the orders, the build key, its tree callbacks), `Scout.swift` (a character-controlled hero and a kicked crate), `RtsCamera.swift` (panning), `Contract.swift` (content names, collision layers, the report components and `Veterancy`), `Game.swift` (the module's entry points and the `trainUnits` system). |
+| `host/rts_host.*` | Servers, the adapters bound on the ABI host, the scene bridge, the schedule with the script systems in it, the Swift module, and the frame loop. |
+| `host/level.*` | Content built in code: the ground, a navigation tile, the worker prefab, the arrival click, the input actions, and the `/Level` nodes with the crate. |
+| `host/units.*` | Plumbing for navigation agents (an agent's position is its scene node, and it has a kinematic capsule on collision layer 1), the one entity-to-body map, and the native `Veterancy` reader. |
 | `host/script.*` | The scripted player: synthetic key and mouse events, aimed with the camera projection. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
 
@@ -34,6 +42,10 @@ ctest -R rts_api_sample                    the test: the claims below, the contr
 | sends the selected unit to the recorded point | `nav_agent_move_to` | fixed (`onFixedUpdate`) |
 | plays the arrival cue where a unit stops | `nav_agent_state` (the one-tick ARRIVED event), `audio_play` | fixed |
 | builds a worker when B goes down | `input_action_state_by_name`, `spawn_instantiate`, `nav_agent_configure` | fixed |
+| counts the tree reaching it, finds `../Barracks` and `../Crate` | the vtable's `enter_tree` and `ready`, `node_find` | none (the pump) |
+| trains every unit one tick | `register_system`, then the engine's scheduler over `world_chunks` | fixed (Simulation stage) |
+| walks the hero, jumps once | `character_create`, `character_move`, `character_state` | none, then fixed |
+| kicks the crate | `physics_apply_impulse`, `physics_get_velocity` | fixed |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern
@@ -52,7 +64,13 @@ fresh image, and reads the report it prints:
 * the game saw one arrival, the audio adapter accepted the cue, and the audio server had a voice;
 * the build key made a third worker: three `Worker` nodes, three agents, three bodies;
 * with `--no-behaviours` none of that happens;
-* two runs print the same report.
+* two runs print the same report;
+* ABI 1.5: `onEnterTree` and `onReady` reached the commander exactly once and both `@Node` paths
+  resolved; `trainUnits` ran on all 420 fixed ticks, the native reader saw three units the first of
+  which had served 419, and the scheduler ordered the two by their declarations; the hero walked
+  about 4 m, was airborne once and stands on the ground; the crate left at 5 m/s and slid;
+* with `--no-systems` the system never runs and nothing else changes, and with `--no-behaviours`
+  no tree callback, hero or kick happens.
 
 It was proven red by breaking `physics_raycast` (the hit is never written back: selection, order,
 arrival and cue fail) and `audio_play` (every play dropped: the cue and voice checks fail), each

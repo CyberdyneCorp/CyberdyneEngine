@@ -3,6 +3,8 @@
 //
 //   just run-sample rts-api                    the scripted session, then the report
 //   just run-sample rts-api --no-behaviours    the negative control: the same host, no game
+//   just run-sample rts-api --no-systems       the scheduler's control: the module's systems are
+//                                              registered with the engine but never installed
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -63,6 +65,17 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
                 wide(now.game.cues), seen.peak_voices);
     std::printf("rts spawn    spawns=%.0f units=%u agents=%u workers=%u\n", wide(now.game.spawns),
                 now.units, now.agents, now.workers);
+    // ABI 1.5: tree callbacks and @Node, a scheduled Swift system, a character and an impulse.
+    std::printf("rts tree     entered=%.0f readied=%.0f barracks=%.0f crate_found=%.0f\n",
+                wide(now.tree.entered), wide(now.tree.readied), wide(now.tree.barracks_found),
+                wide(now.scout.crate_found));
+    std::printf("rts system   installed=%u runs=%llu rows=%u most=%.0f ordered=%d\n",
+                now.systems.installed, static_cast<unsigned long long>(now.systems.runs),
+                now.systems.rows, wide(now.systems.most), now.systems.ordered ? 1 : 0);
+    std::printf("rts hero     x=%.3f ground=%.0f airborne=%.0f\n", wide(now.scout.hero_x),
+                wide(now.scout.hero_ground), wide(now.scout.airborne));
+    std::printf("rts body     kicks=%.0f crate_speed=%.3f crate_moved=%.3f\n",
+                wide(now.scout.kicks), wide(now.scout.crate_speed), wide(now.scout.crate_moved));
 }
 
 }  // namespace
@@ -74,6 +87,8 @@ int main(int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--no-behaviours") == 0) {
             options.behaviours = false;
+        } else if (std::strcmp(argv[index], "--no-systems") == 0) {
+            options.systems = false;
         } else if (std::strcmp(argv[index], "--headless") != 0) {
             std::fprintf(stderr, "rts-api: unknown argument '%s'\n", argv[index]);
             return 2;

@@ -32,6 +32,27 @@ enum Layers {
     static let units = Physics.Filter(mask: 1 << 1)
 }
 
+/// How long a unit has served, in fixed ticks. Written by the `trainUnits` system — scheduled by
+/// the engine, not called by any behaviour — and read by nothing in the game; the host reports it.
+@Component
+struct Veterancy {
+    var ticks: Float = 0
+}
+
+/// What the scout did, written by `Scout` for the host's report and nothing else.
+@Component
+struct ScoutReport {
+    /// The crate's `@Node` resolved at `onReady`: 1, or 0 when it did not.
+    var crateFound: Float = 0
+    /// The hero character's x, its ground state (`GroundState`), and whether it was ever airborne.
+    var heroX: Float = 0
+    var heroGround: Float = -1
+    var airborne: Float = 0
+    /// Impulses applied to the crate, and the crate's speed read back the tick it was kicked.
+    var kicks: Float = 0
+    var crateSpeed: Float = 0
+}
+
 /// What the game did, written by `Commander` for the host's report and nothing else.
 @Component
 struct RtsReport {
@@ -45,6 +66,11 @@ struct RtsReport {
     var cues: Float = 0
     /// Units built with the spawn key, after the starting squad.
     var spawns: Float = 0
+    /// Tree callbacks the engine delivered: `onEnterTree` and `onReady`, once each per attachment.
+    var entered: Float = 0
+    var readied: Float = 0
+    /// The barracks `@Node` resolved at `onReady`: 1, or 0 when it did not.
+    var barracksFound: Float = 0
 }
 
 extension Component {

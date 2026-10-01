@@ -735,6 +735,106 @@ impl NavQueryState {
         }
     }
 }
+/// `CyAccessMode`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum AccessMode {
+    /// `CY_ACCESS_READ` = 0.
+    Read = 0,
+    /// `CY_ACCESS_WRITE` = 1.
+    Write = 1,
+    /// `CY_ACCESS_EXCLUDE` = 2.
+    Exclude = 2,
+}
+
+impl AccessMode {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [AccessMode; 3] = [AccessMode::Read, AccessMode::Write, AccessMode::Exclude];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(AccessMode::Read),
+            1 => Some(AccessMode::Write),
+            2 => Some(AccessMode::Exclude),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            AccessMode::Read => "CY_ACCESS_READ",
+            AccessMode::Write => "CY_ACCESS_WRITE",
+            AccessMode::Exclude => "CY_ACCESS_EXCLUDE",
+        }
+    }
+}
+/// `CyGroundState`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GroundState {
+    /// `CY_GROUND_GROUNDED` = 0.
+    Grounded = 0,
+    /// `CY_GROUND_STEEP_SLOPE` = 1.
+    SteepSlope = 1,
+    /// `CY_GROUND_IN_AIR` = 2.
+    InAir = 2,
+}
+
+impl GroundState {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GroundState; 3] = [
+        GroundState::Grounded,
+        GroundState::SteepSlope,
+        GroundState::InAir,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GroundState::Grounded),
+            1 => Some(GroundState::SteepSlope),
+            2 => Some(GroundState::InAir),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GroundState::Grounded => "CY_GROUND_GROUNDED",
+            GroundState::SteepSlope => "CY_GROUND_STEEP_SLOPE",
+            GroundState::InAir => "CY_GROUND_IN_AIR",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

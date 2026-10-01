@@ -1,5 +1,5 @@
 // Systems.swift — the data-oriented programming model, over the ECS's access declarations.
-// Task 3.3.
+// Task 3.3; scheduled by the engine since ABI 1.5 (`add-swift-m12-gaps`).
 //
 // `swift-scripting`: "Swift SHALL also be able to define **systems** for data-oriented work, with
 // access declared in the signature so the scheduler can parallelise them exactly as it does native
@@ -17,19 +17,20 @@
 // `@System` macro reads it out of the function's signature and registers exactly it; there is no
 // second place to write access down, and therefore nothing for a second place to disagree with.
 //
-// --- WHAT ABI 1.0 CANNOT DO YET, STATED PLAINLY ----------------------------------------------------
+// --- HOW A SYSTEM REACHES THE ENGINE'S SCHEDULER (ABI 1.5) ----------------------------------------
 //
-// `CyInterface` at 1.0 has thirty entries and NONE of them hands a module a chunk. It carries the
-// world, entities, components (by id, by field, one entity at a time) and behaviours. So:
+// `Systems.register`, in a module bound to an engine, also calls `register_system`: the access set
+// becomes `CySystemAccess` terms (each component resolved by name in the bound world, so the
+// component must be registered first — `GameModule.components` is registered before `systems`), the
+// stage is the one the attribute named, and the body is a C thunk over a retained record.
+// `cy::abi::ScriptSystems` puts it in the stage beside the native systems and orders it by the same
+// conflict rules. When the stage runs, the thunk hands the body an `EngineChunkSource` over
+// `world_chunks` — the chunks of every archetype holding every component the query reads or
+// writes, and none that holds a `Without` — and invalidates every view when the body returns.
 //
-//   * the model below — terms, access derivation, conflict detection, registration, and a chunk
-//     inner loop that never marshals — is complete and tested;
-//   * the SOURCE of chunks is not, because the entry that would provide one does not exist. It is
-//     an append to `CyInterface` (the only legal way to grow it) that belongs to whoever owns the
-//     ECS's ABI surface, alongside a `CyStage` enum so that `SystemStage` below stops being a copy.
-//
-// `ChunkSource` is that seam, and it is a protocol rather than a `TODO` so that the inner loop is
-// exercised by real tests today and the day the entry lands is a conformance and nothing else.
+// A body runs in its stage's phase (F for the simulation stages, U for the frame ones), possibly on a
+// job worker beside other systems it does not conflict with, and the world is iterating while it
+// runs: a structural call (create, destroy, add, remove) throws `.unavailable`.
 
 import CyberdyneABI
 import CyberdyneCore
@@ -210,13 +211,79 @@ public final class EscapeGuard {
     }
 }
 
-/// Where a system's chunks come from.
-///
-/// A protocol because ABI 1.0 has no entry that hands a module a chunk (see the header comment). A
-/// conformance over an appended `world_query_chunks` entry is the only thing missing; everything
-/// above this line is complete and exercised.
+/// Where a system's chunks come from: the engine's world (`EngineChunkSource`) when the scheduler
+/// runs it, or a test's own source when the package's suite does.
 public protocol ChunkSource {
     func forEachChunk(matching access: AccessSet, _ body: (ChunkView) -> Void)
+}
+
+/// The engine's chunks, through `world_chunks`. ABI 1.5.
+///
+/// One `world_chunks` call per component the query names, then a join by archetype: chunks are
+/// listed "in archetype then chunk order", so the k-th chunk of an archetype is the same chunk for
+/// every component it holds — the same entity array — and a view over it carries one column per
+/// component. An archetype that lacks a component the query reads or writes is skipped, and so is
+/// one that holds a component it excludes. No per-entity call, no `CyVar`.
+public struct EngineChunkSource: ChunkSource {
+    public let world: World
+    private let guardToken: EscapeGuard
+
+    public init(world: World, guardToken: EscapeGuard) {
+        self.world = world
+        self.guardToken = guardToken
+    }
+
+    public func forEachChunk(matching access: AccessSet, _ body: (ChunkView) -> Void) {
+        let required = access.reads.union(access.writes).sorted()
+        guard let lead = required.first else { return }
+        var columns: [String: [UInt32: [CyChunk]]] = [:]
+        for name in required {
+            guard let chunks = chunks(of: name) else { return }  // not registered: nothing matches
+            columns[name] = Dictionary(grouping: chunks, by: \.archetype)
+        }
+        let excluded = Set(access.excludes.flatMap { chunks(of: $0)?.map(\.archetype) ?? [] })
+        var seen: Set<UInt32> = []
+        for chunk in chunks(of: lead) ?? [] where seen.insert(chunk.archetype).inserted {
+            guard !excluded.contains(chunk.archetype) else { continue }
+            visit(archetype: chunk.archetype, columns: columns, required: required, body)
+        }
+    }
+
+    /// Every chunk of one archetype, as views carrying every required column.
+    private func visit(
+        archetype: UInt32, columns: [String: [UInt32: [CyChunk]]], required: [String],
+        _ body: (ChunkView) -> Void
+    ) {
+        guard let leading = columns[required[0]]?[archetype] else { return }
+        for (index, chunk) in leading.enumerated() {
+            var bases: [String: UnsafeMutableRawPointer] = [:]
+            var strides: [String: Int] = [:]
+            for name in required {
+                guard let column = columns[name]?[archetype], index < column.count else { return }
+                if let data = column[index].data {
+                    bases[name] = data
+                    strides[name] = Int(column[index].stride)
+                }
+            }
+            let entities = UnsafeBufferPointer(start: chunk.entities, count: Int(chunk.entity_count))
+            body(ChunkView(entities: entities, bases: bases, strides: strides, guardToken: guardToken))
+        }
+    }
+
+    private func chunks(of name: String) -> [CyChunk]? {
+        let id = name.withCString { world.findComponent(name: $0) }
+        guard id != CY_COMPONENT_TYPE_INVALID else { return nil }
+        return try? Physics.sized { buffer, capacity, count in
+            try world.chunks(component: id, into: buffer, capacity: capacity, count: count)
+        }
+    }
+}
+
+/// What the `@System` macro emits for each system: its descriptor and how to register it. A game
+/// lists them in `GameModule.systems`.
+public protocol SystemRegistration {
+    static var descriptor: SystemDescriptor { get }
+    static func register() throws
 }
 
 // --- Registration -------------------------------------------------------------------------------------
@@ -234,11 +301,8 @@ public struct SystemDescriptor: Sendable {
     }
 }
 
-/// The systems this module image declares.
-///
-/// Held on the module side because the ABI has no `register_system` entry to hand them across yet.
-/// When one is appended, this is the list it reads — which is why registration is a real registry
-/// rather than each `@System` macro emitting a call directly.
+/// The systems this module image declares, and — when the image is bound to an engine — what the
+/// engine's scheduler was handed for each.
 public enum Systems {
     public nonisolated(unsafe) private(set) static var registered: [SystemDescriptor] = []
     nonisolated(unsafe) private static var bodies: [String: (ChunkSource) -> Void] = [:]
@@ -258,12 +322,15 @@ public enum Systems {
                     + "\(descriptor.access.reads.intersection(descriptor.access.writes).sorted().joined(separator: ", "))"
             )
         }
+        if Runtime.isBoundToEngine {
+            try EngineSystems.register(descriptor, body: body)
+        }
         registered.append(descriptor)
         bodies[descriptor.name] = body
     }
 
-    /// Run one stage's systems against a chunk source. The engine's scheduler does this when the
-    /// ABI can hand systems across; until then it is what the package's own tests run.
+    /// Run one stage's systems against a chunk source, in this process. The engine's scheduler runs
+    /// a bound module's systems itself; this is what the package's own tests run.
     public static func run(stage: SystemStage, over source: ChunkSource) {
         for descriptor in registered where descriptor.stage == stage {
             bodies[descriptor.name]?(source)
@@ -290,3 +357,86 @@ public enum Systems {
         bodies.removeAll()
     }
 }
+
+// --- Handing a system to the engine (ABI 1.5) ---------------------------------------------------------
+
+/// One system as the engine holds it: the body the C thunk calls. Retained for the life of the
+/// image, like a behaviour's registration — the engine keeps `user_data`, and a retired image is
+/// never unloaded, so there is no later moment at which releasing it is safe.
+final class SystemRecord {
+    let name: String
+    let body: (ChunkSource) -> Void
+
+    init(name: String, body: @escaping (ChunkSource) -> Void) {
+        self.name = name
+        self.body = body
+    }
+}
+
+enum EngineSystems {
+    /// `register_system` for one descriptor. Throws when a component is not registered in the bound
+    /// world, when the query names a resource (the ABI has no resource entry), or when the engine
+    /// refuses — a reload that changed this system's stage or access among them.
+    static func register(_ descriptor: SystemDescriptor, body: @escaping (ChunkSource) -> Void)
+        throws
+    {
+        let engine = try GameServices.engine()
+        guard let world = Runtime.world else {
+            throw CyberdyneError.status(.unavailable, message: "no world is bound to this module")
+        }
+        let access = try terms(descriptor.access, in: world, system: descriptor.name)
+        let record = SystemRecord(name: descriptor.name, body: body)
+        try access.withUnsafeBufferPointer { terms in
+            var desc = CySystemDesc()
+            desc.struct_size = UInt32(MemoryLayout<CySystemDesc>.size)
+            desc.stage = descriptor.stage.rawValue
+            // Retained, not borrowed: the engine keeps the name for the registration's life.
+            desc.name = RetainedCString.make(descriptor.name)
+            desc.access = terms.baseAddress
+            desc.access_count = UInt32(terms.count)
+            desc.run = systemRun
+            desc.user_data = Unmanaged.passRetained(record).toOpaque()
+            try engine.registerSystem(desc: &desc)
+        }
+    }
+
+    /// The access set as `CySystemAccess` terms, sorted by name so the declaration is the same bytes
+    /// on every registration of the same query.
+    static func terms(_ access: AccessSet, in world: World, system: String) throws
+        -> [CySystemAccess]
+    {
+        let modes: [(Set<String>, AccessMode)] = [
+            (access.reads, .read), (access.writes, .write), (access.excludes, .exclude),
+        ]
+        var terms: [CySystemAccess] = []
+        for (names, mode) in modes {
+            for name in names.sorted() {
+                guard !name.hasPrefix("res:") else {
+                    throw CyberdyneError.notRepresentable(
+                        "\(system): a Res<...> term has no engine entry to read a resource through")
+                }
+                let id = name.withCString { world.findComponent(name: $0) }
+                guard id != CY_COMPONENT_TYPE_INVALID else {
+                    throw CyberdyneError.status(
+                        .notFound,
+                        message: "\(system): component \(name) is not registered in the world; "
+                            + "list it in GameModule.components")
+                }
+                terms.append(CySystemAccess(component: id, mode: mode.rawValue))
+            }
+        }
+        return terms
+    }
+}
+
+/// `CySystemDesc.run`: the body, over the engine's chunks, with every view invalidated when it
+/// returns. Possibly on a job worker; it reads only the record and the bound table.
+private let systemRun:
+    @convention(c) (CyEngine?, CyWorld?, UnsafeMutableRawPointer?) -> Void = {
+        _, world, userData in
+        guard let world, let userData, let interface = Runtime.interface else { return }
+        let record = Unmanaged<SystemRecord>.fromOpaque(userData).takeUnretainedValue()
+        let guardToken = EscapeGuard(systemName: record.name)
+        record.body(EngineChunkSource(world: World(world, interface), guardToken: guardToken))
+        guardToken.invalidate()
+    }

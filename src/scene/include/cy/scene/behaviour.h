@@ -85,6 +85,9 @@ struct BehaviourContext {
     /// Where a structural change goes. Null outside a schedule, in which case the callback is
     /// running at a point where the world accepts one directly.
     ecs::CommandBuffer* commands = nullptr;
+    /// The type's `BehaviourDesc::user`, handed back unchanged. What lets one set of callbacks
+    /// serve several types — a scripting bridge registering a type per script class, say.
+    void* user = nullptr;
 };
 
 /// What a lowered (batched) callback is handed: a whole chunk, not an entity.
@@ -114,6 +117,9 @@ const char* behaviour_dispatch_name(BehaviourDispatch dispatch) noexcept;
 struct BehaviourDesc {
     /// A string literal or other storage outliving the registry. Also the tag component's suffix.
     const char* name = "";
+
+    /// Handed back in every `BehaviourContext::user`. The registry never interprets it.
+    void* user = nullptr;
 
     // The lifecycle callbacks. A null pointer is "not implemented", and an unimplemented callback
     // is in no list and costs nothing.
@@ -230,6 +236,11 @@ public:
     [[nodiscard]] Status request_ready(SceneTree& tree, Node node) noexcept;
     [[nodiscard]] bool ready(u32 instance) const noexcept;
     void set_ready(u32 instance, bool ready) noexcept;
+    /// `onEnterTree` fired for the current attachment. What keeps it once per attachment when two
+    /// queued subtree events cover the same node — a node created under one that was itself
+    /// attached earlier in the same frame is in both.
+    [[nodiscard]] bool entered(u32 instance) const noexcept;
+    void set_entered(u32 instance, bool entered) noexcept;
     [[nodiscard]] bool enabled_state(u32 instance) const noexcept;
     void set_enabled_state(u32 instance, bool enabled) noexcept;
 
@@ -263,6 +274,7 @@ private:
         Entity entity;
         void* state = nullptr;
         bool live = false;
+        bool entered = false;
         bool ready = false;
         bool enabled = true;
     };

@@ -303,6 +303,61 @@ public struct Engine: @unchecked Sendable {
     public func vfxEffectParameterGet(entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyVar>?) throws {
         try interface.vfxEffectParameterGet(engine: raw, entity: entity, emitter: emitter, parameter: parameter, into: into)
     }
+
+    @inlinable
+    public func registerSystem(desc: UnsafePointer<CySystemDesc>?) throws {
+        try interface.registerSystem(engine: raw, desc: desc)
+    }
+
+    @inlinable
+    public func nodeFind(from: CyEntity, path: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyEntity>?) throws {
+        try interface.nodeFind(engine: raw, from: from, path: path, into: into)
+    }
+
+    @inlinable
+    public func physicsApplyForce(entity: CyEntity, force: UnsafePointer<Float>?) throws {
+        try interface.physicsApplyForce(engine: raw, entity: entity, force: force)
+    }
+
+    @inlinable
+    public func physicsApplyImpulse(entity: CyEntity, impulse: UnsafePointer<Float>?, point: UnsafePointer<Float>?) throws {
+        try interface.physicsApplyImpulse(engine: raw, entity: entity, impulse: impulse, point: point)
+    }
+
+    @inlinable
+    public func physicsApplyTorque(entity: CyEntity, torque: UnsafePointer<Float>?) throws {
+        try interface.physicsApplyTorque(engine: raw, entity: entity, torque: torque)
+    }
+
+    @inlinable
+    public func physicsSetVelocity(entity: CyEntity, linear: UnsafePointer<Float>?, angular: UnsafePointer<Float>?) throws {
+        try interface.physicsSetVelocity(engine: raw, entity: entity, linear: linear, angular: angular)
+    }
+
+    @inlinable
+    public func physicsGetVelocity(entity: CyEntity, linear: UnsafeMutablePointer<Float>?, angular: UnsafeMutablePointer<Float>?) throws {
+        try interface.physicsGetVelocity(engine: raw, entity: entity, linear: linear, angular: angular)
+    }
+
+    @inlinable
+    public func characterCreate(entity: CyEntity, desc: UnsafePointer<CyCharacterDesc>?) throws {
+        try interface.characterCreate(engine: raw, entity: entity, desc: desc)
+    }
+
+    @inlinable
+    public func characterDestroy(entity: CyEntity) throws {
+        try interface.characterDestroy(engine: raw, entity: entity)
+    }
+
+    @inlinable
+    public func characterMove(entity: CyEntity, input: UnsafePointer<CyCharacterInput>?) throws {
+        try interface.characterMove(engine: raw, entity: entity, input: input)
+    }
+
+    @inlinable
+    public func characterState(entity: CyEntity, into: UnsafeMutablePointer<CyCharacterState>?) throws {
+        try interface.characterState(engine: raw, entity: entity, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

@@ -249,8 +249,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyBehaviourVTable>() == 64,
-    "CyBehaviourVTable is not 64 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyBehaviourVTable>() == 104,
+    "CyBehaviourVTable is not 104 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyBehaviourVTable>() == 8,
@@ -291,6 +291,26 @@ const _: () = assert!(
 const _: () = assert!(
     offset_of!(ffi::CyBehaviourVTable, frame_update) == 56,
     "CyBehaviourVTable::frame_update is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyBehaviourVTable, enter_tree) == 64,
+    "CyBehaviourVTable::enter_tree is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyBehaviourVTable, ready) == 72,
+    "CyBehaviourVTable::ready is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyBehaviourVTable, enable) == 80,
+    "CyBehaviourVTable::enable is not at byte 80"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyBehaviourVTable, disable) == 88,
+    "CyBehaviourVTable::disable is not at byte 88"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyBehaviourVTable, exit_tree) == 96,
+    "CyBehaviourVTable::exit_tree is not at byte 96"
 );
 
 const _: () = assert!(
@@ -909,6 +929,195 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CySystemAccess>() == 8,
+    "CySystemAccess is not 8 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CySystemAccess>() == 4,
+    "CySystemAccess is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemAccess, component) == 0,
+    "CySystemAccess::component is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemAccess, mode) == 4,
+    "CySystemAccess::mode is not at byte 4"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CySystemDesc>() == 48,
+    "CySystemDesc is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CySystemDesc>() == 8,
+    "CySystemDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, struct_size) == 0,
+    "CySystemDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, stage) == 4,
+    "CySystemDesc::stage is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, name) == 8,
+    "CySystemDesc::name is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, access) == 16,
+    "CySystemDesc::access is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, access_count) == 24,
+    "CySystemDesc::access_count is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, reserved) == 28,
+    "CySystemDesc::reserved is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, run) == 32,
+    "CySystemDesc::run is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CySystemDesc, user_data) == 40,
+    "CySystemDesc::user_data is not at byte 40"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyCharacterDesc>() == 76,
+    "CyCharacterDesc is not 76 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyCharacterDesc>() == 4,
+    "CyCharacterDesc is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, struct_size) == 0,
+    "CyCharacterDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, flags) == 4,
+    "CyCharacterDesc::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, radius) == 8,
+    "CyCharacterDesc::radius is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, height) == 12,
+    "CyCharacterDesc::height is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, max_slope_radians) == 16,
+    "CyCharacterDesc::max_slope_radians is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, step_offset) == 20,
+    "CyCharacterDesc::step_offset is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, skin_width) == 24,
+    "CyCharacterDesc::skin_width is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, gravity_scale) == 28,
+    "CyCharacterDesc::gravity_scale is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, mass) == 32,
+    "CyCharacterDesc::mass is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, push_force) == 36,
+    "CyCharacterDesc::push_force is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, layer) == 40,
+    "CyCharacterDesc::layer is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, mask) == 44,
+    "CyCharacterDesc::mask is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterDesc, start) == 48,
+    "CyCharacterDesc::start is not at byte 48"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyCharacterInput>() == 24,
+    "CyCharacterInput is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyCharacterInput>() == 4,
+    "CyCharacterInput is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterInput, struct_size) == 0,
+    "CyCharacterInput::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterInput, flags) == 4,
+    "CyCharacterInput::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterInput, desired_velocity) == 8,
+    "CyCharacterInput::desired_velocity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterInput, jump_speed) == 20,
+    "CyCharacterInput::jump_speed is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyCharacterState>() == 72,
+    "CyCharacterState is not 72 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyCharacterState>() == 8,
+    "CyCharacterState is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, struct_size) == 0,
+    "CyCharacterState::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, ground) == 4,
+    "CyCharacterState::ground is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, flags) == 8,
+    "CyCharacterState::flags is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, reserved) == 12,
+    "CyCharacterState::reserved is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, ground_entity) == 16,
+    "CyCharacterState::ground_entity is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, position) == 24,
+    "CyCharacterState::position is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, velocity) == 36,
+    "CyCharacterState::velocity is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, ground_normal) == 48,
+    "CyCharacterState::ground_normal is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyCharacterState, platform_velocity) == 60,
+    "CyCharacterState::platform_velocity is not at byte 60"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -934,8 +1143,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 680,
-    "CyInterface is not 680 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 768,
+    "CyInterface is not 768 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -1277,6 +1486,50 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, vfx_effect_parameter_get) == 672,
     "CyInterface::vfx_effect_parameter_get is not at byte 672"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, register_system) == 680,
+    "CyInterface::register_system is not at byte 680"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, node_find) == 688,
+    "CyInterface::node_find is not at byte 688"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, physics_apply_force) == 696,
+    "CyInterface::physics_apply_force is not at byte 696"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, physics_apply_impulse) == 704,
+    "CyInterface::physics_apply_impulse is not at byte 704"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, physics_apply_torque) == 712,
+    "CyInterface::physics_apply_torque is not at byte 712"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, physics_set_velocity) == 720,
+    "CyInterface::physics_set_velocity is not at byte 720"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, physics_get_velocity) == 728,
+    "CyInterface::physics_get_velocity is not at byte 728"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, character_create) == 736,
+    "CyInterface::character_create is not at byte 736"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, character_destroy) == 744,
+    "CyInterface::character_destroy is not at byte 744"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, character_move) == 752,
+    "CyInterface::character_move is not at byte 752"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, character_state) == 760,
+    "CyInterface::character_state is not at byte 760"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -1323,7 +1576,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        83,
+        94,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

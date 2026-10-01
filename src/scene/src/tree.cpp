@@ -385,8 +385,15 @@ Status SceneTree::dispatch_attached(Entity subtree_root) noexcept {
     if (Status collected = collect_subtree(subtree_root, subtree); !collected) {
         return collected;
     }
-    // Parent-first, as the specification tabulates `onEnterTree`.
+    // Parent-first, as the specification tabulates `onEnterTree` — and once per attachment. A node
+    // created under a parent that was itself attached earlier in the same frame is in two queued
+    // events, the parent's subtree and its own; the second must not enter it again.
     for (const Entity entity : subtree) {
+        const u32 instance = behaviours_.instance_of(*this, entity);
+        if (instance == kNoBehaviourInstance || behaviours_.entered(instance)) {
+            continue;
+        }
+        behaviours_.set_entered(instance, true);
         (void)behaviours_.invoke(*this, Node(*this, entity), BehaviourCallback::EnterTree, 0.0F,
                                  nullptr);
     }
@@ -412,11 +419,12 @@ Status SceneTree::dispatch_detached(Entity subtree_root) noexcept {
     for (usize index = subtree.size(); index > 0; --index) {
         const Node node(*this, subtree[index - 1]);
         (void)behaviours_.invoke(*this, node, BehaviourCallback::ExitTree, 0.0F, nullptr);
-        // Leaving the tree ends the attachment, so a later re-attachment gets `onReady` again —
-        // which is the "once per attachment" half of the rule rather than "once ever".
+        // Leaving the tree ends the attachment, so a later re-attachment gets `onEnterTree` and
+        // `onReady` again — the "once per attachment" half of the rule rather than "once ever".
         if (const u32 instance = behaviours_.instance_of(*this, node.entity());
             instance != kNoBehaviourInstance) {
             behaviours_.set_ready(instance, false);
+            behaviours_.set_entered(instance, false);
         }
     }
     return ok();

@@ -8,6 +8,7 @@
 // clips. Every item is registered under a NAME that game/Contract.swift also knows:
 //
 //   the ground          a 32 m square, a static box on collision layer 0
+//   /Level              Barracks, Crate (a 20 kg dynamic box on layer 2), Commander and Scout
 //   the navigation mesh one flat tile over the same square, navigation world 0
 //   "units/worker"      a one-node prefab, registered resident with the spawn adapter
 //   "unit.arrived"      a short generated click, registered as a cue with the audio adapter
@@ -34,6 +35,10 @@ inline constexpr cy::u32 kNavCells = 16;
 /// Collision layers. game/Contract.swift's `Layers` masks select them.
 inline constexpr cy::u8 kGroundLayer = 0;
 inline constexpr cy::u8 kUnitLayer = 1;
+/// Level props and the scout's hero: neither a unit a click selects nor ground an order lands on.
+inline constexpr cy::u8 kPropLayer = 2;
+/// Where the crate starts: its centre, resting on the ground, away from the units' paths.
+inline constexpr cy::Vec3 kCrateStart{28.0F, 0.5F, 6.0F};
 
 /// The names game/Contract.swift's `Content` uses.
 inline constexpr const char* kWorkerPrefab = "units/worker";

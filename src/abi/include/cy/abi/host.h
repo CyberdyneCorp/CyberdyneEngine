@@ -101,6 +101,29 @@ struct ComponentRecord {
     u32 field_count = 0;
 };
 
+/// One system a module registered through ABI 1.5's `register_system`, and the generation of the
+/// image that registered it.
+///
+/// Individually allocated for the reason behaviour records are: `ScriptSystems` resolves a name to
+/// one of these on every run, and the array of records grows. `name` is borrowed for the life of
+/// the process — a retired image is never unloaded — and the access list is copied, because the
+/// caller's array is borrowed for the call only.
+struct SystemRecord {
+    explicit SystemRecord(Allocator& allocator) noexcept : access(allocator) {}
+
+    const char* name = "";
+    CyStage stage = CY_STAGE_SIMULATION;
+    Array<CySystemAccess> access;
+    void (*run)(CyEngine engine, CyWorld world, void* user_data) = nullptr;
+    void* user_data = nullptr;
+    u32 generation = 0;
+
+    /// True when `other` declares the same stage and the same access, in any order. What a reload
+    /// is checked by: a scheduled system cannot be re-ordered in a running schedule.
+    [[nodiscard]] bool same_declaration(CyStage other_stage,
+                                        Span<const CySystemAccess> other) const noexcept;
+};
+
 }  // namespace cy::abi
 
 /// The object `CyBehaviourType` addresses: a behaviour type registration, and the generation of the
@@ -202,7 +225,10 @@ struct CyEngine_T {
 
     /// Retire the current generation and open the next. Called by the loader before the next
     /// image's entry point runs; see cy/abi/module.h for the whole sequence.
-    void open_generation() noexcept { ++generation; }
+    void open_generation() noexcept {
+        ++generation;
+        refused_systems = 0;
+    }
 
     /// Undo `open_generation`, discarding every registration the generation being abandoned made.
     ///
@@ -214,6 +240,17 @@ struct CyEngine_T {
     /// instance into.
     void abandon_generation() noexcept;
 
+    /// Register a system in the current generation (ABI 1.5). Re-registering a name in the same
+    /// generation replaces it. In a later generation the stage and the access must equal the most
+    /// recent earlier registration's, or it is refused with `Unsupported` and `refused_systems` is
+    /// counted — which is what makes the reload that carried it refuse too. See `register_system`
+    /// in cy_abi.h.
+    [[nodiscard]] cy::Status register_system(const CySystemDesc& desc) noexcept;
+
+    /// The system of that name in the current generation, or null. Read on every run of a scheduled
+    /// script system, possibly from a job worker; the array is only written at a frame boundary.
+    [[nodiscard]] const cy::abi::SystemRecord* find_system(const char* name) const noexcept;
+
     cy::Allocator& allocator;
     CyWorld_T* world = nullptr;
     cy::abi::EditorServiceBackend* editor_service = nullptr;
@@ -223,6 +260,11 @@ struct CyEngine_T {
     cy::abi::game::GameServices game;
     cy::abi::VfxEffectBackend* vfx_effects = nullptr;
     cy::Array<CyBehaviourType_T*> behaviours;
+    /// ABI 1.5's registered systems, every generation's. See `cy::abi::ScriptSystems`.
+    cy::Array<cy::abi::SystemRecord*> systems;
+    /// Registrations the current generation made that changed an earlier generation's declaration,
+    /// and were therefore refused. Non-zero refuses the reload that opened the generation.
+    cy::u32 refused_systems = 0;
     cy::u32 generation = 0;
     /// Heap-backed `CyVar` payloads currently alive. Atomic because a value may be released on a
     /// job worker, and counted in every configuration so that a leak assertion is evidence rather

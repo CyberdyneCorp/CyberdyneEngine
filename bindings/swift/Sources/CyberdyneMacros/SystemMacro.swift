@@ -51,7 +51,7 @@ public struct SystemMacro: PeerMacro {
 
         return [
             """
-            public enum __CySystem_\(raw: name) {
+            public enum __CySystem_\(raw: name): SystemRegistration {
                 public static let descriptor = SystemDescriptor(
                     name: "\(raw: name)", stage: \(raw: stage), access: \(raw: query).access)
 

@@ -22,8 +22,10 @@
 #include <cy/abi/errors.h>
 #include <cy/abi/host.h>
 #include <cy/abi/module.h>
+#include <cy/abi/systems.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
 #include <cy/test/test.h>
 
@@ -310,4 +312,101 @@ CY_TEST_CASE("reload time and address-space cost stay flat as generations accumu
     // And the state is still the state, nine generations later.
     CY_CHECK_EQ(field(fixture.runtime, 0, "mana"), 8);
     CY_CHECK_EQ(field(fixture.runtime, 0, "shield"), 10);
+}
+
+// --- ABI 1.5: a module's scheduled system across a reload
+// -----------------------------------------
+//
+// `counter.tick` (src/abi/tests/module/behaviour.c) adds its image's step to a `Ticks` component
+// through `world_chunks`. System A steps by 1, B by 100, and "moved" declares the same system in
+// another stage. Reading the component tells which image's code the schedule ran.
+
+namespace {
+
+struct SystemFixture : Fixture {
+    cy::ecs::Schedule schedule{world};
+    cy::abi::ScriptSystems systems{allocator(), host};
+    cy::ecs::Entity ticking;
+
+    /// Load `library`, install its system, and give one entity a `Ticks` to step.
+    void start(const char* library) {
+        CY_REQUIRE(runtime.load(manifest, library).has_value());
+        const cy::Expected<cy::u32, cy::Error> installed = systems.install(schedule);
+        CY_REQUIRE(installed.has_value());
+        CY_REQUIRE_EQ(installed.value(), 1U);
+        const cy::abi::ComponentRecord* record = binding.find("Ticks");
+        CY_REQUIRE(record != nullptr);
+        const cy::Expected<cy::ecs::Entity, cy::Error> made = world.create();
+        CY_REQUIRE(made.has_value());
+        ticking = made.value();
+        const cy::i64 zero = 0;
+        CY_REQUIRE(world.add(ticking, record->id, &zero).has_value());
+    }
+
+    void tick() {
+        CY_REQUIRE(systems.run(schedule, cy::ecs::Stage::Simulation, nullptr).has_value());
+        CY_REQUIRE(systems.run(schedule, cy::ecs::Stage::Frame, nullptr).has_value());
+    }
+
+    [[nodiscard]] cy::i64 ticks() const noexcept {
+        const cy::abi::ComponentRecord* record = binding.find("Ticks");
+        const void* bytes = record == nullptr ? nullptr : world.get(ticking, record->id);
+        cy::i64 value = -1;
+        if (bytes != nullptr) {
+            std::memcpy(&value, bytes, sizeof(value));
+        }
+        return value;
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("a module's system runs in the stage it named, through world_chunks") {
+    SystemFixture fixture;
+    fixture.start(CY_ABI_TEST_MODULE_SYSTEM_A);
+    fixture.tick();
+    fixture.tick();
+    CY_CHECK_EQ(fixture.ticks(), 2);
+    CY_CHECK_EQ(fixture.systems.runs("counter.tick"), 2U);
+    CY_CHECK_EQ(fixture.schedule.system_count(cy::ecs::Stage::Simulation), 1U);
+    CY_CHECK_EQ(fixture.schedule.system_count(cy::ecs::Stage::Frame), 0U);
+}
+
+CY_TEST_CASE("after a reload the scheduled system runs the new image's code, in the same slot") {
+    SystemFixture fixture;
+    fixture.start(CY_ABI_TEST_MODULE_SYSTEM_A);
+    fixture.tick();
+    cy::Expected<cy::abi::ReloadReport, cy::Error> report =
+        fixture.runtime.reload(CY_ABI_TEST_MODULE_SYSTEM_B);
+    CY_REQUIRE(report.has_value());
+    CY_REQUIRE_EQ(report.value().failure, cy::abi::ReloadFailure::None);
+    // Nothing new to install: the name is already scheduled, and the slot resolves to B now.
+    const cy::Expected<cy::u32, cy::Error> installed = fixture.systems.install(fixture.schedule);
+    CY_REQUIRE(installed.has_value());
+    CY_CHECK_EQ(installed.value(), 0U);
+    fixture.tick();
+    CY_CHECK_EQ(fixture.ticks(), 101);
+    CY_CHECK_EQ(fixture.schedule.system_count(cy::ecs::Stage::Simulation), 1U);
+}
+
+CY_TEST_CASE("a reload that moves a scheduled system to another stage is refused") {
+    // A running schedule cannot re-order a system, so the reload that would need it is refused and
+    // the previous generation — and its system, in its place — stays live.
+    SystemFixture fixture;
+    fixture.start(CY_ABI_TEST_MODULE_SYSTEM_A);
+    CY_REQUIRE(fixture.runtime.create("Counter", 1).has_value());
+    fixture.tick();
+
+    cy::Expected<cy::abi::ReloadReport, cy::Error> report =
+        fixture.runtime.reload(CY_ABI_TEST_MODULE_SYSTEM_MOVED);
+    CY_REQUIRE(report.has_value());
+    CY_CHECK_EQ(report.value().failure, cy::abi::ReloadFailure::SystemChanged);
+    CY_CHECK_EQ(fixture.runtime.generation(), 0U);
+    CY_CHECK_EQ(fixture.runtime.live_instances(), 1U);
+    CY_CHECK_EQ(fixture.host.refused_systems, 0U);
+    // The abandoned generation's registrations went with it: only A's system record is left.
+    CY_CHECK_EQ(fixture.host.systems.size(), 1U);
+
+    fixture.tick();
+    CY_CHECK_EQ(fixture.ticks(), 2);  // A's step, not the moved image's 1000
 }

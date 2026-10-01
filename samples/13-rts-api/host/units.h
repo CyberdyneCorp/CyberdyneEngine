@@ -15,12 +15,25 @@
 //     data so a physics hit names the unit. It follows the node each tick and goes away with the
 //     entity. It is also the physics adapter's `EntityBodies`, for ignore lists.
 //
-// A game with character controllers would bind those instead. This sample's units only walk.
+// A game with character controllers would bind those instead. This sample's units only walk; its
+// one character (the scout's hero, ABI 1.5) has its body from the `CharacterAdapter`.
+//
+// Two more pieces, both observers, added with ABI 1.5:
+//
+//   * `LevelBodies` is the ONE entity-to-body map the physics adapters see: level props the host
+//     built (the crate), then the units, then the characters. So a script can push the crate, and a
+//     query's ignore list can name a unit or the hero.
+//   * `VeterancyRoll` is a NATIVE system reading the `Veterancy` column the Swift `trainUnits`
+//     system writes. It exists to show the two scheduled side by side and ordered by their
+//     declarations, and to read the column for the report. It decides nothing.
 
 #include <cy/abi/cy_abi.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/ownership.h>
 #include <cy/ecs/query.h>
+#include <cy/ecs/system.h>
+#include <cy/game_backend/character_backend.h>
 #include <cy/game_backend/navigation_backend.h>
 #include <cy/game_backend/physics_backend.h>
 #include <cy/navigation/components.h>
@@ -91,6 +104,58 @@ private:
     cy::ecs::Query agents_;
     /// Sorted by entity bits.
     cy::Array<Unit> units_;
+};
+
+/// Props, then units, then characters: every body a script may name, by entity.
+class LevelBodies final : public cy::game_backend::EntityBodies {
+public:
+    LevelBodies(const UnitBodies& units,
+                const cy::game_backend::CharacterAdapter& characters) noexcept
+        : units_(&units), characters_(&characters) {}
+
+    /// A level prop the host built. Up to `kProps`; the sample has one.
+    void add_prop(CyEntity entity, cy::physics::BodyHandle body) noexcept;
+
+    [[nodiscard]] cy::physics::BodyHandle body_of(CyEntity entity) const noexcept override;
+
+private:
+    static constexpr cy::u32 kProps = 4;
+    struct Prop {
+        CyEntity entity = CY_ENTITY_NULL;
+        cy::physics::BodyHandle body;
+    };
+    Prop props_[kProps] = {};
+    cy::u32 prop_count_ = 0;
+    const UnitBodies* units_;
+    const cy::game_backend::CharacterAdapter* characters_;
+};
+
+/// A native system reading `Veterancy`, registered in the same stage as the Swift system that
+/// writes it. What it sees is what the report prints.
+class VeterancyRoll {
+public:
+    static constexpr const char* kName = "host.veterancy.roll";
+
+    VeterancyRoll(cy::Allocator& allocator, cy::ecs::World& world) noexcept
+        : allocator_(&allocator), world_(&world) {}
+
+    /// Add the system to `schedule`'s Simulation stage, reading `veterancy`.
+    [[nodiscard]] cy::Expected<cy::ecs::SystemId, cy::Error> install(
+        cy::ecs::Schedule& schedule, cy::ecs::ComponentTypeId veterancy) noexcept;
+
+    /// Rows seen on the last run, and the most ticks any of them had served.
+    [[nodiscard]] cy::u32 rows() const noexcept { return rows_; }
+    [[nodiscard]] cy::f32 most() const noexcept { return most_; }
+
+private:
+    static void body(const cy::ecs::SystemContext& context) noexcept;
+
+    cy::Allocator* allocator_;
+    cy::ecs::World* world_;
+    cy::UniquePtr<cy::ecs::Query> query_;
+    cy::ecs::ComponentTypeId veterancy_ = 0;
+    cy::u32 rows_ = 0;
+    cy::f32 most_ = 0.0F;
 };
 
 }  // namespace sample::rts

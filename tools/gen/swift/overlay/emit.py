@@ -67,6 +67,9 @@ ENUM_SPECS = {
     "CyShapeKind": ("ShapeKind", "CY_SHAPE_", "UInt32"),
     "CyNavPathStatus": ("NavPathStatus", "CY_NAV_PATH_STATUS_", "UInt32"),
     "CyNavQueryState": ("NavQueryState", "CY_NAV_QUERY_", "UInt32"),
+    # ADDED AT ABI 1.5 with scheduled systems and character controllers.
+    "CyAccessMode": ("AccessMode", "CY_ACCESS_", "UInt32"),
+    "CyGroundState": ("GroundState", "CY_GROUND_", "UInt32"),
 }
 
 
@@ -163,6 +166,9 @@ def enums(description: dict) -> str:
         ("CyShapeKind", "/// `CyShapeKind`: the shapes a physics query sweeps or overlaps."),
         ("CyNavPathStatus", "/// `CyNavPathStatus`: where a crowd agent is on its way to a target."),
         ("CyNavQueryState", "/// `CyNavQueryState`: an asynchronous path search's state."),
+        # ABI 1.5.
+        ("CyAccessMode", "/// `CyAccessMode`: what a scheduled system declares about one component."),
+        ("CyGroundState", "/// `CyGroundState`: what a character controller is standing on."),
     ))
     return f"""{BANNER}
 {status}

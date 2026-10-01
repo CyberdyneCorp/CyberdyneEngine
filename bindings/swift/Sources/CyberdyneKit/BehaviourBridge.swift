@@ -43,15 +43,18 @@ final class BehaviourRegistration {
     let name: String
     let schema: UInt32
     let callbacks: CallbackSet
+    /// True when the class declares `@Node` properties, which are resolved at `ready`.
+    let resolvesNodes: Bool
     let make: (Entity) -> any BehaviourClass
 
     init(
-        name: String, schema: UInt32, callbacks: CallbackSet,
+        name: String, schema: UInt32, callbacks: CallbackSet, resolvesNodes: Bool = false,
         make: @escaping (Entity) -> any BehaviourClass
     ) {
         self.name = name
         self.schema = schema
         self.callbacks = callbacks
+        self.resolvesNodes = resolvesNodes
         self.make = make
     }
 
@@ -83,7 +86,7 @@ public enum Behaviours {
         }
         let record = BehaviourRegistration(
             name: type.behaviourName, schema: type.behaviourSchema,
-            callbacks: type.behaviourCallbacks,
+            callbacks: type.behaviourCallbacks, resolvesNodes: !type.nodePaths.isEmpty,
             make: { type.init(entity: $0) })
         var vtable = makeVTable(record)
         // The name is RETAINED, not borrowed: the host keeps the pointer. See CStrings.swift for
@@ -121,6 +124,15 @@ private func makeVTable(_ record: BehaviourRegistration) -> CyBehaviourVTable {
     vtable.frame_update = record.callbacks.contains(.update) ? behaviourFrameUpdate : nil
     vtable.serialize = behaviourSerialize
     vtable.deserialize = behaviourDeserialize
+    // ABI 1.5: the tree callbacks, each registered only when the class wrote it — so a behaviour
+    // with no `onEnable` is never called on an enable. `ready` is also registered for a class with
+    // `@Node` properties, because resolving them is what `ready` is for.
+    let callbacks = record.callbacks
+    vtable.enter_tree = callbacks.contains(.enterTree) ? behaviourEnterTree : nil
+    vtable.ready = callbacks.contains(.ready) || record.resolvesNodes ? behaviourReady : nil
+    vtable.enable = callbacks.contains(.enable) ? behaviourEnable : nil
+    vtable.disable = callbacks.contains(.disable) ? behaviourDisable : nil
+    vtable.exit_tree = callbacks.contains(.exitTree) ? behaviourExitTree : nil
     // Retained for the life of the image. See the header comment; there is no later safe release.
     vtable.user_data = Unmanaged.passRetained(record).toOpaque()
     return vtable
@@ -194,6 +206,55 @@ private let behaviourFrameUpdate:
                 record.report(error, in: "onUpdate", on: object)
             }
         }
+
+/// One of the argument-free tree callbacks, with the bridge's guarantees: nothing on a disabled
+/// instance or one whose class did not write it, and a thrown error disables rather than escapes.
+private func treeCallback(
+    _ raw: CyInstance?, _ userData: UnsafeMutableRawPointer?, _ callback: CallbackSet,
+    _ name: String, _ call: (any BehaviourClass) throws -> Void
+) {
+    guard let record = registration(userData), let object = instance(raw) else { return }
+    guard object.isEnabled, record.callbacks.contains(callback) else { return }
+    do {
+        try call(object)
+    } catch {
+        record.report(error, in: name, on: object)
+    }
+}
+
+private let behaviourEnterTree:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
+        treeCallback(raw, userData, .enterTree, "onEnterTree") { try $0.onEnterTree() }
+    }
+
+/// `ready`: resolve every `@Node` against the behaviour's own node, THEN `onReady` — so a
+/// behaviour reads its references in `onReady` and finds them filled, or nil for a path that does
+/// not resolve. An unresolved path is a warning, not a failure: `swift-scripting` asks for nil.
+private let behaviourReady:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
+        guard let record = registration(userData), let object = instance(raw) else { return }
+        for reference in object.nodeReferences() where !reference.resolveNode(from: object.entity) {
+            Log.warning(
+                "\(record.name): @Node(\"\(reference.path)\") does not resolve from its node; it "
+                    + "stays nil.")
+        }
+        treeCallback(raw, userData, .ready, "onReady") { try $0.onReady() }
+    }
+
+private let behaviourEnable:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
+        treeCallback(raw, userData, .enable, "onEnable") { try $0.onEnable() }
+    }
+
+private let behaviourDisable:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
+        treeCallback(raw, userData, .disable, "onDisable") { try $0.onDisable() }
+    }
+
+private let behaviourExitTree:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
+        treeCallback(raw, userData, .exitTree, "onExitTree") { try $0.onExitTree() }
+    }
 
 /// `serialize(self, NULL, 0, ud)` returns the byte count required and writes nothing; that is how
 /// the host sizes the blob, and it is why this builds the blob before it looks at `capacity`.
@@ -277,21 +338,15 @@ extension CyResult {
     var rawValue32: Int32 { Int32(bitPattern: UInt32(rawValue)) }
 }
 
-// --- The tree callbacks the ABI cannot drive yet ----------------------------------------------
+// --- Driving a callback by hand ---------------------------------------------------------------
 
 extension Behaviour {
     /// Drive one lifecycle callback by hand, with the same guarantees the engine's own thunks give:
     /// nothing is called on a class that did not write it, nothing is called on a disabled instance,
     /// and a thrown error disables the instance rather than escaping into C.
     ///
-    /// WHY THIS IS PUBLIC AND WHY IT IS NOT A WORKAROUND. `CyBehaviourVTable` carries `create`,
-    /// `destroy`, `fixed_update`, `serialize`, `deserialize` and — since ABI 1.3 — `frame_update`,
-    /// which the engine dispatches to `onUpdate`. The other tree callbacks
-    /// `scene-graph-and-nodes` defines — `onEnterTree`, `onReady`, `onEnable`, `onDisable`,
-    /// `onExitTree` — need scene entries that the table does not have yet.
-    /// They are part of the model, they are recorded in `behaviourCallbacks`, and this is the one
-    /// place that dispatches them. When those entries are APPENDED to `CyInterface` — the only legal
-    /// way to grow it — the new thunks call exactly this, and nothing in a game changes.
+    /// The engine drives every callback itself since ABI 1.5 (the vtable thunks above). This stays
+    /// for a test, or a tool, that wants one callback without a scene tree behind it.
     ///
     /// `delta` is ignored by every callback that does not take one.
     public func dispatch(_ callback: CallbackSet, delta: Double = 0) {
