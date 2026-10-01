@@ -50,6 +50,7 @@ cy_add_module(
         src/audit.cpp
         src/cybergraph.cpp
         src/emit.cpp
+        src/event_script.cpp
         src/expr.cpp
         src/locomotion.cpp
         src/lower_behaviour.cpp

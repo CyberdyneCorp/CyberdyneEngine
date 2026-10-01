@@ -227,6 +227,7 @@ fn draw_vfx_canvas(
         "Empty VFX stage graph\nChoose a node from the engine catalogue",
         &mut inputs.vfx_link_source,
         &mut graph_canvas::CanvasFeedback {
+            unwired_inputs: true,
             link_problem: &mut inputs.vfx_link_problem,
             node_alerts: actions.node_alerts,
             on_connect: Some(&mut |canvas, connection| {

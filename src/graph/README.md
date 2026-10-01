@@ -30,6 +30,26 @@ ahead-of-time-resolved native path in `lower_script_native.cpp`. They share `Scr
 instance suspended under one resumes under the other, and `integration.graph_compiler` checks that
 they agree effect for effect rather than only on the outcome.
 
+## Event graphs: gameplay graphs that start at events
+
+`event_script.h` (#29, visual scripting) is how a gameplay graph authored in the editor compiles. Its
+entry points are `script.on_event` nodes, each naming an event, and `compile_event_graph` lowers every
+handler through the same builder as `compile_script` and `compile_ability` into ONE `ScriptProgram`;
+`EventProgram` records where each event's handler begins. `execute_from` and `execute_native_from` start
+an instance at a handler on either back end, discarding a wait it was in (a newer order replaces an
+older one). There is no tick node: a handler that must outlast a frame waits, and the scheduler resumes
+it once its host satisfies the reason (`waiting_at`).
+
+The compiler checks names against `ExternalDecl`s the HOST declares — function metadata: name or
+family prefix, kind, arity, capability. An undeclared name, a name used as another kind, or one outside
+the graph's capabilities is a diagnostic on the node that names it, as are a graph with no event, an
+unnamed or duplicate event, an unknown node type and a wire between pins of different types; a node no
+event reaches is a warning. Every diagnostic carries a stable `code` (`script.external.unknown`, ...).
+`disassemble` lists what a graph became, instruction by instruction, each with its node.
+
+`cy::game_backend::GraphBehaviours` is the host the editor's Play uses; its declarations and its
+binding are in `src/game_backend/include/cy/game_backend/graph_behaviours.h`.
+
 ## Which consumer uses which, and why
 
 | Consumer | Lowers to | Why not the expression core |
@@ -146,4 +166,4 @@ The rule the fix leaves behind, because it is not specific to this struct:
 | Suite | Kind | Subject |
 |---|---|---|
 | `unit.cybergraph` | unit | The authoring layer: identity, typed pins, the textual round trip, diff and merge, migration, the audit |
-| `integration.graph_compiler` | integration | The expression core, the anchor, the four lowerings, and the locomotion graph the animation lowering is asked to compile. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |
+| `integration.graph_compiler` | integration | The expression core, the anchor, the four lowerings, event graphs (`test_event_script.cpp`: handlers, diagnostics on the node, the two back ends call for call), and the locomotion graph the animation lowering is asked to compile. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |

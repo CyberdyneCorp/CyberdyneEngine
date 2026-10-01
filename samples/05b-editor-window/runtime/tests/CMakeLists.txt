@@ -267,6 +267,50 @@ function(cy_editor_window_runtime_declare_tests)
         endif()
     endif()
 
+    # #29, VISUAL SCRIPTING: the editor's unit-command graph against its Swift twin. Declared
+    # wherever a Swift toolchain is, not only on macOS, because the claim is about the engine's
+    # compiled program and the C ABI, neither of which is Apple's. Smoke because it builds and loads
+    # a Swift module.
+    if(CY_SCRIPTING AND Python3_Interpreter_FOUND)
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py" --probe
+            RESULT_VARIABLE twin_swift_result OUTPUT_QUIET ERROR_QUIET)
+        if(twin_swift_result EQUAL 0)
+            set(twin_module_dir "${CMAKE_CURRENT_BINARY_DIR}/twin-module")
+            set(twin_module "${twin_module_dir}/out/libCyGame_g1.so")
+            file(GLOB twin_game_sources CONFIGURE_DEPENDS "${tests_dir}/../../project/game/*.swift")
+            file(GLOB_RECURSE twin_package_sources CONFIGURE_DEPENDS
+                 "${CMAKE_SOURCE_DIR}/bindings/swift/Sources/*")
+            add_custom_command(
+                OUTPUT "${twin_module}"
+                COMMAND "${Python3_EXECUTABLE}"
+                        "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                        --work "${twin_module_dir}" --out "${twin_module_dir}/out"
+                        --generation "1=${tests_dir}/../../project/game"
+                DEPENDS ${twin_game_sources}
+                        "${CMAKE_SOURCE_DIR}/bindings/swift/tools/cy_swift_module.py"
+                        ${twin_package_sources}
+                VERBATIM)
+            add_custom_target(cy_editor_twin_module DEPENDS "${twin_module}")
+            cy_add_test(
+                NAME editor_graph_equivalence
+                KIND smoke
+                SOURCES "${tests_dir}/test_graph_equivalence.cpp"
+                        "${tests_dir}/../script_runtime.cpp"
+                        "${tests_dir}/../graph_runtime.cpp"
+                DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
+                             cy::scene-serialization cy::scene cy::game-backend
+                             cy::editor-backend
+                DEFINITIONS "CY_TWIN_MODULE=\"${twin_module}\""
+                            "CY_SCRIPT_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/src/editor_backend/tests/data\""
+                            "CY_EDITOR_PROJECT_DIR=\"${tests_dir}/../../project\"")
+            add_dependencies(cy_test_smoke_editor_graph_equivalence cy_editor_twin_module)
+            target_include_directories(cy_test_smoke_editor_graph_equivalence PRIVATE
+                                       "${tests_dir}/..")
+        endif()
+    endif()
+
     foreach(target cy_test_unit_editor_window_runtime
                    cy_test_integration_editor_window_physics_overlay
                    cy_test_integration_editor_window_overlay

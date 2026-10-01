@@ -337,6 +337,16 @@ enum class RunOutcome : u8 {
                                                   ScriptHost& host,
                                                   u32 instruction_budget = 4096) noexcept;
 
+/// Run one instance from `start`, the first block of an event handler, rather than from the
+/// program's entry or its resume point. Whatever suspension the instance was in is DISCARDED: an
+/// event that arrives while a handler waits starts that event's handler, which is what an RTS order
+/// means — the newest command replaces the one in progress. Same budget, same outcomes as
+/// `execute`; `start` outside the program is an error rather than a jump into nothing.
+[[nodiscard]] Expected<RunOutcome, Error> execute_from(const ScriptProgram& program,
+                                                       ScriptState& state, ScriptHost& host,
+                                                       BlockId start,
+                                                       u32 instruction_budget = 4096) noexcept;
+
 // --- The native back end ------------------------------------------------------------------------
 //
 // `visual-scripting` requires TWO execution backends from ONE intermediate representation:
@@ -446,6 +456,11 @@ private:
 [[nodiscard]] Expected<RunOutcome, Error> execute_native(const NativeProgram& program,
                                                          ScriptState& state, ScriptHost& host,
                                                          u32 instruction_budget = 4096) noexcept;
+
+/// `execute_from` on the native back end: the same handler block, resolved to its first step.
+[[nodiscard]] Expected<RunOutcome, Error> execute_native_from(
+    const NativeProgram& program, ScriptState& state, ScriptHost& host, BlockId start,
+    u32 instruction_budget = 4096) noexcept;
 
 // --- Compilation ------------------------------------------------------------------------------
 

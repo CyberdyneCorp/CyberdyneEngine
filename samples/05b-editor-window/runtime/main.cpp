@@ -92,6 +92,7 @@
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "scene_vfx_runtime.h"
 #endif
+#include "graph_runtime.h"
 #include "scene_audio.h"
 #include "script_runtime.h"
 #include "world_view.h"
@@ -335,6 +336,8 @@ struct Host {
     /// over M3's ring would be a simulation of a fixture, which is what this milestone ends.
     gameplay::PlaySession* play = nullptr;
     ScriptRuntime* scripts = nullptr;
+    /// #29, visual scripting: the gameplay graphs Play runs, and the editor's `script.*` seam.
+    GraphRuntime* graphs = nullptr;
     /// #29: the mixer editor, cue preview and Play's audio, over one server. Never null in a
     /// running host; its backend is null when no device opened, which every reply names.
     SceneAudio* audio = nullptr;
@@ -780,8 +783,13 @@ void sync_world(Host& host, const runtime::EditorRequest& request) noexcept {
 /// THE ANSWER IS ALWAYS THE STATE NOW IN FORCE, never a silence. A runtime that ignored a play it
 /// could not honour would leave the editor showing "PLAYING" over a world that is not moving, which
 /// is worse than a refusal: it is a refusal a person cannot see.
-Status tick_scripts(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
-    return static_cast<ScriptRuntime*>(user)->tick(play, dt);
+/// Play's gameplay step: the Swift behaviours, then the gameplay graphs, each fixed tick.
+Status tick_gameplay(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
+    Host& host = *static_cast<Host*>(user);
+    if (Status scripted = host.scripts->tick(play, dt); !scripted) {
+        return scripted;
+    }
+    return host.graphs->tick(dt);
 }
 
 void answer_reload(Host& host, const runtime::EditorRequest& request) noexcept {
@@ -857,7 +865,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     }
     host.play_mode = *mode;
 
-    char detail[192] = {};
+    char detail[256] = {};
     switch (*wanted) {
         case gameplay::PlayState::Playing: {
             if (host.play->state() == gameplay::PlayState::Paused) {
@@ -881,8 +889,8 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             // The mode the editor asked for, carried into the session so that `enter` refuses one
             // this build cannot run rather than this function having to remember to.
             configuration.mode = host.play_mode;
-            configuration.gameplay_tick = &tick_scripts;
-            configuration.gameplay_user = host.scripts;
+            configuration.gameplay_tick = &tick_gameplay;
+            configuration.gameplay_user = &host;
             if (Status entered = host.play->enter(configuration); !entered) {
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
@@ -908,14 +916,33 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                                 sounding.error().message);
                 return;
             }
+            // GAMEPLAY GRAPHS (#29). After the audio, so a graph's `cue.` events bind to the
+            // project's cues; a graph that does not compile ends Play naming its node.
+            if (Status graphed = host.graphs->start(*host.play, host.view_world->world(),
+                                                    &host.audio->authoring()->adapter());
+                !graphed) {
+                const std::string why = host.graphs->problem().empty()
+                                            ? std::string(graphed.error().message)
+                                            : host.graphs->problem();
+                host.graphs->stop();
+                host.audio->stop_play();
+                host.scripts->stop();
+                (void)host.play->stop();
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
+                                                why.c_str());
+                return;
+            }
             host.play_sessions += 1;
             host.play_bodies = host.play->report().bodies;
             (void)std::snprintf(detail, sizeof(detail),
                                 "%u entities, %u bodies, %u colliders; "
-                                "%u Swift behaviour(s); audio: %u source(s) on %s",
+                                "%u Swift behaviour(s); %u graph instance(s); "
+                                "audio: %u source(s) on %s",
                                 host.play->report().entities, host.play->report().bodies,
                                 host.play->report().colliders, host.scripts->count(),
-                                host.audio->play_voices(), host.audio->backend());
+                                host.graphs->count(), host.audio->play_voices(),
+                                host.audio->backend());
             break;
         }
         case gameplay::PlayState::Paused:
@@ -929,6 +956,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             break;
         case gameplay::PlayState::Editing: {
             const bool was_playing = host.play->state() != gameplay::PlayState::Editing;
+            host.graphs->stop();
             host.audio->stop_play();
             host.scripts->stop();
             if (Status stopped = host.play->stop(); !stopped) {
@@ -1791,6 +1819,7 @@ int main(int argc, char** argv) {
 
         Host host;
         ScriptRuntime scripts(allocator, options.project);
+        GraphRuntime graphs(allocator, options.project);
         scripts.bind_audio(&audio.authoring()->adapter());
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
         scripts.bind_scene_vfx(view_world.loaded() ? &scene_vfx : nullptr);
@@ -1813,6 +1842,7 @@ int main(int argc, char** argv) {
         nav_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
         editor::NavigationService navigation_service(allocator, &nav_source);
         editor_service.set_audio(audio.authoring());
+        editor_service.set_scripts(&graphs);
         editor::CompositeEditorService composite_service(allocator);
         CyServiceSession service_session =
             open_services(composite_service, editor_service, navigation_service);
@@ -1826,6 +1856,7 @@ int main(int argc, char** argv) {
         host.view_world = &view_world;
         host.play = play.session.get();
         host.scripts = &scripts;
+        host.graphs = &graphs;
         host.audio = &audio;
         host.physics = play.server;
         host.renderer = &renderer;
@@ -1854,6 +1885,7 @@ int main(int argc, char** argv) {
         // it deliberately does NOT stop play, because a destructor that wrote into the authored
         // world would put a restore on a path nobody asked for.
         if (play.session && play.session->state() != gameplay::PlayState::Editing) {
+            graphs.stop();
             scripts.stop();
             (void)play.session->stop();
         }

@@ -46,6 +46,16 @@ The first vertical slice supports:
   autoplaying `cy::audio::AudioSource`. `tests/data/audio_*` holds the wire the Rust editor's
   suites read and write.
 
+- `script.catalogue.get`, `script.compile`, `script.event.raise` and `script.state.get` — the gameplay
+  graph editor's (#29, visual scripting; `include/cy/editor/script_service.h` gives the payloads). The
+  catalogue is the material catalogue's schema 3 over `cy::graph`'s script vocabulary without
+  `script.entry`, with property choices that are `cy::game_backend::gameplay_graph_externals()`. A
+  compile always completes: the program (digests, sizes, handlers, externals, accesses, listing) or
+  the diagnostics, each with its node, pin, code and the name it is about. Raise and state reach the
+  host's Play through `cy::editor::ScriptPlayRuntime` once the host calls
+  `MaterialService::set_scripts`, and are refused with `script.play.unavailable` otherwise.
+  `tests/data/script_*` holds the wire the Rust editor's suites read and write.
+
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of
 the live message framing.

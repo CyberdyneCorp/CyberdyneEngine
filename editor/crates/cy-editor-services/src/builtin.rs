@@ -67,6 +67,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // The mixer, cues and audio sources, and the engine previews over them. See
     // `crate::audio_commands`.
     crate::audio_commands::register(registry)?;
+    crate::script_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
@@ -550,11 +551,13 @@ fn apply_sources(
         .collect();
     let vfx_documents = vfx_sources(transaction, forward);
     let audio_assets = audio_sources(transaction, forward);
+    let script_graphs = script_sources(transaction, forward);
     if wanted.is_empty()
         && moves.is_empty()
         && graphs.is_empty()
         && vfx_documents.is_empty()
         && audio_assets.is_empty()
+        && script_graphs.is_empty()
     {
         return;
     }
@@ -578,7 +581,7 @@ fn apply_sources(
             let _ = project.material_graph_preview(&reference, source);
         }
     }
-    for (reference, source) in vfx_documents {
+    for (reference, source) in vfx_documents.into_iter().chain(script_graphs) {
         let _ = project.put_source(&reference, source.as_deref());
     }
     restore_audio(project, audio_assets);
@@ -614,6 +617,30 @@ fn audio_sources(
                 ..
             } => Some((
                 kind.strip_prefix(crate::audio::DOMAIN_PREFIX)?.to_owned(),
+                crate::project::decode_source(if forward { after } else { before }),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The gameplay graphs (#29) a transaction saved, with the text each must hold now.
+fn script_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+) -> Vec<(String, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => Some((
+                kind.strip_prefix(crate::script_graph::DOMAIN_PREFIX)?
+                    .to_owned(),
                 crate::project::decode_source(if forward { after } else { before }),
             )),
             _ => None,
@@ -712,6 +739,8 @@ mod tests {
         // The lighting tools add the GI probe debug view (thirty-nine viewport controls), the
         // four authoring commands in `crate::lighting`, and `lighting.write-lightmap-description`
         // beside the bake in `crate::lightmaps`.
+        // Gameplay graphs (#29, visual scripting) add the undoable attach and five reads and
+        // engine requests in `crate::script_commands`; the canvas edits are the interface's.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
         let earlier =
@@ -719,7 +748,11 @@ mod tests {
         let audio = 13 + 8;
         let navigation = 18;
         let lighting = 1 + 4 + 1;
-        assert_eq!(registry.len(), earlier + audio + navigation + lighting);
+        let gameplay_graphs = 1 + 5;
+        assert_eq!(
+            registry.len(),
+            earlier + audio + navigation + lighting + gameplay_graphs
+        );
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

@@ -9,6 +9,7 @@ cy_add_module(
         src/composite_service.cpp
         src/material_service.cpp
         src/navigation_service.cpp
+        src/script_service.cpp
         src/terrain_service.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::navigation is layer 4 (scene) under this layer-6 service: the navigation service runs
@@ -66,6 +67,14 @@ if(CY_BUILD_TESTS)
             DEFINITIONS
                 "CY_AUDIO_WIRE_DIR=\"${tests_dir}/data\""
                 "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+        # THE GAMEPLAY GRAPH EDITOR, ENGINE SIDE (#29, visual scripting). `integration` because
+        # it reads the committed wire and runs a graph on a scene for four hundred ticks.
+        cy_add_test(
+            NAME editor_backend_script
+            KIND integration
+            SOURCES "${tests_dir}/test_script_service.cpp"
+            DEPENDENCIES cy::editor-backend cy::game-backend cy::graph cy::scene
+            DEFINITIONS "CY_SCRIPT_WIRE_DIR=\"${tests_dir}/data\"")
         cy_add_test(
             NAME editor_backend_terrain
             KIND integration

@@ -910,6 +910,125 @@ fn audio_panel_snapshots() {
     let _ = std::fs::remove_dir_all(&project);
 }
 
+/// Answer one `script.*` request with an engine reply over a real session, as the window does.
+fn answer_script(
+    desk: &mut Desk,
+    send: &dyn Fn(&mut Editor) -> cy_editor_protocol::RequestId,
+    reply: Vec<u8>,
+) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    desk.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = send(&mut desk.editor);
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    while desk.editor.backend.script.pending() {
+        for message in desk.editor.runtime.pump(&mut notifications) {
+            let _ = desk.editor.backend.accept(&message);
+        }
+        std::thread::yield_now();
+    }
+}
+
+/// The gameplay graph editor over the engine's own fixtures (#29, visual scripting): the
+/// acceptance graph as the engine compiled it, the same graph with a misspelled function and the
+/// engine's diagnostic on that node, and Play's state after the unit arrived.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn gameplay_graph_snapshots() {
+    let fixture = |name: &str| {
+        std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../src/editor_backend/tests/data")
+                .join(name),
+        )
+        .expect("the engine's gameplay graph fixture")
+    };
+    let reference = "game/scripts/unit_command.cyscript";
+    let source = String::from_utf8(fixture("script_unit_command_v1.cyscript")).unwrap();
+    let project = std::env::temp_dir().join(format!("cy-graph-snapshot-{}", std::process::id()));
+    std::fs::create_dir_all(project.join("game/scripts")).unwrap();
+    let mut desk = Desk::new();
+    desk.editor = Editor::new(Actor::human("designer"))
+        .with_project(cy_editor_services::ProjectService::new(&project));
+    desk.editor.open_document("worlds/units.cyworld").unwrap();
+    desk.specialised
+        .install_script_catalogue(&fixture("script_catalogue_v1.wire"))
+        .unwrap();
+    let compile = |source: String| {
+        move |editor: &mut Editor| {
+            editor
+                .backend
+                .script
+                .compile(&editor.runtime, reference, &source)
+                .unwrap()
+                .unwrap()
+        }
+    };
+
+    std::fs::write(project.join(reference), &source).unwrap();
+    answer_script(
+        &mut desk,
+        &compile(source.clone()),
+        fixture("script_compile_v1.wire"),
+    );
+    snapshot(
+        &mut desk,
+        "editor-gameplay-and-utility-graphs",
+        "editor-gameplay-graph.png",
+    );
+
+    let misspelled = source.replace("unit.move_to", "unit.mvoe_to");
+    std::fs::write(project.join(reference), &misspelled).unwrap();
+    answer_script(
+        &mut desk,
+        &compile(misspelled.clone()),
+        fixture("script_compile_error_v1.wire"),
+    );
+    snapshot(
+        &mut desk,
+        "editor-gameplay-and-utility-graphs",
+        "editor-gameplay-graph-diagnostic.png",
+    );
+
+    std::fs::write(project.join(reference), &source).unwrap();
+    answer_script(
+        &mut desk,
+        &compile(source.clone()),
+        fixture("script_compile_v1.wire"),
+    );
+    answer_script(
+        &mut desk,
+        &|editor: &mut Editor| {
+            editor
+                .backend
+                .script
+                .refresh(&editor.runtime)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("script_state_play_v1.wire"),
+    );
+    snapshot(
+        &mut desk,
+        "editor-gameplay-and-utility-graphs",
+        "editor-gameplay-graph-play.png",
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
 /// The room [`lighting_desk`] bakes, authored through the registered commands.
 fn author_room(desk: &mut Desk) {
     use cy_editor_core::value::Value;

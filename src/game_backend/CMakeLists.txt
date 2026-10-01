@@ -10,6 +10,10 @@
 #   input_backend.cpp, camera_backend.cpp        A
 #   physics_backend.cpp, navigation_backend.cpp  B
 #   audio_backend.cpp, spawn_backend.cpp         C
+#
+# AND ONE THAT IS NOT AN ADAPTER: graph_behaviours.cpp (#29, visual scripting) runs compiled gameplay
+# graphs on scene entities, and plays their cues through the audio adapter above — the same verb a
+# Swift game reaches through the ABI — so it lives beside the adapters it shares.
 cy_add_module(
     NAME cy_game_backend
     LAYER abi
@@ -22,9 +26,11 @@ cy_add_module(
         src/navigation_backend.cpp
         src/audio_backend.cpp
         src/spawn_backend.cpp
+        src/graph_behaviours.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::abi
+        cy::graph
         cy::servers-input
         cy::servers-camera
         cy::camera
@@ -33,6 +39,17 @@ cy_add_module(
         cy::servers-audio
         cy::scene
         cy::scene-serialization)
+
+# #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
+# with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
+# `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP
+# from the twentieth tick on arm64. The flag only, not a declared determinism profile: the adapters
+# beside it make no profile claim. See src/gameplay/CMakeLists.txt for the same argument.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(cy_game_backend PRIVATE -ffp-contract=off)
+elseif(MSVC)
+    target_compile_options(cy_game_backend PRIVATE /fp:precise)
+endif()
 
 # One integration suite per service, each registered when its source exists — so an implementer adds
 # a test file and nothing else, and a service with no suite is visibly absent at configure time.
@@ -49,7 +66,7 @@ if(CY_BUILD_TESTS)
         # A suite that needs a concrete backend behind its server's interface names it here; the
         # adapters themselves never link one.
         set(extra_physics cy::physics-reference)
-        foreach(service IN ITEMS input camera physics navigation audio spawn)
+        foreach(service IN ITEMS input camera physics navigation audio spawn graph)
             if(EXISTS "${tests_dir}/test_${service}_backend.cpp")
                 cy_add_test(
                     NAME game_backend_${service}
@@ -61,6 +78,12 @@ if(CY_BUILD_TESTS)
                                "(tests/test_${service}_backend.cpp)")
             endif()
         endforeach()
+        # The gameplay graph suite reads the graph the editor writes for #29's acceptance scenario
+        # from the one place both sides compare against.
+        if(TARGET cy_test_integration_game_backend_graph)
+            target_compile_definitions(cy_test_integration_game_backend_graph PRIVATE
+                "CY_SCRIPT_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/src/editor_backend/tests/data\"")
+        endif()
     endfunction()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_game_backend_declare_tests)
 endif()

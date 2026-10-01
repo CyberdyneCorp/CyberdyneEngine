@@ -55,6 +55,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         authored_frame.cpp
+        graph_runtime.cpp
         layout_file.cpp
         main.cpp
         material_runtime.cpp

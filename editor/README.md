@@ -268,6 +268,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
 | Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `lighting.write-lightmap-description`, `lighting.volume.create`, `lighting.volume.set`, `lighting.light.set-mobility`, `lighting.object.set-resolution`, `viewport.view-mode.lightmap-density`, `viewport.view-mode.gi-probes` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
+| Gameplay graphs (#29) | `script.graph.create`, `script.node.add`, `script.node.move`, `script.node.connect`, `script.node.disconnect`, `script.node.remove`, `script.node.property.set`, `script.graph.attach`, `script.graph.read`, `script.graph.compile`, `script.event.raise`, `script.refresh`, `script.status` |
 | Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
 
 **Lighting & lightmaps.** The lighting and lightmap baking specialised editor bakes the open world
@@ -357,6 +358,11 @@ To add one, for example the animation editor:
    `crates/cy-editor-mcp/tests/a_session_over_the_wire.rs` that drives the same commands and
    undoes them, and a frame in `crates/cy-editor-shell/tests/new_panels_are_accessible.rs`.
    Prove each case red with a recorded mutation.
+
+`panels/script_graph.rs` (`ScriptGraphTool`) is the scaffold's graph tool: it draws on the session's
+shared canvas, routes each gesture to a `script.*` command through `CanvasFeedback`, and registers its
+canvas edits itself (`SpecialisedTool::register`) because they live beside the canvas in
+`cy-editor-interface`.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
 in the scaffold's diagnostics area. See [Terrain tools](#terrain-tools) for how its strokes reach
@@ -494,6 +500,57 @@ without them. Its captures are the [viewport](../docs/design/images/editor-audio
 with a source's rings, and the [whole window](../docs/design/images/editor-audio-source-window.png)
 with the source's `cy::audio::AudioSource` in the Inspector. On this machine it reported the
 `miniaudio` backend.
+
+## Gameplay graphs (visual scripting)
+
+The Gameplay Graph editor (`editor-gameplay-and-utility-graphs`, `panels/script_graph.rs`) authors
+`Domain::GameplayAndUtilityGraphs` on the specialised scaffold and the shared canvas. It is the first
+slice of #29's visual scripting: graphs are authored, saved, attached to entities, compiled by the
+engine and run in Play by the engine's compiled program. The editor interprets nothing.
+
+- **The palette is the engine's.** `script.catalogue.get` declares the node types, their pins and
+  their properties. A property that names an engine function, query or wait is a choice among the
+  names the engine declares (`cy::game_backend::gameplay_graph_externals()`), so a misspelled
+  function cannot be typed into the panel. The palette has `On Event` and no per-frame entry: a new
+  graph answers `unit.command`, and a graph that keeps working across frames waits (`unit.arrived`)
+  rather than ticking. Until the engine has answered, the panel says so and edits nothing.
+- **The file is the engine's text.** A graph is a project `.cyscript` holding CyberGraph's canonical
+  `cygraph 1` text (`cy_editor_services::script_graph`), byte for byte what `cy::graph::write_graph`
+  writes: nodes by key, properties by name, wires in the engine's order, layout last, floats as
+  `%.9g`. A text diff of it is a semantic diff. A node of a type the catalogue lacks is kept as the
+  file had it.
+- **Every edit is one undoable transaction and an MCP tool.** `script.graph.create`,
+  `script.node.add` (every property at the engine's default), `.move`, `.connect`, `.disconnect`,
+  `.remove` and `.property.set` read the file, lay it on a canvas holding the engine's catalogue,
+  change it through the canvas's checks (a wire between different pin types is refused), and save it
+  in the open world's history. `script.graph.attach` gives an entity a `ScriptGraph` component naming
+  the graph. The panel's gestures push the same commands.
+- **The engine compiles every change.** The panel sends the graph to `script.compile` whenever the
+  saved text differs from what the engine last compiled. Its diagnostics are on the node: the canvas
+  outlines the node and its hover says why, and a row under the canvas names node, pin, code, message
+  and the name it is about, and selects the node when clicked. A compiled graph shows its handlers,
+  its instruction count, the registers it keeps across a wait, what it reads and writes, and its
+  instruction listing with each instruction's node. `script.graph.compile` and `script.status` give an
+  agent the same.
+- **Play runs it.** The hosted runtime attaches every authored `ScriptGraph` when Play starts and
+  refuses Play, naming the node, when a graph does not compile or plays a cue the project lacks. The
+  panel's Play row raises an event on the selected entity (`script.event.raise`, `unit.command` with a
+  target) and shows each instance — waiting on what, where, how many runs — and every cue the graphs
+  played, with its tick.
+
+The contract between the two sides is `src/editor_backend/tests/data/script_*`: the acceptance graph
+(`script_unit_command_v1.cyscript`), the raise this workspace encodes, and the engine's catalogue,
+compile, refusal and Play-state replies. The MCP suite authors the graph call by call and requires the
+file to equal the fixture; the engine's suites compile and run the same file. The panel's
+[compiled graph](../docs/design/images/editor-gameplay-graph.png), its
+[diagnostic on node 4](../docs/design/images/editor-gameplay-graph-diagnostic.png) and its
+[Play state](../docs/design/images/editor-gameplay-graph-play.png) are rendered offscreen by
+`tests/panel_snapshots.rs` from those replies.
+
+Not built yet, and the next slices: the Play debugger (breakpoints, stepping, watches, execution
+highlighting), hot reload with state migration, semantic diff and merge of `.cyscript` in the merge
+panel, Swift interop beyond shared engine services, AI behaviour and ability graphs in this panel, and
+an explicit per-tick event.
 
 ## The dependencies, and the rule they arrived under
 

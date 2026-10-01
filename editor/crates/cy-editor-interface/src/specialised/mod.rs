@@ -44,6 +44,8 @@ pub mod lighting;
 pub mod material;
 pub mod material_authoring_commands;
 pub mod painting;
+pub mod script;
+pub mod script_authoring_commands;
 pub mod timeline;
 pub mod vfx;
 pub mod vfx_authoring_commands;
@@ -285,6 +287,7 @@ const SCRIPT_AND_AI_NODES: &[&str] = &[
     "script.loop",
     "script.mul_float",
     "script.not",
+    "script.on_event",
     "script.query",
     "script.return",
     "script.set_field",
@@ -311,6 +314,7 @@ const ABILITY_NODES: &[&str] = &[
     "script.loop",
     "script.mul_float",
     "script.not",
+    "script.on_event",
     "script.query",
     "script.return",
     "script.set_field",
@@ -418,6 +422,7 @@ pub struct SpecialisedEditors {
     active: Option<Domain>,
     catalogues: BTreeMap<Domain, Catalogue>,
     audio_vocabulary: Option<cy_editor_services::audio::AudioVocabulary>,
+    script_catalogue_ready: bool,
 }
 
 impl SpecialisedEditors {
@@ -467,6 +472,7 @@ impl SpecialisedEditors {
             active: None,
             catalogues,
             audio_vocabulary: None,
+            script_catalogue_ready: false,
         })
     }
 
@@ -493,6 +499,30 @@ impl SpecialisedEditors {
             self.canvas.replace_catalogue(catalogue);
         }
         Ok(())
+    }
+
+    /// Install the engine's gameplay graph vocabulary (`script.catalogue.get`): node types with
+    /// their pins and properties, and property choices that are the externals the engine declares.
+    /// Until it arrives the gameplay graph editor shows names only and its panel refuses to edit.
+    pub fn install_script_catalogue(&mut self, payload: &[u8]) -> Result<()> {
+        let catalogue = script::catalogue(payload)?;
+        self.catalogues
+            .insert(Domain::GameplayAndUtilityGraphs, catalogue.clone());
+        if self.active == Some(Domain::GameplayAndUtilityGraphs) {
+            self.canvas.replace_catalogue(catalogue);
+        }
+        self.script_catalogue_ready = true;
+        Ok(())
+    }
+
+    /// Whether the engine's gameplay graph vocabulary is installed.
+    pub fn script_catalogue_ready(&self) -> bool {
+        self.script_catalogue_ready
+    }
+
+    /// The gameplay graph vocabulary in use: the engine's once installed.
+    pub fn script_catalogue(&self) -> Option<&Catalogue> {
+        self.catalogues.get(&Domain::GameplayAndUtilityGraphs)
     }
 
     /// Install VFX node definitions supplied by the engine registry through the backend service.

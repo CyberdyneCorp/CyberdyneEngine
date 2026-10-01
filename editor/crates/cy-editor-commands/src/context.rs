@@ -630,6 +630,54 @@ pub trait ProjectHost {
     fn audio_listener(&self) -> ([f32; 3], [f32; 3]) {
         ([0.0; 3], [0.0, 0.0, -1.0])
     }
+
+    /// Save a gameplay graph's `.cyscript` in one undoable project transaction. Issue #29.
+    fn script_graph_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "save a gameplay graph",
+            "this host has no project to save it in",
+        ))
+    }
+
+    /// The engine's gameplay graph vocabulary once it has answered. Asking is what makes the
+    /// editor request it, so the first call on a fresh connection answers `None`.
+    fn script_catalogue(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Send a gameplay graph to the engine's compiler. The request's identity, or `0` when it was
+    /// queued behind one still in flight.
+    fn script_compile(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "compile a gameplay graph",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Raise an event on an entity's gameplay graphs during Play: a `script.event.raise` payload.
+    fn script_raise(&mut self, payload: Vec<u8>) -> Result<u64> {
+        let _ = payload;
+        Err(cy_editor_core::problem::Problem::new(
+            "raise a gameplay event",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Ask the engine for Play's gameplay graphs.
+    fn script_refresh(&mut self) -> Result<u64> {
+        Err(cy_editor_core::problem::Problem::new(
+            "read Play's gameplay graphs",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// The engine's last compile of `reference` and Play's gameplay graphs.
+    fn script_status(&self, reference: &str) -> Outcome {
+        let _ = reference;
+        Outcome::new("Engine gameplay graphs unavailable")
+    }
 }
 
 /// Result of a fingerprint-guarded source write.

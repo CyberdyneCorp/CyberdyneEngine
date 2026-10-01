@@ -36,6 +36,7 @@ use cy_editor_services::material_parameters;
 pub mod audio_mixer;
 mod pending;
 mod physics;
+pub mod script_graph;
 mod semantic_merge;
 mod settings;
 mod source;
@@ -309,6 +310,8 @@ pub struct Inputs {
     pub lighting: lighting::LightingInputs,
     /// The audio mixer's selection and fields.
     pub audio: audio_mixer::AudioInputs,
+    /// The gameplay graph editor's state: the graph, the palette search, Play's event.
+    pub script: script_graph::ScriptInputs,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -425,6 +428,7 @@ impl Default for Inputs {
             terrain_surface: None,
             lighting: lighting::LightingInputs::default(),
             audio: audio_mixer::AudioInputs::default(),
+            script: script_graph::ScriptInputs::default(),
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -554,6 +558,9 @@ impl egui_dock::TabViewer for Panels<'_> {
                 "physics" => physics::show(self, ui),
                 "editor-audio-buses-and-mixing" => {
                     specialised::show::<audio_mixer::AudioMixerTool>(self, ui);
+                }
+                "editor-gameplay-and-utility-graphs" => {
+                    specialised::show::<script_graph::ScriptGraphTool>(self, ui);
                 }
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),

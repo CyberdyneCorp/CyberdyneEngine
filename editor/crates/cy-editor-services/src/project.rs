@@ -540,6 +540,7 @@ fn apply_domain(
             .strip_prefix(crate::vfx_document::DOMAIN_PREFIX)
             .or_else(|| kind.strip_prefix(crate::vfx_module::DOMAIN_PREFIX))
             .or_else(|| kind.strip_prefix(crate::audio::DOMAIN_PREFIX))
+            .or_else(|| kind.strip_prefix(crate::script_graph::DOMAIN_PREFIX))
         {
             let wanted = decode_source(if forward { after } else { before });
             let _ = project.put_source(reference, wanted.as_deref());

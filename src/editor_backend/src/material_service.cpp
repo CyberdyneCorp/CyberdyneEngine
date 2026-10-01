@@ -3,6 +3,7 @@
 #include <cy/editor/terrain_service.h>
 
 #include <cy/editor/audio_service.h>
+#include <cy/editor/script_service.h>
 #include <cy/graph/material/canvas.h>
 #include <cy/graph/material/lower_material.h>
 #include <cy/graph/text.h>
@@ -1103,6 +1104,14 @@ CyResult dispatch_audio(CyServiceSession_T& session, std::string_view operation,
     return refusal.refused() ? failed(session, refusal.code, refusal.detail) : CY_RESULT_OK;
 }
 
+CyResult dispatch_script(CyServiceSession_T& session, std::string_view operation,
+                         cy::editor::ScriptPlayRuntime* play) noexcept {
+    const cy::editor::ScriptRefusal refusal = cy::editor::answer_script(
+        play, operation, {session.request_payload.data(), session.request_payload.size()},
+        session.event_payload);
+    return refusal.refused() ? failed(session, refusal.code, refusal.detail) : CY_RESULT_OK;
+}
+
 CyResult capabilities(CyServiceSession_T& session,
                       const cy::editor::MaterialPreviewRuntime* preview_runtime,
                       const cy::editor::MaterialAuthoringRuntime* authoring_runtime) noexcept {
@@ -1121,10 +1130,17 @@ CyResult capabilities(CyServiceSession_T& session,
     if (!put_u32(session.event_payload, 1) ||
         !put_u32(session.event_payload,
                  static_cast<u32>(std::size(operations) + (authoring_runtime != nullptr ? 1 : 0) +
-                                  vfx_operations))) {
+                                  vfx_operations + cy::editor::kScriptOperations.size()))) {
         return CY_RESULT_OUT_OF_MEMORY;
     }
     for (const char* operation : operations) {
+        if (!put_text(session.event_payload, operation)) {
+            return CY_RESULT_OUT_OF_MEMORY;
+        }
+    }
+    // The gameplay graph editor's (#29). Always served: the catalogue and the compiler need no
+    // host, and the two Play operations refuse by name until a host binds its Play.
+    for (const std::string_view operation : cy::editor::kScriptOperations) {
         if (!put_text(session.event_payload, operation)) {
             return CY_RESULT_OUT_OF_MEMORY;
         }
@@ -1366,6 +1382,8 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
         result = dispatch_preview(*session, operation, preview_runtime_);
     } else if (!session->cancelled && operation.starts_with("audio.")) {
         result = dispatch_audio(*session, operation, audio_);
+    } else if (!session->cancelled && operation.starts_with("script.")) {
+        result = dispatch_script(*session, operation, scripts_);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");

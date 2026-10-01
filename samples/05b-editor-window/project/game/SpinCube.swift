@@ -47,5 +47,7 @@ private enum VfxError: Error {
 
 @GameModule
 enum EditorDemoGame: GameModule {
-    static let behaviours: [any BehaviourClass.Type] = [SpinCube.self, VfxSpeed.self]
+    static let behaviours: [any BehaviourClass.Type] = [
+        SpinCube.self, VfxSpeed.self, CommandedUnit.self,
+    ]
 }

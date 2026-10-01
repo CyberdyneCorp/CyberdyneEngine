@@ -274,6 +274,8 @@ pub struct BackendServices {
     connected: bool,
     /// The `audio.*` operations: see `crate::audio_requests`.
     pub audio: crate::audio_requests::AudioRequests,
+    /// The `script.*` operations, the gameplay graph editor's: see `crate::script_requests`.
+    pub script: crate::script_requests::ScriptRequests,
 }
 
 impl Default for BackendServices {
@@ -305,6 +307,7 @@ impl Default for BackendServices {
             preview_state: MaterialPreviewState::Idle,
             connected: false,
             audio: crate::audio_requests::AudioRequests::default(),
+            script: crate::script_requests::ScriptRequests::default(),
         }
     }
 }
@@ -321,6 +324,7 @@ impl BackendServices {
         if !runtime.is_connected() {
             self.disconnect();
             let _ = self.audio.maintain(runtime);
+            let _ = self.script.maintain(runtime);
             return None;
         }
         // Only once discovery is done, so a runtime's first answers stay in the order they always
@@ -331,6 +335,15 @@ impl BackendServices {
             && self.vfx_catalogue_request.is_none()
             && self.vfx_capabilities_request.is_none()
             && let Some(problem) = self.audio.maintain(runtime)
+        {
+            return Some(problem);
+        }
+        // The same rule for gameplay graphs: nothing is asked until a graph is.
+        if self.connected
+            && self.catalogue_request.is_none()
+            && self.vfx_catalogue_request.is_none()
+            && self.vfx_capabilities_request.is_none()
+            && let Some(problem) = self.script.maintain(runtime)
         {
             return Some(problem);
         }
@@ -448,6 +461,9 @@ impl BackendServices {
             return None;
         };
         if let Some(outcome) = self.audio.accept(message) {
+            return outcome;
+        }
+        if let Some(outcome) = self.script.accept(message) {
             return outcome;
         }
         if Some(*request) == self.catalogue_request {

@@ -667,6 +667,49 @@ impl GraphCanvas {
         Ok(())
     }
 
+    /// Restore a value a saved graph holds, by stable identity, WITHOUT the literal checks.
+    ///
+    /// Opening a file must not refuse what the file says: a hand edit or a merge can leave a value
+    /// the catalogue would not accept from a gesture, and the engine's compiler — not the loader —
+    /// is what names it, on its node. Edits still go through [`Self::set_property_by_identity`].
+    pub fn restore_property_by_identity(
+        &mut self,
+        key: NodeKey,
+        identity: u32,
+        value: impl Into<String>,
+    ) -> Result<()> {
+        let value = value.into();
+        let name = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| Self::no_such_node(key))
+            .and_then(|node| {
+                self.catalogue
+                    .get(&node.type_name)
+                    .and_then(|node_type| {
+                        node_type
+                            .properties
+                            .iter()
+                            .find(|property| property.identity == identity)
+                    })
+                    .map(|property| property.name.clone())
+                    .ok_or_else(|| {
+                        Problem::new(
+                            format!("restore property {identity} on {}", node.type_name),
+                            "the current catalogue does not declare that property identity",
+                        )
+                    })
+            })?;
+        let node = self
+            .nodes
+            .get_mut(&key)
+            .expect("the descriptor lookup found the node");
+        node.properties.insert(name.clone(), value.clone());
+        node.property_identities.insert(identity, value);
+        node.property_names.insert(identity, name);
+        Ok(())
+    }
+
     /// Read an authored value by stable identity, falling back to readable legacy metadata.
     #[must_use]
     pub fn property_value(&self, key: NodeKey, property: &Property) -> Option<&str> {
@@ -836,6 +879,15 @@ impl GraphCanvas {
     /// a node whose type the loaded catalogue no longer declares — which is what a catalogue
     /// switched underneath authored content looks like.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        self.diagnostics_reporting(true)
+    }
+
+    /// [`Self::diagnostics`], optionally without the unwired-input warnings.
+    ///
+    /// A domain whose unwired data input is a defined value — a gameplay graph reads zero from one
+    /// — leaves them out, so its canvas shows the engine compiler's diagnostics rather than a
+    /// warning on every optional argument.
+    pub fn diagnostics_reporting(&self, unwired_inputs: bool) -> Vec<Diagnostic> {
         let mut found = Vec::new();
         for node in self.nodes.values() {
             let Some(node_type) = self.catalogue.get(&node.type_name) else {
@@ -852,7 +904,7 @@ impl GraphCanvas {
                 continue;
             };
             for pin in &node_type.pins {
-                if pin.direction != PinDirection::Input {
+                if !unwired_inputs || pin.direction != PinDirection::Input {
                     continue;
                 }
                 let wired = self
