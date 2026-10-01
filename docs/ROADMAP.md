@@ -1676,6 +1676,21 @@ both hosted WARP and the physical Radeon report Tier 2. Its engine-side partitio
 and [`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/design.md) names the
 Tier 1 device or validation forcing mode that re-enters the native exercise.
 
+**What closed.** M11.d.5 closed on its one row: `rhi-and-render-graph` is recorded Complete, the oldest
+unfinished row on the ladder, Working since M3 over a single backend. The evidence is
+the ledger at `e48d3c3a`, run incrementally against the full ledger at `4fb1e998`:
+4 of 415 red. One is the closing change's own `m11d5:roadmap-tiers`. `m0:test` failed on a busy host
+and passed alone on a quiet one. `m1:four-profiles` found two test defects, fixed in #75 and #79,
+after which every profile row passed on a quiet host. `m11a:world-budget-on-a-device` is
+pre-existing and intermittent at both commits, and #77 owns it. The three `where = "ci"` criteria
+are answered by hardware rather than by a Linux ledger:
+Metal on an Apple M2 Max and D3D12 on an AMD Radeon RX 6900 XT, both at `70df47f1`
+([#44](https://github.com/CyberdyneCorp/CyberdyneEngine/issues/44)), and the committed Vulkan, Metal
+and D3D12 captures compared by hand on the closing commit, each matched and within a channel delta
+of 1 of the others ([`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/tasks.md),
+the close's verdict). The three-backend claim is parity of `first_light`, not of the renderer
+features merged since; that picture parity is M11.e's.
+
 **Risk spike**: **already spent, by M11.d.** Two throwaway workflow runs created a device on each
 hosted leg, cleared a target to a known colour, read the pixel back and presented it — a frame that
 happened, not a runner manifest saying an SDK is installed. This rung starts from that answer rather

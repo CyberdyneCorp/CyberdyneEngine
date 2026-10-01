@@ -147,9 +147,15 @@ change flow rather than through a backend. Everything else follows the interface
 - [x] 6.3 An `m11e-open` criterion using the double-star glob form, and **M11.d's own handover
       criterion re-pointed at this rung** — it named `m11e`, and a handover that skips a rung is the
       one thing a handover check exists to make impossible
-- [ ] 6.4 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
+- [x] 6.4 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
-- [ ] 6.5 Move `ci.yml`'s milestone job to `m11d5` in the same commit that flips the gate green
+      **Done in the closing change**: `rhi-and-render-graph` Working → Complete at M11D5; `open-debts.md`
+      and the matrix lists regenerated; `just roadmap-test` re-run over the closing tree (the close's
+      verdict at the end of this file)
+- [x] 6.5 Move `ci.yml`'s milestone job to `m11d5` in the same commit that flips the gate green
+      **Done**: `milestone-m11d5` is `green` and the step runs `just roadmap-milestone m11d5 --ci`, one
+      commit. Its runner is Linux, so `metal-backend-is-native` and `d3d12-backend-exists` fail there
+      until the job has macOS and Windows legs (M11.e); the step's comment says so
 - [x] 6.6 **Hand M11.e its entry**: a written statement of **what M11.d.5 did not close**, in the shape
       M8.a, M8.c and M10 used — unchecked tasks named, with the defect rather than the intention, and
       the four deferrals of §2 carried forward with their re-entry points
@@ -159,8 +165,12 @@ change flow rather than through a backend. Everything else follows the interface
 
 ## 7. The gate
 
-- [ ] 7.1 Clean build of every profile from empty; `test-all` in each; every gate by hand; the M11.d.5
+- [x] 7.1 Clean build of every profile from empty; `test-all` in each; every gate by hand; the M11.d.5
       ledger run once
+      **Run on `e48d3c3a`, incrementally against the full ledger at `4fb1e998`: 4 of 415 evaluated
+      red, each classified and resolved** (the close's verdict at the end of this file). The four
+      profiles were built in the ledger's shared trees under `build/ledger-matrix/`, which are warm,
+      not from empty; `test-all` passed in each on a quiet host
 - [ ] 7.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red. M6 shipped four that did not, and M9's gate found one that passed 44 of 44 with its
       enforcement point deleted
@@ -270,3 +280,81 @@ the M3 `first_light` scene, which uses none of them. So **the three-backend clai
 `first_light`, not of the current renderer.** M11.e owes a golden per feature, or one scene using all
 of them, captured on each backend's own device with a manifest naming that device, before any claim
 wider than `first_light`.
+
+## The close's verdict — THE LEDGER ON `e48d3c3a`: 4 RED, EACH RESOLVED, M11.d.5 CLOSES
+
+The full ledger at `4fb1e998` (476 criteria) had six reds. The pull requests that answered them
+(#69 and #70 to #74) merged in `e48d3c3a`, and this run measured what changed since then.
+
+| | |
+|---|---|
+| command | `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11d5 --incremental --changed-since 4fb1e998`, main clone detached at `e48d3c3a` |
+| window | 01:40 → 06:25 on 2026-10-01, exit 1 |
+| selection | 423 of 484 criteria: 9 own, 4 smoke, 1 edited, 409 whose inputs cannot be read; 61 skipped as unchanged |
+| host | a `roadmap.py milestone hold` marker was alive for the whole window, and no compiler, ninja, cargo or ctest from any other worktree ran in the five minutes before it started |
+
+**`M11D5 is not closed: 4 of 415 evaluated criteria failed.`** 12 declared gaps are still open, none of
+them now passing, and 8 criteria were NOT EVALUATED here. Every other criterion was green. That
+includes the ones the six reds at `4fb1e998` were about: `m8c:feature-options-off` (#69),
+`m11c:the-shot-does-not-overclaim-the-editor` and the authored-frame motion check (#74), and
+`m11d5:renderer-options-off-is-clean`. Each red was re-run alone:
+
+1. **`m11d5:roadmap-tiers` — EXPECTED.** The closing change writes the tier; see below.
+2. **`m0:test` — ENVIRONMENTAL.** `just test-all` exited 0, but the wrapper reported a busiest second
+   of 2.96 cores used by other processes (limit 2.00), with I/O pressure at 30 %. The first re-run
+   alone hit the same, at 2.52 cores. The second was **quiet and green**.
+3. **`m1:four-profiles` — TWO REAL DEFECTS, both fixed.** The ledger stopped at the Debug row, so the
+   other three rows were never reached. The re-runs found:
+   - **`unit.editor_window_physics_overlay` (#61) is too close to the Debug unit budget.** Its cases
+     spend 2 to 6 ms of CPU at -O0 against 4 ms. It failed 10 of 100 runs alone in
+     `build/ledger-matrix/debug-default`, and 47 of 50 at the harness's factor-of-two margin check.
+     Fix: #75 (`f6210608`). Following `tests/harness`'s rule it moves up a tier rather than shrinking the
+     case or raising the budget. As `integration.editor_window_physics_overlay` it passes 100 of 100,
+     and 50 of 50 at half its budget.
+   - **`smoke.editor_authored_frame_vulkan` failed in every Profile and Release run.** Two cases added
+     in `b02903b4` required scene vertex stages, which only the Slang front end compiles, and
+     Profile and Shipping build none (`shader-system`). The refusal message was *"scene material
+     variants require the Slang front end in this editor build"*. The full ledger at `4fb1e998`
+     could not see it, because the Debug row failed first. Fix: #79 (`511d397f`). Where Slang is not
+     built, the cases now require the refusal, and require it to name Slang. It was red in both
+     trees on `e48d3c3a` and is green with the fix.
+   - **Not reproduced:** `unit.reflect_roundtrip` failed once in the ledger's Debug row (03:04). The
+     failing assertion is not in the ledger's excerpt, and 500 runs alone passed (300 directly, 200
+     under ctest), so its cause is unknown.
+
+   With both fixes, each row was run alone through `just test-quiet-host`, and **every row has a quiet
+   green run**: debug 08:35, dev 08:44, profile 08:48, release 09:02. The other attempts were
+   host-too-busy (2.06 to 3.22 cores, `test-all` exiting 0). Twice, once in a Release attempt and once
+   in a whole-criterion run that stopped at Debug, `smoke.quiet_host_marker` leg 6 (c) failed inside
+   the wrapper. Alone it passed 11 of 11. It is filed as #80, and no test was changed.
+4. **`m11a:world-budget-on-a-device` — PRE-EXISTING, intermittent, filed as #77.** The worst frame
+   was 17.01 ms against 16.7 ms on a host the sample judged quiet. The re-run through the ledger
+   alone was green. `cy_sample_world` was then built at `4fb1e998` and alternated with `e48d3c3a`:
+   **3 of 9 runs fail at `4fb1e998` and 3 of 7 at `e48d3c3a`**. Both average about 13.1 ms a frame,
+   and the worst frame lands between 15.5 and 20.0 ms. Nothing merged since the last full ledger
+   moved it. The criterion's own text records 10.8 ms worst, so the frame got slower before
+   `4fb1e998`, and #77 owns finding where.
+
+**The three `where = "ci"` criteria, answered by hardware.** A Linux ledger reports them NOT
+EVALUATED. Their evidence is the same commit, `70df47f1`, run on each backend's own device
+([#44](https://github.com/CyberdyneCorp/CyberdyneEngine/issues/44)):
+
+| criterion | evidence |
+|---|---|
+| `metal-backend-is-native` | Mac Studio, Apple M2 Max, macOS 27.0, Xcode 27.0, default dev profile: the criterion's body, 4 of 4 suites registered and passing (`integration.rhi_metal`, `integration.rhi_metal_shader`, `integration.rhi_metal_surface`, `render.golden_backends`); capture byte-identical to the committed one (#45) |
+| `d3d12-backend-exists` | AMD Radeon RX 6900 XT, driver 32.0.21045.5002, Windows 11 build 10.0.26200, MSVC 19.44: `unit.rhi_d3d12` and `integration.rhi_d3d12` pass with the debug layer, inside `just test-d3d12-golden`, which exits 0; capture byte-identical to the committed one |
+| `golden-images-across-three-backends` | run by hand on the closing commit, since its body reads only committed files: `just test-render --compare-backends vulkan metal d3d12` exits 0 — vulkan on the NVIDIA GeForce RTX 5060 (delta 0), metal on the Apple M2 Max (delta 1), d3d12 on the AMD Radeon RX 6900 XT (delta 1), both pairs within tolerance |
+
+**The close.** `milestone-m11d5` goes green, and `ci.yml`'s milestone step moves to `m11d5` in the same
+commit (6.5). `rhi-and-render-graph` is recorded Complete at M11D5 (6.4), read by criteria that were
+green in this ledger: `rhi-row-at-complete-grade` (12 of 12 requirements mapped),
+`device-identity-is-named`, `renderer-options-off-is-clean` and `three-backend-images-committed`,
+together with the hardware evidence above. `m11d5:roadmap-tiers` passes and was re-proven red under
+its derived `lower-tiers` mutation. `open-debts.md` and the matrix lists are regenerated.
+These checks were re-run over the closing tree on `511d397f`. `m11d5:roadmap-tiers` passes. `just
+roadmap-test`, which is `m7:plan-consistency`, passes **650 of 650**. `just roadmap-status`,
+`just ci-check`, `just quality-docs` and `openspec validate --strict` pass. `just test-render
+--compare-backends vulkan metal d3d12` exits 0.
+
+Pull requests merged after `e48d3c3a`, other than #75 and #79, are not covered by this verdict. M11.e's
+ledger evaluates them.

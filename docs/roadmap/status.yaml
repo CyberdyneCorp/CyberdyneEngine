@@ -11,6 +11,20 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M11.d.5's tier: one row completed, the oldest unfinished one on the ladder -------------------
+#
+#   rhi-and-render-graph  working -> complete  M3 -> M11D5. 12 of 12 requirements map
+#                         (`m11d5:rhi-row-at-complete-grade`); every device report names the device
+#                         that answered (`m11d5:device-identity-is-named`); the engine builds and
+#                         passes with both new renderer options off (`m11d5:renderer-options-off-is-clean`);
+#                         and the three captures are committed, each labelled with its device
+#                         (`m11d5:three-backend-images-committed`).
+#
+# The three criteria marked `where = "ci"` are NOT EVALUATED by a Linux ledger. Their evidence is
+# hardware runs at 70df47f1 (issue #44): Metal on an Apple M2 Max, D3D12 on an AMD Radeon RX 6900 XT,
+# and the comparison run by hand on the closing commit — recorded in
+# openspec/changes/implement-m11d5-backends/tasks.md (7.1).
+
 # --- M11.d's tiers: three rows completed, each read by a criterion green in the full ledger ----------
 #
 #   testing-and-quality          seed -> complete     M0 -> M11D. The full gate set and the documentation
@@ -495,9 +509,9 @@ capabilities:
     milestone: M4
     change: implement-m4-playable
   rhi-and-render-graph:
-    tier: working
-    milestone: M3
-    change: implement-m3-first-light
+    tier: complete
+    milestone: M11D5
+    change: implement-m11d5-backends
   rendering-architecture:
     tier: working
     milestone: M3
