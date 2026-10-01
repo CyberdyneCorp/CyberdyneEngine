@@ -205,10 +205,13 @@ public:
     u64 plays = 0;
 };
 
-/// A host's Play: one unit at the origin running the editor's graph.
-class Play final : public editor::ScriptPlayRuntime {
-public:
-    Play() {
+/// The world Play runs: one unit at the origin running the editor's graph.
+///
+/// Built outside `Play` on purpose: on Linux other than x86, doctest's assertions break into the
+/// debugger through an unqualified `raise(SIGTRAP)`, which inside `Play` would find its `raise`.
+/// For the same reason no local in this file is named `raise`.
+struct PlayStage {
+    PlayStage() {
         CY_REQUIRE(world.initialize().has_value());
         CY_REQUIRE(tree.initialize().has_value());
         const auto node = tree.create_node(Name::intern("Tank"), tree.root());
@@ -223,6 +226,16 @@ public:
         CY_REQUIRE(graphs.attach(*loaded, unit).has_value());
     }
 
+    ecs::World world{system_allocator(MemoryDomain::World)};
+    scene::SceneTree tree{world};
+    OneCue audio;
+    game_backend::GraphBehaviours graphs{allocator()};
+    ecs::Entity unit;
+};
+
+/// A host's Play over that world.
+class Play final : public editor::ScriptPlayRuntime, public PlayStage {
+public:
     const game_backend::GraphBehaviours* behaviours() const noexcept override {
         return playing ? &graphs : nullptr;
     }
@@ -237,11 +250,6 @@ public:
         return graphs.raise(entity, event, arguments);
     }
 
-    ecs::World world{system_allocator(MemoryDomain::World)};
-    scene::SceneTree tree{world};
-    OneCue audio;
-    game_backend::GraphBehaviours graphs{allocator()};
-    ecs::Entity unit;
     bool playing = true;
 };
 
@@ -381,10 +389,10 @@ CY_TEST_CASE("editor script: source that does not parse is a diagnostic, not a f
 
 CY_TEST_CASE("editor script: the editor's raise reaches Play's graph and the state reports it") {
     Play play;
-    const std::string raise = read_file("script_raise_request_v1.wire");
+    const std::string raise_wire = read_file("script_raise_request_v1.wire");
     Array<u8> request(allocator());
-    CY_REQUIRE(
-        request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()}).has_value());
+    CY_REQUIRE(request.append({reinterpret_cast<const u8*>(raise_wire.data()), raise_wire.size()})
+                   .has_value());
 
     Array<u8> reply(allocator());
     auto refusal = ask(&play, "script.event.raise", request, reply);
@@ -431,10 +439,10 @@ CY_TEST_CASE("editor script: the editor's raise reaches Play's graph and the sta
 CY_TEST_CASE("editor script: without Play the Play operations are refused by name") {
     Play play;
     play.playing = false;
-    const std::string raise = read_file("script_raise_request_v1.wire");
+    const std::string raise_wire = read_file("script_raise_request_v1.wire");
     Array<u8> request(allocator());
-    CY_REQUIRE(
-        request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()}).has_value());
+    CY_REQUIRE(request.append({reinterpret_cast<const u8*>(raise_wire.data()), raise_wire.size()})
+                   .has_value());
     Array<u8> reply(allocator());
     CY_CHECK_EQ(std::string(ask(&play, "script.event.raise", request, reply).code),
                 "script.play.unavailable");
@@ -466,8 +474,9 @@ CY_TEST_CASE("editor script: the material service routes script.* and lists it")
     const std::string payload(reinterpret_cast<const char*>(event.payload), event.payload_size);
     CY_CHECK(decode_compile(payload).compiled);
 
-    const CyServiceRequest raise{sizeof(CyServiceRequest), 1, 2, "script.event.raise", nullptr, 0};
-    CY_REQUIRE_EQ(api->service_submit(&host, session, &raise), CY_RESULT_OK);
+    const CyServiceRequest raise_request{sizeof(CyServiceRequest), 1,       2,
+                                         "script.event.raise",     nullptr, 0};
+    CY_REQUIRE_EQ(api->service_submit(&host, session, &raise_request), CY_RESULT_OK);
     CY_REQUIRE_EQ(api->service_poll(&host, session, &event, &present), CY_RESULT_OK);
     CY_CHECK_EQ(event.kind, static_cast<u32>(CY_SERVICE_EVENT_FAILED));
     api->service_close(&host, session);
