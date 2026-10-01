@@ -850,7 +850,7 @@ Tests: `crates/cy-editor-services/tests/a_joint_is_a_transaction.rs`,
 `physics_authoring_is_an_undoable_mcp_peer_of_the_physics_panel` in
 `crates/cy-editor-mcp/tests/a_session_over_the_wire.rs`, the physics frames in
 `crates/cy-editor-shell/tests/new_panels_are_accessible.rs`, and on the engine side
-`integration.gameplay_joints` and `unit.editor_window_physics_overlay`.
+`integration.gameplay_joints` and `integration.editor_window_physics_overlay`.
 
 ## VFX graph authoring status
 

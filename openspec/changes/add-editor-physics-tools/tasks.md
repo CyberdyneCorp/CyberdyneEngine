@@ -6,7 +6,7 @@
 - [x] 1.2 Move constraint drawing out of the Jolt backend into `cy::physics::debug_draw_constraint`; unit tests for anchors, limits and a free hinge.
 - [x] 1.3 Append `physics_overlays` to `GizmoIntent`, optional on decode; test both an older and a newer message.
 - [x] 1.4 Read authored joints (`cy/gameplay/play/joints.h`) and hand them to the bridge at play, rejoining after a body is rebuilt; `integration.gameplay_joints`, including a Jolt pendulum against a no-joint control.
-- [x] 1.5 Draw the requested physics layers and the selected authored joint in `cy_editor_window_runtime`; `unit.editor_window_physics_overlay`.
+- [x] 1.5 Draw the requested physics layers and the selected authored joint in `cy_editor_window_runtime`; `integration.editor_window_physics_overlay`.
 
 ## 2. Editor
 

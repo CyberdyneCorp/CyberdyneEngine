@@ -161,14 +161,14 @@ MUTATIONS = [
      ctest("integration", "gameplay_joints"), None),
     ("c10_overlay_ignores_the_camera", RUNTIME,
      "project_to_pixel(view_, from - eye_, start)", "project_to_pixel(view_, from, start)",
-     ctest("unit", "editor_window_physics_overlay"), None),
+     ctest("integration", "editor_window_physics_overlay"), None),
     ("c11_joint_frame_scaled", RUNTIME,
      "    placement.scale = Vec3{1.0F, 1.0F, 1.0F};\n    return placement;",
      "    return placement;",
-     ctest("unit", "editor_window_physics_overlay"), None),
+     ctest("integration", "editor_window_physics_overlay"), None),
     ("c12_joint_axis_not_drawn", RUNTIME,
      "    if (has_axis(description.type)) {", "    if (has_axis(description.type) && false) {",
-     ctest("unit", "editor_window_physics_overlay"), None),
+     ctest("integration", "editor_window_physics_overlay"), None),
 ]
 
 
