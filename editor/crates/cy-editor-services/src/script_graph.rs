@@ -74,9 +74,14 @@ pub fn validate_reference(reference: &str) -> Result<()> {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("");
+    // Checked on the text as well as the components: `Path` reads `/a` as relative on Windows and
+    // `C:/a` as relative on Unix, and the reference is the same string on every host.
     let fine = !reference.is_empty()
-        && path.is_relative()
-        && !reference.contains("..")
+        && !reference.starts_with('/')
+        && !reference.contains(':')
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
         && !reference.contains('\\')
         && path.extension().and_then(|extension| extension.to_str()) == Some(EXTENSION)
         && !stem.is_empty()
@@ -1135,6 +1140,10 @@ mod tests {
             "",
             "/abs/a.cyscript",
             "../a.cyscript",
+            "game/../a.cyscript",
+            "./a.cyscript",
+            "C:/a.cyscript",
+            "C:a.cyscript",
             "game/a.cygraph",
             "game/a b.cyscript",
         ] {
