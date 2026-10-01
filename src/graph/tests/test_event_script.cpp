@@ -172,11 +172,28 @@ CY_TEST_CASE("event graph: each event starts its own handler in one shared progr
 
     RecordingHost host;
     script::ScriptState state(allocator(), program.program());
-    const auto ran = script::execute_from(program.program(), state, host, select->block);
+    // The order waits; the selection that interrupts it runs only its own handler and leaves
+    // nothing waiting.
+    auto ran = script::execute_from(program.program(), state, host, order->block);
+    CY_REQUIRE(ran.has_value());
+    CY_CHECK(*ran == script::RunOutcome::Suspended);
+    host.calls.clear();
+    ran = script::execute_from(program.program(), state, host, select->block);
     CY_REQUIRE(ran.has_value());
     CY_CHECK(*ran == script::RunOutcome::Finished);
     CY_REQUIRE_EQ(host.calls.size(), 1U);
     CY_CHECK_EQ(host.calls[0], "event cue.selected 0.000000 0.000000");
+    CY_CHECK(script::waiting_at(program.program(), state) == nullptr);
+
+    // The native back end starts the same handler, not the program's entry.
+    auto native = script::compile_native(program.program(), allocator());
+    CY_REQUIRE(native.has_value());
+    RecordingHost native_host;
+    script::ScriptState native_state(allocator(), program.program());
+    ran = script::execute_native_from(*native, native_state, native_host, select->block);
+    CY_REQUIRE(ran.has_value());
+    CY_CHECK(*ran == script::RunOutcome::Finished);
+    CY_CHECK(native_host.calls == host.calls);
 }
 
 CY_TEST_CASE("event graph: a wait suspends, and a newer event discards the suspension") {
