@@ -242,7 +242,6 @@ private:
     void stop_voices_on_dead_buses() noexcept;
     void forget_finished_voices() noexcept;
 
-    Allocator* allocator_;
     audio::AudioBackend* device_;
     std::unique_ptr<audio::NullAudioBackend> null_device_;
     audio::AudioServer server_;

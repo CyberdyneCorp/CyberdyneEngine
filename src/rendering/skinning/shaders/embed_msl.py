@@ -42,7 +42,8 @@ def main() -> int:
         raise ValueError("MSL contains the raw-string delimiter")
     parts = chunks(source)
     body = "\n    ".join(f'R"cy_msl({part})cy_msl"' for part in parts)
-    output = f'''#pragma once
+    output = f'''// SPDX-License-Identifier: MIT
+#pragma once
 // Compiled MSL for the GPU skinning dispatch. GENERATED — do not edit by hand.
 
 #include <cy/core/base/types.h>

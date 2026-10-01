@@ -74,3 +74,36 @@ that spelling costs on each target and why every draw of those stages starts at 
 requiring no failure, no disagreement and no target refusal. It was red on the tree M11.d started
 from for both reasons above, so the next shader that reaches for a one-target semantic is found by
 the build that adds it rather than by the next ledger run.
+
+## The committed shader headers, and the check that keeps them current
+
+`cy_shaderc` compiles the tree's shaders. It does not produce the compiled shaders the tree
+**commits**: the `*_spirv.h` and `*_msl.h` headers that passes embed because they must exist in a
+build with `CY_SHADER_SLANG` off. Each of those comes from a script beside its sources, either a
+`regenerate.py` or a slangc invocation written in the `.slang` file's header comment followed by
+an `embed_*.py`. None of those scripts can tell when a Slang edit left its header behind. The
+particle and strip renderers' headers had been compiled against a `CyFrameData` fourteen fields
+shorter than the frame's, and nothing reported it.
+
+`embedded_headers.toml` records how every committed header is produced. `embedded_headers.py`
+reads it:
+
+    python3 tools/shaders/embedded_headers.py check --slangc <build>/Development/bin/slangc
+    python3 tools/shaders/embedded_headers.py regenerate --slangc <slangc> [--group <name>]
+
+`check` copies the working tree into a scratch directory, runs every group there, formats the
+output with clang-format, and compares bytes. It fails on a stale header, on a declared header
+that is missing, and on a header that matches the name patterns but is not declared. A header that
+is deliberately not regenerated has an `[[excluded]]` entry with the reason: the DXIL header (DXC,
+checked by its own Windows workflow) and the three render-test fixtures pinned to old commits.
+`just quality-shader-headers` runs the check's own negative cases, then the check. It is the
+permanent gate `shader-headers`, and CI's `quality` job runs it after building the dev tree.
+
+**Regenerate with a GCC-built slangc,** which is what a Linux dev build and CI's build produce. The
+same Slang release built by clang orders some SPIR-V ids and decorations differently. The modules
+are equivalent but the bytes differ, and several headers on main had been committed that way. When
+the check fails in CI, the job uploads the regenerated headers as the `regenerated-shader-headers`
+artefact, so a machine with a different slangc can commit those files as they are.
+
+Adding a header means adding a group. For a new header whose name matches a pattern, the check
+fails until a group declares it.

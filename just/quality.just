@@ -335,6 +335,38 @@ quality-docs *args:
     echo "==> doc-gate      public C++ headers, the C ABI and the Swift overlay"
     python3 tools/quality/doc_gate.py {{args}}
 
+# Committed shader headers (`*_spirv.h`, `*_msl.h`) are what their Slang sources compile to today.
+#
+# tools/shaders/embedded_headers.toml says how each one is produced; the check reruns every group
+# in a scratch copy of the tree and compares bytes, and fails on a header no group or exclusion
+# names. It needs the dev build's slangc — a Development tree built with CY_SHADER_SLANG, which is
+# what `just build-engine` gives — and the pinned clang-format. Its own negative cases run first
+# and need neither. The regenerated text of every stale header is kept under <build>/shader-headers.
+#
+# THE REFERENCE COMPILER IS A GCC-BUILT slangc. The same Slang release built by clang orders some
+# SPIR-V ids and decorations differently (equivalent modules, different bytes), so headers are
+# regenerated on Linux with the dev build's slangc, or taken from the artefacts CI keeps.
+quality-shader-headers *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    echo "==> shader-headers  the check's own negative cases"
+    python3 tools/shaders/tests/test_embedded_headers.py
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    slangc="${build_dir}/Development/bin/slangc"
+    if [ ! -x "${slangc}" ]; then
+        echo "quality-shader-headers: ${slangc} was not built." >&2
+        echo "  Build the dev profile first (just build-engine), or name the tree with CY_BUILD_DIR." >&2
+        exit 1
+    fi
+    formatter="$(just _tool clang-format "${CY_CLANG_FORMAT:-}")"
+    echo "==> shader-headers  every committed header against ${slangc}"
+    rm -rf "${build_dir}/shader-headers"
+    python3 tools/shaders/embedded_headers.py check --slangc "${slangc}" \
+        --clang-format "${formatter}" --artifacts "${build_dir}/shader-headers" ${rest}
+
 # Prove all four of M11.d's gates still refuse what they exist to refuse. --strict requires every case.
 quality-gates-selftest *args:
     cd "{{root}}" && python3 tools/quality/selftest.py {{args}}

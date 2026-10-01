@@ -1523,6 +1523,12 @@ note = "'use a generic fallback pipeline for any state not yet compiled, so a mi
 
 [[coverage]]
 row = "shader-system"
+requirement = "Committed compiled shaders stay current"
+evidence = "gate:shader-headers"
+note = "tools/shaders/embedded_headers.toml declares how every committed *_spirv.h and *_msl.h is produced; `just quality-shader-headers` reruns every group against the dev build's slangc in a scratch copy of the tree and fails on a stale, missing or undeclared header. Its negative cases (tools/shaders/tests/test_embedded_headers.py) run first, and on main it was red on the particle and strip headers compiled against a shorter CyFrameData."
+
+[[coverage]]
+row = "shader-system"
 requirement = "Shader compilation service and tiered cache"
 evidence = "test:unit.shader"
 case = "every field the specification names changes the key"

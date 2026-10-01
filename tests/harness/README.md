@@ -130,6 +130,28 @@ printed: the vfork case, the vfork case beside its own readers, the vfork case b
 reported and passed outside one — the spin fails as `over budget:` in both, and none is ever
 `contended:`.
 
+## The macros under clang
+
+Every harness macro expands into every test, so a warning one of them raises fails every test
+binary. Two did, under compilers no CI leg runs on Linux:
+
+- clang 18 reports `-Wdouble-promotion` when a float reaches `doctest::Approx`, which holds
+  doubles. `CY_CHECK_NEAR` now casts its expectation and tolerance explicitly.
+- clang 22 reports `__COUNTER__` as a C2y extension under `-Wpedantic`. Every test declaration
+  expands one, in `CY_TEST_UNIQUE` and inside doctest's own macros. The diagnostic lands on the
+  test's line, so including doctest as a system header does not suppress it.
+  `CY_TEST_COUNTER_BEGIN` and `CY_TEST_COUNTER_END` suppress it for the expansion of the macros
+  that use it. The suppression applies only on a clang that knows the warning, and the project's
+  flags do not change.
+
+Two suites, `render.vfx_gpu` and `render.material_binding`, used doctest's short names
+(`TEST_CASE`, `CHECK_EQ`) instead of the wrapper. Their cases had no budget guard, and their
+`__COUNTER__` was outside the suppression. They now use the `CY_*` macros, and `cy/test/test.h`
+defines `DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES`, so a test that uses a short name does not compile.
+
+`integration.harness_under_clang` compiles `probe/clang_warnings_probe.cpp` with every clang++ on
+PATH, under the project's warning options and `-Werror`. It skips on a host with no clang.
+
 ## What the harness does not have yet
 
 `testing-and-quality` names a fuller set than this: scene and world fixtures, a mock platform and

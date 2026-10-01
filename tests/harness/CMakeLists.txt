@@ -86,3 +86,31 @@ if(TARGET cy_quiet_host)
         message(STATUS "tests/harness: smoke.quiet_host_* need python3, so they are not declared.")
     endif()
 endif()
+
+# ================================================================================================
+# THE HARNESS UNDER EVERY CLANG ON THE HOST
+# ================================================================================================
+#
+# The macros in cy/test/test.h expand into every test, so a warning they raise fails every test
+# binary. Clang 18 and clang 22 each found one that GCC does not report, and no CI leg builds with
+# clang on Linux. `integration.harness_under_clang` compiles probe/clang_warnings_probe.cpp with
+# each clang++ on PATH under the project's own warning options and -Werror, and skips (exit 3) on a
+# host with none.
+if(NOT MSVC)
+    find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME integration.harness_under_clang
+                 COMMAND "${Python3_EXECUTABLE}"
+                         "${CMAKE_CURRENT_SOURCE_DIR}/clang_warnings_test.py"
+                         --probe "${CMAKE_CURRENT_SOURCE_DIR}/probe/clang_warnings_probe.cpp"
+                         --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
+                         "--system-include=$<JOIN:$<TARGET_PROPERTY:${CY_DEP_doctest_cmake_target},INTERFACE_INCLUDE_DIRECTORIES>,;--system-include=>"
+                         --define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
+                         --
+                         "$<TARGET_PROPERTY:cy_compile_options,INTERFACE_COMPILE_OPTIONS>"
+                 COMMAND_EXPAND_LISTS)
+        set_tests_properties(integration.harness_under_clang PROPERTIES
+                             LABELS "integration" TIMEOUT "${CY_TEST_TIMEOUT_integration}"
+                             SKIP_RETURN_CODE 3)
+    endif()
+endif()

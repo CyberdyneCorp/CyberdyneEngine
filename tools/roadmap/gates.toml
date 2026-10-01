@@ -519,6 +519,22 @@ platforms = ["linux"]
 since = "m5b"
 class = "permanent"
 
+# --- The committed shaders are what their sources compile to -------------------------------------
+#
+# The passes that must exist with no shader compiler in the build embed their SPIR-V and MSL as
+# checked-in headers, and until this gate nothing noticed a Slang edit that left one behind: the
+# particle and strip renderers' headers were compiled against a CyFrameData fourteen fields shorter
+# than the frame's. tools/shaders/embedded_headers.toml says how each header is made; the check
+# reruns all of them against the dev build's slangc and compares bytes.
+
+[[gate]]
+id = "shader-headers"
+describe = "Every committed embedded-shader header (*_spirv.h, *_msl.h) is byte for byte what its Slang sources and embed script produce with the dev build's slangc, and every such header in the tree is declared in tools/shaders/embedded_headers.toml or excluded there with a reason. The check's own negative cases run first."
+runs = ["just quality-shader-headers"]
+platforms = ["linux"]
+since = "m11d5"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;

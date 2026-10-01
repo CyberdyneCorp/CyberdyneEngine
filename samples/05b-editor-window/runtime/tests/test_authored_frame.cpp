@@ -909,9 +909,9 @@ CY_TEST_CASE("authored scene compiles a surface beside its vertex graph") {
     auto colour = graph_diffuse_colour(kSurfaceVertexGraph, allocator(), true);
     CY_REQUIRE(colour.has_value());
     CY_CHECK(colour->vertex);
-    CY_CHECK_EQ(colour->value.x, doctest::Approx(1.0F));
-    CY_CHECK_EQ(colour->value.y, doctest::Approx(1.0F));
-    CY_CHECK_EQ(colour->value.z, doctest::Approx(1.0F));
+    CY_CHECK_EQ(colour->value.x, doctest::Approx(1.0));
+    CY_CHECK_EQ(colour->value.y, doctest::Approx(1.0));
+    CY_CHECK_EQ(colour->value.z, doctest::Approx(1.0));
     auto compiled = compile_scene_graph_material(kSurfaceVertexGraph, allocator());
     CY_REQUIRE(compiled.has_value());
     const auto* program = compiled->find(rendering::material::ProgramKind::Primary,

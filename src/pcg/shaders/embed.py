@@ -26,7 +26,8 @@ def main() -> int:
     if ")cy_msl\"" in msl:
         raise SystemExit("MSL contains the raw-string delimiter")
     output.write_text(
-        """#pragma once
+        """// SPDX-License-Identifier: MIT
+#pragma once
 // GENERATED from gpu_conformance.slang by embed.py. Do not edit by hand.
 
 #include <cy/core/base/types.h>

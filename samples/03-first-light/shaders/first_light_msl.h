@@ -32,7 +32,7 @@ struct FrameConstants_0
 };
 
 
-#line 97
+#line 98
 struct FirstLightGlobals_default_0
 {
     FrameConstants_0 constant* frame_0;
@@ -43,7 +43,7 @@ struct FirstLightGlobals_default_0
 };
 
 
-#line 110
+#line 111
 struct ObjectPush_0
 {
     float4 modelRow0_0;
@@ -61,7 +61,7 @@ struct KernelContext_0
 };
 
 
-#line 152 "samples/03-first-light/shaders/first_light.slang"
+#line 153 "samples/03-first-light/shaders/first_light.slang"
 float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(objectPosition_0, 1.0);
@@ -69,7 +69,7 @@ float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kerne
 }
 
 
-#line 170
+#line 171
 float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, float3 relative_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -77,66 +77,66 @@ float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, f
 }
 
 
-#line 173
+#line 174
 struct shadowVertex_Result_0
 {
     float4 clip_0 [[position]];
 };
 
 
-#line 173
+#line 174
 struct vertexInput_0
 {
     float3 position_0 [[attribute(0)]];
 };
 
 
-#line 146
+#line 147
 struct DepthOnlyOutput_0
 {
     float4 clip_1;
 };
 
 
-#line 146
+#line 147
 [[vertex]] shadowVertex_Result_0 shadowVertex(vertexInput_0 _S3 [[stage_in]], FirstLightGlobals_default_0 constant* globals_1 [[buffer(0)]], ObjectPush_0 constant* object_1 [[buffer(1)]])
 {
 
-#line 146
+#line 147
     thread KernelContext_0 kernelContext_1;
 
-#line 146
+#line 147
     (&kernelContext_1)->globals_0 = globals_1;
 
-#line 146
+#line 147
     (&kernelContext_1)->object_0 = object_1;
 
-#line 179
+#line 180
     thread DepthOnlyOutput_0 output_0;
 
-#line 179
+#line 180
     float3 _S4 = toCameraRelative_0(_S3.position_0, &kernelContext_1);
     (&output_0)->clip_1 = transform_0(globals_1->frame_0->lightViewProjectionRow0_0, globals_1->frame_0->lightViewProjectionRow1_0, globals_1->frame_0->lightViewProjectionRow2_0, globals_1->frame_0->lightViewProjectionRow3_0, _S4);
 
-#line 180
+#line 181
     thread shadowVertex_Result_0 _S5;
 
-#line 180
+#line 181
     (&_S5)->clip_0 = output_0.clip_1;
 
-#line 180
+#line 181
     return _S5;
 }
 
 )cy_msl";
 
-/// samples.03-first-light.shaders.first_light.forwardVertex.metal, 3773 bytes.
+/// samples.03-first-light.shaders.first_light.forwardVertex.metal, 3790 bytes.
 inline constexpr char kFirstLightForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 100 "samples.03-first-light.shaders.first_light"
+#line 111 "samples/03-first-light/shaders/first_light.slang"
 struct ObjectPush_0
 {
     float4 modelRow0_0;
@@ -146,7 +146,7 @@ struct ObjectPush_0
 };
 
 
-#line 60
+#line 70
 struct FrameConstants_0
 {
     float4 viewProjectionRow0_0;
@@ -163,7 +163,7 @@ struct FrameConstants_0
 };
 
 
-#line 87
+#line 98
 struct FirstLightGlobals_default_0
 {
     FrameConstants_0 constant* frame_0;
@@ -174,7 +174,7 @@ struct FirstLightGlobals_default_0
 };
 
 
-#line 87
+#line 98
 struct KernelContext_0
 {
     ObjectPush_0 constant* object_0;
@@ -182,7 +182,7 @@ struct KernelContext_0
 };
 
 
-#line 134
+#line 153
 float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(objectPosition_0, 1.0);
@@ -190,7 +190,7 @@ float3 toCameraRelative_0(float3 objectPosition_0, KernelContext_0 thread* kerne
 }
 
 
-#line 145
+#line 164
 float3 rotateNormal_0(float3 objectNormal_0, KernelContext_0 thread* kernelContext_1)
 {
     return normalize(float3(dot(kernelContext_1->object_0->modelRow0_0.xyz, objectNormal_0), dot(kernelContext_1->object_0->modelRow1_0.xyz, objectNormal_0), dot(kernelContext_1->object_0->modelRow2_0.xyz, objectNormal_0)));
@@ -205,7 +205,7 @@ float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, f
 }
 
 
-#line 113
+#line 124
 struct forwardVertex_Result_0
 {
     float4 clip_0 [[position]];
@@ -215,7 +215,7 @@ struct forwardVertex_Result_0
 };
 
 
-#line 113
+#line 124
 struct vertexInput_0
 {
     float3 position_0 [[attribute(0)]];
@@ -223,6 +223,8 @@ struct vertexInput_0
     float2 uv_1 [[attribute(2)]];
 };
 
+
+#line 139
 struct ForwardVertexOutput_0
 {
     float4 clip_1;
@@ -232,60 +234,60 @@ struct ForwardVertexOutput_0
 };
 
 
-#line 120
+#line 139
 [[vertex]] forwardVertex_Result_0 forwardVertex(vertexInput_0 _S3 [[stage_in]], ObjectPush_0 constant* object_1 [[buffer(1)]], FirstLightGlobals_default_0 constant* globals_1 [[buffer(0)]])
 {
 
-#line 120
+#line 139
     thread KernelContext_0 kernelContext_2;
 
-#line 120
+#line 139
     (&kernelContext_2)->object_0 = object_1;
 
-#line 120
+#line 139
     (&kernelContext_2)->globals_0 = globals_1;
 
-#line 173
+#line 192
     thread ForwardVertexOutput_0 output_0;
 
-#line 173
+#line 192
     float3 _S4 = toCameraRelative_0(_S3.position_0, &kernelContext_2);
     (&output_0)->positionRelativeToCamera_1 = _S4;
 
-#line 174
+#line 193
     float3 _S5 = rotateNormal_0(_S3.normal_1, &kernelContext_2);
     (&output_0)->normal_2 = _S5;
     (&output_0)->uv_2 = _S3.uv_1;
     (&output_0)->clip_1 = transform_0((&kernelContext_2)->globals_0->frame_0->viewProjectionRow0_0, (&kernelContext_2)->globals_0->frame_0->viewProjectionRow1_0, (&kernelContext_2)->globals_0->frame_0->viewProjectionRow2_0, (&kernelContext_2)->globals_0->frame_0->viewProjectionRow3_0, _S4);
 
-#line 177
+#line 196
     thread forwardVertex_Result_0 _S6;
 
-#line 177
+#line 196
     (&_S6)->clip_0 = output_0.clip_1;
 
-#line 177
+#line 196
     (&_S6)->positionRelativeToCamera_0 = output_0.positionRelativeToCamera_1;
 
-#line 177
+#line 196
     (&_S6)->normal_0 = output_0.normal_2;
 
-#line 177
+#line 196
     (&_S6)->uv_0 = output_0.uv_2;
 
-#line 177
+#line 196
     return _S6;
 }
 
 )cy_msl";
 
-/// samples.03-first-light.shaders.first_light.forwardFragment.metal, 4570 bytes.
+/// samples.03-first-light.shaders.first_light.forwardFragment.metal, 4588 bytes.
 inline constexpr char kFirstLightForwardFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 152 "samples.03-first-light.shaders.first_light"
+#line 171 "samples/03-first-light/shaders/first_light.slang"
 float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, float3 relative_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -293,7 +295,7 @@ float4 transform_0(float4 row0_0, float4 row1_0, float4 row2_0, float4 row3_0, f
 }
 
 
-#line 60
+#line 70
 struct FrameConstants_0
 {
     float4 viewProjectionRow0_0;
@@ -321,7 +323,7 @@ struct FirstLightGlobals_default_0
 };
 
 
-#line 100 "samples.03-first-light.shaders.first_light"
+#line 111 "samples/03-first-light/shaders/first_light.slang"
 struct ObjectPush_0
 {
     float4 modelRow0_0;
@@ -339,7 +341,7 @@ struct KernelContext_0
 };
 
 
-#line 184 "samples.03-first-light.shaders.first_light"
+#line 203 "samples/03-first-light/shaders/first_light.slang"
 float sunVisibility_0(float3 positionRelativeToCamera_0, float3 normal_0, KernelContext_0 thread* kernelContext_0)
 {
     if((kernelContext_0->globals_0->frame_0->shadowControl_0.x) < 0.5)
@@ -347,14 +349,14 @@ float sunVisibility_0(float3 positionRelativeToCamera_0, float3 normal_0, Kernel
         return 1.0;
     }
 
-#line 194
+#line 213
     float4 _S2 = transform_0(kernelContext_0->globals_0->frame_0->lightViewProjectionRow0_0, kernelContext_0->globals_0->frame_0->lightViewProjectionRow1_0, kernelContext_0->globals_0->frame_0->lightViewProjectionRow2_0, kernelContext_0->globals_0->frame_0->lightViewProjectionRow3_0, positionRelativeToCamera_0 + normal_0 * float3(kernelContext_0->globals_0->frame_0->shadowControl_0.y) );
 
 
 
     float _S3 = _S2.w;
 
-#line 198
+#line 217
     if(_S3 <= 0.0)
     {
         return 1.0;
@@ -364,68 +366,68 @@ float sunVisibility_0(float3 positionRelativeToCamera_0, float3 normal_0, Kernel
 
     float _S5 = _S4.x * 0.5 + 0.5;
 
-#line 205
+#line 224
     float _S6 = 0.5 - _S4.y * 0.5;
 
-#line 205
+#line 224
     float2 _S7 = float2(_S5, _S6);
 
-#line 205
+#line 224
     bool _S8;
     if(_S5 < 0.0)
     {
 
-#line 206
+#line 225
         _S8 = true;
 
-#line 206
+#line 225
     }
     else
     {
 
-#line 206
+#line 225
         _S8 = _S5 > 1.0;
 
-#line 206
+#line 225
     }
 
-#line 206
+#line 225
     if(_S8)
     {
 
-#line 206
+#line 225
         _S8 = true;
 
-#line 206
+#line 225
     }
     else
     {
 
-#line 206
+#line 225
         _S8 = _S6 < 0.0;
 
-#line 206
+#line 225
     }
 
-#line 206
+#line 225
     if(_S8)
     {
 
-#line 206
+#line 225
         _S8 = true;
 
-#line 206
+#line 225
     }
     else
     {
 
-#line 206
+#line 225
         _S8 = _S6 > 1.0;
 
-#line 206
+#line 225
     }
 
-#line 206
+#line 225
     if(_S8)
     {
         return 1.0;
@@ -438,22 +440,22 @@ float sunVisibility_0(float3 positionRelativeToCamera_0, float3 normal_0, Kernel
         _S9 = *(depth2d<float, access::sample> thread*)(&_slang_ordinary_texture);
     }
 
-#line 212
+#line 231
     float _S10 = ((_S9).sample_compare((kernelContext_0->globals_0->shadowSampler_0), (_S7), (_S4.z + kernelContext_0->globals_0->frame_0->sunDirectionAndBias_0.w), level((0.0))));
 
-#line 212
+#line 231
     return _S10;
 }
 
 
-#line 212
+#line 231
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 212
+#line 231
 struct pixelInput_0
 {
     float3 positionRelativeToCamera_1 [[user(TEXCOORD_1)]];
@@ -462,17 +464,17 @@ struct pixelInput_0
 };
 
 
-#line 216
+#line 235
 [[fragment]] pixelOutput_0 forwardFragment(pixelInput_0 _S11 [[stage_in]], float4 clip_0 [[position]], FirstLightGlobals_default_0 constant* globals_1 [[buffer(0)]], ObjectPush_0 constant* object_1 [[buffer(1)]])
 {
 
-#line 216
+#line 235
     thread KernelContext_0 kernelContext_1;
 
-#line 216
+#line 235
     (&kernelContext_1)->globals_0 = globals_1;
 
-#line 216
+#line 235
     (&kernelContext_1)->object_0 = object_1;
 
     float3 _S12 = normalize(_S11.normal_1);
@@ -480,13 +482,13 @@ struct pixelInput_0
 
     float _S14 = max(dot(_S12, globals_1->frame_0->sunDirectionAndBias_0.xyz), 0.0);
 
-#line 221
+#line 240
     float _S15 = sunVisibility_0(_S11.positionRelativeToCamera_1, _S12, &kernelContext_1);
 
-#line 221
+#line 240
     pixelOutput_0 _S16 = { float4(pow(saturate(_S13 * (globals_1->frame_0->sunColorAndAmbient_0.xyz * float3(_S14)  * float3(_S15)  + float3(globals_1->frame_0->sunColorAndAmbient_0.w) )), float3(0.45454543828964233) ), 1.0) };
 
-#line 229
+#line 248
     return _S16;
 }
 

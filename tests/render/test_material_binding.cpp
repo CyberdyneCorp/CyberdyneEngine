@@ -469,8 +469,8 @@ struct Difference {
 
 }  // namespace
 
-TEST_SUITE("render.material_binding") {
-    TEST_CASE("a material program samples a texture through the device's global table") {
+CY_TEST_SUITE("render.material_binding") {
+    CY_TEST_CASE("a material program samples a texture through the device's global table") {
         DeviceFixture fixture("vulkan", "cy_test_render_material_binding");
         if (!fixture.is(rhi::BackendKind::Vulkan)) {
             fixture.report_skip();
@@ -482,16 +482,16 @@ TEST_SUITE("render.material_binding") {
         // The table exists and is reachable. Both were true of `bindless_set_` before M11.c only in
         // the sense that the Vulkan objects existed: there were no handles, so nothing above the
         // backend could name either one.
-        REQUIRE(device.descriptor_model() == rhi::DescriptorModel::Bindless);
-        REQUIRE_FALSE(device.global_texture_table_layout().is_null());
-        REQUIRE_FALSE(device.global_texture_table().is_null());
+        CY_REQUIRE(device.descriptor_model() == rhi::DescriptorModel::Bindless);
+        CY_REQUIRE_FALSE(device.global_texture_table_layout().is_null());
+        CY_REQUIRE_FALSE(device.global_texture_table().is_null());
 
         render::RenderServer server(allocator);
         render::RenderServerConfig config;
         config.debug_primitive_capacity = 16;
         config.debug_label_capacity = 4;
-        REQUIRE(server.configure(config));
-        REQUIRE(server.initialize());
+        CY_REQUIRE(server.configure(config));
+        CY_REQUIRE(server.initialize());
 
         render::TextureRecord description;
         description.name = Name::intern("material probe pattern");
@@ -501,53 +501,53 @@ TEST_SUITE("render.material_binding") {
         description.height = kExtent;
         description.mip_levels = 0;  // the server fills in the whole chain
         Expected<render::TextureHandle, Error> pattern = server.create_texture(description);
-        REQUIRE(pattern.has_value());
+        CY_REQUIRE(pattern.has_value());
         description.name = Name::intern("material probe average");
         Expected<render::TextureHandle, Error> flat = server.create_texture(description);
-        REQUIRE(flat.has_value());
+        CY_REQUIRE(flat.has_value());
 
         const render::TextureRecord* pattern_record = server.texture(*pattern);
-        REQUIRE(pattern_record != nullptr);
+        CY_REQUIRE(pattern_record != nullptr);
         const u32 mip_levels = pattern_record->mip_levels;
-        CHECK(mip_levels == 7);
+        CY_CHECK(mip_levels == 7);
 
         Array<u8> pattern_pixels(allocator);
         Array<u8> flat_pixels(allocator);
         u8 average[4] = {0, 0, 0, 0};
         u8 same_average[4] = {0, 0, 0, 0};
-        REQUIRE(build_chain(pattern_pixels, mip_levels, false, average));
-        REQUIRE(build_chain(flat_pixels, mip_levels, true, same_average));
+        CY_REQUIRE(build_chain(pattern_pixels, mip_levels, false, average));
+        CY_REQUIRE(build_chain(flat_pixels, mip_levels, true, same_average));
 
         // --- Upload, which is the path that did not exist under src/ -------------------------
         MaterialTextureTable table;
         rhi::SamplerDescription sampler;
         sampler.name = "material probe sampler";
-        REQUIRE(table.initialize(device, allocator, sampler));
+        CY_REQUIRE(table.initialize(device, allocator, sampler));
 
         const TextureUpload uploads[2] = {
             {*pattern, Span<const u8>(pattern_pixels.data(), pattern_pixels.size())},
             {*flat, Span<const u8>(flat_pixels.data(), flat_pixels.size())},
         };
-        REQUIRE(table.upload(server, Span<const TextureUpload>(uploads, 2)));
-        CHECK(table.resident() == 2);
-        CHECK(table.resident_bytes() == pattern_record->bytes * 2);
+        CY_REQUIRE(table.upload(server, Span<const TextureUpload>(uploads, 2)));
+        CY_CHECK(table.resident() == 2);
+        CY_CHECK(table.resident_bytes() == pattern_record->bytes * 2);
 
         const rhi::BindlessIndex pattern_slot = table.slot_of(*pattern);
         const rhi::BindlessIndex flat_slot = table.slot_of(*flat);
-        REQUIRE(pattern_slot != rhi::kInvalidBindlessIndex);
-        REQUIRE(flat_slot != rhi::kInvalidBindlessIndex);
-        REQUIRE(pattern_slot != flat_slot);
+        CY_REQUIRE(pattern_slot != rhi::kInvalidBindlessIndex);
+        CY_REQUIRE(flat_slot != rhi::kInvalidBindlessIndex);
+        CY_REQUIRE(pattern_slot != flat_slot);
         // The table the module reports is the DEVICE's, not one of its own.
-        CHECK(table.set() == device.global_texture_table());
-        CHECK(table.layout() == device.global_texture_table_layout());
+        CY_CHECK(table.set() == device.global_texture_table());
+        CY_CHECK(table.layout() == device.global_texture_table_layout());
 
         // --- Two frames -----------------------------------------------------------------------
         ProbePipeline probe;
-        REQUIRE(probe.create(device));
+        CY_REQUIRE(probe.create(device));
         Array<u32> textured(allocator);
         Array<u32> averaged(allocator);
-        REQUIRE(probe.render(allocator, device.global_texture_table(), pattern_slot, textured));
-        REQUIRE(probe.render(allocator, device.global_texture_table(), flat_slot, averaged));
+        CY_REQUIRE(probe.render(allocator, device.global_texture_table(), pattern_slot, textured));
+        CY_REQUIRE(probe.render(allocator, device.global_texture_table(), flat_slot, averaged));
 
         // `REQUIRE` does not unwind in this build — doctest is compiled with exceptions off — so a
         // render that failed leaves an empty readback that the comparison below would walk off the
@@ -566,8 +566,8 @@ TEST_SUITE("render.material_binding") {
         // material; the thresholds are well under both, because what must never pass is two frames
         // that AGREE — which is what an unbound table, a slot that always resolves to zero, or a
         // set bound at the wrong index all produce.
-        CHECK(difference.share_differing > 0.5);
-        CHECK(difference.mean_absolute > 8.0);
+        CY_CHECK(difference.share_differing > 0.5);
+        CY_CHECK(difference.mean_absolute > 8.0);
 
         // AND IT IS THIS TEXTURE. Every pixel centre lands on a texel centre, so a correct sample
         // is the uploaded byte exactly. A frame that sampled SOMETHING — the wrong slot, a stale
@@ -584,19 +584,19 @@ TEST_SUITE("render.material_binding") {
         }
         std::fprintf(stderr, "material binding: %u of %u texels are the uploaded byte exactly\n",
                      exact, kTexels);
-        CHECK(exact == kTexels);
+        CY_CHECK(exact == kTexels);
 
         // And the average frame is the average, which is what makes it a control rather than a
         // second unknown.
         for (u32 index = 0; index < kTexels; index += 137U) {
-            CHECK(((averaged[index] >> 0U) & 0xFFU) == average[0]);
-            CHECK(((averaged[index] >> 8U) & 0xFFU) == average[1]);
-            CHECK(((averaged[index] >> 16U) & 0xFFU) == average[2]);
+            CY_CHECK(((averaged[index] >> 0U) & 0xFFU) == average[0]);
+            CY_CHECK(((averaged[index] >> 8U) & 0xFFU) == average[1]);
+            CY_CHECK(((averaged[index] >> 16U) & 0xFFU) == average[2]);
         }
 
         // A frame drawn with validation errors is not a frame that works: M3's recycled-descriptor
         // defect reached an artefact while the sample still printed "exit 0 (clean)".
-        CHECK(fixture.validation_errors() == 0);
+        CY_CHECK(fixture.validation_errors() == 0);
 
         table.shutdown();
         server.shutdown();

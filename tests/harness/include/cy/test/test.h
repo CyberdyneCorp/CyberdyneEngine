@@ -25,6 +25,12 @@
 #    include <ostream>
 #endif
 
+// doctest's short names (`TEST_CASE`, `CHECK_EQ`, ...) are the framework reached past the wrapper:
+// a case declared with them has no budget guard, and its `__COUNTER__` is outside the suppression
+// below. They are switched off, so such a test does not compile rather than passing quietly.
+#ifndef DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES
+#    define DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES
+#endif
 #include <doctest/doctest.h>
 
 #include <cstddef>
@@ -252,6 +258,24 @@ unsigned long long contended_cases() noexcept;
 #    define CY_TEST_UNIQUE(prefix) CY_TEST_CONCAT(prefix, __LINE__)
 #endif
 
+// `__COUNTER__` names every anonymous object a test declaration makes, here and inside doctest's
+// own macros, and clang 22 reports it under -Wpedantic as a C2y extension. The diagnostic lands on
+// the test's line rather than in doctest's system header, so -isystem does not reach it. These two
+// bracket exactly the macros below that expand a `__COUNTER__`, and nothing a test writes itself;
+// a clang that does not know the warning, and every other compiler, gets nothing.
+#if defined(__clang__) && defined(__has_warning)
+#    if __has_warning("-Wc2y-extensions")
+#        define CY_TEST_COUNTER_BEGIN        \
+            _Pragma("clang diagnostic push") \
+                _Pragma("clang diagnostic ignored \"-Wc2y-extensions\"")
+#        define CY_TEST_COUNTER_END _Pragma("clang diagnostic pop")
+#    endif
+#endif
+#ifndef CY_TEST_COUNTER_BEGIN
+#    define CY_TEST_COUNTER_BEGIN
+#    define CY_TEST_COUNTER_END
+#endif
+
 // The body is a separate function so that the budget guard brackets it exactly: the guard is
 // constructed before the first statement and destroyed after the last, including on an early
 // return. Subcases still work — doctest tracks them on a stack, so a CY_TEST_SUBCASE inside the
@@ -266,14 +290,15 @@ unsigned long long contended_cases() noexcept;
     static void fn()
 
 /// Declare a test case. `CY_TEST_CASE("name") { ... }`
-#define CY_TEST_CASE(name) CY_TEST_CASE_IMPL(name, CY_TEST_UNIQUE(cy_test_body_))
+#define CY_TEST_CASE(name) \
+    CY_TEST_COUNTER_BEGIN CY_TEST_CASE_IMPL(name, CY_TEST_UNIQUE(cy_test_body_)) CY_TEST_COUNTER_END
 
 /// A named section of a test case, re-entered once per leaf. State declared before it is rebuilt
 /// for each, which is how a fixture is shared without being shared between runs.
-#define CY_TEST_SUBCASE(name) DOCTEST_SUBCASE(name)
+#define CY_TEST_SUBCASE(name) CY_TEST_COUNTER_BEGIN DOCTEST_SUBCASE(name) CY_TEST_COUNTER_END
 
 /// Group the test cases that follow under a name, for `--test-suite=` selection.
-#define CY_TEST_SUITE(name) DOCTEST_TEST_SUITE(name)
+#define CY_TEST_SUITE(name) CY_TEST_COUNTER_BEGIN DOCTEST_TEST_SUITE(name) CY_TEST_COUNTER_END
 
 // --- Assertions ---------------------------------------------------------------------------------
 //
@@ -301,16 +326,23 @@ unsigned long long contended_cases() noexcept;
 
 /// Floating-point comparison with an explicit tolerance. There is no default tolerance: the value
 /// that is close enough is a property of what is being measured, not of the framework.
+///
+/// doctest::Approx holds doubles, so a float expectation or tolerance is widened on the way in. The
+/// cast says so: without it clang's -Wdouble-promotion reports the implicit widening at every
+/// float call site, and the widening is exact.
 #define CY_CHECK_NEAR(value, expected, tolerance) \
-    DOCTEST_CHECK((value) == doctest::Approx(expected).epsilon(tolerance))
+    DOCTEST_CHECK(                                \
+        (value) ==                                \
+        doctest::Approx(static_cast<double>(expected)).epsilon(static_cast<double>(tolerance)))
 
 /// Record a message in the test's output without asserting anything.
-#define CY_TEST_MESSAGE(...) DOCTEST_MESSAGE(__VA_ARGS__)
+#define CY_TEST_MESSAGE(...) CY_TEST_COUNTER_BEGIN DOCTEST_MESSAGE(__VA_ARGS__) CY_TEST_COUNTER_END
 
 /// Fail the current test case with a message, and continue.
-#define CY_TEST_FAIL_CHECK(...) DOCTEST_FAIL_CHECK(__VA_ARGS__)
+#define CY_TEST_FAIL_CHECK(...) \
+    CY_TEST_COUNTER_BEGIN DOCTEST_FAIL_CHECK(__VA_ARGS__) CY_TEST_COUNTER_END
 
 /// Fail the current test case with a message, and stop it.
-#define CY_TEST_FAIL(...) DOCTEST_FAIL(__VA_ARGS__)
+#define CY_TEST_FAIL(...) CY_TEST_COUNTER_BEGIN DOCTEST_FAIL(__VA_ARGS__) CY_TEST_COUNTER_END
 
 #endif  // CY_TEST_TEST_H
