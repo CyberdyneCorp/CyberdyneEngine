@@ -69,6 +69,9 @@ impl Default for ScriptInputs {
     }
 }
 
+/// A selected entity: its identity, its name, and the graph it runs.
+type Selected = (NodeId, String, Option<String>);
+
 /// What the panel edits this frame.
 pub(crate) struct Target {
     reference: String,
@@ -77,7 +80,7 @@ pub(crate) struct Target {
     report: Option<(bool, CompileReport)>,
     state: Option<PlayState>,
     /// The first selected entity, its name, and the graph it runs.
-    selected: Option<(NodeId, String, Option<String>)>,
+    selected: Option<Selected>,
     /// Engine identity to the authored name, for Play's rows.
     names: Vec<(u64, String)>,
     problem: Option<String>,
@@ -236,7 +239,7 @@ fn read_graph(
 fn selection_and_names(
     panels: &Panels<'_>,
     document_id: cy_editor_core::ids::DocumentId,
-) -> (Option<(NodeId, String, Option<String>)>, Vec<(u64, String)>) {
+) -> (Option<Selected>, Vec<(u64, String)>) {
     let Some(document) = panels.editor.documents.get(document_id) else {
         return (None, Vec::new());
     };
@@ -598,11 +601,11 @@ fn compile_rows(
         let line = format!("{place} — {}: {}", diagnostic.code, diagnostic.describe());
         let response = ui
             .add(
-                egui::Label::new(
+                egui::Button::new(
                     egui::RichText::new(format!("{} {line}", role.glyph()))
                         .color(crate::theme::role(frame.shell.theme, role)),
                 )
-                .sense(egui::Sense::click()),
+                .frame(false),
             )
             .on_hover_text("Select the node this is about");
         if response.clicked()

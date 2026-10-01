@@ -266,7 +266,7 @@ fn raise() -> Command {
         .with(ParameterSpec::optional(
             "event",
             ValueKind::Text,
-            "The event to raise.",
+            "The event the entity's graphs answer; unit.command orders a unit to the target.",
             Value::Text(DEFAULT_EVENT.into()),
         ))
         .with(coordinate("x", "first"))

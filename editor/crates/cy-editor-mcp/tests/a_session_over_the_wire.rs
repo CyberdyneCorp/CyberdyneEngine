@@ -5042,6 +5042,15 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
     editor.open_document("worlds/units.cyworld").unwrap();
     let asked = script_runtime_double(&mut editor);
 
+    author_unit_graph(&mut editor, &sandbox);
+    compile_unit_graph(&mut editor, &asked);
+    let node = attach_and_order(&mut editor, &asked);
+    a_misspelling_is_named_on_its_node(&mut editor, &sandbox);
+    undo_the_graph(&mut editor, &sandbox, node);
+}
+
+/// The acceptance graph, call by call, compared with the engine's fixture byte for byte.
+fn author_unit_graph(editor: &mut Editor, sandbox: &Sandbox) {
     // Creating needs no vocabulary; the first canvas edit does, and asks for it rather than
     // guessing one.
     let early = converse(
@@ -5050,12 +5059,12 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
             &tool_call(2, "script.graph.create", &[("reference", UNIT_GRAPH)]),
             &add_node(3, "script.query", 16, 110),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(result(&early, 1).get("isError"), &Json::Bool(false));
     let (refusal, refused) = tool_reply(&early, 2);
     assert!(refused && refusal.contains("has not arrived"), "{refusal}");
-    settle_script(&mut editor);
+    settle_script(editor);
 
     let authored = converse(
         &[
@@ -5080,7 +5089,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
             // Refused by the canvas, as the panel refuses it: an execution pin into a number.
             &wire(13, 1, "then", 4, "arg1"),
         ],
-        &mut editor,
+        editor,
     );
     for index in 1..12 {
         let (text, is_error) = tool_reply(&authored, index);
@@ -5093,18 +5102,21 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
         std::fs::read(sandbox.0.join(UNIT_GRAPH)).unwrap(),
         engine_audio_fixture("script_unit_command_v1.cyscript")
     );
+}
 
+/// The engine compiles exactly the authored text, and says so through `script.status`.
+fn compile_unit_graph(editor: &mut Editor, asked: &Arc<Mutex<ScriptAsked>>) {
     // The engine compiles exactly that text.
     let compiled = converse(
         &[
             INITIALIZE,
             &tool_call(2, "script.graph.compile", &[("reference", UNIT_GRAPH)]),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(result(&compiled, 1).get("isError"), &Json::Bool(false));
-    settle_script(&mut editor);
-    let payload = last_script_payload(&asked, "script.compile");
+    settle_script(editor);
+    let payload = last_script_payload(asked, "script.compile");
     let mut reader = cy_editor_core::codec::Reader::new(&payload);
     assert_eq!(reader.u32().unwrap(), 1);
     assert_eq!(
@@ -5116,20 +5128,26 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
             INITIALIZE,
             &tool_call(2, "script.status", &[("reference", UNIT_GRAPH)]),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(structured(&status, 1, "compiled"), "true");
     assert_eq!(structured(&status, 1, "current"), "true");
     assert_eq!(structured(&status, 1, "diagnostics"), "0");
     assert_eq!(structured(&status, 1, "handlers"), "unit.command@node1");
+}
 
+/// A unit with the graph attached, Play, and the order raised on it. Answers the unit.
+fn attach_and_order(
+    editor: &mut Editor,
+    asked: &Arc<Mutex<ScriptAsked>>,
+) -> cy_editor_core::ids::NodeId {
     // A unit to run it, and the graph attached to it in the world's history.
     let unit = converse(
         &[
             INITIALIZE,
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"scene.create-entity","arguments":{}}}"#,
         ],
-        &mut editor,
+        editor,
     );
     let entity = structured(&unit, 1, "entity");
     let attached = converse(
@@ -5141,7 +5159,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
                 &[("reference", UNIT_GRAPH), ("entity", &entity)],
             ),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(
         result(&attached, 1).get("isError"),
@@ -5151,7 +5169,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
     );
     let node = cy_editor_core::ids::NodeId::from_u128(u128::from_str_radix(&entity, 16).unwrap());
     assert_eq!(
-        cy_editor_services::script_commands::attached_graph(active_world(&editor), node).as_deref(),
+        cy_editor_services::script_commands::attached_graph(active_world(editor), node).as_deref(),
         Some(UNIT_GRAPH)
     );
 
@@ -5166,7 +5184,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
                 &format!(r#"{{"entity":"{entity}","event":"unit.command","x":6,"y":0,"z":8}}"#),
             ),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(
         result(&played, 2).get("isError"),
@@ -5174,24 +5192,26 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
         "{}",
         tool_text(&played, 2)
     );
-    settle_script(&mut editor);
+    settle_script(editor);
     assert_eq!(
-        last_script_payload(&asked, "script.event.raise"),
+        last_script_payload(asked, "script.event.raise"),
         cy_editor_services::script_graph::raise_payload(
             cy_editor_services::mirror::engine_identity(node),
             "unit.command",
             &[6.0, 0.0, 8.0]
         )
     );
-    let running = converse(
-        &[INITIALIZE, &tool_call(2, "script.status", &[])],
-        &mut editor,
-    );
+    let running = converse(&[INITIALIZE, &tool_call(2, "script.status", &[])], editor);
     assert_eq!(structured(&running, 1, "playing"), "true");
     assert_eq!(structured(&running, 1, "started"), "1");
     assert_eq!(structured(&running, 1, "instances"), "1");
     assert!(structured(&running, 1, "cue.0").starts_with("unit.arrived tick="));
 
+    node
+}
+
+/// A source the panel would never write, and the engine's diagnostic on its node.
+fn a_misspelling_is_named_on_its_node(editor: &mut Editor, sandbox: &Sandbox) {
     // A source the editor's palette would never write — a hand edit, a merge — and the engine
     // names the node.
     let misspelled = String::from_utf8(engine_audio_fixture("script_unit_command_v1.cyscript"))
@@ -5203,15 +5223,15 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
             INITIALIZE,
             &tool_call(2, "script.graph.compile", &[("reference", UNIT_GRAPH)]),
         ],
-        &mut editor,
+        editor,
     );
-    settle_script(&mut editor);
+    settle_script(editor);
     let diagnosed = converse(
         &[
             INITIALIZE,
             &tool_call(2, "script.status", &[("reference", UNIT_GRAPH)]),
         ],
-        &mut editor,
+        editor,
     );
     assert_eq!(structured(&diagnosed, 1, "compiled"), "false");
     let diagnostic = structured(&diagnosed, 1, "diagnostic.0");
@@ -5224,15 +5244,18 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
         engine_audio_fixture("script_unit_command_v1.cyscript"),
     )
     .unwrap();
+}
 
+/// Undo, one transaction at a time, down to no file at all.
+fn undo_the_graph(editor: &mut Editor, sandbox: &Sandbox, node: cy_editor_core::ids::NodeId) {
     // Undo, one transaction at a time: the attach, then every graph edit, then the file itself.
     let undo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#;
-    converse(&[INITIALIZE, undo], &mut editor);
+    converse(&[INITIALIZE, undo], editor);
     assert!(
-        cy_editor_services::script_commands::attached_graph(active_world(&editor), node).is_none()
+        cy_editor_services::script_commands::attached_graph(active_world(editor), node).is_none()
     );
-    converse(&[INITIALIZE, undo], &mut editor); // the entity
-    converse(&[INITIALIZE, undo], &mut editor); // the last wire
+    converse(&[INITIALIZE, undo], editor); // the entity
+    converse(&[INITIALIZE, undo], editor); // the last wire
     let one_wire_fewer = std::fs::read_to_string(sandbox.0.join(UNIT_GRAPH)).unwrap();
     assert!(
         !one_wire_fewer.contains("link 5 \"then\" -> 6 \"in\""),
@@ -5240,7 +5263,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
     );
     // Four wires, three nodes, the property, two nodes, and the creation.
     for _ in 0..11 {
-        converse(&[INITIALIZE, undo], &mut editor);
+        converse(&[INITIALIZE, undo], editor);
     }
     assert!(
         !sandbox.0.join(UNIT_GRAPH).exists(),

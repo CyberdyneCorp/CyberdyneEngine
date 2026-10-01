@@ -56,6 +56,8 @@ struct Harness {
     link: ViewportLink,
     inputs: Inputs,
     ctx: egui::Context,
+    /// The runtime's ends of a session the harness answered on, kept open so it stays attached.
+    runtime_ends: Vec<Box<dyn std::any::Any>>,
 }
 
 impl Harness {
@@ -96,6 +98,7 @@ impl Harness {
             link: ViewportLink::idle(),
             inputs: Inputs::default(),
             ctx,
+            runtime_ends: Vec::new(),
         }
     }
 
@@ -125,6 +128,7 @@ impl Harness {
             link,
             inputs,
             ctx,
+            runtime_ends: _,
         } = self;
         let mut intents: Vec<Intent> = Vec::new();
         let mut drawn = Vec::new();
@@ -200,6 +204,7 @@ impl Harness {
             link,
             inputs,
             ctx,
+            runtime_ends: _,
         } = self;
         let mut intents: Vec<Intent> = Vec::new();
         let mut output = ctx.run_ui(raw, |ui| {
@@ -1525,7 +1530,7 @@ fn engine_answers_script(
 ) {
     use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
     let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
-    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
     harness.editor.runtime =
         cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
     let request = send(&mut harness.editor);
@@ -1552,6 +1557,8 @@ fn engine_answers_script(
         !harness.editor.backend.script.pending(),
         "the engine's reply was not taken"
     );
+    harness.runtime_ends.push(Box::new(runtime_writer));
+    harness.runtime_ends.push(Box::new(runtime_reader));
 }
 
 /// A world, `source` as the unit graph, the engine's catalogue, and its compile of that source.

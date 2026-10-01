@@ -93,7 +93,7 @@ fn set_property(
         .iter()
         .find(|declared| declared.name == property.name)
     {
-        Some(declared) => canvas.set_property_by_identity(
+        Some(declared) => canvas.restore_property_by_identity(
             key,
             declared.identity,
             property.literal.display(literal_type(declared)),
@@ -228,6 +228,22 @@ mod tests {
         assert_eq!(captured.nodes[&6].type_name, "plugin.fireworks");
         assert!(captured.links.iter().any(|link| link.to == 6));
         assert_eq!(captured.encode(), graph.encode());
+    }
+
+    #[test]
+    fn a_value_the_palette_would_refuse_still_opens_and_is_kept() {
+        let catalogue = catalogue(&engine_fixture("script_catalogue_v1.wire")).unwrap();
+        let source = String::from_utf8(engine_fixture("script_unit_command_v1.cyscript"))
+            .unwrap()
+            .replace("unit.move_to", "unit.mvoe_to");
+        let graph = ScriptGraph::decode(&source).unwrap();
+        let canvas = canvas_for(catalogue, &graph).unwrap();
+        assert_eq!(
+            canvas.nodes().count(),
+            6,
+            "the engine names the misspelling, not the loader"
+        );
+        assert_eq!(capture(&graph, &canvas).unwrap().encode(), source);
     }
 
     #[test]

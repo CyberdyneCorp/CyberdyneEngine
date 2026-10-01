@@ -43,31 +43,32 @@ constexpr ExternalDecl kExternals[] = {
 }
 
 /// A graph built line by line, with every step required to succeed.
-struct Builder {
+struct GraphBuilder {
     Graph graph{allocator(), Name::intern("probe")};
     NodeRegistry registry{allocator()};
 
-    Builder() {
+    GraphBuilder() {
         CY_REQUIRE(script::register_script_nodes(registry).has_value());
         graph.grant(Capability::ReadWorld | Capability::WriteWorld | Capability::Audio);
     }
 
-    Builder& node(NodeKey key, std::string_view type) {
+    GraphBuilder& node(NodeKey key, std::string_view type) {
         CY_REQUIRE(graph.add_node(key, Name::intern(type)).has_value());
         return *this;
     }
-    Builder& prop(NodeKey key, std::string_view name, std::string_view value) {
+    GraphBuilder& prop(NodeKey key, std::string_view name, std::string_view value) {
         CY_REQUIRE(graph.set_property(key, Name::intern(name), text(value)).has_value());
         return *this;
     }
-    Builder& wire(NodeKey from, std::string_view from_pin, NodeKey to, std::string_view to_pin) {
+    GraphBuilder& wire(NodeKey from, std::string_view from_pin, NodeKey to,
+                       std::string_view to_pin) {
         CY_REQUIRE(
             graph.connect(from, Name::intern(from_pin), to, Name::intern(to_pin)).has_value());
         return *this;
     }
 
     /// "on unit.command: move to (event.x, event.z), wait until arrived, play cue.done".
-    Builder& order() {
+    GraphBuilder& order() {
         node(1, "script.on_event").prop(1, "event", "unit.command");
         node(2, "script.query").prop(2, "query", "event.x");
         node(3, "script.query").prop(3, "query", "event.z");
@@ -128,7 +129,7 @@ private:
     }
 };
 
-[[nodiscard]] script::EventProgram compiled(Builder& builder) {
+[[nodiscard]] script::EventProgram compiled(GraphBuilder& builder) {
     DiagnosticSink sink(allocator());
     auto program = script::compile_event_graph(builder.graph, builder.registry, externals(), sink);
     CY_REQUIRE(program.has_value());
@@ -137,7 +138,7 @@ private:
 }
 
 /// The diagnostics a graph compiles to, which must refuse it.
-[[nodiscard]] std::vector<Diagnostic> refused(Builder& builder) {
+[[nodiscard]] std::vector<Diagnostic> refused(GraphBuilder& builder) {
     DiagnosticSink sink(allocator());
     auto program = script::compile_event_graph(builder.graph, builder.registry, externals(), sink);
     CY_CHECK(!program.has_value());
@@ -156,7 +157,7 @@ private:
 }  // namespace
 
 CY_TEST_CASE("event graph: each event starts its own handler in one shared program") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     builder.node(7, "script.on_event").prop(7, "event", "unit.selected");
     builder.node(8, "script.emit_event").prop(8, "event", "cue.selected").wire(7, "then", 8, "in");
@@ -197,7 +198,7 @@ CY_TEST_CASE("event graph: each event starts its own handler in one shared progr
 }
 
 CY_TEST_CASE("event graph: a wait suspends, and a newer event discards the suspension") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     const script::EventProgram program = compiled(builder);
     const script::EventHandler* order = program.handler(Name::intern("unit.command"));
@@ -232,7 +233,7 @@ CY_TEST_CASE("event graph: a wait suspends, and a newer event discards the suspe
 }
 
 CY_TEST_CASE("event graph: both back ends make the same host calls and leave the same state") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     const script::EventProgram program = compiled(builder);
     const script::EventHandler* order = program.handler(Name::intern("unit.command"));
@@ -268,19 +269,19 @@ CY_TEST_CASE("event graph: both back ends make the same host calls and leave the
 }
 
 CY_TEST_CASE("event graph: a graph with no event, an unnamed event, or two of one is refused") {
-    Builder none;
+    GraphBuilder none;
     none.node(1, "script.query").prop(1, "query", "event.x");
     const auto no_event = refused(none);
     CY_CHECK(coded(no_event, "script.event.none") != nullptr);
 
-    Builder unnamed;
+    GraphBuilder unnamed;
     unnamed.node(1, "script.on_event");
     const auto unnamed_found = refused(unnamed);
     const Diagnostic* nameless = coded(unnamed_found, "script.event.unnamed");
     CY_REQUIRE(nameless != nullptr);
     CY_CHECK_EQ(nameless->node, 1U);
 
-    Builder twice;
+    GraphBuilder twice;
     twice.order();
     twice.node(9, "script.on_event").prop(9, "event", "unit.command");
     const auto twice_found = refused(twice);
@@ -291,7 +292,7 @@ CY_TEST_CASE("event graph: a graph with no event, an unnamed event, or two of on
 }
 
 CY_TEST_CASE("event graph: an undeclared, misused or unnamed external is an error on its node") {
-    Builder unknown;
+    GraphBuilder unknown;
     unknown.order().prop(4, "function", "unit.mvoe_to");
     const auto unknown_found = refused(unknown);
     const Diagnostic* undeclared = coded(unknown_found, "script.external.unknown");
@@ -300,14 +301,14 @@ CY_TEST_CASE("event graph: an undeclared, misused or unnamed external is an erro
     CY_CHECK_EQ(undeclared->detail, Name::intern("unit.mvoe_to"));
     CY_CHECK_EQ(undeclared->severity, Severity::Error);
 
-    Builder misused;
+    GraphBuilder misused;
     misused.order().prop(4, "function", "event.x");
     const std::vector<Diagnostic> kind_found = refused(misused);
     const Diagnostic* kind = coded(kind_found, "script.external.kind");
     CY_REQUIRE(kind != nullptr);
     CY_CHECK_EQ(kind->node, 4U);
 
-    Builder nothing;
+    GraphBuilder nothing;
     nothing.order().prop(5, "reason", "");
     const std::vector<Diagnostic> nameless_found = refused(nothing);
     const Diagnostic* nameless = coded(nameless_found, "script.external.unnamed");
@@ -316,7 +317,7 @@ CY_TEST_CASE("event graph: an undeclared, misused or unnamed external is an erro
 }
 
 CY_TEST_CASE("event graph: a call outside the graph's capabilities is an error on its node") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     builder.graph.revoke(Capability::Audio);
     const std::vector<Diagnostic> missing_found = refused(builder);
@@ -327,7 +328,7 @@ CY_TEST_CASE("event graph: a call outside the graph's capabilities is an error o
 }
 
 CY_TEST_CASE("event graph: a wire between different pin types names both ends and both types") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     // An execution output into a float input: the canvas refuses it, a hand-edited source can not.
     builder.wire(1, "then", 4, "arg1");
@@ -341,7 +342,7 @@ CY_TEST_CASE("event graph: a wire between different pin types names both ends an
 }
 
 CY_TEST_CASE("event graph: a node type the registry lacks is reported, not silently dropped") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     builder.node(9, "ai.selector");
     const std::vector<Diagnostic> unknown_found = refused(builder);
@@ -351,7 +352,7 @@ CY_TEST_CASE("event graph: a node type the registry lacks is reported, not silen
 }
 
 CY_TEST_CASE("event graph: a node no event reaches is a warning and the graph still compiles") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     builder.node(9, "script.emit_event").prop(9, "event", "cue.orphan");
     DiagnosticSink sink(allocator());
@@ -364,7 +365,7 @@ CY_TEST_CASE("event graph: a node no event reaches is a warning and the graph st
 }
 
 CY_TEST_CASE("event graph: the listing shows each instruction and the node it came from") {
-    Builder builder;
+    GraphBuilder builder;
     builder.order();
     const script::EventProgram program = compiled(builder);
     Array<char> listing(allocator());

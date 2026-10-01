@@ -1173,7 +1173,10 @@ mod tests {
         let state = PlayState::decode(&engine_fixture("script_state_play_v1.wire")).unwrap();
         assert!(state.playing);
         assert_eq!(state.instances.len(), 1);
-        assert_eq!(state.instances[0].position, [6.0, 0.0, 8.0]);
+        assert_eq!(
+            state.instances[0].position.map(f32::to_bits),
+            [6.0_f32, 0.0, 8.0].map(f32::to_bits)
+        );
         assert_eq!(state.cues[0].cue, "unit.arrived");
     }
 }

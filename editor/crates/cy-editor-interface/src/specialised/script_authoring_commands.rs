@@ -367,7 +367,7 @@ fn set_property() -> Command {
         .with(ParameterSpec::required(
             "value",
             ValueKind::Text,
-            "The new value.",
+            "The value to write, as the property's engine-declared kind reads it.",
         )),
         |context, arguments| {
             let reference = text(arguments, "reference").to_owned();

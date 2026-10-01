@@ -36,7 +36,7 @@ GRAPH_RS = "editor/crates/cy-editor-services/src/script_graph.rs"
 REQUESTS_RS = "editor/crates/cy-editor-services/src/script_requests.rs"
 COMMANDS_RS = "editor/crates/cy-editor-services/src/script_commands.rs"
 EDITOR_RS = "editor/crates/cy-editor-services/src/editor.rs"
-PROJECT_RS = "editor/crates/cy-editor-services/src/project.rs"
+BUILTIN_RS = "editor/crates/cy-editor-services/src/builtin.rs"
 CANVAS_RS = "editor/crates/cy-editor-interface/src/specialised/script.rs"
 AUTHORING_RS = "editor/crates/cy-editor-interface/src/specialised/script_authoring_commands.rs"
 DOMAINS_RS = "editor/crates/cy-editor-interface/src/specialised/mod.rs"
@@ -164,8 +164,9 @@ MUTATIONS = [
      '                kind: format!("{}{reference}", crate::script_graph::DOMAIN_PREFIX),',
      '                kind: format!("unrecorded:{reference}"),',
      MCP, ACCEPTANCE),
-    ("r06_undo_does_not_restore_the_file", PROJECT_RS,
-     "            .or_else(|| kind.strip_prefix(crate::script_graph::DOMAIN_PREFIX))\n", "",
+    ("r06_undo_does_not_restore_the_file", BUILTIN_RS,
+     "    for (reference, source) in vfx_documents.into_iter().chain(script_graphs) {",
+     "    let _ = script_graphs;\n    for (reference, source) in vfx_documents {",
      MCP, ACCEPTANCE),
     ("r07_added_nodes_lack_the_engines_defaults", AUTHORING_RS,
      "                    canvas.set_property_by_identity(node, identity, default)?;",

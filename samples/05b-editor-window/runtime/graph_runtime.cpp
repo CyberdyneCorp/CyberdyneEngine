@@ -83,8 +83,9 @@ Expected<u32, Error> GraphRuntime::load(const std::string& reference) noexcept {
         problem_ = reference + ": the graph is not in the project";
         return fail(ErrorCode::NotFound, "a ScriptGraph's graph is not in the project");
     }
-    const std::string source{std::istreambuf_iterator<char>(file),
-                             std::istreambuf_iterator<char>()};
+    std::ostringstream read;
+    read << file.rdbuf();
+    const std::string source = read.str();
     graph::DiagnosticSink sink(*allocator_);
     const std::string stem = std::filesystem::path(reference).stem().string();
     Expected<u32, Error> loaded =

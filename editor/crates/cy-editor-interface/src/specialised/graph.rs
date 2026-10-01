@@ -667,6 +667,49 @@ impl GraphCanvas {
         Ok(())
     }
 
+    /// Restore a value a saved graph holds, by stable identity, WITHOUT the literal checks.
+    ///
+    /// Opening a file must not refuse what the file says: a hand edit or a merge can leave a value
+    /// the catalogue would not accept from a gesture, and the engine's compiler — not the loader —
+    /// is what names it, on its node. Edits still go through [`Self::set_property_by_identity`].
+    pub fn restore_property_by_identity(
+        &mut self,
+        key: NodeKey,
+        identity: u32,
+        value: impl Into<String>,
+    ) -> Result<()> {
+        let value = value.into();
+        let name = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| Self::no_such_node(key))
+            .and_then(|node| {
+                self.catalogue
+                    .get(&node.type_name)
+                    .and_then(|node_type| {
+                        node_type
+                            .properties
+                            .iter()
+                            .find(|property| property.identity == identity)
+                    })
+                    .map(|property| property.name.clone())
+                    .ok_or_else(|| {
+                        Problem::new(
+                            format!("restore property {identity} on {}", node.type_name),
+                            "the current catalogue does not declare that property identity",
+                        )
+                    })
+            })?;
+        let node = self
+            .nodes
+            .get_mut(&key)
+            .expect("the descriptor lookup found the node");
+        node.properties.insert(name.clone(), value.clone());
+        node.property_identities.insert(identity, value);
+        node.property_names.insert(identity, name);
+        Ok(())
+    }
+
     /// Read an authored value by stable identity, falling back to readable legacy metadata.
     #[must_use]
     pub fn property_value(&self, key: NodeKey, property: &Property) -> Option<&str> {

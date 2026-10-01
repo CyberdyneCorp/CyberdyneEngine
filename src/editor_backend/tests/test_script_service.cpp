@@ -27,6 +27,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,7 +47,9 @@ std::filesystem::path wire(std::string_view name) {
 std::string read_file(std::string_view name) {
     std::ifstream input(wire(name), std::ios::binary);
     CY_REQUIRE(input.good());
-    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    std::ostringstream text;
+    text << input.rdbuf();
+    return text.str();
 }
 
 std::string text_of(const Array<u8>& bytes) {
