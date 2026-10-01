@@ -18,7 +18,7 @@ import XCTest
 private enum Seen {
     nonisolated(unsafe) static var vtable = CyBehaviourVTable()
     nonisolated(unsafe) static var paths: [String] = []
-    nonisolated(unsafe) static var froms: [CyEntity] = []
+    nonisolated(unsafe) static var sources: [CyEntity] = []
 }
 
 @Behaviour
@@ -58,7 +58,7 @@ final class TreeCallbackTests: XCTestCase {
     override func setUp() {
         super.setUp()
         Seen.paths = []
-        Seen.froms = []
+        Seen.sources = []
         FakeEngine.install { table in
             table.register_behaviour = { _, _, vtable in
                 Seen.vtable = vtable?.pointee ?? CyBehaviourVTable()
@@ -67,7 +67,7 @@ final class TreeCallbackTests: XCTestCase {
             table.node_find = { _, from, path, out in
                 let text = String(cString: path!)
                 Seen.paths.append(text)
-                Seen.froms.append(from)
+                Seen.sources.append(from)
                 guard text == "../Camera" || text == "Rig" else {
                     return FakeEngine.fail(CY_RESULT_NOT_FOUND, "no node at that path")
                 }
@@ -127,7 +127,7 @@ final class TreeCallbackTests: XCTestCase {
         XCTAssertEqual(probe.camera, Entity(bits: 77))
         XCTAssertNil(probe.missing, "a path that does not resolve is nil, not a trap")
         XCTAssertEqual(Seen.paths, ["../Camera", "/Level/Missing"])
-        XCTAssertEqual(Seen.froms, [5, 5])
+        XCTAssertEqual(Seen.sources, [5, 5])
         vtable.destroy?(raw, vtable.user_data)
     }
 

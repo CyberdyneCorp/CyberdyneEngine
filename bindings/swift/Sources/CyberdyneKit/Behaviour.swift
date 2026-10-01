@@ -157,6 +157,7 @@ extension BehaviourClass {
     /// No `@Node` properties: the default for a class the `@Behaviour` macro did not expand, such as
     /// a hand-written registration in a test.
     public static var nodePaths: [String] { [] }
+    /// Nothing for the bridge to resolve: the default has no `@Node` properties.
     public func nodeReferences() -> [any NodeReference] { [] }
 }
 

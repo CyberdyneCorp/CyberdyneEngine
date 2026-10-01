@@ -40,6 +40,9 @@ class SceneTree;
 
 namespace cy::game_backend {
 
+/// Puts script behaviours in the scene tree: each Swift behaviour type becomes a scene behaviour of
+/// the same name, so the tree's pump delivers the tree callbacks, and `node_find` is answered
+/// against the tree.
 class ScriptSceneBridge final : public abi::game::SceneBackend {
 public:
     /// Joins `tree` to `runtime`, whose host is `host`. All three are borrowed and outlive the

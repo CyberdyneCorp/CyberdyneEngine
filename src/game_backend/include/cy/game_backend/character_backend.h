@@ -30,6 +30,8 @@
 
 namespace cy::game_backend {
 
+/// `CharacterBackend` over `cy::physics::CharacterController`: a Swift character is a capsule
+/// controller on the physics server, whose body carries the entity so a query names it.
 class CharacterAdapter final : public abi::game::CharacterBackend, public EntityBodies {
 public:
     /// Characters live in `world` on `server`; both are borrowed and outlive the adapter, which

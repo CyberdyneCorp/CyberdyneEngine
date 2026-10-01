@@ -214,6 +214,8 @@ public final class EscapeGuard {
 /// Where a system's chunks come from: the engine's world (`EngineChunkSource`) when the scheduler
 /// runs it, or a test's own source when the package's suite does.
 public protocol ChunkSource {
+    /// Calls `body` once per chunk holding every component `access` reads or writes and none it
+    /// excludes.
     func forEachChunk(matching access: AccessSet, _ body: (ChunkView) -> Void)
 }
 
@@ -225,14 +227,17 @@ public protocol ChunkSource {
 /// component. An archetype that lacks a component the query reads or writes is skipped, and so is
 /// one that holds a component it excludes. No per-entity call, no `CyVar`.
 public struct EngineChunkSource: ChunkSource {
+    /// The world whose chunks are read.
     public let world: World
     private let guardToken: EscapeGuard
 
+    /// Reads `world`; `guardToken` keeps any chunk view from outliving the system's run.
     public init(world: World, guardToken: EscapeGuard) {
         self.world = world
         self.guardToken = guardToken
     }
 
+    /// One `world_chunks` call per component `access` names, joined by archetype; see the type.
     public func forEachChunk(matching access: AccessSet, _ body: (ChunkView) -> Void) {
         let required = access.reads.union(access.writes).sorted()
         guard let lead = required.first else { return }
@@ -267,8 +272,11 @@ public struct EngineChunkSource: ChunkSource {
                     strides[name] = Int(column[index].stride)
                 }
             }
-            let entities = UnsafeBufferPointer(start: chunk.entities, count: Int(chunk.entity_count))
-            body(ChunkView(entities: entities, bases: bases, strides: strides, guardToken: guardToken))
+            let entities = UnsafeBufferPointer(
+                start: chunk.entities, count: Int(chunk.entity_count))
+            body(
+                ChunkView(
+                    entities: entities, bases: bases, strides: strides, guardToken: guardToken))
         }
     }
 
@@ -379,7 +387,9 @@ enum EngineSystems {
     /// `register_system` for one descriptor. Throws when a component is not registered in the bound
     /// world, when the query names a resource (the ABI has no resource entry), or when the engine
     /// refuses — a reload that changed this system's stage or access among them.
-    static func register(_ descriptor: SystemDescriptor, body: @escaping (ChunkSource) -> Void)
+    static func register(
+        _ descriptor: SystemDescriptor, body: @escaping (ChunkSource) -> Void
+    )
         throws
     {
         let engine = try GameServices.engine()
@@ -404,7 +414,9 @@ enum EngineSystems {
 
     /// The access set as `CySystemAccess` terms, sorted by name so the declaration is the same bytes
     /// on every registration of the same query.
-    static func terms(_ access: AccessSet, in world: World, system: String) throws
+    static func terms(
+        _ access: AccessSet, in world: World, system: String
+    ) throws
         -> [CySystemAccess]
     {
         let modes: [(Set<String>, AccessMode)] = [
@@ -433,12 +445,11 @@ enum EngineSystems {
 
 /// `CySystemDesc.run`: the body, over the engine's chunks, with every view invalidated when it
 /// returns. Possibly on a job worker; it reads only the record and the bound table.
-private let systemRun:
-    @convention(c) (CyEngine?, CyWorld?, UnsafeMutableRawPointer?) -> Void = {
-        _, world, userData in
-        guard let world, let userData, let interface = Runtime.interface else { return }
-        let record = Unmanaged<SystemRecord>.fromOpaque(userData).takeUnretainedValue()
-        let guardToken = EscapeGuard(systemName: record.name)
-        record.body(EngineChunkSource(world: World(world, interface), guardToken: guardToken))
-        guardToken.invalidate()
-    }
+private let systemRun: @convention(c) (CyEngine?, CyWorld?, UnsafeMutableRawPointer?) -> Void = {
+    _, world, userData in
+    guard let world, let userData, let interface = Runtime.interface else { return }
+    let record = Unmanaged<SystemRecord>.fromOpaque(userData).takeUnretainedValue()
+    let guardToken = EscapeGuard(systemName: record.name)
+    record.body(EngineChunkSource(world: World(world, interface), guardToken: guardToken))
+    guardToken.invalidate()
+}

@@ -14,6 +14,9 @@
 
 namespace cy::abi::game {
 
+/// What `character_*` reaches on the engine side: one capsule controller per entity. A host
+/// installs an implementation (`cy::game_backend::CharacterAdapter`); without one the entries
+/// return `CY_RESULT_UNAVAILABLE`.
 class CharacterBackend {
 public:
     virtual ~CharacterBackend() = default;

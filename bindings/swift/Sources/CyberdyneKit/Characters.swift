@@ -34,11 +34,15 @@ public struct CharacterController: Hashable, Sendable {
     /// How a character is built. A nil field is the engine's default (`cy::physics::
     /// CharacterDescription`): a 0.3 m by 1.8 m capsule, 45 degree slopes, 0.35 m steps.
     public struct Description: Equatable, Sendable {
+        /// Capsule radius in metres.
         public var radius: Float?
         /// Total height, both caps included.
         public var height: Float?
+        /// The steepest slope it can stand on, in radians.
         public var maxSlopeRadians: Float?
+        /// The highest step it climbs without jumping, in metres.
         public var stepOffset: Float?
+        /// A multiplier on world gravity for this character.
         public var gravityScale: Float?
         /// Six degrees of freedom: no gravity, no ground, no steps.
         public var floating: Bool
@@ -46,10 +50,12 @@ public struct CharacterController: Hashable, Sendable {
         public var pushesBodies: Bool
         /// The collision layer, 0 to 31, and the layers it collides with.
         public var layer: UInt32
+        /// The layers it collides with, one bit per layer.
         public var mask: UInt32
         /// Where it starts.
         public var start: Pose
 
+        /// A description; every field left out keeps the engine's default.
         public init(
             radius: Float? = nil, height: Float? = nil, maxSlopeRadians: Float? = nil,
             stepOffset: Float? = nil, gravityScale: Float? = nil, floating: Bool = false,
@@ -88,19 +94,26 @@ public struct CharacterController: Hashable, Sendable {
 
     /// What the last move produced.
     public struct State: Equatable, Sendable {
+        /// Whether it stood on ground, a steep slope or nothing after the move.
         public var ground: GroundState
         /// The entity owning what it stands on, or `.null`.
         public var groundEntity: Entity
         /// The capsule's centre, world space.
         public var position: Vec3
+        /// Its velocity after gravity, collisions and the platform, world space, per second.
         public var velocity: Vec3
+        /// The normal of what it stands on; meaningless when it is in the air.
         public var groundNormal: Vec3
+        /// The platform's share of the motion, per second.
         public var platformVelocity: Vec3
+        /// The move ended against something above it.
         public var touchingCeiling: Bool
+        /// The move ended against something beside it.
         public var touchingWall: Bool
         /// Lifted onto a stair by the last move.
         public var steppedUp: Bool
 
+        /// Standing on walkable ground, the usual test before a jump.
         public var isGrounded: Bool { ground == .grounded }
 
         /// From the ABI's spelling.
@@ -119,7 +132,9 @@ public struct CharacterController: Hashable, Sendable {
 
     /// Give `entity` a character. Throws `.alreadyExists` when it has one.
     @discardableResult
-    public static func create(on entity: Entity, _ description: Description = Description())
+    public static func create(
+        on entity: Entity, _ description: Description = Description()
+    )
         throws -> CharacterController
     {
         var desc = description.raw

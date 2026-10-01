@@ -222,39 +222,39 @@ private func treeCallback(
     }
 }
 
-private let behaviourEnterTree:
-    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
-        treeCallback(raw, userData, .enterTree, "onEnterTree") { try $0.onEnterTree() }
-    }
+private let behaviourEnterTree: @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = {
+    raw, userData in
+    treeCallback(raw, userData, .enterTree, "onEnterTree") { try $0.onEnterTree() }
+}
 
 /// `ready`: resolve every `@Node` against the behaviour's own node, THEN `onReady` — so a
 /// behaviour reads its references in `onReady` and finds them filled, or nil for a path that does
 /// not resolve. An unresolved path is a warning, not a failure: `swift-scripting` asks for nil.
-private let behaviourReady:
-    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
-        guard let record = registration(userData), let object = instance(raw) else { return }
-        for reference in object.nodeReferences() where !reference.resolveNode(from: object.entity) {
-            Log.warning(
-                "\(record.name): @Node(\"\(reference.path)\") does not resolve from its node; it "
-                    + "stays nil.")
-        }
-        treeCallback(raw, userData, .ready, "onReady") { try $0.onReady() }
+private let behaviourReady: @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = {
+    raw, userData in
+    guard let record = registration(userData), let object = instance(raw) else { return }
+    for reference in object.nodeReferences() where !reference.resolveNode(from: object.entity) {
+        Log.warning(
+            "\(record.name): @Node(\"\(reference.path)\") does not resolve from its node; it "
+                + "stays nil.")
     }
+    treeCallback(raw, userData, .ready, "onReady") { try $0.onReady() }
+}
 
-private let behaviourEnable:
-    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
-        treeCallback(raw, userData, .enable, "onEnable") { try $0.onEnable() }
-    }
+private let behaviourEnable: @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = {
+    raw, userData in
+    treeCallback(raw, userData, .enable, "onEnable") { try $0.onEnable() }
+}
 
-private let behaviourDisable:
-    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
-        treeCallback(raw, userData, .disable, "onDisable") { try $0.onDisable() }
-    }
+private let behaviourDisable: @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = {
+    raw, userData in
+    treeCallback(raw, userData, .disable, "onDisable") { try $0.onDisable() }
+}
 
-private let behaviourExitTree:
-    @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = { raw, userData in
-        treeCallback(raw, userData, .exitTree, "onExitTree") { try $0.onExitTree() }
-    }
+private let behaviourExitTree: @convention(c) (CyInstance?, UnsafeMutableRawPointer?) -> Void = {
+    raw, userData in
+    treeCallback(raw, userData, .exitTree, "onExitTree") { try $0.onExitTree() }
+}
 
 /// `serialize(self, NULL, 0, ud)` returns the byte count required and writes nothing; that is how
 /// the host sizes the blob, and it is why this builds the blob before it looks at `capacity`.

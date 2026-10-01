@@ -121,6 +121,7 @@ public protocol NodeReference: AnyObject {
 }
 
 extension Node: NodeReference {
+    /// Looks the path up from `node` through `SceneTree.find`; nil when it does not resolve.
     @discardableResult
     public func resolveNode(from node: Entity) -> Bool {
         guard let found = SceneTree.find(path, from: node),

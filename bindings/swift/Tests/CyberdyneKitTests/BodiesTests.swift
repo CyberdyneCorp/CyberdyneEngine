@@ -125,7 +125,8 @@ final class BodiesTests: XCTestCase {
 
     func testARefusedBodyWriteThrowsTheEnginesStatus() {
         XCTAssertThrowsError(try RigidBody(Entity(bits: 9)).applyTorque(Vec3(x: 0, y: 1, z: 0))) {
-            XCTAssertEqual($0 as? CyberdyneError, .status(.invalidArgument, message: "a static body"))
+            XCTAssertEqual(
+                $0 as? CyberdyneError, .status(.invalidArgument, message: "a static body"))
         }
         FakeEngine.uninstall()
         XCTAssertThrowsError(try RigidBody(Entity(bits: 9)).applyForce(Vec3())) { error in

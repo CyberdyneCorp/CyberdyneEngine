@@ -120,6 +120,8 @@ struct GameServices {
     return stage <= CY_STAGE_UI ? CY_PHASE_FRAME_UPDATE : CY_PHASE_NONE;
 }
 
+/// Sets the clock's phase for a scope and restores the previous one on exit, so an entry called
+/// from inside a scheduled system sees the phase of the stage it runs in.
 class PhaseScope {
 public:
     PhaseScope(GameClock& clock, CyPhase phase) noexcept : clock_(clock), previous_(clock.phase) {

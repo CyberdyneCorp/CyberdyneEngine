@@ -47,7 +47,9 @@ public protocol GameModule {
 }
 
 extension GameModule {
+    /// No components of its own: the default for a module whose systems use none.
     public static var components: [any Component.Type] { [] }
+    /// No scheduled systems: the default for a module that only has behaviours.
     public static var systems: [any SystemRegistration.Type] { [] }
 
     public static func initialize(at level: InitLevel) {

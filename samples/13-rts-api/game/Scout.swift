@@ -53,7 +53,8 @@ final class Scout: Behaviour {
         hero = Entity(bits: world.createEntity())
         try CharacterController.create(
             on: hero,
-            CharacterController.Description(radius: 0.4, layer: 2, start: Pose(position: heroStart)))
+            CharacterController.Description(radius: 0.4, layer: 2, start: Pose(position: heroStart))
+        )
     }
 
     override func onReady() throws {

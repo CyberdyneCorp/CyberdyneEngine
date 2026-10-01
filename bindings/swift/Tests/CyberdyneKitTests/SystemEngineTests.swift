@@ -172,7 +172,8 @@ final class SystemEngineTests: XCTestCase {
         let access = AccessSet([AccessTerm(name: "Unregistered", mode: .write)])
         XCTAssertThrowsError(
             try Systems.register(
-                SystemDescriptor(name: "orphan", stage: .simulation, access: access)) { _ in }
+                SystemDescriptor(name: "orphan", stage: .simulation, access: access)
+            ) { _ in }
         ) { error in
             guard case CyberdyneError.status(.notFound, _) = error else {
                 return XCTFail("expected notFound, got \(error)")
@@ -186,7 +187,8 @@ final class SystemEngineTests: XCTestCase {
         let access = AccessSet([Res<Double>.accessTerm])
         XCTAssertThrowsError(
             try Systems.register(
-                SystemDescriptor(name: "clock", stage: .simulation, access: access)) { _ in }
+                SystemDescriptor(name: "clock", stage: .simulation, access: access)
+            ) { _ in }
         ) { error in
             guard case CyberdyneError.notRepresentable = error else {
                 return XCTFail("expected notRepresentable, got \(error)")
