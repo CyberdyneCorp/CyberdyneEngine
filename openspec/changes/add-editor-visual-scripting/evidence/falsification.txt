@@ -159,6 +159,13 @@ FAILED  the editor's unit-command graph moves and sounds as its Swift twin does,
 [doctest] test cases:    1 |    0 passed |  1 failed | 1 skipped
 RESTORED md5 ok
 
+== c23_a_muted_node_skips_the_external_check: src/graph/src/event_script.cpp
+<   if (const ExternalUse* use = external_use(node.type); use != nullptr) {
+>   if (const ExternalUse* use = external_use(node.type); use != nullptr && !node.muted) {
+FAILED  event graph: a muted node's external is checked, since a muted value still lowers
+[doctest] test cases:  1 |  0 passed | 1 failed | 46 skipped
+RESTORED md5 ok
+
 == r01_floats_not_written_as_the_engine_writes_them: editor/crates/cy-editor-services/src/script_graph.rs
 <   trim_fraction(&format!("{wide:.decimals$}"))
 >   format!("{value}")
@@ -284,4 +291,4 @@ FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_pee
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 142 filtered out; finished in 0.00s
 RESTORED md5 ok
 
-39 of 39 mutations killed.
+40 of 40 mutations killed.

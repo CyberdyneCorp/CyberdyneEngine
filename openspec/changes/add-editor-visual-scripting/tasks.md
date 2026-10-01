@@ -20,7 +20,7 @@
 
 - [x] 3.1 Rust cases in services, interface, shell and MCP; panel snapshots `docs/design/images/editor-gameplay-graph*.png`.
 - [x] 3.2 Mutation proofs in `evidence/falsification.txt`.
-- [x] 3.3 `tools/roadmap/requirements-coverage.toml`: three `visual-scripting` requirements mapped; the added requirements recorded for mapping on archive.
+- [x] 3.3 `tools/roadmap/requirements-coverage.toml`: the three added requirements and their tests recorded for mapping on archive (the `visual-scripting` row maps none yet, on main or here).
 - [x] 3.4 `editor/README.md`, `src/graph/README.md`, `src/editor_backend/README.md`, `src/game_backend` header, `samples/05b-editor-window/README.md`.
 - [ ] 3.5 On archive, add the `test:`/`rust:` entries recorded in the coverage file.
 

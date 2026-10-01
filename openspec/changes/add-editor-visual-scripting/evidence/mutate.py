@@ -145,6 +145,10 @@ MUTATIONS = [
     ("c22_the_graph_rounds_differently", HOST,
      "    position.x += dx / distance * step;", "    position.x += dx * step / distance;",
      TWIN, "*Swift twin*"),
+    ("c23_a_muted_node_skips_the_external_check", EVENTS,
+     "        if (const ExternalUse* use = external_use(node.type); use != nullptr) {",
+     "        if (const ExternalUse* use = external_use(node.type); use != nullptr && !node.muted) {",
+     COMPILER, "event graph: a muted node*"),
     # --- The editor -----------------------------------------------------------------------------
     ("r01_floats_not_written_as_the_engine_writes_them", GRAPH_RS,
      '    trim_fraction(&format!("{wide:.decimals$}"))', '    format!("{value}")',
