@@ -478,25 +478,29 @@ cy::Status CyEngine_T::register_system(const CySystemDesc& desc) noexcept {
     const cy::Span<const CySystemAccess> access(desc.access, desc.access_count);
     const auto stage = static_cast<CyStage>(desc.stage);
 
-    // The most recent registration of this name, from any generation. In this generation it is
-    // replaced; in an earlier one it is what a reload must not contradict.
-    cy::abi::SystemRecord* latest = nullptr;
-    for (cy::abi::SystemRecord* record : systems) {
-        if (std::strcmp(record->name, desc.name) == 0 &&
-            (latest == nullptr || record->generation >= latest->generation)) {
-            latest = record;
+    // This generation's registration of the name, which is replaced, and the most recent earlier
+    // one, which a reload must not contradict — checked on every registration in this generation,
+    // not only the first, or a second registration could move what the first kept in place.
+    cy::abi::SystemRecord* record = nullptr;
+    const cy::abi::SystemRecord* earlier = nullptr;
+    for (cy::abi::SystemRecord* candidate : systems) {
+        if (std::strcmp(candidate->name, desc.name) != 0) {
+            continue;
+        }
+        if (candidate->generation == generation) {
+            record = candidate;
+        } else if (earlier == nullptr || candidate->generation > earlier->generation) {
+            earlier = candidate;
         }
     }
-    if (latest != nullptr && latest->generation != generation &&
-        !latest->same_declaration(stage, access)) {
+    if (earlier != nullptr && !earlier->same_declaration(stage, access)) {
         ++refused_systems;
         return cy::fail(cy::ErrorCode::Unsupported,
                         "a reload changed a scheduled system's stage or access; a running schedule "
                         "cannot re-order it, so the reload is refused");
     }
 
-    cy::abi::SystemRecord* record = latest;
-    if (record == nullptr || record->generation != generation) {
+    if (record == nullptr) {
         cy::Expected<cy::UniquePtr<cy::abi::SystemRecord>, cy::Error> allocated =
             cy::make_unique<cy::abi::SystemRecord>(allocator, allocator);
         if (!allocated) {

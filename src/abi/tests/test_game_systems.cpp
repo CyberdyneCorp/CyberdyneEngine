@@ -311,3 +311,31 @@ CY_TEST_CASE("a later generation may re-register a system only with the same dec
     CY_REQUIRE(fixture.host.find_system("move") != nullptr);
     CY_CHECK_EQ(fixture.host.find_system("move")->generation, 1U);
 }
+
+CY_TEST_CASE("a second registration in a later generation is held to the earlier declaration too") {
+    // Regression: only a later generation's FIRST registration of a name was compared with the
+    // earlier generation's. A second one in the same reload compared with the first and replaced
+    // it, so a reload could move an installed system's stage or access without being refused.
+    Fixture fixture;
+    const CyInterface& iface = table();
+    const CySystemAccess write{g_velocity, CY_ACCESS_WRITE};
+    const CySystemAccess read{g_velocity, CY_ACCESS_READ};
+    CySystemDesc first = system_desc("move", CY_STAGE_SIMULATION, &write, 1);
+    CY_REQUIRE_EQ(iface.register_system(fixture.engine(), &first), CY_RESULT_OK);
+
+    fixture.host.open_generation();
+    CY_REQUIRE_EQ(iface.register_system(fixture.engine(), &first), CY_RESULT_OK);
+    CySystemDesc other_stage = system_desc("move", CY_STAGE_FRAME, &write, 1);
+    CY_CHECK_EQ(iface.register_system(fixture.engine(), &other_stage), CY_RESULT_UNSUPPORTED);
+    CySystemDesc other_access = system_desc("move", CY_STAGE_SIMULATION, &read, 1);
+    CY_CHECK_EQ(iface.register_system(fixture.engine(), &other_access), CY_RESULT_UNSUPPORTED);
+    CY_CHECK_EQ(fixture.host.refused_systems, 2U);
+    const cy::abi::SystemRecord* current = fixture.host.find_system("move");
+    CY_REQUIRE(current != nullptr);
+    CY_CHECK_EQ(current->stage, CY_STAGE_SIMULATION);
+    CY_REQUIRE_EQ(current->access.size(), 1U);
+    CY_CHECK_EQ(current->access[0].mode, static_cast<uint32_t>(CY_ACCESS_WRITE));
+    // The same declaration again is still a replacement, not a refusal.
+    CY_CHECK_EQ(iface.register_system(fixture.engine(), &first), CY_RESULT_OK);
+    CY_CHECK_EQ(fixture.host.systems.size(), 2U);
+}

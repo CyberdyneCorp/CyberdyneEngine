@@ -22,6 +22,7 @@ compiling form (M6b). All went RED; none survived.
 | S2 | `EngineChunkSource` ignores `Without` | `bindings/swift/Sources/CyberdyneKit/Systems.swift` | `integration.swift_package` (SystemEngineTests) | RED |
 | S3 | `enter_tree` registered for every class | `bindings/swift/Sources/CyberdyneKit/BehaviourBridge.swift` | `integration.swift_package` (TreeCallbackTests) | RED |
 | S4 | a `@System` is never handed to the engine | `bindings/swift/Sources/CyberdyneKit/Systems.swift` | `integration.swift_package` (SystemEngineTests) | RED |
+| M11 | **the old code**: only a reload's first registration of a name is held to the earlier declaration | `src/abi/src/host.cpp` | `unit.abi` — a second registration in a later generation is held to the earlier declaration too | RED, 4 checks (the regression test fails on the pre-fix code) |
 
 The harness is a 40-line script: replace one exact string (refusing an anchor that does not occur
 exactly once), `cmake --build build/dev --target <suite>`, run the suite, restore, verify the md5.
