@@ -294,3 +294,49 @@ CY_TEST_CASE("graph behaviours: the step is the one statement of a unit's arithm
     CY_CHECK_EQ(position.x, 4.0F);
     CY_CHECK_EQ(position.z, 5.0F);
 }
+
+namespace {
+
+/// `step_towards` with every product and quotient rounded to a float before it is added, as Swift
+/// (which never contracts) evaluates the twin's expression. The volatile stores keep this file's
+/// own compiler from fusing them, whatever its contraction default.
+bool step_rounded(Vec3& position, f32 target_x, f32 target_z, f32 speed, f32 dt) noexcept {
+    const f32 dx = target_x - position.x;
+    const f32 dz = target_z - position.z;
+    const volatile f32 dx2 = dx * dx;
+    const volatile f32 dz2 = dz * dz;
+    const f32 distance = std::sqrt(dx2 + dz2);
+    const f32 step = speed * dt;
+    if (distance <= step) {
+        position.x = target_x;
+        position.z = target_z;
+        return true;
+    }
+    const volatile f32 along_x = dx / distance * step;
+    const volatile f32 along_z = dz / distance * step;
+    position.x = position.x + along_x;
+    position.z = position.z + along_z;
+    return false;
+}
+
+}  // namespace
+
+CY_TEST_CASE("graph behaviours: the step never fuses a multiply into the add that follows it") {
+    // The acceptance unit's walk, ten metres at three a second in sixtieths: on a host with a fused
+    // multiply-add (aarch64, Apple silicon) a contracted `x += dx / distance * step` leaves the
+    // rounded walk by an ULP from the twentieth tick, and the graph unit then disagrees with its
+    // Swift twin.
+    const f32 dt = static_cast<f32>(1.0 / 60.0);
+    Vec3 engine{0.0F, 0.0F, 0.0F};
+    Vec3 rounded{0.0F, 0.0F, 0.0F};
+    for (u32 tick = 1; tick <= 260; ++tick) {
+        DOCTEST_INFO("tick " << tick);
+        const bool engine_arrived = game_backend::step_towards(engine, 6.0F, 8.0F, 3.0F, dt);
+        const bool rounded_arrived = step_rounded(rounded, 6.0F, 8.0F, 3.0F, dt);
+        CY_REQUIRE_EQ(engine.x, rounded.x);
+        CY_REQUIRE_EQ(engine.z, rounded.z);
+        CY_REQUIRE_EQ(engine_arrived, rounded_arrived);
+    }
+    CY_CHECK_EQ(engine.x, 6.0F);
+    CY_CHECK_EQ(engine.z, 8.0F);
+}

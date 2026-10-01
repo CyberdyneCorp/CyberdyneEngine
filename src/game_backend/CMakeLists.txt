@@ -40,6 +40,17 @@ cy_add_module(
         cy::scene
         cy::scene-serialization)
 
+# #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
+# with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
+# `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP
+# from the twentieth tick on arm64. The flag only, not a declared determinism profile: the adapters
+# beside it make no profile claim. See src/gameplay/CMakeLists.txt for the same argument.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(cy_game_backend PRIVATE -ffp-contract=off)
+elseif(MSVC)
+    target_compile_options(cy_game_backend PRIVATE /fp:precise)
+endif()
+
 # One integration suite per service, each registered when its source exists — so an implementer adds
 # a test file and nothing else, and a service with no suite is visibly absent at configure time.
 if(CY_BUILD_TESTS)

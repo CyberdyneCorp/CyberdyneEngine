@@ -48,7 +48,9 @@ each a `ScriptState`. A graph is compiled once however many entities run it.
 
 Movement is `step_towards`, stated once: towards the target in the ground plane, `speed * dt`, arriving
 exactly on it. A Swift behaviour that does the same thing must use the same expression to agree float for
-float, and `CommandedUnit.swift` does.
+float, and `CommandedUnit.swift` does. The same expression is not enough on its own: Swift never contracts
+floating-point arithmetic, and GCC on aarch64 and clang on Apple silicon fuse `x += dx / distance * step`
+into one multiply-add by default, so `cy_game_backend` is compiled with `-ffp-contract=off`.
 
 ### The editor writes the engine's canonical text
 

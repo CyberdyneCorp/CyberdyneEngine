@@ -556,7 +556,9 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 #     rust:cy-editor-mcp::a_session_over_the_wire::a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
 #     (and cy-editor-shell's an_engine_diagnostic_is_on_its_node_and_selects_it); the play half is
 #     test:smoke.editor_graph_equivalence, case "the editor's unit-command graph moves and sounds as
-#     its Swift twin does, tick for tick"
+#     its Swift twin does, tick for tick", which holds on a fused-multiply-add host only because
+#     test:integration.game_backend_graph, case "graph behaviours: the step never fuses a multiply
+#     into the add that follows it" does
 #   visual-scripting "Event graphs compile to one program with a handler table"
 #     test:integration.graph_compiler, case "event graph: each event starts its own handler in one
 #     shared program" (and "event graph: a wait suspends, and a newer event discards the suspension")
