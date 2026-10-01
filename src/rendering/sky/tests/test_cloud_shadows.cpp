@@ -585,8 +585,8 @@ CY_TEST_CASE("cloud shadows: the shadow moves with the wind, by the distance the
     CY_CHECK_LT(std::fabs(after.weight - before.weight), before.weight * 0.1);
     // And it moved by what the wind carried, to within half a cell: the field is sampled at cell
     // centres, so a translation is recovered to a fraction of 128 m and not better. ABSOLUTE
-    // metres, and not `CY_CHECK_NEAR`: that is doctest's `Approx`, whose epsilon is RELATIVE, and
-    // a relative 64 accepts a shadow that never moved — which is how this case first passed a
+    // metres: `CY_CHECK_NEAR` was doctest's `Approx` then, whose epsilon is RELATIVE, and a
+    // relative 64 accepts a shadow that never moved — which is how this case first passed a
     // producer marching a still sky.
     constexpr double kHalfCell = 64.0;
     CY_CHECK_LT(std::fabs(moved_x - drift_x), kHalfCell);

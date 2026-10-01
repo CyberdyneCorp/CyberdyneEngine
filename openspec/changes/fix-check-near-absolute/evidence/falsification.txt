@@ -1,0 +1,34 @@
+fix-check-near-absolute — falsification and audit record (Linux, GCC 13, Development and Debug)
+
+== Mutation: the absolute branch of cy::test::Near::admits restored to the old expansion
+   `value == doctest::Approx(expected).epsilon(tolerance)`
+
+build/dev/tests/unit/harness/cy_test_unit_harness
+tests/unit/harness/test_assertions.cpp:52: ERROR: CHECK_FALSE( 1000.5 == cy::test::near(1000.0, 0.01) ) is NOT correct!
+tests/unit/harness/test_assertions.cpp:56: ERROR: CHECK_FALSE( 0.515 == cy::test::near(0.5, 0.01) ) is NOT correct!
+tests/unit/harness/test_assertions.cpp:62: ERROR: CHECK_FALSE( 1.2500001 == cy::test::near(1.0, 0.25) ) is NOT correct!
+[doctest] test cases:  30 |  29 passed | 1 failed | 0 skipped
+
+== Unmutated
+[doctest] test cases:  30 |  30 passed | 0 failed | 0 skipped
+
+== Audit: every call site the absolute tolerance turned red (just test-all --profile dev)
+
+unit.render_lighting — src/rendering/lighting/tests/test_units.cpp:84,89,92
+  values: CHECK( 14.6439 == 15 +/- 0.05 )   (and 13.6439 == 14 twice)
+  The TEST was wrong, not exposure_value(): f/16 at 1/100 s is log2(256 x 100) = EV 14.64. The
+  sunny 16 exposure at ISO 100 is 1/125 s, EV 14.97. The old relative tolerance admitted 0.8 EV.
+  Fixed by using 1/125 s; tolerance unchanged.
+
+integration.math_geometry — src/core/math/tests/test_geometry_property.cpp:241
+  values: CHECK( 1495.09 == 1495.09 +/- 0.0001 )
+  Relative intent: both sides are sums of f32 triangle areas totalling ~1500, so rounding scales
+  with the total. Now CY_CHECK_NEAR_REL at the same 1e-4, with a comment.
+
+No other suite failed on a near-comparison in Development or Debug. The remaining red suites in
+this host's runs fail on assertions that do not use CY_CHECK_NEAR (CPU budget overruns under
+load, the editor binary not built for smoke.authoring, device validation and pixel counts).
+
+Not compiled on this host, so not audited by a run: src/ml/tests/test_onnxruntime.cpp
+(CY_ML_ONNXRUNTIME off; tolerances 1e-5 on probabilities below one, so absolute is at most twice
+as strict) and src/scene/tests/test_firewall.cpp (registered by no CMakeLists.txt).

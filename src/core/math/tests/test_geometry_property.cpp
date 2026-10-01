@@ -238,8 +238,11 @@ CY_TEST_CASE("triangulate_delaunay: the triangles tile the hull of the points ex
         hull_points.push_back(points[hull[i]]);
     }
 
-    CY_CHECK_CLOSE(triangulated, static_cast<double>(polygon_area(hull_points.data(), *hull_size)),
-                   1e-4);
+    // RELATIVE: both sides are sums of f32 areas over a 40 x 40 field (about 1500 square units
+    // from some 390 triangles), so their rounding grows with the total. One part in ten thousand
+    // is 0.15; a missing or doubled triangle of average size, about 4, is far above it.
+    CY_CHECK_NEAR_REL(triangulated,
+                      static_cast<double>(polygon_area(hull_points.data(), *hull_size)), 1e-4);
 }
 
 CY_TEST_CASE("polygon_boolean: union plus intersection is the sum of the parts") {

@@ -245,7 +245,66 @@ StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long conten
 /// How many cases this binary excused because the machine, rather than the case, was slow.
 unsigned long long contended_cases() noexcept;
 
+/// The right-hand side of CY_CHECK_NEAR and CY_CHECK_NEAR_REL: an expected value and how far from
+/// it a measurement may fall. A type rather than a boolean so that a failed check prints both
+/// sides, as doctest's own comparisons do.
+struct Near {
+    double expected;
+    double tolerance;
+    bool relative;
+
+    /// Whether `value` is close enough. Exact equality always is, so an expected infinity admits
+    /// itself; a NaN on either side never is.
+    [[nodiscard]] bool admits(double value) const noexcept {
+        if (value == expected) {
+            return true;
+        }
+        const double difference = value < expected ? expected - value : value - expected;
+        if (!relative) {
+            return difference <= tolerance;
+        }
+        const double magnitude_value = value < 0.0 ? -value : value;
+        const double magnitude_expected = expected < 0.0 ? -expected : expected;
+        const double magnitude =
+            magnitude_value > magnitude_expected ? magnitude_value : magnitude_expected;
+        return difference <= tolerance * magnitude;
+    }
+};
+
+/// NOT `near`: <windows.h>, which doctest's implementation includes on Windows, defines `near` and
+/// `far` as empty macros. tests/unit/harness/test_windows_macros.cpp holds this on every host.
+///
+/// `expected`, within an absolute `tolerance`. Every argument is converted explicitly, so a call
+/// site comparing `float`s is not an implicit promotion under -Wdouble-promotion.
+template <typename E, typename T>
+[[nodiscard]] Near within(const E& expected, const T& tolerance) noexcept {
+    return Near{static_cast<double>(expected), static_cast<double>(tolerance), false};
+}
+
+/// `expected`, within `tolerance` times the larger of the two magnitudes.
+template <typename E, typename T>
+[[nodiscard]] Near within_relative(const E& expected, const T& tolerance) noexcept {
+    return Near{static_cast<double>(expected), static_cast<double>(tolerance), true};
+}
+
+template <typename V>
+[[nodiscard]] bool operator==(const V& value, const Near& bound) noexcept {
+    return bound.admits(static_cast<double>(value));
+}
+
 }  // namespace cy::test
+
+namespace doctest {
+
+template <>
+struct StringMaker<::cy::test::Near> {
+    static String convert(const ::cy::test::Near& bound) {
+        return toString(bound.expected) + String(bound.relative ? " +/- (relative) " : " +/- ") +
+               toString(bound.tolerance);
+    }
+};
+
+}  // namespace doctest
 
 // --- Test declaration ---------------------------------------------------------------------------
 
@@ -324,16 +383,23 @@ unsigned long long contended_cases() noexcept;
 #define CY_REQUIRE_EQ(...) DOCTEST_REQUIRE_EQ(__VA_ARGS__)
 #define CY_REQUIRE_NE(...) DOCTEST_REQUIRE_NE(__VA_ARGS__)
 
-/// Floating-point comparison with an explicit tolerance. There is no default tolerance: the value
-/// that is close enough is a property of what is being measured, not of the framework.
+/// Floating-point comparison with an explicit ABSOLUTE tolerance: passes when
+/// `|value - expected| <= tolerance`. There is no default tolerance: the value that is close enough
+/// is a property of what is being measured, not of the framework.
 ///
-/// doctest::Approx holds doubles, so a float expectation or tolerance is widened on the way in. The
-/// cast says so: without it clang's -Wdouble-promotion reports the implicit widening at every
-/// float call site, and the widening is exact.
+/// Until this was written out here the macro expanded to `doctest::Approx(expected)
+/// .epsilon(tolerance)`, which is RELATIVE — it admits `tolerance * (1 + max(|value|, |expected|))`
+/// — so a check on a value of a thousand was a thousand times looser than it read. A comparison
+/// that genuinely wants a fraction of the magnitude says so with CY_CHECK_NEAR_REL.
 #define CY_CHECK_NEAR(value, expected, tolerance) \
-    DOCTEST_CHECK(                                \
-        (value) ==                                \
-        doctest::Approx(static_cast<double>(expected)).epsilon(static_cast<double>(tolerance)))
+    DOCTEST_CHECK((value) == ::cy::test::within(expected, tolerance))
+
+/// Floating-point comparison with a RELATIVE tolerance: passes when
+/// `|value - expected| <= tolerance * max(|value|, |expected|)`. For a quantity whose acceptable
+/// error scales with its size — an accumulated sum, a figure measured in thousands of metres — and
+/// only there; each call site says why its tolerance is a fraction rather than an amount.
+#define CY_CHECK_NEAR_REL(value, expected, tolerance) \
+    DOCTEST_CHECK((value) == ::cy::test::within_relative(expected, tolerance))
 
 /// Record a message in the test's output without asserting anything.
 #define CY_TEST_MESSAGE(...) CY_TEST_COUNTER_BEGIN DOCTEST_MESSAGE(__VA_ARGS__) CY_TEST_COUNTER_END

@@ -76,10 +76,13 @@ CY_TEST_CASE("a colour temperature is a tint, not a second intensity") {
 }
 
 CY_TEST_CASE("exposure is a photographer's, and the sunny 16 rule lands where it should") {
-    // f/16, 1/100 s, ISO 100 is the "sunny 16" exposure for direct daylight, which is EV 15.
+    // f/16, 1/125 s, ISO 100 is the "sunny 16" exposure for direct daylight, which is EV 15:
+    // log2(256 x 125) = 14.97. The shutter is the marked speed nearest 1/ISO; it was 1/100 s here,
+    // which is EV 14.64, and the relative tolerance CY_CHECK_NEAR used to have hid the third of a
+    // stop.
     CameraExposure sunny;
     sunny.aperture = 16.0F;
-    sunny.shutter_seconds = 1.0F / 100.0F;
+    sunny.shutter_seconds = 1.0F / 125.0F;
     sunny.sensitivity = 100.0F;
     CY_CHECK_NEAR(cy::rendering::exposure_value(sunny), 15.0F, 0.05F);
 

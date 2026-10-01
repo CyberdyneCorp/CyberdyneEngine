@@ -3447,3 +3447,13 @@ row = "testing-and-quality"
 requirement = "Test taxonomy"
 evidence = "gate:build-and-test"
 note = "The kinds and their budgets are data in tests/CMakeLists.txt (cy_add_test compiles the per-case budget in and gives CTest the kind's timeout), and `just test-all`, which this gate runs, selects every suite by its label. The requirement's clause that building what a test drives is a fixture rather than part of its budget is held by integration.editor_fixture (tools/ci/editor_fixture.py), which that run includes: every editor-driving entry must require the cy_editor fixture and pass no --build."
+
+# Mapped for fix-check-near-absolute, which made the harness's near-comparison absolute. The other
+# requirements of this row have not been read against the tree yet.
+
+[[coverage]]
+row = "testing-and-quality"
+requirement = "Test infrastructure"
+evidence = "test:unit.harness"
+case = "harness: CY_CHECK_NEAR's tolerance is absolute, and Approx's was not"
+note = "Only the floating-point comparison half of this requirement is answered here: CY_CHECK_NEAR admits |value - expected| <= tolerance whatever the magnitude, and the case shows doctest's Approx epsilon (what the macro used to expand to) accepting 1000.5 against 1000.0 at 0.01 while the harness refuses it. 'CY_CHECK_NEAR_REL scales its tolerance by the larger magnitude' is the relative form. Proven red by restoring the relative expansion (openspec/changes/fix-check-near-absolute/evidence/falsification.txt). The fixtures, mock platform, filesystem mount, network conditions, image comparison and state hashing have not been read against the tree yet."

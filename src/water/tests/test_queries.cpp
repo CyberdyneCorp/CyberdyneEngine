@@ -231,8 +231,9 @@ CY_TEST_CASE("buoyancy lifts against gravity, and only what is submerged") {
     const auto submerged = system.buoyancy(under, cy::Span<const BuoyancySample>(hull, 1), params);
     CY_REQUIRE(submerged.has_value());
     // rho g V, upward: 1000 x 9.80665 x 2 = 19 613 N.
-    // A relative epsilon of 1e-4 against 19 613 N is two newtons; `CY_CHECK_NEAR`'s third argument
-    // is relative, so a tolerance of 1.0F here would accept any number at all.
+    // `CY_CHECK_NEAR`'s tolerance is absolute: 1e-4 N, below one f32 step at 19 613 N, so this
+    // holds the force to the same product computed the same way. (When the macro was relative
+    // this tolerance was two newtons, and 1.0F would have accepted any number at all.)
     CY_CHECK_NEAR(submerged->displacement_force.y, 1000.0F * cy::water::kGravity * 2.0F, 1e-4F);
     CY_CHECK_EQ(submerged->submerged_samples, 1u);
 

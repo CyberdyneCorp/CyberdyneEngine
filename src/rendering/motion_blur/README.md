@@ -129,9 +129,10 @@ run.
   byte-identity held vacuously. `bind_frame_sets` now binds the pass's pipeline first; (d)'s
   open-shutter control is the regression case. `samples/12-beauty`'s resolve had the same order and
   crashed in the validation layer under `--motion-blur`.
-- **`CY_CHECK_NEAR`'s tolerance is a relative epsilon** (`doctest::Approx::epsilon`), not an absolute
+- **`CY_CHECK_NEAR`'s tolerance was a relative epsilon** (`doctest::Approx::epsilon`), not an absolute
   one, so the tolerances this module's first draft passed it (2 to 3) accepted any value. These
-  suites no longer use it for anything but small tolerances; the macro itself is unchanged.
+  suites no longer use it for anything but small tolerances, and the harness has since made the
+  macro absolute (`CY_CHECK_NEAR_REL` is the relative form).
 
 ## Regenerating the shaders
 
