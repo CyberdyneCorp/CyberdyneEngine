@@ -34,7 +34,7 @@ const CyInterface& table() noexcept {
 
 /// Bit-for-bit equality. The determinism claims are about bytes, not values within a tolerance,
 /// so this compares object representations on purpose.
-bool same_bytes(const void* a, const void* b, std::size_t size) noexcept {
+[[maybe_unused]] bool same_bytes(const void* a, const void* b, std::size_t size) noexcept {
     return std::memcmp(a, b, size) == 0;
 }
 

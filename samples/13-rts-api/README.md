@@ -74,7 +74,9 @@ fresh image, and reads the report it prints:
 
 It was proven red by breaking `physics_raycast` (the hit is never written back: selection, order,
 arrival and cue fail) and `audio_play` (every play dropped: the cue and voice checks fail), each
-restored and md5-verified.
+restored and md5-verified. The ABI 1.5 half was proven red by a scheduled body that never runs
+(`most` stays 0); the rest of its mutations are in
+`openspec/changes/add-swift-m12-gaps/evidence/falsification.md`.
 
 ## Known limits
 

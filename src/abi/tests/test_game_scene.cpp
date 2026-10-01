@@ -57,37 +57,37 @@ void record(char what) noexcept {
     }
 }
 
-extern "C" CyInstance probe_create(CyEngine, CyEntity, void*) {
+extern "C" CyInstance tree_probe_create(CyEngine, CyEntity, void*) {
     static int instance = 0;
     return &instance;
 }
-extern "C" void probe_destroy(CyInstance, void*) {}
-extern "C" void probe_enter(CyInstance, void*) {
+extern "C" void tree_probe_destroy(CyInstance, void*) {}
+extern "C" void tree_probe_enter(CyInstance, void*) {
     record('E');
 }
-extern "C" void probe_ready(CyInstance, void*) {
+extern "C" void tree_probe_ready(CyInstance, void*) {
     record('R');
 }
-extern "C" void probe_enable(CyInstance, void*) {
+extern "C" void tree_probe_enable(CyInstance, void*) {
     record('+');
 }
-extern "C" void probe_disable(CyInstance, void*) {
+extern "C" void tree_probe_disable(CyInstance, void*) {
     record('-');
 }
-extern "C" void probe_exit(CyInstance, void*) {
+extern "C" void tree_probe_exit(CyInstance, void*) {
     record('X');
 }
 
 CyBehaviourVTable tree_vtable() noexcept {
     CyBehaviourVTable vtable{};
     vtable.struct_size = sizeof(vtable);
-    vtable.create = &probe_create;
-    vtable.destroy = &probe_destroy;
-    vtable.enter_tree = &probe_enter;
-    vtable.ready = &probe_ready;
-    vtable.enable = &probe_enable;
-    vtable.disable = &probe_disable;
-    vtable.exit_tree = &probe_exit;
+    vtable.create = &tree_probe_create;
+    vtable.destroy = &tree_probe_destroy;
+    vtable.enter_tree = &tree_probe_enter;
+    vtable.ready = &tree_probe_ready;
+    vtable.enable = &tree_probe_enable;
+    vtable.disable = &tree_probe_disable;
+    vtable.exit_tree = &tree_probe_exit;
     return vtable;
 }
 

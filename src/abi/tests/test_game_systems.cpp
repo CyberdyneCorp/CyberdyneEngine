@@ -49,7 +49,7 @@ struct Probe {
 Probe g_probe;
 CyComponentTypeId g_velocity = CY_COMPONENT_TYPE_INVALID;
 
-extern "C" void probe_run(CyEngine engine, CyWorld world, void* user_data) {
+extern "C" void system_probe_run(CyEngine engine, CyWorld world, void* user_data) {
     (void)user_data;
     const CyInterface& iface = table();
     ++g_probe.runs;
@@ -59,7 +59,7 @@ extern "C" void probe_run(CyEngine engine, CyWorld world, void* user_data) {
 }
 
 /// A module-shaped inner loop: one `world_chunks` call, then the column, with no per-entity call.
-extern "C" void accelerate(CyEngine engine, CyWorld world, void* user_data) {
+extern "C" void system_accelerate(CyEngine engine, CyWorld world, void* user_data) {
     (void)engine;
     const float step = *static_cast<const float*>(user_data);
     const CyInterface& iface = table();
@@ -110,7 +110,7 @@ struct Fixture {
 };
 
 CySystemDesc system_desc(const char* name, CyStage stage, const CySystemAccess* access, u32 count,
-                         void (*run)(CyEngine, CyWorld, void*) = &probe_run,
+                         void (*run)(CyEngine, CyWorld, void*) = &system_probe_run,
                          void* user = nullptr) noexcept {
     CySystemDesc desc{};
     desc.struct_size = sizeof(desc);
@@ -261,7 +261,7 @@ CY_TEST_CASE("a script system writes a column it declared through world_chunks")
     static float step = 0.5F;
     const CySystemAccess write{g_velocity, CY_ACCESS_WRITE};
     CySystemDesc desc =
-        system_desc("accelerate", CY_STAGE_SIMULATION, &write, 1, &accelerate, &step);
+        system_desc("system_accelerate", CY_STAGE_SIMULATION, &write, 1, &system_accelerate, &step);
     CY_REQUIRE_EQ(iface.register_system(fixture.engine(), &desc), CY_RESULT_OK);
     CY_REQUIRE(fixture.systems.install(fixture.schedule).has_value());
     CY_REQUIRE(

@@ -149,7 +149,7 @@ Sources/CyberdyneABI/       generated: the C header and its module map
 Sources/CyberdyneCore/      generated: the overlay
 Sources/CyberdyneKit/       hand-written: the ergonomic layer
 Sources/CyberdyneMacros/    hand-written: the macro plugin
-Tests/                      160 cases; CyberdyneCoreTests/Generated/ is generated too
+Tests/                      161 cases; CyberdyneCoreTests/Generated/ is generated too
 fixtures/reload/            two generations of one module, for the reload suite
 tests/                      the C++ side of the reload suite
 tools/                      the module builder and the no-Swift-runtime check
