@@ -71,7 +71,13 @@ private:
     CyResult take(CyEntity target, const f32* xyz) noexcept {
         ++calls;
         entity = target;
-        std::memcpy(vector, xyz, sizeof(vector));
+        // The entry refuses a call with no vector before it reaches a backend; a fake that is
+        // reached with none anyway records zeros rather than reading through a null pointer.
+        if (xyz == nullptr) {
+            std::memset(vector, 0, sizeof(vector));
+        } else {
+            std::memcpy(vector, xyz, sizeof(vector));
+        }
         return CY_RESULT_OK;
     }
 };

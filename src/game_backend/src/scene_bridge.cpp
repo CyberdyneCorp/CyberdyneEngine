@@ -9,6 +9,7 @@
 #include <cy/core/values/name.h>
 #include <cy/scene/tree.h>
 
+#include <algorithm>
 #include <cstring>
 #include <string_view>
 
@@ -32,12 +33,9 @@ ScriptSceneBridge::~ScriptSceneBridge() {
 }
 
 bool ScriptSceneBridge::owns_type(const char* name) const noexcept {
-    for (const TypeBinding* binding : types_) {
-        if (std::strcmp(binding->name, name) == 0) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(types_, [name](const TypeBinding* binding) noexcept {
+        return std::strcmp(binding->name, name) == 0;
+    });
 }
 
 Status ScriptSceneBridge::add_type(const char* name) noexcept {

@@ -34,6 +34,8 @@
 #include <cy/core/memory/array.h>
 #include <cy/ecs/system.h>
 
+#include <atomic>
+
 namespace cy::jobs {
 class JobSystem;
 }  // namespace cy::jobs
@@ -77,7 +79,8 @@ private:
         const char* name = "";
         ecs::Stage stage = ecs::Stage::Simulation;
         ecs::SystemId id = ecs::kInvalidSystem;
-        u64 runs = 0;
+        /// Bumped from whichever worker runs the body; read by `runs()` on the host thread.
+        std::atomic<u64> runs{0};
     };
 
     static void body(const ecs::SystemContext& context) noexcept;

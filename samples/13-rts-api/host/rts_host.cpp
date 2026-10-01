@@ -205,7 +205,7 @@ cy::Status RtsHost::attach_behaviours(const char** detail) noexcept {
     // Attached to level nodes, so the tree's pump drives their tree callbacks and their `@Node`
     // paths resolve against `/Level`.
     const struct {
-        const char* name;
+        const char* name = nullptr;
         cy::scene::Node node;
     } attachments[] = {{"Commander", commander_}, {"Scout", scout_}};
     for (const auto& attachment : attachments) {

@@ -105,7 +105,7 @@ void ScriptSystems::body(const ecs::SystemContext& context) noexcept {
         return;
     }
     // Relaxed: a counter for tests and diagnostics, and two runs of one slot never overlap.
-    std::atomic_ref<u64>(slot->runs).fetch_add(1, std::memory_order_relaxed);
+    slot->runs.fetch_add(1, std::memory_order_relaxed);
     const ecs::World::IterationGuard iterating(*context.world);
     record->run(&host, host.world, record->user_data);
 }
@@ -124,7 +124,7 @@ ecs::SystemId ScriptSystems::id_of(const char* name) const noexcept {
 
 u64 ScriptSystems::runs(const char* name) const noexcept {
     const Slot* slot = name == nullptr ? nullptr : find(name);
-    return slot == nullptr ? 0U : slot->runs;
+    return slot == nullptr ? 0U : slot->runs.load(std::memory_order_relaxed);
 }
 
 }  // namespace cy::abi
