@@ -995,7 +995,7 @@ note = "Grid, angle and scale snapping, modifiers, alignment, large-coordinate a
 row = "editor-viewport-and-gizmos"
 requirement = "View modes and debug visualisation"
 evidence = "exempt:m11e"
-note = "The editor list is checked against engine view-mode names, every mode explains itself and has a unique command, and unavailable modes are named rather than faked. Physics colliders are now engine-drawn physics layers over any mode (rust:cy-editor-viewport::physics_view::tests::the_layers_are_the_engines, test:unit.editor_window_physics_overlay). Lightmap density and GI probes are engine view modes (`LightmapDensity`, drawn by the forward frame; `GiProbes`, named for the probes the lightmap bake captures, which the lighting panel draws and no frame yet does). Several required engine producers remain unavailable, including virtual-geometry, GI, virtual-texture, shadow-page, navigation, audio and streaming explanations. Re-enter when each produces a real frame and causal drill-down."
+note = "The editor list is checked against engine view-mode names, every mode explains itself and has a unique command, and unavailable modes are named rather than faked. Physics colliders are now engine-drawn physics layers over any mode (rust:cy-editor-viewport::physics_view::tests::the_layers_are_the_engines, test:integration.editor_window_physics_overlay). Lightmap density and GI probes are engine view modes (`LightmapDensity`, drawn by the forward frame; `GiProbes`, named for the probes the lightmap bake captures, which the lighting panel draws and no frame yet does). Several required engine producers remain unavailable, including virtual-geometry, GI, virtual-texture, shadow-page, navigation, audio and streaming explanations. Re-enter when each produces a real frame and causal drill-down."
 
 [[coverage]]
 row = "editor-viewport-and-gizmos"
@@ -1025,10 +1025,10 @@ note = "View state and captures round-trip camera, projection, mode, filters, fr
 # one to `physics`. They cannot be mapped until that change is archived, because an entry naming a
 # requirement the specification does not yet contain is stale. On archive, map them to:
 #   editor-viewport-and-gizmos "Physics debug layers are requested from the engine"
-#     test:unit.editor_window_physics_overlay
+#     test:integration.editor_window_physics_overlay
 #     case "only the layers the editor asked for are drawn, and none when it asked for none"
 #   editor-viewport-and-gizmos "The selected joint is drawn by the engine"
-#     test:unit.editor_window_physics_overlay
+#     test:integration.editor_window_physics_overlay
 #     case "a selected hinge is drawn at its anchor with its axis and its limits"
 #   physics "Joints authored in a world"
 #     test:integration.gameplay_joints

@@ -35,9 +35,14 @@ function(cy_editor_window_runtime_declare_tests)
 
     # The physics debug layers and the joint gizmo, rasterised into a frame from the reference
     # solver's own debug output and an authored world. No device, like the gizmo's case above.
+    # INTEGRATION, NOT UNIT: each case builds a reference physics server and rasterises 320x180
+    # frames, which costs 2 to 6 ms of CPU at -O0 against the unit tier's 4 ms Debug budget. It
+    # failed `four-profiles`' Debug row and about one run in ten alone; tests/harness's rule for a
+    # case within a factor of two of its budget is to move it up a tier, as M7 did for the overlay
+    # clipping case.
     cy_add_test(
         NAME editor_window_physics_overlay
-        KIND unit
+        KIND integration
         SOURCES
             "${tests_dir}/test_physics_overlay.cpp"
             "${tests_dir}/../overlay.cpp"
@@ -262,7 +267,8 @@ function(cy_editor_window_runtime_declare_tests)
         endif()
     endif()
 
-    foreach(target cy_test_unit_editor_window_runtime cy_test_unit_editor_window_physics_overlay
+    foreach(target cy_test_unit_editor_window_runtime
+                   cy_test_integration_editor_window_physics_overlay
                    cy_test_integration_editor_window_overlay
                    cy_test_integration_editor_window_one_world
                    cy_test_integration_editor_window_layout_file)
