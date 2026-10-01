@@ -436,7 +436,7 @@ cy::Status check_system_desc(const CySystemDesc& desc, const CyWorld_T* world) n
     if (desc.name == nullptr || desc.name[0] == '\0' || desc.run == nullptr) {
         return cy::fail(cy::ErrorCode::InvalidArgument, "a system needs a name and a run function");
     }
-    if (desc.stage > CY_STAGE_RENDER) {
+    if (desc.stage > static_cast<uint32_t>(CY_STAGE_RENDER)) {
         return cy::fail(cy::ErrorCode::InvalidArgument, "the system names no CyStage");
     }
     if (desc.access_count > cy::jobs::AccessSet::kMaxEntries) {
@@ -452,7 +452,7 @@ cy::Status check_system_desc(const CySystemDesc& desc, const CyWorld_T* world) n
     }
     for (cy::u32 index = 0; index < desc.access_count; ++index) {
         const CySystemAccess& term = desc.access[index];
-        if (term.mode > CY_ACCESS_EXCLUDE) {
+        if (term.mode > static_cast<uint32_t>(CY_ACCESS_EXCLUDE)) {
             return cy::fail(cy::ErrorCode::InvalidArgument, "an access term names no CyAccessMode");
         }
         if (!world->world.components().registered(term.component)) {

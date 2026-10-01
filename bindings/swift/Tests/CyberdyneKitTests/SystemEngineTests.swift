@@ -129,7 +129,7 @@ final class SystemEngineTests: XCTestCase {
                 for (index, chunk) in chunks.prefix(Int(capacity)).enumerated() {
                     out[index] = chunk
                 }
-                return capacity < chunks.count ? CY_RESULT_BUFFER_TOO_SMALL : CY_RESULT_OK
+                return Int(capacity) < chunks.count ? CY_RESULT_BUFFER_TOO_SMALL : CY_RESULT_OK
             }
         }
     }
@@ -147,10 +147,9 @@ final class SystemEngineTests: XCTestCase {
         XCTAssertEqual(World_.desc.stage, SystemStage.simulation.rawValue)
         XCTAssertEqual(World_.desc.struct_size, UInt32(MemoryLayout<CySystemDesc>.size))
         // Reads, then writes, then excludes; each set in name order.
-        let terms = World_.terms.map { ($0.component, $0.mode) }
-        XCTAssertEqual(terms.map(\.0), [2, 1, 3])
+        XCTAssertEqual(World_.terms.map { $0.component }, [2, 1, 3])
         XCTAssertEqual(
-            terms.map(\.1),
+            World_.terms.map { $0.mode },
             [AccessMode.read.rawValue, AccessMode.write.rawValue, AccessMode.exclude.rawValue])
         XCTAssertNotNil(World_.desc.run)
         XCTAssertNotNil(World_.desc.user_data)

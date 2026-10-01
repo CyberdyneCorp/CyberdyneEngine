@@ -59,7 +59,7 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
         // `BehaviourClass`'s empty defaults, so its expansion is what it was before 1.5.
         if !nodes.isEmpty {
             members.append(
-                "public static let nodePaths: [String] = [\(raw: nodes.map(\.path).joined(separator: ", "))]"
+                "public static let nodePaths: [String] = [\(raw: nodes.map { $0.path }.joined(separator: ", "))]"
             )
             members.append(
                 "public func nodeReferences() -> [any NodeReference] { [\(raw: nodes.map { "_\($0.name)" }.joined(separator: ", "))] }"

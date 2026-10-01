@@ -183,20 +183,20 @@ CyResult CharacterAdapter::state(CyEntity entity, CyCharacterState& out) const n
     if (found == nullptr) {
         return abi::report(CY_RESULT_NOT_FOUND, "the entity has no character");
     }
-    const physics::CharacterState& state = found->controller->state();
-    out.ground = static_cast<u32>(state.ground);
-    out.flags = (state.touching_ceiling ? CY_CHARACTER_TOUCHING_CEILING : 0U) |
-                (state.touching_wall ? CY_CHARACTER_TOUCHING_WALL : 0U) |
-                (state.stepped_up ? CY_CHARACTER_STEPPED_UP : 0U);
+    const physics::CharacterState& moved = found->controller->state();
+    out.ground = static_cast<u32>(moved.ground);
+    out.flags = (moved.touching_ceiling ? CY_CHARACTER_TOUCHING_CEILING : 0U) |
+                (moved.touching_wall ? CY_CHARACTER_TOUCHING_WALL : 0U) |
+                (moved.stepped_up ? CY_CHARACTER_STEPPED_UP : 0U);
     out.ground_entity = CY_ENTITY_NULL;
-    if (!state.ground_body.is_null()) {
-        const Expected<physics::UserData, Error> owner = server_->body_user_data(state.ground_body);
+    if (!moved.ground_body.is_null()) {
+        const Expected<physics::UserData, Error> owner = server_->body_user_data(moved.ground_body);
         out.ground_entity = owner ? static_cast<CyEntity>(*owner) : CY_ENTITY_NULL;
     }
-    write3(out.position, state.transform.translation);
-    write3(out.velocity, state.velocity);
-    write3(out.ground_normal, state.ground_normal);
-    write3(out.platform_velocity, state.platform_velocity);
+    write3(out.position, moved.transform.translation);
+    write3(out.velocity, moved.velocity);
+    write3(out.ground_normal, moved.ground_normal);
+    write3(out.platform_velocity, moved.platform_velocity);
     return CY_RESULT_OK;
 }
 

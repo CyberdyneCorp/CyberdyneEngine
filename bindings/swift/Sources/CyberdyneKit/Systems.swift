@@ -243,8 +243,10 @@ public struct EngineChunkSource: ChunkSource {
         }
         let excluded = Set(access.excludes.flatMap { chunks(of: $0)?.map(\.archetype) ?? [] })
         var seen: Set<UInt32> = []
-        for chunk in chunks(of: lead) ?? [] where seen.insert(chunk.archetype).inserted {
-            guard !excluded.contains(chunk.archetype) else { continue }
+        for chunk in chunks(of: lead) ?? [] {
+            guard seen.insert(chunk.archetype).inserted, !excluded.contains(chunk.archetype) else {
+                continue
+            }
             visit(archetype: chunk.archetype, columns: columns, required: required, body)
         }
     }
