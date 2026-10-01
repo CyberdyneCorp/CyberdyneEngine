@@ -2,8 +2,9 @@
 
 ## 1. Harness
 
-- [x] 1.1 `cy::test::Near`, `near` and `near_relative`; `CY_CHECK_NEAR` absolute, `CY_CHECK_NEAR_REL` relative; a failed check prints both sides.
+- [x] 1.1 `cy::test::Near`, `within` and `within_relative` (not `near`, which <windows.h> defines away); `CY_CHECK_NEAR` absolute, `CY_CHECK_NEAR_REL` relative; a failed check prints both sides.
 - [x] 1.2 `unit.harness` regressions: the old expansion accepts 1000.5 against 1000.0 at 0.01 and 0.515 against 0.5 at 0.01, the new one refuses both; the bound is inclusive; NaN is refused and an exact infinity admitted; the relative form scales by the larger magnitude with no `1 +`.
+- [x] 1.3 `unit.harness` compiles `test.h` with `near` and `far` defined as empty macros, as <windows.h> leaves them.
 
 ## 2. Audit
 

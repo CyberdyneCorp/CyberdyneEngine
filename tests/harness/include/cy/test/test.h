@@ -271,22 +271,25 @@ struct Near {
     }
 };
 
+/// NOT `near`: <windows.h>, which doctest's implementation includes on Windows, defines `near` and
+/// `far` as empty macros. tests/unit/harness/test_windows_macros.cpp holds this on every host.
+///
 /// `expected`, within an absolute `tolerance`. Every argument is converted explicitly, so a call
 /// site comparing `float`s is not an implicit promotion under -Wdouble-promotion.
 template <typename E, typename T>
-[[nodiscard]] Near near(const E& expected, const T& tolerance) noexcept {
+[[nodiscard]] Near within(const E& expected, const T& tolerance) noexcept {
     return Near{static_cast<double>(expected), static_cast<double>(tolerance), false};
 }
 
 /// `expected`, within `tolerance` times the larger of the two magnitudes.
 template <typename E, typename T>
-[[nodiscard]] Near near_relative(const E& expected, const T& tolerance) noexcept {
+[[nodiscard]] Near within_relative(const E& expected, const T& tolerance) noexcept {
     return Near{static_cast<double>(expected), static_cast<double>(tolerance), true};
 }
 
 template <typename V>
-[[nodiscard]] bool operator==(const V& value, const Near& near) noexcept {
-    return near.admits(static_cast<double>(value));
+[[nodiscard]] bool operator==(const V& value, const Near& bound) noexcept {
+    return bound.admits(static_cast<double>(value));
 }
 
 }  // namespace cy::test
@@ -295,9 +298,9 @@ namespace doctest {
 
 template <>
 struct StringMaker<::cy::test::Near> {
-    static String convert(const ::cy::test::Near& near) {
-        return toString(near.expected) + String(near.relative ? " +/- (relative) " : " +/- ") +
-               toString(near.tolerance);
+    static String convert(const ::cy::test::Near& bound) {
+        return toString(bound.expected) + String(bound.relative ? " +/- (relative) " : " +/- ") +
+               toString(bound.tolerance);
     }
 };
 
@@ -389,14 +392,14 @@ struct StringMaker<::cy::test::Near> {
 /// — so a check on a value of a thousand was a thousand times looser than it read. A comparison
 /// that genuinely wants a fraction of the magnitude says so with CY_CHECK_NEAR_REL.
 #define CY_CHECK_NEAR(value, expected, tolerance) \
-    DOCTEST_CHECK((value) == ::cy::test::near(expected, tolerance))
+    DOCTEST_CHECK((value) == ::cy::test::within(expected, tolerance))
 
 /// Floating-point comparison with a RELATIVE tolerance: passes when
 /// `|value - expected| <= tolerance * max(|value|, |expected|)`. For a quantity whose acceptable
 /// error scales with its size — an accumulated sum, a figure measured in thousands of metres — and
 /// only there; each call site says why its tolerance is a fraction rather than an amount.
 #define CY_CHECK_NEAR_REL(value, expected, tolerance) \
-    DOCTEST_CHECK((value) == ::cy::test::near_relative(expected, tolerance))
+    DOCTEST_CHECK((value) == ::cy::test::within_relative(expected, tolerance))
 
 /// Record a message in the test's output without asserting anything.
 #define CY_TEST_MESSAGE(...) CY_TEST_COUNTER_BEGIN DOCTEST_MESSAGE(__VA_ARGS__) CY_TEST_COUNTER_END

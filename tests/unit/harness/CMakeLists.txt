@@ -8,4 +8,5 @@ cy_add_test(
     SOURCES
         test_assertions.cpp
         test_budget.cpp
-        test_fixtures.cpp)
+        test_fixtures.cpp
+        test_windows_macros.cpp)
