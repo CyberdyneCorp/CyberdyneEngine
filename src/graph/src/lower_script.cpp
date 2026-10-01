@@ -372,7 +372,8 @@ Expected<RunOutcome, Error> execute_from(const ScriptProgram& program, ScriptSta
                                          ScriptHost& host, BlockId start,
                                          u32 instruction_budget) noexcept {
     if (start >= program.blocks().size()) {
-        return make_unexpected(invalid("this handler begins at a block that is not in its program"));
+        return make_unexpected(
+            invalid("this handler begins at a block that is not in its program"));
     }
     state.set_resume_block(kNoBlock);
     return run_blocks(program, state, host, start, instruction_budget);

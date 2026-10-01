@@ -5016,9 +5016,7 @@ fn add_node(id: u32, node_type: &str, x: u32, y: u32) -> String {
     call_json(
         id,
         "script.node.add",
-        &format!(
-            r#"{{"reference":"{UNIT_GRAPH}","node_type":"{node_type}","x":{x},"y":{y}}}"#
-        ),
+        &format!(r#"{{"reference":"{UNIT_GRAPH}","node_type":"{node_type}","x":{x},"y":{y}}}"#),
     )
 }
 
@@ -5153,8 +5151,7 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
     );
     let node = cy_editor_core::ids::NodeId::from_u128(u128::from_str_radix(&entity, 16).unwrap());
     assert_eq!(
-        cy_editor_services::script_commands::attached_graph(active_world(&editor), node)
-            .as_deref(),
+        cy_editor_services::script_commands::attached_graph(active_world(&editor), node).as_deref(),
         Some(UNIT_GRAPH)
     );
 
@@ -5186,7 +5183,10 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
             &[6.0, 0.0, 8.0]
         )
     );
-    let running = converse(&[INITIALIZE, &tool_call(2, "script.status", &[])], &mut editor);
+    let running = converse(
+        &[INITIALIZE, &tool_call(2, "script.status", &[])],
+        &mut editor,
+    );
     assert_eq!(structured(&running, 1, "playing"), "true");
     assert_eq!(structured(&running, 1, "started"), "1");
     assert_eq!(structured(&running, 1, "instances"), "1");
@@ -5234,7 +5234,10 @@ fn a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes() {
     converse(&[INITIALIZE, undo], &mut editor); // the entity
     converse(&[INITIALIZE, undo], &mut editor); // the last wire
     let one_wire_fewer = std::fs::read_to_string(sandbox.0.join(UNIT_GRAPH)).unwrap();
-    assert!(!one_wire_fewer.contains("link 5 \"then\" -> 6 \"in\""), "{one_wire_fewer}");
+    assert!(
+        !one_wire_fewer.contains("link 5 \"then\" -> 6 \"in\""),
+        "{one_wire_fewer}"
+    );
     // Four wires, three nodes, the property, two nodes, and the creation.
     for _ in 0..11 {
         converse(&[INITIALIZE, undo], &mut editor);

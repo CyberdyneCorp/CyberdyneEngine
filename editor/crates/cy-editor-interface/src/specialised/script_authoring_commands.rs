@@ -190,9 +190,11 @@ fn create_graph() -> Command {
             graph.layout.insert(1, (16.0, 16.0, String::new()));
             let source = graph.encode();
             project.script_graph_save(&reference, &source)?;
-            Ok(Outcome::new(format!("Created {reference}, answering {event}"))
-                .with("node", Value::Int(1))
-                .with("source", Value::Text(source)))
+            Ok(
+                Outcome::new(format!("Created {reference}, answering {event}"))
+                    .with("node", Value::Int(1))
+                    .with("source", Value::Text(source)),
+            )
         },
     )
 }
@@ -232,8 +234,10 @@ fn add_node() -> Command {
                 for (identity, default) in defaults {
                     canvas.set_property_by_identity(node, identity, default)?;
                 }
-                Ok(Outcome::new(format!("Added {node_type}"))
-                    .with("node", Value::Int(i64::try_from(node.ordinal()).unwrap_or(0))))
+                Ok(Outcome::new(format!("Added {node_type}")).with(
+                    "node",
+                    Value::Int(i64::try_from(node.ordinal()).unwrap_or(0)),
+                ))
             })
         },
     )

@@ -813,7 +813,10 @@ impl Editor {
             let document = self.documents.get_mut(document_id).ok_or_else(|| {
                 Problem::new("save a gameplay graph", "the active scene document closed")
             })?;
-            document.begin(format!("Save gameplay graph {reference}"), self.actor.clone());
+            document.begin(
+                format!("Save gameplay graph {reference}"),
+                self.actor.clone(),
+            );
             document.record(cy_editor_documents::operation::Operation::Domain {
                 node: None,
                 kind: format!("{}{reference}", crate::script_graph::DOMAIN_PREFIX),

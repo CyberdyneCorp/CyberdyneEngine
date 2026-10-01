@@ -38,27 +38,25 @@ constexpr ExternalUse kExternalUses[] = {
     return nullptr;
 }
 
-/// The diagnostic's fields, so a report reads as one statement at its call site.
-struct Report {
-    Severity severity = Severity::Error;
-    const char* code = "graph.unspecified";
-    NodeKey node = kInvalidNodeKey;
-    Name pin;
-    const char* message = "";
-    Name detail;
-    NodeKey related = kInvalidNodeKey;
-};
-
-void report(DiagnosticSink& sink, const Report& what) noexcept {
+/// Report one diagnostic. `pin`, `detail` and `related` are optional; every diagnostic names a node
+/// (zero for the graph as a whole) and a stable code.
+void report(DiagnosticSink& sink, Severity severity, const char* code, NodeKey node,
+            const char* message, Name detail = Name{}, NodeKey related = kInvalidNodeKey,
+            Name pin = Name{}) noexcept {
     Diagnostic diagnostic;
-    diagnostic.severity = what.severity;
-    diagnostic.code = what.code;
-    diagnostic.node = what.node;
-    diagnostic.pin = what.pin;
-    diagnostic.message = what.message;
-    diagnostic.detail = what.detail;
-    diagnostic.related_node = what.related;
+    diagnostic.severity = severity;
+    diagnostic.code = code;
+    diagnostic.node = node;
+    diagnostic.pin = pin;
+    diagnostic.message = message;
+    diagnostic.detail = detail;
+    diagnostic.related_node = related;
     sink.report(diagnostic);
+}
+
+void error(DiagnosticSink& sink, const char* code, NodeKey node, const char* message,
+           Name detail = Name{}, NodeKey related = kInvalidNodeKey, Name pin = Name{}) noexcept {
+    report(sink, Severity::Error, code, node, message, detail, related, pin);
 }
 
 [[nodiscard]] Name text_property(const Graph& graph, NodeKey node,
@@ -88,9 +86,8 @@ void report(DiagnosticSink& sink, const Report& what) noexcept {
         any = true;
         const Name event = text_property(graph, node.key, "event");
         if (event.is_empty()) {
-            report(sink, {.code = "script.event.unnamed",
-                          .node = node.key,
-                          .message = "this event node names no event, so nothing can start it"});
+            error(sink, "script.event.unnamed", node.key,
+                  "this event node names no event, so nothing can start it");
             continue;
         }
         const EventHandler* earlier = nullptr;
@@ -98,11 +95,8 @@ void report(DiagnosticSink& sink, const Report& what) noexcept {
             earlier = existing.event == event ? &existing : earlier;
         }
         if (earlier != nullptr) {
-            report(sink, {.code = "script.event.duplicate",
-                          .node = node.key,
-                          .message = "another event node already answers this event",
-                          .detail = event,
-                          .related = earlier->node});
+            error(sink, "script.event.duplicate", node.key,
+                  "another event node already answers this event", event, earlier->node);
             continue;
         }
         if (Status pushed = out.push_back(EventHandler{event, kNoBlock, node.key}); !pushed) {
@@ -110,8 +104,8 @@ void report(DiagnosticSink& sink, const Report& what) noexcept {
         }
     }
     if (!any) {
-        report(sink, {.code = "script.event.none",
-                      .message = "this graph answers no event; add an event node to start it"});
+        error(sink, "script.event.none", kInvalidNodeKey,
+              "this graph answers no event; add an event node to start it");
     }
     return ok();
 }
@@ -120,11 +114,10 @@ void check_node_types(const Graph& graph, const NodeRegistry& registry,
                       DiagnosticSink& sink) noexcept {
     for (const GraphNode& node : graph.nodes()) {
         if (registry.find(node.type) == nullptr) {
-            report(sink, {.code = "script.node.unknown",
-                          .node = node.key,
-                          .message = "this node's type is not a gameplay graph node; the graph "
-                                     "keeps it and cannot compile it",
-                          .detail = node.type});
+            error(sink, "script.node.unknown", node.key,
+                  "this node's type is not a gameplay graph node; the graph keeps it and cannot "
+                  "compile it",
+                  node.type);
         }
     }
 }
@@ -148,25 +141,21 @@ void check_link(const Graph& graph, const NodeRegistry& registry, const Link& li
     const PinDesc* source = pin_of(graph, registry, link.from, link.from_pin, PinDirection::Output);
     const PinDesc* target = pin_of(graph, registry, link.to, link.to_pin, PinDirection::Input);
     if (source == nullptr || target == nullptr) {
-        report(sink, {.code = "script.pin.unknown",
-                      .node = source == nullptr ? link.from : link.to,
-                      .pin = source == nullptr ? link.from_pin : link.to_pin,
-                      .message = "a wire names a pin this node's type does not declare",
-                      .related = source == nullptr ? link.to : link.from});
+        error(sink, "script.pin.unknown", source == nullptr ? link.from : link.to,
+              "a wire names a pin this node's type does not declare", Name{},
+              source == nullptr ? link.to : link.from,
+              source == nullptr ? link.from_pin : link.to_pin);
         return;
     }
     if (source->type == target->type || registry.converts(source->type, target->type)) {
         return;
     }
     char buffer[160] = {};
-    (void)std::snprintf(buffer, sizeof(buffer), "expected %s, received %s",
-                        target->type.c_str(), source->type.c_str());
-    report(sink, {.code = "script.pin.type",
-                  .node = link.to,
-                  .pin = link.to_pin,
-                  .message = "a wire joins pins of different types and no conversion is declared",
-                  .detail = Name::intern(buffer),
-                  .related = link.from});
+    (void)std::snprintf(buffer, sizeof(buffer), "expected %s, received %s", target->type.c_str(),
+                        source->type.c_str());
+    error(sink, "script.pin.type", link.to,
+          "a wire joins pins of different types and no conversion is declared",
+          Name::intern(buffer), link.from, link.to_pin);
 }
 
 /// One node's external: named, declared, of the right kind, and inside the granted capabilities.
@@ -174,10 +163,9 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
                     Span<const ExternalDecl> externals, DiagnosticSink& sink) noexcept {
     const Name name = text_property(graph, node.key, use.property);
     if (name.is_empty()) {
-        report(sink, {.code = "script.external.unnamed",
-                      .node = node.key,
-                      .message = "this node names nothing to call, read, emit or wait for",
-                      .detail = Name::intern(use.property)});
+        error(sink, "script.external.unnamed", node.key,
+              "this node names nothing to call, read, emit or wait for",
+              Name::intern(use.property));
         return;
     }
     const ExternalDecl* declared = find_external(externals, name.text(), use.kind);
@@ -187,20 +175,17 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
             other_kind = other_kind ||
                          find_external(externals, name.text(), static_cast<ExternalKind>(kind));
         }
-        report(sink, {.code = other_kind ? "script.external.kind" : "script.external.unknown",
-                      .node = node.key,
-                      .message = other_kind
-                                     ? "this name is declared, but not as what this node uses it as"
-                                     : "this name is not one the graph's host declares",
-                      .detail = name});
+        error(sink, other_kind ? "script.external.kind" : "script.external.unknown", node.key,
+              other_kind ? "this name is declared, but not as what this node uses it as"
+                         : "this name is not one the graph's host declares",
+              name);
         return;
     }
     if (declared->capability != Capability::None &&
         !has_capability(graph.granted(), declared->capability)) {
-        report(sink, {.code = "script.capability.missing",
-                      .node = node.key,
-                      .message = "this needs a capability the graph was not granted",
-                      .detail = Name::intern(capability_name(declared->capability))});
+        error(sink, "script.capability.missing", node.key,
+              "this needs a capability the graph was not granted",
+              Name::intern(capability_name(declared->capability)));
     }
 }
 
@@ -233,18 +218,16 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
             return pushed;
         }
         for (const Link& link : graph.links()) {
-            const PinDesc* out =
-                link.from == node
-                    ? pin_of(graph, registry, node, link.from_pin, PinDirection::Output)
-                    : nullptr;
-            const PinDesc* in = link.to == node ? pin_of(graph, registry, node, link.to_pin,
-                                                         PinDirection::Input)
-                                                : nullptr;
+            const PinDesc* out = link.from == node ? pin_of(graph, registry, node, link.from_pin,
+                                                            PinDirection::Output)
+                                                   : nullptr;
+            const PinDesc* in =
+                link.to == node ? pin_of(graph, registry, node, link.to_pin, PinDirection::Input)
+                                : nullptr;
             const bool downstream = out != nullptr && out->execution;
             const bool upstream = in != nullptr && !in->execution;
             if (downstream || upstream) {
-                if (Status pushed = pending.push_back(downstream ? link.to : link.from);
-                    !pushed) {
+                if (Status pushed = pending.push_back(downstream ? link.to : link.from); !pushed) {
                     return pushed;
                 }
             }
@@ -265,10 +248,8 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
             node.type.text() == kOnEventType) {
             continue;
         }
-        report(sink, {.severity = Severity::Warning,
-                      .code = "script.node.unreachable",
-                      .node = node.key,
-                      .message = "no event reaches this node, so it compiles to nothing"});
+        report(sink, Severity::Warning, "script.node.unreachable", node.key,
+               "no event reaches this node, so it compiles to nothing");
     }
     return ok();
 }

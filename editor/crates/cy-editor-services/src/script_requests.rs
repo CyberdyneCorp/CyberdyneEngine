@@ -106,7 +106,11 @@ impl ScriptRequests {
     /// # Errors
     ///
     /// When no runtime is attached.
-    pub fn raise(&mut self, runtime: &RuntimeSession, payload: Vec<u8>) -> Result<Option<RequestId>> {
+    pub fn raise(
+        &mut self,
+        runtime: &RuntimeSession,
+        payload: Vec<u8>,
+    ) -> Result<Option<RequestId>> {
         self.enqueue(
             runtime,
             Queued {

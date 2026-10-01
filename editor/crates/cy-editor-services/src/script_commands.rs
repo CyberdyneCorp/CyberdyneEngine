@@ -174,9 +174,11 @@ fn attach() -> Command {
             document.with_transaction("Attach Gameplay Graph", actor, |document| {
                 set_graph(document, entity, &reference)
             })?;
-            Ok(Outcome::new(format!("{entity} runs {reference} during Play"))
-                .with("entity", Value::Text(entity.to_string()))
-                .with("reference", Value::Text(reference)))
+            Ok(
+                Outcome::new(format!("{entity} runs {reference} during Play"))
+                    .with("entity", Value::Text(entity.to_string()))
+                    .with("reference", Value::Text(reference)),
+            )
         },
     )
 }
@@ -234,8 +236,12 @@ fn compile() -> Command {
             let host = host(context)?;
             let (source, _) = source_of(host, &reference)?;
             let request = host.script_compile(&reference, &source)?;
-            Ok(Outcome::new(format!("Sent {reference} to the engine's compiler"))
-                .with("request", Value::Int(i64::try_from(request).unwrap_or(i64::MAX))))
+            Ok(
+                Outcome::new(format!("Sent {reference} to the engine's compiler")).with(
+                    "request",
+                    Value::Int(i64::try_from(request).unwrap_or(i64::MAX)),
+                ),
+            )
         },
     )
 }
@@ -292,8 +298,10 @@ fn raise() -> Command {
                 &values,
             );
             let request = host(context)?.script_raise(payload)?;
-            Ok(Outcome::new(format!("Raised {event} on {entity}"))
-                .with("request", Value::Int(i64::try_from(request).unwrap_or(i64::MAX))))
+            Ok(Outcome::new(format!("Raised {event} on {entity}")).with(
+                "request",
+                Value::Int(i64::try_from(request).unwrap_or(i64::MAX)),
+            ))
         },
     )
 }
@@ -307,8 +315,12 @@ fn refresh() -> Command {
         ),
         |context, _| {
             let request = host(context)?.script_refresh()?;
-            Ok(Outcome::new("Asked the engine for Play's gameplay graphs")
-                .with("request", Value::Int(i64::try_from(request).unwrap_or(i64::MAX))))
+            Ok(
+                Outcome::new("Asked the engine for Play's gameplay graphs").with(
+                    "request",
+                    Value::Int(i64::try_from(request).unwrap_or(i64::MAX)),
+                ),
+            )
         },
     )
 }
@@ -337,7 +349,11 @@ fn status() -> Command {
 /// `script.status`: what the engine last said about `reference` and about Play. Every number here
 /// was decoded from an engine reply.
 #[must_use]
-pub fn status_outcome(requests: &ScriptRequests, reference: &str, current: Option<&str>) -> Outcome {
+pub fn status_outcome(
+    requests: &ScriptRequests,
+    reference: &str,
+    current: Option<&str>,
+) -> Outcome {
     let mut outcome = Outcome::new("Engine gameplay graphs")
         .with("pending", Value::Bool(requests.pending()))
         .with(
@@ -355,7 +371,7 @@ pub fn status_outcome(requests: &ScriptRequests, reference: &str, current: Optio
         outcome = compile_outcome(outcome, report);
         outcome = outcome.with(
             "current",
-            Value::Bool(current.is_some_and(|source| source == compiled_source)),
+            Value::Bool(current.is_some_and(|source| source == compiled_source.as_str())),
         );
     }
     if let Some(started) = requests.started() {
@@ -406,7 +422,10 @@ fn compile_outcome(mut outcome: Outcome, report: &CompileReport) -> Outcome {
 fn play_outcome(mut outcome: Outcome, state: &PlayState) -> Outcome {
     outcome = outcome
         .with("playing", Value::Bool(state.playing))
-        .with("tick", Value::Int(i64::try_from(state.tick).unwrap_or(i64::MAX)))
+        .with(
+            "tick",
+            Value::Int(i64::try_from(state.tick).unwrap_or(i64::MAX)),
+        )
         .with(
             "instances",
             Value::Int(i64::try_from(state.instances.len()).unwrap_or(i64::MAX)),

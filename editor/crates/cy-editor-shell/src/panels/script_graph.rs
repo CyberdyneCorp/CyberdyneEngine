@@ -109,7 +109,9 @@ impl SpecialisedTool for ScriptGraphTool {
 
     /// The canvas edits live beside the shared canvas (`script_authoring_commands`); the rest are
     /// built in, in `cy_editor_services::script_commands`.
-    fn register(registry: &mut cy_editor_commands::Registry) -> cy_editor_core::problem::Result<()> {
+    fn register(
+        registry: &mut cy_editor_commands::Registry,
+    ) -> cy_editor_core::problem::Result<()> {
         cy_editor_interface::specialised::script_authoring_commands::register(registry)
     }
 
@@ -140,69 +142,14 @@ impl SpecialisedTool for ScriptGraphTool {
             );
             return None;
         }
-        let project = &panels.editor.project;
-        if !project.source_exists(&reference) {
-            ui.label(secondary(
-                panels.shell,
-                "There is no graph here yet. A new one answers one event; add its response from \
-                 the palette.",
-            ));
-            if ui.button("Create graph").clicked() {
-                panels.intents.push(Intent::Invoke(
-                    "script.graph.create".into(),
-                    Arguments::new().with("reference", Value::Text(reference)),
-                ));
-            }
-            return None;
-        }
-        let source = match project.read_source(&reference) {
-            Ok(source) => source,
-            Err(problem) => {
-                status(ui, panels.shell, Semantic::Error, &problem.to_string());
-                return None;
-            }
-        };
-        let graph = match ScriptGraph::decode(&source) {
-            Ok(graph) => graph,
-            Err(problem) => {
-                status(ui, panels.shell, Semantic::Error, &problem.to_string());
-                return None;
-            }
-        };
+        let (source, graph) = read_graph(panels, ui, &reference)?;
         let requests = &panels.editor.backend.script;
         let report = requests
             .report(&reference)
             .map(|(compiled, report)| (compiled == &source, report.clone()));
         let connected = panels.editor.runtime.is_connected();
         ask_for_compile(panels, &reference, &source, report.as_ref());
-        let document = panels.editor.documents.get(document_id);
-        let selected = panels
-            .editor
-            .selection
-            .get()
-            .nodes()
-            .next()
-            .and_then(|node| {
-                let document = document?;
-                let name = document.content().node(node)?.name.clone();
-                Some((
-                    node,
-                    name,
-                    cy_editor_services::script_commands::attached_graph(document, node),
-                ))
-            });
-        let names = document.map_or_else(Vec::new, |document| {
-            let content = document.content();
-            content
-                .nodes()
-                .filter_map(|node| {
-                    Some((
-                        cy_editor_services::mirror::engine_identity(node),
-                        content.node(node)?.name.clone(),
-                    ))
-                })
-                .collect()
-        });
+        let (selected, names) = selection_and_names(panels, document_id);
         let requests = &panels.editor.backend.script;
         Some(Target {
             reference,
@@ -250,6 +197,74 @@ impl SpecialisedTool for ScriptGraphTool {
             play_rows(frame, ui, &target);
         });
     }
+}
+
+/// The graph's text and its reading, or the empty state that offers to create it.
+fn read_graph(
+    panels: &mut Panels<'_>,
+    ui: &mut egui::Ui,
+    reference: &str,
+) -> Option<(String, ScriptGraph)> {
+    let project = &panels.editor.project;
+    if !project.source_exists(reference) {
+        ui.label(secondary(
+            panels.shell,
+            "There is no graph here yet. A new one answers one event; add its response from the \
+             palette.",
+        ));
+        if ui.button("Create graph").clicked() {
+            panels.intents.push(Intent::Invoke(
+                "script.graph.create".into(),
+                Arguments::new().with("reference", Value::Text(reference.to_owned())),
+            ));
+        }
+        return None;
+    }
+    let read = project
+        .read_source(reference)
+        .and_then(|source| ScriptGraph::decode(&source).map(|graph| (source, graph)));
+    match read {
+        Ok(read) => Some(read),
+        Err(problem) => {
+            status(ui, panels.shell, Semantic::Error, &problem.to_string());
+            None
+        }
+    }
+}
+
+/// The first selected entity with its name and graph, and every entity's engine identity and name.
+fn selection_and_names(
+    panels: &Panels<'_>,
+    document_id: cy_editor_core::ids::DocumentId,
+) -> (Option<(NodeId, String, Option<String>)>, Vec<(u64, String)>) {
+    let Some(document) = panels.editor.documents.get(document_id) else {
+        return (None, Vec::new());
+    };
+    let content = document.content();
+    let selected = panels
+        .editor
+        .selection
+        .get()
+        .nodes()
+        .next()
+        .and_then(|node| {
+            let name = content.node(node)?.name.clone();
+            Some((
+                node,
+                name,
+                cy_editor_services::script_commands::attached_graph(document, node),
+            ))
+        });
+    let names = content
+        .nodes()
+        .filter_map(|node| {
+            Some((
+                cy_editor_services::mirror::engine_identity(node),
+                content.node(node)?.name.clone(),
+            ))
+        })
+        .collect();
+    (selected, names)
 }
 
 fn reference_row(shell: &Shell, ui: &mut egui::Ui, reference: &mut String) {
@@ -415,19 +430,22 @@ fn side_column(
         &mut frame.inputs.script.filter,
     );
     let entries = graph_canvas::catalogue_palette(canvas, &frame.inputs.script.filter);
-    ui.allocate_ui(egui::vec2(ui.available_width(), ui.available_height() * 0.55), |ui| {
-        if let Some(node_type) = graph_canvas::node_palette(ui, entries, true) {
-            let at = graph_canvas::palette_slot(canvas.nodes().count());
-            invoke(
-                frame,
-                "script.node.add",
-                with_reference(target)
-                    .with("node_type", Value::Text(node_type))
-                    .with("x", Value::Float(at.x))
-                    .with("y", Value::Float(at.y)),
-            );
-        }
-    });
+    ui.allocate_ui(
+        egui::vec2(ui.available_width(), ui.available_height() * 0.55),
+        |ui| {
+            if let Some(node_type) = graph_canvas::node_palette(ui, entries, true) {
+                let at = graph_canvas::palette_slot(canvas.nodes().count());
+                invoke(
+                    frame,
+                    "script.node.add",
+                    with_reference(target)
+                        .with("node_type", Value::Text(node_type))
+                        .with("x", Value::Float(at.x))
+                        .with("y", Value::Float(at.y)),
+                );
+            }
+        },
+    );
     let assets = AssetCatalogueService::new(PathBuf::new());
     let mut edits = Vec::new();
     graph_canvas::graph_properties_with(
@@ -492,7 +510,9 @@ fn side_column(
 fn draw(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, canvas: &mut GraphCanvas, target: &Target) {
     let alerts = node_alerts(target);
     let mut requested = Vec::new();
-    let mut on_connect = |_: &mut GraphCanvas, connection: &GraphConnection| {
+    let mut on_connect = |_: &mut GraphCanvas,
+                          connection: &GraphConnection|
+     -> cy_editor_core::problem::Result<()> {
         requested.push(
             with_reference(target)
                 .with("from", ordinal(connection.from))
@@ -503,7 +523,9 @@ fn draw(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, canvas: &mut GraphCanvas, 
         Ok(())
     };
     let mut moved = None;
-    let mut on_move = |canvas: &mut GraphCanvas, movement: GraphMovement| {
+    let mut on_move = |canvas: &mut GraphCanvas,
+                       movement: GraphMovement|
+     -> cy_editor_core::problem::Result<()> {
         if movement.finished {
             moved = Some((movement.node, movement.at));
             Ok(())
@@ -575,10 +597,13 @@ fn compile_rows(
         };
         let line = format!("{place} — {}: {}", diagnostic.code, diagnostic.describe());
         let response = ui
-            .add(egui::Label::new(egui::RichText::new(format!("{} {line}", role.glyph())).color(
-                crate::theme::role(frame.shell.theme, role),
-            ))
-            .sense(egui::Sense::click()))
+            .add(
+                egui::Label::new(
+                    egui::RichText::new(format!("{} {line}", role.glyph()))
+                        .color(crate::theme::role(frame.shell.theme, role)),
+                )
+                .sense(egui::Sense::click()),
+            )
             .on_hover_text("Select the node this is about");
         if response.clicked()
             && let Ok(key) = NodeKey::new(diagnostic.node)
@@ -639,16 +664,13 @@ fn play_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
             && let Some((entity, _, _)) = raise
         {
             let [x, y, z] = frame.inputs.script.arguments;
-            invoke(
-                frame,
-                "script.event.raise",
-                Arguments::new()
-                    .with("entity", Value::Text(entity.to_string()))
-                    .with("event", Value::Text(frame.inputs.script.event.clone()))
-                    .with("x", Value::Float(x))
-                    .with("y", Value::Float(y))
-                    .with("z", Value::Float(z)),
-            );
+            let arguments = Arguments::new()
+                .with("entity", Value::Text(entity.to_string()))
+                .with("event", Value::Text(frame.inputs.script.event.clone()))
+                .with("x", Value::Float(x))
+                .with("y", Value::Float(y))
+                .with("z", Value::Float(z));
+            invoke(frame, "script.event.raise", arguments);
         }
     });
     let Some(state) = &target.state else {
@@ -665,23 +687,44 @@ fn play_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
             state.instances.len()
         ),
     ));
-    let name_of = |node: u64| {
-        target
-            .names
-            .iter()
-            .find(|(identity, _)| *identity == node)
-            .map_or_else(|| format!("{node:x}"), |(_, name)| name.clone())
-    };
+    instances_table(frame.shell, ui, target, state);
+    for cue in &state.cues {
+        ui.label(secondary(
+            frame.shell,
+            format!(
+                "♪ {} played {} at tick {} ({:.2}, {:.2}, {:.2})",
+                name_of(target, cue.node),
+                cue.cue,
+                cue.tick,
+                cue.position[0],
+                cue.position[1],
+                cue.position[2]
+            ),
+        ));
+    }
+}
+
+/// The authored name of an engine identity, or the identity.
+fn name_of(target: &Target, node: u64) -> String {
+    target
+        .names
+        .iter()
+        .find(|(identity, _)| *identity == node)
+        .map_or_else(|| format!("{node:x}"), |(_, name)| name.clone())
+}
+
+/// One row per graph instance Play is running.
+fn instances_table(shell: &Shell, ui: &mut egui::Ui, target: &Target, state: &PlayState) {
     egui::Grid::new("script-play-instances")
         .striped(true)
         .num_columns(5)
         .show(ui, |ui| {
             for title in ["Entity", "Graph", "Status", "Position", "Runs"] {
-                ui.label(secondary(frame.shell, title));
+                ui.label(secondary(shell, title));
             }
             ui.end_row();
             for instance in &state.instances {
-                ui.label(name_of(instance.node));
+                ui.label(name_of(target, instance.node));
                 ui.label(&instance.graph);
                 ui.label(if instance.waiting.is_empty() {
                     instance.status.to_owned()
@@ -696,18 +739,4 @@ fn play_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
                 ui.end_row();
             }
         });
-    for cue in &state.cues {
-        ui.label(secondary(
-            frame.shell,
-            format!(
-                "♪ {} played {} at tick {} ({:.2}, {:.2}, {:.2})",
-                name_of(cue.node),
-                cue.cue,
-                cue.tick,
-                cue.position[0],
-                cue.position[1],
-                cue.position[2]
-            ),
-        ));
-    }
 }

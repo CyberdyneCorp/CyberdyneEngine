@@ -10,8 +10,8 @@
 // `project/game/CommandedUnit.swift`, with the same target exported. Both are run through the
 // hosted runtime's own glue (`GraphRuntime`, `ScriptRuntime`), and both reach the same audio
 // backend, through the C ABI for Swift and directly for the graph. The case requires the same
-// position on every tick, the arrival on the same tick, and one `unit.arrived` cue each, on the same
-// tick and at the same place.
+// position on every tick, the arrival on the same tick, and one `unit.arrived` cue each, on the
+// same tick and at the same place.
 
 #include <cy/abi/cy_abi.h>
 #include <cy/core/memory/system_allocator.h>
@@ -93,9 +93,8 @@ public:
         return std::string_view(name) == "unit.arrived" ? CY_RESULT_OK : CY_RESULT_NOT_FOUND;
     }
     CyResult play(const CyAudioPlay& request, CyAudioVoice& out_voice) noexcept override {
-        plays.push_back(
-            Played{tick, request.cue, request.position[0], request.position[1],
-                   request.position[2]});
+        plays.push_back(Played{tick, request.cue, request.position[0], request.position[1],
+                               request.position[2]});
         out_voice = plays.size();
         return CY_RESULT_OK;
     }
@@ -224,8 +223,9 @@ Trace run_swift(Stage& stage) {
 
 }  // namespace
 
-CY_TEST_CASE("the editor's unit-command graph moves and sounds as its Swift twin does, tick for "
-             "tick") {
+CY_TEST_CASE(
+    "the editor's unit-command graph moves and sounds as its Swift twin does, tick for "
+    "tick") {
     Stage stage;
     const Trace graph = run_graph(stage);
     const Trace swift = run_swift(stage);

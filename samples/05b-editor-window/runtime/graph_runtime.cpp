@@ -87,8 +87,8 @@ Expected<u32, Error> GraphRuntime::load(const std::string& reference) noexcept {
                              std::istreambuf_iterator<char>()};
     graph::DiagnosticSink sink(*allocator_);
     const std::string stem = std::filesystem::path(reference).stem().string();
-    Expected<u32, Error> loaded = graphs_.load(Name::intern(stem), source,
-                                               game_backend::GraphBackend::Bytecode, sink);
+    Expected<u32, Error> loaded =
+        graphs_.load(Name::intern(stem), source, game_backend::GraphBackend::Bytecode, sink);
     if (!loaded) {
         problem_ = describe(reference, sink, loaded.error().message);
         return loaded;

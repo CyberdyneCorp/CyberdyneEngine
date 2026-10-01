@@ -3,11 +3,11 @@
 // cy/game_backend/graph_behaviours.h — gameplay graphs, run on scene entities through the same
 // engine services a Swift game calls. Issue #29, visual scripting.
 //
-// WHAT IT IS. The host side of an event graph (`cy/graph/event_script.h`): it compiles a `.cyscript`
-// source once per graph, binds every name the program uses ONCE, and then runs one shared program
-// over a dense array of instances — one `ScriptState` per entity, never a machine per entity.
-// `update()` is the one system: it moves every unit that has an order, then resumes every instance
-// whose wait its host has satisfied.
+// WHAT IT IS. The host side of an event graph (`cy/graph/event_script.h`): it compiles a
+// `.cyscript` source once per graph, binds every name the program uses ONCE, and then runs one
+// shared program over a dense array of instances — one `ScriptState` per entity, never a machine
+// per entity. `update()` is the one system: it moves every unit that has an order, then resumes
+// every instance whose wait its host has satisfied.
 //
 // WHAT A GRAPH CAN NAME. `gameplay_graph_externals()` is the whole vocabulary, with its metadata,
 // and the compiler refuses anything else on the node that names it:
@@ -206,7 +206,8 @@ private:
 
     [[nodiscard]] Status bind(LoadedGraph& loaded, const graph::Graph& source,
                               graph::DiagnosticSink& sink) noexcept;
-    [[nodiscard]] const Binding& binding_of(const graph::script::ExternalRef& external) const noexcept;
+    [[nodiscard]] const Binding& binding_of(
+        const graph::script::ExternalRef& external) const noexcept;
 
     [[nodiscard]] Status run(Instance& instance, graph::script::BlockId start) noexcept;
     [[nodiscard]] Vec3 position_of(ecs::Entity entity) const noexcept;

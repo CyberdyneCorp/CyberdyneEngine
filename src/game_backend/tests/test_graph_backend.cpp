@@ -128,7 +128,8 @@ constexpr f32 kDt = 1.0F / 60.0F;
 CY_TEST_CASE("graph behaviours: an ordered unit moves to the target and plays its cue on arrival") {
     Scene scene;
     const ecs::Entity unit = scene.unit("Tank");
-    const u32 graph = scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
+    const u32 graph =
+        scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
     CY_REQUIRE(scene.graphs.attach(graph, unit).has_value());
 
     CY_CHECK_EQ(scene.order(unit, 6.0F, 8.0F), 1U);
@@ -174,7 +175,8 @@ CY_TEST_CASE("graph behaviours: an ordered unit moves to the target and plays it
 CY_TEST_CASE("graph behaviours: an event the graph does not answer starts nothing") {
     Scene scene;
     const ecs::Entity unit = scene.unit("Tank");
-    const u32 graph = scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
+    const u32 graph =
+        scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
     CY_REQUIRE(scene.graphs.attach(graph, unit).has_value());
     const auto started = scene.graphs.raise(unit, Name::intern("unit.selected"), {});
     CY_REQUIRE(started.has_value());
@@ -186,7 +188,8 @@ CY_TEST_CASE("graph behaviours: an event the graph does not answer starts nothin
 CY_TEST_CASE("graph behaviours: a newer order replaces the one the unit is still carrying out") {
     Scene scene;
     const ecs::Entity unit = scene.unit("Tank");
-    const u32 graph = scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
+    const u32 graph =
+        scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
     CY_REQUIRE(scene.graphs.attach(graph, unit).has_value());
     CY_CHECK_EQ(scene.order(unit, 30.0F, 0.0F), 1U);
     for (u32 step = 0; step < 20; ++step) {
@@ -204,7 +207,8 @@ CY_TEST_CASE("graph behaviours: a newer order replaces the one the unit is still
 
 CY_TEST_CASE("graph behaviours: one compiled program serves a hundred units, each with its state") {
     Scene scene;
-    const u32 graph = scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
+    const u32 graph =
+        scene.load(GraphBackend::Bytecode, fixture("script_unit_command_v1.cyscript"));
     std::vector<ecs::Entity> units;
     for (u32 index = 0; index < 100; ++index) {
         units.push_back(scene.unit("Unit"));
@@ -256,8 +260,8 @@ CY_TEST_CASE("graph behaviours: a cue the project lacks is refused on the node t
     const std::string source = replaced(fixture("script_unit_command_v1.cyscript"),
                                         "cue.unit.arrived", "cue.unit.vanished");
     graph::DiagnosticSink sink(allocator());
-    const auto loaded = scene.graphs.load(Name::intern("unit_command"), source,
-                                          GraphBackend::Bytecode, sink);
+    const auto loaded =
+        scene.graphs.load(Name::intern("unit_command"), source, GraphBackend::Bytecode, sink);
     CY_CHECK(!loaded.has_value());
     CY_REQUIRE_EQ(sink.entries().size(), 1U);
     CY_CHECK_EQ(std::string(sink.entries()[0].code), "script.cue.unknown");
@@ -267,11 +271,11 @@ CY_TEST_CASE("graph behaviours: a cue the project lacks is refused on the node t
 
 CY_TEST_CASE("graph behaviours: a function the engine does not declare is an error on its node") {
     Scene scene;
-    const std::string source = replaced(fixture("script_unit_command_v1.cyscript"),
-                                        "unit.move_to", "unit.mvoe_to");
+    const std::string source =
+        replaced(fixture("script_unit_command_v1.cyscript"), "unit.move_to", "unit.mvoe_to");
     graph::DiagnosticSink sink(allocator());
-    const auto loaded = scene.graphs.load(Name::intern("unit_command"), source,
-                                          GraphBackend::Bytecode, sink);
+    const auto loaded =
+        scene.graphs.load(Name::intern("unit_command"), source, GraphBackend::Bytecode, sink);
     CY_CHECK(!loaded.has_value());
     CY_REQUIRE_EQ(sink.errors(), 1U);
     CY_CHECK_EQ(std::string(sink.entries()[0].code), "script.external.unknown");

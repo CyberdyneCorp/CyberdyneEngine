@@ -41,10 +41,7 @@ pub fn catalogue(payload: &[u8]) -> Result<Catalogue> {
 /// The literal type a catalogue property is written at in the graph's text.
 #[must_use]
 pub fn literal_type(property: &super::graph::Property) -> &str {
-    property
-        .semantic
-        .strip_prefix("literal:")
-        .unwrap_or("name")
+    property.semantic.strip_prefix("literal:").unwrap_or("name")
 }
 
 fn key_of(key: u64) -> Result<NodeKey> {
@@ -211,8 +208,7 @@ mod tests {
         let catalogue = catalogue(&engine_fixture("script_catalogue_v1.wire")).unwrap();
         assert!(catalogue.get("script.on_event").is_some());
         assert!(catalogue.get("script.entry").is_none());
-        let source =
-            String::from_utf8(engine_fixture("script_unit_command_v1.cyscript")).unwrap();
+        let source = String::from_utf8(engine_fixture("script_unit_command_v1.cyscript")).unwrap();
         let graph = ScriptGraph::decode(&source).unwrap();
         let canvas = canvas_for(catalogue, &graph).unwrap();
         assert_eq!(canvas.nodes().count(), 6);
@@ -223,8 +219,7 @@ mod tests {
     #[test]
     fn a_node_the_catalogue_lacks_is_kept_with_its_wires() {
         let catalogue = catalogue(&engine_fixture("script_catalogue_v1.wire")).unwrap();
-        let source =
-            String::from_utf8(engine_fixture("script_unit_command_v1.cyscript")).unwrap();
+        let source = String::from_utf8(engine_fixture("script_unit_command_v1.cyscript")).unwrap();
         let mut graph = ScriptGraph::decode(&source).unwrap();
         graph.nodes.get_mut(&6).unwrap().type_name = "plugin.fireworks".into();
         let canvas = canvas_for(catalogue, &graph).unwrap();

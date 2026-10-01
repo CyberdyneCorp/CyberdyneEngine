@@ -68,7 +68,8 @@ enum class ExternalKind : u8 {
 /// Function metadata, as a host declares it. `visual-scripting`'s "Function and node metadata".
 struct ExternalDecl {
     /// The exact name, or — when `family` — a prefix every member begins with (`cue.` declares
-    /// `cue.unit.arrived`). A family is still resolved once, when a program is bound, never per run.
+    /// `cue.unit.arrived`). A family is still resolved once, when a program is bound, never per
+    /// run.
     std::string_view name;
     ExternalKind kind = ExternalKind::Call;
     /// The arguments the host reads, in pin order (`arg0`, `arg1`).
@@ -82,8 +83,7 @@ struct ExternalDecl {
 
 /// The declaration `name` resolves to as `kind`, or null. An exact name wins over a family.
 [[nodiscard]] const ExternalDecl* find_external(Span<const ExternalDecl> table,
-                                                std::string_view name,
-                                                ExternalKind kind) noexcept;
+                                                std::string_view name, ExternalKind kind) noexcept;
 
 /// One event the program answers, and where its handler begins.
 struct EventHandler {
@@ -119,8 +119,8 @@ private:
 ///
 ///   script.event.none          the graph answers no event
 ///   script.event.unnamed       an `on_event` names no event
-///   script.event.duplicate     two `on_event` nodes answer one event (on the second; related: first)
-///   script.node.unknown        a node whose type the registry does not declare
+///   script.event.duplicate     two `on_event` nodes answer one event (on the second; related:
+///   first) script.node.unknown        a node whose type the registry does not declare
 ///   script.pin.unknown         a wire to or from a pin its node's type does not declare
 ///   script.pin.type            a wire between pins of different types with no declared conversion
 ///   script.external.unnamed    a call, query, emission, field or wait that names nothing

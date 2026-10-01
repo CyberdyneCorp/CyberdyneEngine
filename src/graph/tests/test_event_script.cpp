@@ -61,9 +61,8 @@ struct Builder {
         return *this;
     }
     Builder& wire(NodeKey from, std::string_view from_pin, NodeKey to, std::string_view to_pin) {
-        CY_REQUIRE(graph
-                       .connect(from, Name::intern(from_pin), to, Name::intern(to_pin))
-                       .has_value());
+        CY_REQUIRE(
+            graph.connect(from, Name::intern(from_pin), to, Name::intern(to_pin)).has_value());
         return *this;
     }
 
@@ -228,8 +227,8 @@ CY_TEST_CASE("event graph: both back ends make the same host calls and leave the
     RecordingHost native_host;
     script::ScriptState bytecode_state(allocator(), program.program());
     script::ScriptState native_state(allocator(), program.program());
-    auto first = script::execute_from(program.program(), bytecode_state, bytecode_host,
-                                      order->block);
+    auto first =
+        script::execute_from(program.program(), bytecode_state, bytecode_host, order->block);
     auto second = script::execute_native_from(*native, native_state, native_host, order->block);
     CY_REQUIRE(first.has_value());
     CY_REQUIRE(second.has_value());
@@ -247,8 +246,7 @@ CY_TEST_CASE("event graph: both back ends make the same host calls and leave the
     CY_CHECK(!bytecode_host.calls.empty());
     for (usize reg = 0; reg < bytecode_state.registers().size(); ++reg) {
         CY_CHECK_EQ(bytecode_state.registers()[reg].x, native_state.registers()[reg].x);
-        CY_CHECK_EQ(bytecode_state.registers()[reg].integer,
-                    native_state.registers()[reg].integer);
+        CY_CHECK_EQ(bytecode_state.registers()[reg].integer, native_state.registers()[reg].integer);
     }
 }
 
@@ -287,13 +285,15 @@ CY_TEST_CASE("event graph: an undeclared, misused or unnamed external is an erro
 
     Builder misused;
     misused.order().prop(4, "function", "event.x");
-    const Diagnostic* kind = coded(refused(misused), "script.external.kind");
+    const std::vector<Diagnostic> kind_found = refused(misused);
+    const Diagnostic* kind = coded(kind_found, "script.external.kind");
     CY_REQUIRE(kind != nullptr);
     CY_CHECK_EQ(kind->node, 4U);
 
     Builder nothing;
     nothing.order().prop(5, "reason", "");
-    const Diagnostic* nameless = coded(refused(nothing), "script.external.unnamed");
+    const std::vector<Diagnostic> nameless_found = refused(nothing);
+    const Diagnostic* nameless = coded(nameless_found, "script.external.unnamed");
     CY_REQUIRE(nameless != nullptr);
     CY_CHECK_EQ(nameless->node, 5U);
 }
@@ -302,7 +302,8 @@ CY_TEST_CASE("event graph: a call outside the graph's capabilities is an error o
     Builder builder;
     builder.order();
     builder.graph.revoke(Capability::Audio);
-    const Diagnostic* missing = coded(refused(builder), "script.capability.missing");
+    const std::vector<Diagnostic> missing_found = refused(builder);
+    const Diagnostic* missing = coded(missing_found, "script.capability.missing");
     CY_REQUIRE(missing != nullptr);
     CY_CHECK_EQ(missing->node, 6U);
     CY_CHECK_EQ(missing->detail, Name::intern("audio"));
@@ -313,7 +314,8 @@ CY_TEST_CASE("event graph: a wire between different pin types names both ends an
     builder.order();
     // An execution output into a float input: the canvas refuses it, a hand-edited source can not.
     builder.wire(1, "then", 4, "arg1");
-    const Diagnostic* mismatch = coded(refused(builder), "script.pin.type");
+    const std::vector<Diagnostic> mismatch_found = refused(builder);
+    const Diagnostic* mismatch = coded(mismatch_found, "script.pin.type");
     CY_REQUIRE(mismatch != nullptr);
     CY_CHECK_EQ(mismatch->node, 4U);
     CY_CHECK_EQ(mismatch->pin, Name::intern("arg1"));
@@ -325,7 +327,8 @@ CY_TEST_CASE("event graph: a node type the registry lacks is reported, not silen
     Builder builder;
     builder.order();
     builder.node(9, "ai.selector");
-    const Diagnostic* unknown = coded(refused(builder), "script.node.unknown");
+    const std::vector<Diagnostic> unknown_found = refused(builder);
+    const Diagnostic* unknown = coded(unknown_found, "script.node.unknown");
     CY_REQUIRE(unknown != nullptr);
     CY_CHECK_EQ(unknown->node, 9U);
 }

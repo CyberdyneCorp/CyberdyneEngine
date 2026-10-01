@@ -937,7 +937,9 @@ fn gameplay_graph_snapshots() {
     desk.specialised
         .install_script_catalogue(&fixture("script_catalogue_v1.wire"))
         .unwrap();
-    let answer = |desk: &mut Desk, send: &dyn Fn(&mut Editor) -> cy_editor_protocol::RequestId, reply: Vec<u8>| {
+    let answer = |desk: &mut Desk,
+                  send: &dyn Fn(&mut Editor) -> cy_editor_protocol::RequestId,
+                  reply: Vec<u8>| {
         let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
         let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
         desk.editor.runtime =
@@ -974,7 +976,11 @@ fn gameplay_graph_snapshots() {
     };
 
     std::fs::write(project.join(reference), &source).unwrap();
-    answer(&mut desk, &compile(source.clone()), fixture("script_compile_v1.wire"));
+    answer(
+        &mut desk,
+        &compile(source.clone()),
+        fixture("script_compile_v1.wire"),
+    );
     snapshot(
         &mut desk,
         "editor-gameplay-and-utility-graphs",
@@ -995,7 +1001,11 @@ fn gameplay_graph_snapshots() {
     );
 
     std::fs::write(project.join(reference), &source).unwrap();
-    answer(&mut desk, &compile(source.clone()), fixture("script_compile_v1.wire"));
+    answer(
+        &mut desk,
+        &compile(source.clone()),
+        fixture("script_compile_v1.wire"),
+    );
     answer(
         &mut desk,
         &|editor: &mut Editor| {

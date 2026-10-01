@@ -1561,7 +1561,10 @@ fn graph_harness(project: &Project, source: &str, compiled: &str) -> Harness {
     let mut harness = Harness::new();
     harness.editor = Editor::new(Actor::human("designer"))
         .with_project(cy_editor_services::ProjectService::new(&project.0));
-    harness.editor.open_document("worlds/units.cyworld").unwrap();
+    harness
+        .editor
+        .open_document("worlds/units.cyworld")
+        .unwrap();
     harness
         .specialised
         .install_script_catalogue(&engine_audio("script_catalogue_v1.wire"))
@@ -1591,7 +1594,13 @@ fn the_gameplay_graph_panel_offers_the_engines_events_and_shows_what_it_compiled
     let project = Project::new("graph");
     let mut harness = graph_harness(&project, &unit_graph(), "script_compile_v1.wire");
     let evidence = harness.frame(GRAPH, egui::vec2(1100.0, 760.0), Vec::new());
-    for label in ["Gameplay Graph", "＋ On Event", "＋ Call", "＋ Wait", "Undo"] {
+    for label in [
+        "Gameplay Graph",
+        "＋ On Event",
+        "＋ Call",
+        "＋ Wait",
+        "Undo",
+    ] {
         assert!(
             has(&evidence, label),
             "the panel lacks {label:?}: {:?}",

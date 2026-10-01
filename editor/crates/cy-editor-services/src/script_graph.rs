@@ -70,7 +70,10 @@ pub const GAMEPLAY_CAPABILITIES: [&str; 3] = ["read_world", "write_world", "audi
 /// An empty, absolute or escaping path, or another extension.
 pub fn validate_reference(reference: &str) -> Result<()> {
     let path = std::path::Path::new(reference);
-    let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("");
     let fine = !reference.is_empty()
         && path.is_relative()
         && !reference.contains("..")
@@ -275,7 +278,9 @@ impl ScriptNode {
     /// The property named `name`.
     #[must_use]
     pub fn property(&self, name: &str) -> Option<&Property> {
-        self.properties.iter().find(|property| property.name == name)
+        self.properties
+            .iter()
+            .find(|property| property.name == name)
     }
 }
 
@@ -320,7 +325,7 @@ impl ScriptGraph {
         Self {
             name: name.into(),
             version: 1,
-            capabilities: GAMEPLAY_CAPABILITIES.iter().map(|&c| c.to_owned()).collect(),
+            capabilities: GAMEPLAY_CAPABILITIES.map(String::from).to_vec(),
             deterministic: true,
             interface: Vec::new(),
             nodes: BTreeMap::new(),
@@ -337,7 +342,11 @@ impl ScriptGraph {
         let _ = writeln!(out, "graph {} version {}", quoted(&self.name), self.version);
         out.push_str("capability");
         for capability in CAPABILITIES {
-            if self.capabilities.iter().any(|granted| granted == capability) {
+            if self
+                .capabilities
+                .iter()
+                .any(|granted| granted == capability)
+            {
                 out.push(' ');
                 out.push_str(capability);
             }
@@ -496,7 +505,9 @@ impl<'a> Decoder<'a> {
             Some("capability") => {
                 while let Some(capability) = tokens.word() {
                     if !CAPABILITIES.contains(&capability) {
-                        return Err(Self::refuse(format!("no capability is called {capability}")));
+                        return Err(Self::refuse(format!(
+                            "no capability is called {capability}"
+                        )));
                     }
                     graph.capabilities.push(capability.to_owned());
                 }
@@ -608,12 +619,18 @@ fn tuple(text: &str) -> Option<Literal> {
 
 fn link(graph: &mut ScriptGraph, tokens: &mut Tokens<'_>) -> Result<()> {
     let refuse = || Decoder::refuse("a wire is written `link <from> \"pin\" -> <to> \"pin\"`");
-    let from = tokens.word().and_then(|w| w.parse().ok()).ok_or_else(refuse)?;
+    let from = tokens
+        .word()
+        .and_then(|w| w.parse().ok())
+        .ok_or_else(refuse)?;
     let from_pin = tokens.quoted().ok_or_else(refuse)?;
     if tokens.word() != Some("->") {
         return Err(refuse());
     }
-    let to = tokens.word().and_then(|w| w.parse().ok()).ok_or_else(refuse)?;
+    let to = tokens
+        .word()
+        .and_then(|w| w.parse().ok())
+        .ok_or_else(refuse)?;
     let to_pin = tokens.quoted().ok_or_else(refuse)?;
     graph.links.insert(ScriptLink {
         to,
@@ -626,12 +643,21 @@ fn link(graph: &mut ScriptGraph, tokens: &mut Tokens<'_>) -> Result<()> {
 
 fn layout(graph: &mut ScriptGraph, tokens: &mut Tokens<'_>) -> Result<()> {
     let refuse = || Decoder::refuse("a layout entry is written `layout <key> at <x> <y>`");
-    let key: u64 = tokens.word().and_then(|w| w.parse().ok()).ok_or_else(refuse)?;
+    let key: u64 = tokens
+        .word()
+        .and_then(|w| w.parse().ok())
+        .ok_or_else(refuse)?;
     if tokens.word() != Some("at") {
         return Err(refuse());
     }
-    let x: f32 = tokens.word().and_then(|w| w.parse().ok()).ok_or_else(refuse)?;
-    let y: f32 = tokens.word().and_then(|w| w.parse().ok()).ok_or_else(refuse)?;
+    let x: f32 = tokens
+        .word()
+        .and_then(|w| w.parse().ok())
+        .ok_or_else(refuse)?;
+    let y: f32 = tokens
+        .word()
+        .and_then(|w| w.parse().ok())
+        .ok_or_else(refuse)?;
     let rest = tokens.rest();
     let rest = if rest.is_empty() {
         String::new()
@@ -1114,7 +1140,10 @@ mod tests {
         ] {
             assert!(validate_reference(bad).is_err(), "{bad}");
         }
-        assert_eq!(graph_name("game/scripts/unit_command.cyscript"), "unit_command");
+        assert_eq!(
+            graph_name("game/scripts/unit_command.cyscript"),
+            "unit_command"
+        );
     }
 
     #[test]

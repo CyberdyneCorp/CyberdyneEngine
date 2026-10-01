@@ -106,9 +106,9 @@ public:
     [[nodiscard]] Status status() const noexcept { return status_; }
 
 private:
-    Out& keep(Status status) noexcept {
-        if (status_ && !status) {
-            status_ = status;
+    Out& keep(Status result) noexcept {
+        if (status_ && !result) {
+            status_ = result;
         }
         return *this;
     }

@@ -172,8 +172,8 @@ Array<u8> compile_request(std::string_view source) {
     Array<u8> request(allocator());
     const u32 header[2] = {1, static_cast<u32>(source.size())};
     CY_REQUIRE(request.append({reinterpret_cast<const u8*>(header), sizeof(header)}).has_value());
-    CY_REQUIRE(request.append({reinterpret_cast<const u8*>(source.data()), source.size()})
-                   .has_value());
+    CY_REQUIRE(
+        request.append({reinterpret_cast<const u8*>(source.data()), source.size()}).has_value());
     return request;
 }
 
@@ -344,8 +344,8 @@ CY_TEST_CASE("editor script: the editor's graph is the engine's canonical text a
 }
 
 CY_TEST_CASE("editor script: a misspelled function is refused on the node that names it") {
-    const std::string source = replaced(read_file("script_unit_command_v1.cyscript"),
-                                        "unit.move_to", "unit.mvoe_to");
+    const std::string source =
+        replaced(read_file("script_unit_command_v1.cyscript"), "unit.move_to", "unit.mvoe_to");
     Array<u8> reply(allocator());
     const auto refusal = ask(nullptr, "script.compile", compile_request(source), reply);
     CY_REQUIRE(!refusal.refused());
@@ -380,17 +380,17 @@ CY_TEST_CASE("editor script: the editor's raise reaches Play's graph and the sta
     Play play;
     const std::string raise = read_file("script_raise_request_v1.wire");
     Array<u8> request(allocator());
-    CY_REQUIRE(request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()})
-                   .has_value());
+    CY_REQUIRE(
+        request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()}).has_value());
 
     Array<u8> reply(allocator());
     auto refusal = ask(&play, "script.event.raise", request, reply);
     CY_REQUIRE(!refusal.refused());
     Reply started(text_of(reply));
     CY_CHECK_EQ(started.u32v(), 1U);
-    CY_CHECK_EQ(started.u32v(), 1U);   // format
-    CY_CHECK_EQ(started.u8v(), 1U);    // playing
-    CY_CHECK_EQ(started.u64v(), 0U);   // tick
+    CY_CHECK_EQ(started.u32v(), 1U);    // format
+    CY_CHECK_EQ(started.u8v(), 1U);     // playing
+    CY_CHECK_EQ(started.u64v(), 0U);    // tick
     CY_REQUIRE_EQ(started.u32v(), 1U);  // instances
     CY_CHECK_EQ(started.u64v(), kUnitIdentity);
     CY_CHECK_EQ(started.text(), "unit_command");
@@ -430,8 +430,8 @@ CY_TEST_CASE("editor script: without Play the Play operations are refused by nam
     play.playing = false;
     const std::string raise = read_file("script_raise_request_v1.wire");
     Array<u8> request(allocator());
-    CY_REQUIRE(request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()})
-                   .has_value());
+    CY_REQUIRE(
+        request.append({reinterpret_cast<const u8*>(raise.data()), raise.size()}).has_value());
     Array<u8> reply(allocator());
     CY_CHECK_EQ(std::string(ask(&play, "script.event.raise", request, reply).code),
                 "script.play.unavailable");
@@ -452,8 +452,8 @@ CY_TEST_CASE("editor script: the material service routes script.* and lists it")
     CyServiceSession session = nullptr;
     CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
     const Array<u8> request = compile_request(read_file("script_unit_command_v1.cyscript"));
-    const CyServiceRequest compile{sizeof(CyServiceRequest), 1, 1, "script.compile",
-                                   request.data(), request.size()};
+    const CyServiceRequest compile{
+        sizeof(CyServiceRequest), 1, 1, "script.compile", request.data(), request.size()};
     CY_REQUIRE_EQ(api->service_submit(&host, session, &compile), CY_RESULT_OK);
     CyServiceEvent event{};
     bool present = false;

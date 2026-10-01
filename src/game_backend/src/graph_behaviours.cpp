@@ -56,10 +56,10 @@ struct Named {
 }
 
 /// The node that names `name` as its `property`, for a diagnostic about a binding.
-[[nodiscard]] graph::NodeKey naming_node(const graph::Graph& graph, Name name,
+[[nodiscard]] graph::NodeKey naming_node(const graph::Graph& source, Name name,
                                          std::string_view property) noexcept {
-    for (const graph::GraphNode& node : graph.nodes()) {
-        const graph::Literal* literal = graph.property(node.key, Name::intern(property));
+    for (const graph::GraphNode& node : source.nodes()) {
+        const graph::Literal* literal = source.property(node.key, Name::intern(property));
         if (literal != nullptr && literal->text == name) {
             return node.key;
         }
@@ -67,8 +67,8 @@ struct Named {
     return graph::kInvalidNodeKey;
 }
 
-void report(graph::DiagnosticSink& sink, const char* code, graph::NodeKey node,
-            const char* message, Name detail) noexcept {
+void report(graph::DiagnosticSink& sink, const char* code, graph::NodeKey node, const char* message,
+            Name detail) noexcept {
     graph::Diagnostic diagnostic;
     diagnostic.code = code;
     diagnostic.node = node;
@@ -153,8 +153,7 @@ void GraphBehaviours::stop() noexcept {
     tick_ = 0;
 }
 
-Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source,
-                                           GraphBackend backend,
+Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source, GraphBackend backend,
                                            graph::DiagnosticSink& sink) noexcept {
     if (!registered_) {
         if (Status registered = register_gameplay_graph_nodes(registry_); !registered) {
@@ -165,12 +164,11 @@ Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source,
     Expected<graph::Graph, Error> parsed =
         graph::parse_graph(source, &registry_, *allocator_, sink);
     if (!parsed) {
-        report(sink, "script.source.invalid", graph::kInvalidNodeKey, parsed.error().message,
-               name);
+        report(sink, "script.source.invalid", graph::kInvalidNodeKey, parsed.error().message, name);
         return make_unexpected(parsed.error());
     }
-    Expected<script::EventProgram, Error> compiled = script::compile_event_graph(
-        *parsed, registry_, gameplay_graph_externals(), sink);
+    Expected<script::EventProgram, Error> compiled =
+        script::compile_event_graph(*parsed, registry_, gameplay_graph_externals(), sink);
     if (!compiled) {
         return make_unexpected(compiled.error());
     }
@@ -179,17 +177,17 @@ Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source,
     if (!loaded) {
         return make_unexpected(loaded.error());
     }
-    LoadedGraph& graph = **loaded;
-    graph.backend = backend;
+    LoadedGraph& compiled_graph = **loaded;
+    compiled_graph.backend = backend;
     if (backend == GraphBackend::Native) {
         Expected<script::NativeProgram, Error> native =
-            script::compile_native(graph.program.program(), *allocator_);
+            script::compile_native(compiled_graph.program.program(), *allocator_);
         if (!native) {
             return make_unexpected(native.error());
         }
-        graph.native = std::move(*native);
+        compiled_graph.native = std::move(*native);
     }
-    if (Status bound = bind(graph, *parsed, sink); !bound) {
+    if (Status bound = bind(compiled_graph, *parsed, sink); !bound) {
         return make_unexpected(bound.error());
     }
     const auto index = static_cast<u32>(graphs_.size());
@@ -204,10 +202,14 @@ Status GraphBehaviours::bind(LoadedGraph& loaded, const graph::Graph& source,
     // EVERY NAME IS RESOLVED HERE, ONCE. At run time an external is an index into `externals` and
     // a cue is the adapter's handle: `visual-scripting` forbids a name lookup in execution.
     constexpr Named kNamed[] = {
-        {"unit.move_to", static_cast<u8>(Verb::MoveTo)}, {"unit.set_speed", static_cast<u8>(Verb::SetSpeed)},
-        {"unit.stop", static_cast<u8>(Verb::Stop)},      {"event.x", static_cast<u8>(Verb::EventX)},
-        {"event.y", static_cast<u8>(Verb::EventY)},      {"event.z", static_cast<u8>(Verb::EventZ)},
-        {"unit.x", static_cast<u8>(Verb::UnitX)},        {"unit.z", static_cast<u8>(Verb::UnitZ)},
+        {"unit.move_to", static_cast<u8>(Verb::MoveTo)},
+        {"unit.set_speed", static_cast<u8>(Verb::SetSpeed)},
+        {"unit.stop", static_cast<u8>(Verb::Stop)},
+        {"event.x", static_cast<u8>(Verb::EventX)},
+        {"event.y", static_cast<u8>(Verb::EventY)},
+        {"event.z", static_cast<u8>(Verb::EventZ)},
+        {"unit.x", static_cast<u8>(Verb::UnitX)},
+        {"unit.z", static_cast<u8>(Verb::UnitZ)},
     };
     bool refused = false;
     for (const script::ExternalRef& external : loaded.program.program().externals()) {
@@ -306,7 +308,8 @@ Status GraphBehaviours::update(f32 dt) noexcept {
     // a satisfied wait costs a resumed program.
     for (Instance& instance : instances_) {
         const LoadedGraph& loaded = *graphs_[instance.graph];
-        const script::SuspendPoint* point = script::waiting_at(loaded.program.program(), instance.state);
+        const script::SuspendPoint* point =
+            script::waiting_at(loaded.program.program(), instance.state);
         if (point == nullptr) {
             continue;
         }
@@ -325,17 +328,17 @@ Status GraphBehaviours::update(f32 dt) noexcept {
 Status GraphBehaviours::run(Instance& instance, script::BlockId start) noexcept {
     const LoadedGraph& loaded = *graphs_[instance.graph];
     const bool native = loaded.backend == GraphBackend::Native;
+    script::ScriptHost& host = *this;
+    const auto run_program = [&]() noexcept -> Expected<script::RunOutcome, Error> {
+        if (start == script::kNoBlock) {
+            return native ? script::execute_native(loaded.native, instance.state, host)
+                          : script::execute(loaded.program.program(), instance.state, host);
+        }
+        return native ? script::execute_native_from(loaded.native, instance.state, host, start)
+                      : script::execute_from(loaded.program.program(), instance.state, host, start);
+    };
     current_ = &instance;
-    Expected<script::RunOutcome, Error> outcome = script::RunOutcome::Finished;
-    if (start == script::kNoBlock) {
-        outcome = native ? script::execute_native(loaded.native, instance.state, *this)
-                         : script::execute(loaded.program.program(), instance.state, *this);
-    } else {
-        outcome = native
-                      ? script::execute_native_from(loaded.native, instance.state, *this, start)
-                      : script::execute_from(loaded.program.program(), instance.state, *this,
-                                             start);
-    }
+    const Expected<script::RunOutcome, Error> outcome = run_program();
     current_ = nullptr;
     // A HANDLER THAT FAILS FAILS ITSELF, NOT THE SESSION: the instance says why and answers the
     // next event, as a Swift behaviour that throws is reported and keeps its entity.
@@ -408,7 +411,8 @@ const script::EventProgram* GraphBehaviours::program(u32 graph) const noexcept {
     return graph < graphs_.size() ? &graphs_[graph]->program : nullptr;
 }
 
-// --- The host calls a running handler makes -------------------------------------------------------
+// --- The host calls a running handler makes
+// -------------------------------------------------------
 
 const GraphBehaviours::Binding& GraphBehaviours::binding_of(
     const script::ExternalRef& external) const noexcept {
