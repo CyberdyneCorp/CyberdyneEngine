@@ -262,6 +262,37 @@ inline constexpr u32 kChannelsPerJoint = 8;
                               Span<const f32> parameters, PoseSampler& sampler, Span<f32> out,
                               EvaluationReport& report) noexcept;
 
+// --- Loading a cooked program -----------------------------------------------------------------
+
+/// Everything a compiled program holds, as a loader reads it back out of a cooked asset. Spans,
+/// because the loader owns the decoded arrays only until `assemble_pose_program` copies them.
+struct PoseProgramParts {
+    Name name;
+    Span<const PoseInstruction> code;
+    Span<const PoseState> states;
+    Span<const Transition> transitions;
+    Span<const ClipRef> clips;
+    Span<const JointMask> masks;
+    Span<const Name> parameters;
+    Span<const SyncGroup> sync_groups;
+    Span<const SyncMarker> markers;
+    u16 entry_state = 0;
+    u32 joint_count = 0;
+    u64 digest = 0;
+};
+
+/// Rebuild a program a cook compiled. RUNTIME, AND NOT A COMPILER: it lowers nothing and analyses
+/// nothing. It checks that every index the parts hold is in range — every operand, clip, mask,
+/// parameter, state, transition and the entry state — so a corrupt asset is refused rather than
+/// read out of bounds a frame later, and then copies them, trusting the dependency masks and the
+/// digest the compiler wrote. The debug map, which names authored nodes, is not part of a cooked
+/// program and stays empty.
+///
+/// Defined in pose_program.cpp beside `advance`, with nothing of the compiler: a runtime that loads
+/// programs links no `compile_pose`.
+[[nodiscard]] Expected<PoseProgram, Error> assemble_pose_program(
+    Allocator& allocator, const PoseProgramParts& parts) noexcept;
+
 // --- Compilation ------------------------------------------------------------------------------
 
 /// Compile an authored animation graph. Cook time; nothing here runs in a frame.

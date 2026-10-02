@@ -4,27 +4,31 @@
 // WHAT THIS PROGRAM CLAIMS, AND WHAT IT DOES NOT
 // ================================================================================================
 //
-// IT CLAIMS: four FBX files go through `tools/import/`'s steps 7 and 8 into a `cy::animation`
-// skeleton and four clips; three of those clips are RETARGETED onto the fourth's rig by
-// `retarget_build.h`'s measured correspondence; a four-state machine compiled by
-// `cy::graph::pose::compile_locomotion` drives idle to walk to run to a death; every frame's pose
-// is published into a `cy::animation::PoseWorld`; and the bone matrices that come out of it move
-// vertices in a COMPUTE PASS on a real device, whose output buffer a rasteriser then draws. Nothing
-// on the CPU writes the vertices that appear in the picture.
+// IT CLAIMS: four FBX files go through `tools/import/`'s steps 7 and 8; the character's skeleton,
+// its four clips — three of them RETARGETED onto the fourth file's rig by `retarget_build.h`'s
+// measured correspondence — and its compiled four-state locomotion program are COOKED into the
+// records a game ships (`cook_locomotion_set`, the `animation` build-graph producer's work); those
+// records are LOADED BY ASSET ID through the asset system and `AnimationLibrary`; one entity
+// carries an `Animator`, and the engine's `AnimationSystem` advances it in the fixed step and
+// evaluates it in `Stage::Animation` of a real `runtime::Simulation`, publishing into the system's
+// `PoseWorld`; and the bone matrices that come out of it move vertices in a COMPUTE PASS on a real
+// device, whose output buffer a rasteriser then draws. Nothing on the CPU writes the vertices that
+// appear in the picture, and nothing in this file advances, evaluates or publishes a pose: the
+// game's only per-frame animation code is the one request it raises.
 //
-// IT DOES NOT CLAIM that the skin weights are the artist's — they are derived, and `character.h`
-// says so at the top and in the report this program prints — nor that a skinned mesh goes through
-// `cy::rendering::pipeline`'s forward frame, which `stage.h` explains it cannot yet.
+// IT DOES NOT CLAIM that the skin weights are the artist's on an old cache entry — `character.h`
+// says which were used, and the report this program prints names it — nor that a skinned mesh goes
+// through `cy::rendering::pipeline`'s forward frame, which `stage.h` explains it cannot yet.
 //
 // ================================================================================================
 // THE TIMESTEP IS FIXED, AND THAT IS A REPRODUCIBILITY CLAIM
 // ================================================================================================
 //
-// Every frame advances the animation by exactly 1/`--fps` seconds and the camera by the same, so
-// two runs of this program produce the same pose at the same frame index. There is no wall clock
-// anywhere in the loop. That is what makes the video a thing a reviewer can regenerate and compare
-// rather than a recording of one afternoon — and it is the same argument
-// `determinism-and-replay` makes about a simulation tick.
+// The simulation runs at `--fps` ticks a second, one tick a frame, and the camera moves by the same
+// step, so two runs of this program produce the same pose at the same frame index. There is no
+// wall clock anywhere in the loop: the animation is a function of the simulation's tick count,
+// which is the rule `AnimationSystem` is written to. That is what makes the video a thing a
+// reviewer can regenerate and compare rather than a recording of one afternoon.
 //
 // ================================================================================================
 // THE STATE SCHEDULE
@@ -40,15 +44,20 @@
 //   7.0  walk     decelerating, through the edge that exists
 //   8.0  die      outranks locomotion and cannot be outranked; the death has no outgoing edge
 //
-// The take runs to thirteen seconds because the death clip is 4.6 s long and CLAMPS on its last
+// The take runs to thirteen seconds because the death clip is 4.6 s long and HOLDS on its last
 // frame rather than looping. Cutting at ten would show a character mid-fall and leave a viewer to
 // guess what happened to it.
 
-#include <cy/animation/evaluate.h>
-#include <cy/animation/lod.h>
-#include <cy/animation/pose_world.h>
+#include <cy/animation/animation_system.h>
+#include <cy/animation/library.h>
+#include <cy/core/assets/asset_system.h>
+#include <cy/core/assets/package.h>
+#include <cy/core/assets/vfs.h>
+#include <cy/core/jobs/async.h>
+#include <cy/core/jobs/job_system.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/graph/locomotion.h>
+#include <cy/runtime/simulation.h>
 
 #include "character.h"
 #include "stage.h"
@@ -57,6 +66,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 
 namespace {
@@ -213,8 +223,7 @@ void print_sources(const Character& character) noexcept {
     std::printf("\n  source files\n");
     for (u32 index = 0; index < kMotionCount; ++index) {
         const SourceReport& report = character.sources[index];
-        std::printf("    %-5s %s\n", motion_name(static_cast<Motion>(index)).c_str(),
-                    report.file.c_str());
+        std::printf("    %-5s %s\n", motion_name(static_cast<Motion>(index)), report.file.c_str());
         std::printf("          imported  mesh=%u material=%u skeleton=%u animation=%u warning=%u\n",
                     report.meshes, report.materials, report.skeletons, report.animations,
                     report.warnings);
@@ -263,128 +272,6 @@ void print_skin(const SkinReport& skin) noexcept {
                 static_cast<f64>(skin.rig_max.y), static_cast<f64>(skin.rig_max.z));
 }
 
-/// Build the spec the four imported clips describe. The durations are the clips' own, because
-/// `ClipRef::duration` comes from the GRAPH and `LocomotionDriver::clip_time` is what reads it —
-/// a spec that guessed would wrap the wrong clip at the wrong moment.
-[[nodiscard]] pose::LocomotionSpec spec_for(const Character& character) noexcept {
-    pose::LocomotionSpec spec;
-    spec.name = Name::intern("locomotion");
-    const auto describe = [&](Motion motion) noexcept {
-        pose::LocomotionClip clip;
-        clip.clip = motion_name(motion);
-        clip.duration = character.clips[static_cast<u32>(motion)].duration();
-        clip.looping = motion != Motion::Die;
-        return clip;
-    };
-    spec.idle = describe(Motion::Idle);
-    spec.walk = describe(Motion::Walk);
-    spec.run = describe(Motion::Run);
-    spec.die = describe(Motion::Die);
-    return spec;
-}
-
-/// The clip table `AnimationRig::bind` takes, parallel to `program.clips()` and matched BY NAME.
-///
-/// The matching is the caller's — `evaluate.h` says so — and it is the one place a program and the
-/// content it names are joined. A null entry is legal and yields the reference pose, which is
-/// exactly the silent failure this artefact must not ship: a missing clip would make the character
-/// stand in its bind pose with nothing reporting it, so an unmatched name is an error here.
-[[nodiscard]] Status build_clip_table(const pose::PoseProgram& program, Character& character,
-                                      Array<const animation::Clip*>& out) noexcept {
-    if (Status sized = out.resize(program.clips().size()); !sized) {
-        return sized;
-    }
-    for (usize index = 0; index < program.clips().size(); ++index) {
-        const Name wanted = program.clips()[index].name;
-        out[index] = nullptr;
-        for (u32 motion = 0; motion < kMotionCount; ++motion) {
-            if (character.clips[motion].name() == wanted) {
-                out[index] = &character.clips[motion];
-                break;
-            }
-        }
-        if (out[index] == nullptr) {
-            return fail(ErrorCode::NotFound,
-                        "the compiled program names a clip the import did not produce");
-        }
-    }
-    return ok();
-}
-
-/// The clip a state samples, or null when its root is not a clip instruction.
-///
-/// `LocomotionDriver::write_clock` walks exactly this path privately; it is written out here
-/// because this program owns its own clocks (see `StateClocks` below) and therefore has to reach
-/// the same `ClipRef` the driver would have.
-[[nodiscard]] const pose::ClipRef* clip_of_state(const pose::PoseProgram& program,
-                                                 u16 state) noexcept {
-    if (state >= program.states().size()) {
-        return nullptr;
-    }
-    const pose::PoseValue root = program.states()[state].root;
-    if (root == pose::kNoPoseValue || root >= program.code().size()) {
-        return nullptr;
-    }
-    const pose::PoseInstruction& instruction = program.code()[root];
-    if (instruction.op != pose::PoseOp::SampleClip || instruction.clip >= program.clips().size()) {
-        return nullptr;
-    }
-    return &program.clips()[instruction.clip];
-}
-
-/// One clock per state, advanced by this program and never reset by the state machine.
-///
-/// WHY THIS EXISTS, AND IT IS A DEFECT WORKED AROUND RATHER THAN A PREFERENCE.
-/// `LocomotionDriver::follow` derives a state's clip time from `PoseInstance::state_time`, and
-/// `graph::pose::advance` sets `state_time = 0` at the instant a blend COMPLETES
-/// (src/graph/src/lower_pose.cpp). During the blend the incoming state is the target and its clock
-/// is driven from `blend_elapsed`, so it has already reached the blend's duration by the time the
-/// blend ends — and then restarts at zero. The incoming clip therefore jumps backwards by one blend
-/// duration on the frame it becomes the active state: 0.15 s of a 0.633 s run cycle, which this
-/// program's own `worst joint step between two frames` measured at 802 mm in one thirtieth of a
-/// second. `animation::advance`'s `reset_state_times` does the same thing by a different route.
-///
-/// A clock a state machine resets is a clock the HOST cannot keep continuous, and `locomotion.h` is
-/// explicit that the clock is the host's: "nothing in the program advances it, because a clock the
-/// program owned would be a clock every character shared". So this program advances its own, zeroes
-/// a state's clock when that state becomes a blend TARGET — which is the moment it starts being
-/// sampled — and leaves it alone when the blend completes. The fix belongs in src/graph/, which
-/// this artefact does not own, and is reported as a finding.
-class StateClocks {
-public:
-    void tick(const pose::PoseProgram& program, const pose::PoseInstance& machine,
-              f32 dt) noexcept {
-        if (machine.target != previous_target_ && machine.target < pose::kLocomotionStateCount) {
-            elapsed_[machine.target] = 0.0F;
-        }
-        previous_target_ = machine.target;
-        if (machine.state < pose::kLocomotionStateCount) {
-            elapsed_[machine.state] += dt;
-        }
-        if (machine.target < pose::kLocomotionStateCount && machine.target != machine.state) {
-            elapsed_[machine.target] += dt;
-        }
-        (void)program;
-    }
-
-    /// Write every state's clip time into `driver`, through `clip_time` so that the compiled
-    /// `ClipRef::looping` is what decides whether a clock wraps or clamps.
-    void publish(const pose::PoseProgram& program, pose::LocomotionDriver& driver) const noexcept {
-        for (u32 index = 0; index < pose::kLocomotionStateCount; ++index) {
-            const pose::ClipRef* reference = clip_of_state(program, static_cast<u16>(index));
-            if (reference == nullptr) {
-                continue;
-            }
-            driver.set_clock(static_cast<pose::LocomotionState>(index),
-                             pose::clip_time(*reference, elapsed_[index]));
-        }
-    }
-
-private:
-    f32 elapsed_[pose::kLocomotionStateCount] = {};
-    u16 previous_target_ = 0xFFFFU;
-};
-
 /// Which state the schedule asks for at `seconds`.
 [[nodiscard]] pose::LocomotionState requested_at(f32 seconds) noexcept {
     pose::LocomotionState wanted = kSchedule[0].state;
@@ -395,70 +282,6 @@ private:
     }
     return wanted;
 }
-
-/// Everything one character needs to be evaluated and published, bound once.
-///
-/// A struct rather than a dozen locals in `run()`, because binding a rig is nine calls that each
-/// fail differently and the loop that follows is the part worth reading.
-struct Take {
-    explicit Take(Allocator& memory) noexcept
-        : table(memory),
-          rig(memory),
-          instance(memory),
-          scratch(memory),
-          driver(memory),
-          world(memory),
-          local(memory),
-          model(memory),
-          matrices(memory),
-          previous_model(memory) {}
-
-    Take(const Take&) = delete;
-    Take& operator=(const Take&) = delete;
-
-    [[nodiscard]] Status prepare(const pose::PoseProgram& program, Character& character) noexcept {
-        if (Status built = build_clip_table(program, character, table); !built) {
-            return built;
-        }
-        if (Status bound = rig.bind(character.skeleton, program, table.span()); !bound) {
-            return bound;
-        }
-        if (Status prepared = instance.prepare(rig); !prepared) {
-            return prepared;
-        }
-        if (Status prepared = scratch.prepare(rig); !prepared) {
-            return prepared;
-        }
-        if (Status bound = driver.bind(program); !bound) {
-            return bound;
-        }
-        const u16 joints = character.skeleton.joint_count();
-        Expected<animation::PoseHandle, Error> added = world.add(joints);
-        if (!added) {
-            return make_unexpected(added.error());
-        }
-        handle = *added;
-        // The previous frame's model pose is kept for the one measurement that proves the claim:
-        // how far a joint moved between two frames. See `Summary::worst_step`.
-        if (!local.resize(joints) || !model.resize(joints) || !matrices.resize(joints) ||
-            !previous_model.resize(joints)) {
-            return fail(ErrorCode::OutOfMemory, "the pose buffers would not size");
-        }
-        return ok();
-    }
-
-    Array<const animation::Clip*> table;
-    animation::AnimationRig rig;
-    animation::AnimationInstance instance;
-    animation::PoseScratch scratch;
-    pose::LocomotionDriver driver;
-    animation::PoseWorld world;
-    animation::PoseHandle handle;
-    Array<Transform> local;
-    Array<Transform> model;
-    Array<Mat4> matrices;
-    Array<Transform> previous_model;
-};
 
 /// What the take measured, and what the gates at the end of `run()` read.
 struct Summary {
@@ -481,23 +304,27 @@ struct Summary {
     u32 frames = 0;
 };
 
-/// Fold one frame's model pose into the measurements, and keep it for the next frame's comparison.
-void measure(const Character& character, Take& take, u32 frame, bool have_previous,
-             Summary& out) noexcept {
+/// Fold one frame's pose into the measurements, and keep it for the next frame's comparison.
+///
+/// The joints' model-space places are recovered from the published skinning matrices — the matrix
+/// carries the bind pose out, so multiplying it back in gives where the joint is — because the pose
+/// is the system's and the matrices are what it publishes.
+void measure(const Character& character, Span<const Mat4> matrices, Array<Vec3>& places,
+             Array<Vec3>& previous, u32 frame, bool have_previous, Summary& out) noexcept {
     const u16 joints = character.skeleton.joint_count();
     for (u16 joint = 0; joint < joints; ++joint) {
+        places[joint] =
+            (matrices[joint] * character.skeleton.bind_model()[joint].to_matrix()).translation();
         const Vec3 rest = character.skeleton.bind_model()[joint].translation;
-        out.worst_departure =
-            math::max(out.worst_departure, length(take.model[joint].translation - rest));
+        out.worst_departure = math::max(out.worst_departure, length(places[joint] - rest));
         if (have_previous) {
-            const f32 step =
-                length(take.model[joint].translation - take.previous_model[joint].translation);
+            const f32 step = length(places[joint] - previous[joint]);
             if (step > out.worst_step) {
                 out.worst_step = step;
                 out.worst_step_frame = frame;
             }
         }
-        take.previous_model[joint] = take.model[joint];
+        previous[joint] = places[joint];
     }
 }
 
@@ -519,106 +346,275 @@ void measure(const Character& character, Take& take, u32 frame, bool have_previo
     return shot;
 }
 
-/// One frame: request, advance, clock, evaluate, publish, skin, draw.
-[[nodiscard]] Status step(const Options& options, const pose::PoseProgram& program,
-                          Character& character, Take& take, StateClocks& clocks, Stage& stage,
-                          u32 frame, f32 dt, Vec3& follow, FrameReport& report) noexcept {
+/// The asset ids the cooked records are stored under.
+///
+/// FIXED rather than minted, which a real cook would not do: `cy::assets::mint_asset_id` draws
+/// random bits once and a sidecar records them. These records are cooked again on every run from
+/// files outside the repository and nothing persists a reference to them, so a fixed id is the
+/// reproducible choice — the same one samples/01-headless-host makes, and outside the reserved
+/// placeholder namespace.
+constexpr AssetId kSkeletonId{0x09B0'0000'0000'0001ULL, 1};
+constexpr AssetId kProgramId{0x09B0'0000'0000'0001ULL, 2};
+constexpr AssetId kClipIds[kMotionCount] = {
+    {0x09B0'0000'0000'0001ULL, 10},
+    {0x09B0'0000'0000'0001ULL, 11},
+    {0x09B0'0000'0000'0001ULL, 12},
+    {0x09B0'0000'0000'0001ULL, 13},
+};
+
+/// The asset system a game loads through, over one memory mount the cooked records are written
+/// into. A shipped game mounts a package instead; the asset system, the ids and every load are the
+/// same.
+struct AssetHost {
+    AssetHost() = default;
+    ~AssetHost() {
+        library.reset();
+        assets.shutdown();
+        async.stop();
+        workers.shutdown();
+    }
+    AssetHost(const AssetHost&) = delete;
+    AssetHost& operator=(const AssetHost&) = delete;
+
+    [[nodiscard]] Status open(const Character& character) noexcept {
+        jobs::JobSystemConfig config;
+        config.worker_count = 2;
+        if (Status started = workers.start(config); !started) {
+            return started;
+        }
+        if (Status started = async.start(workers); !started) {
+            return started;
+        }
+        Expected<UniquePtr<assets::MemoryMount>, Error> memory =
+            make_unique<assets::MemoryMount>(allocator(), "cooked-character");
+        if (!memory) {
+            return Status{make_unexpected(memory.error())};
+        }
+        if (Expected<assets::MountId, Error> mounted =
+                files.mount_owned(std::move(*memory), assets::mount_priority::kMemory);
+            !mounted) {
+            return Status{make_unexpected(mounted.error())};
+        }
+        if (Status started = assets.start(workers, async, files, assets::AssetSystemConfig{});
+            !started) {
+            return started;
+        }
+        Status put = store(kSkeletonId, character.cooked.skeleton);
+        if (put) {
+            put = store(kProgramId, character.cooked.program);
+        }
+        for (u32 index = 0; index < kMotionCount && put; ++index) {
+            put = store(kClipIds[index], character.cooked.clips[index].bytes);
+        }
+        if (!put) {
+            return put;
+        }
+        library = std::make_unique<animation::AnimationLibrary>(allocator(), assets);
+        return ok();
+    }
+
+    [[nodiscard]] Status store(AssetId id, const Array<u8>& bytes) noexcept {
+        Expected<assets::VirtualPath, Error> path = assets::package_entry_path(id, {});
+        if (!path) {
+            return Status{make_unexpected(path.error())};
+        }
+        return files.write(*path, bytes.data(), bytes.size());
+    }
+
+    jobs::JobSystem workers;
+    jobs::AsyncService async;
+    assets::VirtualFileSystem files;
+    assets::AssetSystem assets;
+    std::unique_ptr<animation::AnimationLibrary> library;
+};
+
+/// The rig, bound from asset ids, and the compiled clip table printed: `ClipRef::looping` is the
+/// one thing about a clip the program carries that nothing else in this report would show, and a
+/// death that arrived as `looping=yes` would play forever with the picture looking plausible
+/// throughout.
+[[nodiscard]] Expected<const animation::AnimationRig*, Error> bind_rig(AssetHost& host) noexcept {
+    const animation::RigAssets wanted{kSkeletonId, kProgramId,
+                                      Span<const AssetId>(kClipIds, kMotionCount)};
+    Expected<const animation::AnimationRig*, Error> rig = host.library->rig(wanted);
+    if (!rig) {
+        std::fprintf(stderr, "the rig would not bind: %s\n", rig.error().message);
+        return rig;
+    }
+    const pose::PoseProgram& program = (*rig)->program();
+    for (const pose::ClipRef& reference : program.clips()) {
+        std::printf("  clip ref  %-5s duration=%.3fs looping=%s\n", reference.name.c_str(),
+                    static_cast<f64>(reference.duration), reference.looping ? "yes" : "no");
+    }
+    std::printf("\n  program   states=%u transitions=%u clips=%u parameters=%u joints=%u\n",
+                static_cast<u32>(program.states().size()),
+                static_cast<u32>(program.transitions().size()),
+                static_cast<u32>(program.clips().size()),
+                static_cast<u32>(program.parameters().size()), program.joint_count());
+    std::printf(
+        "  loaded    by asset id through the asset system: 1 skeleton, %u clips, 1 program\n",
+        host.library->stats().clips);
+    return rig;
+}
+
+/// The simulation the character lives in, with the engine's animation system installed: the tick
+/// half in the fixed step and the pose half in `Stage::Animation`.
+struct World {
+    explicit World(u32 fps) noexcept : simulation(allocator(), config_for(fps)) {}
+
+    [[nodiscard]] static runtime::SimulationConfig config_for(u32 fps) noexcept {
+        runtime::SimulationConfig config;
+        config.world_name = "animated-character";
+        config.clock.rate = determinism::TickRate{fps, 1};
+        config.clock.mode = determinism::TickMode::FixedStep;
+        config.clock.fixed_ticks_per_frame = 1;
+        return config;
+    }
+
+    [[nodiscard]] Status open(const animation::AnimationRig& rig) noexcept {
+        if (Status initialized = simulation.initialize(); !initialized) {
+            return initialized;
+        }
+        Expected<ecs::ComponentTypeId, Error> registered =
+            animation::register_animator(simulation.world());
+        if (!registered) {
+            return Status{make_unexpected(registered.error())};
+        }
+        animator = *registered;
+        system = std::make_unique<animation::AnimationSystem>(allocator(), simulation.world(),
+                                                              animator, simulation.tree());
+        if (Expected<animation::RigId, Error> added = system->add_rig(rig); !added) {
+            return Status{make_unexpected(added.error())};
+        }
+        if (Expected<ecs::SystemId, Error> installed =
+                system->install(simulation.schedule(), simulation.clock());
+            !installed) {
+            return Status{make_unexpected(installed.error())};
+        }
+        if (Status closed = simulation.finalize_registration(); !closed) {
+            return closed;
+        }
+        // THE CHARACTER IS AN ENTITY WITH AN ANIMATOR, and that is all the game declares. Full
+        // tier: one character, framed close.
+        animation::Animator settings;
+        settings.rig = 0;
+        settings.tier = animation::LodTier::Full;
+        const ecs::ComponentTypeId components[] = {animator};
+        Expected<ecs::Entity, Error> created =
+            simulation.world().create(Span<const ecs::ComponentTypeId>(components, 1));
+        if (!created) {
+            return Status{make_unexpected(created.error())};
+        }
+        character = *created;
+        return simulation.world().set(character, animator, settings);
+    }
+
+    /// Raise exactly one request — what `LocomotionDriver::request` does — through the system.
+    /// Before the first tick the instance does not exist yet, and the entry state is the idle the
+    /// schedule asks for, so there is nothing to raise.
+    [[nodiscard]] Status request(pose::LocomotionState wanted) noexcept {
+        if (system->instance(character) == nullptr) {
+            return ok();
+        }
+        for (u32 index = 0; index < pose::kLocomotionStateCount; ++index) {
+            const auto state = static_cast<pose::LocomotionState>(index);
+            if (Status set = system->set_parameter(character, pose::locomotion_request(state),
+                                                   state == wanted ? 1.0F : 0.0F);
+                !set) {
+                return set;
+            }
+        }
+        return ok();
+    }
+
+    /// One frame of the simulation: its tick, then the frame stages.
+    [[nodiscard]] Status frame() noexcept {
+        const determinism::FrameTicks ticks = simulation.begin_frame(0);
+        for (u32 tick = 0; tick < ticks.ticks; ++tick) {
+            Expected<determinism::CommitRecord, Error> stepped = simulation.step(nullptr);
+            if (!stepped) {
+                return Status{make_unexpected(stepped.error())};
+            }
+        }
+        if (Status framed = simulation.frame(ticks.alpha, nullptr); !framed) {
+            return framed;
+        }
+        return system->last_error();
+    }
+
+    runtime::Simulation simulation;
+    ecs::ComponentTypeId animator = ecs::kInvalidComponent;
+    std::unique_ptr<animation::AnimationSystem> system;
+    ecs::Entity character = ecs::kNoEntity;
+};
+
+/// One frame: the request, the simulation's tick and frame stages, and the shot.
+[[nodiscard]] Status step(const Options& options, World& world, Stage& stage, u32 frame, f32 dt,
+                          Vec3 hips, Vec3& follow, FrameReport& report) noexcept {
     const f32 seconds = static_cast<f32>(frame) * dt;
-
-    // 1. The request. Exactly one is raised; the machine decides whether it has an edge for it.
-    take.driver.request(requested_at(seconds));
-    Span<f32> parameters = take.instance.parameters();
-    for (usize index = 0; index < parameters.size(); ++index) {
-        parameters[index] = take.driver.parameters()[index];
-    }
-
-    // 2. The deterministic half: the state machine, the clip clocks, root motion and events.
-    if (Status advanced = animation::advance(take.rig, take.instance, dt, nullptr); !advanced) {
-        return advanced;
-    }
-
-    // 3. THE CLOCKS ARE THIS PROGRAM'S, AND THERE ARE TWO REASONS.
-    //
-    //    `animation::advance` wraps every clip clock by that clip's DURATION whatever its loop mode
-    //    is — `AnimationRig::bind` records a duration per time parameter and nothing there reads
-    //    `LoopMode` or the compiled `ClipRef::looping` — so a death, which must stop on its last
-    //    frame, restarts. `clip_time()` is the one place the compiled loop flag is acted on, and
-    //    `StateClocks` is why the elapsed time handed to it is kept here rather than read back out
-    //    of the state machine.
-    //
-    //    Overwriting AFTER the advance rather than instead of it keeps the state machine, the
-    //    root-motion integration and the event emission on the runtime's own path.
-    clocks.tick(program, take.instance.machine(), dt);
-    clocks.publish(program, take.driver);
-    for (usize index = 0; index < parameters.size(); ++index) {
-        parameters[index] = take.driver.parameters()[index];
-    }
-
-    // 4. The pose. The seed is mandatory: only the joints a track wrote are copied out, so a joint
-    //    no clip drives keeps whatever it was handed.
-    character.skeleton.reference_pose(take.local.span());
-    animation::EvaluationStats stats;
-    if (Status evaluated =
-            animation::evaluate(take.rig, take.instance, 0, take.scratch, take.local.span(), stats);
-        !evaluated) {
-        return evaluated;
-    }
-
-    // 5. Local to model to skinning matrices, published into the pose world. `matrix_offset` moves
-    //    on every publish, which is what the double buffering IS.
-    if (Status published =
-            animation::publish_pose(character.skeleton, take.local.span(), 0, take.world,
-                                    take.handle, take.model.span(), take.matrices.span());
-        !published) {
-        return published;
-    }
-
-    const Vec3 hips = take.model[0].translation;
+    const animation::PoseWorld& poses = world.system->poses();
+    const animation::PoseHandle handle = world.system->pose_of(world.character);
     follow = frame == 0 ? hips : follow + ((hips - follow) * 0.08F);
     const Shot shot = compose(follow, seconds);
-    const u32 pose_offset = take.world.matrix_offset(take.handle);
+    // Read every frame, never cached: `matrix_offset` moves on every publish, which is what the
+    // double buffering IS.
+    const u32 pose_offset = poses.matrix_offset(handle);
 
     char path[512];
     (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", options.frames.c_str(), frame);
     const char* target = options.frames.empty() ? nullptr : path;
-    if (Status taken = stage.shoot(take.world.matrices(), pose_offset, shot, frame, target, report);
+    if (Status taken = stage.shoot(poses.matrices(), pose_offset, shot, frame, target, report);
         !taken) {
         return taken;
     }
     if (frame == options.still_frame && !options.still.empty()) {
-        return stage.shoot(take.world.matrices(), pose_offset, shot, frame, options.still.c_str(),
+        return stage.shoot(poses.matrices(), pose_offset, shot, frame, options.still.c_str(),
                            report);
     }
     return ok();
 }
 
 /// Every frame of the take.
-[[nodiscard]] Status play(const Options& options, const pose::PoseProgram& program,
-                          Character& character, Take& take, Stage& stage, Summary& out) noexcept {
+[[nodiscard]] Status play(const Options& options, const Character& character, World& world,
+                          Stage& stage, Summary& out) noexcept {
     const f32 dt = 1.0F / static_cast<f32>(options.fps);
     out.frames = static_cast<u32>(std::lround(options.seconds * static_cast<f32>(options.fps)));
     // Seeded from the first frame's hips inside `step`, so the camera does not sweep in from
     // the origin over the first second of the take.
     Vec3 follow{0.0F, 0.0F, 0.0F};
-    StateClocks clocks;
     FrameReport report;
     u32 last_vertex_offset = 0xFFFFFFFFU;
     u32 last_pose_offset = 0xFFFFFFFFU;
+    Array<Vec3> places(allocator());
+    Array<Vec3> previous(allocator());
+    if (!places.resize(character.skeleton.joint_count()) ||
+        !previous.resize(character.skeleton.joint_count())) {
+        return fail(ErrorCode::OutOfMemory, "the measurement buffers would not size");
+    }
 
     for (u32 frame = 0; frame < out.frames; ++frame) {
-        if (Status stepped =
-                step(options, program, character, take, clocks, stage, frame, dt, follow, report);
-            !stepped) {
+        // THE GAME'S WHOLE PER-FRAME ANIMATION CODE: one request. The system advances, evaluates
+        // and publishes in the simulation's own stages.
+        const f32 seconds = static_cast<f32>(frame) * dt;
+        Status stepped = world.request(requested_at(seconds));
+        if (stepped) {
+            stepped = world.frame();
+        }
+        if (stepped) {
+            const Span<const Mat4> matrices =
+                world.system->poses().current(world.system->pose_of(world.character));
+            measure(character, matrices, places, previous, frame, frame != 0, out);
+            stepped = step(options, world, stage, frame, dt, places[0], follow, report);
+        }
+        if (!stepped) {
             std::fprintf(stderr, "frame %u failed: %s\n", frame, stepped.error().message);
             return stepped;
         }
-        measure(character, take, frame, frame != 0, out);
 
-        const u16 state = take.instance.machine().state;
+        const u16 state = world.system->instance(world.character)->machine().state;
         if (state < pose::kLocomotionStateCount) {
             out.states_entered[state] = 1;
         }
-        const Vec3 hips = take.model[0].translation;
+        const Vec3 hips = places[0];
         out.furthest = math::max(out.furthest, std::sqrt((hips.x * hips.x) + (hips.z * hips.z)));
         if (report.vertex_offset != last_vertex_offset) {
             last_vertex_offset = report.vertex_offset;
@@ -631,7 +627,7 @@ void measure(const Character& character, Take& take, u32 frame, bool have_previo
         out.validation_errors = report.validation_errors;
         if ((frame % 30U) == 0U) {
             std::printf("    frame %3u  t=%5.2fs  state=%-5s  hips=(%.2f, %.2f, %.2f)\n", frame,
-                        static_cast<f64>(static_cast<f32>(frame) * dt),
+                        static_cast<f64>(seconds),
                         pose::locomotion_state_name(static_cast<pose::LocomotionState>(state)),
                         static_cast<f64>(hips.x), static_cast<f64>(hips.y),
                         static_cast<f64>(hips.z));
@@ -733,35 +729,6 @@ void print_summary(const Options& options, const Summary& summary, u32& out_visi
     return true;
 }
 
-/// Compile the four-state machine over the four imported clips, and print what it compiled to.
-[[nodiscard]] Expected<pose::PoseProgram, Error> compile(Allocator& memory,
-                                                         const Character& character) noexcept {
-    graph::DiagnosticSink sink(memory);
-    Expected<pose::PoseProgram, Error> compiled = pose::compile_locomotion(
-        memory, spec_for(character), character.skeleton.joint_count(), sink);
-    if (!compiled) {
-        std::fprintf(stderr, "the locomotion graph did not compile: %s\n",
-                     compiled.error().message);
-        for (const graph::Diagnostic& entry : sink.entries()) {
-            std::fprintf(stderr, "  %s\n", entry.message);
-        }
-        return compiled;
-    }
-    // THE COMPILED CLIP TABLE, printed because `ClipRef::looping` is the one thing about a clip the
-    // compiled program carries that nothing else in this report would show — and a death that
-    // arrived as `looping=yes` would play forever with the picture looking plausible throughout.
-    for (const pose::ClipRef& reference : compiled->clips()) {
-        std::printf("  clip ref  %-5s duration=%.3fs looping=%s\n", reference.name.c_str(),
-                    static_cast<f64>(reference.duration), reference.looping ? "yes" : "no");
-    }
-    std::printf("\n  program   states=%u transitions=%u clips=%u parameters=%u joints=%u\n",
-                static_cast<u32>(compiled->states().size()),
-                static_cast<u32>(compiled->transitions().size()),
-                static_cast<u32>(compiled->clips().size()),
-                static_cast<u32>(compiled->parameters().size()), compiled->joint_count());
-    return compiled;
-}
-
 int run(const Options& options) noexcept {
     Allocator& memory = allocator();
 
@@ -774,13 +741,18 @@ int run(const Options& options) noexcept {
     if (!load(memory, options, character)) {
         return 1;
     }
-    Expected<pose::PoseProgram, Error> program = compile(memory, character);
-    if (!program) {
+    AssetHost host;
+    if (Status opened = host.open(character); !opened) {
+        std::fprintf(stderr, "the asset system would not start: %s\n", opened.error().message);
         return 1;
     }
-    Take take(memory);
-    if (Status prepared = take.prepare(*program, character); !prepared) {
-        std::fprintf(stderr, "the rig would not bind: %s\n", prepared.error().message);
+    Expected<const animation::AnimationRig*, Error> rig = bind_rig(host);
+    if (!rig) {
+        return 1;
+    }
+    World world(options.fps);
+    if (Status opened = world.open(**rig); !opened) {
+        std::fprintf(stderr, "the simulation would not start: %s\n", opened.error().message);
         return 1;
     }
 
@@ -792,8 +764,7 @@ int run(const Options& options) noexcept {
     if (!stage.available()) {
         std::printf("\nno graphics device answered: %s\n", stage.absence());
         std::printf(
-            "the import, the retarget and the pose program all ran; only the picture needs a "
-            "device.\n");
+            "the import, the cook and the load all ran; only the picture needs a device.\n");
         return 2;
     }
     if (Status staged = stage.stage_character(character); !staged) {
@@ -802,7 +773,7 @@ int run(const Options& options) noexcept {
     }
 
     Summary summary;
-    const Status played = play(options, *program, character, take, stage, summary);
+    const Status played = play(options, character, world, stage, summary);
     u32 visited = 0;
     print_summary(options, summary, visited);
     const int status = played ? gate(summary, visited) : 1;

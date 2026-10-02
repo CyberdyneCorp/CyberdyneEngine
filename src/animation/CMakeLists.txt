@@ -58,6 +58,9 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-reflect
                         cy::core-values cy::graph)
 
+add_subdirectory(assets)
+add_subdirectory(system)
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()

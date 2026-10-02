@@ -39,7 +39,7 @@
 set(cy_import_animation_dependencies "")
 set(cy_import_animation_definitions "")
 if(CY_ANIMATION)
-    set(cy_import_animation_dependencies cy::animation)
+    set(cy_import_animation_dependencies cy::animation cy::animation-assets cy::graph)
     # The keyword travels with its value, so that an empty list expands to nothing at all rather
     # than to a keyword cy_add_module() would refuse for having been given no value.
     set(cy_import_animation_definitions PUBLIC_DEFINITIONS CY_IMPORT_ANIMATION=1)
@@ -51,6 +51,7 @@ cy_add_module(
     ALIAS cy::import
     TYPE STATIC
     SOURCES
+        src/animation_cook.cpp
         src/block_encode.cpp
         src/clip_record.cpp
         src/fbx.cpp

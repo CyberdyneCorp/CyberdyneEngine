@@ -3670,20 +3670,21 @@ row = "animation-and-skinning"
 requirement = "Compiled animation and rig programs"
 evidence = "test:integration.graph_compiler"
 case = "graph_pose: pose dependency analysis narrows a masked layer to the joints it writes"
-note = "compile_pose lowers the graph to a PoseProgram and evaluation samples the base clip for eight joints and the upper-body layer's clip for only four. 'graph_lowering: eight thousand instances over three shared programs, and teardown' shows one program per asset with small per-instance state, and the runtime under src/animation contains no compiler. The rig half is not covered: no control-rig compiler exists (see the Control rig exemption)."
+note = "compile_pose lowers the graph to a PoseProgram and evaluation samples the base clip for eight joints and the upper-body layer's clip for only four. 'graph_lowering: eight thousand instances over three shared programs, and teardown' shows one program per asset with small per-instance state. Since issue #76 the program has a cooked record (cy/animation/cooked.h) rebuilt by assemble_pose_program, and unit.animation_runtime_only links a binary that loads and plays one while defining compile_pose itself, so the runtime provably links no compiler. The rig half is not covered: no control-rig compiler exists (see the Control rig exemption)."
 
 [[coverage]]
 row = "animation-and-skinning"
 requirement = "Animation evaluation"
-evidence = "exempt:m11e"
-note = "advance()/evaluate() exist and integration.animation_runtime covers laziness, the state machine's blend and tier-gated evaluation. Missing: no case composites an additive pose (PoseOp::Additive exists in lower_pose.h and is never exercised), evaluation is not run as an Animation-stage system distributed over job workers (the batch case splits ranges on one thread), and pose buffers come from a caller-owned PoseScratch rather than the frame arena. Re-enter with a case scheduling 500 instances across job workers each writing its own buffer, and an additive breathing layer over a locomotion blend that preserves the base motion."
+evidence = "test:integration.animation_system"
+case = "animation system: five hundred instances over three rigs are three batches spread over the workers"
+note = "Issue #76 stage 1: the engine's AnimationSystem evaluates every Animator entity in Stage::Animation, slicing each batch across job workers; each slice takes its pose buffers from its worker's scratch arena and writes skinning matrices into the pose world's staging half, and more than one participant evaluates while the poses stay bit-identical to a serial run. 'animation system: an entity's machine advances with simulation time, bit for bit the hand-driven path' pins sample, blend and publish against the runtime called directly, and the level-of-detail case gates rate and fidelity by tier. The additive half (a breathing layer composited as a delta over a locomotion blend) moved to issue #92 stage 1."
 
 [[coverage]]
 row = "animation-and-skinning"
 requirement = "Batched evaluation"
-evidence = "test:integration.animation_runtime"
-case = "animation: a batch of five hundred is one program, packed state and one scratch"
-note = "AnimationBatch holds 500 packed instances of one rig, advances them together, evaluates in 125-instance ranges as the unit of work and refuses a range that runs past the end. Not observed: ranges actually executed on job workers, several batches formed by program, or SIMD over the inner loop."
+evidence = "test:integration.animation_system"
+case = "animation system: five hundred instances over three rigs are three batches spread over the workers"
+note = "Five hundred Animator entities over three rigs form exactly three AnimationBatches of packed instance state, each advanced in one pass and evaluated in slices that job workers take, the batch's slice being the unit of parallelism. integration.animation_runtime 'animation: a batch of five hundred is one program, packed state and one scratch' covers one batch's packed state and range refusal. Not observed: SIMD over the per-instance inner loop."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3701,7 +3702,7 @@ note = "Curve tracks exist (Clip::add_curve_track, sample_curve, SampleStats::cu
 row = "animation-and-skinning"
 requirement = "Root motion"
 evidence = "exempt:m11e"
-note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' and the determinism case cover extraction and integration. Missing: no consumer-handling choice (ignore, apply to transform, feed the character controller, feed motion matching, extract only) and no case blending two clips' root deltas. Re-enter with a two-clip locomotion blend asserting the root delta blends by the pose weights, and a consumer feeding a character controller rather than the transform."
+note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' covers extraction, and the consumer is now a per-instance RootMotionMode (issue #76 stage 1): integration.animation_system 'animation system: root motion goes where each instance's mode says' applies one to the transform, feeds one to a controller that takes it, extracts one and ignores one. Still missing, and moved to issue #92 stage 2: a case blending two clips' root deltas by the pose weights."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3786,7 +3787,7 @@ row = "animation-and-skinning"
 requirement = "Animation determinism"
 evidence = "test:integration.animation_runtime"
 case = "animation: root motion is integrated whatever the tier and whatever the rate"
-note = "Root motion is integrated in advance() from root tracks: 60 ticks at 60 Hz and 10 at 10 Hz travel the same distance within tolerance, a Baked-tier instance that evaluates no pose travels the same, and a re-simulated run is bit-identical. unit.animation 'lod: an authoritative instance is never taken below Simplified, and a pin wins' covers tier as a function of simulation state."
+note = "Root motion is integrated in advance() from root tracks: 60 ticks at 60 Hz and 10 at 10 Hz travel the same distance within tolerance, a Baked-tier instance that evaluates no pose travels the same, and a re-simulated run is bit-identical. Through the frame system, integration.animation_system 'animation system: two runs of the same ticks reproduce pose, root motion and events exactly' runs one session a tick per frame and another three ticks per frame on a job system and requires identical poses, root motion, transforms and events. unit.animation 'lod: an authoritative instance is never taken below Simplified, and a pin wins' covers tier as a function of simulation state. Instance state is not in a rollback capture yet (docs/guides/animation.md, 'Not built yet')."
 
 [[coverage]]
 row = "animation-and-skinning"

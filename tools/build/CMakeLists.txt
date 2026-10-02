@@ -58,6 +58,7 @@ cy_add_module(
     ALIAS cy::build-content
     TYPE STATIC
     SOURCES
+        src/animation_producer.cpp
         src/content_producers.cpp
         src/lightmap_producer.cpp
         src/navmesh_producer.cpp

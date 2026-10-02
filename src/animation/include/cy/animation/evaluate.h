@@ -82,6 +82,14 @@ public:
         u16 parameter = 0;
         u16 clip = 0;
         f32 duration = 1.0F;
+        /// False when the clock holds on the clip's last frame instead of wrapping: the program
+        /// compiled the clip as non-looping (`ClipRef::looping`) or the clip's own loop mode is
+        /// `LoopMode::None`. Either one is a decision that the clip stops, and a clock that wrapped
+        /// regardless restarted a death.
+        bool looping = true;
+        /// What a looping clock wraps by: the duration, or twice it for `LoopMode::PingPong`,
+        /// whose sampler folds the second half back.
+        f32 period = 1.0F;
     };
     [[nodiscard]] Span<const TimeParameter> time_parameters() const noexcept {
         return times_.span();
@@ -183,12 +191,20 @@ public:
     explicit PoseScratch(Allocator& allocator) noexcept;
 
     [[nodiscard]] Status prepare(const AnimationRig& rig) noexcept;
+
+    /// Use `storage` instead of memory of its own: the caller's frame or job scratch, which is
+    /// where a worker evaluating a slice of a batch takes its buffers from. `storage` must hold
+    /// `transforms_needed(rig)` transforms and outlive every evaluation that uses this scratch.
+    [[nodiscard]] Status adopt(const AnimationRig& rig, Span<Transform> storage) noexcept;
+    [[nodiscard]] static usize transforms_needed(const AnimationRig& rig) noexcept;
+
     [[nodiscard]] Span<Transform> slot(PoseValue value) noexcept;
     [[nodiscard]] u32 joints() const noexcept { return joints_; }
     [[nodiscard]] bool ready() const noexcept { return joints_ != 0; }
 
 private:
     Array<Transform> storage_;
+    Span<Transform> view_;
     u32 joints_ = 0;
     u32 slots_ = 0;
 };
@@ -234,8 +250,18 @@ public:
     AnimationBatch(Allocator& allocator, const AnimationRig& rig) noexcept;
 
     [[nodiscard]] Expected<u32, Error> add() noexcept;
+
+    /// Remove the instance in `slot` by moving the LAST instance into it, so the batch stays
+    /// packed. The moved instance keeps its state and its `identifier()`; a caller that maps
+    /// something onto slots updates the one entry that names the old last slot. Removing the last
+    /// slot moves nothing.
+    [[nodiscard]] Status remove(u32 slot) noexcept;
+
     [[nodiscard]] u32 size() const noexcept { return static_cast<u32>(instances_.size()); }
     [[nodiscard]] AnimationInstance& instance(u32 slot) noexcept { return instances_[slot]; }
+    [[nodiscard]] const AnimationInstance& instance(u32 slot) const noexcept {
+        return instances_[slot];
+    }
     [[nodiscard]] const AnimationRig& rig() const noexcept { return *rig_; }
 
     /// Advance every instance. One pass over packed state.

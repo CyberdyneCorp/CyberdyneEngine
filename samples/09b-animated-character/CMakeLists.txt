@@ -22,9 +22,11 @@
 # does not run.
 #
 # IT LINKS A TOOL, which only samples/06-open-world has done before. `cy::import` is LAYER tools and
-# so is every sample, so the link is legal — and it is the only way to demonstrate an IMPORT: an
-# artefact that read a pre-cooked asset out of the tree would be demonstrating the loader, and there
-# is no loader for a cooked skeleton or clip yet.
+# so is every sample, so the link is legal — and it is the only way to demonstrate an IMPORT from
+# files that cannot be committed. Since issue #76 the import feeds a COOK (`cook_locomotion_set`,
+# the `animation` build-graph producer's work) and the cooked records are then loaded by asset id
+# through the asset system and `cy::animation-assets`, and animated by `cy::animation-system` inside
+# a `cy::runtime` simulation: the runtime half is exactly what a shipped game links.
 #
 # ================================================================================================
 # AND WHY IT DECLARES NOTHING WHEN A FEATURE IT NEEDS IS OFF
@@ -69,8 +71,13 @@ cy_add_module(
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
         cy::animation
+        cy::animation-assets
+        cy::animation-system
+        cy::core-assets
+        cy::core-jobs
         cy::graph
         cy::import
+        cy::runtime
         cy::rendering-graph
         cy::rendering-skinning
         cy::servers-render-geometry

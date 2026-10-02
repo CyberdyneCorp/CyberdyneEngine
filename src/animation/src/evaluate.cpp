@@ -3,6 +3,7 @@
 #include <cy/core/math/scalar.h>
 
 #include <cmath>
+#include <utility>
 
 namespace cy::animation {
 namespace {
@@ -72,6 +73,12 @@ Status AnimationRig::bind(const Skeleton& skeleton, const PoseProgram& program,
         entry.clip = instruction.clip;
         const Clip* clip = instruction.clip < clips_.size() ? clips_[instruction.clip] : nullptr;
         entry.duration = clip != nullptr ? clip->duration() : 1.0F;
+        const bool compiled_loop =
+            instruction.clip >= program.clips().size() || program.clips()[instruction.clip].looping;
+        entry.looping = compiled_loop && (clip == nullptr || clip->loop_mode() != LoopMode::None);
+        entry.period = clip != nullptr && clip->loop_mode() == LoopMode::PingPong
+                           ? entry.duration * 2.0F
+                           : entry.duration;
         if (Status pushed = times_.push_back(entry); !pushed) {
             return pushed;
         }
@@ -207,20 +214,45 @@ void AnimationInstance::accept_root_motion(const RootDelta& delta) noexcept {
 
 PoseScratch::PoseScratch(Allocator& allocator) noexcept : storage_(allocator) {}
 
+usize PoseScratch::transforms_needed(const AnimationRig& rig) noexcept {
+    if (!rig.bound()) {
+        return 0;
+    }
+    return static_cast<usize>(rig.skeleton().joint_count()) * (rig.program().code().size() + 1);
+}
+
 Status PoseScratch::prepare(const AnimationRig& rig) noexcept {
     if (!rig.bound()) {
         return fail(ErrorCode::InvalidArgument, "the rig has no program bound");
     }
+    if (Status sized = storage_.resize(transforms_needed(rig)); !sized) {
+        return sized;
+    }
     joints_ = rig.skeleton().joint_count();
     slots_ = static_cast<u32>(rig.program().code().size()) + 1;
-    return storage_.resize(static_cast<usize>(joints_) * slots_);
+    view_ = storage_.span();
+    return ok();
+}
+
+Status PoseScratch::adopt(const AnimationRig& rig, Span<Transform> storage) noexcept {
+    if (!rig.bound()) {
+        return fail(ErrorCode::InvalidArgument, "the rig has no program bound");
+    }
+    if (storage.size() < transforms_needed(rig)) {
+        return fail(ErrorCode::BufferTooSmall,
+                    "the adopted scratch is smaller than one pose per instruction of the program");
+    }
+    joints_ = rig.skeleton().joint_count();
+    slots_ = static_cast<u32>(rig.program().code().size()) + 1;
+    view_ = storage;
+    return ok();
 }
 
 Span<Transform> PoseScratch::slot(PoseValue value) noexcept {
     if (value >= slots_) {
         return {};
     }
-    return {storage_.data() + (static_cast<usize>(value) * joints_), joints_};
+    return view_.subspan(static_cast<usize>(value) * joints_, joints_);
 }
 
 // --- The evaluator ------------------------------------------------------------------------------
@@ -282,8 +314,15 @@ Status Evaluator::sample_clip(const PoseInstruction& instruction, Span<Transform
         return ok();
     }
     const f32 time = parameter_of(parameters(), instruction.time_param);
+    // A clip the program compiled as non-looping is HELD: its clock stops at the duration, and the
+    // pose there is the last key even when the clip asset itself loops (where `sample()` would wrap
+    // the duration to the first frame).
+    const bool held =
+        instruction.clip < program().clips().size() && !program().clips()[instruction.clip].looping;
     SampleStats sampled;
-    if (Status ran = clip->sample(time, required, instance->cursor(instruction.clip), out, sampled);
+    ClipCursor& cursor = instance->cursor(instruction.clip);
+    if (Status ran = held ? clip->sample_unwrapped(time, required, cursor, out, sampled)
+                          : clip->sample(time, required, cursor, out, sampled);
         !ran) {
         return ran;
     }
@@ -575,6 +614,23 @@ RootDelta RootWalker::run(PoseValue value) const noexcept {
     return emit_state_events(rig, instance, instruction.b, before, after, buffer);
 }
 
+/// The state whose clips start playing on this tick, or `kNoTransition` when none does.
+///
+/// A state STARTS PLAYING when it becomes the target of a blend — that is the moment its tree is
+/// first sampled — or when a cut makes it current outright. It does NOT start again when a blend
+/// into it completes: its clips have been playing for the whole blend, and restarting them there
+/// jumped the incoming clip back by one blend duration on the frame it became current.
+[[nodiscard]] u16 entered_state(const graph::pose::PoseInstance& machine, u16 state_before,
+                                u16 target_before) noexcept {
+    if (machine.target != kNoTransition && machine.target != target_before) {
+        return machine.target;
+    }
+    if (machine.state != state_before && machine.state != target_before) {
+        return machine.state;
+    }
+    return kNoTransition;
+}
+
 /// Restart the clip times of a state that has just been entered.
 void reset_state_times(const AnimationRig& rig, AnimationInstance& instance,
                        PoseValue value) noexcept {
@@ -618,18 +674,25 @@ Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
     }
 
     // THE CLIP CLOCKS. Advanced by the whole interval whatever the tier evaluates at, so an
-    // instance evaluated at 10 Hz has advanced exactly as far as one evaluated at 60 Hz.
+    // instance evaluated at 10 Hz has advanced exactly as far as one evaluated at 60 Hz. A clock
+    // that does not loop is held at its clip's ends HERE, before root motion and events read the
+    // interval, so a held clip contributes nothing once it has stopped.
     const f32 step = dt * instance.play_rate();
     for (const AnimationRig::TimeParameter& entry : times) {
         if (entry.parameter >= parameters.size()) {
             continue;
         }
         parameters[entry.parameter] += step;
+        if (!entry.looping) {
+            parameters[entry.parameter] =
+                math::clamp(parameters[entry.parameter], 0.0F, math::max(entry.duration, 0.0F));
+        }
     }
 
     const u16 state_before = instance.machine().state;
+    const u16 target_before = instance.machine().target;
     graph::pose::advance(program, instance.machine(), instance.parameters(), dt);
-    const u16 state_after = instance.machine().state;
+    const u16 entered = entered_state(instance.machine(), state_before, target_before);
 
     // The interval each clip advanced over is [previous, the parameter array as it stands now].
     // The clocks are wrapped at the END of this function, so nothing here has to reconstruct a
@@ -662,18 +725,17 @@ Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
     // The clocks are wrapped AFTER root motion and events have read the unwrapped interval, so a
     // step that crosses the end of a clip is one interval rather than a jump backwards.
     for (const AnimationRig::TimeParameter& entry : times) {
-        if (entry.parameter >= parameters.size() || entry.duration <= 0.0F) {
+        if (entry.parameter >= parameters.size() || !entry.looping || entry.period <= 0.0F) {
             continue;
         }
         const f32 value = parameters[entry.parameter];
-        if (value >= entry.duration || value < 0.0F) {
-            parameters[entry.parameter] =
-                value - (std::floor(value / entry.duration) * entry.duration);
+        if (value >= entry.period || value < 0.0F) {
+            parameters[entry.parameter] = value - (std::floor(value / entry.period) * entry.period);
         }
     }
 
-    if (state_after != state_before) {
-        reset_state_times(rig, instance, program.states()[state_after].root);
+    if (entered != kNoTransition) {
+        reset_state_times(rig, instance, program.states()[entered].root);
     }
     return ok();
 }
@@ -695,6 +757,18 @@ Expected<u32, Error> AnimationBatch::add() noexcept {
     const auto index = static_cast<u32>(instances_.size() - 1);
     (*slot)->set_identifier(index);
     return index;
+}
+
+Status AnimationBatch::remove(u32 slot) noexcept {
+    if (slot >= instances_.size()) {
+        return fail(ErrorCode::OutOfRange, "the batch has no instance in that slot");
+    }
+    const usize last = instances_.size() - 1;
+    if (slot != last) {
+        instances_[slot] = std::move(instances_[last]);
+    }
+    instances_.pop_back();
+    return ok();
 }
 
 Status AnimationBatch::advance_all(f32 dt, EventBuffer* events) noexcept {

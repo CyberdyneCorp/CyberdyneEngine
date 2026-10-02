@@ -1,24 +1,27 @@
 #pragma once
-// The character: four Mixamo FBX files, imported, retargeted onto one rig, and turned into the four
-// clips a compiled locomotion program plays. M8.d, samples/09b-animated-character.
+// The character: four Mixamo FBX files, imported, cooked into one rig's skeleton, clips and
+// locomotion program, and bound to the mesh. M8.d, samples/09b-animated-character; ported to the
+// engine's animation runtime by issue #76.
 //
 // ================================================================================================
-// WHAT THIS FILE JOINS, AND WHY IT IS THE FIRST THING THAT DOES
+// WHAT THIS FILE JOINS
 // ================================================================================================
-//
-// M8.d landed four pieces that had never met:
 //
 //   tools/import/       `import_fbx_skeleton` (step 7) and `import_fbx_animations` (step 8) produce
-//                       a cooked skeleton record and a cooked clip record from an FBX.
-//   src/animation/      `Skeleton`, `Clip`, `RetargetProfile` and `retarget_build.h`'s
-//                       `build_retarget_profile` turn those records into a rig that can be posed.
-//   src/graph/          `compile_locomotion` compiles a four-state machine over four named clips.
+//                       a cooked skeleton record and a cooked clip record from each FBX, and
+//                       `cook_locomotion_set` (`cy/import/animation_cook.h`) turns the four into
+//                       the records a game loads: the character's skeleton, its four clips — three
+//                       of them retargeted onto its rig and baked — and the compiled locomotion
+//                       program. That function is the `animation` build-graph producer's work,
+//                       called here directly because the sources live outside the repository.
+//   src/animation/      `cy/animation/cooked.h` decodes the skeleton for the skin bind below; the
+//                       clips and the program are loaded by asset id in main.cpp, through the asset
+//                       system and `AnimationLibrary`, exactly as a shipped game loads them.
 //   src/rendering/skinning/  `SkinPass` moves a vertex by a bone matrix, on the device.
 //
-// Every one of them was reachable only from its own test suite. THIS file is the first caller that
-// has all four in one translation unit, which is the only way to find out whether the seams between
-// them line up — and two of them did not until this artefact was written. They are recorded in
-// README.md rather than smoothed over here.
+// Until issue #76 this file dequantised every cooked clip and recompressed it by hand, and main.cpp
+// compiled the machine at startup — the runtime had no loader for either. Both are gone: the clips
+// arrive as the codec stored them, and nothing in the frame compiles.
 //
 // ================================================================================================
 // THE ONE SUBSTITUTION — AND M11.b REMOVED THE REASON FOR IT
@@ -56,11 +59,11 @@
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/values/name.h>
+#include <cy/import/animation_cook.h>
 #include <cy/import/mesh.h>
 #include <cy/servers/render/geometry/skin_dispatch.h>
 #include <cy/servers/render/mesh.h>
 
-#include <cy/animation/clip.h>
 #include <cy/animation/skeleton.h>
 
 #include <string>
@@ -75,8 +78,8 @@ enum class Motion : u32 { Idle = 0, Walk, Run, Die, Count };
 inline constexpr u32 kMotionCount = static_cast<u32>(Motion::Count);
 
 /// `idle`, `walk`, `run`, `die` — the names `LocomotionSpec` refers to its clips by and therefore
-/// the names `AnimationRig::bind` matches the clip table against.
-[[nodiscard]] Name motion_name(Motion motion) noexcept;
+/// the names the library matches the program's clip table against.
+[[nodiscard]] const char* motion_name(Motion motion) noexcept;
 
 /// Where the four source files live. Paths rather than bytes: each is 1–17 MB and lives OUTSIDE the
 /// repository, because they are Mixamo exports under Mixamo's licence.
@@ -152,10 +155,11 @@ struct SkinReport {
     Vec3 rig_max{0.0F, 0.0F, 0.0F};
 };
 
-/// One imported, retargeted, skinned character.
+/// One imported, cooked, skinned character.
 ///
-/// Holds the runtime objects rather than the cooked records: the records are read, converted and
-/// dropped inside `load_character`, because nothing downstream of it wants a payload.
+/// Holds the COOKED RECORDS rather than the runtime objects for the animation: main.cpp loads the
+/// clips and the program by asset id, through the asset system, as a game would. The skeleton is
+/// decoded here as well, because binding the mesh to the rig needs its bind pose.
 struct Character {
     explicit Character(Allocator& allocator) noexcept;
 
@@ -164,11 +168,10 @@ struct Character {
 
     Allocator* allocator = nullptr;
 
+    /// The skeleton, the four clips and the program, as the cook wrote them.
+    import::CookedAnimationSet cooked;
     animation::Skeleton skeleton;
     animation::SkeletonProfile humanoid;
-
-    /// The four clips, indexed by `Motion`, each already bound to `skeleton`'s joint indices.
-    std::vector<animation::Clip> clips;
 
     /// The cooked mesh, in the skeleton's bind-model space.
     Array<Vec3> positions;
@@ -185,7 +188,8 @@ struct Character {
     SkinReport skin;
 };
 
-/// Import the four files, build the rig, retarget three clips onto it, and bind the mesh.
+/// Import the four files, cook the character's skeleton, clips and program from them, and bind the
+/// mesh.
 ///
 /// Every failure is a returned error naming what could not be done; nothing here degrades quietly,
 /// because an artefact whose picture is a character standing still must not be reachable by a

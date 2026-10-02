@@ -160,8 +160,11 @@ namespace {
                                 Span<Transform> target_local) noexcept {
     source.reference_pose(source_local);
     SampleStats stats;
-    if (Status sampled =
-            clip.sample(time, JointMask::all(source.joint_count()), cursor, source_local, stats);
+    // UNWRAPPED. The last frame is taken at the clip's duration, and `sample()` would wrap that by
+    // the loop mode — under `LoopMode::Loop`, to zero — so a baked clip would end on the source's
+    // FIRST frame. A resampler reading the end of a timeline wants the last key.
+    if (Status sampled = clip.sample_unwrapped(time, JointMask::all(source.joint_count()), cursor,
+                                               source_local, stats);
         !sampled) {
         return sampled;
     }

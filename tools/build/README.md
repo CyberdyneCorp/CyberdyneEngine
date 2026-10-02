@@ -66,6 +66,7 @@ adds them by default:
 | `cook` | `Cook` | every declared authoring document, read into a `MemoryMount` the cook is given as its whole filesystem | one `.cypak` |
 | `lightmap` | `Cook` | a `cylightmap 1` description and its upstream mesh bundles | one cooked lightmap, and the captured irradiance volumes when the node declares a second output |
 | `navmesh` | `Cook` | one saved `.cynavmesh` sidecar and a `bake-identity` option naming the world's bake | the verified navigation mesh |
+| `animation` | `Cook` | a `cyanim 1` character description and the upstream import bundles it names | the character's cooked skeleton, its clips (retargeted onto its rig where their rigs differ) and its compiled locomotion program — only with `CY_ANIMATION` |
 
 It is a **separate target** from `cy_build_graph`, which links `cy::core-assets` and
 `cy::core-memory` and nothing else: the importer links ufbx and xatlas, the cook links the ECS and
@@ -107,6 +108,33 @@ is not the world's (`navmesh-identity`). The verified bytes are the output. The 
 sidecar's content digest, the identity option and `kNavmeshProducerVersion`, so a rebake or a
 producer version bump re-cooks, and an unchanged world is served from the store. Its cases are in
 `tests/test_navmesh_producer.cpp`, part of `integration.build_content`.
+
+### The `animation` producer (issue #76)
+
+A character is several imports — a Mixamo character is one export per motion — so making one is a
+node of its own over the import nodes' bundles:
+
+```text
+node "animation:hero" cook "animation" 1
+  source "characters/hero.cyanim"
+  upstream "import:idle"
+  upstream "import:walk"
+  upstream "import:run"
+  upstream "import:die"
+  output "derived/hero.skeleton"
+  output "derived/hero.program"
+  output "derived/hero.idle.clip"
+  output "derived/hero.walk.clip"
+  output "derived/hero.run.clip"
+  output "derived/hero.die.clip"
+```
+
+The description names the rig's bundle, each clip's name and bundle (`hold` for one that stops on its
+last frame), and optional blend durations; `docs/guides/animation.md` section 2 shows it. The work is
+`cy::import::cook_locomotion_set`, so the program is compiled here and a game only loads it. Outputs
+are matched by suffix (`.skeleton`, `.program`, `.<clip>.clip`), and a declared output nothing
+matches is refused. The key covers the description and every upstream bundle, so re-exporting one
+motion re-cooks the character. Cases: `integration.build_animation`.
 
 ## Running it
 

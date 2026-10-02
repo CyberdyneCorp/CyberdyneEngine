@@ -38,6 +38,8 @@ report    what happened, with the reason, per asset and for the run
 | `pipeline.h` | The driver: the cache, the sidecars, the parallel phase, cancellation and the report |
 | `report.h` | Per-asset rows and the project-level summary `asset-import-pipeline` asks for |
 | `live_import.h` | M5 task 5.2's asset half: watch, re-cook, and reload behind the stable handle |
+| `animation_cook.h` | Issue #76: `cook_locomotion_set`, a character made from several imports — the rig's skeleton, every clip on it (retargeted and baked where its rig's rest pose differs), and the locomotion program compiled at cook time — as the three records `cy/animation/cooked.h` loads. The `animation` build-graph producer runs it |
+| `clip_record.h` | Step 8's clip writer. Since issue #76 it calls the runtime's `cy::animation::encode_clip`, so the record has one writer, beside the runtime's reader |
 
 The **cook cache is not here**. It is `src/core/assets/derived_cache.h` at layer 0, because
 `asset-import-pipeline` requires one cache over all derived data and a cache that lived with the

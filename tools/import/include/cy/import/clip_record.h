@@ -17,8 +17,12 @@
 // `AssetId` would rebind, and the day one writer gained a field the other would not.
 //
 // So the format-specific half of step 8 is: read the source's curves, author them onto a
-// `cy::animation::Clip`, and call this. The BYTES are decided here and nowhere else, and
-// `read_cooked_clip` in `cy/import/fbx_clip.h` is the one reader of them.
+// `cy::animation::Clip`, and call this. Since issue #76 the bytes are decided by the RUNTIME's
+// `cy::animation::encode_clip` (`cy/animation/cooked.h`), which this calls: the record is the one
+// the runtime's `decode_clip` reads, so the writer lives beside that reader rather than in a
+// cook-time library a game does not link. `read_cooked_clip` in `cy/import/fbx_clip.h` stays as the
+// importer's own inspection reader, and `integration.animation_cook` holds the two readers
+// to one record.
 //
 // BEHIND `CY_IMPORT_ANIMATION`, for the reason `fbx_clip.h` states at length: a clip's
 // error-bounded codec IS `cy::animation::Clip`, so with `-D CY_ANIMATION=OFF` there is nothing to

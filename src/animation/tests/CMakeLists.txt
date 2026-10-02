@@ -26,6 +26,20 @@
 #                       work three more times over a twenty-eight joint skeleton, so it is here and
 #                       not beside the correspondence's own unit cases.
 #
+#   animation_system    integration. The per-frame system (src/animation/system/) over a real
+#                       `runtime::Simulation`: an entity's machine against the hand-driven path bit
+#                       for bit, level of detail, events, root motion, removal, five hundred
+#                       instances over three rigs on a job system, and two runs that must agree.
+#
+#   animation_assets    integration. Issue #76 stage 2: the cooked skeleton, clip and program records
+#                       round-trip byte for byte, and the library loads them through a real asset
+#                       system, binds rigs by asset id and name, refuses what does not match, and
+#                       swaps a reloaded clip under live instances.
+#
+#   animation_runtime_only
+#                       unit, and a LINK-time test: it defines `compile_pose` itself, so it links
+#                       only while a runtime that loads programs pulls in no compiler.
+#
 #   animation_teardown  integration, and hard rule 4's case. Pose worlds and batches created and
 #                       destroyed with work in flight and four spinner threads holding the cores. A
 #                       millisecond budget would be met by trimming the rounds until the race
@@ -71,10 +85,37 @@ function(cy_animation_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/test_bake.cpp"
+            "${tests_dir}/test_clocks.cpp"
             "${tests_dir}/test_retarget_exports.cpp"
             "${tests_dir}/test_evaluate.cpp"
             "${tests_dir}/test_pose_world.cpp"
         DEPENDENCIES cy::animation cy::servers-render-geometry)
+
+    # The per-frame system over a real `runtime::Simulation`: the tick half in the fixed step, the
+    # pose half in `Stage::Animation`, and a job system for the cases that spread a batch. Issue #76
+    # stage 1. Integration for the reason `animation_runtime` is: the subject is hundreds of ticks.
+    cy_add_test(
+        NAME animation_system
+        KIND integration
+        SOURCES "${tests_dir}/test_system.cpp"
+        DEPENDENCIES cy::animation-system cy::core-jobs cy::runtime cy::scene)
+
+    # The cooked records and the library over a real asset system. Issue #76 stage 2.
+    cy_add_test(
+        NAME animation_assets
+        KIND integration
+        SOURCES "${tests_dir}/test_assets.cpp"
+        DEPENDENCIES cy::animation-assets cy::core-jobs)
+
+    # A LINK-TIME TEST. runtime_only_probe.cpp defines `cy::graph::pose::compile_pose` itself, so
+    # this target links only while nothing it depends on pulls the real compiler in. Its one case
+    # then loads and plays a cooked program. The dependency list is deliberately the runtime and
+    # the decoders and nothing that compiles.
+    cy_add_test(
+        NAME animation_runtime_only
+        KIND unit
+        SOURCES "${tests_dir}/runtime_only_probe.cpp"
+        DEPENDENCIES cy::animation-assets)
 
     cy_add_test(
         NAME animation_teardown

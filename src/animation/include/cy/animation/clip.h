@@ -168,6 +168,7 @@ public:
     [[nodiscard]] u32 at(u32 track) const noexcept;
     void set(u32 track, u32 key) noexcept;
     [[nodiscard]] bool empty() const noexcept { return keys_.empty(); }
+    [[nodiscard]] u32 size() const noexcept { return static_cast<u32>(keys_.size()); }
 
     /// How many keys the last sample had to step over. The measurement behind "forward playback is
     /// O(1) amortised": a forward step over a 600-key clip visits one or two, a backward jump
@@ -266,6 +267,16 @@ public:
     /// authored keys, which are kept so the error report is measured rather than estimated.
     [[nodiscard]] Status compress(const CompressionSettings& settings) noexcept;
 
+    /// Install tracks and keys that are ALREADY compressed: a cooked clip read back at load time.
+    ///
+    /// The codec's output is the cooked form — `keys()` is what a cook writes — so a loader hands
+    /// it back here instead of dequantising and compressing again, which would run the fit a second
+    /// time and could move a key. Every track's key range is checked against `keys`. The clip has
+    /// no authored keys afterwards, so `compress()` refuses it and `report()` is empty: nothing was
+    /// measured, because nothing was fitted.
+    [[nodiscard]] Status adopt_compressed(Span<const TrackDesc> tracks,
+                                          Span<const PackedKey> keys) noexcept;
+
     // --- Sampling -------------------------------------------------------------------------------
 
     /// Sample the pose into `out`, writing only the joints in `mask`.
@@ -274,6 +285,16 @@ public:
     /// has no track for are left untouched, so a caller seeds `out` with the reference pose.
     [[nodiscard]] Status sample(f32 time, const JointMask& mask, ClipCursor& cursor,
                                 Span<Transform> out, SampleStats& stats) const noexcept;
+
+    /// Sample at a time already inside the clip, without applying its loop mode.
+    ///
+    /// `sample()` wraps `time` by the loop mode first, and under `LoopMode::Loop` the clip's own
+    /// duration wraps to ZERO — the first frame. A caller that holds a clip on its last frame (a
+    /// resampler reading the end of a timeline, or a program clip compiled as non-looping over a
+    /// clip whose asset loops) wants the last key there, so this clamps to `[0, duration]` and
+    /// reads the keys at that time.
+    [[nodiscard]] Status sample_unwrapped(f32 time, const JointMask& mask, ClipCursor& cursor,
+                                          Span<Transform> out, SampleStats& stats) const noexcept;
 
     /// Sample one named curve. The empty answer is `false`, so a caller can tell "zero" from "no
     /// such curve".
@@ -325,6 +346,7 @@ private:
     LoopMode loop_ = LoopMode::Loop;
     u16 root_joint_ = kInvalidJoint;
     bool compressed_ = false;
+    bool adopted_ = false;
 };
 
 /// One emitted animation event. `animation-and-skinning`: "Events SHALL be emitted as typed data
