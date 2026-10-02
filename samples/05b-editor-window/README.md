@@ -117,6 +117,14 @@ order, move to the target, then play `unit.arrived` where it stopped. `smoke.edi
 same position on every tick and the same cue on the same tick. It is declared wherever a Swift
 toolchain is, Linux included.
 
+The Play debugger and hot reload (#84) run here too. In a Debug or Development build Play attaches
+the graph debugger when it starts. When a graph stops at a breakpoint or a step, `GraphRuntime`
+pauses the `PlaySession` and Play's audio, so the whole simulation tick waits; continuing or stepping
+finishes the held tick and resumes the session, and resuming Play from the editor continues the
+graph. `script.reload` recompiles a graph Play runs and swaps it in at the next tick, keeping each
+entity's variables. `integration.editor_window_graph_debugger`
+(`runtime/tests/test_graph_debugger_runtime.cpp`) holds both without a device or a Swift toolchain.
+
 ## Material Graph cube
 
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,
