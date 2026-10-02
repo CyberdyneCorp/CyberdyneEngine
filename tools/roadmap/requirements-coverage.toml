@@ -7667,8 +7667,8 @@ note = "A chaos-permuted reduction with an undeclared ordering dependency gives 
 [[coverage]]
 row = "simulation-and-determinism"
 requirement = "Determinism lint"
-evidence = "exempt:m11e"
-note = "src/core/determinism/lint/determinism_lint.py implements the five source rules plus a contraction-off build check, with a per-rule selftest. Its suites, integration.determinism_lint and its selftest, are plain add_test rather than cy_add_test, and m9:determinism-lint and m9:determinism-lint-selftest have no proof in falsifiability.toml, so neither can answer here. Re-enter by proving m9:determinism-lint-selftest red (delete one rule from scan_source()) with `just roadmap-falsify --record`, then cite it, with findings naming the system as well as the file and line."
+evidence = "criterion:m9:determinism-lint-selftest"
+note = "src/core/determinism/lint/determinism_lint.py reports the five source rules — wall clock, ambient random generator, iteration over an unordered container, a presentation read, a floating-point function the profile forbids — over every target that declares a determinism profile, plus a contraction-off build check. Each finding names the system (the target whose profile the source was compiled under) as well as the file and line, and the selftest has one fixture per rule, a clean fixture that must stay silent, and a fixture that fails when a finding does not name its system. Proven red by deleting one pattern of the ambient-random rule from what scan_source() matches; `m9:determinism-lint`, the lint over the real tree, is proven red by deleting the policy file's per-rule exemption. NOT CLAIMED: the `--severity warning` path is not exercised by a test."
 
 [[coverage]]
 row = "simulation-and-determinism"
