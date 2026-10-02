@@ -40,24 +40,17 @@ constexpr f32 kMinHalfExtent = 24.0F;
 /// scale act a linearity test instead — the same simulation, four times as much of it.
 constexpr f32 kMetresPerCharacter = 4.0F;
 
-/// The crowd grid's cell, for a given population and arena.
+/// The crowd grid's cell: the avoidance query's own radius, `AvoidanceParams::neighbour_distance`.
 ///
-/// A UNIFORM GRID HAS TWO COSTS AND THEY PULL IN OPPOSITE DIRECTIONS: building it costs a pass over
-/// the occupied cells per agent (`Crowd::rebuild_grid` finds an agent's cell by scanning the cell
-/// table, which is a linear scan), and querying it costs a pass over the agents in the block of
-/// cells the neighbour distance covers. Small cells make the first expensive, large cells the
-/// second. The sum is least at roughly 3·sqrt(agents) cells, which is what this returns, floored at
-/// the neighbour distance because a cell smaller than the query radius buys nothing.
-///
-/// MEASURED, on this machine, 8,000 agents over a 179 m arena: 2 m cells cost 72 ms a tick and
-/// 11 m cells cost 9 ms. The difference is entirely the linear scan, and it is reported to
-/// `src/navigation/`'s owner as a finding rather than worked around silently — a hash of the cell
-/// key would make the build O(agents) and make this function unnecessary.
-[[nodiscard]] inline f32 crowd_cell_size(u32 agents, f32 half_extent) noexcept {
-    const f32 cells = 3.0F * std::sqrt(static_cast<f32>(agents < 1U ? 1U : agents));
-    const f32 size = (2.0F * half_extent) / std::sqrt(cells);
-    return size < 4.0F ? 4.0F : size;
-}
+/// A cell the size of the query radius makes every query a block of three by three cells, which is
+/// the fewest agents a query can test. Until `Crowd` kept its cell table sorted, finding a cell was
+/// a scan of the whole table, so small cells cost a pass over every occupied cell per agent and
+/// this function grew the cell with the population to keep the table short — 7.7 m at 2,000
+/// agents, which made each query test about 220 agents where 4 m cells test about 64. Measured in
+/// the Debug configuration at 2,000 agents, the navigation phase went from 14.2 ms a tick to 7.6 ms
+/// with the sorted table and these cells, and the state digest did not move: a neighbour set is
+/// the nearest agents inside the radius, whatever grid found them.
+constexpr f32 kCrowdCellSize = 4.0F;
 
 /// Half the arena's side for a given population.
 [[nodiscard]] inline f32 arena_half_extent(u32 agents) noexcept {

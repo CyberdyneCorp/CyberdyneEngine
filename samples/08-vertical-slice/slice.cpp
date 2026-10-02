@@ -112,7 +112,7 @@ Status Slice::build(const Options& options) noexcept {
 
     const f32 arena = arena_half_extent(options.agents);
     level_ = new (std::nothrow) Level(*allocator_, arena);
-    brain_ = new (std::nothrow) Brain(*allocator_, crowd_cell_size(options.agents, arena));
+    brain_ = new (std::nothrow) Brain(*allocator_, kCrowdCellSize);
     kit_ = new (std::nothrow) Kit(*allocator_, options.seed);
     presentation_ = new (std::nothrow) Presentation(*allocator_);
     if (level_ == nullptr || brain_ == nullptr || kit_ == nullptr || presentation_ == nullptr) {

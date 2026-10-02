@@ -228,40 +228,59 @@ CY_TEST_CASE("sky tables: the sky view regenerates incrementally as the sun move
         u32 full_rebuilds_after_first = 0;
     };
 
+    // THE ORACLE IS THE SAME FOR EVERY BUDGET, so it is rebuilt once per sun position and its
+    // samples are kept, rather than rebuilt again inside each budget's sweep. A full rebuild at
+    // every step is most of this case's cost; doing it three times over measured the same table
+    // three times and put the Debug row of `profiles` over its integration budget.
+    constexpr u32 kSamplesPerStep = 15;
+    const f32 sample_elevations[5] = {-5.0F, 1.0F, 8.0F, 30.0F, 70.0F};
+    const f32 sample_azimuths[3] = {0.0F, 90.0F, 210.0F};
+    const auto sample_direction = [&](u32 sample) {
+        return direction_at(sample_elevations[sample / 3], sample_azimuths[sample % 3]);
+    };
+    const auto sun_at = [&](u32 step) {
+        const f32 elevation = (static_cast<f32>(step) / static_cast<f32>(kSteps)) * kSweepDegrees;
+        return direction_at(elevation, 30.0F);
+    };
+
+    cy::Array<Vec3> expected(cy::current_allocator());
+    CY_REQUIRE(expected.resize(static_cast<usize>(kSteps + 1) * kSamplesPerStep));
+    {
+        SkyViewTable oracle;
+        CY_REQUIRE(oracle.configure(SkyTableQuality::Low));
+        for (u32 step = 0; step <= kSteps; ++step) {
+            CY_REQUIRE(oracle.update(atmosphere, ground, sun_at(step)));
+            for (u32 sample = 0; sample < kSamplesPerStep; ++sample) {
+                expected[(step * kSamplesPerStep) + sample] =
+                    oracle.sample(sample_direction(sample));
+            }
+        }
+    }
+
     Run runs[3];
     const u32 budgets[3] = {1, 3, 8};
     for (u32 index = 0; index < 3; ++index) {
         IncrementalSkyView incremental;
         CY_REQUIRE(incremental.configure(SkyTableQuality::Low));
-        SkyViewTable oracle;
-        CY_REQUIRE(oracle.configure(SkyTableQuality::Low));
         Run& run = runs[index];
         run.budget = budgets[index];
 
         for (u32 step = 0; step <= kSteps; ++step) {
-            const f32 elevation =
-                (static_cast<f32>(step) / static_cast<f32>(kSteps)) * kSweepDegrees;
-            const Vec3 sun = direction_at(elevation, 30.0F);
-
-            auto update = incremental.update(atmosphere, ground, sun, run.budget);
+            auto update = incremental.update(atmosphere, ground, sun_at(step), run.budget);
             CY_REQUIRE(update);
             CY_CHECK_LE(update.value().rows_rebuilt, step == 0 ? incremental.rows() : run.budget);
             if (step > 0 && update.value().full_rebuild) {
                 ++run.full_rebuilds_after_first;
             }
-            CY_REQUIRE(oracle.update(atmosphere, ground, sun));
 
             f32 peak = 1.0e-6F;
             f32 error = 0.0F;
-            for (const f32 elevation_sample : {-5.0F, 1.0F, 8.0F, 30.0F, 70.0F}) {
-                for (const f32 azimuth : {0.0F, 90.0F, 210.0F}) {
-                    const Vec3 direction = direction_at(elevation_sample, azimuth);
-                    const Vec3 got = incremental.sample(direction);
-                    const Vec3 want = oracle.sample(direction);
-                    for (u32 channel = 0; channel < 3; ++channel) {
-                        peak = cy::math::max(peak, std::fabs(want[channel]));
-                        error = cy::math::max(error, std::fabs(got[channel] - want[channel]));
-                    }
+            for (u32 sample = 0; sample < kSamplesPerStep; ++sample) {
+                const Vec3 got = incremental.sample(sample_direction(sample));
+                const Vec3 want = expected[(step * kSamplesPerStep) + sample];
+                for (u32 channel = 0; channel < 3; ++channel) {
+                    peak = cy::math::max(peak, std::fabs(want[channel]));
+                    error = cy::math::max(error, std::fabs(got[channel] - want[channel]));
                 }
             }
             run.worst_error = cy::math::max(run.worst_error, error / peak);

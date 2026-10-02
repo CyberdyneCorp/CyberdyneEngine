@@ -1,9 +1,11 @@
 // Local avoidance and the crowd. See cy/navigation/crowd.h for the argument; this file is the
 // sampled reciprocal-velocity-obstacle solver and the uniform grid that bounds its neighbour set.
+// The grid is a cell table sorted by key, so finding a cell is a binary search rather than a scan.
 
 #include <cy/core/base/assert.h>
 #include <cy/navigation/crowd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -112,6 +114,7 @@ Crowd::Crowd(Allocator& allocator, f32 cell_size) noexcept
     : agents_(allocator),
       cells_(allocator),
       cell_agents_(allocator),
+      cell_keys_(allocator),
       neighbours_(allocator),
       neighbour_distance_(allocator),
       cell_size_(cell_size > 0.0F ? cell_size : 4.0F) {}
@@ -193,62 +196,63 @@ void Crowd::steer_towards(CrowdAgentId id, Vec3 target, f32 arrival_distance) no
 Status Crowd::rebuild_grid(CrowdReport& report) noexcept {
     cells_.clear();
     cell_agents_.clear();
-
-    // A counting sort into a linear cell table. Cells are keyed by their (x, z) pair and found by a
-    // scan, which is O(cells) per agent in the worst case and O(1) in the common one because agents
-    // arrive in position order after the first step. The alternative — a hash map — costs an
-    // allocation per step and its iteration order is not a thing this engine wants a crowd to
-    // depend on.
-    for (const CrowdAgent& agent_row : agents_.span()) {
-        if (!agent_row.active) {
-            continue;
-        }
-        const i32 x = static_cast<i32>(std::floor(agent_row.position.x / cell_size_));
-        const i32 z = static_cast<i32>(std::floor(agent_row.position.z / cell_size_));
-        bool found = false;
-        for (GridCell& cell : cells_.span()) {
-            if (cell.x == x && cell.z == z) {
-                ++cell.count;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            GridCell cell;
-            cell.x = x;
-            cell.z = z;
-            cell.count = 1;
-            if (Status pushed = cells_.push_back(cell); !pushed) {
-                return pushed;
-            }
-        }
-    }
-
-    u32 running = 0;
-    for (GridCell& cell : cells_.span()) {
-        cell.first = running;
-        running += cell.count;
-        cell.count = 0;
-    }
-    if (Status sized = cell_agents_.resize(running); !sized) {
+    if (Status sized = cell_keys_.resize(agents_.size()); !sized) {
         return sized;
     }
+
+    // A SORT, NOT A SCAN. Every active agent is listed once, ordered by (cell key, agent index),
+    // and the cell table is the run-length encoding of that list — so it comes out ordered by key
+    // and `gather_neighbours` finds a cell by binary search. Until this was a sort, each agent
+    // found its cell by scanning the cell table, which made a step O(agents x cells): the 2,000
+    // agent scale act spent most of its navigation tick there, and `samples/08-vertical-slice/`
+    // had to size its cells to keep the table short. The agent index as the second key keeps the
+    // order within a cell the ascending one the scan produced.
     for (usize index = 0; index < agents_.size(); ++index) {
         if (!agents_[index].active) {
             continue;
         }
-        const i32 x = static_cast<i32>(std::floor(agents_[index].position.x / cell_size_));
-        const i32 z = static_cast<i32>(std::floor(agents_[index].position.z / cell_size_));
-        for (GridCell& cell : cells_.span()) {
-            if (cell.x == x && cell.z == z) {
-                cell_agents_[cell.first + cell.count] = static_cast<u32>(index);
-                ++cell.count;
-                break;
-            }
+        cell_keys_[index] =
+            cell_key(cell_of(agents_[index].position.x), cell_of(agents_[index].position.z));
+        if (Status pushed = cell_agents_.push_back(static_cast<u32>(index)); !pushed) {
+            return pushed;
+        }
+    }
+    const u64* keys = cell_keys_.data();
+    std::sort(cell_agents_.data(), cell_agents_.data() + cell_agents_.size(),
+              [keys](u32 a, u32 b) noexcept {
+                  return keys[a] < keys[b] || (keys[a] == keys[b] && a < b);
+              });
+
+    for (usize slot = 0; slot < cell_agents_.size(); ++slot) {
+        const u64 key = keys[cell_agents_[slot]];
+        if (!cells_.empty() && cells_[cells_.size() - 1].key == key) {
+            ++cells_[cells_.size() - 1].count;
+            continue;
+        }
+        GridCell cell;
+        cell.key = key;
+        cell.first = static_cast<u32>(slot);
+        cell.count = 1;
+        if (Status pushed = cells_.push_back(cell); !pushed) {
+            return pushed;
         }
     }
     report.grid_cells_used = static_cast<u32>(cells_.size());
     return ok();
+}
+
+i32 Crowd::cell_of(f32 coordinate) const noexcept {
+    return static_cast<i32>(std::floor(coordinate / cell_size_));
+}
+
+u64 Crowd::cell_key(i32 x, i32 z) noexcept {
+    // Row-major with z the major key, each coordinate biased into an unsigned range so that the
+    // packed key orders the same way the signed pair does. A row of cells is then one contiguous,
+    // ascending run of keys.
+    const auto biased = [](i32 value) noexcept {
+        return static_cast<u64>(static_cast<u32>(value) ^ 0x80000000U);
+    };
+    return (biased(z) << 32U) | biased(x);
 }
 
 void Crowd::gather_neighbours(CrowdAgentId id, u32 wanted, CrowdReport& report) noexcept {
@@ -259,52 +263,66 @@ void Crowd::gather_neighbours(CrowdAgentId id, u32 wanted, CrowdReport& report) 
     }
     const CrowdAgent& self = agents_[id];
     const f32 range = self.params.neighbour_distance;
-    const i32 x = static_cast<i32>(std::floor(self.position.x / cell_size_));
-    const i32 z = static_cast<i32>(std::floor(self.position.z / cell_size_));
+    const i32 x = cell_of(self.position.x);
+    const i32 z = cell_of(self.position.z);
     const i32 span = static_cast<i32>(std::ceil(range / cell_size_));
 
-    for (const GridCell& cell : cells_.span()) {
-        if (cell.x < x - span || cell.x > x + span || cell.z < z - span || cell.z > z + span) {
+    const GridCell* const first_cell = cells_.data();
+    const GridCell* const last_cell = first_cell + cells_.size();
+    for (i32 row = z - span; row <= z + span; ++row) {
+        const u64 lowest = cell_key(x - span, row);
+        const u64 highest = cell_key(x + span, row);
+        const GridCell* cell =
+            std::lower_bound(first_cell, last_cell, lowest,
+                             [](const GridCell& c, u64 key) noexcept { return c.key < key; });
+        for (; cell != last_cell && cell->key <= highest; ++cell) {
+            ++report.cells_examined;
+            consider_cell(id, *cell, wanted, report);
+        }
+    }
+}
+
+void Crowd::consider_cell(CrowdAgentId id, const GridCell& cell, u32 wanted,
+                          CrowdReport& report) noexcept {
+    const CrowdAgent& self = agents_[id];
+    const f32 range = self.params.neighbour_distance;
+    for (u32 slot = 0; slot < cell.count; ++slot) {
+        const u32 other = cell_agents_[cell.first + slot];
+        if (other == id) {
             continue;
         }
-        for (u32 slot = 0; slot < cell.count; ++slot) {
-            const u32 other = cell_agents_[cell.first + slot];
-            if (other == id) {
-                continue;
-            }
-            ++report.neighbour_tests;
-            const Vec3 offset = flatten(agents_[other].position - self.position);
-            const f32 distance_squared = (offset.x * offset.x) + (offset.z * offset.z);
-            if (distance_squared > range * range) {
-                continue;
-            }
-            // An insertion sort into a list of at most `wanted`, ordered by (distance, id). The
-            // second key is what makes two agents at the same distance resolve the same way in
-            // every run — see the header.
-            const auto after = [](f32 distance_a, u32 id_a, f32 distance_b, u32 id_b) noexcept {
-                return distance_a > distance_b || (distance_a == distance_b && id_a > id_b);
-            };
-            if (neighbours_.size() == wanted &&
-                !after(neighbour_distance_[wanted - 1], neighbours_[wanted - 1], distance_squared,
-                       other)) {
-                continue;
-            }
-            if (neighbours_.size() < wanted) {
-                if (!neighbours_.push_back(other) ||
-                    !neighbour_distance_.push_back(distance_squared)) {
-                    return;
-                }
-            }
-            usize slot_index = neighbours_.size() - 1;
-            while (slot_index > 0 && after(neighbour_distance_[slot_index - 1],
-                                           neighbours_[slot_index - 1], distance_squared, other)) {
-                neighbours_[slot_index] = neighbours_[slot_index - 1];
-                neighbour_distance_[slot_index] = neighbour_distance_[slot_index - 1];
-                --slot_index;
-            }
-            neighbours_[slot_index] = other;
-            neighbour_distance_[slot_index] = distance_squared;
+        ++report.neighbour_tests;
+        const Vec3 offset = flatten(agents_[other].position - self.position);
+        const f32 distance_squared = (offset.x * offset.x) + (offset.z * offset.z);
+        if (distance_squared > range * range) {
+            continue;
         }
+        // An insertion sort into a list of at most `wanted`, ordered by (distance, id). The
+        // second key is what makes two agents at the same distance resolve the same way in
+        // every run, and what makes the result independent of the order cells are visited in —
+        // see the header.
+        const auto after = [](f32 distance_a, u32 id_a, f32 distance_b, u32 id_b) noexcept {
+            return distance_a > distance_b || (distance_a == distance_b && id_a > id_b);
+        };
+        if (neighbours_.size() == wanted &&
+            !after(neighbour_distance_[wanted - 1], neighbours_[wanted - 1], distance_squared,
+                   other)) {
+            continue;
+        }
+        if (neighbours_.size() < wanted) {
+            if (!neighbours_.push_back(other) || !neighbour_distance_.push_back(distance_squared)) {
+                return;
+            }
+        }
+        usize slot_index = neighbours_.size() - 1;
+        while (slot_index > 0 && after(neighbour_distance_[slot_index - 1],
+                                       neighbours_[slot_index - 1], distance_squared, other)) {
+            neighbours_[slot_index] = neighbours_[slot_index - 1];
+            neighbour_distance_[slot_index] = neighbour_distance_[slot_index - 1];
+            --slot_index;
+        }
+        neighbours_[slot_index] = other;
+        neighbour_distance_[slot_index] = distance_squared;
     }
 }
 

@@ -240,6 +240,35 @@ CY_TEST_CASE("a path follower and a field follower both produce a desired veloci
     CY_CHECK_NEAR(length(done), 0.0F, 1e-6F);
 }
 
+CY_TEST_CASE("a neighbour query looks at the cells its radius covers, not every occupied cell") {
+    // REGRESSION. Until this was fixed, `gather_neighbours` tested every occupied cell's bounds for
+    // every agent and `rebuild_grid` found each agent's cell by scanning the cell table, so a step
+    // cost agents x occupied cells before any avoidance was solved. The 2,000-agent scale act of
+    // `smoke.vertical_slice` spent most of its navigation tick there and failed its simulation
+    // budget in Debug. A sparse crowd is the case that shows it: here every agent has a cell of its
+    // own, so the old grid examined 1,024 cells per query where the radius covers nine.
+    constexpr u32 kSide = 32;
+    constexpr u32 kAgents = kSide * kSide;
+    Crowd crowd(allocator(), 4.0F);
+    AvoidanceParams params = walker();
+    params.neighbour_distance = 2.5F;
+    for (u32 index = 0; index < kAgents; ++index) {
+        // Ten metres apart against four-metre cells: one agent per cell, and no neighbours.
+        const u32 row = index / kSide;
+        const f32 x = static_cast<f32>(index % kSide) * 10.0F;
+        const f32 z = static_cast<f32>(row) * 10.0F;
+        CY_REQUIRE(crowd.add(Vec3{x - 160.0F, 0.0F, z - 160.0F}, params).has_value());
+    }
+
+    CrowdReport report;
+    CY_REQUIRE(crowd.step(1.0F / 60.0F, report).has_value());
+    CY_CHECK_EQ(report.agents, kAgents);
+    CY_CHECK_EQ(report.grid_cells_used, kAgents);
+    CY_CHECK_EQ(report.neighbour_tests, 0U);
+    // A 2.5 m radius over 4 m cells is a block of three by three.
+    CY_CHECK_LE(report.cells_examined, kAgents * 9U);
+}
+
 CY_TEST_CASE("eight thousand agents hold their declared budget") {
     // THE MILESTONE'S OWN EXIT CRITERION, measured rather than asserted: "Cost is bounded by
     // configuration: 8,000 agents and 100 concurrent effects hold their budgets."
