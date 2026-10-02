@@ -13,6 +13,7 @@ cy_add_module(
         src/budget.cpp
         src/fixtures.cpp
         src/host_blocking.cpp
+        src/image_warmup.cpp
         src/main.cpp
         src/quiet_host_marker.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
