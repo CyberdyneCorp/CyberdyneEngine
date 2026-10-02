@@ -11,9 +11,8 @@
 // the benchmark at a sample count large enough to mean something, and the module's README records
 // them. A threshold here would be a claim about whichever machine ran the suite.
 //
-// HOW TO MAKE IT FAIL:
-//   * report `trace_was_open` as anything but trace_is_open()       -> the closed/open checks;
-//   * make the measurement loops emit on a channel the policy refuses -> the nothing-refused check.
+// HOW TO MAKE IT FAIL: report `trace_was_open` as anything but trace_is_open() in
+// measure_emission_cost() — the recording figure then claims it was measured closed.
 
 #include <cy/core/diagnostics/trace.h>
 #include <cy/test/test.h>
