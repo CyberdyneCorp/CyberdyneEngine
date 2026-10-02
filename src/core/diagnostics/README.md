@@ -131,8 +131,13 @@ registrations the fixed-capacity metadata table refused.
 machine M0 was implemented on. Re-run it rather than trusting the table:
 
 ```
-build/<dir>/src/core/diagnostics/tests/cy_diag_overhead 400000 [trace-path]
+just diagnose-overhead [samples] [trace-path]    # build/<dir>/src/core/diagnostics/tests/cy_diag_overhead
 ```
+
+The benchmark asserts nothing; `integration.diagnostics_overhead` holds what it relies on — the
+figures are produced closed and recording, and every measured emission reached a buffer. No
+threshold is committed yet, so the one-per-cent bound for a Shipping build is still a measurement
+in this table rather than a gate.
 
 | State | ns per instant | +2 fields | scope pair |
 |---|---:|---:|---:|
@@ -153,6 +158,30 @@ Against a 16.67 ms frame:
 
 The dominant term in the recording figures is the monotonic clock read, not the buffer write.
 `measure_emission_cost()` is public, so the engine can report the cost of its own diagnostics.
+
+## Tests
+
+The C++ checks are `cy_add_test` suites in `tests/`, one per subject, each case named for the
+behaviour it holds, so `tools/roadmap/requirements-coverage.toml` can cite them by case:
+
+| Suite | What it holds |
+|---|---|
+| `integration.diagnostics_trace` | one trace and one timeline, names resolved offline from the capture, emission that allocates nothing |
+| `integration.diagnostics_loss` | drops by priority; a flood on every channel keeps breadcrumbs, ticks and task lifecycle and counts every drop |
+| `integration.diagnostics_log` | level and category floors, the record's site, a query by typed field |
+| `integration.diagnostics_capture` | the rolling buffer, its triggers, the health model, teardown under load |
+| `integration.diagnostics_privacy` | export policies, redaction, unclassified fields |
+| `integration.diagnostics_source_privacy` | a source location as classified data; no build-machine path in an artefact |
+| `integration.diagnostics_bridge` | base's diagnostic sink as classified records |
+| `integration.diagnostics_reproduction` | the reproduction artefact and the crash report's link to it |
+| `integration.diagnostics_overhead` | the engine's report of its own emission cost |
+
+The crash probe, the field-macro compile check and the source-location lint (with its self-test)
+stay plain CTest entries — `diagnostics.crash`, `diagnostics.field_macro`,
+`diagnostics.source_location_lint*` — because a probe that must really die cannot be a case in a
+suite that has to survive it. They and the two privacy suites are the `diagnostics-privacy` gate in
+`tools/roadmap/gates.toml`, which is what makes "the check SHALL be a gate rather than a review"
+true of them.
 
 ## Artefacts
 

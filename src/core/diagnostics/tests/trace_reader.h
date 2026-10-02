@@ -60,6 +60,14 @@ struct LossEntry {
     cy::diag::u64 count = 0;
 };
 
+/// One entry of the capture's chunk index (`ENDX`), as the writer recorded it.
+struct IndexRef {
+    cy::diag::u32 tag = 0;
+    cy::diag::u32 thread = 0;
+    cy::diag::u64 offset = 0;
+    cy::diag::u64 payload_bytes = 0;
+};
+
 struct Capture {
     bool valid = false;
     cy::diag::format::FileHeader header{};
@@ -70,6 +78,7 @@ struct Capture {
     std::map<std::string, std::string> identity;
     std::vector<ReadRecord> records;
     std::vector<LossEntry> losses;
+    std::vector<IndexRef> index;
     std::vector<cy::diag::u8> bytes;
     cy::diag::u32 chunk_count = 0;
 
@@ -235,6 +244,21 @@ inline void read_losses(Capture& capture, const cy::diag::u8* payload, std::size
     }
 }
 
+inline void read_index(Capture& capture, const cy::diag::u8* payload, std::size_t bytes) {
+    Cursor cursor(payload, bytes);
+    const auto count = cursor.read<cy::diag::u32>();
+    for (cy::diag::u32 index = 0; index < count; ++index) {
+        IndexRef entry;
+        entry.tag = cursor.read<cy::diag::u32>();
+        entry.thread = cursor.read<cy::diag::u32>();
+        entry.offset = cursor.read<cy::diag::u64>();
+        entry.payload_bytes = cursor.read<cy::diag::u64>();
+        (void)cursor.read<cy::diag::u64>();  // first timestamp
+        (void)cursor.read<cy::diag::u64>();  // last timestamp
+        capture.index.push_back(entry);
+    }
+}
+
 /// Read a whole capture. Two passes, because the metadata chunk that classifies a field is written
 /// at close as well as at open, and a record's text can only be read once its field is known.
 inline Capture read_capture(const char* path) {
@@ -274,6 +298,8 @@ inline Capture read_capture(const char* path) {
                 read_events(capture, payload, bytes, chunk.flags);
             } else if (pass == 1 && chunk.tag == cy::diag::format::kChunkLoss) {
                 read_losses(capture, payload, bytes);
+            } else if (pass == 1 && chunk.tag == cy::diag::format::kChunkIndex) {
+                read_index(capture, payload, bytes);
             }
             if (pass == 1) {
                 ++capture.chunk_count;

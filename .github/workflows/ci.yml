@@ -1053,6 +1053,19 @@ jobs:
       # this command; without a job that runs it the check exists and gates nothing.
       - name: The project graph's rejections
         run: just test-integration -R project_graph
+      # The `diagnostics-privacy` gate: what a produced artefact may contain, checked on every pull
+      # request rather than reviewed. The two suites, the compile-time refusal, the lint that
+      # forbids a path as a name with its self-test, and a real crash read back for build paths.
+      - name: Diagnostics privacy — export policies and redaction
+        run: just test-integration -R diagnostics_privacy
+      - name: Diagnostics privacy — no build-machine path in any artefact
+        run: just test-integration -R diagnostics_source_privacy
+      - name: Diagnostics privacy — a field cannot be declared without a classification
+        run: just test-integration -R diagnostics.field_macro
+      - name: Diagnostics privacy — no source path is a name, and the lint can still fire
+        run: just test-integration -R diagnostics.source_location_lint
+      - name: Diagnostics privacy — a real crash, its report and its reader
+        run: just test-integration -R diagnostics.crash
 
   # --- The specification set ----------------------------------------------------------------------
   specs:

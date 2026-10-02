@@ -117,9 +117,15 @@ class Finding:
     line: int
     text: str
     detail: str
+    # The system the finding belongs to: the CMake target that declared the determinism profile
+    # the source was checked under. The requirement asks for "the system and the source location",
+    # and a path alone makes a reader work out which profile made it a finding.
+    system: str = ""
 
     def render(self) -> str:
-        return f"{self.path}:{self.line}: [{self.rule}] {self.detail}\n    {self.text.strip()}"
+        system = f" {self.system}:" if self.system else ""
+        return (f"{self.path}:{self.line}: [{self.rule}]{system} {self.detail}\n"
+                f"    {self.text.strip()}")
 
 
 def strip_comments_and_strings(line: str) -> str:
@@ -156,7 +162,8 @@ def strip_comments_and_strings(line: str) -> str:
     return "".join(out)
 
 
-def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = ()) -> list[Finding]:
+def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = (),
+                system: str = "") -> list[Finding]:
     relative = str(path.relative_to(root))
     findings: list[Finding] = []
     try:
@@ -188,19 +195,21 @@ def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = ()) -> list[Fi
         for token in WALL_CLOCK:
             if token in code:
                 findings.append(Finding("wall-clock", relative, number, raw,
-                                        f"authoritative code reads a wall clock ({token})"))
+                                        f"authoritative code reads a wall clock ({token})",
+                                        system))
         for token in AMBIENT_RANDOM:
             if token in code:
                 findings.append(Finding("ambient-random", relative, number, raw,
-                                        f"authoritative code uses an ambient generator ({token})"))
+                                        f"authoritative code uses an ambient generator ({token})",
+                                        system))
         if HASH_ITERATION.search(code):
             findings.append(Finding("unordered-iteration", relative, number, raw,
                                     "iteration over a container with unspecified order; lookup is "
-                                    "permitted, iteration as a decision order is not"))
+                                    "permitted, iteration as a decision order is not", system))
         if PRESENTATION_READ.search(code) and "presentation-read" not in exempt:
             findings.append(Finding("presentation-read", relative, number, raw,
                                     "bypass_classification() reads a value without its witness; "
-                                    "reflection-driven machinery only"))
+                                    "reflection-driven machinery only", system))
         if "forbidden-cmath" not in exempt:
             for name in FORBIDDEN_CMATH:
                 # `(?<!fp::)` is the one spelling that is not a finding: it IS the replacement.
@@ -210,7 +219,8 @@ def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = ()) -> list[Fi
                     findings.append(Finding(
                         "forbidden-cmath", relative, number, raw,
                         f"'{name}' is not correctly rounded in this libm and its folded value "
-                        f"differs from its runtime value; use cy::determinism::fp::{name}"))
+                        f"differs from its runtime value; use cy::determinism::fp::{name}",
+                        system))
     return findings
 
 
@@ -255,10 +265,12 @@ def target_of(entry: dict) -> str:
 
 
 def check_build_half(profiles: dict[str, str], entries: list[dict],
-                     contraction_flag: str) -> tuple[list[Finding], int, set[str]]:
+                     contraction_flag: str) -> tuple[list[Finding], int, dict[str, str]]:
+    """The contraction and fast-math findings, the number of translation units examined, and each
+    examined source mapped to the target — the system — whose profile it was compiled under."""
     findings: list[Finding] = []
     checked = 0
-    sources: set[str] = set()
+    sources: dict[str, str] = {}
     for entry in entries:
         target = target_of(entry)
         profile = profiles.get(target)
@@ -266,7 +278,7 @@ def check_build_half(profiles: dict[str, str], entries: list[dict],
             continue
         command = entry.get("command") or " ".join(entry.get("arguments", []))
         source = entry.get("file", "")
-        sources.add(source)
+        sources.setdefault(source, target)
         checked += 1
         if profile in ("None", "ReplayStable"):
             continue
@@ -281,12 +293,12 @@ def check_build_half(profiles: dict[str, str], entries: list[dict],
             findings.append(Finding(
                 "contraction", source, 0, "",
                 f"target '{target}' declares determinism profile {profile} but was compiled "
-                f"without {contraction_flag}"))
+                f"without {contraction_flag}", target))
         for fast in ("-ffast-math", "-Ofast", "/fp:fast"):
             if fast in command:
                 findings.append(Finding(
                     "fast-math", source, 0, "",
-                    f"target '{target}' declares {profile} and was compiled with {fast}"))
+                    f"target '{target}' declares {profile} and was compiled with {fast}", target))
     return findings, checked, sources
 
 
@@ -353,6 +365,15 @@ def run_selftest(root: Path) -> int:
             if not any(finding.rule == rule for finding in found):
                 print(f"determinism-lint selftest: rule '{rule}' did not fire on: {line}")
                 failures += 1
+
+        # A finding names the system as well as the file and line: the requirement's own words.
+        named = base / "named.cpp"
+        named.write_text("void f() {\n    int roll = std::rand();\n}\n", encoding="utf-8")
+        rendered = [finding.render() for finding in scan_source(named, base, system="cy_selftest")]
+        if not any("cy_selftest:" in text and "named.cpp:2:" in text for text in rendered):
+            print("determinism-lint selftest: a finding does not name its system, file and line: "
+                  f"{rendered}")
+            failures += 1
 
         clean = base / "clean.cpp"
         clean.write_text(SELFTEST_CLEAN, encoding="utf-8")
@@ -429,13 +450,13 @@ def main() -> int:
 
     exemptions = {str((root / name).resolve()): rules for name, rules in EXEMPTIONS.items()}
     source_findings: list[Finding] = []
-    for source in sorted(sources):
+    for source, system in sorted(sources.items()):
         path = Path(source)
         if not path.is_file() or root not in path.resolve().parents:
             continue
         resolved = path.resolve()
         source_findings.extend(
-            scan_source(resolved, root, exempt=exemptions.get(str(resolved), ())))
+            scan_source(resolved, root, exempt=exemptions.get(str(resolved), ()), system=system))
 
     findings = build_findings + source_findings
 

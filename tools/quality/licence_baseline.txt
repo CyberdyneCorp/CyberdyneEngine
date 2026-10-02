@@ -732,7 +732,6 @@ src/core/diagnostics/tests/compile_fail/runtime_classification.cpp
 src/core/diagnostics/tests/compile_fail/unclassified.cpp
 src/core/diagnostics/tests/compile_fail/unregistered_type.cpp
 src/core/diagnostics/tests/crash_probe.cpp
-src/core/diagnostics/tests/harness.h
 src/core/diagnostics/tests/test_bridge.cpp
 src/core/diagnostics/tests/test_capture.cpp
 src/core/diagnostics/tests/test_crash.py

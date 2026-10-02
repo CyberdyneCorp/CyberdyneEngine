@@ -14,18 +14,19 @@
 //      loses records, says how many, and tells the health model.
 //
 // HOW TO MAKE IT FAIL:
-//   * make `on_record()` return without copying                -> case 2 goes red (empty artefact);
-//   * make `age_out()` evict everything rather than the window -> case 2 goes red;
-//   * drop the `frame_budget_ns` comparison in note_frame      -> case 4a goes red;
-//   * stop counting `records_overwritten`                      -> case 5 goes red.
+//   * make `on_record()` return without copying                -> the frame-over-budget case goes
+//                                                                  red (empty artefact);
+//   * make `age_out()` evict everything rather than the window -> the frame-over-budget case;
+//   * drop the `frame_budget_ns` comparison in note_frame      -> the frame-over-budget case;
+//   * stop counting `records_overwritten`                      -> the bounded-arena case.
 
-#include "harness.h"
 #include "trace_reader.h"
 
 #include <cy/core/diagnostics/capture.h>
 #include <cy/core/diagnostics/health.h>
 #include <cy/core/diagnostics/log.h>
 #include <cy/core/diagnostics/trace.h>
+#include <cy/test/test.h>
 
 #include <atomic>
 #include <cstdio>
@@ -69,11 +70,15 @@ void emit(NameId name, u64 index) {
     trace_instant(name, sample_category(), Channel::Important, fields, 1);
 }
 
-void case_1_and_2_always_on_and_the_window_before_the_event() {
+}  // namespace
+
+CY_TEST_CASE(
+    "capture: a frame over budget freezes the rolling window, including what came before the "
+    "trigger") {
     health_reset();
     RollingConfig config = deterministic_config();
     config.frame_budget_ns = 1'000'000ULL;  // one millisecond
-    CY_CHECK(rolling_open(config).has_value(), "the rolling buffer opens");
+    CY_CHECK_MESSAGE(rolling_open(config).has_value(), "the rolling buffer opens");
 
     // The window BEFORE the event: forty records nobody asked to keep.
     for (u64 index = 0; index < 40; ++index) {
@@ -82,9 +87,9 @@ void case_1_and_2_always_on_and_the_window_before_the_event() {
     trace_flush();
 
     const RollingStats held = rolling_stats();
-    CY_CHECK(held.records_held >= 40, "the buffer holds what was emitted");
-    CY_CHECK_EQ(held.captures_written, 0u, "and has written nothing, because nothing asked");
-    CY_CHECK(last_capture_path()[0] == '\0', "so there is no artefact yet");
+    CY_CHECK_MESSAGE(held.records_held >= 40, "the buffer holds what was emitted");
+    CY_CHECK_MESSAGE(held.captures_written == 0u, "and has written nothing, because nothing asked");
+    CY_CHECK_MESSAGE(last_capture_path()[0] == '\0', "so there is no artefact yet");
 
     // A declared condition: this frame took ten milliseconds against a one-millisecond budget.
     rolling_note_frame(41, 10'000'000ULL);
@@ -92,13 +97,14 @@ void case_1_and_2_always_on_and_the_window_before_the_event() {
     rolling_poll();
 
     const RollingStats after = rolling_stats();
-    CY_CHECK_EQ(after.captures_written, 1u, "the overrun wrote a capture with no capture call");
+    CY_CHECK_MESSAGE(after.captures_written == 1u,
+                     "the overrun wrote a capture with no capture call");
     const std::string path = last_capture_path();
-    CY_CHECK(!path.empty(), "and the artefact has a path");
-    CY_CHECK(file_exists(path.c_str()), "and the artefact exists");
+    CY_CHECK_MESSAGE(!path.empty(), "and the artefact has a path");
+    CY_CHECK_MESSAGE(file_exists(path.c_str()), "and the artefact exists");
 
     const cy_test::Capture capture = cy_test::read_capture(path.c_str());
-    CY_CHECK(capture.valid, "the artefact is readable by the ordinary reader");
+    CY_CHECK_MESSAGE(capture.valid, "the artefact is readable by the ordinary reader");
 
     u32 early = 0;
     u32 late = 0;
@@ -114,39 +120,41 @@ void case_1_and_2_always_on_and_the_window_before_the_event() {
         }
     }
     // THE CLAIM. The records are from before the trigger; nobody was profiling when they happened.
-    CY_CHECK_EQ(early, 40u, "every record from before the trigger is in the capture");
-    CY_CHECK_EQ(late, 1u, "and the record from after it as well");
-    CY_CHECK(saw_trigger, "and the artefact carries the record of its own reason");
+    CY_CHECK_MESSAGE(early == 40u, "every record from before the trigger is in the capture");
+    CY_CHECK_MESSAGE(late == 1u, "and the record from after it as well");
+    CY_CHECK_MESSAGE(saw_trigger, "and the artefact carries the record of its own reason");
 
     rolling_close();
-    CY_CHECK(!rolling_is_open(), "the buffer closes");
+    CY_CHECK_MESSAGE(!rolling_is_open(), "the buffer closes");
 }
 
-void case_3_manual_capture_is_the_same_format() {
+CY_TEST_CASE("capture: a manual capture is the same format as an automatic one") {
     health_reset();
     RollingConfig config = deterministic_config();
-    CY_CHECK(rolling_open(config).has_value(), "the rolling buffer opens");
+    CY_CHECK_MESSAGE(rolling_open(config).has_value(), "the rolling buffer opens");
     for (u64 index = 0; index < 10; ++index) {
         emit(early_event(), index);
     }
     trace_flush();
-    CY_CHECK(capture_trigger(CaptureTrigger::Manual, 0).has_value(),
-             "a manual capture is accepted");
+    CY_CHECK_MESSAGE(capture_trigger(CaptureTrigger::Manual, 0).has_value(),
+                     "a manual capture is accepted");
     rolling_poll();
 
     const std::string path = last_capture_path();
-    CY_CHECK(path.find("manual") != std::string::npos, "the file names what asked for it");
+    CY_CHECK_MESSAGE(path.find("manual") != std::string::npos, "the file names what asked for it");
     const cy_test::Capture capture = cy_test::read_capture(path.c_str());
-    CY_CHECK(capture.valid, "manual and automatic produce one format and one reader");
-    CY_CHECK(!capture.records.empty(), "and the manual capture holds the window too");
+    CY_CHECK_MESSAGE(capture.valid, "manual and automatic produce one format and one reader");
+    CY_CHECK_MESSAGE(!capture.records.empty(), "and the manual capture holds the window too");
     rolling_close();
 }
 
-void case_4_health_critical_triggers_a_capture() {
+CY_TEST_CASE(
+    "capture: a health condition going critical triggers a capture, and the model reports the "
+    "worst level and since when") {
     health_reset();
     RollingConfig config = deterministic_config();
     config.on_health_critical = true;
-    CY_CHECK(rolling_open(config).has_value(), "the rolling buffer opens");
+    CY_CHECK_MESSAGE(rolling_open(config).has_value(), "the rolling buffer opens");
     emit(early_event(), 1);
     trace_flush();
 
@@ -155,25 +163,27 @@ void case_4_health_critical_triggers_a_capture() {
     rolling_poll();
 
     const RollingStats stats = rolling_stats();
-    CY_CHECK_EQ(stats.captures_written, 1u, "a health transition to Critical wrote a capture");
-    CY_CHECK(std::string(last_capture_path()).find("health") != std::string::npos,
-             "and the artefact names the condition kind that asked for it");
+    CY_CHECK_MESSAGE(stats.captures_written == 1u,
+                     "a health transition to Critical wrote a capture");
+    CY_CHECK_MESSAGE(std::string(last_capture_path()).find("health") != std::string::npos,
+                     "and the artefact names the condition kind that asked for it");
 
     const HealthSnapshot snapshot = health_snapshot();
-    CY_CHECK(snapshot.worst == HealthSeverity::Critical, "the model reports the worst level");
-    CY_CHECK_EQ(snapshot.active, 1u, "and how many conditions are active");
+    CY_CHECK_MESSAGE(snapshot.worst == HealthSeverity::Critical,
+                     "the model reports the worst level");
+    CY_CHECK_MESSAGE(snapshot.active == 1u, "and how many conditions are active");
     const auto& entry =
         snapshot.conditions[static_cast<cy::diag::u32>(HealthCondition::DeterminismDivergence)];
-    CY_CHECK(entry.since_ns != 0, "and since when — the half a level alone does not carry");
-    CY_CHECK_EQ(entry.detail, 7u, "and the subsystem's own number");
+    CY_CHECK_MESSAGE(entry.since_ns != 0, "and since when — the half a level alone does not carry");
+    CY_CHECK_MESSAGE(entry.detail == 7u, "and the subsystem's own number");
     rolling_close();
 }
 
-void case_5_the_arena_is_bounded_and_says_what_it_lost() {
+CY_TEST_CASE("capture: the arena is bounded and counts what it overwrote") {
     health_reset();
     RollingConfig config = deterministic_config();
     config.arena_bytes = 64u * 1024u;  // deliberately far too small for what follows
-    CY_CHECK(rolling_open(config).has_value(), "the rolling buffer opens");
+    CY_CHECK_MESSAGE(rolling_open(config).has_value(), "the rolling buffer opens");
 
     for (u64 index = 0; index < 20000; ++index) {
         emit(early_event(), index);
@@ -184,15 +194,16 @@ void case_5_the_arena_is_bounded_and_says_what_it_lost() {
     trace_flush();
 
     const RollingStats stats = rolling_stats();
-    CY_CHECK(stats.bytes_held <= config.arena_bytes, "the arena never exceeds what was declared");
-    CY_CHECK(stats.records_overwritten > 0,
-             "an arena too small for the window loses records, and counts them");
+    CY_CHECK_MESSAGE(stats.bytes_held <= config.arena_bytes,
+                     "the arena never exceeds what was declared");
+    CY_CHECK_MESSAGE(stats.records_overwritten > 0,
+                     "an arena too small for the window loses records, and counts them");
     rolling_close();
 }
 
 /// HARD RULE: teardown under load. Producers on four threads, the background consumer draining, and
 /// captures triggering while `rolling_close()` runs.
-void case_6_teardown_under_load() {
+CY_TEST_CASE("capture: the rolling buffer tears down under load") {
     health_reset();
     RollingConfig config = deterministic_config();
     config.consumer_thread = true;
@@ -200,7 +211,8 @@ void case_6_teardown_under_load() {
     config.arena_bytes = 512u * 1024u;
     config.cooldown_ns = 0;
     config.max_captures = 64;
-    CY_CHECK(rolling_open(config).has_value(), "the rolling buffer opens with a real consumer");
+    CY_CHECK_MESSAGE(rolling_open(config).has_value(),
+                     "the rolling buffer opens with a real consumer");
 
     std::atomic<bool> stop{false};
     std::vector<std::thread> producers;
@@ -229,20 +241,9 @@ void case_6_teardown_under_load() {
     }
     trigger.join();
 
-    CY_CHECK(!rolling_is_open(), "the buffer is closed");
-    CY_CHECK(!trace_is_open(), "and so is the trace it opened");
+    CY_CHECK_MESSAGE(!rolling_is_open(), "the buffer is closed");
+    CY_CHECK_MESSAGE(!trace_is_open(), "and so is the trace it opened");
     // The producers kept emitting after the close: that must be a no-op, not a fault.
     const RollingStats stats = rolling_stats();
-    CY_CHECK_EQ(stats.records_held, 0u, "and it holds nothing");
-}
-
-}  // namespace
-
-int main() {
-    case_1_and_2_always_on_and_the_window_before_the_event();
-    case_3_manual_capture_is_the_same_format();
-    case_4_health_critical_triggers_a_capture();
-    case_5_the_arena_is_bounded_and_says_what_it_lost();
-    case_6_teardown_under_load();
-    return cy_test::summarise("test_capture");
+    CY_CHECK_MESSAGE(stats.records_held == 0u, "and it holds nothing");
 }

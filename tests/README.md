@@ -57,7 +57,10 @@ configure time by `tests/CMakeLists.txt` and again at run time by
 
 `CY_CHECK` records a failure and carries on. `CY_REQUIRE` stops the test — and, under
 `-fno-exceptions`, aborts the process, taking the rest of the binary's cases with it. Guard
-preconditions with it; assert results with `CY_CHECK`.
+preconditions with it; assert results with `CY_CHECK`. `CY_CHECK_MESSAGE(condition, "sentence")`
+and `CY_REQUIRE_MESSAGE` do the same and print the sentence beside the expression when they fail —
+for a case with many checks, where the expression alone does not say which claim broke. Wrap a
+condition joined by `&&` or `||` in its own parentheses: doctest decomposes one comparison only.
 
 `CY_CHECK_NEAR(value, expected, tolerance)` is an ABSOLUTE comparison: it passes when
 `|value - expected| <= tolerance`. Where the error that is acceptable is a fraction of the quantity,
