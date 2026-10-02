@@ -283,6 +283,7 @@ const SCRIPT_AND_AI_NODES: &[&str] = &[
     "script.emit_event",
     "script.entry",
     "script.get_field",
+    "script.get_var",
     "script.less_float",
     "script.loop",
     "script.mul_float",
@@ -291,7 +292,9 @@ const SCRIPT_AND_AI_NODES: &[&str] = &[
     "script.query",
     "script.return",
     "script.set_field",
+    "script.set_var",
     "script.sub_float",
+    "script.variable",
     "script.wait",
 ];
 
@@ -310,6 +313,7 @@ const ABILITY_NODES: &[&str] = &[
     "script.emit_event",
     "script.entry",
     "script.get_field",
+    "script.get_var",
     "script.less_float",
     "script.loop",
     "script.mul_float",
@@ -318,7 +322,9 @@ const ABILITY_NODES: &[&str] = &[
     "script.query",
     "script.return",
     "script.set_field",
+    "script.set_var",
     "script.sub_float",
+    "script.variable",
     "script.wait",
 ];
 

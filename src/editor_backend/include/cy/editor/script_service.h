@@ -12,6 +12,22 @@
 //                          n x f32 argument)
 //   script.state.get      ()                       -> the Play state
 //
+// and, for the Play debugger and hot reload (#84 stages 2 and 3):
+//
+//   script.debug.get         (u32 1, u64 node,       -> the debug state of Play, with that entity's
+//                             text graph, u32 n,        instance of that graph inspected: its
+//                             n x (u64 node,            variables and the n watched pins
+//                             text pin))
+//   script.debug.breakpoint  (u32 1, text graph,     -> the debug state, nothing inspected
+//                             u64 node, u64 entity,
+//                             u8 enabled)
+//   script.debug.control     (u32 1, u8 action:      -> the debug state, nothing inspected
+//                             0 pause, 1 continue,
+//                             2 step into, 3 step
+//                             over)
+//   script.reload            (u32 1, text reference, -> u32 1, u8 accepted, u32 generation, and
+//                             text source)              the diagnostics as a compile lists them
+//
 // THE CATALOGUE is the material catalogue's schema 3 (`material.catalogue.get`), so one decoder
 // reads both: per node a stable identity, `v1`, its name, a stage mask of 0, its pins (identity,
 // direction, name, type) and its properties. Its node types are `cy::graph`'s script vocabulary
@@ -33,9 +49,24 @@
 // text problem), u32 cues and per cue (u64 node, text cue, u64 tick, f32 x, y, z). `node` is the
 // authored node's engine identity, the one the editor's mirror sends.
 //
+// THE DEBUG STATE: u32 1, u8 playing, u8 debugging, u8 paused, u8 reason (0 breakpoint, 1 step, 2
+// pause), u64 paused entity, text paused graph, u64 paused node, u64 the tick it paused in; u64
+// tick; u32 breakpoints and per breakpoint (text graph, u64 node, u64 entity, 0 for every one);
+// u32 trace and per entry, oldest first (u64 sequence, u64 tick, u64 entity, text graph, u64
+// node); u64 the inspected entity (0 for none) and text its graph; u32 variables and per variable
+// (u64 declaring node, text name, u8 kind, f32 x, u64 integer); u32 watches and per watch, in the
+// request's order (u64 node, text pin, u8 found, u8 kind, f32 x, u64 integer); and the last
+// applied reload (text graph, u32 generation, u32 instances, u32 kept, u32 added, u32 dropped, u32
+// waits kept, u32 waits dropped). `kind` is `graph::script::ValueKind`; an `int` or `bool` is read
+// from `integer` as a two's-complement i64, anything else from `x`. With nothing paused, the
+// inspected instance is the entity named, or none.
+//
 // Refusals (`u32 1, text code, text detail`): script.request.malformed, script.schema.unsupported,
 // script.operation.unsupported, script.play.unavailable (no runtime seam, or Play is not running),
-// script.node.unknown (raise names a node Play has no entity for), script.raise.failed.
+// script.node.unknown (raise names a node Play has no entity for), script.raise.failed,
+// script.debug.unavailable (the build or the runtime has no debugger), script.debug.refused (the
+// runtime refused a breakpoint or a control, with its reason), script.reload.unavailable (the
+// runtime cannot reload, or does not run that graph).
 
 #pragma once
 
@@ -55,8 +86,12 @@ namespace cy::editor {
 inline constexpr u32 kScriptWireFormat = 1;
 
 /// Every operation `script.*` serves, in the order `capabilities.get` lists them.
-inline constexpr std::array<std::string_view, 4> kScriptOperations{
-    "script.catalogue.get", "script.compile", "script.event.raise", "script.state.get"};
+inline constexpr std::array<std::string_view, 8> kScriptOperations{
+    "script.catalogue.get", "script.compile",          "script.event.raise",   "script.state.get",
+    "script.debug.get",     "script.debug.breakpoint", "script.debug.control", "script.reload"};
+
+/// What `script.debug.control` asks of a paused or running Play.
+enum class ScriptDebugAction : u8 { Pause = 0, Continue, StepInto, StepOver };
 
 /// The host's Play, as the gameplay graph editor reaches it. Implemented by the runtime that owns
 /// the play session; the service never runs a graph itself.
@@ -78,6 +113,32 @@ public:
     /// Raise `event` on `entity`; answers the handlers started.
     [[nodiscard]] virtual Expected<u32, Error> raise(ecs::Entity entity, Name event,
                                                      Span<const f32> arguments) noexcept = 0;
+
+    /// Add or remove a breakpoint on Play's graphs. A runtime without a debugger refuses.
+    [[nodiscard]] virtual Status set_breakpoint(Name graph, u64 node, ecs::Entity entity,
+                                                bool enabled) noexcept {
+        (void)graph;
+        (void)node;
+        (void)entity;
+        (void)enabled;
+        return fail(ErrorCode::Unsupported, "this runtime has no graph debugger");
+    }
+    /// Pause, continue or step Play's graphs. Pausing a graph pauses the WHOLE simulation tick, so
+    /// the runtime owes the rest of its simulation the same pause. A runtime without one refuses.
+    [[nodiscard]] virtual Status debug(ScriptDebugAction action) noexcept {
+        (void)action;
+        return fail(ErrorCode::Unsupported, "this runtime has no graph debugger");
+    }
+    /// Recompile the graph at project-relative `reference` from `source` and stage it for every
+    /// instance at the next tick boundary; problems go to `sink`. Answers the new generation.
+    [[nodiscard]] virtual Expected<u32, Error> reload(std::string_view reference,
+                                                      std::string_view source,
+                                                      graph::DiagnosticSink& sink) noexcept {
+        (void)reference;
+        (void)source;
+        (void)sink;
+        return fail(ErrorCode::Unsupported, "this runtime cannot reload a graph");
+    }
 };
 
 /// Why a `script.*` request was refused, or an empty code when it was answered.
@@ -96,6 +157,17 @@ struct ScriptRefusal {
 
 /// Encode Play's state. `play` may be null, which encodes "not playing".
 [[nodiscard]] Status encode_script_state(const ScriptPlayRuntime* play, Array<u8>& out) noexcept;
+
+/// One watched pin, as `script.debug.get` names it.
+struct ScriptWatch {
+    u64 node = 0;
+    Name pin;
+};
+
+/// Encode the debug state, inspecting `inspect`'s instance of `graph` (any graph when empty) and
+/// reading `watches` in it. `play` may be null, which encodes "not playing".
+[[nodiscard]] Status encode_script_debug(const ScriptPlayRuntime* play, u64 inspect, Name graph,
+                                         Span<const ScriptWatch> watches, Array<u8>& out) noexcept;
 
 /// Answer one `script.*` request into `reply`.
 [[nodiscard]] ScriptRefusal answer_script(ScriptPlayRuntime* play, std::string_view operation,

@@ -190,6 +190,57 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
     }
 }
 
+/// Every `script.variable` declaration, and every read and write naming one.
+void check_variables(const Graph& graph, DiagnosticSink& sink) noexcept {
+    const Name declaration = Name::intern("script.variable");
+    for (const GraphNode& node : graph.nodes()) {
+        if (node.type != declaration) {
+            continue;
+        }
+        const Name name = text_property(graph, node.key, "name");
+        const Name type = text_property(graph, node.key, "type");
+        if (name.is_empty()) {
+            error(sink, "script.variable.unnamed", node.key,
+                  "this variable has no name, so nothing can read or write it", Name{},
+                  kInvalidNodeKey, Name::intern("name"));
+            continue;
+        }
+        if (!type.is_empty() && type.text() != "float" && type.text() != "int" &&
+            type.text() != "bool") {
+            error(sink, "script.variable.type", node.key, "a variable is a float, an int or a bool",
+                  type, kInvalidNodeKey, Name::intern("type"));
+        }
+        for (const GraphNode& earlier : graph.nodes()) {
+            if (earlier.key == node.key) {
+                break;
+            }
+            if (earlier.type == declaration && text_property(graph, earlier.key, "name") == name) {
+                error(sink, "script.variable.duplicate", node.key,
+                      "another node already declares a variable of this name", name, earlier.key);
+                break;
+            }
+        }
+    }
+    for (const GraphNode& node : graph.nodes()) {
+        if (node.type.text() != "script.get_var" && node.type.text() != "script.set_var") {
+            continue;
+        }
+        const Name name = text_property(graph, node.key, "variable");
+        bool declared = false;
+        for (const GraphNode& candidate : graph.nodes()) {
+            declared = declared || (candidate.type == declaration && !name.is_empty() &&
+                                    text_property(graph, candidate.key, "name") == name);
+        }
+        if (!declared) {
+            error(sink, name.is_empty() ? "script.variable.unnamed" : "script.variable.unknown",
+                  node.key,
+                  name.is_empty() ? "this node names no variable"
+                                  : "this graph declares no variable of this name",
+                  name, kInvalidNodeKey, Name::intern("variable"));
+        }
+    }
+}
+
 [[nodiscard]] bool contains(const Array<NodeKey>& keys, NodeKey key) noexcept {
     return std::ranges::any_of(keys, [key](NodeKey existing) { return existing == key; });
 }
@@ -240,8 +291,9 @@ void check_external(const Graph& graph, const GraphNode& node, const ExternalUse
         return walked;
     }
     for (const GraphNode& node : graph.nodes()) {
+        // A variable declaration is state, not a step: nothing "reaches" it and nothing should.
         if (node.muted || contains(reached, node.key) || registry.find(node.type) == nullptr ||
-            node.type.text() == kOnEventType) {
+            node.type.text() == kOnEventType || node.type.text() == "script.variable") {
             continue;
         }
         report(sink, Severity::Warning, "script.node.unreachable", node.key,
@@ -344,6 +396,7 @@ Expected<EventProgram, Error> compile_event_graph(const Graph& graph, const Node
             check_external(graph, node, *use, externals, sink);
         }
     }
+    check_variables(graph, sink);
     if (Status warned = warn_unreachable(graph, registry, handlers.span(), sink); !warned) {
         return make_unexpected(warned.error());
     }

@@ -50,6 +50,30 @@ event reaches is a warning. Every diagnostic carries a stable `code` (`script.ex
 `cy::game_backend::GraphBehaviours` is the host the editor's Play uses; its declarations and its
 binding are in `src/game_backend/include/cy/game_backend/graph_behaviours.h`.
 
+Graph VARIABLES (`script.variable`, `script.get_var`, `script.set_var`) are per-instance state in
+registers the compiler reserves (`ScriptProgram::variables()`); a variable's identity is its declaring
+node's key.
+
+## Debugging and hot reload (#84 stages 2 and 3)
+
+`script_debug.h` debugs the COMPILED program. `instrument_for_debug` copies a program and puts a
+`ScriptOp::Probe` before each node's instructions (and one on each handler's event node); blocks,
+registers, suspend points and externals are unchanged, so a `ScriptState` is valid against both copies.
+At a probe the run loop asks the `ScriptDebugHook` passed to `execute*`; a break returns
+`RunOutcome::Paused` with the instance's pause point recorded as a block and an offset, which both back
+ends resume from. A probe is not charged to the instruction budget, and a paused instance resumes with
+the budget it had spent, so the debugger never changes where a handler finishes or runs out. The debug map records pins, and `read_pin` reads a node's pin from the register its
+instruction wrote. A program the compiler emits has no probe; where `CY_DEVELOPMENT` is not defined
+(Profile, Shipping) `kGraphDebuggerEnabled` is false, the probe test is not compiled into the bytecode
+loop, the native probe step is empty and instrumentation refuses. `ScriptOp::Probe` is appended after
+the terminators, so no existing digest moved.
+
+`script_reload.h` moves an instance between two programs: `check_migration` refuses a variable whose
+kind changed (`script.reload.type` on its node); `migrate_state` keeps variables by identity, starts new
+ones at their default, drops removed ones, and keeps a wait in progress when the wait node survives and
+the new program carries nothing else across a wait. `GraphBehaviours` applies both — breakpoints, steps,
+the held tick, the trace, and reloads staged for the next tick boundary.
+
 ## Which consumer uses which, and why
 
 | Consumer | Lowers to | Why not the expression core |
@@ -166,4 +190,4 @@ The rule the fix leaves behind, because it is not specific to this struct:
 | Suite | Kind | Subject |
 |---|---|---|
 | `unit.cybergraph` | unit | The authoring layer: identity, typed pins, the textual round trip, diff and merge, migration, the audit |
-| `integration.graph_compiler` | integration | The expression core, the anchor, the four lowerings, event graphs (`test_event_script.cpp`: handlers, diagnostics on the node, the two back ends call for call), and the locomotion graph the animation lowering is asked to compile. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |
+| `integration.graph_compiler` | integration | The expression core, the anchor, the four lowerings, event graphs (`test_event_script.cpp`: handlers, diagnostics on the node, the two back ends call for call), the debugger, variables and reload (`test_script_debug.cpp`), and the locomotion graph the animation lowering is asked to compile. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |

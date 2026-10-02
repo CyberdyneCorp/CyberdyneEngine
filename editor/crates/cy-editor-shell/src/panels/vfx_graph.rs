@@ -243,6 +243,8 @@ fn draw_vfx_canvas(
                     movement,
                 )
             }),
+            node_marks: &[],
+            on_gutter: None,
         },
     );
     if !move_seen

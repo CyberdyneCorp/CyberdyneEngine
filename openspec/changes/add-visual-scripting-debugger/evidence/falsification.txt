@@ -1,0 +1,237 @@
+Mutations that turn the Play debugger's and hot reload's tests red (#84, #29),
+Development profile (d07: Shipping). Each mutation was applied, its tests run, the file restored and
+md5-verified. Listed under each: the tests (Rust) or test cases (C++) that failed.
+
+== d01_bytecode_probe_never_breaks: src/graph/src/lower_script.cpp
+<   if (debug->on_probe(site, state) != DebugVerdict::Break) {
+>   if (true) {
+FAILED  graph debugger: a breakpoint stops before its node, on both back ends alike
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d02_native_probe_never_breaks: src/graph/src/lower_script_native.cpp
+<   if (frame.debug->on_probe(site, *frame.state) != DebugVerdict::Break) {
+>   if (true) {
+FAILED  graph debugger: a breakpoint stops before its node, on both back ends alike
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d03_native_resumes_past_the_next_instruction: src/graph/src/lower_script_native.cpp
+<   frame.state->pause_at(site.block, site.offset + 1);
+>   frame.state->pause_at(site.block, site.offset + 2);
+FAILED  graph debugger: a breakpoint stops before its node, on both back ends alike
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d04_no_probe_on_the_event: src/graph/src/script_debug.cpp
+<   if (entry != kInvalidNodeKey && entry != first_node) {
+>   if (entry != kInvalidNodeKey && entry != first_node && false) {
+FAILED  graph debugger: a breakpoint on the event stops before the handler's first node
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d05_a_call_is_not_an_execution_node: src/graph/src/script_debug.cpp
+<   case ScriptOp::Call:
+<   case ScriptOp::EmitEvent:
+>   case ScriptOp::EmitEvent:
+FAILED  graph debugger: stepping visits nodes in the order the program runs them
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d06_a_pin_reads_nothing: src/graph/src/script_debug.cpp
+<   reading.value = state.registers()[instruction.dst];
+>   reading.value = Value{};
+FAILED  graph debugger: pins and variables are read through the debug map
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d07_instrumented_in_shipping: src/graph/src/script_debug.cpp
+<   if constexpr (!kGraphDebuggerEnabled) {
+<   (void)program;
+>   if constexpr (false) {
+>   (void)program;
+FAILED  graph debugger: compiled out of Profile and Shipping
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d08_variables_start_at_zero: src/graph/src/lower_script.cpp
+<   registers_[variable.reg] = variable.initial;
+>   registers_[variable.reg] = Value{};
+FAILED  graph reload: a running counter keeps its count, by the variable's identity
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d09_an_undeclared_variable_compiles: src/graph/src/event_script.cpp
+<   if (!declared) {
+<   error(sink, name.is_empty()
+>   if (false) {
+>   error(sink, name.is_empty()
+FAILED  graph variables: every misuse is an error on its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== m01_a_kept_variable_loses_its_value: src/graph/src/script_reload.cpp
+<   target.registers()[next.reg] = read_variable(*previous, source);
+>   (void)source;
+FAILED  graph reload: a running counter keeps its count, by the variable's identity
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== m02_a_type_change_is_migrated: src/graph/src/script_reload.cpp
+<   if (previous == nullptr || previous->kind == next.kind) {
+>   if (true) {
+FAILED  graph reload: a variable that changed type is refused on its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== m03_a_wait_is_always_dropped: src/graph/src/script_reload.cpp
+<   target.set_resume_block(point->resume);
+>   (void)point;
+FAILED  graph reload: a wait in progress survives when its wait node does
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== g01_a_breakpoint_stops_every_entity: src/game_backend/src/graph_behaviours.cpp
+<   (!breakpoint.entity.valid() || breakpoint.entity == current_->entity)
+>   true
+FAILED  graph debugger: a breakpoint stops the tick at its node, for the entity it names
+[doctest] test cases:  1 |  0 passed | 1 failed | 17 skipped
+RESTORED md5 ok
+
+== g02_held_work_is_dropped: src/game_backend/src/graph_behaviours.cpp
+<   return resume_from(held.instance + 1);
+>   return ok();
+FAILED  graph debugger: the work a break held runs on, in order, in the same tick
+[doctest] test cases:   1 |   0 passed | 1 failed | 17 skipped
+RESTORED md5 ok
+
+== g03_a_tick_runs_while_paused: src/game_backend/src/graph_behaviours.cpp
+<   Status GraphBehaviours::update(f32 dt) noexcept {
+<   if (paused()) {
+>   Status GraphBehaviours::update(f32 dt) noexcept {
+>   if (false) {
+FAILED  graph debugger: a breakpoint stops the tick at its node, for the entity it names
+[doctest] test cases:  1 |  0 passed | 1 failed | 17 skipped
+RESTORED md5 ok
+
+== g04_step_over_stops_at_data_nodes: src/game_backend/src/graph_behaviours.cpp
+<   (step_ == GraphStep::Into || site.executes)
+>   (step_ == GraphStep::Into || true)
+FAILED  graph debugger: a step visits nodes in the order the trace records them running
+[doctest] test cases:   1 |   0 passed | 1 failed | 17 skipped
+RESTORED md5 ok
+
+== g05_a_reload_is_never_applied: src/game_backend/src/graph_behaviours.cpp
+<   if (Status reloaded = apply_reloads(); !reloaded) {
+>   if (Status reloaded = ok(); !reloaded) {
+FAILED  graph reload: a running counter keeps its count; a refused reload changes nothing
+[doctest] test cases:   1 |  0 passed |  1 failed | 17 skipped
+RESTORED md5 ok
+
+== g06_the_trace_is_not_kept: src/game_backend/src/graph_behaviours.cpp
+<   (void)trace_.push_back(entry);
+>   (void)entry;
+FAILED  graph debugger: a step visits nodes in the order the trace records them running
+[doctest] test cases:   1 |   0 passed | 1 failed | 17 skipped
+RESTORED md5 ok
+
+== s01_a_breakpoints_entity_is_not_resolved: src/editor_backend/src/script_service.cpp
+<   if (entity != 0) {
+>   if (false) {
+FAILED  editor script: the debugger stops Play at a breakpoint and reads its watches
+[doctest] test cases:   1 |   0 passed | 1 failed | 9 skipped
+RESTORED md5 ok
+
+== s02_watches_read_nothing: src/editor_backend/src/script_service.cpp
+<   const graph::script::PinReading reading =
+<   graphs->watch_pin(instance, watch.node, watch.pin);
+>   const graph::script::PinReading reading{};
+FAILED  editor script: the debugger stops Play at a breakpoint and reads its watches
+[doctest] test cases:   1 |   0 passed | 1 failed | 9 skipped
+RESTORED md5 ok
+
+== s03_a_refused_reload_is_not_the_graphs_fault: src/editor_backend/src/script_service.cpp
+<   if (!staged && sink.entries().empty()) {
+>   if (!staged) {
+FAILED  editor script: a reload keeps the running count, and a refused one names its node
+[doctest] test cases:  1 |  0 passed | 1 failed | 9 skipped
+RESTORED md5 ok
+
+== u01_the_session_runs_under_a_break: samples/05b-editor-window/runtime/graph_runtime.cpp
+<   (void)play_->pause();
+>   (void)0;
+FAILED  a graph breakpoint pauses the whole Play session until the debugger releases it
+[doctest] test cases:    1 |    0 passed |  1 failed | 1 skipped
+RESTORED md5 ok
+
+== u02_the_session_stays_paused: samples/05b-editor-window/runtime/graph_runtime.cpp
+<   (void)play_->resume();
+>   (void)0;
+FAILED  a graph breakpoint pauses the whole Play session until the debugger releases it
+[doctest] test cases:    1 |    0 passed |  1 failed | 1 skipped
+RESTORED md5 ok
+
+== r01_breakpoints_are_not_sent_when_play_starts: editor/crates/cy-editor-services/src/script_requests.rs
+<   if started && state.debugging {
+>   if false && started && state.debugging {
+FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r02_saving_does_not_reload: editor/crates/cy-editor-services/src/editor.rs
+<   self.reload_running_graph(reference, Some(source));
+>   
+FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r03_undo_does_not_reload: editor/crates/cy-editor-services/src/builtin.rs
+<   project.script_graph_changed(&reference, source.as_deref());
+>   
+FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r04_graphs_play_does_not_run_are_reloaded: editor/crates/cy-editor-services/src/editor.rs
+<   if running && self.runtime.is_connected() {
+>   if self.runtime.is_connected() {
+FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r05_a_watch_is_not_kept: editor/crates/cy-editor-services/src/editor.rs
+<   watch.pins.push(pair);
+>   let _ = pair;
+FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r06_the_reason_is_misread: editor/crates/cy-editor-services/src/script_debug.rs
+<   0 => "breakpoint",
+>   0 => "step",
+FAILED  script_debug::tests::the_engines_paused_state_decodes_with_its_variable_and_watches
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r07_the_oldest_node_glows_brightest: editor/crates/cy-editor-services/src/script_debug.rs
+<   for entry in self.trace.iter().rev() {
+>   for entry in self.trace.iter() {
+FAILED  script_debug::tests::the_engines_paused_state_decodes_with_its_variable_and_watches
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 255 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r08_the_gutter_removes_the_wrong_breakpoint: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   format!("{:x}", breakpoint.entity)
+>   String::new()
+FAILED  the_debuggers_controls_and_gutter_are_the_registered_debug_commands
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.02s
+RESTORED md5 ok
+
+== r09_step_over_steps_into: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   ("Step Over", "script.debug.step", Some("over"), paused)
+>   ("Step Over", "script.debug.step", Some("into"), paused)
+FAILED  the_debuggers_controls_and_gutter_are_the_registered_debug_commands
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.02s
+RESTORED md5 ok
+
+32 of 32 mutations killed.

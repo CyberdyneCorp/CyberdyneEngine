@@ -210,6 +210,22 @@ function(cy_editor_window_runtime_declare_tests)
                                "${CMAKE_SOURCE_DIR}/src/editor_backend/tests"
                                "${CMAKE_SOURCE_DIR}/src/navigation/tests")
 
+    # #84 and #29: THE PLAY DEBUGGER AND HOT RELOAD THROUGH THE HOSTED RUNTIME'S GLUE, without a
+    # device or a Swift toolchain. A graph breakpoint must pause the whole `PlaySession`, and the
+    # debugged run must be the undebugged one placement for placement. Integration because each
+    # case runs a reference physics server through a few hundred ticks.
+    cy_add_test(
+        NAME editor_window_graph_debugger
+        KIND integration
+        SOURCES "${tests_dir}/test_graph_debugger_runtime.cpp"
+                "${tests_dir}/../graph_runtime.cpp"
+        DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference cy::scene-serialization
+                     cy::scene cy::game-backend cy::editor-backend
+        DEFINITIONS
+            "CY_SCRIPT_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/src/editor_backend/tests/data\"")
+    target_include_directories(cy_test_integration_editor_window_graph_debugger PRIVATE
+                               "${tests_dir}/..")
+
     # THE `--layout` FILE, and the per-frame rewrites that wedged the runtime on a busy disk. See
     # `layout_file.h`. `integration` because it writes a file, which is not a millisecond on a disk
     # that is busy — which is the very condition it was found under.

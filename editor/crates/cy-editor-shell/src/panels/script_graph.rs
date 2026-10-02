@@ -9,6 +9,14 @@
 //! row below it that selects the node. During Play the panel raises events on an entity's graphs
 //! and shows what the engine's compiled program did: each instance, what it waits for, and the cues
 //! it played. Nothing here interprets a graph.
+//!
+//! THE PLAY DEBUGGER (#84). A dot at the right of a node's header is its breakpoint gutter; the
+//! header row holds Pause, Continue, Step Over and Step Into; the node Play is paused before is
+//! outlined, and the last nodes the engine's trace says ran glow, newest brightest. Below the
+//! canvas the watch list shows the inspected entity's graph variables and the watched pins. Each
+//! of these is a registered `script.debug.*` command, so an agent does the same over MCP. Saving
+//! a graph Play runs reloads it there, and the panel says what the reload kept or why it was
+//! refused, on the node.
 
 use std::path::PathBuf;
 
@@ -20,13 +28,15 @@ use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::Session;
 use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
 use cy_editor_interface::specialised::script;
+use cy_editor_services::script_debug::{Breakpoint, DebugState, ReloadReply};
 use cy_editor_services::script_graph::{
-    CompileReport, DEFAULT_EVENT, PlayState, ScriptGraph, Severity, validate_reference,
+    CompileDiagnostic, CompileReport, DEFAULT_EVENT, PlayState, ScriptGraph, Severity, graph_name,
+    validate_reference,
 };
 use cy_editor_services::{AssetCatalogueService, MaterialCatalogueState};
 use cy_editor_visual::colour::Semantic;
 
-use super::graph_canvas::{self, CanvasFeedback, GraphConnection, GraphMovement};
+use super::graph_canvas::{self, CanvasFeedback, GraphConnection, GraphMovement, NodeMark};
 use super::specialised::{SpecialisedTool, ToolDiagnostic, ToolFrame};
 use super::{Inputs, Intent, Panels, heading, nothing_here, secondary, status};
 
@@ -51,6 +61,8 @@ pub struct ScriptInputs {
     pub event: String,
     /// The event's arguments: for `unit.command`, the target.
     pub arguments: [f32; 3],
+    /// Whether a breakpoint set from the gutter stops only the selected entity.
+    pub break_selected_only: bool,
 }
 
 impl Default for ScriptInputs {
@@ -65,6 +77,7 @@ impl Default for ScriptInputs {
             compile_asked: None,
             event: DEFAULT_EVENT.into(),
             arguments: [6.0, 0.0, 8.0],
+            break_selected_only: false,
         }
     }
 }
@@ -86,6 +99,14 @@ pub(crate) struct Target {
     problem: Option<String>,
     connected: bool,
     pending: bool,
+    /// The graph's name as Play knows it: its file's stem.
+    graph_name: String,
+    /// The debugger's last state.
+    debug: Option<DebugState>,
+    /// The breakpoints the editor wants on this graph.
+    breakpoints: Vec<Breakpoint>,
+    /// The engine's last answer to a reload of this graph, and whether it was of this text.
+    reload: Option<(bool, ReloadReply)>,
 }
 
 /// The Gameplay Graph editor, drawn in the specialised-editor frame.
@@ -106,6 +127,12 @@ impl SpecialisedTool for ScriptGraphTool {
         "script.graph.compile",
         "script.event.raise",
         "script.refresh",
+        "script.debug.breakpoint",
+        "script.debug.pause",
+        "script.debug.continue",
+        "script.debug.step",
+        "script.debug.watch",
+        "script.debug.inspect",
     ];
 
     type Target = Target;
@@ -154,10 +181,9 @@ impl SpecialisedTool for ScriptGraphTool {
         ask_for_compile(panels, &reference, &source, report.as_ref());
         let (selected, names) = selection_and_names(panels, document_id);
         let requests = &panels.editor.backend.script;
+        let name = graph_name(&reference);
         Some(Target {
-            reference,
             graph,
-            source,
             report,
             state: requests.state().cloned(),
             selected,
@@ -165,6 +191,14 @@ impl SpecialisedTool for ScriptGraphTool {
             problem: requests.problem().map(str::to_owned),
             connected,
             pending: requests.pending(),
+            debug: requests.debug().cloned(),
+            breakpoints: breakpoints_of(requests, &name),
+            reload: requests
+                .reload_reply(&reference)
+                .map(|(sent, reply)| (sent == &source, reply.clone())),
+            graph_name: name,
+            reference,
+            source,
         })
     }
 
@@ -191,12 +225,15 @@ impl SpecialisedTool for ScriptGraphTool {
             status(ui, frame.shell, Semantic::Error, problem);
         }
         toolbar(frame, ui, &target);
-        let height = (ui.available_height() * 0.7).max(300.0);
+        debug_bar(frame, ui, &target);
+        let height = (ui.available_height() * 0.62).max(300.0);
         ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
             canvas_area(frame, ui, canvas, &target);
         });
         egui::ScrollArea::vertical().show(ui, |ui| {
             compile_rows(frame, ui, canvas, &target);
+            reload_rows(frame, ui, canvas, &target);
+            watch_rows(frame, ui, canvas, &target);
             play_rows(frame, ui, &target);
         });
     }
@@ -525,6 +562,9 @@ fn draw(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, canvas: &mut GraphCanvas, 
         );
         Ok(())
     };
+    let marks = node_marks(target);
+    let mut toggled = None;
+    let mut on_gutter = |key: NodeKey| toggled = Some(key);
     let mut moved = None;
     let mut on_move = |canvas: &mut GraphCanvas,
                        movement: GraphMovement|
@@ -549,10 +589,15 @@ fn draw(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, canvas: &mut GraphCanvas, 
             unwired_inputs: false,
             on_connect: Some(&mut on_connect),
             on_move: Some(&mut on_move),
+            node_marks: &marks,
+            on_gutter: Some(&mut on_gutter),
         },
     );
     for arguments in requested {
         invoke(frame, "script.node.connect", arguments);
+    }
+    if let Some(key) = toggled {
+        toggle_breakpoint(frame, target, key);
     }
     if let Some((node, at)) = moved {
         invoke(frame, "script.node.move", move_arguments(target, node, at));
@@ -586,33 +631,7 @@ fn compile_rows(
         heading(ui, frame.shell, "Diagnostics");
     }
     for diagnostic in &report.diagnostics {
-        let role = match diagnostic.severity {
-            Severity::Info => Semantic::Active,
-            Severity::Warning => Semantic::Warning,
-            Severity::Error => Semantic::Error,
-        };
-        let place = if diagnostic.node == 0 {
-            "graph".to_owned()
-        } else if diagnostic.pin.is_empty() {
-            format!("node {}", diagnostic.node)
-        } else {
-            format!("node {} · pin {}", diagnostic.node, diagnostic.pin)
-        };
-        let line = format!("{place} — {}: {}", diagnostic.code, diagnostic.describe());
-        let response = ui
-            .add(
-                egui::Button::new(
-                    egui::RichText::new(format!("{} {line}", role.glyph()))
-                        .color(crate::theme::role(frame.shell.theme, role)),
-                )
-                .frame(false),
-            )
-            .on_hover_text("Select the node this is about");
-        if response.clicked()
-            && let Ok(key) = NodeKey::new(diagnostic.node)
-        {
-            let _ = canvas.select([key]);
-        }
+        diagnostic_row(frame, ui, canvas, diagnostic);
     }
     if report.compiled {
         egui::CollapsingHeader::new("What the graph became")
@@ -638,6 +657,42 @@ fn compile_rows(
                     egui::RichText::new(&report.listing).monospace(),
                 ));
             });
+    }
+}
+
+/// One engine diagnostic as a row that selects the node it is about.
+fn diagnostic_row(
+    frame: &ToolFrame<'_>,
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    diagnostic: &CompileDiagnostic,
+) {
+    let role = match diagnostic.severity {
+        Severity::Info => Semantic::Active,
+        Severity::Warning => Semantic::Warning,
+        Severity::Error => Semantic::Error,
+    };
+    let place = if diagnostic.node == 0 {
+        "graph".to_owned()
+    } else if diagnostic.pin.is_empty() {
+        format!("node {}", diagnostic.node)
+    } else {
+        format!("node {} · pin {}", diagnostic.node, diagnostic.pin)
+    };
+    let line = format!("{place} — {}: {}", diagnostic.code, diagnostic.describe());
+    let response = ui
+        .add(
+            egui::Button::new(
+                egui::RichText::new(format!("{} {line}", role.glyph()))
+                    .color(crate::theme::role(frame.shell.theme, role)),
+            )
+            .frame(false),
+        )
+        .on_hover_text("Select the node this is about");
+    if response.clicked()
+        && let Ok(key) = NodeKey::new(diagnostic.node)
+    {
+        let _ = canvas.select([key]);
     }
 }
 
@@ -742,4 +797,339 @@ fn instances_table(shell: &Shell, ui: &mut egui::Ui, target: &Target, state: &Pl
                 ui.end_row();
             }
         });
+}
+
+// --- The Play debugger (#84) ----------------------------------------------------------------------
+
+/// How many of the trace's most recent nodes glow on the canvas.
+const HIGHLIGHTED: usize = 6;
+
+/// The breakpoints on graph `name`: the ones the editor wants, and any the engine holds besides.
+fn breakpoints_of(
+    requests: &cy_editor_services::script_requests::ScriptRequests,
+    name: &str,
+) -> Vec<Breakpoint> {
+    let held = requests
+        .debug()
+        .filter(|debug| debug.playing)
+        .map(|debug| debug.breakpoints.as_slice())
+        .unwrap_or_default();
+    let mut all: Vec<Breakpoint> = requests
+        .breakpoints()
+        .iter()
+        .chain(held)
+        .filter(|breakpoint| breakpoint.graph == name)
+        .cloned()
+        .collect();
+    all.sort();
+    all.dedup();
+    all
+}
+
+/// The debugger's marks on this graph's nodes: breakpoints, the paused node and recent execution.
+fn node_marks(target: &Target) -> Vec<NodeMark> {
+    let mut marks: Vec<NodeMark> = Vec::new();
+    for breakpoint in &target.breakpoints {
+        mark_of(&mut marks, breakpoint.node).breakpoint = true;
+    }
+    if let Some(debug) = target.debug.as_ref().filter(|debug| debug.playing) {
+        for (node, heat) in debug.recent_nodes(&target.graph_name, HIGHLIGHTED) {
+            mark_of(&mut marks, node).heat = heat;
+        }
+        if debug.paused && debug.paused_graph == target.graph_name {
+            mark_of(&mut marks, debug.paused_node).paused = true;
+        }
+    }
+    marks
+}
+
+/// `node`'s mark, added when it has none yet.
+fn mark_of(marks: &mut Vec<NodeMark>, node: u64) -> &mut NodeMark {
+    let index = marks
+        .iter()
+        .position(|mark| mark.node == node)
+        .unwrap_or_else(|| {
+            marks.push(NodeMark {
+                node,
+                ..NodeMark::default()
+            });
+            marks.len() - 1
+        });
+    &mut marks[index]
+}
+
+/// The entity a breakpoint set from the gutter stops for: the selected one when the panel is
+/// scoped to it, else every entity (empty).
+fn scoped_entity(frame: &ToolFrame<'_>, target: &Target) -> String {
+    match &target.selected {
+        Some((entity, _, _)) if frame.inputs.script.break_selected_only => entity.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// A gutter click: remove every breakpoint on the node, or set one.
+fn toggle_breakpoint(frame: &mut ToolFrame<'_>, target: &Target, key: NodeKey) {
+    let existing: Vec<&Breakpoint> = target
+        .breakpoints
+        .iter()
+        .filter(|breakpoint| breakpoint.node == key.ordinal())
+        .collect();
+    if existing.is_empty() {
+        let entity = scoped_entity(frame, target);
+        invoke(
+            frame,
+            "script.debug.breakpoint",
+            breakpoint_arguments(target, key, entity, true),
+        );
+        return;
+    }
+    for breakpoint in existing {
+        let entity = if breakpoint.entity == 0 {
+            String::new()
+        } else {
+            format!("{:x}", breakpoint.entity)
+        };
+        invoke(
+            frame,
+            "script.debug.breakpoint",
+            breakpoint_arguments(target, key, entity, false),
+        );
+    }
+}
+
+fn breakpoint_arguments(target: &Target, key: NodeKey, entity: String, enabled: bool) -> Arguments {
+    with_reference(target)
+        .with("node", ordinal(key))
+        .with("entity", Value::Text(entity))
+        .with("enabled", Value::Bool(enabled))
+}
+
+/// Pause, continue and the two steps, and one line on where Play is.
+fn debug_bar(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
+    let debug = target.debug.as_ref().filter(|debug| debug.playing);
+    let paused = debug.is_some_and(|debug| debug.paused);
+    let running = debug.is_some_and(|debug| debug.debugging && !debug.paused);
+    ui.horizontal(|ui| {
+        let (role, line) = debug_line(target);
+        status(ui, frame.shell, role, &line);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let controls = [
+                ("Step Into", "script.debug.step", Some("into"), paused),
+                ("Step Over", "script.debug.step", Some("over"), paused),
+                ("Continue", "script.debug.continue", None, paused),
+                ("Pause", "script.debug.pause", None, running),
+            ];
+            for (label, command, mode, enabled) in controls {
+                let clicked = ui
+                    .add_enabled(enabled, egui::Button::new(label))
+                    .on_disabled_hover_text(if paused || running {
+                        "Not while Play is in this state"
+                    } else {
+                        "The debugger works on Play's graphs; enter Play"
+                    })
+                    .clicked();
+                if clicked {
+                    let arguments = mode.map_or_else(Arguments::new, |mode| {
+                        Arguments::new().with("mode", Value::Text(mode.into()))
+                    });
+                    invoke(frame, command, arguments);
+                }
+            }
+            if let Some((_, name, _)) = &target.selected {
+                ui.checkbox(
+                    &mut frame.inputs.script.break_selected_only,
+                    format!("Break only for {name}"),
+                )
+                .on_hover_text("New breakpoints stop the selected entity's graph and no other");
+            }
+        });
+    });
+}
+
+fn debug_line(target: &Target) -> (Semantic, String) {
+    let Some(debug) = target.debug.as_ref().filter(|debug| debug.playing) else {
+        return (
+            Semantic::Neutral,
+            format!(
+                "Debugger: {} breakpoint(s), sent when Play starts",
+                target.breakpoints.len()
+            ),
+        );
+    };
+    if !debug.debugging {
+        return (
+            Semantic::Warning,
+            "Debugger: this runtime was built without it (Profile or Shipping)".into(),
+        );
+    }
+    if debug.paused {
+        return (
+            Semantic::Warning,
+            format!(
+                "Paused before {} node {} on {} ({}, tick {}) — the whole simulation waits",
+                debug.paused_graph,
+                debug.paused_node,
+                name_of(target, debug.paused_entity),
+                debug.reason,
+                debug.paused_tick
+            ),
+        );
+    }
+    (
+        Semantic::Live,
+        format!(
+            "Running · tick {} · {} breakpoint(s)",
+            debug.tick,
+            debug.breakpoints.len()
+        ),
+    )
+}
+
+/// What the last reload of this graph did, or why it was refused, each refusal on its node.
+fn reload_rows(
+    frame: &mut ToolFrame<'_>,
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    target: &Target,
+) {
+    let Some((current, reply)) = &target.reload else {
+        return;
+    };
+    if reply.accepted {
+        let applied = target
+            .debug
+            .as_ref()
+            .map(|debug| &debug.last_reload)
+            .filter(|reload| {
+                reload.graph == target.graph_name && reload.generation == reply.generation
+            });
+        let line = applied.map_or_else(
+            || format!("Reloaded into Play: generation {}, swapped at the next tick", reply.generation),
+            |reload| {
+                format!(
+                    "Reloaded into Play: generation {}, {} instance(s), {} variable(s) kept, {} added, \
+                     {} dropped",
+                    reload.generation, reload.instances, reload.kept, reload.added, reload.dropped
+                )
+            },
+        );
+        status(ui, frame.shell, Semantic::Live, &line);
+        return;
+    }
+    status(
+        ui,
+        frame.shell,
+        Semantic::Error,
+        if *current {
+            "Not reloaded: Play keeps running the previous program"
+        } else {
+            "The last reload was refused; the graph has changed since"
+        },
+    );
+    for diagnostic in &reply.diagnostics {
+        diagnostic_row(frame, ui, canvas, diagnostic);
+    }
+}
+
+/// The inspected entity's variables and the watched pins, and the buttons that change them.
+fn watch_rows(
+    frame: &mut ToolFrame<'_>,
+    ui: &mut egui::Ui,
+    canvas: &mut GraphCanvas,
+    target: &Target,
+) {
+    heading(ui, frame.shell, "Watches");
+    ui.horizontal(|ui| {
+        if let Some(node) = canvas.selection().first().copied()
+            && ui
+                .button(format!("Watch node {}", node.ordinal()))
+                .on_hover_text("Add the selected node's value to the watch list")
+                .clicked()
+        {
+            invoke(
+                frame,
+                "script.debug.watch",
+                with_reference(target)
+                    .with("node", ordinal(node))
+                    .with("pin", Value::Text("value".into())),
+            );
+        }
+        if let Some((entity, name, _)) = &target.selected
+            && ui
+                .button(format!("Inspect {name}"))
+                .on_hover_text(
+                    "Read the selected entity's variables and pins rather than the paused one's",
+                )
+                .clicked()
+        {
+            invoke(
+                frame,
+                "script.debug.inspect",
+                with_reference(target).with("entity", Value::Text(entity.to_string())),
+            );
+        }
+    });
+    let Some(debug) = target.debug.as_ref().filter(|debug| debug.playing) else {
+        ui.label(secondary(
+            frame.shell,
+            "During Play the paused entity's graph variables and watched pins show here.",
+        ));
+        return;
+    };
+    if debug.inspected_entity == 0 {
+        ui.label(secondary(
+            frame.shell,
+            "Nothing to inspect: pause at a breakpoint, or inspect the selected entity.",
+        ));
+        return;
+    }
+    ui.label(secondary(
+        frame.shell,
+        format!(
+            "{} on {}",
+            debug.inspected_graph,
+            name_of(target, debug.inspected_entity)
+        ),
+    ));
+    let mut remove = None;
+    egui::Grid::new("script-debug-watches")
+        .striped(true)
+        .num_columns(3)
+        .show(ui, |ui| {
+            for variable in &debug.variables {
+                ui.label(format!("var {}", variable.name));
+                ui.label(egui::RichText::new(variable.value.display()).monospace());
+                ui.label("");
+                ui.end_row();
+            }
+            for watch in &debug.watches {
+                ui.label(format!("node {} · {}", watch.node, watch.pin));
+                ui.label(
+                    egui::RichText::new(if watch.found {
+                        watch.value.display()
+                    } else {
+                        "—".into()
+                    })
+                    .monospace(),
+                );
+                if ui
+                    .small_button("Unwatch")
+                    .on_hover_text("Stop watching")
+                    .clicked()
+                {
+                    remove = Some((watch.node, watch.pin.clone()));
+                }
+                ui.end_row();
+            }
+        });
+    if let Some((node, pin)) = remove {
+        invoke(
+            frame,
+            "script.debug.watch",
+            with_reference(target)
+                .with("node", Value::Int(i64::try_from(node).unwrap_or(i64::MAX)))
+                .with("pin", Value::Text(pin))
+                .with("enabled", Value::Bool(false)),
+        );
+    }
 }

@@ -565,6 +565,30 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 #   visual-scripting "The host declares what a graph may name"
 #     test:integration.graph_compiler, case "event graph: an undeclared, misused or unnamed external
 #     is an error on its node"
+# `openspec/changes/add-visual-scripting-debugger` (#84 stages 2 and 3, #29 tasks 4.1 and 4.2) adds
+# one requirement to this row and three to `visual-scripting`. Map them on archive, not before:
+#   "Gameplay graph debugger and hot reload in the editor"
+#     rust:cy-editor-mcp::a_session_over_the_wire::a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
+#     (and cy-editor-shell's the_debuggers_controls_and_gutter_are_the_registered_debug_commands)
+#   visual-scripting "Compiled graphs are debugged at node granularity"
+#     test:integration.graph_compiler, cases "graph debugger: a breakpoint stops before its node, on
+#     both back ends alike", "graph debugger: stepping visits nodes in the order the program runs
+#     them" and "graph debugger: compiled out of Profile and Shipping"; test:integration.
+#     game_backend_graph, case "graph debugger: a breakpoint stops the tick at its node, for the
+#     entity it names"
+#   visual-scripting "A graph break pauses the whole simulation tick"
+#     test:integration.game_backend_graph, case "graph debugger: a run that breaks and steps moves
+#     and sounds as one that does not"; test:integration.graph_compiler, case "graph debugger: probes
+#     and pauses leave a handler's instruction budget unchanged"; test:integration.
+#     editor_window_graph_debugger, case "a graph
+#     breakpoint pauses the whole Play session until the debugger releases it"
+#   visual-scripting "Running graphs reload with their variables"
+#     test:integration.game_backend_graph, case "graph reload: a running counter keeps its count; a
+#     refused reload changes nothing"
+# They also move the existing "Graph debugging" (breakpoints, stepping, pin watches and history
+# through the debug map, on the native back end too — no predicted/authoritative view or per-node
+# profiling yet) and "Hot reload and state migration" (keep-by-identity and refuse; no reset or
+# restart policy, no simulation epoch) requirements, which stay unmapped until they close.
 # The existing visual-scripting requirements this slice moves but does not close — "Execution
 # backends" (no per-build-configuration selection), "Events, not tick" (no declared per-tick event),
 # "Compiler-grade diagnostics" (no path, no unused-output or loop warnings), "Function and node

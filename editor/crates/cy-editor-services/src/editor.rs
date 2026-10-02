@@ -829,7 +829,26 @@ impl Editor {
             let _ = self.project.put_source(reference, prior.as_deref());
             return Err(problem);
         }
+        self.reload_running_graph(reference, Some(source));
         Ok(())
+    }
+
+    /// HOT RELOAD (#84): a graph saved while Play runs it is recompiled there and swapped in at
+    /// the next tick. Nothing is sent outside Play or for a graph Play does not run, and a graph
+    /// removed by an undo is left running.
+    fn reload_running_graph(&mut self, reference: &str, source: Option<&str>) {
+        let Some(source) = source else { return };
+        let graph = crate::script_graph::graph_name(reference);
+        let running = self.backend.script.state().is_some_and(|state| {
+            state.playing
+                && state
+                    .instances
+                    .iter()
+                    .any(|instance| instance.graph == graph)
+        });
+        if running && self.runtime.is_connected() {
+            let _ = self.backend.script.reload(&self.runtime, reference, source);
+        }
     }
 
     fn save_audio_asset(&mut self, reference: &str, source: &str) -> Result<()> {
@@ -1927,6 +1946,93 @@ impl cy_editor_commands::ProjectHost for Editor {
             .then(|| self.project.read_source(reference).ok())
             .flatten();
         crate::script_commands::status_outcome(&self.backend.script, reference, current.as_deref())
+    }
+
+    fn script_breakpoint(
+        &mut self,
+        graph: &str,
+        node: u64,
+        entity: u64,
+        enabled: bool,
+    ) -> Result<u64> {
+        let breakpoint = crate::script_debug::Breakpoint {
+            graph: graph.to_owned(),
+            node,
+            entity,
+        };
+        let sent = self
+            .backend
+            .script
+            .set_breakpoint(&self.runtime, breakpoint, enabled)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_debug_control(&mut self, action: &str) -> Result<u64> {
+        let action = match action {
+            "pause" => crate::script_debug::DebugAction::Pause,
+            "continue" => crate::script_debug::DebugAction::Continue,
+            mode => crate::script_debug::DebugAction::step(mode)?,
+        };
+        let sent = self.backend.script.control(&self.runtime, action)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_watch(
+        &mut self,
+        graph: &str,
+        entity: Option<u64>,
+        node: u64,
+        pin: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let mut watch = self.backend.script.watch().clone();
+        if watch.graph != graph {
+            // Pins are a graph's: watching another graph starts its own list.
+            watch.pins.clear();
+            graph.clone_into(&mut watch.graph);
+        }
+        if let Some(entity) = entity {
+            watch.entity = entity;
+        }
+        let pair = (node, pin.to_owned());
+        watch.pins.retain(|watched| watched != &pair);
+        if enabled {
+            watch.pins.push(pair);
+        }
+        self.backend.script.set_watch(watch);
+        Ok(())
+    }
+
+    fn script_inspect(&mut self, graph: &str, entity: u64) -> Result<()> {
+        let mut watch = self.backend.script.watch().clone();
+        if watch.graph != graph {
+            watch.pins.clear();
+            graph.clone_into(&mut watch.graph);
+        }
+        watch.entity = entity;
+        self.backend.script.set_watch(watch);
+        Ok(())
+    }
+
+    fn script_debug_refresh(&mut self) -> Result<u64> {
+        let sent = self.backend.script.refresh_debug(&self.runtime)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_reload(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let sent = self
+            .backend
+            .script
+            .reload(&self.runtime, reference, source)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn script_graph_changed(&mut self, reference: &str, source: Option<&str>) {
+        self.reload_running_graph(reference, source);
+    }
+
+    fn script_debug_status(&self, reference: &str) -> cy_editor_commands::Outcome {
+        crate::script_debug_commands::debug_outcome(&self.backend.script, reference)
     }
 
     fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {

@@ -165,6 +165,12 @@ enum class ScriptOp : u16 {
     /// scheduler. `target` is the block execution resumes in.
     Suspend,
     Return,
+
+    // --- Debugging. Present only in a program `instrument_for_debug` produced. ------------------
+    /// A node boundary: `immediate` indexes `ScriptProgram::probes()`. It reads and writes no
+    /// register, so a probed program computes exactly what its source computes. Appended after the
+    /// terminators so that no opcode a cooked program already holds changes its number.
+    Probe,
     Count,
 };
 
@@ -215,6 +221,33 @@ struct SuspendPoint {
     NodeKey origin = kInvalidNodeKey;
 };
 
+/// A graph variable: per-instance state that lives across handlers and suspensions, declared by a
+/// `script.variable` node and read and written by `script.get_var` and `script.set_var`.
+///
+/// ITS IDENTITY IS THE DECLARING NODE'S KEY, not its name. A key is author-owned and survives every
+/// edit of the graph, so a reload migrates a renamed variable's value rather than resetting it, and
+/// a variable deleted and declared again starts from its default. `reg` is where it lives in
+/// `ScriptState::registers()`; it is reserved for the variable in every block.
+struct Variable {
+    NodeKey id = kInvalidNodeKey;
+    Name name;
+    ValueKind kind = ValueKind::Float;
+    Reg reg = kNoRegister;
+    Value initial;
+};
+
+/// One node boundary of a debug-instrumented program: the node about to run, and where. `offset`
+/// is the `Probe` instruction's position within `block`, so an instance paused here resumes at
+/// `offset + 1` on either back end.
+struct ProbeSite {
+    NodeKey node = kInvalidNodeKey;
+    BlockId block = kNoBlock;
+    u32 offset = 0;
+    /// True for a node on an execution chain (a call, an emission, a wait, a branch); false for a
+    /// data node evaluated to feed one. A step over stops only at the first kind.
+    bool executes = false;
+};
+
 /// An external name the program calls, emits or queries. Resolved by the host, never by the graph:
 /// a program that looked a function up by string at run time would be a string-keyed node lookup,
 /// which is on `visual-scripting`'s forbidden list.
@@ -241,6 +274,11 @@ public:
     [[nodiscard]] Span<const StateSlot> state_slots() const noexcept { return state_.span(); }
     [[nodiscard]] Span<const SuspendPoint> suspends() const noexcept { return suspends_.span(); }
     [[nodiscard]] Span<const ExternalRef> externals() const noexcept { return externals_.span(); }
+    /// The graph variables, in declaration order.
+    [[nodiscard]] Span<const Variable> variables() const noexcept { return variables_.span(); }
+    /// The node boundaries of a debug-instrumented program; EMPTY in every program the compiler
+    /// emits, which is what "the debugger costs nothing unless it is attached" means here.
+    [[nodiscard]] Span<const ProbeSite> probes() const noexcept { return probes_.span(); }
     [[nodiscard]] u32 register_count() const noexcept { return registers_; }
     [[nodiscard]] BlockId entry() const noexcept { return entry_; }
     /// A content hash over the code, the blocks and the constants: the cook key's input.
@@ -261,6 +299,8 @@ private:
     Array<StateSlot> state_;
     Array<SuspendPoint> suspends_;
     Array<ExternalRef> externals_;
+    Array<Variable> variables_;
+    Array<ProbeSite> probes_;
     DebugMap debug_;
     u32 registers_ = 0;
     BlockId entry_ = 0;
@@ -270,9 +310,11 @@ private:
 /// ONE INSTANCE'S STATE. No program, no graph, no virtual dispatch, and no allocation once sized.
 ///
 /// `visual-scripting`: "There SHALL NOT be one virtual machine instance per entity." This is what
-/// an entity carries instead: a register file and two integers.
+/// an entity carries instead: a register file and a few integers.
 class ScriptState {
 public:
+    /// Sized for `program`, every register zero and every graph variable at its declared initial
+    /// value.
     ScriptState(Allocator& allocator, const ScriptProgram& program) noexcept;
 
     ScriptState(const ScriptState&) = delete;
@@ -286,6 +328,23 @@ public:
     [[nodiscard]] BlockId resume_block() const noexcept { return resume_; }
     void set_resume_block(BlockId block) noexcept { resume_ = block; }
     [[nodiscard]] bool suspended() const noexcept { return resume_ != kNoBlock; }
+    /// A debugger stopped this instance in the middle of a handler. Its registers are live as they
+    /// were, and `execute` / `execute_native` continue at `paused_block()`, `paused_offset()`.
+    [[nodiscard]] bool paused() const noexcept { return paused_block_ != kNoBlock; }
+    [[nodiscard]] BlockId paused_block() const noexcept { return paused_block_; }
+    [[nodiscard]] u32 paused_offset() const noexcept { return paused_offset_; }
+    /// The instruction budget the handler had used when it paused. A continued run starts from
+    /// it, so breaking and continuing never hands a handler a fresh budget.
+    [[nodiscard]] u32 paused_spent() const noexcept { return paused_spent_; }
+    void pause_at(BlockId block, u32 offset, u32 spent = 0) noexcept {
+        paused_block_ = block;
+        paused_offset_ = offset;
+        paused_spent_ = spent;
+    }
+    void clear_pause() noexcept {
+        paused_block_ = kNoBlock;
+        paused_spent_ = 0;
+    }
     /// The registers persisted across the last suspension. THE COMPACT STATE.
     [[nodiscard]] Span<const Value> persisted() const noexcept { return persisted_.span(); }
     [[nodiscard]] Status persist(const ScriptProgram& program) noexcept;
@@ -295,6 +354,9 @@ private:
     Array<Value> registers_;
     Array<Value> persisted_;
     BlockId resume_ = kNoBlock;
+    BlockId paused_block_ = kNoBlock;
+    u32 paused_offset_ = 0;
+    u32 paused_spent_ = 0;
 };
 
 /// What the host supplies to a running program. Every external effect goes through it, which is
@@ -327,15 +389,51 @@ enum class RunOutcome : u8 {
     /// The instruction budget ran out. A program that loops forever is stopped rather than hanging
     /// the frame, and this is what the scheduler sees.
     BudgetExhausted,
+    /// A debugger stopped the instance at a node (`ScriptState::paused`). Only a debug-instrumented
+    /// program run with a hook can answer this.
+    Paused,
 };
 
-/// Run one instance to completion, to a suspension, or to the budget.
+/// Whether this build carries the graph debugger at all. `CY_DEVELOPMENT` is the engine's line for
+/// "assertions, diagnostics, hot reload and debug visualisation" (cmake/profiles.cmake): defined in
+/// Debug and Development, absent from Profile and Shipping. Where it is false the run loops contain
+/// no probe test, the native probe step does nothing, and `instrument_for_debug` refuses — so a
+/// shipped program cannot carry a probe and a shipped loop cannot look for one.
+inline constexpr bool kGraphDebuggerEnabled =
+#if defined(CY_DEVELOPMENT)
+    true;
+#else
+    false;
+#endif
+
+/// What a debugger decides at a node boundary.
+enum class DebugVerdict : u8 { Continue = 0, Break };
+
+/// The debugger's side of a run: called at every `Probe` of an instrumented program, before the
+/// node runs. See `cy/graph/script_debug.h`, which owns the rest of the debugger services.
+class ScriptDebugHook {
+public:
+    ScriptDebugHook() = default;
+    virtual ~ScriptDebugHook() = default;
+    ScriptDebugHook(const ScriptDebugHook&) = delete;
+    ScriptDebugHook& operator=(const ScriptDebugHook&) = delete;
+    ScriptDebugHook(ScriptDebugHook&&) = delete;
+    ScriptDebugHook& operator=(ScriptDebugHook&&) = delete;
+
+    [[nodiscard]] virtual DebugVerdict on_probe(const ProbeSite& site,
+                                                const ScriptState& state) noexcept = 0;
+};
+
+/// Run one instance to completion, to a suspension, or to the budget — or, for a paused instance,
+/// on from where a debugger stopped it.
 ///
 /// ONE SHARED PROGRAM, ONE INSTANCE'S STATE. Calling this for eight thousand entities is eight
-/// thousand calls with one `program` — not eight thousand machines.
+/// thousand calls with one `program` — not eight thousand machines. `debug` is consulted only at
+/// the `Probe` instructions an instrumented program carries, and only in a build where
+/// `kGraphDebuggerEnabled` (script_debug.h) is true.
 [[nodiscard]] Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& state,
-                                                  ScriptHost& host,
-                                                  u32 instruction_budget = 4096) noexcept;
+                                                  ScriptHost& host, u32 instruction_budget = 4096,
+                                                  ScriptDebugHook* debug = nullptr) noexcept;
 
 /// Run one instance from `start`, the first block of an event handler, rather than from the
 /// program's entry or its resume point. Whatever suspension the instance was in is DISCARDED: an
@@ -344,8 +442,8 @@ enum class RunOutcome : u8 {
 /// `execute`; `start` outside the program is an error rather than a jump into nothing.
 [[nodiscard]] Expected<RunOutcome, Error> execute_from(const ScriptProgram& program,
                                                        ScriptState& state, ScriptHost& host,
-                                                       BlockId start,
-                                                       u32 instruction_budget = 4096) noexcept;
+                                                       BlockId start, u32 instruction_budget = 4096,
+                                                       ScriptDebugHook* debug = nullptr) noexcept;
 
 // --- The native back end ------------------------------------------------------------------------
 //
@@ -392,6 +490,8 @@ struct NativeFrame {
     /// The step that runs next. Set by a terminator; otherwise the walk advances by one.
     u32 next = 0;
     RunOutcome outcome = RunOutcome::Finished;
+    /// The debugger a probe step consults; null when none is attached.
+    ScriptDebugHook* debug = nullptr;
     /// A terminator that ends this call — a return, or a suspension that did not clear.
     bool stop = false;
     bool failed = false;
@@ -455,12 +555,13 @@ private:
 /// Run one instance on the native back end. Same state, same host, same outcome as `execute`.
 [[nodiscard]] Expected<RunOutcome, Error> execute_native(const NativeProgram& program,
                                                          ScriptState& state, ScriptHost& host,
-                                                         u32 instruction_budget = 4096) noexcept;
+                                                         u32 instruction_budget = 4096,
+                                                         ScriptDebugHook* debug = nullptr) noexcept;
 
 /// `execute_from` on the native back end: the same handler block, resolved to its first step.
 [[nodiscard]] Expected<RunOutcome, Error> execute_native_from(
     const NativeProgram& program, ScriptState& state, ScriptHost& host, BlockId start,
-    u32 instruction_budget = 4096) noexcept;
+    u32 instruction_budget = 4096, ScriptDebugHook* debug = nullptr) noexcept;
 
 // --- Compilation ------------------------------------------------------------------------------
 

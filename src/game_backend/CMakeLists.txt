@@ -87,7 +87,10 @@ if(CY_BUILD_TESTS)
         endforeach()
         # The gameplay graph suite reads the graph the editor writes for #29's acceptance scenario
         # from the one place both sides compare against.
+        # The Play debugger and hot reload (#84) are cases of the same suite, over the same scene.
         if(TARGET cy_test_integration_game_backend_graph)
+            target_sources(cy_test_integration_game_backend_graph PRIVATE
+                "${tests_dir}/test_graph_debugger.cpp")
             target_compile_definitions(cy_test_integration_game_backend_graph PRIVATE
                 "CY_SCRIPT_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/src/editor_backend/tests/data\"")
         endif()

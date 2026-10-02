@@ -272,6 +272,17 @@ type ConnectionHandler<'a> =
     dyn FnMut(&mut GraphCanvas, &GraphConnection) -> cy_editor_core::problem::Result<()> + 'a;
 type MoveHandler<'a> =
     dyn FnMut(&mut GraphCanvas, GraphMovement) -> cy_editor_core::problem::Result<()> + 'a;
+type GutterHandler<'a> = dyn FnMut(NodeKey) + 'a;
+
+/// What a debugger says about one node: a breakpoint on it, execution paused before it, and how
+/// recently it ran (1 for the newest node of the trace, falling towards 0; 0 for not recently).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct NodeMark {
+    pub node: u64,
+    pub breakpoint: bool,
+    pub paused: bool,
+    pub heat: f32,
+}
 
 /// What the host panel learns from, and routes through, one frame of the canvas.
 ///
@@ -285,6 +296,11 @@ pub(super) struct CanvasFeedback<'a> {
     pub unwired_inputs: bool,
     pub on_connect: Option<&'a mut ConnectionHandler<'a>>,
     pub on_move: Option<&'a mut MoveHandler<'a>>,
+    /// The debugger's marks, drawn on their nodes. Empty where a domain has no debugger.
+    pub node_marks: &'a [NodeMark],
+    /// A click on a node's breakpoint gutter, the dot at the right of its header. `None` draws no
+    /// gutter.
+    pub on_gutter: Option<&'a mut GutterHandler<'a>>,
 }
 
 /// A node drag: `finished` is set on the frame the pointer is released.
@@ -336,6 +352,7 @@ pub(super) fn draw_canvas(
     let selected = canvas.selection();
     let mut select = None;
     let mut movement = None;
+    let mut gutter_clicked = None;
     for card in &cards {
         let header = egui::Rect::from_min_max(
             card.rect.min,
@@ -349,21 +366,8 @@ pub(super) fn draw_canvas(
         if response.clicked() {
             select = Some(card.key);
         }
-        if response.dragged() {
-            movement = Some(GraphMovement {
-                node: card.key,
-                at: GraphLayout {
-                    x: card.layout.x + response.drag_delta().x,
-                    y: card.layout.y + response.drag_delta().y,
-                },
-                finished: false,
-            });
-        } else if response.drag_stopped() && feedback.on_move.is_some() {
-            movement = Some(GraphMovement {
-                node: card.key,
-                at: card.layout,
-                finished: true,
-            });
+        if let Some(moved) = node_movement(card, &response, feedback.on_move.is_some()) {
+            movement = Some(moved);
         }
         draw_node(
             &painter,
@@ -372,7 +376,13 @@ pub(super) fn draw_canvas(
             selected.contains(&card.key),
             response.hovered(),
         );
+        if draw_debugger(ui, &painter, shell, card, feedback) {
+            gutter_clicked = Some(card.key);
+        }
         draw_node_alert(&painter, shell, card, response, feedback.node_alerts);
+    }
+    if let (Some(key), Some(on_gutter)) = (gutter_clicked, feedback.on_gutter.as_mut()) {
+        on_gutter(key);
     }
     let pin_action = interact_with_pins(ui, shell, &cards, pending_source.as_ref());
     if let Some(pin) = pin_action {
@@ -460,6 +470,130 @@ fn draw_catalogue_status(
             },
         ),
     );
+}
+
+/// The move a header drag makes this frame: an in-progress move while dragged, and the finished
+/// gesture on release when the host routes moves through a command.
+fn node_movement(
+    card: &NodeCard,
+    response: &egui::Response,
+    finishable: bool,
+) -> Option<GraphMovement> {
+    if response.dragged() {
+        return Some(GraphMovement {
+            node: card.key,
+            at: GraphLayout {
+                x: card.layout.x + response.drag_delta().x,
+                y: card.layout.y + response.drag_delta().y,
+            },
+            finished: false,
+        });
+    }
+    (response.drag_stopped() && finishable).then_some(GraphMovement {
+        node: card.key,
+        at: card.layout,
+        finished: true,
+    })
+}
+
+/// A node's debugger marks and, where the host has a debugger, its gutter. Answers whether the
+/// gutter was clicked.
+fn draw_debugger(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    card: &NodeCard,
+    feedback: &CanvasFeedback<'_>,
+) -> bool {
+    let mark = feedback
+        .node_marks
+        .iter()
+        .find(|mark| mark.node == card.key.ordinal())
+        .copied()
+        .unwrap_or_default();
+    draw_node_mark(painter, shell, card, mark);
+    feedback.on_gutter.is_some() && draw_gutter(ui, painter, shell, card, mark)
+}
+
+/// Where a node's breakpoint gutter is: a dot at the right end of its header.
+fn gutter_centre(card: &NodeCard) -> egui::Pos2 {
+    egui::pos2(card.rect.right() - 12.0, card.rect.top() + 16.0)
+}
+
+/// The breakpoint gutter of one node: a filled dot for a breakpoint, a ring on hover. Answers
+/// whether it was clicked this frame.
+fn draw_gutter(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    card: &NodeCard,
+    mark: NodeMark,
+) -> bool {
+    let centre = gutter_centre(card);
+    let response = ui
+        .interact(
+            egui::Rect::from_center_size(centre, egui::vec2(16.0, 16.0)),
+            egui::Id::new(("graph-node-gutter", card.key.ordinal())),
+            egui::Sense::click(),
+        )
+        .on_hover_text(if mark.breakpoint {
+            "Remove the breakpoint"
+        } else {
+            "Stop Play before this node runs"
+        });
+    // Named for assistive technology and for an agent driving the window: the gutter is a button.
+    let node = card.key.ordinal();
+    let set = mark.breakpoint;
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Checkbox,
+            true,
+            set,
+            format!("Breakpoint on node {node}"),
+        )
+    });
+    let colour = theme::role(shell.theme, Semantic::Error);
+    if mark.breakpoint {
+        painter.circle_filled(centre, 5.5, colour);
+    } else if response.hovered() {
+        painter.circle_stroke(centre, 5.5, egui::Stroke::new(1.5, colour));
+    }
+    response.clicked()
+}
+
+/// The debugger's marks on one node: the recent-execution glow, and the paused outline.
+fn draw_node_mark(
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    card: &NodeCard,
+    mark: NodeMark,
+) {
+    if mark.heat > 0.0 {
+        let heat = mark.heat.clamp(0.0, 1.0);
+        let live = theme::role(shell.theme, Semantic::Live).gamma_multiply(0.25 + 0.75 * heat);
+        painter.rect_stroke(
+            card.rect.expand(3.0),
+            egui::CornerRadius::same(7),
+            egui::Stroke::new(1.5 + 2.0 * heat, live),
+            egui::StrokeKind::Outside,
+        );
+    }
+    if mark.paused {
+        let warning = theme::role(shell.theme, Semantic::Warning);
+        painter.rect_stroke(
+            card.rect.expand(5.0),
+            egui::CornerRadius::same(8),
+            egui::Stroke::new(3.0, warning),
+            egui::StrokeKind::Outside,
+        );
+        painter.text(
+            card.rect.left_bottom() + egui::vec2(0.0, 8.0),
+            egui::Align2::LEFT_TOP,
+            "▶ PAUSED HERE",
+            egui::FontId::monospace(shell.metrics().text(TextRole::Secondary)),
+            warning,
+        );
+    }
 }
 
 fn draw_node_alert(
@@ -1241,6 +1375,8 @@ mod tests {
                     node_alerts: &[],
                     on_connect: None,
                     on_move: Some(&mut on_move),
+                    node_marks: &[],
+                    on_gutter: None,
                 },
             )
         };
@@ -1303,6 +1439,8 @@ mod tests {
                     node_alerts: &[],
                     on_connect: Some(&mut on_connect),
                     on_move: None,
+                    node_marks: &[],
+                    on_gutter: None,
                 },
             )
         };

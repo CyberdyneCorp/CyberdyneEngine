@@ -127,6 +127,11 @@ private:
 ///   script.external.unknown    ... that names something the host did not declare
 ///   script.external.kind       ... that names a declared external of another kind
 ///   script.capability.missing  ... that needs a capability the graph was not granted
+///   script.variable.unnamed    a variable declared without a name, or a read or write naming none
+///   script.variable.type       a variable whose type is not float, int or bool
+///   script.variable.duplicate  two declarations of one variable name (on the second; related:
+///                              first)
+///   script.variable.unknown    a read or write naming a variable the graph does not declare
 ///   script.node.unreachable    a WARNING: a node no handler reaches, which compiles to nothing
 [[nodiscard]] Expected<EventProgram, Error> compile_event_graph(const Graph& graph,
                                                                 const NodeRegistry& registry,

@@ -58,6 +58,8 @@ cy_add_module(
         src/lower_pose.cpp
         src/lower_script.cpp
         src/lower_script_native.cpp
+        src/script_debug.cpp
+        src/script_reload.cpp
         src/merge.cpp
         src/passes.cpp
         src/pose_program.cpp

@@ -56,6 +56,7 @@ function(cy_graph_declare_tests)
             "${cy_graph_tests_dir}/anchor/material_anchor_graph.cpp"
             "${cy_graph_tests_dir}/test_anchor.cpp"
             "${cy_graph_tests_dir}/test_event_script.cpp"
+            "${cy_graph_tests_dir}/test_script_debug.cpp"
             "${cy_graph_tests_dir}/test_expr.cpp"
             "${cy_graph_tests_dir}/test_locomotion.cpp"
             "${cy_graph_tests_dir}/test_lowering.cpp"

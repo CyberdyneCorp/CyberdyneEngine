@@ -1717,3 +1717,127 @@ fn a_graph_the_engine_has_not_compiled_is_sent_to_it_once() {
     let second = harness.frame(GRAPH, size, Vec::new());
     assert!(second.intents.is_empty(), "{:?}", second.intents);
 }
+
+// --- The Play debugger (#84) ------------------------------------------------------------------------
+
+const COUNTER_GRAPH: &str = "game/scripts/unit_counter.cyscript";
+
+/// The counter graph open in the panel, compiled, and Play paused at its write, as the engine's
+/// `script.debug.get` fixture reports it.
+fn paused_harness(project: &Project) -> Harness {
+    let counter = String::from_utf8(engine_audio("script_unit_counter_v1.cyscript")).unwrap();
+    let mut harness = graph_harness(project, &unit_graph(), "script_compile_v1.wire");
+    std::fs::write(project.0.join(COUNTER_GRAPH), &counter).unwrap();
+    harness.inputs.script.reference = COUNTER_GRAPH.into();
+    // The panel asks for a compile of the graph it now shows; the debugger's state is answered.
+    harness.inputs.script.compile_asked = Some(counter);
+    engine_answers_script(
+        &mut harness,
+        |editor| {
+            editor
+                .backend
+                .script
+                .refresh_debug(&editor.runtime)
+                .unwrap()
+                .expect("nothing else is in flight")
+        },
+        engine_audio("script_debug_paused_v1.wire"),
+    );
+    harness
+}
+
+#[test]
+fn the_debugger_shows_where_play_paused_and_the_paused_entitys_values() {
+    let project = Project::new("graph-debugger");
+    let mut harness = paused_harness(&project);
+    let evidence = harness.frame(GRAPH, egui::vec2(1100.0, 900.0), Vec::new());
+    for label in [
+        "Pause",
+        "Continue",
+        "Step Over",
+        "Step Into",
+        "Watches",
+        "var orders",
+        "node 10 · value",
+        "node 8 · value",
+        "Breakpoint on node 11",
+        "Breakpoint on node 4",
+    ] {
+        assert!(
+            has(&evidence, label),
+            "the debugger lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.starts_with("Paused before unit_counter node 11 on ")),
+        "{:?}",
+        evidence.labels
+    );
+}
+
+#[test]
+fn the_debuggers_controls_and_gutter_are_the_registered_debug_commands() {
+    let project = Project::new("graph-debugger-gestures");
+    let mut harness = paused_harness(&project);
+    let size = egui::vec2(1100.0, 900.0);
+    let first = harness.frame(GRAPH, size, Vec::new());
+    let stepped = harness.frame(GRAPH, size, vec![click_named(&first, "Step Over")]);
+    assert!(
+        matches!(
+            stepped.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "script.debug.step" && arguments.text("mode") == Some("over")
+        ),
+        "{:?}",
+        stepped.intents
+    );
+    let continued = harness.frame(GRAPH, size, vec![click_named(&first, "Continue")]);
+    assert!(
+        matches!(
+            continued.intents.as_slice(),
+            [Intent::Invoke(command, _)] if command == "script.debug.continue"
+        ),
+        "{:?}",
+        continued.intents
+    );
+    // A gutter without a breakpoint sets one for every entity.
+    let set = harness.frame(
+        GRAPH,
+        size,
+        vec![click_named(&first, "Breakpoint on node 4")],
+    );
+    assert!(
+        matches!(
+            set.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "script.debug.breakpoint"
+                    && arguments.text("reference") == Some(COUNTER_GRAPH)
+                    && arguments.get("node") == Some(&cy_editor_core::value::Value::Int(4))
+                    && arguments.get("enabled") == Some(&cy_editor_core::value::Value::Bool(true))
+                    && arguments.text("entity") == Some("")
+        ),
+        "{:?}",
+        set.intents
+    );
+    // The engine holds one on node 11 for one entity: its gutter removes exactly that one.
+    let removed = harness.frame(
+        GRAPH,
+        size,
+        vec![click_named(&first, "Breakpoint on node 11")],
+    );
+    assert!(
+        matches!(
+            removed.intents.as_slice(),
+            [Intent::Invoke(command, arguments)]
+                if command == "script.debug.breakpoint"
+                    && arguments.get("enabled") == Some(&cy_editor_core::value::Value::Bool(false))
+                    && arguments.text("entity") == Some("123456789abcdef")
+        ),
+        "{:?}",
+        removed.intents
+    );
+}

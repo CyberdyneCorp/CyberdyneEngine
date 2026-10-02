@@ -43,7 +43,7 @@ pub const RAISE: &str = "script.event.raise";
 pub const STATE: &str = "script.state.get";
 
 /// The wire format every `script.*` payload begins with.
-const WIRE_FORMAT: u32 = 1;
+pub(crate) const WIRE_FORMAT: u32 = 1;
 
 /// Every capability, in the order `cy::graph::write_graph` writes them.
 pub const CAPABILITIES: [&str; 11] = [
@@ -866,21 +866,7 @@ impl CompileReport {
         for _ in 0..reader.u32()? {
             report.accesses.push((reader.text()?, reader.u8()?));
         }
-        for _ in 0..reader.u32()? {
-            report.diagnostics.push(CompileDiagnostic {
-                severity: match reader.u8()? {
-                    0 => Severity::Info,
-                    1 => Severity::Warning,
-                    _ => Severity::Error,
-                },
-                code: reader.text()?,
-                node: reader.u64()?,
-                pin: reader.text()?,
-                message: reader.text()?,
-                detail: reader.text()?,
-                related: reader.u64()?,
-            });
-        }
+        report.diagnostics = read_diagnostics(&mut reader)?;
         report.listing = reader.text()?;
         finished(&reader, "read the engine's compile")?;
         Ok(report)
@@ -1002,7 +988,28 @@ impl PlayState {
     }
 }
 
-fn expect_format(reader: &mut Reader<'_>, action: &str) -> Result<()> {
+/// The diagnostics list a compile and a reload reply both end with.
+pub(crate) fn read_diagnostics(reader: &mut Reader<'_>) -> Result<Vec<CompileDiagnostic>> {
+    let mut diagnostics = Vec::new();
+    for _ in 0..reader.u32()? {
+        diagnostics.push(CompileDiagnostic {
+            severity: match reader.u8()? {
+                0 => Severity::Info,
+                1 => Severity::Warning,
+                _ => Severity::Error,
+            },
+            code: reader.text()?,
+            node: reader.u64()?,
+            pin: reader.text()?,
+            message: reader.text()?,
+            detail: reader.text()?,
+            related: reader.u64()?,
+        });
+    }
+    Ok(diagnostics)
+}
+
+pub(crate) fn expect_format(reader: &mut Reader<'_>, action: &str) -> Result<()> {
     let format = reader.u32()?;
     if format == WIRE_FORMAT {
         Ok(())
@@ -1014,7 +1021,7 @@ fn expect_format(reader: &mut Reader<'_>, action: &str) -> Result<()> {
     }
 }
 
-fn finished(reader: &Reader<'_>, action: &str) -> Result<()> {
+pub(crate) fn finished(reader: &Reader<'_>, action: &str) -> Result<()> {
     if reader.is_empty() {
         Ok(())
     } else {
@@ -1023,7 +1030,7 @@ fn finished(reader: &Reader<'_>, action: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn engine_fixture(name: &str) -> Vec<u8> {

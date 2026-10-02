@@ -537,6 +537,17 @@ engine and run in Play by the engine's compiled program. The editor interprets n
   panel's Play row raises an event on the selected entity (`script.event.raise`, `unit.command` with a
   target) and shows each instance — waiting on what, where, how many runs — and every cue the graphs
   played, with its tick.
+- **The Play debugger (#84).** A dot at the right of each node's header sets a breakpoint (for every
+  entity, or only the selected one); the header row has Pause, Continue, Step Over and Step Into; the
+  node Play is paused before is outlined and the last nodes run glow; the watch list shows the
+  inspected entity's variables and watched pins. A graph break pauses the engine's whole simulation
+  tick. Breakpoints are the editor's (`ScriptRequests`) and are sent when Play starts. The same are
+  `script.debug.breakpoint`, `.pause`, `.continue`, `.step`, `.watch`, `.inspect`, `.refresh` and
+  `.status` (`cy_editor_services::script_debug_commands`).
+- **Hot reload.** Saving a graph Play runs, and undoing or redoing an edit to it, sends it to
+  `script.reload`; the engine swaps it in at the next tick keeping each entity's variables, or refuses
+  on the node (a variable whose type changed). `script.graph.reload` does it by hand. See
+  [the guide](../docs/guides/visual-scripting.md#editing-while-play-runs).
 
 The contract between the two sides is `src/editor_backend/tests/data/script_*`: the acceptance graph
 (`script_unit_command_v1.cyscript`), the raise this workspace encodes, and the engine's catalogue,
