@@ -261,12 +261,14 @@ namespace {
 struct RunStart {
     BlockId block = kNoBlock;
     u32 offset = 0;
+    /// The budget already spent: nonzero only when a paused instance continues.
+    u32 spent = 0;
 };
 
 /// A probe, in a build that has the debugger: ask the hook, and on a break record where this
 /// instance continues — the instruction after the probe — so either back end resumes it there.
 [[nodiscard]] bool probe_breaks(const ScriptProgram& program, const Instruction& instruction,
-                                ScriptState& state, ScriptDebugHook* debug) noexcept {
+                                ScriptState& state, ScriptDebugHook* debug, u32 spent) noexcept {
     if (debug == nullptr || instruction.immediate >= program.probes().size()) {
         return false;
     }
@@ -274,7 +276,7 @@ struct RunStart {
     if (debug->on_probe(site, state) != DebugVerdict::Break) {
         return false;
     }
-    state.pause_at(site.block, site.offset + 1);
+    state.pause_at(site.block, site.offset + 1, spent);
     return true;
 }
 
@@ -285,7 +287,7 @@ struct RunStart {
                                                      ScriptState& state, ScriptHost& host,
                                                      RunStart start, u32 instruction_budget,
                                                      ScriptDebugHook* debug) noexcept {
-    u32 executed = 0;
+    u32 executed = start.spent;
     BlockId block = start.block;
     u32 first = start.offset;
     while (block != kNoBlock) {
@@ -295,19 +297,20 @@ struct RunStart {
         const BasicBlock& current = program.blocks()[block];
         BlockId next = kNoBlock;
         for (u32 index = first; index < current.count; ++index) {
-            if (++executed > instruction_budget) {
-                return RunOutcome::BudgetExhausted;
-            }
             const Instruction& instruction = program.code()[current.first + index];
             // COMPILED OUT OF PROFILE AND SHIPPING: there the loop has no probe test at all, and no
-            // program it can be given holds a probe (`instrument_for_debug` refuses there).
+            // program it can be given holds a probe (`instrument_for_debug` refuses there). A probe
+            // is not charged to the budget, so the debugger never changes when a handler runs out.
             if constexpr (kGraphDebuggerEnabled) {
                 if (instruction.op == ScriptOp::Probe) {
-                    if (probe_breaks(program, instruction, state, debug)) {
+                    if (probe_breaks(program, instruction, state, debug, executed)) {
                         return RunOutcome::Paused;
                     }
                     continue;
                 }
+            }
+            if (++executed > instruction_budget) {
+                return RunOutcome::BudgetExhausted;
             }
             if (is_external(instruction.op)) {
                 step_external(program, instruction, state.registers(), host);
@@ -360,7 +363,7 @@ Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& s
     // A PAUSED INSTANCE CONTINUES WHERE THE DEBUGGER STOPPED IT, with its registers as they were:
     // nothing was persisted, so nothing is restored.
     if (state.paused()) {
-        const RunStart start{state.paused_block(), state.paused_offset()};
+        const RunStart start{state.paused_block(), state.paused_offset(), state.paused_spent()};
         state.clear_pause();
         return run_blocks(program, state, host, start, instruction_budget, debug);
     }

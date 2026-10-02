@@ -489,6 +489,74 @@ CY_TEST_CASE("graph debugger: a program nobody debugs carries no probe and never
     }
 }
 
+CY_TEST_CASE("graph debugger: probes and pauses leave a handler's instruction budget unchanged") {
+    if constexpr (!script::kGraphDebuggerEnabled) {
+        return;
+    }
+    // A handler that fits its budget exactly must still fit it under the debugger, and one that
+    // does not must still run out: otherwise attaching the debugger (or breaking and continuing)
+    // turns a looping handler from Finished into Failed, or the reverse.
+    GraphBuilder builder;
+    builder.counter();
+    const script::EventProgram program = compiled(builder);
+    const script::EventProgram debug = instrumented(program);
+    const script::EventHandler* up = program.handler(Name::intern("count.up"));
+    CY_REQUIRE(up != nullptr);
+    auto native = script::compile_native(program.program(), allocator());
+    auto debug_native = script::compile_native(debug.program(), allocator());
+    CY_REQUIRE(native.has_value());
+    CY_REQUIRE(debug_native.has_value());
+
+    for (const bool on_native : {false, true}) {
+        const auto run = [&](const script::ScriptProgram& code, const script::NativeProgram& steps,
+                             script::ScriptState& state, u32 budget, script::ScriptDebugHook* hook,
+                             bool from) {
+            RecordingHost host;
+            if (from) {
+                return on_native ? script::execute_native_from(steps, state, host, up->block,
+                                                               budget, hook)
+                                 : script::execute_from(code, state, host, up->block, budget, hook);
+            }
+            return on_native ? script::execute_native(steps, state, host, budget, hook)
+                             : script::execute(code, state, host, budget, hook);
+        };
+        // The smallest budget the plain program finishes in.
+        u32 exact = 1;
+        for (;; ++exact) {
+            CY_REQUIRE(exact < 64U);
+            script::ScriptState state(allocator(), program.program());
+            auto outcome = run(program.program(), *native, state, exact, nullptr, true);
+            CY_REQUIRE(outcome.has_value());
+            if (*outcome == script::RunOutcome::Finished) {
+                break;
+            }
+        }
+
+        // Probes that never break cost the handler nothing.
+        Breaker idle;
+        script::ScriptState probed(allocator(), debug.program());
+        auto outcome = run(debug.program(), *debug_native, probed, exact, &idle, true);
+        CY_REQUIRE(outcome.has_value());
+        CY_CHECK(*outcome == script::RunOutcome::Finished);
+        CY_CHECK_FALSE(idle.seen.empty());
+
+        // Breaking at every node and continuing does not hand the handler a fresh budget.
+        Breaker every;
+        every.every = true;
+        script::ScriptState stepped(allocator(), debug.program());
+        outcome = run(debug.program(), *debug_native, stepped, exact - 1, &every, true);
+        CY_REQUIRE(outcome.has_value());
+        u32 pauses = 0;
+        while (*outcome == script::RunOutcome::Paused) {
+            CY_REQUIRE(++pauses < 64U);
+            outcome = run(debug.program(), *debug_native, stepped, exact - 1, &every, false);
+            CY_REQUIRE(outcome.has_value());
+        }
+        CY_CHECK_GT(pauses, 1U);
+        CY_CHECK(*outcome == script::RunOutcome::BudgetExhausted);
+    }
+}
+
 CY_TEST_CASE("graph debugger: compiled out of Profile and Shipping") {
     GraphBuilder builder;
     builder.order();

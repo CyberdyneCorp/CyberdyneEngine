@@ -196,6 +196,17 @@ void step_probe(const NativeStep& step, NativeFrame& frame) noexcept {
     }
 }
 
+/// Whether `step` is a probe. Always false where the debugger is compiled out, so that loop keeps
+/// no probe test either.
+[[nodiscard]] bool is_probe(const NativeStep& step) noexcept {
+    if constexpr (kGraphDebuggerEnabled) {
+        return step.run == &step_probe;
+    } else {
+        (void)step;
+        return false;
+    }
+}
+
 /// THE RESOLUTION, and it is an array index rather than a switch: `compile_native` reads this table
 /// once per instruction and the run-time walk never reads an opcode at all.
 constexpr NativeHandler kHandlers[] = {
@@ -354,7 +365,7 @@ namespace {
 [[nodiscard]] Expected<RunOutcome, Error> run_steps(const NativeProgram& program,
                                                     ScriptState& state, ScriptHost& host,
                                                     u32 step_index, u32 instruction_budget,
-                                                    ScriptDebugHook* debug) noexcept {
+                                                    ScriptDebugHook* debug, u32 spent) noexcept {
     NativeFrame frame;
     frame.program = &program.source();
     frame.state = &state;
@@ -362,19 +373,23 @@ namespace {
     frame.debug = debug;
     frame.registers = state.registers();
 
-    u32 executed = 0;
+    u32 executed = spent;
     const Span<const NativeStep> steps = program.steps();
     while (step_index < steps.size()) {
-        if (++executed > instruction_budget) {
+        const NativeStep& step = steps[step_index];
+        // A probe is not charged to the budget, as on the bytecode back end.
+        if (!is_probe(step) && ++executed > instruction_budget) {
             return RunOutcome::BudgetExhausted;
         }
-        const NativeStep& step = steps[step_index];
         frame.next = step_index + 1;
         step.run(step, frame);
         if (frame.failed) {
             return make_unexpected(frame.error);
         }
         if (frame.stop) {
+            if (frame.outcome == RunOutcome::Paused) {
+                state.pause_at(state.paused_block(), state.paused_offset(), executed);
+            }
             return frame.outcome;
         }
         step_index = frame.next;
@@ -396,8 +411,9 @@ Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptS
             return invalid("this instance is paused in a block that is not in its program");
         }
         const u32 resume = program.block_starts()[state.paused_block()] + state.paused_offset();
+        const u32 spent = state.paused_spent();
         state.clear_pause();
-        return run_steps(program, state, host, resume, instruction_budget, debug);
+        return run_steps(program, state, host, resume, instruction_budget, debug, spent);
     }
     u32 step_index = program.entry_step();
     if (state.suspended()) {
@@ -413,7 +429,7 @@ Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptS
     if (step_index == kNoStep) {
         return invalid("this program has no entry block");
     }
-    return run_steps(program, state, host, step_index, instruction_budget, debug);
+    return run_steps(program, state, host, step_index, instruction_budget, debug, 0);
 }
 
 Expected<RunOutcome, Error> execute_native_from(const NativeProgram& program, ScriptState& state,
@@ -425,8 +441,8 @@ Expected<RunOutcome, Error> execute_native_from(const NativeProgram& program, Sc
     }
     state.set_resume_block(kNoBlock);
     state.clear_pause();
-    return run_steps(program, state, host, program.block_starts()[start], instruction_budget,
-                     debug);
+    return run_steps(program, state, host, program.block_starts()[start], instruction_budget, debug,
+                     0);
 }
 
 }  // namespace cy::graph::script

@@ -578,7 +578,9 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 #     entity it names"
 #   visual-scripting "A graph break pauses the whole simulation tick"
 #     test:integration.game_backend_graph, case "graph debugger: a run that breaks and steps moves
-#     and sounds as one that does not"; test:integration.editor_window_graph_debugger, case "a graph
+#     and sounds as one that does not"; test:integration.graph_compiler, case "graph debugger: probes
+#     and pauses leave a handler's instruction budget unchanged"; test:integration.
+#     editor_window_graph_debugger, case "a graph
 #     breakpoint pauses the whole Play session until the debugger releases it"
 #   visual-scripting "Running graphs reload with their variables"
 #     test:integration.game_backend_graph, case "graph reload: a running counter keeps its count; a

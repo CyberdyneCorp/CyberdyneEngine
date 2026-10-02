@@ -43,6 +43,11 @@ produce the same simulation, tick for tick, as the same run without the debugger
 - **WHEN** a run stops at breakpoints and is stepped and continued
 - **THEN** every placement and every cue SHALL be the same, on the same tick, as in the run without the debugger
 
+#### Scenario: Debugging does not change a handler's budget
+- **WHEN** a handler runs under the debugger, with or without breaks
+- **THEN** it SHALL finish or exhaust its instruction budget exactly where it does without the debugger: a
+  probe SHALL not be charged to the budget, and a continued handler SHALL resume with the budget it had spent
+
 ### Requirement: Running graphs reload with their variables
 A graph SHALL declare per-instance variables, each with a name, a type and a default, kept across events
 and waits; a variable's identity SHALL be the node that declares it. Saving a graph during play SHALL

@@ -61,7 +61,8 @@ node's key.
 registers, suspend points and externals are unchanged, so a `ScriptState` is valid against both copies.
 At a probe the run loop asks the `ScriptDebugHook` passed to `execute*`; a break returns
 `RunOutcome::Paused` with the instance's pause point recorded as a block and an offset, which both back
-ends resume from. The debug map records pins, and `read_pin` reads a node's pin from the register its
+ends resume from. A probe is not charged to the instruction budget, and a paused instance resumes with
+the budget it had spent, so the debugger never changes where a handler finishes or runs out. The debug map records pins, and `read_pin` reads a node's pin from the register its
 instruction wrote. A program the compiler emits has no probe; where `CY_DEVELOPMENT` is not defined
 (Profile, Shipping) `kGraphDebuggerEnabled` is false, the probe test is not compiled into the bytecode
 loop, the native probe step is empty and instrumentation refuses. `ScriptOp::Probe` is appended after

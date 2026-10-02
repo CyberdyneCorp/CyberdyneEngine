@@ -333,11 +333,18 @@ public:
     [[nodiscard]] bool paused() const noexcept { return paused_block_ != kNoBlock; }
     [[nodiscard]] BlockId paused_block() const noexcept { return paused_block_; }
     [[nodiscard]] u32 paused_offset() const noexcept { return paused_offset_; }
-    void pause_at(BlockId block, u32 offset) noexcept {
+    /// The instruction budget the handler had used when it paused. A continued run starts from
+    /// it, so breaking and continuing never hands a handler a fresh budget.
+    [[nodiscard]] u32 paused_spent() const noexcept { return paused_spent_; }
+    void pause_at(BlockId block, u32 offset, u32 spent = 0) noexcept {
         paused_block_ = block;
         paused_offset_ = offset;
+        paused_spent_ = spent;
     }
-    void clear_pause() noexcept { paused_block_ = kNoBlock; }
+    void clear_pause() noexcept {
+        paused_block_ = kNoBlock;
+        paused_spent_ = 0;
+    }
     /// The registers persisted across the last suspension. THE COMPACT STATE.
     [[nodiscard]] Span<const Value> persisted() const noexcept { return persisted_.span(); }
     [[nodiscard]] Status persist(const ScriptProgram& program) noexcept;
@@ -349,6 +356,7 @@ private:
     BlockId resume_ = kNoBlock;
     BlockId paused_block_ = kNoBlock;
     u32 paused_offset_ = 0;
+    u32 paused_spent_ = 0;
 };
 
 /// What the host supplies to a running program. Every external effect goes through it, which is
