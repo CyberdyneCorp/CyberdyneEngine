@@ -133,3 +133,52 @@ CY_TEST_CASE(
     CY_REQUIRE(machine.evaluate_pose().has_value());
     CY_CHECK_NEAR(machine.local[kRoot].translation.z, -1.0F, 1e-3);
 }
+
+// REGRESSION: every looping clock wrapped by its clip's DURATION, so a `LoopMode::PingPong` clip
+// never played its way back: the clock returned to zero at the end of the forward leg and the
+// sampler, which folds the second half of a 2 × duration period, never saw that half. A ping-pong
+// clock wraps by twice the duration.
+CY_TEST_CASE("animation clocks: a ping-pong clip's clock runs through its return leg") {
+    Machine machine(allocator());
+    CY_REQUIRE(machine.build(LoopMode::None).has_value());
+    machine.locomotion.idle.set_loop_mode(LoopMode::PingPong);
+    CY_REQUIRE(machine.locomotion.rig
+                   .bind(machine.locomotion.skeleton, machine.locomotion.program,
+                         machine.locomotion.table.span())
+                   .has_value());
+    CY_REQUIRE(machine.instance.prepare(machine.locomotion.rig).has_value());
+    CY_REQUIRE(machine.request(pose::LocomotionState::Idle).has_value());
+
+    // A second and a half into a one-second clip: half-way back along the return leg.
+    for (u32 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(advance(machine.locomotion.rig, machine.instance, kDt, nullptr).has_value());
+    }
+    CY_REQUIRE_EQ(machine.instance.machine().state, static_cast<u16>(pose::LocomotionState::Idle));
+    CY_CHECK_NEAR(machine.clock(pose::LocomotionState::Idle), 1.5F, 1e-3);
+
+    // And a full period wraps it to where it started.
+    for (u32 tick = 0; tick < 60; ++tick) {
+        CY_REQUIRE(advance(machine.locomotion.rig, machine.instance, kDt, nullptr).has_value());
+    }
+    CY_CHECK_NEAR(machine.clock(pose::LocomotionState::Idle), 0.5F, 1e-3);
+}
+
+// REGRESSION: a clip ASSET authored with `LoopMode::None` under a program slot compiled as looping
+// had its clock wrapped by the duration all the same, so the asset's own decision that it stops
+// was ignored and it restarted. Either flag saying "does not loop" holds the clock.
+CY_TEST_CASE("animation clocks: a non-looping clip asset holds even where the program loops it") {
+    Machine machine(allocator());
+    CY_REQUIRE(machine.build(LoopMode::None).has_value());
+    machine.locomotion.idle.set_loop_mode(LoopMode::None);
+    CY_REQUIRE(machine.locomotion.rig
+                   .bind(machine.locomotion.skeleton, machine.locomotion.program,
+                         machine.locomotion.table.span())
+                   .has_value());
+    CY_REQUIRE(machine.instance.prepare(machine.locomotion.rig).has_value());
+    CY_REQUIRE(machine.request(pose::LocomotionState::Idle).has_value());
+    for (u32 tick = 0; tick < 90; ++tick) {
+        CY_REQUIRE(advance(machine.locomotion.rig, machine.instance, kDt, nullptr).has_value());
+    }
+    CY_REQUIRE_EQ(machine.instance.machine().state, static_cast<u16>(pose::LocomotionState::Idle));
+    CY_CHECK_EQ(machine.clock(pose::LocomotionState::Idle), machine.locomotion.idle.duration());
+}
