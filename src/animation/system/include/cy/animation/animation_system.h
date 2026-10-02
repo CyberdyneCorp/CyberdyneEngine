@@ -281,7 +281,7 @@ private:
     [[nodiscard]] Slot* slot_of(ecs::Entity entity) noexcept;
     [[nodiscard]] bool tracks(const Animator& animator, ecs::Entity entity) const noexcept;
     [[nodiscard]] Status create(ecs::Entity entity) noexcept;
-    [[nodiscard]] Status destroy(u32 slot) noexcept;
+    [[nodiscard]] Status destroy(u32 index) noexcept;
     void configure(Slot& slot, const Animator& animator) noexcept;
     [[nodiscard]] Status consume_root_motion(f32 tick_seconds) noexcept;
     void schedule_evaluation(f32 seconds) noexcept;

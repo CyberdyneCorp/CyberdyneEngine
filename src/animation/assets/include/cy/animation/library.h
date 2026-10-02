@@ -79,7 +79,7 @@ public:
 
     /// Load the three kinds and bind a rig, refusing a clip the program names and the list lacks,
     /// and a clip whose tracks mean other joints than the skeleton's.
-    [[nodiscard]] Expected<const AnimationRig*, Error> rig(const RigAssets& assets) noexcept;
+    [[nodiscard]] Expected<const AnimationRig*, Error> rig(const RigAssets& wanted) noexcept;
 
     /// Be told when a loaded asset's bytes are replaced. Idempotent.
     [[nodiscard]] Status watch() noexcept;
@@ -101,7 +101,7 @@ private:
     [[nodiscard]] LoadedProgram* find_program(AssetId id) const noexcept;
     [[nodiscard]] Expected<LoadedClip*, Error> load_clip(AssetId id) noexcept;
     [[nodiscard]] Status bind_table(BoundRig& rig, Span<LoadedClip* const> available) noexcept;
-    [[nodiscard]] Status reload_clip(LoadedClip& clip) noexcept;
+    [[nodiscard]] Status reload_clip(LoadedClip& loaded) noexcept;
     static void on_reload(void* user, const assets::ReloadEvent& event) noexcept;
 
     /// Record a refusal: its text, the diagnostic, and an `Error` whose message is that text.

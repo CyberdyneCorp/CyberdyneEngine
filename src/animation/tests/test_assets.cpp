@@ -140,13 +140,14 @@ void cook(const LocomotionRig& locomotion, Assets& assets, AssetId skip = AssetI
     bytes.clear();
     CY_REQUIRE(encode_program(locomotion.program, bytes).has_value());
     assets.put(kProgram, bytes);
-    const struct {
+    struct Entry {
         AssetId id;
-        const Clip* clip;
-    } clips[] = {{kIdle, &locomotion.idle},
-                 {kWalk, &locomotion.walk},
-                 {kRun, &locomotion.run},
-                 {kDie, &locomotion.die}};
+        const Clip* clip = nullptr;
+    };
+    const Entry clips[] = {{kIdle, &locomotion.idle},
+                           {kWalk, &locomotion.walk},
+                           {kRun, &locomotion.run},
+                           {kDie, &locomotion.die}};
     for (const auto& entry : clips) {
         if (entry.id == skip) {
             continue;
@@ -304,7 +305,9 @@ CY_TEST_CASE(
         CY_REQUIRE(same_pose(built.local.span(), loaded.local.span()));
         const Vec3 built_travel = built.instance.travelled();
         const Vec3 loaded_travel = loaded.instance.travelled();
-        CY_REQUIRE(std::memcmp(&built_travel, &loaded_travel, sizeof(Vec3)) == 0);
+        CY_REQUIRE(built_travel.x == loaded_travel.x);
+        CY_REQUIRE(built_travel.y == loaded_travel.y);
+        CY_REQUIRE(built_travel.z == loaded_travel.z);
     }
 
     // Asked again, the same ids are the same objects: one load per id.

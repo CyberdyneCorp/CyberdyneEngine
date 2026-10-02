@@ -511,7 +511,7 @@ struct World {
     /// Raise exactly one request — what `LocomotionDriver::request` does — through the system.
     /// Before the first tick the instance does not exist yet, and the entry state is the idle the
     /// schedule asks for, so there is nothing to raise.
-    [[nodiscard]] Status request(pose::LocomotionState wanted) noexcept {
+    [[nodiscard]] Status request(pose::LocomotionState wanted) const noexcept {
         if (system->instance(character) == nullptr) {
             return ok();
         }

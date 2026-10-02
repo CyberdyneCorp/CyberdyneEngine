@@ -14,9 +14,9 @@ namespace pose = graph::pose;
 
 constexpr u32 kUnmapped = 0xFFFFFFFFU;
 /// A joint record after its name: the parent, ten floats of bind pose, the bone level.
-constexpr u64 kJointRecordBytes = 4 + (10 * 4) + 4;
-constexpr u64 kTrackRecordBytes = 12 * 4;
-constexpr u64 kKeyRecordBytes = 4 + (4 * 2);
+constexpr u64 kJointRecordBytes = u64{4} + (u64{10} * 4U) + 4U;
+constexpr u64 kTrackRecordBytes = u64{12} * 4U;
+constexpr u64 kKeyRecordBytes = u64{4} + (u64{4} * 2U);
 
 [[nodiscard]] Status finished(const Writer& writer) noexcept {
     return writer.ok() ? ok() : fail(ErrorCode::OutOfMemory, "a cooked record would not grow");
@@ -456,7 +456,7 @@ template <class T, class Read>
     return ok();
 }
 
-constexpr u64 kMaskBytes = (pose::kMaxJoints / 64U) * 8U;
+constexpr u64 kMaskBytes = u64{pose::kMaxJoints / 64U} * 8U;
 
 [[nodiscard]] Status read_tables(Reader& reader, DecodedProgram& out) noexcept {
     Status read = read_table(reader, 4, out.parameters, [&](Name& name) { name = reader.name(); });

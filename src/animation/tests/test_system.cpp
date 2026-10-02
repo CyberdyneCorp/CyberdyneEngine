@@ -185,12 +185,20 @@ struct HandDriven {
 };
 
 [[nodiscard]] bool same_bits(Span<const Mat4> a, Span<const Mat4> b) noexcept {
-    return a.size() == b.size() && a.size() != 0 &&
+    return a.size() == b.size() && !a.empty() &&
            std::memcmp(a.data(), b.data(), a.size() * sizeof(Mat4)) == 0;
 }
 
+/// Exact equality, component by component: the system and the path it replaces must agree to the
+/// last bit, not within a tolerance.
 [[nodiscard]] bool same_bits(Vec3 a, Vec3 b) noexcept {
-    return std::memcmp(&a, &b, sizeof(Vec3)) == 0;
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+[[nodiscard]] bool same_bits(const Transform& a, const Transform& b) noexcept {
+    return same_bits(a.translation, b.translation) && same_bits(a.scale, b.scale) &&
+           a.rotation.x == b.rotation.x && a.rotation.y == b.rotation.y &&
+           a.rotation.z == b.rotation.z && a.rotation.w == b.rotation.w;
 }
 
 /// The request schedule samples/09b-animated-character plays, compressed: idle, walk, run, back
@@ -563,9 +571,9 @@ CY_TEST_CASE(
     for (u32 tick = 1; tick < 40; ++tick) {
         for (u32 index = 0; index < 500; ++index) {
             CY_REQUIRE(
-                parallel.request(spawned[0][index], requested_at(tick + index % 50)).has_value());
+                parallel.request(spawned[0][index], requested_at(tick + (index % 50))).has_value());
             CY_REQUIRE(
-                serial.request(spawned[1][index], requested_at(tick + index % 50)).has_value());
+                serial.request(spawned[1][index], requested_at(tick + (index % 50))).has_value());
         }
         CY_REQUIRE(parallel.frame(&workers).has_value());
         CY_REQUIRE(serial.frame().has_value());
@@ -611,8 +619,8 @@ CY_TEST_CASE(
     Run three(3);
     for (Run* run : {&one, &three}) {
         CY_REQUIRE(run->host.open({&locomotion.rig}).has_value());
-        for (u32 index = 0; index < 8; ++index) {
-            run->characters[index] = run->host.spawn(
+        for (ecs::Entity& character : run->characters) {
+            character = run->host.spawn(
                 animator_on(0, LodTier::Full, RootMotionMode::ApplyToTransform), true);
         }
     }
@@ -623,7 +631,7 @@ CY_TEST_CASE(
             for (u32 index = 0; index < 8; ++index) {
                 if (run->host.system->instance(run->characters[index]) != nullptr) {
                     CY_REQUIRE(
-                        run->host.request(run->characters[index], requested_at(tick + index * 7))
+                        run->host.request(run->characters[index], requested_at(tick + (index * 7)))
                             .has_value());
                 }
             }
@@ -649,7 +657,7 @@ CY_TEST_CASE(
         CY_CHECK(same_bits(one.host.system->travelled(a), three.host.system->travelled(b)));
         const auto* placed_a = one.host.simulation.world().get<scene::LocalTransform>(a, local);
         const auto* placed_b = three.host.simulation.world().get<scene::LocalTransform>(b, local);
-        CY_CHECK(std::memcmp(&placed_a->value, &placed_b->value, sizeof(Transform)) == 0);
+        CY_CHECK(same_bits(placed_a->value, placed_b->value));
     }
     CY_REQUIRE_EQ(one.events.size(), three.events.size());
     CY_CHECK_GT(one.events.size(), 0U);
