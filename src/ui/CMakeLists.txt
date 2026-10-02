@@ -45,3 +45,12 @@ cy_add_module(
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
+
+# THE INTERFACE ON SCREEN, in three targets so each keeps the dependency it needs and no other:
+#   text/     cy::ui-text     the text painter over cy::servers-text and the built-in font
+#   render/   cy::ui-render   the primitive stream drawn on the device, at the frame's UI stage
+#   console/  cy::ui-console  the developer console, the first first-party consumer
+# cy::ui itself still names neither a font server nor a device. All three are behind CY_UI with it.
+add_subdirectory(text)
+add_subdirectory(render)
+add_subdirectory(console)
