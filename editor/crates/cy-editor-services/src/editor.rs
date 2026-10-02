@@ -1989,7 +1989,7 @@ impl cy_editor_commands::ProjectHost for Editor {
         if watch.graph != graph {
             // Pins are a graph's: watching another graph starts its own list.
             watch.pins.clear();
-            watch.graph = graph.to_owned();
+            graph.clone_into(&mut watch.graph);
         }
         if let Some(entity) = entity {
             watch.entity = entity;
@@ -2007,7 +2007,7 @@ impl cy_editor_commands::ProjectHost for Editor {
         let mut watch = self.backend.script.watch().clone();
         if watch.graph != graph {
             watch.pins.clear();
-            watch.graph = graph.to_owned();
+            graph.clone_into(&mut watch.graph);
         }
         watch.entity = entity;
         self.backend.script.set_watch(watch);

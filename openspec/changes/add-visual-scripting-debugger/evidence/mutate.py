@@ -71,7 +71,7 @@ MUTATIONS = [
      COMPILER, "graph debugger: a breakpoint stops*"),
     ("d04_no_probe_on_the_event", DEBUG,
      "        if (entry != kInvalidNodeKey && entry != first_node) {",
-     "        if (false) {",
+     "        if (entry != kInvalidNodeKey && entry != first_node && false) {",
      COMPILER, "graph debugger: a breakpoint on the event*"),
     ("d05_a_call_is_not_an_execution_node", DEBUG,
      "        case ScriptOp::Call:\n        case ScriptOp::EmitEvent:",

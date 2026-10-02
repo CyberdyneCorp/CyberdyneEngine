@@ -355,11 +355,13 @@ impl DebugState {
                 }
             }
         }
-        let span = recent.len().max(1) as f32;
+        // A handful of nodes: the counts are small enough for a float to hold exactly.
+        let small = |count: usize| f32::from(u16::try_from(count).unwrap_or(u16::MAX));
+        let span = small(recent.len().max(1));
         recent
             .into_iter()
             .enumerate()
-            .map(|(age, node)| (node, 1.0 - age as f32 / span))
+            .map(|(age, node)| (node, 1.0 - small(age) / span))
             .collect()
     }
 

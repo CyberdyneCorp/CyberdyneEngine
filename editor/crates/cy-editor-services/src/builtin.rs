@@ -585,12 +585,20 @@ fn apply_sources(
     for (reference, source) in vfx_documents {
         let _ = project.put_source(&reference, source.as_deref());
     }
-    for (reference, source) in script_graphs {
+    restore_script_graphs(project, script_graphs);
+    restore_audio(project, audio_assets);
+}
+
+/// Put gameplay graphs back. An undone or redone graph edit during Play reloads the running
+/// program, as the edit did.
+fn restore_script_graphs(
+    project: &mut dyn cy_editor_commands::ProjectHost,
+    graphs: Vec<(String, Option<String>)>,
+) {
+    for (reference, source) in graphs {
         let _ = project.put_source(&reference, source.as_deref());
-        // An undone or redone graph edit during Play reloads the running program, as the edit did.
         project.script_graph_changed(&reference, source.as_deref());
     }
-    restore_audio(project, audio_assets);
 }
 
 /// Put audio assets back, and send the engine the mixer the file now says. A mixer undone out of

@@ -366,21 +366,8 @@ pub(super) fn draw_canvas(
         if response.clicked() {
             select = Some(card.key);
         }
-        if response.dragged() {
-            movement = Some(GraphMovement {
-                node: card.key,
-                at: GraphLayout {
-                    x: card.layout.x + response.drag_delta().x,
-                    y: card.layout.y + response.drag_delta().y,
-                },
-                finished: false,
-            });
-        } else if response.drag_stopped() && feedback.on_move.is_some() {
-            movement = Some(GraphMovement {
-                node: card.key,
-                at: card.layout,
-                finished: true,
-            });
+        if let Some(moved) = node_movement(card, &response, feedback.on_move.is_some()) {
+            movement = Some(moved);
         }
         draw_node(
             &painter,
@@ -389,14 +376,7 @@ pub(super) fn draw_canvas(
             selected.contains(&card.key),
             response.hovered(),
         );
-        let mark = feedback
-            .node_marks
-            .iter()
-            .find(|mark| mark.node == card.key.ordinal())
-            .copied()
-            .unwrap_or_default();
-        draw_node_mark(&painter, shell, card, mark);
-        if feedback.on_gutter.is_some() && draw_gutter(ui, &painter, shell, card, mark) {
+        if draw_debugger(ui, &painter, shell, card, feedback) {
             gutter_clicked = Some(card.key);
         }
         draw_node_alert(&painter, shell, card, response, feedback.node_alerts);
@@ -492,6 +472,49 @@ fn draw_catalogue_status(
     );
 }
 
+/// The move a header drag makes this frame: an in-progress move while dragged, and the finished
+/// gesture on release when the host routes moves through a command.
+fn node_movement(
+    card: &NodeCard,
+    response: &egui::Response,
+    finishable: bool,
+) -> Option<GraphMovement> {
+    if response.dragged() {
+        return Some(GraphMovement {
+            node: card.key,
+            at: GraphLayout {
+                x: card.layout.x + response.drag_delta().x,
+                y: card.layout.y + response.drag_delta().y,
+            },
+            finished: false,
+        });
+    }
+    (response.drag_stopped() && finishable).then_some(GraphMovement {
+        node: card.key,
+        at: card.layout,
+        finished: true,
+    })
+}
+
+/// A node's debugger marks and, where the host has a debugger, its gutter. Answers whether the
+/// gutter was clicked.
+fn draw_debugger(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    shell: &cy_editor_interface::shell::Shell,
+    card: &NodeCard,
+    feedback: &CanvasFeedback<'_>,
+) -> bool {
+    let mark = feedback
+        .node_marks
+        .iter()
+        .find(|mark| mark.node == card.key.ordinal())
+        .copied()
+        .unwrap_or_default();
+    draw_node_mark(painter, shell, card, mark);
+    feedback.on_gutter.is_some() && draw_gutter(ui, painter, shell, card, mark)
+}
+
 /// Where a node's breakpoint gutter is: a dot at the right end of its header.
 fn gutter_centre(card: &NodeCard) -> egui::Pos2 {
     egui::pos2(card.rect.right() - 12.0, card.rect.top() + 16.0)
@@ -546,15 +569,12 @@ fn draw_node_mark(
     mark: NodeMark,
 ) {
     if mark.heat > 0.0 {
-        let live = theme::role(shell.theme, Semantic::Live);
-        let alpha = (60.0 + 195.0 * mark.heat.clamp(0.0, 1.0)) as u8;
+        let heat = mark.heat.clamp(0.0, 1.0);
+        let live = theme::role(shell.theme, Semantic::Live).gamma_multiply(0.25 + 0.75 * heat);
         painter.rect_stroke(
             card.rect.expand(3.0),
             egui::CornerRadius::same(7),
-            egui::Stroke::new(
-                1.5 + 2.0 * mark.heat,
-                egui::Color32::from_rgba_unmultiplied(live.r(), live.g(), live.b(), alpha),
-            ),
+            egui::Stroke::new(1.5 + 2.0 * heat, live),
             egui::StrokeKind::Outside,
         );
     }
@@ -567,8 +587,8 @@ fn draw_node_mark(
             egui::StrokeKind::Outside,
         );
         painter.text(
-            card.rect.left_top() + egui::vec2(0.0, -10.0),
-            egui::Align2::LEFT_BOTTOM,
+            card.rect.left_bottom() + egui::vec2(0.0, 8.0),
+            egui::Align2::LEFT_TOP,
             "▶ PAUSED HERE",
             egui::FontId::monospace(shell.metrics().text(TextRole::Secondary)),
             warning,

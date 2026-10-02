@@ -658,12 +658,17 @@ CY_TEST_CASE("graph reload: a wait in progress survives when its wait node does"
     CY_REQUIRE(migration.has_value());
     CY_CHECK(migration->wait_kept);
     CY_CHECK(!migration->wait_dropped);
+    // Still waiting, at the new program's own block for the same wait node.
+    const script::SuspendPoint* still = script::waiting_at(new_program.program(), moved);
+    CY_REQUIRE(still != nullptr);
+    CY_CHECK_EQ(still->origin, 5U);
     host.calls.clear();
     host.arrived = true;
     auto resumed = script::execute(new_program.program(), moved, host);
     CY_REQUIRE(resumed.has_value());
     CY_CHECK(*resumed == script::RunOutcome::Finished);
-    CY_CHECK_EQ(host.calls.back(), "event cue.edited 0.000000 0.000000");
+    // Resumed after the wait, not started over: the cue is the one thing left to do.
+    CY_CHECK(host.calls == std::vector<std::string>{"event cue.edited 0.000000 0.000000"});
 
     // Edited so the wait node is gone: the wait is dropped, said so, and nothing resumes.
     GraphBuilder unwaited;

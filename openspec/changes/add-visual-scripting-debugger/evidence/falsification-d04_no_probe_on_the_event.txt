@@ -1,0 +1,19 @@
+Mutations that turn the Play debugger's and hot reload's tests red (#84, #29),
+Development profile (d07: Shipping). Each mutation was applied, its tests run, the file restored and
+md5-verified. Listed under each: the tests (Rust) or test cases (C++) that failed.
+
+== d04_no_probe_on_the_event: src/graph/src/script_debug.cpp
+<   if (entry != kInvalidNodeKey && entry != first_node) {
+>   if (entry != kInvalidNodeKey && entry != first_node && false) {
+FAILED  graph debugger: a breakpoint on the event stops before the handler's first node
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== m03_a_wait_is_always_dropped: src/graph/src/script_reload.cpp
+<   target.set_resume_block(point->resume);
+>   (void)point;
+FAILED  graph reload: a wait in progress survives when its wait node does
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+2 of 2 mutations killed.

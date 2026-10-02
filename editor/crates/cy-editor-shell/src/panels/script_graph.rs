@@ -1113,7 +1113,7 @@ fn watch_rows(
                     .monospace(),
                 );
                 if ui
-                    .small_button("✕")
+                    .small_button("Unwatch")
                     .on_hover_text("Stop watching")
                     .clicked()
                 {

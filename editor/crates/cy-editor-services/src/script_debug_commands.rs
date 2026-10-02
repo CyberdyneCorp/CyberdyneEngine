@@ -373,33 +373,42 @@ fn reload() -> Command {
 pub fn debug_outcome(requests: &ScriptRequests, reference: &str) -> Outcome {
     let mut outcome = Outcome::new("Gameplay graph debugger")
         .with("pending", Value::Bool(requests.pending()))
-        .with(
-            "wanted_breakpoints",
-            Value::Int(i64::try_from(requests.breakpoints().len()).unwrap_or(i64::MAX)),
-        );
+        .with("wanted_breakpoints", count(requests.breakpoints().len()));
     if let Some(problem) = requests.problem() {
         outcome = outcome.with("problem", Value::Text(problem.to_owned()));
     }
     if let Some((_, reply)) = requests.reload_reply(reference) {
-        outcome = outcome
-            .with("reload_accepted", Value::Bool(reply.accepted))
-            .with("reload_generation", Value::Int(i64::from(reply.generation)));
-        for (index, diagnostic) in reply.diagnostics.iter().enumerate() {
-            outcome = outcome.with(
-                format!("reload_diagnostic.{index}"),
-                Value::Text(format!(
-                    "node {} {}: {}",
-                    diagnostic.node,
-                    diagnostic.code,
-                    diagnostic.describe()
-                )),
-            );
-        }
+        outcome = reload_outcome(outcome, reply);
     }
-    let Some(debug) = requests.debug() else {
-        return outcome.with("playing", Value::Bool(false));
-    };
-    let count = |n: usize| Value::Int(i64::try_from(n).unwrap_or(i64::MAX));
+    match requests.debug() {
+        Some(debug) => state_outcome(outcome, debug),
+        None => outcome.with("playing", Value::Bool(false)),
+    }
+}
+
+fn count(n: usize) -> Value {
+    Value::Int(i64::try_from(n).unwrap_or(i64::MAX))
+}
+
+fn reload_outcome(mut outcome: Outcome, reply: &crate::script_debug::ReloadReply) -> Outcome {
+    outcome = outcome
+        .with("reload_accepted", Value::Bool(reply.accepted))
+        .with("reload_generation", Value::Int(i64::from(reply.generation)));
+    for (index, diagnostic) in reply.diagnostics.iter().enumerate() {
+        outcome = outcome.with(
+            format!("reload_diagnostic.{index}"),
+            Value::Text(format!(
+                "node {} {}: {}",
+                diagnostic.node,
+                diagnostic.code,
+                diagnostic.describe()
+            )),
+        );
+    }
+    outcome
+}
+
+fn state_outcome(mut outcome: Outcome, debug: &crate::script_debug::DebugState) -> Outcome {
     outcome = outcome
         .with("playing", Value::Bool(debug.playing))
         .with("debugging", Value::Bool(debug.debugging))
@@ -456,22 +465,22 @@ pub fn debug_outcome(requests: &ScriptRequests, reference: &str) -> Outcome {
         );
     }
     let reload = &debug.last_reload;
-    if !reload.graph.is_empty() {
-        outcome = outcome.with(
-            "last_reload",
-            Value::Text(format!(
-                "{} generation {}: {} instance(s), {} kept, {} added, {} dropped, {} wait(s) kept, \
-                 {} dropped",
-                reload.graph,
-                reload.generation,
-                reload.instances,
-                reload.kept,
-                reload.added,
-                reload.dropped,
-                reload.waits_kept,
-                reload.waits_dropped
-            )),
-        );
+    if reload.graph.is_empty() {
+        return outcome;
     }
-    outcome
+    outcome.with(
+        "last_reload",
+        Value::Text(format!(
+            "{} generation {}: {} instance(s), {} kept, {} added, {} dropped, {} wait(s) kept, \
+             {} dropped",
+            reload.graph,
+            reload.generation,
+            reload.instances,
+            reload.kept,
+            reload.added,
+            reload.dropped,
+            reload.waits_kept,
+            reload.waits_dropped
+        )),
+    )
 }

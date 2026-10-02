@@ -1026,7 +1026,48 @@ fn gameplay_graph_snapshots() {
         "editor-gameplay-and-utility-graphs",
         "editor-gameplay-graph-play.png",
     );
+
+    debugger_snapshot(&mut desk, &project, &fixture);
     let _ = std::fs::remove_dir_all(&project);
+}
+
+/// THE PLAY DEBUGGER (#84): the counter graph paused before it writes its count, with the
+/// engine's own debug state — the paused node, the nodes that ran, the variable and two pins.
+fn debugger_snapshot(
+    desk: &mut Desk,
+    project: &std::path::Path,
+    fixture: &dyn Fn(&str) -> Vec<u8>,
+) {
+    let counter_reference = "game/scripts/unit_counter.cyscript";
+    let counter = String::from_utf8(fixture("script_unit_counter_v1.cyscript")).unwrap();
+    std::fs::write(project.join(counter_reference), &counter).unwrap();
+    desk.inputs.script.reference = counter_reference.into();
+    let compile_counter = move |editor: &mut Editor| {
+        editor
+            .backend
+            .script
+            .compile(&editor.runtime, counter_reference, &counter)
+            .unwrap()
+            .unwrap()
+    };
+    answer_script(desk, &compile_counter, fixture("script_compile_v1.wire"));
+    answer_script(
+        desk,
+        &|editor: &mut Editor| {
+            editor
+                .backend
+                .script
+                .refresh_debug(&editor.runtime)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("script_debug_paused_v1.wire"),
+    );
+    snapshot(
+        desk,
+        "editor-gameplay-and-utility-graphs",
+        "editor-gameplay-graph-debugger.png",
+    );
 }
 
 /// The room [`lighting_desk`] bakes, authored through the registered commands.
