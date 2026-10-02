@@ -535,6 +535,28 @@ platforms = ["linux"]
 since = "m11d5"
 class = "permanent"
 
+# --- Diagnostics privacy, as a gate rather than a review ------------------------------------------
+#
+# `diagnostics-profiling-and-crash`, "Privacy classification": "WHEN any produced trace, log or
+# crash artefact is inspected for strings THEN it SHALL contain no absolute path from the build
+# machine, and the check SHALL be a gate rather than a review." Until issue #90 the checks existed
+# and ran inside `just test-all`, which says only that a suite passed; none of them was named
+# anywhere a merge is decided. The job that runs these commands is in .github/workflows/ci.yml.
+
+[[gate]]
+id = "diagnostics-privacy"
+describe = "A FIELD CANNOT BE EXPORTED AT A LEVEL IT WAS NEVER CLASSIFIED FOR, AND NO ARTEFACT CARRIES A BUILD-MACHINE PATH. The privacy suite writes captures under the upload and local policies and requires a value above the ceiling to be absent from the artefact's BYTES, an unregistered field to be redacted and counted, and a Secret to be admitted by no policy at all. The source-privacy suite pushes an absolute path no build produced through the writer and requires only its basename to survive — and nothing at all under a public-only ceiling — so the check holds on a toolchain with no prefix map. The field-macro check compiles the three declarations that must not compile; the source-location lint, with its self-test, forbids a path used as a name anywhere in src/, samples/ and tools/; and the crash check kills a real probe and greps the report it left for a build-machine path, then reads it back with the reader `just diagnose-crash` uses."
+runs = [
+    "just test-integration -R diagnostics_privacy",
+    "just test-integration -R diagnostics_source_privacy",
+    "just test-integration -R diagnostics.field_macro",
+    "just test-integration -R diagnostics.source_location_lint",
+    "just test-integration -R diagnostics.crash",
+]
+platforms = ["linux"]
+since = "m11e"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;

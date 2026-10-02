@@ -217,6 +217,12 @@ kind = "recipe"
 run = "just test-integration -R ^integration.determinism_lint$"
 ci_job = "milestone-m9"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/determinism/lint/determinism_lint.py"
+token  = "\"src/core/determinism/src/fp_policy.cpp\": (\"forbidden-cmath\",),"
+note   = "the policy file loses its one per-rule exemption, so the lint scans the thirteen replacement definitions (`f64 acos(f64 x)` and its siblings) in a covered target and reports each as a forbidden-cmath call — the source half going red over the real tree rather than over a fixture"
+
 [[criterion]]
 id = "determinism-lint-selftest"
 describe = "AND THE LINT'S OWN NEGATIVE CONTROL, which is why the line above means anything: one fixture per rule, and the selftest fails if the rule did not fire. Delete a rule from `scan_source()` and this goes red — without it, deleting a rule would make the criterion above greener"
@@ -224,6 +230,12 @@ source = "tasks 2.6, delivery-roadmap"
 kind = "recipe"
 run = "just test-integration -R determinism_lint_selftest"
 ci_job = "milestone-m9"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/determinism/lint/determinism_lint.py"
+token  = "\"std::mt19937\","
+note   = "one pattern of the ambient-random rule is deleted from what scan_source() matches, and the selftest's `std::mt19937 engine(seed);` fixture stops firing — which is the selftest's whole claim: a rule removed from the scanner turns this red instead of turning the lint above quietly green"
 
 [[criterion]]
 id = "state-hash-coverage"

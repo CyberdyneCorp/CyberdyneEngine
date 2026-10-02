@@ -4956,7 +4956,7 @@ note = "Concurrent interning yields one Name and one entry. unit.values 'Name: t
 row = "core-type-system"
 requirement = "Diagnostics"
 evidence = "exempt:m11e"
-note = "CY_ASSERT, CY_ASSERT_MSG and CY_VERIFY exist in assert.h (compiled out of Profile and Shipping, CY_VERIFY still evaluating), and logging is structured trace records with category, severity, location and fields (log.h's CY_LOG). CY_LOG_INFO/WARN/ERROR, CY_LOG_ONCE, CY_CHECK_RETURN(_V) and CY_UNREACHABLE are not defined, no rotating-file, editor or remote-debugger sink exists, and the diagnostics.* tests are plain add_test rather than cy_add_test suites. Re-enter with the named macros and a case routing one error to console, file and editor sinks with file, line and category."
+note = "CY_ASSERT, CY_ASSERT_MSG and CY_VERIFY exist in assert.h (compiled out of Profile and Shipping, CY_VERIFY still evaluating), and logging is structured trace records with category, severity, location and fields (log.h's CY_LOG). CY_LOG_INFO/WARN/ERROR, CY_LOG_ONCE, CY_CHECK_RETURN(_V) and CY_UNREACHABLE are not defined, no rotating-file, editor or remote-debugger sink exists, Re-enter with the named macros and a case routing one error to console, file and editor sinks with file, line and category."
 
 # --- delivery-roadmap -----------------------------------------------------------------------------
 #
@@ -5206,14 +5206,16 @@ note = "The job system emits into the one shared trace and reads its statistics 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Trace identity and formatting"
-evidence = "exempt:m11e"
-note = "Implemented and tested, but not through a suite the map can cite. `src/core/diagnostics/tests/test_trace.cpp` resolves names offline from the capture's name table, and is registered with plain `add_test(diagnostics.test_trace)`, not `cy_add_test` (`src/core/diagnostics/tests/CMakeLists.txt` says the move was deferred). No cy_add_test case asserts that emission does no string work or allocation. Re-enter by moving the diagnostics executables under `cy_add_test` and naming the offline-resolution case and an allocation-counting emission case."
+evidence = "test:integration.diagnostics_trace"
+case = "trace: identifiers resolve offline from the capture's own name table"
+note = "Captures are readable offline: a capture written by three producers is read back by the test's own reader of format.h, and its identifiers resolve to names from the capture's metadata, with the build identity it was written under. Emission is cheap: `trace: emission allocates nothing once a producer has its buffer` replaces the binary's global allocation functions, counts what one thread allocates while it emits every shape of record (instants with numeric and text fields, counters, scopes, flows, ticks, breadcrumbs, a structured log) and requires zero, with a positive control that the counter sees an allocation. NOT CLAIMED: the aligned allocation functions are not counted, and the absence of hashing on the emission path is shown by reading trace.cpp rather than by a case."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Buffering and loss policy"
-evidence = "exempt:m11e"
-note = "`src/core/diagnostics/tests/test_loss.cpp` drops verbose events under pressure, records a loss chunk in the artefact, and shows producers continuing, but it is a plain `add_test(diagnostics.test_loss)` executable that this map cannot cite. Re-enter when that file is a `cy_add_test` suite, with a case that floods every channel and requires breadcrumbs, ticks and task lifecycle to survive while verbose is dropped and counted."
+evidence = "test:integration.diagnostics_loss"
+case = "loss: a flood on every channel keeps breadcrumbs, ticks and task lifecycle, and counts what it dropped"
+note = "Sixty-four rounds flood all four channels of a 4 KiB per-thread ring far past their shares, then emit a breadcrumb, a tick and a task's begin and end before each drain. Every breadcrumb, tick boundary and task lifecycle record survives, nothing critical is refused, and for the verbose and sampled channels what reached the artefact plus what its LOSS chunk reports equals what was emitted. `loss: verbose records are dropped under pressure, and the loss is recorded` holds the same with no consumer at all — the producer continues at bounded cost — and shows the loss on the timeline where the gap is. NOT CLAIMED: the audio thread and the simulation are not exercised as producers here."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
@@ -5224,26 +5226,28 @@ note = "The critical path is computed separately from total work (`integration.j
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Structured logging"
-evidence = "exempt:m11e"
-note = "`src/core/diagnostics/tests/test_log.cpp` checks level filtering before emission and records carrying level, source location and typed fields, but it is a plain `add_test(diagnostics.test_log)` executable. No case queries logs by typed field, and plugin-extensible categories are not exercised. Re-enter with a cy_add_test case that emits structured records and selects every rejected ability activation for one participant by field."
+evidence = "test:integration.diagnostics_log"
+case = "log: every rejected ability activation for one participant is selected by field"
+note = "Three participants activate abilities and some activations are rejected; the case selects participant 2's rejections by message identifier and typed field from the capture, with no text parsed, and requires exactly those two, each carrying its reason as a field. `log: a record below the global or the category floor never reaches the trace` shows a filtered record is never emitted, so an unread verbose log formats nothing, and `log: a record carries its level and its source location` holds the severity and site. NOT CLAIMED: categories extended by a plugin are not exercised."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Assertions and health"
 evidence = "exempt:m11e"
-note = "The health model exists and `src/core/diagnostics/tests/test_capture.cpp` asserts the worst level and since-when per condition, but only through a plain `add_test` executable. No case or document declares assertion-level behaviour per build configuration as data. Re-enter with a cy_add_test health case and a per-profile table of checked, ensured, verified and fatal behaviour that a test compares against the configured build."
+note = "The health half is citable: `capture: a health condition going critical triggers a capture, and the model reports the worst level and since when` in `integration.diagnostics_capture`. Missing: no case or document declares assertion-level behaviour per build configuration as data. Re-enter with a per-profile table of checked, ensured, verified and fatal behaviour that a test compares against the configured build (stage 3 of issue #90)."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Rolling buffer and automatic capture"
-evidence = "exempt:m11e"
-note = "`src/core/diagnostics/tests/test_capture.cpp` freezes the rolling window on a threshold trigger and a health transition, writes the same artefact format for manual capture, and bounds the arena. It is registered with plain `add_test(diagnostics.test_capture)`, and `m9:screenshot-rolling-capture` proves only that an image exists. Re-enter when the capture executable is a `cy_add_test` suite and its trigger case is named here."
+evidence = "test:integration.diagnostics_capture"
+case = "capture: a frame over budget freezes the rolling window, including what came before the trigger"
+note = "The hitch that does not recur: with the buffer open and nothing asked of it no artefact exists, then a frame over its budget writes a capture with no capture call, and the capture holds every record from before the trigger as well as the one after it and the record of its own reason. One artefact format: `capture: a manual capture is the same format as an automatic one`. Also a health transition to critical (`capture: a health condition going critical triggers a capture, ...`), a bounded arena that counts what it overwrote, and teardown under load. NOT CLAIMED: the GPU-overrun and assertion triggers are not exercised by a case here."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Crash artefacts"
 evidence = "exempt:m11e"
-note = "`diagnostics.crash` (`test_crash.py`, a plain `add_test`) crashes a probe and checks the report sections, the absence of build paths and the reader. `m11d:provenance-and-symbols` symbolicates `main` through archived symbols, but for a stripped binary, not a crash artefact. Re-enter with a cy_add_test or proven criterion that crashes a stripped Shipping probe with no tool attached and symbolicates the artefact's module offsets against the archived symbols."
+note = "`diagnostics.crash` (`test_crash.py`, run by the `diagnostics-privacy` gate) crashes a probe and checks the report sections, the absence of build paths and the reader. `m11d:provenance-and-symbols` symbolicates `main` through archived symbols, but for a stripped binary, not a crash artefact. Re-enter with a cy_add_test or proven criterion that crashes a stripped Shipping probe with no tool attached and symbolicates the artefact's module offsets against the archived symbols (stage 2 of issue #90)."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
@@ -5269,25 +5273,25 @@ row = "diagnostics-profiling-and-crash"
 requirement = "Reproduction artefacts"
 evidence = "test:integration.replay_session"
 case = "replay: a crash artefact round-trips, and its window re-simulates to its own hash"
-note = "The crash ring is written, read back, and its window re-simulated from the checkpoint to the recorded hash, so the artefact replays the failure window. NOT CLAIMED: the stated-fidelity and crash-link halves (`fidelity: approximate` with its reason, `crash_report:` link) are in `src/core/diagnostics/tests/test_reproduction.cpp`, a plain `add_test` executable."
+note = "The crash ring is written, read back, and its window re-simulated from the checkpoint to the recorded hash, so the artefact replays the failure window. The stated-fidelity and crash-link halves are `reproduction: a fidelity short of exact needs a reason` and `reproduction: the crash artefact carries the link and states its absence` in `integration.diagnostics_reproduction`: an approximation with no reason is refused rather than written, and a crash report names the reproduction artefact and its fidelity, or states that none was registered."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Privacy classification"
-evidence = "exempt:m11e"
-note = "`src/core/diagnostics/tests/test_privacy.cpp` and `test_source_privacy.cpp` cover upload and local policies, redaction of sensitive and secret fields, unclassified-field reporting, and source locations as classified fields with no absolute paths. `lint_source_locations.py` lints for unclassified locations. All are plain `add_test` entries (`diagnostics.*`), not cy_add_test suites, gates or proven criteria, so the 'check SHALL be a gate' scenario is unmet as written. Re-enter by declaring the source-location lint and the privacy executables in a gate in `tools/roadmap/gates.toml`, or moving them under `cy_add_test`."
+evidence = "gate:diagnostics-privacy"
+note = "The check is a gate rather than a review: `diagnostics-privacy` in tools/roadmap/gates.toml, run by the quality job, runs `integration.diagnostics_privacy` (upload and local policies, values above the ceiling absent from the artefact's bytes, Secret admitted by no policy, unclassified fields redacted and counted, a policy that tightens and never widens), `integration.diagnostics_source_privacy` (a foreign absolute path reduced to its basename with no prefix map involved, nothing at all under a public-only ceiling, no registered name that is a source path), `diagnostics.field_macro` (a field cannot be declared without a classification), the source-location lint over src/, samples/ and tools/ with its self-test, and `diagnostics.crash`, which kills a real probe and reads the report back. NOT CLAIMED: the crash report's own fields are not classified individually; it carries no field values above the ceiling it declares by construction rather than by redaction."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Remote and server diagnostics"
 evidence = "exempt:m11e"
-note = "`src/core/diagnostics/src/bridge.cpp` exists and `test_bridge.cpp` (plain `add_test`) checks that bridged messages are classified fields. Missing: no transport carries trace, health and captures from a runtime to another machine for a tool or the editor, and no dedicated-server diagnostics surface is tested. Re-enter with a case where a headless runtime with no render, audio or UI code streams trace and health to a separate client over the shared transport."
+note = "`src/core/diagnostics/src/bridge.cpp` exists and `integration.diagnostics_bridge` (`bridge: a warning from base becomes a classified record on the one timeline`) checks that bridged messages are classified fields. Missing: no transport carries trace, health and captures from a runtime to another machine for a tool or the editor, and no dedicated-server diagnostics surface is tested. Re-enter with a case where a headless runtime with no render, audio or UI code streams trace and health to a separate client over the shared transport."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Capture artefacts"
 evidence = "exempt:m11e"
-note = "Captures are chunked and carry their own name table and identity, readable offline by `tools/trace/trace_inspect.py`. Missing: compression and an index for partial, on-demand region loading are not asserted by any citable case, and the capture/crash/reproduction mutual links are only in plain `add_test` executables. Re-enter with a multi-minute capture opened through its index, loading one region without reading the whole file."
+note = "Captures are chunked and carry their own name table and identity, readable offline by `tools/trace/trace_inspect.py`. Missing: compression and an index for partial, on-demand region loading are not asserted by any citable case, and the capture/crash/reproduction links are held only in one direction, by `integration.diagnostics_reproduction`. Re-enter with a multi-minute capture opened through its index, loading one region without reading the whole file."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
@@ -5299,13 +5303,13 @@ note = "Nothing exports aggregated metrics to an external system: there is no op
 row = "diagnostics-profiling-and-crash"
 requirement = "Diagnostics overhead"
 evidence = "exempt:m11e"
-note = "`src/core/diagnostics/bench/diag_overhead.cpp` runs as plain `add_test(diagnostics.overhead)`, with no committed thresholds a gate or proven criterion checks, and no shipping-build measurement against the one-per-cent bound. Re-enter with the overhead benchmark under a gate or criterion that holds a Shipping build's minimal telemetry under the declared bound and reports diagnostics' own cost."
+note = "The engine reports its own cost and that report is citable: `overhead: the engine measures its own emission cost, closed and recording` in `integration.diagnostics_overhead`, and `just diagnose-overhead` runs the benchmark the module's README takes its table from. Missing: no committed threshold, and no Shipping-build measurement held under the one-per-cent bound by a gate or criterion. Re-enter with that threshold (stage 3 of issue #90)."
 
 [[coverage]]
 row = "diagnostics-profiling-and-crash"
 requirement = "Forbidden diagnostics patterns"
 evidence = "exempt:m11e"
-note = "One pattern has a check: the source-location lint, which forbids paths as names. It is a plain `add_test`, not a gate. The others (global lock per event, allocation or formatting in emission, editor-owned profiler, subsystem-specific capture formats, silent loss) have no check. Re-enter with one lint or negative fixture per pattern, run by a declared gate."
+note = "One pattern has a check: the source-location lint, which forbids paths as names. It runs, with its self-test, in the `diagnostics-privacy` gate. The others (global lock per event, allocation or formatting in emission, editor-owned profiler, subsystem-specific capture formats, silent loss) have no check. Re-enter with one lint or negative fixture per pattern, run by a declared gate."
 
 # --- engine-architecture --------------------------------------------------------------------------
 #
@@ -7664,8 +7668,8 @@ note = "A chaos-permuted reduction with an undeclared ordering dependency gives 
 [[coverage]]
 row = "simulation-and-determinism"
 requirement = "Determinism lint"
-evidence = "exempt:m11e"
-note = "src/core/determinism/lint/determinism_lint.py implements the five source rules plus a contraction-off build check, with a per-rule selftest. Its suites, integration.determinism_lint and its selftest, are plain add_test rather than cy_add_test, and m9:determinism-lint and m9:determinism-lint-selftest have no proof in falsifiability.toml, so neither can answer here. Re-enter by proving m9:determinism-lint-selftest red (delete one rule from scan_source()) with `just roadmap-falsify --record`, then cite it, with findings naming the system as well as the file and line."
+evidence = "criterion:m9:determinism-lint-selftest"
+note = "src/core/determinism/lint/determinism_lint.py reports the five source rules — wall clock, ambient random generator, iteration over an unordered container, a presentation read, a floating-point function the profile forbids — over every target that declares a determinism profile, plus a contraction-off build check. Each finding names the system (the target whose profile the source was compiled under) as well as the file and line, and the selftest has one fixture per rule, a clean fixture that must stay silent, and a fixture that fails when a finding does not name its system. Proven red by deleting one pattern of the ambient-random rule from what scan_source() matches; `m9:determinism-lint`, the lint over the real tree, is proven red by deleting the policy file's per-rule exemption. NOT CLAIMED: the `--severity warning` path is not exercised by a test."
 
 [[coverage]]
 row = "simulation-and-determinism"

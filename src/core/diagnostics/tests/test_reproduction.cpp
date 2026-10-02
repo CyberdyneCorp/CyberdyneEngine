@@ -18,11 +18,10 @@
 //   * drop the `replay_log_path` check                          -> case 3 goes red;
 //   * stop writing the [reproduction] section of the report     -> case 4 goes red.
 
-#include "harness.h"
-
 #include <cy/core/diagnostics/crash.h>
 #include <cy/core/diagnostics/health.h>
 #include <cy/core/diagnostics/reproduction.h>
+#include <cy/test/test.h>
 
 #include <cstddef>
 #include <cstdio>
@@ -112,23 +111,27 @@ Reproduction exact_record() {
     return record;
 }
 
-void case_1_an_exact_artefact_is_written_and_says_so() {
+}  // namespace
+
+CY_TEST_CASE("reproduction: an exact artefact is written and says so") {
     const auto written = write_reproduction(scratch("repro_exact.cyrepro").c_str(), exact_record());
-    CY_CHECK(written.has_value(), "an artefact with a slice and a stated fidelity is written");
+    CY_CHECK_MESSAGE(written.has_value(),
+                     "an artefact with a slice and a stated fidelity is written");
 
     const std::string text = read_file(scratch("repro_exact.cyrepro").c_str());
-    CY_CHECK(has(text, "fidelity: exact"), "and it states its fidelity");
-    CY_CHECK(has(text, "checkpoint_tick: 896"),
-             "and the checkpoint a player seeks to before advancing");
-    CY_CHECK(has(text, "replay_log: session-0041.cyreplay"),
-             "and names the slice, rather than "
-             "containing it");
-    CY_CHECK(has(text, "crash_report: crash-1234.txt"), "and the crash artefact it is linked to");
-    CY_CHECK(has(text, "log_hash: 0x0123456789abcdef"),
-             "and the slice's hash, so a player can tell it was handed the right one");
+    CY_CHECK_MESSAGE(has(text, "fidelity: exact"), "and it states its fidelity");
+    CY_CHECK_MESSAGE(has(text, "checkpoint_tick: 896"),
+                     "and the checkpoint a player seeks to before advancing");
+    CY_CHECK_MESSAGE(has(text, "replay_log: session-0041.cyreplay"),
+                     "and names the slice, rather than "
+                     "containing it");
+    CY_CHECK_MESSAGE(has(text, "crash_report: crash-1234.txt"),
+                     "and the crash artefact it is linked to");
+    CY_CHECK_MESSAGE(has(text, "log_hash: 0x0123456789abcdef"),
+                     "and the slice's hash, so a player can tell it was handed the right one");
 }
 
-void case_2_a_fidelity_short_of_exact_needs_a_reason() {
+CY_TEST_CASE("reproduction: a fidelity short of exact needs a reason") {
     Reproduction record = exact_record();
     record.fidelity = Fidelity::Approximate;
     record.fidelity_reason = "";
@@ -136,34 +139,36 @@ void case_2_a_fidelity_short_of_exact_needs_a_reason() {
     // previous one would make the check pass or fail for the wrong reason.
     (void)std::remove("repro_silent.cyrepro");
     const auto refused = write_reproduction("repro_silent.cyrepro", record);
-    CY_CHECK(!refused.has_value(), "an unexplained approximation is refused, not written");
-    CY_CHECK(read_file("repro_silent.cyrepro").empty(), "and no file was left behind");
+    CY_CHECK_MESSAGE(!refused.has_value(), "an unexplained approximation is refused, not written");
+    CY_CHECK_MESSAGE(read_file("repro_silent.cyrepro").empty(), "and no file was left behind");
 
     record.fidelity_reason = "an unrecorded inference result is consumed at tick 1002";
     const auto accepted = write_reproduction(scratch("repro_approximate.cyrepro").c_str(), record);
-    CY_CHECK(accepted.has_value(), "the same artefact with a reason is written");
+    CY_CHECK_MESSAGE(accepted.has_value(), "the same artefact with a reason is written");
     const std::string text = read_file(scratch("repro_approximate.cyrepro").c_str());
-    CY_CHECK(has(text, "fidelity: approximate"), "and it does not imply exactness");
-    CY_CHECK(has(text, "unrecorded inference result"), "and says what stops it being exact");
+    CY_CHECK_MESSAGE(has(text, "fidelity: approximate"), "and it does not imply exactness");
+    CY_CHECK_MESSAGE(has(text, "unrecorded inference result"),
+                     "and says what stops it being exact");
 
     // The strongest form of the same rule.
     record.fidelity = Fidelity::NotReproducible;
     record.fidelity_reason = "the session declared no determinism profile";
-    CY_CHECK(write_reproduction(scratch("repro_none.cyrepro").c_str(), record).has_value(),
-             "a window that will not reproduce is still worth recording");
-    CY_CHECK(has(read_file(scratch("repro_none.cyrepro").c_str()), "fidelity: not-reproducible"),
-             "provided it says so");
+    CY_CHECK_MESSAGE(write_reproduction(scratch("repro_none.cyrepro").c_str(), record).has_value(),
+                     "a window that will not reproduce is still worth recording");
+    CY_CHECK_MESSAGE(
+        has(read_file(scratch("repro_none.cyrepro").c_str()), "fidelity: not-reproducible"),
+        "provided it says so");
 }
 
-void case_3_an_artefact_with_no_slice_is_refused() {
+CY_TEST_CASE("reproduction: an artefact with no replay slice is refused") {
     Reproduction record = exact_record();
     record.replay_log_path = "";
     (void)std::remove("repro_empty.cyrepro");
-    CY_CHECK(!write_reproduction("repro_empty.cyrepro", record).has_value(),
-             "a reproduction artefact that points at no slice reproduces nothing");
+    CY_CHECK_MESSAGE(!write_reproduction("repro_empty.cyrepro", record).has_value(),
+                     "a reproduction artefact that points at no slice reproduces nothing");
 }
 
-void case_4_the_crash_artefact_carries_the_link() {
+CY_TEST_CASE("reproduction: the crash artefact carries the link and states its absence") {
     health_reset();
     clear_reproduction_link();
 
@@ -175,42 +180,32 @@ void case_4_the_crash_artefact_carries_the_link() {
     config.directory = scratch_dir();
     config.engine_version = "test";
     config.build_identity = "reproduction-test";
-    CY_CHECK(install_crash_handler(config).has_value(), "a crash handler installs");
+    CY_CHECK_MESSAGE(install_crash_handler(config).has_value(), "a crash handler installs");
 
     // No reproduction registered: the report says so rather than omitting the section.
     CrashSignal signal;
     signal.description = "synthetic";
-    CY_CHECK(write_crash_report(signal).has_value(), "a report is written");
+    CY_CHECK_MESSAGE(write_crash_report(signal).has_value(), "a report is written");
     const std::string absent = read_file(crash_report_path());
-    CY_CHECK(has(absent, "[reproduction]"), "the report has the section");
-    CY_CHECK(has(absent, "<none registered for this session>"),
-             "and states the absence, because a crash may have no reproduction");
+    CY_CHECK_MESSAGE(has(absent, "[reproduction]"), "the report has the section");
+    CY_CHECK_MESSAGE(has(absent, "<none registered for this session>"),
+                     "and states the absence, because a crash may have no reproduction");
 
     // A condition the process died in, and a reproduction it can be replayed from.
     health_report(HealthCondition::PacketLoss, HealthSeverity::Degraded, 12);
     health_report(HealthCondition::RollbackFrequency, HealthSeverity::Critical, 40);
     set_reproduction_link(scratch("repro_exact.cyrepro").c_str(), Fidelity::Exact, 900, 1024);
 
-    CY_CHECK(write_crash_report(signal).has_value(), "a second report is written");
+    CY_CHECK_MESSAGE(write_crash_report(signal).has_value(), "a second report is written");
     const std::string present = read_file(crash_report_path());
-    CY_CHECK(has(present, scratch("repro_exact.cyrepro").c_str()),
-             "the report names the reproduction artefact");
-    CY_CHECK(has(present, "fidelity: exact"), "and what replaying it will produce");
-    CY_CHECK(has(present, "[health] 2 active"), "and the health state the process died in");
-    CY_CHECK(has(present, "rollback_frequency critical"), "condition by condition");
-    CY_CHECK(has(present, "packet_loss degraded"), "at the level each was reported at");
+    CY_CHECK_MESSAGE(has(present, scratch("repro_exact.cyrepro").c_str()),
+                     "the report names the reproduction artefact");
+    CY_CHECK_MESSAGE(has(present, "fidelity: exact"), "and what replaying it will produce");
+    CY_CHECK_MESSAGE(has(present, "[health] 2 active"), "and the health state the process died in");
+    CY_CHECK_MESSAGE(has(present, "rollback_frequency critical"), "condition by condition");
+    CY_CHECK_MESSAGE(has(present, "packet_loss degraded"), "at the level each was reported at");
 
     uninstall_crash_handler();
     clear_reproduction_link();
     health_reset();
-}
-
-}  // namespace
-
-int main() {
-    case_1_an_exact_artefact_is_written_and_says_so();
-    case_2_a_fidelity_short_of_exact_needs_a_reason();
-    case_3_an_artefact_with_no_slice_is_refused();
-    case_4_the_crash_artefact_carries_the_link();
-    return cy_test::summarise("test_reproduction");
 }

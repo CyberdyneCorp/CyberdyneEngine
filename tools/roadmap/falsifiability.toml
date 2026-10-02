@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 315 proven, 373 not yet shown able to fail.
+# 317 proven, 371 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -2394,6 +2394,22 @@ digest = "c2a62e5422dba388"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'node.hash = combine(node.hash, value);' in src/core/determinism/src/hash.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/qh-dev (exit 1: error: Recipe `test-quiet-host` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m9"
+criterion = "determinism-lint"
+digest = "be2a71e57d2320c3"
+verdict = "proven against a built tree"
+mutation = "delete-lines '\"src/core/determinism/src/fp_policy.cpp\": (\"forbidden-cmath\",),' in src/core/determinism/lint/determinism_lint.py (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 8: error: Recipe `test-integration` failed on line 94 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m9"
+criterion = "determinism-lint-selftest"
+digest = "40470d8d62d0554d"
+verdict = "proven against a built tree"
+mutation = "delete-lines '\"std::mt19937\",' in src/core/determinism/lint/determinism_lint.py (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 8: error: Recipe `test-integration` failed on line 94 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m9"
@@ -5274,22 +5290,6 @@ digest = "d155c7533880a5fd"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
-criterion = "determinism-lint"
-digest = "caac65aa14de7a54"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m9"
-criterion = "determinism-lint-selftest"
-digest = "96ba8a65cd66a8df"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m9"

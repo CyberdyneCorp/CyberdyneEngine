@@ -378,10 +378,18 @@ struct StringMaker<::cy::test::Near> {
 #define CY_CHECK_GT(...) DOCTEST_CHECK_GT(__VA_ARGS__)
 #define CY_CHECK_GE(...) DOCTEST_CHECK_GE(__VA_ARGS__)
 
+/// CY_CHECK with the sentence that says what the check means, printed beside the expression when
+/// it fails. For a check whose expression alone does not say which claim of the case broke.
+#define CY_CHECK_MESSAGE(condition, ...) \
+    CY_TEST_COUNTER_BEGIN DOCTEST_CHECK_MESSAGE(condition, __VA_ARGS__) CY_TEST_COUNTER_END
+
 #define CY_REQUIRE(...) DOCTEST_REQUIRE(__VA_ARGS__)
 #define CY_REQUIRE_FALSE(...) DOCTEST_REQUIRE_FALSE(__VA_ARGS__)
 #define CY_REQUIRE_EQ(...) DOCTEST_REQUIRE_EQ(__VA_ARGS__)
 #define CY_REQUIRE_NE(...) DOCTEST_REQUIRE_NE(__VA_ARGS__)
+/// CY_REQUIRE with the sentence that says what the precondition is, printed when it fails.
+#define CY_REQUIRE_MESSAGE(condition, ...) \
+    CY_TEST_COUNTER_BEGIN DOCTEST_REQUIRE_MESSAGE(condition, __VA_ARGS__) CY_TEST_COUNTER_END
 
 /// Floating-point comparison with an explicit ABSOLUTE tolerance: passes when
 /// `|value - expected| <= tolerance`. There is no default tolerance: the value that is close enough

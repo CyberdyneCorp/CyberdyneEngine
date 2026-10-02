@@ -73,6 +73,15 @@ Expected<TraceId, cy::Error> TraceWriter::open(const TraceConfig& config,
     policy_ = config.policy;
     stats_ = TraceStats{};
     stats_.trace_id = trace_id;
+    // The writer belongs to the process and outlives each trace. Everything it accumulates about
+    // ONE artefact starts empty here: before this, a second capture's LOSS chunk carried the first
+    // capture's drops and its index carried offsets into the first capture's file.
+    index_.clear();
+    losses_.clear();
+    current_thread_ = 0;
+    chunk_first_timestamp_ = 0;
+    chunk_last_timestamp_ = 0;
+    write_failed_ = false;
 
     FileHeader header{};
     std::memcpy(header.magic, format::kMagic, sizeof(header.magic));

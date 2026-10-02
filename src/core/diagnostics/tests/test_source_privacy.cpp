@@ -20,11 +20,10 @@
 //   * make `CY_LOG` register the site with `register_name()` again   -> case 5 goes red;
 //   * let the writer emit a location's path regardless of the policy -> case 4 goes red.
 
-#include "harness.h"
-
 #include <cy/core/diagnostics/log.h>
 #include <cy/core/diagnostics/source.h>
 #include <cy/core/diagnostics/trace.h>
+#include <cy/test/test.h>
 
 #include <cstddef>
 #include <cstdio>
@@ -86,12 +85,12 @@ std::string capture_with_foreign_location(const char* path, cy::ExportPolicy pol
     config.consumer_thread = false;
 
     const auto opened = trace_open(config);
-    CY_CHECK(opened.has_value(), "the trace opens");
+    CY_CHECK_MESSAGE(opened.has_value(), "the trace opens");
 
     // The runtime half: a location whose path this build did not produce, exactly as an assertion
     // in a plugin compiled with someone else's flags would hand it to the bridge.
     const LocationId foreign = register_source_location(kForeignFile, 4242);
-    CY_CHECK(foreign != kInvalidLocation, "the foreign location interns");
+    CY_CHECK_MESSAGE(foreign != kInvalidLocation, "the foreign location interns");
     log_emit(sample_category(), LogLevel::Error, register_name("source.foreign"), foreign, nullptr,
              0);
 
@@ -100,76 +99,89 @@ std::string capture_with_foreign_location(const char* path, cy::ExportPolicy pol
 
     trace_flush();
     const auto closed = trace_close();
-    CY_CHECK(closed.has_value(), "the trace closes");
+    CY_CHECK_MESSAGE(closed.has_value(), "the trace closes");
     if (closed.has_value()) {
         stats = closed.value();
     }
     return read_file(path);
 }
 
-void case_1_absolute_paths_keep_only_their_basename() {
+}  // namespace
+
+CY_TEST_CASE("source privacy: an absolute path keeps only its basename") {
     PathForm form = PathForm::Empty;
     const std::string out = sanitised(kForeignFile, form);
-    CY_CHECK(form == PathForm::Basename, "an absolute path outside the root is reduced");
-    CY_CHECK(out == kForeignBasename, "and what survives is the file's own name");
+    CY_CHECK_MESSAGE(form == PathForm::Basename, "an absolute path outside the root is reduced");
+    CY_CHECK_MESSAGE(out == kForeignBasename, "and what survives is the file's own name");
 
     PathForm windows_form = PathForm::Empty;
     const std::string windows = sanitised(R"(C:\Users\someone\game\src\pawn.cpp)", windows_form);
-    CY_CHECK(windows_form == PathForm::Basename, "a Windows absolute path is reduced too");
-    CY_CHECK(windows == "pawn.cpp", "MSVC has no prefix-map, so this is the only mechanism there");
+    CY_CHECK_MESSAGE(windows_form == PathForm::Basename, "a Windows absolute path is reduced too");
+    CY_CHECK_MESSAGE(windows == "pawn.cpp",
+                     "MSVC has no prefix-map, so this is the only mechanism there");
 }
 
-void case_2_the_declared_root_is_stripped() {
+CY_TEST_CASE("source privacy: the declared source root is stripped") {
     const std::string root = source_root();
-    CY_CHECK(!root.empty(), "this build declared its source root");
+    CY_CHECK_MESSAGE(!root.empty(), "this build declared its source root");
     PathForm form = PathForm::Empty;
     const std::string out =
         sanitised((root + "/src/core/diagnostics/src/writer.cpp").c_str(), form);
-    CY_CHECK(form == PathForm::Relative, "a path under the root becomes relative");
-    CY_CHECK(out == "src/core/diagnostics/src/writer.cpp", "and keeps everything below the root");
+    CY_CHECK_MESSAGE(form == PathForm::Relative, "a path under the root becomes relative");
+    CY_CHECK_MESSAGE(out == "src/core/diagnostics/src/writer.cpp",
+                     "and keeps everything below the root");
 
     PathForm already = PathForm::Empty;
     const std::string relative = sanitised("src/gameplay/src/command.cpp", already);
-    CY_CHECK(already == PathForm::Relative, "an already-relative path passes through");
-    CY_CHECK(relative == "src/gameplay/src/command.cpp", "unchanged");
+    CY_CHECK_MESSAGE(already == PathForm::Relative, "an already-relative path passes through");
+    CY_CHECK_MESSAGE(relative == "src/gameplay/src/command.cpp", "unchanged");
 }
 
-void case_3_no_artefact_carries_a_build_machine_path() {
+CY_TEST_CASE("source privacy: no artefact carries a build-machine path") {
     TraceStats stats{};
     const std::string bytes =
         capture_with_foreign_location("source_upload.cytrace", cy::ExportPolicy::upload(), stats);
-    CY_CHECK(!bytes.empty(), "the artefact was written");
+    CY_CHECK_MESSAGE(!bytes.empty(), "the artefact was written");
 
     // The gate. Both directions, because a check that only asserts an absence passes when nothing
     // was written at all.
-    CY_CHECK(!contains(bytes, kForeignPrefix), "no absolute path from another machine survives");
-    CY_CHECK(!contains(bytes, source_root()), "and none from this one either");
-    CY_CHECK(contains(bytes, kForeignBasename),
-             "the file's name did survive, so this is not vacuous");
+    CY_CHECK_MESSAGE(!contains(bytes, kForeignPrefix),
+                     "no absolute path from another machine survives");
+    CY_CHECK_MESSAGE(!contains(bytes, source_root()), "and none from this one either");
+    CY_CHECK_MESSAGE(contains(bytes, kForeignBasename),
+                     "the file's name did survive, so this is not vacuous");
     // The basename rather than the relative path: with `-fmacro-prefix-map` this file's __FILE__ is
     // already relative and the whole path is present, and without it the writer reduces it to this.
     // Asserting the half that holds EITHER WAY is what makes this check independent of the
     // compiler.
-    CY_CHECK(contains(bytes, "test_source_privacy.cpp"),
-             "and this file's own site is present, in whatever form the mechanism left it");
+    CY_CHECK_MESSAGE(contains(bytes, "test_source_privacy.cpp"),
+                     "and this file's own site is present, in whatever form the mechanism left it");
 
     // One location was reduced, and the artefact says so rather than rewriting it silently.
-    CY_CHECK(stats.events_written >= 2, "both records reached the artefact");
+    CY_CHECK_MESSAGE(stats.events_written >= 2, "both records reached the artefact");
 }
 
-void case_4_a_tighter_policy_removes_the_path_entirely() {
+CY_TEST_CASE("source privacy: a public-only artefact carries no source path at all") {
     TraceStats stats{};
     const std::string bytes = capture_with_foreign_location("source_public.cytrace",
                                                             cy::ExportPolicy::public_only(), stats);
-    CY_CHECK(!bytes.empty(), "the artefact was written");
-    CY_CHECK(!contains(bytes, kForeignPrefix), "still no absolute path");
-    CY_CHECK(!contains(bytes, kForeignBasename),
-             "a Public-only artefact carries no source path at all, because a path is Developer");
-    CY_CHECK(!contains(bytes, "test_source_privacy.cpp"), "including this file's own");
-    CY_CHECK(stats.redacted_fields > 0, "and the removal is counted rather than silent");
+    CY_CHECK_MESSAGE(!bytes.empty(), "the artefact was written");
+    CY_CHECK_MESSAGE(!contains(bytes, kForeignPrefix), "still no absolute path");
+    CY_CHECK_MESSAGE(
+        !contains(bytes, kForeignBasename),
+        "a Public-only artefact carries no source path at all, because a path is Developer");
+    CY_CHECK_MESSAGE(!contains(bytes, "test_source_privacy.cpp"), "including this file's own");
+    CY_CHECK_MESSAGE(stats.redacted_fields > 0, "and the removal is counted rather than silent");
 }
 
-void case_5_no_registered_name_is_a_source_path() {
+CY_TEST_CASE("source privacy: no registered name is a source path") {
+    // Both kinds of site — a foreign location and this file's own CY_LOG — are registered by this
+    // case itself, so it holds when it is the only case run.
+    TraceStats stats{};
+    const std::string bytes =
+        capture_with_foreign_location("source_names.cytrace", cy::ExportPolicy::upload(), stats);
+    CY_CHECK_MESSAGE(!bytes.empty(), "the artefact was written");
+
     // The class, not the instance: whatever any subsystem in this process registered, no NAME in
     // the metadata table looks like a source file. A name is beyond the writer's redaction by
     // construction, so nothing that could ever be a path may be one.
@@ -190,17 +202,7 @@ void case_5_no_registered_name_is_a_source_path() {
             ++offenders;
         }
     }
-    CY_CHECK_EQ(offenders, 0u, "no source location was registered as a name");
-    CY_CHECK(source_location_count() >= 2u, "and locations went into the table that is classified");
-}
-
-}  // namespace
-
-int main() {
-    case_1_absolute_paths_keep_only_their_basename();
-    case_2_the_declared_root_is_stripped();
-    case_3_no_artefact_carries_a_build_machine_path();
-    case_4_a_tighter_policy_removes_the_path_entirely();
-    case_5_no_registered_name_is_a_source_path();
-    return cy_test::summarise("test_source_privacy");
+    CY_CHECK_MESSAGE(offenders == 0u, "no source location was registered as a name");
+    CY_CHECK_MESSAGE(source_location_count() >= 2u,
+                     "and locations went into the table that is classified");
 }

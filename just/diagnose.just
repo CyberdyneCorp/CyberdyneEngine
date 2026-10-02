@@ -30,3 +30,16 @@ diagnose-save-patterns:
     cd "{{root}}"
     python3 tools/save/check_forbidden_test.py
     python3 tools/save/check_forbidden.py --binary "${CY_BUILD_DIR:-build/{{default_profile}}}/cy_test_unit_save"
+
+# The emission benchmark's figures — trace closed, recording, at development volume, a filtered log
+# record, a consumer draining — against a 60 Hz frame. It links the engine and asserts nothing;
+# `integration.diagnostics_overhead` is the suite that holds what it relies on. The sample count
+# defaults to 400000, the figure src/core/diagnostics/README.md records. Build the engine first.
+# Measure what diagnostics cost. Arguments: [samples] [trace-path].
+diagnose-overhead *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    argv=({{args}})
+    exec "${CY_BUILD_DIR:-build/{{default_profile}}}/src/core/diagnostics/tests/cy_diag_overhead" \
+        "${argv[@]:-400000}"
