@@ -387,6 +387,11 @@ struct FrameDescription {
     /// Record callbacks, indexed by `FramePassKind`. A missing one declares the pass and records
     /// nothing, which is a legitimate frame — see the header comment.
     FramePassCallback callbacks[kFramePassKindCount] = {};
+    /// The producer that declares the interface stage: handed the colour the chain ended in — the
+    /// output, when post-processing tonemapped into it — as `target`, which its passes draw over.
+    /// Null keeps the stage the single pass recorded by `callbacks[UiAndDebug]`. Only with
+    /// `features.ui`. Appended, so a brace-initialised description keeps its meaning.
+    FrameStageDeclaration ui_stage;
 };
 
 /// Declares one view's frame into a graph.

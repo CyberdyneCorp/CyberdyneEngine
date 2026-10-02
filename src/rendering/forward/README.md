@@ -111,6 +111,14 @@ pass reads and writes the target, so the interface loads the outlined colour. `b
 feature without a producer, and without the depth prepass: a marked surface is found hidden by
 comparing it with the prepass depth. `src/rendering/selection/` is the producer.
 
+## The interface, last: an optional producer
+
+`FramePassKind::UiAndDebug` is still declared as one pass recorded through `callbacks[UiAndDebug]`
+when nothing produces it. With `FrameDescription::ui_stage` set (`FrameSinks::ui` through the
+assembly) the producer declares its own passes instead, handed the colour the chain ended in as
+`target` — after the outlines, so the interface draws over them. A producer that refuses fails the
+build. `src/ui/render/` is the producer: CyberUI's primitive stream, drawn after the tone curve.
+
 ## A fourth, in the post chain: depth of field
 
 `FramePassKind::DepthOfField` is step 7 of `rendering-post-processing`'s chain: after the temporal

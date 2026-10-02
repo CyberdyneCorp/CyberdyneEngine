@@ -718,8 +718,12 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
                                state.current_color);
     }
 
-    // 12. UI and debug, drawn after tonemapping.
-    if (features.ui) {
+    // 12. UI and debug, drawn after tonemapping. A producer — the runtime interface's renderer —
+    // declares its own passes over the colour the chain ended in, as the outlines above do.
+    if (features.ui && description.ui_stage.declare != nullptr) {
+        declare_produced_stage(graph, state, description.ui_stage, FramePassKind::UiAndDebug,
+                               "ui and debug", state.current_color);
+    } else if (features.ui) {
         PassBuilder builder = graph.add_pass("ui and debug", QueueKind::Graphics);
         builder.use(state.current_color, Access::ColorAttachmentReadWrite);
         attach(builder, description, FramePassKind::UiAndDebug);
