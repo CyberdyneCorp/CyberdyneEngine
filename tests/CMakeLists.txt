@@ -41,6 +41,12 @@ set(CY_TEST_TIMEOUT_determinism 300)
 # wrapper is the whole reason doctest is an acceptable choice (design.md §5). Checked here, at the
 # point a suite is declared, and again at run time by tests/integration/test_wrapper_seam.cpp, which sees
 # a file added after the last configure.
+#
+# Calling a DOCTEST_* macro through the wrapper's include steps around it just as far, and costs more
+# than replaceability: the macros that expand a `__COUNTER__` are bracketed by cy/test/test.h's
+# clang 22 -Wc2y-extensions suppression only when they are reached as CY_*, so a raw one compiles
+# under GCC and fails every clang 22 build of the suite. A comment that names a configuration macro
+# has no parenthesis after it and is not matched.
 function(_cy_test_reject_direct_doctest target)
     foreach(source IN LISTS ARGN)
         if(NOT IS_ABSOLUTE "${source}")
@@ -54,6 +60,14 @@ function(_cy_test_reject_direct_doctest target)
                 "cy/test/test.h, so that the framework stays replaceable — see design.md §5. "
                 "Replace the include with <cy/test/test.h> and the DOCTEST_* macros with their CY_* "
                 "equivalents.\n"
+                "  Declared by cy_add_test(NAME ${target} ...).")
+        endif()
+        if(contents MATCHES "DOCTEST_[A-Z0-9_]+[ \t]*\\(")
+            message(FATAL_ERROR
+                "${source}\n"
+                "  calls ${CMAKE_MATCH_0}...) directly. Tests use the CY_* macros of cy/test/test.h, "
+                "which keep the framework replaceable (design.md §5) and scope the clang 22 "
+                "__COUNTER__ suppression; add a CY_* wrapper there if the one you need is missing.\n"
                 "  Declared by cy_add_test(NAME ${target} ...).")
         endif()
     endforeach()

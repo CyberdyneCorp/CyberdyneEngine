@@ -179,7 +179,7 @@ Trace run_graph(Stage& stage) {
     configuration.gameplay_user = &graphs;
     CY_REQUIRE(play.enter(configuration).has_value());
     const cy::Status started = graphs.start(play, world, &audio);
-    DOCTEST_INFO(graphs.problem());
+    CY_TEST_INFO(graphs.problem());
     CY_REQUIRE(started.has_value());
     CY_REQUIRE_EQ(graphs.count(), 1U);
 
@@ -236,7 +236,7 @@ CY_TEST_CASE(
     for (u32 index = 0; index < graph.positions.size(); ++index) {
         const cy::Vec3 left = graph.positions[index];
         const cy::Vec3 right = swift.positions[index];
-        DOCTEST_INFO("tick " << (index + 1));
+        CY_TEST_INFO("tick " << (index + 1));
         CY_CHECK_EQ(left.x, right.x);
         CY_CHECK_EQ(left.y, right.y);
         CY_CHECK_EQ(left.z, right.z);

@@ -242,7 +242,7 @@ CY_TEST_CASE("graph behaviours: the step never fuses a multiply into the add tha
     Vec3 engine{0.0F, 0.0F, 0.0F};
     Vec3 rounded{0.0F, 0.0F, 0.0F};
     for (u32 tick = 1; tick <= 260; ++tick) {
-        DOCTEST_INFO("tick " << tick);
+        CY_TEST_INFO("tick " << tick);
         const bool engine_arrived = game_backend::step_towards(engine, 6.0F, 8.0F, 3.0F, dt);
         const bool rounded_arrived = step_rounded(rounded, 6.0F, 8.0F, 3.0F, dt);
         CY_REQUIRE_EQ(engine.x, rounded.x);

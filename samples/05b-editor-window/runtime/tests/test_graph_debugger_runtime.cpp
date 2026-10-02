@@ -109,7 +109,7 @@ struct Session {
         configuration.gameplay_user = &graphs;
         CY_REQUIRE(play.enter(configuration).has_value());
         const cy::Status started = graphs.start(play, world, &audio);
-        DOCTEST_INFO(graphs.problem());
+        CY_TEST_INFO(graphs.problem());
         CY_REQUIRE(started.has_value());
         graphs.set_hold_listener(
             [](void* user, bool held) noexcept {
@@ -198,7 +198,7 @@ CY_TEST_CASE("a graph breakpoint pauses the whole Play session until the debugge
             CY_CHECK(debugged.play.state() == cy::gameplay::PlayState::Playing);
             CY_CHECK(debugged.holds == (std::vector<bool>{true, false}));
         }
-        DOCTEST_INFO("tick " << tick);
+        CY_TEST_INFO("tick " << tick);
         CY_REQUIRE_EQ(plain.placed().x, debugged.placed().x);
         CY_REQUIRE_EQ(plain.placed().z, debugged.placed().z);
         CY_REQUIRE_EQ(plain.play.report().ticks, debugged.play.report().ticks);

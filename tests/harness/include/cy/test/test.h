@@ -434,6 +434,10 @@ struct StringMaker<::cy::test::Near> {
 /// Record a message in the test's output without asserting anything.
 #define CY_TEST_MESSAGE(...) CY_TEST_COUNTER_BEGIN DOCTEST_MESSAGE(__VA_ARGS__) CY_TEST_COUNTER_END
 
+/// Attach context to every assertion that fails later in the enclosing scope — which iteration of
+/// a loop, which input — without printing anything when they pass. `CY_TEST_INFO("tick " << tick);`
+#define CY_TEST_INFO(...) CY_TEST_COUNTER_BEGIN DOCTEST_INFO(__VA_ARGS__) CY_TEST_COUNTER_END
+
 /// Fail the current test case with a message, and continue.
 #define CY_TEST_FAIL_CHECK(...) \
     CY_TEST_COUNTER_BEGIN DOCTEST_FAIL_CHECK(__VA_ARGS__) CY_TEST_COUNTER_END

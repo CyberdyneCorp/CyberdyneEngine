@@ -8,6 +8,7 @@
 CY_TEST_SUITE("harness.clang_probe") {
     CY_TEST_CASE("the harness compiles cleanly under clang") {
         const float measured = 0.5f;
+        CY_TEST_INFO("measured " << measured);
         CY_CHECK_NEAR(measured, 0.5f, 0.001f);
         CY_CHECK_EQ(measured, 0.5f);
         CY_TEST_SUBCASE("a subcase") {

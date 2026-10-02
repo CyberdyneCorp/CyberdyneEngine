@@ -212,7 +212,7 @@ CY_TEST_CASE("graph debugger: a run that breaks and steps moves and sounds as on
         CY_REQUIRE(plain.scene.graphs.update(kDt).has_value());
         CY_REQUIRE(graphs.update(kDt).has_value());
         settle();
-        DOCTEST_INFO("tick " << tick);
+        CY_TEST_INFO("tick " << tick);
         CY_REQUIRE(plain.frame() == debugged.frame());
         CY_REQUIRE_EQ(plain.scene.graphs.tick(), graphs.tick());
     }
