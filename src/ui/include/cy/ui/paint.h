@@ -44,7 +44,37 @@
 
 namespace cy::ui {
 
-/// One flattened primitive. Six fields, and the requirement names all six.
+/// The behaviours of the one built-in UI shader, selected by a primitive's material index.
+///
+/// `ui-system`: "Text glyphs, rounded rectangles, borders, gradients, shadows, and images SHALL
+/// share the primitive representation and, where practical, one shader with material-indexed
+/// behaviour." These are the indices that shader answers; a custom UI material (stage 2 of the
+/// runtime UI work) takes an index from `kFirstCustomMaterial` up.
+enum class BuiltinMaterial : u16 {
+    /// A rectangle, rounded by `Primitive::corner_radius` and bordered by `border_width` in
+    /// `border_colour`, as a signed distance. The default, and what every panel is.
+    Shape = 0,
+    /// The atlas page sampled at `uv`, premultiplied, multiplied by the colour and masked by the
+    /// same rounded shape.
+    Image = 1,
+    /// The atlas page's red channel as coverage — a glyph — multiplied by the colour.
+    Glyph = 2,
+};
+
+/// The first material index that is not a built-in behaviour.
+inline constexpr u16 kFirstCustomMaterial = 16;
+
+/// A built-in behaviour as the index `PaintData::material` and `Primitive::material` carry.
+[[nodiscard]] constexpr u16 material_index(BuiltinMaterial material) noexcept {
+    return static_cast<u16>(material);
+}
+
+/// One flattened primitive.
+///
+/// The requirement's six fields — bounds, UV rect, material, clip, transform and colour — plus the
+/// atlas the batch key needs and the three numbers the built-in shape material reads. Colours are
+/// PREMULTIPLIED, and the element's opacity, multiplied down the tree, is already in them: a
+/// renderer draws `colour` and never sees an opacity.
 struct Primitive {
     Rect bounds;
     Rect uv;
@@ -58,6 +88,38 @@ struct Primitive {
     u32 colour = 0xFFFFFFFFU;
     /// The element it came from, so the inspector can go back from a pixel to a node.
     ElementId source;
+    /// `BuiltinMaterial::Shape`'s and `Image`'s corner radius, in the document's units.
+    f32 corner_radius = 0.0F;
+    /// The border's width, drawn inside the bounds, in the document's units. Zero draws none.
+    f32 border_width = 0.0F;
+    /// The border's premultiplied colour, with the opacity folded in as `colour`'s is.
+    u32 border_colour = 0;
+};
+
+/// A premultiplied colour scaled by an opacity: every channel, alpha included, rounded to the
+/// nearest step. An opacity of one returns the colour unchanged, bit for bit.
+[[nodiscard]] u32 scale_premultiplied(u32 colour, f32 opacity) noexcept;
+
+/// What draws an element's own content — a label's glyphs, an icon — into the primitive stream.
+///
+/// `flatten()` calls it once per visible element, after the element's own background primitive and
+/// before its children, so content sits over its panel and under anything nested inside it. A
+/// painter appends primitives with their bounds, uv, material, atlas and colour; `flatten()` fills
+/// in the clip, the transform and the source element, folds the inherited opacity into the colours,
+/// and culls any that fall outside the clip. The interface is the twin of `ContentMeasurer`: a
+/// module that included a font server could not be tested without one.
+class ContentPainter {
+public:
+    ContentPainter() = default;
+    virtual ~ContentPainter() = default;
+    ContentPainter(const ContentPainter&) = delete;
+    ContentPainter& operator=(const ContentPainter&) = delete;
+    ContentPainter(ContentPainter&&) = delete;
+    ContentPainter& operator=(ContentPainter&&) = delete;
+
+    /// Append `element`'s content, laid out inside `rect`, to `out`.
+    [[nodiscard]] virtual Status paint_content(ElementId element, const Rect& rect,
+                                               Array<Primitive>& out) noexcept = 0;
 };
 
 /// A run of primitives that share a material and an atlas, drawn as one indirect draw.
@@ -81,6 +143,9 @@ struct FlattenReport {
     u32 batches = 0;
     /// The elements that were visited at all. With nothing dirty this is zero.
     u32 visited = 0;
+    /// Visible elements with nothing of their own to draw — a built-in material with no colour and
+    /// no border, which is what a layout container is — that put no primitive in the stream.
+    u32 empty = 0;
 };
 
 /// The flattened output, retained between frames so that "unchanged regions SHALL reuse their
@@ -97,7 +162,8 @@ public:
     [[nodiscard]] Span<const Rect> clips() const noexcept { return clips_.span(); }
     void clear() noexcept;
 
-    friend Status flatten(ElementStore&, const Rect&, PrimitiveBuffer&, FlattenReport&) noexcept;
+    friend Status flatten(ElementStore&, const Rect&, PrimitiveBuffer&, FlattenReport&,
+                          ContentPainter*) noexcept;
 
 private:
     Array<Primitive> primitives_;
@@ -112,8 +178,14 @@ private:
 ///
 /// Incremental: an element with no paint dirt keeps the primitive it had. A caller that wants a
 /// full rebuild clears the buffer first, which is what a resolution change does.
+///
+/// An element's opacity multiplies down the tree into every primitive beneath it, so a panel at
+/// half opacity draws its children at half too. Overlapping children of a faded panel each blend
+/// on their own: the offscreen opacity group `ui-system` asks for is not built yet.
+///
+/// `painter`, when given, draws each visible element's content; see `ContentPainter`.
 [[nodiscard]] Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
-                             FlattenReport& report) noexcept;
+                             FlattenReport& report, ContentPainter* painter = nullptr) noexcept;
 
 // --- The frame budget
 // -----------------------------------------------------------------------------
