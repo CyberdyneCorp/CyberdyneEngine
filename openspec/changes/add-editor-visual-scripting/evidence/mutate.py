@@ -12,7 +12,8 @@ Run from anywhere: python3 openspec/changes/add-editor-visual-scripting/evidence
 Pass mutation names to run only those; the record then goes to falsification-<first name>.txt.
 Pass --check to verify every snippet occurs exactly once without building anything.
 The snippets of c02, c03, r06, r13 and r16 were restated for the code as
-`add-visual-scripting-debugger` left it (the same mutations, in today's spelling).
+`add-visual-scripting-debugger` left it (the same mutations, in today's spelling); their
+re-run is recorded in falsification-restated.txt.
 Output: falsification.txt beside this file. Every C++ target is rebuilt unmutated at the end.
 """
 import hashlib

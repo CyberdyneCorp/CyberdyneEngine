@@ -391,10 +391,11 @@ enum class RunOutcome : u8 {
 /// Debug and Development, absent from Profile and Shipping. Where it is false the run loops contain
 /// no probe test, the native probe step does nothing, and `instrument_for_debug` refuses — so a
 /// shipped program cannot carry a probe and a shipped loop cannot look for one.
+inline constexpr bool kGraphDebuggerEnabled =
 #if defined(CY_DEVELOPMENT)
-inline constexpr bool kGraphDebuggerEnabled = true;
+    true;
 #else
-inline constexpr bool kGraphDebuggerEnabled = false;
+    false;
 #endif
 
 /// What a debugger decides at a node boundary.

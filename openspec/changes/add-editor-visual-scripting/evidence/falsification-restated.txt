@@ -1,0 +1,48 @@
+Mutations that turn the gameplay graph editor's tests red (#29, visual scripting),
+Development profile. Each mutation was applied, its tests run, the file restored and
+md5-verified. Listed under each: the tests (Rust) or test cases (C++) that failed.
+
+== c02_a_new_event_keeps_the_old_wait: src/graph/src/lower_script.cpp
+<   state.set_resume_block(kNoBlock);
+<   state.clear_pause();
+<   return run_blocks(program, state, host, RunStart{start, 0}, instruction_budget, debug);
+>   state.clear_pause();
+>   return run_blocks(program, state, host, RunStart{start, 0}, instruction_budget, debug);
+FAILED  event graph: each event starts its own handler in one shared program
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== c03_native_handler_starts_at_the_entry: src/graph/src/lower_script_native.cpp
+<   return run_steps(program, state, host, program.block_starts()[start], instruction_budget,
+<   debug);
+>   return run_steps(program, state, host, program.entry_step(), instruction_budget, debug);
+FAILED  event graph: each event starts its own handler in one shared program
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== r06_undo_does_not_restore_the_file: editor/crates/cy-editor-services/src/builtin.rs
+<   for (reference, source) in graphs {
+<   let _ = project.put_source(
+>   for (reference, source) in graphs {
+>   let _ = (
+FAILED  a_gameplay_graph_is_authored_compiled_and_run_in_play_over_mcp_and_undoes
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r13_a_diagnostic_row_selects_nothing: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   let _ = canvas.select([key]);
+>   let _ = key;
+FAILED  an_engine_diagnostic_is_on_its_node_and_selects_it
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r16_panel_invokes_an_unregistered_command: editor/crates/cy-editor-shell/src/panels/script_graph.rs
+<   "script.debug.inspect",
+<   ];
+>   "script.reload",
+>   ];
+FAILED  panels::specialised::tests::every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 142 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+5 of 5 mutations killed.

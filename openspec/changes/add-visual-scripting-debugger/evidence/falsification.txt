@@ -25,8 +25,9 @@ RESTORED md5 ok
 
 == d04_no_probe_on_the_event: src/graph/src/script_debug.cpp
 <   if (entry != kInvalidNodeKey && entry != first_node) {
->   if (false) {
-DID NOT COMPILE
+>   if (entry != kInvalidNodeKey && entry != first_node && false) {
+FAILED  graph debugger: a breakpoint on the event stops before the handler's first node
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
 RESTORED md5 ok
 
 == d05_a_call_is_not_an_execution_node: src/graph/src/script_debug.cpp
@@ -41,6 +42,15 @@ RESTORED md5 ok
 <   reading.value = state.registers()[instruction.dst];
 >   reading.value = Value{};
 FAILED  graph debugger: pins and variables are read through the debug map
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
+RESTORED md5 ok
+
+== d07_instrumented_in_shipping: src/graph/src/script_debug.cpp
+<   if constexpr (!kGraphDebuggerEnabled) {
+<   (void)program;
+>   if constexpr (false) {
+>   (void)program;
+FAILED  graph debugger: compiled out of Profile and Shipping
 [doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
 RESTORED md5 ok
 
@@ -77,7 +87,8 @@ RESTORED md5 ok
 == m03_a_wait_is_always_dropped: src/graph/src/script_reload.cpp
 <   target.set_resume_block(point->resume);
 >   (void)point;
-SURVIVED  [doctest] test cases:  1 |  1 passed | 0 failed | 58 skipped
+FAILED  graph reload: a wait in progress survives when its wait node does
+[doctest] test cases:  1 |  0 passed | 1 failed | 58 skipped
 RESTORED md5 ok
 
 == g01_a_breakpoint_stops_every_entity: src/game_backend/src/graph_behaviours.cpp
@@ -185,14 +196,14 @@ RESTORED md5 ok
 <   if running && self.runtime.is_connected() {
 >   if self.runtime.is_connected() {
 FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.03s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == r05_a_watch_is_not_kept: editor/crates/cy-editor-services/src/editor.rs
 <   watch.pins.push(pair);
 >   let _ = pair;
 FAILED  a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.01s
 RESTORED md5 ok
 
 == r06_the_reason_is_misread: editor/crates/cy-editor-services/src/script_debug.rs
@@ -223,4 +234,4 @@ FAILED  the_debuggers_controls_and_gutter_are_the_registered_debug_commands
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.02s
 RESTORED md5 ok
 
-29 of 31 mutations killed.
+32 of 32 mutations killed.
