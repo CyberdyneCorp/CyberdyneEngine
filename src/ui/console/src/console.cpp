@@ -147,13 +147,13 @@ std::string_view DevConsole::input() const noexcept {
     return view_of(input_.text, input_.length);
 }
 
-Status DevConsole::print(std::string_view text, u32 colour) noexcept {
+Status DevConsole::print(std::string_view line, u32 colour) noexcept {
     if (store_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "console: not created");
     }
     const auto history = static_cast<u32>(lines_.size());
     Line& entry = lines_[head_];
-    entry.length = copy_cut(text, entry.text, kConsoleLineCapacity);
+    entry.length = copy_cut(line, entry.text, kConsoleLineCapacity);
     entry.colour = colour;
     head_ = (head_ + 1U) % history;
     count_ = std::min(count_ + 1U, history);
@@ -264,14 +264,14 @@ Status DevConsole::submit() noexcept {
 Status DevConsole::refresh() noexcept {
     const auto visible = static_cast<u32>(rows_.size());
     for (u32 row = 0; row < visible; ++row) {
-        // The bottom row shows the newest line `scroll_` lines back; the rows above, older ones.
-        const i64 index = static_cast<i64>(count_) - scroll_ - visible + row;
+        // How many lines back from the newest this row shows: the bottom row `scroll_`, the rows
+        // above it older ones.
+        const u32 back = scroll_ + (visible - 1U - row);
         TextStyle style = style_.text;
         std::string_view shown;
-        if (index >= 0 && index < static_cast<i64>(count_)) {
+        if (back < count_) {
             const auto history = static_cast<u32>(lines_.size());
-            const Line& entry =
-                lines_[(head_ + history - count_ + static_cast<u32>(index)) % history];
+            const Line& entry = lines_[(head_ + history - 1U - back) % history];
             shown = view_of(entry.text, entry.length);
             style.colour = entry.colour;
         }

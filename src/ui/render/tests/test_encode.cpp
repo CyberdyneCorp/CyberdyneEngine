@@ -198,7 +198,7 @@ CY_TEST_CASE(
     CY_REQUIRE(build_draws(buffer, 1.0F, 64, 48, list).has_value());
 
     const u32 below = 0xFF202020U;
-    std::vector<u32> target(64U * 48U, below);
+    std::vector<u32> target(static_cast<usize>(64U) * 48U, below);
     CY_REQUIRE(
         draw_reference(list, {}, 64, 48, Span<u32>(target.data(), target.size())).has_value());
     const auto at = [&](u32 x, u32 y) { return target[(static_cast<usize>(y) * 64U) + x]; };

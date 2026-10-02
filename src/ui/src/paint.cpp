@@ -82,7 +82,7 @@ u32 scale_premultiplied(u32 colour, f32 opacity) noexcept {
     u32 scaled = 0;
     for (u32 shift = 0; shift < 32U; shift += 8U) {
         const auto channel = static_cast<f32>((colour >> shift) & 0xFFU);
-        const auto rounded = static_cast<u32>((channel * opacity) + 0.5F);
+        const auto rounded = static_cast<u32>(std::lround(channel * opacity));
         scaled |= (rounded > 255U ? 255U : rounded) << shift;
     }
     return scaled;

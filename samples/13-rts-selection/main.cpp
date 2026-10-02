@@ -319,9 +319,12 @@ sample::rts::MinimapDot dot_for(const Placement& placement) noexcept {
     sample::rts::MinimapDot dot;
     dot.x = (placement.centre.x + 6.0F) / 12.0F;
     dot.y = (placement.centre.z + 20.0F) / 16.0F;
-    dot.team = placement.side == Side::Enemy     ? sample::rts::Team::Enemy
-               : placement.side == Side::Neutral ? sample::rts::Team::Neutral
-                                                 : sample::rts::Team::Player;
+    dot.team = sample::rts::Team::Player;
+    if (placement.side == Side::Enemy) {
+        dot.team = sample::rts::Team::Enemy;
+    } else if (placement.side == Side::Neutral) {
+        dot.team = sample::rts::Team::Neutral;
+    }
     return dot;
 }
 

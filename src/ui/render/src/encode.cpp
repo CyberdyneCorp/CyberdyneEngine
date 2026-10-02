@@ -23,7 +23,7 @@ namespace {
 /// cy/ui.slang's `roundedBoxDistance`.
 [[nodiscard]] f32 rounded_box_distance(f32 px, f32 py, f32 half_x, f32 half_y,
                                        f32 radius) noexcept {
-    const f32 r = std::min(radius, std::min(half_x, half_y));
+    const f32 r = std::min({radius, half_x, half_y});
     const f32 qx = std::fabs(px) - half_x + r;
     const f32 qy = std::fabs(py) - half_y + r;
     const f32 mx = std::max(qx, 0.0F);

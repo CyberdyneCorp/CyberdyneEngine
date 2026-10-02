@@ -42,5 +42,34 @@ painted, and growth between two glyphs of one frame would move the first.
 `render.ui` pins the frame with no interface to a reference drawn with main's frame code before the
 seam existed, compares the device with `draw_reference` to one 8-bit step, checks order, nested
 clipping and opacity byte for byte, counts one draw per batch, and holds the HUD and console to a
-golden image. Each case was proven red by a recorded mutation (the change's PR description lists
-them).
+golden image. Each case was proven red by a mutation of the code it holds:
+
+| Case | Mutation | Result |
+|---|---|---|
+| `unit.ui` opacity | opacity not inherited from the parent | red |
+| `unit.ui` premultiplied scaling | truncate instead of round | red |
+| `unit.ui` content painting | content outside the clip not culled | red |
+| `unit.ui` empty containers | every element emits a primitive | red |
+| `unit.ui` shape fields | border colour read from the background | red |
+| `unit.render_forward` interface producer | `ui_stage` ignored | red |
+| `unit.ui_text` built-in font | row bits read in reverse | red |
+| `unit.ui_text` glyph placement | baseline dropped | red |
+| `unit.ui_text` warmed atlas | no warming at start | red |
+| `unit.ui_text` measurement | pixel scale ignored | red |
+| `unit.ui_text` replacing text | compaction loses offsets | red (abort) |
+| `unit.ui_console` scrollback | rows bound one line late | red |
+| `unit.ui_console` repaint | a print marks measure dirty | red |
+| `unit.ui_console` commands | arguments keep the separating space | red |
+| `unit.ui_console` layout | panel padding dropped | red |
+| `unit.ui_render` round trip | border width not unscaled | red |
+| `unit.ui_render` scissor | floor instead of the pixel-centre rule | red |
+| `unit.ui_render` draws | empty scissors not dropped | red |
+| `unit.ui_render` whole pixels | coverage offset 0.4 | red |
+| `unit.ui_render` reference blend | destination not attenuated | red |
+| `unit.ui_render` glyph sampling | round instead of floor | red |
+| `render.ui` (a) | the pass clears and records with nothing to draw | red |
+| `render.ui` (b) | host coverage offset 0.4 | red |
+| `render.ui` (c) | children visited last-to-first | red |
+| `render.ui` (d) | every draw scissored to the viewport | red |
+| `render.ui` (e) | opacity not applied to alpha | red |
+| `render.ui` (f) | the HUD's panel colour changed by four steps | red |

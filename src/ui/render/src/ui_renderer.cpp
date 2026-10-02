@@ -572,17 +572,19 @@ void UiRenderer::record(const PassContext& context) noexcept {
     push.inverse_extent[0] = 2.0F / static_cast<f32>(desc_.width);
     push.inverse_extent[1] = 2.0F / static_cast<f32>(desc_.height);
     push.flags = flags_;
-    i32 bound_page = -1;
+    bool bound = false;
+    u16 bound_page = 0;
     for (usize index = 0; index < list_.draws.size(); ++index) {
         const UiDraw& draw = list_.draws[index];
-        if (static_cast<i32>(draw.atlas) != bound_page) {
+        if (!bound || draw.atlas != bound_page) {
             Expected<rhi::DescriptorSetHandle, Error> set = set_for(draw.atlas, slot_);
             if (!set.has_value()) {
                 break;
             }
             commands.bind_descriptor_sets(layout_, 0,
                                           Span<const rhi::DescriptorSetHandle>(&*set, 1));
-            bound_page = static_cast<i32>(draw.atlas);
+            bound = true;
+            bound_page = draw.atlas;
             ++report_.page_binds;
         }
         commands.set_scissor(rhi::Rect2D{static_cast<i32>(draw.scissor.x),

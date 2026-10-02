@@ -8,6 +8,7 @@
 #include <cy/ui/text/builtin_font.h>
 #include <cy/ui/text/text_painter.h>
 
+#include <cmath>
 #include <string_view>
 
 using namespace cy;
@@ -40,8 +41,8 @@ struct Fixture {
 [[nodiscard]] u8 atlas_at(const TextPainter& painter, const Primitive& glyph, u32 x,
                           u32 y) noexcept {
     const u32 extent = painter.atlas_extent();
-    const auto left = static_cast<u32>((glyph.uv.x * static_cast<f32>(extent)) + 0.5F);
-    const auto top = static_cast<u32>((glyph.uv.y * static_cast<f32>(extent)) + 0.5F);
+    const auto left = static_cast<u32>(std::lround(glyph.uv.x * static_cast<f32>(extent)));
+    const auto top = static_cast<u32>(std::lround(glyph.uv.y * static_cast<f32>(extent)));
     return painter.atlas_pixels()[(static_cast<usize>(top + y) * extent) + left + x];
 }
 

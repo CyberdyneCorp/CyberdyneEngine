@@ -87,7 +87,7 @@ private:
     [[nodiscard]] Status create_minimap(ui::ElementId root) noexcept;
     [[nodiscard]] Status create_selection(ui::ElementId root) noexcept;
     [[nodiscard]] Status create_row(Row& row) noexcept;
-    [[nodiscard]] Status set_text(ui::ElementId element, const char* text, u32 colour) noexcept;
+    [[nodiscard]] Status set_text(ui::ElementId target, const char* text, u32 colour) noexcept;
 
     ui::ElementStore* store_ = nullptr;
     ui::TextPainter* text_ = nullptr;
