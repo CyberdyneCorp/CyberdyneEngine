@@ -106,6 +106,17 @@ function(cy_import_declare_tests)
             KIND integration
             SOURCES "${tests_dir}/test_fbx_skeleton.cpp"
             DEPENDENCIES cy::import cy::animation)
+
+        # `animation_cook` holds the cook-to-runtime seam (issue #76 stage 2): the skeleton and clip
+        # records the importer writes decode with the RUNTIME's `cy/animation/cooked.h` and encode
+        # back to the same bytes, and `cook_locomotion_set` turns imported sources into the three
+        # records a game loads. Here rather than in src/animation/tests/ because it needs both the
+        # importer and the runtime, and the runtime may not link the importer.
+        cy_add_test(
+            NAME animation_cook
+            KIND integration
+            SOURCES "${tests_dir}/test_animation_cook.cpp"
+            DEPENDENCIES cy::import cy::animation cy::animation-assets cy::graph)
     endif()
 
     # `import_fbx_clip` is the suite for step 8: the animation-only document whose silent drop this

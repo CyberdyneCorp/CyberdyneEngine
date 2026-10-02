@@ -1,9 +1,12 @@
 # `samples/09b-animated-character` — four Mixamo files, one character, one video
 
-M8.d's artefact. It imports four FBX exports, retargets three of their clips onto the rig that came
-with the fourth, compiles a four-state locomotion machine over them, evaluates a pose at a fixed
-timestep, publishes it into the GPU pose world, skins the character with the compute dispatch that
-reads it, and writes one PNG per frame.
+M8.d's artefact, ported onto the engine's animation runtime by issue #76. It imports four FBX
+exports, COOKS them — the rig's skeleton, three clips retargeted onto it, and a four-state locomotion
+program compiled at cook time — LOADS the cooked records by asset id through the asset system, and
+animates one entity carrying an `Animator` with the engine's `AnimationSystem` inside a
+`runtime::Simulation` at a fixed tick. The system publishes into the GPU pose world, the compute
+dispatch skins the character from it, and the program writes one PNG per frame. The only per-frame
+animation code the program has is the request it raises.
 
 ![the character, mid-run](../../docs/design/images/animated-character.png)
 
@@ -23,9 +26,11 @@ just capture-animated-character --sources <directory holding the four .fbx files
 | FBX → skeleton | `tools/import/` step 7 | 65 joints, 22 of 22 humanoid slots mapped, from each of the four files |
 | FBX → clip | `tools/import/` step 8 | one clip per file, 0.63 s to 9.93 s, quantised by the engine's own codec |
 | rig → rig | `cy/animation/retarget_build.h` | the three animation-only rigs disagree with the mesh's rig by up to **29.89°** at rest; `build_retarget_profile` pairs all 65 joints and `bake_clip` absorbs the difference |
-| clips → machine | `cy/graph/locomotion.h` | four states, seven transitions, compiled by `compile_pose` |
-| machine → pose | `cy/animation/evaluate.h` | `advance` then `evaluate`, fixed step, no wall clock |
-| pose → matrices | `cy/animation/pose_world.h` | `publish_pose`, double buffered; the offset alternates every frame |
+| clips → machine | `cy/graph/locomotion.h` | four states, seven transitions, compiled by `compile_pose` at COOK time |
+| imports → cooked records | `cy/import/animation_cook.h` | `cook_locomotion_set`, the `animation` build-graph producer's work: a skeleton, four clips and a program |
+| records → rig | `cy/animation/library.h` | loaded by asset id through `AssetSystem`, bound by clip name |
+| entity → pose | `cy/animation/animation_system.h` | the `AnimationSystem`: advance per simulation tick, evaluate in `Stage::Animation`, no wall clock |
+| pose → matrices | `cy/animation/pose_world.h` | published into the system's pose world, double buffered; the offset alternates every frame |
 | matrices → vertices | `cy/rendering/skinning/` | a compute dispatch, on the device |
 | vertices → pixels | this directory | the dispatch's output buffer bound as vertex buffer 0 |
 
@@ -86,24 +91,52 @@ makes. What is gated automatically is every link underneath it: `unit.import`, `
 `integration.animation_runtime`, `integration.graph_compiler`, `render.skinning` and
 `render.skinned_draw`.
 
-## Two defects this artefact found
+## Two defects this artefact found, fixed by issue #76
 
-Both are in modules it does not own, both are worked around in place with the reason written beside
-the workaround, and both were found by the program's own `worst joint step between two frames`
-measurement rather than by looking at the picture.
+Both are in the runtime, both were found by the program's own `worst joint step between two frames`
+measurement rather than by looking at the picture, and both were worked around here until the frame
+system needed them gone. Each now has a regression test that fails on the old code.
 
-1. **`bake_clip` ends every baked clip on its source's FIRST frame.** It resamples
+1. **`bake_clip` ended every baked clip on its source's FIRST frame.** It resamples
    `floor(duration * rate) + 1` frames, so its last sample is taken at exactly `duration`, and
-   `Clip::sample` wraps that by the source's loop mode — `wrap()` under `LoopMode::Loop` sends
-   `duration` to zero. FBX carries no loop flag, so step 8 gives every imported clip the runtime's
-   `Loop` default. On a cycle that is invisible; on a death it is a character that falls over for
-   4.6 seconds and stands up in one frame. Measured: 2,427 mm of joint movement in one thirtieth of a
-   second. `character.cpp` declares the source non-looping for the duration of the bake.
+   `Clip::sample` wrapped that by the source's loop mode — `wrap()` under `LoopMode::Loop` sends
+   `duration` to zero. On a death that was a character that falls over for 4.6 seconds and stands up
+   in one frame: 2,427 mm of joint movement in one thirtieth of a second. `bake_clip` now samples the
+   end with `Clip::sample_unwrapped`, and `character.cpp` no longer declares the source non-looping
+   for the bake.
 
-2. **A state's clip clock restarts when its incoming blend completes.**
-   `graph::pose::advance` sets `PoseInstance::state_time = 0` the instant a transition finishes,
-   and `LocomotionDriver::follow` derives the clock from it — but during the blend the incoming state
-   was already being sampled, from `blend_elapsed`. The incoming clip therefore jumps backwards by
-   one blend duration on the frame it becomes active: 0.15 s of a 0.633 s run cycle, 802 mm in one
-   frame. `animation::advance`'s `reset_state_times` does the same by another route. `main.cpp`'s
-   `StateClocks` keeps its own clocks, which is what `locomotion.h` says the host is for.
+2. **A state's clip clock restarted when its incoming blend completed**, jumping the incoming clip
+   back by one blend duration — 0.15 s of a 0.633 s run cycle, 802 mm in one frame — and every clock
+   wrapped whatever the loop flag. A state's clips now start when it becomes a blend's target, and a
+   held clock stops at the duration. `main.cpp`'s `StateClocks` is gone.
+
+## What moving onto the engine path changed in the picture
+
+Captured before (the M8.d program, main at `ed7f90c9`) and after, 390 frames at 960x540 and 30 fps,
+the take is NOT byte-identical, and the difference is the engine's rather than the sample's:
+
+- **The clocks are the runtime's.** `StateClocks` started a blend target's clock at one tick and kept
+  an unwrapped elapsed time; the runtime starts it at zero on the tick the blend begins and wraps it
+  incrementally. After every transition the incoming clip plays one frame (1/30 s) later, and a
+  wrapped clock can differ in its last bits.
+- **The clips are adopted, not re-authored.** The program used to dequantise every cooked clip and run
+  the codec a second time; now the keys arrive exactly as the importer's codec stored them, so the
+  walk and the three bakes' sources differ by up to one quantisation step.
+- **The bakes end on the source's last frame** (defect 1 above) rather than on a source declared
+  non-looping for the bake, which samples the same pose by a different route.
+
+Measured by comparing the two takes frame by frame (pixels whose grey difference is non-zero, of
+518,400):
+
+| Frame | When | Pixels that differ | Why |
+|---|---|---|---|
+| 0 | idle | 47 | the idle's bake source is adopted rather than re-encoded: silhouette edges move by a fraction of a pixel |
+| 30 | idle | 189 | the same |
+| 61 | the idle-to-walk blend has begun | 15,224 | the walk's clock now starts on the tick the blend begins, one frame later than `StateClocks` started it |
+| 111, 200, 300 | walk, run, death | 24,000–30,000 | every later clip carries that one-frame phase difference |
+| 389 | the death, held | 126 | both hold the death's last frame, so the pictures converge again |
+
+No frame of the two takes is byte-identical, and the gates the program applies — every state
+reached, no frozen pose, both double-buffered ranges alternating, zero validation errors — pass on
+both. The worst joint step between two frames moved from 381.7 mm at frame 211 to 374.5 mm at frame
+212, the run-to-walk blend, which is one frame later for the reason in the table.

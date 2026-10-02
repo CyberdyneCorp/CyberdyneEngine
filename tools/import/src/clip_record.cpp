@@ -8,82 +8,22 @@
 // The definition, which `cy/import/clip_record.h` only forward-declares — see the note there for
 // why a public header may not include it.
 #    include <cy/animation/clip.h>
-#endif
-
-#include <cstring>
-
-#ifdef CY_IMPORT_ANIMATION
+#    include <cy/animation/cooked.h>
+#    include <cy/core/memory/system_allocator.h>
 
 namespace cy::import {
-namespace {
-
-void put_u16(Array<u8>& out, u16 value) noexcept {
-    (void)out.push_back(static_cast<u8>(value & 0xFFU));
-    (void)out.push_back(static_cast<u8>((value >> 8U) & 0xFFU));
-}
-
-void put_u32(Array<u8>& out, u32 value) noexcept {
-    for (u32 index = 0; index < 4; ++index) {
-        (void)out.push_back(static_cast<u8>((value >> (index * 8U)) & 0xFFU));
-    }
-}
-
-void put_f32(Array<u8>& out, f32 value) noexcept {
-    u32 bits = 0;
-    static_assert(sizeof(bits) == sizeof(value));
-    std::memcpy(&bits, &value, sizeof(bits));
-    put_u32(out, bits);
-}
-
-/// A counted string: the length, then the bytes. Never a terminator, because a name may not be
-/// ASCII and a reader must not have to scan for an end the file did not promise.
-void put_text(Array<u8>& out, std::string_view text) noexcept {
-    put_u32(out, static_cast<u32>(text.size()));
-    for (const char character : text) {
-        (void)out.push_back(static_cast<u8>(character));
-    }
-}
-
-}  // namespace
 
 Status write_cooked_clip(const animation::Clip& clip, Span<const std::string_view> joint_names,
                          Array<u8>& out) noexcept {
-    put_u32(out, kCookedClipVersion);
-    put_text(out, clip.name().text());
-    put_f32(out, clip.duration());
-    put_u32(out, static_cast<u32>(clip.loop_mode()));
-    put_f32(out, clip.sample_rate_hint());
-    put_u32(out, clip.root_motion_joint());
-
-    put_u32(out, static_cast<u32>(joint_names.size()));
+    // The runtime's writer, over the names as the runtime holds them. One writer for the record,
+    // beside the one reader the runtime loads with.
+    Array<Name> names(system_allocator(MemoryDomain::Animation));
     for (const std::string_view joint : joint_names) {
-        put_text(out, joint);
-    }
-
-    put_u32(out, clip.track_count());
-    for (const animation::TrackDesc& track : clip.tracks()) {
-        put_u32(out, static_cast<u32>(track.kind));
-        put_u32(out, static_cast<u32>(track.interpolation));
-        put_u32(out, track.joint);
-        put_u32(out, track.constant ? 1U : 0U);
-        put_u32(out, track.first_key);
-        put_u32(out, track.key_count);
-        put_f32(out, track.range_min.x);
-        put_f32(out, track.range_min.y);
-        put_f32(out, track.range_min.z);
-        put_f32(out, track.range_max.x);
-        put_f32(out, track.range_max.y);
-        put_f32(out, track.range_max.z);
-    }
-
-    put_u32(out, static_cast<u32>(clip.keys().size()));
-    for (const animation::PackedKey& key : clip.keys()) {
-        put_f32(out, key.time);
-        for (const u16 component : key.c) {
-            put_u16(out, component);
+        if (Status pushed = names.push_back(Name::intern(joint)); !pushed) {
+            return pushed;
         }
     }
-    return ok();
+    return animation::encode_clip(clip, names.span(), out);
 }
 
 }  // namespace cy::import

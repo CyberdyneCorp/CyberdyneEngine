@@ -1,14 +1,12 @@
 #include "character.h"
 
-#include <cy/animation/retarget.h>
-#include <cy/animation/retarget_build.h>
+#include <cy/animation/cooked.h>
 #include <cy/core/assets/path.h>
 #include <cy/core/math/quat.h>
 #include <cy/core/math/scalar.h>
 #include <cy/core/math/transform.h>
-#include <cy/import/animation_bridge.h>
+#include <cy/core/memory/system_allocator.h>
 #include <cy/import/fbx.h>
-#include <cy/import/fbx_clip.h>
 #include <cy/import/fbx_skeleton.h>
 #include <cy/import/gltf.h>
 
@@ -20,41 +18,8 @@
 namespace cy::sample::character {
 namespace {
 
-using import::CookedClip;
-using import::CookedClipKey;
-using import::CookedClipTrack;
-using import::ImportedSkeleton;
-
-/// The codec's quantisation constant, from `src/animation/src/clip.cpp`.
-///
-/// DUPLICATED, and that is a cost worth naming rather than hiding behind a helper. `Clip` exposes
-/// its stored keys — `keys()`'s own comment says a cooked clip IS those bytes — but exposes no way
-/// to put them back, because the only thing that can produce the quantised form is `compress()`.
-/// So a consumer that reads a cooked clip has to dequantise it and re-author, and the constant it
-/// divides by has to match the one that multiplied. The alternative is a `Clip::adopt_packed()`
-/// this artefact would be the first and only caller of, in a module it does not own.
-constexpr f32 kQuantiseMax = 65535.0F;
-
-[[nodiscard]] f32 dequantise(u16 value, f32 low, f32 high) noexcept {
-    return low + ((static_cast<f32>(value) / kQuantiseMax) * (high - low));
-}
-
-/// One stored key, back as the value `add_key` takes. The inverse of `pack()` in clip.cpp, written
-/// against the same two cases: a rotation over the fixed [-1, 1] component range, and everything
-/// else over the track's own derived range.
-[[nodiscard]] Vec4 unpack_key(const CookedClipTrack& track, const CookedClipKey& key) noexcept {
-    if (static_cast<animation::TrackKind>(track.kind) == animation::TrackKind::Rotation) {
-        const Quat rotation{
-            dequantise(key.components[0], -1.0F, 1.0F), dequantise(key.components[1], -1.0F, 1.0F),
-            dequantise(key.components[2], -1.0F, 1.0F), dequantise(key.components[3], -1.0F, 1.0F)};
-        const f32 length_sq = length_squared(rotation);
-        const Quat unit = length_sq <= math::kSmallLength ? Quat::identity() : normalize(rotation);
-        return Vec4{unit.x, unit.y, unit.z, unit.w};
-    }
-    return Vec4{dequantise(key.components[0], track.range_min.x, track.range_max.x),
-                dequantise(key.components[1], track.range_min.y, track.range_max.y),
-                dequantise(key.components[2], track.range_min.z, track.range_max.z), 0.0F};
-}
+using import::ImportResult;
+using import::SubAsset;
 
 [[nodiscard]] Status read_file(const std::string& path, std::vector<u8>& out) noexcept {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -150,54 +115,6 @@ constexpr f32 kQuantiseMax = 65535.0F;
     }
     report.warnings = static_cast<u32>(out.warning_count());
     return ok();
-}
-
-/// Turn a cooked clip back into a runtime one, authored against `joint_count` joints.
-///
-/// The keys are dequantised and re-authored rather than adopted, for the reason `kQuantiseMax`'s
-/// comment gives. What that costs is one extra pass of the codec: `compress()` runs on keys that
-/// have already been fitted and quantised once, so the second fit keeps every key the first one did
-/// (they already lie on their own straight segments) and the second quantisation lands on the same
-/// grid. It is measured — `report.worst_rotation_degrees` is the SECOND pass's measurement — rather
-/// than argued.
-[[nodiscard]] Status build_clip(const CookedClip& cooked, u16 joint_count, Name name,
-                                const animation::CompressionSettings& settings,
-                                animation::Clip& out) noexcept {
-    out.set_name(name);
-    out.set_duration(cooked.duration);
-    out.set_loop_mode(static_cast<animation::LoopMode>(cooked.loop_mode));
-    out.set_sample_rate_hint(cooked.sample_rate_hint);
-    if (cooked.root_motion_joint != 0xFFFFU) {
-        out.set_root_motion_joint(cooked.root_motion_joint);
-    }
-    for (const CookedClipTrack& track : cooked.tracks) {
-        // A curve or property track addresses no joint. The FBX importer produces neither, so this
-        // is a refusal to invent one rather than a branch with a body.
-        if (track.joint >= joint_count) {
-            continue;
-        }
-        const Expected<u32, Error> index =
-            out.add_joint_track(static_cast<animation::TrackKind>(track.kind), track.joint,
-                                static_cast<animation::Interpolation>(track.interpolation));
-        if (!index) {
-            return make_unexpected(index.error());
-        }
-        // `add_key` refuses any track but the last one added, so a track's keys are all appended
-        // before the next track is opened. That is why this is a nested loop and not two passes.
-        for (u32 key = 0; key < track.key_count; ++key) {
-            const usize at = static_cast<usize>(track.first_key) + key;
-            if (at >= cooked.keys.size()) {
-                return fail(ErrorCode::OutOfRange,
-                            "a cooked clip track addresses a key it has not");
-            }
-            if (Status added =
-                    out.add_key(*index, cooked.keys[at].time, unpack_key(track, cooked.keys[at]));
-                !added) {
-                return added;
-            }
-        }
-    }
-    return out.compress(settings);
 }
 
 /// Where a joint's bone segment runs: from the joint to each of its children, in model space.
@@ -329,20 +246,20 @@ void weight_bytes(const NearestBones& nearest, u8 (&out)[4]) noexcept {
 
 }  // namespace
 
-Name motion_name(Motion motion) noexcept {
+const char* motion_name(Motion motion) noexcept {
     switch (motion) {
         case Motion::Idle:
-            return Name::intern("idle");
+            return "idle";
         case Motion::Walk:
-            return Name::intern("walk");
+            return "walk";
         case Motion::Run:
-            return Name::intern("run");
+            return "run";
         case Motion::Die:
-            return Name::intern("die");
+            return "die";
         case Motion::Count:
             break;
     }
-    return Name::intern("idle");
+    return "idle";
 }
 
 CharacterSources default_sources(std::string_view directory) noexcept {
@@ -525,184 +442,93 @@ namespace {
     return ok();
 }
 
-/// Import one source file and produce the skeleton and the clip it carries.
-///
-/// `mesh_out` is filled only for the file the mesh comes from; the other three carry no mesh at
-/// all, which is what an animation-only export from a character library IS.
-[[nodiscard]] Status load_one(const CharacterSources& sources, Motion motion,
-                              animation::Skeleton& skeleton, animation::SkeletonProfile& humanoid,
-                              animation::Clip& clip, Character* mesh_out,
-                              SourceReport& report) noexcept {
+/// Import one source file, and count what it produced.
+[[nodiscard]] Status import_one(const CharacterSources& sources, Motion motion,
+                                ImportResult& result, SourceReport& report) noexcept {
     const std::string path = sources.directory + sources.files[static_cast<u32>(motion)];
     std::vector<u8> bytes;
     if (Status read = read_file(path, bytes); !read) {
         report.file = path;
         return read;
     }
-
-    import::ImportResult result;
     const std::string virtual_path =
         std::string("models/") + sources.files[static_cast<u32>(motion)];
-    if (Status imported = import_file(path, virtual_path,
-                                      Span<const u8>(bytes.data(), bytes.size()), result, report);
-        !imported) {
-        return imported;
-    }
+    return import_file(path, virtual_path, Span<const u8>(bytes.data(), bytes.size()), result,
+                       report);
+}
 
-    const import::SubAsset* skeleton_asset = find_prefixed(result, import::kSkeletonSubAssetPrefix);
+/// The source's own rig, as step 7 recorded it: what the report prints beside the clip.
+[[nodiscard]] Status report_rig(const ImportResult& result, SourceReport& report) noexcept {
+    const SubAsset* skeleton_asset = find_prefixed(result, import::kSkeletonSubAssetPrefix);
     if (skeleton_asset == nullptr) {
         return fail(ErrorCode::NotFound,
                     "a source file produced no skeleton; step 7 imports one from every node that "
                     "carries a bone attribute, so a file without one is not a rig");
     }
-    ImportedSkeleton record;
-    if (Status read = import::read_cooked_skeleton(payload_of(*skeleton_asset), record); !read) {
+    animation::Skeleton rig(system_allocator(MemoryDomain::Animation));
+    animation::SkeletonProfile humanoid;
+    if (Status read = animation::decode_skeleton(payload_of(*skeleton_asset), rig, humanoid);
+        !read) {
         return read;
     }
-    if (Status built = import::build_runtime_skeleton(record, skeleton, humanoid); !built) {
-        return built;
-    }
-    skeleton.set_name(Name::intern(record.name));
-    report.joints = skeleton.joint_count();
+    report.joints = rig.joint_count();
     report.humanoid_mapped = humanoid.mapped_count();
-
-    const import::SubAsset* clip_asset = find_prefixed(result, "animation/");
-    if (clip_asset == nullptr) {
-        return fail(ErrorCode::NotFound,
-                    "a source file produced no animation; a Mixamo export carries exactly one "
-                    "stack that animates anything, and step 8 skips a stack whose every track the "
-                    "codec collapsed to one key");
-    }
-    CookedClip cooked;
-    if (Status read = import::read_cooked_clip(payload_of(*clip_asset), cooked); !read) {
-        return read;
-    }
-    report.duration = cooked.duration;
-    report.tracks = static_cast<u32>(cooked.tracks.size());
-    report.keys = static_cast<u32>(cooked.keys.size());
-
-    const animation::CompressionSettings settings;
-    if (Status rebuilt =
-            build_clip(cooked, skeleton.joint_count(), motion_name(motion), settings, clip);
-        !rebuilt) {
-        return rebuilt;
-    }
-
-    if (mesh_out == nullptr) {
-        return ok();
-    }
-    return read_mesh(result, *mesh_out);
+    return ok();
 }
 
 }  // namespace
 
 Status load_character(Allocator& allocator, const CharacterSources& sources,
                       Character& out) noexcept {
-    out.clips.reserve(kMotionCount);
-
-    // --- The character's own rig and mesh, from the one file that has both.
-    if (Status loaded = load_one(sources, sources.mesh_from, out.skeleton, out.humanoid,
-                                 out.clips.emplace_back(allocator), &out,
-                                 out.sources[static_cast<u32>(sources.mesh_from)]);
-        !loaded) {
-        return loaded;
-    }
-    out.sources[static_cast<u32>(sources.mesh_from)].final_tracks = out.clips[0].track_count();
-    out.sources[static_cast<u32>(sources.mesh_from)].final_keys =
-        static_cast<u32>(out.clips[0].keys().size());
-    out.sources[static_cast<u32>(sources.mesh_from)].worst_rotation_degrees =
-        out.clips[0].report().worst_rotation_degrees;
-
-    // The clip for the file the rig came from needs no retarget: it is already indexed against
-    // these joints. Moving it into its own slot is what makes `clips[motion]` the whole of the
-    // lookup everything downstream does.
-    std::vector<animation::Clip> ordered;
-    ordered.reserve(kMotionCount);
-    for (u32 motion = 0; motion < kMotionCount; ++motion) {
-        ordered.emplace_back(allocator);
-    }
-    ordered[static_cast<u32>(sources.mesh_from)] = std::move(out.clips[0]);
-    out.clips = std::move(ordered);
-
-    // --- The three animation-only files, retargeted onto that rig.
+    (void)allocator;
+    ImportResult imports[kMotionCount];
     for (u32 index = 0; index < kMotionCount; ++index) {
         const auto motion = static_cast<Motion>(index);
-        if (motion == sources.mesh_from) {
-            continue;
+        if (Status imported = import_one(sources, motion, imports[index], out.sources[index]);
+            !imported) {
+            return imported;
         }
+        if (Status reported = report_rig(imports[index], out.sources[index]); !reported) {
+            return reported;
+        }
+    }
+    if (Status read = read_mesh(imports[static_cast<u32>(sources.mesh_from)], out); !read) {
+        return read;
+    }
+
+    // THE COOK. The character's skeleton is the mesh file's; the other three clips are retargeted
+    // onto it and baked, because their rest poses differ from it by up to 29.89 degrees; the death
+    // holds its last frame, which FBX has no flag to say; and the machine is compiled. The same
+    // function is the `animation` build-graph producer's work.
+    import::AnimationCookSpec spec;
+    spec.rig = &imports[static_cast<u32>(sources.mesh_from)];
+    for (u32 index = 0; index < kMotionCount; ++index) {
+        const auto motion = static_cast<Motion>(index);
+        spec.clips.push_back(import::AnimationClipSource{&imports[index], motion_name(motion),
+                                                         motion != Motion::Die});
+    }
+    if (Status cooked = import::cook_locomotion_set(spec, out.cooked); !cooked) {
+        return cooked;
+    }
+    for (u32 index = 0; index < kMotionCount; ++index) {
+        const import::CookedAnimationClip& clip = out.cooked.clips[index];
         SourceReport& report = out.sources[index];
-
-        animation::Skeleton source_rig(allocator);
-        animation::SkeletonProfile source_humanoid;
-        animation::Clip source_clip(allocator);
-        if (Status loaded = load_one(sources, motion, source_rig, source_humanoid, source_clip,
-                                     nullptr, report);
-            !loaded) {
-            return loaded;
-        }
-
-        // MEASURED BEFORE IT IS RECONCILED. The four exports are the same 65-joint hierarchy and do
-        // NOT share a rest pose — step 7 reads `ufbx_node::local_transform`, which is a bind pose
-        // in a file that carries a skin and the node's authored default in a file that does not.
-        // The retarget's rest reconciliation is exactly what absorbs that, and a reader should see
-        // the number it absorbed rather than take the claim on faith.
-        const animation::RigMatch match = animation::compare_rigs(source_rig, out.skeleton);
-        report.rest_difference_degrees = match.worst_rest_rotation_degrees;
-        report.rest_difference_metres = match.worst_rest_translation;
-        report.retargeted = true;
-
-        animation::RetargetProfile profile(allocator);
-        animation::RetargetBuildReport retarget;
-        if (Status built = animation::build_retarget_profile(
-                source_rig, source_humanoid, out.skeleton, out.humanoid, profile, retarget);
-            !built) {
-            return built;
-        }
-        report.retarget_pairs = retarget.pairs;
-        report.height_scale = profile.height_scale();
-
-        // A DEFECT IN `bake_clip`, WORKED AROUND HERE AND REPORTED RATHER THAN HIDDEN.
-        //
-        // `bake_clip` resamples `floor(duration * rate) + 1` frames, so its LAST sample is taken at
-        // exactly `clip.duration()`. `Clip::sample` wraps that time by the source clip's own loop
-        // mode, and `wrap()` under `LoopMode::Loop` sends `duration` to ZERO — so the last key of
-        // every baked clip is the source's FIRST frame. On a cyclic clip that is invisible, because
-        // frame zero and frame N of a walk cycle are the same pose. On a death it is a character
-        // that falls over for 4.6 seconds and then stands up in one frame, which is exactly what
-        // this artefact's own `worst joint step between two frames` measurement caught: 2.4 metres,
-        // at the frame where the clock reached the clip's duration.
-        //
-        // FBX carries no loop flag, so step 8 gives every imported clip the runtime's default —
-        // `LoopMode::Loop` — and this is where that default meets a resampler that reads the end of
-        // the timeline. Declaring the SOURCE non-looping for the duration of the bake is correct
-        // whatever the clip is: a resampler asking for the pose at the end of a clip wants the last
-        // frame, never the first. The fix belongs in `bake_clip`, in a module this artefact does
-        // not own, and is reported as a finding.
-        source_clip.set_loop_mode(animation::LoopMode::None);
-
-        // Baked rather than retargeted per frame: `retarget.h` says to prefer the bake for the
-        // combinations a game ships, and a demonstration that plays four fixed clips on one rig is
-        // as shipped as a combination gets. The sample rate is the source clip's own hint, so a
-        // 30 Hz Mixamo export is baked at 30 Hz and not resampled to a number this file invented.
-        const animation::CompressionSettings settings;
-        animation::Clip baked(allocator);
-        if (Status done =
-                animation::bake_clip(allocator, profile, source_rig, out.skeleton, source_clip,
-                                     source_clip.sample_rate_hint(), settings, baked);
-            !done) {
-            return done;
-        }
-        baked.set_name(motion_name(motion));
-        baked.set_duration(source_clip.duration());
-        // A DEATH DOES NOT LOOP, and `build_locomotion_graph` refuses a spec that says it does. FBX
-        // carries no loop flag, so the runtime's own default — Loop — is what every imported clip
-        // arrives with; deciding otherwise is this artefact's call and is made here, once.
-        baked.set_loop_mode(motion == Motion::Die ? animation::LoopMode::None
-                                                  : animation::LoopMode::Loop);
-        report.final_tracks = baked.track_count();
-        report.final_keys = static_cast<u32>(baked.keys().size());
-        report.worst_rotation_degrees = baked.report().worst_rotation_degrees;
-        out.clips[index] = std::move(baked);
+        report.duration = clip.duration;
+        report.tracks = clip.source_tracks;
+        report.keys = clip.source_keys;
+        report.retargeted = clip.retargeted;
+        report.rest_difference_degrees = clip.rest_difference_degrees;
+        report.rest_difference_metres = clip.rest_difference_metres;
+        report.retarget_pairs = clip.retarget_pairs;
+        report.height_scale = clip.height_scale;
+        report.final_tracks = clip.tracks;
+        report.final_keys = clip.keys;
+        report.worst_rotation_degrees = clip.worst_rotation_degrees;
+    }
+    if (Status decoded =
+            animation::decode_skeleton(out.cooked.skeleton.span(), out.skeleton, out.humanoid);
+        !decoded) {
+        return decoded;
     }
 
     // --- The skin. The artist's weights when the cooked mesh carries them — which it has since

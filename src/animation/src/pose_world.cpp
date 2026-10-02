@@ -135,14 +135,31 @@ Status PoseWorld::publish(PoseHandle handle, Span<const Mat4> matrices) noexcept
         return fail(ErrorCode::InvalidArgument,
                     "fewer matrices were published than the instance has bones");
     }
+    const Span<Mat4> staged = staging(handle);
+    for (u32 bone = 0; bone < found->bones; ++bone) {
+        staged[bone] = matrices[bone];
+    }
+    return commit(handle);
+}
+
+Span<Mat4> PoseWorld::staging(PoseHandle handle) noexcept {
+    const Slot* slot = slot_of(handle);
+    if (slot == nullptr) {
+        return {};
+    }
+    const u32 first = slot->offset + ((slot->parity ^ 1U) * slot->bones);
+    return storage_.span().subspan(first, slot->bones);
+}
+
+Status PoseWorld::commit(PoseHandle handle) noexcept {
+    if (slot_of(handle) == nullptr) {
+        return fail(ErrorCode::NotFound, "this pose handle names no live instance");
+    }
     Slot& slot = slots_[handle.index];
     // The rotation is an index flip. Nothing is copied, and last frame's matrices stay exactly
     // where the motion-vector pass expects them.
     slot.parity ^= 1U;
     const u32 first = slot.offset + (slot.parity * slot.bones);
-    for (u32 bone = 0; bone < slot.bones; ++bone) {
-        storage_[first + bone] = matrices[bone];
-    }
     mark_dirty(first, slot.bones);
     ++stats_.publishes;
     return ok();

@@ -88,6 +88,18 @@ public:
     /// what motion vectors read; nothing is copied.
     [[nodiscard]] Status publish(PoseHandle handle, Span<const Mat4> matrices) noexcept;
 
+    /// `publish` in two halves, for workers that each fill a different instance.
+    ///
+    /// `staging(handle)` is the half the NEXT publish writes — the previous frame's matrices, which
+    /// that publish overwrites anyway — writable in place, so a worker computes its instance's
+    /// skinning matrices straight into the world with no copy. It touches no state of the world, so
+    /// workers holding different handles may write concurrently. `commit(handle)` then makes the
+    /// staged half current exactly as `publish` would, and is NOT thread-safe: commits are made on
+    /// one thread after the workers have finished. A handle staged and never committed leaves the
+    /// current pose untouched; only its previous half has been overwritten.
+    [[nodiscard]] Span<Mat4> staging(PoseHandle handle) noexcept;
+    [[nodiscard]] Status commit(PoseHandle handle) noexcept;
+
     [[nodiscard]] Span<const Mat4> current(PoseHandle handle) const noexcept;
     [[nodiscard]] Span<const Mat4> previous(PoseHandle handle) const noexcept;
 

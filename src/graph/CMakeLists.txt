@@ -60,6 +60,7 @@ cy_add_module(
         src/lower_script_native.cpp
         src/merge.cpp
         src/passes.cpp
+        src/pose_program.cpp
         src/text.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-values)

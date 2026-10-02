@@ -64,6 +64,19 @@ function(cy_build_declare_tests)
     target_compile_definitions(cy_test_integration_build_content
                                PRIVATE CY_BUILD_TEST_DATA="${tests_dir}/data")
 
+    # `build_animation` is the `animation` producer (issue #76): four FBX imports and one character
+    # node over their bundles. Only with CY_ANIMATION, where the producer is registered. The FBX
+    # documents are the importer's own clip-suite builders, shared rather than copied.
+    if(CY_ANIMATION)
+        cy_add_test(
+            NAME build_animation
+            KIND integration
+            SOURCES "${tests_dir}/test_animation_producer.cpp"
+            DEPENDENCIES cy::build-graph cy::build-content cy::animation-assets cy::import)
+        target_include_directories(cy_test_integration_build_animation
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tools/import/tests")
+    endif()
+
     # `build_patch` exercises the hard-interrupt property of `Installation::apply` by forking a
     # child process and killing it at each patch stage. `fork` with no `exec` is POSIX-only: the
     # child inherits the fixture exactly as the parent has it, which is what makes this an

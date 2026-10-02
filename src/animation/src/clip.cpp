@@ -338,7 +338,42 @@ void widen(Vec3& low, Vec3& high, Vec4 value, bool first) noexcept {
 
 }  // namespace
 
+Status Clip::adopt_compressed(Span<const TrackDesc> tracks, Span<const PackedKey> keys) noexcept {
+    for (const TrackDesc& track : tracks) {
+        if (static_cast<u64>(track.first_key) + track.key_count > keys.size()) {
+            return fail(ErrorCode::OutOfRange, "a compressed track addresses keys the clip lacks");
+        }
+    }
+    tracks_.clear();
+    if (Status appended = tracks_.append(tracks); !appended) {
+        return appended;
+    }
+    packed_.clear();
+    if (Status appended = packed_.append(keys); !appended) {
+        return appended;
+    }
+    raw_.clear();
+    if (Status sized = raw_first_.resize(tracks.size()); !sized) {
+        return sized;
+    }
+    if (Status sized = raw_count_.resize(tracks.size()); !sized) {
+        return sized;
+    }
+    for (usize index = 0; index < tracks.size(); ++index) {
+        raw_first_[index] = 0;
+        raw_count_[index] = 0;
+    }
+    report_ = CompressionReport{};
+    compressed_ = true;
+    adopted_ = true;
+    return ok();
+}
+
 Status Clip::compress(const CompressionSettings& settings) noexcept {
+    if (adopted_) {
+        return fail(ErrorCode::InvalidArgument,
+                    "an adopted clip has no authored keys to compress; it is already compressed");
+    }
     report_ = CompressionReport{};
     report_.tracks = static_cast<u32>(tracks_.size());
 
@@ -475,16 +510,23 @@ Vec4 Clip::sample_track(u32 track, f32 time, ClipCursor& cursor) const noexcept 
 
 Status Clip::sample(f32 time, const JointMask& mask, ClipCursor& cursor, Span<Transform> out,
                     SampleStats& stats) const noexcept {
+    return sample_unwrapped(wrap(time), mask, cursor, out, stats);
+}
+
+Status Clip::sample_unwrapped(f32 time, const JointMask& mask, ClipCursor& cursor,
+                              Span<Transform> out, SampleStats& stats) const noexcept {
     if (!compressed_) {
         return fail(ErrorCode::InvalidArgument,
                     "a clip is sampled from its compressed form; call compress() at cook time");
     }
-    if (cursor.empty()) {
+    // A cursor sized for a different track count — a clip reloaded in place under an instance
+    // that kept its cursor — starts again rather than reading positions in another clip's tracks.
+    if (cursor.size() != tracks_.size()) {
         if (Status sized = cursor.reset(static_cast<u32>(tracks_.size())); !sized) {
             return sized;
         }
     }
-    const f32 wrapped = wrap(time);
+    const f32 wrapped = duration_ > 0.0F ? math::clamp(time, 0.0F, duration_) : 0.0F;
     u32 touched = 0;
     for (usize index = 0; index < tracks_.size(); ++index) {
         const TrackDesc& track = tracks_[index];

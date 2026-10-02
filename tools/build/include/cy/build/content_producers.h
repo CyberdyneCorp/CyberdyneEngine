@@ -80,6 +80,11 @@ inline constexpr u32 kLightmapProducerVersion = 4;
 /// the world's `bake-identity` option, and the cooked navigation mesh out. Issue #28.
 inline constexpr u32 kNavmeshProducerVersion = 1;
 
+/// The `animation` producer, registered when the build has `CY_ANIMATION`: a `cyanim 1` character
+/// description and the import bundles it names in; the character's cooked skeleton, clips and
+/// compiled locomotion program out (`cy/import/animation_cook.h`). Issue #76.
+inline constexpr u32 kAnimationProducerVersion = 1;
+
 }  // namespace cy::build
 
 #endif  // CY_BUILD_CONTENT_PRODUCERS_H

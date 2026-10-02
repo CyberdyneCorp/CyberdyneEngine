@@ -2,6 +2,7 @@
 
 #include <cy/build/content_producers.h>
 
+#include "animation_producer.h"
 #include "lightmap_producer.h"
 #include "navmesh_producer.h"
 
@@ -11,6 +12,7 @@
 #include <cy/core/assets/vfs.h>
 #include <cy/core/memory/ownership.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/import/animation_cook.h>
 #include <cy/import/importer.h>
 #include <cy/import/pipeline.h>
 
@@ -350,6 +352,15 @@ Status add_content_producers(ProducerRegistry& registry, const ecs::World* world
                                              /*distributable=*/true});
         !added) {
         return added;
+    }
+    // Distributable: a character cook is a pure function of its description and its upstream
+    // bundles. Registered only where the animation runtime exists to cook against.
+    if constexpr (import::kAnimationCookAvailable) {
+        if (Status added = registry.add(Producer{"animation", kAnimationProducerVersion,
+                                                 produce_animation, /*distributable=*/true});
+            !added) {
+            return added;
+        }
     }
 #if defined(CY_BUILD_HAS_VFX)
     // Distributable: a VFX cook reads nothing but its declared system and the modules it
