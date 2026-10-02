@@ -12,7 +12,7 @@
 // built-in font, and flattened by `ui::flatten` — the path a game takes.
 //
 // ================================================================================================
-// SIX PROPERTIES, EACH A CASE
+// SEVEN PROPERTIES, EACH A CASE
 // ================================================================================================
 //
 //   (a) with no interface attached, and with one attached that draws nothing, the frame is the
@@ -26,16 +26,20 @@
 //   (e) opacity: a half-transparent panel blends premultiplied over what is beneath, an invisible
 //       one draws nothing, and there is one indirect draw per batch `flatten()` made;
 //   (f) a strategy game's HUD and the developer console over the scene, against a committed golden
-//       image — the picture docs/design/images/ shows.
+//       image — the picture docs/design/images/ shows;
+//   (g) on an `Rgba8Srgb` output an opaque colour lands as the same bytes a UNORM output holds, and
+//       a translucent one blends in linear light — the `kUiOutputLinear` path, alone on a target.
 
 #include "frame_scene.h"
 #include "golden.h"
 #include "hud.h"
 
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/command_buffer.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/graph/executor.h>
 #include <cy/test/test.h>
 #include <cy/ui/console/console.h>
 #include <cy/ui/layout.h>
@@ -43,6 +47,7 @@
 #include <cy/ui/text/builtin_font.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -636,5 +641,207 @@ CY_TEST_CASE("(f) a strategy game's HUD and the console over the scene, against 
     CY_REQUIRE(run.render());
     save("ui-hud.png", run.pixels());
     check_against_reference("ui_hud.png", run.pixels());
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+// --- (g) An sRGB output --------------------------------------------------------------------------
+
+namespace {
+
+constexpr u32 kSrgbSide = 32;
+constexpr usize kSrgbTexels = static_cast<usize>(kSrgbSide) * kSrgbSide;
+/// The display-encoded byte the target starts as: `0x40` grey, opaque.
+constexpr u32 kSrgbBackground = 0xFF404040U;
+
+/// The copies on either side of the interface pass: a known picture in, the result out.
+struct SrgbTarget {
+    rhi::TextureHandle texture;
+    rhi::BufferHandle upload;
+    rhi::BufferHandle readback;
+};
+
+void record_srgb_fill(const rendering::PassContext& context, void* user) noexcept {
+    const auto* target = static_cast<const SrgbTarget*>(user);
+    rhi::BufferTextureCopy region;
+    region.texture_extent = rhi::Extent3D{kSrgbSide, kSrgbSide, 1};
+    context.commands->copy_buffer_to_texture(target->upload, target->texture,
+                                             Span<const rhi::BufferTextureCopy>(&region, 1));
+}
+
+void record_srgb_capture(const rendering::PassContext& context, void* user) noexcept {
+    const auto* target = static_cast<const SrgbTarget*>(user);
+    rhi::BufferTextureCopy region;
+    region.texture_extent = rhi::Extent3D{kSrgbSide, kSrgbSide, 1};
+    context.commands->copy_texture_to_buffer(target->texture, target->readback,
+                                             Span<const rhi::BufferTextureCopy>(&region, 1));
+}
+
+[[nodiscard]] f32 srgb_decode(f32 value) noexcept {
+    return value <= 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
+}
+
+[[nodiscard]] u32 srgb_encode_byte(f32 value) noexcept {
+    const f32 clamped = std::clamp(value, 0.0F, 1.0F);
+    const f32 encoded = clamped <= 0.0031308F ? clamped * 12.92F
+                                              : (1.055F * std::pow(clamped, 1.0F / 2.4F)) - 0.055F;
+    return static_cast<u32>(std::lround(encoded * 255.0F));
+}
+
+/// The interface drawn by `renderer` over an `Rgba8Srgb` target filled with `kSrgbBackground`.
+[[nodiscard]] bool render_srgb(DeviceFixture& fixture, UiRenderer& renderer,
+                               const PrimitiveBuffer& buffer, std::vector<u32>& out) {
+    rhi::Device& device = fixture.device();
+    SrgbTarget target;
+    rhi::TextureDescription texture;
+    texture.name = "ui srgb target";
+    texture.format = rhi::Format::Rgba8Srgb;
+    texture.extent = rhi::Extent3D{kSrgbSide, kSrgbSide, 1};
+    texture.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource |
+                    rhi::TextureUsage::TransferDestination;
+    rhi::BufferDescription upload;
+    upload.name = "ui srgb fill";
+    upload.size = kSrgbTexels * sizeof(u32);
+    upload.usage = rhi::BufferUsage::TransferSource;
+    upload.memory = rhi::MemoryUse::Upload;
+    rhi::BufferDescription readback = upload;
+    readback.name = "ui srgb capture";
+    readback.usage = rhi::BufferUsage::TransferDestination;
+    readback.memory = rhi::MemoryUse::Readback;
+    auto made_texture = device.create_texture(texture);
+    auto made_upload = device.create_buffer(upload);
+    auto made_readback = device.create_buffer(readback);
+    bool drawn = made_texture.has_value() && made_upload.has_value() && made_readback.has_value();
+    if (drawn) {
+        target = SrgbTarget{*made_texture, *made_upload, *made_readback};
+        auto* fill = static_cast<u32*>(device.buffer_mapped_pointer(target.upload));
+        drawn = fill != nullptr;
+        if (drawn) {
+            std::fill(fill, fill + kSrgbTexels, kSrgbBackground);
+        }
+    }
+    drawn = drawn && device.begin_frame().has_value();
+    if (drawn) {
+        bool executed = renderer.submit(buffer, 1.0F).has_value();
+        rendering::RenderGraph graph(allocator());
+        rendering::TextureRequest request;
+        request.name = "ui srgb target";
+        request.format = rhi::Format::Rgba8Srgb;
+        request.width = kSrgbSide;
+        request.height = kSrgbSide;
+        const rendering::ResourceId colour =
+            graph.import_texture(request, target.texture, rhi::ImageUse::Undefined);
+        graph.add_pass("ui srgb fill", rhi::QueueKind::Graphics)
+            .write(colour, rhi::Access::TransferWrite)
+            .record(&record_srgb_fill, &target);
+        rendering::ScreenSpaceStageInputs inputs;
+        inputs.target = colour;
+        inputs.width = kSrgbSide;
+        inputs.height = kSrgbSide;
+        executed = executed && renderer.declare(graph, inputs) != rendering::kInvalidPass;
+        rendering::BufferRequest capture;
+        capture.name = "ui srgb capture";
+        capture.size = readback.size;
+        capture.extra_usage = rhi::BufferUsage::TransferDestination;
+        const rendering::ResourceId destination = graph.import_buffer(capture, target.readback);
+        graph.add_pass("ui srgb capture", rhi::QueueKind::Graphics)
+            .read(colour, rhi::Access::TransferRead)
+            .write(destination, rhi::Access::TransferWrite)
+            .record(&record_srgb_capture, &target);
+        graph.add_pass("ui srgb capture host", rhi::QueueKind::Graphics)
+            .read(destination, rhi::Access::HostRead)
+            .side_effect();
+        {
+            rendering::GraphExecutor executor(allocator(), device);
+            executed =
+                executed && graph.status().has_value() &&
+                executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
+                    .has_value() &&
+                device.wait_idle().has_value();
+            executor.release();
+        }
+        const auto* mapped = static_cast<const u32*>(device.buffer_mapped_pointer(target.readback));
+        executed = executed && mapped != nullptr;
+        if (executed) {
+            out.assign(mapped, mapped + kSrgbTexels);
+        }
+        drawn = device.end_frame().has_value() && executed;
+    }
+    (void)device.wait_idle();
+    if (made_readback.has_value()) {
+        device.destroy_buffer(*made_readback);
+    }
+    if (made_upload.has_value()) {
+        device.destroy_buffer(*made_upload);
+    }
+    if (made_texture.has_value()) {
+        device.destroy_texture(*made_texture);
+    }
+    return drawn;
+}
+
+}  // namespace
+
+CY_TEST_CASE("(g) on an sRGB output the interface's bytes are its colours, blended in linear") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // An opaque red square and, beside it, half white over the grey the target starts as.
+    ElementStore store(allocator());
+    auto made = store.create(kNoElement, Name::intern("screen"));
+    CY_REQUIRE(made.has_value());
+    const ElementId root = *made;
+    store.layout_input(root)->model = LayoutModel::Absolute;
+    const auto square = [&store, root](f32 x, u32 colour) noexcept {
+        auto element = store.create(root, Name::intern("box"));
+        if (!element.has_value()) {
+            return kNoElement;
+        }
+        LayoutInput* input = store.layout_input(*element);
+        input->model = LayoutModel::Absolute;
+        input->offset_min = Vec2{x, 4.0F};
+        input->offset_max = Vec2{x + 12.0F, 16.0F};
+        store.paint(*element)->background = colour;
+        return *element;
+    };
+    CY_REQUIRE(square(2.0F, kRed) != kNoElement);
+    const ElementId glass = square(18.0F, 0xFFFFFFFFU);
+    CY_REQUIRE(glass != kNoElement);
+    store.paint(glass)->opacity = 0.5F;
+    ScaleSettings settings;
+    settings.mode = ScaleMode::FixedPixel;
+    const Vec2 viewport{static_cast<f32>(kSrgbSide), static_cast<f32>(kSrgbSide)};
+    LayoutReport laid{};
+    CY_REQUIRE(layout(store, settings, viewport, nullptr, laid).has_value());
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport flattened{};
+    CY_REQUIRE(flatten(store, ui::Rect{0.0F, 0.0F, viewport.x, viewport.y}, buffer, flattened)
+                   .has_value());
+
+    UiRenderer renderer(allocator());
+    UiRendererDescription description;
+    description.width = kSrgbSide;
+    description.height = kSrgbSide;
+    description.output_format = rhi::Format::Rgba8Srgb;
+    CY_REQUIRE(renderer.create(fixture.device(), description).has_value());
+    std::vector<u32> pixels;
+    CY_REQUIRE(render_srgb(fixture, renderer, buffer, pixels));
+    renderer.destroy();
+    const auto pixel = [&pixels](u32 x, u32 y) { return pixels[(y * kSrgbSide) + x]; };
+
+    // The opaque colour's display bytes, as a UNORM output holds them: decoded by the shader,
+    // encoded again by the target.
+    CY_CHECK_LE(channel_delta(pixel(8, 10), texel_of(kRed)), 1U);
+    // Nothing drawn is untouched.
+    CY_CHECK_EQ(pixel(1, 1), kSrgbBackground);
+    // Half white over 0x40 grey, blended by the hardware in linear light: 0.502 + 0.051 x 0.498.
+    const f32 alpha = 128.0F / 255.0F;
+    const u32 expected = srgb_encode_byte(alpha + (srgb_decode(64.0F / 255.0F) * (1.0F - alpha)));
+    for (u32 shift = 0; shift < 24U; shift += 8U) {
+        const u32 channel = (pixel(24, 10) >> shift) & 0xFFU;
+        CY_CHECK_GE(channel + 1U, expected);
+        CY_CHECK_LE(channel, expected + 1U);
+    }
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

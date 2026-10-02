@@ -54,7 +54,9 @@ anti-aliased. The quad is grown by a pixel so a fractional edge is rasterised at
 
 **Premultiplied, display-referred, discard where nothing is drawn.** Colours arrive premultiplied with
 the element's opacity folded in and blend `One, OneMinusSourceAlpha`. On an sRGB target the shader
-decodes first (`kUiOutputLinear`) so the bytes in the output are still the interface's.
+decodes first (`kUiOutputLinear`) so the bytes in the output are still the interface's, and a
+translucent colour blends in linear light; `render.ui` case (g) draws on an `Rgba8Srgb` target to
+hold both.
 
 **Atlas pages are uploaded outside the frame.** `upload_atlas` runs a graph of its own and waits, as
 grading's table upload does, and leaves the page in the sampled layout. Page 0 is one white texel,
@@ -73,7 +75,7 @@ compiled and compared by `just build-shaders --strict`, and no DXIL is embedded.
 ## Testing
 
 `unit.ui_render` — the rows, the scissor rule, one draw per batch, and the reference. `render.ui` —
-six cases on a Vulkan device, with validation on; see `tests/test_ui_device.cpp`'s header.
+seven cases on a Vulkan device, with validation on; see `tests/test_ui_device.cpp`'s header.
 
 | No interface | The strategy HUD and the console |
 |---|---|

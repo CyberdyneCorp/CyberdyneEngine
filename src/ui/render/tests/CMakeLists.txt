@@ -10,9 +10,10 @@
 #               reference drawn before the interface pass existed; the device matches the host
 #               reference to one 8-bit step; order, nested clipping and opacity hold byte for byte;
 #               and samples/13-rts-selection's HUD with the developer console matches a committed
-#               golden image. It compiles src/rendering/pipeline/tests/frame_scene.cpp — the one
-#               scene — tests/render/golden.cpp for the PNG encoder, and the sample's hud.cpp, so
-#               the HUD photographed is the HUD the sample draws.
+#               golden image; on an sRGB output the bytes are the interface's colours. It
+#               compiles src/rendering/pipeline/tests/frame_scene.cpp — the one scene —
+#               tests/render/golden.cpp for the PNG encoder, and the sample's hud.cpp, so the HUD
+#               photographed is the HUD the sample draws.
 #
 # Declared with cy_add_test(), deferred to the end of the top-level directory for the reason
 # src/rendering/pipeline/tests/CMakeLists.txt gives.
