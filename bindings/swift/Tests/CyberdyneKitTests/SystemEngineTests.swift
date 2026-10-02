@@ -160,9 +160,11 @@ final class SystemEngineTests: XCTestCase {
         let run = try XCTUnwrap(World_.desc.run)
         run(FakeEngine.handle, World_.handle, World_.desc.user_data)
 
-        // Archetype 10, both chunks, each row by its own mass.
-        XCTAssertEqual(World_.ys(World_.velocities10a, 2), [-9.81, -9.81 * 2])
-        XCTAssertEqual(World_.ys(World_.velocities10b, 1), [-9.81 * 3])
+        // Archetype 10, both chunks, each row by its own mass. Typed, because an older Swift does
+        // not infer a literal product inside an array literal as `Float`.
+        let gravity: Float = -9.81
+        XCTAssertEqual(World_.ys(World_.velocities10a, 2), [gravity, gravity * 2])
+        XCTAssertEqual(World_.ys(World_.velocities10b, 1), [gravity * 3])
         // Archetype 11 holds Grounded, which the query excludes; 12 lacks Mass.
         XCTAssertEqual(World_.ys(World_.velocities11, 1), [0])
         XCTAssertEqual(World_.ys(World_.velocities12, 1), [0])
