@@ -217,8 +217,8 @@ CY_TEST_CASE("a graph saved during Play is swapped in at the next tick and keeps
     const cy::game_backend::GraphBehaviours& graphs = *session.graphs.behaviours();
     CY_CHECK_EQ(graphs.variable(0, 0).value.integer, 3);
     std::string source = fixture(kReference);
-    const std::string one = "prop \"value\" : \"int\" = (0, 0, 0, 0, 1)";
-    source.replace(source.find(one), one.size(), "prop \"value\" : \"int\" = (0, 0, 0, 0, 5)");
+    const std::string one = R"(prop "value" : "int" = (0, 0, 0, 0, 1))";
+    source.replace(source.find(one), one.size(), R"(prop "value" : "int" = (0, 0, 0, 0, 5))");
     cy::graph::DiagnosticSink sink(session.allocator);
     const auto staged = session.graphs.reload(kReference, source, sink);
     CY_REQUIRE(staged.has_value());

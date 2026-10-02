@@ -196,9 +196,8 @@ CY_TEST_CASE("graph debugger: a run that breaks and steps moves and sounds as on
         while (graphs.paused()) {
             ++breaks;
             const u32 choice = action++ % 3;
-            const Status answered = choice == 0   ? graphs.debug_continue()
-                                    : choice == 1 ? graphs.debug_step(GraphStep::Into)
-                                                  : graphs.debug_step(GraphStep::Over);
+            const GraphStep step = choice == 1 ? GraphStep::Into : GraphStep::Over;
+            const Status answered = choice == 0 ? graphs.debug_continue() : graphs.debug_step(step);
             CY_REQUIRE(answered.has_value());
         }
     };
@@ -242,6 +241,7 @@ CY_TEST_CASE("graph debugger: a step visits nodes in the order the trace records
         CY_REQUIRE(traced.graphs.update(kDt).has_value());
     }
     std::vector<graph::NodeKey> ran;
+    ran.reserve(traced.graphs.trace_count());
     for (u32 index = 0; index < traced.graphs.trace_count(); ++index) {
         ran.push_back(traced.graphs.trace_entry(index).node);
     }
@@ -352,8 +352,8 @@ CY_TEST_CASE("graph reload: a running counter keeps its count; a refused reload 
 
         // Edited while the game runs: each order now counts two. Staged, then applied at the next
         // tick boundary to every instance, keeping each count.
-        const std::string twice = replaced(source, "prop \"value\" : \"int\" = (0, 0, 0, 0, 1)",
-                                           "prop \"value\" : \"int\" = (0, 0, 0, 0, 2)");
+        const std::string twice = replaced(source, R"(prop "value" : "int" = (0, 0, 0, 0, 1))",
+                                           R"(prop "value" : "int" = (0, 0, 0, 0, 2))");
         graph::DiagnosticSink sink(allocator());
         const auto staged = graphs.reload(name, twice, sink);
         CY_REQUIRE(staged.has_value());
@@ -371,8 +371,8 @@ CY_TEST_CASE("graph reload: a running counter keeps its count; a refused reload 
         CY_CHECK_EQ(graphs.variable(0, 0).value.integer, 5);
 
         // A type change is refused on the declaring node, and the running program is kept.
-        const std::string retyped = replaced(twice, "prop \"type\" : \"name\" = \"int\"",
-                                             "prop \"type\" : \"name\" = \"float\"");
+        const std::string retyped =
+            replaced(twice, R"(prop "type" : "name" = "int")", R"(prop "type" : "name" = "float")");
         graph::DiagnosticSink refused(allocator());
         CY_CHECK(!graphs.reload(name, retyped, refused).has_value());
         CY_REQUIRE_EQ(refused.errors(), 1U);
@@ -405,9 +405,9 @@ CY_TEST_CASE("graph reload: a unit walking to its target keeps waiting across a 
     CY_REQUIRE(graphs.instance(0).status == GraphInstanceStatus::Waiting);
 
     // The edit swaps the order's axes for later orders; the wait in progress is the same node.
-    std::string edited = replaced(fixture(kUnitGraph), "link 2 \"value\" -> 4 \"arg0\"",
-                                  "link 2 \"value\" -> 4 \"arg1\"");
-    edited = replaced(edited, "link 3 \"value\" -> 4 \"arg1\"", "link 3 \"value\" -> 4 \"arg0\"");
+    std::string edited = replaced(fixture(kUnitGraph), R"(link 2 "value" -> 4 "arg0")",
+                                  R"(link 2 "value" -> 4 "arg1")");
+    edited = replaced(edited, R"(link 3 "value" -> 4 "arg1")", R"(link 3 "value" -> 4 "arg0")");
     graph::DiagnosticSink sink(allocator());
     CY_REQUIRE(graphs.reload(Name::intern("unit_command"), edited, sink).has_value());
     for (u32 tick = 0; tick < 260; ++tick) {

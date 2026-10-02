@@ -704,8 +704,8 @@ CY_TEST_CASE("editor script: a reload keeps the running count, and a refused one
                 .has_value());
     }
     const std::string source = read_file(kCounterFile);
-    const std::string twice = replaced(source, "prop \"value\" : \"int\" = (0, 0, 0, 0, 1)",
-                                       "prop \"value\" : \"int\" = (0, 0, 0, 0, 2)");
+    const std::string twice = replaced(source, R"(prop "value" : "int" = (0, 0, 0, 0, 1))",
+                                       R"(prop "value" : "int" = (0, 0, 0, 0, 2))");
     Array<u8> reply(allocator());
     const Request accepted = Request().text("game/scripts/unit_counter.cyscript").text(twice);
     CY_REQUIRE(!ask(&play, "script.reload", accepted.bytes(), reply).refused());
@@ -724,8 +724,8 @@ CY_TEST_CASE("editor script: a reload keeps the running count, and a refused one
             .has_value());
     CY_CHECK_EQ(play.graphs.variable(0, 0).value.integer, 4);
 
-    const std::string retyped = replaced(twice, "prop \"type\" : \"name\" = \"int\"",
-                                         "prop \"type\" : \"name\" = \"bool\"");
+    const std::string retyped =
+        replaced(twice, R"(prop "type" : "name" = "int")", R"(prop "type" : "name" = "bool")");
     const Request refused_request =
         Request().text("game/scripts/unit_counter.cyscript").text(retyped);
     CY_REQUIRE(!ask(&play, "script.reload", refused_request.bytes(), reply).refused());

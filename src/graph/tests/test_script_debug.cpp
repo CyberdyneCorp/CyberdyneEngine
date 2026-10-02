@@ -624,8 +624,8 @@ CY_TEST_CASE("graph variables: every misuse is an error on its node") {
     CY_CHECK_EQ(unknown->detail, Name::intern("missing"));
     // A declaration is state, not a step: it is never "unreachable".
     for (const Diagnostic& diagnostic : found) {
-        CY_CHECK(!(std::string_view(diagnostic.code) == "script.node.unreachable" &&
-                   diagnostic.node == 20U));
+        CY_CHECK((std::string_view(diagnostic.code) != "script.node.unreachable" ||
+                  diagnostic.node != 20U));
     }
 }
 

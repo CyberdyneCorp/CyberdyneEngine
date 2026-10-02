@@ -10,6 +10,7 @@
 #include <cy/scene/node.h>
 #include <cy/scene/tree.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -504,12 +505,9 @@ u32 GraphBehaviours::generation(u32 graph) const noexcept {
 }
 
 bool GraphBehaviours::reload_pending() const noexcept {
-    for (const UniquePtr<LoadedGraph>& staged : staged_) {
-        if (staged) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(staged_.span(), [](const UniquePtr<LoadedGraph>& staged) noexcept {
+        return static_cast<bool>(staged);
+    });
 }
 
 Expected<u32, Error> GraphBehaviours::reload(Name name, std::string_view source,
