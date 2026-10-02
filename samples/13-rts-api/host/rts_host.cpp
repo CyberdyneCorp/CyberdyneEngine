@@ -124,9 +124,12 @@ RtsHost::RtsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
       options_(options),
       world_(allocator),
       tree_(world_),
+      schedule_(world_),
       binding_(cy::system_allocator(cy::MemoryDomain::Scripting), world_),
       host_(cy::system_allocator(cy::MemoryDomain::Scripting)),
       runtime_(cy::system_allocator(cy::MemoryDomain::Scripting), host_),
+      script_systems_(cy::system_allocator(cy::MemoryDomain::Scripting), host_),
+      bridge_(allocator, tree_, host_, runtime_),
       manifest_text_(allocator),
       input_(allocator),
       camera_(allocator),
@@ -139,6 +142,7 @@ RtsHost::RtsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
       audio_adapter_(audio_, allocator, &tree_),
       spawn_adapter_(tree_, allocator),
       motion_(tree_),
+      roll_(allocator, world_),
       click_samples_(allocator),
       mix_scratch_(allocator) {}
 
@@ -155,6 +159,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         {"scene", &RtsHost::start_scene},           {"input", &RtsHost::start_input},
         {"camera", &RtsHost::start_camera},         {"physics", &RtsHost::start_physics},
         {"navigation", &RtsHost::start_navigation}, {"audio", &RtsHost::start_audio},
+        {"props", &RtsHost::start_props},
     };
     for (const auto& step : steps) {
         if (cy::Status done = (this->*step.step)(); !done) {
@@ -169,25 +174,67 @@ cy::Status RtsHost::start(const char** detail) noexcept {
     cy::game_backend::bind(host_, nav_adapter_.get());
     cy::game_backend::bind(host_, &audio_adapter_);
     cy::game_backend::bind(host_, &spawn_adapter_);
+    cy::game_backend::bind_bodies(host_, body_adapter_.get());
+    cy::game_backend::bind_characters(host_, characters_.get());
+    cy::game_backend::bind_scene(host_, &bridge_);
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
         return loaded;
     }
-    const auto player = world_.create();
-    if (!player) {
-        return cy::make_unexpected(player.error());
+    *detail = "systems";
+    if (cy::Status scheduled = start_systems(); !scheduled) {
+        return scheduled;
     }
-    player_ = *player;
-    if (options_.behaviours) {
-        *detail = "Commander";
-        const auto created = runtime_.create("Commander", cy::abi::to_abi(player_));
-        if (!created) {
-            return cy::make_unexpected(created.error());
-        }
+    if (cy::Status attached = attach_behaviours(detail); !attached) {
+        return attached;
     }
     *detail = "";
     return cy::ok();
+}
+
+cy::Status RtsHost::attach_behaviours(const char** detail) noexcept {
+    // Every script type the module registered becomes a scene behaviour of the same name.
+    const auto synced = bridge_.sync_types();
+    if (!synced) {
+        return cy::make_unexpected(synced.error());
+    }
+    if (!options_.behaviours) {
+        return cy::ok();
+    }
+    // Attached to level nodes, so the tree's pump drives their tree callbacks and their `@Node`
+    // paths resolve against `/Level`.
+    const struct {
+        const char* name = nullptr;
+        cy::scene::Node node;
+    } attachments[] = {{"Commander", commander_}, {"Scout", scout_}};
+    for (const auto& attachment : attachments) {
+        *detail = attachment.name;
+        if (cy::Status attached = bridge_.attach(attachment.node, attachment.name); !attached) {
+            return attached;
+        }
+    }
+    return cy::ok();
+}
+
+cy::Status RtsHost::start_systems() noexcept {
+    // The native observer reads the column the Swift system writes; registered first, so the
+    // scheduler has to order the Swift system against it by their declarations alone.
+    if (const cy::abi::ComponentRecord* veterancy = binding_.find("Veterancy");
+        veterancy != nullptr) {
+        const auto installed = roll_.install(schedule_, veterancy->id);
+        if (!installed) {
+            return cy::make_unexpected(installed.error());
+        }
+        roll_id_ = *installed;
+    }
+    if (options_.systems) {
+        const auto installed = script_systems_.install(schedule_);
+        if (!installed) {
+            return cy::make_unexpected(installed.error());
+        }
+    }
+    return schedule_.build();
 }
 
 cy::Status RtsHost::start_scene() noexcept {
@@ -197,7 +244,55 @@ cy::Status RtsHost::start_scene() noexcept {
     if (cy::Status ready = tree_.initialize(); !ready) {
         return ready;
     }
+    // The level's named nodes: what `@Node("../Barracks")` and `@Node("../Crate")` resolve to,
+    // and the two nodes the script behaviours are attached to.
+    const auto level = tree_.create_node(cy::Name::intern("Level"), tree_.root());
+    if (!level) {
+        return cy::make_unexpected(level.error());
+    }
+    cy::scene::Node* nodes[] = {nullptr, &crate_, &commander_, &scout_};
+    const char* names[] = {"Barracks", "Crate", "Commander", "Scout"};
+    for (cy::usize index = 0; index < 4U; ++index) {
+        const auto made = tree_.create_node(cy::Name::intern(names[index]), *level);
+        if (!made) {
+            return cy::make_unexpected(made.error());
+        }
+        if (nodes[index] != nullptr) {
+            *nodes[index] = *made;
+        }
+    }
     return spawn_adapter_.add_prefab(kWorkerPrefab, worker_prefab());
+}
+
+cy::Status RtsHost::start_props() noexcept {
+    // The crate: a 1 m dynamic box of 20 kg on collision layer 2, owned by the Crate node, so a
+    // script that resolved `../Crate` can push it. Where it goes when pushed is the server's.
+    cy::physics::ShapeDescription box;
+    box.type = cy::physics::ShapeType::Box;
+    box.half_extents = Vec3{0.5F, 0.5F, 0.5F};
+    const auto shape = physics_->create_shape(box);
+    if (!shape) {
+        return cy::make_unexpected(shape.error());
+    }
+    crate_shape_ = *shape;
+    cy::physics::ColliderDescription collider;
+    collider.shape = crate_shape_;
+    collider.filter.layer = kPropLayer;
+    cy::physics::BodyDescription body;
+    body.motion = cy::physics::MotionType::Dynamic;
+    body.mass = 20.0F;
+    body.transform = cy::Transform::from_translation(kCrateStart);
+    body.colliders = &collider;
+    body.collider_count = 1;
+    body.user_data = cy::abi::to_abi(crate_.entity());
+    const auto created = physics_->create_body(physics_world_, body);
+    if (!created) {
+        return cy::make_unexpected(created.error());
+    }
+    crate_body_ = *created;
+    crate_start_z_ = kCrateStart.z;
+    level_bodies_->add_prop(cy::abi::to_abi(crate_.entity()), crate_body_);
+    return cy::ok();
 }
 
 cy::Status RtsHost::start_input() noexcept {
@@ -313,14 +408,28 @@ cy::Status RtsHost::start_navigation() noexcept {
         return cy::make_unexpected(bodies.error());
     }
     bodies_ = std::move(*bodies);
+    auto characters = cy::make_unique<cy::game_backend::CharacterAdapter>(
+        allocator_, allocator_, *physics_, physics_world_);
+    if (!characters) {
+        return cy::make_unexpected(characters.error());
+    }
+    characters_ = std::move(*characters);
+    auto level_bodies = cy::make_unique<LevelBodies>(allocator_, *bodies_, *characters_);
+    if (!level_bodies) {
+        return cy::make_unexpected(level_bodies.error());
+    }
+    level_bodies_ = std::move(*level_bodies);
     auto physics = cy::make_unique<cy::game_backend::PhysicsQueryAdapter>(
-        allocator_, allocator_, *physics_, physics_world_, *bodies_);
+        allocator_, allocator_, *physics_, physics_world_, *level_bodies_);
+    auto body_writes = cy::make_unique<cy::game_backend::PhysicsBodyAdapter>(allocator_, *physics_,
+                                                                             *level_bodies_);
     auto navigation = cy::make_unique<cy::game_backend::NavigationAdapter>(
         allocator_, allocator_, world_, nav_components_, nav_worlds_, host_.game.clock);
-    if (!physics || !navigation) {
+    if (!physics || !body_writes || !navigation) {
         return cy::fail(cy::ErrorCode::OutOfMemory, "a physics or navigation adapter was refused");
     }
     physics_adapter_ = std::move(*physics);
+    body_adapter_ = std::move(*body_writes);
     nav_adapter_ = std::move(*navigation);
     nav_adapter_->set_motion(&motion_);
     return cy::ok();
@@ -383,6 +492,11 @@ cy::Status RtsHost::load_module(const char** detail) noexcept {
 }
 
 cy::Status RtsHost::frame() noexcept {
+    // The frame boundary: tree-shape callbacks queued since the last frame are delivered here, in
+    // no phase — `onEnterTree` and `onReady` for the behaviours attached at start, on frame 0.
+    if (cy::Status pumped = tree_.pump(); !pumped) {
+        return pumped;
+    }
     if (cy::Status ticked = fixed_tick(); !ticked) {
         return ticked;
     }
@@ -394,6 +508,9 @@ cy::Status RtsHost::frame() noexcept {
     }
     host_.game.clock.interpolation = 0.0;
     runtime_.frame_update(kStep);
+    if (cy::Status staged = run_stages(cy::ecs::Stage::Frame, cy::ecs::Stage::UI); !staged) {
+        return staged;
+    }
     update_audio();
     ++frame_;
     events_this_frame_ = 0;
@@ -406,6 +523,11 @@ cy::Status RtsHost::fixed_tick() noexcept {
     input_adapter_.observe_pending();
     input_.resolve_tick(tick, static_cast<cy::Nanoseconds>(tick) * kStepNs, kStep);
     runtime_.fixed_update(kStep);
+    if (cy::Status staged =
+            run_stages(cy::ecs::Stage::PreSimulation, cy::ecs::Stage::PostSimulation);
+        !staged) {
+        return staged;
+    }
     if (cy::Status navigated = nav_adapter_->update(kStep); !navigated) {
         return navigated;
     }
@@ -416,6 +538,19 @@ cy::Status RtsHost::fixed_tick() noexcept {
     step.delta_seconds = kStep;
     step.tick = tick;
     return physics_->step(physics_world_, step);
+}
+
+cy::Status RtsHost::run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept {
+    // Serially, on this thread: the result is the job system's by construction (system.h), and a
+    // sample has no job system to hand.
+    for (auto stage = static_cast<u32>(first); stage <= static_cast<u32>(last); ++stage) {
+        if (cy::Status ran =
+                script_systems_.run(schedule_, static_cast<cy::ecs::Stage>(stage), nullptr);
+            !ran) {
+            return ran;
+        }
+    }
+    return cy::ok();
 }
 
 void RtsHost::update_audio() noexcept {
@@ -435,11 +570,17 @@ void RtsHost::shutdown() noexcept {
     host_.bind_world(nullptr);
     nav_adapter_.reset();
     physics_adapter_.reset();
+    body_adapter_.reset();
+    level_bodies_.reset();
+    // Each controller destroys its own body and shape, so the characters go before the world.
+    characters_.reset();
     if (bodies_) {
         bodies_->clear();
         bodies_.reset();
     }
     if (physics_ != nullptr) {
+        (void)physics_->destroy_body(crate_body_);
+        (void)physics_->destroy_shape(crate_shape_);
         (void)physics_->destroy_body(ground_);
         (void)physics_->destroy_shape(ground_shape_);
         (void)physics_->destroy_world(physics_world_);
@@ -531,18 +672,52 @@ Observation RtsHost::observe() noexcept {
         }
     }
 
+    seen.systems.installed = script_systems_.installed();
+    seen.systems.runs = script_systems_.runs("trainUnits");
+    seen.systems.rows = roll_.rows();
+    seen.systems.most = roll_.most();
+    const cy::ecs::SystemId swift = script_systems_.id_of("trainUnits");
+    seen.systems.ordered = roll_id_ != cy::ecs::kInvalidSystem &&
+                           swift != cy::ecs::kInvalidSystem &&
+                           schedule_.ordered_before(cy::ecs::Stage::Simulation, roll_id_, swift);
+    observe_scout(seen);
+
     const cy::abi::ComponentRecord* record = binding_.find("RtsReport");
     if (record == nullptr) {
         return seen;
     }
-    const void* bytes = world_.get(player_, record->id);
+    const void* bytes = world_.get(commander_.entity(), record->id);
+    const auto field = [&](const char* name) { return report_field(binding_, *record, name); };
     seen.game.found = bytes != nullptr;
-    seen.game.selected = read_field<CyEntity>(bytes, report_field(binding_, *record, "selected"));
-    seen.game.orders = read_field<f32>(bytes, report_field(binding_, *record, "orders"));
-    seen.game.arrivals = read_field<f32>(bytes, report_field(binding_, *record, "arrivals"));
-    seen.game.cues = read_field<f32>(bytes, report_field(binding_, *record, "cues"));
-    seen.game.spawns = read_field<f32>(bytes, report_field(binding_, *record, "spawns"));
+    seen.game.selected = read_field<CyEntity>(bytes, field("selected"));
+    seen.game.orders = read_field<f32>(bytes, field("orders"));
+    seen.game.arrivals = read_field<f32>(bytes, field("arrivals"));
+    seen.game.cues = read_field<f32>(bytes, field("cues"));
+    seen.game.spawns = read_field<f32>(bytes, field("spawns"));
+    seen.tree.entered = read_field<f32>(bytes, field("entered"));
+    seen.tree.readied = read_field<f32>(bytes, field("readied"));
+    seen.tree.barracks_found = read_field<f32>(bytes, field("barracksFound"));
     return seen;
+}
+
+void RtsHost::observe_scout(Observation& seen) noexcept {
+    if (physics_ != nullptr && !crate_body_.is_null()) {
+        const auto state = physics_->body_state(crate_body_);
+        seen.scout.crate_moved = state ? state->transform.translation.z - crate_start_z_ : 0.0F;
+    }
+    const cy::abi::ComponentRecord* record = binding_.find("ScoutReport");
+    if (record == nullptr) {
+        return;
+    }
+    const void* bytes = world_.get(scout_.entity(), record->id);
+    const auto field = [&](const char* name) { return report_field(binding_, *record, name); };
+    seen.scout.found = bytes != nullptr;
+    seen.scout.crate_found = read_field<f32>(bytes, field("crateFound"));
+    seen.scout.hero_x = read_field<f32>(bytes, field("heroX"));
+    seen.scout.hero_ground = read_field<f32>(bytes, field("heroGround"));
+    seen.scout.airborne = read_field<f32>(bytes, field("airborne"));
+    seen.scout.kicks = read_field<f32>(bytes, field("kicks"));
+    seen.scout.crate_speed = read_field<f32>(bytes, field("crateSpeed"));
 }
 
 }  // namespace sample::rts

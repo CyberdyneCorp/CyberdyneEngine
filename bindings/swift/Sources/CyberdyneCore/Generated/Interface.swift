@@ -473,4 +473,59 @@ public struct Interface: @unchecked Sendable {
     public func vfxEffectParameterGet(engine: CyEngine, entity: CyEntity, emitter: UnsafePointer<CChar>?, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyVar>?) throws {
         try check(table.pointee.vfx_effect_parameter_get(engine, entity, emitter, parameter, into))
     }
+
+    @inlinable
+    public func registerSystem(engine: CyEngine, desc: UnsafePointer<CySystemDesc>?) throws {
+        try check(table.pointee.register_system(engine, desc))
+    }
+
+    @inlinable
+    public func nodeFind(engine: CyEngine, from: CyEntity, path: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyEntity>?) throws {
+        try check(table.pointee.node_find(engine, from, path, into))
+    }
+
+    @inlinable
+    public func physicsApplyForce(engine: CyEngine, entity: CyEntity, force: UnsafePointer<Float>?) throws {
+        try check(table.pointee.physics_apply_force(engine, entity, force))
+    }
+
+    @inlinable
+    public func physicsApplyImpulse(engine: CyEngine, entity: CyEntity, impulse: UnsafePointer<Float>?, point: UnsafePointer<Float>?) throws {
+        try check(table.pointee.physics_apply_impulse(engine, entity, impulse, point))
+    }
+
+    @inlinable
+    public func physicsApplyTorque(engine: CyEngine, entity: CyEntity, torque: UnsafePointer<Float>?) throws {
+        try check(table.pointee.physics_apply_torque(engine, entity, torque))
+    }
+
+    @inlinable
+    public func physicsSetVelocity(engine: CyEngine, entity: CyEntity, linear: UnsafePointer<Float>?, angular: UnsafePointer<Float>?) throws {
+        try check(table.pointee.physics_set_velocity(engine, entity, linear, angular))
+    }
+
+    @inlinable
+    public func physicsGetVelocity(engine: CyEngine, entity: CyEntity, linear: UnsafeMutablePointer<Float>?, angular: UnsafeMutablePointer<Float>?) throws {
+        try check(table.pointee.physics_get_velocity(engine, entity, linear, angular))
+    }
+
+    @inlinable
+    public func characterCreate(engine: CyEngine, entity: CyEntity, desc: UnsafePointer<CyCharacterDesc>?) throws {
+        try check(table.pointee.character_create(engine, entity, desc))
+    }
+
+    @inlinable
+    public func characterDestroy(engine: CyEngine, entity: CyEntity) throws {
+        try check(table.pointee.character_destroy(engine, entity))
+    }
+
+    @inlinable
+    public func characterMove(engine: CyEngine, entity: CyEntity, input: UnsafePointer<CyCharacterInput>?) throws {
+        try check(table.pointee.character_move(engine, entity, input))
+    }
+
+    @inlinable
+    public func characterState(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyCharacterState>?) throws {
+        try check(table.pointee.character_state(engine, entity, into))
+    }
 }

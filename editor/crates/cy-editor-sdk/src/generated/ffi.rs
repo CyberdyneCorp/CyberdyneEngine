@@ -222,7 +222,7 @@ pub struct CyServiceEvent {
     pub payload_size: u64,
 }
 
-/// `CyBehaviourVTable` — 64 bytes, 8-byte aligned.
+/// `CyBehaviourVTable` — 104 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyBehaviourVTable {
@@ -248,6 +248,16 @@ pub struct CyBehaviourVTable {
     pub user_data: *mut ::std::ffi::c_void,
     /// `void(*)(CyInstance, float, void*)` at byte 56.
     pub frame_update: Option<unsafe extern "C" fn(CyInstance, f32, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, void*)` at byte 64.
+    pub enter_tree: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, void*)` at byte 72.
+    pub ready: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, void*)` at byte 80.
+    pub enable: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, void*)` at byte 88.
+    pub disable: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, void*)` at byte 96.
+    pub exit_tree: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
 }
 
 /// `CyBorrow` — 16 bytes, 8-byte aligned.
@@ -610,6 +620,108 @@ pub struct CySpawnParams {
     pub scale: [f32; 3],
 }
 
+/// `CySystemAccess` — 8 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CySystemAccess {
+    /// `CyComponentTypeId` at byte 0.
+    pub component: CyComponentTypeId,
+    /// `uint32_t` at byte 4.
+    pub mode: u32,
+}
+
+/// `CySystemDesc` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CySystemDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub stage: u32,
+    /// `const char*` at byte 8.
+    pub name: *const ::std::ffi::c_char,
+    /// `const CySystemAccess*` at byte 16.
+    pub access: *const CySystemAccess,
+    /// `uint32_t` at byte 24.
+    pub access_count: u32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+    /// `void(*)(CyEngine, CyWorld, void*)` at byte 32.
+    pub run: Option<unsafe extern "C" fn(CyEngine, CyWorld, *mut ::std::ffi::c_void)>,
+    /// `void*` at byte 40.
+    pub user_data: *mut ::std::ffi::c_void,
+}
+
+/// `CyCharacterDesc` — 76 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyCharacterDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float` at byte 8.
+    pub radius: f32,
+    /// `float` at byte 12.
+    pub height: f32,
+    /// `float` at byte 16.
+    pub max_slope_radians: f32,
+    /// `float` at byte 20.
+    pub step_offset: f32,
+    /// `float` at byte 24.
+    pub skin_width: f32,
+    /// `float` at byte 28.
+    pub gravity_scale: f32,
+    /// `float` at byte 32.
+    pub mass: f32,
+    /// `float` at byte 36.
+    pub push_force: f32,
+    /// `uint32_t` at byte 40.
+    pub layer: u32,
+    /// `uint32_t` at byte 44.
+    pub mask: u32,
+    /// `CyPose` at byte 48.
+    pub start: CyPose,
+}
+
+/// `CyCharacterInput` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyCharacterInput {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float[3]` at byte 8.
+    pub desired_velocity: [f32; 3],
+    /// `float` at byte 20.
+    pub jump_speed: f32,
+}
+
+/// `CyCharacterState` — 72 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyCharacterState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub ground: u32,
+    /// `uint32_t` at byte 8.
+    pub flags: u32,
+    /// `uint32_t` at byte 12.
+    pub reserved: u32,
+    /// `CyEntity` at byte 16.
+    pub ground_entity: CyEntity,
+    /// `float[3]` at byte 24.
+    pub position: [f32; 3],
+    /// `float[3]` at byte 36.
+    pub velocity: [f32; 3],
+    /// `float[3]` at byte 48.
+    pub ground_normal: [f32; 3],
+    /// `float[3]` at byte 60.
+    pub platform_velocity: [f32; 3],
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -624,7 +736,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 680 bytes, 8-byte aligned.
+/// `CyInterface` — 768 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -929,6 +1041,36 @@ pub struct CyInterface {
             *mut CyVar,
         ) -> i32,
     >,
+    /// `CyResult(*)(CyEngine, const CySystemDesc*)` at byte 680.
+    pub register_system: Option<unsafe extern "C" fn(CyEngine, *const CySystemDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, CyEntity*)` at byte 688.
+    pub node_find: Option<
+        unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, *mut CyEntity) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyEntity, const float*)` at byte 696.
+    pub physics_apply_force: Option<unsafe extern "C" fn(CyEngine, CyEntity, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const float*, const float*)` at byte 704.
+    pub physics_apply_impulse:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const f32, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const float*)` at byte 712.
+    pub physics_apply_torque: Option<unsafe extern "C" fn(CyEngine, CyEntity, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const float*, const float*)` at byte 720.
+    pub physics_set_velocity:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const f32, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, float*, float*)` at byte 728.
+    pub physics_get_velocity:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut f32, *mut f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const CyCharacterDesc*)` at byte 736.
+    pub character_create:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const CyCharacterDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity)` at byte 744.
+    pub character_destroy: Option<unsafe extern "C" fn(CyEngine, CyEntity) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const CyCharacterInput*)` at byte 752.
+    pub character_move:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const CyCharacterInput) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, CyCharacterState*)` at byte 760.
+    pub character_state:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyCharacterState) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1054,5 +1196,16 @@ impl CyInterface {
         spawn_destroy: None,
         vfx_effect_parameter_set: None,
         vfx_effect_parameter_get: None,
+        register_system: None,
+        node_find: None,
+        physics_apply_force: None,
+        physics_apply_impulse: None,
+        physics_apply_torque: None,
+        physics_set_velocity: None,
+        physics_get_velocity: None,
+        character_create: None,
+        character_destroy: None,
+        character_move: None,
+        character_state: None,
     };
 }

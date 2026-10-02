@@ -77,13 +77,12 @@ public final class Export<T: Exportable>: ExportedStorage {
 /// resolution, and reading it before `onReady` is nil rather than a trap — which is the same
 /// answer as a path that does not exist, deliberately: a behaviour that handles one handles both.
 ///
-/// WHAT IS NOT HERE YET, STATED AS IT IS RATHER THAN AS IT WILL BE. Resolution needs the scene's
-/// path lookup, and ABI 1.0's table has no node entry — `CyInterface` carries the world, components
-/// and behaviours and nothing about the node graph. So `resolve(_:)` is the seam and **nothing
-/// calls it**: no resolver exists, every `@Node` reads nil for the process's life, and there is no
-/// warning, because a warning would need a resolution attempt to report the failure of. When
-/// `scene-graph-and-nodes`' entries are appended, the bridge resolves at `onReady` and an
-/// unresolved path becomes a diagnostic there; the wrapper does not change.
+/// RESOLVED BY THE ENGINE AT ABI 1.5. When the scene tree's pump delivers `ready` to a behaviour
+/// attached to a node, the bridge resolves every `@Node` the class declares through `node_find` —
+/// relative to the behaviour's own node (`Camera`, `../Camera`) or absolute (`/Level/Player`) —
+/// and only then calls `onReady`. An unresolved path is logged as a warning naming the behaviour and
+/// the path, and the property stays nil. `T` is what the node is read as: an `Entity`, or any type
+/// conforming to `NodeResolvable`.
 @propertyWrapper
 public final class Node<T> {
     public let path: String
@@ -96,9 +95,43 @@ public final class Node<T> {
 
     public var projectedValue: Node<T> { self }
 
-    /// Fill in the reference. The behaviour bridge will call this at `onReady` once the node
-    /// entries exist; today only a test does, which is what keeps the wrapper exercised.
+    /// Fill in the reference. The bridge calls this at `onReady`; a test may call it directly.
     public func resolve(_ value: T?) {
         wrappedValue = value
+    }
+}
+
+/// A type a resolved `@Node` can be read as. `Entity` is one; a game's own node handle may be too.
+public protocol NodeResolvable {
+    init(resolvedNode: Entity)
+}
+
+extension Entity: NodeResolvable {
+    public init(resolvedNode: Entity) { self = resolvedNode }
+}
+
+/// A `@Node` property, type-erased, so the bridge can resolve every one a class declares without
+/// knowing what each is read as. The `@Behaviour` macro lists them in `nodeReferences()`.
+public protocol NodeReference: AnyObject {
+    var path: String { get }
+    /// Resolve against `node`, through `node_find`. Returns false, leaving the property nil, when
+    /// the path does not resolve or `T` is not something a node can be read as.
+    @discardableResult
+    func resolveNode(from node: Entity) -> Bool
+}
+
+extension Node: NodeReference {
+    /// Looks the path up from `node` through `SceneTree.find`; nil when it does not resolve.
+    @discardableResult
+    public func resolveNode(from node: Entity) -> Bool {
+        guard let found = SceneTree.find(path, from: node),
+            let type = T.self as? any NodeResolvable.Type,
+            let value = type.init(resolvedNode: found) as? T
+        else {
+            wrappedValue = nil
+            return false
+        }
+        wrappedValue = value
+        return true
     }
 }

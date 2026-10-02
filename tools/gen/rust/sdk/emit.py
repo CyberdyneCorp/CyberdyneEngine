@@ -56,6 +56,9 @@ ENUM_SPECS = {
     "CyShapeKind": ("ShapeKind", "CY_SHAPE_", "u32"),
     "CyNavPathStatus": ("NavPathStatus", "CY_NAV_PATH_STATUS_", "u32"),
     "CyNavQueryState": ("NavQueryState", "CY_NAV_QUERY_", "u32"),
+    # ABI 1.5, scheduled systems and character controllers.
+    "CyAccessMode": ("AccessMode", "CY_ACCESS_", "u32"),
+    "CyGroundState": ("GroundState", "CY_GROUND_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 4,
+    "minor": 5,
     "patch": 0
   },
   "functions": [
@@ -442,10 +442,65 @@
         "index": 83,
         "name": "vfx_effect_parameter_get",
         "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, CyVar*)"
+      },
+      {
+        "index": 84,
+        "name": "register_system",
+        "type": "CyResult(*)(CyEngine, const CySystemDesc*)"
+      },
+      {
+        "index": 85,
+        "name": "node_find",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyEntity*)"
+      },
+      {
+        "index": 86,
+        "name": "physics_apply_force",
+        "type": "CyResult(*)(CyEngine, CyEntity, const float*)"
+      },
+      {
+        "index": 87,
+        "name": "physics_apply_impulse",
+        "type": "CyResult(*)(CyEngine, CyEntity, const float*, const float*)"
+      },
+      {
+        "index": 88,
+        "name": "physics_apply_torque",
+        "type": "CyResult(*)(CyEngine, CyEntity, const float*)"
+      },
+      {
+        "index": 89,
+        "name": "physics_set_velocity",
+        "type": "CyResult(*)(CyEngine, CyEntity, const float*, const float*)"
+      },
+      {
+        "index": 90,
+        "name": "physics_get_velocity",
+        "type": "CyResult(*)(CyEngine, CyEntity, float*, float*)"
+      },
+      {
+        "index": 91,
+        "name": "character_create",
+        "type": "CyResult(*)(CyEngine, CyEntity, const CyCharacterDesc*)"
+      },
+      {
+        "index": 92,
+        "name": "character_destroy",
+        "type": "CyResult(*)(CyEngine, CyEntity)"
+      },
+      {
+        "index": 93,
+        "name": "character_move",
+        "type": "CyResult(*)(CyEngine, CyEntity, const CyCharacterInput*)"
+      },
+      {
+        "index": 94,
+        "name": "character_state",
+        "type": "CyResult(*)(CyEngine, CyEntity, CyCharacterState*)"
       }
     ],
     "name": "CyInterface",
-    "size": 680
+    "size": 768
   },
   "types": [
     {
@@ -1150,10 +1205,45 @@
           "offset": 56,
           "size": 8,
           "type": "void(*)(CyInstance, float, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "enter_tree",
+          "offset": 64,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ready",
+          "offset": 72,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "enable",
+          "offset": 80,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "disable",
+          "offset": 88,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "exit_tree",
+          "offset": 96,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
         }
       ],
       "name": "CyBehaviourVTable",
-      "size": 64
+      "size": 104
     },
     {
       "alignment": 8,
@@ -2222,6 +2312,334 @@
       "size": 56
     },
     {
+      "kind": "enum",
+      "name": "CyAccessMode",
+      "values": [
+        {
+          "name": "CY_ACCESS_READ",
+          "value": 0
+        },
+        {
+          "name": "CY_ACCESS_WRITE",
+          "value": 1
+        },
+        {
+          "name": "CY_ACCESS_EXCLUDE",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "component",
+          "offset": 0,
+          "size": 4,
+          "type": "CyComponentTypeId"
+        },
+        {
+          "alignment": 4,
+          "name": "mode",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CySystemAccess",
+      "size": 8
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "stage",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 8,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "access",
+          "offset": 16,
+          "size": 8,
+          "type": "const CySystemAccess*"
+        },
+        {
+          "alignment": 4,
+          "name": "access_count",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "run",
+          "offset": 32,
+          "size": 8,
+          "type": "void(*)(CyEngine, CyWorld, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "user_data",
+          "offset": 40,
+          "size": 8,
+          "type": "void*"
+        }
+      ],
+      "name": "CySystemDesc",
+      "size": 48
+    },
+    {
+      "kind": "enum",
+      "name": "CyGroundState",
+      "values": [
+        {
+          "name": "CY_GROUND_GROUNDED",
+          "value": 0
+        },
+        {
+          "name": "CY_GROUND_STEEP_SLOPE",
+          "value": 1
+        },
+        {
+          "name": "CY_GROUND_IN_AIR",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "radius",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "height",
+          "offset": 12,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "max_slope_radians",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "step_offset",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "skin_width",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "gravity_scale",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "mass",
+          "offset": 32,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "push_force",
+          "offset": 36,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "layer",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "mask",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "start",
+          "offset": 48,
+          "size": 28,
+          "type": "CyPose"
+        }
+      ],
+      "name": "CyCharacterDesc",
+      "size": 76
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "desired_velocity",
+          "offset": 8,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "jump_speed",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        }
+      ],
+      "name": "CyCharacterInput",
+      "size": 24
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "ground",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "ground_entity",
+          "offset": 16,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 4,
+          "name": "position",
+          "offset": 24,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "velocity",
+          "offset": 36,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "ground_normal",
+          "offset": 48,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "platform_velocity",
+          "offset": 60,
+          "size": 12,
+          "type": "float[3]"
+        }
+      ],
+      "name": "CyCharacterState",
+      "size": 72
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -2848,10 +3266,87 @@
           "offset": 672,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyEntity, const char*, const char*, CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "register_system",
+          "offset": 680,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CySystemDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "node_find",
+          "offset": 688,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyEntity*)"
+        },
+        {
+          "alignment": 8,
+          "name": "physics_apply_force",
+          "offset": 696,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "physics_apply_impulse",
+          "offset": 704,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const float*, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "physics_apply_torque",
+          "offset": 712,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "physics_set_velocity",
+          "offset": 720,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const float*, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "physics_get_velocity",
+          "offset": 728,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, float*, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "character_create",
+          "offset": 736,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const CyCharacterDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "character_destroy",
+          "offset": 744,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "character_move",
+          "offset": 752,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const CyCharacterInput*)"
+        },
+        {
+          "alignment": 8,
+          "name": "character_state",
+          "offset": 760,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, CyCharacterState*)"
         }
       ],
       "name": "CyInterface",
-      "size": 680
+      "size": 768
     },
     {
       "kind": "enum",

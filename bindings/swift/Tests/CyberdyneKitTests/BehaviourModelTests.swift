@@ -149,11 +149,8 @@ final class BehaviourDispatchTests: XCTestCase {
     /// `swift-scripting`: "@Node(path) ... SHALL be resolved at `onReady` and be `nil` if the path
     /// does not resolve, rather than trapping".
     ///
-    /// THE NIL HALF IS THE WHOLE OF WHAT SHIPS, and this case is why the wrapper is not dead code:
-    /// ABI 1.0 has no node entry, so nothing in the engine calls `resolve(_:)` yet and every `@Node`
-    /// reads nil. That is the correct answer for an unresolvable path, so the shipped behaviour is
-    /// the specification's failure case rather than a stub that traps — and the assertion below is
-    /// what holds it to that when the resolver lands.
+    /// The wrapper's own contract: nil until resolved, and nil again when told so. The engine's
+    /// resolution at `ready` through `node_find` (ABI 1.5) is TreeCallbackTests'.
     func testANodeReferenceIsNilUntilItIsResolvedAndNeverTraps() {
         let reference = Node<TestPlayer>("../Camera")
         XCTAssertEqual(reference.path, "../Camera")

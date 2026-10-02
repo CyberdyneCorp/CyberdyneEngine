@@ -157,6 +157,18 @@ ENTRIES: dict[str, Entry] = {
                                       result="throwing"),
     "vfx_effect_parameter_get": Entry(("engine", "entity", "emitter", "parameter", "into"),
                                       result="throwing"),
+    # 1.5: scheduled systems, the scene tree, rigid bodies and characters
+    "register_system": Entry(("engine", "desc"), result="throwing"),
+    "node_find": Entry(("engine", "from", "path", "into"), result="throwing"),
+    "physics_apply_force": Entry(("engine", "entity", "force"), result="throwing"),
+    "physics_apply_impulse": Entry(("engine", "entity", "impulse", "point"), result="throwing"),
+    "physics_apply_torque": Entry(("engine", "entity", "torque"), result="throwing"),
+    "physics_set_velocity": Entry(("engine", "entity", "linear", "angular"), result="throwing"),
+    "physics_get_velocity": Entry(("engine", "entity", "linear", "angular"), result="throwing"),
+    "character_create": Entry(("engine", "entity", "desc"), result="throwing"),
+    "character_destroy": Entry(("engine", "entity"), result="throwing"),
+    "character_move": Entry(("engine", "entity", "input"), result="throwing"),
+    "character_state": Entry(("engine", "entity", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

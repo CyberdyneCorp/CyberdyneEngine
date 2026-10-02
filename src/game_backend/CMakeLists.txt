@@ -27,6 +27,10 @@ cy_add_module(
         src/audio_backend.cpp
         src/spawn_backend.cpp
         src/graph_behaviours.cpp
+        # ABI 1.5 (`add-swift-m12-gaps`): rigid bodies, characters and script behaviours on nodes.
+        src/body_backend.cpp
+        src/character_backend.cpp
+        src/scene_bridge.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::abi
@@ -66,7 +70,10 @@ if(CY_BUILD_TESTS)
         # A suite that needs a concrete backend behind its server's interface names it here; the
         # adapters themselves never link one.
         set(extra_physics cy::physics-reference)
-        foreach(service IN ITEMS input camera physics navigation audio spawn graph)
+        set(extra_bodies cy::physics-reference)
+        set(extra_character cy::physics-reference)
+        foreach(service IN ITEMS input camera physics navigation audio spawn graph bodies
+                                 character scene)
             if(EXISTS "${tests_dir}/test_${service}_backend.cpp")
                 cy_add_test(
                     NAME game_backend_${service}

@@ -4,6 +4,7 @@
 #include <cy/abi/host.h>
 
 #include <algorithm>
+#include <utility>
 
 #include "level.h"
 
@@ -174,6 +175,61 @@ cy::physics::BodyHandle UnitBodies::body_of(CyEntity entity) const noexcept {
         }
     }
     return cy::physics::BodyHandle{};
+}
+
+// --- LevelBodies ---------------------------------------------------------------------------------
+
+void LevelBodies::add_prop(CyEntity entity, cy::physics::BodyHandle body) noexcept {
+    if (prop_count_ < kProps) {
+        props_[prop_count_++] = Prop{entity, body};
+    }
+}
+
+cy::physics::BodyHandle LevelBodies::body_of(CyEntity entity) const noexcept {
+    for (cy::u32 index = 0; index < prop_count_; ++index) {
+        if (props_[index].entity == entity) {
+            return props_[index].body;
+        }
+    }
+    const cy::physics::BodyHandle unit = units_->body_of(entity);
+    return unit.is_null() ? characters_->body_of(entity) : unit;
+}
+
+// --- VeterancyRoll -------------------------------------------------------------------------------
+
+cy::Expected<cy::ecs::SystemId, cy::Error> VeterancyRoll::install(
+    cy::ecs::Schedule& schedule, cy::ecs::ComponentTypeId veterancy) noexcept {
+    veterancy_ = veterancy;
+    cy::ecs::QueryDesc desc(*allocator_);
+    if (cy::Status declared = desc.read(veterancy); !declared) {
+        return cy::make_unexpected(declared.error());
+    }
+    cy::ecs::SystemDesc system;
+    system.name = kName;
+    system.body = &VeterancyRoll::body;
+    system.user = this;
+    // THE QUERY IS THE DECLARATION, as system.h asks: the access is the query's own.
+    system.access = desc.access();
+    auto query = cy::make_unique<cy::ecs::Query>(*allocator_, *world_, std::move(desc));
+    if (!query) {
+        return cy::make_unexpected(query.error());
+    }
+    query_ = std::move(*query);
+    return schedule.add(cy::ecs::Stage::Simulation, system);
+}
+
+void VeterancyRoll::body(const cy::ecs::SystemContext& context) noexcept {
+    auto* self = static_cast<VeterancyRoll*>(context.user);
+    self->rows_ = 0;
+    self->most_ = 0.0F;
+    (void)self->query_->for_each_chunk([&](cy::ecs::QueryChunk& chunk) {
+        // `Veterancy` is one f32, `ticks`, so its column is a column of floats.
+        const auto ticks = chunk.read<cy::f32>(self->veterancy_);
+        for (cy::u32 index = 0; index < chunk.count(); ++index) {
+            self->most_ = std::max(self->most_, ticks[index]);
+            ++self->rows_;
+        }
+    });
 }
 
 }  // namespace sample::rts

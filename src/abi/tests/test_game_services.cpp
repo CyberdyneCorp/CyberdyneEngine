@@ -83,8 +83,44 @@ CY_TEST_CASE("the 1.3 table carries every game-service entry, after every 1.2 en
     // The 1.4 VFX entries follow the complete 1.3 game-service prefix.
     CY_CHECK_EQ(offsetof(CyInterface, spawn_destroy) + sizeof(void*),
                 offsetof(CyInterface, vfx_effect_parameter_set));
+    // And the 1.5 entries follow the 1.4 ones.
     CY_CHECK_EQ(offsetof(CyInterface, vfx_effect_parameter_get) + sizeof(void*),
-                sizeof(CyInterface));
+                offsetof(CyInterface, register_system));
+}
+
+CY_TEST_CASE("the 1.5 table appends systems, nodes, bodies and characters after every 1.4 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 5U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.register_system != nullptr,      iface.node_find != nullptr,
+        iface.physics_apply_force != nullptr,  iface.physics_apply_impulse != nullptr,
+        iface.physics_apply_torque != nullptr, iface.physics_set_velocity != nullptr,
+        iface.physics_get_velocity != nullptr, iface.character_create != nullptr,
+        iface.character_destroy != nullptr,    iface.character_move != nullptr,
+        iface.character_state != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 11U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    // Appended, never inserted: the first 1.5 entry is one pointer after the last 1.4 one, and the
+    // last 1.5 entry is the table's last member, so nothing was declared and not listed.
+    CY_CHECK_EQ(offsetof(CyInterface, register_system),
+                offsetof(CyInterface, vfx_effect_parameter_get) + sizeof(void*));
+    CY_CHECK_EQ(offsetof(CyInterface, character_state) + sizeof(void*), sizeof(CyInterface));
+}
+
+CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
+    using cy::abi::game::phase_of_stage;
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_PRE_SIMULATION), CY_PHASE_FIXED_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_PHYSICS), CY_PHASE_FIXED_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_SIMULATION), CY_PHASE_FIXED_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_POST_SIMULATION), CY_PHASE_FIXED_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_FRAME), CY_PHASE_FRAME_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_ANIMATION), CY_PHASE_FRAME_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_UI), CY_PHASE_FRAME_UPDATE);
+    CY_CHECK_EQ(phase_of_stage(CY_STAGE_RENDER), CY_PHASE_NONE);
 }
 
 CY_TEST_CASE("a new host starts with no game backend and in no phase") {
@@ -95,6 +131,9 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.navigation == nullptr);
     CY_CHECK(host.game.audio == nullptr);
     CY_CHECK(host.game.spawn == nullptr);
+    CY_CHECK(host.game.scene == nullptr);
+    CY_CHECK(host.game.bodies == nullptr);
+    CY_CHECK(host.game.characters == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }

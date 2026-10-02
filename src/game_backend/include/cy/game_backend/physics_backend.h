@@ -108,4 +108,47 @@ private:
 /// place an embedder wires the physics service; the adapter must outlive the binding.
 void bind(cy::abi::Host& host, PhysicsQueryAdapter* adapter) noexcept;
 
+/// ABI 1.5's rigid-body writes over `PhysicsServer`: `physics_apply_force`,
+/// `physics_apply_impulse`, `physics_apply_torque`, `physics_set_velocity` and
+/// `physics_get_velocity`.
+///
+/// WHAT IT ADDS TO THE SERVER'S OWN CALLS:
+///
+///   * ENTITIES IN PLACE OF BODIES, through the embedder's `EntityBodies` — the same map the query
+///     adapter uses for ignore lists.
+///   * A REFUSAL WHERE THE SERVER IS SILENT. `add_force` and friends on a static or kinematic body
+///   are
+///     a no-op in the server; a game that pushes a body that cannot move has a bug, so the adapter
+///     answers INVALID_ARGUMENT instead. A velocity may be set on a kinematic body (that is how one
+///     is driven) but not on a static one.
+///   * WAKING. A force or torque wakes a sleeping body, as an impulse already does, so a script's
+///     push is never swallowed by the sleep threshold.
+///   * UNAVAILABLE DURING THE STEP, in every build — the bodies are mid-solve.
+///
+/// Not thread-safe: the writes are simulation, made from the game thread in N or F.
+class PhysicsBodyAdapter final : public abi::game::PhysicsBodyBackend {
+public:
+    /// Writes to bodies on `server`; `bodies` maps entities to them. Both are borrowed.
+    PhysicsBodyAdapter(physics::PhysicsServer& server, const EntityBodies& bodies) noexcept
+        : server_(&server), bodies_(&bodies) {}
+
+    CyResult apply_force(CyEntity entity, const f32* force) noexcept override;
+    CyResult apply_impulse(CyEntity entity, const f32* impulse, const f32* point) noexcept override;
+    CyResult apply_torque(CyEntity entity, const f32* torque) noexcept override;
+    CyResult set_velocity(CyEntity entity, const f32* linear, const f32* angular) noexcept override;
+    CyResult velocity(CyEntity entity, f32* out_linear, f32* out_angular) const noexcept override;
+
+private:
+    /// The entity's body, checked available and of a motion type `dynamic_only` allows.
+    [[nodiscard]] CyResult resolve(CyEntity entity, bool dynamic_only,
+                                   physics::BodyHandle& out) const noexcept;
+
+    physics::PhysicsServer* server_;
+    const EntityBodies* bodies_;
+};
+
+/// Bind `adapter` as `host.game.bodies`, or unbind with null. Named rather than another `bind`
+/// overload so that `bind(host, nullptr)` for the query adapter stays unambiguous.
+void bind_bodies(cy::abi::Host& host, PhysicsBodyAdapter* adapter) noexcept;
+
 }  // namespace cy::game_backend

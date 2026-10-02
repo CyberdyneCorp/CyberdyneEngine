@@ -6,6 +6,8 @@
 // service says which phases may call it (openspec/specs/native-abi/spec.md):
 //
 //   onCreate       (no phase)    resolve the prefab and the cue, spawn the starting squad
+//   onEnterTree,   (no phase,    the commander is a NODE (`/Level/Commander`), so the scene tree's
+//   onReady         the pump)    pump delivers these; `@Node("../Barracks")` is resolved first
 //   onUpdate       (frame)       read the pointer, pan the camera, pick a unit or a ground point
 //   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build
 //
@@ -36,6 +38,9 @@ final class Commander: Behaviour {
     @Export(range: 0.1...2) var unitRadius: Float = 0.5
     @Export(range: 0.5...4) var unitHeight: Float = 1.8
     @Export(range: 0.05...2) var arrivalDistance: Float = 0.3
+
+    /// The level's barracks node, resolved by the engine at `onReady`. Nil if the level has none.
+    @Node("../Barracks") var barracksNode: Entity?
 
     // --- State ---------------------------------------------------------------------------------
 
@@ -74,6 +79,18 @@ final class Commander: Behaviour {
             try enlist(unit)
         }
         Log.info("Commander: \(squad.count) units ready")
+    }
+
+    override func onEnterTree() throws {
+        tally.entered += 1
+        try publish()
+    }
+
+    /// Every `@Node` is resolved before this runs, so the barracks reference is already filled in.
+    override func onReady() throws {
+        tally.readied += 1
+        tally.barracksFound = barracksNode == nil ? 0 : 1
+        try publish()
     }
 
     override func onUpdate(_ delta: Double) throws {
@@ -128,12 +145,16 @@ final class Commander: Behaviour {
 
     // --- Fixed step: the squad -----------------------------------------------------------------
 
-    /// Make `unit` a navigation agent with this game's size and speed, and count it in the squad.
+    /// Make `unit` a navigation agent with this game's size and speed, enrol it in `trainUnits`
+    /// by giving it a `Veterancy`, and count it in the squad.
     private func enlist(_ unit: Entity) throws {
         try NavAgent(unit).configure(
             .init(
                 radius: unitRadius, height: unitHeight, maxSpeed: unitSpeed,
                 arrivalDistance: arrivalDistance))
+        if let world {
+            try world.add(Components.register(Veterancy.self, in: world), to: unit)
+        }
         squad.append(unit)
     }
 
@@ -154,6 +175,9 @@ final class Commander: Behaviour {
         try world.setFloat(tally.arrivals, entity, report, field: reportFields.arrivals)
         try world.setFloat(tally.cues, entity, report, field: reportFields.cues)
         try world.setFloat(tally.spawns, entity, report, field: reportFields.spawns)
+        try world.setFloat(tally.entered, entity, report, field: reportFields.entered)
+        try world.setFloat(tally.readied, entity, report, field: reportFields.readied)
+        try world.setFloat(tally.barracksFound, entity, report, field: reportFields.barracksFound)
     }
 }
 
@@ -163,6 +187,9 @@ private struct Tally {
     var arrivals: Float = 0
     var cues: Float = 0
     var spawns: Float = 0
+    var entered: Float = 0
+    var readied: Float = 0
+    var barracksFound: Float = 0
 }
 
 /// `RtsReport`'s field indices, resolved by name once.
@@ -172,4 +199,7 @@ private struct ReportFields {
     let arrivals = RtsReport.field("arrivals")
     let cues = RtsReport.field("cues")
     let spawns = RtsReport.field("spawns")
+    let entered = RtsReport.field("entered")
+    let readied = RtsReport.field("readied")
+    let barracksFound = RtsReport.field("barracksFound")
 }

@@ -47,6 +47,12 @@ cy_add_module(
         src/game/navigation_thunks.cpp
         src/game/audio_thunks.cpp
         src/game/spawn_thunks.cpp
+        # ABI 1.5 (`add-swift-m12-gaps`): scheduled systems, node paths, bodies and characters.
+        src/game/system_thunks.cpp
+        src/game/scene_thunks.cpp
+        src/game/body_thunks.cpp
+        src/game/character_thunks.cpp
+        src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation
     # (M5 task 1.1). PRIVATE would be wrong only if the header exposed it, and it does not: the

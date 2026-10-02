@@ -85,4 +85,20 @@ CyResult spawn_instantiate_many(CyEngine engine, CyPrefab prefab, CyEntity paren
                                 const CyPose* poses, uint32_t count, CyEntity* out_roots);
 CyResult spawn_destroy(CyEngine engine, CyEntity root);
 
+// --- 1.5: scheduled systems, the scene tree, bodies and characters (`add-swift-m12-gaps`) ----
+CyResult register_system(CyEngine engine, const CySystemDesc* desc);
+CyResult node_find(CyEngine engine, CyEntity from, const char* path, CyEntity* out_entity);
+CyResult physics_apply_force(CyEngine engine, CyEntity entity, const float* force_xyz);
+CyResult physics_apply_impulse(CyEngine engine, CyEntity entity, const float* impulse_xyz,
+                               const float* point_xyz);
+CyResult physics_apply_torque(CyEngine engine, CyEntity entity, const float* torque_xyz);
+CyResult physics_set_velocity(CyEngine engine, CyEntity entity, const float* linear_xyz,
+                              const float* angular_xyz);
+CyResult physics_get_velocity(CyEngine engine, CyEntity entity, float* out_linear_xyz,
+                              float* out_angular_xyz);
+CyResult character_create(CyEngine engine, CyEntity entity, const CyCharacterDesc* desc);
+CyResult character_destroy(CyEngine engine, CyEntity entity);
+CyResult character_move(CyEngine engine, CyEntity entity, const CyCharacterInput* input);
+CyResult character_state(CyEngine engine, CyEntity entity, CyCharacterState* out_state);
+
 }  // namespace cy::abi::game

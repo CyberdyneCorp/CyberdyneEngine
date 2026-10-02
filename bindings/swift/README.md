@@ -149,7 +149,7 @@ Sources/CyberdyneABI/       generated: the C header and its module map
 Sources/CyberdyneCore/      generated: the overlay
 Sources/CyberdyneKit/       hand-written: the ergonomic layer
 Sources/CyberdyneMacros/    hand-written: the macro plugin
-Tests/                      61 cases; CyberdyneCoreTests/Generated/ is generated too
+Tests/                      161 cases; CyberdyneCoreTests/Generated/ is generated too
 fixtures/reload/            two generations of one module, for the reload suite
 tests/                      the C++ side of the reload suite
 tools/                      the module builder and the no-Swift-runtime check
@@ -303,29 +303,40 @@ What the host still does, and why none of it is gameplay: it builds the level (g
 tile, prefab, cue, input actions) and names each piece, binds the adapters, and gives every
 navigation agent a body and a scene node to move. See `samples/13-rts-api/README.md`.
 
+## Scheduled systems, the tree, bodies and characters (ABI 1.5)
+
+`add-swift-m12-gaps` appends what M12's RTS could not do without:
+
+* **`@System` runs in the engine's scheduler.** A `GameModule` lists `components` (registered first)
+  and `systems` (`[__CySystem_trainUnits.self]`); registering one in a bound module calls
+  `register_system` with the query's terms as component ids and the attribute's stage, and the host's
+  `cy::abi::ScriptSystems` installs it beside native systems, ordered by the same conflict rules, run
+  in its stage's phase. The body gets `EngineChunkSource`: `world_chunks` per component, joined by
+  archetype, `Without` archetypes skipped. Structural calls throw `.unavailable` while it runs; a
+  reload that changes a system's stage or access is refused. `Systems.swift` says how.
+* **The tree callbacks are driven.** `CyBehaviourVTable` gained `enter_tree`, `ready`, `enable`,
+  `disable` and `exit_tree`; the bridge registers each only for a class that wrote it. A behaviour
+  attached to a scene node (`cy::game_backend::ScriptSceneBridge`) receives them at the scene tree's
+  pump, in the tree's order.
+* **`@Node(path)` resolves at `onReady`**, through `node_find`, relative to the behaviour's node or
+  absolute; a path that does not resolve is nil and a warning. `SceneTree.find(_:from:)` is the same
+  lookup.
+* **`RigidBody`** — `applyForce`, `applyImpulse(_:at:)`, `applyTorque`, `setVelocity`, `velocity` — and
+  **`CharacterController`** — `create(on:_:)`, `move(velocity:jump:)` (one fixed step), `state`,
+  `destroy()` — over the physics server and `cy::physics::CharacterController`.
+
+Tested through `FakeEngine` in `SystemEngineTests.swift`, `TreeCallbackTests.swift` and
+`BodiesTests.swift`; end to end in `samples/13-rts-api` (`integration.rts_api_sample`).
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:
 
-* **No chunk source.** ABI 1.0's table has thirty entries and none of them hands a module a chunk.
-  The system model, its access derivation, and an inner loop that does not marshal are complete and
-  tested; the *source* of chunks is `ChunkSource`, a protocol waiting on an appended
-  `world_query_chunks` entry. `Res<...>` as a system parameter is diagnosed for the same reason.
-* **Two enums in this package are copies of engine enums the ABI does not carry.** `SystemStage` is
-  `cy::ecs::Stage`'s values, with no `CyStage` to check them against; `Severity` is
-  `cy::DiagnosticSeverity`'s, with no `CySeverity`. The second one *was already wrong* — six
-  enumerators where the engine has three, so every `Log.info` arrived in the engine's log as an
-  error, on a green run, for as long as nobody read the word — and the fix is
-  `integration.swift_reload`'s "a behaviour's `Log.info` reaches the engine as Info" case, which
-  installs a diagnostic sink and reads the severity the engine actually received. A Swift-side
-  assertion could not have caught it: this side asserts what it *sent*. Appending `CyStage` and
-  `CySeverity` to `CyInterface` would let the generator own both, and that is the real fix.
-* **The tree callbacks are declared, not driven.** `CyBehaviourVTable` carries `create`, `destroy`,
-  `fixed_update`, `serialize` and `deserialize`, and at 1.3 `frame_update`, which `onUpdate` is
-  wired to by `add-swift-game-api`. `onEnterTree`, `onReady`, `onEnable`, `onDisable` and
-  `onExitTree` are part of the model and recorded in `behaviourCallbacks`; the engine
-  gains the thunks when the scene entries are appended.
-* **`@Node(path)` resolves to nil.** There is no node entry in ABI 1.0. The wrapper is the seam.
+* **No resource in a system.** `Res<...>` as a system parameter is diagnosed by the macro and
+  refused at registration: no entry reads a resource.
+* **The tree callbacks need a node.** A behaviour created on a bare entity has no tree and receives
+  none of the five; only one attached through the scene bridge (or spawned from a prefab node that
+  names it) does.
 * **No `async` wrappers.** The generator emits them for entries declared asynchronous, and no entry
   in the current table is; asset loading is the first one that will be.
 * **A trap in game code is still fatal.** A *thrown* error is caught, logged with the behaviour and

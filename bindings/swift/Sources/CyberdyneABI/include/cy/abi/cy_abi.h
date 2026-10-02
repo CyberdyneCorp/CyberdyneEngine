@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 4u
+#define CY_ABI_MINOR 5u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -395,6 +395,24 @@ typedef struct CyBehaviourVTable {
      * callback costs nothing". A module compiled before 1.3 has a shorter `struct_size`, so the
      * engine's copy leaves this null — see `register_behaviour`. */
     void (*frame_update)(CyInstance self, float dt, void* user_data);
+
+    /* --- Appended at 1.5: the tree callbacks -------------------------------------------------
+     *
+     * `scene-graph-and-nodes`' transitions, driven by the scene tree's pump for an instance that is
+     * attached to a NODE (see `cy::game_backend::ScriptSceneBridge`). An instance created on a bare
+     * entity has no tree and receives none of them. The order is the tree's: `enter_tree` parent
+     * first, `ready` child first and once per attachment, `exit_tree` child first, and `enable` /
+     * `disable` on a change of the node's effective enablement. They run in the phase of the pump's
+     * caller, which the frame loop calls at the frame boundary (CY_PHASE_NONE), so the same tree
+     * operations dispatch the same callbacks in the same order on every run.
+     *
+     * Null when the behaviour does not implement the callback, and the engine then never calls it.
+     * A module compiled before 1.5 has a shorter `struct_size`, so all five are null for it. */
+    void (*enter_tree)(CyInstance self, void* user_data);
+    void (*ready)(CyInstance self, void* user_data);
+    void (*enable)(CyInstance self, void* user_data);
+    void (*disable)(CyInstance self, void* user_data);
+    void (*exit_tree)(CyInstance self, void* user_data);
 } CyBehaviourVTable;
 
 /* --- Borrowed pointers -------------------------------------------------------------------------
@@ -770,6 +788,105 @@ typedef struct CySpawnParams {
     float scale[3];  /* all zero is read as one */
 } CySpawnParams;
 
+/* === 1.5: SCHEDULED SYSTEMS, NODE PATHS, BODIES AND CHARACTERS =================================
+ *
+ * WHY THESE EXIST. M12 is an RTS written in Swift, and three things it needs were still missing at
+ * 1.4: a Swift `@System` could not be scheduled (it ran only in the package's own tests), the tree
+ * callbacks and `@Node(path)` were declared and never driven, and physics was queries only. The
+ * rules stated above `CyPhase` hold for every entry below. */
+
+/* --- 1.5: scheduled systems ---------------------------------------------------------------------
+ */
+
+/* What a system declares about one component. `cy::jobs::Access` in the scheduler's terms. */
+typedef enum CyAccessMode {
+    CY_ACCESS_READ = 0,
+    CY_ACCESS_WRITE = 1,
+    /* Narrows the match and declares no access, so it never conflicts. */
+    CY_ACCESS_EXCLUDE = 2
+} CyAccessMode;
+
+/* Passed in arrays, so fixed forever: no `struct_size`. */
+typedef struct CySystemAccess {
+    CyComponentTypeId component;
+    uint32_t mode; /* CyAccessMode */
+} CySystemAccess;
+
+/* A system a module asks the engine to schedule. THE ACCESS LIST IS THE DECLARATION the scheduler
+ * orders the system by, against native systems, by the same conflict rules; the module derives it
+ * from the query it iterates (Swift: the `Query<...>` in the function's signature), so the two
+ * cannot drift. Borrowed for the call except `name`, which must outlive the registration. */
+typedef struct CySystemDesc {
+    uint32_t struct_size;
+    uint32_t stage;   /* CyStage */
+    const char* name; /* unique per engine; the identity a reload matches by */
+    const CySystemAccess* access;
+    uint32_t access_count;
+    uint32_t reserved;
+    /* The body. Called once per run of the stage, possibly on a job worker, in the phase the stage
+     * belongs to. The world is iterating while it runs, so every structural entry answers
+     * UNAVAILABLE; bulk data is reached through `world_chunks`, whose columns the body may read
+     * (and write, where it declared WRITE) through the borrowed pointers until it returns. */
+    void (*run)(CyEngine engine, CyWorld world, void* user_data);
+    void* user_data; /* passed back to `run`; the module's own */
+} CySystemDesc;
+
+/* --- 1.5: characters ----------------------------------------------------------------------------
+ */
+
+/* `cy::physics::GroundState`, value for value. */
+typedef enum CyGroundState {
+    CY_GROUND_GROUNDED = 0,
+    CY_GROUND_STEEP_SLOPE = 1,
+    CY_GROUND_IN_AIR = 2
+} CyGroundState;
+
+#define CY_CHARACTER_FLOATING 0x1u /* six degrees of freedom: no gravity, no ground, no steps */
+#define CY_CHARACTER_NO_PUSH 0x2u  /* do not push dynamic bodies */
+
+/* A capsule character. Zero means "the default" for every field, so a zeroed struct is a 0.3 m by
+ * 1.8 m grounded character at the origin on layer 0 hitting every layer. */
+typedef struct CyCharacterDesc {
+    uint32_t struct_size;
+    uint32_t flags;          /* CY_CHARACTER_* */
+    float radius;            /* metres */
+    float height;            /* metres, total, both caps included */
+    float max_slope_radians; /* steeper is a wall */
+    float step_offset;       /* the tallest step climbed rather than blocked */
+    float skin_width;
+    float gravity_scale;
+    float mass;       /* kilograms, what a pushed body is pushed with */
+    float push_force; /* newtons */
+    uint32_t layer;   /* 0 to 31 */
+    uint32_t mask;    /* layers the capsule collides with; zero: every layer */
+    CyPose start;
+} CyCharacterDesc;
+
+#define CY_CHARACTER_JUMP 0x1u /* replace the vertical velocity with `jump_speed` this step */
+
+typedef struct CyCharacterInput {
+    uint32_t struct_size;
+    uint32_t flags;            /* CY_CHARACTER_JUMP */
+    float desired_velocity[3]; /* metres per second, world space */
+    float jump_speed;          /* metres per second, with CY_CHARACTER_JUMP */
+} CyCharacterInput;
+
+#define CY_CHARACTER_TOUCHING_CEILING 0x1u
+#define CY_CHARACTER_TOUCHING_WALL 0x2u
+#define CY_CHARACTER_STEPPED_UP 0x4u /* lifted onto a stair during the last move */
+
+typedef struct CyCharacterState {
+    uint32_t struct_size;
+    uint32_t ground; /* CyGroundState */
+    uint32_t flags;  /* CY_CHARACTER_TOUCHING_* and CY_CHARACTER_STEPPED_UP */
+    uint32_t reserved;
+    CyEntity ground_entity; /* the entity owning the ground body; null for none */
+    float position[3];      /* the capsule's centre, world space */
+    float velocity[3];      /* after gravity, collisions and the platform */
+    float ground_normal[3];
+    float platform_velocity[3]; /* the platform's share of the motion, per second */
+} CyCharacterState;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -1125,6 +1242,74 @@ typedef struct CyInterface {
      * carries no owned payload, so `var_release` is safe but unnecessary. */
     CyResult (*vfx_effect_parameter_get)(CyEngine engine, CyEntity entity, const char* emitter,
                                          const char* parameter, CyVar* out_value);
+
+    /* --- 1.5: scheduled systems --- */
+
+    /* [N] Schedule a module's system into `desc->stage`. The engine copies the access list,
+     * resolves it into the scheduler's declaration and installs the system when the embedder next
+     * installs script systems (`cy::abi::ScriptSystems`). Within its stage the system is ordered
+     * against every other by its declared access, exactly as a native system is, and runs in that
+     * stage's phase: F for CY_STAGE_PRE_SIMULATION to CY_STAGE_POST_SIMULATION, U for
+     * CY_STAGE_FRAME to CY_STAGE_UI, N for CY_STAGE_RENDER. Deterministic in F: the schedule is
+     * built from the declarations, ties broken by registration order, and a body sees the same
+     * chunks in the same order.
+     *
+     * Registering a name again in the same generation replaces it. In a LATER generation (a hot
+     * reload) the stage and the access must be unchanged, or the registration is refused with
+     * UNSUPPORTED and the reload is refused with it: a scheduled system cannot be re-ordered in a
+     * running schedule. INVALID_ARGUMENT for an unknown stage or mode, a component the bound world
+     * does not have, or a component declared twice; UNAVAILABLE with no world bound. */
+    CyResult (*register_system)(CyEngine engine, const CySystemDesc* desc);
+
+    /* --- 1.5: the scene tree --- */
+
+    /* [N F U] The node at `path`, relative to the node `from` (`Camera`, `../Camera`, `./Rig/Arm`)
+     * or absolute from the tree's root (`/Level/Player`). NOT_FOUND when the path does not resolve
+     * — which is how `@Node(path)` becomes nil rather than a trap. Deterministic: names are unique
+     * among siblings, so a path names one node or none. */
+    CyResult (*node_find)(CyEngine engine, CyEntity from, const char* path, CyEntity* out_entity);
+
+    /* --- 1.5: rigid bodies ---
+     *
+     * Simulation writes on the body `entity` owns, through the embedder's entity-to-body map.
+     * NOT_FOUND for an entity with no body; INVALID_ARGUMENT for a non-finite vector or for a
+     * force, impulse or torque on a body that is not dynamic; UNAVAILABLE while the physics step
+     * runs. Forces and torques accumulate until the next step and are cleared by it; impulses and
+     * velocities apply at once. In F they take effect in call order, which is script order —
+     * deterministic. */
+
+    /* [N F] Add a force (newtons, world space) at the centre of mass for the next step. */
+    CyResult (*physics_apply_force)(CyEngine engine, CyEntity entity, const float* force_xyz);
+    /* [N F] Add an impulse (newton seconds, world space). `point_xyz` is a world-space point of
+     * application, or null for the centre of mass. Wakes the body. */
+    CyResult (*physics_apply_impulse)(CyEngine engine, CyEntity entity, const float* impulse_xyz,
+                                      const float* point_xyz);
+    /* [N F] Add a torque (newton metres, world space) for the next step. */
+    CyResult (*physics_apply_torque)(CyEngine engine, CyEntity entity, const float* torque_xyz);
+    /* [N F] Replace the body's velocity. Either pointer may be null, keeping that half. */
+    CyResult (*physics_set_velocity)(CyEngine engine, CyEntity entity, const float* linear_xyz,
+                                     const float* angular_xyz);
+    /* [N F U] The body's linear and angular velocity after the last step and any writes since.
+     * Either output may be null. */
+    CyResult (*physics_get_velocity)(CyEngine engine, CyEntity entity, float* out_linear_xyz,
+                                     float* out_angular_xyz);
+
+    /* --- 1.5: character controllers ---
+     *
+     * `cy::physics::CharacterController`: a capsule moved by collide-and-slide over the server's
+     * queries, identical over every backend. One per entity; the controller owns a kinematic body
+     * carrying the entity, so a ray cast hits the character and names it. */
+
+    /* [N F] Give `entity` a character. ALREADY_EXISTS when it has one. */
+    CyResult (*character_create)(CyEngine engine, CyEntity entity, const CyCharacterDesc* desc);
+    /* [N F] Remove it and its body. NOT_FOUND when it has none. */
+    CyResult (*character_destroy)(CyEngine engine, CyEntity entity);
+    /* [F] One fixed step of `CyTime.fixed_delta`: gravity, the slide, stairs, the platform. Applied
+     * at the call, so the state reads back at once; characters moved in one tick move in call
+     * order, which is script order — deterministic. UNAVAILABLE while the physics step runs. */
+    CyResult (*character_move)(CyEngine engine, CyEntity entity, const CyCharacterInput* input);
+    /* [N F U] What the last move produced. */
+    CyResult (*character_state)(CyEngine engine, CyEntity entity, CyCharacterState* out_state);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -1201,7 +1386,7 @@ CY_ABI_STATIC_ASSERT(sizeof(CyVarPayload) == 16, "CyVarPayload is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyVar) == 32, "CyVar is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyFieldDesc) == 24, "CyFieldDesc is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentTypeDesc) == 32, "CyComponentTypeDesc is 32 bytes");
-CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 64, "CyBehaviourVTable is 64 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 104, "CyBehaviourVTable is 104 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyBorrow) == 16, "CyBorrow is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentInfo) == 24, "CyComponentInfo is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyChunk) == 40, "CyChunk is 40 bytes");
@@ -1227,6 +1412,12 @@ CY_ABI_STATIC_ASSERT(sizeof(CyNavAgentParams) == 48, "CyNavAgentParams is 48 byt
 CY_ABI_STATIC_ASSERT(sizeof(CyNavAgentState) == 56, "CyNavAgentState is 56 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyAudioPlay) == 56, "CyAudioPlay is 56 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CySpawnParams) == 56, "CySpawnParams is 56 bytes");
+/* 1.5 */
+CY_ABI_STATIC_ASSERT(sizeof(CySystemAccess) == 8, "CySystemAccess is 8 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CySystemDesc) == 48, "CySystemDesc is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyCharacterDesc) == 76, "CyCharacterDesc is 76 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyCharacterInput) == 24, "CyCharacterInput is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyCharacterState) == 72, "CyCharacterState is 72 bytes");
 
 #ifdef __cplusplus
 }

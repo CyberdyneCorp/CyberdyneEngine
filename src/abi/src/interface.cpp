@@ -1039,6 +1039,19 @@ const CyInterface kInterface = {
 
     &abi_vfx_effect_parameter_set,
     &abi_vfx_effect_parameter_get,
+
+    // --- 1.5: scheduled systems, the scene tree, bodies and characters ---------------------------
+    &cy::abi::game::register_system,
+    &cy::abi::game::node_find,
+    &cy::abi::game::physics_apply_force,
+    &cy::abi::game::physics_apply_impulse,
+    &cy::abi::game::physics_apply_torque,
+    &cy::abi::game::physics_set_velocity,
+    &cy::abi::game::physics_get_velocity,
+    &cy::abi::game::character_create,
+    &cy::abi::game::character_destroy,
+    &cy::abi::game::character_move,
+    &cy::abi::game::character_state,
 };
 
 }  // namespace
@@ -1057,7 +1070,7 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.4 and the module requires a later minor");
+                              "this engine exports ABI 1.5 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

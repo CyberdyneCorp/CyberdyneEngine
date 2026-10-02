@@ -6197,7 +6197,7 @@ row = "native-abi"
 requirement = "Callbacks into modules"
 evidence = "test:unit.abi"
 case = "a module registers a behaviour type and the engine calls back into it"
-note = "The engine calls module code only through registered function pointers with user data, and 'only the prefix both sides agree on is copied out of a vtable' covers the vtable copy. On reload the outgoing generation's registrations are dropped from lookup (integration.abi_reload). Per-callback thread-role documentation is not checked by a test."
+note = "The engine calls module code only through registered function pointers with user data, and 'only the prefix both sides agree on is copied out of a vtable' covers the vtable copy. On reload the outgoing generation's registrations are dropped from lookup (integration.abi_reload). Per-callback thread-role documentation is not checked by a test. ABI 1.5 (`add-swift-m12-gaps`) adds scheduled systems: unit.abi's `a script system runs in its stage's phase and cannot change the world's structure` is the system-callback half: `CySystemDesc.run` is a function pointer with the module's `user_data`, cy_abi.h states that it may run on a job worker in its stage's phase and must stay within its declared access, and the case shows the engine holding the world iterating while it runs, so a structural entry answers UNAVAILABLE. The unload half is the reload model's (images are retired, never unloaded): `integration.abi_reload`'s `after a reload the scheduled system runs the new image's code, in the same slot` shows a scheduled callback resolving to the current generation, never a retired one."
 
 [[coverage]]
 row = "native-abi"
@@ -6210,7 +6210,7 @@ row = "native-abi"
 requirement = "Hot reload"
 evidence = "test:integration.abi_reload"
 case = "state survives a reload across a layout change, by name"
-note = "Live instances migrate by field name across a layout change. Companion cases refuse a reload whose schema predates the saved state and one that drops a live type while the old code stays live, refuse a module that did not declare reload, and keep reload time and address-space cost flat as generations accumulate; integration.abi_live_reload covers reload at a frame boundary while the loop runs."
+note = "Live instances migrate by field name across a layout change. Companion cases refuse a reload whose schema predates the saved state and one that drops a live type while the old code stays live, refuse a module that did not declare reload, and keep reload time and address-space cost flat as generations accumulate; integration.abi_live_reload covers reload at a frame boundary while the loop runs. ABI 1.5 (`add-swift-m12-gaps`): `a reload that moves a scheduled system to another stage is refused` is aBI 1.5's addition to the incompatible-reload cases: a new module that registers an existing scheduled system in another stage is refused with ReloadFailure::SystemChanged, the abandoned generation's system records are dropped, and the system keeps running the previous image's code in its original place (its step, 1, not the moved image's 1000)."
 
 [[coverage]]
 row = "native-abi"
@@ -7151,7 +7151,7 @@ row = "scene-graph-and-nodes"
 requirement = "Node lifecycle callbacks"
 evidence = "test:unit.scene"
 case = "onReady runs child-first, exactly once per attachment"
-note = "A subtree added to the tree delivers onReady to every descendant before its ancestors, once, which is 'Ready runs bottom-up once'. 'an unimplemented callback is in no dispatch list and costs nothing' is 'Callbacks are opt-in'. 'leaving and re-entering the tree fires exit and ready again', 'onDestroy runs child-first while the components still exist' and 'onEnable and onDisable follow the effective state, published by propagation' cover the rest of the table's order."
+note = "A subtree added to the tree delivers onReady to every descendant before its ancestors, once, which is 'Ready runs bottom-up once'. 'an unimplemented callback is in no dispatch list and costs nothing' is 'Callbacks are opt-in'. 'leaving and re-entering the tree fires exit and ready again', 'onDestroy runs child-first while the components still exist' and 'onEnable and onDisable follow the effective state, published by propagation' cover the rest of the table's order. `a node created under one attached in the same frame enters the tree once` is a regression found by add-swift-m12-gaps: each node created under an in-tree parent queues its own subtree event, so a child built in the same frame as its parent was in two events and received onEnterTree twice. An `entered` flag per instance, cleared on exit, keeps it once per attachment; `onReady runs child-first, exactly once per attachment` in the same suite is the bottom-up scenario."
 
 [[coverage]]
 row = "scene-graph-and-nodes"
@@ -7717,14 +7717,16 @@ note = "`integration.swift_overlay` regenerates the committed overlay from the A
 [[coverage]]
 row = "swift-scripting"
 requirement = "Behaviour programming model"
-evidence = "exempt:m11e"
-note = "`Behaviour`, `@Export` and `@Node` exist and the package tests cover declared-callback dispatch and exported storage (`swift-api`). Missing: ABI 1.3 drives only create, destroy, fixed update, frame update, serialize and deserialize, so onEnterTree, onReady, onEnable, onDisable and onExitTree are never called; `@Node(path)` always resolves to nil because there is no node entry; and no case shows an exported property in the editor inspector. Re-enter when the scene entries are appended, with a module whose lifecycle callbacks fire in order and whose @Node resolves at onReady."
+evidence = "test:integration.rts_api_sample"
+case = "samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system, a hero, a push"
+note = "A Swift behaviour on a scene node receives the lifecycle `scene-graph-and-nodes` defines through ABI 1.5's vtable entries (onEnterTree and onReady exactly once each), and 'Node reference resolution' is the same case: both @Node paths resolved before onReady read them. The engine-side order for every tree callback (enter parent-first, ready child-first, disable/enable, exit then destroy child-first) is integration.game_backend_scene's `a script on a node is created at once and gets the tree callbacks in tree order`, and an unresolvable path reading nil is TreeCallbackTests.swift. The Inspector scenario is not answered here. It replaces an M11.e exemption recorded while ABI 1.3 drove only create, destroy, the updates and serialization; `Behaviour`, `@Export` and `@Node` declared-callback dispatch and exported storage are also covered by the package tests (`swift-api`)."
 
 [[coverage]]
 row = "swift-scripting"
 requirement = "System programming model"
-evidence = "exempt:m11e"
-note = "Access derivation, conflict rules and an inner loop over borrowed buffers are tested against a fake chunk in the package tests (`swift-api`). Missing: ABI 1.0-1.3 has no entry that hands a module a chunk (`ChunkSource` waits on `world_query_chunks`), so no Swift system is scheduled by the engine alongside a native system or iterates real storage. Re-enter with the chunk entry appended and a case where a Swift `Write<Velocity>` system and a native `Read<Velocity>` system are ordered by the native scheduler over 100,000 entities."
+evidence = "test:unit.abi"
+case = "a script system is ordered against a native one by the same conflict rules"
+note = "The 'Swift system is scheduled like a native one' scenario at the boundary: a module system declaring write access and a native system declaring read access to one component in one stage are ordered, two readers are not. The Swift half (the query's terms crossing as component ids, the body run over world_chunks joined by archetype) is SystemEngineTests.swift in integration.swift_package, and end to end integration.rts_api_sample's `trainUnits` runs on every fixed tick, ordered after the native roll, and not at all under --no-systems. 'Bulk iteration does not marshal' is the same EngineChunkSource: one world_chunks call per component, no CyVar. It replaces an M11.e exemption recorded while ABI 1.0-1.3 had no entry that handed a module a chunk; access derivation and the conflict rules are also tested against a fake chunk in the package tests (`swift-api`)."
 
 [[coverage]]
 row = "swift-scripting"

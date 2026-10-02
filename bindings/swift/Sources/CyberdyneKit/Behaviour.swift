@@ -18,15 +18,14 @@
 // callback the class did not write, and `swift-scripting`'s "SHALL not be registered in the
 // per-frame dispatch list" is a fact about the registration rather than a check inside it.
 //
-// --- WHAT THE ABI CAN DELIVER TODAY ----------------------------------------------------------------
+// --- WHAT THE ENGINE DRIVES ------------------------------------------------------------------------
 //
-// `CyBehaviourVTable` carries `create`, `destroy`, `fixed_update`, `serialize` and `deserialize`.
-// So `onCreate`, `onFixedUpdate`, `onDestroy` and `onAfterReload` are driven by the engine now. The
-// tree callbacks — `onEnterTree`, `onReady`, `onEnable`, `onDisable`, `onUpdate`, `onExitTree` —
-// need scene and frame entries that ABI 1.0's table does not have; they are declared here, they are
-// recorded in `behaviourCallbacks`, and `dispatch(_:)` is the seam that drives them. When the
-// scene's entries are APPENDED to `CyInterface` (which is the only legal way to grow it), the
-// bridge gains the thunks and nothing in a game changes.
+// Every callback. `CyBehaviourVTable` carries `create`, `destroy`, `fixed_update`, `serialize` and
+// `deserialize` (ABI 1.0), `frame_update` for `onUpdate` (1.3), and `enter_tree`, `ready`, `enable`,
+// `disable` and `exit_tree` (1.5). The tree callbacks reach a behaviour that is attached to a scene
+// NODE — `cy::game_backend::ScriptSceneBridge` makes each behaviour type a scene behaviour of the
+// same name — in the tree's order, at the scene tree's pump. A behaviour created on a bare entity
+// has no tree and gets none of them. `dispatch(_:)` remains for a test that drives one by hand.
 
 import CyberdyneCore
 
@@ -147,6 +146,19 @@ public protocol BehaviourClass: Behaviour {
     static var exportedNames: [String] { get }
     /// The storage behind one exported property, or nil when this class has no such property.
     func exportedStorage(named name: String) -> (any ExportedStorage)?
+    /// The paths of the `@Node` properties, in declaration order. Non-empty means the bridge
+    /// resolves them at `ready` even when the class does not override `onReady`.
+    static var nodePaths: [String] { get }
+    /// The `@Node` properties themselves, for the bridge to resolve.
+    func nodeReferences() -> [any NodeReference]
+}
+
+extension BehaviourClass {
+    /// No `@Node` properties: the default for a class the `@Behaviour` macro did not expand, such as
+    /// a hand-written registration in a test.
+    public static var nodePaths: [String] { [] }
+    /// Nothing for the bridge to resolve: the default has no `@Node` properties.
+    public func nodeReferences() -> [any NodeReference] { [] }
 }
 
 extension BehaviourClass {

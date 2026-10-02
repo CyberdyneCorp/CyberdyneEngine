@@ -28,7 +28,7 @@ import CyberdyneCore
 @attached(extension, conformances: BehaviourClass)
 @attached(
     member, names: named(behaviourName), named(behaviourSchema), named(behaviourCallbacks),
-    named(exportedNames), named(exportedStorage(named:)))
+    named(exportedNames), named(exportedStorage(named:)), named(nodePaths), named(nodeReferences))
 public macro Behaviour(name: String? = nil, schema: UInt32 = 1) =
     #externalMacro(module: "CyberdyneMacros", type: "BehaviourMacro")
 

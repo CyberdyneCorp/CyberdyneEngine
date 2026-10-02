@@ -99,6 +99,49 @@ final class BehaviourMacroTests: XCTestCase {
             macroSpecs: macros)
     }
 
+    /// ABI 1.5: the `@Node` properties are listed, so the bridge can resolve them at `ready`
+    /// without `Mirror` — and a class without one keeps the protocol's empty defaults.
+    func testItListsTheNodeReferences() {
+        assertMacroExpansion(
+            """
+            @Behaviour
+            final class Squad: Behaviour {
+                @Node("../Barracks") var barracks: Entity?
+            }
+            """,
+            expandedSource: """
+                final class Squad: Behaviour {
+                    @Node("../Barracks") var barracks: Entity?
+
+                    public static let behaviourName: String = "Squad"
+
+                    public static let behaviourSchema: UInt32 = 1
+
+                    public static let behaviourCallbacks: CallbackSet = []
+
+                    public static let exportedNames: [String] = []
+
+                    public func exportedStorage(named name: String) -> (any ExportedStorage)? {
+                        switch name {
+
+                        default:
+                            return nil
+                        }
+                    }
+
+                    public static let nodePaths: [String] = ["../Barracks"]
+
+                    public func nodeReferences() -> [any NodeReference] {
+                        [_barracks]
+                    }
+                }
+
+                extension Squad: BehaviourClass {
+                }
+                """,
+            macroSpecs: macros)
+    }
+
     func testItRefusesAStruct() {
         assertMacroExpansion(
             """
@@ -247,7 +290,7 @@ final class SystemMacroTests: XCTestCase {
             expandedSource: """
                 func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
 
-                public enum __CySystem_applyGravity {
+                public enum __CySystem_applyGravity: SystemRegistration {
                     public static let descriptor = SystemDescriptor(
                         name: "applyGravity", stage: .simulation, access: Query<Write<Velocity>, Read<Mass>>.access)
 

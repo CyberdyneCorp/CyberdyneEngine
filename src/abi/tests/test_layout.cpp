@@ -29,7 +29,7 @@ CY_TEST_CASE("every ABI struct has the size the header declares") {
     CY_CHECK_EQ(sizeof(CyVar), 32U);
     CY_CHECK_EQ(sizeof(CyFieldDesc), 24U);
     CY_CHECK_EQ(sizeof(CyComponentTypeDesc), 32U);
-    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 64U);
+    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 104U);
     CY_CHECK_EQ(sizeof(CyBorrow), 16U);
     CY_CHECK_EQ(sizeof(CyServiceRequest), 40U);
     CY_CHECK_EQ(sizeof(CyServiceEvent), 40U);
@@ -59,6 +59,11 @@ CY_TEST_CASE("every ABI struct has the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, create), 8U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, user_data), 48U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, frame_update), 56U);  // appended at 1.3
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, enter_tree), 64U);    // appended at 1.5
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, ready), 72U);
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, enable), 80U);
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, disable), 88U);
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, exit_tree), 96U);
 
     CY_CHECK_EQ(offsetof(CyInterfaceHeader, table_size), 12U);
     CY_CHECK_EQ(offsetof(CyModuleInit, initialize), 16U);
@@ -254,4 +259,49 @@ CY_TEST_CASE("the 1.3 service handles are integers, never addresses") {
     CY_CHECK_EQ(sizeof(CyAudioBus), 8U);
     CY_CHECK_EQ(sizeof(CyAudioVoice), 8U);
     CY_CHECK_EQ(sizeof(CyPrefab), 8U);
+}
+
+// ABI 1.5: scheduled systems and character controllers.
+CY_TEST_CASE("the 1.5 system structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CySystemAccess), 8U);
+    CY_CHECK_EQ(offsetof(CySystemAccess, component), 0U);
+    CY_CHECK_EQ(offsetof(CySystemAccess, mode), 4U);
+    CY_CHECK_EQ(sizeof(CySystemDesc), 48U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, struct_size), 0U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, stage), 4U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, name), 8U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, access), 16U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, access_count), 24U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, reserved), 28U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, run), 32U);
+    CY_CHECK_EQ(offsetof(CySystemDesc, user_data), 40U);
+}
+
+CY_TEST_CASE("the 1.5 character structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyCharacterDesc), 76U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, radius), 8U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, height), 12U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, max_slope_radians), 16U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, step_offset), 20U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, skin_width), 24U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, gravity_scale), 28U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, mass), 32U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, push_force), 36U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, layer), 40U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, mask), 44U);
+    CY_CHECK_EQ(offsetof(CyCharacterDesc, start), 48U);
+    CY_CHECK_EQ(sizeof(CyCharacterInput), 24U);
+    CY_CHECK_EQ(offsetof(CyCharacterInput, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyCharacterInput, desired_velocity), 8U);
+    CY_CHECK_EQ(offsetof(CyCharacterInput, jump_speed), 20U);
+    CY_CHECK_EQ(sizeof(CyCharacterState), 72U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, ground), 4U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, flags), 8U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, reserved), 12U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, ground_entity), 16U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, position), 24U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, velocity), 36U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, ground_normal), 48U);
+    CY_CHECK_EQ(offsetof(CyCharacterState, platform_velocity), 60U);
 }

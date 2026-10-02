@@ -29,8 +29,17 @@ public protocol GameModule {
     /// The behaviour types this module registers, in the order they should be registered.
     static var behaviours: [any BehaviourClass.Type] { get }
 
-    /// Called at each initialisation level. The default registers `behaviours` at `.scene`, which is
-    /// where `native-abi` puts type registration; override it to do more.
+    /// The components this module registers, before its systems — a system's access names its
+    /// components, and the engine resolves each in the world when the system is registered.
+    static var components: [any Component.Type] { get }
+
+    /// The systems this module asks the engine to schedule: the `@System` macro's
+    /// `__CySystem_<name>` for each, e.g. `[__CySystem_ageUnits.self]`. ABI 1.5.
+    static var systems: [any SystemRegistration.Type] { get }
+
+    /// Called at each initialisation level. The default registers `components`, `behaviours` and
+    /// `systems`, in that order, at `.scene` — where `native-abi` puts type registration and where a
+    /// world exists to register against; override it to do more.
     static func initialize(at level: InitLevel)
 
     /// Called at each level on the way down.
@@ -38,8 +47,22 @@ public protocol GameModule {
 }
 
 extension GameModule {
+    /// No components of its own: the default for a module whose systems use none.
+    public static var components: [any Component.Type] { [] }
+    /// No scheduled systems: the default for a module that only has behaviours.
+    public static var systems: [any SystemRegistration.Type] { [] }
+
     public static func initialize(at level: InitLevel) {
         guard level == .scene else { return }
+        if let world = Runtime.world {
+            for type in components {
+                do {
+                    _ = try Components.register(type, in: world)
+                } catch {
+                    Log.error("could not register component \(type.componentName): \(error)")
+                }
+            }
+        }
         for type in behaviours {
             do {
                 try Behaviours.register(type)
@@ -49,6 +72,16 @@ extension GameModule {
                 // look. Returning false from the entry point is for a version mismatch, which is a
                 // different failure and is handled before any of this runs.
                 Log.error("could not register \(type.behaviourName): \(error)")
+            }
+        }
+        for system in systems {
+            do {
+                try system.register()
+            } catch {
+                // A refused system is logged, not fatal, for the reason a refused behaviour is. A
+                // reload that changed a system's stage or access is refused by the engine as a
+                // whole, so the previous generation keeps running it.
+                Log.error("could not schedule system \(system.descriptor.name): \(error)")
             }
         }
     }
@@ -95,6 +128,7 @@ public enum ModuleBootstrap {
         initializer = nil
         finalizer = nil
         Behaviours.forgetRegistrations()
+        Systems.forgetRegistrations()
         Runtime.unbind()
     }
 

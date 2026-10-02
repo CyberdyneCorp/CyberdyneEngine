@@ -50,6 +50,9 @@ class PhysicsQueryBackend;
 class NavigationBackend;
 class AudioBackend;
 class SpawnBackend;
+class SceneBackend;
+class PhysicsBodyBackend;
+class CharacterBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -92,6 +95,10 @@ struct GameServices {
     NavigationBackend* navigation = nullptr;
     AudioBackend* audio = nullptr;
     SpawnBackend* spawn = nullptr;
+    /// ABI 1.5: `node_find`, `physics_apply_*` / `physics_*_velocity` and `character_*`.
+    SceneBackend* scene = nullptr;
+    PhysicsBodyBackend* bodies = nullptr;
+    CharacterBackend* characters = nullptr;
     GameClock clock;
 };
 
@@ -103,6 +110,18 @@ struct GameServices {
 
 /// The phase for the duration of a scope, restored afterwards. What the behaviour runtime wraps
 /// `fixed_update` and `frame_update` dispatch in, so a callback can never leave the phase set.
+/// The phase a scheduler stage runs in: CY_STAGE_PRE_SIMULATION to CY_STAGE_POST_SIMULATION are a
+/// fixed step (F), CY_STAGE_FRAME to CY_STAGE_UI the frame (U), and CY_STAGE_RENDER is neither (N).
+/// cy_abi.h states the mapping above `CyPhase`; this is the one place that computes it.
+[[nodiscard]] constexpr CyPhase phase_of_stage(CyStage stage) noexcept {
+    if (stage <= CY_STAGE_POST_SIMULATION) {
+        return CY_PHASE_FIXED_UPDATE;
+    }
+    return stage <= CY_STAGE_UI ? CY_PHASE_FRAME_UPDATE : CY_PHASE_NONE;
+}
+
+/// Sets the clock's phase for a scope and restores the previous one on exit, so an entry called
+/// from inside a scheduled system sees the phase of the stage it runs in.
 class PhaseScope {
 public:
     PhaseScope(GameClock& clock, CyPhase phase) noexcept : clock_(clock), previous_(clock.phase) {
