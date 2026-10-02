@@ -151,6 +151,154 @@ CY_TEST_CASE("ui_paint: a primitive outside its clip is culled before batching")
     CY_CHECK_EQ(buffer.primitives().size(), 2U);  // the root and the visible row
 }
 
+namespace {
+
+/// A content painter that draws two glyph-like primitives at an element's top-left, one of them
+/// far outside anything that could be its clip, and remembers what it was asked.
+class TwoGlyphs final : public ContentPainter {
+public:
+    [[nodiscard]] Status paint_content(ElementId element, const Rect& rect,
+                                       Array<Primitive>& out) noexcept override {
+        if (element != target) {
+            return ok();
+        }
+        painted_rect = rect;
+        Primitive glyph;
+        glyph.bounds = Rect{rect.x, rect.y, 6.0F, 13.0F};
+        glyph.material = material_index(BuiltinMaterial::Glyph);
+        glyph.atlas = 1;
+        glyph.colour = 0xFFFFFFFFU;
+        if (Status pushed = out.push_back(glyph); !pushed) {
+            return pushed;
+        }
+        glyph.bounds = Rect{5000.0F, 5000.0F, 6.0F, 13.0F};
+        return out.push_back(glyph);
+    }
+
+    ElementId target;
+    Rect painted_rect;
+};
+
+}  // namespace
+
+CY_TEST_CASE("ui_paint: opacity multiplies down the tree into the premultiplied colours") {
+    // A panel at half opacity holding a child at half opacity: the child is drawn at a quarter,
+    // its border too, and an untouched element keeps its colour bit for bit.
+    ElementStore store(allocator());
+    const ElementId root = add(store, kNoElement, "panel", Rect{0.0F, 0.0F, 400.0F, 300.0F});
+    const ElementId faded = add(store, root, "panel", Rect{10.0F, 10.0F, 200.0F, 100.0F});
+    const ElementId inner = add(store, faded, "panel", Rect{20.0F, 20.0F, 50.0F, 50.0F});
+    const ElementId hidden = add(store, root, "panel", Rect{250.0F, 10.0F, 100.0F, 100.0F});
+    const ElementId under_hidden = add(store, hidden, "panel", Rect{260.0F, 20.0F, 20.0F, 20.0F});
+    store.paint(root)->background = 0xFF336699U;
+    store.paint(faded)->opacity = 0.5F;
+    store.paint(faded)->background = 0xFFFF0000U;
+    store.paint(inner)->opacity = 0.5F;
+    store.paint(inner)->background = 0xFF00FF00U;
+    store.paint(inner)->border_colour = 0xFF0000FFU;
+    store.paint(inner)->border_width = 2.0F;
+    store.paint(hidden)->opacity = 0.0F;
+    (void)under_hidden;
+
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(flatten(store, Rect{0.0F, 0.0F, 400.0F, 300.0F}, buffer, report).has_value());
+    // The fully transparent panel takes its subtree with it.
+    CY_REQUIRE_EQ(buffer.primitives().size(), 3U);
+    CY_CHECK_EQ(buffer.primitives()[0].colour, 0xFF336699U);
+    CY_CHECK_EQ(buffer.primitives()[1].colour, scale_premultiplied(0xFFFF0000U, 0.5F));
+    CY_CHECK_EQ(buffer.primitives()[1].colour, 0x80800000U);
+    CY_CHECK_EQ(buffer.primitives()[2].colour, 0x40004000U);
+    CY_CHECK_EQ(buffer.primitives()[2].border_colour, 0x40000040U);
+    CY_CHECK_EQ(buffer.primitives()[2].border_width, 2.0F);
+}
+
+CY_TEST_CASE("ui_paint: premultiplied scaling rounds every channel and keeps a whole colour") {
+    CY_CHECK_EQ(scale_premultiplied(0xFFFFFFFFU, 1.0F), 0xFFFFFFFFU);
+    CY_CHECK_EQ(scale_premultiplied(0x12345678U, 1.0F), 0x12345678U);
+    CY_CHECK_EQ(scale_premultiplied(0xFFFFFFFFU, 0.0F), 0U);
+    // 255 * 0.5 = 127.5 rounds up; 1 * 0.5 = 0.5 rounds up too.
+    CY_CHECK_EQ(scale_premultiplied(0xFF010203U, 0.5F), 0x80010102U);
+}
+
+CY_TEST_CASE("ui_paint: content is painted over its element, under its children, and clipped") {
+    // A label's glyphs come after the label's own background and before anything nested in it,
+    // carry the label's clip and identity, and a glyph outside the clip is culled like an element.
+    ElementStore store(allocator());
+    const ElementId root = add(store, kNoElement, "panel", Rect{0.0F, 0.0F, 400.0F, 300.0F});
+    const ElementId label = add(store, root, "label", Rect{40.0F, 30.0F, 120.0F, 20.0F});
+    const ElementId child = add(store, label, "icon", Rect{150.0F, 30.0F, 10.0F, 10.0F});
+    store.layout_output(label)->clip = Rect{0.0F, 0.0F, 300.0F, 200.0F};
+    store.layout_output(child)->clip = Rect{0.0F, 0.0F, 300.0F, 200.0F};
+    store.paint(label)->opacity = 0.5F;
+
+    TwoGlyphs painter;
+    painter.target = label;
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(
+        flatten(store, Rect{0.0F, 0.0F, 400.0F, 300.0F}, buffer, report, &painter).has_value());
+    CY_CHECK_EQ(painter.painted_rect.x, 40.0F);
+    CY_CHECK_EQ(painter.painted_rect.width, 120.0F);
+    CY_CHECK_EQ(report.culled, 1U);
+    const Span<const Primitive> primitives = buffer.primitives();
+    CY_REQUIRE_EQ(primitives.size(), 4U);
+    CY_CHECK(primitives[1].source == label);
+    CY_CHECK_EQ(primitives[1].material, material_index(BuiltinMaterial::Shape));
+    CY_CHECK(primitives[2].source == label);
+    CY_CHECK_EQ(primitives[2].material, material_index(BuiltinMaterial::Glyph));
+    CY_CHECK_EQ(primitives[2].clip, primitives[1].clip);
+    CY_CHECK_EQ(primitives[2].colour, scale_premultiplied(0xFFFFFFFFU, 0.5F));
+    CY_CHECK(primitives[3].source == child);
+    // The root; the label under its own clip; the glyph by material; the child's panel by
+    // material again — four batches, in tree order.
+    CY_CHECK_EQ(report.batches, 4U);
+    CY_REQUIRE_EQ(buffer.batches().size(), 4U);
+    CY_CHECK_EQ(buffer.batches()[0].reason, Batch::BreakReason::Clip);
+    CY_CHECK_EQ(buffer.batches()[1].reason, Batch::BreakReason::Material);
+    CY_CHECK_EQ(buffer.batches()[2].reason, Batch::BreakReason::Material);
+}
+
+CY_TEST_CASE("ui_paint: a container with nothing to draw puts no primitive in the stream") {
+    // A layout container — no colour, no border — is counted and skipped; its children are not.
+    // A border alone is something to draw, and so is a custom material, which decides for itself.
+    ElementStore store(allocator());
+    const ElementId root = add(store, kNoElement, "panel", Rect{0.0F, 0.0F, 400.0F, 300.0F});
+    store.paint(root)->background = 0;
+    const ElementId frame = add(store, root, "frame", Rect{10.0F, 10.0F, 50.0F, 50.0F});
+    store.paint(frame)->background = 0;
+    store.paint(frame)->border_width = 1.0F;
+    store.paint(frame)->border_colour = 0xFFFFFFFFU;
+    const ElementId custom =
+        add(store, root, "effect", Rect{70.0F, 10.0F, 50.0F, 50.0F}, kFirstCustomMaterial);
+    store.paint(custom)->background = 0;
+    const ElementId child = add(store, root, "panel", Rect{130.0F, 10.0F, 50.0F, 50.0F});
+
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(flatten(store, Rect{0.0F, 0.0F, 400.0F, 300.0F}, buffer, report).has_value());
+    CY_CHECK_EQ(report.empty, 1U);
+    CY_REQUIRE_EQ(buffer.primitives().size(), 3U);
+    CY_CHECK(buffer.primitives()[0].source == frame);
+    CY_CHECK(buffer.primitives()[1].source == custom);
+    CY_CHECK(buffer.primitives()[2].source == child);
+}
+
+CY_TEST_CASE("ui_paint: a corner radius, a border and its colour reach the primitive") {
+    ElementStore store(allocator());
+    const ElementId root = add(store, kNoElement, "panel", Rect{0.0F, 0.0F, 400.0F, 300.0F});
+    store.paint(root)->corner_radius = 6.0F;
+    store.paint(root)->border_width = 1.5F;
+    store.paint(root)->border_colour = 0xFF102030U;
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(flatten(store, Rect{0.0F, 0.0F, 400.0F, 300.0F}, buffer, report).has_value());
+    CY_REQUIRE_EQ(buffer.primitives().size(), 1U);
+    CY_CHECK_EQ(buffer.primitives()[0].corner_radius, 6.0F);
+    CY_CHECK_EQ(buffer.primitives()[0].border_width, 1.5F);
+    CY_CHECK_EQ(buffer.primitives()[0].border_colour, 0xFF102030U);
+}
+
 CY_TEST_CASE("ui_budget: the ladder degrades in the declared order and never past it") {
     // "When budgets are exceeded, the system SHALL degrade in a defined order — reducing effect
     // quality, disabling blur-behind, and reducing world-space UI detail — before reducing anything

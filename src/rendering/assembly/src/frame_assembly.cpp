@@ -744,6 +744,7 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.volumetric_fog_stage = sinks.volumetric_fog;
     description.motion_blur_target = view.motion_blur;
     description.motion_blur_stage = sinks.motion_blur;
+    description.ui_stage = sinks.ui;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

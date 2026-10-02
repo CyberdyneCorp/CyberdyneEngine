@@ -836,3 +836,14 @@ which is why no entry appears above for any of it.
 **The rule this establishes, for whoever adds the next asset**: a file under `content/` carries a
 `PROVENANCE.md` beside it naming its licence and either the generator and seed that produce it or the
 source it came from and the terms it came under. A file that carries neither does not get committed.
+
+### Data compiled into the engine
+
+One third-party work is compiled into the engine as data rather than linked as code:
+
+| what | where | provenance |
+|---|---|---|
+| The built-in interface font: printable ASCII from the X Window System's `misc-fixed` 6x13 bitmap font | `src/ui/text/src/builtin_font_data.h` | **public domain** — the font's own `COPYRIGHT` property reads "Public domain font. Share and enjoy." Generated from `/usr/share/fonts/X11/misc/6x13.pcf.gz` (the `xfonts-base` package) by `src/ui/text/tools/make_builtin_font.py` |
+
+It is a stand-in: CyberUI needs glyphs to draw a console and a HUD before the engine imports real
+fonts (`text-and-fonts`, issue #86), and it goes when a cooked font replaces it.

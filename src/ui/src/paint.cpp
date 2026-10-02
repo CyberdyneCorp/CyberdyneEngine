@@ -72,99 +72,156 @@ void PrimitiveBuffer::clear() noexcept {
     owners_.clear();
 }
 
-Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
-               FlattenReport& report) noexcept {
-    report = FlattenReport{};
+u32 scale_premultiplied(u32 colour, f32 opacity) noexcept {
+    if (opacity >= 1.0F) {
+        return colour;
+    }
+    if (opacity <= 0.0F) {
+        return 0U;
+    }
+    u32 scaled = 0;
+    for (u32 shift = 0; shift < 32U; shift += 8U) {
+        const auto channel = static_cast<f32>((colour >> shift) & 0xFFU);
+        const auto rounded = static_cast<u32>(std::lround(channel * opacity));
+        scaled |= (rounded > 255U ? 255U : rounded) << shift;
+    }
+    return scaled;
+}
 
-    // INCREMENTAL. An element with no paint dirt keeps the primitive it already has; the pass walks
-    // the tree once, and every element whose paint bit is clear and whose primitive is already in
-    // the buffer is counted as reused rather than re-emitted.
-    Array<Primitive> emitted(out.primitives_.allocator());
-    Array<ElementId> owners(out.owners_.allocator());
-    Array<Rect> clips(out.clips_.allocator());
-    if (Status pushed = clips.push_back(viewport); !pushed) {
+namespace {
+
+/// One element waiting to be visited, with the opacity its ancestors multiply into it.
+struct Pending {
+    ElementId element;
+    f32 opacity = 1.0F;
+};
+
+/// The walk's scratch and its output, threaded through the helpers below so each stays about one
+/// decision.
+struct FlattenWalk {
+    ElementStore& store;
+    const Rect& viewport;
+    FlattenReport& report;
+    ContentPainter* painter;
+    Array<Primitive>& emitted;
+    Array<ElementId>& owners;
+    Array<Rect>& clips;
+    Array<Pending>& stack;
+};
+
+/// Fill in what `flatten()` owns on a primitive and append it: the clip, the identity transform,
+/// the source, and the inherited opacity folded into both colours.
+[[nodiscard]] Status emit(FlattenWalk& walk, Primitive primitive, ElementId element, u16 clip,
+                          f32 opacity) noexcept {
+    primitive.clip = clip;
+    primitive.transform = 0;
+    primitive.source = element;
+    primitive.colour = scale_premultiplied(primitive.colour, opacity);
+    primitive.border_colour = scale_premultiplied(primitive.border_colour, opacity);
+    if (Status pushed = walk.emitted.push_back(primitive); !pushed) {
         return pushed;
     }
+    return walk.owners.push_back(element);
+}
 
-    Array<ElementId> stack(out.primitives_.allocator());
-    // Roots in order, so the first root is drawn first and the last is on top.
-    for (usize index = store.roots().size(); index > 0; --index) {
-        if (Status pushed = stack.push_back(store.roots()[index - 1]); !pushed) {
+/// The element's content, through the painter, culled against the same clip as its background.
+[[nodiscard]] Status emit_content(FlattenWalk& walk, ElementId element, const Rect& rect,
+                                  const Rect& clip, u16 clip_slot, f32 opacity) noexcept {
+    Array<Primitive> content(walk.emitted.allocator());
+    if (Status painted = walk.painter->paint_content(element, rect, content); !painted) {
+        return painted;
+    }
+    for (const Primitive& primitive : content.span()) {
+        if (primitive.bounds.intersected(clip).empty()) {
+            ++walk.report.culled;
+            continue;
+        }
+        if (Status pushed = emit(walk, primitive, element, clip_slot, opacity); !pushed) {
             return pushed;
         }
     }
+    return ok();
+}
 
-    while (!stack.empty()) {
-        const ElementId element = stack[stack.size() - 1];
-        stack.pop_back();
-        ++report.visited;
+/// Whether an element's own primitive would draw nothing: every built-in material multiplies by
+/// the colour, so no colour and no visible border is no pixel. A custom material decides for
+/// itself and is always emitted.
+[[nodiscard]] bool draws_nothing(const PaintData& paint) noexcept {
+    const bool border = paint.border_width > 0.0F && paint.border_colour != 0U;
+    return paint.material < kFirstCustomMaterial && paint.background == 0U && !border;
+}
 
-        const ElementFlags flags = store.flags(element);
-        const LayoutOutput* output = store.layout_output(element);
-        const PaintData* paint = store.paint(element);
-        const Hierarchy* node = store.hierarchy(element);
-        if (output == nullptr || paint == nullptr || node == nullptr) {
-            continue;
-        }
-        if (has_flag(flags, ElementFlags::Collapsed)) {
-            continue;
-        }
+/// The element's own primitive and its content, or the cull count when it is outside its clip.
+[[nodiscard]] Status visit(FlattenWalk& walk, ElementId element, f32 opacity) noexcept {
+    const LayoutOutput& output = *walk.store.layout_output(element);
+    const PaintData& paint = *walk.store.paint(element);
 
-        // CULLING, against the viewport and against the element's own clip. "WHEN elements lie
-        // outside their scroll container's clip rect THEN their primitives SHALL be culled before
-        // batching."
-        const Rect clip = output->clip.empty() ? viewport : output->clip.intersected(viewport);
-        const Rect visible = output->rect.intersected(clip);
-        const bool culled = visible.empty();
-
-        if (!culled && has_flag(flags, ElementFlags::Visible) && paint->opacity > 0.0F) {
-            Primitive primitive;
-            primitive.bounds = output->rect;
-            primitive.uv = paint->uv;
-            primitive.material = paint->material;
-            primitive.atlas = paint->atlas;
-            primitive.transform = 0;
-            primitive.colour = paint->background;
-            primitive.source = element;
-
-            auto clip_slot = clip_index_for(clips, clip);
-            if (!clip_slot) {
-                return make_unexpected(clip_slot.error());
-            }
-            primitive.clip = clip_slot.value();
-
-            if (has_dirty(store.dirty(element), Dirty::Paint)) {
-                ++report.emitted;
-                store.clear_dirty(element, Dirty::Paint);
-            } else {
-                ++report.reused;
-            }
-            if (Status pushed = emitted.push_back(primitive); !pushed) {
-                return pushed;
-            }
-            if (Status pushed = owners.push_back(element); !pushed) {
-                return pushed;
-            }
-        } else if (culled) {
-            ++report.culled;
-        }
-
-        for (ElementId child = node->last_child; child.is_valid();) {
-            const Hierarchy* child_node = store.hierarchy(child);
-            if (child_node == nullptr) {
-                break;
-            }
-            if (Status pushed = stack.push_back(child); !pushed) {
-                return pushed;
-            }
-            child = child_node->previous_sibling;
-        }
+    // CULLING, against the viewport and against the element's own clip. "WHEN elements lie
+    // outside their scroll container's clip rect THEN their primitives SHALL be culled before
+    // batching."
+    const Rect clip = output.clip.empty() ? walk.viewport : output.clip.intersected(walk.viewport);
+    if (output.rect.intersected(clip).empty()) {
+        ++walk.report.culled;
+        return ok();
+    }
+    if (!has_flag(walk.store.flags(element), ElementFlags::Visible) || opacity <= 0.0F) {
+        return ok();
     }
 
-    // BATCHING by material and atlas, with the break reason recorded. A batch that broke for a
-    // reason nobody can name is the commonest cause of an interface that draws in four hundred
-    // calls, and this is the column that names it.
-    Array<Batch> batches(out.batches_.allocator());
+    auto clip_slot = clip_index_for(walk.clips, clip);
+    if (!clip_slot) {
+        return make_unexpected(clip_slot.error());
+    }
+    if (has_dirty(walk.store.dirty(element), Dirty::Paint)) {
+        ++walk.report.emitted;
+        walk.store.clear_dirty(element, Dirty::Paint);
+    } else {
+        ++walk.report.reused;
+    }
+
+    if (draws_nothing(paint)) {
+        // A layout container: counted, attributed nothing, and no quad for the device to discard.
+        ++walk.report.empty;
+        return walk.painter == nullptr
+                   ? ok()
+                   : emit_content(walk, element, output.rect, clip, clip_slot.value(), opacity);
+    }
+    Primitive primitive;
+    primitive.bounds = output.rect;
+    primitive.uv = paint.uv;
+    primitive.material = paint.material;
+    primitive.atlas = paint.atlas;
+    primitive.colour = paint.background;
+    primitive.corner_radius = paint.corner_radius;
+    primitive.border_width = paint.border_width;
+    primitive.border_colour = paint.border_colour;
+    if (Status pushed = emit(walk, primitive, element, clip_slot.value(), opacity); !pushed) {
+        return pushed;
+    }
+    if (walk.painter == nullptr) {
+        return ok();
+    }
+    return emit_content(walk, element, output.rect, clip, clip_slot.value(), opacity);
+}
+
+/// Push an element's children so the first is visited first — the stack pops the last pushed.
+[[nodiscard]] Status push_children(FlattenWalk& walk, const Hierarchy& node, f32 opacity) noexcept {
+    for (ElementId child = node.last_child; child.is_valid();) {
+        const Hierarchy* child_node = walk.store.hierarchy(child);
+        if (child_node == nullptr) {
+            break;
+        }
+        if (Status pushed = walk.stack.push_back(Pending{child, opacity}); !pushed) {
+            return pushed;
+        }
+        child = child_node->previous_sibling;
+    }
+    return ok();
+}
+
+/// Group consecutive primitives sharing a material, an atlas, a clip and a transform.
+[[nodiscard]] Status build_batches(const Array<Primitive>& emitted,
+                                   Array<Batch>& batches) noexcept {
     for (usize index = 0; index < emitted.size(); ++index) {
         const Primitive& primitive = emitted[index];
         if (!batches.empty()) {
@@ -185,6 +242,62 @@ Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
         if (Status pushed = batches.push_back(batch); !pushed) {
             return pushed;
         }
+    }
+    return ok();
+}
+
+}  // namespace
+
+Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
+               FlattenReport& report, ContentPainter* painter) noexcept {
+    report = FlattenReport{};
+
+    // INCREMENTAL. An element with no paint dirt keeps the primitive it already has; the pass walks
+    // the tree once, and every element whose paint bit is clear and whose primitive is already in
+    // the buffer is counted as reused rather than re-emitted.
+    Array<Primitive> emitted(out.primitives_.allocator());
+    Array<ElementId> owners(out.owners_.allocator());
+    Array<Rect> clips(out.clips_.allocator());
+    if (Status pushed = clips.push_back(viewport); !pushed) {
+        return pushed;
+    }
+
+    Array<Pending> stack(out.primitives_.allocator());
+    // Roots in order, so the first root is drawn first and the last is on top.
+    for (usize index = store.roots().size(); index > 0; --index) {
+        if (Status pushed = stack.push_back(Pending{store.roots()[index - 1], 1.0F}); !pushed) {
+            return pushed;
+        }
+    }
+
+    FlattenWalk walk{store, viewport, report, painter, emitted, owners, clips, stack};
+    while (!stack.empty()) {
+        const Pending pending = stack[stack.size() - 1];
+        stack.pop_back();
+        ++report.visited;
+
+        const Hierarchy* node = store.hierarchy(pending.element);
+        if (node == nullptr || store.layout_output(pending.element) == nullptr ||
+            store.paint(pending.element) == nullptr ||
+            has_flag(store.flags(pending.element), ElementFlags::Collapsed)) {
+            continue;
+        }
+        // OPACITY MULTIPLIES DOWN THE TREE, so a faded panel fades everything inside it.
+        const f32 opacity = pending.opacity * store.paint(pending.element)->opacity;
+        if (Status visited = visit(walk, pending.element, opacity); !visited) {
+            return visited;
+        }
+        if (Status pushed = push_children(walk, *node, opacity); !pushed) {
+            return pushed;
+        }
+    }
+
+    // BATCHING by material and atlas, with the break reason recorded. A batch that broke for a
+    // reason nobody can name is the commonest cause of an interface that draws in four hundred
+    // calls, and this is the column that names it.
+    Array<Batch> batches(out.batches_.allocator());
+    if (Status built = build_batches(emitted, batches); !built) {
+        return built;
     }
     report.batches = static_cast<u32>(batches.size());
 

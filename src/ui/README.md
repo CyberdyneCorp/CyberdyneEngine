@@ -40,6 +40,17 @@ counts the rest as reused. Both are numbers a test reads.
 | `paint.h` | flattening to primitives, batching with break reasons, the budget ladder, accessibility |
 | `widgets.h` | declarative descriptions and the reconciler, virtualisation, data binding |
 
+Three targets beside `cy::ui` put it on screen, each with only the dependency it needs:
+
+| directory | target | what it holds |
+|---|---|---|
+| `text/` | `cy::ui-text` | `TextPainter` — `ContentMeasurer` and `ContentPainter` over `cy::servers-text` — and the built-in bitmap font, a stand-in until real fonts are imported (#86) |
+| `render/` | `cy::ui-render` | the primitive stream drawn on the device at the frame's `UiAndDebug` stage ([its README](render/README.md)) |
+| `console/` | `cy::ui-console` | `DevConsole`, the developer console: commands, an input line, a virtualised scrollback |
+
+`cy::ui` itself still names neither a font server nor a device: text and drawing arrive through the
+`ContentMeasurer` and `ContentPainter` interfaces and through the stream `flatten()` returns.
+
 ## The `.cyss` divergences, in one place
 
 `ui-system` requires them documented "rather than approximating CSS and leaving differences to be
@@ -65,18 +76,28 @@ Recorded rather than left for a reader to find:
 * **Animation and transitions** are declared in the style subset (`transition-duration`) and not
   evaluated: there is no keyframe player, no spring and no stagger.
 * **The immediate-mode API** is absent.
-* **World-space and surface-space UI**, the UI materials and effects, and the render-target capture
-  the budget's blur-behind rung talks about are not implemented — this module produces a primitive
-  stream and does not submit it.
-* **The forcing functions** — the developer console, the debuggers, the profiler overlays, the
-  settings interface and the conformance suite — are not built. `ui-system` is explicit that a UI
-  system with no demanding first-party consumer decays, and this module has no consumer in the tree
-  yet.
+* **The renderer is stage 1 of issue #91.** `render/` draws rectangles, rounded and bordered boxes,
+  images and glyphs, clipped by scissor, after the tone curve. Not built: offscreen opacity groups
+  (`flatten()` multiplies opacity down the tree, so overlapping children of a faded panel each
+  blend), the HDR composite before tonemapping, custom UI materials, blur-behind, transforms other
+  than the identity, and world-space and surface-space documents.
+* **Text is one line in a bitmap font.** `text/`'s painter lays out a single left-aligned line at a
+  whole-number scale; wrapping, carets and selection come with the widget set and real fonts with
+  #86.
+* **The forcing functions** are begun: `console/` is the developer console, and
+  `samples/13-rts-selection` draws a strategy HUD on the same store. The debuggers, the profiler
+  overlays, the settings interface and the conformance suite are not built.
 
 ## Testing
 
-`unit.ui` — 45 cases: the store's identity and dirty propagation, the reconciler's identity and
+`unit.ui_text`, `unit.ui_console` and `unit.ui_render` hold the three targets above with no device;
+`render.ui` draws on a Vulkan device and holds the frame with no interface byte-identical to the frame
+from before the renderer, the device to the host reference, order, nested clipping and opacity byte
+for byte, and the HUD with the console to a golden image.
+
+`unit.ui` — 50 cases: the store's identity and dirty propagation, the reconciler's identity and
 churn reporting, virtualisation at a hundred thousand rows, flex/grid/absolute layout, the scale
 strategies, `.cyss` parsing and cascade, hit testing and capture, focus scoping and navigation, the
 layer stack's semantics, flattening and batching, the budget ladder, data binding granularity, and
-the accessibility audit with each of its four findings.
+the accessibility audit with each of its four findings, and opacity, content painting and empty
+containers in the stream.

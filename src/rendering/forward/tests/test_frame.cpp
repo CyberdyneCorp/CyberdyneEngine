@@ -887,3 +887,92 @@ CY_TEST_CASE("volumetric fog without its producer is refused, and so is a produc
     ForwardFrame refusing_frame(allocator());
     CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
 }
+
+namespace {
+
+/// A stand-in for `ui::render::UiRenderer`: it records what the frame handed it and declares the
+/// one pass the real producer does — the interface drawn over the stage's target.
+struct InterfaceProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::rendering::PassId draw = kInvalidPass;
+    bool refuse = false;
+};
+
+cy::rendering::PassId declare_interface(RenderGraph& graph,
+                                        const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                        void* user) noexcept {
+    auto* producer = static_cast<InterfaceProducer*>(user);
+    producer->seen = inputs;
+    if (producer->refuse) {
+        return kInvalidPass;
+    }
+    producer->draw = graph.add_pass("ui", cy::rhi::QueueKind::Graphics)
+                         .use(inputs.target, cy::rhi::Access::ColorAttachmentReadWrite)
+                         .id();
+    return producer->draw;
+}
+
+}  // namespace
+
+CY_TEST_CASE("the interface's producer draws over the outlined, tonemapped colour, last") {
+    // No producer: the stage stays the one pass a caller records through `callbacks`.
+    FrameDescription description = make_description();
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_REQUIRE(declared(plain_frame, FramePassKind::UiAndDebug));
+    CY_CHECK_EQ(std::strcmp(plain.pass_name(plain_frame.pass_of(FramePassKind::UiAndDebug)),
+                            "ui and debug"),
+                0);
+
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    OutlineProducer outlines;
+    InterfaceProducer overlay;
+    description.features.selection_outlines = true;
+    description.selection_outlines_stage =
+        cy::rendering::FrameStageDeclaration{&declare_outlines, &outlines};
+    description.ui_stage = cy::rendering::FrameStageDeclaration{&declare_interface, &overlay};
+    CY_REQUIRE(frame.build(graph, description).has_value());
+
+    // The producer's pass IS the stage, and it is handed the colour the chain ended in: the output
+    // the post-process tonemapped into, which the outline composite drew over just before.
+    CY_REQUIRE_NE(overlay.draw, kInvalidPass);
+    CY_CHECK_EQ(frame.pass_of(FramePassKind::UiAndDebug), overlay.draw);
+    CY_CHECK_EQ(overlay.seen.target, frame.resources().output);
+    CY_CHECK_EQ(overlay.seen.width, description.width);
+    CY_CHECK_EQ(overlay.seen.height, description.height);
+    CY_CHECK_LT(outlines.composite, overlay.draw);
+    CY_CHECK_LT(position_of(frame, FramePassKind::SelectionOutlines),
+                position_of(frame, FramePassKind::UiAndDebug));
+    CY_CHECK_LT(position_of(frame, FramePassKind::UiAndDebug),
+                position_of(frame, FramePassKind::Present));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // Without the tone curve the chain ends in the scene colour, and the overlay is handed that,
+    // followed by the composite blit that carries it to the output.
+    description.features.post_process = false;
+    description.features.selection_outlines = false;
+    RenderGraph untonemapped(allocator());
+    ForwardFrame untonemapped_frame(allocator());
+    CY_REQUIRE(untonemapped_frame.build(untonemapped, description).has_value());
+    CY_CHECK_EQ(overlay.seen.target, untonemapped_frame.resources().color);
+    CY_CHECK_LT(position_of(untonemapped_frame, FramePassKind::UiAndDebug),
+                position_of(untonemapped_frame, FramePassKind::Composite));
+
+    // With the overlay off the producer is not asked at all.
+    overlay = InterfaceProducer{};
+    description.features.ui = false;
+    RenderGraph off(allocator());
+    ForwardFrame off_frame(allocator());
+    CY_REQUIRE(off_frame.build(off, description).has_value());
+    CY_CHECK_FALSE(declared(off_frame, FramePassKind::UiAndDebug));
+    CY_CHECK_EQ(overlay.draw, kInvalidPass);
+
+    // A producer that refuses fails the frame rather than leaving the overlay out.
+    description.features.ui = true;
+    overlay.refuse = true;
+    RenderGraph refusing(allocator());
+    ForwardFrame refusing_frame(allocator());
+    CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
+}

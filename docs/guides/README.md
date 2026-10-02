@@ -13,6 +13,7 @@ module READMEs it links to; where a guide and a specification disagree, the spec
 | [Physics in CyberEngine](physics.md) | How physics is layered over Jolt; authoring bodies in C++, scene files and the editor; the fixed step, interpolation and determinism; queries from C++ and Swift; characters, joints, ragdolls and buoyancy; the suites and the pitfalls |
 | [Lighting authoring and lightmap baking](lighting.md) | The lighting editor's volumes, light mobility and lightmap resolution; how the editor writes the level's `.cylightmap` from the world and `cy_build lightmap` bakes it and its irradiance volumes; caching, cancel and the suites |
 | [Navigation authoring](navigation.md) | The editor's navigation baking tool (issue #28): what the engine bakes and what the editor requests; baking, checking for a stale bake and testing a path from the Navigation panel or over MCP; the acceptance ledger |
+| [Runtime UI](ui.md) | CyberUI on screen (issue #91): the element store, layout and flattening; text through the built-in font; the interface pass after the tone curve; the developer console; a strategy HUD driven from game code; the suites and what is not built yet |
 | [Visual scripting](visual-scripting.md) | Gameplay graphs (issue #29): authoring in the Gameplay Graph panel or over MCP, the engine's compile and its diagnostics on nodes, attaching a graph to an entity and running it in Play, agreeing with a Swift twin float for float, the suites and what is not built yet |
 
 See also the [documentation index](../README.md).

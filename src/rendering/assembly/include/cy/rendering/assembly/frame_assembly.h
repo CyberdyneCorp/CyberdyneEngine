@@ -297,6 +297,9 @@ struct FrameSinks {
     /// The producer that declares the motion blur stage — `motion_blur::MotionBlurPass::stage()`.
     /// Required when the post chain has motion blur in it; the frame refuses to build without it.
     FrameStageDeclaration motion_blur;
+    /// The producer that declares the interface stage — `ui::render::UiRenderer::stage()`. Null
+    /// keeps the stage the single pass recorded by `passes[UiAndDebug]`.
+    FrameStageDeclaration ui;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
