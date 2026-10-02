@@ -10,6 +10,9 @@
 //   * stop recording a channel's drops in drain_slot() (trace.cpp)   -> both cases go red;
 //   * admit the verbose channel up to the whole buffer (ring.h)      -> the flood case goes red,
 //     because the critical records it requires no longer have room.
+//   * stop resetting the writer's per-trace state in TraceWriter::open() (writer.cpp)
+//                                                                     -> the second-trace case, and
+//     on Linux the after-a-failed-write case for the write-failure latch.
 
 #include "trace_reader.h"
 
@@ -238,3 +241,34 @@ CY_TEST_CASE("loss: a second trace in one process reports only its own losses an
     }
     CY_CHECK_MESSAGE(every_entry_is_a_chunk_here, "and every entry is a chunk of this file");
 }
+
+#if defined(__linux__)
+// /dev/full accepts the open and refuses every write, which is the one portable-enough way to make
+// the writer's own I/O fail. The other hosts have no such device; the reset is the same code there.
+CY_TEST_CASE("loss: a trace after one whose writes failed is written in full") {
+    // The writer latches a failed write so a broken capture is reported rather than half-written.
+    // Until issue #90 that latch outlived the trace, and every later capture in the process wrote
+    // nothing past its header and closed as an I/O error.
+    constexpr const char* kSecond = "cy_diag_loss_after_failure.cytrace";
+    CY_REQUIRE_MESSAGE(trace_open(pressured("/dev/full")).has_value(),
+                       "a trace onto a device that refuses writes opens");
+    for (u32 index = 0; index < kVerboseEmissions; ++index) {
+        trace_instant(verbose_event(), flood_category(), Channel::Verbose);
+        if (index % 64 == 0) {
+            trace_flush();
+        }
+    }
+    CY_REQUIRE_MESSAGE(!trace_close().has_value(), "and closes reporting that it was not written");
+
+    CY_REQUIRE_MESSAGE(trace_open(pressured(kSecond)).has_value(), "the next trace opens");
+    for (u32 index = 0; index < kCriticalEmissions; ++index) {
+        trace_instant(critical_event(), flood_category(), Channel::Critical);
+    }
+    trace_flush();
+    CY_CHECK_MESSAGE(trace_close().has_value(), "the next trace closes without an I/O error");
+    const cy_test::Capture capture = cy_test::read_capture(kSecond);
+    CY_CHECK_MESSAGE(capture.valid, "its capture parses");
+    CY_CHECK_MESSAGE(count_named(capture, "flood.critical") == kCriticalEmissions,
+                     "and holds every record it was given");
+}
+#endif
