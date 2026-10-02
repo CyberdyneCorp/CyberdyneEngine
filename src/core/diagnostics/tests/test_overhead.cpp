@@ -63,8 +63,8 @@ CY_TEST_CASE("overhead: the engine measures its own emission cost, closed and re
     // Every measured emission reached the ring, so the figures are the cost of emitting and not the
     // cost of being refused: four records per sample per batch.
     const TraceStats& written = stats.value();
-    for (u32 channel = 0; channel < kChannelCount; ++channel) {
-        CY_CHECK_MESSAGE(written.dropped[channel] == 0u, "nothing measured was refused");
+    for (const u64 dropped : written.dropped) {
+        CY_CHECK_MESSAGE(dropped == 0u, "nothing measured was refused");
     }
     CY_CHECK_MESSAGE(written.events_emitted == u64{kBatches} * kBatch * 4u,
                      "every measured emission was recorded");

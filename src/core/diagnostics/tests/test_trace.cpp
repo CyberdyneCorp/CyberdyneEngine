@@ -50,23 +50,17 @@ void* counted_allocation(std::size_t size) {
     return memory;
 }
 
-/// Counts the allocations this thread makes between construction and `stop()`.
-class AllocationWindow {
-public:
-    AllocationWindow() noexcept {
-        g_counted_allocations.store(0, std::memory_order_relaxed);
-        t_counting_allocations = true;
-    }
-    ~AllocationWindow() { t_counting_allocations = false; }
+/// Start counting the allocations this thread makes.
+void start_counting_allocations() noexcept {
+    g_counted_allocations.store(0, std::memory_order_relaxed);
+    t_counting_allocations = true;
+}
 
-    AllocationWindow(const AllocationWindow&) = delete;
-    AllocationWindow& operator=(const AllocationWindow&) = delete;
-
-    unsigned long long stop() noexcept {
-        t_counting_allocations = false;
-        return g_counted_allocations.load(std::memory_order_relaxed);
-    }
-};
+/// Stop counting, and return how many allocations this thread made since the start.
+unsigned long long stop_counting_allocations() noexcept {
+    t_counting_allocations = false;
+    return g_counted_allocations.load(std::memory_order_relaxed);
+}
 
 }  // namespace
 
@@ -328,14 +322,13 @@ CY_TEST_CASE("trace: three subsystems appear on one timeline with one clock") {
 CY_TEST_CASE("trace: emission allocates nothing once a producer has its buffer") {
     // The counter is live: without this, a replacement the linker did not pick up would report
     // zero for every window and the check below would pass over anything.
-    {
-        AllocationWindow control;
-        // Through a volatile pointer, because a new-expression whose result is only deleted is one
-        // an optimiser may remove — and then this control would measure nothing.
-        int* volatile probe = new int(7);
-        delete probe;
-        CY_REQUIRE_MESSAGE(control.stop() == 1u, "the allocation counter sees an allocation");
-    }
+    start_counting_allocations();
+    // Through a volatile pointer, because a new-expression whose result is only deleted is one an
+    // optimiser may remove — and then this control would measure nothing.
+    int* volatile probe = new int(7);
+    delete probe;
+    CY_REQUIRE_MESSAGE(stop_counting_allocations() == 1u,
+                       "the allocation counter sees an allocation");
 
     TraceConfig config;
     config.path = kAllocationPath;
@@ -355,11 +348,11 @@ CY_TEST_CASE("trace: emission allocates nothing once a producer has its buffer")
     // this thread first, the ring is that trace's size, not the one configured above, and nothing
     // may drain inside the window because draining is the consumer's work and allocates.
     constexpr u64 kRounds = 50;
-    AllocationWindow window;
+    start_counting_allocations();
     for (u64 index = 1; index <= kRounds; ++index) {
         emit_one_of_each(index);
     }
-    const unsigned long long allocations = window.stop();
+    const unsigned long long allocations = stop_counting_allocations();
 
     const u64 emitted = trace_stats().events_emitted - before;
     trace_flush();
