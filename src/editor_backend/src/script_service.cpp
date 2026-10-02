@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 
 #include "service_wire.h"
 
@@ -25,6 +26,10 @@ enum class ControlKind : u8 { Text = 0, Bool, Scalar, Vector, Enumeration, Asset
 
 /// The `ExternalKind` whose declared names a property chooses from, or none.
 inline constexpr u8 kFreeText = 0xFF;
+/// A variable's type: one of `kVariableTypes`.
+inline constexpr u8 kVariableTypeChoices = 0xFE;
+
+constexpr std::string_view kVariableTypes[] = {"float", "int", "bool"};
 
 struct PropertySpec {
     std::string_view node;
@@ -60,6 +65,17 @@ constexpr PropertySpec kProperties[] = {
      "The field to write. This engine declares none yet."},
     {"script.wait", "reason", ControlKind::Enumeration, "unit.arrived", "name",
      static_cast<u8>(ExternalKind::Wait), "What to wait for before the next node runs."},
+    {"script.variable", "name", ControlKind::Text, "count", "name", kFreeText,
+     "The variable's name. Each entity running the graph has its own value, kept across events "
+     "and across a reload while Play runs."},
+    {"script.variable", "type", ControlKind::Enumeration, "int", "name", kVariableTypeChoices,
+     "What the variable holds. Changing it while Play runs is refused: stop Play first."},
+    {"script.variable", "default", ControlKind::Scalar, "0", "float", kFreeText,
+     "The value an entity's variable starts at; an int truncates it, a bool is true unless 0."},
+    {"script.get_var", "variable", ControlKind::Text, "count", "name", kFreeText,
+     "The variable to read."},
+    {"script.set_var", "variable", ControlKind::Text, "count", "name", kFreeText,
+     "The variable to write."},
 };
 
 /// An event graph starts at events, so the single-entry node is not in its palette.
@@ -117,6 +133,13 @@ private:
 void encode_choices(Out& out, const PropertySpec& property) noexcept {
     if (property.choices == kFreeText) {
         out.u32v(0);
+        return;
+    }
+    if (property.choices == kVariableTypeChoices) {
+        out.u32v(static_cast<u32>(std::size(kVariableTypes)));
+        for (const std::string_view type : kVariableTypes) {
+            out.text(type);
+        }
         return;
     }
     const auto kind = static_cast<ExternalKind>(property.choices);
@@ -283,7 +306,212 @@ void encode_not_compiled(Out& out, u64 semantic) noexcept {
     return answered(reply.append(state.span()));
 }
 
+/// The request prefix every debug and reload operation starts with.
+[[nodiscard]] ScriptRefusal check_format(u32 format, bool complete, const char* shape) noexcept {
+    if (!complete) {
+        return refused("script.request.malformed", shape);
+    }
+    if (format != kScriptWireFormat) {
+        return refused("script.schema.unsupported", "this engine reads script format 1");
+    }
+    return {};
+}
+
+[[nodiscard]] bool playing(const ScriptPlayRuntime* play) noexcept {
+    return play != nullptr && play->behaviours() != nullptr;
+}
+
+[[nodiscard]] ScriptRefusal answered_debug(ScriptPlayRuntime* play, Array<u8>& reply) noexcept {
+    return answered(encode_script_debug(play, 0, Name{}, {}, reply));
+}
+
+[[nodiscard]] ScriptRefusal debug_get(ScriptPlayRuntime* play, Span<const u8> payload,
+                                      Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    const u64 inspect = reader.read_u64();
+    const std::string_view graph_name = reader.read_text();
+    const u32 count = reader.read_u32();
+    constexpr u32 kMostWatches = 64;
+    ScriptWatch watches[kMostWatches] = {};
+    for (u32 index = 0; index < count && index < kMostWatches; ++index) {
+        watches[index].node = reader.read_u64();
+        watches[index].pin = Name::intern(reader.read_text());
+    }
+    if (const ScriptRefusal bad =
+            check_format(format, reader.complete() && count <= kMostWatches,
+                         "a debug read is format, node, graph and at most 64 (node, pin) watches");
+        bad.refused()) {
+        return bad;
+    }
+    return answered(encode_script_debug(play, inspect, Name::intern(graph_name),
+                                        Span<const ScriptWatch>(watches, count), reply));
+}
+
+[[nodiscard]] ScriptRefusal debug_breakpoint(ScriptPlayRuntime* play, Span<const u8> payload,
+                                             Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    const std::string_view graph_name = reader.read_text();
+    const u64 node = reader.read_u64();
+    const u64 entity = reader.read_u64();
+    const u8 enabled = reader.read_u8();
+    if (const ScriptRefusal bad =
+            check_format(format, reader.complete() && !graph_name.empty() && node != 0,
+                         "a breakpoint is format, graph, node, entity and enabled");
+        bad.refused()) {
+        return bad;
+    }
+    if (!playing(play)) {
+        return refused("script.play.unavailable",
+                       "breakpoints are set on Play's graphs; enter Play and set it again");
+    }
+    ecs::Entity target;
+    if (entity != 0) {
+        target = play->entity_for(entity);
+        if (!target.valid()) {
+            return refused("script.node.unknown", "Play has no entity for this node");
+        }
+    }
+    if (Status set = play->set_breakpoint(Name::intern(graph_name), node, target, enabled != 0);
+        !set) {
+        return refused(set.error().code == ErrorCode::Unsupported ? "script.debug.unavailable"
+                                                                  : "script.debug.refused",
+                       set.error().message);
+    }
+    return answered_debug(play, reply);
+}
+
+[[nodiscard]] ScriptRefusal debug_control(ScriptPlayRuntime* play, Span<const u8> payload,
+                                          Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    const u8 action = reader.read_u8();
+    if (const ScriptRefusal bad =
+            check_format(format, reader.complete() && action <= 3U,
+                         "a control is format and an action: 0 pause, 1 continue, 2 step into, "
+                         "3 step over");
+        bad.refused()) {
+        return bad;
+    }
+    if (!playing(play)) {
+        return refused("script.play.unavailable", "the debugger controls Play; enter Play first");
+    }
+    if (Status done = play->debug(static_cast<ScriptDebugAction>(action)); !done) {
+        return refused(done.error().code == ErrorCode::Unsupported ? "script.debug.unavailable"
+                                                                   : "script.debug.refused",
+                       done.error().message);
+    }
+    return answered_debug(play, reply);
+}
+
+[[nodiscard]] ScriptRefusal reload(ScriptPlayRuntime* play, Span<const u8> payload,
+                                   Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    const std::string_view reference = reader.read_text();
+    const std::string_view source = reader.read_text();
+    if (const ScriptRefusal bad = check_format(format, reader.complete() && !reference.empty(),
+                                               "a reload is format, reference and source");
+        bad.refused()) {
+        return bad;
+    }
+    if (!playing(play)) {
+        return refused("script.play.unavailable",
+                       "a reload swaps Play's running program; nothing is running");
+    }
+    graph::DiagnosticSink sink(allocator());
+    const Expected<u32, Error> staged = play->reload(reference, source, sink);
+    if (!staged && sink.entries().empty()) {
+        // Nothing about the graph was wrong: the runtime could not reload it at all.
+        return refused("script.reload.unavailable", staged.error().message);
+    }
+    reply.clear();
+    Out writer(reply);
+    writer.u32v(kScriptWireFormat).u8v(staged ? 1 : 0).u32v(staged ? *staged : 0U);
+    encode_diagnostics(writer, sink);
+    return answered(writer.status());
+}
+
+void encode_value(Out& out, graph::script::ValueKind kind, const graph::script::Value& value) {
+    out.u8v(static_cast<u8>(kind)).f32v(value.x).u64v(static_cast<u64>(value.integer));
+}
+
+/// The instance `inspect` names (any graph when `graph_name` is empty), else the paused one when
+/// `inspect` is zero; `instance_count()` when there is none.
+[[nodiscard]] u32 inspected(const ScriptPlayRuntime& play,
+                            const game_backend::GraphBehaviours& graphs, u64 inspect,
+                            Name graph_name) noexcept {
+    if (inspect == 0) {
+        return graphs.paused() ? graphs.pause_view().instance : graphs.instance_count();
+    }
+    for (u32 index = 0; index < graphs.instance_count(); ++index) {
+        const game_backend::GraphInstanceView view = graphs.instance(index);
+        if (play.identity_of(view.entity) == inspect &&
+            (graph_name.is_empty() || view.graph == graph_name)) {
+            return index;
+        }
+    }
+    return graphs.instance_count();
+}
+
 }  // namespace
+
+Status encode_script_debug(const ScriptPlayRuntime* play, u64 inspect, Name graph_name,
+                           Span<const ScriptWatch> watches, Array<u8>& out) noexcept {
+    out.clear();
+    Out writer(out);
+    const game_backend::GraphBehaviours* graphs = play != nullptr ? play->behaviours() : nullptr;
+    writer.u32v(kScriptWireFormat).u8v(graphs != nullptr ? 1 : 0);
+    if (graphs == nullptr) {
+        writer.u8v(0).u8v(0).u8v(0).u64v(0).text("").u64v(0).u64v(0).u64v(0);
+        writer.u32v(0).u32v(0).u64v(0).text("").u32v(0).u32v(0);
+        writer.text("").u32v(0).u32v(0).u32v(0).u32v(0).u32v(0).u32v(0).u32v(0);
+        return writer.status();
+    }
+    const game_backend::GraphPauseView& pause = graphs->pause_view();
+    writer.u8v(graphs->debugging() ? 1 : 0).u8v(pause.paused ? 1 : 0);
+    writer.u8v(static_cast<u8>(pause.reason))
+        .u64v(pause.paused ? play->identity_of(pause.entity) : 0);
+    writer.text(pause.graph.text()).u64v(pause.node).u64v(pause.tick);
+    writer.u64v(graphs->tick());
+    writer.u32v(static_cast<u32>(graphs->breakpoints().size()));
+    for (const game_backend::GraphBreakpoint& breakpoint : graphs->breakpoints()) {
+        writer.text(breakpoint.graph.text()).u64v(breakpoint.node);
+        writer.u64v(breakpoint.entity.valid() ? play->identity_of(breakpoint.entity) : 0);
+    }
+    writer.u32v(graphs->trace_count());
+    for (u32 index = 0; index < graphs->trace_count(); ++index) {
+        const game_backend::GraphTraceEntry entry = graphs->trace_entry(index);
+        writer.u64v(entry.sequence).u64v(entry.tick).u64v(play->identity_of(entry.entity));
+        writer.text(entry.graph.text()).u64v(entry.node);
+    }
+    const u32 instance = inspected(*play, *graphs, inspect, graph_name);
+    if (instance < graphs->instance_count()) {
+        const game_backend::GraphInstanceView view = graphs->instance(instance);
+        writer.u64v(play->identity_of(view.entity)).text(view.graph.text());
+        writer.u32v(graphs->variable_count(instance));
+        for (u32 index = 0; index < graphs->variable_count(instance); ++index) {
+            const game_backend::GraphVariableView variable = graphs->variable(instance, index);
+            writer.u64v(variable.id).text(variable.name.text());
+            encode_value(writer, variable.kind, variable.value);
+        }
+        writer.u32v(static_cast<u32>(watches.size()));
+        for (const ScriptWatch& watch : watches) {
+            const graph::script::PinReading reading =
+                graphs->watch_pin(instance, watch.node, watch.pin);
+            writer.u64v(watch.node).text(watch.pin.text()).u8v(reading.found ? 1 : 0);
+            encode_value(writer, reading.kind, reading.value);
+        }
+    } else {
+        writer.u64v(0).text("").u32v(0).u32v(0);
+    }
+    const game_backend::GraphReloadReport& reloaded = graphs->last_reload();
+    writer.text(reloaded.graph.text()).u32v(reloaded.generation).u32v(reloaded.instances);
+    writer.u32v(reloaded.kept).u32v(reloaded.added).u32v(reloaded.dropped);
+    writer.u32v(reloaded.waits_kept).u32v(reloaded.waits_dropped);
+    return writer.status();
+}
 
 Status encode_script_catalogue(Array<u8>& out) noexcept {
     graph::NodeRegistry registry(allocator());
@@ -391,6 +619,18 @@ ScriptRefusal answer_script(ScriptPlayRuntime* play, std::string_view operation,
     }
     if (operation == "script.state.get") {
         return answered(encode_script_state(play, reply));
+    }
+    if (operation == "script.debug.get") {
+        return debug_get(play, payload, reply);
+    }
+    if (operation == "script.debug.breakpoint") {
+        return debug_breakpoint(play, payload, reply);
+    }
+    if (operation == "script.debug.control") {
+        return debug_control(play, payload, reply);
+    }
+    if (operation == "script.reload") {
+        return reload(play, payload, reply);
     }
     return refused("script.operation.unsupported", "this engine does not serve that operation");
 }

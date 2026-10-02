@@ -5,6 +5,7 @@
 
 #include <cy/abi/cy_abi.h>
 #include <cy/core/math/transform.h>
+#include <cy/graph/script_reload.h>
 #include <cy/graph/text.h>
 #include <cy/scene/node.h>
 #include <cy/scene/tree.h>
@@ -102,6 +103,18 @@ bool step_towards(Vec3& position, f32 target_x, f32 target_z, f32 speed, f32 dt)
     return false;
 }
 
+const char* graph_pause_reason_name(GraphPauseReason reason) noexcept {
+    switch (reason) {
+        case GraphPauseReason::Breakpoint:
+            return "breakpoint";
+        case GraphPauseReason::Step:
+            return "step";
+        case GraphPauseReason::Pause:
+            return "pause";
+    }
+    return "?";
+}
+
 const char* graph_instance_status_name(GraphInstanceStatus status) noexcept {
     switch (status) {
         case GraphInstanceStatus::Idle:
@@ -119,6 +132,7 @@ GraphBehaviours::LoadedGraph::LoadedGraph(Allocator& allocator, Name graph_name,
     : name(graph_name),
       program(std::move(compiled)),
       native(allocator),
+      debug_native(allocator),
       externals(allocator),
       waits(allocator) {}
 
@@ -131,7 +145,10 @@ GraphBehaviours::GraphBehaviours(Allocator& allocator) noexcept
       registry_(allocator),
       graphs_(allocator),
       instances_(allocator),
-      cues_(allocator) {}
+      cues_(allocator),
+      staged_(allocator),
+      breakpoints_(allocator),
+      trace_(allocator) {}
 
 GraphBehaviours::~GraphBehaviours() {
     stop();
@@ -145,16 +162,29 @@ void GraphBehaviours::start(scene::SceneTree& tree, abi::game::AudioBackend* aud
 
 void GraphBehaviours::stop() noexcept {
     instances_.clear();
+    staged_.clear();
     graphs_.clear();
     cues_.clear();
     current_ = nullptr;
     tree_ = nullptr;
     audio_ = nullptr;
     tick_ = 0;
+    // The session's debugging ends with it; breakpoints are the editor's and are set again.
+    debugging_ = false;
+    breakpoints_.clear();
+    pause_requested_ = false;
+    stepping_ = false;
+    pause_ = GraphPauseView{};
+    interrupted_ = Interrupted{};
+    trace_.clear();
+    trace_head_ = 0;
+    trace_sequence_ = 0;
+    last_reload_ = GraphReloadReport{};
 }
 
-Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source, GraphBackend backend,
-                                           graph::DiagnosticSink& sink) noexcept {
+Expected<UniquePtr<GraphBehaviours::LoadedGraph>, Error> GraphBehaviours::compile(
+    Name name, std::string_view source, GraphBackend backend,
+    graph::DiagnosticSink& sink) noexcept {
     if (!registered_) {
         if (Status registered = register_gameplay_graph_nodes(registry_); !registered) {
             return make_unexpected(registered.error());
@@ -190,11 +220,54 @@ Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source, G
     if (Status bound = bind(compiled_graph, *parsed, sink); !bound) {
         return make_unexpected(bound.error());
     }
+    if (debugging_) {
+        if (Status instrumented = instrument(compiled_graph); !instrumented) {
+            return make_unexpected(instrumented.error());
+        }
+    }
+    return std::move(*loaded);
+}
+
+Expected<u32, Error> GraphBehaviours::load(Name name, std::string_view source, GraphBackend backend,
+                                           graph::DiagnosticSink& sink) noexcept {
+    Expected<UniquePtr<LoadedGraph>, Error> loaded = compile(name, source, backend, sink);
+    if (!loaded) {
+        return make_unexpected(loaded.error());
+    }
     const auto index = static_cast<u32>(graphs_.size());
     if (Status pushed = graphs_.push_back(std::move(*loaded)); !pushed) {
         return make_unexpected(pushed.error());
     }
+    if (Status pushed = staged_.push_back(UniquePtr<LoadedGraph>{}); !pushed) {
+        return make_unexpected(pushed.error());
+    }
     return index;
+}
+
+Status GraphBehaviours::instrument(LoadedGraph& loaded) noexcept {
+    Expected<script::EventProgram, Error> copy = script::instrument_for_debug(loaded.program);
+    if (!copy) {
+        return make_unexpected(copy.error());
+    }
+    Expected<UniquePtr<script::EventProgram>, Error> held =
+        make_unique<script::EventProgram>(*allocator_, std::move(*copy));
+    if (!held) {
+        return make_unexpected(held.error());
+    }
+    loaded.debug = std::move(*held);
+    if (loaded.backend == GraphBackend::Native) {
+        Expected<script::NativeProgram, Error> native =
+            script::compile_native(loaded.debug->program(), *allocator_);
+        if (!native) {
+            return make_unexpected(native.error());
+        }
+        loaded.debug_native = std::move(*native);
+    }
+    return ok();
+}
+
+const script::ScriptProgram& GraphBehaviours::active(const LoadedGraph& loaded) const noexcept {
+    return debugging_ && loaded.debug ? loaded.debug->program() : loaded.program.program();
 }
 
 Status GraphBehaviours::bind(LoadedGraph& loaded, const graph::Graph& source,
@@ -270,8 +343,18 @@ Status GraphBehaviours::attach(u32 graph, ecs::Entity entity) noexcept {
 
 Expected<u32, Error> GraphBehaviours::raise(ecs::Entity entity, Name event,
                                             Span<const f32> arguments) noexcept {
+    if (paused()) {
+        return fail(ErrorCode::Unavailable,
+                    "the simulation is paused at a graph node; continue or step it first");
+    }
+    return raise_from(0, entity, event, arguments);
+}
+
+Expected<u32, Error> GraphBehaviours::raise_from(u32 first, ecs::Entity entity, Name event,
+                                                 Span<const f32> arguments) noexcept {
     u32 started = 0;
-    for (Instance& instance : instances_) {
+    for (u32 index = first; index < instances_.size(); ++index) {
+        Instance& instance = instances_[index];
         if (instance.entity != entity) {
             continue;
         }
@@ -287,11 +370,31 @@ Expected<u32, Error> GraphBehaviours::raise(ecs::Entity entity, Name event,
             return make_unexpected(ran.error());
         }
         ++started;
+        if (paused()) {
+            // The rest of this raise waits for the debugger, in order.
+            interrupted_.phase = Phase::Raise;
+            interrupted_.instance = index;
+            interrupted_.entity = entity;
+            interrupted_.event = event;
+            for (usize lane = 0; lane < 3; ++lane) {
+                interrupted_.arguments[lane] = lane < arguments.size() ? arguments[lane] : 0.0F;
+            }
+            break;
+        }
     }
     return started;
 }
 
 Status GraphBehaviours::update(f32 dt) noexcept {
+    if (paused()) {
+        return fail(ErrorCode::Unavailable,
+                    "the simulation is paused at a graph node; continue or step it first");
+    }
+    // THE TICK BOUNDARY: a staged reload swaps every instance of its graph here, before anything
+    // of this tick runs, so no tick is half one program and half the other.
+    if (Status reloaded = apply_reloads(); !reloaded) {
+        return reloaded;
+    }
     ++tick_;
     for (Instance& instance : instances_) {
         if (!instance.moving) {
@@ -304,38 +407,55 @@ Status GraphBehaviours::update(f32 dt) noexcept {
             return placed;
         }
     }
+    return resume_from(0);
+}
+
+Status GraphBehaviours::resume_from(u32 first) noexcept {
     // ONE PASS OVER THE INSTANCES, AFTER EVERY MOVE: the scheduler asks each wait's host, and only
     // a satisfied wait costs a resumed program.
-    for (Instance& instance : instances_) {
+    for (u32 index = first; index < instances_.size(); ++index) {
+        Instance& instance = instances_[index];
         const LoadedGraph& loaded = *graphs_[instance.graph];
-        const script::SuspendPoint* point =
-            script::waiting_at(loaded.program.program(), instance.state);
+        const script::SuspendPoint* point = script::waiting_at(active(loaded), instance.state);
         if (point == nullptr) {
             continue;
         }
         current_ = &instance;
         const bool ready = wait_satisfied(*point);
         current_ = nullptr;
-        if (ready) {
-            if (Status ran = run(instance, script::kNoBlock); !ran) {
-                return ran;
-            }
+        if (!ready) {
+            continue;
+        }
+        if (Status ran = run(instance, script::kNoBlock); !ran) {
+            return ran;
+        }
+        if (paused()) {
+            interrupted_.phase = Phase::Resume;
+            interrupted_.instance = index;
+            return ok();
         }
     }
+    interrupted_ = Interrupted{};
     return ok();
 }
 
 Status GraphBehaviours::run(Instance& instance, script::BlockId start) noexcept {
     const LoadedGraph& loaded = *graphs_[instance.graph];
     const bool native = loaded.backend == GraphBackend::Native;
+    const bool debug = debugging_ && loaded.debug;
+    const script::ScriptProgram& program = active(loaded);
+    const script::NativeProgram& compiled = debug ? loaded.debug_native : loaded.native;
     script::ScriptHost& host = *this;
+    script::ScriptDebugHook* hook = debug ? static_cast<script::ScriptDebugHook*>(this) : nullptr;
+    constexpr u32 kBudget = 4096;
     const auto run_program = [&]() noexcept -> Expected<script::RunOutcome, Error> {
         if (start == script::kNoBlock) {
-            return native ? script::execute_native(loaded.native, instance.state, host)
-                          : script::execute(loaded.program.program(), instance.state, host);
+            return native ? script::execute_native(compiled, instance.state, host, kBudget, hook)
+                          : script::execute(program, instance.state, host, kBudget, hook);
         }
-        return native ? script::execute_native_from(loaded.native, instance.state, host, start)
-                      : script::execute_from(loaded.program.program(), instance.state, host, start);
+        return native ? script::execute_native_from(compiled, instance.state, host, start, kBudget,
+                                                    hook)
+                      : script::execute_from(program, instance.state, host, start, kBudget, hook);
     };
     current_ = &instance;
     const Expected<script::RunOutcome, Error> outcome = run_program();
@@ -360,8 +480,289 @@ Status GraphBehaviours::run(Instance& instance, script::BlockId start) noexcept 
             instance.status = GraphInstanceStatus::Failed;
             instance.problem = "the handler ran past its instruction budget";
             break;
+        case script::RunOutcome::Paused:
+            // `on_probe` recorded where; the status is what it was until the handler goes on.
+            break;
     }
     return ok();
+}
+
+// --- Hot reload
+// -----------------------------------------------------------------------------------
+
+u32 GraphBehaviours::find_graph(Name name) const noexcept {
+    for (u32 index = 0; index < graphs_.size(); ++index) {
+        if (graphs_[index]->name == name) {
+            return index;
+        }
+    }
+    return static_cast<u32>(graphs_.size());
+}
+
+u32 GraphBehaviours::generation(u32 graph) const noexcept {
+    return graph < graphs_.size() ? graphs_[graph]->generation : 0U;
+}
+
+bool GraphBehaviours::reload_pending() const noexcept {
+    for (const UniquePtr<LoadedGraph>& staged : staged_) {
+        if (staged) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Expected<u32, Error> GraphBehaviours::reload(Name name, std::string_view source,
+                                             graph::DiagnosticSink& sink) noexcept {
+    const u32 index = find_graph(name);
+    if (index >= graphs_.size()) {
+        return fail(ErrorCode::NotFound, "no graph of that name is running in Play");
+    }
+    const LoadedGraph& running = *graphs_[index];
+    Expected<UniquePtr<LoadedGraph>, Error> next = compile(name, source, running.backend, sink);
+    if (!next) {
+        return make_unexpected(next.error());
+    }
+    // REFUSED BEFORE ANYTHING MOVES: a variable whose type changed is reported on its node, and
+    // the running program is left exactly as it was.
+    if (script::check_migration(running.program.program(), (*next)->program.program(), sink) != 0) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a variable changed type; the running program is kept");
+    }
+    (*next)->generation = running.generation + 1;
+    const u32 generation = (*next)->generation;
+    staged_[index] = std::move(*next);
+    return generation;
+}
+
+Status GraphBehaviours::apply_reloads() noexcept {
+    for (u32 graph = 0; graph < staged_.size(); ++graph) {
+        if (!staged_[graph]) {
+            continue;
+        }
+        UniquePtr<LoadedGraph> next = std::move(staged_[graph]);
+        const LoadedGraph& previous = *graphs_[graph];
+        GraphReloadReport report;
+        report.graph = next->name;
+        report.generation = next->generation;
+        for (Instance& instance : instances_) {
+            if (instance.graph != graph) {
+                continue;
+            }
+            script::ScriptState moved(*allocator_, next->program.program());
+            Expected<script::StateMigration, Error> migration = script::migrate_state(
+                previous.program.program(), instance.state, next->program.program(), moved);
+            if (!migration) {
+                return make_unexpected(migration.error());
+            }
+            instance.state = std::move(moved);
+            if (migration->wait_dropped) {
+                instance.status = GraphInstanceStatus::Idle;
+            }
+            report.instances += 1;
+            report.kept += migration->kept;
+            report.added += migration->added;
+            report.dropped += migration->dropped;
+            report.waits_kept += migration->wait_kept ? 1U : 0U;
+            report.waits_dropped += migration->wait_dropped ? 1U : 0U;
+        }
+        graphs_[graph] = std::move(next);
+        last_reload_ = report;
+    }
+    return ok();
+}
+
+// --- The Play debugger
+// ----------------------------------------------------------------------------
+
+Status GraphBehaviours::set_debugging(bool enabled) noexcept {
+    if (!script::kGraphDebuggerEnabled) {
+        return fail(ErrorCode::Unsupported,
+                    "the graph debugger is compiled out of this build (Profile and Shipping)");
+    }
+    if (paused()) {
+        return fail(ErrorCode::Unavailable, "continue the paused graph before changing this");
+    }
+    if (enabled) {
+        for (UniquePtr<LoadedGraph>& loaded : graphs_) {
+            if (!loaded->debug) {
+                if (Status instrumented = instrument(*loaded); !instrumented) {
+                    return instrumented;
+                }
+            }
+        }
+        for (UniquePtr<LoadedGraph>& staged : staged_) {
+            if (staged && !staged->debug) {
+                if (Status instrumented = instrument(*staged); !instrumented) {
+                    return instrumented;
+                }
+            }
+        }
+    }
+    debugging_ = enabled;
+    return ok();
+}
+
+Status GraphBehaviours::set_breakpoint(Name graph, graph::NodeKey node, ecs::Entity entity,
+                                       bool enabled) noexcept {
+    if (node == graph::kInvalidNodeKey || graph.is_empty()) {
+        return fail(ErrorCode::InvalidArgument, "a breakpoint names a graph and a node");
+    }
+    for (usize index = 0; index < breakpoints_.size(); ++index) {
+        const GraphBreakpoint& existing = breakpoints_[index];
+        if (existing.graph == graph && existing.node == node && existing.entity == entity) {
+            if (!enabled) {
+                breakpoints_[index] = breakpoints_.back();
+                breakpoints_.pop_back();
+            }
+            return ok();
+        }
+    }
+    return enabled ? breakpoints_.push_back(GraphBreakpoint{graph, node, entity}) : ok();
+}
+
+Status GraphBehaviours::debug_pause() noexcept {
+    if (!debugging_) {
+        return fail(ErrorCode::Unavailable, "the graph debugger is not attached to this Play");
+    }
+    pause_requested_ = true;
+    return ok();
+}
+
+Status GraphBehaviours::debug_continue() noexcept {
+    if (!paused()) {
+        return ok();
+    }
+    return run_on();
+}
+
+Status GraphBehaviours::debug_step(GraphStep step) noexcept {
+    if (!paused()) {
+        return fail(ErrorCode::Unavailable, "a step continues a paused graph; nothing is paused");
+    }
+    stepping_ = true;
+    step_ = step;
+    step_instance_ = pause_.instance;
+    return run_on();
+}
+
+Status GraphBehaviours::run_on() noexcept {
+    const Interrupted held = interrupted_;
+    pause_ = GraphPauseView{};
+    interrupted_ = Interrupted{};
+    if (held.instance >= instances_.size()) {
+        return ok();
+    }
+    // The paused handler first: it continues from the instruction after its probe.
+    if (Status ran = run(instances_[held.instance], script::kNoBlock); !ran) {
+        return ran;
+    }
+    if (paused()) {
+        interrupted_ = held;
+        return ok();
+    }
+    // Then the rest of the work the break held, in the order it would have run.
+    switch (held.phase) {
+        case Phase::Raise: {
+            Expected<u32, Error> started = raise_from(held.instance + 1, held.entity, held.event,
+                                                      Span<const f32>(held.arguments, 3));
+            if (!started) {
+                return make_unexpected(started.error());
+            }
+            return ok();
+        }
+        case Phase::Resume:
+            return resume_from(held.instance + 1);
+        case Phase::None:
+            return ok();
+    }
+    return ok();
+}
+
+u32 GraphBehaviours::index_of(const Instance& instance) const noexcept {
+    return static_cast<u32>(&instance - instances_.data());
+}
+
+script::DebugVerdict GraphBehaviours::on_probe(const script::ProbeSite& site,
+                                               const script::ScriptState& /*state*/) noexcept {
+    if (current_ == nullptr) {
+        return script::DebugVerdict::Continue;
+    }
+    const u32 instance = index_of(*current_);
+    const Name graph = graphs_[current_->graph]->name;
+    GraphTraceEntry entry{++trace_sequence_, tick_, instance, current_->entity, graph, site.node};
+    if (trace_.size() < kGraphTraceCapacity) {
+        (void)trace_.push_back(entry);
+    } else {
+        trace_[trace_head_] = entry;
+        trace_head_ = (trace_head_ + 1) % kGraphTraceCapacity;
+    }
+
+    GraphPauseReason reason = GraphPauseReason::Breakpoint;
+    bool stop = false;
+    if (stepping_ && step_instance_ == instance && (step_ == GraphStep::Into || site.executes)) {
+        stop = true;
+        reason = GraphPauseReason::Step;
+    } else if (pause_requested_) {
+        stop = true;
+        reason = GraphPauseReason::Pause;
+    } else {
+        for (const GraphBreakpoint& breakpoint : breakpoints_) {
+            stop = stop || (breakpoint.graph == graph && breakpoint.node == site.node &&
+                            (!breakpoint.entity.valid() || breakpoint.entity == current_->entity));
+        }
+    }
+    if (!stop) {
+        return script::DebugVerdict::Continue;
+    }
+    stepping_ = false;
+    pause_requested_ = false;
+    pause_ = GraphPauseView{true, reason, instance, current_->entity, graph, site.node, tick_};
+    return script::DebugVerdict::Break;
+}
+
+u32 GraphBehaviours::trace_count() const noexcept {
+    return static_cast<u32>(trace_.size());
+}
+
+GraphTraceEntry GraphBehaviours::trace_entry(u32 index) const noexcept {
+    if (index >= trace_.size()) {
+        return {};
+    }
+    const u32 oldest = trace_.size() < kGraphTraceCapacity ? 0U : trace_head_;
+    return trace_[(oldest + index) % trace_.size()];
+}
+
+script::PinReading GraphBehaviours::watch_pin(u32 instance, graph::NodeKey node,
+                                              Name pin) const noexcept {
+    if (instance >= instances_.size()) {
+        return {};
+    }
+    const Instance& watched = instances_[instance];
+    const script::BlockId here =
+        watched.state.paused() ? watched.state.paused_block() : script::kNoBlock;
+    return script::read_pin(active(*graphs_[watched.graph]), watched.state, node, pin, here);
+}
+
+u32 GraphBehaviours::variable_count(u32 instance) const noexcept {
+    if (instance >= instances_.size()) {
+        return 0;
+    }
+    return static_cast<u32>(active(*graphs_[instances_[instance].graph]).variables().size());
+}
+
+GraphVariableView GraphBehaviours::variable(u32 instance, u32 index) const noexcept {
+    if (instance >= instances_.size()) {
+        return {};
+    }
+    const Instance& watched = instances_[instance];
+    const Span<const script::Variable> declared = active(*graphs_[watched.graph]).variables();
+    if (index >= declared.size()) {
+        return {};
+    }
+    const script::Variable& variable = declared[index];
+    return GraphVariableView{variable.id, variable.name, variable.kind,
+                             script::read_variable(variable, watched.state)};
 }
 
 Vec3 GraphBehaviours::position_of(ecs::Entity entity) const noexcept {
@@ -395,8 +796,7 @@ GraphInstanceView GraphBehaviours::instance(u32 index) const noexcept {
     view.entity = instance.entity;
     view.graph = loaded.name;
     view.status = instance.status;
-    if (const script::SuspendPoint* point =
-            script::waiting_at(loaded.program.program(), instance.state);
+    if (const script::SuspendPoint* point = script::waiting_at(active(loaded), instance.state);
         point != nullptr) {
         view.waiting = point->reason;
     }
@@ -420,8 +820,10 @@ const GraphBehaviours::Binding& GraphBehaviours::binding_of(
     if (current_ == nullptr) {
         return kUnbound;
     }
+    // The table of the program actually running: the debug copy's, while debugging, holds the
+    // same externals in the same order.
     const LoadedGraph& loaded = *graphs_[current_->graph];
-    const Span<const script::ExternalRef> table = loaded.program.program().externals();
+    const Span<const script::ExternalRef> table = active(loaded).externals();
     const auto index = static_cast<usize>(&external - table.data());
     return index < loaded.externals.size() ? loaded.externals[index] : kUnbound;
 }
@@ -518,7 +920,7 @@ bool GraphBehaviours::wait_satisfied(const script::SuspendPoint& point) noexcept
         return false;
     }
     const LoadedGraph& loaded = *graphs_[current_->graph];
-    const Span<const script::SuspendPoint> table = loaded.program.program().suspends();
+    const Span<const script::SuspendPoint> table = active(loaded).suspends();
     const auto index = static_cast<usize>(&point - table.data());
     if (index >= loaded.waits.size()) {
         return false;

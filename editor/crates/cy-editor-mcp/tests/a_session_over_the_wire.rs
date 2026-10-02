@@ -5270,3 +5270,307 @@ fn undo_the_graph(editor: &mut Editor, sandbox: &Sandbox, node: cy_editor_core::
         "undoing the creation removes the graph"
     );
 }
+
+// --- The Play debugger and hot reload (#84) --------------------------------------------------------
+
+const COUNTER_GRAPH: &str = "game/scripts/unit_counter.cyscript";
+
+/// A Play runtime that answers the debugger and reload with the ENGINE'S OWN replies
+/// (`cy_test_integration_editor_backend_script` writes them): Play paused at the counter graph's
+/// write, with its variable and two watched pins; a reload staged at generation 2, or refused on
+/// node 7 when the source changes the variable's type to `bool`; and Play's state, running the
+/// unit-command graph.
+fn debug_runtime_double(editor: &mut Editor) -> Arc<Mutex<ScriptAsked>> {
+    let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let asked = Arc::new(Mutex::new(ScriptAsked::default()));
+    let recorded = Arc::clone(&asked);
+    let catalogue = engine_audio_fixture("script_catalogue_v1.wire");
+    let compiled = engine_audio_fixture("script_compile_v1.wire");
+    let state = engine_audio_fixture("script_state_play_v1.wire");
+    let paused = engine_audio_fixture("script_debug_paused_v1.wire");
+    let reloaded = engine_audio_fixture("script_reload_v1.wire");
+    let refused = engine_audio_fixture("script_reload_refused_v1.wire");
+    std::thread::spawn(move || {
+        let (mut reader, mut writer) = (runtime_reader, runtime_writer);
+        let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+            let mut asked = recorded.lock().unwrap();
+            let Message::ServiceRequest {
+                request,
+                operation,
+                payload,
+                ..
+            } = message
+            else {
+                return Some(Vec::new());
+            };
+            let reply = match operation.as_str() {
+                "script.catalogue.get" => catalogue.clone(),
+                "script.compile" => compiled.clone(),
+                "script.state.get" => state.clone(),
+                "script.debug.get" | "script.debug.breakpoint" | "script.debug.control" => {
+                    paused.clone()
+                }
+                "script.reload" if String::from_utf8_lossy(&payload).contains("\"bool\"") => {
+                    refused.clone()
+                }
+                _ => reloaded.clone(),
+            };
+            asked.requests.push((operation, payload));
+            Some(vec![Message::ServiceEvent {
+                request,
+                kind: ServiceEventKind::Completed,
+                schema_version: 1,
+                payload: reply,
+            }])
+        });
+    });
+    asked
+}
+
+fn sent(asked: &Arc<Mutex<ScriptAsked>>, operation: &str) -> Vec<Vec<u8>> {
+    asked
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .filter(|(name, _)| name == operation)
+        .map(|(_, payload)| payload.clone())
+        .collect()
+}
+
+/// ISSUE #84 AS AN AGENT DRIVES IT: a breakpoint set before Play reaches the engine when Play
+/// starts; the agent pauses, steps and continues, watches a pin and reads the paused entity's
+/// variables; a graph reloads by hand, and by itself when an edit saves it during Play (and again
+/// when the edit is undone); and a reload the engine refuses is reported on its node.
+#[test]
+fn a_gameplay_graph_is_debugged_and_reloaded_in_play_over_mcp() {
+    use cy_editor_services::script_debug::{
+        Breakpoint, DebugAction, WatchList, breakpoint_payload, control_payload, debug_get_payload,
+        reload_payload,
+    };
+    let sandbox = Sandbox::new("gameplay-graph-debugger");
+    std::fs::create_dir_all(sandbox.0.join("game/scripts")).unwrap();
+    std::fs::write(
+        sandbox.0.join(COUNTER_GRAPH),
+        engine_audio_fixture("script_unit_counter_v1.cyscript"),
+    )
+    .unwrap();
+    std::fs::write(
+        sandbox.0.join(UNIT_GRAPH),
+        engine_audio_fixture("script_unit_command_v1.cyscript"),
+    )
+    .unwrap();
+    let mut editor =
+        Editor::new(Actor::human("designer")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/units.cyworld").unwrap();
+    let asked = debug_runtime_double(&mut editor);
+    let counter = Breakpoint {
+        graph: "unit_counter".into(),
+        node: 11,
+        entity: 0,
+    };
+
+    // Before Play the breakpoint is the editor's: nothing is sent.
+    let early = converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "script.debug.breakpoint",
+                &format!(r#"{{"reference":"{COUNTER_GRAPH}","node":11}}"#),
+            ),
+        ],
+        &mut editor,
+    );
+    let (text, refused) = tool_reply(&early, 1);
+    assert!(
+        !refused && text.contains("sent when Play runs it"),
+        "{text}"
+    );
+    settle_script(&mut editor);
+    assert!(sent(&asked, "script.debug.breakpoint").is_empty());
+
+    // Play is seen running: the debugger's first state sends the breakpoint the editor kept.
+    converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.refresh", &[]),
+            &tool_call(3, "script.debug.refresh", &[]),
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    assert_eq!(
+        sent(&asked, "script.debug.breakpoint"),
+        vec![breakpoint_payload(&counter, true)]
+    );
+
+    // A watch, and the paused entity's state read through it.
+    converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "script.debug.watch",
+                &format!(r#"{{"reference":"{COUNTER_GRAPH}","node":10}}"#),
+            ),
+            &tool_call(3, "script.debug.refresh", &[]),
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    assert_eq!(
+        sent(&asked, "script.debug.get").last(),
+        Some(&debug_get_payload(&WatchList {
+            entity: 0,
+            graph: "unit_counter".into(),
+            pins: vec![(10, "value".into())],
+        }))
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.debug.status", &[("reference", COUNTER_GRAPH)]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(structured(&status, 1, "paused"), "true");
+    assert!(structured(&status, 1, "paused_at").starts_with("unit_counter node 11 "));
+    assert_eq!(structured(&status, 1, "variable.orders"), "0");
+    assert_eq!(structured(&status, 1, "watch.10.value"), "1");
+    assert!(structured(&status, 1, "trace").ends_with("unit_counter:11@0"));
+
+    // Step into, step over, continue and pause: each the engine's control, in that order.
+    let controls = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.debug.step", &[("mode", "into")]),
+            &tool_call(3, "script.debug.step", &[]),
+            &tool_call(4, "script.debug.continue", &[]),
+            &tool_call(5, "script.debug.pause", &[]),
+            &tool_call(6, "script.debug.step", &[("mode", "out")]),
+        ],
+        &mut editor,
+    );
+    let (refusal, refused) = tool_reply(&controls, 5);
+    assert!(refused && refusal.contains("into"), "{refusal}");
+    settle_script(&mut editor);
+    assert_eq!(
+        sent(&asked, "script.debug.control"),
+        [
+            DebugAction::StepInto,
+            DebugAction::StepOver,
+            DebugAction::Continue,
+            DebugAction::Pause
+        ]
+        .map(control_payload)
+    );
+
+    // A reload by hand sends the saved text, and its answer is reported.
+    let counter_source =
+        String::from_utf8(engine_audio_fixture("script_unit_counter_v1.cyscript")).unwrap();
+    converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.graph.reload", &[("reference", COUNTER_GRAPH)]),
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    assert_eq!(
+        sent(&asked, "script.reload").last(),
+        Some(&reload_payload(COUNTER_GRAPH, &counter_source))
+    );
+    let reloaded = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.debug.status", &[("reference", COUNTER_GRAPH)]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(structured(&reloaded, 1, "reload_accepted"), "true");
+    assert_eq!(structured(&reloaded, 1, "reload_generation"), "2");
+
+    // Saving a graph Play runs reloads it by itself, and so does undoing the save.
+    let before = sent(&asked, "script.reload").len();
+    let moved = converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "script.node.move",
+                &format!(r#"{{"reference":"{UNIT_GRAPH}","node":6,"x":500,"y":180}}"#),
+            ),
+        ],
+        &mut editor,
+    );
+    let (text, refused) = tool_reply(&moved, 1);
+    assert!(!refused, "{text}");
+    settle_script(&mut editor);
+    let edited = std::fs::read_to_string(sandbox.0.join(UNIT_GRAPH)).unwrap();
+    let reloads = sent(&asked, "script.reload");
+    assert_eq!(reloads.len(), before + 1);
+    assert_eq!(reloads.last(), Some(&reload_payload(UNIT_GRAPH, &edited)));
+    converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    let reloads = sent(&asked, "script.reload");
+    assert_eq!(reloads.len(), before + 2);
+    assert_eq!(
+        reloads.last(),
+        Some(&reload_payload(
+            UNIT_GRAPH,
+            &String::from_utf8(engine_audio_fixture("script_unit_command_v1.cyscript")).unwrap()
+        ))
+    );
+    // A graph Play does not run is not sent when it is saved.
+    let quiet = sent(&asked, "script.reload").len();
+    converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "script.node.move",
+                &format!(r#"{{"reference":"{COUNTER_GRAPH}","node":6,"x":500,"y":180}}"#),
+            ),
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    assert_eq!(sent(&asked, "script.reload").len(), quiet);
+
+    // A type change the engine refuses is reported on the variable's node.
+    std::fs::write(
+        sandbox.0.join(COUNTER_GRAPH),
+        counter_source.replace(r#"= "int""#, r#"= "bool""#),
+    )
+    .unwrap();
+    converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.graph.reload", &[("reference", COUNTER_GRAPH)]),
+        ],
+        &mut editor,
+    );
+    settle_script(&mut editor);
+    let refusal = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "script.debug.status", &[("reference", COUNTER_GRAPH)]),
+        ],
+        &mut editor,
+    );
+    assert_eq!(structured(&refusal, 1, "reload_accepted"), "false");
+    assert!(
+        structured(&refusal, 1, "reload_diagnostic.0").starts_with("node 7 script.reload.type"),
+        "{}",
+        structured(&refusal, 1, "reload_diagnostic.0")
+    );
+}

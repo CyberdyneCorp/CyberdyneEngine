@@ -220,6 +220,8 @@ fn draw_material_canvas(
             node_alerts: &[],
             on_connect: Some(&mut connect),
             on_move: Some(&mut move_node),
+            node_marks: &[],
+            on_gutter: None,
         },
     );
     if !move_seen.get() {

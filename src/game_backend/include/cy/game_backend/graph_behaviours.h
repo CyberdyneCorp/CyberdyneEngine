@@ -29,6 +29,28 @@
 // BYTECODE OR NATIVE, PER GRAPH. `GraphBackend` picks the back end when a graph is loaded. Both
 // read the same `ScriptState`, and `integration.game_backend_graph` runs one graph on each and
 // requires the same moves, the same cues, at the same ticks.
+//
+// THE PLAY DEBUGGER (#84 stage 3, #29). `set_debugging(true)` swaps every graph's program for its
+// debug-instrumented copy (`cy/graph/script_debug.h`): the same code with a probe at each node
+// boundary, so nothing is interpreted and nothing else changes. Breakpoints name a graph, a node
+// and optionally one entity; `debug_pause` breaks at the next node any instance runs; a step runs
+// the paused instance to its next node (`Into`) or its next node on an execution chain (`Over`).
+// Every node an instance runs is appended to a bounded trace, the panel's execution highlighting.
+//
+// WHAT A BREAK PAUSES IS THE WHOLE SIMULATION TICK, as a Blueprint breakpoint stops the game
+// thread. The instance stops before its node with its registers live; the rest of the tick's graph
+// work — later instances' resumes, later handlers of the same raise — is held, in order, and
+// `debug_continue` / `debug_step` run it on from exactly there. While `paused()`, `update` and
+// `raise` are refused, so nothing else advances: a host pauses its physics and its other systems
+// with it (the hosted runtime pauses its `PlaySession`). A run that breaks and continues therefore
+// makes exactly the moves, cues and state a run without the debugger makes, tick for tick —
+// `integration.game_backend_graph` holds that.
+//
+// HOT RELOAD (#84 stage 2). `reload` compiles a graph's new source, binds it and checks that every
+// instance can move to it (`cy/graph/script_reload.h`: variables by declaring node, added at their
+// defaults, removed dropped, a changed type refused on its node). A refused reload changes
+// nothing; an accepted one is applied at the next tick boundary — the start of the next `update` —
+// to every instance of that graph at once, and the graph's `generation` moves on.
 
 #include <cy/abi/game/audio.h>
 #include <cy/core/base/expected.h>
@@ -38,6 +60,7 @@
 #include <cy/core/values/name.h>
 #include <cy/ecs/entity.h>
 #include <cy/graph/event_script.h>
+#include <cy/graph/script_debug.h>
 
 #include <string_view>
 
@@ -96,6 +119,74 @@ struct GraphInstanceView {
     const char* problem = "";
 };
 
+/// How a paused instance continues.
+enum class GraphStep : u8 {
+    /// To the very next node it runs, a data node included.
+    Into = 0,
+    /// To the next node on an execution chain: the data nodes feeding it run without stopping.
+    Over,
+};
+
+/// A breakpoint: a node of a graph, for every instance or for one entity's.
+struct GraphBreakpoint {
+    Name graph;
+    graph::NodeKey node = graph::kInvalidNodeKey;
+    /// The one entity it stops for; a null entity stops every instance of the graph.
+    ecs::Entity entity;
+};
+
+/// Why the simulation is paused.
+enum class GraphPauseReason : u8 { Breakpoint = 0, Step, Pause };
+
+[[nodiscard]] const char* graph_pause_reason_name(GraphPauseReason reason) noexcept;
+
+/// Where the debugger stopped: one instance, before one node.
+struct GraphPauseView {
+    bool paused = false;
+    GraphPauseReason reason = GraphPauseReason::Breakpoint;
+    u32 instance = 0;
+    ecs::Entity entity;
+    Name graph;
+    graph::NodeKey node = graph::kInvalidNodeKey;
+    /// The simulation tick the break happened in.
+    u64 tick = 0;
+};
+
+/// One node an instance ran, in execution order.
+struct GraphTraceEntry {
+    /// Monotonic across the session; a reader keeps the last it saw.
+    u64 sequence = 0;
+    u64 tick = 0;
+    u32 instance = 0;
+    ecs::Entity entity;
+    Name graph;
+    graph::NodeKey node = graph::kInvalidNodeKey;
+};
+
+/// How many trace entries are kept: the oldest is dropped beyond it.
+inline constexpr u32 kGraphTraceCapacity = 64;
+
+/// One graph variable's value in one instance.
+struct GraphVariableView {
+    graph::NodeKey id = graph::kInvalidNodeKey;
+    Name name;
+    graph::script::ValueKind kind = graph::script::ValueKind::Float;
+    graph::script::Value value;
+};
+
+/// What the last applied reload did.
+struct GraphReloadReport {
+    Name graph;
+    /// The graph's generation after the reload: 1 for the program Play started with.
+    u32 generation = 1;
+    u32 instances = 0;
+    u32 kept = 0;
+    u32 added = 0;
+    u32 dropped = 0;
+    u32 waits_kept = 0;
+    u32 waits_dropped = 0;
+};
+
 /// One cue a graph played: which entity, which cue, on which tick and where.
 struct GraphCuePlayed {
     ecs::Entity entity;
@@ -105,7 +196,8 @@ struct GraphCuePlayed {
 };
 
 /// Compiled gameplay graphs and their instances. See the header comment.
-class GraphBehaviours final : private graph::script::ScriptHost {
+class GraphBehaviours final : private graph::script::ScriptHost,
+                              private graph::script::ScriptDebugHook {
 public:
     explicit GraphBehaviours(Allocator& allocator) noexcept;
     ~GraphBehaviours() override;
@@ -137,8 +229,68 @@ public:
     [[nodiscard]] Expected<u32, Error> raise(ecs::Entity entity, Name event,
                                              Span<const f32> arguments) noexcept;
 
-    /// One fixed step: move every unit with an order, then resume every satisfied wait.
+    /// One fixed step: apply a staged reload, move every unit with an order, then resume every
+    /// satisfied wait. Refused while the debugger holds the simulation paused.
     [[nodiscard]] Status update(f32 dt) noexcept;
+
+    // --- Hot reload ------------------------------------------------------------------------------
+
+    /// Compile `source` as the new program of the loaded graph `name` and check that every running
+    /// instance can move to it. Problems are reported through `sink`, on their nodes, and refuse
+    /// the reload with the old program left running. An accepted reload is staged and applied at
+    /// the next tick boundary; staging another before then replaces it. Answers the generation the
+    /// graph will have.
+    [[nodiscard]] Expected<u32, Error> reload(Name name, std::string_view source,
+                                              graph::DiagnosticSink& sink) noexcept;
+    /// Whether a reload is staged and not yet applied.
+    [[nodiscard]] bool reload_pending() const noexcept;
+    /// The last reload that was applied.
+    [[nodiscard]] const GraphReloadReport& last_reload() const noexcept { return last_reload_; }
+    /// A loaded graph's program generation: 1 until it is first reloaded.
+    [[nodiscard]] u32 generation(u32 graph) const noexcept;
+    /// The index of the loaded graph `name`, or `graph_count()`.
+    [[nodiscard]] u32 find_graph(Name name) const noexcept;
+
+    // --- The Play debugger -----------------------------------------------------------------------
+
+    /// Run every graph's debug-instrumented program (true) or its plain one (false), from the
+    /// next handler or resume on. Refused (`Unsupported`) where the debugger is compiled out, and
+    /// refused while paused.
+    [[nodiscard]] Status set_debugging(bool enabled) noexcept;
+    [[nodiscard]] bool debugging() const noexcept { return debugging_; }
+
+    /// Add or remove a breakpoint. `entity` null stops every instance of `graph`.
+    [[nodiscard]] Status set_breakpoint(Name graph, graph::NodeKey node, ecs::Entity entity,
+                                        bool enabled) noexcept;
+    void clear_breakpoints() noexcept { breakpoints_.clear(); }
+    [[nodiscard]] Span<const GraphBreakpoint> breakpoints() const noexcept {
+        return breakpoints_.span();
+    }
+
+    /// Break at the next node any instance runs.
+    [[nodiscard]] Status debug_pause() noexcept;
+    /// Run the held tick on from the paused node until the next breakpoint, or to its end.
+    [[nodiscard]] Status debug_continue() noexcept;
+    /// Run the paused instance to its next node (`Into`) or next execution node (`Over`). The step
+    /// stays armed for that instance until it gets there, a later tick if need be; a breakpoint
+    /// another instance reaches first still stops there.
+    [[nodiscard]] Status debug_step(GraphStep step) noexcept;
+
+    /// Whether the debugger is holding the simulation in the middle of a tick.
+    [[nodiscard]] bool paused() const noexcept { return pause_.paused; }
+    [[nodiscard]] const GraphPauseView& pause_view() const noexcept { return pause_; }
+
+    /// The trace, oldest first: at most `kGraphTraceCapacity` entries.
+    [[nodiscard]] u32 trace_count() const noexcept;
+    [[nodiscard]] GraphTraceEntry trace_entry(u32 index) const noexcept;
+
+    /// A pin's value in one instance, through the running program's debug map (see
+    /// `graph::script::read_pin`). A paused instance is read in the block it is paused in.
+    [[nodiscard]] graph::script::PinReading watch_pin(u32 instance, graph::NodeKey node,
+                                                      Name pin) const noexcept;
+    /// One instance's graph variables, in declaration order.
+    [[nodiscard]] u32 variable_count(u32 instance) const noexcept;
+    [[nodiscard]] GraphVariableView variable(u32 instance, u32 index) const noexcept;
 
     [[nodiscard]] u64 tick() const noexcept { return tick_; }
     [[nodiscard]] u32 graph_count() const noexcept { return static_cast<u32>(graphs_.size()); }
@@ -172,7 +324,7 @@ private:
         Name cue_name;
     };
 
-    /// One compiled graph. Heap-held, because its native program points at its script program.
+    /// One compiled graph. Heap-held, because its native programs point at its script programs.
     struct LoadedGraph {
         LoadedGraph(Allocator& allocator, Name graph_name,
                     graph::script::EventProgram&& compiled) noexcept;
@@ -180,8 +332,13 @@ private:
         Name name;
         graph::script::EventProgram program;
         graph::script::NativeProgram native;
+        /// The debug-instrumented copy and its native compile, while the debugger is on.
+        UniquePtr<graph::script::EventProgram> debug;
+        graph::script::NativeProgram debug_native;
         GraphBackend backend = GraphBackend::Bytecode;
-        /// By external index, then by suspend-point index: resolved once, at load.
+        u32 generation = 1;
+        /// By external index, then by suspend-point index: resolved once, at load. The debug copy
+        /// has the same tables in the same order, so one binding serves both.
         Array<Binding> externals;
         Array<Binding> waits;
     };
@@ -204,8 +361,34 @@ private:
         const char* problem = "";
     };
 
+    /// Where a tick's graph work stopped for the debugger, so it runs on from exactly there.
+    enum class Phase : u8 { None = 0, Raise, Resume };
+    struct Interrupted {
+        Phase phase = Phase::None;
+        u32 instance = 0;
+        ecs::Entity entity;
+        Name event;
+        f32 arguments[3] = {};
+    };
+
+    [[nodiscard]] Expected<UniquePtr<LoadedGraph>, Error> compile(
+        Name name, std::string_view source, GraphBackend backend,
+        graph::DiagnosticSink& sink) noexcept;
+    [[nodiscard]] Status instrument(LoadedGraph& loaded) noexcept;
     [[nodiscard]] Status bind(LoadedGraph& loaded, const graph::Graph& source,
                               graph::DiagnosticSink& sink) noexcept;
+    [[nodiscard]] Status apply_reloads() noexcept;
+    /// The program an instance of `loaded` runs right now: the debug copy while debugging.
+    [[nodiscard]] const graph::script::ScriptProgram& active(
+        const LoadedGraph& loaded) const noexcept;
+    /// Start handlers on `entity`'s instances from `first` on; answers how many started.
+    [[nodiscard]] Expected<u32, Error> raise_from(u32 first, ecs::Entity entity, Name event,
+                                                  Span<const f32> arguments) noexcept;
+    /// Resume every satisfied wait from instance `first` on.
+    [[nodiscard]] Status resume_from(u32 first) noexcept;
+    /// Run the held work on after the paused instance finishes its handler.
+    [[nodiscard]] Status run_on() noexcept;
+    [[nodiscard]] u32 index_of(const Instance& instance) const noexcept;
     [[nodiscard]] const Binding& binding_of(
         const graph::script::ExternalRef& external) const noexcept;
 
@@ -226,6 +409,9 @@ private:
     void set_field(const graph::script::ExternalRef& field, const graph::script::Value& subject,
                    const graph::script::Value& value) noexcept override;
     [[nodiscard]] bool wait_satisfied(const graph::script::SuspendPoint& point) noexcept override;
+    [[nodiscard]] graph::script::DebugVerdict on_probe(
+        const graph::script::ProbeSite& site,
+        const graph::script::ScriptState& state) noexcept override;
 
     Allocator* allocator_;
     graph::NodeRegistry registry_;
@@ -238,6 +424,24 @@ private:
     /// The instance whose handler is running, for the host calls it makes.
     Instance* current_ = nullptr;
     u64 tick_ = 0;
+
+    /// Reloads accepted and not yet applied, by graph index; null where none is staged.
+    Array<UniquePtr<LoadedGraph>> staged_;
+    GraphReloadReport last_reload_;
+
+    bool debugging_ = false;
+    Array<GraphBreakpoint> breakpoints_;
+    bool pause_requested_ = false;
+    /// An armed step: which instance, and how it continues.
+    bool stepping_ = false;
+    GraphStep step_ = GraphStep::Into;
+    u32 step_instance_ = 0;
+    GraphPauseView pause_;
+    Interrupted interrupted_;
+    /// A ring of the last `kGraphTraceCapacity` nodes run.
+    Array<GraphTraceEntry> trace_;
+    u32 trace_head_ = 0;
+    u64 trace_sequence_ = 0;
 };
 
 }  // namespace cy::game_backend

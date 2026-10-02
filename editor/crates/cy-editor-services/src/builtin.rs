@@ -68,6 +68,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // `crate::audio_commands`.
     crate::audio_commands::register(registry)?;
     crate::script_commands::register(registry)?;
+    crate::script_debug_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
     crate::source_control::register_commands(registry)?;
@@ -581,8 +582,13 @@ fn apply_sources(
             let _ = project.material_graph_preview(&reference, source);
         }
     }
-    for (reference, source) in vfx_documents.into_iter().chain(script_graphs) {
+    for (reference, source) in vfx_documents {
         let _ = project.put_source(&reference, source.as_deref());
+    }
+    for (reference, source) in script_graphs {
+        let _ = project.put_source(&reference, source.as_deref());
+        // An undone or redone graph edit during Play reloads the running program, as the edit did.
+        project.script_graph_changed(&reference, source.as_deref());
     }
     restore_audio(project, audio_assets);
 }
@@ -748,7 +754,8 @@ mod tests {
         let audio = 13 + 8;
         let navigation = 18;
         let lighting = 1 + 4 + 1;
-        let gameplay_graphs = 1 + 5;
+        // The Play debugger and hot reload (#84) add nine reads in `crate::script_debug_commands`.
+        let gameplay_graphs = 1 + 5 + 9;
         assert_eq!(
             registry.len(),
             earlier + audio + navigation + lighting + gameplay_graphs

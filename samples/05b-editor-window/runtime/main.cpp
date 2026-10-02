@@ -868,6 +868,21 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     char detail[256] = {};
     switch (*wanted) {
         case gameplay::PlayState::Playing: {
+            if (host.graphs->held()) {
+                // A GRAPH BREAKPOINT HOLDS THE SIMULATION MID-TICK. Resuming the session under it
+                // would start the next tick with this one unfinished, so resuming Play continues
+                // the graph instead; the session resumes once the held tick is done.
+                if (Status continued = host.graphs->debug(editor::ScriptDebugAction::Continue);
+                    !continued) {
+                    (void)std::snprintf(detail, sizeof(detail), "%s", continued.error().message);
+                } else {
+                    (void)std::snprintf(detail, sizeof(detail), "%s",
+                                        host.graphs->held()
+                                            ? "continued to the next graph breakpoint"
+                                            : "continued past the graph breakpoint");
+                }
+                break;
+            }
             if (host.play->state() == gameplay::PlayState::Paused) {
                 if (Status resumed = host.play->resume(); !resumed) {
                     (void)host.bridge->send_playing(
@@ -1858,6 +1873,12 @@ int main(int argc, char** argv) {
         host.scripts = &scripts;
         host.graphs = &graphs;
         host.audio = &audio;
+        // A graph breakpoint pauses the whole simulation, and Play's audio is part of it.
+        graphs.set_hold_listener(
+            [](void* user, bool held) noexcept {
+                static_cast<Host*>(user)->audio->pause_play(held);
+            },
+            &host);
         host.physics = play.server;
         host.renderer = &renderer;
 #if defined(CY_EDITOR_MATERIAL_RUNTIME) && CY_EDITOR_MATERIAL_RUNTIME

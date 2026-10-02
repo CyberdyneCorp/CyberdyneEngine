@@ -678,6 +678,88 @@ pub trait ProjectHost {
         let _ = reference;
         Outcome::new("Engine gameplay graphs unavailable")
     }
+
+    /// Want, or stop wanting, a Play debugger breakpoint on `graph`'s `node` for the entity of
+    /// engine identity `entity` (zero: every instance). Kept by the editor and sent while Play
+    /// runs. The request's identity, or `0` when it was only recorded or queued. Issue #84.
+    fn script_breakpoint(
+        &mut self,
+        graph: &str,
+        node: u64,
+        entity: u64,
+        enabled: bool,
+    ) -> Result<u64> {
+        let _ = (graph, node, entity, enabled);
+        Err(cy_editor_core::problem::Problem::new(
+            "set a gameplay graph breakpoint",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Pause, continue or step Play's graphs: `pause`, `continue`, `into` or `over`.
+    fn script_debug_control(&mut self, action: &str) -> Result<u64> {
+        let _ = action;
+        Err(cy_editor_core::problem::Problem::new(
+            "control the gameplay graph debugger",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Watch (or stop watching) `node`'s `pin` of `graph`; with `entity`, inspect that entity's
+    /// instance rather than the paused one.
+    fn script_watch(
+        &mut self,
+        graph: &str,
+        entity: Option<u64>,
+        node: u64,
+        pin: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let _ = (graph, entity, node, pin, enabled);
+        Err(cy_editor_core::problem::Problem::new(
+            "watch a gameplay graph pin",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Inspect `entity`'s instance of `graph` (engine identity; zero: the paused one).
+    fn script_inspect(&mut self, graph: &str, entity: u64) -> Result<()> {
+        let _ = (graph, entity);
+        Err(cy_editor_core::problem::Problem::new(
+            "inspect a gameplay graph entity",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Ask the engine for the debugger's state now.
+    fn script_debug_refresh(&mut self) -> Result<u64> {
+        Err(cy_editor_core::problem::Problem::new(
+            "read the gameplay graph debugger",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// Recompile a saved graph in the running Play and swap it in at the next tick.
+    fn script_reload(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "reload a gameplay graph",
+            "this host has no engine gameplay graph service",
+        ))
+    }
+
+    /// A gameplay graph's saved text changed — an edit, an undo or a redo. While Play runs, the
+    /// host reloads it there, so the running program follows the file. Ignored by default.
+    fn script_graph_changed(&mut self, reference: &str, source: Option<&str>) {
+        let _ = (reference, source);
+    }
+
+    /// The debugger's last state: where Play is paused, the breakpoints, the recent trace, and the
+    /// inspected instance's variables and watched pins; and the last reload of `reference`.
+    fn script_debug_status(&self, reference: &str) -> Outcome {
+        let _ = reference;
+        Outcome::new("Gameplay graph debugger unavailable")
+    }
 }
 
 /// Result of a fingerprint-guarded source write.

@@ -7,8 +7,13 @@
 //! they are asked for, and while the panel is on screen during Play the state is polled four times
 //! a second. A compile's answer is kept per graph reference together with the source it answered,
 //! so a report is never shown against a graph that has changed since.
+//!
+//! The Play debugger (#84) rides the same queue. The editor keeps the breakpoints a person wants
+//! (they can be set before Play) and sends them when Play starts; while the panel is drawn the
+//! debug state — paused or not, the trace, the inspected instance's variables and watched pins —
+//! is polled with Play's state. Controls and reloads are sent as they are asked for.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use cy_editor_core::observe::{Revision, Versioned};
@@ -16,6 +21,10 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 
 use crate::runtime::RuntimeSession;
+use crate::script_debug::{
+    Breakpoint, DEBUG_BREAKPOINT, DEBUG_CONTROL, DEBUG_GET, DebugAction, DebugState, RELOAD,
+    ReloadReply, WatchList,
+};
 use crate::script_graph::{CATALOGUE, COMPILE, CompileReport, PlayState, RAISE, STATE};
 
 const SCHEMA: u32 = 1;
@@ -45,6 +54,10 @@ pub struct ScriptRequests {
     state: Versioned<Option<PlayState>>,
     started: Option<u32>,
     problem: Option<String>,
+    debug: Versioned<Option<DebugState>>,
+    reloads: Versioned<BTreeMap<String, (String, ReloadReply)>>,
+    watch: WatchList,
+    breakpoints: BTreeSet<Breakpoint>,
 }
 
 impl Default for ScriptRequests {
@@ -61,6 +74,10 @@ impl Default for ScriptRequests {
             state: Versioned::new(None),
             started: None,
             problem: None,
+            debug: Versioned::new(None),
+            reloads: Versioned::new(BTreeMap::new()),
+            watch: WatchList::default(),
+            breakpoints: BTreeSet::new(),
         }
     }
 }
@@ -131,6 +148,111 @@ impl ScriptRequests {
         self.enqueue(runtime, state_request())
     }
 
+    /// Want `breakpoint` (or no longer want it). Kept by the editor, so it can be set before Play;
+    /// sent at once while Play runs, and again whenever Play starts.
+    ///
+    /// # Errors
+    ///
+    /// When Play runs and no runtime is attached to send it to.
+    pub fn set_breakpoint(
+        &mut self,
+        runtime: &RuntimeSession,
+        breakpoint: Breakpoint,
+        enabled: bool,
+    ) -> Result<Option<RequestId>> {
+        let payload = crate::script_debug::breakpoint_payload(&breakpoint, enabled);
+        // A breakpoint is a reason to talk to the engine's graphs, Play or not.
+        self.wanted = true;
+        if enabled {
+            self.breakpoints.insert(breakpoint);
+        } else {
+            self.breakpoints.remove(&breakpoint);
+        }
+        if !self.playing() {
+            return Ok(None);
+        }
+        self.enqueue(runtime, plain(DEBUG_BREAKPOINT, payload))
+    }
+
+    /// Pause, continue or step Play's graphs.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached.
+    pub fn control(
+        &mut self,
+        runtime: &RuntimeSession,
+        action: DebugAction,
+    ) -> Result<Option<RequestId>> {
+        self.enqueue(
+            runtime,
+            plain(DEBUG_CONTROL, crate::script_debug::control_payload(action)),
+        )
+    }
+
+    /// Recompile `reference` from `source` in Play and swap it in at the next tick.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached.
+    pub fn reload(
+        &mut self,
+        runtime: &RuntimeSession,
+        reference: &str,
+        source: &str,
+    ) -> Result<Option<RequestId>> {
+        self.enqueue(
+            runtime,
+            Queued {
+                operation: RELOAD,
+                payload: crate::script_debug::reload_payload(reference, source),
+                reference: reference.to_owned(),
+                source: source.to_owned(),
+            },
+        )
+    }
+
+    /// Ask for the debug state now, inspecting what [`Self::set_watch`] named.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached.
+    pub fn refresh_debug(&mut self, runtime: &RuntimeSession) -> Result<Option<RequestId>> {
+        let queued = self.debug_request();
+        self.enqueue(runtime, queued)
+    }
+
+    /// The instance the debug state inspects and the pins it reads, from the next request on.
+    pub fn set_watch(&mut self, watch: WatchList) {
+        self.watch = watch;
+    }
+
+    /// What the debug state inspects.
+    #[must_use]
+    pub const fn watch(&self) -> &WatchList {
+        &self.watch
+    }
+
+    /// The breakpoints the editor wants.
+    #[must_use]
+    pub const fn breakpoints(&self) -> &BTreeSet<Breakpoint> {
+        &self.breakpoints
+    }
+
+    /// Whether the engine last said Play runs graphs.
+    #[must_use]
+    pub fn playing(&self) -> bool {
+        self.state.get().as_ref().is_some_and(|state| state.playing)
+            || self.debug.get().as_ref().is_some_and(|debug| debug.playing)
+    }
+
+    fn debug_request(&self) -> Queued {
+        plain(
+            DEBUG_GET,
+            crate::script_debug::debug_get_payload(&self.watch),
+        )
+    }
+
     fn enqueue(&mut self, runtime: &RuntimeSession, queued: Queued) -> Result<Option<RequestId>> {
         if !runtime.is_connected() {
             return Err(Problem::new(
@@ -141,7 +263,10 @@ impl ScriptRequests {
         }
         self.wanted = true;
         if self.queue.len() >= MAX_QUEUED
-            && let Some(index) = self.queue.iter().position(|q| q.operation == STATE)
+            && let Some(index) = self
+                .queue
+                .iter()
+                .position(|q| q.operation == STATE || q.operation == DEBUG_GET)
         {
             self.queue.remove(index);
         }
@@ -185,6 +310,8 @@ impl ScriptRequests {
         if self.polling && due && self.in_flight.is_none() && self.queue.is_empty() {
             self.last_poll = Some(Instant::now());
             self.queue.push_back(state_request());
+            let debug = self.debug_request();
+            self.queue.push_back(debug);
         }
         self.send_next(runtime).err()
     }
@@ -198,6 +325,9 @@ impl ScriptRequests {
         self.catalogue_requested = false;
         if self.state.get().is_some() {
             self.state.set(None);
+        }
+        if self.debug.get().is_some() {
+            self.debug.set(None);
         }
     }
 
@@ -257,6 +387,17 @@ impl ScriptRequests {
                     self.state.set(Some(state));
                     Ok(())
                 }
+                DEBUG_GET | DEBUG_BREAKPOINT | DEBUG_CONTROL => {
+                    self.accept_debug(DebugState::decode(payload)?);
+                    Ok(())
+                }
+                RELOAD => {
+                    let reply = ReloadReply::decode(payload)?;
+                    let mut reloads = self.reloads.get().clone();
+                    reloads.insert(queued.reference.clone(), (queued.source.clone(), reply));
+                    self.reloads.set(reloads);
+                    Ok(())
+                }
                 _ => {
                     self.state.set(Some(PlayState::decode(payload)?));
                     Ok(())
@@ -272,6 +413,41 @@ impl ScriptRequests {
                 "the engine answered with an incompatible schema",
             )),
         }
+    }
+
+    /// Keep the engine's debug state, and when Play has just started send it every breakpoint the
+    /// editor wants: a breakpoint set before Play stops the first tick that reaches it.
+    fn accept_debug(&mut self, state: DebugState) {
+        let started = state.playing && !self.debug.get().as_ref().is_some_and(|old| old.playing);
+        if started && state.debugging {
+            for breakpoint in &self.breakpoints {
+                if !state.breakpoints.contains(breakpoint) {
+                    self.queue.push_back(plain(
+                        DEBUG_BREAKPOINT,
+                        crate::script_debug::breakpoint_payload(breakpoint, true),
+                    ));
+                }
+            }
+        }
+        self.debug.set(Some(state));
+    }
+
+    /// The engine's last debug state.
+    #[must_use]
+    pub fn debug(&self) -> Option<&DebugState> {
+        self.debug.get().as_ref()
+    }
+
+    /// Moves when a debug state arrives.
+    #[must_use]
+    pub const fn debug_revision(&self) -> Revision {
+        self.debug.revision()
+    }
+
+    /// The engine's last answer to a reload of `reference`, with the source it was sent.
+    #[must_use]
+    pub fn reload_reply(&self, reference: &str) -> Option<&(String, ReloadReply)> {
+        self.reloads.get().get(reference)
     }
 
     /// The engine's node vocabulary, once it has answered.
@@ -324,9 +500,14 @@ impl ScriptRequests {
 }
 
 fn state_request() -> Queued {
+    plain(STATE, Vec::new())
+}
+
+/// A request about no graph in particular.
+fn plain(operation: &'static str, payload: Vec<u8>) -> Queued {
     Queued {
-        operation: STATE,
-        payload: Vec::new(),
+        operation,
+        payload,
         reference: String::new(),
         source: String::new(),
     }

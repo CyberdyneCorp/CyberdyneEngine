@@ -5,58 +5,12 @@
 
 #include <cy/graph/lower_script.h>
 
+#include <string_view>
 #include <utility>
 
 #include "script_build.h"
 
 namespace cy::graph::script {
-
-/// Write access to a `ScriptProgram`, which has none in public.
-///
-/// The header declares this a friend because a compiled program is SHARED BY EVERY INSTANCE at run
-/// time and must be immutable there; the compiler is the one thing that fills one in, and it says
-/// so by having to name this class to do it.
-class ProgramBuilder {
-public:
-    [[nodiscard]] static Array<Instruction>& code(ScriptProgram& program) noexcept {
-        return program.code_;
-    }
-    [[nodiscard]] static Array<BasicBlock>& blocks(ScriptProgram& program) noexcept {
-        return program.blocks_;
-    }
-    [[nodiscard]] static Array<Value>& constants(ScriptProgram& program) noexcept {
-        return program.constants_;
-    }
-    [[nodiscard]] static Array<AccessDecl>& accesses(ScriptProgram& program) noexcept {
-        return program.accesses_;
-    }
-    [[nodiscard]] static Array<StateSlot>& state_slots(ScriptProgram& program) noexcept {
-        return program.state_;
-    }
-    [[nodiscard]] static Array<SuspendPoint>& suspends(ScriptProgram& program) noexcept {
-        return program.suspends_;
-    }
-    [[nodiscard]] static Array<ExternalRef>& externals(ScriptProgram& program) noexcept {
-        return program.externals_;
-    }
-    [[nodiscard]] static DebugMap& debug(ScriptProgram& program) noexcept { return program.debug_; }
-    static void set_registers(ScriptProgram& program, u32 count) noexcept {
-        program.registers_ = count;
-    }
-    static void set_entry(ScriptProgram& program, BlockId block) noexcept {
-        program.entry_ = block;
-    }
-    static void set_name(ScriptProgram& program, Name name) noexcept { program.name_ = name; }
-    static void set_digest(ScriptProgram& program, u64 digest) noexcept {
-        program.digest_ = digest;
-    }
-
-    [[nodiscard]] static Expected<ScriptProgram, Error> build(const Graph& graph,
-                                                              const NodeRegistry& registry,
-                                                              Span<const NodeKey> entries,
-                                                              Array<BlockId>& entry_blocks,
-                                                              DiagnosticSink& sink) noexcept;
-};
 
 namespace {
 
@@ -76,6 +30,7 @@ constexpr OpInfo kOps[] = {
     {"and_bool", false},   {"or_bool", false},    {"get_field", false},    {"set_field", false},
     {"call", false},       {"emit_event", false}, {"emit_command", false}, {"query", false},
     {"branch_if", true},   {"jump", true},        {"suspend", true},       {"return", true},
+    {"probe", false},
 };
 static_assert(sizeof(kOps) / sizeof(kOps[0]) == static_cast<usize>(ScriptOp::Count));
 
@@ -163,6 +118,8 @@ ScriptProgram::ScriptProgram(Allocator& allocator) noexcept
       state_(allocator),
       suspends_(allocator),
       externals_(allocator),
+      variables_(allocator),
+      probes_(allocator),
       debug_(allocator) {}
 
 ScriptState::ScriptState(Allocator& allocator, const ScriptProgram& program) noexcept
@@ -170,6 +127,11 @@ ScriptState::ScriptState(Allocator& allocator, const ScriptProgram& program) noe
     (void)registers_.resize(program.register_count());
     for (Value& value : registers_) {
         value = Value{};
+    }
+    for (const Variable& variable : program.variables()) {
+        if (variable.reg < registers_.size()) {
+            registers_[variable.reg] = variable.initial;
+        }
     }
 }
 
@@ -294,24 +256,59 @@ void step_external(const ScriptProgram& program, const Instruction& instruction,
 
 namespace {
 
-/// The register machine's loop, from `block` until a return, a suspension or the budget. Shared by
-/// `execute` (entry or resume point) and `execute_from` (an event handler's block).
+/// Where a run starts: a block, and the instruction within it — zero except when a paused instance
+/// continues after the probe it stopped at.
+struct RunStart {
+    BlockId block = kNoBlock;
+    u32 offset = 0;
+};
+
+/// A probe, in a build that has the debugger: ask the hook, and on a break record where this
+/// instance continues — the instruction after the probe — so either back end resumes it there.
+[[nodiscard]] bool probe_breaks(const ScriptProgram& program, const Instruction& instruction,
+                                ScriptState& state, ScriptDebugHook* debug) noexcept {
+    if (debug == nullptr || instruction.immediate >= program.probes().size()) {
+        return false;
+    }
+    const ProbeSite& site = program.probes()[instruction.immediate];
+    if (debug->on_probe(site, state) != DebugVerdict::Break) {
+        return false;
+    }
+    state.pause_at(site.block, site.offset + 1);
+    return true;
+}
+
+/// The register machine's loop, from `start` until a return, a suspension, a debugger's break or
+/// the budget. Shared by `execute` (entry, resume or pause point) and `execute_from` (an event
+/// handler's block).
 [[nodiscard]] Expected<RunOutcome, Error> run_blocks(const ScriptProgram& program,
                                                      ScriptState& state, ScriptHost& host,
-                                                     BlockId block,
-                                                     u32 instruction_budget) noexcept {
+                                                     RunStart start, u32 instruction_budget,
+                                                     ScriptDebugHook* debug) noexcept {
     u32 executed = 0;
+    BlockId block = start.block;
+    u32 first = start.offset;
     while (block != kNoBlock) {
         if (block >= program.blocks().size()) {
             return make_unexpected(invalid("this program jumps to a block that is not in it"));
         }
         const BasicBlock& current = program.blocks()[block];
         BlockId next = kNoBlock;
-        for (u32 index = 0; index < current.count; ++index) {
+        for (u32 index = first; index < current.count; ++index) {
             if (++executed > instruction_budget) {
                 return RunOutcome::BudgetExhausted;
             }
             const Instruction& instruction = program.code()[current.first + index];
+            // COMPILED OUT OF PROFILE AND SHIPPING: there the loop has no probe test at all, and no
+            // program it can be given holds a probe (`instrument_for_debug` refuses there).
+            if constexpr (kGraphDebuggerEnabled) {
+                if (instruction.op == ScriptOp::Probe) {
+                    if (probe_breaks(program, instruction, state, debug)) {
+                        return RunOutcome::Paused;
+                    }
+                    continue;
+                }
+            }
             if (is_external(instruction.op)) {
                 step_external(program, instruction, state.registers(), host);
                 continue;
@@ -347,6 +344,7 @@ namespace {
             break;
         }
         block = next;
+        first = 0;
     }
     return RunOutcome::Finished;
 }
@@ -354,9 +352,17 @@ namespace {
 }  // namespace
 
 Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& state,
-                                    ScriptHost& host, u32 instruction_budget) noexcept {
+                                    ScriptHost& host, u32 instruction_budget,
+                                    ScriptDebugHook* debug) noexcept {
     if (program.blocks().empty()) {
         return RunOutcome::Finished;
+    }
+    // A PAUSED INSTANCE CONTINUES WHERE THE DEBUGGER STOPPED IT, with its registers as they were:
+    // nothing was persisted, so nothing is restored.
+    if (state.paused()) {
+        const RunStart start{state.paused_block(), state.paused_offset()};
+        state.clear_pause();
+        return run_blocks(program, state, host, start, instruction_budget, debug);
     }
     BlockId block = state.suspended() ? state.resume_block() : program.entry();
     if (state.suspended()) {
@@ -365,18 +371,19 @@ Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& s
         }
         state.set_resume_block(kNoBlock);
     }
-    return run_blocks(program, state, host, block, instruction_budget);
+    return run_blocks(program, state, host, RunStart{block, 0}, instruction_budget, debug);
 }
 
 Expected<RunOutcome, Error> execute_from(const ScriptProgram& program, ScriptState& state,
-                                         ScriptHost& host, BlockId start,
-                                         u32 instruction_budget) noexcept {
+                                         ScriptHost& host, BlockId start, u32 instruction_budget,
+                                         ScriptDebugHook* debug) noexcept {
     if (start >= program.blocks().size()) {
         return make_unexpected(
             invalid("this handler begins at a block that is not in its program"));
     }
     state.set_resume_block(kNoBlock);
-    return run_blocks(program, state, host, start, instruction_budget);
+    state.clear_pause();
+    return run_blocks(program, state, host, RunStart{start, 0}, instruction_budget, debug);
 }
 
 // --- Compilation ------------------------------------------------------------------------------
@@ -452,7 +459,20 @@ constexpr NodeLowering kLowerings[] = {
      {"arg0", "arg1", nullptr},
      "command",
      true},
+    // Graph variables. Both lower to a `Move` against the variable's reserved register; the kind
+    // here is a placeholder, and `Compiler::variable_of` supplies the declared one.
+    {"script.get_var",
+     ScriptOp::Move,
+     ValueKind::Float,
+     {nullptr, nullptr, nullptr},
+     nullptr,
+     false},
+    {"script.set_var", ScriptOp::Move, ValueKind::Void, {"value", nullptr, nullptr}, nullptr, true},
 };
+
+constexpr std::string_view kVariableType = "script.variable";
+constexpr std::string_view kGetVariableType = "script.get_var";
+constexpr std::string_view kSetVariableType = "script.set_var";
 
 [[nodiscard]] const NodeLowering* lowering_of(Name type) noexcept {
     for (const NodeLowering& entry : kLowerings) {
@@ -530,12 +550,18 @@ private:
     [[nodiscard]] Status compile_exec_node(NodeKey node, const NodeLowering& lowering) noexcept;
     [[nodiscard]] Status compile_terminator(NodeKey node, Name type) noexcept;
     [[nodiscard]] Expected<Reg, Error> compile_data(NodeKey node) noexcept;
+    [[nodiscard]] Expected<Reg, Error> compile_get_variable(NodeKey node) noexcept;
+    [[nodiscard]] Status compile_set_variable(NodeKey node) noexcept;
+    [[nodiscard]] const Variable* variable_of(NodeKey node) noexcept;
     [[nodiscard]] Expected<Reg, Error> operand_of(NodeKey node, const char* pin) noexcept;
     [[nodiscard]] Expected<Reg, Error> pack_arguments(NodeKey node, const NodeLowering& lowering,
                                                       u32& count) noexcept;
     [[nodiscard]] Expected<u32, Error> external_index(Name name, u32 arity) noexcept;
     [[nodiscard]] Expected<u32, Error> constant_index(const Value& value) noexcept;
-    [[nodiscard]] Status emit(const Instruction& instruction, NodeKey origin) noexcept;
+    /// Append `instruction`, recording in the debug map the node it came from and, when it writes
+    /// a pin's value, which pin — the output `value`, or the input it packs into an argument run.
+    [[nodiscard]] Status emit(const Instruction& instruction, NodeKey origin,
+                              Name pin = Name{}) noexcept;
     [[nodiscard]] Status declare_access(Name resource, AccessMode mode) noexcept;
     void report(NodeKey node, Name pin, const char* message) noexcept;
 
@@ -592,12 +618,62 @@ void Compiler::report(NodeKey node, Name pin, const char* message) noexcept {
     sink_->report(diagnostic);
 }
 
-Status Compiler::emit(const Instruction& instruction, NodeKey origin) noexcept {
+Status Compiler::emit(const Instruction& instruction, NodeKey origin, Name pin) noexcept {
     const auto location = static_cast<u32>(ProgramBuilder::code(*program_).size());
     if (Status pushed = ProgramBuilder::code(*program_).push_back(instruction); !pushed) {
         return pushed;
     }
-    return ProgramBuilder::debug(*program_).record(location, origin);
+    return ProgramBuilder::debug(*program_).record(location, origin, pin);
+}
+
+const Variable* Compiler::variable_of(NodeKey node) noexcept {
+    const Literal* named = graph_->property(node, Name::intern("variable"));
+    const Name name = named != nullptr ? named->text : Name{};
+    for (const Variable& variable : program_->variables()) {
+        if (!name.is_empty() && variable.name == name) {
+            return &variable;
+        }
+    }
+    report(node, Name::intern("variable"), "this node names no variable the graph declares");
+    return nullptr;
+}
+
+Expected<Reg, Error> Compiler::compile_get_variable(NodeKey node) noexcept {
+    const Variable* variable = variable_of(node);
+    if (variable == nullptr) {
+        return make_unexpected(invalid("a variable read names no declared variable"));
+    }
+    Instruction read;
+    read.op = ScriptOp::Move;
+    read.kind = variable->kind;
+    read.a = variable->reg;
+    read.dst = allocate();
+    if (Status emitted = emit(read, node, Name::intern("value")); !emitted) {
+        return make_unexpected(emitted.error());
+    }
+    if (Status pushed = cached_.push_back(Cached{node, read.dst}); !pushed) {
+        return make_unexpected(pushed.error());
+    }
+    return read.dst;
+}
+
+Status Compiler::compile_set_variable(NodeKey node) noexcept {
+    const Variable* variable = variable_of(node);
+    if (variable == nullptr) {
+        return make_unexpected(invalid("a variable write names no declared variable"));
+    }
+    const Reg reg = variable->reg;
+    const ValueKind kind = variable->kind;
+    auto value = operand_of(node, "value");
+    if (!value) {
+        return make_unexpected(value.error());
+    }
+    Instruction write;
+    write.op = ScriptOp::Move;
+    write.kind = kind;
+    write.a = value.value();
+    write.dst = reg;
+    return emit(write, node, Name::intern("value"));
 }
 
 Status Compiler::declare_access(Name resource, AccessMode mode) noexcept {
@@ -652,7 +728,7 @@ Expected<Reg, Error> Compiler::operand_of(NodeKey node, const char* pin) noexcep
         load.op = ScriptOp::LoadConst;
         load.dst = reg;
         load.immediate = index.value();
-        if (Status emitted = emit(load, node); !emitted) {
+        if (Status emitted = emit(load, node, Name::intern(pin)); !emitted) {
             return make_unexpected(emitted.error());
         }
         return reg;
@@ -690,7 +766,7 @@ Expected<Reg, Error> Compiler::pack_arguments(NodeKey node, const NodeLowering& 
         move.op = ScriptOp::Move;
         move.dst = static_cast<Reg>(base + index);
         move.a = sources[index];
-        if (Status emitted = emit(move, node); !emitted) {
+        if (Status emitted = emit(move, node, Name::intern(lowering.inputs[index])); !emitted) {
             return make_unexpected(emitted.error());
         }
     }
@@ -711,6 +787,9 @@ Expected<Reg, Error> Compiler::compile_data(NodeKey node) noexcept {
     if (lowering == nullptr || lowering->executes) {
         report(node, Name{}, "this node cannot produce a value on a data pin");
         return make_unexpected(invalid("a data pin is wired to a node that produces no value"));
+    }
+    if (authored->type.text() == kGetVariableType) {
+        return compile_get_variable(node);
     }
 
     Instruction instruction;
@@ -777,7 +856,7 @@ Expected<Reg, Error> Compiler::compile_data(NodeKey node) noexcept {
         }
     }
     instruction.dst = allocate();
-    if (Status emitted = emit(instruction, node); !emitted) {
+    if (Status emitted = emit(instruction, node, Name::intern("value")); !emitted) {
         return make_unexpected(emitted.error());
     }
     if (Status pushed = cached_.push_back(Cached{node, instruction.dst}); !pushed) {
@@ -787,6 +866,9 @@ Expected<Reg, Error> Compiler::compile_data(NodeKey node) noexcept {
 }
 
 Status Compiler::compile_exec_node(NodeKey node, const NodeLowering& lowering) noexcept {
+    if (std::string_view(lowering.type) == kSetVariableType) {
+        return compile_set_variable(node);
+    }
     const bool packed = lowering.op == ScriptOp::Call || lowering.op == ScriptOp::EmitEvent ||
                         lowering.op == ScriptOp::EmitCommand;
     Reg operands[3] = {kNoRegister, kNoRegister, kNoRegister};
@@ -836,7 +918,8 @@ Status Compiler::compile_exec_node(NodeKey node, const NodeLowering& lowering) n
             return pushed;
         }
     }
-    return emit(instruction, node);
+    return emit(instruction, node,
+                lowering.kind != ValueKind::Void ? Name::intern("value") : Name{});
 }
 
 Status Compiler::compile_terminator(NodeKey node, Name type) noexcept {
@@ -1091,7 +1174,9 @@ Status Compiler::compile_block(const Pending& pending) noexcept {
     return ok();
 }
 
-void finish_digest(ScriptProgram& program) noexcept {
+}  // namespace
+
+void finish_program_digest(ScriptProgram& program) noexcept {
     u64 digest = hash_u64(kHashSeed, program.code().size());
     for (const Instruction& instruction : program.code()) {
         digest = hash_u64(digest, static_cast<u64>(instruction.op));
@@ -1107,8 +1192,17 @@ void finish_digest(ScriptProgram& program) noexcept {
     for (const ExternalRef& external : program.externals()) {
         digest = hash_text(digest, external.name.text());
     }
+    // Nothing is folded for a program without variables, so every digest a cook already recorded
+    // for one is unchanged.
+    for (const Variable& variable : program.variables()) {
+        digest = hash_u64(digest, variable.id);
+        digest = hash_u64(digest, (static_cast<u64>(variable.kind) << 16U) | variable.reg);
+        digest = hash_constant(digest, variable.initial);
+    }
     ProgramBuilder::set_digest(program, digest);
 }
+
+namespace {
 
 /// The node types both compilers share.
 constexpr PinDesc kExecIn{};
@@ -1133,6 +1227,58 @@ constexpr PinDesc kExecIn{};
     return desc;
 }
 
+/// The kind a `script.variable`'s `type` names, or `Void` for anything else.
+[[nodiscard]] ValueKind variable_kind(Name type) noexcept {
+    if (type.text() == "float") {
+        return ValueKind::Float;
+    }
+    if (type.text() == "int") {
+        return ValueKind::Int;
+    }
+    if (type.text() == "bool") {
+        return ValueKind::Bool;
+    }
+    return ValueKind::Void;
+}
+
+/// A variable's initial value: `default` is written as a number and read at the declared kind.
+[[nodiscard]] Value variable_initial(const Literal* written, ValueKind kind) noexcept {
+    const f32 number = written != nullptr ? written->value.x : 0.0F;
+    switch (kind) {
+        case ValueKind::Int:
+            return Value::from_int(static_cast<i64>(number));
+        case ValueKind::Bool:
+            return Value::from_bool(number != 0.0F);
+        default:
+            return Value::from_float(number);
+    }
+}
+
+[[nodiscard]] Status declare_variables(const Graph& graph, Compiler& compiler,
+                                       ScriptProgram& program) noexcept {
+    for (const GraphNode& node : graph.nodes()) {
+        if (node.type.text() != kVariableType) {
+            continue;
+        }
+        const Literal* name = graph.property(node.key, Name::intern("name"));
+        const Literal* type = graph.property(node.key, Name::intern("type"));
+        Variable variable;
+        variable.id = node.key;
+        variable.name = name != nullptr ? name->text : Name{};
+        variable.kind = variable_kind(type != nullptr ? type->text : Name::intern("float"));
+        if (variable.name.is_empty() || variable.kind == ValueKind::Void) {
+            continue;  // `compile_event_graph` reports both on the node before it gets here.
+        }
+        variable.initial =
+            variable_initial(graph.property(node.key, Name::intern("default")), variable.kind);
+        variable.reg = compiler.allocate();
+        if (Status pushed = ProgramBuilder::variables(program).push_back(variable); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
 }  // namespace
 
 Expected<ScriptProgram, Error> ProgramBuilder::build(const Graph& graph,
@@ -1146,6 +1292,11 @@ Expected<ScriptProgram, Error> ProgramBuilder::build(const Graph& graph,
     // Registers 0 and 1 are reserved for the ability pipeline's verdict and reason. Reserving them
     // in every program costs two slots and keeps one register numbering.
     compiler.reserve(2);
+    // Then one register per graph variable, held for it in every block: a variable is state, and
+    // nothing else may be allocated over it.
+    if (Status declared = declare_variables(graph, compiler, program); !declared) {
+        return make_unexpected(declared.error());
+    }
     for (const NodeKey entry : entries) {
         auto block = compiler.chain_block(entry);
         if (!block) {
@@ -1162,7 +1313,7 @@ Expected<ScriptProgram, Error> ProgramBuilder::build(const Graph& graph,
         return make_unexpected(computed.error());
     }
     set_entry(program, entry_blocks.empty() ? 0U : entry_blocks[0]);
-    finish_digest(program);
+    finish_program_digest(program);
     return program;
 }
 
@@ -1270,7 +1421,26 @@ Status register_script_nodes(NodeRegistry& registry) noexcept {
         return added;
     }
     const PinDesc ret[] = {pin("in", "exec", PinDirection::Input, true)};
-    return register_node(registry, "script.return", Span<const PinDesc>(ret, 1), false);
+    if (Status added = register_node(registry, "script.return", Span<const PinDesc>(ret, 1), false);
+        !added) {
+        return added;
+    }
+    // Graph variables. A declaration has no pins: it is state, not a step, and its `name`, `type`
+    // (`float`, `int` or `bool`) and `default` properties are all a reload needs to migrate it.
+    if (Status added = register_node(registry, "script.variable", Span<const PinDesc>{}, true);
+        !added) {
+        return added;
+    }
+    const PinDesc get_var[] = {pin("value", "float", PinDirection::Output)};
+    if (Status added =
+            register_node(registry, "script.get_var", Span<const PinDesc>(get_var, 1), true);
+        !added) {
+        return added;
+    }
+    const PinDesc set_var[] = {pin("in", "exec", PinDirection::Input, true),
+                               pin("value", "float", PinDirection::Input),
+                               pin("then", "exec", PinDirection::Output, true)};
+    return register_node(registry, "script.set_var", Span<const PinDesc>(set_var, 3), false);
 }
 
 Expected<ScriptProgram, Error> compile_script(const Graph& graph, const NodeRegistry& registry,

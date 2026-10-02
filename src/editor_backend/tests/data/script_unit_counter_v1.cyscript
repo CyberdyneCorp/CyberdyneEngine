@@ -1,0 +1,58 @@
+cygraph 1
+graph "unit_counter" version 1
+capability read_world write_world audio
+deterministic true
+node 1 "script.on_event" v1 {
+    prop "event" : "name" = "unit.command"
+}
+node 2 "script.query" v1 {
+    prop "query" : "name" = "event.x"
+}
+node 3 "script.query" v1 {
+    prop "query" : "name" = "event.z"
+}
+node 4 "script.call" v1 {
+    prop "function" : "name" = "unit.move_to"
+}
+node 5 "script.wait" v1 {
+    prop "reason" : "name" = "unit.arrived"
+}
+node 6 "script.emit_event" v1 {
+    prop "event" : "name" = "cue.unit.arrived"
+}
+node 7 "script.variable" v1 {
+    prop "default" : "float" = (0, 0, 0, 0, 0)
+    prop "name" : "name" = "orders"
+    prop "type" : "name" = "int"
+}
+node 8 "script.get_var" v1 {
+    prop "variable" : "name" = "orders"
+}
+node 9 "script.const_int" v1 {
+    prop "value" : "int" = (0, 0, 0, 0, 1)
+}
+node 10 "script.add_int" v1 {
+}
+node 11 "script.set_var" v1 {
+    prop "variable" : "name" = "orders"
+}
+link 2 "value" -> 4 "arg0"
+link 3 "value" -> 4 "arg1"
+link 11 "then" -> 4 "in"
+link 4 "then" -> 5 "in"
+link 5 "then" -> 6 "in"
+link 8 "value" -> 10 "a"
+link 9 "value" -> 10 "b"
+link 1 "then" -> 11 "in"
+link 10 "value" -> 11 "value"
+layout 1 at 16 16
+layout 2 at 230 200
+layout 3 at 230 290
+layout 4 at 444 16
+layout 5 at 658 16
+layout 6 at 658 150
+layout 7 at 16 380
+layout 8 at 16 200
+layout 9 at 16 290
+layout 10 at 16 110
+layout 11 at 230 16

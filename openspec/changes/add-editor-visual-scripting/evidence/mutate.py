@@ -11,6 +11,8 @@ tests notices is written as SURVIVED and makes the driver exit non-zero.
 Run from anywhere: python3 openspec/changes/add-editor-visual-scripting/evidence/mutate.py
 Pass mutation names to run only those; the record then goes to falsification-<first name>.txt.
 Pass --check to verify every snippet occurs exactly once without building anything.
+The snippets of c02, c03, r06, r13 and r16 were restated for the code as
+`add-visual-scripting-debugger` left it (the same mutations, in today's spelling).
 Output: falsification.txt beside this file. Every C++ target is rebuilt unmutated at the end.
 """
 import hashlib
@@ -61,14 +63,15 @@ MUTATIONS = [
      "        handler.block = blocks[index];", "        handler.block = blocks[0];",
      COMPILER, "event graph: each event*"),
     ("c02_a_new_event_keeps_the_old_wait", SCRIPT,
-     "    state.set_resume_block(kNoBlock);\n    return run_blocks(program, state, host, start, "
-     "instruction_budget);",
-     "    return run_blocks(program, state, host, start, instruction_budget);",
+     "    state.set_resume_block(kNoBlock);\n    state.clear_pause();\n    return run_blocks(program, "
+     "state, host, RunStart{start, 0}, instruction_budget, debug);",
+     "    state.clear_pause();\n    return run_blocks(program, state, host, RunStart{start, 0}, "
+     "instruction_budget, debug);",
      COMPILER, "event graph: each event*"),
     ("c03_native_handler_starts_at_the_entry", NATIVE,
      "    return run_steps(program, state, host, program.block_starts()[start], "
-     "instruction_budget);",
-     "    return run_steps(program, state, host, program.entry_step(), instruction_budget);",
+     "instruction_budget,\n                     debug);",
+     "    return run_steps(program, state, host, program.entry_step(), instruction_budget, debug);",
      COMPILER, "event graph: each event*"),
     ("c04_any_name_of_the_kind_is_declared", EVENTS,
      "        if (!declared.family && declared.name == name) {",
@@ -169,8 +172,8 @@ MUTATIONS = [
      '                kind: format!("unrecorded:{reference}"),',
      MCP, ACCEPTANCE),
     ("r06_undo_does_not_restore_the_file", BUILTIN_RS,
-     "    for (reference, source) in vfx_documents.into_iter().chain(script_graphs) {",
-     "    let _ = script_graphs;\n    for (reference, source) in vfx_documents {",
+     "    for (reference, source) in script_graphs {\n        let _ = project.put_source(",
+     "    for (reference, source) in script_graphs {\n        let _ = (",
      MCP, ACCEPTANCE),
     ("r07_added_nodes_lack_the_engines_defaults", AUTHORING_RS,
      "                    canvas.set_property_by_identity(node, identity, default)?;",
@@ -194,7 +197,7 @@ MUTATIONS = [
      "        self.script_catalogue_ready = true;", "        self.script_catalogue_ready = false;",
      PANELS, "the_gameplay_graph_panel_offers_the_engines_events"),
     ("r13_a_diagnostic_row_selects_nothing", PANEL_RS,
-     "            let _ = canvas.select([key]);", "            let _ = key;",
+     "        let _ = canvas.select([key]);", "        let _ = key;",
      PANELS, "an_engine_diagnostic_is_on_its_node_and_selects_it"),
     ("r14_the_palette_is_empty", PANEL_RS,
      "graph_canvas::node_palette(ui, entries, true)",
@@ -208,7 +211,7 @@ MUTATIONS = [
      "        Some(declared) => canvas.set_property_by_identity(",
      INTERFACE_LIB, "a_value_the_palette_would_refuse_still_opens_and_is_kept"),
     ("r16_panel_invokes_an_unregistered_command", PANEL_RS,
-     '        "script.refresh",\n    ];', '        "script.reload",\n    ];',
+     '        "script.debug.inspect",\n    ];', '        "script.reload",\n    ];',
      SHELL_LIB, "every_scaffolded_tool_is_an_undoable_mcp_peer_of_its_panel"),
 ]
 

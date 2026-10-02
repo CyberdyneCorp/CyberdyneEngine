@@ -174,6 +174,28 @@ void step_return(const NativeStep& /*step*/, NativeFrame& frame) noexcept {
     frame.stop = true;
 }
 
+/// A node boundary of an instrumented program. The pause is recorded in the BYTECODE back end's
+/// terms — a block and an offset — exactly as a suspension is, so a paused instance continues on
+/// either back end. Where the debugger is compiled out this step does nothing, and no program that
+/// build can produce contains it.
+void step_probe(const NativeStep& step, NativeFrame& frame) noexcept {
+    if constexpr (kGraphDebuggerEnabled) {
+        if (frame.debug == nullptr || step.immediate >= frame.program->probes().size()) {
+            return;
+        }
+        const ProbeSite& site = frame.program->probes()[step.immediate];
+        if (frame.debug->on_probe(site, *frame.state) != DebugVerdict::Break) {
+            return;
+        }
+        frame.state->pause_at(site.block, site.offset + 1);
+        frame.outcome = RunOutcome::Paused;
+        frame.stop = true;
+    } else {
+        (void)step;
+        (void)frame;
+    }
+}
+
 /// THE RESOLUTION, and it is an array index rather than a switch: `compile_native` reads this table
 /// once per instruction and the run-time walk never reads an opcode at all.
 constexpr NativeHandler kHandlers[] = {
@@ -181,7 +203,7 @@ constexpr NativeHandler kHandlers[] = {
     step_div_float,  step_add_int,  step_sub_int,    step_less_float,   step_less_int,
     step_equal_int,  step_not_bool, step_and_bool,   step_or_bool,      step_get_field,
     step_set_field,  step_call,     step_emit_event, step_emit_command, step_query,
-    step_branch_if,  step_jump,     step_suspend,    step_return,
+    step_branch_if,  step_jump,     step_suspend,    step_return,       step_probe,
 };
 
 static_assert(sizeof(kHandlers) / sizeof(kHandlers[0]) == static_cast<usize>(ScriptOp::Count),
@@ -331,12 +353,13 @@ namespace {
 /// The native walk from `step_index`. Shared by `execute_native` and `execute_native_from`.
 [[nodiscard]] Expected<RunOutcome, Error> run_steps(const NativeProgram& program,
                                                     ScriptState& state, ScriptHost& host,
-                                                    u32 step_index,
-                                                    u32 instruction_budget) noexcept {
+                                                    u32 step_index, u32 instruction_budget,
+                                                    ScriptDebugHook* debug) noexcept {
     NativeFrame frame;
     frame.program = &program.source();
     frame.state = &state;
     frame.host = &host;
+    frame.debug = debug;
     frame.registers = state.registers();
 
     u32 executed = 0;
@@ -362,9 +385,19 @@ namespace {
 }  // namespace
 
 Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptState& state,
-                                           ScriptHost& host, u32 instruction_budget) noexcept {
+                                           ScriptHost& host, u32 instruction_budget,
+                                           ScriptDebugHook* debug) noexcept {
     if (program.steps().empty()) {
         return RunOutcome::Finished;
+    }
+    // A paused instance continues after the probe it stopped at, registers untouched.
+    if (state.paused()) {
+        if (state.paused_block() >= program.block_starts().size()) {
+            return invalid("this instance is paused in a block that is not in its program");
+        }
+        const u32 resume = program.block_starts()[state.paused_block()] + state.paused_offset();
+        state.clear_pause();
+        return run_steps(program, state, host, resume, instruction_budget, debug);
     }
     u32 step_index = program.entry_step();
     if (state.suspended()) {
@@ -380,17 +413,20 @@ Expected<RunOutcome, Error> execute_native(const NativeProgram& program, ScriptS
     if (step_index == kNoStep) {
         return invalid("this program has no entry block");
     }
-    return run_steps(program, state, host, step_index, instruction_budget);
+    return run_steps(program, state, host, step_index, instruction_budget, debug);
 }
 
 Expected<RunOutcome, Error> execute_native_from(const NativeProgram& program, ScriptState& state,
                                                 ScriptHost& host, BlockId start,
-                                                u32 instruction_budget) noexcept {
+                                                u32 instruction_budget,
+                                                ScriptDebugHook* debug) noexcept {
     if (start >= program.block_starts().size() || program.block_starts()[start] == kNoStep) {
         return invalid("this handler begins at a block that is not in its program");
     }
     state.set_resume_block(kNoBlock);
-    return run_steps(program, state, host, program.block_starts()[start], instruction_budget);
+    state.clear_pause();
+    return run_steps(program, state, host, program.block_starts()[start], instruction_budget,
+                     debug);
 }
 
 }  // namespace cy::graph::script

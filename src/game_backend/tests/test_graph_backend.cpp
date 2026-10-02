@@ -21,107 +21,19 @@
 #include <string>
 #include <vector>
 
+#include "graph_scene.h"
+
 namespace {
 
 using namespace cy;
 using game_backend::GraphBackend;
-using game_backend::GraphBehaviours;
 using game_backend::GraphInstanceStatus;
-
-Allocator& allocator() noexcept {
-    return system_allocator(MemoryDomain::Scripting);
-}
-
-std::string fixture(const char* name) {
-    std::ifstream file(std::string(CY_SCRIPT_FIXTURE_DIR) + "/" + name, std::ios::binary);
-    CY_REQUIRE(file.good());
-    std::ostringstream text;
-    text << file.rdbuf();
-    return text.str();
-}
-
-std::string replaced(std::string text, const std::string& from, const std::string& to) {
-    const usize at = text.find(from);
-    CY_REQUIRE(at != std::string::npos);
-    return text.replace(at, from.size(), to);
-}
-
-/// The audio a graph reaches: one cue, `unit.arrived`, and a record of every play.
-class RecordingAudio final : public abi::game::AudioBackend {
-public:
-    struct Played {
-        CyAudioCue cue;
-        f32 x;
-        f32 z;
-        bool spatial;
-    };
-
-    CyResult find_cue(const char* name, CyAudioCue& out_cue) noexcept override {
-        if (std::string(name) != "unit.arrived") {
-            return CY_RESULT_NOT_FOUND;
-        }
-        out_cue = kArrived;
-        return CY_RESULT_OK;
-    }
-    CyResult play(const CyAudioPlay& play, CyAudioVoice& out_voice) noexcept override {
-        plays.push_back(Played{play.cue, play.position[0], play.position[2],
-                               (play.flags & CY_AUDIO_PLAY_SPATIAL) != 0});
-        out_voice = plays.size();
-        return CY_RESULT_OK;
-    }
-    CyResult stop(CyAudioVoice /*voice*/, f32 /*fade*/) noexcept override { return CY_RESULT_OK; }
-    bool playing(CyAudioVoice /*voice*/) const noexcept override { return false; }
-    CyResult find_bus(const char* /*name*/, CyAudioBus& /*out_bus*/) noexcept override {
-        return CY_RESULT_NOT_FOUND;
-    }
-    CyResult set_bus_volume(CyAudioBus /*bus*/, f32 /*volume*/, f32 /*fade*/) noexcept override {
-        return CY_RESULT_OK;
-    }
-
-    static constexpr CyAudioCue kArrived = 7;
-    std::vector<Played> plays;
-};
-
-/// A world, a tree, and units placed at the origin.
-struct Scene {
-    ecs::World world{system_allocator(MemoryDomain::World)};
-    scene::SceneTree tree{world};
-    RecordingAudio audio;
-    GraphBehaviours graphs{allocator()};
-
-    Scene() {
-        CY_REQUIRE(world.initialize().has_value());
-        CY_REQUIRE(tree.initialize().has_value());
-        graphs.start(tree, &audio);
-    }
-
-    ecs::Entity unit(const char* name) {
-        const auto node = tree.create_node(Name::intern(name), tree.root());
-        CY_REQUIRE(node.has_value());
-        return node->entity();
-    }
-
-    Vec3 at(ecs::Entity entity) { return tree.node(entity).local_transform().translation; }
-
-    u32 load(GraphBackend backend, const std::string& source) {
-        graph::DiagnosticSink sink(allocator());
-        const auto loaded = graphs.load(Name::intern("unit_command"), source, backend, sink);
-        CY_REQUIRE(loaded.has_value());
-        CY_CHECK_EQ(sink.errors(), 0U);
-        CY_CHECK_EQ(sink.warnings(), 0U);
-        return *loaded;
-    }
-
-    u32 order(ecs::Entity entity, f32 x, f32 z) {
-        const f32 arguments[] = {x, 0.0F, z};
-        const auto started =
-            graphs.raise(entity, Name::intern("unit.command"), Span<const f32>(arguments, 3));
-        CY_REQUIRE(started.has_value());
-        return *started;
-    }
-};
-
-constexpr f32 kDt = 1.0F / 60.0F;
+using test_graph::allocator;
+using test_graph::fixture;
+using test_graph::kDt;
+using test_graph::RecordingAudio;
+using test_graph::replaced;
+using test_graph::Scene;
 
 }  // namespace
 

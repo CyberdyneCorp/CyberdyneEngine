@@ -59,6 +59,8 @@ pub mod project;
 pub mod runtime;
 pub mod scene_actors;
 pub mod script_commands;
+pub mod script_debug;
+pub mod script_debug_commands;
 pub mod script_graph;
 pub mod script_requests;
 pub mod selection;

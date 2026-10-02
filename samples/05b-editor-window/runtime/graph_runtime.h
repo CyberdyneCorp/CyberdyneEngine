@@ -8,6 +8,15 @@
 // each distinct graph ONCE, and attaches every node to its graph's shared program. Each fixed tick
 // it runs the one graph system. It is also the editor's `script.*` seam: `script.event.raise`
 // reaches `raise`, and `script.state.get` reads what `behaviours` returns.
+//
+// THE PLAY DEBUGGER (#84, #29). In a build with the graph debugger (`CY_DEVELOPMENT`), Play runs
+// every graph's debug-instrumented program, so breakpoints, steps and the execution trace work from
+// the first tick. When a graph breaks, the WHOLE SIMULATION pauses with it: this pauses the
+// `PlaySession`, so physics, the Swift behaviours and the clock stop, and the hold listener pauses
+// Play's audio. The graph tick the break interrupted is finished by a continue or a step before any
+// later tick runs, and only then does the session resume — and only if it was running when the
+// graph broke. `script.reload` reaches `reload`: the graph is recompiled and swapped at the next
+// tick boundary.
 
 #include <cy/core/base/expected.h>
 #include <cy/editor/script_service.h>
@@ -46,8 +55,25 @@ public:
     [[nodiscard]] u64 identity_of(ecs::Entity entity) const noexcept override;
     [[nodiscard]] Expected<u32, Error> raise(ecs::Entity entity, Name event,
                                              Span<const f32> arguments) noexcept override;
+    [[nodiscard]] Status set_breakpoint(Name graph, u64 node, ecs::Entity entity,
+                                        bool enabled) noexcept override;
+    [[nodiscard]] Status debug(editor::ScriptDebugAction action) noexcept override;
+    [[nodiscard]] Expected<u32, Error> reload(std::string_view reference, std::string_view source,
+                                              graph::DiagnosticSink& sink) noexcept override;
+
+    /// Whether a graph breakpoint is holding the simulation paused.
+    [[nodiscard]] bool held() const noexcept { return held_; }
+    /// Told when a graph break starts or ends holding the simulation, so the host can pause what
+    /// it owns beside the session (Play's audio).
+    void set_hold_listener(void (*listener)(void* user, bool held), void* user) noexcept {
+        hold_listener_ = listener;
+        hold_user_ = user;
+    }
 
 private:
+    /// After graph work ran: hold the simulation if a graph broke, release it if the break is over.
+    void sync_hold() noexcept;
+
     [[nodiscard]] Expected<u32, Error> load(const std::string& reference) noexcept;
 
     Allocator* allocator_;
@@ -57,6 +83,11 @@ private:
     gameplay::PlaySession* play_ = nullptr;
     const scene::serialization::World* authored_ = nullptr;
     std::string problem_;
+    bool held_ = false;
+    /// Whether the session was running when the hold began, and so resumes when it ends.
+    bool resume_on_release_ = false;
+    void (*hold_listener_)(void* user, bool held) = nullptr;
+    void* hold_user_ = nullptr;
 };
 
 }  // namespace cy::sample::editor_window
