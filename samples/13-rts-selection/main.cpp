@@ -13,6 +13,8 @@
 //   1. nothing selected                                         <dir>/rts-selection-before.png
 //   2. the player drags a box over the squad and rests the      <dir>/rts-selection-after.png
 //      cursor on an enemy                                       <dir>/rts-selection-detail.png
+//   3. the same frame with the game's HUD and the developer     <dir>/rts-hud.png
+//      console drawn over it by the engine's interface pass     <dir>/rts-hud-2x.png
 //
 // The GAME side is what a strategy game does: the drag box and the cursor are screen positions, the
 // units they catch are found from the units' own bounds, and the result is written as a
@@ -20,6 +22,11 @@
 // squad, hovered for the enemy under the cursor. The ENGINE side gathers those components into the
 // `HighlightSet` the outline pass draws (`gather_highlights`), keyed by the entity's identity,
 // which is the identity each unit's draws carry.
+//
+// The HUD is game code too (hud.h): a resource bar, a minimap with the camera's rectangle and a
+// panel listing the units the drag box caught, built on CyberUI's `ElementStore` with the engine's
+// developer console beside it, laid out, flattened and drawn by `ui::render::UiRenderer` at the
+// frame's interface stage — after the tone curve and the outlines.
 //
 // The frame is `pipeline_test::FrameScene` — the scene the pipeline suites render, whose recorder,
 // pipelines and bindings are the engine's — with its ring of boxes arranged as the field and its
@@ -31,6 +38,7 @@
 
 #include "frame_scene.h"
 #include "golden.h"
+#include "hud.h"
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
@@ -39,12 +47,17 @@
 #include <cy/ecs/world.h>
 #include <cy/rendering/selection/outline_pass.h>
 #include <cy/rendering/selection/selection_component.h>
+#include <cy/ui/console/console.h>
+#include <cy/ui/layout.h>
+#include <cy/ui/render/ui_renderer.h>
+#include <cy/ui/text/builtin_font.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -110,7 +123,19 @@ struct Game {
     ecs::World world{allocator()};
     ecs::ComponentTypeId highlight = ecs::kInvalidComponent;
     ecs::Entity entities[kInstanceCount] = {};
+    /// The boxes the drag box caught, in field order: what the HUD's selection panel lists.
+    u32 selected[kFieldCount] = {};
+    u32 selected_count = 0;
 };
+
+/// What each of the player's units is called and how hurt it is, by field index.
+struct UnitCard {
+    const char* name;
+    u32 health;
+    u32 max_health;
+};
+const UnitCard kPlayerUnits[] = {
+    {"Rifleman", 100, 100}, {"Rifleman", 64, 100}, {"Engineer", 30, 80}, {"Scout", 55, 60}};
 
 struct Frame {
     Game* game = nullptr;
@@ -118,6 +143,8 @@ struct Frame {
     HighlightSet* highlights = nullptr;
     FrameScene* scene = nullptr;
     OutlineSettings settings{};
+    /// The interface's renderer, once the HUD is on: the frame's `UiAndDebug` stage.
+    ui::render::UiRenderer* ui_pass = nullptr;
 };
 
 void place_box(u32 which, Vec3& centre, f32& half, void* /*user*/) noexcept {
@@ -149,6 +176,9 @@ Status before_assemble(rendering::RenderGraph& /*graph*/,
         return set;
     }
     sinks.selection_outlines = frame->pass->stage(frame->scene->recorder());
+    if (frame->ui_pass != nullptr) {
+        sinks.ui = frame->ui_pass->stage();
+    }
     return ok();
 }
 
@@ -190,6 +220,7 @@ Status apply_input(Game& game, FrameScene& scene) noexcept {
                 !added) {
                 return added;
             }
+            game.selected[game.selected_count++] = which;
         }
         const f32 depth = -kField[which - 1U].centre.z;
         if (side == Side::Enemy && kCursor[0] >= min[0] && kCursor[0] <= max[0] &&
@@ -255,6 +286,162 @@ bool flag(int argc, char** argv, const char* name) {
         }
     }
     return false;
+}
+
+// --- The HUD ------------------------------------------------------------------------------------
+
+/// The interface's half of the game: its store, its text, the HUD and the console, and the pass
+/// that draws them.
+struct Interface {
+    cy::text::TextServer server;
+    ui::TextPainter text{allocator()};
+    ui::ElementStore store{allocator()};
+    ui::PrimitiveBuffer buffer{allocator()};
+    ui::render::UiRenderer renderer{allocator()};
+    sample::rts::Hud hud;
+    ui::DevConsole console{allocator()};
+    ui::ElementId root;
+};
+
+constexpr u16 kGlyphPage = 1;
+
+ui::ConsoleReply report_selection(std::string_view /*arguments*/, void* user) noexcept {
+    static char line[48];
+    const auto* game = static_cast<const Game*>(user);
+    const int length =
+        std::snprintf(line, sizeof(line), "squad selected: %u units", game->selected_count);
+    return ui::ConsoleReply{std::string_view(line, length > 0 ? static_cast<usize>(length) : 0U),
+                            ui::kConsoleEcho};
+}
+
+/// The field's units on the minimap: x across, depth down — the far end of the field at the top.
+sample::rts::MinimapDot dot_for(const Placement& placement) noexcept {
+    sample::rts::MinimapDot dot;
+    dot.x = (placement.centre.x + 6.0F) / 12.0F;
+    dot.y = (placement.centre.z + 20.0F) / 16.0F;
+    dot.team = placement.side == Side::Enemy     ? sample::rts::Team::Enemy
+               : placement.side == Side::Neutral ? sample::rts::Team::Neutral
+                                                 : sample::rts::Team::Player;
+    return dot;
+}
+
+/// Build the HUD and the console from the game's state, lay them out and flatten them.
+Status build_interface(Interface& ui_state, rhi::Device& device, Game& game,
+                       const FrameScene& scene) noexcept {
+    ui::render::UiRendererDescription description;
+    description.width = kWidth;
+    description.height = kHeight;
+    description.output_format = scene.pipelines().setup().output_format;
+    if (Status made = ui_state.renderer.create(device, description); !made) {
+        return made;
+    }
+    if (Status started = ui_state.server.start(cy::text::TextServerConfig{}); !started) {
+        return started;
+    }
+    if (Status started = ui_state.text.start(ui_state.server, ui::builtin_font(), kGlyphPage);
+        !started) {
+        return started;
+    }
+    const u32 extent = ui_state.text.atlas_extent();
+    if (Status uploaded = ui_state.renderer.upload_atlas(kGlyphPage, rhi::Format::R8Unorm, extent,
+                                                         extent, ui_state.text.atlas_pixels());
+        !uploaded) {
+        return uploaded;
+    }
+    Expected<ui::ElementId, Error> root =
+        ui_state.store.create(ui::kNoElement, Name::intern("hud"));
+    if (!root.has_value()) {
+        return make_unexpected(root.error());
+    }
+    ui_state.root = *root;
+    ui_state.store.layout_input(ui_state.root)->model = ui::LayoutModel::Absolute;
+    if (Status made = ui_state.hud.create(ui_state.store, ui_state.text, ui_state.root); !made) {
+        return made;
+    }
+
+    // THE GAME'S STATE, AS THE HUD SHOWS IT.
+    if (Status set = ui_state.hud.set_resources(sample::rts::Resources{1250, 830, 42, 60}); !set) {
+        return set;
+    }
+    sample::rts::SelectedUnit units[kFieldCount];
+    for (u32 index = 0; index < game.selected_count; ++index) {
+        const UnitCard& card = kPlayerUnits[game.selected[index] - 1U];
+        units[index] = sample::rts::SelectedUnit{card.name, card.health, card.max_health};
+    }
+    if (Status set = ui_state.hud.set_selection(
+            Span<const sample::rts::SelectedUnit>(units, game.selected_count));
+        !set) {
+        return set;
+    }
+    sample::rts::MinimapDot dots[kFieldCount];
+    u32 dot_count = 0;
+    for (const Placement& placement : kField) {
+        if (placement.side != Side::Building) {
+            dots[dot_count++] = dot_for(placement);
+        }
+    }
+    // The camera sees most of the field and a little past its near edge, which the minimap clips.
+    if (Status set = ui_state.hud.set_minimap(Span<const sample::rts::MinimapDot>(dots, dot_count),
+                                              ui::Rect{0.12F, 0.25F, 0.76F, 0.8F});
+        !set) {
+        return set;
+    }
+
+    ui::ConsoleStyle style;
+    style.offset_min = Vec2{6.0F, 22.0F};
+    style.offset_max = Vec2{300.0F, 22.0F + (4.0F * 13.0F) + 10.0F};
+    style.anchor_max = Vec2{0.0F, 0.0F};
+    style.visible_rows = 3;
+    if (Status made = ui_state.console.create(ui_state.store, ui_state.text, ui_state.root, style);
+        !made) {
+        return made;
+    }
+    if (Status added = ui_state.console.add_command("selection", &report_selection, &game);
+        !added) {
+        return added;
+    }
+    // The player opens the console and asks what is selected.
+    if (Status printed = ui_state.console.print("CyberUI console - type help"); !printed) {
+        return printed;
+    }
+    if (Status typed = ui_state.console.type("selection"); !typed) {
+        return typed;
+    }
+    if (Status submitted = ui_state.console.submit(); !submitted) {
+        return submitted;
+    }
+    if (Status typed = ui_state.console.type("spawn tank"); !typed) {
+        return typed;
+    }
+
+    ui::ScaleSettings scale;
+    scale.mode = ui::ScaleMode::FixedPixel;
+    ui::LayoutReport laid{};
+    const Vec2 viewport{static_cast<f32>(kWidth), static_cast<f32>(kHeight)};
+    if (Status done = ui::layout(ui_state.store, scale, viewport, &ui_state.text, laid); !done) {
+        return done;
+    }
+    ui::FlattenReport flattened{};
+    if (Status done = ui::flatten(ui_state.store, ui::Rect{0.0F, 0.0F, viewport.x, viewport.y},
+                                  ui_state.buffer, flattened, &ui_state.text);
+        !done) {
+        return done;
+    }
+    std::printf("interface: %zu primitives in %u batches\n", ui_state.buffer.primitives().size(),
+                flattened.batches);
+    return ui_state.renderer.submit(ui_state.buffer, 1.0F);
+}
+
+/// Nearest-neighbour, twice the size: the HUD's one-pixel font read at a glance.
+std::vector<u32> doubled(Span<const u32> pixels) {
+    std::vector<u32> out(static_cast<usize>(kWidth) * kHeight * 4U);
+    for (u32 y = 0; y < kHeight * 2U; ++y) {
+        for (u32 x = 0; x < kWidth * 2U; ++x) {
+            out[(static_cast<usize>(y) * kWidth * 2U) + x] =
+                pixels[(static_cast<usize>(y / 2U) * kWidth) + (x / 2U)];
+        }
+    }
+    return out;
 }
 
 int run(rhi::Device& device, const std::string& out) {
@@ -341,7 +528,32 @@ int run(rhi::Device& device, const std::string& out) {
     wrote = save(out + "/rts-selection-detail.png",
                  Span<const u32>(enlarged.data(), enlarged.size()), width, height) &&
             wrote;
+
+    // THE HUD: the same frame, with the game's interface drawn over it.
+    Interface hud_state;
+    if (Status built = build_interface(hud_state, device, game, scene); !built) {
+        std::fprintf(stderr, "the interface was not built: %s\n", built.error().message);
+        return 1;
+    }
+    frame.ui_pass = &hud_state.renderer;
+    if (Status rendered = scene.render(RecordMode::Callbacks, report); !rendered) {
+        std::fprintf(stderr, "the HUD frame failed: %s\n", rendered.error().message);
+        return 1;
+    }
     (void)device.wait_idle();
+    std::printf("the interface pass recorded %u draws\n", hud_state.renderer.report().draws);
+    const std::vector<u32> with_hud(scene.pixels().begin(), scene.pixels().end());
+    wrote = save(out + "/rts-hud.png", Span<const u32>(with_hud.data(), with_hud.size()), kWidth,
+                 kHeight) &&
+            wrote;
+    const std::vector<u32> big = doubled(Span<const u32>(with_hud.data(), with_hud.size()));
+    wrote = save(out + "/rts-hud-2x.png", Span<const u32>(big.data(), big.size()), kWidth * 2U,
+                 kHeight * 2U) &&
+            wrote;
+
+    (void)device.wait_idle();
+    frame.ui_pass = nullptr;
+    hud_state.renderer.destroy();
     pass.destroy();
     scene.release();
     return wrote ? 0 : 1;

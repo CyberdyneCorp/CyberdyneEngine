@@ -2,7 +2,8 @@
 #
 # A squad selected by a drag box, an enemy under the cursor, and a unit behind a building, marked
 # from gameplay as `SelectionHighlight` components on their entities and outlined by
-# `selection::OutlinePass` in the engine's own assembled frame. main.cpp says what it runs.
+# `selection::OutlinePass` in the engine's own assembled frame; then the game's HUD (hud.cpp) and
+# the developer console drawn over it by CyberUI's interface pass. main.cpp says what it runs.
 #
 # THE SCENE IS THE PIPELINE SUITES' OWN. `src/rendering/pipeline/tests/frame_scene.cpp` is compiled
 # here as `tests/render/golden.cpp` is compiled by samples/12-beauty: the frame the suites hold to
@@ -17,6 +18,13 @@ if(NOT CY_RENDERER_VULKAN)
                    "is not declared.")
     return()
 endif()
+# The HUD is CyberUI, which CY_UI removes; without it the sample declines, as
+# samples/08-vertical-slice does.
+if(NOT CY_UI)
+    message(STATUS "samples/13-rts-selection: CY_UI is off, so the HUD and the sample are not "
+                   "declared.")
+    return()
+endif()
 
 cy_add_module(
     NAME cy_sample_rts_selection
@@ -24,6 +32,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         main.cpp
+        hud.cpp
         "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests/frame_scene.cpp"
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
@@ -32,6 +41,9 @@ cy_add_module(
         cy::rendering-pipeline
         cy::rendering-selection
         cy::rhi
+        cy::ui-console
+        cy::ui-render
+        cy::ui-text
         cy::rhi-null
         cy::rhi-vulkan)
 

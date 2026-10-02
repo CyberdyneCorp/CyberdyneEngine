@@ -16,7 +16,7 @@ the stage to its requirement.
 | **the input** | a drag box and a cursor position, in pixels. The game logic is what a strategy game's is: the player's units whose screen centre falls inside the box are selected; the nearest enemy whose screen rectangle holds the cursor is hovered |
 | **the marks** | a `SelectionHighlight` component on each marked unit's entity — `selected` in the team's blue, `hovered` in a warm red — through `ecs::World::add`, the call a Swift module reaches as `world.highlight(unit, .selected(...))` |
 | **the frame** | `gather_highlights` turns the components into the `HighlightSet` that `selection::OutlinePass` draws at the frame's `SelectionOutlines` stage, after the tone curve and before the interface |
-| **the pictures** | the frame before the input and after it, and the building and the unit behind it enlarged four times |
+| **the pictures** | the frame before the input and after it, the building and the unit behind it enlarged four times, and the frame with the HUD and the console (`rts-hud.png`, and `rts-hud-2x.png` at twice the size) |
 
 | Before | After |
 |---|---|
@@ -27,6 +27,18 @@ the stage to its requirement.
 The unit behind the building keeps its solid blue outline where it is on screen; beside the part
 the building hides the outline is dimmed and dashed, and the hidden part itself is tinted, so the
 player still sees where the unit is. The hovered enemy glows rather than being outlined.
+
+## The HUD and the console
+
+The third frame draws the game's interface over the selection: a resource bar, the minimap with the
+units and the camera's rectangle (clipped where the camera looks past the map), a panel listing the
+units the drag box caught, and the engine's developer console, where the player has typed
+`selection` and is typing `spawn tank`. `hud.h` is game code over CyberUI's `ElementStore`; the
+console is `ui::DevConsole`; both are laid out and flattened together and drawn by
+`ui::render::UiRenderer` at the frame's interface stage, after the outlines. `render.ui` photographs
+the same HUD against a golden image.
+
+![The HUD and the console, twice the size](../../docs/design/images/rts-hud-2x.png)
 
 ## What it does not claim
 
