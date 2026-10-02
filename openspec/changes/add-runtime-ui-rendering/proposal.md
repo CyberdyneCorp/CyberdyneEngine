@@ -39,7 +39,8 @@ primitive stream, and the first consumers on it.
   frame; `docs/design/images/rts-hud*.png`.
 - Tests: `unit.ui` (opacity, content painting, empty containers, shape fields), `unit.ui_text`,
   `unit.ui_console`, `unit.ui_render`, `unit.render_forward` (the stage's producer), and
-  `render.ui` (six cases on a Vulkan device), each proven red by a mutation.
+  `render.ui` (seven cases on a Vulkan device, one of them on an sRGB output), each proven red by
+  a mutation.
 
 ## Scope
 

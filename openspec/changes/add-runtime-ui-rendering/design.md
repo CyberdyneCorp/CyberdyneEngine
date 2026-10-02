@@ -73,3 +73,4 @@ golden image. Each case was proven red by a mutation of the code it holds:
 | `render.ui` (d) | every draw scissored to the viewport | red |
 | `render.ui` (e) | opacity not applied to alpha | red |
 | `render.ui` (f) | the HUD's panel colour changed by four steps | red |
+| `render.ui` (g) | `kUiOutputLinear` never set on an sRGB output | red |
