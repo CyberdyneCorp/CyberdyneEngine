@@ -190,6 +190,14 @@ Two suites, `render.vfx_gpu` and `render.material_binding`, used doctest's short
 `__COUNTER__` was outside the suppression. They now use the `CY_*` macros, and `cy/test/test.h`
 defines `DOCTEST_CONFIG_NO_SHORT_MACRO_NAMES`, so a test that uses a short name does not compile.
 
+The long names reach past the wrapper the same way. Five `DOCTEST_INFO` calls in the graph
+backend, debugger and equivalence suites compiled under GCC and failed every clang 22 build; they
+are `CY_TEST_INFO` now. `cy_add_test` refuses at configure time a suite whose source calls any
+`DOCTEST_*(` macro, on every compiler, so the next one fails the GCC legs too.
+`integration.harness`'s seam case applies the same rule to `tests/` at run time. When a test needs
+a doctest macro the wrapper lacks, add a `CY_*` spelling to `cy/test/test.h`, bracketed by
+`CY_TEST_COUNTER_BEGIN`/`END` if it expands a `__COUNTER__`.
+
 `integration.harness_under_clang` compiles `probe/clang_warnings_probe.cpp` with every clang++ on
 PATH, under the project's warning options and `-Werror`. It skips on a host with no clang.
 

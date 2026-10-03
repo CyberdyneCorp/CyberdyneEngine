@@ -13,8 +13,10 @@
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
+#include <cctype>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -26,6 +28,34 @@ const char* const kIncludeToken = "#include";
 const char* const kFrameworkToken =
     "doct"
     "est";
+
+// The framework's own macro names, called rather than mentioned: an info or check macro followed by
+// its argument list reaches past the wrapper, a comment naming a configuration macro does not.
+constexpr std::string_view kMacroPrefix =
+    "DOCT"
+    "EST_";
+
+bool is_macro_name_char(char c) {
+    const auto byte = static_cast<unsigned char>(c);
+    return std::isupper(byte) != 0 || std::isdigit(byte) != 0 || c == '_';
+}
+
+bool calls_framework_macro(const std::string& text) {
+    for (std::size_t at = text.find(kMacroPrefix); at != std::string::npos;
+         at = text.find(kMacroPrefix, at + 1)) {
+        std::size_t next = at + kMacroPrefix.size();
+        while (next < text.size() && is_macro_name_char(text[next])) {
+            ++next;
+        }
+        while (next < text.size() && (text[next] == ' ' || text[next] == '\t')) {
+            ++next;
+        }
+        if (next < text.size() && text[next] == '(') {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool is_source(const std::filesystem::path& path) {
     const std::string extension = path.extension().string();
@@ -65,8 +95,9 @@ std::vector<Finding> scan(const std::filesystem::path& root, int& files_scanned)
             const std::size_t end_of_line = contents.find('\n', start);
             const std::string text = contents.substr(
                 start, end_of_line == std::string::npos ? std::string::npos : end_of_line - start);
-            if (text.find(kIncludeToken) != std::string::npos &&
-                text.find(kFrameworkToken) != std::string::npos) {
+            const bool includes_framework = text.find(kIncludeToken) != std::string::npos &&
+                                            text.find(kFrameworkToken) != std::string::npos;
+            if (includes_framework || calls_framework_macro(text)) {
                 findings.push_back(Finding{.file = path.string(), .line = line});
             }
             if (end_of_line == std::string::npos) {
