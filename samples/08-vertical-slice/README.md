@@ -220,9 +220,17 @@ flat today and nothing was stopping it from not being.
 "O(1) in the common one because agents arrive in position order", and the scan restarts from the
 beginning of the cell table every time, so an agent in the last cell scans every cell before it.
 Measured on this machine at 8,000 agents over a 179 m arena: **72 ms a tick with 2 m cells and 9 ms
-with 11 m cells**, the whole difference being the scan. `crowd_cell_size()` in `internals.h`
-chooses the cell that minimises the sum of the two costs and says why; a hash of the cell key would
-make the build linear and make that function unnecessary.
+with 11 m cells**, the whole difference being the scan. `crowd_cell_size()` in `internals.h` chose
+the cell that minimised the sum of the two costs.
+
+*Closed.* `Crowd` now sorts its agents by cell key and finds a cell by binary search, so neither the
+build nor a query depends on how many cells are occupied, and the slice uses cells the size of the
+query radius (`kCrowdCellSize`). The large cells were what put the 2,000-agent scale act over its
+simulation budget in the Debug row of `profiles` (30.8 ms against 25 on a hosted runner, 24.5 of it
+navigation); in Debug on this machine navigation went from 14.2 ms to 7.6 ms a tick with the same
+state digest. `src/navigation/tests/test_crowd.cpp` carries the regression: a sparse crowd with one
+agent per cell, whose `CrowdReport::cells_examined` must stay within the query's three-by-three
+block.
 
 **3. `PerceptionScheduler`'s broad phase has no spatial index.** Its header describes step 2 as
 "broad-phase by declared filter — faction, range, layer — **over a spatial grid**"; `gather()` loops

@@ -104,6 +104,10 @@ struct CrowdReport {
     u32 candidates_scored = 0;
     u32 agents_adjusted = 0;  ///< whose velocity differs from the desired one
     u32 grid_cells_used = 0;
+    /// Grid cells the neighbour queries looked at, summed over every agent. Bounded by the block
+    /// of cells one query's radius covers, times the agents — NOT by the cells the crowd occupies,
+    /// which is what a grid that scanned its whole cell table per query would show here.
+    u32 cells_examined = 0;
 };
 
 /// A crowd: packed agents, a uniform grid for neighbour queries, and one velocity per agent per
@@ -149,20 +153,27 @@ public:
     void integrate(f32 dt) noexcept;
 
 private:
+    /// One occupied cell. `cells_` is ordered by `key`, which is `cell_key(x, z)`.
     struct GridCell {
-        i32 x = 0;
-        i32 z = 0;
+        u64 key = 0;
         u32 first = 0;  ///< into `cell_agents_`
         u32 count = 0;
     };
 
     [[nodiscard]] Status rebuild_grid(CrowdReport& report) noexcept;
+    [[nodiscard]] i32 cell_of(f32 coordinate) const noexcept;
+    [[nodiscard]] static u64 cell_key(i32 x, i32 z) noexcept;
     void gather_neighbours(CrowdAgentId id, u32 wanted, CrowdReport& report) noexcept;
+    void consider_cell(CrowdAgentId id, const GridCell& cell, u32 wanted,
+                       CrowdReport& report) noexcept;
     [[nodiscard]] Vec3 solve(const CrowdAgent& self, f32 dt, CrowdReport& report) noexcept;
 
     Array<CrowdAgent> agents_;
     Array<GridCell> cells_;
+    /// Every active agent's index, ordered by (cell key, index); a cell is a run of it.
     Array<u32> cell_agents_;
+    /// Scratch, reused every step: each agent's cell key, indexed by agent.
+    Array<u64> cell_keys_;
     /// Scratch, reused every step: the neighbour set of the agent being solved, ordered by
     /// (distance, id) so the solver's input does not depend on the grid's iteration order.
     Array<u32> neighbours_;
