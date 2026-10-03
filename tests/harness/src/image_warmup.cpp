@@ -44,10 +44,18 @@
 #endif
 
 namespace cy::test {
-namespace {
 
-/// Reads one byte of each page in [begin, begin + size). `volatile` so the reads are not elided:
-/// a warm-up the optimiser removes reports pages it never touched.
+/// `volatile` so the reads are not elided: a warm-up the optimiser removes reports pages it never
+/// touched.
+///
+/// Not instrumented by AddressSanitizer: a page's first byte can sit in the redzone ASan places
+/// after a global (a string literal in `unit.jobs`, CI run 37076205289), and the read is of the
+/// mapped segment, not of any object.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((no_sanitize_address))
+#elif defined(_MSC_VER)
+__declspec(no_sanitize_address)
+#endif
 std::size_t touch_pages(std::uintptr_t begin, std::size_t size, std::size_t page_size) noexcept {
     if (size == 0 || page_size == 0) {
         return 0;
@@ -71,6 +79,8 @@ std::size_t touch_pages(std::uintptr_t begin, std::size_t size, std::size_t page
     observed = sink;
     return pages + (observed & 0U);
 }
+
+namespace {
 
 #if defined(__linux__)
 

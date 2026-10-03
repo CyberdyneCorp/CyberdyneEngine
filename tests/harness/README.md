@@ -164,6 +164,13 @@ only case in its binary, and on Linux it reads `/proc/self/pagemap` to check tha
 executable is mapped before it runs. The binary carries a 256 KiB table that nothing reads, so with
 the warm-up removed the check fails with 40 to 45 pages unmapped.
 
+The walk (`touch_pages`) is not instrumented by AddressSanitizer. The first byte of a page can be
+any byte of the image, including the redzone ASan places after a global, and an instrumented read
+there aborts the process before doctest starts: every suite in the `jobs` sanitizer step failed
+that way (CI run 37076205289). The case "the image warm-up may read a global's redzone without
+tripping ASan" in `unit.harness` reads such a byte on purpose, so the exemption cannot be lost
+without a sanitized run noticing, whatever the linker's layout.
+
 ## The macros under clang
 
 Every harness macro expands into every test, so a warning one of them raises fails every test

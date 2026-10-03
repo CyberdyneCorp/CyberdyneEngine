@@ -34,6 +34,7 @@
 #include <doctest/doctest.h>
 
 #include <cstddef>
+#include <cstdint>
 
 // The budget for one test case, in nanoseconds of the case's own CPU time. tests/CMakeLists.txt
 // defines it per suite from the taxonomy in `testing-and-quality`: 1 ms for a unit test, 1 s for an
@@ -227,6 +228,13 @@ std::size_t warm_process_image() noexcept;
 
 /// True where `warm_process_image()` walks the executable: Linux and 64-bit Apple platforms.
 bool budget_warms_process_image() noexcept;
+
+/// Reads one byte of each page in `[begin, begin + size)` — the byte at `begin`, then the first
+/// byte of every later page — and returns how many it read: the walk `warm_process_image()` does
+/// over each segment. A page's first byte can be any byte of the image, including one
+/// AddressSanitizer has poisoned as the redzone after a global, so the walk is not instrumented.
+/// Exposed so that a test can hand it such a byte.
+std::size_t touch_pages(std::uintptr_t begin, std::size_t size, std::size_t page_size) noexcept;
 
 /// The scheduler state letter of a `/proc/<pid>/task/<tid>/stat` line — `R`, `S`, `D` and the
 /// rest — or `'\0'` when the text is not one. Exposed because the state is found after the LAST

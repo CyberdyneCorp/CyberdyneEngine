@@ -9,7 +9,9 @@
 #include <cy/test/quiet_host.h>
 #include <cy/test/test.h>
 
+#include <bit>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -177,6 +179,24 @@ CY_TEST_CASE("harness: the stall verdict separates a busy machine from a waiting
 }
 
 // --- M11.c's fourth close: the fourth clock, time the case was blocked by the HOST ---------------
+
+namespace {
+// A global with nothing after it that belongs to it. Under AddressSanitizer the byte past its end
+// is the redzone ASan places after every global; elsewhere it is some other byte of the image.
+unsigned char global_before_a_redzone[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+}  // namespace
+
+CY_TEST_CASE("harness: the image warm-up may read a global's redzone without tripping ASan") {
+    // The warm-up reads the first byte of each page, and which byte that is depends on where the
+    // linker happened to put things. In `unit.jobs` under ASan it was the byte after a string
+    // literal that ended on a page boundary, and every case in the binary aborted before doctest
+    // started (CI run 37076205289). Here that byte is chosen rather than happened upon, so an
+    // instrumented walk fails this case under ASan on every layout.
+    const auto end = std::bit_cast<std::uintptr_t>(&global_before_a_redzone[0]) +
+                     sizeof(global_before_a_redzone);
+    CY_CHECK_EQ(cy::test::touch_pages(end, 1, 4096), std::size_t{1});
+    CY_CHECK_EQ(global_before_a_redzone[0], 1);
+}
 
 CY_TEST_CASE("harness: a thread's state is read after the LAST parenthesis of its stat line") {
     using cy::test::thread_state_from_stat;
