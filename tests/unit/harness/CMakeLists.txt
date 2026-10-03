@@ -10,3 +10,11 @@ cy_add_test(
         test_budget.cpp
         test_fixtures.cpp
         test_windows_macros.cpp)
+
+# ITS OWN BINARY, AND ITS ONLY CASE. The check is that every page of the executable is mapped
+# before the first case runs, so it has to BE the first case: in the suite above, the cases sorted
+# before it fault most of the image in themselves and it passes with the warm-up removed.
+cy_add_test(
+    NAME    harness_image_warmup
+    KIND    unit
+    SOURCES test_image_warmup.cpp)

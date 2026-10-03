@@ -7,7 +7,8 @@ only directory permitted to name doctest.
 |---|---|
 | `include/cy/test/test.h` | `CY_TEST_CASE`, the assertions, and the budget guard. The one include a test needs. |
 | `include/cy/test/fixtures.h` | The injectable fixtures: a deterministic clock, a seeded generator, a temporary directory. |
-| `src/main.cpp` | doctest's `main`, so no test file carries one. |
+| `src/main.cpp` | doctest's `main`, so no test file carries one. It pages the executable in before the first case: see below. |
+| `src/image_warmup.cpp` | That warm-up: one read per page of the test executable's own segments, so the first case is not charged for loading the binary. |
 | `src/budget.cpp` | The per-test budget check: the CPU clock, the wall-clock stall ceiling, and the contention clock that separates the two. |
 | `src/host_blocking.cpp` | The fourth clock: a sampler that sees the case's thread in an uninterruptible wait. A diagnostic in the stall message, never an excuse. |
 | `include/cy/test/quiet_host.h`, `src/quiet_host_marker.cpp` | Whether this run is inside a verified `cy_quiet_host`, and so whether the stall ceiling fails a case or only reports it. |
@@ -129,6 +130,46 @@ printed: the vfork case, the vfork case beside its own readers, the vfork case b
 **orphaned** readers and the held mutex are `stalled:` — failed inside a verified wrapper,
 reported and passed outside one — the spin fails as `over budget:` in both, and none is ever
 `contended:`.
+
+## The first case does not pay for loading the binary
+
+The budget is the case's own CPU time, and the kernel charges a page fault to the thread that
+takes it. Until this change, the first case in a binary was the first to execute most of the
+binary's code, so it paid for paging that code in: work that belongs to starting the process,
+which a second run of the same body in the same process does not repeat. CTest runs every binary
+once, freshly built, so on a CI leg every case that runs first pays it.
+
+On the hosted macOS runner a first touch of a code page is a 16 KiB fault that also checks the
+page's code signature. `unit.animation_runtime_only` has one case. It spent 1.115 ms of CPU against
+its 1 ms budget on main (CI run 37002996092), and in that runner's 60 earlier CI runs, 5 of the 13
+distinct unit cases that went over budget were the first case of their binary. The same macOS
+runner, idle, measured this as the first-case CPU of three such binaries (ms):
+
+| Binary | First run, without the warm-up | Runs 2–25, without | First run, with | Runs 2–25, with |
+|---|---|---|---|---|
+| `unit.animation_runtime_only` | 0.177 | 0.035–0.058 | 0.025 | 0.027–0.035 |
+| `unit.gameplay_spawn` | 0.172 | 0.052–0.075 | 0.046 | 0.043–0.060 |
+| `unit.ecs` | 0.082 | 0.035–0.048 | 0.037 | 0.030–0.053 |
+
+So `main` calls `warm_process_image()` before doctest runs anything: one read of each page of every
+readable segment of the main executable (`dl_iterate_phdr` on Linux, the load commands of image 0
+on Apple platforms). Every test binary links the engine statically, so that is all the code a case
+runs apart from the system runtimes, which the loader has already paged in. The largest test
+binary has about 2.7 MB of text, so the warm-up reads a few hundred pages, once per process.
+Windows is not walked: its clock counts cycles, and no first-case overrun has been seen there.
+
+It warms the image and nothing else. Memory a case allocates, the caches and the core's clock are
+still the case's, or the calibration's. `unit.harness_image_warmup` is the regression: it is the
+only case in its binary, and on Linux it reads `/proc/self/pagemap` to check that every page of the
+executable is mapped before it runs. The binary carries a 256 KiB table that nothing reads, so with
+the warm-up removed the check fails with 40 to 45 pages unmapped.
+
+The walk (`touch_pages`) is not instrumented by AddressSanitizer. The first byte of a page can be
+any byte of the image, including the redzone ASan places after a global, and an instrumented read
+there aborts the process before doctest starts: every suite in the `jobs` sanitizer step failed
+that way (CI run 37076205289). The case "the image warm-up may read a global's redzone without
+tripping ASan" in `unit.harness` reads such a byte on purpose, so the exemption cannot be lost
+without a sanitized run noticing, whatever the linker's layout.
 
 ## The macros under clang
 

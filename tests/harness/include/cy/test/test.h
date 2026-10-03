@@ -34,6 +34,7 @@
 #include <doctest/doctest.h>
 
 #include <cstddef>
+#include <cstdint>
 
 // The budget for one test case, in nanoseconds of the case's own CPU time. tests/CMakeLists.txt
 // defines it per suite from the taxonomy in `testing-and-quality`: 1 ms for a unit test, 1 s for an
@@ -213,6 +214,27 @@ unsigned long long blocked_on_host_ns() noexcept;
 
 /// True where `blocked_on_host_ns()` measures something.
 bool budget_measures_host_blocking() noexcept;
+
+/// Pages in every mapped segment of the test executable by reading one byte per page, and returns
+/// how many pages it read, or zero where `budget_warms_process_image()` is false. `src/main.cpp`
+/// calls it once, before doctest runs any case.
+///
+/// The budget is the case's own CPU time, and the kernel charges a page fault to the thread that
+/// takes it, so the first case in a binary was paying for paging in the code every case shares.
+/// On the hosted macOS runner, where a first touch of a code page is a 16 KiB fault that also
+/// checks the page's code signature, a case whose body costs about 0.04 ms went over its 1 ms unit
+/// budget as the only case of a freshly built binary. tests/harness/README.md has the measurements.
+std::size_t warm_process_image() noexcept;
+
+/// True where `warm_process_image()` walks the executable: Linux and 64-bit Apple platforms.
+bool budget_warms_process_image() noexcept;
+
+/// Reads one byte of each page in `[begin, begin + size)` — the byte at `begin`, then the first
+/// byte of every later page — and returns how many it read: the walk `warm_process_image()` does
+/// over each segment. A page's first byte can be any byte of the image, including one
+/// AddressSanitizer has poisoned as the redzone after a global, so the walk is not instrumented.
+/// Exposed so that a test can hand it such a byte.
+std::size_t touch_pages(std::uintptr_t begin, std::size_t size, std::size_t page_size) noexcept;
 
 /// The scheduler state letter of a `/proc/<pid>/task/<tid>/stat` line — `R`, `S`, `D` and the
 /// rest — or `'\0'` when the text is not one. Exposed because the state is found after the LAST
