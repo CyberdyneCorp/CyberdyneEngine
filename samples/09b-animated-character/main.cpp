@@ -17,8 +17,12 @@
 // game's only per-frame animation code is the one request it raises.
 //
 // IT DOES NOT CLAIM that the skin weights are the artist's on an old cache entry — `character.h`
-// says which were used, and the report this program prints names it — nor that a skinned mesh goes
-// through `cy::rendering::pipeline`'s forward frame, which `stage.h` explains it cannot yet.
+// says which were used, and the report this program prints names it.
+//
+// SINCE ISSUE #76 STAGE 3 the character is drawn by the ENGINE'S FORWARD FRAME: the pose world's
+// dirty range fills `skinning::SkinnedScene`'s device pose buffer, one compute pass skins it, and
+// `FramePipelines`' skinned variants draw it in the depth prepass, the directional shadow and the
+// opaque pass, lit and shadowed like everything else the frame draws. `stage.h` says how.
 //
 // ================================================================================================
 // THE TIMESTEP IS FIXED, AND THAT IS A REPRODUCIBILITY CLAIM
@@ -302,6 +306,12 @@ struct Summary {
     u32 pose_offsets_seen = 0;
     u32 validation_errors = 0;
     u32 frames = 0;
+    /// Frames in which the forward frame did not draw the character from the skinning output in
+    /// all three of its depth prepass, shadow and opaque passes.
+    u32 frames_not_drawn = 0;
+    /// The most matrices one frame copied to the device pose buffer. The pose world's dirty range
+    /// is one skeleton's current half here; anything larger is a copy of more than changed.
+    u32 most_uploaded = 0;
 };
 
 /// Fold one frame's pose into the measurements, and keep it for the next frame's comparison.
@@ -551,24 +561,26 @@ struct World {
 [[nodiscard]] Status step(const Options& options, World& world, Stage& stage, u32 frame, f32 dt,
                           Vec3 hips, Vec3& follow, FrameReport& report) noexcept {
     const f32 seconds = static_cast<f32>(frame) * dt;
-    const animation::PoseWorld& poses = world.system->poses();
+    animation::PoseWorld& poses = world.system->poses();
     const animation::PoseHandle handle = world.system->pose_of(world.character);
     follow = frame == 0 ? hips : follow + ((hips - follow) * 0.08F);
     const Shot shot = compose(follow, seconds);
-    // Read every frame, never cached: `matrix_offset` moves on every publish, which is what the
-    // double buffering IS.
-    const u32 pose_offset = poses.matrix_offset(handle);
 
+    // The stage uploads the pose world's dirty range and reads `matrix_offset(handle)` itself,
+    // every frame: the offset moves on every publish, which is what the double buffering IS.
     char path[512];
     (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", options.frames.c_str(), frame);
     const char* target = options.frames.empty() ? nullptr : path;
-    if (Status taken = stage.shoot(poses.matrices(), pose_offset, shot, frame, target, report);
-        !taken) {
+    const char* still =
+        frame == options.still_frame && !options.still.empty() ? options.still.c_str() : nullptr;
+    if (Status taken = stage.shoot(poses, handle, shot, frame, target, report); !taken) {
         return taken;
     }
-    if (frame == options.still_frame && !options.still.empty()) {
-        return stage.shoot(poses.matrices(), pose_offset, shot, frame, options.still.c_str(),
-                           report);
+    // The still is the same frame drawn again: nothing was published since, so the upload is
+    // empty and the skinning pass writes the other half from the same pose.
+    if (still != nullptr) {
+        FrameReport again;
+        return stage.shoot(poses, handle, shot, frame, still, again);
     }
     return ok();
 }
@@ -625,6 +637,8 @@ struct World {
             ++out.pose_offsets_seen;
         }
         out.validation_errors = report.validation_errors;
+        out.frames_not_drawn += report.skinned_draws == 3U ? 0U : 1U;
+        out.most_uploaded = math::max(out.most_uploaded, report.uploaded_matrices);
         if ((frame % 30U) == 0U) {
             std::printf("    frame %3u  t=%5.2fs  state=%-5s  hips=(%.2f, %.2f, %.2f)\n", frame,
                         static_cast<f64>(seconds),
@@ -668,6 +682,10 @@ void print_summary(const Options& options, const Summary& summary, u32& out_visi
         static_cast<f64>(summary.furthest));
     std::printf("  buffers   the skinned vertex range alternated %u times, the pose offset %u\n",
                 summary.vertex_offsets_seen, summary.pose_offsets_seen);
+    std::printf(
+        "  frame     drawn by the forward frame's prepass, shadow and opaque passes in "
+        "all but %u frames; at most %u matrices uploaded in one frame\n",
+        summary.frames_not_drawn, summary.most_uploaded);
     std::printf("  validation errors: %u\n", summary.validation_errors);
 }
 
@@ -702,6 +720,13 @@ void print_summary(const Options& options, const Summary& summary, u32& out_visi
     }
     if (summary.validation_errors != 0) {
         std::fprintf(stderr, "GAP: %u Vulkan validation errors\n", summary.validation_errors);
+        status = 1;
+    }
+    if (summary.frames_not_drawn != 0) {
+        std::fprintf(stderr,
+                     "GAP: %u frames did not draw the character from the skinning output in the "
+                     "frame's prepass, shadow and opaque passes\n",
+                     summary.frames_not_drawn);
         status = 1;
     }
     return status;
