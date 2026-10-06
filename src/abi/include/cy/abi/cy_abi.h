@@ -1106,10 +1106,10 @@ typedef struct CyAnimatorDesc {
     uint32_t reserved;
 } CyAnimatorDesc;
 
-#define CY_ANIMATOR_BLENDING                                                                      \
-    0x1u                           /* a blend is in flight; `target` and `blend_weight` say where \
-                                    */
-#define CY_ANIMATOR_REQUESTED 0x2u /* that blend was requested by `animation_play` or `_stop` */
+/* A blend is in flight; `target` and `blend_weight` say where to and how far. */
+#define CY_ANIMATOR_BLENDING 0x1u
+/* That blend was requested by `animation_play` or `animation_stop`. */
+#define CY_ANIMATOR_REQUESTED 0x2u
 
 /* Where an animator's state machine is. */
 typedef struct CyAnimatorState {
