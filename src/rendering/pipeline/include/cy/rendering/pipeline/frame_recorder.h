@@ -90,6 +90,22 @@ struct DrawGeometry {
     /// non-indexed draw is recorded from vertex zero and has no offset to move.
     bool has_previous_vertices = false;
     i32 previous_vertex_offset = 0;
+    /// A SKINNED DRAW, whose position and normal-tangent streams are the skinning pass's own output
+    /// buffers rather than the source's — `skinning::SkinnedScene`. When set, `vertex_offset` and
+    /// `previous_vertex_offset` are vertex indices INTO THESE BUFFERS, the frame is bound as the
+    /// `Rgba16Snorm` `render::PackedNormalTangent` the pass wrote, and the draw binds the frame's
+    /// skinned pipelines (`FramePipelines::skinned_pipeline`); the UVs, which skinning does not
+    /// touch, are read from the source's streams at `static_vertex_offset`. Each binding carries
+    /// its own byte offset and the draw is recorded from vertex zero, so the two vertex ranges
+    /// never have to coincide. Indexed draws only, and the caller's `DrawPipelineFn` is not
+    /// consulted: a material variant's vertex stage reads the rigid frame encoding.
+    ///
+    /// NULL, THE DEFAULT, IS EVERY DRAW BEFORE SKINNED DRAWS EXISTED. Appended, as above.
+    rhi::BufferHandle skinned_positions;
+    rhi::BufferHandle skinned_frames;
+    i32 static_vertex_offset = 0;
+
+    [[nodiscard]] bool skinned() const noexcept { return !skinned_positions.is_null(); }
 };
 
 /// Where a draw's geometry comes from. False means "this draw has nothing to draw", which is a
@@ -180,6 +196,9 @@ struct RecorderReport {
     u32 skipped_draws = 0;
     u32 extensions_run = 0;
     u32 temporal_resolves = 0;
+    /// Draws recorded from a skinning pass's output, over every geometry pass — counted once per
+    /// pass that drew them, as `skipped_draws` is. Zero in a frame with no skinned draw.
+    u32 skinned_draws = 0;
     /// Bytes copied by the Prepare pass into the frame's own buffers.
     u64 uploaded_bytes = 0;
 
@@ -270,6 +289,14 @@ private:
     u32 extension_count_ = 0;
     RecorderReport report_;
 };
+
+/// Bind the position stream `draw` reads at binding 0 — the source's, or a skinned draw's own
+/// output — and return the vertex offset to record the draw with. For a pass that draws the frame's
+/// geometry a second time with positions alone, such as the selection mask, so that it finds a
+/// skinned mesh where the frame drew it. A rigid draw rebinds the source's stream from its start,
+/// which is the binding such a pass makes once before its loop.
+[[nodiscard]] i32 bind_draw_positions(rhi::CommandBuffer& commands, const GeometrySource& geometry,
+                                      const DrawGeometry& draw) noexcept;
 
 /// The `FrameUpload` one assembled frame implies, built from the assembly's own outputs.
 ///

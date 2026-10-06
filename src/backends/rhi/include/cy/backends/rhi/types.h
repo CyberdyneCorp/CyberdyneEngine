@@ -297,6 +297,12 @@ enum class Format : u16 {
     Bc7Unorm,
     Bc7Srgb,
 
+    /// Four 16-bit signed normalised components. A VERTEX format first: the skinning pass writes
+    /// `render::PackedNormalTangent` in exactly this encoding, and the frame's skinned pipelines
+    /// bind that output without a repack (`cy::rendering::skinning::SkinnedScene`). Appended, so
+    /// every enumerator before it keeps its value.
+    Rgba16Snorm,
+
     Count,
 };
 

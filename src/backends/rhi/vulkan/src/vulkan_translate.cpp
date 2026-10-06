@@ -248,6 +248,7 @@ constexpr FormatPair kFormats[] = {
     {Format::Bc6HUfloat, VK_FORMAT_BC6H_UFLOAT_BLOCK},
     {Format::Bc7Unorm, VK_FORMAT_BC7_UNORM_BLOCK},
     {Format::Bc7Srgb, VK_FORMAT_BC7_SRGB_BLOCK},
+    {Format::Rgba16Snorm, VK_FORMAT_R16G16B16A16_SNORM},
 };
 
 static_assert(sizeof(kFormats) / sizeof(kFormats[0]) == static_cast<usize>(Format::Count) - 1,

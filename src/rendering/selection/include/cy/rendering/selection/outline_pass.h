@@ -95,6 +95,13 @@ public:
     [[nodiscard]] Status set_highlights(const HighlightSet* highlights,
                                         const OutlineSettings& settings) noexcept;
     [[nodiscard]] const OutlineSettings& settings() const noexcept { return settings_; }
+
+    /// Vertex buffers the mask reads that another pass of this frame WROTE — a skinning dispatch's
+    /// output, `skinning::SkinnedScene::vertex_reads()` — declared on the mask pass as
+    /// `Access::VertexAttributeRead` so the graph orders the mask after the writer. Held until
+    /// replaced; empty, the default, declares none. At most `kMaxVertexReads`.
+    [[nodiscard]] Status set_vertex_reads(Span<const ResourceId> resources) noexcept;
+    static constexpr u32 kMaxVertexReads = 4;
     [[nodiscard]] const OutlineConstants& constants() const noexcept { return constants_; }
 
     /// The frame's hook: the stage declared as this module's two passes, drawing through
@@ -157,6 +164,9 @@ private:
     ResourceId mask_depth_ = kInvalidResource;
     ResourceId scene_depth_ = kInvalidResource;
     ResourceId target_ = kInvalidResource;
+    ResourceId vertex_reads_[kMaxVertexReads] = {kInvalidResource, kInvalidResource,
+                                                 kInvalidResource, kInvalidResource};
+    u32 vertex_read_count_ = 0;
 };
 
 }  // namespace cy::rendering::selection

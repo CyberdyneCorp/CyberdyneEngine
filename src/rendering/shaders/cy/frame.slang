@@ -1213,3 +1213,39 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
     let instance = cyInstances[draw.instanceSlot];
     return cyShadeForward(surfaceOf(draw.material, instance.tint.rgb, input.uv), input);
 }
+
+// --- Skinned geometry -----------------------------------------------------------------------------
+//
+// A SKINNED DRAW BINDS THE SKINNING PASS'S OWN OUTPUT, whose frame is `render::PackedNormalTangent`:
+// the octahedral pairs as 16-bit SIGNED normalised components, bound as `Rgba16Snorm`, so the
+// vertex fetch hands these entries values in [-1, 1]. The rigid streams carry the same pairs
+// remapped to [0, 1] as half floats (`pack_normal_stream`), and that is the range
+// `decodeOctahedral` takes. These two entries move the signed pair into that range and call the
+// rigid entry points, so every line after the fetch is the rigid path's and cannot drift from it.
+// The rigid entries are unchanged, which is what keeps a frame with no skinned draw the frame it
+// was before skinned draws existed — and the section is at the END of the file so that no line of
+// the rigid entries moves, and their MSL, which carries #line directives, is the same text.
+//
+//   slangc ... -entry cySkinnedDepthVertex   -stage vertex -o frame_skinned_depth_vertex.spv
+//   slangc ... -entry cySkinnedForwardVertex -stage vertex -o frame_skinned_forward_vertex.spv
+//
+// `src/rendering/pipeline/shaders/regenerate.py` runs both with the rest.
+
+float4 cySkinnedFrameToStream(float4 frame)
+{
+    return frame * 0.5 + 0.5;
+}
+
+[shader("vertex")]
+public CyDepthVertex cySkinnedDepthVertex(float3 modelPosition : POSITION, float4 frame : NORMAL,
+                                          float3 previousModelPosition : PREVIOUS_POSITION)
+{
+    return cyDepthVertex(modelPosition, cySkinnedFrameToStream(frame), previousModelPosition);
+}
+
+[shader("vertex")]
+public CyForwardVertex cySkinnedForwardVertex(float3 modelPosition : POSITION, float4 frame : NORMAL,
+                                              float2 uv : TEXCOORD0, float2 lightmapUv : TEXCOORD1)
+{
+    return cyForwardVertex(modelPosition, cySkinnedFrameToStream(frame), uv, lightmapUv);
+}

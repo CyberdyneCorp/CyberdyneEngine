@@ -429,6 +429,12 @@ struct PipelineSetup {
     /// The prepass attachments its shader writes. Velocity implies normal.
     bool prepass_normal = false;
     bool prepass_velocity = false;
+    /// Create the SKINNED variants of the depth, opaque and transparent pipelines: the same state
+    /// with the normal attribute declared `Rgba16Snorm` — the skinning pass's own frame encoding —
+    /// and `cySkinnedDepthVertex` / `cySkinnedForwardVertex`. Off, the default, creates nothing a
+    /// frame before skinned draws did not create. Appended, so a brace-initialised setup keeps its
+    /// meaning.
+    bool skinned = false;
 };
 
 /// Which pipeline a pass binds.
@@ -479,6 +485,12 @@ public:
     [[nodiscard]] rhi::PipelineLayoutHandle layout() const noexcept { return layout_; }
     [[nodiscard]] rhi::DescriptorSetLayoutHandle set_layout(u32 set) const noexcept;
     [[nodiscard]] rhi::GraphicsPipelineHandle pipeline(FramePipelineKind kind) const noexcept;
+    /// The pipeline a SKINNED draw binds in a pass of `kind`: the skinned variant for depth, opaque
+    /// and transparent, and the standard shadow pipeline — which reads the position alone, so a
+    /// skinned position stream needs nothing else. Null for any other kind, and for every kind when
+    /// the pipelines were created without `PipelineSetup::skinned`.
+    [[nodiscard]] rhi::GraphicsPipelineHandle skinned_pipeline(
+        FramePipelineKind kind) const noexcept;
     /// Create a caller-owned geometry pipeline with compiled material shaders. The supplied
     /// layout must preserve the frame's sets 0-2 and may append material set 3. A fragment shader
     /// may replace the standard one in opaque and transparent passes; depth and shadow keep their
@@ -507,11 +519,13 @@ private:
     [[nodiscard]] Status create_pipelines(rhi::Device& device, const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_geometry_pipeline(rhi::Device& device, const PipelineSetup& setup,
                                                   FramePipelineKind kind) noexcept;
+    [[nodiscard]] Status create_skinned_pipelines(rhi::Device& device,
+                                                  const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_shadow_pipeline(rhi::Device& device) noexcept;
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_geometry_pipeline(
         rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
         rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout, bool graph_vertex,
-        rhi::ShaderModuleHandle fragment = {}) const noexcept;
+        rhi::ShaderModuleHandle fragment = {}, bool skinned = false) const noexcept;
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_shadow_pipeline(
         rhi::Device& device, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
         bool graph_vertex) const noexcept;
@@ -531,11 +545,15 @@ private:
     rhi::ShaderModuleHandle resolve_vertex_;
     rhi::ShaderModuleHandle resolve_fragment_;
     rhi::ShaderModuleHandle temporal_fragment_;
+    rhi::ShaderModuleHandle skinned_depth_vertex_;
+    rhi::ShaderModuleHandle skinned_forward_vertex_;
     rhi::DescriptorSetLayoutHandle sets_[kSetCount];
     rhi::PipelineLayoutHandle layout_;
     rhi::SamplerHandle sampler_;
     rhi::SamplerHandle material_sampler_;
     rhi::GraphicsPipelineHandle pipelines_[kFramePipelineKindCount];
+    /// Indexed by `FramePipelineKind`; only depth, opaque and transparent are ever filled.
+    rhi::GraphicsPipelineHandle skinned_[kFramePipelineKindCount];
     u32 created_ = 0;
     bool ready_ = false;
 };

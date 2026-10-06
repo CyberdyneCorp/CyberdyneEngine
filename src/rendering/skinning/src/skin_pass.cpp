@@ -2,10 +2,7 @@
 
 #include <cstring>
 
-#include "skin_msl.h"
-#include "skin_spirv.h"
-
-#include <cy/backends/rhi/validation.h>
+#include "skin_pipeline.h"
 
 namespace cy::rendering::skinning {
 namespace {
@@ -20,35 +17,8 @@ using render::geometry::pack_bone_matrix;
 using render::geometry::SkinnedBuffers;
 using render::geometry::SkinningDescriptor;
 
-/// `skin_vertices`'s `[numthreads(64, 1, 1)]`. One place, so that a change to the shader that is
-/// not reflected here covers the wrong number of vertices rather than a comment.
-constexpr u32 kSkinGroupSize = 64;
-
-/// The nine bindings the shader declares, in the order it declares them.
-///
-/// SIX UNTIL M11.c, and the three that joined are the dual-quaternion pose and the two blend-shape
-/// buffers. Every one of them is bound on every pass, empty or not, for the reason `at_least_one`
-/// below gives: a descriptor must name something, and the flags and the active count in the
-/// constant block are what tell the shader whether to read it.
-enum Binding : u32 {
-    kBindingBones = 0,
-    kBindingInPositions = 1,
-    kBindingInFrames = 2,
-    kBindingInfluences = 3,
-    kBindingOutPositions = 4,
-    kBindingOutFrames = 5,
-    kBindingBoneDualQuaternions = 6,
-    kBindingBlendShapeDeltas = 7,
-    kBindingActiveBlendShapes = 8,
-    kBindingCount = 9,
-};
-
-/// Vulkan has no zero-length buffer, and a descriptor must name something even when the stream
-/// behind it is empty — a pass created without frames still binds bindings 2 and 5, and the flag in
-/// the constant block is what tells the shader not to read them.
-[[nodiscard]] u64 at_least_one(u64 count, u64 stride) noexcept {
-    return (count == 0 ? 1 : count) * stride;
-}
+using detail::at_least_one;
+using detail::kBindingCount;
 
 template <typename T>
 [[nodiscard]] Status copy_into(rhi::Device& device, rhi::BufferHandle handle,
@@ -73,9 +43,7 @@ SkinPass::~SkinPass() {
 }
 
 bool SkinPass::supported(const rhi::Device& device) noexcept {
-    const rhi::ShaderFormat format = device.capabilities().native_shader_format();
-    return device.capabilities().has(rhi::Capability::ComputeShaders) &&
-           (format == rhi::ShaderFormat::Spirv || format == rhi::ShaderFormat::Msl);
+    return detail::skin_supported(device);
 }
 
 Status SkinPass::create(Allocator& allocator, rhi::Device& device,
@@ -84,13 +52,7 @@ Status SkinPass::create(Allocator& allocator, rhi::Device& device,
         return fail(ErrorCode::InvalidArgument, "the skinning pass has already been created");
     }
     if (!supported(device)) {
-        if (device.capabilities().has(rhi::Capability::ComputeShaders)) {
-            return fail(ErrorCode::Unsupported,
-                        "skinning package has no shader for the device's native format");
-        }
-        return fail(ErrorCode::Unsupported,
-                    "skinning needs Capability::ComputeShaders; cpu_reference_skin computes the "
-                    "same answer and is what a device without one would have to run");
+        return detail::skin_unsupported(device);
     }
     if (desc.max_vertices == 0 || desc.max_bones == 0) {
         return fail(ErrorCode::InvalidArgument,
@@ -117,64 +79,7 @@ Status SkinPass::create(Allocator& allocator, rhi::Device& device,
 }
 
 Status SkinPass::create_pipeline() noexcept {
-    rhi::ShaderModuleBundle bundle;
-    bundle.spirv = {kSkinVerticesSpirv, sizeof(kSkinVerticesSpirv) / sizeof(u32)};
-    bundle.msl = {reinterpret_cast<const u8*>(kSkinVerticesMsl), sizeof(kSkinVerticesMsl) - 1};
-    bundle.spirv_entry_point = "main";
-    bundle.msl_entry_point = "skin_vertices";
-    rhi::ValidationMessage message;
-    auto module = rhi::select_shader_module(bundle, device_->capabilities().native_shader_format(),
-                                            "skin vertices", rhi::ShaderStage::Compute, message);
-    if (!module.has_value()) {
-        return make_unexpected(module.error());
-    }
-    Expected<rhi::ShaderModuleHandle, Error> created = device_->create_shader_module(*module);
-    if (!created.has_value()) {
-        return make_unexpected(created.error());
-    }
-    shader_ = *created;
-
-    rhi::DescriptorBinding bindings[kBindingCount] = {};
-    for (u32 index = 0; index < kBindingCount; ++index) {
-        bindings[index].binding = index;
-        bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
-        bindings[index].count = 1;
-        bindings[index].stages = rhi::ShaderStage::Compute;
-    }
-    rhi::DescriptorSetLayoutDescription set_layout;
-    set_layout.name = "skin set";
-    set_layout.bindings = Span<const rhi::DescriptorBinding>(bindings, kBindingCount);
-    Expected<rhi::DescriptorSetLayoutHandle, Error> layout =
-        device_->create_descriptor_set_layout(set_layout);
-    if (!layout.has_value()) {
-        return make_unexpected(layout.error());
-    }
-    set_layout_ = *layout;
-
-    const rhi::PushConstantRange range{rhi::ShaderStage::Compute, 0, sizeof(GpuSkinConstants)};
-    rhi::PipelineLayoutDescription pipeline_layout;
-    pipeline_layout.name = "skin layout";
-    pipeline_layout.set_layouts = Span<const rhi::DescriptorSetLayoutHandle>(&set_layout_, 1);
-    pipeline_layout.push_constants = Span<const rhi::PushConstantRange>(&range, 1);
-    Expected<rhi::PipelineLayoutHandle, Error> pipeline_layout_handle =
-        device_->create_pipeline_layout(pipeline_layout);
-    if (!pipeline_layout_handle.has_value()) {
-        return make_unexpected(pipeline_layout_handle.error());
-    }
-    pipeline_layout_ = *pipeline_layout_handle;
-
-    rhi::ComputePipelineDescription pipeline;
-    pipeline.name = "skin vertices";
-    pipeline.layout = pipeline_layout_;
-    pipeline.shader = shader_;
-    pipeline.workgroup_size[0] = kSkinGroupSize;
-    Expected<rhi::ComputePipelineHandle, Error> pipeline_handle =
-        device_->create_compute_pipeline(pipeline);
-    if (!pipeline_handle.has_value()) {
-        return make_unexpected(pipeline_handle.error());
-    }
-    pipeline_ = *pipeline_handle;
-    return ok();
+    return pipeline_.create(*device_);
 }
 
 Status SkinPass::create_buffers() noexcept {
@@ -275,7 +180,7 @@ Status SkinPass::create_buffers() noexcept {
 
 Status SkinPass::write_descriptors() noexcept {
     Expected<rhi::DescriptorSetHandle, Error> set =
-        device_->allocate_descriptor_set(set_layout_, false);
+        device_->allocate_descriptor_set(pipeline_.set_layout, false);
     if (!set.has_value()) {
         return make_unexpected(set.error());
     }
@@ -292,15 +197,7 @@ Status SkinPass::write_descriptors() noexcept {
         buffers_.blend_shape_deltas,
         buffers_.active_blend_shapes,
     };
-    rhi::DescriptorWrite writes[kBindingCount] = {};
-    for (u32 index = 0; index < kBindingCount; ++index) {
-        writes[index].binding = index;
-        writes[index].kind = rhi::DescriptorKind::StorageBuffer;
-        writes[index].buffer = handles[index];
-        writes[index].buffer_range = 0;  // the rest of the buffer
-    }
-    return device_->update_descriptor_set(descriptor_set_,
-                                          Span<const rhi::DescriptorWrite>(writes, kBindingCount));
+    return detail::write_skin_set(*device_, descriptor_set_, handles);
 }
 
 void SkinPass::destroy() noexcept {
@@ -328,22 +225,7 @@ void SkinPass::destroy() noexcept {
     buffers_ = Buffers{};
     active_shapes_ = 0;
     mesh_uploaded_ = false;
-    if (pipeline_) {
-        device_->destroy_compute_pipeline(pipeline_);
-    }
-    if (pipeline_layout_) {
-        device_->destroy_pipeline_layout(pipeline_layout_);
-    }
-    if (set_layout_) {
-        device_->destroy_descriptor_set_layout(set_layout_);
-    }
-    if (shader_) {
-        device_->destroy_shader_module(shader_);
-    }
-    pipeline_ = {};
-    pipeline_layout_ = {};
-    set_layout_ = {};
-    shader_ = {};
+    pipeline_.destroy(*device_);
     descriptor_set_ = {};
     device_ = nullptr;
     allocator_ = nullptr;
@@ -494,14 +376,13 @@ Status SkinPass::upload_blend_shapes(Span<const render::geometry::BlendShapeDelt
 
 void SkinPass::record_skin(const PassContext& context, void* user) noexcept {
     auto* self = static_cast<SkinPass*>(user);
-    context.commands->bind_compute_pipeline(self->pipeline_);
+    context.commands->bind_compute_pipeline(self->pipeline_.pipeline);
     context.commands->bind_descriptor_sets(
-        self->pipeline_layout_, 0, Span<const rhi::DescriptorSetHandle>(&self->descriptor_set_, 1));
+        self->pipeline_.layout, 0, Span<const rhi::DescriptorSetHandle>(&self->descriptor_set_, 1));
     context.commands->push_constants(
-        self->pipeline_layout_, rhi::ShaderStage::Compute, 0,
+        self->pipeline_.layout, rhi::ShaderStage::Compute, 0,
         Span<const u8>(reinterpret_cast<const u8*>(&self->constants_), sizeof(GpuSkinConstants)));
-    const u32 groups = (self->constants_.vertex_count + kSkinGroupSize - 1U) / kSkinGroupSize;
-    context.commands->dispatch(groups == 0 ? 1 : groups, 1, 1);
+    context.commands->dispatch(detail::skin_groups(self->constants_.vertex_count), 1, 1);
 }
 
 void SkinPass::record_readback(const PassContext& context, void* user) noexcept {

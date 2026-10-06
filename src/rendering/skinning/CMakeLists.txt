@@ -26,10 +26,12 @@ cy_add_module(
     LAYER rendering
     ALIAS cy::rendering-skinning
     TYPE STATIC
-    SOURCES src/skin_pass.cpp
+    SOURCES src/skin_pass.cpp src/skin_pipeline.cpp src/skinned_scene.cpp src/frame_skinning.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    # cy::rendering-pipeline for `frame_skinning.h`: a skinned instance as one of the frame's draws.
+    # The frame does not name this module; the dependency runs one way.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rendering-graph
-                        cy::servers-render cy::servers-render-geometry
+                        cy::rendering-pipeline cy::servers-render cy::servers-render-geometry
     PRIVATE_DEPENDENCIES cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

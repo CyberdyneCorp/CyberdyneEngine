@@ -58,6 +58,8 @@ constexpr FormatInfo kFormatTable[kFormatCount] = {
     {"Bc6HUfloat", 16, 4, 4, false, false, false, true},
     {"Bc7Unorm", 16, 4, 4, false, false, false, true},
     {"Bc7Srgb", 16, 4, 4, false, false, true, true},
+
+    {"Rgba16Snorm", 8, 1, 1, false, false, false, false},
 };
 
 static_assert(sizeof(kFormatTable) / sizeof(kFormatTable[0]) == kFormatCount,

@@ -136,6 +136,18 @@ rhi::GraphicsPipelineHandle FramePipelines::pipeline(FramePipelineKind kind) con
     return pipelines_[index];
 }
 
+rhi::GraphicsPipelineHandle FramePipelines::skinned_pipeline(
+    FramePipelineKind kind) const noexcept {
+    if (!setup_.skinned) {
+        return rhi::GraphicsPipelineHandle{};
+    }
+    if (kind == FramePipelineKind::Shadow) {
+        return pipelines_[static_cast<u32>(FramePipelineKind::Shadow)];
+    }
+    const auto index = static_cast<u32>(kind);
+    return index < kFramePipelineKindCount ? skinned_[index] : rhi::GraphicsPipelineHandle{};
+}
+
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::create_vertex_variant(
     FramePipelineKind kind, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
     rhi::ShaderModuleHandle fragment) const noexcept {
@@ -198,8 +210,21 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
          words(kFrameTemporalFragmentSpirv), kFrameTemporalFragmentMsl,
          sizeof(kFrameTemporalFragmentMsl) - 1, &temporal_fragment_},
     };
+    // The skinned vertex stages exist only for a frame that draws skinned meshes, so a frame that
+    // does not creates exactly the modules it always created.
+    const Request skinned[] = {
+        {"cy frame skinned depth vertex", rhi::ShaderStage::Vertex, "cySkinnedDepthVertex",
+         words(kFrameSkinnedDepthVertexSpirv), kFrameSkinnedDepthVertexMsl,
+         sizeof(kFrameSkinnedDepthVertexMsl) - 1, &skinned_depth_vertex_},
+        {"cy frame skinned forward vertex", rhi::ShaderStage::Vertex, "cySkinnedForwardVertex",
+         words(kFrameSkinnedForwardVertexSpirv), kFrameSkinnedForwardVertexMsl,
+         sizeof(kFrameSkinnedForwardVertexMsl) - 1, &skinned_forward_vertex_},
+    };
     const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
-    for (const Request& request : requests) {
+    const usize standard = sizeof(requests) / sizeof(requests[0]);
+    const usize total = standard + (setup_.skinned ? sizeof(skinned) / sizeof(skinned[0]) : 0U);
+    for (usize index = 0; index < total; ++index) {
+        const Request& request = index < standard ? requests[index] : skinned[index - standard];
         rhi::ShaderModuleDescription description;
         description.name = request.name;
         description.stage = request.stage;
@@ -343,12 +368,37 @@ Status FramePipelines::create_geometry_pipeline(rhi::Device& device, const Pipel
     return ok();
 }
 
+Status FramePipelines::create_skinned_pipelines(rhi::Device& device,
+                                                const PipelineSetup& setup) noexcept {
+    const FramePipelineKind kinds[] = {FramePipelineKind::Depth, FramePipelineKind::Opaque,
+                                       FramePipelineKind::Transparent};
+    for (const FramePipelineKind kind : kinds) {
+        if (kind == FramePipelineKind::Transparent && !setup.transparency) {
+            continue;
+        }
+        const rhi::ShaderModuleHandle vertex =
+            kind == FramePipelineKind::Depth ? skinned_depth_vertex_ : skinned_forward_vertex_;
+        auto created =
+            make_geometry_pipeline(device, setup, kind, vertex, layout_, false, {}, true);
+        if (!created) {
+            return make_unexpected(created.error());
+        }
+        skinned_[static_cast<u32>(kind)] = *created;
+        ++created_;
+    }
+    return ok();
+}
+
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipeline(
     rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
     rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout, bool graph_vertex,
-    rhi::ShaderModuleHandle fragment) const noexcept {
+    rhi::ShaderModuleHandle fragment, bool skinned) const noexcept {
     const bool depth_only = kind == FramePipelineKind::Depth;
     const bool blended = kind == FramePipelineKind::Transparent;
+    // A SKINNED DRAW'S FRAME IS THE SKINNING PASS'S OUTPUT, `render::PackedNormalTangent`, bound
+    // as it was written. The rigid streams carry the half-float form `pack_normal_stream` writes.
+    const rhi::Format normal_format =
+        skinned ? rhi::Format::Rgba16Snorm : rhi::Format::Rgba16Sfloat;
 
     const rhi::VertexBinding forward_bindings[] = {
         {kPositionStream, kPositionStreamStride, rhi::VertexInputRate::PerVertex},
@@ -358,7 +408,7 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
     };
     const rhi::VertexAttribute forward_attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
-        {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
+        {1, kNormalStream, normal_format, 0},
         {2, kUvStream, rhi::Format::Rg32Sfloat, 0},
         {3, kLightmapUvStream, rhi::Format::Rg32Sfloat, 0},
     };
@@ -371,7 +421,7 @@ Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::make_geometry_pipel
     };
     const rhi::VertexAttribute depth_attributes[] = {
         {0, kPositionStream, rhi::Format::Rgb32Sfloat, 0},
-        {1, kNormalStream, rhi::Format::Rgba16Sfloat, 0},
+        {1, kNormalStream, normal_format, 0},
         {2, kPreviousPositionStream, rhi::Format::Rgb32Sfloat, 0},
     };
     static_assert(std::size(forward_bindings) == kForwardPassStreamCount);
@@ -575,6 +625,11 @@ Status FramePipelines::create_pipelines(rhi::Device& device, const PipelineSetup
             return made;
         }
     }
+    if (setup.skinned) {
+        if (Status made = create_skinned_pipelines(device, setup); !made) {
+            return made;
+        }
+    }
     if (setup.tonemap) {
         if (Status made = create_resolve_pipeline(device, setup); !made) {
             return made;
@@ -632,6 +687,12 @@ void FramePipelines::shutdown() noexcept {
             handle = rhi::GraphicsPipelineHandle{};
         }
     }
+    for (rhi::GraphicsPipelineHandle& handle : skinned_) {
+        if (!handle.is_null()) {
+            device.destroy_graphics_pipeline(handle);
+            handle = rhi::GraphicsPipelineHandle{};
+        }
+    }
     if (!sampler_.is_null()) {
         device.destroy_sampler(sampler_);
         sampler_ = rhi::SamplerHandle{};
@@ -651,9 +712,9 @@ void FramePipelines::shutdown() noexcept {
         }
     }
     rhi::ShaderModuleHandle* modules[] = {
-        &depth_vertex_,    &depth_fragment_,   &shadow_vertex_,
-        &shadow_fragment_, &forward_vertex_,   &forward_fragment_,
-        &resolve_vertex_,  &resolve_fragment_, &temporal_fragment_};
+        &depth_vertex_,      &depth_fragment_,       &shadow_vertex_,         &shadow_fragment_,
+        &forward_vertex_,    &forward_fragment_,     &resolve_vertex_,        &resolve_fragment_,
+        &temporal_fragment_, &skinned_depth_vertex_, &skinned_forward_vertex_};
     for (rhi::ShaderModuleHandle* handle : modules) {
         if (!handle->is_null()) {
             device.destroy_shader_module(*handle);
