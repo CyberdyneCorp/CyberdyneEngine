@@ -64,8 +64,7 @@ template <typename T>
 }  // namespace
 
 SkinnedScene::SkinnedScene(Allocator& allocator) noexcept
-    : allocator_(&allocator),
-      meshes_(allocator),
+    : meshes_(allocator),
       instances_(allocator),
       free_instances_(allocator),
       free_windows_(allocator),

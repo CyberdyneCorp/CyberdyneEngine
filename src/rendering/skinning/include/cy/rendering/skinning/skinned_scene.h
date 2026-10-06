@@ -245,7 +245,6 @@ private:
     static void record_skin(const PassContext& context, void* user) noexcept;
     static void record_readback(const PassContext& context, void* user) noexcept;
 
-    Allocator* allocator_ = nullptr;
     rhi::Device* device_ = nullptr;
     SkinnedSceneDescription desc_{};
     detail::SkinPipeline pipeline_;

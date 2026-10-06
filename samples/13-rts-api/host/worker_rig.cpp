@@ -41,8 +41,8 @@ enum Joint : u16 { kRoot, kHips, kSpine, kHead, kArmLeft, kArmRight, kLegLeft, k
 static_assert(kJoints == kWorkerJoints, "the header's joint count is the skeleton's");
 
 struct JointRow {
-    const char* name;
-    u16 parent;
+    const char* name = nullptr;
+    u16 parent = 0;
     Vec3 offset;
 };
 
@@ -180,7 +180,7 @@ template <class Angle>
     for (u32 index = 0; index < kStateCount; ++index) {
         const StateRow& row = kStates[index];
         // Ascending keys, so idle — the lowest — is the entry state.
-        const auto state_node = static_cast<graph::NodeKey>((index + 1U) * 10U);
+        const auto state_node = (static_cast<graph::NodeKey>(index) + 1U) * 10U;
         const graph::NodeKey clip_node = state_node + 1U;
         char clock[48];
         (void)std::snprintf(clock, sizeof(clock), "clock_%s", row.state);

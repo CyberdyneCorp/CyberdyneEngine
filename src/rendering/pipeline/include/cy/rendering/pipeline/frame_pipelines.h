@@ -200,9 +200,9 @@ inline constexpr u32 kForwardPassStreamCount = 4;
 /// THE BRIDGE BETWEEN THE COOKED ENCODING AND THE RIGID VERTEX INPUT: the same two octahedral pairs
 /// `render::PackedNormalTangent` stores as 16-bit signed normalised components, remapped to [0, 1]
 /// and stored as half floats, which the rigid pipelines bind as `Rgba16Sfloat`. It was written when
-/// `rhi::Format` had no `Rgba16Snorm`. Since issue #76 stage 3 it has one, and the SKINNED pipelines
-/// (`PipelineSetup::skinned`) bind the skinning pass's `PackedNormalTangent` output in it directly;
-/// the rigid streams keep this encoding, so every frame drawn before is the frame it was.
+/// `rhi::Format` had no `Rgba16Snorm`. Since issue #76 stage 3 it has one, and the SKINNED
+/// pipelines (`PipelineSetup::skinned`) bind the skinning pass's `PackedNormalTangent` output in it
+/// directly; the rigid streams keep this encoding, so every frame drawn before is the frame it was.
 void pack_normal_stream(Vec3 normal, Vec3 tangent, u16 out[4]) noexcept;
 
 // --- The blocks the shader reads ---------------------------------------------------------------

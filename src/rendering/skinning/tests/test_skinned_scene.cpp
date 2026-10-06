@@ -30,6 +30,15 @@ using cy::rendering::skinning::SkinnedSceneDescription;
 
 namespace {
 
+/// Bit-for-bit equality: the GPU must produce exactly what the CPU reference does, so the claim is
+/// about the representation. `bugprone-suspicious-memory-comparison` is right that a float has no
+/// unique representation, which is the point; comparing members would assert something weaker.
+template <class T>
+[[nodiscard]] bool identical(const T& left, const T& right) noexcept {
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
+    return std::memcmp(&left, &right, sizeof(T)) == 0;
+}
+
 Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Renderer);
 }
@@ -254,7 +263,7 @@ CY_TEST_CASE("skinned scene: an upload writes the dirty range and nothing outsid
     for (u32 index = 0; index < 16U; ++index) {
         const bool inside = index >= 4U && index < 7U;
         const GpuBoneMatrix& expected = inside ? new_value : old_value;
-        CY_CHECK(std::memcmp(&device[index], &expected, sizeof(GpuBoneMatrix)) == 0);
+        CY_CHECK(identical(device[index], expected));
     }
     // Nothing published is nothing written.
     CY_REQUIRE(scene.upload_poses(Span<const Mat4>(world.data(), world.size()), 0, 0).has_value());

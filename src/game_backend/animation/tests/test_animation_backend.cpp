@@ -27,7 +27,6 @@
 
 namespace {
 
-namespace pose = cy::graph::pose;
 using animation::testing::LocomotionRig;
 
 constexpr f32 kTick = 1.0F / 60.0F;
@@ -221,6 +220,8 @@ CY_TEST_CASE("animation abi: walk then run through the table is the C++ path, bi
         CY_REQUIRE_EQ(table().animation_root_motion(through_abi.engine(), a, &motion),
                       CY_RESULT_OK);
         const animation::RootDelta expected = direct.system->root_motion(abi::from_abi(b));
+        // The same bits either way: the ABI copies the engine's answer, it does not recompute it.
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
         CY_REQUIRE(std::memcmp(motion.translation, &expected.translation, sizeof(f32) * 3) == 0);
     }
     CY_CHECK_EQ(through_abi.state(a).state, hash("run"));
@@ -316,7 +317,7 @@ CY_TEST_CASE("animation abi: every event is delivered once, in time order, acros
             CY_CHECK_EQ(event.entity, hero);
         }
         total += static_cast<u32>(events.size());
-        if (events.size() > 0U) {
+        if (!events.empty()) {
             const abi::game::PhaseScope frame_phase(game.host.game.clock, CY_PHASE_FRAME_UPDATE);
             CyAnimationEvent one{};
             u32 count = 0;

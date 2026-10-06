@@ -110,7 +110,7 @@ struct Cube {
                 positions[(vertex * 3U) + 0] = position.x;
                 positions[(vertex * 3U) + 1] = position.y;
                 positions[(vertex * 3U) + 2] = position.z;
-                pack_normal_stream(normal, tangent, &normals[vertex * 4U]);
+                pack_normal_stream(normal, tangent, &normals[static_cast<size_t>(vertex) * 4U]);
                 uvs[(vertex * 2U) + 0] = (u * 0.5F) + 0.5F;
                 uvs[(vertex * 2U) + 1] = (v * 0.5F) + 0.5F;
                 ++vertex;

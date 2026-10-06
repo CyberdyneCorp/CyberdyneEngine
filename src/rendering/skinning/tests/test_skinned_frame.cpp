@@ -59,6 +59,15 @@ using cy::rendering::skinning::SkinnedScene;
 
 namespace {
 
+/// Bit-for-bit equality: the GPU must produce exactly what the CPU reference does, so the claim is
+/// about the representation. `bugprone-suspicious-memory-comparison` is right that a float has no
+/// unique representation, which is the point; comparing members would assert something weaker.
+template <class T>
+[[nodiscard]] bool identical(const T& left, const T& right) noexcept {
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
+    return std::memcmp(&left, &right, sizeof(T)) == 0;
+}
+
 constexpr u32 kPixels = kWidth * kHeight;
 constexpr u32 kSides = 8;
 constexpr u32 kRings = 4;
@@ -497,7 +506,8 @@ private:
         u32 height = 0;
     };
 
-    void declare_copy(rendering::RenderGraph& graph, Copy& copy, const char* name, u64 bytes) {
+    static void declare_copy(rendering::RenderGraph& graph, Copy& copy, const char* name,
+                             u64 bytes) {
         if (copy.source == rendering::kInvalidResource) {
             return;
         }
@@ -622,8 +632,8 @@ private:
             return;
         }
         for (u32 pixel = 0; pixel < kPixels; ++pixel) {
-            velocity_[pixel] =
-                Vec2{half_to_float(words[pixel * 2U]), half_to_float(words[(pixel * 2U) + 1U])};
+            velocity_[pixel] = Vec2{half_to_float(words[static_cast<size_t>(pixel) * 2U]),
+                                    half_to_float(words[(static_cast<size_t>(pixel) * 2U) + 1U])};
         }
     }
 
@@ -830,7 +840,7 @@ CY_TEST_CASE("(b) a bent limb is skinned by the dispatch and drawn by the frame'
     CY_REQUIRE(constants.has_value());
     const Span<const GpuBoneMatrix> pose = run.skins().pose_buffer();
     std::vector<GpuBoneMatrix> bones(pose.begin(), pose.end());
-    std::vector<Vec3> positions(kLimbVertices * kMaxLimbs * 2U);
+    std::vector<Vec3> positions(static_cast<size_t>(kLimbVertices) * kMaxLimbs * 2U);
     std::vector<PackedNormalTangent> frames(positions.size());
     render::geometry::SkinInputs inputs;
     inputs.bones = Span<const GpuBoneMatrix>(bones.data(), bones.size());
@@ -855,7 +865,7 @@ CY_TEST_CASE("(b) a bent limb is skinned by the dispatch and drawn by the frame'
     u32 mismatched = 0;
     for (u32 vertex = 0; vertex < kLimbVertices; ++vertex) {
         const u32 at = constants->first_output_vertex + vertex;
-        mismatched += std::memcmp(&(*skinned)[at], &positions[at], sizeof(Vec3)) != 0 ? 1U : 0U;
+        mismatched += identical((*skinned)[at], positions[at]) ? 0U : 1U;
         mismatched +=
             std::memcmp(&(*skinned_frames)[at], &frames[at], sizeof(PackedNormalTangent)) != 0 ? 1U
                                                                                                : 0U;
@@ -1023,11 +1033,11 @@ CY_TEST_CASE("(g) a changed instance uploads its own matrices and nothing else")
     for (u32 bone = 0; bone < kBones; ++bone) {
         const GpuBoneMatrix garbage =
             render::geometry::pack_bone_matrix(Mat4::from_translation(Vec3{99.0F, 99.0F, 99.0F}));
-        CY_CHECK(std::memcmp(&device[staged_at + bone], &garbage, sizeof(GpuBoneMatrix)) != 0);
+        CY_CHECK(!identical(device[staged_at + bone], garbage));
     }
     // Limb 1's current matrices are on the device.
     const u32 current = world.matrix_offset(run.handle(1));
     const GpuBoneMatrix expected = render::geometry::pack_bone_matrix(limb_pose(0.7F)[1]);
-    CY_CHECK(std::memcmp(&device[current + 1U], &expected, sizeof(GpuBoneMatrix)) == 0);
+    CY_CHECK(identical(device[current + 1U], expected));
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

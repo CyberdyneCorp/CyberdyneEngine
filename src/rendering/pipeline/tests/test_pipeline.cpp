@@ -340,7 +340,7 @@ bool skinned_geometry(u32 which, DrawGeometry& out, void* user) noexcept {
 [[nodiscard]] rhi::BufferHandle probe_buffer(rhi::Device& device, rhi::BufferUsage usage) noexcept {
     rhi::BufferDescription description;
     description.name = "skinned probe";
-    description.size = 48U * 12U;
+    description.size = u64{48U} * 12U;
     description.usage = usage;
     description.memory = rhi::MemoryUse::Upload;
     Expected<rhi::BufferHandle, Error> made = device.create_buffer(description);

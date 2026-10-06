@@ -84,7 +84,7 @@ private:
     };
 
     [[nodiscard]] const animation::Animator* animator_of(CyEntity entity) const noexcept;
-    [[nodiscard]] CyResult missing(CyEntity entity) const noexcept;
+    [[nodiscard]] static CyResult missing() noexcept;
     [[nodiscard]] CyResult write_mode(CyEntity entity, CyRootMotionMode mode) noexcept;
     [[nodiscard]] Transform placement_of(CyEntity entity) const noexcept;
     void forget_driven(CyEntity entity) noexcept;

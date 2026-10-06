@@ -96,8 +96,7 @@ const animation::Animator* AnimationAdapter::animator_of(CyEntity entity) const 
     return world_->get<animation::Animator>(from_abi(entity), animator_);
 }
 
-CyResult AnimationAdapter::missing(CyEntity entity) const noexcept {
-    (void)entity;
+CyResult AnimationAdapter::missing() noexcept {
     return abi::report(CY_RESULT_NOT_FOUND, "this entity has no animator");
 }
 
@@ -160,7 +159,7 @@ CyResult AnimationAdapter::attach(CyEntity entity, const CyAnimatorDesc& desc) n
 CyResult AnimationAdapter::detach(CyEntity entity) noexcept {
     const ecs::Entity target = from_abi(entity);
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     if (Status removed = world_->remove(target, animator_); !removed) {
         return abi::report(removed.error());
@@ -174,14 +173,14 @@ CyResult AnimationAdapter::detach(CyEntity entity) noexcept {
 
 CyResult AnimationAdapter::play(CyEntity entity, const char* state, f32 seconds) noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     return answer(system_->play(from_abi(entity), known(state), seconds));
 }
 
 CyResult AnimationAdapter::stop(CyEntity entity, f32 seconds) noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     return answer(system_->stop(from_abi(entity), seconds));
 }
@@ -189,14 +188,14 @@ CyResult AnimationAdapter::stop(CyEntity entity, f32 seconds) noexcept {
 CyResult AnimationAdapter::set_parameter(CyEntity entity, const char* parameter,
                                          f32 value) noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     return answer(system_->set_parameter(from_abi(entity), known(parameter), value));
 }
 
 CyResult AnimationAdapter::fire_trigger(CyEntity entity, const char* parameter) noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     return answer(system_->fire_trigger(from_abi(entity), known(parameter)));
 }
@@ -207,7 +206,7 @@ CyResult AnimationAdapter::fire_trigger(CyEntity entity, const char* parameter) 
 CyResult AnimationAdapter::parameter(CyEntity entity, const char* parameter,
                                      f32& out) const noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     Expected<f32, Error> value = system_->parameter(from_abi(entity), known(parameter));
     if (!value.has_value()) {
@@ -219,7 +218,7 @@ CyResult AnimationAdapter::parameter(CyEntity entity, const char* parameter,
 
 CyResult AnimationAdapter::state(CyEntity entity, CyAnimatorState& out) const noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     Expected<animation::AnimatorStatus, Error> status = system_->status(from_abi(entity));
     if (!status.has_value()) {
@@ -243,7 +242,7 @@ CyResult AnimationAdapter::state(CyEntity entity, CyAnimatorState& out) const no
 
 CyResult AnimationAdapter::root_motion(CyEntity entity, CyRootMotion& out) const noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     const ecs::Entity target = from_abi(entity);
     write_motion(system_->root_motion(target), system_->travelled(target), out);
@@ -253,11 +252,11 @@ CyResult AnimationAdapter::root_motion(CyEntity entity, CyRootMotion& out) const
 CyResult AnimationAdapter::take_root_motion(CyEntity entity, CyRootMotion& out) noexcept {
     const animation::Animator* animator = animator_of(entity);
     if (animator == nullptr) {
-        return missing(entity);
+        return missing();
     }
     // ONLY AN ACCUMULATING ANIMATOR IS TAKEN FROM. A character's motion is the adapter's to take,
     // and taking it here too would move the character by half of it.
-    const bool driven = std::binary_search(driven_.begin(), driven_.end(), entity);
+    const bool driven = std::ranges::binary_search(driven_, entity);
     if (animator->root_motion != animation::RootMotionMode::Controller || driven) {
         return abi::report(CY_RESULT_NOT_FOUND,
                            "root motion is taken only from an animator in "
@@ -270,7 +269,7 @@ CyResult AnimationAdapter::take_root_motion(CyEntity entity, CyRootMotion& out) 
 
 CyResult AnimationAdapter::set_root_motion(CyEntity entity, CyRootMotionMode mode) noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     if (mode == CY_ROOT_MOTION_CHARACTER) {
         CyCharacterState probe{};
@@ -286,12 +285,12 @@ CyResult AnimationAdapter::set_root_motion(CyEntity entity, CyRootMotionMode mod
 CyResult AnimationAdapter::write_mode(CyEntity entity, CyRootMotionMode mode) noexcept {
     auto* animator = world_->get_mut<animation::Animator>(from_abi(entity), animator_);
     if (animator == nullptr) {
-        return missing(entity);
+        return missing();
     }
     animator->root_motion = system_mode(mode);
     forget_driven(entity);
     if (mode == CY_ROOT_MOTION_CHARACTER) {
-        const auto* at = std::lower_bound(driven_.begin(), driven_.end(), entity);
+        const auto* at = std::ranges::lower_bound(driven_, entity);
         const auto index = static_cast<usize>(at - driven_.begin());
         if (Status pushed = driven_.push_back(entity); !pushed) {
             return abi::report(pushed.error());
@@ -327,7 +326,7 @@ Transform AnimationAdapter::placement_of(CyEntity entity) const noexcept {
 CyResult AnimationAdapter::joint_pose(CyEntity entity, const char* joint,
                                       CyPose& out) const noexcept {
     if (animator_of(entity) == nullptr) {
-        return missing(entity);
+        return missing();
     }
     Expected<Mat4, Error> model = system_->joint_model_matrix(from_abi(entity), known(joint));
     if (!model.has_value()) {

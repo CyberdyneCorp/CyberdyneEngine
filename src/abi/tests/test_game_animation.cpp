@@ -290,7 +290,7 @@ CY_TEST_CASE("animation: CY_NAME_HASH is FNV-1a over the name's bytes") {
     CY_CHECK_EQ(cy::abi::game::name_hash("a"), 0xaf63dc4c8601ec8cULL);
     CY_CHECK_EQ(cy::abi::game::name_hash("foobar"), 0x85944171f73967e8ULL);
     // Constant-evaluated, so a module's `static const` and the engine's agree at compile time.
-    static_assert(cy::abi::game::name_hash("walk") == cy::abi::game::name_hash("walk"));
+    static_assert(cy::abi::game::name_hash("a") == 0xaf63dc4c8601ec8cULL);
     CY_CHECK_NE(cy::abi::game::name_hash("walk"), cy::abi::game::name_hash("run"));
 }
 
