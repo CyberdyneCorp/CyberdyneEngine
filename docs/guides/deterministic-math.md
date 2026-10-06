@@ -243,6 +243,12 @@ CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites
 - **Comparing angles with `<`.** `Angle` has no order; compare `signed_turns()` of a difference.
 - **Swift's `+`.** It traps on overflow; the engine's rule is wrapping. The Swift `Fixed` (a later
   stage) uses `&+`.
+- **Trusting the compiler at its highest setting.** GCC 13 at `-O3` with LTO, the `release`
+  profile, miscompiled the digest sweep. It unswitched the loop over the `KernelFunction` switch and
+  sent `add` to the `default` branch, which folded 0 for every input. Sanitizers found nothing,
+  and GCC 12, Clang and GCC 13 without LTO were correct. The sweep now takes the function as a
+  template argument (`src/digest.cpp`), and the `profiles` job runs the vectors in `release`. The
+  committed digests are why this showed up as a failure rather than as a new answer.
 
 ## 11. What is not built yet
 

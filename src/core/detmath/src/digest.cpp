@@ -9,6 +9,8 @@
 #include <cy/core/detmath/functions.h>
 #include <cy/core/detmath/version.h>
 
+#include <utility>
+
 namespace cy::detmath::inline CY_DETMATH_VARIANT {
 namespace {
 
@@ -256,7 +258,15 @@ u64 digest_fold(u64 accumulator, u64 value) noexcept {
     return finalize((accumulator ^ value) + kGolden);
 }
 
-u64 function_digest(KernelFunction function, u32 count) noexcept {
+namespace {
+
+// One sweep per function, with the function a template argument rather than a loop-invariant
+// value. GCC 13 at -O3 with LTO unswitches the loop over the switch chain draw()/evaluate_raw()
+// and sends some functions to evaluate_arithmetic()'s `default`, so `add` folded 0 for every
+// input. With the function constant, every switch folds away before there is anything to
+// unswitch. GCC 12, Clang and GCC 13 without LTO compute the same digest either way.
+template <KernelFunction function>
+u64 sweep(u32 count) noexcept {
     SplitMix64 rng(function_seed(function));
     u64 accumulator = function_seed(function);
     u64 inputs[2] = {0, 0};
@@ -265,6 +275,30 @@ u64 function_digest(KernelFunction function, u32 count) noexcept {
         accumulator = digest_fold(accumulator, evaluate_raw(function, inputs));
     }
     return accumulator;
+}
+
+using Sweep = u64 (*)(u32 count) noexcept;
+
+constexpr usize kFunctionCount = static_cast<usize>(KernelFunction::Count);
+
+// A plain array rather than std::array: <array> brings in long double, which the
+// -mgeneral-regs-only build of this file cannot compile under Clang.
+struct SweepTable {
+    Sweep entries[kFunctionCount];
+};
+
+template <u8... index>
+constexpr SweepTable sweeps(std::integer_sequence<u8, index...>) noexcept {
+    return {{&sweep<static_cast<KernelFunction>(index)>...}};
+}
+
+constexpr SweepTable kSweeps = sweeps(std::make_integer_sequence<u8, kFunctionCount>{});
+
+}  // namespace
+
+u64 function_digest(KernelFunction function, u32 count) noexcept {
+    const auto index = static_cast<usize>(function);
+    return index < kFunctionCount ? kSweeps.entries[index](count) : 0;
 }
 
 u64 kernel_digest() noexcept {
