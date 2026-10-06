@@ -1220,32 +1220,60 @@ public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 // the octahedral pairs as 16-bit SIGNED normalised components, bound as `Rgba16Snorm`, so the
 // vertex fetch hands these entries values in [-1, 1]. The rigid streams carry the same pairs
 // remapped to [0, 1] as half floats (`pack_normal_stream`), and that is the range
-// `decodeOctahedral` takes. These two entries move the signed pair into that range and call the
-// rigid entry points, so every line after the fetch is the rigid path's and cannot drift from it.
-// The rigid entries are unchanged, which is what keeps a frame with no skinned draw the frame it
-// was before skinned draws existed — and the section is at the END of the file so that no line of
-// the rigid entries moves, and their MSL, which carries #line directives, is the same text.
+// `decodeOctahedral` takes, so these two entries move the signed pair into it.
+//
+// THE BODIES ARE THE RIGID ENTRIES' OWN, LINE FOR LINE, and are written out rather than called: an
+// entry point that calls another entry point crashes Slang's `translateEntryPointInParamToBorrow`
+// pass when the module is compiled through the API (`cy_shaderc build` reproduces it), and moving
+// the rigid bodies into a shared function would change the rigid modules' bytes. So the rigid
+// entries above are untouched — which is what keeps a frame with no skinned draw the frame it was
+// before skinned draws existed — and the section is at the END of the file so that no line of them
+// moves either, and their MSL, which carries #line directives, is the same text. A change to
+// `cyDepthVertex` or `cyForwardVertex` is made here too; `render.skinned_frame` (b) holds the
+// skinned draw to a golden image and (d) its motion vectors to the rigid path's rule.
 //
 //   slangc ... -entry cySkinnedDepthVertex   -stage vertex -o frame_skinned_depth_vertex.spv
 //   slangc ... -entry cySkinnedForwardVertex -stage vertex -o frame_skinned_forward_vertex.spv
 //
 // `src/rendering/pipeline/shaders/regenerate.py` runs both with the rest.
 
-float4 cySkinnedFrameToStream(float4 frame)
+float2 cySkinnedNormalToStream(float4 frame)
 {
-    return frame * 0.5 + 0.5;
+    return frame.xy * 0.5 + 0.5;
 }
 
 [shader("vertex")]
 public CyDepthVertex cySkinnedDepthVertex(float3 modelPosition : POSITION, float4 frame : NORMAL,
                                           float3 previousModelPosition : PREVIOUS_POSITION)
 {
-    return cyDepthVertex(modelPosition, cySkinnedFrameToStream(frame), previousModelPosition);
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    CyDepthVertex output;
+    let relative = transformToRelative(instance, modelPosition);
+    output.position = transformToClip(relative);
+    output.currentClip = output.position;
+    let point = float4(previousRelativeOf(draw.instanceSlot, instance, previousModelPosition), 1.0);
+    output.previousClip = float4(dot(cyFrame.previousRelativeToClipRow0, point),
+                                 dot(cyFrame.previousRelativeToClipRow1, point),
+                                 dot(cyFrame.previousRelativeToClipRow2, point),
+                                 dot(cyFrame.previousRelativeToClipRow3, point));
+    output.normal = rotateToRelative(instance, decodeOctahedral(cySkinnedNormalToStream(frame)));
+    return output;
 }
 
 [shader("vertex")]
 public CyForwardVertex cySkinnedForwardVertex(float3 modelPosition : POSITION, float4 frame : NORMAL,
                                               float2 uv : TEXCOORD0, float2 lightmapUv : TEXCOORD1)
 {
-    return cyForwardVertex(modelPosition, cySkinnedFrameToStream(frame), uv, lightmapUv);
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+
+    CyForwardVertex output;
+    output.relativePosition = transformToRelative(instance, modelPosition);
+    output.position = transformToClip(output.relativePosition);
+    output.normal = rotateToRelative(instance, decodeOctahedral(cySkinnedNormalToStream(frame)));
+    output.uv = uv;
+    output.drawIndex = cyDraw.drawIndex;
+    output.lightmapUv = lightmapUv;
+    return output;
 }
