@@ -110,6 +110,13 @@ constexpr Function kFunctions[] = {
     {"exp", 1, [](const u64* in) { return out(dm::exp(fx(in[0]))); }},
     {"log", 1, [](const u64* in) { return out(dm::log(fx(in[0]))); }},
     {"pow", 2, [](const u64* in) { return out(dm::pow(fx(in[0]), fx(in[1]))); }},
+    // The Q2.62 kernel values are internal, so they are reached through the module's own
+    // `evaluate_raw` rather than restated here.
+    {"sin_core", 1, [](const u64* in) { return dm::evaluate_raw(KernelFunction::SinCore, in); }},
+    {"cos_core", 1, [](const u64* in) { return dm::evaluate_raw(KernelFunction::CosCore, in); }},
+    {"atan_core", 1, [](const u64* in) { return dm::evaluate_raw(KernelFunction::AtanCore, in); }},
+    {"exp2_core", 1, [](const u64* in) { return dm::evaluate_raw(KernelFunction::Exp2Core, in); }},
+    {"log2_core", 1, [](const u64* in) { return dm::evaluate_raw(KernelFunction::Log2Core, in); }},
 };
 // clang-format on
 

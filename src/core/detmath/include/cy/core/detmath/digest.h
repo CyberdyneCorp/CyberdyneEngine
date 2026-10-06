@@ -48,6 +48,14 @@ enum class KernelFunction : u8 {
     Exp,
     Log,
     Pow,
+    // The Q2.62 kernel values beneath the public functions, before their final rounding. A change
+    // in the last bit of a coefficient moves these on almost every input while it moves a rounded
+    // `Fixed` result on almost none, so they are what makes such a change visible in a digest.
+    SinCore,
+    CosCore,
+    AtanCore,
+    Exp2Core,
+    Log2Core,
     Count,
 };
 
@@ -59,6 +67,11 @@ inline constexpr u64 kSweepSeed = 0xDE73A70001ULL;
 
 /// Inputs per function in the sweep.
 inline constexpr u32 kSweepCount = 16384;
+
+/// `function` on raw inputs, as the vector files and the sweep state them: an `i64` raw for a
+/// `Fixed`, a `u32` raw for an `Angle`, and (high, low) for `SqrtWide`'s 128-bit argument. The
+/// result is the output's raw bit pattern, widened to 64 bits.
+[[nodiscard]] u64 evaluate_raw(KernelFunction function, const u64* inputs) noexcept;
 
 /// The digest of one function over `count` seeded inputs.
 [[nodiscard]] u64 function_digest(KernelFunction function, u32 count = kSweepCount) noexcept;

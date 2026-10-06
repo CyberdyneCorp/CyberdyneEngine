@@ -97,6 +97,13 @@ EDGES: dict[str, list[tuple[int, ...]]] = {
              (SQRT2_TOP,), (SQRT2_TOP + 1,)],
     "exp": [(0,), (ONE,), (-ONE,), (21 * ONE,), (22 * ONE,), (-23 * ONE,), (I64_MAX,), (I64_MIN,)],
     "log": [(1,), (ONE,), (I64_MAX,), (0,), (-ONE,), (11674931555,)],
+    # The Q2.62 kernel values, at the ends of each reduced interval and at the reductions' seams.
+    "sin_core": [(0,), (1,), (EIGHTH - 1,), (EIGHTH,), (QUARTER,), (0xFFFFFFFF,)],
+    "cos_core": [(0,), (1,), (EIGHTH - 1,), (EIGHTH,), (QUARTER,), (0xFFFFFFFF,)],
+    "atan_core": [(0,), (1,), (1910222894239003202,), (1910222894239003203,), ((1 << 62) - 1,),
+                  (1 << 62,)],
+    "exp2_core": [(0,), (1,), (1 << 61,), ((1 << 62) - 1,)],
+    "log2_core": [(1,), (ONE,), (SQRT2_TOP,), (SQRT2_TOP + 1,), (I64_MAX,), (3,)],
     "pow": [(ONE, 0), (2 * ONE, 3 * ONE), (2 * ONE, -ONE), (4 * ONE, ONE // 2), (0, ONE),
             (-ONE, ONE), (I64_MAX, ONE), (I64_MAX, 2 * ONE), (1, ONE), (ONE + 1, I64_MAX)],
 }

@@ -210,13 +210,8 @@ class Kernel:
 
     # --- arctangent ------------------------------------------------------------------------------
 
-    def atan2(self, y: int, x: int) -> int:
-        if x == 0 and y == 0:
-            return 0
-        ax, ay = abs(x), abs(y)
-        swap = ay > ax
-        numerator, denominator = (ax, ay) if swap else (ay, ax)
-        ratio = (numerator << 62) // denominator
+    def atan_turns62(self, ratio: int) -> int:
+        """atan(ratio) in turns, Q2.62, for a Q2.62 ratio in [0, 1]."""
         if ratio > self.t["kTanPiOver8Q62"]:
             z = -(((ONE62 - ratio) << 62) // (ONE62 + ratio))
             base = 1 << 59
@@ -224,8 +219,16 @@ class Kernel:
             z = ratio
             base = 0
         u = self.mul62(z, z)
-        turns = base + self.mul62(self.horner(self.t["kAtan"], u), z)
-        angle = (turns + (1 << 29)) >> 30
+        return wrap64(base + self.mul62(self.horner(self.t["kAtan"], u), z))
+
+    def atan2(self, y: int, x: int) -> int:
+        if x == 0 and y == 0:
+            return 0
+        ax, ay = abs(x), abs(y)
+        swap = ay > ax
+        numerator, denominator = (ax, ay) if swap else (ay, ax)
+        ratio = (numerator << 62) // denominator
+        angle = (self.atan_turns62(ratio) + (1 << 29)) >> 30
         if swap:
             angle = (1 << 30) - angle
         if x < 0:
@@ -251,8 +254,11 @@ class Kernel:
 
     # --- exponentials and logarithms -------------------------------------------------------------
 
+    def exp2_value62(self, f62: int) -> int:
+        return wrap64(ONE62 + self.mul62(self.horner(self.t["kExp2"], f62), f62))
+
     def exp2_core(self, n: int, f62: int) -> int:
-        value = wrap64(ONE62 + self.mul62(self.horner(self.t["kExp2"], f62), f62))
+        value = self.exp2_value62(f62)
         if n >= 31:
             return I64_MAX
         shift = 30 - n
@@ -294,6 +300,23 @@ class Kernel:
         ln2 = self.t["kLn2Q62"]
         total = exponent * ln2 + ((remainder * ln2 + (1 << 61)) >> 62)
         return wrap64((total + (1 << 29)) >> 30)
+
+    # --- the Q2.62 values beneath the public functions, before their final rounding -------------
+
+    def sin_core(self, angle: int) -> int:
+        return self.sincos62(angle)[0]
+
+    def cos_core(self, angle: int) -> int:
+        return self.sincos62(angle)[1]
+
+    def atan_core(self, ratio: int) -> int:
+        return self.atan_turns62(ratio)
+
+    def exp2_core_value(self, f62: int) -> int:
+        return self.exp2_value62(f62)
+
+    def log2_core_value(self, x: int) -> int:
+        return self.log2_core(x)[1] if x > 0 else 0
 
     def pow(self, x: int, y: int) -> int:
         if x <= 0:
@@ -360,6 +383,7 @@ FUNCTIONS = (
     "add", "sub", "mul", "div", "sqrt", "sqrt_wide", "narrow16", "angle_scale",
     "angle_from_radians", "angle_radians", "sin", "cos", "tan", "atan", "atan2", "asin", "acos",
     "exp2", "log2", "exp", "log", "pow",
+    "sin_core", "cos_core", "atan_core", "exp2_core", "log2_core",
 )
 
 
@@ -384,8 +408,12 @@ def draw(function: str, rng: SplitMix64) -> tuple[int, ...]:
         return (scaled(rng),)
     if function == "angle_radians":
         return (rng.next() >> 32,)
-    if function in ("sin", "cos", "tan"):
+    if function in ("sin", "cos", "tan", "sin_core", "cos_core"):
         return (rng.next() >> 32,)
+    if function in ("atan_core", "exp2_core"):
+        return (rng.next() >> 2,)
+    if function == "log2_core":
+        return (positive(rng),)
     if function == "atan":
         return (scaled(rng),)
     if function == "atan2":
@@ -408,6 +436,10 @@ def evaluate(kernel: Kernel, function: str, inputs: tuple[int, ...]) -> int:
         result = kernel.sqrt_wide((high << 64) | low)
     elif function == "narrow16":
         result = kernel.narrow16(inputs[0])
+    elif function == "exp2_core":
+        result = kernel.exp2_core_value(inputs[0])
+    elif function == "log2_core":
+        result = kernel.log2_core_value(inputs[0])
     else:
         result = getattr(kernel, function)(*inputs)
     return u64(result)

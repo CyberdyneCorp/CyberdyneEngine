@@ -49,7 +49,7 @@ BASE = {
     "pcg-gpu-domain": "none",
     "detmath-kernel-version": "1",
     "detmath-sweep-count": "16384",
-    "detmath-kernel-digest": "61b3f0c2c781e836",
+    "detmath-kernel-digest": "e034ac1da6722b97",
 }
 
 

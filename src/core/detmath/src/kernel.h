@@ -56,6 +56,12 @@ struct Log2Parts {
 };
 [[nodiscard]] Log2Parts log2_parts(i64 x) noexcept;
 
+/// The arctangent, in turns, of a Q2.62 ratio in [0, 1]: an angle in [0, 1/8] turn, in Q2.62.
+[[nodiscard]] i64 atan_turns62(i64 ratio62) noexcept;
+
+/// `2^f` in Q2.62 for a Q0.62 fraction `f` in [0, 1): a value in [1, 2).
+[[nodiscard]] i64 exp2_value62(u64 fraction62) noexcept;
+
 /// `2^(n + f)` for an integer `n` and a Q0.62 fraction `f` in [0, 1), as a `Fixed` raw: saturated
 /// beyond the range (and counted), 0 below half an ulp.
 [[nodiscard]] i64 exp2_parts(i64 n, u64 fraction62) noexcept;

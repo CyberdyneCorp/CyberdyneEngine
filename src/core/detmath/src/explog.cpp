@@ -24,9 +24,13 @@
 namespace cy::detmath::inline CY_DETMATH_VARIANT {
 namespace kernel {
 
-i64 exp2_parts(i64 n, u64 fraction62) noexcept {
+i64 exp2_value62(u64 fraction62) noexcept {
     const auto f = static_cast<i64>(fraction62);
-    const i64 value = kOne62 + mul62(horner(coefficients::kExp2, f), f);  // [2^62, 2^63)
+    return kOne62 + mul62(horner(coefficients::kExp2, f), f);
+}
+
+i64 exp2_parts(i64 n, u64 fraction62) noexcept {
+    const i64 value = exp2_value62(fraction62);  // [2^62, 2^63)
     if (n >= 31) {
         detail::overflowed("exp2 beyond the range");
         return INT64_MAX;

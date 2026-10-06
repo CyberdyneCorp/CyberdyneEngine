@@ -46,6 +46,8 @@ constexpr Octant kOctants[8] = {
 constexpr u32 kOctantBits = 29;
 constexpr u32 kOctantMask = (u32{1} << kOctantBits) - 1;
 
+}  // namespace
+
 /// The arctangent, in turns, of a Q2.62 ratio in [0, 1]: an angle in [0, 1/8] turn, in Q2.62.
 i64 atan_turns62(i64 ratio62) noexcept {
     i64 z = ratio62;
@@ -59,8 +61,6 @@ i64 atan_turns62(i64 ratio62) noexcept {
     }
     return base + mul62(horner(coefficients::kAtan, mul62(z, z)), z);
 }
-
-}  // namespace
 
 SinCos62 sincos62(u32 angle) noexcept {
     const u32 octant = angle >> kOctantBits;

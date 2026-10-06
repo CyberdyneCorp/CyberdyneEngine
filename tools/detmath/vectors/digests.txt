@@ -25,4 +25,9 @@ log2 672a61d7d11aee5a
 exp f1b6ed04669d221f
 log 29875899fd12f8be
 pow 73d5c35a624f7867
-kernel 61b3f0c2c781e836
+sin_core 2dffee1a805b4e7d
+cos_core 450e88fba5a5effa
+atan_core ea9e20ee6e40220f
+exp2_core a375e0468df02955
+log2_core d677453ff6490fb6
+kernel e034ac1da6722b97

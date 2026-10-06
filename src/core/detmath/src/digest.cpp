@@ -2,6 +2,8 @@
 // The kernel digest. Design §10.1 and §10.2; the definition is digest.h's, and
 // tools/detmath/model.py states the same sweep in Python. The two must change together.
 
+#include "kernel.h"
+
 #include <cy/core/detmath/digest.h>
 #include <cy/core/detmath/fixed.h>
 #include <cy/core/detmath/functions.h>
@@ -64,84 +66,135 @@ u64 bits(Angle value) noexcept {
     return value.raw;
 }
 
-Fixed draw_fixed(SplitMix64& rng) noexcept {
-    return Fixed::from_raw(rng.scaled());
+u64 bits(i64 value) noexcept {
+    return static_cast<u64>(value);
 }
 
-u64 arithmetic_step(KernelFunction function, SplitMix64& rng) noexcept {
+Fixed fx(u64 raw) noexcept {
+    return Fixed::from_raw(static_cast<i64>(raw));
+}
+
+Angle an(u64 raw) noexcept {
+    return Angle::from_raw(static_cast<u32>(raw));
+}
+
+/// The inputs of one sweep step. The order of the draws is part of the digest's definition;
+/// tools/detmath/model.py's `draw()` states the same order.
+void draw_arithmetic(KernelFunction function, SplitMix64& rng, u64* inputs) noexcept {
     switch (function) {
-        case KernelFunction::Add: {
-            const auto a = static_cast<i64>(rng.next());
-            const auto b = static_cast<i64>(rng.next());
-            return bits(Fixed::from_raw(a) + Fixed::from_raw(b));
-        }
-        case KernelFunction::Subtract: {
-            const auto a = static_cast<i64>(rng.next());
-            const auto b = static_cast<i64>(rng.next());
-            return bits(Fixed::from_raw(a) - Fixed::from_raw(b));
-        }
-        case KernelFunction::Multiply: {
-            const Fixed a = draw_fixed(rng);
-            return bits(a * draw_fixed(rng));
-        }
-        case KernelFunction::Divide: {
-            const Fixed a = draw_fixed(rng);
-            return bits(a / draw_fixed(rng));
-        }
-        case KernelFunction::Sqrt:
-            return bits(sqrt(draw_fixed(rng)));
-        case KernelFunction::SqrtWide: {
-            const i64 high = rng.scaled();
-            const u64 low = rng.next();
-            return bits(sqrt(WideFixed::from_raw(U128{low, static_cast<u64>(high)})));
-        }
-        case KernelFunction::NarrowFixed16:
-            return static_cast<u64>(static_cast<i64>(Fixed16::narrow(draw_fixed(rng)).raw));
-        case KernelFunction::AngleScale: {
-            const Angle a = Angle::from_raw(rng.angle());
-            return bits(a * Fixed::from_raw(rng.scaled() >> 16));
-        }
-        case KernelFunction::AngleFromRadians:
-            return bits(Angle::from_radians(draw_fixed(rng)));
+        case KernelFunction::Add:
+        case KernelFunction::Subtract:
+            inputs[0] = rng.next();
+            inputs[1] = rng.next();
+            return;
+        case KernelFunction::Multiply:
+        case KernelFunction::Divide:
+            inputs[0] = bits(rng.scaled());
+            inputs[1] = bits(rng.scaled());
+            return;
+        case KernelFunction::SqrtWide:
+            inputs[0] = bits(rng.scaled());  // the high limb
+            inputs[1] = rng.next();          // the low limb
+            return;
+        case KernelFunction::AngleScale:
+            inputs[0] = rng.angle();
+            inputs[1] = bits(rng.scaled() >> 16);
+            return;
         case KernelFunction::AngleRadians:
-            return bits(Angle::from_raw(rng.angle()).radians());
+            inputs[0] = rng.angle();
+            return;
+        default:  // Sqrt, NarrowFixed16, AngleFromRadians
+            inputs[0] = bits(rng.scaled());
+            return;
+    }
+}
+
+void draw(KernelFunction function, SplitMix64& rng, u64* inputs) noexcept {
+    switch (function) {
+        case KernelFunction::Sin:
+        case KernelFunction::Cos:
+        case KernelFunction::Tan:
+        case KernelFunction::SinCore:
+        case KernelFunction::CosCore:
+            inputs[0] = rng.angle();
+            return;
+        case KernelFunction::Atan:
+            inputs[0] = bits(rng.scaled());
+            return;
+        case KernelFunction::Atan2:
+            inputs[0] = bits(rng.scaled());
+            inputs[1] = bits(rng.scaled());
+            return;
+        case KernelFunction::Asin:
+        case KernelFunction::Acos:
+            inputs[0] = bits(rng.ranged(-5 * (kOne >> 2), 5 * (kOne >> 2)));
+            return;
+        case KernelFunction::Exp2:
+        case KernelFunction::Exp:
+            inputs[0] = bits(rng.ranged(-40 * kOne, 40 * kOne));
+            return;
+        case KernelFunction::Log2:
+        case KernelFunction::Log:
+        case KernelFunction::Log2Core:
+            inputs[0] = bits(rng.positive());
+            return;
+        case KernelFunction::Pow:
+            inputs[0] = bits(rng.positive());
+            inputs[1] = bits(rng.ranged(-8 * kOne, 8 * kOne));
+            return;
+        case KernelFunction::AtanCore:
+        case KernelFunction::Exp2Core:
+            inputs[0] = rng.next() >> 2;  // a Q2.62 value in [0, 1)
+            return;
+        default:
+            draw_arithmetic(function, rng, inputs);
+            return;
+    }
+}
+
+u64 evaluate_arithmetic(KernelFunction function, const u64* in) noexcept {
+    switch (function) {
+        case KernelFunction::Add:
+            return bits(fx(in[0]) + fx(in[1]));
+        case KernelFunction::Subtract:
+            return bits(fx(in[0]) - fx(in[1]));
+        case KernelFunction::Multiply:
+            return bits(fx(in[0]) * fx(in[1]));
+        case KernelFunction::Divide:
+            return bits(fx(in[0]) / fx(in[1]));
+        case KernelFunction::Sqrt:
+            return bits(sqrt(fx(in[0])));
+        case KernelFunction::SqrtWide:
+            return bits(sqrt(WideFixed::from_raw(U128{in[1], in[0]})));
+        case KernelFunction::NarrowFixed16:
+            return bits(i64{Fixed16::narrow(fx(in[0])).raw});
+        case KernelFunction::AngleScale:
+            return bits(an(in[0]) * fx(in[1]));
+        case KernelFunction::AngleFromRadians:
+            return bits(Angle::from_radians(fx(in[0])));
+        case KernelFunction::AngleRadians:
+            return bits(an(in[0]).radians());
         default:
             return 0;
     }
 }
 
-u64 transcendental_step(KernelFunction function, SplitMix64& rng) noexcept {
+u64 evaluate_core(KernelFunction function, const u64* in) noexcept {
     switch (function) {
-        case KernelFunction::Sin:
-            return bits(sin(Angle::from_raw(rng.angle())));
-        case KernelFunction::Cos:
-            return bits(cos(Angle::from_raw(rng.angle())));
-        case KernelFunction::Tan:
-            return bits(tan(Angle::from_raw(rng.angle())));
-        case KernelFunction::Atan:
-            return bits(atan(draw_fixed(rng)));
-        case KernelFunction::Atan2: {
-            const Fixed y = draw_fixed(rng);
-            return bits(atan2(y, draw_fixed(rng)));
-        }
-        case KernelFunction::Asin:
-            return bits(asin(Fixed::from_raw(rng.ranged(-5 * (kOne >> 2), 5 * (kOne >> 2)))));
-        case KernelFunction::Acos:
-            return bits(acos(Fixed::from_raw(rng.ranged(-5 * (kOne >> 2), 5 * (kOne >> 2)))));
-        case KernelFunction::Exp2:
-            return bits(exp2(Fixed::from_raw(rng.ranged(-40 * kOne, 40 * kOne))));
-        case KernelFunction::Log2:
-            return bits(log2(Fixed::from_raw(rng.positive())));
-        case KernelFunction::Exp:
-            return bits(exp(Fixed::from_raw(rng.ranged(-40 * kOne, 40 * kOne))));
-        case KernelFunction::Log:
-            return bits(log(Fixed::from_raw(rng.positive())));
-        case KernelFunction::Pow: {
-            const Fixed x = Fixed::from_raw(rng.positive());
-            return bits(pow(x, Fixed::from_raw(rng.ranged(-8 * kOne, 8 * kOne))));
+        case KernelFunction::SinCore:
+            return bits(kernel::sincos62(static_cast<u32>(in[0])).sin);
+        case KernelFunction::CosCore:
+            return bits(kernel::sincos62(static_cast<u32>(in[0])).cos);
+        case KernelFunction::AtanCore:
+            return bits(kernel::atan_turns62(static_cast<i64>(in[0])));
+        case KernelFunction::Exp2Core:
+            return bits(kernel::exp2_value62(in[0]));
+        case KernelFunction::Log2Core: {
+            const auto x = static_cast<i64>(in[0]);
+            return x > 0 ? bits(kernel::log2_parts(x).remainder62) : 0;
         }
         default:
-            return arithmetic_step(function, rng);
+            return evaluate_arithmetic(function, in);
     }
 }
 
@@ -150,6 +203,37 @@ u64 function_seed(KernelFunction function) noexcept {
 }
 
 }  // namespace
+
+u64 evaluate_raw(KernelFunction function, const u64* in) noexcept {
+    switch (function) {
+        case KernelFunction::Sin:
+            return bits(sin(an(in[0])));
+        case KernelFunction::Cos:
+            return bits(cos(an(in[0])));
+        case KernelFunction::Tan:
+            return bits(tan(an(in[0])));
+        case KernelFunction::Atan:
+            return bits(atan(fx(in[0])));
+        case KernelFunction::Atan2:
+            return bits(atan2(fx(in[0]), fx(in[1])));
+        case KernelFunction::Asin:
+            return bits(asin(fx(in[0])));
+        case KernelFunction::Acos:
+            return bits(acos(fx(in[0])));
+        case KernelFunction::Exp2:
+            return bits(exp2(fx(in[0])));
+        case KernelFunction::Log2:
+            return bits(log2(fx(in[0])));
+        case KernelFunction::Exp:
+            return bits(exp(fx(in[0])));
+        case KernelFunction::Log:
+            return bits(log(fx(in[0])));
+        case KernelFunction::Pow:
+            return bits(pow(fx(in[0]), fx(in[1])));
+        default:
+            return evaluate_core(function, in);
+    }
+}
 
 const char* kernel_function_name(KernelFunction function) noexcept {
     constexpr const char* kNames[] = {
@@ -160,7 +244,8 @@ const char* kernel_function_name(KernelFunction function) noexcept {
         "tan",           "atan",        "atan2",
         "asin",          "acos",        "exp2",
         "log2",          "exp",         "log",
-        "pow",
+        "pow",           "sin_core",    "cos_core",
+        "atan_core",     "exp2_core",   "log2_core",
     };
     static_assert(sizeof(kNames) / sizeof(kNames[0]) == static_cast<u64>(KernelFunction::Count));
     const auto index = static_cast<u64>(function);
@@ -174,8 +259,10 @@ u64 digest_fold(u64 accumulator, u64 value) noexcept {
 u64 function_digest(KernelFunction function, u32 count) noexcept {
     SplitMix64 rng(function_seed(function));
     u64 accumulator = function_seed(function);
+    u64 inputs[2] = {0, 0};
     for (u32 index = 0; index < count; ++index) {
-        accumulator = digest_fold(accumulator, transcendental_step(function, rng));
+        draw(function, rng, inputs);
+        accumulator = digest_fold(accumulator, evaluate_raw(function, inputs));
     }
     return accumulator;
 }
