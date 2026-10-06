@@ -85,6 +85,12 @@ release | Shipping    | off | off | shipping    | -O3
 llvm_pin := '22'
 llvm_pin_version := '22.1.8'
 
+# The OpenSpec CLI behind `just quality-specs`, pinned for the same reason. 1.14.1 added a warning for
+# requirement text over 500 characters, which `--strict` turns into a failure: an unpinned install
+# took 75 of the 76 capabilities red overnight with no change in the tree. Raise it deliberately,
+# after `just quality-specs` passes under the new version.
+openspec_pin_version := '1.14.0'
+
 # The repository root. `just` 1.21 runs a recipe in the directory of the file that *defines* it, so
 # a recipe in just/ starts in just/ rather than at the root. Every recipe that touches the tree
 # begins `cd "{{root}}"`; a recipe that forgets will fail loudly on the first path it uses.
