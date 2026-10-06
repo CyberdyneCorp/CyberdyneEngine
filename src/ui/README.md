@@ -85,7 +85,10 @@ Recorded rather than left for a reader to find:
   whole-number scale; wrapping, carets and selection come with the widget set and real fonts with
   #86.
 * **The forcing functions** are begun: `console/` is the developer console, and
-  `samples/13-rts-selection` draws a strategy HUD on the same store. The debuggers, the profiler
+  `samples/13-rts-selection` draws a strategy HUD on the same store. The same HUD is built from Swift
+  in `samples/13-rts-api` through ABI 1.6's `ui_*` entries; the adapter that implements them over
+  this store is `cy::game-backend-ui` (`src/game_backend/ui/`), and `render.rts_api_hud` holds the
+  two HUDs to the same primitives and bytes. The debuggers, the profiler
   overlays, the settings interface and the conformance suite are not built.
 
 ## Testing

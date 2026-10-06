@@ -9,6 +9,13 @@
 # Like 04-character, the target is NOT DECLARED without Python 3 or a Swift toolchain: a host with
 # no game would be a run that passes on exactly the machines least able to judge it.
 
+# The game builds its HUD through ABI 1.6, so the sample is not declared without CyberUI — the way
+# samples/08-vertical-slice declines without CY_ANIMATION.
+if(NOT CY_UI)
+    message(STATUS "samples/13-rts-api: CY_UI is off, so the sample is not built")
+    return()
+endif()
+
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
 if(NOT Python3_Interpreter_FOUND)
     message(STATUS "samples/13-rts-api: no Python 3 interpreter; the sample is not built")
@@ -74,6 +81,7 @@ cy_add_module(
     PRIVATE_DEPENDENCIES
         cy::abi
         cy::game-backend
+        cy::game-backend-ui
         cy::physics-reference
         cy::navigation
         cy::scene
@@ -101,4 +109,42 @@ if(CY_BUILD_TESTS)
     target_include_directories(cy_test_integration_rts_api_sample
                                PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke")
     add_dependencies(cy_test_integration_rts_api_sample cy_sample_rts-api)
+
+    # render.rts_api_hud: the Swift HUD against samples/13-rts-selection's C++ HUD, on a device.
+    # It loads the game module into the test process and draws over the pipeline suites' one scene,
+    # so it is declared here, beside the module it loads, and only with the Vulkan renderer.
+    if(CY_RENDERER_VULKAN)
+        get_directory_property(rts_api_render_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_render)
+        get_directory_property(rts_api_render_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_render)
+        set(CY_TEST_BUDGET_render "${rts_api_render_budget}")
+        set(CY_TEST_TIMEOUT_render "${rts_api_render_timeout}")
+        set(rts_api_pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+        set(rts_api_selection "${CMAKE_SOURCE_DIR}/samples/13-rts-selection")
+        cy_add_test(
+            NAME rts_api_hud
+            KIND render
+            SOURCES
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_hud_device.cpp"
+                "${rts_api_pipeline_tests}/frame_scene.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+                "${rts_api_selection}/hud.cpp"
+            DEPENDENCIES cy::abi cy::game-backend-ui cy::ui-render cy::ui-text
+                         cy::rendering-pipeline cy::rendering-particles cy::rhi-null
+                         cy::rhi-vulkan)
+        target_include_directories(cy_test_render_rts_api_hud
+                                   PRIVATE "${rts_api_pipeline_tests}"
+                                           "${CMAKE_SOURCE_DIR}/tests/render"
+                                           "${rts_api_selection}")
+        target_compile_definitions(cy_test_render_rts_api_hud
+                                   PRIVATE
+                                       CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+                                       CY_RTS_API_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                                       CY_RTS_API_MODULE_LIBRARY="${CY_RTS_API_MODULE_LIBRARY}"
+                                       CY_RTS_API_MODULE_MANIFEST="${CY_RTS_API_MODULE_MANIFEST}")
+        add_dependencies(cy_test_render_rts_api_hud cy_sample_rts-api_game)
+        set_tests_properties(render.rts_api_hud PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+    endif()
 endif()

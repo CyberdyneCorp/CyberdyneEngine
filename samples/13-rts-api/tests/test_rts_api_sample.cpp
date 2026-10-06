@@ -20,8 +20,19 @@
 //   the hero walked and jumped   character_create, character_move, character_state
 //   the crate was kicked         physics_apply_impulse, physics_get_velocity
 //
-// and the negative controls: the same host with no behaviours does none of the behaviour work, and
-// the same host with the systems left out of the schedule never runs `trainUnits`.
+// and, at ABI 1.6:
+//
+//   the game built its HUD       ui_root, ui_create, ui_set_layout, ui_set_style, ui_set_text,
+//                                ui_set_progress, ui_set_visibility — from Swift's CyberdyneKit
+//   the HUD follows the game     the store's texts, rows, health fill and minimap dots after 420
+//                                frames are what the game's state says
+//   the Build click built        the adapter routed a press and a release on the button into a
+//                                click, ui_event delivered it to the commander, a worker followed
+//   the click was the HUD's      ui_hit_test kept it from deselecting the unit beneath
+//
+// and the negative controls: the same host with no behaviours does none of the behaviour work, the
+// same host with the systems left out of the schedule never runs `trainUnits`, and the same host
+// with no interface has no HUD and its Build click lands on the world.
 
 #include <cy/test/test.h>
 
@@ -69,11 +80,12 @@ struct Run {
     std::string system;
     std::string hero;
     std::string body;
+    std::string hud;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
                !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
-               !hero.empty() && !body.empty();
+               !hero.empty() && !body.empty() && !hud.empty();
     }
 };
 
@@ -91,6 +103,7 @@ struct Run {
     run.system = line_with(run.process.output, "rts system ");
     run.hero = line_with(run.process.output, "rts hero ");
     run.body = line_with(run.process.output, "rts body ");
+    run.hud = line_with(run.process.output, "rts hud ");
     return run;
 }
 
@@ -137,12 +150,12 @@ CY_TEST_CASE("samples/13-rts-api: a Swift RTS selects, orders, hears and builds 
     CY_CHECK_EQ(number_after(run.audio, "cues="), 1.0);
     CY_CHECK(number_after(run.audio, "peak_voices=") >= 1.0);
 
-    // The build key made a third worker through the prefab, and it is a navigation agent with a
-    // body like the first two.
-    CY_CHECK_EQ(number_after(run.spawn, "spawns="), 1.0);
-    CY_CHECK_EQ(number_after(run.spawn, "workers="), 3.0);
-    CY_CHECK_EQ(number_after(run.spawn, "agents="), 3.0);
-    CY_CHECK_EQ(number_after(run.spawn, "units="), 3.0);
+    // The build key made a third worker through the prefab, and the HUD's Build button a fourth;
+    // each is a navigation agent with a body like the first two.
+    CY_CHECK_EQ(number_after(run.spawn, "spawns="), 2.0);
+    CY_CHECK_EQ(number_after(run.spawn, "workers="), 4.0);
+    CY_CHECK_EQ(number_after(run.spawn, "agents="), 4.0);
+    CY_CHECK_EQ(number_after(run.spawn, "units="), 4.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system, a hero, a push") {
@@ -160,12 +173,12 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system
     CY_CHECK_EQ(number_after(run.tree, "crate_found="), 1.0);
 
     // `trainUnits` is a Swift system the ENGINE ran: once per fixed tick (420 frames, one tick
-    // each), over every unit's Veterancy column; the native roll that reads the column saw three
+    // each), over every unit's Veterancy column; the native roll that reads the column saw four
     // units, the first of which has served every tick but the one the roll ran before; and the
     // scheduler ordered the two by their declarations.
     CY_CHECK_EQ(number_after(run.system, "installed="), 1.0);
     CY_CHECK_EQ(number_after(run.system, "runs="), 420.0);
-    CY_CHECK_EQ(number_after(run.system, "rows="), 3.0);
+    CY_CHECK_EQ(number_after(run.system, "rows="), 4.0);
     CY_CHECK_EQ(number_after(run.system, "most="), 419.0);
     CY_CHECK_EQ(number_after(run.system, "ordered="), 1.0);
 
@@ -193,7 +206,7 @@ CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, non
     // without it nothing serves a tick — and nothing else changed.
     CY_CHECK_EQ(number_after(control.system, "installed="), 0.0);
     CY_CHECK_EQ(number_after(control.system, "runs="), 0.0);
-    CY_CHECK_EQ(number_after(control.system, "rows="), 3.0);
+    CY_CHECK_EQ(number_after(control.system, "rows="), 4.0);
     CY_CHECK_EQ(number_after(control.system, "most="), 0.0);
     CY_CHECK_EQ(number_after(control.tree, "readied="), 1.0);
     CY_CHECK_EQ(number_after(control.body, "kicks="), 1.0);
@@ -223,6 +236,82 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.body, "kicks="), 0.0);
     CY_CHECK(number_after(control.body, "crate_moved=") < 0.01);
     CY_CHECK_EQ(number_after(control.system, "rows="), 0.0);
+    // The interface is up, and nobody built anything in it.
+    CY_CHECK_EQ(number_after(control.hud, "mounted="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "elements="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "button="), 0.0);
+}
+
+CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
+    const Run run = run_sample("");
+    report_if_broken(run);
+    CY_REQUIRE(run.process.ran);
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+
+    // The commander mounted the HUD: the resource bar (7), the minimap (19), the selection panel
+    // and its title (2) with three rows of four (12), and the Build button — 41 elements the
+    // module made, every one in the store.
+    CY_CHECK_EQ(number_after(run.hud, "mounted="), 1.0);
+    CY_CHECK_EQ(number_after(run.hud, "elements="), 41.0);
+    CY_CHECK_EQ(number_after(run.hud, "button="), 1.0);
+    CY_CHECK_EQ(number_after(run.hud, "aimed="), 1.0);
+
+    // The click: the adapter routed one press and release on the button into one click, the
+    // engine delivered it to the commander (its `onUIEvent` heard it), the button's action asked
+    // for a worker, and the next fixed step built it.
+    CY_CHECK_EQ(number_after(run.hud, "clicks="), 1.0);
+    CY_CHECK_EQ(number_after(run.hud, "heard="), 1.0);
+    CY_CHECK_EQ(number_after(run.hud, "builds="), 1.0);
+
+    // The HUD shows the game as it ended. Two workers cost 50 gold each from 1250; four units of
+    // food against a cap of 10; the selected unit is the hurt one of the starting pair.
+    const double spawns = number_after(run.spawn, "spawns=");
+    CY_CHECK_EQ(spawns, 2.0);
+    CY_CHECK(run.hud.find("gold=1150 ") != std::string::npos);
+    CY_CHECK(run.hud.find("wood=830 ") != std::string::npos);
+    CY_CHECK(run.hud.find("food=4/10 ") != std::string::npos);
+    CY_CHECK(run.hud.find("title='Selected: 1 unit'") != std::string::npos);
+    CY_CHECK_EQ(number_after(run.hud, "rows="), 1.0);
+    CY_CHECK(run.hud.find("health=64/100 ") != std::string::npos);
+    // The health bar is 50 wide and 64% full.
+    CY_CHECK(number_after(run.hud, "fill=") > 31.99);
+    CY_CHECK(number_after(run.hud, "fill=") < 32.01);
+    // One dot per unit on the minimap.
+    CY_CHECK_EQ(number_after(run.hud, "dots="), number_after(run.spawn, "units="));
+
+    // The click on the button was the HUD's: `UI.hitTest` kept it from reaching the world, so the
+    // unit selected at frame 81 is still the one selected.
+    const unsigned long long clicked = entity_after(run.select, "clicked=");
+    CY_CHECK(clicked != 0ULL);
+    CY_CHECK_EQ(entity_after(run.select, "selected="), clicked);
+}
+
+CY_TEST_CASE(
+    "samples/13-rts-api: with no interface there is no HUD, and the Build click is the "
+    "world's") {
+    const Run control = run_sample(" --no-ui");
+    report_if_broken(control);
+    CY_REQUIRE(control.process.ran);
+    CY_REQUIRE_EQ(control.process.exit_code, 0);
+    CY_REQUIRE(control.parsed());
+
+    // The game found no interface (UNAVAILABLE), said so, and played on without a HUD.
+    CY_CHECK_EQ(number_after(control.hud, "mounted="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "button="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "aimed="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "clicks="), 0.0);
+    CY_CHECK_EQ(number_after(control.hud, "builds="), 0.0);
+    // The same click on the same pixel built nothing: only the key's worker exists.
+    CY_CHECK_EQ(number_after(control.spawn, "spawns="), 1.0);
+    CY_CHECK_EQ(number_after(control.spawn, "workers="), 3.0);
+    // With no HUD to take it, the left click went to the world and found no unit there, so the
+    // selection made at frame 81 was dropped.
+    CY_CHECK_EQ(entity_after(control.select, "selected="), 0ULL);
+    // Everything that is not the interface is unchanged.
+    CY_CHECK_EQ(number_after(control.order, "orders="), 1.0);
+    CY_CHECK_EQ(number_after(control.audio, "arrivals="), 1.0);
+    CY_CHECK_EQ(number_after(control.tree, "readied="), 1.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
@@ -237,4 +326,5 @@ CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
     CY_CHECK_EQ(first.system, second.system);
     CY_CHECK_EQ(first.hero, second.hero);
     CY_CHECK_EQ(first.body, second.body);
+    CY_CHECK_EQ(first.hud, second.hud);
 }

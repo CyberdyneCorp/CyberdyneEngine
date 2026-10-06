@@ -97,8 +97,20 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyServiceEvent>.offset(of: \CyServiceEvent.payload_size), 32, "CyServiceEvent.payload_size offset")
     }
 
+    func testUiEventLayout() {
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.size, 40, "CyUiEvent size")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.alignment, 8, "CyUiEvent alignment")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.struct_size), 0, "CyUiEvent.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.kind), 4, "CyUiEvent.kind offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.element), 8, "CyUiEvent.element offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.owner), 16, "CyUiEvent.owner offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.position), 24, "CyUiEvent.position offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.button), 32, "CyUiEvent.button offset")
+        XCTAssertEqual(MemoryLayout<CyUiEvent>.offset(of: \CyUiEvent.reserved), 36, "CyUiEvent.reserved offset")
+    }
+
     func testBehaviourVTableLayout() {
-        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.size, 104, "CyBehaviourVTable size")
+        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.size, 112, "CyBehaviourVTable size")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.alignment, 8, "CyBehaviourVTable alignment")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.struct_size), 0, "CyBehaviourVTable.struct_size offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.schema_version), 4, "CyBehaviourVTable.schema_version offset")
@@ -114,6 +126,7 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.enable), 80, "CyBehaviourVTable.enable offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.disable), 88, "CyBehaviourVTable.disable offset")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.exit_tree), 96, "CyBehaviourVTable.exit_tree offset")
+        XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.offset(of: \CyBehaviourVTable.ui_event), 104, "CyBehaviourVTable.ui_event offset")
     }
 
     func testBorrowLayout() {
@@ -381,6 +394,59 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyCharacterState>.offset(of: \CyCharacterState.platform_velocity), 60, "CyCharacterState.platform_velocity offset")
     }
 
+    func testUiElementDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.size, 24, "CyUiElementDesc size")
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.alignment, 8, "CyUiElementDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.offset(of: \CyUiElementDesc.struct_size), 0, "CyUiElementDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.offset(of: \CyUiElementDesc.kind), 4, "CyUiElementDesc.kind offset")
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.offset(of: \CyUiElementDesc.name), 8, "CyUiElementDesc.name offset")
+        XCTAssertEqual(MemoryLayout<CyUiElementDesc>.offset(of: \CyUiElementDesc.owner), 16, "CyUiElementDesc.owner offset")
+    }
+
+    func testUiLayoutLayout() {
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.size, 144, "CyUiLayout size")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.alignment, 4, "CyUiLayout alignment")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.struct_size), 0, "CyUiLayout.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.model), 4, "CyUiLayout.model offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.direction), 8, "CyUiLayout.direction offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.justify), 12, "CyUiLayout.justify offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.align), 16, "CyUiLayout.align offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.self_align), 20, "CyUiLayout.self_align offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.flags), 24, "CyUiLayout.flags offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.gap), 28, "CyUiLayout.gap offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.preferred), 32, "CyUiLayout.preferred offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.minimum), 40, "CyUiLayout.minimum offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.maximum), 48, "CyUiLayout.maximum offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.margin), 56, "CyUiLayout.margin offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.padding), 72, "CyUiLayout.padding offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.flex_grow), 88, "CyUiLayout.flex_grow offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.flex_shrink), 92, "CyUiLayout.flex_shrink offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.aspect_ratio), 96, "CyUiLayout.aspect_ratio offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.anchor_min), 100, "CyUiLayout.anchor_min offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.anchor_max), 108, "CyUiLayout.anchor_max offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.offset_min), 116, "CyUiLayout.offset_min offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.offset_max), 124, "CyUiLayout.offset_max offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.grid_column), 132, "CyUiLayout.grid_column offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.grid_row), 134, "CyUiLayout.grid_row offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.grid_column_span), 136, "CyUiLayout.grid_column_span offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.grid_row_span), 138, "CyUiLayout.grid_row_span offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.grid_columns), 140, "CyUiLayout.grid_columns offset")
+        XCTAssertEqual(MemoryLayout<CyUiLayout>.offset(of: \CyUiLayout.reserved), 142, "CyUiLayout.reserved offset")
+    }
+
+    func testUiStyleLayout() {
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.size, 32, "CyUiStyle size")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.alignment, 4, "CyUiStyle alignment")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.struct_size), 0, "CyUiStyle.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.flags), 4, "CyUiStyle.flags offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.background), 8, "CyUiStyle.background offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.border_colour), 12, "CyUiStyle.border_colour offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.accent), 16, "CyUiStyle.accent offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.border_width), 20, "CyUiStyle.border_width offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.corner_radius), 24, "CyUiStyle.corner_radius offset")
+        XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.reserved), 28, "CyUiStyle.reserved offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -391,7 +457,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 768, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 880, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -488,6 +554,20 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.character_destroy), 744, "CyInterface.character_destroy offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.character_move), 752, "CyInterface.character_move offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.character_state), 760, "CyInterface.character_state offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_root), 768, "CyInterface.ui_root offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_create), 776, "CyInterface.ui_create offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_destroy), 784, "CyInterface.ui_destroy offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_layout), 792, "CyInterface.ui_set_layout offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_style), 800, "CyInterface.ui_set_style offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_text), 808, "CyInterface.ui_set_text offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_image), 816, "CyInterface.ui_set_image offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_progress), 824, "CyInterface.ui_set_progress offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_visibility), 832, "CyInterface.ui_set_visibility offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_opacity), 840, "CyInterface.ui_set_opacity offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_element_rect), 848, "CyInterface.ui_element_rect offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_hit_test), 856, "CyInterface.ui_hit_test offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_focus), 864, "CyInterface.ui_focus offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_focus), 872, "CyInterface.ui_set_focus offset")
     }
 
     func testModuleInitLayout() {
@@ -505,7 +585,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 768,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 880,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -551,8 +631,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 94)
+        XCTAssertEqual(ABI.entryNames.count, 108)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "character_state")
+        XCTAssertEqual(ABI.entryNames.last, "ui_set_focus")
     }
 }

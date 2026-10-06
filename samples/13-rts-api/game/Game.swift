@@ -15,7 +15,7 @@ enum RtsGame: GameModule {
         RtsReport.self, ScoutReport.self, Veterancy.self,
     ]
     static let behaviours: [any BehaviourClass.Type] = [
-        Commander.self, Scout.self,
+        Commander.self, Scout.self, HudShowcase.self, HudShowcaseWithButton.self,
     ]
     static let systems: [any SystemRegistration.Type] = [
         __CySystem_trainUnits.self

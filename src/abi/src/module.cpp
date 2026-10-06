@@ -368,6 +368,22 @@ bool BehaviourRuntime::tree_callback(u32 slot, TreeCallback callback) noexcept {
     return true;
 }
 
+u32 BehaviourRuntime::ui_event(const CyUiEvent& event) noexcept {
+    // A module compiled before 1.6 registered a shorter vtable and the host's copy left the entry
+    // null, so such an instance simply takes no interface events.
+    const game::PhaseScope phase(host_.game.clock, CY_PHASE_FRAME_UPDATE);
+    u32 delivered = 0;
+    for (const BehaviourInstance& live : instances_) {
+        if (live.instance == nullptr || live.entity != event.owner ||
+            live.record->vtable.ui_event == nullptr) {
+            continue;
+        }
+        live.record->vtable.ui_event(live.instance, &event, live.record->vtable.user_data);
+        ++delivered;
+    }
+    return delivered;
+}
+
 Expected<u32, Error> BehaviourRuntime::quiesce_and_save(Array<SavedInstance>& saved,
                                                         Array<u8>& blobs) noexcept {
     for (u32 slot = 0; slot < instances_.size(); ++slot) {

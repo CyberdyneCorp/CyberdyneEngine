@@ -159,7 +159,52 @@ build/dev/samples/13-rts-selection/cy_sample_rts_selection --out docs/design/ima
 |---|---|
 | ![](../design/images/rts-selection-after.png) | ![](../design/images/rts-hud.png) |
 
-Swift cannot drive the interface yet: no ABI entry reaches `cy::ui`. That is a follow-up.
+### The same HUD from Swift
+
+ABI 1.6 lets a scripting module build in the same store. `samples/13-rts-api/game/Hud.swift` is this
+HUD rewritten in Swift with CyberdyneKit's declarative layer — panel for panel, colour for colour —
+plus a Build button, and the RTS game there writes it from its own state every frame:
+
+```swift
+hud = try mountUI {
+    Panel("resource-bar") {
+        Label("0", colour: gold, name: "gold").id("gold")
+        …
+    }
+    .layout(.anchored(min: Vec2(x: 0, y: 0), max: Vec2(x: 1, y: 0), offsetMax: Vec2(x: 0, y: 17))
+                .flex(.row, gap: 4, align: .centre, padding: UIInsets(horizontal: 6, vertical: 2)))
+    .style(UIStyle(background: panel))
+    Button("Build", colour: text, name: "build-button") { _ in onBuild() }
+}
+try hud["gold"].setText("\(gold)", colour: gold)
+```
+
+![The Swift-built HUD with its Build button](../design/images/rts-api-hud.png)
+
+*`render.rts_api_hud`: the HUD a Swift behaviour built through the ABI, over the pipeline suites'
+scene. Without the button it is the C++ HUD's frame byte for byte.*
+
+The host side is three calls on `cy::game_backend::UiAdapter` (`cy::game-backend-ui`), which
+implements the ABI's `UiBackend` over the store, a `TextPainter` and an `Interaction` it owns:
+
+```cpp
+cy::game_backend::UiAdapter ui(allocator, store, text, root);
+(void)ui.start();                              // the root transparent to hits, a HUD layer
+cy::game_backend::bind(host, &ui);             // every ui_* entry now answers
+// every frame, before the behaviours' frame update:
+(void)ui.layout(scale_settings, viewport);
+(void)ui.route_pointer(position, buttons_pressed, buttons_released);
+input_adapter.set_pointer_focus(0, true, ui.pointer_over());
+ui.drain_events([&](const CyUiEvent& event) noexcept { (void)runtime.ui_event(event); });
+```
+
+Deliver through `drain_events`, not a loop over `events()`: a receiver that moves focus or destroys
+what it clicked queues a BLUR and a FOCUS while the batch is delivered, and `drain_events` keeps
+those for the next frame instead of walking an array that is growing under it and clearing them.
+
+A module reaches the root and its own elements only; the console beside them in the same store
+answers `NOT_FOUND`. A press and a release of the left button over one button is a click, delivered
+to the behaviours of the entity that owns it. The Swift side is in [the Swift guide](swift.md#the-interface-abi-16).
 
 ## 7. Testing
 
@@ -171,6 +216,8 @@ Swift cannot drive the interface yet: no ABI entry reaches `cy::ui`. That is a f
 | `unit.ui_render` | the 64-byte row round-trips, the scissor rule, one draw per batch, the host reference |
 | `unit.render_forward` | the interface stage's producer is handed the chain's last colour |
 | `render.ui` | on a device: nothing to draw is byte-identical to the frame before the pass; the device matches the host reference to one step; order, nested clipping and opacity; the HUD and console against a golden image |
+| `integration.game_backend_ui` | the ABI 1.6 entries over a real store: ownership, kinds, the progress fill, visibility, clicks, hits, focus, destroy |
+| `render.rts_api_hud` | the Swift-built HUD flattens to the C++ HUD's primitives and draws the same bytes on a device; with its Build button against a golden image |
 
 ```sh
 just test-suites render:^render.ui$
@@ -184,4 +231,5 @@ just build-shaders --strict src samples
 Issue #91's later stages: offscreen opacity groups, the HDR composite before tonemapping, custom UI
 materials and blur-behind, world-space and surface-space documents, the widget set, the UI document
 asset, animation, the immediate-mode API, the inspector and the conformance suite. Text is one line
-of a bitmap font until #86.
+of a bitmap font until #86. From a module (ABI 1.6): no style sheet or document asset, no navigation
+driven from script, no text input, no image upload — five element kinds, set element by element.

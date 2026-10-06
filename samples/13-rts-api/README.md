@@ -1,4 +1,4 @@
-# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3 and 1.5
+# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5 and 1.6
 
 The end-to-end proof of `add-swift-game-api`. A Swift behaviour runs a small RTS: a camera the
 keyboard and the screen edges pan, a unit picked under the pointer, sent to a clicked ground point,
@@ -10,6 +10,7 @@ between the game and a server.
 just run-sample rts-api                    420 frames of scripted play, headless, then the report
 just run-sample rts-api --no-behaviours    the negative control: the same host with no game
 just run-sample rts-api --no-systems       the scheduler's control: Swift systems never installed
+just run-sample rts-api --no-ui            the interface's control: no interface, so no HUD
 ctest -R rts_api_sample                    the test: the claims below, the controls, and two runs
 ```
 
@@ -20,16 +21,25 @@ drives their `onEnterTree` and `onReady` and resolves their `@Node` paths; `trai
 same column; the scout walks a hero with a character controller and jumps once; and it kicks a
 crate with an impulse.
 
+ABI 1.6 (`add-swift-ui-bindings`) adds the HUD. The commander mounts, in CyberUI's store, the
+resource bar, selection panel with health bars and minimap of `samples/13-rts-selection` — written in
+Swift (`game/Hud.swift`), element for element — plus a Build button. Every frame it writes the HUD
+from the game: gold less what was spent, food against the cap, the selected unit's health, a dot per
+unit and the camera's frame on the minimap. A click on Build reaches the commander through the
+engine's `ui_event`, and the next fixed step builds a worker; a left click over the HUD is the HUD's,
+not a selection, because the commander asks `UI.hitTest` first.
+
 ## What is here
 
 | | |
 |---|---|
-| `game/` | **The game.** `Commander.swift` (the squad, the selection, the orders, the build key, its tree callbacks), `Scout.swift` (a character-controlled hero and a kicked crate), `RtsCamera.swift` (panning), `Contract.swift` (content names, collision layers, the report components and `Veterancy`), `Game.swift` (the module's entry points and the `trainUnits` system). |
-| `host/rts_host.*` | Servers, the adapters bound on the ABI host, the scene bridge, the schedule with the script systems in it, the Swift module, and the frame loop. |
+| `game/` | **The game.** `Commander.swift` (the squad, the selection, the orders, the build key and button, the HUD's model, its tree callbacks), `Hud.swift` (the HUD, and `HudShowcase` for `render.rts_api_hud`), `Scout.swift` (a character-controlled hero and a kicked crate), `RtsCamera.swift` (panning), `Contract.swift` (content names, collision layers, the report components and `Veterancy`), `Game.swift` (the module's entry points and the `trainUnits` system). |
+| `host/rts_host.*` | Servers, the adapters bound on the ABI host, the scene bridge, the schedule with the script systems in it, the Swift module, the interface (store, text, `UiAdapter`), and the frame loop. |
 | `host/level.*` | Content built in code: the ground, a navigation tile, the worker prefab, the arrival click, the input actions, and the `/Level` nodes with the crate. |
 | `host/units.*` | Plumbing for navigation agents (an agent's position is its scene node, and it has a kinematic capsule on collision layer 1), the one entity-to-body map, and the native `Veterancy` reader. |
 | `host/script.*` | The scripted player: synthetic key and mouse events, aimed with the camera projection. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
+| `tests/test_rts_api_hud_device.cpp` | `render.rts_api_hud`: the Swift HUD against `samples/13-rts-selection`'s C++ HUD, as a primitive stream and on a device, and with its button against `tests/references/rts_api_hud.png`. |
 
 ## What the game calls, and in which phase
 
@@ -46,6 +56,10 @@ crate with an impulse.
 | trains every unit one tick | `register_system`, then the engine's scheduler over `world_chunks` | fixed (Simulation stage) |
 | walks the hero, jumps once | `character_create`, `character_move`, `character_state` | none, then fixed |
 | kicks the crate | `physics_apply_impulse`, `physics_get_velocity` | fixed |
+| mounts the HUD | `ui_root`, `ui_create`, `ui_set_layout`, `ui_set_style`, `ui_set_text`, `ui_set_progress`, `ui_set_visibility` | none (`onCreate`) |
+| writes the HUD from the game | `ui_set_text`, `ui_set_progress`, `ui_set_visibility`, `ui_set_layout`, `ui_set_style` — only what changed | frame |
+| keeps a click on the HUD from selecting | `ui_hit_test` | frame |
+| hears the Build click, builds | the vtable's `ui_event`, then `spawn_instantiate` | frame, then fixed |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern
@@ -70,7 +84,14 @@ fresh image, and reads the report it prints:
   which had served 419, and the scheduler ordered the two by their declarations; the hero walked
   about 4 m, was airborne once and stands on the ground; the crate left at 5 m/s and slid;
 * with `--no-systems` the system never runs and nothing else changes, and with `--no-behaviours`
-  no tree callback, hero or kick happens.
+  no tree callback, hero or kick happens;
+* ABI 1.6: the commander mounted 41 elements; after 420 frames the store shows gold 1150, food 4/10,
+  "Selected: 1 unit" with the hurt worker's 64/100 and a 32-pixel fill of a 50-pixel bar, and one
+  minimap dot per unit; the scripted click on Build was routed as one click, heard by the
+  commander's `onUIEvent`, and built the fourth worker; the unit selected at frame 81 is still
+  selected, because the click was the HUD's;
+* with `--no-ui` there is no HUD, the same click on the same pixel builds nothing and lands on the
+  world (dropping the selection), and nothing else changes.
 
 It was proven red by breaking `physics_raycast` (the hit is never written back: selection, order,
 arrival and cue fail) and `audio_play` (every play dropped: the cue and voice checks fail), each

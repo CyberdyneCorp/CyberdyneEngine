@@ -835,6 +835,401 @@ impl GroundState {
         }
     }
 }
+/// `CyUiEventKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiEventKind {
+    /// `CY_UI_EVENT_CLICK` = 0.
+    Click = 0,
+    /// `CY_UI_EVENT_FOCUS` = 1.
+    Focus = 1,
+    /// `CY_UI_EVENT_BLUR` = 2.
+    Blur = 2,
+}
+
+impl UiEventKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiEventKind; 3] = [UiEventKind::Click, UiEventKind::Focus, UiEventKind::Blur];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiEventKind::Click),
+            1 => Some(UiEventKind::Focus),
+            2 => Some(UiEventKind::Blur),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiEventKind::Click => "CY_UI_EVENT_CLICK",
+            UiEventKind::Focus => "CY_UI_EVENT_FOCUS",
+            UiEventKind::Blur => "CY_UI_EVENT_BLUR",
+        }
+    }
+}
+/// `CyUiKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiKind {
+    /// `CY_UI_PANEL` = 0.
+    Panel = 0,
+    /// `CY_UI_LABEL` = 1.
+    Label = 1,
+    /// `CY_UI_IMAGE` = 2.
+    Image = 2,
+    /// `CY_UI_PROGRESS` = 3.
+    Progress = 3,
+    /// `CY_UI_BUTTON` = 4.
+    Button = 4,
+}
+
+impl UiKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiKind; 5] = [
+        UiKind::Panel,
+        UiKind::Label,
+        UiKind::Image,
+        UiKind::Progress,
+        UiKind::Button,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiKind::Panel),
+            1 => Some(UiKind::Label),
+            2 => Some(UiKind::Image),
+            3 => Some(UiKind::Progress),
+            4 => Some(UiKind::Button),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiKind::Panel => "CY_UI_PANEL",
+            UiKind::Label => "CY_UI_LABEL",
+            UiKind::Image => "CY_UI_IMAGE",
+            UiKind::Progress => "CY_UI_PROGRESS",
+            UiKind::Button => "CY_UI_BUTTON",
+        }
+    }
+}
+/// `CyUiLayoutModel`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiLayoutModel {
+    /// `CY_UI_LAYOUT_FLEX` = 0.
+    Flex = 0,
+    /// `CY_UI_LAYOUT_GRID` = 1.
+    Grid = 1,
+    /// `CY_UI_LAYOUT_ABSOLUTE` = 2.
+    Absolute = 2,
+}
+
+impl UiLayoutModel {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiLayoutModel; 3] = [
+        UiLayoutModel::Flex,
+        UiLayoutModel::Grid,
+        UiLayoutModel::Absolute,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiLayoutModel::Flex),
+            1 => Some(UiLayoutModel::Grid),
+            2 => Some(UiLayoutModel::Absolute),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiLayoutModel::Flex => "CY_UI_LAYOUT_FLEX",
+            UiLayoutModel::Grid => "CY_UI_LAYOUT_GRID",
+            UiLayoutModel::Absolute => "CY_UI_LAYOUT_ABSOLUTE",
+        }
+    }
+}
+/// `CyUiDirection`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiDirection {
+    /// `CY_UI_DIRECTION_ROW` = 0.
+    Row = 0,
+    /// `CY_UI_DIRECTION_COLUMN` = 1.
+    Column = 1,
+    /// `CY_UI_DIRECTION_ROW_REVERSE` = 2.
+    RowReverse = 2,
+    /// `CY_UI_DIRECTION_COLUMN_REVERSE` = 3.
+    ColumnReverse = 3,
+}
+
+impl UiDirection {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiDirection; 4] = [
+        UiDirection::Row,
+        UiDirection::Column,
+        UiDirection::RowReverse,
+        UiDirection::ColumnReverse,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiDirection::Row),
+            1 => Some(UiDirection::Column),
+            2 => Some(UiDirection::RowReverse),
+            3 => Some(UiDirection::ColumnReverse),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiDirection::Row => "CY_UI_DIRECTION_ROW",
+            UiDirection::Column => "CY_UI_DIRECTION_COLUMN",
+            UiDirection::RowReverse => "CY_UI_DIRECTION_ROW_REVERSE",
+            UiDirection::ColumnReverse => "CY_UI_DIRECTION_COLUMN_REVERSE",
+        }
+    }
+}
+/// `CyUiJustify`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiJustify {
+    /// `CY_UI_JUSTIFY_START` = 0.
+    Start = 0,
+    /// `CY_UI_JUSTIFY_CENTRE` = 1.
+    Centre = 1,
+    /// `CY_UI_JUSTIFY_END` = 2.
+    End = 2,
+    /// `CY_UI_JUSTIFY_SPACE_BETWEEN` = 3.
+    SpaceBetween = 3,
+    /// `CY_UI_JUSTIFY_SPACE_AROUND` = 4.
+    SpaceAround = 4,
+    /// `CY_UI_JUSTIFY_SPACE_EVENLY` = 5.
+    SpaceEvenly = 5,
+}
+
+impl UiJustify {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiJustify; 6] = [
+        UiJustify::Start,
+        UiJustify::Centre,
+        UiJustify::End,
+        UiJustify::SpaceBetween,
+        UiJustify::SpaceAround,
+        UiJustify::SpaceEvenly,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiJustify::Start),
+            1 => Some(UiJustify::Centre),
+            2 => Some(UiJustify::End),
+            3 => Some(UiJustify::SpaceBetween),
+            4 => Some(UiJustify::SpaceAround),
+            5 => Some(UiJustify::SpaceEvenly),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiJustify::Start => "CY_UI_JUSTIFY_START",
+            UiJustify::Centre => "CY_UI_JUSTIFY_CENTRE",
+            UiJustify::End => "CY_UI_JUSTIFY_END",
+            UiJustify::SpaceBetween => "CY_UI_JUSTIFY_SPACE_BETWEEN",
+            UiJustify::SpaceAround => "CY_UI_JUSTIFY_SPACE_AROUND",
+            UiJustify::SpaceEvenly => "CY_UI_JUSTIFY_SPACE_EVENLY",
+        }
+    }
+}
+/// `CyUiAlign`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiAlign {
+    /// `CY_UI_ALIGN_STRETCH` = 0.
+    Stretch = 0,
+    /// `CY_UI_ALIGN_START` = 1.
+    Start = 1,
+    /// `CY_UI_ALIGN_CENTRE` = 2.
+    Centre = 2,
+    /// `CY_UI_ALIGN_END` = 3.
+    End = 3,
+}
+
+impl UiAlign {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiAlign; 4] = [
+        UiAlign::Stretch,
+        UiAlign::Start,
+        UiAlign::Centre,
+        UiAlign::End,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiAlign::Stretch),
+            1 => Some(UiAlign::Start),
+            2 => Some(UiAlign::Centre),
+            3 => Some(UiAlign::End),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiAlign::Stretch => "CY_UI_ALIGN_STRETCH",
+            UiAlign::Start => "CY_UI_ALIGN_START",
+            UiAlign::Centre => "CY_UI_ALIGN_CENTRE",
+            UiAlign::End => "CY_UI_ALIGN_END",
+        }
+    }
+}
+/// `CyUiVisibility`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiVisibility {
+    /// `CY_UI_VISIBLE` = 0.
+    Visible = 0,
+    /// `CY_UI_HIDDEN` = 1.
+    Hidden = 1,
+    /// `CY_UI_COLLAPSED` = 2.
+    Collapsed = 2,
+}
+
+impl UiVisibility {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiVisibility; 3] = [
+        UiVisibility::Visible,
+        UiVisibility::Hidden,
+        UiVisibility::Collapsed,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiVisibility::Visible),
+            1 => Some(UiVisibility::Hidden),
+            2 => Some(UiVisibility::Collapsed),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiVisibility::Visible => "CY_UI_VISIBLE",
+            UiVisibility::Hidden => "CY_UI_HIDDEN",
+            UiVisibility::Collapsed => "CY_UI_COLLAPSED",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

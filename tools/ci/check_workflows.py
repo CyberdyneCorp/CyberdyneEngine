@@ -495,6 +495,43 @@ def pin_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
     return problems
 
 
+
+# The OpenSpec CLI is pinned like the LLVM tooling: `just quality-specs` runs `--strict`, and 1.14.1
+# turned a new warning into 75 failed capabilities overnight on an unpinned `npm install`. Every
+# install in a workflow must name the version the justfile pins; a bare or `@latest` one is drift.
+OPENSPEC_INSTALL = re.compile(r"@fission-ai/openspec(?:@(?P<version>\S+))?")
+OPENSPEC_PIN_IN_JUSTFILE = re.compile(
+    r"^openspec_pin_version\s*:=\s*'(?P<version>[^']+)'", re.MULTILINE
+)
+
+
+def openspec_pinned_version(root: pathlib.Path) -> str | None:
+    """The OpenSpec CLI version the justfile pins, which is the one the workflows must install."""
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return None
+    match = OPENSPEC_PIN_IN_JUSTFILE.search(justfile.read_text(encoding="utf-8"))
+    return match.group("version") if match else None
+
+
+def openspec_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """Every workflow install of the OpenSpec CLI names the version the justfile pins."""
+    pin = openspec_pinned_version(root)
+    if pin is None:
+        return ["the justfile declares no openspec_pin_version, so the workflows cannot be checked"]
+    problems = []
+    for path in workflows:
+        for command in commands_in(path):
+            for match in OPENSPEC_INSTALL.finditer(command.text):
+                version = match.group("version")
+                if version != pin:
+                    problems.append(
+                        f"{path.name}:{command.line} installs @fission-ai/openspec"
+                        f"{'@' + version if version else ' unpinned'}, but the justfile pins {pin}"
+                    )
+    return problems
+
+
 # The documented Linux dependency set, and the check M9's closing gate had to write.
 #
 # SIXTY-THREE CI RUNS, NOT ONE OF THEM GREEN, AND THE CAUSE WAS FOUR PACKAGES. Every Linux job in
@@ -672,6 +709,28 @@ def selftest(root: pathlib.Path) -> int:
             print(f"fail accepted workflow was rejected: {found}", file=sys.stderr)
         else:
             print("ok   accepted: a job that installs the pinned tooling before the gate")
+
+        # The OpenSpec pin's fixtures: an unpinned install, `@latest` and another version are drift;
+        # the pinned one is not.
+        openspec_pin = openspec_pinned_version(root) or "0.0.0"
+        for install, expected in (
+            ("npm install -g @fission-ai/openspec", "unpinned"),
+            ("npm install -g @fission-ai/openspec@latest", "openspec@latest, but"),
+            ("npm install -g @fission-ai/openspec@0.0.1", "openspec@0.0.1, but"),
+            (f"npm install -g @fission-ai/openspec@{openspec_pin}", None),
+        ):
+            scratch.write_text(
+                f"jobs:\n  case:\n    steps:\n      - run: {install}\n", encoding="utf-8"
+            )
+            found = openspec_drift(root, [scratch])
+            if expected is None and not found:
+                print(f"ok   accepted: {install}")
+            elif expected is not None and any(expected in problem for problem in found):
+                print(f"ok   rejected: {install}")
+            else:
+                failed += 1
+                print(f"fail {install}: expected {expected or 'no problem'!r}, "
+                      f"got {found or ['nothing']}", file=sys.stderr)
 
         # --- M9's OWN NEGATIVE FIXTURE ------------------------------------------------------------
         #
@@ -944,10 +1003,11 @@ def main() -> int:
     uncovered = gate_coverage(root, workflows)
     dead = gate_jobs_are_live(root, workflows)
     drift = pin_drift(root, workflows)
+    spec_drift = openspec_drift(root, workflows)
     system = system_dependencies(root, workflows)
     cancellation = long_run_cancellation(root, workflows)
 
-    if violations or uncovered or dead or drift or system or cancellation:
+    if violations or uncovered or dead or drift or spec_drift or system or cancellation:
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
@@ -958,6 +1018,9 @@ def main() -> int:
                   "repair-2 and repair-3 gates.", file=sys.stderr)
         for gap in drift:
             print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
+        for gap in spec_drift:
+            print(f"  {gap}\n      the pin is `openspec_pin_version` in the justfile.",
+                  file=sys.stderr)
         for gap in system:
             print(f"  {gap}\n      {BUILD_GUIDE}'s list is the one a developer is told to run.",
                   file=sys.stderr)

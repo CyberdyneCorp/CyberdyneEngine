@@ -9,6 +9,7 @@
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/errors.h>
 #include <cy/abi/game/services.h>
+#include <cy/abi/game/ui.h>
 #include <cy/abi/host.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
@@ -105,10 +106,12 @@ CY_TEST_CASE("the 1.5 table appends systems, nodes, bodies and characters after 
         CY_CHECK(set);
     }
     // Appended, never inserted: the first 1.5 entry is one pointer after the last 1.4 one, and the
-    // last 1.5 entry is the table's last member, so nothing was declared and not listed.
+    // last 1.5 entry is followed directly by the first 1.6 one, so nothing was declared and not
+    // listed. test_game_ui.cpp holds the 1.6 entries to the end of the table.
     CY_CHECK_EQ(offsetof(CyInterface, register_system),
                 offsetof(CyInterface, vfx_effect_parameter_get) + sizeof(void*));
-    CY_CHECK_EQ(offsetof(CyInterface, character_state) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, character_state) + sizeof(void*),
+                offsetof(CyInterface, ui_root));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
@@ -134,6 +137,7 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.scene == nullptr);
     CY_CHECK(host.game.bodies == nullptr);
     CY_CHECK(host.game.characters == nullptr);
+    CY_CHECK(host.game.ui == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }

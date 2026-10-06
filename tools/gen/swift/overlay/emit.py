@@ -70,6 +70,15 @@ ENUM_SPECS = {
     # ADDED AT ABI 1.5 with scheduled systems and character controllers.
     "CyAccessMode": ("AccessMode", "CY_ACCESS_", "UInt32"),
     "CyGroundState": ("GroundState", "CY_GROUND_", "UInt32"),
+    # ADDED AT ABI 1.6 with the runtime interface. `UI`, as CyberdyneKit's own interface types
+    # (`UIElement`, `UILayout`) spell it.
+    "CyUiEventKind": ("UIEventKind", "CY_UI_EVENT_", "UInt32"),
+    "CyUiKind": ("UIKind", "CY_UI_", "UInt32"),
+    "CyUiLayoutModel": ("UILayoutModel", "CY_UI_LAYOUT_", "UInt32"),
+    "CyUiDirection": ("UIDirection", "CY_UI_DIRECTION_", "UInt32"),
+    "CyUiJustify": ("UIJustify", "CY_UI_JUSTIFY_", "UInt32"),
+    "CyUiAlign": ("UIAlign", "CY_UI_ALIGN_", "UInt32"),
+    "CyUiVisibility": ("UIVisibility", "CY_UI_", "UInt32"),
 }
 
 
@@ -169,6 +178,14 @@ def enums(description: dict) -> str:
         # ABI 1.5.
         ("CyAccessMode", "/// `CyAccessMode`: what a scheduled system declares about one component."),
         ("CyGroundState", "/// `CyGroundState`: what a character controller is standing on."),
+        # ABI 1.6.
+        ("CyUiEventKind", "/// `CyUiEventKind`: what happened to an interface element."),
+        ("CyUiKind", "/// `CyUiKind`: what an interface element is, and so which writes it takes."),
+        ("CyUiLayoutModel", "/// `CyUiLayoutModel`: how an element lays out its children."),
+        ("CyUiDirection", "/// `CyUiDirection`: a flex container's main axis."),
+        ("CyUiJustify", "/// `CyUiJustify`: distribution along a flex container's main axis."),
+        ("CyUiAlign", "/// `CyUiAlign`: alignment across the cross axis; stretch is zero."),
+        ("CyUiVisibility", "/// `CyUiVisibility`: shown, hidden, or out of layout too."),
     ))
     return f"""{BANNER}
 {status}

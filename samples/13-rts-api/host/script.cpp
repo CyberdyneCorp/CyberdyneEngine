@@ -27,6 +27,12 @@ constexpr u64 kSelectAim = 80;
 constexpr u64 kOrderAim = 90;
 constexpr u64 kBuildDown = 360;
 constexpr u64 kBuildUp = 361;
+/// ABI 1.6: the HUD's Build button, clicked with the left button, the selection still held.
+constexpr u64 kButtonAim = 380;
+/// Where the button is when there is no HUD to ask: top right, under the resource bar. The
+/// control without an interface clicks the same pixel.
+constexpr f32 kButtonX = 1253.0F;
+constexpr f32 kButtonY = 29.0F;
 
 /// Frames after which the camera is sampled. A `setTarget` made in a frame's `onUpdate` shows when
 /// the next frame evaluates the rig, so frame 1 shows where frame 0 placed it — before the first
@@ -47,7 +53,23 @@ cy::Status Player::before_frame(u64 frame) noexcept {
     if (frame == kBuildDown || frame == kBuildUp) {
         return host_->press_key(Key::B, frame == kBuildDown);
     }
-    return cy::ok();
+    return button_steps(frame);
+}
+
+cy::Status Player::button_steps(u64 frame) noexcept {
+    switch (frame) {
+        case kButtonAim: {
+            f32 x = kButtonX;
+            f32 y = kButtonY;
+            findings_.button_found = host_->ui_centre("build-button", x, y);
+            return host_->move_pointer(x, y);
+        }
+        case kButtonAim + 1:
+        case kButtonAim + 2:
+            return host_->press_button(MouseControl::Left, frame == kButtonAim + 1);
+        default:
+            return cy::ok();
+    }
 }
 
 cy::Status Player::camera_steps(u64 frame) noexcept {

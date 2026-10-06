@@ -71,6 +71,11 @@ struct RtsReport {
     var readied: Float = 0
     /// The barracks `@Node` resolved at `onReady`: 1, or 0 when it did not.
     var barracksFound: Float = 0
+    /// ABI 1.6. Workers built by the HUD's Build button rather than the key, clicks on the HUD the
+    /// commander heard in `onUIEvent`, and whether the HUD was mounted at all.
+    var hudBuilds: Float = 0
+    var hudClicks: Float = 0
+    var hud: Float = 0
 }
 
 extension Component {

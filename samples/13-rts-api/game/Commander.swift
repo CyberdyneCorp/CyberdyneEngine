@@ -8,13 +8,21 @@
 //   onCreate       (no phase)    resolve the prefab and the cue, spawn the starting squad
 //   onEnterTree,   (no phase,    the commander is a NODE (`/Level/Commander`), so the scene tree's
 //   onReady         the pump)    pump delivers these; `@Node("../Barracks")` is resolved first
-//   onUpdate       (frame)       read the pointer, pan the camera, pick a unit or a ground point
+//   onUpdate       (frame)       read the pointer, pan the camera, pick a unit or a ground point,
+//                                show the game on the HUD
+//   onUIEvent      (frame)       the HUD's Build button was clicked (ABI 1.6), before `onUpdate`
 //   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build
 //
 // The pointer and the camera are device and presentation state, so a fixed step may not read them.
 // Spawning changes the simulation, so a frame may not do it. A click is therefore RECORDED in
 // `onUpdate` and ACTED ON in the next `onFixedUpdate`, which is the pattern design.md gives for an
 // RTS. Everything the fixed step reads (action state, navigation state) replays the same way.
+//
+// THE HUD IS PRESENTATION TOO. It is mounted in `onCreate`, written in `onUpdate` from the game's
+// state, and its Build button's click — delivered in the frame — is recorded and acted on in the
+// next fixed step, exactly as a key is. A left click that lands on the HUD is the HUD's, not a
+// selection: `UI.hitTest` says which. With no interface bound (`--no-ui`) there is no HUD and
+// every click is the world's.
 
 import CyberdyneKit
 
@@ -39,6 +47,14 @@ final class Commander: Behaviour {
     @Export(range: 0.5...4) var unitHeight: Float = 1.8
     @Export(range: 0.05...2) var arrivalDistance: Float = 0.3
 
+    /// What a worker costs, and the stock the game starts with.
+    @Export var workerCost: Float = 50
+    @Export var startingGold: Float = 1250
+    @Export var startingWood: Float = 830
+    @Export var foodCap: Float = 10
+    /// The map's side in metres, for placing units on the minimap.
+    @Export var mapSize: Float = 32
+
     /// The level's barracks node, resolved by the engine at `onReady`. Nil if the level has none.
     @Node("../Barracks") var barracksNode: Entity?
 
@@ -51,6 +67,13 @@ final class Commander: Behaviour {
     /// A ground point clicked in `onUpdate`, waiting for the next fixed step.
     private var pendingOrder: Vec3?
     private var camera = RtsCamera(focus: Vec3(), speed: 12, edgeBand: 8)
+    /// The HUD, or nil when the engine has no interface.
+    private var hud: RtsHud?
+    /// The Build button was clicked; the next fixed step builds.
+    private var buildRequested = false
+    /// Each unit's health: the starting squad is one healthy worker and one hurt one, and a new
+    /// worker arrives at less than full strength.
+    private var health: [Entity: (current: UInt32, max: UInt32)] = [:]
 
     private var tally = Tally()
     private var report = ComponentType(id: 0)
@@ -75,10 +98,22 @@ final class Commander: Behaviour {
         let starting = try worker.instantiate(at: [
             Pose(position: firstUnit), Pose(position: secondUnit),
         ])
-        for unit in starting {
-            try enlist(unit)
+        for (unit, hp) in zip(starting, [UInt32(100), 64]) {
+            try enlist(unit, health: hp)
         }
+        hud = try mountHud()
         Log.info("Commander: \(squad.count) units ready")
+    }
+
+    /// The HUD, with the Build button wired to the next fixed step. Nil, and said once, when the
+    /// engine has no interface to build it in.
+    private func mountHud() throws -> RtsHud? {
+        do {
+            return try RtsHud(for: self) { [unowned self] in self.buildRequested = true }
+        } catch CyberdyneError.status(.unavailable, _) {
+            Log.info("Commander: the engine has no interface; playing without a HUD")
+            return nil
+        }
     }
 
     override func onEnterTree() throws {
@@ -101,11 +136,21 @@ final class Commander: Behaviour {
         let direction = camera.direction(keys: keys, pointer: pointer, viewport: viewport)
         try camera.pan(active, direction: direction, delta: Float(delta))
 
-        if pointer.pressed.contains(.left) {
+        let onHud = try hud != nil && UI.hitTest(pointer.position) != nil
+        if pointer.pressed.contains(.left) && !onHud {
             try select(under: pointer, through: active)
         }
-        if pointer.pressed.contains(.right) && !selected.isNull {
+        if pointer.pressed.contains(.right) && !selected.isNull && !onHud {
             try order(under: pointer, through: active)
+        }
+        try hud?.show(model())
+    }
+
+    /// Every click on the HUD, counted for the report. A button's own action — Build's — has run
+    /// by the time this is called.
+    override func onUIEvent(_ event: UIEvent) throws {
+        if event.kind == .click {
+            tally.hudClicks += 1
         }
     }
 
@@ -119,9 +164,12 @@ final class Commander: Behaviour {
         for unit in squad {
             try listen(to: unit)
         }
-        if try Input.action(Content.spawn).justPressed {
-            try enlist(worker.instantiate(at: Pose(position: barracks)))
+        let built = buildRequested
+        buildRequested = false
+        if try Input.action(Content.spawn).justPressed || built {
+            try enlist(worker.instantiate(at: Pose(position: barracks)), health: 30)
             tally.spawns += 1
+            tally.hudBuilds += built ? 1 : 0
         }
         try publish()
     }
@@ -147,7 +195,7 @@ final class Commander: Behaviour {
 
     /// Make `unit` a navigation agent with this game's size and speed, enrol it in `trainUnits`
     /// by giving it a `Veterancy`, and count it in the squad.
-    private func enlist(_ unit: Entity) throws {
+    private func enlist(_ unit: Entity, health hp: UInt32) throws {
         try NavAgent(unit).configure(
             .init(
                 radius: unitRadius, height: unitHeight, maxSpeed: unitSpeed,
@@ -156,6 +204,7 @@ final class Commander: Behaviour {
             try world.add(Components.register(Veterancy.self, in: world), to: unit)
         }
         squad.append(unit)
+        health[unit] = (hp, 100)
     }
 
     /// Play the arrival cue where a unit stopped, on the one tick navigation reports it.
@@ -168,6 +217,31 @@ final class Commander: Behaviour {
         }
     }
 
+    // --- Frame: the HUD -------------------------------------------------------------------------
+
+    /// What the HUD shows this frame: the stock less what was spent, the selected unit, and where
+    /// every unit and the camera are on the map.
+    private func model() throws -> HudModel {
+        var model = HudModel()
+        let spent = Float(tally.spawns) * workerCost
+        model.resources = .init(
+            gold: UInt32(max(0, startingGold - spent)), wood: UInt32(startingWood),
+            food: UInt32(squad.count), foodCap: UInt32(foodCap))
+        if !selected.isNull, let hp = health[selected] {
+            model.units = [.init(name: "Worker", health: hp.current, maxHealth: hp.max)]
+        }
+        for unit in squad.prefix(RtsHud.minimapDots) {
+            let at = try NavAgent(unit).state.position
+            model.dots.append(.init(x: at.x / mapSize, y: at.z / mapSize, team: .player))
+        }
+        // The view the rig frames, about 16 by 12 metres round the focus.
+        let focus = camera.focus
+        model.camera = UIRect(
+            x: (focus.x - 8) / mapSize, y: (focus.z - 6) / mapSize, width: 16 / mapSize,
+            height: 12 / mapSize)
+        return model
+    }
+
     private func publish() throws {
         guard let world else { return }
         try world.setValue(.entity(selected), entity, report, field: reportFields.selected)
@@ -178,6 +252,9 @@ final class Commander: Behaviour {
         try world.setFloat(tally.entered, entity, report, field: reportFields.entered)
         try world.setFloat(tally.readied, entity, report, field: reportFields.readied)
         try world.setFloat(tally.barracksFound, entity, report, field: reportFields.barracksFound)
+        try world.setFloat(tally.hudBuilds, entity, report, field: reportFields.hudBuilds)
+        try world.setFloat(tally.hudClicks, entity, report, field: reportFields.hudClicks)
+        try world.setFloat(hud == nil ? 0 : 1, entity, report, field: reportFields.hud)
     }
 }
 
@@ -190,6 +267,8 @@ private struct Tally {
     var entered: Float = 0
     var readied: Float = 0
     var barracksFound: Float = 0
+    var hudBuilds: Float = 0
+    var hudClicks: Float = 0
 }
 
 /// `RtsReport`'s field indices, resolved by name once.
@@ -202,4 +281,7 @@ private struct ReportFields {
     let entered = RtsReport.field("entered")
     let readied = RtsReport.field("readied")
     let barracksFound = RtsReport.field("barracksFound")
+    let hudBuilds = RtsReport.field("hudBuilds")
+    let hudClicks = RtsReport.field("hudClicks")
+    let hud = RtsReport.field("hud")
 }

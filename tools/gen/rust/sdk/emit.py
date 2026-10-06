@@ -59,6 +59,14 @@ ENUM_SPECS = {
     # ABI 1.5, scheduled systems and character controllers.
     "CyAccessMode": ("AccessMode", "CY_ACCESS_", "u32"),
     "CyGroundState": ("GroundState", "CY_GROUND_", "u32"),
+    # ABI 1.6, the runtime interface.
+    "CyUiEventKind": ("UiEventKind", "CY_UI_EVENT_", "u32"),
+    "CyUiKind": ("UiKind", "CY_UI_", "u32"),
+    "CyUiLayoutModel": ("UiLayoutModel", "CY_UI_LAYOUT_", "u32"),
+    "CyUiDirection": ("UiDirection", "CY_UI_DIRECTION_", "u32"),
+    "CyUiJustify": ("UiJustify", "CY_UI_JUSTIFY_", "u32"),
+    "CyUiAlign": ("UiAlign", "CY_UI_ALIGN_", "u32"),
+    "CyUiVisibility": ("UiVisibility", "CY_UI_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

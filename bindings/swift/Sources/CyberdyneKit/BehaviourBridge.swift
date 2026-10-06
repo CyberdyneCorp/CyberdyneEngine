@@ -133,6 +133,10 @@ private func makeVTable(_ record: BehaviourRegistration) -> CyBehaviourVTable {
     vtable.enable = callbacks.contains(.enable) ? behaviourEnable : nil
     vtable.disable = callbacks.contains(.disable) ? behaviourDisable : nil
     vtable.exit_tree = callbacks.contains(.exitTree) ? behaviourExitTree : nil
+    // ABI 1.6: registered for every class, because a button's action is attached at run time by
+    // `mountUI` — no compile-time answer says whether a class will own one. An entity that owns no
+    // element is never sent an event, so the entry costs nothing until it is used.
+    vtable.ui_event = behaviourUIEvent
     // Retained for the life of the image. See the header comment; there is no later safe release.
     vtable.user_data = Unmanaged.passRetained(record).toOpaque()
     return vtable
@@ -255,6 +259,27 @@ private let behaviourExitTree: @convention(c) (CyInstance?, UnsafeMutableRawPoin
     raw, userData in
     treeCallback(raw, userData, .exitTree, "onExitTree") { try $0.onExitTree() }
 }
+
+/// `ui_event`, ABI 1.6: a click runs the action the button was mounted with, then `onUIEvent` if the
+/// class wrote it. A throw from either disables the instance, as from any callback.
+private let behaviourUIEvent:
+    @convention(c) (CyInstance?, UnsafePointer<CyUiEvent>?, UnsafeMutableRawPointer?)
+        -> Void = { raw, event, userData in
+            guard let record = registration(userData), let object = instance(raw), let event,
+                let value = UIEvent(event.pointee)
+            else { return }
+            guard object.isEnabled else { return }
+            do {
+                if value.kind == .click, let action = object.uiHandlers[value.element.raw] {
+                    try action(value)
+                }
+                if record.callbacks.contains(.uiEvent) {
+                    try object.onUIEvent(value)
+                }
+            } catch {
+                record.report(error, in: "onUIEvent", on: object)
+            }
+        }
 
 /// `serialize(self, NULL, 0, ud)` returns the byte count required and writes nothing; that is how
 /// the host sizes the blob, and it is why this builds the blob before it looks at `capacity`.

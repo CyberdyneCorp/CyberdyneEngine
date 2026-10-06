@@ -65,7 +65,7 @@ list on the day an idle-inhibition policy lands.
 | just | 1.21 | What `just env-doctor` requires; noble ships 1.21 |
 | Python | 3.10 | Code generation and the layering, roadmap and dependency tools |
 | clang-format, clang-tidy | 22.1.8, pinned | The formatting and lint merge gates refuse another major: `pip install clang-format==22.1.8 clang-tidy==22.1.8` |
-| openspec | any | `just quality-specs` is a merge gate; `npm install -g @fission-ai/openspec@latest` |
+| openspec | 1.14.0, pinned | `just quality-specs` is a merge gate, and a newer CLI can add `--strict` failures: `npm install -g @fission-ai/openspec@1.14.0` |
 
 ### First build
 

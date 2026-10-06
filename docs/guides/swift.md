@@ -827,6 +827,72 @@ selection pass outlines. The C++ half is `src/rendering/selection/` and
 [`samples/13-rts-selection`](../../samples/13-rts-selection/README.md); `unit.abi_selection` drives
 this exact path through the C ABI, and `SelectionTests.swift` pins the layout.
 
+### The interface (ABI 1.6)
+
+A game builds its HUD in CyberUI's store through fourteen `ui_*` entries, wrapped by
+`CyberdyneKit/UI.swift` and `UIBuilder.swift`. Describe the tree once, mount it for the behaviour,
+and update it by handle:
+
+```swift
+final class Commander: Behaviour {
+    private var hud = UITree()
+
+    override func onCreate() throws {
+        hud = try mountUI {
+            Panel("resource-bar") {
+                Label("0", colour: 0xFFFF_D34D, name: "gold").id("gold")
+                Button("Build", name: "build-button") { [unowned self] _ in self.buildRequested = true }
+            }
+            .layout(.anchored(min: Vec2(x: 0, y: 0), max: Vec2(x: 1, y: 0),
+                              offsetMax: Vec2(x: 0, y: 17)).flex(.row, gap: 4, align: .centre))
+            .style(UIStyle(background: 0xC80E_141C))
+        }
+    }
+
+    override func onUpdate(_ delta: Double) throws {
+        try hud["gold"].setText("\(gold)", colour: 0xFFFF_D34D)    // a repaint, no relayout
+        let pointer = try Input.pointer()
+        if pointer.pressed.contains(.left), try UI.hitTest(pointer.position) == nil {
+            // the click was the world's, not the HUD's
+        }
+    }
+
+    override func onUIEvent(_ event: UIEvent) throws { /* every event on this entity's elements */ }
+}
+```
+
+| Kind | Node | Takes |
+|---|---|---|
+| panel | `Panel(name) { children }` | layout, style (background, border, radius, clipping) |
+| label | `Label(text, colour:, scale:)` | text in the built-in font, measured from its content |
+| image | `Image(page:, uv:)` | an atlas page the embedder uploaded, tinted by the style's background |
+| progress bar | `ProgressBar(value)` | a track (`background`) and a fill (`accent`) over `value` of it |
+| button | `Button(title) { event in … }` | text, focus, and clicks routed to the mounting behaviour |
+
+Modifiers: `.id(_:)`, `.layout(_:)`, `.style(_:)`, `.visibility(_:)`/`.shown(_:)`, `.opacity(_:)`.
+`UILayout`'s defaults are the engine's (a stretching flex row of content-sized elements); `.anchored`
+places an element in an absolute parent by corner fractions and offsets, `.flex` makes it a row or
+column container, `.sized` fixes a preferred size. Colours are premultiplied `0xAARRGGBB`; lengths
+are window pixels under the embedder's fixed-pixel scale.
+
+**Phases.** Every interface entry is allowed at initialisation and in `onUpdate` and refused in
+`onFixedUpdate`: the interface is presentation. A click arrives in the frame, before `onUpdate`; act
+on it in the next fixed step, as with a key.
+
+**Clicks.** A press and a release of the left button over one button is a click. The engine delivers
+it to the behaviours of the entity the button was created for — `mountUI` creates every element for
+the behaviour's own entity — through `CyBehaviourVTable.ui_event`: the button's action runs, then
+`onUIEvent`. A focus change arrives as `.blur` then `.focus`.
+
+**What a module may touch.** The root and the elements it created; the embedder's own elements in
+the same store (the developer console) answer `.notFound`. With no interface bound — a dedicated
+server, `--no-ui` — every call throws `.unavailable`, which `samples/13-rts-api` catches to play on
+without a HUD.
+
+`UITests.swift` drives all of it against `FakeEngine`; the engine half is
+`integration.game_backend_ui`; `render.rts_api_hud` holds a Swift HUD to the C++ HUD it was written
+from, primitive for primitive and byte for byte on a device.
+
 ### Diagnostics
 
 ```swift
@@ -853,11 +919,14 @@ not carry a single value between the game and a server. ABI 1.5 adds four more: 
 `Scout` are attached to level nodes, so the tree's pump drives their `onEnterTree`/`onReady` and
 resolves their `@Node` paths; `trainUnits` is a `@System` the engine's scheduler runs every fixed
 tick, ordered against a native reader of the same column; the scout walks a hero with a character
-controller; and it kicks a crate with an impulse.
+controller; and it kicks a crate with an impulse. ABI 1.6 adds the HUD: the commander mounts the
+resource bar, selection panel and minimap of `samples/13-rts-selection` — written in Swift — and a
+Build button, writes them from the game each frame, and builds a worker when the button is clicked.
 
 ```sh
 just run-sample rts-api
 just run-sample rts-api --no-systems      # the scheduler's control: trainUnits never runs
+just run-sample rts-api --no-ui           # the interface's control: no HUD, the Build click is the world's
 ctest --test-dir build/dev -R rts_api_sample --output-on-failure    # integration.rts_api_sample
 ```
 
@@ -865,7 +934,8 @@ ctest --test-dir build/dev -R rts_api_sample --output-on-failure    # integratio
 |---|---|
 | `game/Game.swift` | the `@GameModule` (section 2), and the `trainUnits` system |
 | `game/Contract.swift` | content names, the collision layers, the report components, `Veterancy` |
-| `game/Commander.swift` | the squad, the selection, the orders, the build key, its tree callbacks |
+| `game/Commander.swift` | the squad, the selection, the orders, the build key and button, the HUD's model, its tree callbacks |
+| `game/Hud.swift` | the HUD (`RtsHud`), its model, and `HudShowcase` for `render.rts_api_hud` |
 | `game/Scout.swift` | a character-controlled hero, and a kicked crate |
 | `game/RtsCamera.swift` | panning |
 | `host/` | servers, adapters, the scene bridge, the schedule, the level, bodies, the scripted player |
@@ -1349,6 +1419,8 @@ callback, and the instance is disabled.
 | `onUpdate` never runs in the editor | the hosted runtime calls `fixed_update` only | do per-frame work in a host that calls `frame_update` |
 | `.unavailable` from `Spawn.prefab` in a fixed step | the prefab is not resident, and only `N` may load | resolve in `onCreate` and keep the `Prefab` |
 | `.unavailable` from a physics query | it ran while the physics step was running | query from a behaviour callback, not from inside the step |
+| `permissionDenied` from a `UIElement` write | the HUD was written from `onFixedUpdate` | write the interface in `onUpdate` or `onCreate` |
+| A button's action never runs | it was mounted with `UI.mount` (owned by nobody), or the host does not deliver `ui_event`s | mount with `Behaviour.mountUI`; deliver with `BehaviourRuntime::ui_event` |
 | A behaviour stops doing anything after one error | a callback threw; the bridge disabled it | read the `"<Name>.<callback> failed"` line in the engine's log |
 | The process dies with no log line | a Swift trap in game code | replace force-unwraps and unchecked indexing with `guard … throw` |
 | A renamed `@Export` comes back with its default after a reload | restore is by name | claim the old key in `onMigrate` and bump `schema` |
@@ -1370,6 +1442,11 @@ specs; listed here so a game does not plan around them:
 * **Animation.** No skeleton, clip, parameter, event or root-motion call crosses the ABI; see
   [the animation guide](animation.md#not-built-yet).
 * **Game services in the editor's Play**, and `onUpdate` there (section 2).
+* **More of the interface than five kinds.** No `.cyss` sheet or interface asset a module loads (style
+  is set per element), no keyboard or gamepad navigation driven from a module (focus is set, not
+  navigated), no text input field, no image upload through the ABI (the embedder uploads atlas
+  pages), no world-space document. A Build click arrives only through a host that delivers
+  `ui_event`s — `samples/13-rts-api`'s host is the reference.
 * **`async` in game code.** `@GameActor` is declared as a global actor, but no Kit API is isolated
   to it and it has no custom executor tying it to the simulation thread; no entry is asynchronous;
   and a task still running in a retired generation after a reload is unmeasured. Do not start

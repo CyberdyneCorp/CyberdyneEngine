@@ -138,6 +138,29 @@ Tests: `unit.abi` (`test_game_systems.cpp`, `test_game_scene.cpp`, `test_game_bo
 system run through the scheduler, rebound by a reload, and a reload that moves it refused), and
 `integration.game_backend_bodies` / `_character` / `_scene` against the real servers and tree.
 
+## What ABI 1.6 adds, and why
+
+`add-swift-ui-bindings`, issue #91's follow-up to #102. CyberUI reached the screen with no way for a
+module to touch it: the strategy HUD was C++ game code because nothing else could build it. 1.6
+appends fourteen `ui_*` entries and one `CyBehaviourVTable` member; the reference is
+`openspec/changes/add-swift-ui-bindings/design.md`.
+
+| Entries | Phases | Behind them | Notes |
+|---|---|---|---|
+| `ui_root`, `ui_create`, `ui_destroy` | N U | `cy::abi::game::UiBackend` (`include/cy/abi/game/ui.h`), implemented by `cy::game_backend::UiAdapter` (`cy::game-backend-ui`, behind `CY_UI`) over the embedder's `ElementStore` | Five kinds: panel, label, image, progress bar, button. `CyUiElement` is the store's `ElementId` flat, generation high, so a destroyed element's handle is NOT_FOUND rather than its slot's next occupant. A module reaches the root and the elements it created; the embedder's own (the developer console) are NOT_FOUND. |
+| `ui_set_layout`, `ui_set_style`, `ui_set_text`, `ui_set_image`, `ui_set_progress`, `ui_set_visibility`, `ui_set_opacity` | N U | as above | `CyUiLayout` and `CyUiStyle` read zero as each field's default, so a zeroed layout is the engine's (a content-sized, stretching flex child). A write the kind does not take, a NaN, or an opacity outside [0, 1] is INVALID_ARGUMENT; a progress fraction is clamped. Each marks the dirty state `samples/13-rts-selection/hud.cpp` marks for the same change. |
+| `ui_element_rect`, `ui_hit_test`, `ui_focus`, `ui_set_focus` | N U | as above | A hit is the topmost element under the point, or its nearest ancestor the module created; over the world it is null, not a failure. Only a button takes focus. |
+| vtable `ui_event` | U | `BehaviourRuntime::ui_event`, called by the embedder with what `UiAdapter::route_pointer` queued | A press and a release of the left button over one button is a CLICK; a focus change is BLUR then FOCUS. Delivered to every live instance on the element's owner, through the creating generation's vtable; null for a module compiled before 1.6. |
+
+**The interface is presentation**: a fixed step is refused, so nothing in the simulation can depend
+on an element and a resimulated tick cannot build one twice. A click arrives in the frame; a game
+acts on it in the next fixed step, as with a key.
+
+Tests: `unit.abi` (`test_game_ui.cpp`: the phase rule, the unbound backend, each entry's checks, the
+table shape, `ui_event` dispatch and the pre-1.6 prefix; `test_layout.cpp`: the 1.6 layouts),
+`integration.game_backend_ui` (the adapter over a real store), and `render.rts_api_hud` (a Swift HUD
+against the C++ one).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

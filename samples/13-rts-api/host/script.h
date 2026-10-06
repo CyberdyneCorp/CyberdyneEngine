@@ -47,6 +47,8 @@ struct Findings {
     cy::u32 peak_voices = 0;
     /// Aims that failed because the thing was not on screen or did not exist.
     cy::u32 missed_aims = 0;
+    /// The HUD's Build button was found in the interface and aimed at.
+    bool button_found = false;
 };
 
 class Player {
@@ -65,6 +67,7 @@ public:
 private:
     [[nodiscard]] cy::Status camera_steps(cy::u64 frame) noexcept;
     [[nodiscard]] cy::Status order_steps(cy::u64 frame) noexcept;
+    [[nodiscard]] cy::Status button_steps(cy::u64 frame) noexcept;
     [[nodiscard]] cy::Status aim_at(cy::Vec3 point) noexcept;
     [[nodiscard]] cy::Status aim_at_second_unit() noexcept;
 

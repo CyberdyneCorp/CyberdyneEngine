@@ -138,6 +138,62 @@ public enum GroundState: UInt32, Sendable, CaseIterable {
     case inAir = 2
 }
 
+/// `CyUiEventKind`: what happened to an interface element.
+public enum UIEventKind: UInt32, Sendable, CaseIterable {
+    case click = 0
+    case focus = 1
+    case blur = 2
+}
+
+/// `CyUiKind`: what an interface element is, and so which writes it takes.
+public enum UIKind: UInt32, Sendable, CaseIterable {
+    case panel = 0
+    case label = 1
+    case image = 2
+    case progress = 3
+    case button = 4
+}
+
+/// `CyUiLayoutModel`: how an element lays out its children.
+public enum UILayoutModel: UInt32, Sendable, CaseIterable {
+    case flex = 0
+    case grid = 1
+    case absolute = 2
+}
+
+/// `CyUiDirection`: a flex container's main axis.
+public enum UIDirection: UInt32, Sendable, CaseIterable {
+    case row = 0
+    case column = 1
+    case rowReverse = 2
+    case columnReverse = 3
+}
+
+/// `CyUiJustify`: distribution along a flex container's main axis.
+public enum UIJustify: UInt32, Sendable, CaseIterable {
+    case start = 0
+    case centre = 1
+    case end = 2
+    case spaceBetween = 3
+    case spaceAround = 4
+    case spaceEvenly = 5
+}
+
+/// `CyUiAlign`: alignment across the cross axis; stretch is zero.
+public enum UIAlign: UInt32, Sendable, CaseIterable {
+    case stretch = 0
+    case start = 1
+    case centre = 2
+    case end = 3
+}
+
+/// `CyUiVisibility`: shown, hidden, or out of layout too.
+public enum UIVisibility: UInt32, Sendable, CaseIterable {
+    case visible = 0
+    case hidden = 1
+    case collapsed = 2
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

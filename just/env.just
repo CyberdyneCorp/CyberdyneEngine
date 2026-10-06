@@ -399,7 +399,7 @@ _doctor-hint tool platform purpose:
     git          | sudo apt install git                  | xcode-select --install | winget install Git.Git
     python3      | sudo apt install python3              | brew install python | winget install Python.Python.3.12
     just         | see https://just.systems/man/en/packages.html | brew install just | winget install Casey.Just
-    openspec     | npm install -g @fission-ai/openspec    | npm install -g @fission-ai/openspec | npm install -g @fission-ai/openspec
+    openspec     | npm install -g @fission-ai/openspec@{{openspec_pin_version}} | npm install -g @fission-ai/openspec@{{openspec_pin_version}} | npm install -g @fission-ai/openspec@{{openspec_pin_version}}
     compiler     | sudo apt install g++-13               | xcode-select --install | Visual Studio 2022 17.8 or later, or winget install LLVM.LLVM
     clang-format | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}}
     clang-tidy   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}

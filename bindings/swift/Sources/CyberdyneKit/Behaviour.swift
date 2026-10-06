@@ -22,7 +22,7 @@
 //
 // Every callback. `CyBehaviourVTable` carries `create`, `destroy`, `fixed_update`, `serialize` and
 // `deserialize` (ABI 1.0), `frame_update` for `onUpdate` (1.3), and `enter_tree`, `ready`, `enable`,
-// `disable` and `exit_tree` (1.5). The tree callbacks reach a behaviour that is attached to a scene
+// `disable` and `exit_tree` (1.5), and `ui_event` for button actions and `onUIEvent` (1.6). The tree callbacks reach a behaviour that is attached to a scene
 // NODE — `cy::game_backend::ScriptSceneBridge` makes each behaviour type a scene behaviour of the
 // same name — in the tree's order, at the scene tree's pump. A behaviour created on a bare entity
 // has no tree and gets none of them. `dispatch(_:)` remains for a test that drives one by hand.
@@ -45,6 +45,8 @@ public struct CallbackSet: OptionSet, Sendable, Hashable {
     public static let destroy = CallbackSet(rawValue: 1 << 8)
     public static let afterReload = CallbackSet(rawValue: 1 << 9)
     public static let migrate = CallbackSet(rawValue: 1 << 10)
+    /// ABI 1.6: `onUIEvent`, an event on an interface element this behaviour's entity owns.
+    public static let uiEvent = CallbackSet(rawValue: 1 << 11)
 
     /// The names, for a diagnostic that has to say which callback a behaviour was disabled in.
     public var names: [String] {
@@ -52,7 +54,7 @@ public struct CallbackSet: OptionSet, Sendable, Hashable {
             (.create, "onCreate"), (.enterTree, "onEnterTree"), (.ready, "onReady"),
             (.enable, "onEnable"), (.disable, "onDisable"), (.fixedUpdate, "onFixedUpdate"),
             (.update, "onUpdate"), (.exitTree, "onExitTree"), (.destroy, "onDestroy"),
-            (.afterReload, "onAfterReload"), (.migrate, "onMigrate"),
+            (.afterReload, "onAfterReload"), (.migrate, "onMigrate"), (.uiEvent, "onUIEvent"),
         ]
         return table.filter { contains($0.0) }.map(\.1)
     }
@@ -77,6 +79,10 @@ open class Behaviour {
     /// False once a callback threw and the bridge disabled this instance. `swift-scripting`: the
     /// engine "SHALL disable that behaviour rather than terminating the process".
     public internal(set) var isEnabled: Bool = true
+
+    /// The `onClick` actions of the buttons this behaviour mounted, by element. UIBuilder.swift
+    /// fills it; the bridge's `ui_event` thunk reads it.
+    var uiHandlers: [CyUiElement: UIEventHandler] = [:]
 
     public required init(entity: Entity) {
         self.entity = entity
@@ -118,6 +124,11 @@ open class Behaviour {
     ///
     /// Return true when the entry was consumed, so that `onAfterReload` sees it in `restored`.
     open func onMigrate(_ key: String, _ value: Value) throws -> Bool { false }
+
+    /// An event on an interface element this behaviour's entity owns — a click, a focus change —
+    /// after the clicked button's own `action`, if it has one. Called during the frame, before
+    /// `onUpdate`. ABI 1.6.
+    open func onUIEvent(_ event: UIEvent) throws {}
 }
 
 /// What the `@Behaviour` macro adds to a class, and what the bridge needs to register one.

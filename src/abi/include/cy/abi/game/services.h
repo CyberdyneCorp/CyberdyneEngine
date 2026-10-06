@@ -53,6 +53,7 @@ class SpawnBackend;
 class SceneBackend;
 class PhysicsBodyBackend;
 class CharacterBackend;
+class UiBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -99,6 +100,8 @@ struct GameServices {
     SceneBackend* scene = nullptr;
     PhysicsBodyBackend* bodies = nullptr;
     CharacterBackend* characters = nullptr;
+    /// ABI 1.6: the `ui_*` entries. Null in a build without CyberUI, or a host with no screen.
+    UiBackend* ui = nullptr;
     GameClock clock;
 };
 

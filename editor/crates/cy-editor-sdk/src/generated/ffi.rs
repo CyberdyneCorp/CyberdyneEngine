@@ -222,7 +222,30 @@ pub struct CyServiceEvent {
     pub payload_size: u64,
 }
 
-/// `CyBehaviourVTable` — 104 bytes, 8-byte aligned.
+/// `CyUiElement`, the ABI's alias for `uint64_t`.
+pub type CyUiElement = u64;
+
+/// `CyUiEvent` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiEvent {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `CyUiElement` at byte 8.
+    pub element: CyUiElement,
+    /// `CyEntity` at byte 16.
+    pub owner: CyEntity,
+    /// `float[2]` at byte 24.
+    pub position: [f32; 2],
+    /// `uint32_t` at byte 32.
+    pub button: u32,
+    /// `uint32_t` at byte 36.
+    pub reserved: u32,
+}
+
+/// `CyBehaviourVTable` — 112 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyBehaviourVTable {
@@ -258,6 +281,9 @@ pub struct CyBehaviourVTable {
     pub disable: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
     /// `void(*)(CyInstance, void*)` at byte 96.
     pub exit_tree: Option<unsafe extern "C" fn(CyInstance, *mut ::std::ffi::c_void)>,
+    /// `void(*)(CyInstance, const CyUiEvent*, void*)` at byte 104.
+    pub ui_event:
+        Option<unsafe extern "C" fn(CyInstance, *const CyUiEvent, *mut ::std::ffi::c_void)>,
 }
 
 /// `CyBorrow` — 16 bytes, 8-byte aligned.
@@ -722,6 +748,100 @@ pub struct CyCharacterState {
     pub platform_velocity: [f32; 3],
 }
 
+/// `CyUiElementDesc` — 24 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiElementDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `const char*` at byte 8.
+    pub name: *const ::std::ffi::c_char,
+    /// `CyEntity` at byte 16.
+    pub owner: CyEntity,
+}
+
+/// `CyUiLayout` — 144 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiLayout {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub model: u32,
+    /// `uint32_t` at byte 8.
+    pub direction: u32,
+    /// `uint32_t` at byte 12.
+    pub justify: u32,
+    /// `uint32_t` at byte 16.
+    pub align: u32,
+    /// `uint32_t` at byte 20.
+    pub self_align: u32,
+    /// `uint32_t` at byte 24.
+    pub flags: u32,
+    /// `float` at byte 28.
+    pub gap: f32,
+    /// `float[2]` at byte 32.
+    pub preferred: [f32; 2],
+    /// `float[2]` at byte 40.
+    pub minimum: [f32; 2],
+    /// `float[2]` at byte 48.
+    pub maximum: [f32; 2],
+    /// `float[4]` at byte 56.
+    pub margin: [f32; 4],
+    /// `float[4]` at byte 72.
+    pub padding: [f32; 4],
+    /// `float` at byte 88.
+    pub flex_grow: f32,
+    /// `float` at byte 92.
+    pub flex_shrink: f32,
+    /// `float` at byte 96.
+    pub aspect_ratio: f32,
+    /// `float[2]` at byte 100.
+    pub anchor_min: [f32; 2],
+    /// `float[2]` at byte 108.
+    pub anchor_max: [f32; 2],
+    /// `float[2]` at byte 116.
+    pub offset_min: [f32; 2],
+    /// `float[2]` at byte 124.
+    pub offset_max: [f32; 2],
+    /// `uint16_t` at byte 132.
+    pub grid_column: u16,
+    /// `uint16_t` at byte 134.
+    pub grid_row: u16,
+    /// `uint16_t` at byte 136.
+    pub grid_column_span: u16,
+    /// `uint16_t` at byte 138.
+    pub grid_row_span: u16,
+    /// `uint16_t` at byte 140.
+    pub grid_columns: u16,
+    /// `uint16_t` at byte 142.
+    pub reserved: u16,
+}
+
+/// `CyUiStyle` — 32 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiStyle {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `uint32_t` at byte 8.
+    pub background: u32,
+    /// `uint32_t` at byte 12.
+    pub border_colour: u32,
+    /// `uint32_t` at byte 16.
+    pub accent: u32,
+    /// `float` at byte 20.
+    pub border_width: f32,
+    /// `float` at byte 24.
+    pub corner_radius: f32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -736,7 +856,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 768 bytes, 8-byte aligned.
+/// `CyInterface` — 880 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1071,6 +1191,44 @@ pub struct CyInterface {
     /// `CyResult(*)(CyEngine, CyEntity, CyCharacterState*)` at byte 760.
     pub character_state:
         Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyCharacterState) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement*)` at byte 768.
+    pub ui_root: Option<unsafe extern "C" fn(CyEngine, *mut CyUiElement) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiElementDesc*, CyUiElement*)` at byte 776.
+    pub ui_create: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyUiElement,
+            *const CyUiElementDesc,
+            *mut CyUiElement,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement)` at byte 784.
+    pub ui_destroy: Option<unsafe extern "C" fn(CyEngine, CyUiElement) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiLayout*)` at byte 792.
+    pub ui_set_layout:
+        Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const CyUiLayout) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiStyle*)` at byte 800.
+    pub ui_set_style: Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const CyUiStyle) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char*, uint32_t, uint32_t)` at byte 808.
+    pub ui_set_text: Option<
+        unsafe extern "C" fn(CyEngine, CyUiElement, *const ::std::ffi::c_char, u32, u32) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t, const float*)` at byte 816.
+    pub ui_set_image: Option<unsafe extern "C" fn(CyEngine, CyUiElement, u32, *const f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, float)` at byte 824.
+    pub ui_set_progress: Option<unsafe extern "C" fn(CyEngine, CyUiElement, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t)` at byte 832.
+    pub ui_set_visibility: Option<unsafe extern "C" fn(CyEngine, CyUiElement, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, float)` at byte 840.
+    pub ui_set_opacity: Option<unsafe extern "C" fn(CyEngine, CyUiElement, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, float*)` at byte 848.
+    pub ui_element_rect: Option<unsafe extern "C" fn(CyEngine, CyUiElement, *mut f32) -> i32>,
+    /// `CyResult(*)(CyEngine, const float*, CyUiElement*)` at byte 856.
+    pub ui_hit_test: Option<unsafe extern "C" fn(CyEngine, *const f32, *mut CyUiElement) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement*)` at byte 864.
+    pub ui_focus: Option<unsafe extern "C" fn(CyEngine, *mut CyUiElement) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement)` at byte 872.
+    pub ui_set_focus: Option<unsafe extern "C" fn(CyEngine, CyUiElement) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1207,5 +1365,19 @@ impl CyInterface {
         character_destroy: None,
         character_move: None,
         character_state: None,
+        ui_root: None,
+        ui_create: None,
+        ui_destroy: None,
+        ui_set_layout: None,
+        ui_set_style: None,
+        ui_set_text: None,
+        ui_set_image: None,
+        ui_set_progress: None,
+        ui_set_visibility: None,
+        ui_set_opacity: None,
+        ui_element_rect: None,
+        ui_hit_test: None,
+        ui_focus: None,
+        ui_set_focus: None,
     };
 }
