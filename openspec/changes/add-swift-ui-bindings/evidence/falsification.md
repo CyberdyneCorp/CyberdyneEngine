@@ -26,3 +26,13 @@ element in its parent's arrange, and a dirty element under a clean parent keeps 
 progress case's second half — `ui_set_progress(bar, 0)` after a layout — failed with a width of 32
 against 0 on the first build; the fix marks the track, and the case is the regression test.
 `samples/13-rts-selection/hud.cpp` never hit this because it also marks the selection panel.
+
+## Events a receiver raises while they are delivered
+
+The embedder first delivered with `for (event : ui.events()) runtime.ui_event(event);` and then
+`clear_events()`. A click handler that calls `ui_set_focus` queues a BLUR and a FOCUS into the
+array being walked: they were appended past the walk's end, then cleared, so the module never
+learned that focus moved (and the append could reallocate the array under the walk).
+`UiAdapter::drain_events` moves the batch out before delivering, so what a receiver raises waits for
+the next frame. `integration.game_backend_ui`'s "a receiver that moves focus while handling a click
+loses none of the events" failed against the old walk-then-clear with 2 events delivered of 4.

@@ -28,8 +28,8 @@
 //   route_pointer(position, pressed, ...)  hover, press, release; a press and a release of the
 //                                          left button on one button is a CY_UI_EVENT_CLICK, and a
 //                                          change of focus is a BLUR and a FOCUS
-//   events() → BehaviourRuntime::ui_event  the embedder delivers them to their owners
-//   clear_events()
+//   drain_events(→ BehaviourRuntime::ui_event)  the embedder delivers them to their owners; what
+//                                          a receiver's own writes raise waits for the next frame
 //
 // `layout` runs before routing so the pointer is tested against this frame's rects, and the
 // behaviours' writes during `frame_update` are laid out by the next frame's `layout` — or by the
@@ -53,6 +53,7 @@
 #include <cy/ui/text/text_painter.h>
 
 #include <string_view>
+#include <utility>
 
 namespace cy::game_backend {
 
@@ -95,6 +96,17 @@ public:
     /// The events routed since `clear_events`, in the order they happened.
     [[nodiscard]] Span<const CyUiEvent> events() const noexcept { return events_.span(); }
     void clear_events() noexcept { events_.clear(); }
+    /// Hand every queued event to `deliver` (a `const CyUiEvent&` callable), in order, and empty
+    /// the queue. A receiver may write the interface — move focus, destroy what it clicked — and
+    /// the events that raises go to a fresh queue for the next call, never into the batch being
+    /// walked: no write moves the event a receiver holds, and none is lost to a clear after.
+    template <typename Deliver>
+    void drain_events(Deliver&& deliver) noexcept {
+        const Array<CyUiEvent> batch = std::move(events_);
+        for (const CyUiEvent& event : batch.span()) {
+            deliver(event);
+        }
+    }
 
     /// The first module element whose type name is `name`, or CY_UI_ELEMENT_NULL. For a driver and
     /// a test; a game holds its handles.

@@ -370,6 +370,47 @@ CY_TEST_CASE("focus moves between buttons with a blur and a focus, and a panel r
     CY_CHECK_EQ(focus, CY_UI_ELEMENT_NULL);
 }
 
+CY_TEST_CASE("a receiver that moves focus while handling a click loses none of the events") {
+    // Regression: the embedder walked `events()` and cleared the queue after, so the BLUR and the
+    // FOCUS a click handler's own `ui_set_focus` queued were appended to the array being walked
+    // and then cleared, never delivered.
+    Fixture fixture;
+    CY_REQUIRE(fixture.started);
+    const CyInterface& iface = table();
+    const CyUiElement clicked = fixture.make(fixture.screen(), CY_UI_BUTTON, "clicked");
+    const CyUiElement next = fixture.make(fixture.screen(), CY_UI_BUTTON, "next");
+    CY_CHECK_EQ(fixture.place(clicked, 100, 100, 60, 20), CY_RESULT_OK);
+    CY_CHECK_EQ(fixture.place(next, 200, 100, 60, 20), CY_RESULT_OK);
+    CY_REQUIRE(fixture.lay_out());
+    UiAdapter& adapter = fixture.adapter;
+    const Vec2 on{120.0F, 110.0F};
+    CY_REQUIRE(adapter.route_pointer(on, CY_INPUT_BUTTON_LEFT, 0).has_value());
+    CY_REQUIRE(adapter.route_pointer(on, 0, CY_INPUT_BUTTON_LEFT).has_value());
+
+    CyUiEvent seen[8]{};
+    u32 count = 0;
+    const auto receive = [&](const CyUiEvent& event) noexcept {
+        if (count < 8U) {
+            seen[count] = event;
+        }
+        ++count;
+        if (event.kind == CY_UI_EVENT_CLICK) {
+            CY_CHECK_EQ(iface.ui_set_focus(&fixture.host, next), CY_RESULT_OK);
+        }
+    };
+    adapter.drain_events(receive);
+    // What the handler raised arrives with the next frame's delivery.
+    adapter.drain_events(receive);
+    CY_REQUIRE_EQ(count, 4U);
+    CY_CHECK_EQ(seen[0].kind, static_cast<u32>(CY_UI_EVENT_FOCUS));
+    CY_CHECK_EQ(seen[1].kind, static_cast<u32>(CY_UI_EVENT_CLICK));
+    CY_CHECK_EQ(seen[2].kind, static_cast<u32>(CY_UI_EVENT_BLUR));
+    CY_CHECK_EQ(seen[2].element, clicked);
+    CY_CHECK_EQ(seen[3].kind, static_cast<u32>(CY_UI_EVENT_FOCUS));
+    CY_CHECK_EQ(seen[3].element, next);
+    CY_CHECK(adapter.events().empty());
+}
+
 CY_TEST_CASE("destroying an element takes its subtree, and every handle in it goes stale") {
     Fixture fixture;
     CY_REQUIRE(fixture.started);

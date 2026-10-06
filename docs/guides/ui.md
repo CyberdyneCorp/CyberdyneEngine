@@ -195,9 +195,12 @@ cy::game_backend::bind(host, &ui);             // every ui_* entry now answers
 (void)ui.layout(scale_settings, viewport);
 (void)ui.route_pointer(position, buttons_pressed, buttons_released);
 input_adapter.set_pointer_focus(0, true, ui.pointer_over());
-for (const CyUiEvent& event : ui.events()) { runtime.ui_event(event); }
-ui.clear_events();
+ui.drain_events([&](const CyUiEvent& event) noexcept { (void)runtime.ui_event(event); });
 ```
+
+Deliver through `drain_events`, not a loop over `events()`: a receiver that moves focus or destroys
+what it clicked queues a BLUR and a FOCUS while the batch is delivered, and `drain_events` keeps
+those for the next frame instead of walking an array that is growing under it and clearing them.
 
 A module reaches the root and its own elements only; the console beside them in the same store
 answers `NOT_FOUND`. A press and a release of the left button over one button is a click, delivered

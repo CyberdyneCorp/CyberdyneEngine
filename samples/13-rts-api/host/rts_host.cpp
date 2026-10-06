@@ -278,10 +278,8 @@ cy::Status RtsHost::ui_frame() noexcept {
         return routed;
     }
     input_adapter_.set_pointer_focus(0, true, ui_adapter_->pointer_over());
-    for (const CyUiEvent& event : ui_adapter_->events()) {
-        (void)runtime_.ui_event(event);
-    }
-    ui_adapter_->clear_events();
+    ui_adapter_->drain_events(
+        [this](const CyUiEvent& event) noexcept { (void)runtime_.ui_event(event); });
     return cy::ok();
 }
 
