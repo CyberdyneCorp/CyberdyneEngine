@@ -2229,9 +2229,9 @@ note = "the requirement's first scenario is that the merge happens \"without the
 [[coverage]]
 row = "rendering-geometry-and-resources"
 requirement = "Skinning"
-evidence = "test:unit.render_geometry"
-case = "skin dispatch: the pose offset addresses this skin's slice of the shared world"
-note = "\"Bone matrices SHALL be read from the GPU pose world, the shared GPU-side pose representation, rather than from a buffer uploaded independently per consumer\" is the requirement's structural sentence, and the offset into that shared world is where it is observable: the case puts one skin's two matrices behind two identities, so a dispatch ignoring the offset reports the rest position and one applying it twice runs off the end, and a pose too short to reach the slice is refused rather than read past. Its expected values are worked out on paper rather than captured from the reference. `skinning: the output buffer is double buffered, for motion vectors`, `skinning: bounds come from the bone transforms, not from the bind pose` and `skinning: a baked instance does not skin, and costs no output buffer` carry the double buffering, the skinned bounds and the animation-LOD tier."
+evidence = "test:render.skinned_frame"
+case = "(c) the shadow pass draws the skinned limb into the directional map"
+note = "Issue #76 stage 3: 'Skinned once, used many times' observed in the engine's frame. One compute pass of SkinnedScene skins the limb once from the GPU pose world, and the depth prepass, the directional shadow pass and the opaque pass all draw that one output buffer (three skinned draws, one dispatch) through FramePipelines' skinned variants, which bind the dispatch's PackedNormalTangent stream as rhi::Format::Rgba16Snorm; the shadow map changes when the limb bends. The same suite's (d) reads last frame's half of the double-buffered output for motion vectors (a still limb's are exactly zero, a moving forearm's are not, the rigid upper arm's stay zero) and (b) holds the dispatch to cpu_reference_skin word for word. unit.render_geometry's 'skin dispatch: the pose offset addresses this skin's slice of the shared world', 'skinning: bounds come from the bone transforms, not from the bind pose' and 'skinning: a baked instance does not skin, and costs no output buffer' carry the offset, the skinned bounds and the tier. Not covered: pose textures or vertex animation at the baked tier, mesh LODs restricted to retained joints, and a VFX consumer of the pose world. The case skips on a machine with no Vulkan device."
 
 [[coverage]]
 row = "rendering-geometry-and-resources"
@@ -3453,8 +3453,8 @@ note = "the Archetype thrash warning scenario. `the ECS reports its shape, its s
 row = "native-abi"
 requirement = "Versioned interface table"
 evidence = "test:unit.abi"
-case = "the 1.3 table carries every game-service entry, after every 1.2 entry"
-note = "the append-only half, observed on the table rather than read off the header: the first 1.3 entry sits exactly one pointer after `service_poll`, the last 1.3 entry is the last member, `table_size` is `sizeof(CyInterface)` and `abi_minor` is 3. The older-module half is `CyEngine_T::register_behaviour` copying only a vtable's `struct_size` prefix, so a 1.2 module's behaviour has a null `frame_update`; `a behaviour with no frame callback is never scheduled for a frame` in the same suite is that null being skipped."
+case = "the 1.7 table appends animation after every 1.6 entry"
+note = "the append-only half, observed on the table rather than read off the header: the first 1.7 entry (`animation_attach`) sits exactly one pointer after the last 1.6 one (`ui_set_focus`), the last 1.7 entry is the last member, `table_size` is `sizeof(CyInterface)` and `abi_minor` is at least 7; the 1.3, 1.4, 1.5 and 1.6 cases in the same suite pin each earlier append the same way. The older-module half is `CyEngine_T::register_behaviour` copying only a vtable's `struct_size` prefix, so a 1.2 module's behaviour has a null `frame_update`; `a behaviour with no frame callback is never scheduled for a frame` in the same suite is that null being skipped."
 
 [[coverage]]
 row = "native-abi"
@@ -3726,7 +3726,7 @@ note = "Curve tracks exist (Clip::add_curve_track, sample_curve, SampleStats::cu
 row = "animation-and-skinning"
 requirement = "Root motion"
 evidence = "exempt:m11e"
-note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' covers extraction, and the consumer is now a per-instance RootMotionMode (issue #76 stage 1): integration.animation_system 'animation system: root motion goes where each instance's mode says' applies one to the transform, feeds one to a controller that takes it, extracts one and ignores one. Still missing, and moved to issue #92 stage 2: a case blending two clips' root deltas by the pose weights."
+note = "RootDelta exposes translation, rotation, the distance curve and contact bits; unit.animation 'clip: root motion is a delta over an interval, including one that wraps the loop' covers extraction, and the consumer is now a per-instance RootMotionMode (issue #76 stage 1): integration.animation_system 'animation system: root motion goes where each instance's mode says' applies one to the transform, feeds one to a controller that takes it, extracts one and ignores one. Since issue #76 stage 4 the controller consumer is real: integration.game_backend_animation 'animation abi: root motion is taken, extracted, or moves a character' takes an accumulating animator's composed deltas through the ABI and feeds a CY_ROOT_MOTION_CHARACTER animator's into a cy::physics::CharacterController, which walks a metre down -z on the ground. Still missing, and moved to issue #92 stage 2: a case blending two clips' root deltas by the pose weights."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3771,7 +3771,7 @@ row = "animation-and-skinning"
 requirement = "GPU pose world"
 evidence = "test:integration.animation_runtime"
 case = "pose world: publishing rotates current and previous without copying either"
-note = "Current and previous bone matrices are kept per instance and rotated on publish; 'pose world: instances are added and removed without rebuilding the world' and 'pose world: the upload range covers what was published and nothing else' cover the rest, and render.skinning 'skinning: the pose offset selects this skin's slice of the shared world' reads it with no readback. Not covered: VFX bone attachment reading the world (nothing under src/vfx references it) and a GPU pose-evaluation producer."
+note = "Current and previous bone matrices are kept per instance and rotated on publish; 'pose world: instances are added and removed without rebuilding the world' and 'pose world: the upload range covers what was published and nothing else' cover the rest, and render.skinning 'skinning: the pose offset selects this skin's slice of the shared world' reads it with no readback. Since issue #76 stage 3 the renderer owns one device pose buffer filled from the world's dirty range alone (render.skinned_frame '(g) a changed instance uploads its own matrices and nothing else', integration.skinned_scene 'skinned scene: an upload writes the dirty range and nothing outside it'), and motion vectors read the previous pose's skinned positions ('(d) motion vectors: a still limb's are zero and a moving forearm's are not'). The CPU-bone scenario is AnimationSystem::joint_model_matrix and ABI 1.6's animation_joint_pose (integration.game_backend_animation 'animation abi: a joint's world pose is the published pose through the node'). Not covered: VFX bone attachment reading the world (nothing under src/vfx references it) and a GPU pose-evaluation producer."
 
 [[coverage]]
 row = "animation-and-skinning"
@@ -3804,7 +3804,7 @@ row = "animation-and-skinning"
 requirement = "Animation events"
 evidence = "test:integration.animation_runtime"
 case = "animation: events come out of advance in time order, and a distant tier suppresses"
-note = "Events are typed records in an EventBuffer, a footstep at the half-second is emitted on each of two loops in time order, and a distant instance under EventPolicy::Suppress emits none and counts the suppressed ones. unit.animation 'clip: events fire once per crossing, in time order, and again on the next loop' covers the clip level. Reverse playback is not exercised."
+note = "Events are typed records in an EventBuffer, a footstep at the half-second is emitted on each of two loops in time order, and a distant instance under EventPolicy::Suppress emits none and counts the suppressed ones. unit.animation 'clip: events fire once per crossing, in time order, and again on the next loop' covers the clip level. Gameplay consumes them as typed data across the ABI since issue #76 stage 4: integration.game_backend_animation 'animation abi: every event is delivered once, in time order, across a large step' delivers every footstep exactly once at five ticks a frame and nothing from a suppressed animator, and integration.rts_api_sample's Swift game reads footfalls and a cheer's end from Animation.events. Reverse playback is not exercised."
 
 [[coverage]]
 row = "animation-and-skinning"

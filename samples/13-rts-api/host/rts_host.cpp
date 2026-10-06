@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include "rts_host.h"
 
+#include <cy/core/math/scalar.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/servers/physics/reference/server.h>
 #include <cy/ui/layout.h>
 #include <cy/ui/text/builtin_font.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string_view>
@@ -173,6 +175,8 @@ RtsHost::RtsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
       spawn_adapter_(tree_, allocator),
       motion_(tree_),
       roll_(allocator, world_),
+      worker_rig_(allocator),
+      unit_animation_(allocator),
       click_samples_(allocator),
       mix_scratch_(allocator) {}
 
@@ -189,7 +193,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         {"scene", &RtsHost::start_scene},           {"input", &RtsHost::start_input},
         {"camera", &RtsHost::start_camera},         {"physics", &RtsHost::start_physics},
         {"navigation", &RtsHost::start_navigation}, {"audio", &RtsHost::start_audio},
-        {"props", &RtsHost::start_props},
+        {"props", &RtsHost::start_props},           {"animation", &RtsHost::start_animation},
     };
     for (const auto& step : steps) {
         if (cy::Status done = (this->*step.step)(); !done) {
@@ -214,6 +218,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         }
         cy::game_backend::bind(host_, ui_adapter_.get());
     }
+    cy::game_backend::bind_animation(host_, animation_adapter_.get());
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -324,6 +329,11 @@ cy::Status RtsHost::start_systems() noexcept {
             return cy::make_unexpected(installed.error());
         }
     }
+    // THE ENGINE'S ANIMATION SYSTEM: its tick half in PostSimulation, after the game's fixed step
+    // has made this tick's requests, and its pose half in the Animation stage of the frame.
+    if (const auto installed = animation_->install(schedule_, animation_clock_); !installed) {
+        return cy::make_unexpected(installed.error());
+    }
     return schedule_.build();
 }
 
@@ -352,6 +362,89 @@ cy::Status RtsHost::start_scene() noexcept {
         }
     }
     return spawn_adapter_.add_prefab(kWorkerPrefab, worker_prefab());
+}
+
+cy::Status RtsHost::start_animation() noexcept {
+    // THE RIG ARRIVES THROUGH THE ASSET SYSTEM: cooked into a memory mount and loaded back by id,
+    // its program's clip table bound by name. worker_rig.h says why the host is also the cook.
+    if (cy::Status loaded = worker_rig_.load(); !loaded) {
+        return loaded;
+    }
+    if (cy::Status configured = animation_clock_.configure(cy::determinism::ClockConfig{});
+        !configured) {
+        return configured;
+    }
+    const auto registered = cy::animation::register_animator(world_);
+    if (!registered) {
+        return cy::make_unexpected(registered.error());
+    }
+    animator_ = *registered;
+    animation_ =
+        std::make_unique<cy::animation::AnimationSystem>(allocator_, world_, animator_, &tree_);
+    const auto rig = animation_->add_rig(worker_rig_.rig());
+    if (!rig) {
+        return cy::make_unexpected(rig.error());
+    }
+    animation_adapter_ = std::make_unique<cy::game_backend::AnimationAdapter>(
+        allocator_, world_, *animation_, animator_, &tree_);
+    return animation_adapter_->add_rig(kWorkerRig, *rig);
+}
+
+cy::Status RtsHost::track_animation() noexcept {
+    if (animation_ == nullptr) {
+        return cy::ok();
+    }
+    const auto named = [](cy::Name name, const char* text) {
+        return name == cy::Name::intern(text);
+    };
+    for (cy::u32 index = 0; index < unit_count(); ++index) {
+        const CyEntity unit = this->unit(index);
+        const cy::ecs::Entity entity = cy::abi::from_abi(unit);
+        const auto status = animation_->status(entity);
+        if (!status) {
+            continue;  // a unit the game has not animated
+        }
+        UnitAnimation* tracked = nullptr;
+        for (UnitAnimation& candidate : unit_animation_) {
+            tracked = candidate.entity == unit ? &candidate : tracked;
+        }
+        const cy::Span<const cy::Mat4> pose =
+            animation_->poses().current(animation_->pose_of(entity));
+        if (tracked == nullptr) {
+            UnitAnimation fresh;
+            fresh.entity = unit;
+            for (cy::usize joint = 0; joint < pose.size() && joint < kWorkerJoints; ++joint) {
+                fresh.first[joint] = pose[joint];
+            }
+            if (cy::Status pushed = unit_animation_.push_back(fresh); !pushed) {
+                return pushed;
+            }
+            tracked = &unit_animation_.back();
+        }
+        for (cy::usize joint = 0; joint < pose.size() && joint < kWorkerJoints; ++joint) {
+            for (cy::u32 column = 0; column < 4U; ++column) {
+                const cy::Vec4 delta =
+                    pose[joint].columns[column] - tracked->first[joint].columns[column];
+                tracked->departure = cy::math::max(
+                    tracked->departure,
+                    cy::math::max(cy::math::max(std::fabs(delta.x), std::fabs(delta.y)),
+                                  cy::math::max(std::fabs(delta.z), std::fabs(delta.w))));
+            }
+        }
+        const bool following = unit_status(unit) == CY_NAV_PATH_STATUS_FOLLOWING;
+        const bool walking =
+            named(status->state_name, "walk") || named(status->target_name, "walk");
+        const bool cheering =
+            named(status->state_name, "cheer") || named(status->target_name, "cheer");
+        tracked->walked = tracked->walked || (walking && following);
+        tracked->idle_after =
+            tracked->idle_after ||
+            (tracked->cheered && named(status->state_name, "idle") && status->target == 0xFFFFU);
+        tracked->cheered = tracked->cheered || cheering;
+        tracked->left_idle =
+            tracked->left_idle || !named(status->state_name, "idle") || status->target != 0xFFFFU;
+    }
+    return cy::ok();
 }
 
 cy::Status RtsHost::start_props() noexcept {
@@ -591,6 +684,10 @@ cy::Status RtsHost::frame() noexcept {
         return ticked;
     }
     input_adapter_.begin_frame();
+    // This frame's animation events: those of the tick that just ran, read by the game below.
+    if (cy::Status snapshot = animation_adapter_->begin_frame(); !snapshot) {
+        return snapshot;
+    }
     cy::camera::EvaluationContext context;
     context.delta_seconds = kStep;
     if (const auto evaluated = camera_.evaluate(rig_, context); !evaluated) {
@@ -615,7 +712,7 @@ cy::Status RtsHost::frame() noexcept {
     update_audio();
     ++frame_;
     events_this_frame_ = 0;
-    return cy::ok();
+    return track_animation();
 }
 
 cy::Status RtsHost::fixed_tick() noexcept {
@@ -670,6 +767,9 @@ void RtsHost::shutdown() noexcept {
     host_.game = cy::abi::game::GameServices{};
     host_.bind_world(nullptr);
     ui_adapter_.reset();
+    animation_adapter_.reset();
+    animation_.reset();
+    worker_rig_.shutdown();
     nav_adapter_.reset();
     physics_adapter_.reset();
     body_adapter_.reset();
@@ -789,6 +889,15 @@ Observation RtsHost::observe() noexcept {
         }
     }
 
+    for (const UnitAnimation& unit : unit_animation_) {
+        ++seen.animation.animated;
+        seen.animation.walked += unit.walked ? 1U : 0U;
+        seen.animation.cheered += unit.cheered ? 1U : 0U;
+        seen.animation.idle_after += unit.idle_after ? 1U : 0U;
+        seen.animation.only_idle += unit.left_idle ? 0U : 1U;
+        seen.animation.departure = cy::math::max(seen.animation.departure, unit.departure);
+    }
+
     seen.systems.installed = script_systems_.installed();
     seen.systems.runs = script_systems_.runs("trainUnits");
     seen.systems.rows = roll_.rows();
@@ -818,6 +927,8 @@ Observation RtsHost::observe() noexcept {
     seen.hud.mounted = read_field<f32>(bytes, field("hud"));
     seen.hud.builds = read_field<f32>(bytes, field("hudBuilds"));
     seen.hud.heard = read_field<f32>(bytes, field("hudClicks"));
+    seen.animation.footsteps = read_field<f32>(bytes, field("footsteps"));
+    seen.animation.cheer_events = read_field<f32>(bytes, field("cheerEvents"));
     return seen;
 }
 

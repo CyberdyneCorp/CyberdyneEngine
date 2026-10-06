@@ -240,6 +240,70 @@ struct StreamSet {
     return set;
 }
 
+/// A skinned draw's vertex buffers, each at its own byte offset: the skinning pass's positions and
+/// frames at the draw's current window, its previous window for the prepass's motion, and the
+/// source's UVs at the mesh's own vertices. Recorded from vertex zero, so none of the windows has
+/// to line up with another.
+void bind_skinned_streams(rhi::CommandBuffer& commands, const GeometrySource& geometry,
+                          FramePipelineKind pipeline, const DrawGeometry& draw) noexcept {
+    const auto current = static_cast<u64>(draw.vertex_offset);
+    const u64 previous =
+        draw.has_previous_vertices ? static_cast<u64>(draw.previous_vertex_offset) : current;
+    const auto rigid = static_cast<u64>(draw.static_vertex_offset);
+    rhi::BufferHandle buffers[kForwardPassStreamCount];
+    u64 offsets[kForwardPassStreamCount] = {0, 0, 0, 0};
+    buffers[kPositionStream] = draw.skinned_positions;
+    offsets[kPositionStream] = current * kPositionStreamStride;
+    usize count = 1U;
+    if (pipeline == FramePipelineKind::Depth) {
+        buffers[kNormalStream] = draw.skinned_frames;
+        offsets[kNormalStream] = current * kNormalStreamStride;
+        buffers[kPreviousPositionStream] = draw.skinned_positions;
+        offsets[kPreviousPositionStream] = previous * kPositionStreamStride;
+        count = kDepthPassStreamCount;
+    } else if (pipeline != FramePipelineKind::Shadow) {
+        buffers[kNormalStream] = draw.skinned_frames;
+        offsets[kNormalStream] = current * kNormalStreamStride;
+        buffers[kUvStream] = geometry.streams[kUvStream];
+        offsets[kUvStream] = rigid * kUvStreamStride;
+        buffers[kLightmapUvStream] =
+            geometry.lightmap_uvs.is_null() ? geometry.streams[kUvStream] : geometry.lightmap_uvs;
+        offsets[kLightmapUvStream] = rigid * kLightmapUvStreamStride;
+        count = kForwardPassStreamCount;
+    }
+    commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(buffers, count),
+                                 Span<const u64>(offsets, count));
+}
+
+/// Record one skinned draw through the frame's skinned pipeline for this pass. False — the draw is
+/// skipped and counted — when the pipelines were created without skinned variants, or the draw is
+/// not one this path can record: non-indexed, a negative window, or no frames for a pass that
+/// shades.
+[[nodiscard]] bool record_skinned_draw(FrameRecorder& recorder, rhi::CommandBuffer& commands,
+                                       FramePipelineKind pipeline, u32 index,
+                                       const DrawGeometry& draw, DrawBindingState& bound,
+                                       rhi::BufferHandle& bound_indices) noexcept {
+    const rhi::GraphicsPipelineHandle skinned = recorder.pipelines()->skinned_pipeline(pipeline);
+    const bool shaded = pipeline != FramePipelineKind::Shadow;
+    if (skinned.is_null() || draw.indices.is_null() || draw.vertex_offset < 0 ||
+        draw.previous_vertex_offset < 0 || draw.static_vertex_offset < 0 ||
+        (shaded && draw.skinned_frames.is_null())) {
+        return false;
+    }
+    const DrawPipelineSelection selected{skinned, recorder.pipelines()->layout(), {}, 0};
+    bind_draw_pipeline(recorder, commands, selected, bound);
+    bind_skinned_streams(commands, recorder.geometry(), pipeline, draw);
+    const DrawPush push{index};
+    commands.push_constants(selected.layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment,
+                            0, Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
+    if (!(draw.indices == bound_indices)) {
+        commands.bind_index_buffer(draw.indices, 0, draw.wide_indices);
+        bound_indices = draw.indices;
+    }
+    commands.draw_indexed(draw.index_count, 1, draw.first_index, 0, 0);
+    return true;
+}
+
 /// One geometry pass: bind the state, walk the layer, draw what has geometry.
 void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipelineKind pipeline,
                 render::SortLayer layer, u32& counter) noexcept {
@@ -286,6 +350,20 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
         DrawGeometry draw;
         if (!geometry.geometry(range.items[index], range.instances[index], geometry.user, draw)) {
             ++recorder.mutable_report().skipped_draws;
+            continue;
+        }
+        if (draw.skinned()) {
+            // ITS OWN BUFFERS AND ITS OWN PIPELINE, and the pass's streams are rebound before the
+            // next rigid or variant draw: a skinned draw leaves other buffers at bindings 0 and 1.
+            if (record_skinned_draw(recorder, commands, pipeline, index, draw, bound,
+                                    bound_indices)) {
+                ++counter;
+                ++recorder.mutable_report().skinned_draws;
+            } else {
+                ++recorder.mutable_report().skipped_draws;
+            }
+            offsets_moved = true;
+            forward_bound = 0;
             continue;
         }
         DrawPipelineSelection selected;
@@ -542,6 +620,22 @@ void record_post_process(const PassContext& context, void* user) noexcept {
 }
 
 }  // namespace
+
+i32 bind_draw_positions(rhi::CommandBuffer& commands, const GeometrySource& geometry,
+                        const DrawGeometry& draw) noexcept {
+    if (!draw.skinned()) {
+        const u64 offset = 0;
+        commands.bind_vertex_buffers(
+            0, Span<const rhi::BufferHandle>(&geometry.streams[kPositionStream], 1),
+            Span<const u64>(&offset, 1));
+        return draw.vertex_offset;
+    }
+    const u64 offset =
+        static_cast<u64>(draw.vertex_offset < 0 ? 0 : draw.vertex_offset) * kPositionStreamStride;
+    commands.bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&draw.skinned_positions, 1),
+                                 Span<const u64>(&offset, 1));
+    return 0;
+}
 
 Status FrameRecorder::initialize(FramePipelines& pipelines, FrameBindings& bindings) noexcept {
     if (!pipelines.ready()) {

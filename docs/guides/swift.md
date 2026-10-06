@@ -3,8 +3,9 @@
 A tutorial for a gameplay programmer, and for the engine contributor who extends what gameplay can
 reach: how a Swift game is put together, built, loaded and hot-reloaded; the behaviour and system
 models, with systems scheduled by the engine and the tree callbacks it drives; the game services of
-ABI 1.3 and 1.5 (time, input, camera, physics queries, forces and impulses, character controllers,
-navigation, audio, spawning) with the real API; a walk through the Swift-only RTS sample; and the
+ABI 1.3 to 1.7 (time, input, camera, physics queries, forces and impulses, character
+controllers, the interface, animation, navigation, audio, spawning) with the real API; a walk through the
+Swift-only RTS sample; and the
 bindings underneath,
 including how to add an ABI entry end to end without breaking a module that already shipped.
 
@@ -16,17 +17,18 @@ Rust SDK overlay). The game services were added by the open change
 [`add-swift-game-api`](../../openspec/changes/add-swift-game-api/design.md), whose design is the
 per-entry reference for phases, determinism, ownership and errors; ABI 1.5's scheduled systems, tree
 callbacks, node paths, bodies and characters by
-[`add-swift-m12-gaps`](../../openspec/changes/add-swift-m12-gaps/design.md). The module READMEs linked below
+[`add-swift-m12-gaps`](../../openspec/changes/add-swift-m12-gaps/design.md); ABI 1.7's animation by
+[`add-swift-animation-api`](../../openspec/changes/add-swift-animation-api/design.md). The module READMEs linked below
 are the detailed reference; this guide is the route through them.
 
 | Where | What |
 |---|---|
 | [`bindings/swift/`](../../bindings/swift/README.md) | The `CyberdyneKit` Swift package a game depends on: four targets, the tests, the module builder |
 | [`src/abi/`](../../src/abi/README.md) | The C ABI: `cy_abi.h`, the interface table, the module loader, hot reload, the game thunks, `ScriptSystems` |
-| [`src/game_backend/`](../../src/game_backend/include/cy/game_backend/) | The adapters behind the game entries: input, camera, physics queries and bodies, characters, navigation, audio, spawn, and the scene bridge |
+| [`src/game_backend/`](../../src/game_backend/include/cy/game_backend/) | The adapters behind the game entries: input, camera, physics queries and bodies, characters, navigation, audio, spawn, and the scene bridge; animation in [`src/game_backend/animation/`](../../src/game_backend/animation/include/cy/game_backend/animation_backend.h) |
 | [`tools/abi/`](../../tools/abi/README.md) | The ABI description and its compatibility gate |
 | [`tools/gen/swift/`](../../tools/gen/swift/README.md), [`tools/gen/rust/`](../../tools/gen/rust/README.md) | The Swift overlay generator and the editor's Rust SDK generator |
-| [`samples/13-rts-api`](../../samples/13-rts-api/README.md) | An RTS written only in Swift, through ABI 1.3 and 1.5 |
+| [`samples/13-rts-api`](../../samples/13-rts-api/README.md) | An RTS written only in Swift, through ABI 1.3, 1.5, 1.6 and 1.7, whose HUD is Swift's and whose units animate |
 | [`samples/05b-editor-window/project`](../../samples/05b-editor-window/project/) | The editor project whose `game/SpinCube.swift` runs when you press Play |
 
 ![The editor's Inspector showing the SpinCube node's ScriptBehaviour component, with its class field
@@ -126,18 +128,20 @@ The version this tree is at, from `cy_abi.h` and `Generated/ABI.swift`:
 
 ```c
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 3u
+#define CY_ABI_MINOR 6u
 #define CY_ABI_PATCH 0u
 ```
 
 ```swift
-public static let interfaceTableSize: UInt32 = 664
+public static let interfaceTableSize: UInt32 = 880
 ```
 
-The table has 81 entries (`just quality-abi` reports 82, counting the header): 43 from 1.0 to 1.2 (diagnostics, values, entities, components,
-behaviours, component description, hierarchy, `world_chunks`, the editor service envelope) and the
-38 game-service entries 1.3 appended after `service_poll`, together with
-`CyBehaviourVTable.frame_update`.
+The table has 122 entries (`just quality-abi` reports 123, counting the header): 43 from 1.0 to
+1.2 (diagnostics, values, entities, components, behaviours, component description, hierarchy,
+`world_chunks`, the editor service envelope), the 38 game-service entries 1.3 appended after
+`service_poll` together with `CyBehaviourVTable.frame_update`, 1.4's two VFX parameter entries,
+1.5's eleven (scheduled systems, `node_find`, bodies, characters) with the tree callbacks, 1.6's
+fourteen interface entries with `CyBehaviourVTable.ui_event`, and 1.7's fourteen animation entries.
 
 ---
 
@@ -754,6 +758,45 @@ the frame rate — and the `state` (`ground`, `groundEntity`, `position`, `veloc
 character's kinematic body carries the entity, so `Physics.raycast` names it, and ignore lists can
 skip it. `create` and `destroy` are `onFixedUpdate` or initialisation.
 
+### Animation (ABI 1.7)
+
+```swift
+// onCreate or onFixedUpdate: the rig is one the host loaded and registered by name.
+let worker = try Animator.attach(to: unit, rig: "worker", rootMotion: .ignore)
+
+override func onFixedUpdate(_ delta: Double) throws {
+    try worker.play(moving ? "walk" : "idle", crossfade: 0.2)   // any state, whatever the program
+    try worker.set("speed", to: 1.4)                             // a float parameter
+    try worker.set("armed", to: true)                            // a condition
+    try worker.fire("wave")                                      // read by exactly the next tick
+    if try worker.state.isPlaying("walk") { … }
+}
+
+override func onUpdate(_ delta: Double) throws {
+    for event in try Animation.events(for: unit) where event.name == "footstep" { … }
+}
+```
+
+The animator is the engine's `cy::animation::AnimationSystem` instance on the entity
+([the animation guide](animation.md#from-swift-the-abi-16-animation-api)): the rig's skeleton, clips
+and compiled state machine, advanced in the fixed step and evaluated once a frame by the engine. A
+game only asks.
+
+| Call | Phases | What it does |
+|---|---|---|
+| `Animator.attach(to:rig:tier:emitsEvents:rootMotion:playRate:)` | N F | gives the entity an animator over a rig the host registered (`AnimationAdapter::add_rig`); it can be played in the same callback |
+| `play(_:crossfade:)`, `stop(blend:)` | N F | crossfade to any state of the program, or back to its entry state; zero is a cut; a requested blend runs to completion |
+| `set(_:to: Float)`, `set(_:to: Bool)`, `fire(_:)` | N F | raise a program parameter; a fired trigger reads 1 for exactly one tick |
+| `float(_:)`, `state`, `rootMotion` | N F U | read a parameter, the state machine (`state`, `target`, `blendWeight`, `requested`), the last tick's root motion and the running total |
+| `takeRootMotion()` | F | what an `.accumulate` animator has accumulated since the last take |
+| `setRootMotion(_:)` | N F | `.ignore`, `.transform` (composed onto the node), `.accumulate`, `.extract`, or `.character`: fed to the entity's character controller every tick |
+| `Animation.events()`, `Animation.events(for:)` | N U | the events of the ticks since the previous frame, each delivered in exactly one frame |
+| `jointPose(_:)` | N U | a joint's world placement from the evaluated pose |
+
+Names cross the boundary as `AnimationName`: `CY_NAME_HASH`, the 64-bit FNV-1a hash of the text,
+because no engine pointer escapes a game entry. It compares against a string literal directly
+(`event.name == "footstep"`, `state.state == "idle"`).
+
 ### Navigation
 
 ```swift
@@ -1131,7 +1174,13 @@ happens with `--no-behaviours`; two runs print the same report. ABI 1.5's half: 
 420 fixed ticks and the scheduler ordered it after the native reader; the hero walked about 4 m,
 jumped and stands on the ground; the crate left at 5 m/s; `--no-systems` runs no system and changes
 nothing else. It was proven red by breaking `physics_raycast` and `audio_play`, and the 1.5 half by
-the mutations recorded in `openspec/changes/add-swift-m12-gaps/evidence/`. The README's known limits apply: the navigation funnel walks a
+the mutations recorded in `openspec/changes/add-swift-m12-gaps/evidence/`. ABI 1.7's half: all
+four units carry an animator over the host's cooked `worker` rig; the ordered unit walked while
+its agent followed the path, cheered on arrival and was stood down to idle by the cheer's own
+`cheer_done` event, while the bystander and the two built units never left idle; the pose moved; the game
+read the footfalls and the one cheer finishing, each once; with `--no-behaviours` nothing is
+animated. Proven red by a game that always plays idle and one that ignores the cheer's event
+(`openspec/changes/add-swift-animation-api/evidence/falsification.md`). The README's known limits apply: the navigation funnel walks a
 staircase off a cell row, and the click-to-order hand-off is in-process (single-player; a lockstep
 RTS needs the `gameplay_submit_command` append `design.md` names).
 
@@ -1195,10 +1244,10 @@ Suppose a game needs a new service verb. The steps, in order, with the file each
 
 1. **Header.** Append the entry at the end of `CyInterface`, below the marker
    `Append new entries below this line. Never above it, never between.` and after
-   `character_state`, under a `/* --- 1.6: … --- */` comment. Give it its `[N F U]` phase list and
+   `animation_joint_pose`, under a `/* --- 1.8: … --- */` comment. Give it its `[N F U]` phase list and
    whatever ownership rule is its own. Return `CyResult`; take `CyEngine` first so the generator
    puts it on `Engine`. A new struct begins with `uint32_t struct_size`, uses only fixed-width
-   members, and gets a `CY_ABI_STATIC_ASSERT` on its size. Increment `CY_ABI_MINOR` to `6u`.
+   members, and gets a `CY_ABI_STATIC_ASSERT` on its size. Increment `CY_ABI_MINOR` to `8u`.
 2. **Backend seam.** Add the method to the service's abstract backend in
    `src/abi/include/cy/abi/game/<service>.h` (or a new backend pointer on `GameServices` in
    `services.h`), and implement it in the adapter in `src/game_backend/`.
@@ -1439,8 +1488,6 @@ specs; listed here so a game does not plan around them:
   only; a resource term is refused at registration.
 * **Tree callbacks on a bare entity.** Only a behaviour attached to a scene node gets
   `onEnterTree` … `onExitTree`; one created on a plain entity has no tree.
-* **Animation.** No skeleton, clip, parameter, event or root-motion call crosses the ABI; see
-  [the animation guide](animation.md#not-built-yet).
 * **Game services in the editor's Play**, and `onUpdate` there (section 2).
 * **More of the interface than five kinds.** No `.cyss` sheet or interface asset a module loads (style
   is set per element), no keyboard or gamepad navigation driven from a module (focus is set, not

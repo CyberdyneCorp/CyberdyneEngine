@@ -1,5 +1,9 @@
 # src/rendering/skinning/tests/ — the skinning dispatch, on a device. M8.d.
 #
+#   integration.skinned_scene  `SkinnedScene` on the null backend: one pass and its dispatches, the
+#                        output windows and their reuse, the dirty-range upload, and the refusals.
+#                        No GPU; declared on every machine.
+#
 #   render.skinning      the dispatch against `cpu_reference_skin`, BY COMPARING BUFFERS: one arm
 #                        skinned twice, positions and re-encoded normal-tangent frames compared
 #                        vertex by vertex, plus the pose offset, double buffering, eight influences
@@ -7,6 +11,11 @@
 #   render.skinned_draw  those same output buffers BOUND AS A VERTEX BUFFER and rasterised, with the
 #                        covered pixels checked against addresses computed from the pose. This is
 #                        the case that makes "a skinned mesh is drawn" a measured claim.
+#   render.skinned_frame `SkinnedScene` in the engine's own forward frame: the frame with skinned
+#                        pipelines and no skinned instance against the reference drawn before them,
+#                        a bent limb against the reference skin and a golden image, with a shadow
+#                        map, its motion vectors, the selection mask, one pass for several limbs,
+#                        and an upload of the pose world's dirty range only.
 #
 # KIND render, not unit: both need a Vulkan device, and the render taxonomy is the one whose budget
 # and timeout are written for a suite that talks to a GPU. The arithmetic they are checked against
@@ -25,10 +34,25 @@
 set_property(GLOBAL PROPERTY CY_SKINNING_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_skinning_declare_tests)
+    get_property(cy_skinning_tests_dir GLOBAL PROPERTY CY_SKINNING_TESTS_DIR)
+
+    # The skinning table on the null backend: every machine, no GPU.
+    get_directory_property(integration_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_integration)
+    get_directory_property(integration_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_integration)
+    set(CY_TEST_BUDGET_integration "${integration_budget}")
+    set(CY_TEST_TIMEOUT_integration "${integration_timeout}")
+    cy_add_test(
+        NAME skinned_scene
+        KIND integration
+        SOURCES "${cy_skinning_tests_dir}/test_skinned_scene.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rendering-skinning cy::rhi cy::rhi-null
+                     cy::servers-render-geometry)
+
     if(NOT CY_RENDERER_VULKAN AND NOT (APPLE AND CY_RENDERER_METAL))
         return()
     endif()
-    get_property(cy_skinning_tests_dir GLOBAL PROPERTY CY_SKINNING_TESTS_DIR)
 
     get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                            DEFINITION CY_TEST_BUDGET_render)
@@ -70,6 +94,30 @@ function(cy_skinning_declare_tests)
         target_include_directories(cy_test_render_skinned_draw
                                    PRIVATE "${cy_skinning_tests_dir}"
                                            "${CMAKE_SOURCE_DIR}/tests/render")
+
+        # Skinned meshes in the ENGINE'S frame: `SkinnedScene` filled from a real `PoseWorld` and
+        # drawn by `FramePipelines`' skinned variants through `pipeline_test::FrameScene`, the one
+        # scene the frame suites render. It needs the animation runtime for the pose world, so it
+        # is declared only when `CY_ANIMATION` built one.
+        if(TARGET cy::animation)
+            set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+            cy_add_test(
+                NAME skinned_frame
+                KIND render
+                SOURCES "${cy_skinning_tests_dir}/test_skinned_frame.cpp"
+                        "${pipeline_tests}/frame_scene.cpp"
+                        "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+                DEPENDENCIES cy::animation cy::rendering-graph cy::rendering-particles
+                             cy::rendering-pipeline cy::rendering-selection cy::rendering-skinning
+                             cy::rhi cy::rhi-null cy::rhi-vulkan cy::servers-render-geometry)
+            target_include_directories(cy_test_render_skinned_frame
+                                       PRIVATE "${cy_skinning_tests_dir}" "${pipeline_tests}"
+                                               "${CMAKE_SOURCE_DIR}/tests/render")
+            target_compile_definitions(cy_test_render_skinned_frame
+                                       PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+                                               CY_SKINNING_TEST_DIR="${cy_skinning_tests_dir}"
+                                               CY_PIPELINE_TEST_DIR="${pipeline_tests}")
+        endif()
     endif()
 
     if(CY_RENDERER_METAL AND APPLE)

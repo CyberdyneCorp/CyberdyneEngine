@@ -207,16 +207,44 @@ private:
     u64 digest_ = 0;
 };
 
+/// `PoseInstance::transition` while a blend a HOST requested is in flight — `request_state` —
+/// rather than one of the program's own transitions. Its duration is `requested_duration`.
+inline constexpr u16 kRequestedTransition = 0xFFFEU;
+
 /// One character's animation state. Small, flat and copyable: this is what an entity carries.
 struct PoseInstance {
     u16 state = 0;
     /// The state being blended towards, or `0xFFFF`.
     u16 target = 0xFFFFU;
-    /// The transition in flight, or `0xFFFF`.
+    /// The transition in flight, `kRequestedTransition`, or `0xFFFF`.
     u16 transition = 0xFFFFU;
     f32 blend_elapsed = 0.0F;
     f32 state_time = 0.0F;
+    /// The length of a requested blend, in seconds. Read only while `transition` is
+    /// `kRequestedTransition`. Appended, so an instance brace-initialised before it keeps its
+    /// meaning.
+    f32 requested_duration = 0.0F;
 };
+
+/// The length of the blend `instance` is in, in seconds: the program transition's, or a requested
+/// one's. Zero when no blend is in flight.
+[[nodiscard]] f32 transition_duration(const PoseProgram& program,
+                                      const PoseInstance& instance) noexcept;
+
+/// The state named `name`, or `0xFFFF` when the program has none.
+[[nodiscard]] u16 find_state(const PoseProgram& program, Name name) noexcept;
+
+/// A HOST's request: blend from the current state to `state` over `seconds`, whatever the
+/// program's own transitions say — the "play" and "crossfade" a gameplay script asks for.
+///
+/// Zero seconds is a cut, as a zero-duration transition is. A request for the state the instance
+/// is already in, with no blend in flight, changes nothing; a request for the state a blend is
+/// already heading to changes nothing either. A request made while a blend is in flight starts
+/// the new blend from the blend's SOURCE state, so the pose may step by what the abandoned blend
+/// had reached. A requested blend runs to completion: the program's transitions are considered
+/// again from the state it lands in. False when `state` is not a state of the program.
+[[nodiscard]] bool request_state(const PoseProgram& program, PoseInstance& instance, u16 state,
+                                 f32 seconds) noexcept;
 
 /// What the runtime asks the host for. The sampler is handed the JOINT MASK, which is the whole
 /// mechanism behind "they SHALL NOT be sampled".

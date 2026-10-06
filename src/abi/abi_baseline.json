@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 6,
+    "minor": 7,
     "patch": 0
   },
   "functions": [
@@ -567,10 +567,80 @@
         "index": 108,
         "name": "ui_set_focus",
         "type": "CyResult(*)(CyEngine, CyUiElement)"
+      },
+      {
+        "index": 109,
+        "name": "animation_attach",
+        "type": "CyResult(*)(CyEngine, CyEntity, const CyAnimatorDesc*)"
+      },
+      {
+        "index": 110,
+        "name": "animation_detach",
+        "type": "CyResult(*)(CyEngine, CyEntity)"
+      },
+      {
+        "index": 111,
+        "name": "animation_play",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, float)"
+      },
+      {
+        "index": 112,
+        "name": "animation_stop",
+        "type": "CyResult(*)(CyEngine, CyEntity, float)"
+      },
+      {
+        "index": 113,
+        "name": "animation_set_float",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, float)"
+      },
+      {
+        "index": 114,
+        "name": "animation_set_bool",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, bool)"
+      },
+      {
+        "index": 115,
+        "name": "animation_fire_trigger",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*)"
+      },
+      {
+        "index": 116,
+        "name": "animation_get_float",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, float*)"
+      },
+      {
+        "index": 117,
+        "name": "animation_state",
+        "type": "CyResult(*)(CyEngine, CyEntity, CyAnimatorState*)"
+      },
+      {
+        "index": 118,
+        "name": "animation_events",
+        "type": "CyResult(*)(CyEngine, CyAnimationEvent*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 119,
+        "name": "animation_root_motion",
+        "type": "CyResult(*)(CyEngine, CyEntity, CyRootMotion*)"
+      },
+      {
+        "index": 120,
+        "name": "animation_take_root_motion",
+        "type": "CyResult(*)(CyEngine, CyEntity, CyRootMotion*)"
+      },
+      {
+        "index": 121,
+        "name": "animation_set_root_motion",
+        "type": "CyResult(*)(CyEngine, CyEntity, uint32_t)"
+      },
+      {
+        "index": 122,
+        "name": "animation_joint_pose",
+        "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyPose*)"
       }
     ],
     "name": "CyInterface",
-    "size": 880
+    "size": 992
   },
   "types": [
     {
@@ -3223,6 +3293,247 @@
       "size": 32
     },
     {
+      "kind": "enum",
+      "name": "CyRootMotionMode",
+      "values": [
+        {
+          "name": "CY_ROOT_MOTION_IGNORE",
+          "value": 0
+        },
+        {
+          "name": "CY_ROOT_MOTION_TRANSFORM",
+          "value": 1
+        },
+        {
+          "name": "CY_ROOT_MOTION_ACCUMULATE",
+          "value": 2
+        },
+        {
+          "name": "CY_ROOT_MOTION_EXTRACT",
+          "value": 3
+        },
+        {
+          "name": "CY_ROOT_MOTION_CHARACTER",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyAnimationTier",
+      "values": [
+        {
+          "name": "CY_ANIMATION_TIER_FULL",
+          "value": 0
+        },
+        {
+          "name": "CY_ANIMATION_TIER_SIMPLIFIED",
+          "value": 1
+        },
+        {
+          "name": "CY_ANIMATION_TIER_CACHED",
+          "value": 2
+        },
+        {
+          "name": "CY_ANIMATION_TIER_BAKED",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "rig",
+          "offset": 8,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 4,
+          "name": "tier",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "root_motion",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "play_rate",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyAnimatorDesc",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "state",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "target",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "blend_weight",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "state_time",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        }
+      ],
+      "name": "CyAnimatorState",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "entity",
+          "offset": 0,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "normalised_time",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "parameter",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        }
+      ],
+      "name": "CyAnimationEvent",
+      "size": 24
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "contacts",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "translation",
+          "offset": 8,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "rotation",
+          "offset": 20,
+          "size": 16,
+          "type": "float[4]"
+        },
+        {
+          "alignment": 4,
+          "name": "distance",
+          "offset": 36,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "travelled",
+          "offset": 40,
+          "size": 12,
+          "type": "float[3]"
+        }
+      ],
+      "name": "CyRootMotion",
+      "size": 52
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -4024,10 +4335,108 @@
           "offset": 872,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyUiElement)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_attach",
+          "offset": 880,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const CyAnimatorDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_detach",
+          "offset": 888,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_play",
+          "offset": 896,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_stop",
+          "offset": 904,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_set_float",
+          "offset": 912,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_set_bool",
+          "offset": 920,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, bool)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_fire_trigger",
+          "offset": 928,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_get_float",
+          "offset": 936,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_state",
+          "offset": 944,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, CyAnimatorState*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_events",
+          "offset": 952,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyAnimationEvent*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_root_motion",
+          "offset": 960,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, CyRootMotion*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_take_root_motion",
+          "offset": 968,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, CyRootMotion*)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_set_root_motion",
+          "offset": 976,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "animation_joint_pose",
+          "offset": 984,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyPose*)"
         }
       ],
       "name": "CyInterface",
-      "size": 880
+      "size": 992
     },
     {
       "kind": "enum",

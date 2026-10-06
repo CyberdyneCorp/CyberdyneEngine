@@ -100,7 +100,7 @@ function(cy_abi_declare_tests)
     # compiled when it exists; test_game_services.cpp — the shared rules — always is.
     set(game_sources "${tests_dir}/test_game_services.cpp")
     foreach(group IN ITEMS time input camera physics navigation audio spawn systems scene bodies
-                           character ui)
+                           character ui animation)
         if(EXISTS "${tests_dir}/test_game_${group}.cpp")
             list(APPEND game_sources "${tests_dir}/test_game_${group}.cpp")
         endif()

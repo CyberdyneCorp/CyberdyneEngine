@@ -56,9 +56,9 @@ endif()
 # argument every other call site of this pattern makes. It is compiled in rather than linked because
 # it belongs to a test directory that declares test targets, not a library.
 #
-# shaders/character_spirv.h is CHECKED IN, compiled offline by shaders/embed_spirv.py, for the reason
-# src/rendering/skinning/shaders/ gives: `CY_SHADER_SLANG` is off in Profile and Shipping, and an
-# artefact that needed a shader compiler would not run on the machines that most need to run it.
+# The sample has no shaders of its own since issue #76 stage 3: the character is drawn by the
+# engine's forward frame (`cy::rendering-pipeline`, skinned variants on) from `SkinnedScene`'s
+# output, and the frame's committed modules are the ones every frame binds.
 
 cy_add_module(
     NAME cy_sample_animated-character
@@ -78,7 +78,10 @@ cy_add_module(
         cy::graph
         cy::import
         cy::runtime
+        cy::rendering-assembly
         cy::rendering-graph
+        cy::rendering-material
+        cy::rendering-pipeline
         cy::rendering-skinning
         cy::servers-render-geometry
         cy::rhi

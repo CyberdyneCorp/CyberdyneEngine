@@ -44,6 +44,12 @@ cy_add_module(
         cy::scene
         cy::scene-serialization)
 
+# ABI 1.7's animation adapter, a module of its own because it names the animation runtime, which
+# `-D CY_ANIMATION=OFF` removes. See animation/CMakeLists.txt.
+if(CY_ANIMATION)
+    add_subdirectory(animation)
+endif()
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

@@ -194,6 +194,23 @@ public enum UIVisibility: UInt32, Sendable, CaseIterable {
     case collapsed = 2
 }
 
+/// `CyRootMotionMode`: where an animator's root motion goes.
+public enum RootMotionMode: UInt32, Sendable, CaseIterable {
+    case ignore = 0
+    case transform = 1
+    case accumulate = 2
+    case extract = 3
+    case character = 4
+}
+
+/// `CyAnimationTier`: an animator's level of detail.
+public enum AnimationTier: UInt32, Sendable, CaseIterable {
+    case full = 0
+    case simplified = 1
+    case cached = 2
+    case baked = 3
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

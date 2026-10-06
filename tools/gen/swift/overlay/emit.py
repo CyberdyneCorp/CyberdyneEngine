@@ -79,6 +79,9 @@ ENUM_SPECS = {
     "CyUiJustify": ("UIJustify", "CY_UI_JUSTIFY_", "UInt32"),
     "CyUiAlign": ("UIAlign", "CY_UI_ALIGN_", "UInt32"),
     "CyUiVisibility": ("UIVisibility", "CY_UI_", "UInt32"),
+    # ADDED AT ABI 1.7 with animation (issue #76 stage 4).
+    "CyRootMotionMode": ("RootMotionMode", "CY_ROOT_MOTION_", "UInt32"),
+    "CyAnimationTier": ("AnimationTier", "CY_ANIMATION_TIER_", "UInt32"),
 }
 
 
@@ -186,6 +189,8 @@ def enums(description: dict) -> str:
         ("CyUiJustify", "/// `CyUiJustify`: distribution along a flex container's main axis."),
         ("CyUiAlign", "/// `CyUiAlign`: alignment across the cross axis; stretch is zero."),
         ("CyUiVisibility", "/// `CyUiVisibility`: shown, hidden, or out of layout too."),
+        ("CyRootMotionMode", "/// `CyRootMotionMode`: where an animator's root motion goes."),
+        ("CyAnimationTier", "/// `CyAnimationTier`: an animator's level of detail."),
     ))
     return f"""{BANNER}
 {status}

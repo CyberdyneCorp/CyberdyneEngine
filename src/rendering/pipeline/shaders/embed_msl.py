@@ -81,6 +81,7 @@ def frame_argument_buffers(source: str, name: str) -> str:
     if name not in {
         "kFrameDepthVertexMsl", "kFrameDepthFragmentMsl",
         "kFrameForwardVertexMsl", "kFrameForwardFragmentMsl", "kFrameShadowVertexMsl",
+        "kFrameSkinnedDepthVertexMsl", "kFrameSkinnedForwardVertexMsl",
     }:
         return source
     # Slang emits uint3 for the grid dimensions. Metal pads that field to 16

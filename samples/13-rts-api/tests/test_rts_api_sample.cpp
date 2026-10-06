@@ -30,9 +30,17 @@
 //                                click, ui_event delivered it to the commander, a worker followed
 //   the click was the HUD's      ui_hit_test kept it from deselecting the unit beneath
 //
-// and the negative controls: the same host with no behaviours does none of the behaviour work, the
-// same host with the systems left out of the schedule never runs `trainUnits`, and the same host
-// with no interface has no HUD and its Build click lands on the world.
+// and, at ABI 1.7:
+//
+//   the units animate            animation_attach over the host's cooked `worker` rig, then
+//                                animation_play from the agent's state: walk while it follows a
+//                                path, a cheer on arrival, idle again on the cheer's own event
+//                                (animation_events); the engine's AnimationSystem ran them
+//
+// and the negative controls: the same host with no behaviours does none of the behaviour work and
+// animates nothing, the same host with the systems left out of the schedule never runs
+// `trainUnits`, and the same host with no interface has no HUD and its Build click lands on the
+// world.
 
 #include <cy/test/test.h>
 
@@ -81,11 +89,12 @@ struct Run {
     std::string hero;
     std::string body;
     std::string hud;
+    std::string anim;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
                !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
-               !hero.empty() && !body.empty() && !hud.empty();
+               !hero.empty() && !body.empty() && !hud.empty() && !anim.empty();
     }
 };
 
@@ -104,6 +113,7 @@ struct Run {
     run.hero = line_with(run.process.output, "rts hero ");
     run.body = line_with(run.process.output, "rts body ");
     run.hud = line_with(run.process.output, "rts hud ");
+    run.anim = line_with(run.process.output, "rts anim ");
     return run;
 }
 
@@ -195,6 +205,30 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.5 — tree callbacks, a scheduled system
     CY_CHECK(number_after(run.body, "crate_moved=") > 0.5);
 }
 
+CY_TEST_CASE("samples/13-rts-api: ABI 1.7 — units walk, cheer on arrival and stand down") {
+    const Run run = run_sample("");
+    report_if_broken(run);
+    CY_REQUIRE(run.process.ran);
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+
+    // Every unit the game enlisted carries an animator: the two it started with, the one the build
+    // key built and the one the HUD's Build button built.
+    CY_CHECK_EQ(number_after(run.anim, "animated="), 4.0);
+    // The ordered unit walked while its agent followed the path, cheered when it arrived, and was
+    // stood down to idle by the cheer's own event — three decisions the game made in Swift.
+    CY_CHECK_EQ(number_after(run.anim, "walked="), 1.0);
+    CY_CHECK_EQ(number_after(run.anim, "cheered="), 1.0);
+    CY_CHECK_EQ(number_after(run.anim, "idle_after="), 1.0);
+    // The bystander and the two built units never left idle.
+    CY_CHECK_EQ(number_after(run.anim, "only_idle="), 3.0);
+    // The pose moved: the walk swings the legs by more than half a radian.
+    CY_CHECK(number_after(run.anim, "departure=") > 0.2);
+    // The game read the walk's footfalls and the one cheer finishing, each once.
+    CY_CHECK(number_after(run.anim, "footsteps=") >= 2.0);
+    CY_CHECK_EQ(number_after(run.anim, "cheer_events="), 1.0);
+}
+
 CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, none of them runs") {
     const Run control = run_sample(" --no-systems");
     report_if_broken(control);
@@ -240,6 +274,12 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.hud, "mounted="), 0.0);
     CY_CHECK_EQ(number_after(control.hud, "elements="), 0.0);
     CY_CHECK_EQ(number_after(control.hud, "button="), 0.0);
+    // The engine's animation system ran every tick and had nothing to animate: no animator, no
+    // pose moved from its reference, no event read.
+    CY_CHECK_EQ(number_after(control.anim, "animated="), 0.0);
+    CY_CHECK_EQ(number_after(control.anim, "departure="), 0.0);
+    CY_CHECK_EQ(number_after(control.anim, "footsteps="), 0.0);
+    CY_CHECK_EQ(number_after(control.anim, "cheer_events="), 0.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
@@ -308,7 +348,9 @@ CY_TEST_CASE(
     // With no HUD to take it, the left click went to the world and found no unit there, so the
     // selection made at frame 81 was dropped.
     CY_CHECK_EQ(entity_after(control.select, "selected="), 0ULL);
-    // Everything that is not the interface is unchanged.
+    // Everything that is not the interface is unchanged, and the one worker the HUD did not build
+    // is one animator fewer.
+    CY_CHECK_EQ(number_after(control.anim, "animated="), 3.0);
     CY_CHECK_EQ(number_after(control.order, "orders="), 1.0);
     CY_CHECK_EQ(number_after(control.audio, "arrivals="), 1.0);
     CY_CHECK_EQ(number_after(control.tree, "readied="), 1.0);
@@ -327,4 +369,5 @@ CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
     CY_CHECK_EQ(first.hero, second.hero);
     CY_CHECK_EQ(first.body, second.body);
     CY_CHECK_EQ(first.hud, second.hud);
+    CY_CHECK_EQ(first.anim, second.anim);
 }

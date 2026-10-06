@@ -1230,6 +1230,125 @@ impl UiVisibility {
         }
     }
 }
+/// `CyRootMotionMode`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum RootMotionMode {
+    /// `CY_ROOT_MOTION_IGNORE` = 0.
+    Ignore = 0,
+    /// `CY_ROOT_MOTION_TRANSFORM` = 1.
+    Transform = 1,
+    /// `CY_ROOT_MOTION_ACCUMULATE` = 2.
+    Accumulate = 2,
+    /// `CY_ROOT_MOTION_EXTRACT` = 3.
+    Extract = 3,
+    /// `CY_ROOT_MOTION_CHARACTER` = 4.
+    Character = 4,
+}
+
+impl RootMotionMode {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [RootMotionMode; 5] = [
+        RootMotionMode::Ignore,
+        RootMotionMode::Transform,
+        RootMotionMode::Accumulate,
+        RootMotionMode::Extract,
+        RootMotionMode::Character,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(RootMotionMode::Ignore),
+            1 => Some(RootMotionMode::Transform),
+            2 => Some(RootMotionMode::Accumulate),
+            3 => Some(RootMotionMode::Extract),
+            4 => Some(RootMotionMode::Character),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            RootMotionMode::Ignore => "CY_ROOT_MOTION_IGNORE",
+            RootMotionMode::Transform => "CY_ROOT_MOTION_TRANSFORM",
+            RootMotionMode::Accumulate => "CY_ROOT_MOTION_ACCUMULATE",
+            RootMotionMode::Extract => "CY_ROOT_MOTION_EXTRACT",
+            RootMotionMode::Character => "CY_ROOT_MOTION_CHARACTER",
+        }
+    }
+}
+/// `CyAnimationTier`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum AnimationTier {
+    /// `CY_ANIMATION_TIER_FULL` = 0.
+    Full = 0,
+    /// `CY_ANIMATION_TIER_SIMPLIFIED` = 1.
+    Simplified = 1,
+    /// `CY_ANIMATION_TIER_CACHED` = 2.
+    Cached = 2,
+    /// `CY_ANIMATION_TIER_BAKED` = 3.
+    Baked = 3,
+}
+
+impl AnimationTier {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [AnimationTier; 4] = [
+        AnimationTier::Full,
+        AnimationTier::Simplified,
+        AnimationTier::Cached,
+        AnimationTier::Baked,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(AnimationTier::Full),
+            1 => Some(AnimationTier::Simplified),
+            2 => Some(AnimationTier::Cached),
+            3 => Some(AnimationTier::Baked),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            AnimationTier::Full => "CY_ANIMATION_TIER_FULL",
+            AnimationTier::Simplified => "CY_ANIMATION_TIER_SIMPLIFIED",
+            AnimationTier::Cached => "CY_ANIMATION_TIER_CACHED",
+            AnimationTier::Baked => "CY_ANIMATION_TIER_BAKED",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

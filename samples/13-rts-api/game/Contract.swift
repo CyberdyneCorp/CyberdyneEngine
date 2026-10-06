@@ -23,6 +23,15 @@ enum Content {
     static let pan = "camera.pan"
     /// The build key.
     static let spawn = "unit.spawn"
+    /// The worker's animation rig, which the host cooked and registered under this name, and the
+    /// three states its program has: idle, walking, and a one-shot cheer.
+    static let workerRig = "worker"
+    static let idle = "idle"
+    static let walk = "walk"
+    static let cheer = "cheer"
+    /// The events the worker's clips fire: a footfall, and the cheer finishing.
+    static let footstep: AnimationName = "footstep"
+    static let cheerDone: AnimationName = "cheer_done"
 }
 
 /// The host puts the ground on collision layer 0 and every navigation agent's body on layer 1. A
@@ -76,6 +85,10 @@ struct RtsReport {
     var hudBuilds: Float = 0
     var hudClicks: Float = 0
     var hud: Float = 0
+    /// ABI 1.7. Animation events the game read: footfalls of walking units, and cheers that
+    /// finished.
+    var footsteps: Float = 0
+    var cheerEvents: Float = 0
 }
 
 extension Component {

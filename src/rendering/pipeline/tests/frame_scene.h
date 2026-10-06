@@ -120,6 +120,13 @@ struct FrameSceneHooks {
     /// frame produced — `render.grading`'s metering chain — is declared.
     Status (*after_assemble)(RenderGraph& graph, const FrameResources& resources,
                              void* user) noexcept = nullptr;
+    /// After the scene fills its `PipelineSetup`, before the pipelines are created: where a suite
+    /// that draws skinned meshes asks for the skinned variants.
+    void (*pipelines)(PipelineSetup& setup, void* user) noexcept = nullptr;
+    /// Box `which`'s geometry, answered by the suite instead of the cube: true and `out` filled
+    /// draws what the suite says — a skinned mesh — and false keeps the cube. The floor slab is
+    /// box 0 and is offered like any other.
+    bool (*geometry)(u32 which, DrawGeometry& out, void* user) noexcept = nullptr;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.
@@ -223,6 +230,7 @@ public:
 
     // Public because the geometry lookup is a plain function pointer.
     [[nodiscard]] rhi::BufferHandle index_buffer() const noexcept { return indices_; }
+    [[nodiscard]] const FrameSceneHooks& hooks() const noexcept { return hooks_; }
 
 private:
     [[nodiscard]] Status create_geometry(rhi::Device& device) noexcept;

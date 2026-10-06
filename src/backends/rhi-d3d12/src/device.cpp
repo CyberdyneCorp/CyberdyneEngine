@@ -127,6 +127,8 @@ constexpr u64 kTier1RenderTargets = 1ULL << 2U;
             return DXGI_FORMAT_BC7_UNORM;
         case Format::Bc7Srgb:
             return DXGI_FORMAT_BC7_UNORM_SRGB;
+        case Format::Rgba16Snorm:
+            return DXGI_FORMAT_R16G16B16A16_SNORM;
         case Format::Undefined:
         case Format::Count:
             break;

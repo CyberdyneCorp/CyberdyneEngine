@@ -4,14 +4,15 @@
 # The host takes the library's path from the build (`CY_RTS_API_MODULE_LIBRARY`) because the file
 # is named for its hot-reload generation; see samples/04-character/module.toml for the reasoning.
 #
-# min_abi_minor = 5: the game calls the input, camera, physics, navigation, audio, spawn and time
-# entries ABI 1.3 appended, and ABI 1.5's scheduled systems, tree callbacks, node paths, rigid-body
-# writes and character controllers; an engine older than that does not have them.
+# min_abi_minor = 7: the game calls the input, camera, physics, navigation, audio, spawn and time
+# entries ABI 1.3 appended, ABI 1.5's scheduled systems, tree callbacks, node paths, rigid-body
+# writes and character controllers, ABI 1.6's interface and ABI 1.7's animation; an engine older
+# than that does not have them.
 
 name = "rts-api"
 entry_symbol = "cy_module_entry"
 min_abi_major = 1
-min_abi_minor = 5
+min_abi_minor = 7
 hot_reload = true
 
 [platform.linux]

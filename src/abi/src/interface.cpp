@@ -1067,6 +1067,21 @@ const CyInterface kInterface = {
     &cy::abi::game::ui_hit_test,
     &cy::abi::game::ui_focus,
     &cy::abi::game::ui_set_focus,
+    // 1.7: animation
+    &cy::abi::game::animation_attach,
+    &cy::abi::game::animation_detach,
+    &cy::abi::game::animation_play,
+    &cy::abi::game::animation_stop,
+    &cy::abi::game::animation_set_float,
+    &cy::abi::game::animation_set_bool,
+    &cy::abi::game::animation_fire_trigger,
+    &cy::abi::game::animation_get_float,
+    &cy::abi::game::animation_state,
+    &cy::abi::game::animation_events,
+    &cy::abi::game::animation_root_motion,
+    &cy::abi::game::animation_take_root_motion,
+    &cy::abi::game::animation_set_root_motion,
+    &cy::abi::game::animation_joint_pose,
 };
 
 }  // namespace
@@ -1085,9 +1100,9 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         // The sentence names the minor, so bumping CY_ABI_MINOR without it is a compile error.
-        static_assert(CY_ABI_MINOR == 6U, "update the version in the message below");
+        static_assert(CY_ABI_MINOR == 7U, "update the version in the message below");
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.6 and the module requires a later minor");
+                              "this engine exports ABI 1.7 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

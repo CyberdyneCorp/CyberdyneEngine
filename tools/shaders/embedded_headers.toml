@@ -383,22 +383,6 @@ run = [
 ]
 
 [[group]]
-name = "sample_animated_character"
-headers = ["samples/09b-animated-character/shaders/character_spirv.h"]
-cwd = "samples/09b-animated-character/shaders"
-source = "character.slang"
-compile = [
-    ["spirv", "vertex", "characterVertex", "character_vertex.spv"],
-    ["spirv", "fragment", "characterFragment", "character_fragment.spv"],
-]
-run = [
-    ["{python}", "samples/09b-animated-character/shaders/embed_spirv.py",
-     "samples/09b-animated-character/shaders/character_spirv.h",
-     "kCharacterVertexSpirv={scratch}/character_vertex.spv",
-     "kCharacterFragmentSpirv={scratch}/character_fragment.spv"],
-]
-
-[[group]]
 name = "sample_first_light"
 headers = ["samples/03-first-light/shaders/first_light_spirv.h",
            "samples/03-first-light/shaders/first_light_msl.h"]

@@ -85,6 +85,7 @@ AnimationSystem::AnimationSystem(Allocator& allocator, ecs::World& world,
       index_(allocator),
       slices_(allocator),
       serial_scratch_(allocator),
+      triggers_(allocator),
       poses_(allocator),
       events_(allocator) {
     if (config_.slice == 0) {
@@ -179,6 +180,113 @@ Expected<f32, Error> AnimationSystem::parameter(ecs::Entity entity, Name paramet
         }
     }
     return fail(ErrorCode::NotFound, "the program declares no such parameter");
+}
+
+Status AnimationSystem::play(ecs::Entity entity, Name state, f32 seconds) noexcept {
+    const Slot* slot = slot_of(entity);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "this entity has no animation instance");
+    }
+    Batch& batch = batches_[slot->rig];
+    const u16 index = graph::pose::find_state(batch.instances.rig().program(), state);
+    if (index == 0xFFFFU) {
+        return fail(ErrorCode::NotFound, "the animation program has no state of that name");
+    }
+    return request_state(batch.instances.rig(), batch.instances.instance(slot->index), index,
+                         seconds);
+}
+
+Status AnimationSystem::stop(ecs::Entity entity, f32 seconds) noexcept {
+    const Slot* slot = slot_of(entity);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "this entity has no animation instance");
+    }
+    Batch& batch = batches_[slot->rig];
+    const AnimationRig& rig = batch.instances.rig();
+    return request_state(rig, batch.instances.instance(slot->index), rig.program().entry_state(),
+                         seconds);
+}
+
+Status AnimationSystem::fire_trigger(ecs::Entity entity, Name parameter) noexcept {
+    const Slot* slot = slot_of(entity);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "this entity has no animation instance");
+    }
+    const Span<const Name> names = batches_[slot->rig].instances.rig().program().parameters();
+    for (usize index = 0; index < names.size(); ++index) {
+        if (names[index] != parameter) {
+            continue;
+        }
+        if (Status set = set_parameter(entity, parameter, 1.0F); !set) {
+            return set;
+        }
+        const auto at = static_cast<u32>(slot - slots_.data());
+        return triggers_.push_back(PendingTrigger{at, slot->generation, static_cast<u16>(index)});
+    }
+    return fail(ErrorCode::NotFound, "the program declares no such parameter");
+}
+
+void AnimationSystem::clear_triggers() noexcept {
+    // A TRIGGER LIVES FOR ONE TICK. It was raised before this tick's advance, which has read it;
+    // clearing it here, before the next tick, is what makes a trigger fire its transition once.
+    for (const PendingTrigger& trigger : triggers_) {
+        if (trigger.slot >= slots_.size()) {
+            continue;
+        }
+        const Slot& slot = slots_[trigger.slot];
+        if (!slot.live || slot.generation != trigger.generation) {
+            continue;
+        }
+        const Span<f32> parameters = batches_[slot.rig].instances.instance(slot.index).parameters();
+        if (trigger.parameter < parameters.size()) {
+            parameters[trigger.parameter] = 0.0F;
+        }
+    }
+    triggers_.clear();
+}
+
+Expected<AnimatorStatus, Error> AnimationSystem::status(ecs::Entity entity) const noexcept {
+    const Slot* slot = slot_of(entity);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "this entity has no animation instance");
+    }
+    const graph::pose::PoseProgram& program = batches_[slot->rig].instances.rig().program();
+    const graph::pose::PoseInstance& machine =
+        batches_[slot->rig].instances.instance(slot->index).machine();
+    AnimatorStatus out;
+    out.state = machine.state;
+    out.state_time = machine.state_time;
+    if (machine.state < program.states().size()) {
+        out.state_name = program.states()[machine.state].name;
+    }
+    if (machine.transition != 0xFFFFU && machine.target < program.states().size()) {
+        out.target = machine.target;
+        out.target_name = program.states()[machine.target].name;
+        const f32 duration = graph::pose::transition_duration(program, machine);
+        out.blend_weight =
+            duration <= 0.0F ? 1.0F : math::clamp(machine.blend_elapsed / duration, 0.0F, 1.0F);
+        out.requested = machine.transition == graph::pose::kRequestedTransition;
+    }
+    return out;
+}
+
+Expected<Mat4, Error> AnimationSystem::joint_model_matrix(ecs::Entity entity,
+                                                          Name joint) const noexcept {
+    const Slot* slot = slot_of(entity);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "this entity has no animation instance");
+    }
+    const Skeleton& skeleton = batches_[slot->rig].instances.rig().skeleton();
+    const u16 index = skeleton.find(joint);
+    if (index >= skeleton.joint_count()) {
+        return fail(ErrorCode::NotFound, "the skeleton has no joint of that name");
+    }
+    const Span<const Mat4> current = poses_.current(slot->pose);
+    if (index >= current.size()) {
+        return fail(ErrorCode::NotFound, "the joint has no published pose");
+    }
+    // The world holds `model * inverse_bind`; the bind placement undoes the second factor.
+    return current[index] * skeleton.bind_model()[index].to_matrix();
 }
 
 RootDelta AnimationSystem::root_motion(ecs::Entity entity) const noexcept {
@@ -482,6 +590,7 @@ Status AnimationSystem::step(u32 ticks, f32 tick_seconds) noexcept {
                 return advanced;
             }
         }
+        clear_triggers();
         if (Status consumed = consume_root_motion(tick_seconds); !consumed) {
             return consumed;
         }
@@ -726,6 +835,7 @@ void AnimationSystem::teardown() noexcept {
     free_slots_.clear();
     index_.clear();
     slices_.clear();
+    triggers_.clear();
     events_.clear();
 }
 

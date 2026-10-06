@@ -444,6 +444,9 @@ PassId OutlinePass::declare(RenderGraph& graph, const ScreenSpaceStageInputs& in
     if (inputs.draw_instances != kInvalidResource) {
         mask.read(inputs.draw_instances, Access::VertexStorageRead);
     }
+    for (u32 index = 0; index < vertex_read_count_; ++index) {
+        mask.read(vertex_reads_[index], Access::VertexAttributeRead);
+    }
     mask.record(&record_mask_fn, this);
     const PassId first = mask.id();
 
@@ -504,6 +507,19 @@ void OutlinePass::record_mask(const PassContext& context) noexcept {
     commands.end_rendering();
 }
 
+Status OutlinePass::set_vertex_reads(Span<const ResourceId> resources) noexcept {
+    if (resources.size() > kMaxVertexReads) {
+        vertex_read_count_ = 0;
+        return fail(ErrorCode::OutOfRange,
+                    "selection outlines: more vertex producers than the mask pass declares");
+    }
+    for (usize index = 0; index < resources.size(); ++index) {
+        vertex_reads_[index] = resources[index];
+    }
+    vertex_read_count_ = static_cast<u32>(resources.size());
+    return ok();
+}
+
 void OutlinePass::draw_marked(rhi::CommandBuffer& commands) noexcept {
     const pipeline::FrameRecorder& recorder = *recorder_;
     const pipeline::FrameAssembly* assembly = recorder.assembly();
@@ -532,6 +548,10 @@ void OutlinePass::draw_marked(rhi::CommandBuffer& commands) noexcept {
 
     const auto first = static_cast<u32>(opaque.data() - list.items.data());
     rhi::BufferHandle bound_indices;
+    // A SKINNED DRAW IS MASKED WHERE THE FRAME DREW IT: from the skinning pass's output, which
+    // `bind_draw_positions` binds in place of the shared stream. The shared stream is bound again
+    // before the next rigid draw.
+    bool positions_moved = false;
     for (u32 offset_in_layer = 0; offset_in_layer < opaque.size(); ++offset_in_layer) {
         const u32 index = first + offset_in_layer;
         const u32 slot = highlights_->slot_of(list.items[index].stable_id);
@@ -544,6 +564,15 @@ void OutlinePass::draw_marked(rhi::CommandBuffer& commands) noexcept {
             ++report_.skipped_draws;
             continue;
         }
+        if (draw.skinned() && draw.indices.is_null()) {
+            ++report_.skipped_draws;
+            continue;
+        }
+        i32 vertex_offset = draw.vertex_offset;
+        if (draw.skinned() || positions_moved) {
+            vertex_offset = pipeline::bind_draw_positions(commands, geometry, draw);
+            positions_moved = draw.skinned();
+        }
         const u32 word = index | (slot << kSlotShift);
         commands.push_constants(mask_layout_, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment,
                                 0,
@@ -555,7 +584,7 @@ void OutlinePass::draw_marked(rhi::CommandBuffer& commands) noexcept {
                 commands.bind_index_buffer(draw.indices, 0, draw.wide_indices);
                 bound_indices = draw.indices;
             }
-            commands.draw_indexed(draw.index_count, 1, draw.first_index, draw.vertex_offset, 0);
+            commands.draw_indexed(draw.index_count, 1, draw.first_index, vertex_offset, 0);
         }
         ++report_.marked_draws;
     }

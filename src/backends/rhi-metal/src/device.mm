@@ -485,6 +485,8 @@ struct MetalSwapchain {
             return MTLVertexFormatHalf2;
         case Format::Rgba16Sfloat:
             return MTLVertexFormatHalf4;
+        case Format::Rgba16Snorm:
+            return MTLVertexFormatShort4Normalized;
         case Format::R32Uint:
             return MTLVertexFormatUInt;
         case Format::R32Sint:

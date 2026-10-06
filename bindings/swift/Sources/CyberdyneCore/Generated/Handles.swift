@@ -428,6 +428,76 @@ public struct Engine: @unchecked Sendable {
     public func uiSetFocus(element: CyUiElement) throws {
         try interface.uiSetFocus(engine: raw, element: element)
     }
+
+    @inlinable
+    public func animationAttach(entity: CyEntity, desc: UnsafePointer<CyAnimatorDesc>?) throws {
+        try interface.animationAttach(engine: raw, entity: entity, desc: desc)
+    }
+
+    @inlinable
+    public func animationDetach(entity: CyEntity) throws {
+        try interface.animationDetach(engine: raw, entity: entity)
+    }
+
+    @inlinable
+    public func animationPlay(entity: CyEntity, state: UnsafePointer<CChar>?, crossfade: Float) throws {
+        try interface.animationPlay(engine: raw, entity: entity, state: state, crossfade: crossfade)
+    }
+
+    @inlinable
+    public func animationStop(entity: CyEntity, blend: Float) throws {
+        try interface.animationStop(engine: raw, entity: entity, blend: blend)
+    }
+
+    @inlinable
+    public func animationSetFloat(entity: CyEntity, parameter: UnsafePointer<CChar>?, value: Float) throws {
+        try interface.animationSetFloat(engine: raw, entity: entity, parameter: parameter, value: value)
+    }
+
+    @inlinable
+    public func animationSetBool(entity: CyEntity, parameter: UnsafePointer<CChar>?, value: Bool) throws {
+        try interface.animationSetBool(engine: raw, entity: entity, parameter: parameter, value: value)
+    }
+
+    @inlinable
+    public func animationFireTrigger(entity: CyEntity, parameter: UnsafePointer<CChar>?) throws {
+        try interface.animationFireTrigger(engine: raw, entity: entity, parameter: parameter)
+    }
+
+    @inlinable
+    public func animationGetFloat(entity: CyEntity, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<Float>?) throws {
+        try interface.animationGetFloat(engine: raw, entity: entity, parameter: parameter, into: into)
+    }
+
+    @inlinable
+    public func animationState(entity: CyEntity, into: UnsafeMutablePointer<CyAnimatorState>?) throws {
+        try interface.animationState(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func animationEvents(into: UnsafeMutablePointer<CyAnimationEvent>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.animationEvents(engine: raw, into: into, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func animationRootMotion(entity: CyEntity, into: UnsafeMutablePointer<CyRootMotion>?) throws {
+        try interface.animationRootMotion(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func animationTakeRootMotion(entity: CyEntity, into: UnsafeMutablePointer<CyRootMotion>?) throws {
+        try interface.animationTakeRootMotion(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func animationSetRootMotion(entity: CyEntity, mode: UInt32) throws {
+        try interface.animationSetRootMotion(engine: raw, entity: entity, mode: mode)
+    }
+
+    @inlinable
+    public func animationJointPose(entity: CyEntity, joint: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPose>?) throws {
+        try interface.animationJointPose(engine: raw, entity: entity, joint: joint, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

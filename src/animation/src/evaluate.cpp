@@ -490,10 +490,9 @@ Status evaluate(const AnimationRig& rig, AnimationInstance& instance, u8 bone_lo
     if (Status ran = evaluator.run(target_root); !ran) {
         return ran;
     }
-    const graph::pose::Transition& running = program.transitions()[machine.transition];
-    const f32 weight = running.duration <= 0.0F
-                           ? 1.0F
-                           : math::clamp(machine.blend_elapsed / running.duration, 0.0F, 1.0F);
+    const f32 duration = graph::pose::transition_duration(program, machine);
+    const f32 weight =
+        duration <= 0.0F ? 1.0F : math::clamp(machine.blend_elapsed / duration, 0.0F, 1.0F);
     const Span<const Transform> target = scratch.slot(target_root);
     const JointMask blended = written(target_root);
     for (u32 joint = 0; joint < out_local.size() && joint < target.size(); ++joint) {
@@ -706,10 +705,9 @@ Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
     const graph::pose::PoseInstance& machine = instance.machine();
     RootDelta delta = walker.run(program.states()[machine.state].root);
     if (machine.transition != kNoTransition && machine.target < program.states().size()) {
-        const graph::pose::Transition& running = program.transitions()[machine.transition];
-        const f32 weight = running.duration <= 0.0F
-                               ? 1.0F
-                               : math::clamp(machine.blend_elapsed / running.duration, 0.0F, 1.0F);
+        const f32 duration = graph::pose::transition_duration(program, machine);
+        const f32 weight =
+            duration <= 0.0F ? 1.0F : math::clamp(machine.blend_elapsed / duration, 0.0F, 1.0F);
         delta = blend_root(delta, walker.run(program.states()[machine.target].root), weight);
     }
     instance.accept_root_motion(delta);
@@ -734,6 +732,27 @@ Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
         }
     }
 
+    if (entered != kNoTransition) {
+        reset_state_times(rig, instance, program.states()[entered].root);
+    }
+    return ok();
+}
+
+Status request_state(const AnimationRig& rig, AnimationInstance& instance, u16 state,
+                     f32 seconds) noexcept {
+    if (!rig.bound()) {
+        return fail(ErrorCode::InvalidArgument, "the rig has no program bound");
+    }
+    if (!(seconds >= 0.0F) || !std::isfinite(seconds)) {
+        return fail(ErrorCode::InvalidArgument, "a crossfade lasts a finite, non-negative time");
+    }
+    const PoseProgram& program = rig.program();
+    const u16 state_before = instance.machine().state;
+    const u16 target_before = instance.machine().target;
+    if (!graph::pose::request_state(program, instance.machine(), state, seconds)) {
+        return fail(ErrorCode::NotFound, "the animation program has no such state");
+    }
+    const u16 entered = entered_state(instance.machine(), state_before, target_before);
     if (entered != kNoTransition) {
         reset_state_times(rig, instance, program.states()[entered].root);
     }

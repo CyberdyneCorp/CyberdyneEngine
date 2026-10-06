@@ -4311,6 +4311,615 @@ struct pixelInput_0
 )cy_msl");
 inline constexpr const auto& kFrameForwardFragmentMsl = kFrameForwardFragmentMslText.text;
 
+/// SkinnedDepthVertex.metal, 7900 bytes.
+inline constexpr char kFrameSkinnedDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 295 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 375
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+};
+
+
+#line 20 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    float2 padding_0;
+};
+
+
+#line 282 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_0;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 304
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 349
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 359 "src/rendering/shaders/cy/frame.slang"
+float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow3_0, _S2));
+}
+
+
+#line 519
+float3 previousRelativeOf_0(uint slot_0, const CyInstanceTransform_0 thread* current_0, float3 previousModelPosition_0, KernelContext_0 thread* kernelContext_1)
+{
+    uint _S3 = kernelContext_1->cyFrameView_0->frame_0->motionControl_0.x;
+
+#line 521
+    CyInstanceTransform_0 _S4;
+    if(_S3 == 4294967295U)
+    {
+
+#line 522
+        _S4 = *current_0;
+
+#line 522
+    }
+    else
+    {
+
+#line 522
+        _S4 = kernelContext_1->cyFrameView_0->instances_0[_S3 + slot_0];
+
+#line 522
+    }
+
+#line 522
+    thread CyInstanceTransform_0 _S5 = _S4;
+
+#line 522
+    float3 _S6 = transformToRelative_0(&_S5, previousModelPosition_0);
+    return _S6;
+}
+
+
+#line 1240
+float2 cySkinnedNormalToStream_0(float4 frame_1)
+{
+
+#line 1240
+    float2 _S7 = float2(0.5) ;
+
+    return frame_1.xy * _S7 + _S7;
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S8 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S9 = _S8.x;
+
+#line 26
+    float _S10 = _S8.y;
+
+#line 26
+    float _S11 = 1.0 - abs(_S9) - abs(_S10);
+
+#line 26
+    thread float3 normal_0 = float3(_S9, _S10, _S11);
+    float _S12 = saturate(- _S11);
+    float2 _S13 = float2(_S9, _S10);
+
+#line 28
+    normal_0.xy = _S13 + select(float2(_S12) , float2(- _S12) , _S13 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 384 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 386
+struct cySkinnedDepthVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 normal_1 [[user(TEXCOORD)]];
+    float4 currentClip_0 [[user(TEXCOORD_1)]];
+    float4 previousClip_0 [[user(TEXCOORD_2)]];
+};
+
+
+#line 386
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 frame_2 [[attribute(1)]];
+    float3 previousModelPosition_1 [[attribute(2)]];
+};
+
+
+#line 502
+struct CyDepthVertex_0
+{
+    float4 position_1;
+    float3 normal_2;
+    float4 currentClip_1;
+    float4 previousClip_1;
+};
+
+
+#line 502
+[[vertex]] cySkinnedDepthVertex_Result_0 cySkinnedDepthVertex(vertexInput_0 _S14 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 502
+    thread KernelContext_0 kernelContext_2;
+
+#line 502
+    (&kernelContext_2)->cyFrameView_0 = cyFrameView_1;
+
+#line 502
+    (&kernelContext_2)->cyDraw_0 = cyDraw_1;
+
+#line 1249
+    CyDrawInstance_0 _S15 = cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0];
+    CyInstanceTransform_0 _S16 = cyFrameView_1->instances_0[_S15.instanceSlot_0];
+
+#line 1250
+    thread CyInstanceTransform_0 _S17 = _S16;
+
+#line 1250
+    float3 _S18 = transformToRelative_0(&_S17, _S14.modelPosition_1);
+    thread CyDepthVertex_0 output_0;
+
+#line 1251
+    float4 _S19 = transformToClip_0(_S18, &kernelContext_2);
+
+    (&output_0)->position_1 = _S19;
+    (&output_0)->currentClip_1 = _S19;
+
+#line 1254
+    thread CyInstanceTransform_0 _S20 = _S16;
+
+#line 1254
+    float3 _S21 = previousRelativeOf_0(_S15.instanceSlot_0, &_S20, _S14.previousModelPosition_1, &kernelContext_2);
+    float4 _S22 = float4(_S21, 1.0);
+    (&output_0)->previousClip_1 = float4(dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow0_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow1_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow2_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow3_0, _S22));
+
+
+
+    float3 _S23 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S14.frame_2));
+
+#line 1260
+    thread CyInstanceTransform_0 _S24 = _S16;
+
+#line 1260
+    float3 _S25 = rotateToRelative_0(&_S24, _S23);
+
+#line 1260
+    (&output_0)->normal_2 = _S25;
+
+#line 1260
+    thread cySkinnedDepthVertex_Result_0 _S26;
+
+#line 1260
+    (&_S26)->position_0 = output_0.position_1;
+
+#line 1260
+    (&_S26)->normal_1 = output_0.normal_2;
+
+#line 1260
+    (&_S26)->currentClip_0 = output_0.currentClip_1;
+
+#line 1260
+    (&_S26)->previousClip_0 = output_0.previousClip_1;
+
+#line 1260
+    return _S26;
+}
+
+)cy_msl";
+
+/// SkinnedForwardVertex.metal, 7024 bytes.
+inline constexpr char kFrameSkinnedForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 295 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 375
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+};
+
+
+#line 20 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    float2 padding_0;
+};
+
+
+#line 282 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_0;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 304
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 349
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 359 "src/rendering/shaders/cy/frame.slang"
+float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->relativeToClipRow3_0, _S2));
+}
+
+
+#line 1240
+float2 cySkinnedNormalToStream_0(float4 frame_1)
+{
+
+#line 1240
+    float2 _S3 = float2(0.5) ;
+
+    return frame_1.xy * _S3 + _S3;
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S4 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S5 = _S4.x;
+
+#line 26
+    float _S6 = _S4.y;
+
+#line 26
+    float _S7 = 1.0 - abs(_S5) - abs(_S6);
+
+#line 26
+    thread float3 normal_0 = float3(_S5, _S6, _S7);
+    float _S8 = saturate(- _S7);
+    float2 _S9 = float2(_S5, _S6);
+
+#line 28
+    normal_0.xy = _S9 + select(float2(_S8) , float2(- _S8) , _S9 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 384 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 386
+struct cySkinnedForwardVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 relativePosition_0 [[user(TEXCOORD)]];
+    float3 normal_1 [[user(TEXCOORD_1)]];
+    float2 uv_0 [[user(TEXCOORD_2)]];
+    uint drawIndex_1 [[user(TEXCOORD_3)]];
+    float2 lightmapUv_0 [[user(TEXCOORD_4)]];
+};
+
+
+#line 386
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 frame_2 [[attribute(1)]];
+    float2 uv_1 [[attribute(2)]];
+    float2 lightmapUv_1 [[attribute(3)]];
+};
+
+
+#line 573
+struct CyForwardVertex_0
+{
+    float4 position_1;
+    float3 relativePosition_1;
+    float3 normal_2;
+    float2 uv_2;
+    [[flat]] uint drawIndex_2;
+    float2 lightmapUv_2;
+};
+
+
+#line 573
+[[vertex]] cySkinnedForwardVertex_Result_0 cySkinnedForwardVertex(vertexInput_0 _S10 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 573
+    thread KernelContext_0 kernelContext_1;
+
+#line 573
+    (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
+
+#line 573
+    (&kernelContext_1)->cyDraw_0 = cyDraw_1;
+
+#line 1269
+    CyInstanceTransform_0 _S11 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
+
+    thread CyForwardVertex_0 output_0;
+
+#line 1271
+    thread CyInstanceTransform_0 _S12 = _S11;
+
+#line 1271
+    float3 _S13 = transformToRelative_0(&_S12, _S10.modelPosition_1);
+    (&output_0)->relativePosition_1 = _S13;
+
+#line 1272
+    float4 _S14 = transformToClip_0(_S13, &kernelContext_1);
+    (&output_0)->position_1 = _S14;
+    float3 _S15 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S10.frame_2));
+
+#line 1274
+    thread CyInstanceTransform_0 _S16 = _S11;
+
+#line 1274
+    float3 _S17 = rotateToRelative_0(&_S16, _S15);
+
+#line 1274
+    (&output_0)->normal_2 = _S17;
+    (&output_0)->uv_2 = _S10.uv_1;
+    (&output_0)->drawIndex_2 = cyDraw_1->drawIndex_0;
+    (&output_0)->lightmapUv_2 = _S10.lightmapUv_1;
+
+#line 1277
+    thread cySkinnedForwardVertex_Result_0 _S18;
+
+#line 1277
+    (&_S18)->position_0 = output_0.position_1;
+
+#line 1277
+    (&_S18)->relativePosition_0 = output_0.relativePosition_1;
+
+#line 1277
+    (&_S18)->normal_1 = output_0.normal_2;
+
+#line 1277
+    (&_S18)->uv_0 = output_0.uv_2;
+
+#line 1277
+    (&_S18)->drawIndex_1 = output_0.drawIndex_2;
+
+#line 1277
+    (&_S18)->lightmapUv_0 = output_0.lightmapUv_2;
+
+#line 1277
+    return _S18;
+}
+
+)cy_msl";
+
 /// ResolveVertex.metal, 936 bytes.
 inline constexpr char kFrameResolveVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>

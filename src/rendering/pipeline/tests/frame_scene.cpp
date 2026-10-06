@@ -30,6 +30,10 @@ Span<const DrawSurface> query_surfaces(const VisibleInstance& instance, void* us
 bool cube_geometry(const render::DrawItem& /*item*/, const GpuDrawInstance& instance, void* user,
                    DrawGeometry& out) noexcept {
     auto* scene = static_cast<FrameScene*>(user);
+    const FrameSceneHooks& hooks = scene->hooks();
+    if (hooks.geometry != nullptr && hooks.geometry(instance.instance_slot, out, hooks.user)) {
+        return true;
+    }
     out.indices = scene->index_buffer();
     out.wide_indices = false;
     out.index_count = 36;
@@ -368,6 +372,9 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     setup.output_format = kOutputFormat;
     setup.prepass_normal = true;
     setup.prepass_velocity = true;
+    if (hooks_.pipelines != nullptr) {
+        hooks_.pipelines(setup, hooks_.user);
+    }
     if (Status made = pipelines_.initialize(device, setup); !made) {
         return made;
     }

@@ -79,6 +79,19 @@
 
 namespace cy::rendering::skinning {
 
+namespace detail {
+/// The compute pipeline both `SkinPass` and `SkinnedScene` create — `src/skin_pipeline.h`.
+struct SkinPipeline {
+    rhi::ShaderModuleHandle shader;
+    rhi::DescriptorSetLayoutHandle set_layout;
+    rhi::PipelineLayoutHandle layout;
+    rhi::ComputePipelineHandle pipeline;
+
+    [[nodiscard]] Status create(rhi::Device& device) noexcept;
+    void destroy(rhi::Device& device) noexcept;
+};
+}  // namespace detail
+
 /// How large a skin the pass is sized for. One allocation each, at creation.
 ///
 /// Sized once and reused, because the point of a skinning pass is that the CPU does no per-vertex
@@ -245,10 +258,7 @@ private:
     u32 active_shapes_ = 0;
     bool mesh_uploaded_ = false;
 
-    rhi::ShaderModuleHandle shader_;
-    rhi::DescriptorSetLayoutHandle set_layout_;
-    rhi::PipelineLayoutHandle pipeline_layout_;
-    rhi::ComputePipelineHandle pipeline_;
+    detail::SkinPipeline pipeline_;
     rhi::DescriptorSetHandle descriptor_set_;
     Buffers buffers_{};
     ResourceId positions_id_ = kInvalidResource;

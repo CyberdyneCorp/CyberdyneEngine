@@ -54,6 +54,7 @@ class SceneBackend;
 class PhysicsBodyBackend;
 class CharacterBackend;
 class UiBackend;
+class AnimationBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -102,8 +103,22 @@ struct GameServices {
     CharacterBackend* characters = nullptr;
     /// ABI 1.6: the `ui_*` entries. Null in a build without CyberUI, or a host with no screen.
     UiBackend* ui = nullptr;
+    /// ABI 1.7: `animation_*`.
+    AnimationBackend* animation = nullptr;
     GameClock clock;
 };
+
+/// `CY_NAME_HASH`: FNV-1a over the name's UTF-8 bytes, 64 bits, with the offset basis and prime
+/// `cy_abi.h` states. How a state or an event name crosses the boundary as a value; CyberdyneKit's
+/// `AnimationName` computes the same number from the module's own string.
+[[nodiscard]] constexpr u64 name_hash(const char* text) noexcept {
+    u64 hash = CY_NAME_HASH_OFFSET;
+    for (const char* at = text; at != nullptr && *at != '\0'; ++at) {
+        hash ^= static_cast<u64>(static_cast<unsigned char>(*at));
+        hash *= CY_NAME_HASH_PRIME;
+    }
+    return hash;
+}
 
 /// Refuse a call made in a phase `allowed` does not contain. Reports PERMISSION_DENIED naming
 /// `entry` and the current phase, and returns it; returns CY_RESULT_OK otherwise, touching no

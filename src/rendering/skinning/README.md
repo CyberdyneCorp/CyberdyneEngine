@@ -92,9 +92,48 @@ that had to be answered.
   would have produced a plausible flags field meaning something else. Until M11.c that field was
   written by NOBODY, so every draw in this engine claimed to be unskinned.
 
-**What is still true:** a caller drives one `SkinPass` per skin by hand. There is no per-instance
-skinning *table* and no dispatch that skins a scene's worth of characters in one submit; what exists
-is the bit that says which instances would need one.
+**What was still true until issue #76 stage 3:** a caller drove one `SkinPass` per skin by hand,
+with no per-instance skinning table and no dispatch that skinned a scene's worth of characters in one
+submit. `SkinnedScene`, below, is that table.
+
+## `SkinnedScene`: a scene's skinned instances in the engine's frame — issue #76 stage 3
+
+`include/cy/rendering/skinning/skinned_scene.h` is the renderer half of the GPU pose world that
+`cy::animation::PoseWorld`'s header left to the renderer ("NO DEVICE, NO BUFFER, NO UPLOAD"):
+
+| | |
+|---|---|
+| One pose buffer | `upload_poses(world.matrices(), world.upload_offset(), world.upload_size())` writes the world's DIRTY RANGE and nothing else, at the world's own indices, so `PoseWorld::matrix_offset(handle)` is the `pose_offset` a dispatch reads with no translation. Both representations are written per changed bone. |
+| One skinning table | `add_mesh` packs a bind pose, its frames and its influences into shared input buffers once (an eight-influence mesh's records start at twice its first vertex, so the first vertex is chosen to keep records from overlapping); `add_instance` gives an instance a window of the shared output, twice its vertex count, reused by the next instance of that size after `remove_instance`. |
+| One pass | `declare(graph, frame_index)` adds one compute pass that records a dispatch per posed instance over one descriptor set, each with its own push constants, writing the half of its window the frame's parity selects. Nothing is declared when no instance has a pose. |
+| The frame's draw | `skinned_draw_geometry` (`frame_skinning.h`) fills a `pipeline::DrawGeometry` with the instance's current window, last frame's window when the instance was skinned in the frame before (`SkinnedOutput::has_previous`), and the mesh's indices and UVs. `vertex_reads()` are the resources every frame stage that draws the output declares in `FramePassCallback::vertex_reads`. |
+
+The dispatch is `skin.slang`, unchanged, and its output frame is still `render::PackedNormalTangent`:
+the frame binds it as `rhi::Format::Rgba16Snorm`, the format `rhi` gained for it, through
+`FramePipelines`' skinned variants (`PipelineSetup::skinned`). So the gap this README and
+`skin_dispatch.h` recorded — "a skinned mesh drawn through that vertex input needs the gap closed,
+and this module will not paper over it by inventing a second frame encoding" — is closed by the
+format, as they asked. `SkinPass` and `SkinnedScene` create the pipeline through one function
+(`src/skin_pipeline.h`).
+
+**The depth prepass, the directional shadow, the opaque and transparent passes and the selection
+mask** all draw a skinned instance from the skinning output; the prepass reads last frame's window
+as `kPreviousPositionStream`, which is per-object motion for a deforming mesh.
+
+**What it does not do:** blend shapes (a mesh with active shapes is a `SkinPass`), and frames in
+flight — the same contract `SkinPass` states: the pose buffer is host-visible and the output is
+double buffered by frame parity, so a host that overlaps frames keeps a scene per frame in flight.
+`SkinnedScene` takes the pose as a span and a range, not a `PoseWorld`, because this module builds
+with `CY_ANIMATION=OFF`.
+
+| Suite | What it proves |
+|---|---|
+| `integration.skinned_scene` | the table on the null backend: one pass and one dispatch per posed instance, the constants each pushes, the output halves alternating and the previous one named only when it is last frame's, an upload writing the dirty range and nothing outside it, eight-influence records that never overlap another mesh's, a removed window reused with no other moving, and the refusals |
+| `render.skinned_frame` | on Vulkan, through `pipeline_test::FrameScene` with a bent two-bone limb in place of a box: (a) the skinned pipelines created and no skinned instance is the frame `references/frame_scene_before_bloom.png` holds, byte for byte; (b) the limb's vertices are `cpu_reference_skin`'s word for word and the frame matches `tests/references/skinned_frame.png`; (c) the same with a directional shadow map, which changes when the limb bends; (d) a still limb's motion vectors are exactly zero and a moving forearm's are not while the rigid upper arm's stay zero; (e) the selection mask moves with the limb; (f) three limbs in one pass of three dispatches; (g) an upload carries a changed instance's matrices and not a sentinel staged outside the dirty range |
+| `integration.render_pipeline` | on the null backend: a skinned draw binds the skinned pipelines and is recorded from vertex zero with each stream at its own offset; without the skinned pipelines it is skipped and counted; and creating them records exactly the frame without them |
+
+Each was proven red by a mutation recorded in
+`openspec/changes/add-skinned-forward-frame/evidence/falsification.md`.
 
 `GpuCullPass`'s refusal of `kGpuCullOcclusion` remains the pattern for anything this module cannot
 do: a dispatch that quietly ignored a field would be indistinguishable from one that honoured it over

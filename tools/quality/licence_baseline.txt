@@ -353,9 +353,6 @@ samples/09-multiplayer/world.h
 samples/09b-animated-character/character.cpp
 samples/09b-animated-character/character.h
 samples/09b-animated-character/main.cpp
-samples/09b-animated-character/shaders/character.slang
-samples/09b-animated-character/shaders/character_spirv.h
-samples/09b-animated-character/shaders/embed_spirv.py
 samples/09b-animated-character/stage.cpp
 samples/09b-animated-character/stage.h
 samples/10-world/main.cpp

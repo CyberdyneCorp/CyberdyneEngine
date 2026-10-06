@@ -107,11 +107,43 @@ CY_TEST_CASE("the 1.5 table appends systems, nodes, bodies and characters after 
     }
     // Appended, never inserted: the first 1.5 entry is one pointer after the last 1.4 one, and the
     // last 1.5 entry is followed directly by the first 1.6 one, so nothing was declared and not
-    // listed. test_game_ui.cpp holds the 1.6 entries to the end of the table.
+    // listed. test_game_ui.cpp holds the 1.6 entries together, and the case below holds the 1.7
+    // ones to the end of the table.
     CY_CHECK_EQ(offsetof(CyInterface, register_system),
                 offsetof(CyInterface, vfx_effect_parameter_get) + sizeof(void*));
     CY_CHECK_EQ(offsetof(CyInterface, character_state) + sizeof(void*),
                 offsetof(CyInterface, ui_root));
+}
+
+CY_TEST_CASE("the 1.7 table appends animation after every 1.6 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 7U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.animation_attach != nullptr,
+        iface.animation_detach != nullptr,
+        iface.animation_play != nullptr,
+        iface.animation_stop != nullptr,
+        iface.animation_set_float != nullptr,
+        iface.animation_set_bool != nullptr,
+        iface.animation_fire_trigger != nullptr,
+        iface.animation_get_float != nullptr,
+        iface.animation_state != nullptr,
+        iface.animation_events != nullptr,
+        iface.animation_root_motion != nullptr,
+        iface.animation_take_root_motion != nullptr,
+        iface.animation_set_root_motion != nullptr,
+        iface.animation_joint_pose != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 14U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    // Appended, never inserted: the first 1.7 entry is one pointer after the last 1.6 one, and the
+    // last 1.7 entry is the table's last member, so nothing was declared and not listed.
+    CY_CHECK_EQ(offsetof(CyInterface, animation_attach),
+                offsetof(CyInterface, ui_set_focus) + sizeof(void*));
+    CY_CHECK_EQ(offsetof(CyInterface, animation_joint_pose) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

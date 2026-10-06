@@ -32,12 +32,14 @@ just capture-animated-character --sources <directory holding the four .fbx files
 | entity → pose | `cy/animation/animation_system.h` | the `AnimationSystem`: advance per simulation tick, evaluate in `Stage::Animation`, no wall clock |
 | pose → matrices | `cy/animation/pose_world.h` | published into the system's pose world, double buffered; the offset alternates every frame |
 | matrices → vertices | `cy/rendering/skinning/` | a compute dispatch, on the device |
-| vertices → pixels | this directory | the dispatch's output buffer bound as vertex buffer 0 |
+| vertices → pixels | `cy/rendering/pipeline/` | the engine's forward frame: the skinned depth, shadow and opaque pipelines draw the dispatch's output |
 
-Nothing on the CPU writes the vertices that appear in the picture. `SkinPass::upload_mesh` writes the
-bind pose into a separate input buffer; the buffer the draw binds is device-local, written only by
-`skin.slang` and read only by a vertex fetch. The barrier between the dispatch and the draw is
-derived by the render graph, with synchronisation validation on and its error count reported.
+Nothing on the CPU writes the vertices that appear in the picture. `SkinnedScene::add_mesh` writes the
+bind pose into a separate input buffer; the buffer the frame binds is device-local, written only by
+`skin.slang` and read only by a vertex fetch. The barriers between the dispatch and the frame's
+passes are derived by the render graph, with synchronisation validation on and its error count
+reported, and the program fails if any frame did not draw the character from the skinning output in
+all three of the depth prepass, the shadow and the opaque pass.
 
 ## What it does NOT demonstrate — read this before quoting the video
 
@@ -68,14 +70,15 @@ improve the picture; the camera follows the hips because a clip that did travel 
 these four it does nothing. The death is the exception — the fall's displacement is part of the
 animation, and the hips end 0.9 m behind where they started.
 
-**This is not the engine's forward frame.** `cy::rendering::pipeline`'s `FramePipelines` binds its
-normal stream as `Rgba16Sfloat` because `rhi::Format` has no `Rgba16Snorm`, while the skinning
-dispatch writes the engine's cooked `PackedNormalTangent`, which is 16-bit snorm. The positions would
-bind through `FramePipelines` today; the frames would not. Rather than invent a second frame encoding
-for one consumer, this artefact binds the one stream whose format is unambiguous and recovers the
-normal per pixel from the screen-space derivatives of the world position — flat shading, every
-triangle its own facet. So `rendering-geometry-and-resources` must not be advanced on the strength of
-this picture.
+**Since issue #76 stage 3 this IS the engine's forward frame**, and the video is not. The character
+is a skinned draw in the frame: `skinning::SkinnedScene` uploads the pose world's dirty range into
+one pose buffer and skins the character in one compute pass, and `FramePipelines`' skinned depth,
+shadow and opaque pipelines draw the output, binding the dispatch's `PackedNormalTangent` stream as
+the `rhi::Format::Rgba16Snorm` it was written in — smooth normals, the clustered lights, a
+directional shadow on a tiled ground, per-object motion vectors. The sample's own pipeline and its
+shader are gone. The committed video predates that: it was drawn with flat shading rebuilt from
+screen-space derivatives, because the frame could not then bind the skinned normal stream; the still
+`docs/design/images/animated-character-frame.png` is frame 165 through the frame.
 
 ## The sources
 

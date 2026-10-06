@@ -65,6 +65,8 @@ constexpr FormatRow kFormats[] = {
     {Format::Bc6HUfloat, 151, Format::Undefined},    // MTLPixelFormatBC6H_RGBUfloat
     {Format::Bc7Unorm, 152, Format::Undefined},      // MTLPixelFormatBC7_RGBAUnorm
     {Format::Bc7Srgb, 153, Format::Undefined},       // MTLPixelFormatBC7_RGBAUnorm_sRGB
+
+    {Format::Rgba16Snorm, 112, Format::Undefined},  // MTLPixelFormatRGBA16Snorm
 };
 
 static_assert(sizeof(kFormats) / sizeof(kFormats[0]) == static_cast<usize>(Format::Count),

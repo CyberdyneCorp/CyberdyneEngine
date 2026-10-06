@@ -11,7 +11,14 @@
 //   onUpdate       (frame)       read the pointer, pan the camera, pick a unit or a ground point,
 //                                show the game on the HUD
 //   onUIEvent      (frame)       the HUD's Build button was clicked (ABI 1.6), before `onUpdate`
-//   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build
+//   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build,
+//                                and play each unit's animation from what its agent is doing
+//
+// ABI 1.7: EVERY UNIT ANIMATES FROM HERE. A unit is given an animator over the host's `worker` rig
+// when it is enlisted. Each fixed step the game plays `walk` while its agent follows a path and
+// `idle` when it stands, crossfading between them; an arrival plays the one-shot `cheer`, and the
+// cheer's own `cheer_done` event — read in `onUpdate`, where the frame's events are — sends the
+// unit back to `idle` on the next fixed step. The engine runs the animators; this file only asks.
 //
 // The pointer and the camera are device and presentation state, so a fixed step may not read them.
 // Spawning changes the simulation, so a frame may not do it. A click is therefore RECORDED in
@@ -74,6 +81,11 @@ final class Commander: Behaviour {
     /// Each unit's health: the starting squad is one healthy worker and one hurt one, and a new
     /// worker arrives at less than full strength.
     private var health: [Entity: (current: UInt32, max: UInt32)] = [:]
+
+    /// The state each unit was last asked to play, so a request is made only when it changes.
+    private var playing: [Entity: String] = [:]
+    /// Units whose cheer has finished, waiting for the next fixed step to stand them down.
+    private var cheered: Set<Entity> = []
 
     private var tally = Tally()
     private var report = ComponentType(id: 0)
@@ -143,6 +155,15 @@ final class Commander: Behaviour {
         if pointer.pressed.contains(.right) && !selected.isNull && !onHud {
             try order(under: pointer, through: active)
         }
+        // The animation events of the ticks since the last frame, each delivered once.
+        for event in try Animation.events() {
+            if event.name == Content.footstep {
+                tally.footsteps += 1
+            } else if event.name == Content.cheerDone {
+                tally.cheerEvents += 1
+                cheered.insert(event.entity)
+            }
+        }
         try hud?.show(model())
     }
 
@@ -203,18 +224,40 @@ final class Commander: Behaviour {
         if let world {
             try world.add(Components.register(Veterancy.self, in: world), to: unit)
         }
+        // The engine animates it from now on; the game only says which state to play.
+        try Animator.attach(to: unit, rig: Content.workerRig)
+        playing[unit] = Content.idle
         squad.append(unit)
         health[unit] = (hp, 100)
     }
 
-    /// Play the arrival cue where a unit stopped, on the one tick navigation reports it.
+    /// Play the arrival cue where a unit stopped, on the one tick navigation reports it, and the
+    /// animation its agent's state calls for.
     private func listen(to unit: Entity) throws {
         let state = try NavAgent(unit).state
-        guard state.justArrived else { return }
-        tally.arrivals += 1
-        if try Audio.play(arrivedCue, at: state.position) != nil {
-            tally.cues += 1
+        if state.justArrived {
+            tally.arrivals += 1
+            if try Audio.play(arrivedCue, at: state.position) != nil {
+                tally.cues += 1
+            }
+            try play(Content.cheer, on: unit, crossfade: 0.1)
+            return
         }
+        if playing[unit] == Content.cheer {
+            // The cheer holds until its own event says it is over.
+            guard cheered.remove(unit) != nil else { return }
+            try play(Content.idle, on: unit, crossfade: 0.25)
+            return
+        }
+        let moving = state.status == .following || state.status == .computing
+        try play(moving ? Content.walk : Content.idle, on: unit, crossfade: 0.2)
+    }
+
+    /// Ask for `state` on `unit` when it is not what the unit is already playing.
+    private func play(_ state: String, on unit: Entity, crossfade: Float) throws {
+        guard playing[unit] != state else { return }
+        try Animator(unit).play(state, crossfade: crossfade)
+        playing[unit] = state
     }
 
     // --- Frame: the HUD -------------------------------------------------------------------------
@@ -255,6 +298,8 @@ final class Commander: Behaviour {
         try world.setFloat(tally.hudBuilds, entity, report, field: reportFields.hudBuilds)
         try world.setFloat(tally.hudClicks, entity, report, field: reportFields.hudClicks)
         try world.setFloat(hud == nil ? 0 : 1, entity, report, field: reportFields.hud)
+        try world.setFloat(tally.footsteps, entity, report, field: reportFields.footsteps)
+        try world.setFloat(tally.cheerEvents, entity, report, field: reportFields.cheerEvents)
     }
 }
 
@@ -269,6 +314,8 @@ private struct Tally {
     var barracksFound: Float = 0
     var hudBuilds: Float = 0
     var hudClicks: Float = 0
+    var footsteps: Float = 0
+    var cheerEvents: Float = 0
 }
 
 /// `RtsReport`'s field indices, resolved by name once.
@@ -284,4 +331,6 @@ private struct ReportFields {
     let hudBuilds = RtsReport.field("hudBuilds")
     let hudClicks = RtsReport.field("hudClicks")
     let hud = RtsReport.field("hud")
+    let footsteps = RtsReport.field("footsteps")
+    let cheerEvents = RtsReport.field("cheerEvents")
 }

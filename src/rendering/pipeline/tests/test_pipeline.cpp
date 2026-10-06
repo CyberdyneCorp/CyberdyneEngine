@@ -300,6 +300,187 @@ CY_TEST_CASE("the particle renderer reaches the frame through the layer's own se
     CY_CHECK_EQ(with.draws, without.draws);
 }
 
+namespace {
+
+/// Box 3 of the scene drawn as a SKINNED draw — its positions and frames from two buffers of its
+/// own, the way `skinning::SkinnedScene`'s output is drawn — and the pipelines created with or
+/// without the skinned variants.
+struct SkinnedProbe {
+    bool pipelines = true;
+    bool skinned_box = true;
+    rhi::BufferHandle positions;
+    rhi::BufferHandle frames;
+    rhi::BufferHandle indices;
+};
+
+/// An index count no cube draw has, so the skinned draws can be told apart in the command log.
+constexpr u32 kSkinnedIndexCount = 30;
+constexpr u32 kSkinnedBox = 3;
+
+void skinned_setup(PipelineSetup& setup, void* user) noexcept {
+    setup.skinned = static_cast<SkinnedProbe*>(user)->pipelines;
+}
+
+bool skinned_geometry(u32 which, DrawGeometry& out, void* user) noexcept {
+    const auto& probe = *static_cast<SkinnedProbe*>(user);
+    if (!probe.skinned_box || which != kSkinnedBox) {
+        return false;
+    }
+    out.indices = probe.indices;
+    out.index_count = kSkinnedIndexCount;
+    out.vertex_offset = 24;
+    out.has_previous_vertices = true;
+    out.previous_vertex_offset = 0;
+    out.skinned_positions = probe.positions;
+    out.skinned_frames = probe.frames;
+    out.static_vertex_offset = 0;
+    return true;
+}
+
+[[nodiscard]] rhi::BufferHandle probe_buffer(rhi::Device& device, rhi::BufferUsage usage) noexcept {
+    rhi::BufferDescription description;
+    description.name = "skinned probe";
+    description.size = u64{48U} * 12U;
+    description.usage = usage;
+    description.memory = rhi::MemoryUse::Upload;
+    Expected<rhi::BufferHandle, Error> made = device.create_buffer(description);
+    return made.has_value() ? *made : rhi::BufferHandle{};
+}
+
+/// Draws of `kSkinnedIndexCount` indices, and how many of them were recorded from vertex zero.
+struct SkinnedDraws {
+    u32 draws = 0;
+    u32 from_zero = 0;
+};
+
+[[nodiscard]] SkinnedDraws skinned_draws(Span<const rhi::null::RecordedCommand> commands) noexcept {
+    SkinnedDraws out;
+    for (const rhi::null::RecordedCommand& command : commands) {
+        if (command.kind == rhi::null::CommandKind::DrawIndexed &&
+            command.a == kSkinnedIndexCount) {
+            ++out.draws;
+            out.from_zero += command.handle_bits == 0 ? 1U : 0U;
+        }
+    }
+    return out;
+}
+
+/// A scene whose box 3 is a skinned draw, built on the null device.
+class SkinnedFrame {
+public:
+    SkinnedFrame(NullFixture& fixture, bool pipelines, bool skinned_box)
+        : device_(&fixture.device()), scene_(allocator()) {
+        probe_.pipelines = pipelines;
+        probe_.skinned_box = skinned_box;
+        probe_.positions = probe_buffer(*device_, rhi::BufferUsage::Vertex);
+        probe_.frames = probe_buffer(*device_, rhi::BufferUsage::Vertex);
+        probe_.indices = probe_buffer(*device_, rhi::BufferUsage::Index);
+        FrameSceneHooks hooks;
+        hooks.user = &probe_;
+        hooks.pipelines = &skinned_setup;
+        hooks.geometry = &skinned_geometry;
+        scene_.set_hooks(hooks);
+        built_ = scene_.build(fixture.device()).has_value();
+    }
+    ~SkinnedFrame() {
+        scene_.release();
+        for (const rhi::BufferHandle buffer : {probe_.positions, probe_.frames, probe_.indices}) {
+            if (!buffer.is_null()) {
+                device_->destroy_buffer(buffer);
+            }
+        }
+    }
+    SkinnedFrame(const SkinnedFrame&) = delete;
+    SkinnedFrame& operator=(const SkinnedFrame&) = delete;
+
+    [[nodiscard]] bool built() const noexcept { return built_; }
+    [[nodiscard]] FrameScene& scene() noexcept { return scene_; }
+
+private:
+    rhi::Device* device_;
+    FrameScene scene_;
+    SkinnedProbe probe_;
+    bool built_ = false;
+};
+
+}  // namespace
+
+CY_TEST_CASE("a skinned draw binds the skinned pipelines and is recorded from vertex zero") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    SkinnedFrame frame(fixture, true, true);
+    CY_REQUIRE(frame.built());
+    const FramePipelines& pipelines = frame.scene().pipelines();
+    CY_REQUIRE_FALSE(pipelines.skinned_pipeline(FramePipelineKind::Depth).is_null());
+    CY_REQUIRE_FALSE(pipelines.skinned_pipeline(FramePipelineKind::Opaque).is_null());
+    CY_CHECK(pipelines.skinned_pipeline(FramePipelineKind::Shadow) ==
+             pipelines.pipeline(FramePipelineKind::Shadow));
+    CY_CHECK(pipelines.skinned_pipeline(FramePipelineKind::Resolve).is_null());
+
+    rhi::null::clear_command_log(fixture.device());
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(frame.scene().render(RecordMode::Callbacks, report).has_value());
+    const Span<const rhi::null::RecordedCommand> log = rhi::null::command_log(fixture.device());
+    // The prepass and the opaque pass each drew it once, through its own pipeline.
+    CY_CHECK_EQ(frame.scene().recorded().skinned_draws, 2U);
+    CY_CHECK_EQ(frame.scene().recorded().skipped_draws, 0U);
+    CY_CHECK_GE(bindings_of(log, pipelines.skinned_pipeline(FramePipelineKind::Depth)), 1U);
+    CY_CHECK_GE(bindings_of(log, pipelines.skinned_pipeline(FramePipelineKind::Opaque)), 1U);
+    // EACH BINDING CARRIES ITS OWN OFFSET, so the draw itself starts at vertex zero.
+    const SkinnedDraws draws = skinned_draws(log);
+    CY_CHECK_EQ(draws.draws, 2U);
+    CY_CHECK_EQ(draws.from_zero, 2U);
+}
+
+CY_TEST_CASE("without skinned pipelines a skinned draw is skipped and counted, not mis-drawn") {
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    SkinnedFrame frame(fixture, false, true);
+    CY_REQUIRE(frame.built());
+    CY_CHECK(frame.scene().pipelines().skinned_pipeline(FramePipelineKind::Opaque).is_null());
+    rhi::null::clear_command_log(fixture.device());
+    rendering::assembly::AssemblyReport report;
+    CY_REQUIRE(frame.scene().render(RecordMode::Callbacks, report).has_value());
+    CY_CHECK_EQ(frame.scene().recorded().skinned_draws, 0U);
+    CY_CHECK_EQ(frame.scene().recorded().skipped_draws, 2U);
+    CY_CHECK_EQ(skinned_draws(rhi::null::command_log(fixture.device())).draws, 0U);
+}
+
+CY_TEST_CASE("skinned pipelines and no skinned draw record exactly the frame without them") {
+    // THE OFF CASE ON EVERY MACHINE: the same scene, with and without the skinned variants, and no
+    // draw that uses them. The command logs must be the same commands — only the pipelines created
+    // differ, and none of them is bound.
+    NullFixture fixture;
+    CY_REQUIRE(fixture.ok());
+    u64 hashes[2] = {};
+    u32 commands[2] = {};
+    for (u32 run = 0; run < 2U; ++run) {
+        SkinnedFrame frame(fixture, run == 1U, false);
+        CY_REQUIRE(frame.built());
+        rhi::null::clear_command_log(fixture.device());
+        rendering::assembly::AssemblyReport report;
+        CY_REQUIRE(frame.scene().render(RecordMode::Callbacks, report).has_value());
+        CY_CHECK_EQ(frame.scene().recorded().skinned_draws, 0U);
+        commands[run] = static_cast<u32>(rhi::null::command_log(fixture.device()).size());
+        u64 hash = 1469598103934665603ULL;
+        for (const rhi::null::RecordedCommand& command : rhi::null::command_log(fixture.device())) {
+            // Handles differ between two scenes; what was recorded, in what order, must not. A
+            // draw's every argument is hashed, and of every other command its kind and first word.
+            const bool draw = command.kind == rhi::null::CommandKind::Draw ||
+                              command.kind == rhi::null::CommandKind::DrawIndexed;
+            const u64 words[] = {static_cast<u64>(command.kind), command.a,
+                                 draw ? command.b : 0U,          draw ? command.c : 0U,
+                                 draw ? command.d : 0U,          draw ? command.handle_bits : 0U};
+            for (const u64 word : words) {
+                hash = (hash ^ word) * 1099511628211ULL;
+            }
+        }
+        hashes[run] = hash;
+    }
+    CY_CHECK_EQ(commands[0], commands[1]);
+    CY_CHECK_EQ(hashes[0], hashes[1]);
+}
+
 CY_TEST_CASE("every procedural draw starts at vertex and instance zero") {
     // THE CONTRACT THAT MAKES `SV_VertexID` ONE NUMBER ON THREE TARGETS. `cy/fullscreen.slang` and
     // `cy/particle.slang` derive every position from the vertex index, and the targets do not agree

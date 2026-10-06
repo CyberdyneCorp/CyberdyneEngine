@@ -3,7 +3,8 @@
 A tutorial for a gameplay or engine contributor: how a skeleton, a clip and a compiled animation
 program become a pose, how a character and its clips get in from FBX and are cooked and loaded, how
 the engine's animation system animates an entity every frame, how the pose reaches the skinning pass
-and the screen, and what is not built yet.
+and the engine's forward frame, how a Swift game drives a character through the ABI, and what is not
+built yet.
 
 **Governed by**: [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md)
 (the runtime), with skinning in
@@ -13,9 +14,16 @@ in [`physics`](../../openspec/specs/physics/spec.md). The module READMEs linked 
 detailed reference; this guide is the route through them. Where they disagree, the specification is
 the contract and the module README says what the code does today.
 
+![The animated character, mid-run, drawn by the engine's forward frame](../design/images/animated-character-frame.png)
+
+*`samples/09b-animated-character` since issue #76 stage 3: the character is a skinned draw in the
+engine's forward frame — skinned by `SkinnedScene` from the pose world's dirty range, drawn by the
+skinned depth, shadow and opaque pipelines with the dispatch's own normal-tangent stream, casting
+its shadow on a tiled ground. Frame 165, mid-run, 960x540.*
+
 ![The animated character, mid-run](../design/images/animated-character.png)
 
-*One frame of [`samples/09b-animated-character`](../../samples/09b-animated-character/README.md):
+*The M8.d capture, from before the sample drew through the frame: one frame of [`samples/09b-animated-character`](../../samples/09b-animated-character/README.md):
 four Mixamo FBX exports imported, three clips retargeted onto the fourth's rig, a four-state machine
 compiled at cook time, everything loaded by asset id, the character animated by the engine's
 `AnimationSystem` at a fixed step, and the mesh skinned by a compute dispatch. A still of a
@@ -549,6 +557,23 @@ nowhere). Remember the pitfall in section 8 before applying an imported clip's r
 
 `CY_ANIMATION=OFF` removes the system with the runtime.
 
+### Requests a game makes: play, stop, triggers
+
+Issue #76 stage 4 gave the system the verbs a game needs beyond raising the program's own
+parameters:
+
+| Call | What it does |
+|---|---|
+| `play(entity, state, seconds)` | crossfades from where the machine is to `state` over `seconds`, or cuts when it is zero, whatever the program's transitions say: `graph::pose::request_state` marks the blend `kRequestedTransition` with its own duration. The entered state's clips start at zero, as a program transition's do (`animation::request_state` restarts them, because a request is made between two `advance` calls). A requested blend runs to completion; the program's transitions are considered again from the state it lands in. A request during a blend starts from the blend's source. |
+| `stop(entity, seconds)` | the same, to the program's entry state |
+| `fire_trigger(entity, parameter)` | sets the parameter to 1 for exactly the next tick's advance; `step` clears it after the batches have advanced, so a transition conditioned on it fires once |
+| `status(entity)` | the state, the blend target and weight, the time in the state, and whether the blend was requested |
+| `joint_model_matrix(entity, joint)` | a joint's model-space placement from the published pose: the skinning matrix times the joint's bind placement |
+
+`integration.animation_system`'s *"play crossfades to any state, and its clips start at zero"*,
+*"a trigger is read by exactly one tick"* and *"a joint's model matrix is its published pose"* are
+the cases.
+
 ### The frame path
 
 ```mermaid
@@ -558,13 +583,13 @@ flowchart LR
     end
     subgraph cpu["CPU, per frame: AnimationSystem::evaluate"]
         evaluate["animation::evaluate<br/>local pose, on job workers"] --> publish["to_model, to_skinning<br/>into PoseWorld::staging"]
-        publish --> world["PoseWorld::commit<br/>packed Mat4 array,<br/>two halves per instance"]
+        publish --> world["PoseWorld::commit<br/>packed Mat4 array,<br/>two halves per instance,<br/>dirty range"]
     end
     advance --> evaluate
-    world -->|"matrices() and matrix_offset(handle)"| upload["SkinPass::upload<br/>SkinningDescriptor,<br/>source = GpuPoseWorld"]
+    world -->|"upload_offset, upload_size<br/>and matrix_offset(handle)"| upload["SkinnedScene::upload_poses<br/>one device pose buffer,<br/>the dirty range only"]
     subgraph gpu["Render graph"]
-        upload --> dispatch["compute pass: skin.slang<br/>writes output positions<br/>and normal-tangent frames"]
-        dispatch -->|"barrier derived by the graph"| draw["draw pass<br/>reads positions_resource()<br/>as VertexAttributeRead"]
+        upload --> dispatch["one compute pass: skin.slang<br/>a dispatch per instance,<br/>each its own output window"]
+        dispatch -->|"barrier derived by the graph<br/>(FramePassCallback::vertex_reads)"| draw["the forward frame:<br/>depth prepass, shadow,<br/>opaque, transparent,<br/>selection mask"]
     end
 ```
 
@@ -573,30 +598,66 @@ In order:
 1. The system — or a caller with `publish_pose(skeleton, local, bone_lod, world, handle,
    model_scratch, matrix_scratch)` — runs local to model to skinning matrices and publishes them.
    `PoseWorld::publish` (and `commit`, its second half) swaps current and previous without copying,
-   so **`matrix_offset(handle)` changes every frame**. Read it each frame when you build the
-   descriptor. Never cache it. With the system the handle is `system.pose_of(entity)` and the world
-   is `system.poses()`.
-2. Build a `render::geometry::SkinningDescriptor` with `source = PoseSource::GpuPoseWorld` and
-   `pose_offset = world.matrix_offset(handle)`. `validate()` rejects a `Baked` tier instance
-   claiming a place in the world and a per-skin upload with a non-zero offset.
-3. `SkinPass::upload(descriptor, world.matrices(), frame_index)` packs the bones into the pass's
-   bone buffer. `frame_index` selects which half of the double-buffered output the dispatch writes,
-   so the other half keeps the previous frame's positions for motion vectors.
-4. `SkinPass::declare(graph)` adds the compute pass. The draw pass reads
-   `positions_resource()` with `Access::VertexAttributeRead`. The render graph derives the barrier,
-   and the skinning module emits none of its own.
+   so **`matrix_offset(handle)` changes every frame**. Read it each frame. Never cache it. With the
+   system the handle is `system.pose_of(entity)` and the world is `system.poses()`.
+2. The renderer owns ONE device pose buffer, `cy::rendering::skinning::SkinnedScene`'s:
+   `scene.upload_poses(world.matrices(), world.upload_offset(), world.upload_size())` writes the
+   range the world says changed, at the world's own indices, and the caller then calls
+   `world.clear_upload_range()`. Nothing outside the range is touched — `render.skinned_frame` (g)
+   stages a sentinel outside it and checks the device buffer never sees it.
+3. Each skinned instance is in the scene's table: `add_mesh` once per mesh (bind pose, frames,
+   influences), `add_instance` once per character, and `set_pose(instance, world.matrix_offset(handle))`
+   every frame.
+4. `scene.declare(graph, frame_index)` adds ONE compute pass that skins every posed instance — a
+   dispatch each, over one descriptor set — into the half of its output window the frame's parity
+   selects; the other half keeps last frame's positions.
+5. The frame draws the output. `skinning::skinned_draw_geometry` fills the geometry lookup's
+   `pipeline::DrawGeometry` with the instance's buffers and windows; `FramePipelines` created with
+   `PipelineSetup::skinned` binds the normal-tangent stream as the `rhi::Format::Rgba16Snorm` the
+   dispatch wrote, through `cySkinnedDepthVertex` and `cySkinnedForwardVertex`; the depth prepass
+   reads last frame's window for per-object motion; the shadow pass and the selection mask read the
+   skinned positions; and every one of those stages declares `scene.vertex_reads()` so the graph
+   orders it after the dispatch.
 
-**What "GPU pose world" means today.** `PoseWorld` holds the packed matrix array and a dirty range
-(`upload_offset`, `upload_size`, `clear_upload_range`). *"NO DEVICE, NO BUFFER, NO UPLOAD"*: the
-renderer is meant to own one shared device buffer. No renderer code reads the dirty range yet.
-`SkinPass::upload` copies the matrices it is given into its own host-mapped bone buffer, and one
-`SkinPass` skins one mesh, driven by hand. `src/rendering/skinning/README.md` says: *"There is no
-per-instance skinning table and no dispatch that skins a scene's worth of characters in one
-submit."*
+**With no skinned instance the frame is the frame from before.** The skinned pipelines are created
+only when asked for, the rigid entries of `frame.slang` came out byte-identical, and
+`render.skinned_frame` (a) holds the frame with the skinned pipelines on and no skinned instance to
+`frame_scene_before_bloom.png`, which a build from before them wrote, byte for byte.
 
-**The engine's forward frame does not draw a skinned mesh yet.** `samples/09b-animated-character`
-binds the dispatch output with its own pipeline. Its README explains why `FramePipelines` cannot
-take the skinned normal stream (`Rgba16Sfloat` against the 16-bit snorm `PackedNormalTangent`).
+`SkinPass`, one skin driven by hand, is still there for a mesh with active blend shapes and for the
+dispatch-against-reference suites; `src/rendering/skinning/README.md` has both.
+
+### From Swift: the ABI 1.7 animation API
+
+Issue #76 stage 4 appended fourteen entries to the ABI, reaching the `AnimationSystem` through
+`cy::game_backend::AnimationAdapter` (`src/game_backend/animation/`, built only with
+`CY_ANIMATION`). A host loads its rigs, adds them to the system and registers each under a name
+(`adapter.add_rig("worker", rig)`); a Swift game does the rest:
+
+```swift
+let worker = try Animator.attach(to: unit, rig: "worker")        // onCreate or onFixedUpdate
+try worker.play(moving ? "walk" : "idle", crossfade: 0.2)       // onFixedUpdate
+try worker.fire("wave")                                         // one tick
+for event in try Animation.events(for: unit) where event.name == "footstep" { … }  // onUpdate
+```
+
+| | |
+|---|---|
+| Attach and detach | `Animator.attach(to:rig:tier:emitsEvents:rootMotion:playRate:)` writes the entity's `Animator` and syncs the system at once, so the instance can be played in the same callback |
+| Play and blend | `play(_:crossfade:)` and `stop(blend:)` are `AnimationSystem::play` and `stop`; blend weights are float parameters, `set(_:to:)` |
+| Parameters | `set(_:to: Float)`, `set(_:to: Bool)`, `fire(_:)` (a trigger, one tick), `float(_:)` |
+| Events and notifies | `Animation.events()`: the events of the ticks since the previous frame, as data — the entity, the name, the normalised time and the payload — each delivered in exactly one frame (`AnimationAdapter::begin_frame` snapshots them only when the system ticked since the last frame) and honouring the animator's event policy |
+| Root motion | `rootMotion` (the last tick's delta and the running total), `takeRootMotion()` for an animator in `.accumulate`, and `setRootMotion(_:)`: `.ignore`, `.transform`, `.accumulate`, `.extract`, or `.character`, which `AnimationAdapter::update` feeds to the entity's character controller every tick, turned into the world by the node's placement; an entity whose controller was destroyed under its animator is skipped, so it stops no other character |
+| A joint | `jointPose(_:)`: a joint's world placement from the evaluated pose |
+
+State and event names cross as `AnimationName` — `CY_NAME_HASH`, FNV-1a 64 of the text — because no
+engine pointer escapes a game entry. The phases follow the rule the other game services do: what a
+character does is `N F`, the frame's events and a joint's pose are `N U`, everything else is read
+anywhere. `src/abi/README.md` has the per-entry table; `docs/guides/swift.md` the Swift side.
+
+`samples/13-rts-api` is the proof end to end: its host cooks a worker rig and loads it back through
+the asset system, and its Swift `Commander` plays walk while a unit moves, idle when it stands, a
+held cheer on arrival, and idle again on the cheer's own `cheer_done` event.
 
 ### The iOS RTS load
 
@@ -604,7 +665,9 @@ The iPhone scenes in [building.md](building.md#rts-capacity-scene) show 500 GPU-
 vertices in one batch, 35.13 FPS median on an iPhone 16). They exercise the **skinning pass on
 Metal**, not the animation runtime. `samples/11-ship/ios/main.mm` builds a five-bone pose from `sin`
 in `upload_animation` and uploads it with `PoseSource::UploadedPerSkin`. The models share that one
-pose. No skeleton, clip, program or `PoseWorld` is involved.
+pose. No skeleton, clip, program or `PoseWorld` is involved. Replacing it with real skeletons, clips
+and the pose world through `SkinnedScene`, and re-measuring the scene on the iPhone 16 beside the
+35.13 FPS figure, is the part of issue #76 stage 3 that needs an Apple device and is not done.
 
 ---
 
@@ -716,18 +779,21 @@ and one entity carrying an `Animator`. The game's whole per-frame animation code
 
 `world.frame()` runs the tick — the system's `PostSimulation` half advances the machine, the clocks,
 root motion and events — and the frame stages, whose `Animation` half evaluates and publishes. The
-shot then reads `system.poses()` and `matrix_offset(pose_of(entity))`; `stage.cpp`'s `Stage::shoot`
-builds the descriptor from that offset, uploads it, and declares the skin pass into a render graph
-ahead of its draw:
+shot then hands `system.poses()` and `pose_of(entity)` to `stage.cpp`'s `Stage::shoot`, which draws
+through the engine's forward frame (since issue #76 stage 3): it uploads the pose world's dirty
+range, sets the instance's pose offset, declares the skinning pass ahead of the frame, and lets the
+frame's geometry lookup answer the character's draw from the skinning output:
 
 ```cpp
-    descriptor.pose_offset = pose_offset;
-    descriptor.influences = render::geometry::InfluenceCount::Four;
-    descriptor.method = render::geometry::SkinningMethod::LinearBlend;
-    descriptor.source = render::geometry::PoseSource::GpuPoseWorld;
-    descriptor.tier = render::geometry::AnimationTier::Full;
-    if (Status uploaded = device_->skin.upload(descriptor, pose, frame_index); !uploaded) {
+    if (Status uploaded =
+            state.skins.upload_poses(poses.matrices(), poses.upload_offset(), poses.upload_size());
+        !uploaded) {
         return uploaded;
+    }
+    poses.clear_upload_range();
+    const u32 pose_offset = poses.matrix_offset(handle);
+    if (Status posed = state.skins.set_pose(state.character, pose_offset); !posed) {
+        return posed;
     }
 ```
 
@@ -762,8 +828,10 @@ Read the sample README before quoting the video:
   stretching.
 - **The character runs in place.** All four exports are in-place takes, so there is no forward
   motion. The death is the exception: the hips end 0.9 m behind their start.
-- **Shading is flat.** Normals are rebuilt from screen-space derivatives because the forward frame
-  cannot bind the skinned normal stream (section 5).
+- **The video's shading is flat.** It was captured when the sample drew with a pipeline of its own
+  that rebuilt normals from screen-space derivatives. The sample now draws through the forward
+  frame, with the dispatch's normals, the clustered lights and a directional shadow — the still at
+  the top of this guide — and a new take would show that.
 
 ---
 
@@ -775,7 +843,7 @@ Read the sample README before quoting the video:
 |---|---|
 | `unit.animation` | skeleton order and bone LOD, clip compression and cursors, tier selection and the pose cache, IK conflicts and the two-bone solver, retargeting and profile building |
 | `integration.animation_runtime` | compiling a graph, laziness, the state machine blend, root motion across tiers and rates, a batch of five hundred, events, the pose world handoff to a real `SkinningDescriptor`, and the export retargets |
-| `integration.animation_system` | the frame system over a real `runtime::Simulation`: an entity against the hand-driven path bit for bit, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, 500 instances over three rigs on a job system, two runs that must agree |
+| `integration.animation_system` | the frame system over a real `runtime::Simulation`: an entity against the hand-driven path bit for bit, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, 500 instances over three rigs on a job system, two runs that must agree; `play` to any state with its clips started at zero and a requested blend that runs to completion, a trigger read by exactly one tick, a joint's model matrix |
 | `integration.animation_assets` | the cooked skeleton, clip and program records round-trip byte for byte; `AnimationLibrary` over a real asset system binds by name, refuses a missing clip, a foreign clip and a missing asset, and swaps a reloaded clip under a live instance |
 | `unit.animation_runtime_only` | a LINK-time test: it defines `compile_pose` itself and loads and plays a cooked program, so it links only while the runtime pulls in no compiler |
 | `integration.animation_cook`, `integration.build_animation` | the importer's records read back in the runtime byte for byte, `cook_locomotion_set`, and the `animation` build-graph producer |
@@ -784,12 +852,18 @@ Read the sample README before quoting the video:
 | `integration.import_fbx_skeleton`, `integration.import_fbx_clip`, `integration.asset_import_gltf` | FBX skeleton, skin and clip import, and glTF skins and animations |
 | `unit.render_geometry` | `cpu_reference_skin` against values worked out on paper, the descriptor rules, dual quaternions |
 | `render.skinning`, `render.skinning_metal`, `render.skinned_draw` | the dispatch against the reference on Vulkan and on Metal, and a draw of its output |
+| `integration.skinned_scene` | `SkinnedScene` on the null backend: one pass and one dispatch per posed instance, the output halves, the dirty-range upload, the table's windows and refusals |
+| `render.skinned_frame` | skinned limbs in the engine's forward frame on Vulkan: the frame with skinned pipelines and no skinned instance byte for byte the frame before them, the reference skin word for word, golden images with and without a directional shadow, motion vectors of a still and a moving limb, the selection mask, one pass for three limbs, the dirty-range upload |
+| `integration.render_pipeline` | (its skinned cases) the skinned pipelines bound for a skinned draw recorded from vertex zero, a skinned draw skipped without them, and the same commands with them and no skinned draw |
+| `unit.abi`, `integration.game_backend_animation` | ABI 1.7: the thunks' phases, checks, `struct_size`, events sizing and epoch against a fake; the adapter over a real system — a crossfade through the table bit for bit the C++ path, parameters and triggers, every event once across five ticks a frame, root motion taken, extracted and fed to a character controller (one whose controller is destroyed stops no other), a joint's world pose, the refusals |
+| `integration.swift_package` (`AnimationTests`), `integration.rts_api_sample` | the Swift `Animator` and `Animation` facades through `FakeEngine`; the RTS units walking, cheering and standing down from Swift, with `--no-behaviours` animating nothing |
 | `integration.physics_ragdoll` | profile generation, full, powered and partial ragdoll, hit recovery, rollback |
 
 ```sh
 just test-suites unit:^unit.animation integration:^integration.animation integration:^integration.graph_compiler$ integration:^integration.build_animation$
 just test-suites integration:^integration.import_fbx integration:^integration.asset_import_gltf$ integration:^integration.physics_ragdoll$
-just test-suites render:^render.skinn
+just test-suites render:^render.skinn integration:^integration.skinned_scene$
+just test-suites unit:^unit.abi$ integration:^integration.game_backend_animation$ integration:^integration.rts_api_sample$
 ```
 
 `-D CY_ANIMATION=OFF` removes `src/animation/` — the runtime, the cooked-asset library and the frame
@@ -801,7 +875,9 @@ render. It does not remove `cy::graph`'s pose lowering, which belongs to
 `animation-and-skinning` requirement since the M11.e sweep, to a case or to an exemption naming what
 is not built. Issue #76 moved *Animation evaluation* and *Batched evaluation* to
 `integration.animation_system`'s five-hundred-instance case, and cut the *Root motion* exemption to
-its blending half. `just quality-requirements animation-and-skinning` prints the map.
+its blending half; stages 3 and 4 moved *GPU skinning* and the frame's skinned draw to
+`render.skinned_frame`, and the game-facing requirements to the ABI and RTS suites. `just
+quality-requirements animation-and-skinning` prints the map.
 
 ### Determinism
 
@@ -871,9 +947,10 @@ From `src/animation/README.md`'s own table, and from the tree:
   out from both. Rebuild the rig to use a new one.
 - **A pose cache in the frame system.** `Cached` and `Simplified` instances evaluate at their rate;
   none is satisfied from a `PoseCache` automatically.
-- **No Swift API** (issue #76 stage 4). `bindings/swift` has `SystemStage.animation`, the stage
-  enumerator, and nothing else for animation: no animator, parameter, event or root-motion calls
-  cross the ABI. Gameplay in Swift cannot drive a character's animation today.
+- **What the Swift API does not reach** (issue #76 stage 4 built it, section 5): a rig is a name the
+  HOST registered, so a module cannot load one itself; a requested blend cannot be interrupted by a
+  program transition; there is no per-frame bone write (IK targets go through float parameters); and
+  the events a frame delivers are those of its ticks, with no history.
 - **Editor** (issue #76 stage 5). The model has the pieces and the app has no animation editor.
   `cy-editor-interface`'s `specialised` module declares `Domain::AnimationGraphsAndClips` with a
   graph palette of the nine `pose.*` node names (`POSE_NODES`, *"names only"*, with no pins) and the
@@ -881,10 +958,13 @@ From `src/animation/README.md`'s own table, and from the tree:
   clip on a bound skeleton"*). The desktop shell docks an **Animation** tab, but it is the pending
   panel: *"The animation editor arrives with the animation capability."* There is no rigging
   workspace, weight painting or retarget preview, and the editor cannot save an animation graph.
-- **Renderer integration** (issue #76 stage 3): one `SkinPass` per mesh, driven by hand. There is no
-  shared device pose buffer, no scene-wide skinning table and no skinned draw in the forward frame
-  (section 5). The frame system fills a `PoseWorld` and its dirty range; nothing on the device reads
-  it yet.
+- **What the frame's skinning does not do** (issue #76 stage 3 built it, section 5): blend shapes in
+  `SkinnedScene` (a mesh with active shapes is a `SkinPass`), frames in flight over one scene (a
+  host that overlaps frames keeps a scene per frame), a skinned draw through a material's own vertex
+  variant, a bone read by another compute pass (the pose buffer is there to bind; no consumer and no
+  test exists), the iOS capacity scene on real skeletons (section 5), and a Metal or D3D12 device run
+  of the skinned pipelines: their shaders are compiled for both and checked by `just build-shaders
+  --strict`, and drawn only on Vulkan.
 
 ---
 
