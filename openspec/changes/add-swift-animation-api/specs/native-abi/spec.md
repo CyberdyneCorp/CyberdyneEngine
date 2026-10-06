@@ -26,6 +26,12 @@ an engine pointer.
   ticks to a frame, and the events are read every frame and again at a frame boundary with no tick
 - **THEN** four footsteps SHALL be delivered, each once, and the second read SHALL deliver none
 
+#### Scenario: A character destroyed under its animator
+- **WHEN** two animators feed their root motion to character controllers and the first one's
+  controller is destroyed while its animator stays attached
+- **THEN** every later tick's character update SHALL succeed and the other character SHALL keep
+  walking
+
 #### Scenario: A request in the wrong phase
 - **WHEN** a module calls `animation_play` during a frame update
 - **THEN** the entry SHALL answer PERMISSION_DENIED and nothing SHALL be played

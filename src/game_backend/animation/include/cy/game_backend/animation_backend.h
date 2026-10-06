@@ -55,7 +55,8 @@ public:
 
     /// Once per frame, before the frame's scripts read events.
     [[nodiscard]] Status begin_frame() noexcept;
-    /// Once per tick, after the system's advance: CY_ROOT_MOTION_CHARACTER's moves.
+    /// Once per tick, after the system's advance: CY_ROOT_MOTION_CHARACTER's moves. An entity
+    /// whose character controller was destroyed under its animator is skipped.
     [[nodiscard]] Status update(f32 tick_seconds) noexcept;
 
     CyResult attach(CyEntity entity, const CyAnimatorDesc& desc) noexcept override;
@@ -85,6 +86,8 @@ private:
 
     [[nodiscard]] const animation::Animator* animator_of(CyEntity entity) const noexcept;
     [[nodiscard]] static CyResult missing() noexcept;
+    /// Whether the bound character backend has a controller for `entity`.
+    [[nodiscard]] bool owns_character(CyEntity entity) const noexcept;
     [[nodiscard]] CyResult write_mode(CyEntity entity, CyRootMotionMode mode) noexcept;
     [[nodiscard]] Transform placement_of(CyEntity entity) const noexcept;
     void forget_driven(CyEntity entity) noexcept;

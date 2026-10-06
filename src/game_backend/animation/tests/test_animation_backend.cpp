@@ -404,6 +404,48 @@ CY_TEST_CASE("animation abi: root motion is taken, extracted, or moves a charact
     abi::clear_last_error();
 }
 
+CY_TEST_CASE("animation abi: a driven character that loses its controller stops no other") {
+    // REGRESSION: `update` returned at the first refused move, so destroying one unit's character
+    // controller while its animator still fed it failed every later tick and left every character
+    // after it in entity order standing still.
+    Scene physics;
+    (void)physics.box(1, Vec3{0.0F, -20.0F, 0.0F}, 20.0F);
+    game_backend::CharacterAdapter characters(allocator(), physics.server, physics.world);
+    Game game;
+    game_backend::bind_characters(game.host, &characters);
+    game.adapter->bind_characters(&characters);
+    CyCharacterDesc capsule{};
+    capsule.struct_size = sizeof(capsule);
+    capsule.start.position[1] = 0.95F;
+    CyAnimatorDesc desc{};
+    desc.struct_size = sizeof(desc);
+    desc.rig = "locomotion";
+    desc.root_motion = CY_ROOT_MOTION_CHARACTER;
+    const CyEntity units[] = {game.node(0.0F), game.node(4.0F)};
+    for (const CyEntity unit : units) {
+        CY_REQUIRE_EQ(table().character_create(game.engine(), unit, &capsule), CY_RESULT_OK);
+        CY_REQUIRE_EQ(table().animation_attach(game.engine(), unit, &desc), CY_RESULT_OK);
+        const abi::game::PhaseScope fixed(game.host.game.clock, CY_PHASE_FIXED_UPDATE);
+        CY_REQUIRE_EQ(table().animation_play(game.engine(), unit, "walk", 0.0F), CY_RESULT_OK);
+    }
+    CY_REQUIRE_EQ(game.adapter->character_driven().size(), 2U);
+    // The FIRST driven entity loses its controller; its animator stays attached.
+    const CyEntity fallen = game.adapter->character_driven()[0];
+    const CyEntity walker = game.adapter->character_driven()[1];
+    CY_REQUIRE_EQ(table().character_destroy(game.engine(), fallen), CY_RESULT_OK);
+    for (u32 frame = 0; frame < 30; ++frame) {
+        game.frame();
+        CY_REQUIRE(game.adapter->update(kTick).has_value());
+    }
+    CyCharacterState moved{};
+    moved.struct_size = sizeof(moved);
+    CY_REQUIRE_EQ(table().character_state(game.engine(), walker, &moved), CY_RESULT_OK);
+    CY_CHECK_LT(moved.position[2], -0.4F);
+    game.adapter->bind_characters(nullptr);
+    game_backend::bind_characters(game.host, nullptr);
+    abi::clear_last_error();
+}
+
 CY_TEST_CASE("animation abi: a joint's world pose is the published pose through the node") {
     Game game;
     const CyEntity hero = game.node(2.0F);

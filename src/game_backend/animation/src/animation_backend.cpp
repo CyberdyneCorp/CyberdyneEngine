@@ -100,6 +100,19 @@ CyResult AnimationAdapter::missing() noexcept {
     return abi::report(CY_RESULT_NOT_FOUND, "this entity has no animator");
 }
 
+bool AnimationAdapter::owns_character(CyEntity entity) const noexcept {
+    if (characters_ == nullptr) {
+        return false;
+    }
+    CyCharacterState probe{};
+    probe.struct_size = static_cast<u32>(sizeof(CyCharacterState));
+    if (characters_->state(entity, probe) != CY_RESULT_OK) {
+        abi::clear_last_error();
+        return false;
+    }
+    return true;
+}
+
 // --- Lifetime
 // -------------------------------------------------------------------------------------
 
@@ -122,13 +135,9 @@ CyResult AnimationAdapter::attach(CyEntity entity, const CyAnimatorDesc& desc) n
         return abi::report(CY_RESULT_NOT_FOUND, "no rig is registered under that name");
     }
     const auto mode = static_cast<CyRootMotionMode>(desc.root_motion);
-    if (mode == CY_ROOT_MOTION_CHARACTER) {
-        CyCharacterState probe{};
-        probe.struct_size = static_cast<u32>(sizeof(CyCharacterState));
-        if (characters_ == nullptr || characters_->state(entity, probe) != CY_RESULT_OK) {
-            return abi::report(CY_RESULT_NOT_FOUND,
-                               "CY_ROOT_MOTION_CHARACTER needs the entity to own a character");
-        }
+    if (mode == CY_ROOT_MOTION_CHARACTER && !owns_character(entity)) {
+        return abi::report(CY_RESULT_NOT_FOUND,
+                           "CY_ROOT_MOTION_CHARACTER needs the entity to own a character");
     }
     animation::Animator settings;
     settings.rig = rig;
@@ -271,13 +280,9 @@ CyResult AnimationAdapter::set_root_motion(CyEntity entity, CyRootMotionMode mod
     if (animator_of(entity) == nullptr) {
         return missing();
     }
-    if (mode == CY_ROOT_MOTION_CHARACTER) {
-        CyCharacterState probe{};
-        probe.struct_size = static_cast<u32>(sizeof(CyCharacterState));
-        if (characters_ == nullptr || characters_->state(entity, probe) != CY_RESULT_OK) {
-            return abi::report(CY_RESULT_NOT_FOUND,
-                               "CY_ROOT_MOTION_CHARACTER needs the entity to own a character");
-        }
+    if (mode == CY_ROOT_MOTION_CHARACTER && !owns_character(entity)) {
+        return abi::report(CY_RESULT_NOT_FOUND,
+                           "CY_ROOT_MOTION_CHARACTER needs the entity to own a character");
     }
     return write_mode(entity, mode);
 }
@@ -375,6 +380,11 @@ Status AnimationAdapter::update(f32 tick_seconds) noexcept {
         return ok();
     }
     for (const CyEntity entity : driven_) {
+        // A CHARACTER DESTROYED UNDER ITS ANIMATOR is skipped, not an error: one fallen unit must
+        // not stop every character after it. Its motion stays accumulated on the instance.
+        if (!owns_character(entity)) {
+            continue;
+        }
         // The delta is in the character's own frame; its placement turns it into the world, and a
         // velocity over the tick is what a character controller moves by.
         const animation::RootDelta delta = system_->take_root_motion(from_abi(entity));
