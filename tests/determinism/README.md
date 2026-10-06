@@ -52,6 +52,14 @@ show the differing value. The real Linux arm64 and x86-64 CI digests for run
 [`35843497860`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/35843497860)
 agree on both lockstep fields and both PCG fields; the comparison still runs in CI on every push.
 
+The deterministic math kernel joins the publication (`openspec/changes/add-deterministic-math`,
+design §10.2): `detmath-kernel-version`, `detmath-sweep-count` and `detmath-kernel-digest` — every
+function of `cy::core-detmath` over its seeded sweep, folded. Each leg first checks the digest
+against the committed `tools/detmath/vectors/digests.txt` on its own ("the published kernel digest
+is the committed one, on this leg alone"), and `cross-leg-compare` then compares it between
+architectures under `--detmath`. No four-leg run has been recorded for it yet; the first one belongs
+here, with its run number, and names the legs the claim covers.
+
 **What this does not answer**, said here rather than left to be assumed: `cy::pcg::ExecutionDomain`
 is Editor, Cook, Runtime, Streaming and Dynamic — there is **no GPU execution domain in this tree**
 — and no hosted runner has a device, so `m10:pcg-gpu-domain-agreement` stays open. The last case in

@@ -71,6 +71,24 @@ CY_TEST_CASE("detmath: the native multiply is the reference multiply over a swee
     }
 }
 
+CY_TEST_CASE("detmath: the native signed product is the one built from the unsigned product") {
+    cy::detmath_test::Rng rng(0x5EED'0006ULL);
+    for (const u64 a : kEdges) {
+        for (const u64 b : kEdges) {
+            const auto x = static_cast<i64>(a);
+            const auto y = static_cast<i64>(b);
+            CY_TEST_INFO("a " << x << " b " << y);
+            CY_CHECK(wide::mul_i64(x, y) == wide::mul_i64_from_unsigned(x, y));
+        }
+    }
+    for (int index = 0; index < 2000; ++index) {
+        const i64 x = rng.scaled();
+        const i64 y = rng.scaled();
+        CY_TEST_INFO("a " << x << " b " << y);
+        CY_CHECK(wide::mul_i64(x, y) == wide::mul_i64_from_unsigned(x, y));
+    }
+}
+
 CY_TEST_CASE("detmath: the signed product is the two's complement of the exact product") {
     CY_CHECK(wide::mul_i64(-1, -1) == (U128{1, 0}));
     CY_CHECK(wide::mul_i64(-1, 1) == (U128{kAll, kAll}));

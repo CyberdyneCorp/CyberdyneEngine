@@ -197,18 +197,26 @@ just test-determinism --compare-legs --pcg --detmath --digests cross-leg-digests
 `just test-bench` runs `benchmarks/detmath/`, one dependent chain per operation, against the
 budgets of design §11 (x86-64 reference runner):
 
-| Operation | Budget |
-|---|---|
-| `*` | ≤ 2× an `f64` multiply in a dependent chain (`detmath/f64-mul`) |
-| `/` | ≤ 30 ns |
-| `sqrt` | ≤ 40 ns |
-| `sin`, `cos` | ≤ 25 ns |
-| `atan2` | ≤ 50 ns |
-| `exp2`, `log2` | ≤ 30 ns each |
+| Operation | Budget | First measurement |
+|---|---|---|
+| `*` | ≤ 2× an `f64` multiply in a dependent chain (`detmath/f64-mul`) | 2.18 ns, 2.00× the `f64` multiply |
+| `/` | ≤ 30 ns | 9.2 ns |
+| `sqrt` | ≤ 40 ns | 24.6 ns |
+| `sin`, `cos` | ≤ 25 ns | 19.7 ns |
+| `atan2` | ≤ 50 ns | 30.0 ns |
+| `exp2`, `log2` | ≤ 30 ns each | 26.8 ns, 26.0 ns |
+
+The first measurement is the `profile` build on a 24-core i9-12900K workstation under a load of about
+ten, three runs of nine repetitions agreeing within 2 %; the design's budgets are stated for the CI
+x86-64 reference runner, and the committed thresholds are ratios to the harness's calibration
+workload, so they carry across machines. `*` sits exactly at its budget: the exact product, the
+rounding add and the shift are a dependent chain of about eight cycles against the multiply's four,
+and that is the cost of a rounding rule every implementation can reproduce. It took GCC's and
+Clang's signed 128-bit multiply to get there; the product built from the unsigned one (MSVC's path)
+measured 2.7×.
 
 The measured figures and the committed thresholds are in
-[`benchmarks/baseline.json`](../../benchmarks/baseline.json); the module README records the first
-measurement.
+[`benchmarks/baseline.json`](../../benchmarks/baseline.json).
 
 ## 9. Changing the kernel
 

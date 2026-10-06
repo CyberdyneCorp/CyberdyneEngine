@@ -44,14 +44,14 @@ compiler's floating-point choices.
   |---|---|---|
   | `sqrt` | ≤ 0.5 ulp (correctly rounded) | 0.50 ulp |
   | `sin`, `cos` | ≤ 1 ulp | 0.50 ulp |
-  | `tan` | ≤ 2 ulp where \|tan\| ≤ 1; relative ≤ 2^-30 above | relative 2^-34.6 near the pole |
+  | `tan` | ≤ 2 ulp where \|tan\| ≤ 1; relative ≤ 2^-30 above | 1.0 ulp; relative 2^-34.6 near the pole |
   | `atan`, `atan2` | ≤ 1 ulp of `Angle` | 0.50 ulp |
   | `asin`, `acos` | ≤ 2 ulp of `Angle` for \|x\| ≤ 1 − 2^-16; ≤ 2^-15 turn nearer ±1 | 0.56 ulp |
-  | `exp2` | the larger of 1 ulp and relative 2^-36 | relative 2^-50 at the top of the range |
+  | `exp2` | the larger of 1 ulp and relative 2^-36 | 0.50 ulp |
   | `log2` | ≤ 2 ulp | 0.50 ulp |
-  | `exp` | the larger of 2 ulp and relative 2^-34 | |
+  | `exp` | the larger of 2 ulp and relative 2^-34 | 0.50 ulp |
   | `log` | ≤ 3 ulp | 0.50 ulp |
-  | `pow` (x > 0) | the larger of 2 ulp and relative 2^-34 + \|y\| 2^-58 | |
+  | `pow` (x > 0) | the larger of 2 ulp and relative 2^-34 + \|y\| 2^-58 | 0.50 ulp |
 
   The polynomials themselves are well inside: the generator keeps the first degree whose fit error
   is below 2^-44 (2^-46 for `exp2`), and records the fit and the evaluated error beside the
@@ -82,6 +82,20 @@ compiler's floating-point choices.
 - **MSVC's float-free build.** MSVC has no `-mgeneral-regs-only`; the configure output says so on that
   leg rather than skipping in silence.
 
+## Performance
+
+`benchmarks/detmath/` measures one dependent chain per operation against design §11's budgets, with
+thresholds in `benchmarks/baseline.json`. First measurement, `profile` build, i9-12900K under load:
+
+| Operation | Budget | Measured |
+|---|---|---|
+| `*` | ≤ 2× `f64` `*` | 2.00× (2.18 ns) |
+| `/` | ≤ 30 ns | 9.2 ns |
+| `sqrt` | ≤ 40 ns | 24.6 ns |
+| `sin` | ≤ 25 ns | 19.7 ns |
+| `atan2` | ≤ 50 ns | 30.0 ns |
+| `exp2`, `log2` | ≤ 30 ns | 26.8, 26.0 ns |
+
 ## The conversion boundary
 
 Float becomes `Fixed` once — at cook, at session configuration, or when the issuing peer creates a
@@ -109,13 +123,16 @@ inside a green job.
 
 ## How the checks are made to fail
 
-Each mutation below was applied to this tree, the affected suites run, and the mutation reverted.
+Each mutation below was applied to this tree, the suites rebuilt and run, and the mutation reverted
+(GCC 13, Development, linux-x86_64).
 
 | Mutation | What went red |
 |---|---|
-| The tie rule in `Fixed operator*` changed to round half to even | |
-| The reference multiply replaced with a `double` product | |
-| The last bit of one `kSin` coefficient flipped | |
-| The last bit of one `kAtan` coefficient flipped | |
-| `CY_DETERMINISM_MATH=1` removed from the module's PUBLIC definitions | |
-| The `detmath` claim's kernel digest changed on one leg of the comparator's fixtures | |
+| The tie rule in `Fixed operator*` changed to round half to even | `unit.detmath` ("multiplication rounds to nearest with ties toward +infinity", and `WideFixed::narrow` against `*`); `integration.detmath_vectors` (`mul`: 3 of 276 golden outputs, the tie edges). `determinism.cross_leg` stayed green: a random sweep almost never draws an exact tie, which is why the tie inputs are chosen edges. |
+| The reference multiply replaced with a `double` product | The `-mgeneral-regs-only` build of the kernel fails to compile (`SSE register return with SSE disabled`); built without it, `unit.detmath`'s native-against-reference cases go red. |
+| The last bit of `kSin[0]` flipped | `integration.detmath_vectors` (`sin_core` 74 and `cos_core` 68 of 262 golden outputs, their digests, the kernel digest) and `determinism.cross_leg` (the committed kernel digest). The rounded `sin`/`cos` vectors did NOT move: a 2^-62 change rarely crosses a 2^-32 rounding boundary, which is why the Q2.62 cores have vectors of their own. |
+| The last bit of `kAtan[0]` flipped | `integration.detmath_vectors` (`atan_core` 44 of 262, the kernel digest) and `determinism.cross_leg`. |
+| The digest fold made order-insensitive (`accumulator + finalize(value)`) | `integration.detmath_vectors` (every function's digest) and `determinism.cross_leg`. |
+| `CY_DETERMINISM_MATH=1` removed from the module's PUBLIC definitions | `unit.detmath` ("linking the module is what makes from_build() report deterministic math", and the acceptance case). |
+| `CY_DETERMINISM_MATH=1` added to `unit.determinism`, which does not link the module | `unit.determinism` ("from_build() reports what this translation unit was compiled with"). |
+| A disagreeing, zero, empty or missing `detmath-kernel-digest` | `tools/ci/test_cross_leg_digests.py`'s six `--detmath` fixtures: a finding (exit 1) or a refusal (exit 2), never an agreement. |

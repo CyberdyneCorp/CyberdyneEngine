@@ -22,9 +22,10 @@
 // than one implementation: addition, shifts and comparison are written once, here, in 64-bit
 // operations that mean the same thing on every compiler.
 //
-// The design table names `_mul128` for MSVC x64. The signed product is built here from the
-// unsigned one (`mul_i64` below) on every path, so that only the unsigned primitive varies between
-// toolchains; `_umul128` is that primitive.
+// The design table names `_mul128` for MSVC x64. There the signed product is built from the
+// unsigned `_umul128` (`mul_i64_from_unsigned` below); GCC and Clang use their signed 128-bit
+// multiply, which is one instruction on the critical path of every product. `unit.detmath` holds
+// the two constructions to each other.
 
 #include <cy/core/base/types.h>
 #include <cy/core/detmath/config.h>
@@ -235,11 +236,11 @@ __extension__ using NativeU128 = unsigned __int128;  ///< GCC and Clang's 128-bi
 #endif
 }
 
-/// The exact signed product of two `i64`, as a two's-complement 128-bit value.
-///
-/// Built from the unsigned product on every path: reading a negative operand as unsigned adds
-/// 2^64 times the other operand to the true product, so that much is subtracted from the high limb.
-[[nodiscard]] inline U128 mul_i64(i64 a, i64 b) noexcept {
+/// The exact signed product of two `i64` from the unsigned one: reading a negative operand as
+/// unsigned adds 2^64 times the other operand to the true product, so that much is subtracted from
+/// the high limb. The path on toolchains without a signed 128-bit multiply, and the one the native
+/// signed product is tested against.
+[[nodiscard]] inline U128 mul_i64_from_unsigned(i64 a, i64 b) noexcept {
     U128 product = mul_u64(static_cast<u64>(a), static_cast<u64>(b));
     if (a < 0) {
         product.hi -= static_cast<u64>(b);
@@ -248,6 +249,20 @@ __extension__ using NativeU128 = unsigned __int128;  ///< GCC and Clang's 128-bi
         product.hi -= static_cast<u64>(a);
     }
     return product;
+}
+
+/// The exact signed product of two `i64`, as a two's-complement 128-bit value.
+[[nodiscard]] inline U128 mul_i64(i64 a, i64 b) noexcept {
+#if defined(__SIZEOF_INT128__) && !(defined(_MSC_VER) && !defined(__clang__))
+    // One signed multiply instruction where the compiler has one: the corrections below are on the
+    // critical path of every `Fixed` product and every Horner step. The value is the same exact
+    // product, which `unit.detmath` checks against the corrected unsigned one.
+    __extension__ using NativeI128 = __int128;
+    const auto product = static_cast<NativeU128>(static_cast<NativeI128>(a) * b);
+    return U128{static_cast<u64>(product), static_cast<u64>(product >> 64)};
+#else
+    return mul_i64_from_unsigned(a, b);
+#endif
 }
 
 /// `round(a * b / 2^shift)` with ties toward +infinity, wrapped to 64 bits, for `shift` in
