@@ -197,12 +197,12 @@ inline constexpr u32 kForwardPassStreamCount = 4;
 
 /// Encode a normal and a tangent into one 8-byte normal-stream vertex.
 ///
-/// THE BRIDGE BETWEEN THE COOKED ENCODING AND THE VERTEX INPUT, and the reason it exists is a real
-/// gap rather than a preference: `render::PackedNormalTangent` stores the same two octahedral pairs
-/// as 16-bit SIGNED NORMALISED components, and `rhi::Format` has no `Rgba16Snorm` for a vertex
-/// attribute to be declared with. Half floats carry [-1, 1] with about eleven bits of mantissa,
-/// which is more than the snorm form has, at the same eight bytes. Closing the gap properly means
-/// adding a format to `src/backends/rhi/`, which is below this layer.
+/// THE BRIDGE BETWEEN THE COOKED ENCODING AND THE RIGID VERTEX INPUT: the same two octahedral pairs
+/// `render::PackedNormalTangent` stores as 16-bit signed normalised components, remapped to [0, 1]
+/// and stored as half floats, which the rigid pipelines bind as `Rgba16Sfloat`. It was written when
+/// `rhi::Format` had no `Rgba16Snorm`. Since issue #76 stage 3 it has one, and the SKINNED pipelines
+/// (`PipelineSetup::skinned`) bind the skinning pass's `PackedNormalTangent` output in it directly;
+/// the rigid streams keep this encoding, so every frame drawn before is the frame it was.
 void pack_normal_stream(Vec3 normal, Vec3 tangent, u16 out[4]) noexcept;
 
 // --- The blocks the shader reads ---------------------------------------------------------------

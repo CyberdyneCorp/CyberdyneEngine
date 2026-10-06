@@ -312,13 +312,12 @@ struct SkinInputs {
 /// Everything it writes. `frames` may be empty when `kSkinWriteFrames` is clear.
 ///
 /// THE OUTPUT FRAME IS THE ENGINE'S COOKED ENCODING, `render::PackedNormalTangent`, and not the
-/// encoding the forward pipeline's vertex input happens to bind. `rhi::Format` has no
-/// `Rgba16Snorm`, so `cy::rendering::pipeline` binds its normal stream as `Rgba16Sfloat` carrying
-/// the same octahedral pair as half floats — `frame_pipelines.h` records that gap at length and
-/// says closing it means adding a format to `src/backends/rhi/`. Writing the cooked encoding here
-/// keeps the dispatch honest about which representation it produces; a skinned mesh drawn through
-/// that vertex input needs the gap closed, and this module will not paper over it by inventing a
-/// second frame encoding for one consumer.
+/// encoding the forward pipeline's RIGID vertex input binds, which is the same octahedral pair as
+/// half floats in [0, 1]. Writing the cooked encoding keeps the dispatch honest about which
+/// representation it produces, and this module did not paper over the difference by inventing a
+/// second frame encoding for one consumer: issue #76 stage 3 closed it the way `frame_pipelines.h`
+/// said it had to be closed, by adding `rhi::Format::Rgba16Snorm`. The frame's skinned pipelines
+/// bind this output in that format (`FramePipelines::skinned_pipeline`).
 struct SkinOutputs {
     Span<Vec3> positions;
     Span<PackedNormalTangent> frames;

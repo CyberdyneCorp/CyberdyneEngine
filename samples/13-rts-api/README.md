@@ -1,4 +1,4 @@
-# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5 and 1.6
+# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5, 1.6 and 1.7
 
 The end-to-end proof of `add-swift-game-api`. A Swift behaviour runs a small RTS: a camera the
 keyboard and the screen edges pan, a unit picked under the pointer, sent to a clicked ground point,
@@ -29,6 +29,15 @@ unit and the camera's frame on the minimap. A click on Build reaches the command
 engine's `ui_event`, and the next fixed step builds a worker; a left click over the HUD is the HUD's,
 not a selection, because the commander asks `UI.hitTest` first.
 
+ABI 1.7 (`add-swift-animation-api`, issue #76 stage 4) makes the units ANIMATE from Swift: every
+unit the commander enlists gets an animator over the host's `worker` rig, walks while its agent
+follows a path, stands idle when it stops, cheers on arrival, and is stood down to idle by the
+cheer's own `cheer_done` event. The host cooks that rig — eight joints, an idle, a walk with
+footstep events and a held cheer, and a program with no transitions because the game picks the
+state — into a memory mount, loads it back by asset id through the asset system and
+`AnimationLibrary`, and installs the engine's `AnimationSystem` in its schedule
+(`host/worker_rig.*`).
+
 ## What is here
 
 | | |
@@ -36,6 +45,7 @@ not a selection, because the commander asks `UI.hitTest` first.
 | `game/` | **The game.** `Commander.swift` (the squad, the selection, the orders, the build key and button, the HUD's model, its tree callbacks), `Hud.swift` (the HUD, and `HudShowcase` for `render.rts_api_hud`), `Scout.swift` (a character-controlled hero and a kicked crate), `RtsCamera.swift` (panning), `Contract.swift` (content names, collision layers, the report components and `Veterancy`), `Game.swift` (the module's entry points and the `trainUnits` system). |
 | `host/rts_host.*` | Servers, the adapters bound on the ABI host, the scene bridge, the schedule with the script systems in it, the Swift module, the interface (store, text, `UiAdapter`), and the frame loop. |
 | `host/level.*` | Content built in code: the ground, a navigation tile, the worker prefab, the arrival click, the input actions, and the `/Level` nodes with the crate. |
+| `host/worker_rig.*` | ABI 1.7: the worker's rig authored, cooked into the records a build would write, and loaded back by asset id. |
 | `host/units.*` | Plumbing for navigation agents (an agent's position is its scene node, and it has a kinematic capsule on collision layer 1), the one entity-to-body map, and the native `Veterancy` reader. |
 | `host/script.*` | The scripted player: synthetic key and mouse events, aimed with the camera projection. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
@@ -60,6 +70,9 @@ not a selection, because the commander asks `UI.hitTest` first.
 | writes the HUD from the game | `ui_set_text`, `ui_set_progress`, `ui_set_visibility`, `ui_set_layout`, `ui_set_style` — only what changed | frame |
 | keeps a click on the HUD from selecting | `ui_hit_test` | frame |
 | hears the Build click, builds | the vtable's `ui_event`, then `spawn_instantiate` | frame, then fixed |
+| gives every unit an animator over the `worker` rig | `animation_attach` | none (`onCreate`) or fixed (the build key) |
+| plays walk while a unit's agent follows a path, idle when it stands, the cheer on arrival | `animation_play` | fixed |
+| reads the footfalls and the cheer finishing, and stands the unit down on the next tick | `animation_events`, then `animation_play` | frame, then fixed |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern
@@ -92,12 +105,19 @@ fresh image, and reads the report it prints:
   selected, because the click was the HUD's;
 * with `--no-ui` there is no HUD, the same click on the same pixel builds nothing and lands on the
   world (dropping the selection), and nothing else changes.
+* ABI 1.7: all four units carry an animator; the ordered unit walked while its agent followed the
+  path, cheered on arrival and was back in idle after the cheer's event; the other three never left
+  idle; the pose moved; the game read the footfalls and the one cheer finishing, each once; with
+  `--no-behaviours` nothing is animated, no pose moves and no event is read, and with `--no-ui` the
+  worker the HUD did not build is one animator fewer.
 
 It was proven red by breaking `physics_raycast` (the hit is never written back: selection, order,
 arrival and cue fail) and `audio_play` (every play dropped: the cue and voice checks fail), each
 restored and md5-verified. The ABI 1.5 half was proven red by a scheduled body that never runs
 (`most` stays 0); the rest of its mutations are in
-`openspec/changes/add-swift-m12-gaps/evidence/falsification.md`.
+`openspec/changes/add-swift-m12-gaps/evidence/falsification.md`. The ABI 1.7 animation half was proven red by
+a game that always plays idle (`walked` and `footsteps` fail) and one that ignores the cheer's event
+(`idle_after` fails), recorded in `openspec/changes/add-swift-animation-api/evidence/falsification.md`.
 
 ## Known limits
 

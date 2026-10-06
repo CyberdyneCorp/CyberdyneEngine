@@ -40,7 +40,7 @@ Nothing under `src/animation/` parses or lowers a graph.
 |---|---|
 | `skeleton.h` | The deformation hierarchy: joints ordered parent-before-child, bind poses, bone LOD levels as nested joint masks, per-joint bounds, the humanoid profile, and the one-pass local → model → skinning-matrix path |
 | `clip.h` | The clip asset and its codec: tracks, quantised keys with per-track ranges, curve fitting to a tolerance **in millimetres and degrees**, constant collapsing, a per-track cursor, markers, events and the root motion track. Property tracks bind by `TypeId`/`FieldId`, so a rename does not break a clip |
-| `evaluate.h` | The runtime: `AnimationRig` (skeleton + program + clips), `AnimationInstance` (the small state block), `PoseScratch` (caller-owned pose buffers), `advance()`, `evaluate()` and `AnimationBatch` |
+| `evaluate.h` | The runtime: `AnimationRig` (skeleton + program + clips), `AnimationInstance` (the small state block), `PoseScratch` (caller-owned pose buffers), `advance()`, `evaluate()`, `request_state()` (a host's crossfade to any state, its entered clips started at zero) and `AnimationBatch` |
 | `lod.h` | Animation LOD tiers, the policy that chooses one **from simulation state alone**, hysteresis, and the pose cache pose sharing runs through |
 | `ik.h` | The constraint framework: declared reads and writes, conflict detection at setup, two-bone IK and look-at, each weighted |
 | `retarget.h` | Retargeting by semantic chains, at runtime and as an offline bake |
@@ -54,7 +54,14 @@ runtime may not:
 |---|---|---|
 | `assets/` → `cy::animation-assets` | `cooked.h` | The cooked records the runtime loads: the importer's skeleton and clip records read and written byte for byte without the importer, and the cooked pose program, rebuilt by `graph::pose::assemble_pose_program` with no compiler linked. Issue #76 |
 | | `library.h` | `AnimationLibrary`: skeletons, clips and programs loaded by asset id through `cy::core-assets`, rigs bound by name with refusals that name what is missing, and in-place hot reload of clips |
-| `system/` → `cy::animation-system` | `animation_system.h` | The `Animator` component and `AnimationSystem`: one batch per rig, the deterministic half once per simulation tick in `Stage::PostSimulation`, the pose half in `Stage::Animation` across job workers, level of detail and root-motion routing applied per instance. Issue #76. It names the ECS and the scene, which is why it is not in the runtime |
+| `system/` → `cy::animation-system` | `animation_system.h` | The `Animator` component and `AnimationSystem`: one batch per rig, the deterministic half once per simulation tick in `Stage::PostSimulation`, the pose half in `Stage::Animation` across job workers, level of detail and root-motion routing applied per instance; and the requests a game makes — `play`, `stop`, one-tick triggers, `status` and a joint's model matrix (issue #76 stage 4). It names the ECS and the scene, which is why it is not in the runtime |
+
+Who reads the pose world on the device is the renderer's: `cy::rendering::skinning::SkinnedScene`
+uploads its dirty range into one pose buffer and skins every instance in one pass, and the engine's
+forward frame draws the result (`src/rendering/skinning/README.md`, issue #76 stage 3). Who drives it
+from a game is the ABI's: ABI 1.7's `animation_*` entries reach `AnimationSystem` through
+`cy::game_backend::AnimationAdapter` (`src/game_backend/animation/`, stage 4), and CyberdyneKit's
+`Animator` is their Swift face.
 
 ## Five decisions worth knowing before changing anything here
 
@@ -170,7 +177,7 @@ does **not** gate `cy::graph`'s pose lowering, which is a compiler and belongs t
 |---|---|---|
 | `unit.animation` | unit | The asset model and the algebra over it: skeleton order and bone LOD, clip compression and cursored sampling, tier selection and the pose cache, constraint conflicts and the two-bone solver, retargeting, the correspondence a profile is built from and its bake |
 | `integration.animation_runtime` | integration | Compiling a graph, binding a rig, laziness, the state machine's blend, root motion across tiers and rates, batched evaluation of five hundred instances, events, the pose world's handoff to skinning, and three separately exported rigs' clips baked onto one character |
-| `integration.animation_system` | integration | The frame system over a real `runtime::Simulation`: bit-identical to the hand-driven path, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, five hundred instances over three rigs on a job system, and two runs that must agree |
+| `integration.animation_system` | integration | The frame system over a real `runtime::Simulation`: bit-identical to the hand-driven path, ticks not frames, transitions, level of detail, events, root motion modes, removal mid-run, five hundred instances over three rigs on a job system, and two runs that must agree; `play` and `stop` with the entered clips started at zero and a requested blend run to completion, a trigger read by one tick, a joint's model matrix |
 | `integration.animation_assets` | integration | The cooked records round-trip byte for byte, and `AnimationLibrary` over a real asset system: binding by name, the three refusals, and a clip reloaded under a live instance |
 | `unit.animation_runtime_only` | unit | A link-time proof: it defines `compile_pose` itself and loads and plays a cooked program, so it links only while the runtime pulls in no compiler |
 | `integration.animation_teardown` | integration | Sixty-four rounds of building and tearing down rigs, batches and pose worlds with four spinner threads holding the cores |

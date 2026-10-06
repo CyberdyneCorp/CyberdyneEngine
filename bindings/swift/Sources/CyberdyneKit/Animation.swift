@@ -40,6 +40,7 @@ public struct AnimationName: Hashable, Sendable, ExpressibleByStringLiteral,
         self.hash = hash
     }
 
+    /// A literal name, so `state.state == "walk"` compares against the text it hashes.
     public init(stringLiteral value: String) {
         self.init(value)
     }
@@ -54,6 +55,7 @@ public struct AnimationName: Hashable, Sendable, ExpressibleByStringLiteral,
         return value
     }
 
+    /// The hash, in hex: the text does not cross the boundary, so it is not here to print.
     public var description: String { "AnimationName(0x\(String(hash, radix: 16)))" }
 }
 
@@ -118,7 +120,9 @@ public struct Animator: Hashable, Sendable {
 
     /// Root motion: a delta in the character's own frame, and the running total.
     public struct RootMotion: Equatable, Sendable {
+        /// The root's move over the interval, in the character's own frame, in metres.
         public var translation: Vec3
+        /// The root's turn over the interval.
         public var rotation: Quat
         /// The motion curve's distance over the interval, in metres.
         public var distance: Float

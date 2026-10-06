@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "skin_pipeline.h"
 
 #include <cy/backends/rhi/validation.h>

@@ -161,6 +161,34 @@ table shape, `ui_event` dispatch and the pre-1.6 prefix; `test_layout.cpp`: the 
 `integration.game_backend_ui` (the adapter over a real store), and `render.rts_api_hud` (a Swift HUD
 against the C++ one).
 
+## What ABI 1.7 adds, and why
+
+`add-swift-animation-api`, issue #76 stage 4. The RTS's units must animate from Swift, and until
+1.7 nothing of `cy::animation` crossed the boundary. 1.7 appends fourteen entries, all reaching
+`cy::animation::AnimationSystem` through `cy::abi::game::AnimationBackend`
+(`include/cy/abi/game/animation.h`), implemented by `cy::game_backend::AnimationAdapter` in
+`src/game_backend/animation/` — a module of its own, built only with `CY_ANIMATION`.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `animation_attach`, `animation_detach` | N F | Structural: each success bumps the world's epoch. The rig is a name the host registered; the instance exists when attach returns. ALREADY_EXISTS for a second animator. |
+| `animation_play`, `animation_stop` | N F | A requested crossfade to any state of the program (`graph::pose::request_state`), or back to its entry state; zero seconds is a cut; it runs to completion and the program is consulted again where it lands. The entered state's clips start at zero. |
+| `animation_set_float`, `animation_set_bool`, `animation_fire_trigger` | N F | Program parameters. A trigger reads 1 for exactly the next tick's advance. |
+| `animation_get_float`, `animation_state`, `animation_root_motion` | N F U | `CyAnimatorState` names its states by `CY_NAME_HASH`. |
+| `animation_events` | N U | The events of the ticks since the previous frame, once per frame (`AnimationAdapter::begin_frame`), with `world_chunks`' sizing pattern. |
+| `animation_take_root_motion` | F | Only from an animator in `CY_ROOT_MOTION_ACCUMULATE`. |
+| `animation_set_root_motion` | N F | `CY_ROOT_MOTION_CHARACTER` feeds the entity's character controller every tick (`AnimationAdapter::update`), and needs one. |
+| `animation_joint_pose` | N U | A joint's world placement from the evaluated pose. |
+
+NAMES ARE HASHED. A 1.3 entry hands back no engine pointer, so a state or an event name crosses as
+`CY_NAME_HASH` — FNV-1a, 64 bits, over the UTF-8 bytes, with the offset basis and prime the header
+defines — computed by `cy::abi::game::name_hash` here and `AnimationName` in CyberdyneKit, and held
+to the published FNV-1a vectors on both sides.
+
+Tests: `unit.abi` (`test_game_animation.cpp`, the phases, the argument checks, `struct_size`, the
+events' sizing pattern, the epoch and the hash, and the 1.7 table shape), and
+`integration.game_backend_animation` against a real `AnimationSystem` in a `runtime::Simulation`.
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

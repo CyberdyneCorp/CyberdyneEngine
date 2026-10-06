@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/skinning/skinned_scene.h>
 
 #include <cstring>

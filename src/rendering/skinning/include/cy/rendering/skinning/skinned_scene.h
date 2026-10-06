@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // A scene's skinned instances, skinned in one submit from one device pose buffer. Issue #76
 // stage 3.

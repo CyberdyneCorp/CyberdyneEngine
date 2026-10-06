@@ -222,11 +222,36 @@ embedders; it reproduces the committed headers byte for byte from the same sourc
 `kFrameResolveVertexSpirv`, whose two built-in variables the pinned slangc numbers in the other
 order (the subtraction is the same).
 
+## Skinned draws — `PipelineSetup::skinned` and `DrawGeometry::skinned_positions`
+
+Issue #76 stage 3. With `PipelineSetup::skinned` the pipelines include skinned variants of the depth,
+opaque and transparent pipelines (`skinned_pipeline(kind)`; the shadow pass uses its standard
+pipeline, which reads the position alone): the same state with the normal attribute declared
+`rhi::Format::Rgba16Snorm` — the skinning pass's `render::PackedNormalTangent`, bound as it was
+written — and `cy/frame.slang`'s `cySkinnedDepthVertex` and `cySkinnedForwardVertex`, which move the
+signed pair into the range `decodeOctahedral` takes and call the rigid entry points. The two entries
+are appended at the END of `frame.slang`, so no rigid entry's line moves and every committed module
+came out byte-identical. Off, the default, creates nothing a frame before skinned draws created.
+
+A geometry lookup marks a draw skinned by naming the skinning output's buffers in
+`DrawGeometry::skinned_positions` and `skinned_frames`, with `vertex_offset` and
+`previous_vertex_offset` as vertex indices into them and `static_vertex_offset` where the mesh's UVs
+are in the source's streams. The recorder binds each stream at its own byte offset and records the
+draw from vertex zero, so the windows never have to line up; the prepass reads last frame's window as
+`kPreviousPositionStream`. A skinned draw does not consult the caller's `DrawPipelineFn`, because a
+material variant's vertex stage reads the rigid encoding, and it is skipped and counted when the
+pipelines were created without the variants. `bind_draw_positions` is the same binding for a pass that
+draws positions alone — the selection mask. `RecorderReport::skinned_draws` counts what was drawn.
+`cy::rendering::skinning::SkinnedScene` is what produces the output, and `frame_skinning.h` fills the
+`DrawGeometry`.
+
 ## What is measured and recorded rather than hidden
 
-* **`rhi::Format` has no `Rgba16Snorm`**, so the normal stream is `Rgba16Sfloat` carrying the same
-  octahedral pair as half floats rather than `render::PackedNormalTangent`'s 16-bit snorm form.
-  `pack_normal_stream` is the bridge. Closing it means adding a format to `src/backends/rhi/`.
+* **The rigid normal stream is `Rgba16Sfloat`**, carrying the octahedral pair as half floats
+  remapped to [0, 1] rather than `render::PackedNormalTangent`'s 16-bit snorm form, because it was
+  written when `rhi::Format` had no `Rgba16Snorm`. `pack_normal_stream` is the bridge. The format
+  exists now (issue #76 stage 3) and the skinned pipelines below use it; the rigid streams keep their
+  encoding, so no frame drawn before changed.
 * **`SV_VertexID` costs a device feature, and the device carries it.** Slang lowers it to
   `gl_VertexIndex - gl_BaseVertex`, which declares the SPIR-V `DrawParameters` capability, so
   `src/backends/rhi/vulkan/` creates its device with `shaderDrawParameters` and refuses one without

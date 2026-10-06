@@ -337,6 +337,26 @@ navigation agent a body and a scene node to move. See `samples/13-rts-api/README
 Tested through `FakeEngine` in `SystemEngineTests.swift`, `TreeCallbackTests.swift` and
 `BodiesTests.swift`; end to end in `samples/13-rts-api` (`integration.rts_api_sample`).
 
+## Animation (ABI 1.7)
+
+`add-swift-animation-api` appends fourteen entries, and `Animation.swift` is their face:
+
+* **`Animator`** — `attach(to:rig:tier:emitsEvents:rootMotion:playRate:)` over a rig the host
+  registered by name (`cy::game_backend::AnimationAdapter::add_rig`), then `play(_:crossfade:)` to
+  any state of the rig's program, `stop(blend:)`, `set(_:to:)` for a float or a bool parameter,
+  `fire(_:)` for a one-tick trigger, `float(_:)`, `state`, `rootMotion`, `takeRootMotion()`,
+  `setRootMotion(_:)` and `jointPose(_:)`. What changes a character is `onFixedUpdate` or
+  initialisation; `takeRootMotion` is fixed update alone; `jointPose` is `onUpdate`.
+* **`Animation.events()`** and **`events(for:)`** — the events the clips fired in the ticks since the
+  previous frame, each delivered in exactly one frame, read in `onUpdate`.
+* **`AnimationName`** — a state or event name as it crosses: `CY_NAME_HASH`, FNV-1a 64 of the text,
+  comparable with a string literal. No engine pointer escapes a game entry, so the text does not.
+* **`RootMotionMode`** and **`AnimationTier`** are generated from `cy_abi.h`.
+
+Tested through `FakeEngine` in `AnimationTests.swift`; end to end in `samples/13-rts-api`, whose
+units walk, cheer and stand down from Swift (`integration.rts_api_sample`). The engine side is
+`integration.game_backend_animation`.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

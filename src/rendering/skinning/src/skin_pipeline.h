@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The skinning compute pipeline, shared by `SkinPass` and `SkinnedScene`. Private to the module.
 //

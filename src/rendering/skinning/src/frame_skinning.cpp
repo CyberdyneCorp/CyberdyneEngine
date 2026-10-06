@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/skinning/frame_skinning.h>
 
 namespace cy::rendering::skinning {

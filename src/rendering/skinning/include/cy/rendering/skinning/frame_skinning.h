@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // A skinned instance as one of the frame's draws. Issue #76 stage 3.
 //
