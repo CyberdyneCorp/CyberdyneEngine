@@ -126,6 +126,8 @@ the worst error beside it.
 | `log2` | `countl_zero`, an exact √2 test, s = (m − 1)/(m + 1) | 2 ulp | 0.50 |
 | `exp`, `log` | `exp2`/`log2` kept at 2^-62 internally | max(2 ulp, rel. 2^-34); 3 ulp | 0.50; 0.50 |
 | `pow(x > 0, y)` | `exp2(y log2 x)` at 2^-62 | max(2 ulp, rel. 2^-34 + \|y\| 2^-58) | 0.50 |
+| `Angle::from_radians` | one product with 1/(2π) held to 2^-64 | 0.75 ulp of `Angle` (not correctly rounded) | 0.75 |
+| `Angle::radians`, `signed_radians` | one product with 2π held to 2^-60 | 0.5 + 2^-28 ulp | 0.50 |
 
 Exact identities, asserted with `==`: `sin(a + quarter) == cos(a)`, `sin(-a) == -sin(a)`,
 `atan2(-y, x) == -atan2(y, x)`, `exp2(n) == 2^n`, `log2(2^n) == n`.

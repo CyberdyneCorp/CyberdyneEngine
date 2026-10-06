@@ -137,6 +137,17 @@ FUNCTIONS = {
             [(ONE, 0), (ONE, ONE), (2 * ONE, 3 * ONE), (2 * ONE, -ONE), (4 * ONE, ONE // 2),
              (I64_MAX, 1), (1, ONE), (ONE + 1, 8 * ONE)],
             lambda rng: (positive(rng), ranged(rng, -(8 << 32), 8 << 32))),
+    # The radian conversions, appended so the draws of the files above do not move. Neither is
+    # correctly rounded: 1/(2 pi) and 2 pi are constants rounded to 2^-64 and 2^-60. 0x800e616214d74efd
+    # is 0.747 ulp from the real value; 0xa3711595 and 0xbba08e10 are the only two angles whose
+    # radians are not the nearest Q32.32 (found by an exhaustive search of the 2^32 angles).
+    "angle_from_radians": (1, lambda x: angle_reference(fixed(x)),
+                           [0, 1, -1, ONE, -ONE, I64_MAX, I64_MIN, 0x800E616214D74EFD - (1 << 64),
+                            0x3243F6A88, -0x3243F6A88, 0x6487ED511],
+                           lambda rng: (scaled(rng),)),
+    "angle_radians": (1, lambda a: fixed_reference(2 * mp.pi * turns(a)),
+                      [0, 1, 1 << 29, 1 << 30, 1 << 31, 0xFFFFFFFF, 0xA3711595, 0xBBA08E10],
+                      lambda rng: (rng.next() >> 32,)),
 }
 
 

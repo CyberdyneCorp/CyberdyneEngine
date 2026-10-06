@@ -198,6 +198,12 @@ constexpr Bound kBounds[] = {
          // |y| 2^-58 |r| with |y| = magnitude_y 2^-32: (|r| >> 58) |y_raw| >> 32.
          const U128 amplified = wide::shr(wide::mul_u64(wide::shr(r, 58).lo, magnitude_y), 32);
          return larger(ulps(2), wide::add(wide::shr(r, 34), amplified)); }},
+    // Not correctly rounded: the 2^-64 error of 1/(2 pi), times |radians| < 2^31, adds 0.248 ulp.
+    {"angle_from_radians", true, "0.75 ulp of Angle",
+     [](const u64*, U128) { return wide::from_u64(u64{3} << 30); }},
+    // The 2^-60 error of 2 pi, times an angle below 2^32, adds under 2^-28 ulp to the rounding.
+    {"angle_radians", false, "0.5 ulp + 2^-28 ulp",
+     [](const u64*, U128) { return wide::from_u64((u64{1} << 31) + (u64{1} << 4)); }},
 };
 // clang-format on
 

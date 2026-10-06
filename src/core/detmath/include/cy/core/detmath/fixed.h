@@ -264,11 +264,15 @@ struct Angle {
         return Fixed{static_cast<i64>(static_cast<i32>(raw))};
     }
 
-    /// `radians` modulo one turn, rounded to the nearest 2^-32 turn (ties toward +infinity).
+    /// `radians` modulo one turn, within 0.75 ulp of `Angle`. Not correctly rounded: the product
+    /// with 1/(2 pi), held to 2^-64, is rounded once, and the constant's own error times
+    /// |radians| < 2^31 adds up to 0.248 ulp.
     [[nodiscard]] static Angle from_radians(Fixed radians) noexcept;
-    /// The angle in radians, in [0, 2 pi), rounded to the nearest 2^-32.
+    /// The angle in radians, in [0, 2 pi), within 0.5 + 2^-28 ulp: 2 pi is held to 2^-60, so the
+    /// nearest Q32.32 value is missed only where the real value lies that close to a tie (angles
+    /// 0xa3711595 and 0xbba08e10, of all 2^32).
     [[nodiscard]] Fixed radians() const noexcept;
-    /// The angle in radians, in [-pi, pi), rounded to the nearest 2^-32.
+    /// The angle in radians, in [-pi, pi), within 0.5 + 2^-28 ulp, as `radians()`.
     [[nodiscard]] Fixed signed_radians() const noexcept;
 
     /// Raw equality. Angles are not ordered: on a circle, "less than" has no meaning that survives

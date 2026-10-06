@@ -52,6 +52,8 @@ compiler's floating-point choices.
   | `exp` | the larger of 2 ulp and relative 2^-34 | 0.50 ulp |
   | `log` | ≤ 3 ulp | 0.50 ulp |
   | `pow` (x > 0) | the larger of 2 ulp and relative 2^-34 + \|y\| 2^-58 | 0.50 ulp |
+  | `Angle::from_radians` | ≤ 0.75 ulp of `Angle` (1/(2π) is held to 2^-64) | 0.75 ulp |
+  | `Angle::radians`, `signed_radians` | ≤ 0.5 + 2^-28 ulp (2π is held to 2^-60) | 0.50 ulp |
 
   The polynomials themselves are well inside: the generator keeps the first degree whose fit error
   is below 2^-44 (2^-46 for `exp2`), and records the fit and the evaluated error beside the
