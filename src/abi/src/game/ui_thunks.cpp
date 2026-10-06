@@ -10,6 +10,7 @@
 #include <cy/abi/game/ui.h>
 #include <cy/abi/host.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "thunks.h"
@@ -197,7 +198,7 @@ CyResult ui_set_progress(CyEngine engine, CyUiElement element, float value) {
     if (!finite(value)) {
         return report(CY_RESULT_INVALID_ARGUMENT, "ui_set_progress: the value is not finite");
     }
-    const f32 clamped = value < 0.0F ? 0.0F : (value > 1.0F ? 1.0F : value);
+    const f32 clamped = std::clamp(value, 0.0F, 1.0F);
     return answered(ui->set_progress(element, clamped));
 }
 

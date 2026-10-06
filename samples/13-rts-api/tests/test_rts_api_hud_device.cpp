@@ -64,7 +64,7 @@ public:
     /// destroyed through a Swift vtable during static destruction would run after the process
     /// stopped being one anybody can debug.
     static GameModule& get() noexcept {
-        static GameModule* module = new GameModule();
+        static auto* module = new GameModule();
         return *module;
     }
 
@@ -102,14 +102,18 @@ private:
             failure_ = "the module manifest could not be opened";
             return false;
         }
-        char chunk[512];
-        usize read = 0;
-        while ((read = std::fread(chunk, 1, sizeof(chunk), file)) > 0) {
-            for (usize index = 0; index < read; ++index) {
-                (void)manifest_text_.push_back(chunk[index]);
-            }
-        }
+        // Sized once, read once: the manifest is a few hundred bytes.
+        bool read = std::fseek(file, 0, SEEK_END) == 0;
+        const long length = read ? std::ftell(file) : -1;
+        read = length >= 0 && std::fseek(file, 0, SEEK_SET) == 0 &&
+               manifest_text_.resize(static_cast<usize>(length)).has_value() &&
+               std::fread(manifest_text_.data(), 1, static_cast<usize>(length), file) ==
+                   static_cast<usize>(length);
         (void)std::fclose(file);
+        if (!read) {
+            failure_ = "the module manifest could not be read";
+            return false;
+        }
         (void)manifest_text_.push_back('\0');
         Expected<abi::ModuleManifest, Error> parsed =
             abi::parse_module_manifest(manifest_text_.data());
