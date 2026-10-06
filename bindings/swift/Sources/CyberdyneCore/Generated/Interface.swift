@@ -528,4 +528,74 @@ public struct Interface: @unchecked Sendable {
     public func characterState(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyCharacterState>?) throws {
         try check(table.pointee.character_state(engine, entity, into))
     }
+
+    @inlinable
+    public func uiRoot(engine: CyEngine, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_root(engine, into))
+    }
+
+    @inlinable
+    public func uiCreate(engine: CyEngine, parent: CyUiElement, desc: UnsafePointer<CyUiElementDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_create(engine, parent, desc, into))
+    }
+
+    @inlinable
+    public func uiDestroy(engine: CyEngine, element: CyUiElement) throws {
+        try check(table.pointee.ui_destroy(engine, element))
+    }
+
+    @inlinable
+    public func uiSetLayout(engine: CyEngine, element: CyUiElement, layout: UnsafePointer<CyUiLayout>?) throws {
+        try check(table.pointee.ui_set_layout(engine, element, layout))
+    }
+
+    @inlinable
+    public func uiSetStyle(engine: CyEngine, element: CyUiElement, style: UnsafePointer<CyUiStyle>?) throws {
+        try check(table.pointee.ui_set_style(engine, element, style))
+    }
+
+    @inlinable
+    public func uiSetText(engine: CyEngine, element: CyUiElement, text: UnsafePointer<CChar>?, colour: UInt32, pixelScale: UInt32) throws {
+        try check(table.pointee.ui_set_text(engine, element, text, colour, pixelScale))
+    }
+
+    @inlinable
+    public func uiSetImage(engine: CyEngine, element: CyUiElement, page: UInt32, uv: UnsafePointer<Float>?) throws {
+        try check(table.pointee.ui_set_image(engine, element, page, uv))
+    }
+
+    @inlinable
+    public func uiSetProgress(engine: CyEngine, element: CyUiElement, value: Float) throws {
+        try check(table.pointee.ui_set_progress(engine, element, value))
+    }
+
+    @inlinable
+    public func uiSetVisibility(engine: CyEngine, element: CyUiElement, visibility: UInt32) throws {
+        try check(table.pointee.ui_set_visibility(engine, element, visibility))
+    }
+
+    @inlinable
+    public func uiSetOpacity(engine: CyEngine, element: CyUiElement, opacity: Float) throws {
+        try check(table.pointee.ui_set_opacity(engine, element, opacity))
+    }
+
+    @inlinable
+    public func uiElementRect(engine: CyEngine, element: CyUiElement, into: UnsafeMutablePointer<Float>?) throws {
+        try check(table.pointee.ui_element_rect(engine, element, into))
+    }
+
+    @inlinable
+    public func uiHitTest(engine: CyEngine, position: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_hit_test(engine, position, into))
+    }
+
+    @inlinable
+    public func uiFocus(engine: CyEngine, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_focus(engine, into))
+    }
+
+    @inlinable
+    public func uiSetFocus(engine: CyEngine, element: CyUiElement) throws {
+        try check(table.pointee.ui_set_focus(engine, element))
+    }
 }

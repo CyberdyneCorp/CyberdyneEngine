@@ -225,6 +225,12 @@ public:
     /// runs in the pump caller's. True when the instance is live and implements the callback.
     bool tree_callback(u32 slot, TreeCallback callback) noexcept;
 
+    /// One interface event (ABI 1.6), delivered to every live instance on `event.owner` whose
+    /// vtable takes `ui_event`, in slot order, each through the vtable of the generation that
+    /// created it, in CY_PHASE_FRAME_UPDATE. The embedder's interface decides when — see
+    /// `cy::game_backend::UiAdapter`. Returns how many instances received it.
+    u32 ui_event(const CyUiEvent& event) noexcept;
+
     /// THE RELOAD. `library_path` MUST be a different file from the current one — see the header
     /// comment, item 3. Returns a report; on failure the previous generation is still live and
     /// every instance is still valid, which is `native-abi`'s "Incompatible reload" scenario.

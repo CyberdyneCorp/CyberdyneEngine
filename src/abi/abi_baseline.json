@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 5,
+    "minor": 6,
     "patch": 0
   },
   "functions": [
@@ -497,10 +497,80 @@
         "index": 94,
         "name": "character_state",
         "type": "CyResult(*)(CyEngine, CyEntity, CyCharacterState*)"
+      },
+      {
+        "index": 95,
+        "name": "ui_root",
+        "type": "CyResult(*)(CyEngine, CyUiElement*)"
+      },
+      {
+        "index": 96,
+        "name": "ui_create",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiElementDesc*, CyUiElement*)"
+      },
+      {
+        "index": 97,
+        "name": "ui_destroy",
+        "type": "CyResult(*)(CyEngine, CyUiElement)"
+      },
+      {
+        "index": 98,
+        "name": "ui_set_layout",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiLayout*)"
+      },
+      {
+        "index": 99,
+        "name": "ui_set_style",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiStyle*)"
+      },
+      {
+        "index": 100,
+        "name": "ui_set_text",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char*, uint32_t, uint32_t)"
+      },
+      {
+        "index": 101,
+        "name": "ui_set_image",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t, const float*)"
+      },
+      {
+        "index": 102,
+        "name": "ui_set_progress",
+        "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+      },
+      {
+        "index": 103,
+        "name": "ui_set_visibility",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+      },
+      {
+        "index": 104,
+        "name": "ui_set_opacity",
+        "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+      },
+      {
+        "index": 105,
+        "name": "ui_element_rect",
+        "type": "CyResult(*)(CyEngine, CyUiElement, float*)"
+      },
+      {
+        "index": 106,
+        "name": "ui_hit_test",
+        "type": "CyResult(*)(CyEngine, const float*, CyUiElement*)"
+      },
+      {
+        "index": 107,
+        "name": "ui_focus",
+        "type": "CyResult(*)(CyEngine, CyUiElement*)"
+      },
+      {
+        "index": 108,
+        "name": "ui_set_focus",
+        "type": "CyResult(*)(CyEngine, CyUiElement)"
       }
     ],
     "name": "CyInterface",
-    "size": 768
+    "size": 880
   },
   "types": [
     {
@@ -1140,6 +1210,86 @@
       "size": 40
     },
     {
+      "kind": "alias",
+      "name": "CyUiElement",
+      "underlying": "uint64_t"
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiEventKind",
+      "values": [
+        {
+          "name": "CY_UI_EVENT_CLICK",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_EVENT_FOCUS",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_EVENT_BLUR",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "element",
+          "offset": 8,
+          "size": 8,
+          "type": "CyUiElement"
+        },
+        {
+          "alignment": 8,
+          "name": "owner",
+          "offset": 16,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 4,
+          "name": "position",
+          "offset": 24,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "button",
+          "offset": 32,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 36,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyUiEvent",
+      "size": 40
+    },
+    {
       "alignment": 8,
       "kind": "struct",
       "members": [
@@ -1240,10 +1390,17 @@
           "offset": 96,
           "size": 8,
           "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_event",
+          "offset": 104,
+          "size": 8,
+          "type": "void(*)(CyInstance, const CyUiEvent*, void*)"
         }
       ],
       "name": "CyBehaviourVTable",
-      "size": 104
+      "size": 112
     },
     {
       "alignment": 8,
@@ -2640,6 +2797,432 @@
       "size": 72
     },
     {
+      "kind": "enum",
+      "name": "CyUiKind",
+      "values": [
+        {
+          "name": "CY_UI_PANEL",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_LABEL",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_IMAGE",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_PROGRESS",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_BUTTON",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiLayoutModel",
+      "values": [
+        {
+          "name": "CY_UI_LAYOUT_FLEX",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_LAYOUT_GRID",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_LAYOUT_ABSOLUTE",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiDirection",
+      "values": [
+        {
+          "name": "CY_UI_DIRECTION_ROW",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_DIRECTION_COLUMN",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_DIRECTION_ROW_REVERSE",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_DIRECTION_COLUMN_REVERSE",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiJustify",
+      "values": [
+        {
+          "name": "CY_UI_JUSTIFY_START",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_JUSTIFY_CENTRE",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_JUSTIFY_END",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_JUSTIFY_SPACE_BETWEEN",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_JUSTIFY_SPACE_AROUND",
+          "value": 4
+        },
+        {
+          "name": "CY_UI_JUSTIFY_SPACE_EVENLY",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiAlign",
+      "values": [
+        {
+          "name": "CY_UI_ALIGN_STRETCH",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_ALIGN_START",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_ALIGN_CENTRE",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_ALIGN_END",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiVisibility",
+      "values": [
+        {
+          "name": "CY_UI_VISIBLE",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_HIDDEN",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_COLLAPSED",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 8,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "owner",
+          "offset": 16,
+          "size": 8,
+          "type": "CyEntity"
+        }
+      ],
+      "name": "CyUiElementDesc",
+      "size": 24
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "model",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "direction",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "justify",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "align",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "self_align",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "gap",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "preferred",
+          "offset": 32,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "minimum",
+          "offset": 40,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "maximum",
+          "offset": 48,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "margin",
+          "offset": 56,
+          "size": 16,
+          "type": "float[4]"
+        },
+        {
+          "alignment": 4,
+          "name": "padding",
+          "offset": 72,
+          "size": 16,
+          "type": "float[4]"
+        },
+        {
+          "alignment": 4,
+          "name": "flex_grow",
+          "offset": 88,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "flex_shrink",
+          "offset": 92,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "aspect_ratio",
+          "offset": 96,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "anchor_min",
+          "offset": 100,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "anchor_max",
+          "offset": 108,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "offset_min",
+          "offset": 116,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "offset_max",
+          "offset": 124,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 2,
+          "name": "grid_column",
+          "offset": 132,
+          "size": 2,
+          "type": "uint16_t"
+        },
+        {
+          "alignment": 2,
+          "name": "grid_row",
+          "offset": 134,
+          "size": 2,
+          "type": "uint16_t"
+        },
+        {
+          "alignment": 2,
+          "name": "grid_column_span",
+          "offset": 136,
+          "size": 2,
+          "type": "uint16_t"
+        },
+        {
+          "alignment": 2,
+          "name": "grid_row_span",
+          "offset": 138,
+          "size": 2,
+          "type": "uint16_t"
+        },
+        {
+          "alignment": 2,
+          "name": "grid_columns",
+          "offset": 140,
+          "size": 2,
+          "type": "uint16_t"
+        },
+        {
+          "alignment": 2,
+          "name": "reserved",
+          "offset": 142,
+          "size": 2,
+          "type": "uint16_t"
+        }
+      ],
+      "name": "CyUiLayout",
+      "size": 144
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "background",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "border_colour",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "accent",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "border_width",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "corner_radius",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyUiStyle",
+      "size": 32
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -3343,10 +3926,108 @@
           "offset": 760,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyEntity, CyCharacterState*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_root",
+          "offset": 768,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_create",
+          "offset": 776,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiElementDesc*, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_destroy",
+          "offset": 784,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_layout",
+          "offset": 792,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiLayout*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_style",
+          "offset": 800,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiStyle*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_text",
+          "offset": 808,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char*, uint32_t, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_image",
+          "offset": 816,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_progress",
+          "offset": 824,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_visibility",
+          "offset": 832,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_opacity",
+          "offset": 840,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_element_rect",
+          "offset": 848,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_hit_test",
+          "offset": 856,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const float*, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_focus",
+          "offset": 864,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_set_focus",
+          "offset": 872,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement)"
         }
       ],
       "name": "CyInterface",
-      "size": 768
+      "size": 880
     },
     {
       "kind": "enum",

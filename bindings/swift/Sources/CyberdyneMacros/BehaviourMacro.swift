@@ -28,7 +28,7 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
         ("onCreate", ".create"), ("onEnterTree", ".enterTree"), ("onReady", ".ready"),
         ("onEnable", ".enable"), ("onDisable", ".disable"), ("onFixedUpdate", ".fixedUpdate"),
         ("onUpdate", ".update"), ("onExitTree", ".exitTree"), ("onDestroy", ".destroy"),
-        ("onAfterReload", ".afterReload"), ("onMigrate", ".migrate"),
+        ("onAfterReload", ".afterReload"), ("onMigrate", ".migrate"), ("onUIEvent", ".uiEvent"),
     ]
 
     public static func expansion(

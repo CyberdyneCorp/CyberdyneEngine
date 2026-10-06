@@ -49,6 +49,20 @@ cy_add_module(
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP
 # from the twentieth tick on arm64. The flag only, not a declared determinism profile: the adapters
 # beside it make no profile claim. See src/gameplay/CMakeLists.txt for the same argument.
+# ABI 1.6's interface adapter, over CyberUI. A target of its own because CyberUI is behind CY_UI and
+# the other adapters are not: `-D CY_UI=OFF` removes this and nothing else, and an embedder with no
+# screen binds no `UiBackend`, so every `ui_*` entry answers UNAVAILABLE.
+if(CY_UI)
+    cy_add_module(
+        NAME cy_game_backend_ui
+        LAYER abi
+        ALIAS cy::game-backend-ui
+        TYPE STATIC
+        SOURCES ui/src/ui_backend.cpp
+        PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/ui/include"
+        PUBLIC_DEPENDENCIES cy::abi cy::ui cy::ui-text)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(cy_game_backend PRIVATE -ffp-contract=off)
 elseif(MSVC)
@@ -85,6 +99,14 @@ if(CY_BUILD_TESTS)
                                "(tests/test_${service}_backend.cpp)")
             endif()
         endforeach()
+        # The interface adapter is behind CY_UI with CyberUI itself.
+        if(TARGET cy_game_backend_ui)
+            cy_add_test(
+                NAME game_backend_ui
+                KIND integration
+                SOURCES "${tests_dir}/test_ui_backend.cpp"
+                DEPENDENCIES cy::game-backend-ui)
+        endif()
         # The gameplay graph suite reads the graph the editor writes for #29's acceptance scenario
         # from the one place both sides compare against.
         # The Play debugger and hot reload (#84) are cases of the same suite, over the same scene.

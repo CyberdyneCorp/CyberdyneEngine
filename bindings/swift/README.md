@@ -35,6 +35,15 @@ Pass an empty emitter for a system parameter, or the owning emitter's name for a
 The entity is the effect entity in the Play world. Values use `Value.f32`, `vec2`, `vec3`, `vec4`,
 `i64`, or `bool` according to the authored declaration; a mismatched type is refused.
 
+`UI.swift` and `UIBuilder.swift` wrap ABI 1.6's interface entries: `UIElement` handles with
+layout, style, text, image, progress, visibility and opacity writes, `UI.hitTest` and focus, and a
+result-builder layer — `Panel`, `Label`, `Image`, `ProgressBar`, `Button` and their modifiers —
+that `Behaviour.mountUI` mounts once for the behaviour's entity and returns as a `UITree` to update
+by handle. No SwiftUI. A button's action and `Behaviour.onUIEvent` are reached through the vtable's
+`ui_event`, which every registered class carries because actions are attached at run time.
+`UITests.swift` covers the facades and the routing against `FakeEngine`; the guide is
+[docs/guides/swift.md](../../docs/guides/swift.md#the-interface-abi-16).
+
 ## Writing a game
 
 ```swift

@@ -3,9 +3,12 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/servers/physics/reference/server.h>
+#include <cy/ui/layout.h>
+#include <cy/ui/text/builtin_font.h>
 
 #include <cstdio>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 #include "level.h"
@@ -108,6 +111,31 @@ constexpr Vec3 kCameraOffset{0.0F, 22.0F, 14.0F};
     return nullptr;
 }
 
+/// Every element under `at` whose type name is `name`, depth first.
+void collect(const cy::ui::ElementStore& store, cy::ui::ElementId at, std::string_view name,
+             cy::Array<cy::ui::ElementId>& out) noexcept {
+    if (store.type_of(at).text() == name) {
+        (void)out.push_back(at);
+    }
+    const cy::ui::Hierarchy* node = store.hierarchy(at);
+    for (cy::ui::ElementId child = node != nullptr ? node->first_child : cy::ui::kNoElement;
+         child.is_valid();) {
+        collect(store, child, name, out);
+        const cy::ui::Hierarchy* next = store.hierarchy(child);
+        child = next != nullptr ? next->next_sibling : cy::ui::kNoElement;
+    }
+}
+
+[[nodiscard]] bool shown(const cy::ui::ElementStore& store, cy::ui::ElementId element) noexcept {
+    return cy::ui::has_flag(store.flags(element), cy::ui::ElementFlags::Visible);
+}
+
+/// `text` into `out`, cut to fit.
+template <cy::usize N>
+void copy_text(std::string_view text, char (&out)[N]) noexcept {
+    (void)std::snprintf(out, N, "%.*s", static_cast<int>(text.size()), text.data());
+}
+
 template <class T>
 [[nodiscard]] T read_field(const void* bytes, const cy::abi::FieldRecord* field) noexcept {
     T value{};
@@ -134,6 +162,8 @@ RtsHost::RtsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
       input_(allocator),
       camera_(allocator),
       audio_(allocator),
+      text_(allocator),
+      ui_store_(allocator),
       nav_mesh_(allocator, cy::Name::intern("rts.ground"), kLevelSize),
       nav_queue_(allocator, nav_mesh_, kPathLatencyTicks),
       nav_worlds_(allocator),
@@ -177,6 +207,13 @@ cy::Status RtsHost::start(const char** detail) noexcept {
     cy::game_backend::bind_bodies(host_, body_adapter_.get());
     cy::game_backend::bind_characters(host_, characters_.get());
     cy::game_backend::bind_scene(host_, &bridge_);
+    if (options_.ui) {
+        *detail = "interface";
+        if (cy::Status ui = start_ui(); !ui) {
+            return ui;
+        }
+        cy::game_backend::bind(host_, ui_adapter_.get());
+    }
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -190,6 +227,61 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         return attached;
     }
     *detail = "";
+    return cy::ok();
+}
+
+cy::Status RtsHost::start_ui() noexcept {
+    if (cy::Status text = text_server_.start(cy::text::TextServerConfig{}); !text) {
+        return text;
+    }
+    if (cy::Status painter = text_.start(text_server_, cy::ui::builtin_font(), 1); !painter) {
+        return painter;
+    }
+    auto root = ui_store_.create(cy::ui::kNoElement, cy::Name::intern("screen"));
+    if (!root) {
+        return cy::make_unexpected(root.error());
+    }
+    ui_root_ = *root;
+    ui_store_.layout_input(ui_root_)->model = cy::ui::LayoutModel::Absolute;
+    auto adapter = cy::make_unique<cy::game_backend::UiAdapter>(allocator_, allocator_, ui_store_,
+                                                                text_, ui_root_);
+    if (!adapter) {
+        return cy::make_unexpected(adapter.error());
+    }
+    ui_adapter_ = std::move(*adapter);
+    return ui_adapter_->start();
+}
+
+cy::Status RtsHost::ui_layout() noexcept {
+    cy::ui::ScaleSettings settings;
+    settings.mode = cy::ui::ScaleMode::FixedPixel;
+    return ui_adapter_->layout(
+        settings, cy::Vec2{static_cast<f32>(kViewportWidth), static_cast<f32>(kViewportHeight)});
+}
+
+cy::Status RtsHost::ui_frame() noexcept {
+    // Laid out first, so the pointer is tested against what the last frame's writes produced; then
+    // routed, and the game's pointer told whether it is over the interface before `onUpdate` reads
+    // it; then the clicks delivered to their owners, in the frame's phase.
+    if (cy::Status laid = ui_layout(); !laid) {
+        return laid;
+    }
+    CyInputPointer pointer{};
+    pointer.struct_size = sizeof(pointer);
+    if (input_adapter_.pointer(0, pointer) != CY_RESULT_OK) {
+        return cy::fail(cy::ErrorCode::Internal, "the input adapter has no pointer for user 0");
+    }
+    const cy::Vec2 at{pointer.position[0], pointer.position[1]};
+    if (cy::Status routed =
+            ui_adapter_->route_pointer(at, pointer.buttons_pressed, pointer.buttons_released);
+        !routed) {
+        return routed;
+    }
+    input_adapter_.set_pointer_focus(0, true, ui_adapter_->pointer_over());
+    for (const CyUiEvent& event : ui_adapter_->events()) {
+        (void)runtime_.ui_event(event);
+    }
+    ui_adapter_->clear_events();
     return cy::ok();
 }
 
@@ -507,9 +599,20 @@ cy::Status RtsHost::frame() noexcept {
         return cy::make_unexpected(evaluated.error());
     }
     host_.game.clock.interpolation = 0.0;
+    if (ui_adapter_) {
+        if (cy::Status routed = ui_frame(); !routed) {
+            return routed;
+        }
+    }
     runtime_.frame_update(kStep);
     if (cy::Status staged = run_stages(cy::ecs::Stage::Frame, cy::ecs::Stage::UI); !staged) {
         return staged;
+    }
+    // What a renderer would flatten: this frame's writes, laid out.
+    if (ui_adapter_) {
+        if (cy::Status laid = ui_layout(); !laid) {
+            return laid;
+        }
     }
     update_audio();
     ++frame_;
@@ -568,6 +671,7 @@ void RtsHost::shutdown() noexcept {
     // calls a game service gets UNAVAILABLE rather than an adapter that no longer exists.
     host_.game = cy::abi::game::GameServices{};
     host_.bind_world(nullptr);
+    ui_adapter_.reset();
     nav_adapter_.reset();
     physics_adapter_.reset();
     body_adapter_.reset();
@@ -636,6 +740,21 @@ bool RtsHost::project(Vec3 point, f32& out_x, f32& out_y) noexcept {
     return true;
 }
 
+bool RtsHost::ui_centre(const char* name, f32& out_x, f32& out_y) const noexcept {
+    if (!ui_adapter_) {
+        return false;
+    }
+    cy::Array<cy::ui::ElementId> found(allocator_);
+    collect(ui_store_, ui_root_, name, found);
+    if (found.empty()) {
+        return false;
+    }
+    const cy::ui::Rect& rect = ui_store_.layout_output(found[0])->rect;
+    out_x = rect.x + (rect.width * 0.5F);
+    out_y = rect.y + (rect.height * 0.5F);
+    return rect.width > 0.0F && rect.height > 0.0F;
+}
+
 // --- The eyes ------------------------------------------------------------------------------------
 
 Vec3 RtsHost::unit_position(CyEntity unit) const noexcept {
@@ -681,6 +800,7 @@ Observation RtsHost::observe() noexcept {
                            swift != cy::ecs::kInvalidSystem &&
                            schedule_.ordered_before(cy::ecs::Stage::Simulation, roll_id_, swift);
     observe_scout(seen);
+    observe_hud(seen);
 
     const cy::abi::ComponentRecord* record = binding_.find("RtsReport");
     if (record == nullptr) {
@@ -697,7 +817,45 @@ Observation RtsHost::observe() noexcept {
     seen.tree.entered = read_field<f32>(bytes, field("entered"));
     seen.tree.readied = read_field<f32>(bytes, field("readied"));
     seen.tree.barracks_found = read_field<f32>(bytes, field("barracksFound"));
+    seen.hud.mounted = read_field<f32>(bytes, field("hud"));
+    seen.hud.builds = read_field<f32>(bytes, field("hudBuilds"));
+    seen.hud.heard = read_field<f32>(bytes, field("hudClicks"));
     return seen;
+}
+
+void RtsHost::observe_hud(Observation& seen) noexcept {
+    if (!ui_adapter_) {
+        return;
+    }
+    seen.hud.elements = ui_adapter_->elements();
+    seen.hud.clicks = ui_adapter_->clicks();
+    cy::Array<cy::ui::ElementId> found(allocator_);
+    const auto first = [&](const char* name) {
+        found.clear();
+        collect(ui_store_, ui_root_, name, found);
+        return found.empty() ? cy::ui::kNoElement : found[0];
+    };
+    copy_text(text_.text_of(first("gold")), seen.hud.gold);
+    copy_text(text_.text_of(first("wood")), seen.hud.wood);
+    copy_text(text_.text_of(first("food")), seen.hud.food);
+    copy_text(text_.text_of(first("title")), seen.hud.title);
+    copy_text(text_.text_of(first("unit-health")), seen.hud.health);
+    seen.hud.button = first("build-button").is_valid();
+    if (const cy::ui::ElementId bar = first("health-bar"); bar.is_valid()) {
+        const cy::ui::Hierarchy* node = ui_store_.hierarchy(bar);
+        seen.hud.fill = ui_store_.layout_output(node->first_child)->rect.width;
+    }
+    const auto count_shown = [&](const char* name) {
+        found.clear();
+        collect(ui_store_, ui_root_, name, found);
+        cy::u32 visible = 0;
+        for (const cy::ui::ElementId element : found) {
+            visible += shown(ui_store_, element) ? 1U : 0U;
+        }
+        return visible;
+    };
+    seen.hud.rows = count_shown("unit-row");
+    seen.hud.dots = count_shown("unit");
 }
 
 void RtsHost::observe_scout(Observation& seen) noexcept {

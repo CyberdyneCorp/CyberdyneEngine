@@ -358,6 +358,76 @@ public struct Engine: @unchecked Sendable {
     public func characterState(entity: CyEntity, into: UnsafeMutablePointer<CyCharacterState>?) throws {
         try interface.characterState(engine: raw, entity: entity, into: into)
     }
+
+    @inlinable
+    public func uiRoot(into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiRoot(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func uiCreate(parent: CyUiElement, desc: UnsafePointer<CyUiElementDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiCreate(engine: raw, parent: parent, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func uiDestroy(element: CyUiElement) throws {
+        try interface.uiDestroy(engine: raw, element: element)
+    }
+
+    @inlinable
+    public func uiSetLayout(element: CyUiElement, layout: UnsafePointer<CyUiLayout>?) throws {
+        try interface.uiSetLayout(engine: raw, element: element, layout: layout)
+    }
+
+    @inlinable
+    public func uiSetStyle(element: CyUiElement, style: UnsafePointer<CyUiStyle>?) throws {
+        try interface.uiSetStyle(engine: raw, element: element, style: style)
+    }
+
+    @inlinable
+    public func uiSetText(element: CyUiElement, text: UnsafePointer<CChar>?, colour: UInt32, pixelScale: UInt32) throws {
+        try interface.uiSetText(engine: raw, element: element, text: text, colour: colour, pixelScale: pixelScale)
+    }
+
+    @inlinable
+    public func uiSetImage(element: CyUiElement, page: UInt32, uv: UnsafePointer<Float>?) throws {
+        try interface.uiSetImage(engine: raw, element: element, page: page, uv: uv)
+    }
+
+    @inlinable
+    public func uiSetProgress(element: CyUiElement, value: Float) throws {
+        try interface.uiSetProgress(engine: raw, element: element, value: value)
+    }
+
+    @inlinable
+    public func uiSetVisibility(element: CyUiElement, visibility: UInt32) throws {
+        try interface.uiSetVisibility(engine: raw, element: element, visibility: visibility)
+    }
+
+    @inlinable
+    public func uiSetOpacity(element: CyUiElement, opacity: Float) throws {
+        try interface.uiSetOpacity(engine: raw, element: element, opacity: opacity)
+    }
+
+    @inlinable
+    public func uiElementRect(element: CyUiElement, into: UnsafeMutablePointer<Float>?) throws {
+        try interface.uiElementRect(engine: raw, element: element, into: into)
+    }
+
+    @inlinable
+    public func uiHitTest(position: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiHitTest(engine: raw, position: position, into: into)
+    }
+
+    @inlinable
+    public func uiFocus(into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiFocus(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func uiSetFocus(element: CyUiElement) throws {
+        try interface.uiSetFocus(engine: raw, element: element)
+    }
 }
 
 public struct World: @unchecked Sendable {

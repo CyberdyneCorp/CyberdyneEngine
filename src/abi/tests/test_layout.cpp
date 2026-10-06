@@ -29,7 +29,7 @@ CY_TEST_CASE("every ABI struct has the size the header declares") {
     CY_CHECK_EQ(sizeof(CyVar), 32U);
     CY_CHECK_EQ(sizeof(CyFieldDesc), 24U);
     CY_CHECK_EQ(sizeof(CyComponentTypeDesc), 32U);
-    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 104U);
+    CY_CHECK_EQ(sizeof(CyBehaviourVTable), 112U);
     CY_CHECK_EQ(sizeof(CyBorrow), 16U);
     CY_CHECK_EQ(sizeof(CyServiceRequest), 40U);
     CY_CHECK_EQ(sizeof(CyServiceEvent), 40U);
@@ -64,6 +64,7 @@ CY_TEST_CASE("every ABI struct has the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, enable), 80U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, disable), 88U);
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, exit_tree), 96U);
+    CY_CHECK_EQ(offsetof(CyBehaviourVTable, ui_event), 104U);  // appended at 1.6
 
     CY_CHECK_EQ(offsetof(CyInterfaceHeader, table_size), 12U);
     CY_CHECK_EQ(offsetof(CyModuleInit, initialize), 16U);
@@ -304,4 +305,41 @@ CY_TEST_CASE("the 1.5 character structs have the layout the description computes
     CY_CHECK_EQ(offsetof(CyCharacterState, velocity), 36U);
     CY_CHECK_EQ(offsetof(CyCharacterState, ground_normal), 48U);
     CY_CHECK_EQ(offsetof(CyCharacterState, platform_velocity), 60U);
+}
+
+// ABI 1.6: the runtime interface.
+CY_TEST_CASE("the 1.6 interface structs have the layout the description computes") {
+    CY_CHECK_EQ(sizeof(CyUiEvent), 40U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, kind), 4U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, element), 8U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, owner), 16U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, position), 24U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, button), 32U);
+    CY_CHECK_EQ(offsetof(CyUiEvent, reserved), 36U);
+
+    CY_CHECK_EQ(sizeof(CyUiElementDesc), 24U);
+    CY_CHECK_EQ(offsetof(CyUiElementDesc, kind), 4U);
+    CY_CHECK_EQ(offsetof(CyUiElementDesc, name), 8U);
+    CY_CHECK_EQ(offsetof(CyUiElementDesc, owner), 16U);
+
+    CY_CHECK_EQ(sizeof(CyUiLayout), 144U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, flags), 24U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, gap), 28U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, preferred), 32U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, maximum), 48U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, margin), 56U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, padding), 72U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, flex_grow), 88U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, aspect_ratio), 96U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, anchor_min), 100U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, offset_max), 124U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, grid_column), 132U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, grid_columns), 140U);
+    CY_CHECK_EQ(offsetof(CyUiLayout, reserved), 142U);
+
+    CY_CHECK_EQ(sizeof(CyUiStyle), 32U);
+    CY_CHECK_EQ(offsetof(CyUiStyle, background), 8U);
+    CY_CHECK_EQ(offsetof(CyUiStyle, accent), 16U);
+    CY_CHECK_EQ(offsetof(CyUiStyle, border_width), 20U);
+    CY_CHECK_EQ(offsetof(CyUiStyle, corner_radius), 24U);
 }

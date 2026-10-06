@@ -101,4 +101,23 @@ CyResult character_destroy(CyEngine engine, CyEntity entity);
 CyResult character_move(CyEngine engine, CyEntity entity, const CyCharacterInput* input);
 CyResult character_state(CyEngine engine, CyEntity entity, CyCharacterState* out_state);
 
+// --- 1.6: the runtime interface ------------------------------------------------------------------
+CyResult ui_root(CyEngine engine, CyUiElement* out_root);
+CyResult ui_create(CyEngine engine, CyUiElement parent, const CyUiElementDesc* desc,
+                   CyUiElement* out_element);
+CyResult ui_destroy(CyEngine engine, CyUiElement element);
+CyResult ui_set_layout(CyEngine engine, CyUiElement element, const CyUiLayout* layout);
+CyResult ui_set_style(CyEngine engine, CyUiElement element, const CyUiStyle* style);
+CyResult ui_set_text(CyEngine engine, CyUiElement element, const char* utf8, uint32_t colour,
+                     uint32_t pixel_scale);
+CyResult ui_set_image(CyEngine engine, CyUiElement element, uint32_t atlas_page,
+                      const float* uv_xywh);
+CyResult ui_set_progress(CyEngine engine, CyUiElement element, float value);
+CyResult ui_set_visibility(CyEngine engine, CyUiElement element, uint32_t visibility);
+CyResult ui_set_opacity(CyEngine engine, CyUiElement element, float opacity);
+CyResult ui_element_rect(CyEngine engine, CyUiElement element, float* out_rect_xywh);
+CyResult ui_hit_test(CyEngine engine, const float* position_xy, CyUiElement* out_element);
+CyResult ui_focus(CyEngine engine, CyUiElement* out_element);
+CyResult ui_set_focus(CyEngine engine, CyUiElement element);
+
 }  // namespace cy::abi::game

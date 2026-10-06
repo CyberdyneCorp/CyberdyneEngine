@@ -28,8 +28,11 @@
 //     navigation adapter update          (orders, paths, crowd; moves the scene nodes)
 //     unit bodies follow their nodes;    physics step
 //   input adapter begins the frame;      camera rig evaluates
-//   behaviours' onUpdate                 (Swift, phase U)
+//   interface: layout, the pointer routed, its events delivered
+//                                        (Swift `onUIEvent` and button actions, phase U)
+//   behaviours' onUpdate                 (Swift, phase U; the HUD is written here)
 //   the frame stages of the schedule     (phase U; nothing in them yet)
+//   interface layout                     (what a renderer would flatten)
 //   audio adapter and audio server update; the null device mixes the frame
 //
 // ================================================================================================
@@ -45,6 +48,18 @@
 //
 // The rig is evaluated BEFORE `onUpdate`, so what Swift reads from the camera is the view this
 // frame shows. A `Camera.setTarget` from `onUpdate` shows on the next frame.
+//
+// ================================================================================================
+// WHAT ABI 1.6 ADDED: AN INTERFACE THE GAME BUILDS
+// ================================================================================================
+//
+// A CyberUI store with a screen root, a text painter on the built-in font, and
+// `cy::game_backend::UiAdapter` bound on the ABI host. The commander mounts its HUD in it — the
+// resource bar, the selection panel and the minimap of samples/13-rts-selection, plus a Build
+// button — and writes it from the game every frame. The host lays the store out, routes the pointer
+// through it, sets the input adapter's OVER_UI from what the pointer is over, and delivers the
+// clicks to the behaviours that own the elements. The host is headless, so nothing is drawn here;
+// `render.rts_api_hud` draws the same HUD on a device.
 //
 // ================================================================================================
 // THE HAND
@@ -71,6 +86,7 @@
 #include <cy/game_backend/physics_backend.h>
 #include <cy/game_backend/scene_bridge.h>
 #include <cy/game_backend/spawn_backend.h>
+#include <cy/game_backend/ui_backend.h>
 #include <cy/navigation/components.h>
 #include <cy/navigation/navmesh.h>
 #include <cy/navigation/query.h>
@@ -80,6 +96,9 @@
 #include <cy/servers/camera/server.h>
 #include <cy/servers/input/server.h>
 #include <cy/servers/physics/server.h>
+#include <cy/servers/text/server.h>
+#include <cy/ui/store.h>
+#include <cy/ui/text/text_painter.h>
 
 #include "units.h"
 
@@ -95,6 +114,9 @@ struct HostOptions {
     /// The scheduler's control. False registers the module's systems with the engine but never
     /// installs them in the schedule, so `trainUnits` runs only if the SCHEDULER runs it.
     bool systems = true;
+    /// The interface's control (ABI 1.6). False brings up no interface: the game finds none, mounts
+    /// no HUD, and every click is the world's.
+    bool ui = true;
 };
 
 /// What the game and the engine say happened. Engine facts are read from the servers and the
@@ -139,6 +161,25 @@ struct Observation {
         bool ordered = false;
     };
     Systems systems;
+    /// ABI 1.6. The HUD as the store holds it — the texts and the layout the game's writes produced
+    /// — and what the commander reported about it.
+    struct Hud {
+        cy::u32 elements = 0;  ///< module elements in the store
+        cy::u32 clicks = 0;    ///< clicks the adapter routed
+        cy::f32 mounted = 0.0F;
+        cy::f32 builds = 0.0F;  ///< workers the Build button built
+        cy::f32 heard = 0.0F;   ///< clicks the commander's `onUIEvent` saw
+        char gold[16] = {};
+        char wood[16] = {};
+        char food[16] = {};
+        char title[48] = {};
+        char health[16] = {};  ///< the first selection row's
+        cy::u32 rows = 0;      ///< selection rows shown
+        cy::u32 dots = 0;      ///< minimap dots shown
+        cy::f32 fill = 0.0F;   ///< the first health bar's fill, in pixels
+        bool button = false;
+    };
+    Hud hud;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -172,6 +213,8 @@ public:
     [[nodiscard]] cy::Status press_button(cy::input::MouseControl button, bool down) noexcept;
     /// Where `point` lands on screen through the primary camera, in window pixels.
     [[nodiscard]] bool project(cy::Vec3 point, cy::f32& out_x, cy::f32& out_y) noexcept;
+    /// The centre of the first interface element named `name`, as the last layout placed it.
+    [[nodiscard]] bool ui_centre(const char* name, cy::f32& out_x, cy::f32& out_y) const noexcept;
 
     // --- The eyes ------------------------------------------------------------------------------
     [[nodiscard]] cy::u32 unit_count() const noexcept { return bodies_->count(); }
@@ -194,6 +237,10 @@ private:
     [[nodiscard]] cy::Status start_audio() noexcept;
     [[nodiscard]] cy::Status start_scene() noexcept;
     [[nodiscard]] cy::Status start_props() noexcept;
+    [[nodiscard]] cy::Status start_ui() noexcept;
+    [[nodiscard]] cy::Status ui_frame() noexcept;
+    [[nodiscard]] cy::Status ui_layout() noexcept;
+    void observe_hud(Observation& seen) noexcept;
     [[nodiscard]] cy::Status load_module(const char** detail) noexcept;
     [[nodiscard]] cy::Status start_systems() noexcept;
     [[nodiscard]] cy::Status attach_behaviours(const char** detail) noexcept;
@@ -228,6 +275,13 @@ private:
     cy::physics::WorldHandle physics_world_;
     cy::audio::NullAudioBackend audio_device_;
     cy::audio::AudioServer audio_;
+
+    // The interface (ABI 1.6): the store, its screen root, text on the built-in font, the adapter.
+    cy::text::TextServer text_server_;
+    cy::ui::TextPainter text_;
+    cy::ui::ElementStore ui_store_;
+    cy::ui::ElementId ui_root_;
+    cy::UniquePtr<cy::game_backend::UiAdapter> ui_adapter_;
 
     // Navigation.
     cy::navigation::NavComponents nav_components_;

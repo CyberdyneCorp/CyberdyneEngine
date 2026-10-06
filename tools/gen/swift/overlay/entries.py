@@ -169,6 +169,21 @@ ENTRIES: dict[str, Entry] = {
     "character_destroy": Entry(("engine", "entity"), result="throwing"),
     "character_move": Entry(("engine", "entity", "input"), result="throwing"),
     "character_state": Entry(("engine", "entity", "into"), result="throwing"),
+    # 1.6: the runtime interface
+    "ui_root": Entry(("engine", "into"), result="throwing"),
+    "ui_create": Entry(("engine", "parent", "desc", "into"), result="throwing"),
+    "ui_destroy": Entry(("engine", "element"), result="throwing"),
+    "ui_set_layout": Entry(("engine", "element", "layout"), result="throwing"),
+    "ui_set_style": Entry(("engine", "element", "style"), result="throwing"),
+    "ui_set_text": Entry(("engine", "element", "text", "colour", "pixelScale"), result="throwing"),
+    "ui_set_image": Entry(("engine", "element", "page", "uv"), result="throwing"),
+    "ui_set_progress": Entry(("engine", "element", "value"), result="throwing"),
+    "ui_set_visibility": Entry(("engine", "element", "visibility"), result="throwing"),
+    "ui_set_opacity": Entry(("engine", "element", "opacity"), result="throwing"),
+    "ui_element_rect": Entry(("engine", "element", "into"), result="throwing"),
+    "ui_hit_test": Entry(("engine", "position", "into"), result="throwing"),
+    "ui_focus": Entry(("engine", "into"), result="throwing"),
+    "ui_set_focus": Entry(("engine", "element"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

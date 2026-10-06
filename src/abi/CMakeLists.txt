@@ -52,6 +52,8 @@ cy_add_module(
         src/game/scene_thunks.cpp
         src/game/body_thunks.cpp
         src/game/character_thunks.cpp
+        # ABI 1.6: the runtime interface, over a backend cy::game-backend-ui binds.
+        src/game/ui_thunks.cpp
         src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation

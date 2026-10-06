@@ -5,6 +5,8 @@
 //   just run-sample rts-api --no-behaviours    the negative control: the same host, no game
 //   just run-sample rts-api --no-systems       the scheduler's control: the module's systems are
 //                                              registered with the engine but never installed
+//   just run-sample rts-api --no-ui            the interface's control: no interface, so no HUD,
+//                                              and the Build click lands on the world
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -76,6 +78,14 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
                 wide(now.scout.hero_ground), wide(now.scout.airborne));
     std::printf("rts body     kicks=%.0f crate_speed=%.3f crate_moved=%.3f\n",
                 wide(now.scout.kicks), wide(now.scout.crate_speed), wide(now.scout.crate_moved));
+    // ABI 1.6: the HUD the game built and wrote, read out of the store, and the Build click.
+    std::printf(
+        "rts hud      mounted=%.0f elements=%u button=%d aimed=%d clicks=%u heard=%.0f builds=%.0f "
+        "gold=%s wood=%s food=%s rows=%u health=%s fill=%.3f dots=%u title='%s'\n",
+        wide(now.hud.mounted), now.hud.elements, now.hud.button ? 1 : 0, seen.button_found ? 1 : 0,
+        now.hud.clicks, wide(now.hud.heard), wide(now.hud.builds), now.hud.gold, now.hud.wood,
+        now.hud.food, now.hud.rows, now.hud.health, wide(now.hud.fill), now.hud.dots,
+        now.hud.title);
 }
 
 }  // namespace
@@ -89,6 +99,8 @@ int main(int argc, char** argv) {
             options.behaviours = false;
         } else if (std::strcmp(argv[index], "--no-systems") == 0) {
             options.systems = false;
+        } else if (std::strcmp(argv[index], "--no-ui") == 0) {
+            options.ui = false;
         } else if (std::strcmp(argv[index], "--headless") != 0) {
             std::fprintf(stderr, "rts-api: unknown argument '%s'\n", argv[index]);
             return 2;

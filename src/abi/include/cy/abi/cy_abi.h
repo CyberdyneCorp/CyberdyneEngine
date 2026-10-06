@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 5u
+#define CY_ABI_MINOR 6u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -341,6 +341,37 @@ typedef struct CyServiceEvent {
     uint64_t payload_size;
 } CyServiceEvent;
 
+/* --- 1.6: interface events ---------------------------------------------------------------------
+ *
+ * Declared here rather than with the rest of 1.6's interface types further down because the
+ * behaviour vtable below takes one: an interface event is delivered to the behaviours of the entity
+ * that owns the element, through `CyBehaviourVTable.ui_event`. */
+
+/* An element of the runtime interface. CyberUI's `ElementId` flat: the 32-bit index low, the 32-bit
+ * generation high. Zero is null, because a generation of zero is never issued. NOT an entity:
+ * `ui-system` keeps interface elements out of the ECS world. */
+typedef uint64_t CyUiElement;
+#define CY_UI_ELEMENT_NULL ((CyUiElement)0)
+
+typedef enum CyUiEventKind {
+    /* A button was pressed and released with the pointer over it. */
+    CY_UI_EVENT_CLICK = 0,
+    /* The element took keyboard focus. */
+    CY_UI_EVENT_FOCUS = 1,
+    /* The element lost keyboard focus. */
+    CY_UI_EVENT_BLUR = 2
+} CyUiEventKind;
+
+typedef struct CyUiEvent {
+    uint32_t struct_size;
+    uint32_t kind;       /* CyUiEventKind */
+    CyUiElement element; /* the element the event is about */
+    CyEntity owner;      /* the entity the element was created for; the receiver's own */
+    float position[2];   /* the pointer, window pixels, for CLICK; zero otherwise */
+    uint32_t button;     /* CY_INPUT_BUTTON_* that clicked, for CLICK; zero otherwise */
+    uint32_t reserved;
+} CyUiEvent;
+
 /* --- Behaviours --------------------------------------------------------------------------------
  *
  * The vtable a module registers for one behaviour type. It is the module's code, called by the
@@ -404,6 +435,15 @@ typedef struct CyBehaviourVTable {
     void (*enable)(CyInstance self, void* user_data);
     void (*disable)(CyInstance self, void* user_data);
     void (*exit_tree)(CyInstance self, void* user_data);
+
+    /* --- Appended at 1.6: the interface ------------------------------------------------------
+     *
+     * An event on an interface element created for this instance's entity (`CyUiElementDesc.owner`)
+     * — a button's click, a focus change. Called in CY_PHASE_FRAME_UPDATE, before the frame's
+     * `frame_update`, once per event per instance on that entity, in the order the events happened.
+     * `event` is borrowed for the call. Null when the behaviour takes no interface events; a module
+     * compiled before 1.6 has a shorter `struct_size`, so it is null for it. */
+    void (*ui_event)(CyInstance self, const CyUiEvent* event, void* user_data);
 } CyBehaviourVTable;
 
 /* --- Borrowed pointers -------------------------------------------------------------------------
@@ -878,6 +918,145 @@ typedef struct CyCharacterState {
     float platform_velocity[3]; /* the platform's share of the motion, per second */
 } CyCharacterState;
 
+/* === 1.6: THE RUNTIME INTERFACE ================================================================
+ *
+ * WHY THESE EXIST. CyberUI reached the screen at #102 — the element store, layout, text in the
+ * built-in font and the interface pass — and a Swift game could not touch any of it: no entry
+ * reached `cy::ui`, so a HUD had to be written in C++ by the host. These entries let a module build
+ * and update an interface tree, receive its buttons' clicks, and ask what the pointer is over.
+ *
+ * THE RULES ABOVE `CyPhase` HOLD, with one addition: THE INTERFACE IS PRESENTATION. Every 1.6
+ * entry is `[N U]` — module initialisation and the frame — and a fixed step is refused with
+ * PERMISSION_DENIED, because nothing in the simulation may depend on an element and a resimulated
+ * tick must not build one twice. A module reaches only the elements it created (and the root): an
+ * element the embedder built itself, such as the developer console, answers NOT_FOUND.
+ *
+ * COLOURS are premultiplied 0xAARRGGBB, as everywhere in CyberUI. LENGTHS are reference units,
+ * which are window pixels under the embedder's fixed-pixel scale. The cy::ui store and its three
+ * dirty states are behind every entry; a write marks what it changed, and layout runs once per
+ * frame in the embedder, so a module that changes a number repaints one label and relays out
+ * nothing. */
+
+/* What an element is. The kind decides which writes it takes. */
+typedef enum CyUiKind {
+    /* A box: a background, a border, children. A layout container when it draws nothing. */
+    CY_UI_PANEL = 0,
+    /* A line of text in the built-in font; `ui_set_text`. Measured from its text. */
+    CY_UI_LABEL = 1,
+    /* An atlas page drawn through the image material; `ui_set_image`. */
+    CY_UI_IMAGE = 2,
+    /* A track (`background`) and a fill (`accent`) covering `ui_set_progress`'s fraction of it. */
+    CY_UI_PROGRESS = 3,
+    /* A focusable panel with text whose clicks are delivered to its owner as CY_UI_EVENT_CLICK. */
+    CY_UI_BUTTON = 4
+} CyUiKind;
+
+/* How an element lays out its children. `cy::ui::LayoutModel`, value for value. */
+typedef enum CyUiLayoutModel {
+    CY_UI_LAYOUT_FLEX = 0,
+    CY_UI_LAYOUT_GRID = 1,
+    /* Children placed by anchors and offsets within this element. */
+    CY_UI_LAYOUT_ABSOLUTE = 2
+} CyUiLayoutModel;
+
+/* `cy::ui::FlexDirection`, value for value. */
+typedef enum CyUiDirection {
+    CY_UI_DIRECTION_ROW = 0,
+    CY_UI_DIRECTION_COLUMN = 1,
+    CY_UI_DIRECTION_ROW_REVERSE = 2,
+    CY_UI_DIRECTION_COLUMN_REVERSE = 3
+} CyUiDirection;
+
+/* `cy::ui::Justify`, value for value: distribution along the main axis. */
+typedef enum CyUiJustify {
+    CY_UI_JUSTIFY_START = 0,
+    CY_UI_JUSTIFY_CENTRE = 1,
+    CY_UI_JUSTIFY_END = 2,
+    CY_UI_JUSTIFY_SPACE_BETWEEN = 3,
+    CY_UI_JUSTIFY_SPACE_AROUND = 4,
+    CY_UI_JUSTIFY_SPACE_EVENLY = 5
+} CyUiJustify;
+
+/* Alignment across the cross axis. NOT `cy::ui::Align`'s order: STRETCH, the engine's default, is
+ * zero here, so a zeroed `CyUiLayout` aligns as an element the module never laid out does. */
+typedef enum CyUiAlign {
+    CY_UI_ALIGN_STRETCH = 0,
+    CY_UI_ALIGN_START = 1,
+    CY_UI_ALIGN_CENTRE = 2,
+    CY_UI_ALIGN_END = 3
+} CyUiAlign;
+
+/* Shown, hidden (drawn nowhere, not hit), or collapsed (also out of layout: CSS's display none). */
+typedef enum CyUiVisibility {
+    CY_UI_VISIBLE = 0,
+    CY_UI_HIDDEN = 1,
+    CY_UI_COLLAPSED = 2
+} CyUiVisibility;
+
+/* What `ui_create` makes. `name` is the element's type name — what a `.cyss` type selector and a
+ * diagnostic read — and is copied (interned); null or empty is the kind's own name. */
+typedef struct CyUiElementDesc {
+    uint32_t struct_size;
+    uint32_t kind;    /* CyUiKind */
+    const char* name; /* borrowed for the call */
+    CyEntity owner;   /* whose behaviours receive the element's events; null for nobody */
+} CyUiElementDesc;
+
+#define CY_UI_LAYOUT_WRAP 0x1u      /* flex children wrap onto further lines */
+#define CY_UI_LAYOUT_NO_SHRINK 0x2u /* a flex child never shrinks below its size */
+
+/* An element's layout input: how it lays out its children, and where its parent puts it. ZERO
+ * MEANS THE DEFAULT for every field, so a zeroed struct is a stretching flex row of content-sized
+ * elements: a zero `preferred` axis is measured from the content, a zero `maximum` axis is
+ * unbounded, a zero `flex_shrink` is 1 (CY_UI_LAYOUT_NO_SHRINK is zero), and a zero span is 1. */
+typedef struct CyUiLayout {
+    uint32_t struct_size;
+    uint32_t model;     /* CyUiLayoutModel, for this element's children */
+    uint32_t direction; /* CyUiDirection */
+    uint32_t justify;   /* CyUiJustify */
+    uint32_t align;     /* CyUiAlign: the children across the cross axis */
+    uint32_t
+        self_align; /* CyUiAlign: this element in a flex parent; STRETCH defers to the parent */
+    uint32_t flags; /* CY_UI_LAYOUT_* */
+    float gap;      /* between flex children and grid tracks */
+    float preferred[2];
+    float minimum[2];
+    float maximum[2];
+    float margin[4];  /* left, top, right, bottom */
+    float padding[4]; /* left, top, right, bottom */
+    float flex_grow;
+    float flex_shrink;
+    float aspect_ratio; /* width over height; zero: unconstrained */
+    /* In an ABSOLUTE parent: the corners as fractions of the parent's rect, then offset in units.
+     * (0,0)-(1,1) with zero offsets fills the parent; (1,1)-(1,1) offset by (-100,-80)-(-6,-6)
+     * is a 94 by 74 box six units in from the bottom-right corner. */
+    float anchor_min[2];
+    float anchor_max[2];
+    float offset_min[2];
+    float offset_max[2];
+    /* In a GRID parent: the cell and its spans. On a grid container: its column count. */
+    uint16_t grid_column;
+    uint16_t grid_row;
+    uint16_t grid_column_span;
+    uint16_t grid_row_span;
+    uint16_t grid_columns;
+    uint16_t reserved;
+} CyUiLayout;
+
+#define CY_UI_STYLE_CLIP_CHILDREN 0x1u /* children are clipped to this element's rect */
+
+/* What an element draws. Zero colours draw nothing, so a zeroed style is an invisible container. */
+typedef struct CyUiStyle {
+    uint32_t struct_size;
+    uint32_t flags;         /* CY_UI_STYLE_* */
+    uint32_t background;    /* the fill; an image's tint */
+    uint32_t border_colour; /* drawn inside the bounds, `border_width` thick */
+    uint32_t accent;        /* a progress bar's fill */
+    float border_width;
+    float corner_radius; /* rounds the fill, the border, an image and a progress bar's fill alike */
+    uint32_t reserved;
+} CyUiStyle;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -1301,6 +1480,53 @@ typedef struct CyInterface {
     CyResult (*character_move)(CyEngine engine, CyEntity entity, const CyCharacterInput* input);
     /* [N F U] What the last move produced. */
     CyResult (*character_state)(CyEngine engine, CyEntity entity, CyCharacterState* out_state);
+
+    /* --- 1.6: the runtime interface ---
+     *
+     * Every entry is [N U]. UNAVAILABLE when the embedder bound no interface; NOT_FOUND for a
+     * stale element or one this module did not create; INVALID_ARGUMENT for a write the element's
+     * kind does not take, a non-finite number, or a malformed struct. */
+
+    /* [N U] The screen's root: an ABSOLUTE container covering the window, which every module's
+     * interface is built under. It cannot be written or destroyed. */
+    CyResult (*ui_root)(CyEngine engine, CyUiElement* out_root);
+    /* [N U] A new element, the last child of `parent` — drawn over its earlier siblings. Visible,
+     * laid out by a zeroed `CyUiLayout`, drawing nothing until styled. */
+    CyResult (*ui_create)(CyEngine engine, CyUiElement parent, const CyUiElementDesc* desc,
+                          CyUiElement* out_element);
+    /* [N U] Destroy an element and everything under it. Their handles answer NOT_FOUND after. */
+    CyResult (*ui_destroy)(CyEngine engine, CyUiElement element);
+    /* [N U] Replace the element's layout input. */
+    CyResult (*ui_set_layout)(CyEngine engine, CyUiElement element, const CyUiLayout* layout);
+    /* [N U] Replace what the element draws. */
+    CyResult (*ui_set_style)(CyEngine engine, CyUiElement element, const CyUiStyle* style);
+    /* [N U] A label's or a button's text, UTF-8, copied: one line in the built-in font at a whole
+     * `pixel_scale` (zero is 1). The element is measured again. */
+    CyResult (*ui_set_text)(CyEngine engine, CyUiElement element, const char* utf8, uint32_t colour,
+                            uint32_t pixel_scale);
+    /* [N U] An image's atlas page and its rectangle within it, x y width height in [0, 1]; a null
+     * rectangle is the whole page. The embedder uploads the pages. */
+    CyResult (*ui_set_image)(CyEngine engine, CyUiElement element, uint32_t atlas_page,
+                             const float* uv_xywh);
+    /* [N U] A progress bar's fraction, clamped to [0, 1]. */
+    CyResult (*ui_set_progress)(CyEngine engine, CyUiElement element, float value);
+    /* [N U] CyUiVisibility. */
+    CyResult (*ui_set_visibility)(CyEngine engine, CyUiElement element, uint32_t visibility);
+    /* [N U] The element's opacity in [0, 1], multiplied down the tree into every colour beneath. */
+    CyResult (*ui_set_opacity)(CyEngine engine, CyUiElement element, float opacity);
+    /* [N U] Where the last layout put the element: x y width height in window pixels. Zero before
+     * the first layout after it was created. */
+    CyResult (*ui_element_rect)(CyEngine engine, CyUiElement element, float* out_rect_xywh);
+    /* [N U] The element of this module's under a window point, as the last layout placed it: the
+     * topmost hit, or its nearest ancestor this module created. CY_UI_ELEMENT_NULL when the point
+     * is over no such element — which is how a game tells a click on its HUD from one on the world.
+     */
+    CyResult (*ui_hit_test)(CyEngine engine, const float* position_xy, CyUiElement* out_element);
+    /* [N U] The element with keyboard focus, if this module created it; null otherwise. */
+    CyResult (*ui_focus)(CyEngine engine, CyUiElement* out_element);
+    /* [N U] Move keyboard focus to a button, or clear it with CY_UI_ELEMENT_NULL. INVALID_ARGUMENT
+     * for an element that does not take focus. */
+    CyResult (*ui_set_focus)(CyEngine engine, CyUiElement element);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -1377,7 +1603,7 @@ CY_ABI_STATIC_ASSERT(sizeof(CyVarPayload) == 16, "CyVarPayload is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyVar) == 32, "CyVar is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyFieldDesc) == 24, "CyFieldDesc is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentTypeDesc) == 32, "CyComponentTypeDesc is 32 bytes");
-CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 104, "CyBehaviourVTable is 104 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 112, "CyBehaviourVTable is 112 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyBorrow) == 16, "CyBorrow is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentInfo) == 24, "CyComponentInfo is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyChunk) == 40, "CyChunk is 40 bytes");
@@ -1409,6 +1635,11 @@ CY_ABI_STATIC_ASSERT(sizeof(CySystemDesc) == 48, "CySystemDesc is 48 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyCharacterDesc) == 76, "CyCharacterDesc is 76 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyCharacterInput) == 24, "CyCharacterInput is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyCharacterState) == 72, "CyCharacterState is 72 bytes");
+/* 1.6 */
+CY_ABI_STATIC_ASSERT(sizeof(CyUiEvent) == 40, "CyUiEvent is 40 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyUiElementDesc) == 24, "CyUiElementDesc is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyUiLayout) == 144, "CyUiLayout is 144 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyUiStyle) == 32, "CyUiStyle is 32 bytes");
 
 #ifdef __cplusplus
 }
