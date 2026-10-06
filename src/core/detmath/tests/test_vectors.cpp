@@ -45,6 +45,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -414,6 +415,43 @@ CY_TEST_CASE("detmath vectors: every function is within its declared bound of th
                              << ": " << result.violations << " cases outside "
                              << std::string(bound.stated) << "; worst: " << result.worst_line);
     }
+}
+
+CY_TEST_CASE("detmath vectors: the exact identities and monotonicity hold over long sweeps") {
+    // unit.detmath asserts these over a sample sized for its budget; this is the same property over
+    // enough inputs that an octant or a binade the sample missed is still visited.
+    cy::detmath_test::Rng rng(0x1D'E4717ULL);
+    usize broken = 0;
+    for (int index = 0; index < 65536; ++index) {
+        const Angle a = Angle::from_raw(static_cast<u32>(rng.next() >> 32));
+        const dm::SinCos both = dm::sincos(a);
+        if (!(dm::sin(a + Angle::quarter()) == both.cos) || !(dm::sin(-a) == -both.sin) ||
+            !(dm::sin(a + Angle::half()) == -both.sin)) {
+            ++broken;
+        }
+        const Fixed y = Fixed::from_raw(rng.scaled());
+        const Fixed x = Fixed::from_raw(rng.scaled());
+        if (y != Fixed::min() && !(dm::atan2(-y, x) == -dm::atan2(y, x))) {
+            ++broken;
+        }
+    }
+    CY_CHECK_EQ(broken, 0U);
+
+    std::vector<i64> inputs(4096);
+    for (i64& input : inputs) {
+        input = rng.scaled();
+    }
+    std::ranges::sort(inputs);
+    usize inversions = 0;
+    for (usize index = 1; index < inputs.size(); ++index) {
+        const Fixed before = Fixed::from_raw(inputs[index - 1]);
+        const Fixed after = Fixed::from_raw(inputs[index]);
+        inversions += dm::sqrt(before) > dm::sqrt(after) ? 1U : 0U;
+        inversions += dm::exp2(before >> 26) > dm::exp2(after >> 26) ? 1U : 0U;
+        inversions += dm::atan(before).signed_turns() > dm::atan(after).signed_turns() ? 1U : 0U;
+        inversions += (before.raw > 0 && dm::log2(before) > dm::log2(after)) ? 1U : 0U;
+    }
+    CY_CHECK_EQ(inversions, 0U);
 }
 
 CY_TEST_CASE("detmath vectors: the native 128-bit paths are the reference over a long sweep") {

@@ -39,9 +39,11 @@ using cy::usize;
 
 constexpr i64 kOne = Fixed::kOneRaw;
 
-/// A spread of angles that includes every octant boundary and its neighbours.
-[[nodiscard]] std::array<u32, 512> sample_angles(u64 seed) {
-    std::array<u32, 512> angles{};
+/// A spread of angles that includes every octant boundary and its neighbours. Sized for a unit
+/// budget in an unoptimised build; integration.detmath_vectors runs the same identities over 65
+/// 536.
+[[nodiscard]] std::array<u32, 128> sample_angles(u64 seed) {
+    std::array<u32, 128> angles{};
     cy::detmath_test::Rng rng(seed);
     for (u32& angle : angles) {
         angle = static_cast<u32>(rng.next() >> 32);
@@ -215,7 +217,9 @@ CY_TEST_CASE("detmath: the wide square root takes a squared length a Fixed canno
 }
 
 CY_TEST_CASE("detmath: sqrt, exp2, log2 and atan are monotonic over sorted inputs") {
-    std::array<i64, 600> inputs{};
+    // 150 sorted inputs keep this inside a unit budget at -O0; integration.detmath_vectors sorts 4
+    // 096.
+    std::array<i64, 150> inputs{};
     cy::detmath_test::Rng rng(0xA9'0005ULL);
     for (i64& input : inputs) {
         input = rng.scaled();
