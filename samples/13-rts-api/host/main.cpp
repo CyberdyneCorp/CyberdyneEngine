@@ -86,6 +86,13 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
         now.hud.clicks, wide(now.hud.heard), wide(now.hud.builds), now.hud.gold, now.hud.wood,
         now.hud.food, now.hud.rows, now.hud.health, wide(now.hud.fill), now.hud.dots,
         now.hud.title);
+    // ABI 1.7: the workers' animators — played by the game, run by the engine.
+    std::printf(
+        "rts anim     animated=%u walked=%u cheered=%u idle_after=%u only_idle=%u "
+        "departure=%.4f footsteps=%.0f cheer_events=%.0f\n",
+        now.animation.animated, now.animation.walked, now.animation.cheered,
+        now.animation.idle_after, now.animation.only_idle, wide(now.animation.departure),
+        wide(now.animation.footsteps), wide(now.animation.cheer_events));
 }
 
 }  // namespace

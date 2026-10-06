@@ -73,11 +73,14 @@
 #include <cy/abi/host.h>
 #include <cy/abi/module.h>
 #include <cy/abi/systems.h>
+#include <cy/animation/animation_system.h>
 #include <cy/core/base/expected.h>
+#include <cy/core/determinism/clock.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/ownership.h>
 #include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
+#include <cy/game_backend/animation_backend.h>
 #include <cy/game_backend/audio_backend.h>
 #include <cy/game_backend/camera_backend.h>
 #include <cy/game_backend/character_backend.h>
@@ -101,6 +104,9 @@
 #include <cy/ui/text/text_painter.h>
 
 #include "units.h"
+#include "worker_rig.h"
+
+#include <memory>
 
 namespace sample::rts {
 
@@ -180,6 +186,26 @@ struct Observation {
         bool button = false;
     };
     Hud hud;
+    /// Issue #76 stage 4: the workers' animators, as the engine ran them, and what the game heard.
+    struct Animation {
+        /// Units carrying an animator: what the game attached.
+        cy::u32 animated = 0;
+        /// Units seen in, or blending into, `walk` while their agent followed a path.
+        cy::u32 walked = 0;
+        /// Units seen in `cheer`, the one-shot the game plays on arrival.
+        cy::u32 cheered = 0;
+        /// Units back in `idle` after their cheer, which the game does on the cheer's event.
+        cy::u32 idle_after = 0;
+        /// Animated units that never left `idle`.
+        cy::u32 only_idle = 0;
+        /// The largest change, over the run, of any unit's skinning matrices from the pose it was
+        /// first published with. Zero for a unit that stayed in its reference pose.
+        cy::f32 departure = 0.0F;
+        /// Events the game read from `Animation.events`: footfalls, and cheers finished.
+        cy::f32 footsteps = 0.0F;
+        cy::f32 cheer_events = 0.0F;
+    };
+    Animation animation;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -241,6 +267,9 @@ private:
     [[nodiscard]] cy::Status ui_frame() noexcept;
     [[nodiscard]] cy::Status ui_layout() noexcept;
     void observe_hud(Observation& seen) noexcept;
+    [[nodiscard]] cy::Status start_animation() noexcept;
+    /// After every frame: what each unit's animator was doing, for the report.
+    [[nodiscard]] cy::Status track_animation() noexcept;
     [[nodiscard]] cy::Status load_module(const char** detail) noexcept;
     [[nodiscard]] cy::Status start_systems() noexcept;
     [[nodiscard]] cy::Status attach_behaviours(const char** detail) noexcept;
@@ -304,6 +333,24 @@ private:
     cy::UniquePtr<cy::game_backend::PhysicsBodyAdapter> body_adapter_;
     VeterancyRoll roll_;
     cy::ecs::SystemId roll_id_ = cy::ecs::kInvalidSystem;
+    // Issue #76 stage 4: the worker's rig, the engine's animation system in the schedule, and the
+    // adapter the Swift game drives it through.
+    WorkerRig worker_rig_;
+    cy::determinism::SimulationClock animation_clock_;
+    cy::ecs::ComponentTypeId animator_ = cy::ecs::kInvalidComponent;
+    std::unique_ptr<cy::animation::AnimationSystem> animation_;
+    std::unique_ptr<cy::game_backend::AnimationAdapter> animation_adapter_;
+    /// What the report needs to know about each animated unit, across the run.
+    struct UnitAnimation {
+        CyEntity entity = CY_ENTITY_NULL;
+        cy::Mat4 first[kWorkerJoints] = {};
+        cy::f32 departure = 0.0F;
+        bool walked = false;
+        bool cheered = false;
+        bool idle_after = false;
+        bool left_idle = false;
+    };
+    cy::Array<UnitAnimation> unit_animation_;
 
     // Content.
     cy::Array<cy::f32> click_samples_;

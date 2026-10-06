@@ -9,10 +9,16 @@
 # Like 04-character, the target is NOT DECLARED without Python 3 or a Swift toolchain: a host with
 # no game would be a run that passes on exactly the machines least able to judge it.
 
-# The game builds its HUD through ABI 1.6, so the sample is not declared without CyberUI — the way
-# samples/08-vertical-slice declines without CY_ANIMATION.
+# The game builds its HUD through ABI 1.6 and animates its units through ABI 1.7, so the sample is
+# not declared without CyberUI or the animation runtime — the way samples/08-vertical-slice and
+# samples/09b-animated-character decline without CY_ANIMATION.
 if(NOT CY_UI)
     message(STATUS "samples/13-rts-api: CY_UI is off, so the sample is not built")
+    return()
+endif()
+if(NOT CY_ANIMATION)
+    message(STATUS "samples/13-rts-api: CY_ANIMATION is off, and the units animate from Swift; "
+                   "the sample is not declared.")
     return()
 endif()
 
@@ -75,13 +81,21 @@ cy_add_module(
         host/level.cpp
         host/units.cpp
         host/script.cpp
+        host/worker_rig.cpp
     PRIVATE_DEFINITIONS
         "CY_RTS_API_MODULE_LIBRARY=\"${CY_RTS_API_MODULE_LIBRARY}\""
         "CY_RTS_API_MODULE_MANIFEST=\"${CY_RTS_API_MODULE_MANIFEST}\""
     PRIVATE_DEPENDENCIES
         cy::abi
+        cy::animation
+        cy::animation-assets
+        cy::animation-system
+        cy::core-assets
+        cy::core-jobs
         cy::game-backend
+        cy::game-backend-animation
         cy::game-backend-ui
+        cy::graph
         cy::physics-reference
         cy::navigation
         cy::scene
