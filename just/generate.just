@@ -120,7 +120,41 @@ generate-check *args:
         echo "generated reflection metadata carries an absolute path" >&2
         exit 1
     fi
+
+    # The deterministic math kernel's committed artefacts: the polynomial coefficients, the golden
+    # vectors and digests, and the oracle. All three are functions of tools/detmath/ alone, so the
+    # currency check is over the source tree, and the coefficient generator — the one whose output
+    # the engine compiles — is also run twice into scratch files to show it is reproducible.
+    just generate-detmath --check
+    echo "==> determinism two coefficient runs"
+    python3 tools/detmath/gen_coefficients.py --output "${scratch}/coefficients-a.h" >/dev/null
+    python3 tools/detmath/gen_coefficients.py --output "${scratch}/coefficients-b.h" >/dev/null
+    diff "${scratch}/coefficients-a.h" "${scratch}/coefficients-b.h"
     echo "generation is reproducible"
+
+# Regenerate the deterministic math kernel's committed artefacts, or with --check assert they are
+# current. openspec/changes/add-deterministic-math tasks 1.5, 2.1 and 2.3:
+#
+#   tools/detmath/gen_coefficients.py  the polynomial coefficients the kernel compiles, fitted with
+#                                      mpmath, with each table's measured error written beside it
+#   tools/detmath/gen_vectors.py       the golden vectors and digests, from tools/detmath/model.py
+#   tools/detmath/gen_oracle.py        mpmath references for the declared error bounds
+#
+# The coefficients come first because the other two read them. A regeneration that moves any output
+# also bumps `detmath::kKernelVersion`; integration.detmath_vectors fails until it does. Needs mpmath
+# (`pip install mpmath==1.3.0`, the version CI pins).
+generate-detmath *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if ! python3 -c "import mpmath" >/dev/null 2>&1; then
+        echo "generate-detmath: mpmath is not importable. Install it with: pip install mpmath==1.3.0" >&2
+        exit 1
+    fi
+    echo "==> detmath     coefficients, golden vectors, oracle"
+    python3 tools/detmath/gen_coefficients.py {{args}}
+    python3 tools/detmath/gen_vectors.py {{args}}
+    python3 tools/detmath/gen_oracle.py {{args}}
 
 # Regenerate the CyberdyneKit Swift overlay from the C ABI. Pass --check to assert it is current.
 #
