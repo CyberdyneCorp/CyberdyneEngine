@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Square root and the transcendentals, each with a declared error bound. Design §5.
 //

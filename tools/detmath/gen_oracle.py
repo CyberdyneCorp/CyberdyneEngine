@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """High-precision references for the deterministic math kernel's property tests.
 
 `openspec/changes/add-deterministic-math` task 2.3 and design §10.3. `integration.detmath_vectors`

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // ONE KERNEL, THREE BUILDS, ONE PROCESS. Tasks 1.6 and 4.4; design §7.3 and §10.4.
 //
 // The kernel's translation units are linked into this binary three times, each under its own

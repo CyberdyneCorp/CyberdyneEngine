@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The transcendental kernels' shared arithmetic, private to the module. Design §4.1, "Kernel
 // format": Q2.62 in an i64, range ±2, resolution 2^-62. Reduced arguments and polynomial values

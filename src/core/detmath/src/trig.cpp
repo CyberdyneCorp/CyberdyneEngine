@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Sine, cosine and tangent of a binary angle; arctangent, arcsine and arccosine to one. Design
 // §5.2.
 //
@@ -121,6 +122,9 @@ Angle atan2(Fixed y, Fixed x) noexcept {
     const bool swap = ay > ax;
     const u64 numerator = swap ? ax : ay;
     const u64 denominator = swap ? ay : ax;
+    if (denominator == 0) {
+        return Angle{};  // unreachable: both zero returned above; stated for the analyser
+    }
     const auto ratio = static_cast<i64>(
         wide::divrem(wide::shl(wide::from_u64(numerator), 62), denominator).quotient.lo);
 

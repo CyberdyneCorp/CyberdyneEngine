@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Counting overflows without changing what overflow computes. Design §4.3.
 //

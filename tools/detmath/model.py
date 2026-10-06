@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """The deterministic math kernel, written a second time in Python integers.
 
 `openspec/changes/add-deterministic-math/design.md` §4.3 says the arithmetic rules ARE the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The two compile-time switches of the deterministic math module.
 //

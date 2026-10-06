@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The conversion boundary between floating point and `Fixed`. Design §7.
 //

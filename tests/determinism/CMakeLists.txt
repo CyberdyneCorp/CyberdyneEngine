@@ -72,12 +72,16 @@ if(NOT EXISTS "${cy_pcg_fixture_dir}/fixtures.h")
         "growing a second graph here.")
 endif()
 
+# The deterministic math kernel's digest joins the publication (openspec/changes/
+# add-deterministic-math, design §10.2), checked against the committed tools/detmath/vectors/
+# digests.txt on each leg before the comparator sees it.
 cy_add_test(
     NAME    cross_leg
     KIND    determinism
     SOURCES test_cross_leg.cpp
-    DEPENDENCIES cy::replay cy::pcg
-    DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+    DEPENDENCIES cy::replay cy::pcg cy::core-detmath
+    DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+                CY_DETMATH_VECTORS_DIR="${CMAKE_SOURCE_DIR}/tools/detmath/vectors")
 
 target_include_directories(cy_test_determinism_golden_replay PRIVATE "${cy_replay_fixture_dir}")
 target_include_directories(cy_test_determinism_replay_fuzz PRIVATE "${cy_replay_fixture_dir}")

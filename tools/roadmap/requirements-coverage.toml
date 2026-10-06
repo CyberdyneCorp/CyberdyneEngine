@@ -4675,8 +4675,9 @@ note = "Reversed Z over [0, 1]: near 1, far 0, clear 0.0, opaque compare Greater
 [[coverage]]
 row = "core-math"
 requirement = "Precision"
-evidence = "exempt:m11e"
-note = "f32 runtime math and the f64 clock are asserted (`Convention: the simulation clock accumulates in f64, and runtime math is f32`), and cell-relative positions are exact far from the origin (unit.world `a position is exact in 32-bit local coordinates a thousand kilometres out`). The deterministic math module of fixed-point scalars and transcendental approximations does not exist, so DeterminismConfiguration::require() refuses CrossPlatform and Lockstep with DeterministicMathMissing (src/core/determinism/README.md). Re-enter with that module and a case running one authoritative computation across two vector widths with identical results."
+evidence = "test:integration.detmath_variants"
+case = "detmath variants: every build of the kernel computes the same digests"
+note = "The deterministic math module's kernel is compiled three times into one process, at the baseline, with -mavx2 and with -mgeneral-regs-only, and every function's digest over its seeded sweep is compared bit for bit: one authoritative computation across two vector widths with identical results. core/math itself stays f32 (`Convention: the simulation clock accumulates in f64, and runtime math is f32`), and cell-relative positions are exact far from the origin (unit.world `a position is exact in 32-bit local coordinates a thousand kilometres out`)."
 
 [[coverage]]
 row = "core-math"
@@ -7612,7 +7613,7 @@ row = "simulation-and-determinism"
 requirement = "Determinism profiles"
 evidence = "test:unit.determinism"
 case = "determinism: a session requiring more than a subsystem guarantees is refused by name"
-note = "A configuration validated against a profile stronger than a declared subsystem guarantees is refused, naming that subsystem. 'determinism: a profile's guarantees are separate facts, not a rank' and 'determinism: a presentation-only subsystem constrains nothing' cover profile composition, and 'determinism: CrossPlatform is refused because this tree has no deterministic math' shows the refusal is enforced."
+note = "A configuration validated against a profile stronger than a declared subsystem guarantees is refused, naming that subsystem. 'determinism: a profile's guarantees are separate facts, not a rank' and 'determinism: a presentation-only subsystem constrains nothing' cover profile composition, and 'determinism: CrossPlatform is refused when the build has no deterministic math', 'determinism: CrossPlatform is accepted with deterministic math and every subsystem' and 'determinism: CrossPlatform with authoritative physics is refused naming physics' show the cross-platform refusal is decided by the build and then by each subsystem, by name."
 
 [[coverage]]
 row = "simulation-and-determinism"
@@ -7632,7 +7633,7 @@ note = "The same equal-scoring candidates in two different orders select the sam
 row = "simulation-and-determinism"
 requirement = "Floating-point policy"
 evidence = "exempt:m11e"
-note = "unit.determinism holds the SamePlatform half: contraction off is part of the build contract ('determinism: the build's own flags are part of the contract'), thirteen <cmath> functions are forbidden with twelve replacements accuracy-checked, and 'determinism: a non-finite write to an authoritative field is detected and named'. The deterministic math module that CrossPlatform and Lockstep require (fixed-point scalars, vectors, angles) does not exist; 'determinism: CrossPlatform is refused because this tree has no deterministic math' records that. Re-enter with that module and a case running an authoritative movement step in fixed point across the cross_leg architectures with identical hashes."
+note = "unit.determinism holds the SamePlatform half: contraction off is part of the build contract ('determinism: the build's own flags are part of the contract'), thirteen <cmath> functions are forbidden with twelve replacements accuracy-checked, and 'determinism: a non-finite write to an authoritative field is detected and named'. The deterministic math module exists as `cy::core-detmath` (fixed-point scalars, binary angles, generated transcendentals with declared bounds): unit.detmath holds its arithmetic rules, integration.detmath_vectors its golden vectors and oracle bounds on each leg alone, and determinism.cross_leg publishes its kernel digest for the four-leg comparison. What the requirement's cross-platform half still lacks is an authoritative SIMULATION in fixed point: the fixed-point vector types and the movement step are stages 3 and 4 of openspec/changes/add-deterministic-math. Re-enter with that movement step's per-tick hash identical across the cross_leg architectures."
 
 [[coverage]]
 row = "simulation-and-determinism"

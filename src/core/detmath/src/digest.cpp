@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The kernel digest. Design §10.1 and §10.2; the definition is digest.h's, and
 // tools/detmath/model.py states the same sweep in Python. The two must change together.
 
@@ -145,7 +146,7 @@ u64 transcendental_step(KernelFunction function, SplitMix64& rng) noexcept {
 }
 
 u64 function_seed(KernelFunction function) noexcept {
-    return kSweepSeed + 0x1000ULL * (static_cast<u64>(function) + 1);
+    return kSweepSeed + (0x1000ULL * (static_cast<u64>(function) + 1));
 }
 
 }  // namespace

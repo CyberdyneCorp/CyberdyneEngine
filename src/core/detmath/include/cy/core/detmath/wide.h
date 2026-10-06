@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // 128-bit integers in two 64-bit limbs, and the three ways this module multiplies and divides them.
 //
@@ -157,20 +158,9 @@ namespace reference {
 
 /// 64×64→128 from four 32×32→64 partial products. `cy::detail::mix` in
 /// src/core/memory/include/cy/core/memory/hash.h computes the same product the same way on MSVC.
-[[nodiscard]] constexpr U128 mul_u64(u64 a, u64 b) noexcept {
-    const u64 a_lo = a & 0xFFFF'FFFFU;
-    const u64 a_hi = a >> 32;
-    const u64 b_lo = b & 0xFFFF'FFFFU;
-    const u64 b_hi = b >> 32;
-    const u64 low = a_lo * b_lo;
-    const u64 cross_1 = a_hi * b_lo;
-    const u64 cross_2 = a_lo * b_hi;
-    const u64 high = a_hi * b_hi;
-    // The middle column: three 32-bit quantities, which cannot overflow 64 bits.
-    const u64 middle = (low >> 32) + (cross_1 & 0xFFFF'FFFFU) + (cross_2 & 0xFFFF'FFFFU);
-    return U128{(middle << 32) | (low & 0xFFFF'FFFFU),
-                high + (cross_1 >> 32) + (cross_2 >> 32) + (middle >> 32)};
-}
+/// Out of line, so that it is compiled into every build of the kernel — including the
+/// `-mgeneral-regs-only` one, where a floating-point shortcut in it would fail to compile.
+[[nodiscard]] U128 mul_u64(u64 a, u64 b) noexcept;
 
 /// 128÷64 by restoring shift-and-subtract, one quotient bit per step. `divisor` must not be zero.
 [[nodiscard]] DivResult divrem(U128 numerator, u64 divisor) noexcept;

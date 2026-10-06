@@ -77,8 +77,9 @@ const char* network_mode_name(NetworkMode mode) noexcept;
 ///
 /// `determinism::guarantees_of(DeterminismProfile::Lockstep)` carries
 /// `cross_platform_reproducible`, and `DeterminismConfiguration::require()` refuses that obligation
-/// in this tree — there is no deterministic math module, so every `CrossPlatform` or `Lockstep`
-/// session is rejected with `DeterministicMathMissing`, which is the honest answer and
+/// for any session whose build does not link `cy::core-detmath` (`DeterministicMathMissing`), and
+/// for any session with a float-based authoritative subsystem even when it does — which is the
+/// honest answer and
 /// `simulation-and-determinism`'s own: "The engine SHALL NOT claim that arbitrary floating-point
 /// code produces identical results across architectures, compilers, or vector widths."
 ///

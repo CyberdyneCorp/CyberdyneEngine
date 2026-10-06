@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The correctly rounded square root. Design §5.2: "Integer square root of the 128-bit value
 // raw << 32, rounded to nearest. Correctly rounded."
 //

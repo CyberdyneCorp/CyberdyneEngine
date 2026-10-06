@@ -151,15 +151,17 @@ CY_TEST_CASE("determinism: the build's own flags are part of the contract") {
     CY_CHECK(std::strcmp(fast_refused.error().subsystem, "") == 0);
 }
 
-CY_TEST_CASE("determinism: CrossPlatform is refused because this tree has no deterministic math") {
-    // THE HONEST ANSWER, AND IT IS A TEST RATHER THAN A COMMENT. `simulation-and-determinism`:
-    // "The engine SHALL NOT claim that arbitrary floating-point code produces identical results
-    // across architectures, compilers, or vector widths", and `CrossPlatform` "SHALL require
-    // deterministic math types ... provided as an optional module". There is no such module here,
-    // so every CrossPlatform and Lockstep session is refused, and this case is what stops that
-    // becoming a silent pass the day someone adds a flag.
+// THE REFUSAL THAT USED TO BE ABSOLUTE, AS THREE CASES. Design §12.1 of
+// openspec/changes/add-deterministic-math. Until `cy::core-detmath` existed, every CrossPlatform
+// and Lockstep session was refused with `DeterministicMathMissing`. That refusal stays, for a build
+// without the module; with it, the session reaches the subsystem loop and is accepted or refused BY
+// NAME. `simulation-and-determinism`: "The engine SHALL NOT claim that arbitrary floating-point
+// code produces identical results across architectures" — so what decides acceptance is each
+// subsystem's own declaration, never the presence of the module alone.
+
+CY_TEST_CASE("determinism: CrossPlatform is refused when the build has no deterministic math") {
     DeterminismConfiguration configuration(allocator());
-    CY_REQUIRE(configuration.declare({"physics", DeterminismProfile::Lockstep, true}).has_value());
+    CY_REQUIRE(configuration.declare({"movement", DeterminismProfile::Lockstep, true}).has_value());
 
     BuildConfiguration without = clean_build();
     without.deterministic_math_available = false;
@@ -168,9 +170,46 @@ CY_TEST_CASE("determinism: CrossPlatform is refused because this tree has no det
         const auto refused = configuration.require(profile, without);
         CY_REQUIRE_FALSE(refused.has_value());
         CY_CHECK(refused.error().tag == ProfileRefusal::DeterministicMathMissing);
+        // The build is blamed, not a subsystem: every subsystem here declares Lockstep.
+        CY_CHECK(std::strcmp(refused.error().subsystem, "") == 0);
     }
     // SamePlatform is unaffected: it is a claim about one binary on one machine.
     CY_CHECK(configuration.require(DeterminismProfile::SamePlatform, without).has_value());
+}
+
+CY_TEST_CASE("determinism: CrossPlatform is accepted with deterministic math and every subsystem") {
+    DeterminismConfiguration configuration(allocator());
+    CY_REQUIRE(configuration.declare({"movement", DeterminismProfile::Lockstep, true}).has_value());
+    CY_REQUIRE(
+        configuration.declare({"navigation", DeterminismProfile::CrossPlatform, true}).has_value());
+    // A float-based subsystem that is NOT authoritative constrains nothing, as before.
+    CY_REQUIRE(
+        configuration.declare({"physics", DeterminismProfile::SamePlatform, false}).has_value());
+
+    const auto accepted = configuration.require(DeterminismProfile::CrossPlatform, clean_build());
+    CY_REQUIRE(accepted.has_value());
+    CY_CHECK_EQ(accepted->authoritative_subsystems, 2U);
+    // navigation declares exactly CrossPlatform, so Lockstep is one step beyond it, by name.
+    const auto lockstep = configuration.require(DeterminismProfile::Lockstep, clean_build());
+    CY_REQUIRE_FALSE(lockstep.has_value());
+    CY_CHECK(std::strcmp(lockstep.error().subsystem, "navigation") == 0);
+}
+
+CY_TEST_CASE("determinism: CrossPlatform with authoritative physics is refused naming physics") {
+    // The proposal's own example: Jolt-authoritative physics is float code, and with the module
+    // present the refusal says so instead of blaming the build.
+    DeterminismConfiguration configuration(allocator());
+    CY_REQUIRE(configuration.declare({"movement", DeterminismProfile::Lockstep, true}).has_value());
+    CY_REQUIRE(
+        configuration.declare({"physics", DeterminismProfile::SamePlatform, true}).has_value());
+    for (const DeterminismProfile profile :
+         {DeterminismProfile::CrossPlatform, DeterminismProfile::Lockstep}) {
+        const auto refused = configuration.require(profile, clean_build());
+        CY_REQUIRE_FALSE(refused.has_value());
+        CY_CHECK(refused.error().tag == ProfileRefusal::SubsystemGuarantee);
+        CY_CHECK(std::strcmp(refused.error().subsystem, "physics") == 0);
+        CY_CHECK(std::strcmp(refused.error().guarantee, "cross-platform reproducibility") == 0);
+    }
 }
 
 CY_TEST_CASE("determinism: a presentation-only subsystem constrains nothing") {
@@ -209,6 +248,10 @@ CY_TEST_CASE("determinism: from_build() reports what this translation unit was c
     // for baseline x86-64 today, where it is false, and `-march=x86-64-v3` — which
     // src/core/math/tests/CMakeLists.txt already anticipates — makes it true. Asserting it would
     // make this case a test of the baseline rather than of the mechanism.
+    //
+    // This suite does not link `cy::core-detmath`, so it must not see the module's PUBLIC
+    // `CY_DETERMINISM_MATH`: the other side of this seam is unit.detmath's
+    // "linking the module is what makes from_build() report deterministic math".
     CY_CHECK_FALSE(build.deterministic_math_available);
 }
 

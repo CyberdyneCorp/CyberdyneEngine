@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Helpers shared by the deterministic math suites: a seeded generator for random sweeps, and the
 // parsing of the committed vector and oracle files.
@@ -67,7 +68,7 @@ inline bool parse_hex(std::string_view text, detmath::U128& out) noexcept {
         if (c >= '0' && c <= '9') {
             digit = static_cast<u64>(c - '0');
         } else if (c >= 'a' && c <= 'f') {
-            digit = static_cast<u64>(c - 'a' + 10);
+            digit = static_cast<u64>(c - 'a') + 10;
         } else {
             return false;
         }

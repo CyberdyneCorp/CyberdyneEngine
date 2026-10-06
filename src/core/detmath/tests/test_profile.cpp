@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE SEAM BETWEEN THIS MODULE AND THE PROFILE CHECK. Task 5.1, design §12.1.
 //
 // `cy::core-detmath` exports `CY_DETERMINISM_MATH=1` as PUBLIC, so a translation unit that links it

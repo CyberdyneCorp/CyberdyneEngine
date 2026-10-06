@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE COMMITTED ANSWERS, AND THE DECLARED BOUNDS. Tasks 1.5, 2.3 and 2.4; design §10.1 and §10.3.
 //
 // ================================================================================================
@@ -41,6 +42,7 @@
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
@@ -193,7 +195,7 @@ constexpr Bound kBounds[] = {
 
 /// `value` in ulps of Q32.32, for printing: a 2^-64-scaled magnitude divided by 2^32.
 [[nodiscard]] double in_ulps(U128 magnitude) noexcept {
-    return (static_cast<double>(magnitude.hi) * 18446744073709551616.0 +
+    return ((static_cast<double>(magnitude.hi) * 18446744073709551616.0) +
             static_cast<double>(magnitude.lo)) /
            4294967296.0;
 }

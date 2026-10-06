@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The kernel digest: every function over a seeded sweep of its inputs, folded in order. Design §10.
 //

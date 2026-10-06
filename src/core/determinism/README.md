@@ -209,13 +209,26 @@ Call Stack (most recent call first):
 -- Configuring incomplete, errors occurred!    (exit 1)
 ```
 
-### 6. `CrossPlatform` is refused, and that is the honest answer rather than a gap
+### 6. `CrossPlatform` is refused without deterministic math, and refused BY NAME with it
 
 `simulation-and-determinism` requires the `CrossPlatform` and `Lockstep` profiles to use
 **deterministic math types** — fixed-point scalars and polynomial approximations — "provided as an
-optional module". **This tree has no such module.** `require()` therefore refuses both profiles
-outright with `ProfileRefusal::DeterministicMathMissing`, and `test_profile.cpp` asserts it, so the
-day somebody adds a flag that makes the refusal go away, a test goes red and asks why.
+optional module". That module is [`cy::core-detmath`](../detmath/README.md). It exports
+`CY_DETERMINISM_MATH=1` as PUBLIC, so `BuildConfiguration::from_build()` reports
+`deterministic_math_available` only in translation units that link it.
+
+- **Without the module**, `require()` refuses both profiles outright with
+  `ProfileRefusal::DeterministicMathMissing`, before any subsystem is examined.
+- **With it**, the session reaches the subsystem loop and is accepted only if every authoritative
+  subsystem declares the profile; otherwise the refusal names the first that does not. Today every
+  float-based subsystem (physics, abilities, AI utility, root motion) declares `SamePlatform`, so a
+  session that uses one authoritatively is still refused — now with its name.
+
+`test_profile.cpp` asserts the three outcomes ("CrossPlatform is refused when the build has no
+deterministic math", "... is accepted with deterministic math and every subsystem", "... with
+authoritative physics is refused naming physics"), and its `from_build()` case asserts that this
+suite, which does not link the module, still reports none. `unit.detmath`'s profile cases hold the
+other side of that seam.
 
 `docs/roadmap/status.yaml` must not record `simulation-and-determinism` as claiming
 cross-architecture determinism until a run has compared two architectures. **Nothing in this tree

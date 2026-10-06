@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE TRANSCENDENTALS' EXACT PROPERTIES AND DEFINED EDGES. Tasks 1.4, 2.2 and 2.3; design §5 and
 // §10.3.
 //
@@ -42,13 +43,13 @@ constexpr i64 kOne = Fixed::kOneRaw;
 [[nodiscard]] std::array<u32, 512> sample_angles(u64 seed) {
     std::array<u32, 512> angles{};
     cy::detmath_test::Rng rng(seed);
-    for (usize index = 0; index < angles.size(); ++index) {
-        angles[index] = static_cast<u32>(rng.next() >> 32);
+    for (u32& angle : angles) {
+        angle = static_cast<u32>(rng.next() >> 32);
     }
     for (u32 octant = 0; octant < 8; ++octant) {
-        angles[octant * 3 + 0] = octant << 29;
-        angles[octant * 3 + 1] = (octant << 29) + 1;
-        angles[octant * 3 + 2] = (octant << 29) - 1;
+        angles[(octant * 3) + 0] = octant << 29;
+        angles[(octant * 3) + 1] = (octant << 29) + 1;
+        angles[(octant * 3) + 2] = (octant << 29) - 1;
     }
     return angles;
 }
@@ -219,7 +220,7 @@ CY_TEST_CASE("detmath: sqrt, exp2, log2 and atan are monotonic over sorted input
     for (i64& input : inputs) {
         input = rng.scaled();
     }
-    std::sort(inputs.begin(), inputs.end());
+    std::ranges::sort(inputs);
     for (usize index = 1; index < inputs.size(); ++index) {
         const Fixed before = Fixed::from_raw(inputs[index - 1]);
         const Fixed after = Fixed::from_raw(inputs[index]);

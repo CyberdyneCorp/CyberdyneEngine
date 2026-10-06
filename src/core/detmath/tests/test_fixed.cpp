@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE ARITHMETIC RULES, CASE BY CASE. Tasks 1.2 and 1.4, design §4.3.
 //
 // Each rule of the table is a case here, asserted on the values where an implementation that broke

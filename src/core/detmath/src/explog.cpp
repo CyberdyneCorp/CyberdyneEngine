@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // exp2 and log2, and exp, log and pow built on them. Design §5.2.
 //
 // exp2: the integer part of x is a shift and the fractional part f in [0, 1) goes to the generated
@@ -47,7 +48,7 @@ Log2Parts log2_parts(i64 x) noexcept {
     const auto top = static_cast<unsigned>(63 - std::countl_zero(value));  // 2^top <= x
     // x >= sqrt(2) 2^top, decided exactly: x^2 >= 2^(2 top + 1).
     const U128 square = wide::mul_u64(value, value);
-    const U128 threshold = wide::shl(wide::from_u64(1), 2 * top + 1);
+    const U128 threshold = wide::shl(wide::from_u64(1), (2 * top) + 1);
     const bool upper = !wide::less(square, threshold);
 
     // m = x / 2^top in [1, sqrt 2), or x / 2^(top + 1) in [1/sqrt 2, 1). Both sums fit 64 bits:

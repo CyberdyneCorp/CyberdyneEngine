@@ -64,7 +64,7 @@ FORBIDDEN_CMATH = (
 # --- Exemptions, PER RULE and each with a reason --------------------------------------------------
 #
 # A whole-file exemption is how a lint grows an unexamined corner; these name the one rule each file
-# is allowed to break and leave every other rule in force over it. Three entries, and each is a file
+# is allowed to break and leave every other rule in force over it. Each entry is a file
 # whose *subject* is the rule it breaks.
 EXEMPTIONS = {
     # The file that replaces the thirteen. It contains their definitions — `f64 acos(f64 x)` — and
@@ -77,6 +77,14 @@ EXEMPTIONS = {
     # `bypass_classification()` is this suite's subject. It asserts that the escape hatch exists and
     # that it is the only one; a lint finding on it would be a finding on the test of the finding.
     "src/core/determinism/tests/test_classification.cpp": ("presentation-read",),
+    # The deterministic math module's own `asin`, `acos` and `atan2` take `Fixed` and return an
+    # `Angle`, and share the names on purpose. These two kernel files define and call them, and are
+    # compiled a second time with `-mgeneral-regs-only` (src/core/detmath/tests/CMakeLists.txt),
+    # where a call into <cmath> cannot compile at all: a stronger check than this name match.
+    "src/core/detmath/src/trig.cpp": ("forbidden-cmath",),
+    "src/core/detmath/src/digest.cpp": ("forbidden-cmath",),
+    # The suite of exactly those functions; every call in it is `dm::atan2` of `Fixed` arguments.
+    "src/core/detmath/tests/test_functions.cpp": ("forbidden-cmath",),
 }
 
 WALL_CLOCK = (

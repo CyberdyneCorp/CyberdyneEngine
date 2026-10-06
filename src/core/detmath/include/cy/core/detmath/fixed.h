@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The scalar formats of the deterministic math module, and their arithmetic. Design §4.
 //
@@ -277,11 +278,11 @@ struct Angle {
 
 /// `a + b`, modulo one turn.
 [[nodiscard]] constexpr Angle operator+(Angle a, Angle b) noexcept {
-    return Angle{static_cast<u32>(a.raw + b.raw)};
+    return Angle{a.raw + b.raw};
 }
 /// `a - b`, modulo one turn.
 [[nodiscard]] constexpr Angle operator-(Angle a, Angle b) noexcept {
-    return Angle{static_cast<u32>(a.raw - b.raw)};
+    return Angle{a.raw - b.raw};
 }
 /// `-a`, modulo one turn.
 [[nodiscard]] constexpr Angle operator-(Angle a) noexcept {

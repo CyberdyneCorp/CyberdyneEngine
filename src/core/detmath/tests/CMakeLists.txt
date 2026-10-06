@@ -57,10 +57,14 @@ endif()
 function(cy_detmath_add_variant name)
     get_property(sources GLOBAL PROPERTY CY_DETMATH_KERNEL_SOURCES)
     get_property(include_dir GLOBAL PROPERTY CY_DETMATH_INCLUDE_DIR)
-    add_library(cy_core_detmath_${name} OBJECT ${sources})
-    target_include_directories(cy_core_detmath_${name} PRIVATE "${include_dir}")
-    target_link_libraries(cy_core_detmath_${name} PRIVATE cy::compile-options cy::core-base)
-    target_compile_definitions(cy_core_detmath_${name} PRIVATE CY_DETMATH_VARIANT=${name})
+    cy_add_module(
+        NAME cy_core_detmath_${name}
+        LAYER core
+        TYPE OBJECT
+        SOURCES ${sources}
+        PRIVATE_INCLUDE_DIRS "${include_dir}"
+        PRIVATE_DEFINITIONS CY_DETMATH_VARIANT=${name}
+        PRIVATE_DEPENDENCIES cy::core-base)
     target_compile_options(cy_core_detmath_${name} PRIVATE ${ARGN} -ffp-contract=off)
 endfunction()
 

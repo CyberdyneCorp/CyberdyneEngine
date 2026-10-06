@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Write the deterministic math kernel's golden vectors and its committed digests.
 
 `openspec/changes/add-deterministic-math` tasks 1.5 and 2.4, design §10.1 and §10.2.

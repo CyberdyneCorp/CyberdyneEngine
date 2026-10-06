@@ -179,8 +179,9 @@ Expected<ConfigurationReport, ProfileRejection> DeterminismConfiguration::requir
     if (wanted.cross_platform_reproducible && !build.deterministic_math_available) {
         // `simulation-and-determinism`: "The engine SHALL NOT claim that arbitrary floating-point
         // code produces identical results across architectures, compilers, or vector widths."
-        // There is no deterministic math module in this tree, so this refusal fires for every
-        // `CrossPlatform` session today, and that is the honest answer rather than a silent pass.
+        // A build that does not link `cy::core-detmath` has no deterministic math, so every
+        // `CrossPlatform` and `Lockstep` session it configures is refused here, before any
+        // subsystem is examined. With the module linked, the subsystems below decide, by name.
         return make_unexpected(ProfileRejection{ProfileRefusal::DeterministicMathMissing, "",
                                                 "deterministic math types for authoritative "
                                                 "computation",

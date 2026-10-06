@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The deterministic math module, in one include. `cy::core-detmath`, layer 0.
 //

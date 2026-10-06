@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The out-of-line halves of wide.h: the reference divide and square root, the long division, and
 // the fast integer square root. Design §4.4 and §5.2.
 //
@@ -7,7 +8,6 @@
 
 #include <cy/core/detmath/wide.h>
 
-#include <array>
 #include <bit>
 
 namespace cy::detmath::inline CY_DETMATH_VARIANT::wide {
@@ -39,27 +39,33 @@ constexpr u64 isqrt_bitwise(u64 v) noexcept {
 /// For a normalised `m` in [2^62, 2^64), the seed is `ceil(sqrt((top + 1) * 2^56))` where `top` is
 /// `m`'s leading eight bits. It is never below `sqrt(m)`, which is what Newton's iteration from
 /// above needs, and it is within 2^-7 of it, so two iterations leave an error of a few units.
-constexpr std::array<u64, 192> make_seeds() noexcept {
-    std::array<u64, 192> seeds{};
+struct Seeds {
+    u64 values[192];
+};
+
+// A plain array rather than std::array: libstdc++'s <array> declares a `long double` helper, and
+// Clang refuses to parse it under the -mgeneral-regs-only build this file is also compiled in.
+constexpr Seeds make_seeds() noexcept {
+    Seeds seeds{};
     for (u64 top = 64; top < 256; ++top) {
         if (top == 255) {
-            seeds[top - 64] = kDigit;  // sqrt(2^64), whose argument does not fit 64 bits
+            seeds.values[top - 64] = kDigit;  // sqrt(2^64), whose argument does not fit 64 bits
             continue;
         }
         const u64 bound = (top + 1) << 56;
         const u64 root = isqrt_bitwise(bound);
-        seeds[top - 64] = root * root < bound ? root + 1 : root;
+        seeds.values[top - 64] = root * root < bound ? root + 1 : root;
     }
     return seeds;
 }
 
-constexpr std::array<u64, 192> kSeeds = make_seeds();
+constexpr Seeds kSeeds = make_seeds();
 
 /// `floor(sqrt(m))` for `m` in [2^62, 2^64). The result lies in [2^31, 2^32).
 u64 isqrt_normalized(u64 m) noexcept {
-    u64 y = kSeeds[(m >> 56) - 64];
-    y = (y + m / y) >> 1;
-    y = (y + m / y) >> 1;
+    u64 y = kSeeds.values[(m >> 56) - 64];
+    y = (y + (m / y)) >> 1;
+    y = (y + (m / y)) >> 1;
     // Newton's iteration from above never falls below the floor, so the correction only descends.
     // y is at most 2^32, whose square needs the 128-bit product.
     while (less(U128{m, 0}, mul_u64(y, y))) {
@@ -91,7 +97,7 @@ u64 divide_two_by_one(u64 high, u64 low, u64 divisor, u64& remainder) noexcept {
     const u64 numerator_0 = numerator_10 & kDigitMask;
 
     u64 quotient_1 = numerator_32 / divisor_hi;
-    u64 estimate = numerator_32 - quotient_1 * divisor_hi;
+    u64 estimate = numerator_32 - (quotient_1 * divisor_hi);
     while (quotient_1 >= kDigit || quotient_1 * divisor_lo > ((estimate << 32) | numerator_1)) {
         --quotient_1;
         estimate += divisor_hi;
@@ -100,9 +106,9 @@ u64 divide_two_by_one(u64 high, u64 low, u64 divisor, u64& remainder) noexcept {
         }
     }
 
-    const u64 numerator_21 = (numerator_32 << 32) + numerator_1 - quotient_1 * divisor;
+    const u64 numerator_21 = (numerator_32 << 32) + numerator_1 - (quotient_1 * divisor);
     u64 quotient_0 = numerator_21 / divisor_hi;
-    estimate = numerator_21 - quotient_0 * divisor_hi;
+    estimate = numerator_21 - (quotient_0 * divisor_hi);
     while (quotient_0 >= kDigit || quotient_0 * divisor_lo > ((estimate << 32) | numerator_0)) {
         --quotient_0;
         estimate += divisor_hi;
@@ -111,11 +117,26 @@ u64 divide_two_by_one(u64 high, u64 low, u64 divisor, u64& remainder) noexcept {
         }
     }
 
-    remainder = ((numerator_21 << 32) + numerator_0 - quotient_0 * divisor) >> shift;
+    remainder = ((numerator_21 << 32) + numerator_0 - (quotient_0 * divisor)) >> shift;
     return (quotient_1 << 32) + quotient_0;
 }
 
 }  // namespace
+
+U128 reference::mul_u64(u64 a, u64 b) noexcept {
+    const u64 a_lo = a & kDigitMask;
+    const u64 a_hi = a >> 32;
+    const u64 b_lo = b & kDigitMask;
+    const u64 b_hi = b >> 32;
+    const u64 low = a_lo * b_lo;
+    const u64 cross_1 = a_hi * b_lo;
+    const u64 cross_2 = a_lo * b_hi;
+    const u64 high = a_hi * b_hi;
+    // The middle column: three 32-bit quantities, which cannot overflow 64 bits.
+    const u64 middle = (low >> 32) + (cross_1 & kDigitMask) + (cross_2 & kDigitMask);
+    return U128{(middle << 32) | (low & kDigitMask),
+                high + (cross_1 >> 32) + (cross_2 >> 32) + (middle >> 32)};
+}
 
 DivResult reference::divrem(U128 numerator, u64 divisor) noexcept {
     const U128 wide_divisor{divisor, 0};
@@ -177,7 +198,7 @@ u64 isqrt(U128 value) noexcept {
 
     // One Newton step from y * 2^32, which is below the root: r = y 2^32 + (m - y^2 2^64) / (y
     // 2^33). The step lands at or above the root, by a few units at most.
-    const U128 residual{m.lo, m.hi - y * y};
+    const U128 residual{m.lo, m.hi - (y * y)};
     const u64 step = shr(residual, 33).lo / y;
     u64 root = (y << 32) + step;
     if (root < (y << 32)) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The deterministic math kernel's costs, one dependent chain per operation, so each figure is the
 // LATENCY a simulation step pays when the next operation needs this one's result. Design §11 states
 // the budgets on the x86-64 reference runner:

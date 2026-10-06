@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The conversion boundary. Design §7: the module's only floating point, and the one source the
 // `-mgeneral-regs-only` build of the kernel leaves out.
 

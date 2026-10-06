@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE 128-BIT PATHS AGREE WITH THE REFERENCE. Task 1.3, design §4.4.
 //
 // "The portable reference is compiled on every leg. The unit suite checks that the selected path

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // OverflowGuard: the thread's current guard, and the counting. Design §4.3.
 
 #include <cy/core/detmath/overflow.h>
