@@ -40,6 +40,13 @@
 //                       moved.
 //   pcg-gpu-domain      What `cy::pcg::ExecutionDomain` offers. It is `none` on every leg today and
 //                       the field exists to say so out loud — see the last case in this file.
+//   detmath-kernel-digest
+//                       `cy::detmath::kernel_digest()`: every function of the fixed-point kernel
+//                       over its seeded sweep, folded (openspec/changes/add-deterministic-math,
+//                       design §10.2). Each leg first checks it against
+//                       tools/detmath/vectors/digests.txt ON ITS OWN — the committed value was
+//                       computed by a second implementation of the rules, in Python — and the
+//                       comparator then checks it between architectures.
 //
 // The leg's identity — os, architecture, compiler, endianness and the four build-time
 // floating-point facts `determinism::BuildConfiguration` reads — is published beside the digests,
@@ -73,6 +80,9 @@
 #include "golden_session.h"
 
 #include <cy/core/determinism/profile.h>
+#include <cy/core/detmath/digest.h>
+#include <cy/core/detmath/version.h>
+#include <cy/core/detmath/wide.h>
 #include <cy/core/memory/hash.h>
 #include <cy/pcg/execute.h>
 #include <cy/test/fixtures.h>
@@ -121,6 +131,7 @@ struct LegDigest {
     u64 sim_final = 0;
     u64 pcg_world = 0;
     u64 pcg_identity = 0;
+    u64 detmath_kernel = 0;
     bool complete = false;
 };
 
@@ -222,6 +233,7 @@ struct LegDigest {
     LegDigest digest;
     digest.complete = simulation_digest(digest.sim_state, digest.sim_final) &&
                       generation_digest_of(kPcgSeed, digest.pcg_world, digest.pcg_identity);
+    digest.detmath_kernel = cy::detmath::kernel_digest();
     return digest;
 }
 
@@ -291,6 +303,13 @@ struct Measurements {
     // `none` rather than an omitted line: a comparator that saw no field could not tell a leg with
     // no GPU domain from a leg whose publisher predated the field.
     text += "pcg-gpu-domain " + std::string(names_a_device() ? "present" : "none") + "\n";
+    text += "detmath-kernel-version " + std::to_string(cy::detmath::kKernelVersion) + "\n";
+    text += "detmath-sweep-count " + std::to_string(cy::detmath::kSweepCount) + "\n";
+    text += "detmath-kernel-digest " + hex(digest.detmath_kernel) + "\n";
+    // Which 128-bit multiply and divide this leg's binary used. An annotation: the comparison is of
+    // the digest, and the point of the claim is that the paths do not matter.
+    text += "detmath-paths " + std::string(cy::detmath::wide::kNativeMultiply) + " / " +
+            cy::detmath::wide::kNativeDivide + "\n";
     return text;
 }
 
@@ -320,6 +339,9 @@ constexpr const char* kRequiredKeys[] = {
     "pcg-world-digest",
     "pcg-identity-digest",
     "pcg-gpu-domain",
+    "detmath-kernel-version",
+    "detmath-sweep-count",
+    "detmath-kernel-digest",
 };
 
 }  // namespace
@@ -357,6 +379,23 @@ CY_TEST_CASE("cross-leg: the published digests are the same twice in one process
     CY_CHECK_EQ(taken.first.sim_final, taken.second.sim_final);
     CY_CHECK_EQ(taken.first.pcg_world, taken.second.pcg_world);
     CY_CHECK_EQ(taken.first.pcg_identity, taken.second.pcg_identity);
+    CY_CHECK_EQ(taken.first.detmath_kernel, taken.second.detmath_kernel);
+}
+
+CY_TEST_CASE("cross-leg: the published kernel digest is the committed one, on this leg alone") {
+    // Design §10.1: "The answer is committed, so a single leg that diverges fails by itself,
+    // without waiting for a comparison." The committed value is tools/detmath/gen_vectors.py's,
+    // computed by tools/detmath/model.py — the rules written a second time — so agreement here is
+    // agreement with an independent statement of them, not with a number this binary wrote earlier.
+    const Measurements& taken = measurements();
+    std::string committed;
+    CY_REQUIRE(
+        cy::test::read_file(std::string(CY_DETMATH_VECTORS_DIR) + "/digests.txt", committed));
+    const std::string::size_type at = committed.find("\nkernel ");
+    CY_REQUIRE(at != std::string::npos);
+    const u64 expected = std::strtoull(committed.c_str() + at + 8, nullptr, 16);
+    CY_CHECK_NE(expected, 0U);
+    CY_CHECK_EQ(taken.first.detmath_kernel, expected);
 }
 
 CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {

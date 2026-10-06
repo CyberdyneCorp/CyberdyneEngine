@@ -158,7 +158,8 @@ test-d3d12-golden:
 #
 #   just test-determinism                          the suite, as every other graduated recipe
 #   just test-determinism --publish-digest <path>  one leg computes its state digest and writes it
-#   just test-determinism --compare-legs [--pcg]   every downloaded leg's digest, compared
+#   just test-determinism --compare-legs [--pcg] [--detmath]
+#                                                  every downloaded leg's digest, compared
 #
 # `ci.yml`'s matrices run four legs independently. Before the cross-leg jobs, nothing published a
 # digest or downloaded one to compare, which is why `m9:lockstep-cross-platform` is a declared gap and
@@ -189,6 +190,7 @@ test-determinism *args:
             --digests)          i=$((i + 1)); compare_args+=(--dir "${argv[i]:-}") ;;
             --digests=*)        compare_args+=(--dir "${argv[i]#*=}") ;;
             --pcg)              compare_args+=(--pcg) ;;
+            --detmath)          compare_args+=(--detmath) ;;
             --gpu-domain)       compare_args+=(--gpu-domain) ;;
             *)                  forwarded+=("${argv[i]}") ;;
         esac

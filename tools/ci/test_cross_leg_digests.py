@@ -47,6 +47,9 @@ BASE = {
     "pcg-world-digest": "7bc377fd2fc0872b",
     "pcg-identity-digest": "e40fc43a7d8059bf",
     "pcg-gpu-domain": "none",
+    "detmath-kernel-version": "1",
+    "detmath-sweep-count": "16384",
+    "detmath-kernel-digest": "e034ac1da6722b97",
 }
 
 
@@ -132,6 +135,30 @@ CASES = (
 
     ("a key with no value is a damaged file rather than an empty answer",
      [leg(label="a", endian=""), leg(label="b", arch="arm64")], (), 2, "has no value"),
+
+    ("a disagreeing deterministic math kernel is a finding, and only under --detmath",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_kernel_digest="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-kernel-digest"),
+
+    ("...and without --detmath the same pair passes, so the claim is separable",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_kernel_digest="0123456789abcdef")],
+     (), 0, "identical across"),
+
+    ("a zero kernel digest is agreement produced by absence",
+     [leg(label="a", detmath_kernel_digest="0000000000000000"),
+      leg(label="b", arch="arm64", detmath_kernel_digest="0000000000000000")], ("--detmath",), 2,
+     "Two legs that both computed nothing"),
+
+    ("a kernel digest over an empty sweep, likewise",
+     [leg(label="a", detmath_sweep_count="0"), leg(label="b", arch="arm64", detmath_sweep_count="0")],
+     ("--detmath",), 2, "agrees with every other digest of an empty workload"),
+
+    ("one architecture publishing the kernel digest is still one architecture",
+     [leg(label="a"), leg(label="b")], ("--detmath",), 2, "all of them are x86_64"),
+
+    ("a leg whose publisher predates the kernel digest is refused by name under --detmath",
+     [leg(label="a", detmath_kernel_digest=None), leg(label="b", arch="arm64")], ("--detmath",), 2,
+     "no 'detmath-kernel-digest'"),
 
     ("--gpu-domain refuses on every leg this tree can produce, and says which two things are absent",
      [leg(label="a"), leg(label="b", arch="arm64")], ("--pcg", "--gpu-domain"), 2,

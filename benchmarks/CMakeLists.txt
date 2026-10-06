@@ -40,6 +40,7 @@ endfunction()
 
 add_subdirectory(harness)
 add_subdirectory(micro)
+add_subdirectory(detmath)
 add_subdirectory(ecs)
 add_subdirectory(gameplay)
 add_subdirectory(save)

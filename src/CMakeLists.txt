@@ -12,6 +12,9 @@ add_subdirectory(core)
 # has to change when they move.
 add_subdirectory(core/serialize)
 add_subdirectory(core/determinism)
+# core/detmath is layer 0 too, and is read after core/determinism because it declares its own
+# determinism profile with the function that directory defines.
+add_subdirectory(core/detmath)
 # core/plugins is layer 0 too and belongs in the list above with the others; it is read HERE rather
 # than there because it depends on cy::core-serialize for the manifest's text form, and that module
 # is itself registered from this file. When the two lines above move into src/core/CMakeLists.txt

@@ -150,8 +150,9 @@ struct BuildConfiguration {
     /// The target has a fused multiply-add the compiler may contract into. `__FP_FAST_FMA` on both
     /// compilers. False on baseline x86-64, which is why the engine agrees with itself today.
     bool target_has_fma = false;
-    /// Deterministic math types are available to authoritative code. There is no such module in
-    /// this tree yet; `cross_platform_reproducible` may not be claimed without one.
+    /// Deterministic math types are available to authoritative code: `cy::core-detmath` is linked,
+    /// and its PUBLIC `CY_DETERMINISM_MATH=1` reached this translation unit.
+    /// `cross_platform_reproducible` may not be claimed without it.
     bool deterministic_math_available = false;
 
     /// What *this* translation unit was compiled with.

@@ -9,6 +9,8 @@ platform it is running on, and nothing else in this repository.
   entry points, crash-handler installation). Implementations live under `platform/<name>/`, never here.
 - `diagnostics/` — assertions, structured logging, the trace timeline and its privacy classification
 - Later milestones add memory and containers, math, jobs, and assets and I/O.
+- `detmath/` — optional deterministic math: fixed-point scalars, binary angles and integer-only
+  transcendentals for the `CrossPlatform` and `Lockstep` profiles ([README](detmath/README.md))
 
 **What does not belong here**
 - Anything that names an entity, a node, a server, or a window

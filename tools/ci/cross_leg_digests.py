@@ -13,7 +13,7 @@ for want of that one job —
 
 — and this is the comparator half of it. `determinism.cross_leg` (tests/determinism/) is the
 publisher half; `just test-determinism --publish-digest <path>` runs one leg's publication and
-`just test-determinism --compare-legs [--pcg]` runs this.
+`just test-determinism --compare-legs [--pcg] [--detmath]` runs this.
 
 WHAT THIS REFUSES TO CALL AN AGREEMENT, which is the whole of its value. `m9:lockstep-cross-platform`
 was declared a gap rather than a `where = "ci"` criterion for one stated reason: `where = "ci"` would
@@ -55,6 +55,14 @@ CLAIMS = {
         ("pcg-world-digest", "pcg-identity-digest"),
         "pcg-regions",
         "m10:pcg-regeneration-cross-platform — a generated region's digest between two architectures",
+    ),
+    # openspec/changes/add-deterministic-math, design §10.2: every function of the deterministic
+    # math kernel over its seeded sweep, folded. Each leg also checks it against the committed value
+    # on its own (`determinism.cross_leg`); this is the half that needs two architectures.
+    "detmath": (
+        ("detmath-kernel-digest",),
+        "detmath-sweep-count",
+        "add-deterministic-math — the fixed-point kernel's digest between two architectures",
     ),
 }
 
@@ -183,6 +191,8 @@ def main() -> int:
                         help="where the downloaded digests are (default: cross-leg-digests)")
     parser.add_argument("--pcg", action="store_true",
                         help="also compare the generated world's digest between the legs")
+    parser.add_argument("--detmath", action="store_true",
+                        help="also compare the deterministic math kernel's digest between the legs")
     parser.add_argument("--gpu-domain", action="store_true",
                         help="report m10:pcg-gpu-domain-agreement's state and refuse")
     arguments = parser.parse_args()
@@ -194,7 +204,8 @@ def main() -> int:
             print(f"  {describe(leg)}  <- {leg['source']}")
         check_preconditions(legs)
 
-        claims = ["lockstep"] + (["pcg"] if arguments.pcg else [])
+        claims = (["lockstep"] + (["pcg"] if arguments.pcg else [])
+                  + (["detmath"] if arguments.detmath else []))
         disagreements = {claim: compare(legs, claim) for claim in claims}
         if arguments.gpu_domain:
             report_gpu_domain(legs)

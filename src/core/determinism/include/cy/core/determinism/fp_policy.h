@@ -50,9 +50,10 @@
 // **It is not a cross-platform claim and must not be read as one.** The correctly-rounded set is
 // correctly rounded *in glibc 2.39 on x86-64*; a different libm may round `exp` differently and
 // every function here would move with it. `CrossPlatform` and `Lockstep` need deterministic math
-// types — fixed-point scalars and polynomial approximations that compute their own answers — and
-// this tree has none, which is why `DeterminismConfiguration::require()` refuses those two profiles
-// outright (profile.h). This file is the `SamePlatform` answer and says so.
+// types — fixed-point scalars and polynomial approximations that compute their own answers — which
+// are `cy::core-detmath` (src/core/detmath/), not this file. `DeterminismConfiguration::require()`
+// refuses those two profiles for a build without that module (profile.h). This file is the
+// `SamePlatform` answer and says so.
 
 #include <cy/core/base/types.h>
 #include <cy/core/determinism/profile.h>
