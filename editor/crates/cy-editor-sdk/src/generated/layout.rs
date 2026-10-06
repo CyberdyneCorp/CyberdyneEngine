@@ -1338,6 +1338,134 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyAnimatorDesc>() == 32,
+    "CyAnimatorDesc is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyAnimatorDesc>() == 8,
+    "CyAnimatorDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, struct_size) == 0,
+    "CyAnimatorDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, flags) == 4,
+    "CyAnimatorDesc::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, rig) == 8,
+    "CyAnimatorDesc::rig is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, tier) == 16,
+    "CyAnimatorDesc::tier is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, root_motion) == 20,
+    "CyAnimatorDesc::root_motion is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, play_rate) == 24,
+    "CyAnimatorDesc::play_rate is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorDesc, reserved) == 28,
+    "CyAnimatorDesc::reserved is not at byte 28"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyAnimatorState>() == 32,
+    "CyAnimatorState is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyAnimatorState>() == 8,
+    "CyAnimatorState is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, struct_size) == 0,
+    "CyAnimatorState::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, flags) == 4,
+    "CyAnimatorState::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, state) == 8,
+    "CyAnimatorState::state is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, target) == 16,
+    "CyAnimatorState::target is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, blend_weight) == 24,
+    "CyAnimatorState::blend_weight is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimatorState, state_time) == 28,
+    "CyAnimatorState::state_time is not at byte 28"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyAnimationEvent>() == 24,
+    "CyAnimationEvent is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyAnimationEvent>() == 8,
+    "CyAnimationEvent is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimationEvent, entity) == 0,
+    "CyAnimationEvent::entity is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimationEvent, name) == 8,
+    "CyAnimationEvent::name is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimationEvent, normalised_time) == 16,
+    "CyAnimationEvent::normalised_time is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyAnimationEvent, parameter) == 20,
+    "CyAnimationEvent::parameter is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyRootMotion>() == 52,
+    "CyRootMotion is not 52 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyRootMotion>() == 4,
+    "CyRootMotion is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, struct_size) == 0,
+    "CyRootMotion::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, contacts) == 4,
+    "CyRootMotion::contacts is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, translation) == 8,
+    "CyRootMotion::translation is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, rotation) == 20,
+    "CyRootMotion::rotation is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, distance) == 36,
+    "CyRootMotion::distance is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyRootMotion, travelled) == 40,
+    "CyRootMotion::travelled is not at byte 40"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -1363,8 +1491,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 880,
-    "CyInterface is not 880 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 992,
+    "CyInterface is not 992 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -1806,6 +1934,62 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, ui_set_focus) == 872,
     "CyInterface::ui_set_focus is not at byte 872"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_attach) == 880,
+    "CyInterface::animation_attach is not at byte 880"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_detach) == 888,
+    "CyInterface::animation_detach is not at byte 888"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_play) == 896,
+    "CyInterface::animation_play is not at byte 896"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_stop) == 904,
+    "CyInterface::animation_stop is not at byte 904"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_set_float) == 912,
+    "CyInterface::animation_set_float is not at byte 912"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_set_bool) == 920,
+    "CyInterface::animation_set_bool is not at byte 920"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_fire_trigger) == 928,
+    "CyInterface::animation_fire_trigger is not at byte 928"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_get_float) == 936,
+    "CyInterface::animation_get_float is not at byte 936"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_state) == 944,
+    "CyInterface::animation_state is not at byte 944"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_events) == 952,
+    "CyInterface::animation_events is not at byte 952"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_root_motion) == 960,
+    "CyInterface::animation_root_motion is not at byte 960"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_take_root_motion) == 968,
+    "CyInterface::animation_take_root_motion is not at byte 968"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_set_root_motion) == 976,
+    "CyInterface::animation_set_root_motion is not at byte 976"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, animation_joint_pose) == 984,
+    "CyInterface::animation_joint_pose is not at byte 984"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -1852,7 +2036,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        108,
+        122,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

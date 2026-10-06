@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 6u
+#define CY_ABI_MINOR 7u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1056,6 +1056,88 @@ typedef struct CyUiStyle {
     float corner_radius; /* rounds the fill, the border, an image and a progress bar's fill alike */
     uint32_t reserved;
 } CyUiStyle;
+/* --- 1.7: animation -----------------------------------------------------------------------------
+ *
+ * `cy::animation::AnimationSystem` from a game: an entity is given an animator over a rig the host
+ * registered by name, a script plays and crossfades its states, raises its program's parameters,
+ * reads the events its clips fired and takes the root motion they extracted. Everything that
+ * changes what a character does is simulation (`N F`); what it looks like is read in any phase.
+ *
+ * NAMES ARE HASHED, NOT POINTED AT. No engine pointer escapes a 1.3 entry, so a state or an event
+ * comes back as `CY_NAME_HASH` of its name — FNV-1a, 64 bits, over the name's UTF-8 bytes, with the
+ * constants below — which a module computes from its own string and compares. `cy::abi::name_hash`
+ * and CyberdyneKit's `AnimationName` are the two implementations, and `unit.abi` holds them to the
+ * same values. */
+
+#define CY_NAME_HASH_OFFSET 14695981039346656037ull
+#define CY_NAME_HASH_PRIME 1099511628211ull
+
+/* Where an animator's extracted root motion goes. The first four are
+ * `cy::animation::RootMotionMode`, value for value. */
+typedef enum CyRootMotionMode {
+    CY_ROOT_MOTION_IGNORE = 0,     /* computed and thrown away; gameplay owns the movement */
+    CY_ROOT_MOTION_TRANSFORM = 1,  /* composed onto the entity's local transform each tick */
+    CY_ROOT_MOTION_ACCUMULATE = 2, /* accumulated until `animation_take_root_motion` */
+    CY_ROOT_MOTION_EXTRACT = 3,    /* the last tick's delta, reported and applied nowhere */
+    CY_ROOT_MOTION_CHARACTER = 4   /* fed to the entity's character controller every tick */
+} CyRootMotionMode;
+
+/* `cy::animation::LodTier`, value for value: how often a pose is evaluated, at what bone detail,
+ * and at BAKED never. Every tier is advanced every tick, so root motion and events do not depend
+ * on it. */
+typedef enum CyAnimationTier {
+    CY_ANIMATION_TIER_FULL = 0,
+    CY_ANIMATION_TIER_SIMPLIFIED = 1,
+    CY_ANIMATION_TIER_CACHED = 2,
+    CY_ANIMATION_TIER_BAKED = 3
+} CyAnimationTier;
+
+#define CY_ANIMATOR_SUPPRESS_EVENTS 0x1u /* count event crossings and emit none */
+
+/* An animator. `rig` is borrowed for the call and names a rig the host registered. Zero is the
+ * default for every other field: full tier, events emitted, root motion ignored, play rate 1. */
+typedef struct CyAnimatorDesc {
+    uint32_t struct_size;
+    uint32_t flags; /* CY_ANIMATOR_SUPPRESS_EVENTS */
+    const char* rig;
+    uint32_t tier;        /* CyAnimationTier */
+    uint32_t root_motion; /* CyRootMotionMode */
+    float play_rate;      /* zero is 1 */
+    uint32_t reserved;
+} CyAnimatorDesc;
+
+#define CY_ANIMATOR_BLENDING                                                                      \
+    0x1u                           /* a blend is in flight; `target` and `blend_weight` say where \
+                                    */
+#define CY_ANIMATOR_REQUESTED 0x2u /* that blend was requested by `animation_play` or `_stop` */
+
+/* Where an animator's state machine is. */
+typedef struct CyAnimatorState {
+    uint32_t struct_size;
+    uint32_t flags;     /* CY_ANIMATOR_* */
+    uint64_t state;     /* CY_NAME_HASH of the state it is in */
+    uint64_t target;    /* CY_NAME_HASH of the state a blend heads to; 0 with none in flight */
+    float blend_weight; /* 0 to 1; 0 with no blend in flight */
+    float state_time;   /* seconds since it entered `state` */
+} CyAnimatorState;
+
+/* One event a clip fired. Passed in arrays, so fixed forever: no `struct_size`. */
+typedef struct CyAnimationEvent {
+    CyEntity entity;
+    uint64_t name;         /* CY_NAME_HASH of the event's name */
+    float normalised_time; /* where in its clip the event sits, 0 to 1 */
+    float parameter;       /* the event's authored payload */
+} CyAnimationEvent;
+
+/* Root motion: a delta in the character's own frame, plus the running total. */
+typedef struct CyRootMotion {
+    uint32_t struct_size;
+    uint32_t contacts;    /* bit 0 the left foot down, bit 1 the right */
+    float translation[3]; /* metres */
+    float rotation[4];    /* a unit quaternion, x y z w */
+    float distance;       /* the motion curve's distance over the interval, metres */
+    float travelled[3];   /* everything since the animator was attached, metres */
+} CyRootMotion;
 
 /* --- The interface table -----------------------------------------------------------------------
  *
@@ -1527,6 +1609,60 @@ typedef struct CyInterface {
     /* [N U] Move keyboard focus to a button, or clear it with CY_UI_ELEMENT_NULL. INVALID_ARGUMENT
      * for an element that does not take focus. */
     CyResult (*ui_set_focus)(CyEngine engine, CyUiElement element);
+    /* --- 1.7: animation ---
+     *
+     * `cy::animation::AnimationSystem`, through `cy::abi::game::AnimationBackend`. NOT_FOUND for
+     * an entity with no animator, an unknown rig, state, parameter or joint; INVALID_ARGUMENT for a
+     * non-finite number, a negative duration or an unknown enumerator. Requests made in F take
+     * effect at the tick's animation advance, in call order — deterministic. */
+
+    /* [N F] Give `entity` an animator over the rig `desc->rig`. Structural. ALREADY_EXISTS when
+     * it has one. The instance exists when the call returns, so the entity can be played at once.
+     */
+    CyResult (*animation_attach)(CyEngine engine, CyEntity entity, const CyAnimatorDesc* desc);
+    /* [N F] Remove it. Structural. */
+    CyResult (*animation_detach)(CyEngine engine, CyEntity entity);
+    /* [N F] PLAY the state `state`: crossfade from where the machine is over `crossfade_seconds`,
+     * or cut when it is zero, whatever the program's own transitions say. A requested blend runs
+     * to completion; the program is consulted again from the state it lands in. */
+    CyResult (*animation_play)(CyEngine engine, CyEntity entity, const char* state,
+                               float crossfade_seconds);
+    /* [N F] Blend back to the program's entry state over `blend_seconds`. */
+    CyResult (*animation_stop)(CyEngine engine, CyEntity entity, float blend_seconds);
+    /* [N F] Set a program parameter: a blend weight, a speed, a condition. */
+    CyResult (*animation_set_float)(CyEngine engine, CyEntity entity, const char* parameter,
+                                    float value);
+    /* [N F] Set a condition parameter to 1 or 0. */
+    CyResult (*animation_set_bool)(CyEngine engine, CyEntity entity, const char* parameter,
+                                   bool value);
+    /* [N F] A TRIGGER: the parameter reads 1 for exactly the next tick's advance, then 0. */
+    CyResult (*animation_fire_trigger)(CyEngine engine, CyEntity entity, const char* parameter);
+    /* [N F U] A parameter's value. */
+    CyResult (*animation_get_float)(CyEngine engine, CyEntity entity, const char* parameter,
+                                    float* out_value);
+    /* [N F U] Where the state machine is. */
+    CyResult (*animation_state)(CyEngine engine, CyEntity entity, CyAnimatorState* out_state);
+    /* [N U] The events every animator's clips fired in the ticks since the previous frame, once
+     * per frame: in tick, then rig, then instance order; empty in a frame that ran no tick. The
+     * sizing pattern of `world_chunks`: `*out_count` is always the number there are, and
+     * BUFFER_TOO_SMALL with nothing written when `capacity` is less. Null `out_events` with zero
+     * capacity asks for the count. Events suppressed by CY_ANIMATOR_SUPPRESS_EVENTS are not here.
+     */
+    CyResult (*animation_events)(CyEngine engine, CyAnimationEvent* out_events, uint32_t capacity,
+                                 uint32_t* out_count);
+    /* [N F U] The last tick's root motion delta and the running total. */
+    CyResult (*animation_root_motion)(CyEngine engine, CyEntity entity, CyRootMotion* out_motion);
+    /* [F] Everything accumulated since the last take, composed in tick order, and clear it. For an
+     * animator in CY_ROOT_MOTION_ACCUMULATE; NOT_FOUND in any other mode. */
+    CyResult (*animation_take_root_motion)(CyEngine engine, CyEntity entity,
+                                           CyRootMotion* out_motion);
+    /* [N F] Choose where root motion goes, CyRootMotionMode. CHARACTER requires the entity to own
+     * a character controller (`character_create`): NOT_FOUND otherwise. */
+    CyResult (*animation_set_root_motion)(CyEngine engine, CyEntity entity, uint32_t mode);
+    /* [N U] Joint `joint`'s placement in the WORLD, from the pose last evaluated: what a weapon or
+     * an effect is attached to. Presentation, so not in F. */
+    CyResult (*animation_joint_pose)(CyEngine engine, CyEntity entity, const char* joint,
+                                     CyPose* out_pose);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -1640,6 +1776,11 @@ CY_ABI_STATIC_ASSERT(sizeof(CyUiEvent) == 40, "CyUiEvent is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiElementDesc) == 24, "CyUiElementDesc is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiLayout) == 144, "CyUiLayout is 144 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiStyle) == 32, "CyUiStyle is 32 bytes");
+/* 1.7 */
+CY_ABI_STATIC_ASSERT(sizeof(CyAnimatorDesc) == 32, "CyAnimatorDesc is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyAnimatorState) == 32, "CyAnimatorState is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyAnimationEvent) == 24, "CyAnimationEvent is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyRootMotion) == 52, "CyRootMotion is 52 bytes");
 
 #ifdef __cplusplus
 }

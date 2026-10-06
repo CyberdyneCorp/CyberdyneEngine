@@ -2768,4 +2768,373 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Give an entity an animator over a registered rig.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_attach(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        desc: *const ffi::CyAnimatorDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_attach
+            .ok_or(CallError::Missing("animation_attach"))?;
+        let raw = unsafe { entry(engine, entity, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Remove an entity's animator.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_detach(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_detach
+            .ok_or(CallError::Missing("animation_detach"))?;
+        let raw = unsafe { entry(engine, entity) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Crossfade an animator to a state, or cut with zero seconds.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_play(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        state: *const ::std::ffi::c_char,
+        crossfade: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_play
+            .ok_or(CallError::Missing("animation_play"))?;
+        let raw = unsafe { entry(engine, entity, state, crossfade) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Blend an animator back to its program's entry state.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_stop(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        blend: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_stop
+            .ok_or(CallError::Missing("animation_stop"))?;
+        let raw = unsafe { entry(engine, entity, blend) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Set an animation program parameter.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_set_float(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        parameter: *const ::std::ffi::c_char,
+        value: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_set_float
+            .ok_or(CallError::Missing("animation_set_float"))?;
+        let raw = unsafe { entry(engine, entity, parameter, value) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Set an animation condition parameter to one or zero.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_set_bool(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        parameter: *const ::std::ffi::c_char,
+        value: bool,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_set_bool
+            .ok_or(CallError::Missing("animation_set_bool"))?;
+        let raw = unsafe { entry(engine, entity, parameter, value) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Raise an animation parameter for exactly one tick.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_fire_trigger(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        parameter: *const ::std::ffi::c_char,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_fire_trigger
+            .ok_or(CallError::Missing("animation_fire_trigger"))?;
+        let raw = unsafe { entry(engine, entity, parameter) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Read an animation program parameter.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_get_float(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        parameter: *const ::std::ffi::c_char,
+        into: *mut f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_get_float
+            .ok_or(CallError::Missing("animation_get_float"))?;
+        let raw = unsafe { entry(engine, entity, parameter, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Where an animator's state machine is.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_state(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut ffi::CyAnimatorState,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_state
+            .ok_or(CallError::Missing("animation_state"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The animation events of the ticks since the previous frame.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_events(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyAnimationEvent,
+        capacity: u32,
+        count: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_events
+            .ok_or(CallError::Missing("animation_events"))?;
+        let raw = unsafe { entry(engine, into, capacity, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// An animator's last root motion delta and running total.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_root_motion(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut ffi::CyRootMotion,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_root_motion
+            .ok_or(CallError::Missing("animation_root_motion"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Take an accumulating animator's root motion.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_take_root_motion(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut ffi::CyRootMotion,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_take_root_motion
+            .ok_or(CallError::Missing("animation_take_root_motion"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Choose where an animator's root motion goes.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_set_root_motion(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        mode: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_set_root_motion
+            .ok_or(CallError::Missing("animation_set_root_motion"))?;
+        let raw = unsafe { entry(engine, entity, mode) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A skeleton joint's world pose from the evaluated pose.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn animation_joint_pose(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        joint: *const ::std::ffi::c_char,
+        into: *mut ffi::CyPose,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .animation_joint_pose
+            .ok_or(CallError::Missing("animation_joint_pose"))?;
+        let raw = unsafe { entry(engine, entity, joint, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

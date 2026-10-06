@@ -67,6 +67,9 @@ ENUM_SPECS = {
     "CyUiJustify": ("UiJustify", "CY_UI_JUSTIFY_", "u32"),
     "CyUiAlign": ("UiAlign", "CY_UI_ALIGN_", "u32"),
     "CyUiVisibility": ("UiVisibility", "CY_UI_", "u32"),
+    # ABI 1.7, animation (issue #76 stage 4).
+    "CyRootMotionMode": ("RootMotionMode", "CY_ROOT_MOTION_", "u32"),
+    "CyAnimationTier": ("AnimationTier", "CY_ANIMATION_TIER_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

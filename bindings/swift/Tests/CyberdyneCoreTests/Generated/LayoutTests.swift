@@ -447,6 +447,49 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyUiStyle>.offset(of: \CyUiStyle.reserved), 28, "CyUiStyle.reserved offset")
     }
 
+    func testAnimatorDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.size, 32, "CyAnimatorDesc size")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.alignment, 8, "CyAnimatorDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.struct_size), 0, "CyAnimatorDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.flags), 4, "CyAnimatorDesc.flags offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.rig), 8, "CyAnimatorDesc.rig offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.tier), 16, "CyAnimatorDesc.tier offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.root_motion), 20, "CyAnimatorDesc.root_motion offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.play_rate), 24, "CyAnimatorDesc.play_rate offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorDesc>.offset(of: \CyAnimatorDesc.reserved), 28, "CyAnimatorDesc.reserved offset")
+    }
+
+    func testAnimatorStateLayout() {
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.size, 32, "CyAnimatorState size")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.alignment, 8, "CyAnimatorState alignment")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.struct_size), 0, "CyAnimatorState.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.flags), 4, "CyAnimatorState.flags offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.state), 8, "CyAnimatorState.state offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.target), 16, "CyAnimatorState.target offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.blend_weight), 24, "CyAnimatorState.blend_weight offset")
+        XCTAssertEqual(MemoryLayout<CyAnimatorState>.offset(of: \CyAnimatorState.state_time), 28, "CyAnimatorState.state_time offset")
+    }
+
+    func testAnimationEventLayout() {
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.size, 24, "CyAnimationEvent size")
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.alignment, 8, "CyAnimationEvent alignment")
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.offset(of: \CyAnimationEvent.entity), 0, "CyAnimationEvent.entity offset")
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.offset(of: \CyAnimationEvent.name), 8, "CyAnimationEvent.name offset")
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.offset(of: \CyAnimationEvent.normalised_time), 16, "CyAnimationEvent.normalised_time offset")
+        XCTAssertEqual(MemoryLayout<CyAnimationEvent>.offset(of: \CyAnimationEvent.parameter), 20, "CyAnimationEvent.parameter offset")
+    }
+
+    func testRootMotionLayout() {
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.size, 52, "CyRootMotion size")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.alignment, 4, "CyRootMotion alignment")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.struct_size), 0, "CyRootMotion.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.contacts), 4, "CyRootMotion.contacts offset")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.translation), 8, "CyRootMotion.translation offset")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.rotation), 20, "CyRootMotion.rotation offset")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.distance), 36, "CyRootMotion.distance offset")
+        XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.travelled), 40, "CyRootMotion.travelled offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -457,7 +500,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 880, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 992, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -568,6 +611,20 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_hit_test), 856, "CyInterface.ui_hit_test offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_focus), 864, "CyInterface.ui_focus offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_set_focus), 872, "CyInterface.ui_set_focus offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_attach), 880, "CyInterface.animation_attach offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_detach), 888, "CyInterface.animation_detach offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_play), 896, "CyInterface.animation_play offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_stop), 904, "CyInterface.animation_stop offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_set_float), 912, "CyInterface.animation_set_float offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_set_bool), 920, "CyInterface.animation_set_bool offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_fire_trigger), 928, "CyInterface.animation_fire_trigger offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_get_float), 936, "CyInterface.animation_get_float offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_state), 944, "CyInterface.animation_state offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_events), 952, "CyInterface.animation_events offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_root_motion), 960, "CyInterface.animation_root_motion offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_take_root_motion), 968, "CyInterface.animation_take_root_motion offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_set_root_motion), 976, "CyInterface.animation_set_root_motion offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_joint_pose), 984, "CyInterface.animation_joint_pose offset")
     }
 
     func testModuleInitLayout() {
@@ -585,7 +642,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 880,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 992,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -631,8 +688,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 108)
+        XCTAssertEqual(ABI.entryNames.count, 122)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "ui_set_focus")
+        XCTAssertEqual(ABI.entryNames.last, "animation_joint_pose")
     }
 }

@@ -124,6 +124,22 @@ inline constexpr const char* kAnimatorComponentName = "cy::animation::Animator";
 /// Register `Animator` in a world. Idempotent by name, so two systems over one world share one id.
 [[nodiscard]] Expected<ecs::ComponentTypeId, Error> register_animator(ecs::World& world) noexcept;
 
+/// Where an entity's state machine is, as a game reads it.
+struct AnimatorStatus {
+    /// The state it is in, and its name.
+    u16 state = 0;
+    Name state_name;
+    /// The state a blend is heading to, or `0xFFFF` when none is in flight, and its name.
+    u16 target = 0xFFFFU;
+    Name target_name;
+    /// How far the blend has come, 0 to 1. Zero with no blend in flight.
+    f32 blend_weight = 0.0F;
+    /// Seconds since the instance entered `state`.
+    f32 state_time = 0.0F;
+    /// The blend in flight was requested by `play` or `stop`, not by the program's transitions.
+    bool requested = false;
+};
+
 struct AnimationSystemConfig {
     /// Instances in one slice of a batch: the unit of work a job worker takes. Small enough that a
     /// batch of a few hundred spreads across the workers, large enough that a slice is not mostly
@@ -222,6 +238,25 @@ public:
     [[nodiscard]] Status set_parameter(ecs::Entity entity, Name parameter, f32 value) noexcept;
     [[nodiscard]] Expected<f32, Error> parameter(ecs::Entity entity, Name parameter) const noexcept;
 
+    /// PLAY `state` — crossfade from where the machine is over `seconds`, or cut when it is zero —
+    /// whatever the program's transitions say. `animation::request_state` says what a request
+    /// does during a blend. Refused naming what it could not find: no instance, or no such state.
+    /// Deterministic when made from the fixed step: it takes effect at the next tick's advance.
+    [[nodiscard]] Status play(ecs::Entity entity, Name state, f32 seconds) noexcept;
+    /// Blend back to the program's entry state — what the machine started in — over `seconds`.
+    [[nodiscard]] Status stop(ecs::Entity entity, f32 seconds) noexcept;
+    /// Raise a TRIGGER: the parameter reads 1 for exactly the next tick's advance and 0 after it,
+    /// so a transition conditioned on it fires once however long the caller takes to clear it.
+    /// Refused when the entity has no instance or the program declares no such parameter.
+    [[nodiscard]] Status fire_trigger(ecs::Entity entity, Name parameter) noexcept;
+    /// Where the entity's state machine is.
+    [[nodiscard]] Expected<AnimatorStatus, Error> status(ecs::Entity entity) const noexcept;
+    /// Joint `joint`'s placement in the character's MODEL space, from the pose last published to
+    /// the pose world: the skinning matrix times the joint's bind placement. What a game attaches
+    /// a weapon or an effect to. Refused for an entity with no instance or no such joint.
+    [[nodiscard]] Expected<Mat4, Error> joint_model_matrix(ecs::Entity entity,
+                                                           Name joint) const noexcept;
+
     /// The root motion of the entity's last advanced tick.
     [[nodiscard]] RootDelta root_motion(ecs::Entity entity) const noexcept;
     /// The total the entity has travelled since its instance was created.
@@ -277,6 +312,15 @@ private:
 
     struct EvaluateJob;
 
+    /// A trigger raised since the last tick: the slot whose instance holds it, and its parameter.
+    struct PendingTrigger {
+        u32 slot = 0;
+        u32 generation = 0;
+        u16 parameter = 0;
+    };
+
+    void clear_triggers() noexcept;
+
     [[nodiscard]] const Slot* slot_of(ecs::Entity entity) const noexcept;
     [[nodiscard]] Slot* slot_of(ecs::Entity entity) noexcept;
     [[nodiscard]] bool tracks(const Animator& animator, ecs::Entity entity) const noexcept;
@@ -301,6 +345,7 @@ private:
     HashMap<u64, u32> index_;
     Array<Slice> slices_;
     Array<Transform> serial_scratch_;
+    Array<PendingTrigger> triggers_;
     PoseWorld poses_;
     EventBuffer events_;
     AnimationSystemStats stats_;

@@ -184,6 +184,21 @@ ENTRIES: dict[str, Entry] = {
     "ui_hit_test": Entry(("engine", "position", "into"), result="throwing"),
     "ui_focus": Entry(("engine", "into"), result="throwing"),
     "ui_set_focus": Entry(("engine", "element"), result="throwing"),
+    # 1.7: animation
+    "animation_attach": Entry(("engine", "entity", "desc"), result="throwing"),
+    "animation_detach": Entry(("engine", "entity"), result="throwing"),
+    "animation_play": Entry(("engine", "entity", "state", "crossfade"), result="throwing"),
+    "animation_stop": Entry(("engine", "entity", "blend"), result="throwing"),
+    "animation_set_float": Entry(("engine", "entity", "parameter", "value"), result="throwing"),
+    "animation_set_bool": Entry(("engine", "entity", "parameter", "value"), result="throwing"),
+    "animation_fire_trigger": Entry(("engine", "entity", "parameter"), result="throwing"),
+    "animation_get_float": Entry(("engine", "entity", "parameter", "into"), result="throwing"),
+    "animation_state": Entry(("engine", "entity", "into"), result="throwing"),
+    "animation_events": Entry(("engine", "into", "capacity", "count"), result="throwing"),
+    "animation_root_motion": Entry(("engine", "entity", "into"), result="throwing"),
+    "animation_take_root_motion": Entry(("engine", "entity", "into"), result="throwing"),
+    "animation_set_root_motion": Entry(("engine", "entity", "mode"), result="throwing"),
+    "animation_joint_pose": Entry(("engine", "entity", "joint", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

@@ -194,7 +194,7 @@ CY_TEST_CASE("an older engine refuses a newer module, naming both versions") {
     // `native-abi`'s "Older engine, newer module": null, and the loader can report both numbers.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR + 1) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
-    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.6") != nullptr);
+    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.7") != nullptr);
 
     // A different major is a different ABI and there is nothing to negotiate.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR + 1, 0) == nullptr);

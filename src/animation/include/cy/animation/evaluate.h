@@ -232,6 +232,17 @@ struct EvaluationStats {
 [[nodiscard]] Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
                              EventBuffer* events) noexcept;
 
+/// A host's request to play `state` — crossfading from the current state over `seconds`, or
+/// cutting to it when `seconds` is zero — whatever the program's own transitions say. See
+/// `graph::pose::request_state` for what a request does during a blend.
+///
+/// The clips of the state it enters start from zero, exactly as they do when the program's own
+/// transition enters a state: a request is made between two `advance` calls, where `advance`
+/// cannot see the state change, so the clocks are restarted here. Refused with `NotFound` when the
+/// program has no such state.
+[[nodiscard]] Status request_state(const AnimationRig& rig, AnimationInstance& instance, u16 state,
+                                   f32 seconds) noexcept;
+
 /// Evaluate the instance's pose into `out_local`, in the skeleton's local space.
 ///
 /// `bone_lod` is the bone level of detail: only joints retained at that level are sampled, blended

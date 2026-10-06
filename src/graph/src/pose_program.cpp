@@ -258,12 +258,68 @@ Status Evaluator::run(PoseValue value) noexcept {
 
 }  // namespace
 
+f32 transition_duration(const PoseProgram& program, const PoseInstance& instance) noexcept {
+    if (instance.transition == kRequestedTransition) {
+        return instance.requested_duration;
+    }
+    if (instance.transition >= program.transitions().size()) {
+        return 0.0F;
+    }
+    return program.transitions()[instance.transition].duration;
+}
+
+u16 find_state(const PoseProgram& program, Name name) noexcept {
+    const Span<const PoseState> states = program.states();
+    for (usize index = 0; index < states.size(); ++index) {
+        if (states[index].name == name) {
+            return static_cast<u16>(index);
+        }
+    }
+    return 0xFFFFU;
+}
+
+bool request_state(const PoseProgram& program, PoseInstance& instance, u16 state,
+                   f32 seconds) noexcept {
+    if (state >= program.states().size()) {
+        return false;
+    }
+    const bool blending = instance.transition != 0xFFFFU;
+    if ((!blending && instance.state == state) || (blending && instance.target == state)) {
+        return true;
+    }
+    if (seconds <= 0.0F) {
+        instance.state = state;
+        instance.target = 0xFFFFU;
+        instance.transition = 0xFFFFU;
+        instance.blend_elapsed = 0.0F;
+        instance.state_time = 0.0F;
+        return true;
+    }
+    instance.target = state;
+    instance.transition = kRequestedTransition;
+    instance.requested_duration = seconds;
+    instance.blend_elapsed = 0.0F;
+    return true;
+}
+
 void advance(const PoseProgram& program, PoseInstance& instance, Span<const f32> parameters,
              f32 dt) noexcept {
     if (instance.state >= program.states().size()) {
         return;
     }
     instance.state_time += dt;
+    if (instance.transition == kRequestedTransition) {
+        // A HOST'S BLEND runs to completion; the program is consulted again where it lands.
+        instance.blend_elapsed += dt;
+        if (instance.blend_elapsed >= instance.requested_duration) {
+            instance.state = instance.target;
+            instance.target = 0xFFFFU;
+            instance.transition = 0xFFFFU;
+            instance.blend_elapsed = 0.0F;
+            instance.state_time = 0.0F;
+        }
+        return;
+    }
     if (instance.transition != 0xFFFFU) {
         // A blend in flight. It completes, or a higher-priority transition interrupts it.
         const Transition& running = program.transitions()[instance.transition];
@@ -367,8 +423,8 @@ Status evaluate(const PoseProgram& program, const PoseInstance& instance,
     if (Status ran = evaluator.run(target_root); !ran) {
         return ran;
     }
-    const Transition& running = program.transitions()[instance.transition];
-    const f32 weight = running.duration <= 0.0F ? 1.0F : instance.blend_elapsed / running.duration;
+    const f32 duration = transition_duration(program, instance);
+    const f32 weight = duration <= 0.0F ? 1.0F : instance.blend_elapsed / duration;
     if (target_root != kNoPoseValue && target_root < program.code().size()) {
         blend_into(out, evaluator.slot(target_root), JointMask::all(joints), weight, joints);
     }

@@ -598,4 +598,74 @@ public struct Interface: @unchecked Sendable {
     public func uiSetFocus(engine: CyEngine, element: CyUiElement) throws {
         try check(table.pointee.ui_set_focus(engine, element))
     }
+
+    @inlinable
+    public func animationAttach(engine: CyEngine, entity: CyEntity, desc: UnsafePointer<CyAnimatorDesc>?) throws {
+        try check(table.pointee.animation_attach(engine, entity, desc))
+    }
+
+    @inlinable
+    public func animationDetach(engine: CyEngine, entity: CyEntity) throws {
+        try check(table.pointee.animation_detach(engine, entity))
+    }
+
+    @inlinable
+    public func animationPlay(engine: CyEngine, entity: CyEntity, state: UnsafePointer<CChar>?, crossfade: Float) throws {
+        try check(table.pointee.animation_play(engine, entity, state, crossfade))
+    }
+
+    @inlinable
+    public func animationStop(engine: CyEngine, entity: CyEntity, blend: Float) throws {
+        try check(table.pointee.animation_stop(engine, entity, blend))
+    }
+
+    @inlinable
+    public func animationSetFloat(engine: CyEngine, entity: CyEntity, parameter: UnsafePointer<CChar>?, value: Float) throws {
+        try check(table.pointee.animation_set_float(engine, entity, parameter, value))
+    }
+
+    @inlinable
+    public func animationSetBool(engine: CyEngine, entity: CyEntity, parameter: UnsafePointer<CChar>?, value: Bool) throws {
+        try check(table.pointee.animation_set_bool(engine, entity, parameter, value))
+    }
+
+    @inlinable
+    public func animationFireTrigger(engine: CyEngine, entity: CyEntity, parameter: UnsafePointer<CChar>?) throws {
+        try check(table.pointee.animation_fire_trigger(engine, entity, parameter))
+    }
+
+    @inlinable
+    public func animationGetFloat(engine: CyEngine, entity: CyEntity, parameter: UnsafePointer<CChar>?, into: UnsafeMutablePointer<Float>?) throws {
+        try check(table.pointee.animation_get_float(engine, entity, parameter, into))
+    }
+
+    @inlinable
+    public func animationState(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyAnimatorState>?) throws {
+        try check(table.pointee.animation_state(engine, entity, into))
+    }
+
+    @inlinable
+    public func animationEvents(engine: CyEngine, into: UnsafeMutablePointer<CyAnimationEvent>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.animation_events(engine, into, capacity, count))
+    }
+
+    @inlinable
+    public func animationRootMotion(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyRootMotion>?) throws {
+        try check(table.pointee.animation_root_motion(engine, entity, into))
+    }
+
+    @inlinable
+    public func animationTakeRootMotion(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyRootMotion>?) throws {
+        try check(table.pointee.animation_take_root_motion(engine, entity, into))
+    }
+
+    @inlinable
+    public func animationSetRootMotion(engine: CyEngine, entity: CyEntity, mode: UInt32) throws {
+        try check(table.pointee.animation_set_root_motion(engine, entity, mode))
+    }
+
+    @inlinable
+    public func animationJointPose(engine: CyEngine, entity: CyEntity, joint: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPose>?) throws {
+        try check(table.pointee.animation_joint_pose(engine, entity, joint, into))
+    }
 }

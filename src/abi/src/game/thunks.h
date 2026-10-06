@@ -120,4 +120,24 @@ CyResult ui_hit_test(CyEngine engine, const float* position_xy, CyUiElement* out
 CyResult ui_focus(CyEngine engine, CyUiElement* out_element);
 CyResult ui_set_focus(CyEngine engine, CyUiElement element);
 
+// --- 1.7: animation ------------------------------------------------------------------------------
+CyResult animation_attach(CyEngine engine, CyEntity entity, const CyAnimatorDesc* desc);
+CyResult animation_detach(CyEngine engine, CyEntity entity);
+CyResult animation_play(CyEngine engine, CyEntity entity, const char* state,
+                        float crossfade_seconds);
+CyResult animation_stop(CyEngine engine, CyEntity entity, float blend_seconds);
+CyResult animation_set_float(CyEngine engine, CyEntity entity, const char* parameter, float value);
+CyResult animation_set_bool(CyEngine engine, CyEntity entity, const char* parameter, bool value);
+CyResult animation_fire_trigger(CyEngine engine, CyEntity entity, const char* parameter);
+CyResult animation_get_float(CyEngine engine, CyEntity entity, const char* parameter,
+                             float* out_value);
+CyResult animation_state(CyEngine engine, CyEntity entity, CyAnimatorState* out_state);
+CyResult animation_events(CyEngine engine, CyAnimationEvent* out_events, uint32_t capacity,
+                          uint32_t* out_count);
+CyResult animation_root_motion(CyEngine engine, CyEntity entity, CyRootMotion* out_motion);
+CyResult animation_take_root_motion(CyEngine engine, CyEntity entity, CyRootMotion* out_motion);
+CyResult animation_set_root_motion(CyEngine engine, CyEntity entity, uint32_t mode);
+CyResult animation_joint_pose(CyEngine engine, CyEntity entity, const char* joint,
+                              CyPose* out_pose);
+
 }  // namespace cy::abi::game

@@ -694,3 +694,95 @@ CY_TEST_CASE(
             ->set_parameter(wrong, pose::locomotion_request(pose::LocomotionState::Walk), 1.0F)
             .has_value());
 }
+
+// --- Requests a game makes: play, stop, triggers. Issue #76 stage 4
+// --------------------------------
+
+CY_TEST_CASE("animation system: play crossfades to any state, and its clips start at zero") {
+    LocomotionRig locomotion(allocator());
+    CY_REQUIRE(locomotion.build().has_value());
+    Host host;
+    CY_REQUIRE(host.open({&locomotion.rig}).has_value());
+    const ecs::Entity character = host.spawn(animator_on(0));
+    CY_REQUIRE(host.frame().has_value());
+
+    // Idle to RUN: the program has no idle-to-run edge, and a request does not need one.
+    CY_REQUIRE(host.system->set_parameter(character, Name::intern("clock_run"), 0.4F).has_value());
+    CY_REQUIRE(host.system->play(character, Name::intern("run"), 0.25F).has_value());
+    Expected<AnimatorStatus, Error> status = host.system->status(character);
+    CY_REQUIRE(status.has_value());
+    CY_CHECK_EQ(status->state_name, Name::intern("idle"));
+    CY_CHECK_EQ(status->target_name, Name::intern("run"));
+    CY_CHECK(status->requested);
+    CY_CHECK_EQ(status->blend_weight, 0.0F);
+    // THE ENTERED STATE'S CLOCK RESTARTS at the request, as a program transition restarts it.
+    CY_CHECK_EQ(*host.system->parameter(character, Name::intern("clock_run")), 0.0F);
+
+    // A REQUESTED BLEND RUNS TO COMPLETION: a program request raised during it changes nothing.
+    CY_REQUIRE(host.request(character, pose::LocomotionState::Die).has_value());
+    for (u32 tick = 0; tick < 9; ++tick) {
+        CY_REQUIRE(host.frame().has_value());
+    }
+    status = host.system->status(character);
+    CY_REQUIRE(status.has_value());
+    CY_CHECK_EQ(status->target_name, Name::intern("run"));
+    CY_CHECK_GT(status->blend_weight, 0.5F);
+    CY_CHECK_LT(status->blend_weight, 0.7F);
+    for (u32 tick = 0; tick < 7; ++tick) {
+        CY_REQUIRE(host.frame().has_value());
+    }
+    // Landed in run; the program's die edge from run is then taken.
+    status = host.system->status(character);
+    CY_REQUIRE(status.has_value());
+    const bool landed =
+        status->state_name == Name::intern("run") || status->target_name == Name::intern("die");
+    CY_CHECK(landed);
+    CY_REQUIRE(host.frame().has_value());
+    CY_CHECK_EQ(host.system->status(character)->target_name, Name::intern("die"));
+    CY_CHECK_FALSE(host.system->status(character)->requested);
+
+    // STOP blends back to the entry state, from anywhere; a zero blend is a cut.
+    CY_REQUIRE(host.system->stop(character, 0.0F).has_value());
+    CY_CHECK_EQ(host.system->status(character)->state_name, Name::intern("idle"));
+    CY_CHECK_EQ(host.system->status(character)->target, 0xFFFFU);
+
+    CY_CHECK_FALSE(host.system->play(character, Name::intern("fly"), 0.2F).has_value());
+    CY_CHECK_FALSE(host.system->play(character, Name::intern("run"), -1.0F).has_value());
+    CY_CHECK_FALSE(host.system->play(ecs::kNoEntity, Name::intern("run"), 0.2F).has_value());
+}
+
+CY_TEST_CASE("animation system: a trigger is read by exactly one tick") {
+    LocomotionRig locomotion(allocator());
+    CY_REQUIRE(locomotion.build().has_value());
+    Host host(3);
+    CY_REQUIRE(host.open({&locomotion.rig}).has_value());
+    const ecs::Entity character = host.spawn(animator_on(0));
+    CY_REQUIRE(host.frame().has_value());
+
+    const Name walk = pose::locomotion_request(pose::LocomotionState::Walk);
+    CY_REQUIRE(host.system->fire_trigger(character, walk).has_value());
+    CY_CHECK_EQ(*host.system->parameter(character, walk), 1.0F);
+    // Three ticks this frame: the first takes the edge, the trigger is gone before the second.
+    CY_REQUIRE(host.frame().has_value());
+    CY_CHECK_EQ(*host.system->parameter(character, walk), 0.0F);
+    CY_CHECK_EQ(host.system->status(character)->target_name, Name::intern("walk"));
+    CY_CHECK_FALSE(host.system->fire_trigger(character, Name::intern("nothing")).has_value());
+}
+
+CY_TEST_CASE("animation system: a joint's model matrix is its published pose") {
+    LocomotionRig locomotion(allocator());
+    CY_REQUIRE(locomotion.build().has_value());
+    Host host;
+    CY_REQUIRE(host.open({&locomotion.rig}).has_value());
+    const ecs::Entity character = host.spawn(animator_on(0));
+    CY_REQUIRE(host.frame().has_value());
+
+    // At the reference pose the joint is where the skeleton binds it.
+    Expected<Mat4, Error> head = host.system->joint_model_matrix(character, Name::intern("head"));
+    CY_REQUIRE(head.has_value());
+    const u16 joint = locomotion.skeleton.find(Name::intern("head"));
+    const Vec3 bound = locomotion.skeleton.bind_model()[joint].translation;
+    const Vec3 posed = head->translation();
+    CY_CHECK_NEAR(posed.y, bound.y, 0.05F);
+    CY_CHECK_FALSE(host.system->joint_model_matrix(character, Name::intern("tail")).has_value());
+}

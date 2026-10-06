@@ -842,6 +842,76 @@ pub struct CyUiStyle {
     pub reserved: u32,
 }
 
+/// `CyAnimatorDesc` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAnimatorDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `const char*` at byte 8.
+    pub rig: *const ::std::ffi::c_char,
+    /// `uint32_t` at byte 16.
+    pub tier: u32,
+    /// `uint32_t` at byte 20.
+    pub root_motion: u32,
+    /// `float` at byte 24.
+    pub play_rate: f32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+}
+
+/// `CyAnimatorState` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAnimatorState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `uint64_t` at byte 8.
+    pub state: u64,
+    /// `uint64_t` at byte 16.
+    pub target: u64,
+    /// `float` at byte 24.
+    pub blend_weight: f32,
+    /// `float` at byte 28.
+    pub state_time: f32,
+}
+
+/// `CyAnimationEvent` — 24 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyAnimationEvent {
+    /// `CyEntity` at byte 0.
+    pub entity: CyEntity,
+    /// `uint64_t` at byte 8.
+    pub name: u64,
+    /// `float` at byte 16.
+    pub normalised_time: f32,
+    /// `float` at byte 20.
+    pub parameter: f32,
+}
+
+/// `CyRootMotion` — 52 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyRootMotion {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub contacts: u32,
+    /// `float[3]` at byte 8.
+    pub translation: [f32; 3],
+    /// `float[4]` at byte 20.
+    pub rotation: [f32; 4],
+    /// `float` at byte 36.
+    pub distance: f32,
+    /// `float[3]` at byte 40.
+    pub travelled: [f32; 3],
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -856,7 +926,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 880 bytes, 8-byte aligned.
+/// `CyInterface` — 992 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1229,6 +1299,47 @@ pub struct CyInterface {
     pub ui_focus: Option<unsafe extern "C" fn(CyEngine, *mut CyUiElement) -> i32>,
     /// `CyResult(*)(CyEngine, CyUiElement)` at byte 872.
     pub ui_set_focus: Option<unsafe extern "C" fn(CyEngine, CyUiElement) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const CyAnimatorDesc*)` at byte 880.
+    pub animation_attach:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const CyAnimatorDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity)` at byte 888.
+    pub animation_detach: Option<unsafe extern "C" fn(CyEngine, CyEntity) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, float)` at byte 896.
+    pub animation_play:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, float)` at byte 904.
+    pub animation_stop: Option<unsafe extern "C" fn(CyEngine, CyEntity, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, float)` at byte 912.
+    pub animation_set_float:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, bool)` at byte 920.
+    pub animation_set_bool:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, bool) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*)` at byte 928.
+    pub animation_fire_trigger:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, float*)` at byte 936.
+    pub animation_get_float: Option<
+        unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, *mut f32) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyEntity, CyAnimatorState*)` at byte 944.
+    pub animation_state:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyAnimatorState) -> i32>,
+    /// `CyResult(*)(CyEngine, CyAnimationEvent*, uint32_t, uint32_t*)` at byte 952.
+    pub animation_events:
+        Option<unsafe extern "C" fn(CyEngine, *mut CyAnimationEvent, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, CyRootMotion*)` at byte 960.
+    pub animation_root_motion:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyRootMotion) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, CyRootMotion*)` at byte 968.
+    pub animation_take_root_motion:
+        Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyRootMotion) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, uint32_t)` at byte 976.
+    pub animation_set_root_motion: Option<unsafe extern "C" fn(CyEngine, CyEntity, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const char*, CyPose*)` at byte 984.
+    pub animation_joint_pose: Option<
+        unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, *mut CyPose) -> i32,
+    >,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1379,5 +1490,19 @@ impl CyInterface {
         ui_hit_test: None,
         ui_focus: None,
         ui_set_focus: None,
+        animation_attach: None,
+        animation_detach: None,
+        animation_play: None,
+        animation_stop: None,
+        animation_set_float: None,
+        animation_set_bool: None,
+        animation_fire_trigger: None,
+        animation_get_float: None,
+        animation_state: None,
+        animation_events: None,
+        animation_root_motion: None,
+        animation_take_root_motion: None,
+        animation_set_root_motion: None,
+        animation_joint_pose: None,
     };
 }

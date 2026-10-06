@@ -182,7 +182,7 @@ CyUiEvent click(CyEntity owner) noexcept {
 
 }  // namespace
 
-CY_TEST_CASE("the 1.6 table appends the interface after every 1.5 entry and ends with it") {
+CY_TEST_CASE("the 1.6 table appends the interface after every 1.5 entry, and 1.7 follows it") {
     const CyInterface& iface = table();
     CY_CHECK_GE(iface.header.abi_minor, 6U);
     const bool entries[] = {
@@ -200,7 +200,10 @@ CY_TEST_CASE("the 1.6 table appends the interface after every 1.5 entry and ends
     }
     CY_CHECK_EQ(offsetof(CyInterface, ui_root),
                 offsetof(CyInterface, character_state) + sizeof(void*));
-    CY_CHECK_EQ(offsetof(CyInterface, ui_set_focus) + sizeof(void*), sizeof(CyInterface));
+    // Nothing between the last 1.6 entry and the first 1.7 one; test_game_services.cpp holds the
+    // 1.7 entries to the end of the table.
+    CY_CHECK_EQ(offsetof(CyInterface, ui_set_focus) + sizeof(void*),
+                offsetof(CyInterface, animation_attach));
     CY_CHECK_EQ(offsetof(CyBehaviourVTable, ui_event) + sizeof(void*), sizeof(CyBehaviourVTable));
 }
 
