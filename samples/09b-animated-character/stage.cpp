@@ -115,7 +115,7 @@ struct Cube {
                 uvs[(vertex * 2U) + 1] = (v * 0.5F) + 0.5F;
                 ++vertex;
             }
-            for (const u16 step : {0, 1, 2, 0, 2, 3}) {
+            for (const u32 step : {0U, 1U, 2U, 0U, 2U, 3U}) {
                 indices[index++] = static_cast<u16>(first + step);
             }
         }
