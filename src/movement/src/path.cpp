@@ -147,24 +147,19 @@ FixedPathResult FixedPathSearch::find_corridor(const FixedNavMesh& mesh, FixedVe
     return result;
 }
 
-Status straighten(const FixedNavMesh& mesh, Span<const FixedPolyIndex> corridor, FixedVec2 start,
-                  FixedVec2 goal, Array<FixedVec2>& out) noexcept {
-    out.clear();
-    if (Status pushed = out.push_back(start); !pushed) {
-        return pushed;
-    }
-    const auto append = [&out](FixedVec2 point) noexcept -> Status {
-        return out.back() == point ? ok() : out.push_back(point);
-    };
+namespace {
 
-    // The portals, each as (left, right) seen walking from one polygon to the next: "left" is the
-    // end with the larger exact cross product against the direction of travel. The first portal is
-    // the start and the last the goal, both degenerate.
-    struct Portal {
-        FixedVec2 left;
-        FixedVec2 right;
-    };
-    Array<Portal> portals(out.allocator());
+/// One portal, as (left, right) seen walking from one polygon to the next.
+struct Portal {
+    FixedVec2 left;
+    FixedVec2 right;
+};
+
+/// The corridor's portals: the start and the goal, both degenerate, around every shared edge.
+/// "Left" is the end with the larger exact cross product against the direction of travel.
+[[nodiscard]] Status build_portals(const FixedNavMesh& mesh, Span<const FixedPolyIndex> corridor,
+                                   FixedVec2 start, FixedVec2 goal,
+                                   Array<Portal>& portals) noexcept {
     if (Status pushed = portals.push_back(Portal{start, start}); !pushed) {
         return pushed;
     }
@@ -182,57 +177,95 @@ Status straighten(const FixedNavMesh& mesh, Span<const FixedPolyIndex> corridor,
             return pushed;
         }
     }
-    if (Status pushed = portals.push_back(Portal{goal, goal}); !pushed) {
-        return pushed;
+    return portals.push_back(Portal{goal, goal});
+}
+
+[[nodiscard]] bool strictly_positive(WideFixed value) noexcept {
+    return !value.negative() && value != WideFixed{};
+}
+
+/// The simple stupid funnel's state. `left` and `right` bound the funnel from `apex`; a portal end
+/// that narrows it moves the bound, and one that crosses the other bound turns that bound into the
+/// new apex. Every decision is the sign of an exact cross product.
+class Funnel {
+public:
+    explicit Funnel(FixedVec2 start) noexcept : apex_(start), left_(start), right_(start) {}
+
+    /// Offer portal `i`'s right end. False when it crossed the left bound, which became the apex:
+    /// `corner` is then the point to emit, and the walk restarts after the new apex.
+    [[nodiscard]] bool narrow_right(FixedVec2 next, usize i, FixedVec2& corner) noexcept {
+        if (detmath::cross(right_ - apex_, next - apex_).negative()) {
+            return true;  // widens the funnel: ignored
+        }
+        if (apex_ == right_ || detmath::cross(left_ - apex_, next - apex_).negative()) {
+            right_ = next;
+            right_index_ = i;
+            return true;
+        }
+        corner = left_;
+        restart(left_, left_index_);
+        return false;
     }
 
-    // The simple stupid funnel. `left` and `right` bound the funnel from `apex`; a portal end that
-    // narrows it moves the bound, and one that crosses the other bound turns that bound into the
-    // new apex. Every decision is the sign of an exact cross product.
-    FixedVec2 apex = start;
-    FixedVec2 left = start;
-    FixedVec2 right = start;
-    usize apex_index = 0;
-    usize left_index = 0;
-    usize right_index = 0;
-    for (usize i = 1; i < portals.size(); ++i) {
-        const FixedVec2 next_left = portals[i].left;
-        const FixedVec2 next_right = portals[i].right;
-
-        if (!detmath::cross(right - apex, next_right - apex).negative()) {
-            if (apex == right || detmath::cross(left - apex, next_right - apex).negative()) {
-                right = next_right;
-                right_index = i;
-            } else {
-                if (Status added = append(left); !added) {
-                    return added;
-                }
-                apex = left;
-                apex_index = left_index;
-                right = apex;
-                right_index = apex_index;
-                i = apex_index;
-                continue;
-            }
+    /// Offer portal `i`'s left end; the mirror of `narrow_right`.
+    [[nodiscard]] bool narrow_left(FixedVec2 next, usize i, FixedVec2& corner) noexcept {
+        if (strictly_positive(detmath::cross(left_ - apex_, next - apex_))) {
+            return true;  // widens the funnel: ignored
         }
+        if (apex_ == left_ || strictly_positive(detmath::cross(right_ - apex_, next - apex_))) {
+            left_ = next;
+            left_index_ = i;
+            return true;
+        }
+        corner = right_;
+        restart(right_, right_index_);
+        return false;
+    }
 
-        const WideFixed narrowing = detmath::cross(left - apex, next_left - apex);
-        if (narrowing.negative() || narrowing == WideFixed{}) {
-            const WideFixed beyond = detmath::cross(right - apex, next_left - apex);
-            if (apex == left || (!beyond.negative() && beyond != WideFixed{})) {
-                left = next_left;
-                left_index = i;
-            } else {
-                if (Status added = append(right); !added) {
-                    return added;
-                }
-                apex = right;
-                apex_index = right_index;
-                left = apex;
-                left_index = apex_index;
-                i = apex_index;
-                continue;
+    [[nodiscard]] usize apex_index() const noexcept { return apex_index_; }
+
+private:
+    void restart(FixedVec2 apex, usize index) noexcept {
+        apex_ = apex;
+        left_ = apex;
+        right_ = apex;
+        apex_index_ = index;
+        left_index_ = index;
+        right_index_ = index;
+    }
+
+    FixedVec2 apex_;
+    FixedVec2 left_;
+    FixedVec2 right_;
+    usize apex_index_ = 0;
+    usize left_index_ = 0;
+    usize right_index_ = 0;
+};
+
+}  // namespace
+
+Status straighten(const FixedNavMesh& mesh, Span<const FixedPolyIndex> corridor, FixedVec2 start,
+                  FixedVec2 goal, Array<FixedVec2>& out) noexcept {
+    out.clear();
+    if (Status pushed = out.push_back(start); !pushed) {
+        return pushed;
+    }
+    const auto append = [&out](FixedVec2 point) noexcept -> Status {
+        return out.back() == point ? ok() : out.push_back(point);
+    };
+    Array<Portal> portals(out.allocator());
+    if (Status built = build_portals(mesh, corridor, start, goal, portals); !built) {
+        return built;
+    }
+    Funnel funnel(start);
+    for (usize i = 1; i < portals.size(); ++i) {
+        FixedVec2 corner;
+        if (!funnel.narrow_right(portals[i].right, i, corner) ||
+            !funnel.narrow_left(portals[i].left, i, corner)) {
+            if (Status added = append(corner); !added) {
+                return added;
             }
+            i = funnel.apex_index();  // the loop's increment resumes after the new apex
         }
     }
     return append(goal);

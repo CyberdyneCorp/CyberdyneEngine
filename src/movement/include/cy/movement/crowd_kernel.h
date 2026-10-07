@@ -160,27 +160,7 @@ public:
             if (active[i] == 0) {
                 continue;
             }
-            Vec push{};
-            const u32 home = unit_cell_[i];
-            const i64 home_x = static_cast<i64>(home % grid_.cells_x);
-            const i64 home_z = static_cast<i64>(home / grid_.cells_x);
-            for (i64 z = home_z - 1; z <= home_z + 1; ++z) {
-                if (z < 0 || z >= i64{grid_.cells_z}) {
-                    continue;
-                }
-                for (i64 x = home_x - 1; x <= home_x + 1; ++x) {
-                    if (x < 0 || x >= i64{grid_.cells_x}) {
-                        continue;
-                    }
-                    const auto cell = static_cast<usize>((z * grid_.cells_x) + x);
-                    for (u32 slot = cell_start_[cell]; slot < cell_start_[cell + 1]; ++slot) {
-                        const u32 j = cell_units_[slot];
-                        if (j != i) {
-                            push = push + pushed_by(i, j, share);
-                        }
-                    }
-                }
-            }
+            const Vec push = neighbourhood_push(i, share);
             next_position[i] = position[i] + Policy::clamp_length(push, max_push);
         }
     }
@@ -219,6 +199,37 @@ private:
             return 0;
         }
         return cell >= i64{count} ? i64{count} - 1 : cell;
+    }
+
+    /// The sum of the pushes unit `i` gets from the 3 x 3 block of cells around its own, in
+    /// row-major cell order and unit order within a cell: the fixed order every worker sums in.
+    [[nodiscard]] Vec neighbourhood_push(u32 i, Scalar share) noexcept {
+        Vec push{};
+        const u32 home = unit_cell_[i];
+        const i64 home_x = static_cast<i64>(home % grid_.cells_x);
+        const i64 home_z = static_cast<i64>(home / grid_.cells_x);
+        for (i64 z = home_z - 1; z <= home_z + 1; ++z) {
+            for (i64 x = home_x - 1; x <= home_x + 1; ++x) {
+                push = push + cell_push(i, x, z, share);
+            }
+        }
+        return push;
+    }
+
+    /// The pushes unit `i` gets from the units of cell (`x`, `z`); zero outside the grid.
+    [[nodiscard]] Vec cell_push(u32 i, i64 x, i64 z, Scalar share) noexcept {
+        Vec push{};
+        if (x < 0 || z < 0 || x >= i64{grid_.cells_x} || z >= i64{grid_.cells_z}) {
+            return push;
+        }
+        const auto cell = static_cast<usize>((z * grid_.cells_x) + x);
+        for (u32 slot = cell_start_[cell]; slot < cell_start_[cell + 1]; ++slot) {
+            const u32 j = cell_units_[slot];
+            if (j != i) {
+                push = push + pushed_by(i, j, share);
+            }
+        }
+        return push;
     }
 
     /// The push unit `j` gives unit `i`: zero unless they overlap, decided on the exact squares.
