@@ -116,8 +116,11 @@ Expected<FixedFlowFieldReport, Error> FixedFlowField::build(const FixedNavMesh& 
     const i64 half_cell = i64{1} << (shift - 1);
     for (u32 z = 0; z < depth_; ++z) {
         for (u32 x = 0; x < width_; ++x) {
-            const FixedVec2 centre{Fixed::from_raw(((origin_x_ + x) << shift) + half_cell),
-                                   Fixed::from_raw(((origin_z_ + z) << shift) + half_cell)};
+            // Shifted as unsigned: the origin may be negative, and the bits are what is wanted.
+            const auto corner_x = static_cast<i64>(static_cast<u64>(origin_x_ + x) << shift);
+            const auto corner_z = static_cast<i64>(static_cast<u64>(origin_z_ + z) << shift);
+            const FixedVec2 centre{Fixed::from_raw(corner_x + half_cell),
+                                   Fixed::from_raw(corner_z + half_cell)};
             const FixedPolyIndex poly = mesh.locate(centre);
             const usize cell = (usize{z} * width_) + x;
             const bool open = poly != kNoPoly && !mesh.blocked(poly);

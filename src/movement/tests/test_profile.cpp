@@ -57,6 +57,11 @@ CY_TEST_CASE("movement profile: this build has deterministic math, because it li
     const BuildConfiguration build = BuildConfiguration::from_build();
     CY_CHECK(build.deterministic_math_available);
     CY_CHECK(build.contraction_off);
+    // And the mover's own translation units say the same about themselves.
+    const BuildConfiguration mover = cy::movement::movement_build();
+    CY_CHECK(mover.deterministic_math_available);
+    CY_CHECK(mover.contraction_off);
+    CY_CHECK_FALSE(mover.fast_math);
 }
 
 CY_TEST_CASE("movement profile: Lockstep is accepted when every authoritative subsystem meets it") {

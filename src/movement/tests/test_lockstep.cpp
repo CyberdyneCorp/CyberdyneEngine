@@ -42,6 +42,8 @@ CY_TEST_CASE("movement lockstep: two peers driven by one command log agree on ev
     auto follower = std::make_unique<RtsSession>(config);
     CY_REQUIRE(issuer->setup());
     CY_REQUIRE(follower->setup());
+    // Setup ran the Lockstep profile check over the mover, the Fixed world and the command stream.
+    CY_CHECK_EQ(issuer->admitted_subsystems(), 3U);
     CY_CHECK_EQ(issuer->world_hash(), follower->world_hash());
 
     u32 cursor = 0;

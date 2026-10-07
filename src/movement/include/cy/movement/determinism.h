@@ -22,4 +22,11 @@ inline constexpr const char* kMovementSubsystem = "movement";
                                              determinism::DeterminismProfile::Lockstep, true};
 }
 
+/// The build half of the profile check as the mover was compiled:
+/// `BuildConfiguration::from_build()` evaluated inside `cy::movement`, whose sources carry the
+/// contraction flag its profile declaration requires and the deterministic math module's
+/// definition. What a session passes to `DeterminismConfiguration::require()` for the authoritative
+/// code it runs, rather than what the calling translation unit happened to be compiled with.
+[[nodiscard]] determinism::BuildConfiguration movement_build() noexcept;
+
 }  // namespace cy::movement

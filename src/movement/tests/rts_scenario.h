@@ -17,6 +17,10 @@
 //     per squad that every unit follows to its own slot;
 //   * every tick: commit, execute, follow paths, step the mover, and hash.
 //
+// The session does not start unless `DeterminismConfiguration::require(Lockstep)` admits it: the
+// mover, the `Fixed` navigation world and the payload-checked command stream, against the build the
+// mover was compiled with.
+//
 // TWO PEERS IN ONE PROCESS. `issue()` is the issuing side: it draws the orders and records them.
 // `receive()` is every other peer: it records exactly the commands the issuer's log holds for that
 // tick, and nothing else. Two sessions built separately — each converts its own mesh, cooks its own
@@ -39,11 +43,13 @@
 #include <cy/gameplay/command.h>
 #include <cy/gameplay/context.h>
 #include <cy/gameplay/control.h>
+#include <cy/movement/determinism.h>
 #include <cy/movement/flow_field.h>
 #include <cy/movement/height_field.h>
 #include <cy/movement/mover.h>
 #include <cy/movement/nav_mesh.h>
 #include <cy/movement/path.h>
+#include <cy/navigation/determinism.h>
 #include <cy/navigation/navmesh.h>
 
 #include <memory>
@@ -193,6 +199,9 @@ public:
             return false;
         }
         order_type_ = *declared;
+        if (!profile_admitted()) {
+            return false;
+        }
         for (u32 squad = 0; squad < config_.squads; ++squad) {
             auto participant =
                 session_.add_participant(gameplay::ParticipantKind::LocalHuman, Name::intern("p"));
@@ -303,10 +312,31 @@ public:
     /// Orders executed so far, and how many of their unit paths reached the target's polygon.
     [[nodiscard]] u32 paths_planned() const noexcept { return paths_planned_; }
     [[nodiscard]] u32 paths_found() const noexcept { return paths_found_; }
+    /// How many authoritative subsystems the `Lockstep` profile check admitted at setup.
+    [[nodiscard]] u32 admitted_subsystems() const noexcept { return admitted_subsystems_; }
 
 private:
     [[nodiscard]] static Allocator& allocator() noexcept {
         return system_allocator(MemoryDomain::World);
+    }
+
+    /// The session's profile check: the mover, this navigation world (`Fixed`, no runtime rebuilds)
+    /// and the payload-checked command stream, required at `Lockstep` against the build the mover
+    /// was compiled with. A session that cannot meet it does not start.
+    [[nodiscard]] bool profile_admitted() noexcept {
+        determinism::DeterminismConfiguration registry(allocator());
+        const navigation::NavWorldDeclaration world{"rts", navigation::NavArithmetic::Fixed, true,
+                                                    false};
+        if (!registry.declare(movement::movement_determinism()) ||
+            !registry.declare(navigation::navigation_determinism(
+                Span<const navigation::NavWorldDeclaration>(&world, 1))) ||
+            !registry.declare(commands_.determinism_declaration())) {
+            return false;
+        }
+        const auto verdict =
+            registry.require(determinism::DeterminismProfile::Lockstep, movement::movement_build());
+        admitted_subsystems_ = verdict ? verdict->authoritative_subsystems : 0;
+        return verdict.has_value();
     }
 
     [[nodiscard]] bool cook_heights() noexcept {
@@ -455,6 +485,7 @@ private:
     std::vector<u32> cursors_;
     u32 paths_planned_ = 0;
     u32 paths_found_ = 0;
+    u32 admitted_subsystems_ = 0;
 };
 
 /// The seed the per-tick fold starts from. A committed constant: a digest whose seed moved is a
