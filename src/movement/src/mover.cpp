@@ -12,7 +12,7 @@ namespace {
 /// Units per parallel range. A function of nothing but this constant and the unit count, as
 /// `jobs::parallel_for` requires for its partitioning — and the result does not depend on it
 /// anyway, because every pass writes only its own unit's slot.
-constexpr u64 kGrain = 1024;
+constexpr u64 kGrain = 256;
 
 /// The largest grid the mover builds, in cells.
 constexpr u64 kMaxGridCells = u64{1} << 22;

@@ -50,6 +50,14 @@ function(cy_movement_declare_tests)
     target_include_directories(cy_test_unit_movement
                                PRIVATE "${CMAKE_SOURCE_DIR}/src/navigation/tests")
 
+    cy_add_test(
+        NAME movement_lockstep
+        KIND integration
+        SOURCES "${tests_dir}/test_lockstep.cpp"
+        DEPENDENCIES cy::movement cy::gameplay cy::core-jobs)
+    target_include_directories(cy_test_integration_movement_lockstep
+                               PRIVATE "${CMAKE_SOURCE_DIR}/src/navigation/tests")
+
     # The profile seam (test_profile.cpp) reads `from_build()` in this suite, so the suite is
     # covered by a profile the way src/core/detmath/tests/ covers its own.
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

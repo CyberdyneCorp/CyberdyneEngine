@@ -47,6 +47,18 @@
 //                       tools/detmath/vectors/digests.txt ON ITS OWN — the committed value was
 //                       computed by a second implementation of the rules, in Python — and the
 //                       comparator then checks it between architectures.
+//   detmath-movement-digest
+//                       src/movement/tests/rts_scenario.h's movement scenario: 2 000 units in the
+//                       fixed-point kinematic mover on a converted navigation mesh, crowd
+//                       separation, seeded random orders through a Lockstep command stream, 600
+//                       ticks, every tick's state hash folded in order (design §10.2, task 4.2).
+//   detmath-lockstep-digest, detmath-lockstep-final-hash
+//                       the lockstep RTS scenario run as TWO PEERS — an issuer, and a follower
+//                       driven by the issuer's command log alone — publishing the follower's fold
+//                       and last tick's hash (task 7.2). Each leg checks first that its two peers
+//                       agreed on every tick; the comparator then checks the follower across
+//                       architectures. Both digests are also checked against committed values on
+//                       each leg alone, as the PCG world is.
 //
 // The leg's identity — os, architecture, compiler, endianness and the four build-time
 // floating-point facts `determinism::BuildConfiguration` reads — is published beside the digests,
@@ -78,6 +90,7 @@
 //     carried the aggregate. Two legs agreeing on a constant are not two legs that agreed.
 
 #include "golden_session.h"
+#include "rts_scenario.h"
 
 #include <cy/core/determinism/profile.h>
 #include <cy/core/detmath/digest.h>
@@ -237,6 +250,28 @@ struct LegDigest {
     return digest;
 }
 
+/// The fixed-point movement and lockstep scenarios. Measured once, in a static of their own, so the
+/// cost of 2 000 units for 600 ticks lands in the case that asks for it rather than in the first
+/// case of the file. The lockstep scenario is already two runs — two peers — in one process.
+struct MovementDigest {
+    cy::movement_test::RtsDigest movement;
+    cy::movement_test::RtsPairDigest lockstep;
+};
+
+[[nodiscard]] const MovementDigest& movement_measurements() {
+    static const MovementDigest taken{
+        cy::movement_test::run_rts(cy::movement_test::movement_config()),
+        cy::movement_test::run_lockstep_pair(cy::movement_test::lockstep_config())};
+    return taken;
+}
+
+/// What this leg's movement and lockstep scenarios must reproduce, measured on linux-x86_64 and
+/// compared across the four legs by the comparator. A leg whose arithmetic moved fails here on its
+/// own first.
+constexpr u64 kMovementDigest = 0x6135'd08e'b8d2'6585ULL;
+constexpr u64 kLockstepDigest = 0x4900'b7b9'14a2'25faULL;
+constexpr u64 kLockstepFinalHash = 0x3e5a'699a'41b7'1076ULL;
+
 /// Both measurements, taken once for the whole binary. Two of them, because "the same digest twice
 /// in one process" is a case rather than an assumption — a publisher that was not repeatable within
 /// one process could not be compared between two.
@@ -270,7 +305,7 @@ struct Measurements {
 
 /// The published file. One `key value` per line, because the comparator has to run on three
 /// operating systems' runners and a format needing a library is a format a leg cannot read.
-[[nodiscard]] std::string publish(const LegDigest& digest) {
+[[nodiscard]] std::string publish(const LegDigest& digest, const MovementDigest& movement) {
     const cy::determinism::BuildConfiguration build =
         cy::determinism::BuildConfiguration::from_build();
     std::string text =
@@ -306,6 +341,13 @@ struct Measurements {
     text += "detmath-kernel-version " + std::to_string(cy::detmath::kKernelVersion) + "\n";
     text += "detmath-sweep-count " + std::to_string(cy::detmath::kSweepCount) + "\n";
     text += "detmath-kernel-digest " + hex(digest.detmath_kernel) + "\n";
+    text += "detmath-movement-units " + std::to_string(movement.movement.units) + "\n";
+    text += "detmath-movement-ticks " + std::to_string(movement.movement.ticks) + "\n";
+    text += "detmath-movement-digest " + hex(movement.movement.digest) + "\n";
+    text += "detmath-lockstep-units " + std::to_string(movement.lockstep.follower.units) + "\n";
+    text += "detmath-lockstep-ticks " + std::to_string(movement.lockstep.follower.ticks) + "\n";
+    text += "detmath-lockstep-digest " + hex(movement.lockstep.follower.digest) + "\n";
+    text += "detmath-lockstep-final-hash " + hex(movement.lockstep.follower.final_hash) + "\n";
     // Which 128-bit multiply and divide this leg's binary used. An annotation: the comparison is of
     // the digest, and the point of the claim is that the paths do not matter.
     text += "detmath-paths " + std::string(cy::detmath::wide::kNativeMultiply) + " / " +
@@ -342,6 +384,13 @@ constexpr const char* kRequiredKeys[] = {
     "detmath-kernel-version",
     "detmath-sweep-count",
     "detmath-kernel-digest",
+    "detmath-movement-units",
+    "detmath-movement-ticks",
+    "detmath-movement-digest",
+    "detmath-lockstep-units",
+    "detmath-lockstep-ticks",
+    "detmath-lockstep-digest",
+    "detmath-lockstep-final-hash",
 };
 
 }  // namespace
@@ -398,6 +447,40 @@ CY_TEST_CASE("cross-leg: the published kernel digest is the committed one, on th
     CY_CHECK_EQ(taken.first.detmath_kernel, expected);
 }
 
+CY_TEST_CASE("cross-leg: the movement and lockstep digests are the committed ones, on this leg") {
+    const MovementDigest& taken = movement_measurements();
+    CY_REQUIRE(taken.movement.complete);
+    CY_REQUIRE(taken.lockstep.follower.complete);
+    CY_CHECK_EQ(taken.movement.units, 2000U);
+    CY_CHECK_EQ(taken.movement.ticks, 600U);
+    CY_CHECK_EQ(taken.movement.digest, kMovementDigest);
+    CY_CHECK_EQ(taken.lockstep.follower.digest, kLockstepDigest);
+    CY_CHECK_EQ(taken.lockstep.follower.final_hash, kLockstepFinalHash);
+}
+
+CY_TEST_CASE("cross-leg: two lockstep peers driven by one command log agree on every tick") {
+    // Task 7.2's claim on this leg, before the comparator makes it between legs: the follower
+    // received nothing but the issuer's committed commands and reproduced every tick.
+    const MovementDigest& taken = movement_measurements();
+    CY_REQUIRE(taken.lockstep.issuer.complete);
+    CY_REQUIRE(taken.lockstep.follower.complete);
+    CY_CHECK_EQ(taken.lockstep.disagreements, 0U);
+    CY_CHECK_EQ(taken.lockstep.issuer.world, taken.lockstep.follower.world);
+    CY_CHECK_EQ(taken.lockstep.issuer.digest, taken.lockstep.follower.digest);
+    CY_CHECK_EQ(taken.lockstep.issuer.paths_planned, taken.lockstep.follower.paths_planned);
+    CY_CHECK_GT(taken.lockstep.follower.paths_planned, 0U);
+}
+
+CY_TEST_CASE("cross-leg: the published lockstep digest is a function of the session") {
+    // As for the generated world: two legs agreeing on a constant are not two legs that agreed. A
+    // different seed — different orders — must give a different digest.
+    cy::movement_test::RtsConfig moved = cy::movement_test::lockstep_config();
+    moved.seed ^= 1ULL;
+    const cy::movement_test::RtsDigest other = cy::movement_test::run_rts(moved);
+    CY_REQUIRE(other.complete);
+    CY_CHECK_NE(other.digest, movement_measurements().lockstep.follower.digest);
+}
+
 CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {
     const Measurements& taken = measurements();
     CY_REQUIRE(taken.first.complete);
@@ -409,7 +492,7 @@ CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {
 CY_TEST_CASE("cross-leg: a published digest carries every field the comparison needs") {
     const Measurements& taken = measurements();
     CY_REQUIRE(taken.first.complete);
-    const std::string text = publish(taken.first);
+    const std::string text = publish(taken.first, movement_measurements());
 
     // Compared as text rather than asserted as a boolean, so a failure NAMES the missing key. A
     // check that printed `false` would send the next reader to re-derive which of fourteen fields
@@ -465,5 +548,5 @@ CY_TEST_CASE("cross-leg: the generator has no GPU execution domain, and the dige
     // learn to run it before a comparison of it can mean anything.
     CY_CHECK(!names_a_device());
     CY_CHECK_EQ(static_cast<int>(ExecutionDomain::kCount), 5);
-    CY_CHECK(carries(publish(measurements().first), "pcg-gpu-domain"));
+    CY_CHECK(carries(publish(measurements().first, movement_measurements()), "pcg-gpu-domain"));
 }

@@ -50,6 +50,13 @@ BASE = {
     "detmath-kernel-version": "1",
     "detmath-sweep-count": "16384",
     "detmath-kernel-digest": "e034ac1da6722b97",
+    "detmath-movement-units": "2000",
+    "detmath-movement-ticks": "600",
+    "detmath-movement-digest": "6135d08eb8d26585",
+    "detmath-lockstep-units": "256",
+    "detmath-lockstep-ticks": "480",
+    "detmath-lockstep-digest": "4900b7b914a225fa",
+    "detmath-lockstep-final-hash": "3e5a699a41b71076",
 }
 
 
@@ -159,6 +166,42 @@ CASES = (
     ("a leg whose publisher predates the kernel digest is refused by name under --detmath",
      [leg(label="a", detmath_kernel_digest=None), leg(label="b", arch="arm64")], ("--detmath",), 2,
      "no 'detmath-kernel-digest'"),
+
+    ("a disagreeing fixed-point movement digest is a finding under --detmath",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_movement_digest="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-movement-digest"),
+
+    ("a lockstep follower whose last tick disagrees is a finding, even when the folds agree",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_lockstep_final_hash="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-lockstep-final-hash"),
+
+    ("...and without --detmath the movement and lockstep claims are not asked",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_movement_digest="0123456789abcdef",
+                          detmath_lockstep_digest="0123456789abcdef")],
+     (), 0, "identical across"),
+
+    ("a movement digest of zero is refused",
+     [leg(label="a", detmath_movement_digest="0000000000000000"),
+      leg(label="b", arch="arm64", detmath_movement_digest="0000000000000000")], ("--detmath",), 2,
+     "Two legs that both computed nothing"),
+
+    ("a movement scenario with no units is an empty workload",
+     [leg(label="a", detmath_movement_units="0"),
+      leg(label="b", arch="arm64", detmath_movement_units="0")], ("--detmath",), 2,
+     "agrees with every other digest of an empty workload"),
+
+    ("a lockstep session of no ticks is an empty workload",
+     [leg(label="a", detmath_lockstep_ticks="0"),
+      leg(label="b", arch="arm64", detmath_lockstep_ticks="0")], ("--detmath",), 2,
+     "agrees with every other digest of an empty workload"),
+
+    ("a leg whose publisher predates the movement digest is refused by name under --detmath",
+     [leg(label="a", detmath_movement_digest=None), leg(label="b", arch="arm64")], ("--detmath",),
+     2, "no 'detmath-movement-digest'"),
+
+    ("a leg whose publisher predates the lockstep digest is refused by name under --detmath",
+     [leg(label="a", detmath_lockstep_final_hash=None), leg(label="b", arch="arm64")],
+     ("--detmath",), 2, "no 'detmath-lockstep-final-hash'"),
 
     ("--gpu-domain refuses on every leg this tree can produce, and says which two things are absent",
      [leg(label="a"), leg(label="b", arch="arm64")], ("--pcg", "--gpu-domain"), 2,

@@ -668,6 +668,26 @@ CASES = {
     ),
 }
 
+CASES["detmath"] = (
+    AGREEING,
+    ("the deterministic math kernel's digest differs between the two architectures", 1,
+     [_leg(label="alpha"), _leg(label="beta", arch="arm64", detmath_kernel_digest="0123456789abcdef")],
+     "the comparison must ask for the detmath claims at all: dropping --detmath from the job's "
+     "command passes this"),
+    ("the fixed-point movement digest differs between the two architectures", 1,
+     [_leg(label="alpha"),
+      _leg(label="beta", arch="arm64", detmath_movement_digest="0123456789abcdef")],
+     "authoritative movement in Fixed is the claim the Floating-point policy exemption waits for"),
+    ("a lockstep follower's session differs between the two architectures", 1,
+     [_leg(label="alpha"),
+      _leg(label="beta", arch="arm64", detmath_lockstep_digest="0123456789abcdef")],
+     "two peers on two architectures driven by one command log must agree"),
+    ("both legs ran a movement scenario of no units", 1,
+     [_leg(label="alpha", detmath_movement_units="0"),
+      _leg(label="beta", arch="arm64", detmath_movement_units="0")],
+     "a digest of an empty workload agrees with every other digest of an empty workload"),
+)
+
 #: `m11a:cross-leg-digest-job` claims the job itself, so it is answerable only by every case at once.
 CASES["job"] = tuple({case[0]: case for case in CASES["lockstep"] + CASES["pcg"]}.values())
 

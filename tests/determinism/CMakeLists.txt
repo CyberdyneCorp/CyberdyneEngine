@@ -74,16 +74,19 @@ endif()
 
 # The deterministic math kernel's digest joins the publication (openspec/changes/
 # add-deterministic-math, design §10.2), checked against the committed tools/detmath/vectors/
-# digests.txt on each leg before the comparator sees it.
+# digests.txt on each leg before the comparator sees it. So do the fixed-point movement scenario and
+# the two-peer lockstep RTS scenario of src/movement/tests/rts_scenario.h (tasks 4.2 and 7.2), which
+# this suite runs header-only, as it runs the replay and PCG fixtures.
 cy_add_test(
     NAME    cross_leg
     KIND    determinism
     SOURCES test_cross_leg.cpp
-    DEPENDENCIES cy::replay cy::pcg cy::core-detmath
+    DEPENDENCIES cy::replay cy::pcg cy::core-detmath cy::movement cy::gameplay
     DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
                 CY_DETMATH_VECTORS_DIR="${CMAKE_SOURCE_DIR}/tools/detmath/vectors")
 
 target_include_directories(cy_test_determinism_golden_replay PRIVATE "${cy_replay_fixture_dir}")
 target_include_directories(cy_test_determinism_replay_fuzz PRIVATE "${cy_replay_fixture_dir}")
 target_include_directories(cy_test_determinism_cross_leg
-                           PRIVATE "${cy_replay_fixture_dir}" "${cy_pcg_fixture_dir}")
+                           PRIVATE "${cy_replay_fixture_dir}" "${cy_pcg_fixture_dir}"
+                                   "${CMAKE_SOURCE_DIR}/src/movement/tests")
