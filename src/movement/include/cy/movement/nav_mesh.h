@@ -49,6 +49,7 @@ using detmath::WideFixed;
 
 /// The index of a polygon in a `FixedNavMesh`.
 using FixedPolyIndex = u32;
+/// No polygon: off the mesh, a border edge, or not yet located.
 inline constexpr FixedPolyIndex kNoPoly = 0xFFFF'FFFFU;
 
 /// One converted polygon. Corners are a run of `FixedNavMesh::corners()` and of
@@ -81,6 +82,8 @@ struct NavConversionReport {
     u32 links_dropped = 0;  ///< off-mesh links, which a Fixed world does not traverse
 };
 
+/// A navigation mesh in `Fixed`: the baked mesh's polygons and adjacency converted once, at load,
+/// so every query a `Lockstep` world makes is integer arithmetic.
 class FixedNavMesh {
 public:
     /// The bucket grid `locate()` uses is 2^kBucketShift metres on a side.

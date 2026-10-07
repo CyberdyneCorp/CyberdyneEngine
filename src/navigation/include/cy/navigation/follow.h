@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Path following, written once for both kinds of navigation arithmetic. openspec/changes/
 // add-deterministic-math, navigation delta: "Path following, local avoidance, and crowd steering
@@ -5,8 +6,8 @@
 // two diverging implementations."
 //
 // The algorithm is the loop: skip every point the agent is already within the arrival distance of,
-// in order, and head for the first one it is not. What differs between the arithmetics is only what
-// "within" and "head for" compute, and that is the policy's:
+// in order, and head for the first one it is not. What differs between the two kinds of arithmetic
+// is only what "within" and "head for" compute, and that is the policy's:
 //
 //   policy.position(point)        the point's position, in the policy's vector type
 //   policy.offset(to, from)       the vector from `from` to `to` on the walking plane
@@ -25,6 +26,8 @@
 
 namespace cy::navigation {
 
+/// The velocity that carries an agent at `position` along `path` from point `cursor`, advancing
+/// `cursor` past every point already reached. Zero once the last point is reached.
 template <class Policy, class Point>
 [[nodiscard]] auto follow_points(const Policy& policy, Span<const Point> path,
                                  typename Policy::Vec position, typename Policy::Scalar speed,

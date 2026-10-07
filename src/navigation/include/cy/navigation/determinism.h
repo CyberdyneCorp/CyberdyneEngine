@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // What navigation guarantees, declared from its worlds. openspec/changes/add-deterministic-math,
 // design §9.1 and task 6.2.

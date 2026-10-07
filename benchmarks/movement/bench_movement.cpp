@@ -116,7 +116,7 @@ struct F32Policy {
     return params;
 }
 
-/// The crowd kernel over `Policy`, seeded with the same units in both arithmetics.
+/// The crowd kernel over `Policy`, seeded with the same units in both kinds of arithmetic.
 template <class Policy, class Convert>
 struct KernelWorld {
     explicit KernelWorld(Convert convert) : kernel(cy::system_allocator(cy::MemoryDomain::World)) {

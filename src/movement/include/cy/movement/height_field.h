@@ -23,6 +23,8 @@ using detmath::Fixed;
 using detmath::Fixed16;
 using detmath::FixedVec2;
 
+/// Terrain heights as cooked `Fixed16` samples on a power-of-two grid: what a unit's height is read
+/// from every tick without touching the terrain's floats.
 class FixedHeightField {
 public:
     explicit FixedHeightField(Allocator& allocator) noexcept : samples_(allocator) {}

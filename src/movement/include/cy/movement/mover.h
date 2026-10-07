@@ -116,6 +116,8 @@ struct MoverReport {
     u32 clamped = 0;
 };
 
+/// Moves authoritative units one tick at a time in `Fixed`: the passes in the header comment, in
+/// unit order, with the same bits on any number of job workers.
 class KinematicMover {
 public:
     KinematicMover(Allocator& allocator, const MoverParams& params) noexcept;

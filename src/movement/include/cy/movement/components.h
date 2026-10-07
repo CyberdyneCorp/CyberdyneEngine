@@ -36,6 +36,8 @@ struct AuthoritativeTransform {
     detmath::FixedTransform value;
 };
 
+/// The name `AuthoritativeTransform` is registered under, so a world serialized by one build binds
+/// to it in another.
 inline constexpr const char* kAuthoritativeTransformComponentName =
     "cy::movement::AuthoritativeTransform";
 
@@ -43,13 +45,17 @@ inline constexpr const char* kAuthoritativeTransformComponentName =
 [[nodiscard]] Expected<ecs::ComponentTypeId, Error> register_authoritative_transform(
     ecs::World& world) noexcept;
 
-/// Write every active unit's transform into its entity's `AuthoritativeTransform`. A unit whose
-/// entity is dead or lacks the component is counted, not created: adding a component is a
-/// structural change, which belongs to whoever spawns units. Returns how many were written.
+/// What `publish_units` wrote.
 struct PublishReport {
     u32 written = 0;
+    /// Units whose entity is dead or lacks the component, or that are inactive.
     u32 skipped = 0;
 };
+
+/// Write every active unit's transform into its entity's `AuthoritativeTransform`: the
+/// authoritative half of the sync, once per tick after the mover steps. A unit whose entity is dead
+/// or lacks the component is counted, not created: adding a component is a structural change, which
+/// belongs to whoever spawns units.
 [[nodiscard]] Expected<PublishReport, Error> publish_units(const KinematicMover& mover,
                                                            ecs::World& world,
                                                            ecs::ComponentTypeId component) noexcept;

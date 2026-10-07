@@ -3,12 +3,12 @@
 // The mover's crowd kernel — integration, the neighbour grid and pairwise separation — written once
 // over a scalar policy. Design §8, §9.1 and §11.
 //
-// ONE ALGORITHM TEXT, TWO ARITHMETICS. `KinematicMover` instantiates it over `FixedPolicy`, which
-// is the authoritative path. The movement-step benchmark instantiates it a second time over an
-// `f32` policy of its own (benchmarks/movement/), because design §11's budget is a RATIO — "≤ 2.5×
-// the same kernel in f32" — and a ratio against a different algorithm would measure nothing. The
-// `f32` policy lives with the benchmark, so this module compiles no float into the authoritative
-// path.
+// ONE ALGORITHM TEXT, TWO KINDS OF ARITHMETIC. `KinematicMover` instantiates it over `FixedPolicy`,
+// which is the authoritative path. The movement-step benchmark instantiates it a second time over
+// an `f32` policy of its own (benchmarks/movement/), because design §11's budget is a RATIO —
+// "≤ 2.5× the same kernel in f32" — and a ratio against a different algorithm would measure
+// nothing. The `f32` policy lives with the benchmark, so this module compiles no float into the
+// authoritative path.
 //
 // A policy supplies:
 //
@@ -53,8 +53,9 @@ struct CrowdKernelCounts {
     u64 overlaps = 0;
 };
 
-/// The units' arrays and the kernel over them. Structure-of-arrays, one entry per unit, all the
-/// same length; an inactive unit has `active` zero and is neither moved nor pushes anyone.
+/// The units' arrays and the kernel over them: what moves a crowd one tick, in whichever arithmetic
+/// `Policy` supplies. Structure-of-arrays, one entry per unit, all the same length; an inactive
+/// unit has `active` zero and is neither moved nor pushes anyone.
 template <class Policy>
 class CrowdKernel {
 public:

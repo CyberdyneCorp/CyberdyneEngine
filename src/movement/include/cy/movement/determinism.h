@@ -16,6 +16,7 @@ namespace cy::movement {
 /// The name the mover declares itself under.
 inline constexpr const char* kMovementSubsystem = "movement";
 
+/// The mover's declaration for `DeterminismConfiguration::declare`: authoritative, `Lockstep`.
 [[nodiscard]] constexpr determinism::SubsystemDeterminism movement_determinism() noexcept {
     return determinism::SubsystemDeterminism{kMovementSubsystem,
                                              determinism::DeterminismProfile::Lockstep, true};

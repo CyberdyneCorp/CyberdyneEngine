@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // openspec/changes/add-deterministic-math, task 7.3: the ability system declares `SamePlatform`
 // explicitly, and a `Lockstep` session that uses it authoritatively is refused naming it.
 //

@@ -176,6 +176,12 @@ def _documented(lines: list[str], index: int) -> bool:
         if stripped.startswith("@"):
             cursor -= 1
             continue
+        # So is a C++ template header on its own line, which is where `.clang-format`'s
+        # AlwaysBreakTemplateDeclarations puts it: the comment above `template <class T>` documents
+        # the class or function below it.
+        if re.match(r"^template\s*<.*>$", stripped):
+            cursor -= 1
+            continue
         if stripped.endswith("*/") or stripped.startswith("//"):
             match = DOC_MARKER.match(stripped)
             return bool(match and match.group("text"))

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // What animation root motion guarantees. openspec/changes/add-deterministic-math, design §9.2 and
 // task 7.3.

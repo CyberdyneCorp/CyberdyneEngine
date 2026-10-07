@@ -3,7 +3,7 @@
 # shrink: a line here that has since been documented, renamed or deleted FAILS the gate.
 #
 # Regenerate with `just quality-docs --update`, and only when you have just documented
-# something. Backlog at last write: 533 of 2830 public symbols.
+# something. Backlog at last write: 529 of 3305 public symbols.
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::afterReload
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::create
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::destroy
@@ -64,7 +64,6 @@ bindings/swift/Sources/CyberdyneMacros/GameModuleMacro.swift::expansion
 bindings/swift/Sources/CyberdyneMacros/SystemMacro.swift::SystemMacro
 bindings/swift/Sources/CyberdyneMacros/SystemMacro.swift::expansion
 src/abi/include/cy/abi/cy_abi.h::cy_result_name
-src/abi/include/cy/abi/errors.h::unwrap
 src/abi/include/cy/abi/host.h::BehaviourRecord
 src/abi/include/cy/abi/host.h::Host
 src/abi/include/cy/abi/host.h::World
@@ -112,12 +111,9 @@ src/audio/include/cy/audio/tiers.h::TierReport
 src/camera/include/cy/camera/framing.h::Constraint
 src/camera/include/cy/camera/framing.h::ConstraintKind
 src/camera/include/cy/camera/strategy.h::ZoomState
-src/ecs/include/cy/ecs/buffer.h::BufferView
 src/ecs/include/cy/ecs/buffer.h::buffer_entry_alignment
-src/ecs/include/cy/ecs/buffer.h::release_buffer
 src/ecs/include/cy/ecs/command_buffer.h::CommandOp
 src/ecs/include/cy/ecs/component.h::ComponentKind
-src/ecs/include/cy/ecs/component.h::component_id_of
 src/ecs/include/cy/ecs/component.h::kInvalidComponent
 src/ecs/include/cy/ecs/entity.h::kInvalidArchetype
 src/ecs/include/cy/ecs/firewall.h::authority_is_guarded

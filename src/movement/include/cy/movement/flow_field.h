@@ -39,6 +39,8 @@ struct FixedFlowFieldReport {
     u32 popped = 0;
 };
 
+/// A direction per cell toward one destination, integrated in `Fixed`, so many units heading to one
+/// place follow one field that every peer computes alike.
 class FixedFlowField {
 public:
     /// No direction: unwalkable, unreachable, or a destination.

@@ -56,7 +56,7 @@ fields and path following run in `Fixed`. `navigation_determinism()` declares th
 authoritative input, and `SamePlatform` otherwise, so a lockstep session with a float world is
 refused naming `navigation`. Everything in this module stays `f32`, and this module does not link
 the deterministic math module. `follow_path` here and `cy::movement::follow_path` are the two
-instantiations of `follow_points` (`follow.h`): one loop, two arithmetics.
+instantiations of `follow_points` (`follow.h`): one loop, two kinds of arithmetic.
 
 `NavWorlds` binds each navigation world ID to a mesh and its deterministic query queue. An agent
 is updated only by the binding matching `NavAgent::world`; obstacles and links are authored with the

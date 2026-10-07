@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // What navigation guarantees, declared from its worlds. See include/cy/navigation/determinism.h.
 
 #include <cy/navigation/determinism.h>
