@@ -6,7 +6,8 @@
 # budgets are read back out of tests/ rather than restated (src/navigation/tests/ does the same).
 #
 #   unit.movement          the converted mesh, the path queries, the height field, the mover's passes
-#                          one by one, and the profile check with this module linked. Every case
+#                          one by one, the authoritative transform and its presentation sync, and
+#                          the profile check with this module linked. Every case
 #                          builds a mesh of a few dozen polygons and a handful of units.
 #
 #   integration.movement_lockstep
@@ -41,6 +42,7 @@ function(cy_movement_declare_tests)
         NAME movement
         KIND unit
         SOURCES
+            "${tests_dir}/test_components.cpp"
             "${tests_dir}/test_height_field.cpp"
             "${tests_dir}/test_mover.cpp"
             "${tests_dir}/test_nav_mesh.cpp"

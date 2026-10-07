@@ -10,9 +10,10 @@
 # `cy::core-detmath`, which defines `CY_DETERMINISM_MATH=1` for every consumer — so linking this
 # module is how a game says it has deterministic math, and nothing below it inherits that claim.
 #
-# THE FLOAT BOUNDARY IS TWO FILES. convert_mesh.cpp and height_field_cook.cpp read baked floats and
-# convert them once with `detmath::from_f32_cooked` (design §7.1); they never run in a tick. Every
-# other source here is integer-only.
+# THE FLOAT BOUNDARY IS THREE FILES. convert_mesh.cpp and height_field_cook.cpp read baked floats and
+# convert them once with `detmath::from_f32_cooked` (design §7.1); they never run in a tick.
+# presentation.cpp converts the other way, `detmath::to_f32_relative` into the scene (design §7.2),
+# on the presentation side of the tick. Every other source here is integer-only.
 #
 # Sources are listed explicitly and never globbed: a file this list does not name is compiled by
 # nothing, which reads in a review exactly like a file that passes.
@@ -28,9 +29,10 @@ cy_add_module(
         src/mover.cpp
         src/nav_mesh.cpp
         src/path.cpp
+        src/presentation.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-detmath cy::core-determinism cy::core-jobs
-                        cy::core-memory cy::navigation)
+                        cy::core-memory cy::ecs cy::navigation cy::scene)
 
 # Contraction off, as every authoritative module sets it. The integer paths have nothing to
 # contract; the two conversion files are float, and the profile declaration below refuses to
@@ -43,7 +45,7 @@ endif()
 
 cy_declare_determinism_profile(cy_movement
     PROFILE Lockstep
-    REASON "every per-tick quantity is a detmath Fixed and every decision an exact integer comparison with an index tie-break; the only floating point is the load-time conversion in convert_mesh.cpp and height_field_cook.cpp")
+    REASON "every per-tick quantity is a detmath Fixed and every decision an exact integer comparison with an index tie-break; the only floating point is the load-time conversion in convert_mesh.cpp and height_field_cook.cpp and the presentation sync in presentation.cpp")
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
