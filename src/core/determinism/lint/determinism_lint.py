@@ -222,8 +222,11 @@ def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = (),
             for name in FORBIDDEN_CMATH:
                 # `(?<!fp::)` is the one spelling that is not a finding: it IS the replacement.
                 # Without it the lint fires on every call site it asked people to write, which is
-                # how a lint becomes a thing everybody switches off.
-                if re.search(rf"(?<![A-Za-z0-9_])(?<!fp::){re.escape(name)}\s*\(", code):
+                # how a lint becomes a thing everybody switches off. `(?<!detmath::)` is the other:
+                # the deterministic math module's `asin`, `acos` and `atan2` take `Fixed` and are
+                # integer polynomials, the CrossPlatform replacement rather than a libm call.
+                if re.search(rf"(?<![A-Za-z0-9_])(?<!fp::)(?<!detmath::){re.escape(name)}\s*\(",
+                             code):
                     findings.append(Finding(
                         "forbidden-cmath", relative, number, raw,
                         f"'{name}' is not correctly rounded in this libm and its folded value "
@@ -355,6 +358,7 @@ SELFTEST_CLEAN = """
 const char* kNames[] = {"acos", "cbrt", "sinh"};
 const double angle = cy::determinism::fp::acos(dot);
 const double root = cy::determinism::fp::cbrt(x);
+const Angle heading = cy::detmath::atan2(dz, dx) + detmath::asin(sine) - detmath::acos(cosine);
 const double safe = std::sqrt(x) + std::exp(y) + std::log(z) + std::atan(w);
 const auto value = map.find(key);
 """
