@@ -5,6 +5,8 @@
 #include <cy/core/memory/hash.h>
 #include <cy/movement/flow_field.h>
 
+#include <initializer_list>
+
 namespace cy::movement {
 
 namespace {

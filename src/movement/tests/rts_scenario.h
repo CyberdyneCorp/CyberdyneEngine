@@ -52,6 +52,7 @@
 #include <cy/navigation/determinism.h>
 #include <cy/navigation/navmesh.h>
 
+#include <initializer_list>
 #include <memory>
 #include <utility>
 #include <vector>

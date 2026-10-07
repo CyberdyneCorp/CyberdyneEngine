@@ -28,6 +28,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 
 namespace {

@@ -7,6 +7,8 @@
 
 #include <cy/movement/nav_mesh.h>
 
+#include <initializer_list>
+
 #include "movement_fixture.h"
 
 namespace {
