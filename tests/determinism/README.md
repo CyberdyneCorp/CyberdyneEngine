@@ -60,6 +60,19 @@ is the committed one, on this leg alone"), and `cross-leg-compare` then compares
 architectures under `--detmath`. No four-leg run has been recorded for it yet; the first one belongs
 here, with its run number, and names the legs the claim covers.
 
+Two fixed-point simulations join it (tasks 4.2 and 7.2), both from
+`src/movement/tests/rts_scenario.h`:
+
+| Field | What |
+|---|---|
+| `detmath-movement-digest` (`-units`, `-ticks`) | 2 000 units in the kinematic mover on a converted navigation mesh with walls, crowd separation, seeded orders through a `Lockstep` command stream, 600 ticks, every tick's state hash folded |
+| `detmath-lockstep-digest`, `detmath-lockstep-final-hash` (`-units`, `-ticks`) | a lockstep RTS session run as two peers in one process, the follower driven by the issuer's command log alone; the follower's fold and last hash |
+
+Each leg first checks both against committed values ("the movement and lockstep digests are the
+committed ones, on this leg") and that its two peers agreed on every tick, then the comparator
+compares them between architectures under `--detmath` (claims `detmath-movement` and
+`detmath-lockstep`). Folding either with `+` instead of `hash_combine` turns the first case red.
+
 **What this does not answer**, said here rather than left to be assumed: `cy::pcg::ExecutionDomain`
 is Editor, Cook, Runtime, Streaming and Dynamic — there is **no GPU execution domain in this tree**
 — and no hosted runner has a device, so `m10:pcg-gpu-domain-agreement` stays open. The last case in

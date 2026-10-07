@@ -168,6 +168,18 @@ public:
         return static_cast<f64>(draw(at, entity, index) >> 11U) * 0x1.0p-53;
     }
 
+    /// The raw value of a deterministic-math `Fixed` (Q32.32) in [0, 1): the top 32 bits of the
+    /// draw, which ARE the fraction bits. Exact, like `unit_float()`, and with no float in it, so a
+    /// `CrossPlatform` or `Lockstep` session can draw it inside a tick (openspec/changes/
+    /// add-deterministic-math, design §9.2). Returned raw rather than as `cy::detmath::Fixed`
+    /// because this module does not link `cy::core-detmath`: linking it would define
+    /// `CY_DETERMINISM_MATH` for every consumer of determinism. `Fixed::from_raw()` of it is the
+    /// value.
+    [[nodiscard]] constexpr i64 unit_fixed_raw(SimulationPoint at, u64 entity,
+                                               u64 index) const noexcept {
+        return static_cast<i64>(draw(at, entity, index) >> 32U);
+    }
+
 private:
     u64 seed_ = 0;
     StreamId stream_;

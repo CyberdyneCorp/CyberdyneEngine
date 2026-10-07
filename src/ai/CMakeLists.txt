@@ -43,6 +43,7 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::core-base
+        cy::core-determinism
         cy::core-math
         cy::core-memory
         cy::core-values

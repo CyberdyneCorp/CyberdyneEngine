@@ -55,8 +55,8 @@ cy_add_module(
         src/retarget_build.cpp
         src/skeleton.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-reflect
-                        cy::core-values cy::graph)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
+                        cy::core-reflect cy::core-values cy::graph)
 
 add_subdirectory(assets)
 add_subdirectory(system)

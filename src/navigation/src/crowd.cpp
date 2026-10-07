@@ -4,6 +4,7 @@
 
 #include <cy/core/base/assert.h>
 #include <cy/navigation/crowd.h>
+#include <cy/navigation/follow.h>
 
 #include <algorithm>
 #include <cmath>
@@ -453,18 +454,31 @@ void Crowd::integrate(f32 dt) noexcept {
     }
 }
 
+namespace {
+
+/// `follow_points`' float instantiation: the XZ offset, its length against the arrival distance,
+/// and full speed along it.
+struct FloatFollowPolicy {
+    using Vec = Vec3;
+    using Scalar = f32;
+
+    [[nodiscard]] static Vec3 position(const PathPoint& point) noexcept { return point.position; }
+    [[nodiscard]] static Vec3 offset(Vec3 to, Vec3 from) noexcept {
+        return Vec3{to.x - from.x, 0.0F, to.z - from.z};
+    }
+    [[nodiscard]] static bool beyond(Vec3 offset, f32 arrival) noexcept {
+        return length(offset) > arrival;
+    }
+    [[nodiscard]] static Vec3 toward(Vec3 offset, f32 speed) noexcept {
+        return offset * (speed / std::fmax(length(offset), 1e-5F));
+    }
+};
+
+}  // namespace
+
 Vec3 follow_path(Span<const PathPoint> path, Vec3 position, f32 speed, f32 arrival_distance,
                  u32& cursor) noexcept {
-    while (cursor < path.size()) {
-        const Vec3 offset =
-            Vec3{path[cursor].position.x - position.x, 0.0F, path[cursor].position.z - position.z};
-        const f32 distance = length(offset);
-        if (distance > arrival_distance) {
-            return offset * (speed / std::fmax(distance, 1e-5F));
-        }
-        ++cursor;
-    }
-    return Vec3{};
+    return follow_points(FloatFollowPolicy{}, path, position, speed, arrival_distance, cursor);
 }
 
 Vec3 follow_field(const FlowField& field, Vec3 position, f32 speed) noexcept {

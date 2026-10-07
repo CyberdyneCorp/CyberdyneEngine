@@ -116,6 +116,30 @@
       "ns_per_op_when_recorded": 1.8488,
       "recorded_on": "2026-09-04"
     },
+    "movement/kernel-f32": {
+      "ratio": 4342752.4448,
+      "tolerance": 0.35,
+      "ns_per_op_when_recorded": 3361354.1455,
+      "recorded_on": "2026-10-07"
+    },
+    "movement/kernel-fixed": {
+      "ratio": 5569429.5742,
+      "tolerance": 0.35,
+      "ns_per_op_when_recorded": 4310820.2517,
+      "recorded_on": "2026-10-07"
+    },
+    "movement/step": {
+      "ratio": 9797602.2989,
+      "tolerance": 0.5,
+      "ns_per_op_when_recorded": 7583488.0117,
+      "recorded_on": "2026-10-07"
+    },
+    "movement/step-8-workers": {
+      "ratio": 2308900.6602,
+      "tolerance": 0.5,
+      "ns_per_op_when_recorded": 1787123.0065,
+      "recorded_on": "2026-10-07"
+    },
     "save/autosave-1m-objects": {
       "ratio": 22233568.1544,
       "tolerance": 0.35,

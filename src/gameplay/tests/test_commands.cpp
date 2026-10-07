@@ -6,6 +6,8 @@
 
 #include "fixture.h"
 
+#include <string>
+
 using namespace cy::gameplay_test;
 using cy::i32;
 using cy::u32;
@@ -273,4 +275,106 @@ CY_TEST_CASE("gameplay: a command declares its reliability, prediction and local
     CY_REQUIRE(fixture.commands.producer(*producer).record(command).has_value());
     fixture.commands.commit(fixture.context(), 1);
     CY_CHECK_EQ(fixture.commands.committed_count(), 1);
+}
+
+// --- Payloads under a cross-platform profile (openspec/changes/add-deterministic-math, task 7.1)
+// --
+//
+// Design §9.2: a command carries numbers as the ISSUER converted them, so every other peer reads
+// the same bits. A float in a payload breaks that — each peer's float hardware would read it — so
+// under `CrossPlatform` and `Lockstep` a declaration whose payload has a floating-point field is
+// refused, naming the type and the field. Falsified by deleting the `is_floating` test in
+// `payload_admitted()`: the first case below goes red.
+
+namespace {
+
+using cy::determinism::DeterminismProfile;
+
+constexpr PayloadField kFloatMoveFields[] = {
+    {"target_x", PayloadFieldKind::Fixed},
+    {"speed", PayloadFieldKind::Float32},
+    {"target_z", PayloadFieldKind::Fixed},
+};
+constexpr PayloadField kFixedMoveFields[] = {
+    {"squad", PayloadFieldKind::Integer},
+    {"target_x", PayloadFieldKind::Fixed},
+    {"target_z", PayloadFieldKind::Fixed},
+};
+
+[[nodiscard]] CommandDeclaration move_order(u32 stable_id, const char* type,
+                                            const PayloadField* fields, u32 count) noexcept {
+    CommandDeclaration declaration;
+    declaration.name = cy::Name::intern("MoveOrder");
+    declaration.stable_id = stable_id;
+    declaration.payload = PayloadLayout{type, fields, count};
+    return declaration;
+}
+
+}  // namespace
+
+CY_TEST_CASE("gameplay: under Lockstep a float payload field is refused, naming type and field") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.commands.set_determinism_profile(DeterminismProfile::Lockstep).has_value());
+
+    const auto refused = fixture.commands.declare(move_order(31, "FloatMove", kFloatMoveFields, 3));
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK_EQ(refused.error().code, cy::ErrorCode::PermissionDenied);
+    const PayloadRefusal& why = fixture.commands.last_payload_refusal();
+    CY_CHECK_EQ(std::string(why.type), std::string("FloatMove"));
+    CY_CHECK_EQ(std::string(why.field), std::string("speed"));
+    CY_CHECK_EQ(why.kind, PayloadFieldKind::Float32);
+    CY_CHECK(why.command == cy::Name::intern("MoveOrder"));
+    CY_CHECK_EQ(fixture.commands.type_count(), 0U);
+
+    // The same order carried in Fixed is admitted.
+    CY_CHECK(
+        fixture.commands.declare(move_order(32, "FixedMove", kFixedMoveFields, 3)).has_value());
+}
+
+CY_TEST_CASE("gameplay: under CrossPlatform an undescribed payload is refused") {
+    Fixture fixture;
+    CY_REQUIRE(
+        fixture.commands.set_determinism_profile(DeterminismProfile::CrossPlatform).has_value());
+    CommandDeclaration opaque;
+    opaque.name = cy::Name::intern("Opaque");
+    opaque.stable_id = 33;
+    CY_CHECK_FALSE(fixture.commands.declare(opaque).has_value());
+    CY_CHECK_EQ(std::string(fixture.commands.last_payload_refusal().type), std::string(""));
+
+    // A command with no payload says so with a type and no fields.
+    opaque.payload = PayloadLayout{"none", nullptr, 0};
+    CY_CHECK(fixture.commands.declare(opaque).has_value());
+}
+
+CY_TEST_CASE("gameplay: a SamePlatform session keeps accepting float payloads") {
+    Fixture fixture;
+    CY_REQUIRE(
+        fixture.commands.set_determinism_profile(DeterminismProfile::SamePlatform).has_value());
+    CY_CHECK(
+        fixture.commands.declare(move_order(34, "FloatMove", kFloatMoveFields, 3)).has_value());
+    CommandDeclaration opaque;
+    opaque.name = cy::Name::intern("Opaque");
+    opaque.stable_id = 35;
+    CY_CHECK(fixture.commands.declare(opaque).has_value());
+    CY_CHECK_EQ(fixture.commands.determinism_declaration().guarantees,
+                DeterminismProfile::SamePlatform);
+}
+
+CY_TEST_CASE("gameplay: raising the profile re-checks what was declared, and refuses intact") {
+    Fixture fixture;
+    CY_REQUIRE(
+        fixture.commands.declare(move_order(36, "FloatMove", kFloatMoveFields, 3)).has_value());
+    CY_CHECK_FALSE(
+        fixture.commands.set_determinism_profile(DeterminismProfile::Lockstep).has_value());
+    CY_CHECK_EQ(std::string(fixture.commands.last_payload_refusal().field), std::string("speed"));
+    CY_CHECK_EQ(fixture.commands.determinism_profile(), DeterminismProfile::None);
+
+    Fixture fixed;
+    CY_REQUIRE(
+        fixed.commands.declare(move_order(37, "FixedMove", kFixedMoveFields, 3)).has_value());
+    CY_REQUIRE(fixed.commands.set_determinism_profile(DeterminismProfile::Lockstep).has_value());
+    const cy::determinism::SubsystemDeterminism declared = fixed.commands.determinism_declaration();
+    CY_CHECK_EQ(std::string(declared.name), std::string(kCommandStreamSubsystem));
+    CY_CHECK_EQ(declared.guarantees, DeterminismProfile::Lockstep);
+    CY_CHECK(declared.authoritative);
 }

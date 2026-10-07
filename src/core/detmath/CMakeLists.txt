@@ -1,7 +1,7 @@
 # src/core/detmath/ — layer 0: deterministic math. Fixed-point scalars, binary angles, 128-bit
 # intermediates, and transcendentals computed from integer instructions with declared error bounds.
 #
-# openspec/changes/add-deterministic-math, stages 1 and 2. Governed by `deterministic-math` and by
+# openspec/changes/add-deterministic-math, stages 1 to 3. Governed by `deterministic-math` and by
 # `simulation-and-determinism`'s floating-point policy, which requires "deterministic math types
 # ... provided as an optional module" for the CrossPlatform and Lockstep profiles.
 #
@@ -23,6 +23,7 @@
 set(CY_DETMATH_KERNEL_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/digest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/explog.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/geometry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/overflow.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sqrt.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/trig.cpp"

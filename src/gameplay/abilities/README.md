@@ -96,3 +96,12 @@ batch computes from its own capacities, rather than a claim.
   `ScriptHost` that can answer.
 * **Nothing is replicated.** Attributes and fragments declare their replication; no transport reads
   those declarations, because `networking-and-replication` is M9's.
+
+## Determinism
+
+Attributes are `f32`, so the ability system reproduces on one architecture and not across two. It
+says so explicitly: `abilities_determinism()` (`determinism.h`) declares `abilities` as
+`SamePlatform`, and a `CrossPlatform` or `Lockstep` session that uses abilities authoritatively is
+refused by `DeterminismConfiguration::require()` naming `abilities`
+(`test_determinism.cpp`). Converting attributes to `Fixed` is follow-up work of
+openspec/changes/add-deterministic-math.

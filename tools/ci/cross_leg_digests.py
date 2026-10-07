@@ -64,7 +64,28 @@ CLAIMS = {
         "detmath-sweep-count",
         "add-deterministic-math — the fixed-point kernel's digest between two architectures",
     ),
+    # Design §10.2 and task 4.2: 2 000 units in the fixed-point kinematic mover for 600 ticks, every
+    # tick's state hash folded. The claim that authoritative movement in `Fixed` reproduces across
+    # architectures — the "Floating-point policy" coverage exemption's replacement case.
+    "detmath-movement": (
+        ("detmath-movement-digest",),
+        "detmath-movement-units",
+        "add-deterministic-math — the fixed-point movement scenario's per-tick state between two "
+        "architectures",
+    ),
+    # Task 7.2: the lockstep RTS scenario's follower — a peer driven by another peer's command log
+    # alone — which each leg has already checked against its own issuer, tick by tick.
+    "detmath-lockstep": (
+        ("detmath-lockstep-digest", "detmath-lockstep-final-hash"),
+        "detmath-lockstep-ticks",
+        "add-deterministic-math — a lockstep peer's RTS session from one command log between two "
+        "architectures",
+    ),
 }
+
+#: The claims `--detmath` asks for, together: the kernel, the movement it computes, and the lockstep
+#: session built on both.
+DETMATH_CLAIMS = ("detmath", "detmath-movement", "detmath-lockstep")
 
 #: Fields a digest file must carry before it is compared at all. A file missing one is a publisher
 #: this comparator cannot read, never a leg that agreed.
@@ -192,7 +213,8 @@ def main() -> int:
     parser.add_argument("--pcg", action="store_true",
                         help="also compare the generated world's digest between the legs")
     parser.add_argument("--detmath", action="store_true",
-                        help="also compare the deterministic math kernel's digest between the legs")
+                        help="also compare the deterministic math kernel's digest, the fixed-point "
+                             "movement scenario's and the lockstep RTS session's between the legs")
     parser.add_argument("--gpu-domain", action="store_true",
                         help="report m10:pcg-gpu-domain-agreement's state and refuse")
     arguments = parser.parse_args()
@@ -205,7 +227,7 @@ def main() -> int:
         check_preconditions(legs)
 
         claims = (["lockstep"] + (["pcg"] if arguments.pcg else [])
-                  + (["detmath"] if arguments.detmath else []))
+                  + (list(DETMATH_CLAIMS) if arguments.detmath else []))
         disagreements = {claim: compare(legs, claim) for claim in claims}
         if arguments.gpu_domain:
             report_gpu_domain(legs)

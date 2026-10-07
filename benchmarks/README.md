@@ -14,6 +14,7 @@ itself.
 | `harness/` | Registration, the timing loop, the calibration, and the results file. `cy::bench-harness`. |
 | `micro/` | Benchmarks with no engine dependency. Today: one, and it measures the harness. |
 | `detmath/` | The deterministic math kernel against design §11 of `add-deterministic-math`: `*` beside an `f64` multiply, `/`, `sqrt`, `sin`, `atan2`, `exp2` and `log2`, each a dependent chain. |
+| `movement/` | The fixed-point kinematic mover at strategy scale, 100 000 units, against design §11 of `add-deterministic-math`: the crowd kernel in `Fixed` beside the same kernel in `f32`, and the whole authoritative tick on one thread and on eight workers. |
 | `ecs/` | The ECS's per-entity costs: query iteration, random access, spawn, block activation, deferred structural change. |
 | `gameplay/` | `gameplay-framework`'s performance table: command submission and commit, hierarchical tag tests, the indexed ownership query, and the batch-admit round trip. |
 | `save/` | `save-and-persistence`'s large-world save benchmark: one autosave — the capture through `cy::world-persistence` and the encoding of every dirty region — over 1 048 576 persistent objects and over 65 536, with the same 20 480 dirty records. |
@@ -61,6 +62,17 @@ allocator and by 2.4 MB of column data that does not fit in cache, and the calib
 divides out neither. They were measured at 25% for `ecs/query-iterate` and 35% for the four that
 allocate or chase pointers — chosen from the spread of repeated runs on the recording machine, wide
 enough not to fire on a busy agent and far too narrow for a doubling to hide in.
+
+### `movement/` carries 35%, and 50% for the whole tick, because its bodies are memory traffic
+
+The four `movement/` bodies step 100 000 units through a 262 144-cell grid and a 16 384-polygon mesh:
+megabytes per tick, which the calibration workload does not divide out. Their state also evolves as
+the runner repeats them — the units circle — so a one-iteration sample of `movement/step` measured
+between 7.6 and 9.2 ms across three runs of the same binary (i9-12900K, `profile` build). The two
+kernels moved by under 3 % and carry 35 %; the two whole-tick bodies carry 50 %. The budget that
+matters is design §11's and is a RATIO between two of them — `movement/kernel-fixed` over
+`movement/kernel-f32`, at most 2.5× — first measured at 1.28×, and 1.79 ms for `movement/step-8-workers`
+against its 4 ms.
 
 ### `gameplay/` carries 35%, and 50% for one, because the ratio does not divide out a hybrid CPU
 
