@@ -52,10 +52,10 @@ BASE = {
     "detmath-kernel-digest": "e034ac1da6722b97",
     "detmath-movement-units": "2000",
     "detmath-movement-ticks": "600",
-    "detmath-movement-digest": "6135d08eb8d26585",
+    "detmath-movement-digest": "a4bd1ab8dad86434",
     "detmath-lockstep-units": "256",
     "detmath-lockstep-ticks": "480",
-    "detmath-lockstep-digest": "4900b7b914a225fa",
+    "detmath-lockstep-digest": "1aed05ed2c54f3fb",
     "detmath-lockstep-final-hash": "3e5a699a41b71076",
 }
 

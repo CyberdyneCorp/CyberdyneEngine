@@ -32,7 +32,7 @@ using cy::movement_test::RtsSession;
 
 /// The committed digests of the two published scenarios, measured on linux-x86_64 and compared
 /// across the four CI legs by `determinism.cross_leg` and tools/ci/cross_leg_digests.py.
-constexpr u64 kShortDigest = 0x611e'4ea1'ec74'c152ULL;
+constexpr u64 kShortDigest = 0x817f'0ffa'3fb6'86f0ULL;
 
 }  // namespace
 

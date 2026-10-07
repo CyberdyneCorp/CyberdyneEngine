@@ -268,8 +268,8 @@ struct MovementDigest {
 /// What this leg's movement and lockstep scenarios must reproduce, measured on linux-x86_64 and
 /// compared across the four legs by the comparator. A leg whose arithmetic moved fails here on its
 /// own first.
-constexpr u64 kMovementDigest = 0x6135'd08e'b8d2'6585ULL;
-constexpr u64 kLockstepDigest = 0x4900'b7b9'14a2'25faULL;
+constexpr u64 kMovementDigest = 0xa4bd'1ab8'dad8'6434ULL;
+constexpr u64 kLockstepDigest = 0x1aed'05ed'2c54'f3fbULL;
 constexpr u64 kLockstepFinalHash = 0x3e5a'699a'41b7'1076ULL;
 
 /// Both measurements, taken once for the whole binary. Two of them, because "the same digest twice

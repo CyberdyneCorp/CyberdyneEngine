@@ -39,6 +39,7 @@
 #include <cy/gameplay/command.h>
 #include <cy/gameplay/context.h>
 #include <cy/gameplay/control.h>
+#include <cy/movement/flow_field.h>
 #include <cy/movement/height_field.h>
 #include <cy/movement/mover.h>
 #include <cy/movement/nav_mesh.h>
@@ -279,10 +280,17 @@ public:
         return fold;
     }
 
-    /// What the session is before tick 0: the converted mesh, the cooked heights, the mover's
-    /// parameters and the seed. Peers that disagree here disagree before the first tick.
+    /// What the session is before tick 0: the converted mesh, a flow field over it, the cooked
+    /// heights, the mover's parameters and the seed. Peers that disagree here disagree before the
+    /// first tick.
     [[nodiscard]] u64 world_hash() const noexcept {
-        u64 fold = hash_combine(mesh_.digest(), mover_.params_hash());
+        // A rally field toward the map's centre, built over the converted mesh, so the flow-field
+        // integration joins the digests the legs compare.
+        movement::FixedFlowField rally(allocator());
+        const Fixed centre =
+            Fixed::from_int(static_cast<i32>(config_.map_cells) * kRtsCellMetres / 2);
+        const u64 field = rally.build(mesh_, FixedVec2{centre, centre}, 1) ? rally.digest() : 0;
+        u64 fold = hash_combine(hash_combine(mesh_.digest(), field), mover_.params_hash());
         for (const detmath::Fixed16 sample : heights_.samples()) {
             fold = hash_combine(fold, static_cast<u64>(static_cast<u32>(sample.raw)));
         }

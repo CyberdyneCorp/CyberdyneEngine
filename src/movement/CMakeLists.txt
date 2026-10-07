@@ -24,6 +24,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/convert_mesh.cpp
+        src/flow_field.cpp
         src/height_field.cpp
         src/height_field_cook.cpp
         src/mover.cpp
