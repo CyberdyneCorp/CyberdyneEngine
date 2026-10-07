@@ -90,7 +90,7 @@ Status FixedNavMesh::build_buckets() noexcept {
     // Counting sort into buckets, polygons in index order within each, so `locate()` meets them in
     // the order its tie-break needs.
     bucket_starts_.clear();
-    if (Status sized = bucket_starts_.resize(usize{buckets_x_} * buckets_z_ + 1); !sized) {
+    if (Status sized = bucket_starts_.resize((usize{buckets_x_} * buckets_z_) + 1); !sized) {
         return sized;
     }
     for (int pass = 0; pass < 2; ++pass) {
@@ -114,7 +114,7 @@ Status FixedNavMesh::build_buckets() noexcept {
             const FixedNavPoly& poly = polys_[index];
             for (i64 z = bucket_z(poly.min.y); z <= bucket_z(poly.max.y); ++z) {
                 for (i64 x = bucket_x(poly.min.x); x <= bucket_x(poly.max.x); ++x) {
-                    const usize bucket = static_cast<usize>((z * buckets_x_) + x);
+                    const auto bucket = static_cast<usize>((z * buckets_x_) + x);
                     if (pass == 0) {
                         ++bucket_starts_[bucket];
                     } else {
@@ -168,7 +168,7 @@ FixedPolyIndex FixedNavMesh::locate(FixedVec2 point) const noexcept {
     if (x < 0 || z < 0 || x >= i64{buckets_x_} || z >= i64{buckets_z_}) {
         return kNoPoly;
     }
-    const usize bucket = static_cast<usize>((z * buckets_x_) + x);
+    const auto bucket = static_cast<usize>((z * buckets_x_) + x);
     for (u32 slot = bucket_starts_[bucket]; slot < bucket_starts_[bucket + 1]; ++slot) {
         const FixedPolyIndex candidate = bucket_polys_[slot];
         if (within_box(polys_[candidate], point) && contains(candidate, point)) {

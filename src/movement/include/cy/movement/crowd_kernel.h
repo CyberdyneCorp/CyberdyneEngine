@@ -58,9 +58,9 @@ struct CrowdKernelCounts {
 template <class Policy>
 class CrowdKernel {
 public:
-    using Scalar = typename Policy::Scalar;
-    using Vec = typename Policy::Vec;
-    using Wide = typename Policy::Wide;
+    using Scalar = Policy::Scalar;
+    using Vec = Policy::Vec;
+    using Wide = Policy::Wide;
 
     explicit CrowdKernel(Allocator& allocator) noexcept
         : position(allocator),
@@ -171,7 +171,7 @@ public:
                     if (x < 0 || x >= i64{grid_.cells_x}) {
                         continue;
                     }
-                    const usize cell = static_cast<usize>((z * grid_.cells_x) + x);
+                    const auto cell = static_cast<usize>((z * grid_.cells_x) + x);
                     for (u32 slot = cell_start_[cell]; slot < cell_start_[cell + 1]; ++slot) {
                         const u32 j = cell_units_[slot];
                         if (j != i) {
@@ -205,11 +205,19 @@ public:
 
 private:
     [[nodiscard]] u32 cell_index(Vec at) const noexcept {
-        i64 x = Policy::cell(at.x, grid_.cell_shift) - grid_.origin_x;
-        i64 z = Policy::cell(at.y, grid_.cell_shift) - grid_.origin_z;
-        x = x < 0 ? 0 : (x >= i64{grid_.cells_x} ? i64{grid_.cells_x} - 1 : x);
-        z = z < 0 ? 0 : (z >= i64{grid_.cells_z} ? i64{grid_.cells_z} - 1 : z);
+        const i64 x =
+            clamp_cell(Policy::cell(at.x, grid_.cell_shift) - grid_.origin_x, grid_.cells_x);
+        const i64 z =
+            clamp_cell(Policy::cell(at.y, grid_.cell_shift) - grid_.origin_z, grid_.cells_z);
         return static_cast<u32>((z * grid_.cells_x) + x);
+    }
+
+    /// `cell` clamped into [0, `count`): a unit outside the grid is binned into its border.
+    [[nodiscard]] static i64 clamp_cell(i64 cell, u32 count) noexcept {
+        if (cell < 0) {
+            return 0;
+        }
+        return cell >= i64{count} ? i64{count} - 1 : cell;
     }
 
     /// The push unit `j` gives unit `i`: zero unless they overlap, decided on the exact squares.

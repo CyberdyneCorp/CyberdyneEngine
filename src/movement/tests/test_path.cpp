@@ -19,8 +19,8 @@ using namespace cy::movement_test;
 
 /// An 8 x 8 grid with a wall at column 4, rows 0 to 6: the way round is through row 7.
 [[nodiscard]] FixedNavMesh walled() noexcept {
-    return converted(grid_mesh(
-        8.0F, 8, [](u32 row, u32 column) noexcept { return !(column == 4 && row <= 6); }));
+    return converted(
+        grid_mesh(8.0F, 8, [](u32 row, u32 column) noexcept { return column != 4 || row > 6; }));
 }
 
 }  // namespace

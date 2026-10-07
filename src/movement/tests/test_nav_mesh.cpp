@@ -40,9 +40,11 @@ CY_TEST_CASE("movement mesh: conversion keeps every polygon, its adjacency and i
     // Polygon 5 (row 1, column 1) has four neighbours: 4, 6, 1 and 9, in some edge order.
     u32 seen = 0;
     for (const FixedPolyIndex across : mesh.neighbours_of(5)) {
-        seen |= across == 1 ? 1U : across == 4 ? 2U : across == 6 ? 4U : across == 9 ? 8U : 16U;
+        for (const FixedPolyIndex expected : {1U, 4U, 6U, 9U}) {
+            seen += across == expected ? 1U : 0U;
+        }
     }
-    CY_CHECK_EQ(seen, 15U);
+    CY_CHECK_EQ(seen, 4U);
     FixedVec2 a;
     FixedVec2 b;
     CY_REQUIRE(mesh.portal(5, 6, a, b));
@@ -93,8 +95,8 @@ CY_TEST_CASE("movement mesh: clamp_move keeps a unit on the surface and tracks i
 
 CY_TEST_CASE("movement mesh: nearest snaps a point off the mesh, ties going to the lower index") {
     // A hole at row 1, column 1: polygon (1,1) is missing.
-    const FixedNavMesh mesh = converted(grid_mesh(
-        4.0F, 4, [](u32 row, u32 column) noexcept { return !(row == 1 && column == 1); }));
+    const FixedNavMesh mesh = converted(
+        grid_mesh(4.0F, 4, [](u32 row, u32 column) noexcept { return row != 1 || column != 1; }));
     CY_CHECK_EQ(mesh.poly_count(), 15U);
     FixedVec2 on;
     // The hole's centre is equidistant from four polygons' edges; the lowest index wins.
@@ -123,8 +125,8 @@ CY_TEST_CASE("movement mesh: the digest is a function of the converted content")
     const FixedNavMesh first = converted(open_mesh(4));
     const FixedNavMesh second = converted(open_mesh(4));
     CY_CHECK_EQ(first.digest(), second.digest());
-    const FixedNavMesh holed = converted(grid_mesh(
-        4.0F, 4, [](u32 row, u32 column) noexcept { return !(row == 2 && column == 2); }));
+    const FixedNavMesh holed = converted(
+        grid_mesh(4.0F, 4, [](u32 row, u32 column) noexcept { return row != 2 || column != 2; }));
     CY_CHECK_NE(first.digest(), holed.digest());
 
     FixedNavMesh blocked = converted(open_mesh(4));

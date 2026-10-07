@@ -108,18 +108,18 @@ public:
     }
     [[nodiscard]] Span<const FixedVec2> corners_of(FixedPolyIndex index) const noexcept {
         const FixedNavPoly& p = polys_[index];
-        return Span<const FixedVec2>(corners_.data() + p.first, p.corner_count);
+        return {corners_.data() + p.first, p.corner_count};
     }
     [[nodiscard]] Span<const FixedPolyIndex> neighbours_of(FixedPolyIndex index) const noexcept {
         const FixedNavPoly& p = polys_[index];
-        return Span<const FixedPolyIndex>(neighbours_.data() + p.first, p.corner_count);
+        return {neighbours_.data() + p.first, p.corner_count};
     }
     /// For each edge of polygon `index`, the distance from its centre to the centre of the polygon
     /// across (correctly rounded), or zero at a border. Computed once at conversion: it is A*'s
     /// step length.
     [[nodiscard]] Span<const Fixed> crossings_of(FixedPolyIndex index) const noexcept {
         const FixedNavPoly& p = polys_[index];
-        return Span<const Fixed>(crossings_.data() + p.first, p.corner_count);
+        return {crossings_.data() + p.first, p.corner_count};
     }
     /// The version of the source mesh at conversion.
     [[nodiscard]] u32 source_version() const noexcept { return source_version_; }

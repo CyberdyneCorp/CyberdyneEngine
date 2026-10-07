@@ -47,7 +47,7 @@ in one place, rather than a capability every system quietly has.
 |---|---|---|
 | `context.h` | M4 4.4.1 | The four lifetimes, scoped services, participants, and `GameplayContext`. |
 | `control.h` | M4 4.4.2 | Control sources, channels, many-to-many bindings, entity groups. |
-| `command.h` | M4 4.4.3 | Command declarations, per-producer buffers, the deterministic commit, the log. |
+| `command.h` | M4 4.4.3 | Command declarations, per-producer buffers, the deterministic commit, the log, and the payload check under cross-platform profiles. |
 | `validation.h` | M4 4.4.4 | `ValidationResult` and its tagged reasons with the data behind them. |
 | `random.h` | M4 4.4.5 | Named gameplay streams over `core-determinism`'s seeded streams. |
 | `tags.h` | M8.b 3.2 | Hierarchical gameplay tags, tag sets, and the tooling that reports a tag doing an archetype's job. |
@@ -215,3 +215,28 @@ next milestone does not have to rediscover it:
   from several threads, so the claim is architectural rather than measured.
 * **No benchmark.** The performance contracts are asserted by the `gameplay_scale` suite at the
   scales stated above; they are not in `benchmarks/` and so are not tracked against a baseline.
+
+## Command payloads under `CrossPlatform` and `Lockstep`
+
+A command carries numbers as the issuing peer converted them (openspec/changes/add-deterministic-math,
+design §9.2): every other peer, and every replay, reads the same bits from the log. A float in a
+payload would be read by each peer's own float hardware, so a stream running under a cross-platform
+profile checks what each command type says its payload holds:
+
+```cpp
+constexpr PayloadField kMoveOrderFields[] = {
+    {"squad", PayloadFieldKind::Integer},
+    {"target_x", PayloadFieldKind::Fixed},   // a cy::detmath::Fixed, as its raw i64
+    {"target_z", PayloadFieldKind::Fixed},
+};
+(void)commands.set_determinism_profile(determinism::DeterminismProfile::Lockstep);
+declaration.payload = PayloadLayout{"MoveOrder", kMoveOrderFields, 3};
+auto declared = commands.declare(declaration);   // refused if a field were Float32 or Float64
+```
+
+A refused declaration fails with `PermissionDenied`, and `last_payload_refusal()` names the type and
+the field. An undescribed payload is refused under those profiles too: a payload the stream cannot
+see into is one it cannot vouch for. A command with no payload declares a type with no fields.
+Raising the profile re-checks what was already declared and refuses intact. The stream declares
+itself to the determinism registry as `gameplay-commands` — `Lockstep` when it checks payloads,
+`SamePlatform` when it does not (`determinism_declaration()`). The cases are in `test_commands.cpp`.

@@ -45,6 +45,18 @@ still runs.
 | Flow fields and the cache that shares them | `flow_field.h` |
 | Local avoidance, the crowd, path and field following | `crowd.h` |
 | `NavMeshSurface`, `NavAgent`, `NavObstacle`, `NavLink`, `NavArea` | `components.h` |
+| Path following written once, for `f32` and `Fixed` arithmetic | `follow.h` |
+| What navigation guarantees, declared from its worlds' arithmetic | `determinism.h` |
+
+**Fixed worlds.** Under `CrossPlatform` and `Lockstep` (openspec/changes/add-deterministic-math), a
+navigation world declares `NavArithmetic::Fixed` and its baked mesh is converted once, at load, into
+`cy::movement::FixedNavMesh` ([`src/movement/`](../movement/README.md)), where A*, the funnel, flow
+fields and path following run in `Fixed`. `navigation_determinism()` declares the subsystem
+`Lockstep` only when every authoritative world is `Fixed` and none takes runtime rebuilds as
+authoritative input, and `SamePlatform` otherwise, so a lockstep session with a float world is
+refused naming `navigation`. Everything in this module stays `f32`, and this module does not link
+the deterministic math module. `follow_path` here and `cy::movement::follow_path` are the two
+instantiations of `follow_points` (`follow.h`): one loop, two arithmetics.
 
 `NavWorlds` binds each navigation world ID to a mesh and its deterministic query queue. An agent
 is updated only by the binding matching `NavAgent::world`; obstacles and links are authored with the

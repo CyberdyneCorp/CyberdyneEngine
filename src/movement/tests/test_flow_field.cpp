@@ -16,8 +16,8 @@ using namespace cy::movement_test;
 
 /// The 8 x 8 grid with a wall at column 4, rows 0 to 6, as in the path suite.
 [[nodiscard]] FixedNavMesh walled() noexcept {
-    return converted(grid_mesh(
-        8.0F, 8, [](u32 row, u32 column) noexcept { return !(column == 4 && row <= 6); }));
+    return converted(
+        grid_mesh(8.0F, 8, [](u32 row, u32 column) noexcept { return column != 4 || row > 6; }));
 }
 
 [[nodiscard]] FixedVec2 centre_of(cy::i32 x, cy::i32 z) noexcept {

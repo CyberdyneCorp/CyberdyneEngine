@@ -14,6 +14,7 @@ itself.
 | `harness/` | Registration, the timing loop, the calibration, and the results file. `cy::bench-harness`. |
 | `micro/` | Benchmarks with no engine dependency. Today: one, and it measures the harness. |
 | `detmath/` | The deterministic math kernel against design §11 of `add-deterministic-math`: `*` beside an `f64` multiply, `/`, `sqrt`, `sin`, `atan2`, `exp2` and `log2`, each a dependent chain. |
+| `movement/` | The fixed-point kinematic mover at strategy scale, 100 000 units, against design §11 of `add-deterministic-math`: the crowd kernel in `Fixed` beside the same kernel in `f32`, and the whole authoritative tick on one thread and on eight workers. |
 | `ecs/` | The ECS's per-entity costs: query iteration, random access, spawn, block activation, deferred structural change. |
 | `gameplay/` | `gameplay-framework`'s performance table: command submission and commit, hierarchical tag tests, the indexed ownership query, and the batch-admit round trip. |
 | `save/` | `save-and-persistence`'s large-world save benchmark: one autosave — the capture through `cy::world-persistence` and the encoding of every dirty region — over 1 048 576 persistent objects and over 65 536, with the same 20 480 dirty records. |

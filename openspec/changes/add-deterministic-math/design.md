@@ -326,8 +326,9 @@ interpolation inputs that `scene::InterpolatedTransform` already holds as `Prese
 | **(b) A fixed-point rigid-body solver** | Rewrite contacts, constraints and islands in `Fixed`. | **Rejected.** It contradicts the locked decision to integrate Jolt rather than rebuild it. It is years of work, and a lockstep RTS rarely needs authoritative rigid bodies. |
 | **(c) A fixed-point kinematic mover; physics `NonAuthoritative`** | Authoritative units move with a `Fixed` integrator. Collision is against static navigation and height data and between units, using circles and capsules on the plane. Jolt runs debris, ragdolls and secondary effects as presentation. | **Chosen.** This is already the escape hatch that `physics` and `validate_session()` name: `PhysicsAuthority::Presentation`. |
 
-The mover is not a physics engine. It integrates velocity, resolves overlap by deterministic
-pairwise separation, and clamps to the navigation surface. Its neighbour search uses a grid keyed by
+The mover is not a physics engine (`cy::movement::KinematicMover`, `src/movement/`). It integrates
+velocity, resolves overlap by deterministic pairwise separation, and clamps to the navigation
+surface. Its neighbour search uses a grid keyed by
 `Fixed` cell coordinates. It iterates in entity order, as `simulation-and-determinism`'s
 tie-breaking rules require. Height comes from heightfield samples converted at cook and stored as
 `Fixed16`, so the terrain's float data is never read per tick.
@@ -345,10 +346,28 @@ tie-breaking rules require. Height comes from heightfield samples converted at c
   signs, so collinear and near-collinear cases resolve the same way everywhere. Flow-field
   integration costs become `Fixed`. Its queue already breaks ties by cell index
   (`src/navigation/include/cy/navigation/flow_field.h`).
+
+  *As built (stage 6):* the queries run over the converted copy, `cy::movement::FixedNavMesh`, in a
+  new module `cy::movement` (`src/movement/`) that links `cy::core-detmath` so that
+  `cy::navigation` does not — linking the module defines `CY_DETERMINISM_MATH` for every consumer,
+  and navigation's consumers include every `f32` world. A*, the funnel and the flow field there are
+  `Fixed` implementations of the same algorithms rather than instantiations of `query.cpp` and
+  `flow_field.cpp`: those are written against `NavMesh`'s tiles, salts, off-mesh links and obstacle
+  areas, which a converted single-layer world does not have, and a scalar policy over them would
+  have had to abstract the mesh as well as the arithmetic. Path following IS written once:
+  `navigation::follow_points` (`follow.h`) is the loop, instantiated over `f32` by
+  `navigation::follow_path` and over `Fixed` by `movement::follow_path`.
 - **Crowd.** `Crowd`'s ORCA linear programs (`crowd.h`) run in `Fixed`, with `WideFixed` dot
   products. The algorithm is written once, over a scalar policy, and instantiated for `f32` and for
   `Fixed`. This gives one algorithm text with two arithmetic instantiations, instead of two copies
   that would drift apart. The cost is template complexity in `crowd.cpp`, which we accept.
+
+  *As built (stage 6):* `Crowd` is a sampled reciprocal-velocity solver (`crowd.h` says why), and it
+  is not yet instantiated over `Fixed`. A `Fixed` world's local avoidance is the kinematic mover's
+  pairwise separation (§8), whose kernel — integration, the `Fixed` grid and separation — IS written
+  once over a scalar policy (`cy::movement::CrowdKernel`) and instantiated for `Fixed` in the mover
+  and for `f32` in `benchmarks/movement/`, where §11's ratio is measured. Instantiating `Crowd`'s
+  sampled steering over `Fixed` remains open in task 6.2.
 - **Runtime navmesh rebuild is refused as an authoritative input under `Lockstep`.** A Recast tile
   rebuild at run time is float work on each peer. Dynamic obstacles in a `Lockstep` world use
   integer per-polygon flags and flow-field cost overlays instead. A world that needs runtime
@@ -363,7 +382,12 @@ tie-breaking rules require. Height comes from heightfield samples converted at c
   more. `Command::set_payload` already copies trivially copyable values. No code change is needed
   for payloads to carry `Fixed` values. What changes is the rule: under a cross-platform profile, a
   command type whose payload contains `f32` or `f64` fails registration validation, with the type
-  named.
+  named. *As built (stage 7):* a payload's bytes are opaque to the stream, so a declaration
+  describes them — `CommandDeclaration::payload`, a `PayloadLayout` of the type's name and each
+  field's kind — and `CommandStream::set_determinism_profile` decides which declarations are
+  admitted. Under `CrossPlatform` and `Lockstep` a floating-point field is refused naming the type
+  and the field, and an undescribed payload is refused too, since a payload the stream cannot see
+  into is one it cannot vouch for. The stream then declares itself `gameplay-commands`, `Lockstep`.
 - **Authoritative state.** An `AuthoritativeTransform` component (`FixedTransform`) is the state that
   is hashed and snapshotted. A presentation-sync system, once per tick, writes the scene transform
   and its interpolation pair from it. The scene transform stays `f32` and becomes derived state.
@@ -562,4 +586,5 @@ point of the profile.
   cost of an asymmetric range. Stage 2 decides from the oracle's measured worst case.
 - Whether `Fixed16` earns its place should be checked against stage 6's movement benchmark. If no
   consumer stores it, it is removed before the module is declared stable rather than kept unused,
-  following the same reasoning `fp_policy.h` gives for not shipping a `tgamma` replacement.
+  following the same reasoning `fp_policy.h` gives for not shipping a `tgamma` replacement. *Stage 6:* it has a consumer — `cy::movement::FixedHeightField` stores cooked terrain heights
+  as `Fixed16`, half the bytes of `Fixed`, and widens them on read.

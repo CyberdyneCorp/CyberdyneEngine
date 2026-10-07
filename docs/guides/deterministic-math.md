@@ -12,10 +12,11 @@ profiles. The module's [README](../../src/core/detmath/README.md) is the detaile
 
 | Where | What |
 |---|---|
-| [`src/core/detmath/`](../../src/core/detmath/README.md) | The module: `Fixed`, `Fixed16`, `Angle`, `WideFixed`, the functions, the conversion boundary |
+| [`src/core/detmath/`](../../src/core/detmath/README.md) | The module: `Fixed`, `Fixed16`, `Angle`, `WideFixed`, the vectors, rotations and shapes, the functions, the conversion boundary |
+| [`src/movement/`](../../src/movement/README.md) | The fixed-point kinematic mover and the `Fixed` navigation world it moves units in |
 | [`tools/detmath/`](../../tools/detmath/) | The coefficient generator, the Python model of the rules, the golden vectors and the oracle |
-| [`benchmarks/detmath/`](../../benchmarks/detmath/bench_detmath.cpp) | The costs against the design's budgets |
-| [`tests/determinism/test_cross_leg.cpp`](../../tests/determinism/test_cross_leg.cpp) | Publishes the kernel digest for the four-leg comparison |
+| [`benchmarks/detmath/`](../../benchmarks/detmath/bench_detmath.cpp), [`benchmarks/movement/`](../../benchmarks/movement/bench_movement.cpp) | The costs against the design's budgets |
+| [`tests/determinism/test_cross_leg.cpp`](../../tests/determinism/test_cross_leg.cpp) | Publishes the kernel, movement and lockstep digests for the four-leg comparison |
 
 ![How far each function's worst measured error sits inside its declared bound, and the error of sin
 across a quarter turn](../design/images/detmath-errors.png)
@@ -33,11 +34,12 @@ committed oracle and the model the golden vectors hold the C++ to.*
 4. [The functions and their bounds](#4-the-functions-and-their-bounds)
 5. [The conversion boundary](#5-the-conversion-boundary)
 6. [Profiles: what linking the module changes](#6-profiles-what-linking-the-module-changes)
-7. [How it is proven](#7-how-it-is-proven)
-8. [Performance](#8-performance)
-9. [Changing the kernel](#9-changing-the-kernel)
-10. [Pitfalls](#10-pitfalls)
-11. [What is not built yet](#11-what-is-not-built-yet)
+7. [Authoritative movement under Lockstep](#7-authoritative-movement-under-lockstep)
+8. [How it is proven](#8-how-it-is-proven)
+9. [Performance](#9-performance)
+10. [Changing the kernel](#10-changing-the-kernel)
+11. [Pitfalls](#11-pitfalls)
+12. [What is not built yet](#12-what-is-not-built-yet)
 
 ## 1. Why fixed point
 
@@ -79,6 +81,20 @@ unit_z += dir.sin * speed * dt;
 ```
 
 Units are those of `core-math` — metres, seconds, kilograms — except `Angle`, which is turns.
+
+Built on those, `vec.h` and `shapes.h` give the geometry an authoritative system needs:
+
+| Type | What it is |
+|---|---|
+| `FixedVec2`, `FixedVec3` | `Fixed` components. `dot`, `cross` (planar) and `length_squared` return an exact `WideFixed`; `length` and `distance` are correctly rounded; `normalize` truncates, and the zero vector is zero and counted |
+| `Fixed16Vec3` | The 12-byte storage form, `widen()`/`narrow()` |
+| `Rot2` | A planar rotation as its cosine and sine — an RTS heading |
+| `FixedQuat`, `FixedTransform` | Rotation and placement, normalised after every composition; no `slerp` (interpolation is presentation) |
+| `FixedAabb`, `FixedCircle`, `FixedCapsule2D` | Overlap and containment on exact squares: touching is not overlapping, on every peer |
+
+`mul_div(a, b, c)` is `a * b / c` through the exact 128-bit product, truncated once: the scaling a
+vector needs without the rounding of an intermediate `Fixed`. `RandomStream::unit_fixed_raw()` is the
+raw `Fixed` in [0, 1) of a draw — its top 32 bits, exactly.
 
 ## 3. The rules
 
@@ -167,12 +183,65 @@ require(Lockstep)  with the module     ->  SubsystemGuarantee, subsystem "physic
                                            "cross-platform reproducibility"
 ```
 
-The module alone accepts nothing. Today every float-based subsystem — Jolt-authoritative physics,
-abilities, AI utility, root motion — still declares `SamePlatform`, so a session using one
-authoritatively is refused by name. The cases are `unit.determinism`'s three
-"CrossPlatform is ..." cases and `unit.detmath`'s two profile cases.
+The module alone accepts nothing. Each subsystem declares what it guarantees:
 
-## 7. How it is proven
+| Subsystem | Declares |
+|---|---|
+| `movement` (the kinematic mover) | `Lockstep` |
+| `navigation` | `Lockstep` when every authoritative world is `NavArithmetic::Fixed` with no runtime rebuilds, otherwise `SamePlatform` |
+| `gameplay-commands` | `Lockstep` when the command stream runs under a cross-platform profile, so payloads are checked; otherwise `SamePlatform` |
+| `physics` (Jolt authoritative), `abilities`, `ai-utility`, `root-motion` | `SamePlatform` |
+
+```text
+require(Lockstep)  movement + Fixed navigation + checked commands     ->  accepted
+require(Lockstep)  ... + abilities, authoritative                     ->  SubsystemGuarantee, "abilities"
+require(Lockstep)  ... with a Float navigation world                  ->  SubsystemGuarantee, "navigation"
+```
+
+The cases are `unit.determinism`'s three "CrossPlatform is ..." cases, `unit.detmath`'s two profile
+cases, and `unit.movement`'s profile cases, which assemble the session above with the real
+`from_build()`.
+
+## 7. Authoritative movement under Lockstep
+
+Physics stays presentation under `Lockstep` (design §8). Authoritative units move with the
+fixed-point kinematic mover in [`src/movement/`](../../src/movement/README.md):
+
+1. **The world is converted once.** The baked navigation mesh becomes a `FixedNavMesh` at load
+   (`from_f32_cooked` on every vertex, before tick 0); terrain heights are cooked to `Fixed16`. A
+   runtime rebuild of the source mesh is refused as authoritative input; dynamic obstacles are
+   polygon flags set through commands.
+2. **Orders arrive as commands with `Fixed` payloads.** Under `CrossPlatform` and `Lockstep`,
+   `CommandStream::declare` refuses a declaration whose payload is undescribed or has a
+   floating-point field, and `last_payload_refusal()` names the type and the field:
+
+   ```cpp
+   constexpr gameplay::PayloadField kMoveOrderFields[] = {
+       {"squad", gameplay::PayloadFieldKind::Integer},
+       {"target_x", gameplay::PayloadFieldKind::Fixed},
+       {"target_z", gameplay::PayloadFieldKind::Fixed},
+   };
+   (void)commands.set_determinism_profile(determinism::DeterminismProfile::Lockstep);
+   declaration.payload = gameplay::PayloadLayout{"MoveOrder", kMoveOrderFields, 3};
+   ```
+
+   The issuing peer converts its float pick (a camera ray hit) with `from_f32_cooked` when it creates
+   the command; every other peer reads the raw value from the log.
+3. **Paths are `Fixed`.** A* with `Fixed` g-costs, ties by polygon index; the funnel on exact
+   cross-product signs; a `FixedFlowField` when many units share a destination.
+4. **The mover steps.** Integration, pairwise separation over a `Fixed` grid, static circles and
+   capsules, the clamp to the navigation surface, heights, headings — in entity order, with the
+   same bits on any number of job workers.
+5. **The scene is derived.** `publish_units` writes each unit's `AuthoritativeTransform`
+   (`FixedTransform`, the hashed state); `sync_presentation` converts it camera-relative into the
+   node's `LocalTransform` once per tick, and interpolation does the rest.
+
+`src/movement/tests/rts_scenario.h` is the whole loop as a game wires it: squads ordered around walls
+by four participants through a `Lockstep` command stream. Two peers in one process, the second
+driven by the first's command log alone, agree on every tick (`integration.movement_lockstep`), and
+the second's digest is compared between the four CI legs.
+
+## 8. How it is proven
 
 | Evidence | Where | Fails when |
 |---|---|---|
@@ -183,6 +252,8 @@ authoritatively is refused by name. The cases are `unit.determinism`'s three
 | No float in the kernel | the `-mgeneral-regs-only` build in `integration.detmath_variants` | a float reaches a kernel source (the build fails) |
 | Two vector widths, one answer | the `-mavx2` build in `integration.detmath_variants` | any function's digest differs |
 | Four legs, one answer | `determinism.cross_leg` publishes `detmath-kernel-digest`; `cross-leg-compare` runs `--detmath` | two architectures disagree |
+| A fixed-point simulation, four legs | `determinism.cross_leg` publishes `detmath-movement-digest` (2 000 units, 600 ticks) and the lockstep follower's `detmath-lockstep-digest`, each checked against a committed value on the leg first | a leg's movement moved, or two architectures disagree |
+| Two peers, one command log | `integration.movement_lockstep` and `determinism.cross_leg`: the follower agrees with the issuer on every tick; a follower missing one command does not | a peer reads anything but the log |
 
 The golden vectors and digests come from `tools/detmath/model.py`, the rules written a second time
 in Python integers; the oracle comes from mpmath and shares no code with either. Run them:
@@ -194,7 +265,7 @@ just test-determinism -R cross_leg
 just test-determinism --compare-legs --pcg --detmath --digests cross-leg-digests
 ```
 
-## 8. Performance
+## 9. Performance
 
 `just test-bench` runs `benchmarks/detmath/`, one dependent chain per operation, against the
 budgets of design §11 (x86-64 reference runner):
@@ -217,10 +288,20 @@ and that is the cost of a rounding rule every implementation can reproduce. It t
 Clang's signed 128-bit multiply to get there; the product built from the unsigned one (MSVC's path)
 measured 2.7×.
 
+`benchmarks/movement/` measures the movement step at strategy scale, 100 000 units (design §11:
+at most 4 ms per tick on 8 workers, and at most 2.5× the same kernel in `f32`):
+
+| Benchmark | What | First measurement |
+|---|---|---|
+| `movement/kernel-f32` | the crowd kernel — integration, the grid, separation — over an `f32` policy | MOVEMENT_KERNEL_F32 |
+| `movement/kernel-fixed` | the same kernel text over `FixedPolicy` | MOVEMENT_KERNEL_FIXED |
+| `movement/step` | the whole authoritative tick, one thread | MOVEMENT_STEP |
+| `movement/step-8-workers` | the same tick on eight job workers | MOVEMENT_STEP_8 |
+
 The measured figures and the committed thresholds are in
 [`benchmarks/baseline.json`](../../benchmarks/baseline.json).
 
-## 9. Changing the kernel
+## 10. Changing the kernel
 
 Any change that moves any output for any input — a coefficient, a reduction, a rounding rule —
 bumps `detmath::kKernelVersion` (`version.h`) in the same change. The kernel version is folded into
@@ -233,7 +314,7 @@ just generate-detmath --check    # what `just generate-check` runs in CI
 CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites, and FAILS
 ```
 
-## 10. Pitfalls
+## 11. Pitfalls
 
 - **Squaring a distance in `Fixed`.** `d * d` overflows beyond 46 341 m. Use `WideFixed::product`.
 - **Dividing by a value that may be zero.** It does not trap; it saturates and is counted. Test the
@@ -243,6 +324,10 @@ CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites
 - **Comparing angles with `<`.** `Angle` has no order; compare `signed_turns()` of a difference.
 - **Swift's `+`.** It traps on overflow; the engine's rule is wrapping. The Swift `Fixed` (a later
   stage) uses `&+`.
+- **A float field in a command payload.** It is read by every peer's own float hardware. Under a
+  cross-platform profile the declaration is refused; carry the raw `Fixed` the issuer converted.
+- **Adding units out of entity order.** The mover refuses it: its passes rely on unit order being
+  entity order.
 - **Trusting the compiler at its highest setting.** GCC 13 at `-O3` with LTO, the `release`
   profile, miscompiled the digest sweep. It unswitched the loop over the `KernelFunction` switch and
   sent `add` to the `default` branch, which folded 0 for every input. Sanitizers found nothing,
@@ -250,9 +335,9 @@ CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites
   template argument (`src/digest.cpp`), and the `profiles` job runs the vectors in `release`. The
   committed digests are why this showed up as a failure rather than as a new answer.
 
-## 11. What is not built yet
+## 12. What is not built yet
 
-Stages 3 to 9 of the change: `FixedVec2`/`FixedVec3`/`FixedQuat`/`FixedTransform` and the shapes,
-`RandomStream::unit_fixed()`, the `float-on-cross-platform-path` lint rule, the fixed-point movement
-scenario and its cross-leg digest, networking's simulation identity and replay's kernel version, the
-fixed-point mover and navigation, gameplay command validation, and the ABI and Swift types.
+The remaining stages of the change: the `float-on-cross-platform-path` lint rule, networking's
+simulation identity and replay's kernel version, `Crowd`'s sampled reciprocal-velocity steering and
+off-mesh links in a `Fixed` world, the ABI and Swift types (stage 8), the Jolt measurement and the
+strategy-scale `Lockstep` scenario (stage 9).

@@ -220,9 +220,11 @@ optional module". That module is [`cy::core-detmath`](../detmath/README.md). It 
 - **Without the module**, `require()` refuses both profiles outright with
   `ProfileRefusal::DeterministicMathMissing`, before any subsystem is examined.
 - **With it**, the session reaches the subsystem loop and is accepted only if every authoritative
-  subsystem declares the profile; otherwise the refusal names the first that does not. Today every
-  float-based subsystem (physics, abilities, AI utility, root motion) declares `SamePlatform`, so a
-  session that uses one authoritatively is still refused — now with its name.
+  subsystem declares the profile; otherwise the refusal names the first that does not. The
+  fixed-point mover (`movement`), a `Fixed` navigation world (`navigation`) and a payload-checked
+  command stream (`gameplay-commands`) declare `Lockstep`; the float-based subsystems (physics,
+  abilities, AI utility, root motion) declare `SamePlatform`, so a session that uses one
+  authoritatively is refused with its name (src/movement/tests/test_profile.cpp).
 
 `test_profile.cpp` asserts the three outcomes ("CrossPlatform is refused when the build has no
 deterministic math", "... is accepted with deterministic math and every subsystem", "... with

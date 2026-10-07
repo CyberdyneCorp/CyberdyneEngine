@@ -94,8 +94,8 @@ struct F32Policy {
     const i64 step = (Fixed::kOneRaw * 16) / 5;
     const i64 jitter_x = static_cast<i64>(spread(i, 1) >> 8U) << 8U;  // [0, 1) m
     const i64 jitter_z = static_cast<i64>(spread(i, 2) >> 8U) << 8U;
-    return FixedVec2{Fixed::from_raw(Fixed::kOneRaw * 8 + step * (i % kRow) + jitter_x),
-                     Fixed::from_raw(Fixed::kOneRaw * 8 + step * (i / kRow) + jitter_z)};
+    return FixedVec2{Fixed::from_raw((Fixed::kOneRaw * 8) + (step * (i % kRow)) + jitter_x),
+                     Fixed::from_raw((Fixed::kOneRaw * 8) + (step * (i / kRow)) + jitter_z)};
 }
 
 /// A velocity tangent to the circle about the map's centre through `at`, at 1 to 4 m/s.
@@ -137,9 +137,9 @@ struct KernelWorld {
     }
 
     cy::movement::CrowdKernel<Policy> kernel;
-    typename Policy::Scalar dt{};
-    typename Policy::Scalar share{};
-    typename Policy::Scalar max_push{};
+    Policy::Scalar dt{};
+    Policy::Scalar share{};
+    Policy::Scalar max_push{};
 };
 
 struct ToF32 {

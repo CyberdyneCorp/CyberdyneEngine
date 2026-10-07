@@ -2,7 +2,8 @@
 
 Layer 0, target `cy::core-detmath`. Optional: nothing links it by default. Governed by
 `deterministic-math` and by `simulation-and-determinism`'s floating-point policy. Built by stages 1
-and 2 of `openspec/changes/add-deterministic-math`.
+to 3 of `openspec/changes/add-deterministic-math`; its first consumer is the fixed-point kinematic
+mover in [`src/movement/`](../../movement/README.md).
 
 Authoritative arithmetic whose result does not depend on which machine ran it. Every operation is
 built from integer instructions, which C++20 defines exactly; the transcendentals are polynomials
@@ -13,6 +14,8 @@ compiler's floating-point choices.
 |---|---|
 | `fixed.h` | `Fixed` (Q32.32 in an `i64`), `Fixed16` (Q16.16 storage), `Angle` (a `u32` binary angle), `WideFixed` (Q64.64), and their arithmetic |
 | `functions.h` | `sqrt`, `sin`/`cos`/`sincos`/`tan`, `atan`/`atan2`/`asin`/`acos`, `exp2`/`log2`/`exp`/`log`/`pow`, each with a declared error bound |
+| `vec.h` | `FixedVec2`, `FixedVec3`, `Fixed16Vec3`, `Rot2`, `FixedQuat`, `FixedTransform`; `dot`, `cross` and `length_squared` as exact `WideFixed`; `length`, `distance`, `normalize`, `clamp_length`, `mul_div` |
+| `shapes.h` | `FixedAabb`, `FixedCircle`, `FixedCapsule2D`, `closest_point_on_segment`, `ratio_unit`: overlap and containment decided on exact squares |
 | `convert.h` | The float boundary: `from_f32_cooked`, `from_f64_cooked`, `to_f64_relative`, `to_f32_relative` |
 | `overflow.h` | `OverflowGuard`: wrapping is counted, and the first site named, in development builds |
 | `version.h` | `kKernelVersion` |
@@ -68,6 +71,15 @@ compiler's floating-point choices.
   builds in one process.
 - **Overflow wraps in every build, and is counted in development builds.** `OverflowGuard` names the
   first site; in Shipping the check is not compiled.
+- **The geometry keeps products exact until one stated rounding.** `dot`, `cross` (planar) and
+  `length_squared` are exact Q64.64; `length` and `distance` are the correctly rounded square root of
+  that exact sum; a 3D cross product, a planar rotation and a quaternion product round each output
+  component once from its exact value; `clamp_length` scales through `mul_div`, the exact 128-bit
+  product divided once. A circle pair exactly touching does not overlap, on every peer
+  (`unit.detmath`, "shapes that touch exactly do not overlap").
+- **The conventions are core-math's.** `tests/test_conventions.cpp` asserts the numeric consequences
+  `src/core/math/tests/test_conventions.cpp` asserts for `Vec3` and `Quat`: right-handed, Y up, the
+  identity facing -Z, a quarter turn about +Y taking +X to -Z, and `A * B` applying `B` first.
 
 ## What it does not claim
 
@@ -76,9 +88,11 @@ compiler's floating-point choices.
 - **That a session using it is cross-platform deterministic.** Linking the module makes
   `DeterminismConfiguration::require()` stop refusing `CrossPlatform` and `Lockstep` as a whole (it
   exports `CY_DETERMINISM_MATH=1` as PUBLIC); each authoritative subsystem must then declare the
-  profile itself, and the refusal names the first that does not. Today that is every float-based
-  subsystem: physics, abilities, AI utility, root motion. Vector types, the movement step, navigation
-  and the networking scope are later stages of the change.
+  profile itself, and the refusal names the first that does not. The fixed-point mover, a `Fixed`
+  navigation world and a payload-checked command stream declare `Lockstep`
+  ([`src/movement/`](../../movement/README.md)); physics, abilities, AI utility and root motion
+  declare `SamePlatform` and are refused by name when authoritative. Networking's simulation
+  identity and replay's kernel version are later stages of the change.
 - **Platforms with no CI leg.** The cross-leg comparison covers linux-x86_64, linux-arm64,
   macos-arm64 and windows-x86_64. macOS x86-64, Windows arm64, iOS and Android are not covered.
 - **MSVC's float-free build.** MSVC has no `-mgeneral-regs-only`; the configure output says so on that

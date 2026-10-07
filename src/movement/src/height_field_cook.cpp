@@ -19,7 +19,10 @@ Status FixedHeightField::cook(Span<const f32> heights, u32 width, u32 depth, Fix
         return reserved;
     }
     for (const f32 height : heights) {
-        if (!(height > -32768.0F && height < 32767.0F)) {
+        // Written as the range a sample holds, so a NaN — which compares false with everything —
+        // is refused with it.
+        const bool holds = height > -32768.0F && height < 32767.0F;
+        if (!holds) {
             return fail(ErrorCode::OutOfRange,
                         "movement: a terrain height lies outside the ±32 768 m a cooked sample "
                         "holds");

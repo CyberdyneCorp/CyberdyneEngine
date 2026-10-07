@@ -3,6 +3,7 @@
 
 #include <cy/core/detmath/functions.h>
 #include <cy/movement/path.h>
+#include <cy/navigation/follow.h>
 
 namespace cy::movement {
 
@@ -257,17 +258,35 @@ FixedPathResult find_path(FixedPathSearch& search, const FixedNavMesh& mesh, Fix
     return result;
 }
 
+namespace {
+
+/// `navigation::follow_points`' fixed-point instantiation: arrival decided on the exact squares,
+/// and toward the point at the speed that covers the remaining offset in one tick, capped at
+/// `speed`.
+struct FixedFollowPolicy {
+    using Vec = FixedVec2;
+    using Scalar = Fixed;
+
+    Fixed tick_rate;
+
+    [[nodiscard]] static FixedVec2 position(FixedVec2 point) noexcept { return point; }
+    [[nodiscard]] static FixedVec2 offset(FixedVec2 to, FixedVec2 from) noexcept {
+        return to - from;
+    }
+    [[nodiscard]] static bool beyond(FixedVec2 offset, Fixed arrival) noexcept {
+        return WideFixed::product(arrival, arrival) < detmath::length_squared(offset);
+    }
+    [[nodiscard]] FixedVec2 toward(FixedVec2 offset, Fixed speed) const noexcept {
+        return detmath::clamp_length(offset * tick_rate, speed);
+    }
+};
+
+}  // namespace
+
 FixedVec2 follow_path(Span<const FixedVec2> path, FixedVec2 position, Fixed speed, Fixed arrival,
                       Fixed tick_rate, u32& cursor) noexcept {
-    const WideFixed arrival_squared = WideFixed::product(arrival, arrival);
-    while (cursor < path.size() &&
-           detmath::distance_squared(position, path[cursor]) <= arrival_squared) {
-        ++cursor;
-    }
-    if (cursor >= path.size()) {
-        return FixedVec2::zero();
-    }
-    return detmath::clamp_length((path[cursor] - position) * tick_rate, speed);
+    return navigation::follow_points(FixedFollowPolicy{tick_rate}, path, position, speed, arrival,
+                                     cursor);
 }
 
 }  // namespace cy::movement
