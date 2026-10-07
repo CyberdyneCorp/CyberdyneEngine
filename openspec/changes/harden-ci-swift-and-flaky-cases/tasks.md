@@ -9,8 +9,10 @@
 - [x] 1.3 `check_workflows.py`: the pin rule, with negative fixtures in `--selftest`.
 - [x] 1.4 `cy_swift_module.py`: `--build-system native`, and a bounded, logged retry on a crash
   signal only.
-- [x] 1.5 `test_recipes.py`: the classification, the bound and the native build system, each shown
-  red by a mutation of the driver.
+- [x] 1.5 `cy_swift_module.py`: discard a scratch directory another toolchain wrote, since 6.0.3
+  cannot read the state 6.4 leaves in a restored CI tree.
+- [x] 1.6 `test_recipes.py`: the classification, the bound, the native build system and the
+  discarded state, each shown red by a mutation of the driver.
 
 ## 2. Intermittent tests
 

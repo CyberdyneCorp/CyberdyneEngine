@@ -3,7 +3,8 @@
 ### Requirement: Game module builds survive a crashing toolchain
 The game-module build driver SHALL choose SwiftPM's build system rather than inherit the
 toolchain's default, and SHALL run a Swift command again, a bounded number of times and with the
-reason logged, when a crash signal ended it. A command that exited with an error SHALL NOT be
+reason logged, when a crash signal ended it. It SHALL NOT build in SwiftPM state another toolchain
+wrote. A command that exited with an error SHALL NOT be
 retried, and neither SHALL one stopped by SIGINT, SIGTERM or SIGKILL. Continuous integration SHALL
 build game modules with the Swift version the repository pins, in every job that builds them on a
 platform where the version can be installed.
@@ -21,3 +22,8 @@ platform where the version can be installed.
 - **WHEN** a workflow job builds the tree on Linux x86_64 without installing the pinned Swift, or
   installs another version
 - **THEN** `just ci-check` SHALL fail and name the job
+
+#### Scenario: The toolchain changed under a build tree
+- **WHEN** a module is built in a work directory whose SwiftPM state another Swift version wrote
+- **THEN** the driver SHALL remove that state, say so on stderr, and build from a fresh scratch
+  directory

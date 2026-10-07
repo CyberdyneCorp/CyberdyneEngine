@@ -545,6 +545,45 @@ def swift_builds_name_the_native_build_system(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def swiftpm_state_from_another_toolchain_is_discarded(root: pathlib.Path) -> list[str]:
+    """A scratch directory another Swift wrote is removed before the driver builds in it.
+
+    Swift 6.4 writes `workspace-state.json` version 7 and 6.0.3 refuses it ("unknown
+    'WorkspaceStateStorage' version '7'"). CI restores build trees whose game modules the runner
+    image's 6.4 built into jobs that now install the pinned 6.0.3, so without this every restored
+    tree fails its first Swift build.
+    """
+    import contextlib
+    import io
+
+    driver = _load_swift_driver(root)
+    failures = []
+    cases = (
+        ("another toolchain's state", "Swift version 6.4", "Swift version 6.0.3", False),
+        ("state no toolchain is recorded for", None, "Swift version 6.0.3", False),
+        ("this toolchain's own state", "Swift version 6.0.3", "Swift version 6.0.3", True),
+        ("no toolchain answering", "Swift version 6.4", None, True),
+    )
+    for label, recorded, current, kept in cases:
+        with tempfile.TemporaryDirectory() as scratch:
+            work = pathlib.Path(scratch)
+            state = work / ".build"
+            (state / "debug").mkdir(parents=True)
+            (state / "workspace-state.json").write_text("{}", encoding="utf-8")
+            stamp = work / driver.TOOLCHAIN_STAMP
+            if recorded is not None:
+                stamp.write_text(recorded + "\n", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                driver.forget_state_of_other_toolchains(state, stamp, current)
+            if state.exists() != kept:
+                failures.append(f"{label}: the scratch directory was "
+                                f"{'kept' if state.exists() else 'removed'}")
+            if current is not None and (not stamp.exists()
+                                        or stamp.read_text(encoding="utf-8").strip() != current):
+                failures.append(f"{label}: the stamp does not name {current!r}")
+    return failures
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -1596,6 +1635,9 @@ def main() -> int:
             a_swift_toolchain_crash_is_retried_and_a_compile_error_is_not
         ),
         "Swift builds name the native build system": swift_builds_name_the_native_build_system,
+        "SwiftPM state from another toolchain is discarded": (
+            swiftpm_state_from_another_toolchain_is_discarded
+        ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),

@@ -33,12 +33,16 @@
 - `bindings/swift/tools/cy_swift_module.py` passes `--build-system native` to `swift build` and
   `swift test`, and runs a Swift command again, at most twice, when a crash signal ended it, logging
   the reason. A compile error, SIGINT, SIGTERM or SIGKILL is never retried.
+- The same driver stamps SwiftPM's scratch directory with the toolchain that wrote it and removes it
+  when another builds there. Swift 6.0.3 refuses the `workspace-state.json` 6.4 writes ("unknown
+  'WorkspaceStateStorage' version '7'"), and the jobs moving from the image's 6.4 to the pin restore
+  build trees 6.4 wrote.
 - The stall probe runs at budget scale 1 in `smoke.quiet_host_marker` and `integration.harness`. The
   300 ms holds remain three times the 100 ms ceiling, so every verdict is unchanged.
 - `cy-runtime-stub` prints `connected` when the editor's Hello arrives.
 - `warm_process_image()` also reads the C math library's code.
 - Regression tests: `tools/ci/test_recipes.py` (crash classification, the retry bound, the native
-  build system), `check_workflows.py --selftest` (the pin), `survives_a_runtime_crash.rs` (no
+  build system, another toolchain's state), `check_workflows.py --selftest` (the pin), `survives_a_runtime_crash.rs` (no
   `connected` before a Hello), and `unit.harness_image_warmup` (libm resident before the first case).
 
 ## Not fixed here

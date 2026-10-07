@@ -171,6 +171,38 @@ def swift(arguments: list[str], cwd: pathlib.Path | None = None) -> subprocess.C
         return run_swift(command, cwd)
 
 
+# SWIFTPM'S STATE BELONGS TO THE TOOLCHAIN THAT WROTE IT. A scratch directory written by one Swift
+# and read by an older one is refused outright: Swift 6.4 writes `workspace-state.json` version 7 and
+# 6.0.3 throws "unknown 'WorkspaceStateStorage' version '7'". CI restores build trees from caches,
+# and the jobs that built with the runner image's 6.4 now build with the pinned 6.0.3, so a restored
+# tree would fail every game module; a developer who changes toolchains meets the same thing. The
+# scratch directory is stamped with the `swift --version` line that wrote it, and discarded when the
+# toolchain differs. Only SwiftPM's own state goes: the sources and the copied libraries stay.
+TOOLCHAIN_STAMP = ".cy-swift-toolchain"
+
+
+def toolchain_identity() -> str | None:
+    """The first line `swift --version` prints, or None when no toolchain answers."""
+    result = swift(["swift", "--version"])
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.strip().splitlines()[0]
+
+
+def forget_state_of_other_toolchains(scratch: pathlib.Path, stamp: pathlib.Path,
+                                     identity: str | None) -> None:
+    """Remove `scratch` when `stamp` names a toolchain other than `identity`, then stamp it."""
+    if identity is None:
+        return
+    previous = stamp.read_text(encoding="utf-8").strip() if stamp.exists() else None
+    if previous != identity and scratch.exists():
+        sys.stderr.write(f"cy_swift_module: {scratch} was built by "
+                         f"{previous or 'an unrecorded toolchain'}, not {identity}; removing it\n")
+        shutil.rmtree(scratch)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(identity + "\n", encoding="utf-8")
+
+
 def probe() -> int:
     result = swift(["swift", "--version"])
     if result.returncode != 0:
@@ -233,6 +265,8 @@ def main(argv: list[str]) -> int:
     if arguments.probe:
         return probe()
     if arguments.test:
+        forget_state_of_other_toolchains(SCRATCH, SCRATCH.parent / f"swift-package{TOOLCHAIN_STAMP}",
+                                         toolchain_identity())
         result = swift(["swift", "test", "--package-path", str(PACKAGE),
                         "--scratch-path", str(SCRATCH)])
         sys.stdout.write(result.stdout)
@@ -242,6 +276,8 @@ def main(argv: list[str]) -> int:
         parser.error("--work, --out and at least one --generation are required")
 
     arguments.work.mkdir(parents=True, exist_ok=True)
+    forget_state_of_other_toolchains(arguments.work / ".build", arguments.work / TOOLCHAIN_STAMP,
+                                     toolchain_identity())
     for entry in arguments.generation:
         index, _, directory = entry.partition("=")
         built = build_generation(arguments.work, int(index), pathlib.Path(directory),
