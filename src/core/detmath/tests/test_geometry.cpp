@@ -192,6 +192,18 @@ CY_TEST_CASE("detmath geometry: quaternion composition stays unit length and app
     }
 }
 
+CY_TEST_CASE("detmath geometry: the quaternion product is the Hamilton product in every term") {
+    // Two unit quaternions with every component +-1/2, so each of the sixteen products is exactly
+    // 1/4 and the composition is exact. A yaw-and-pitch pair leaves half the terms multiplied by
+    // zero; here a sign wrong in any one term moves a component by 1/2, which normalize cannot
+    // hide in both orders.
+    const Fixed half = Fixed::half();
+    const FixedQuat a{half, half, half, half};
+    const FixedQuat b{half, -half, half, half};
+    CY_CHECK(a * b == (FixedQuat{Fixed::one(), Fixed::zero(), Fixed::zero(), Fixed::zero()}));
+    CY_CHECK(b * a == (FixedQuat{Fixed::zero(), Fixed::zero(), Fixed::one(), Fixed::zero()}));
+}
+
 CY_TEST_CASE("detmath geometry: a transform rotates, then translates, and composes b first") {
     const FixedTransform move{FixedVec3{whole(10), whole(0), whole(0)}, FixedQuat::identity()};
     const FixedTransform turn{FixedVec3::zero(),
