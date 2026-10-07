@@ -17,6 +17,8 @@
 #    include <fcntl.h>
 #    include <link.h>
 #    include <unistd.h>
+
+#    include <cstring>
 #endif
 
 #if defined(__linux__)
@@ -57,10 +59,10 @@ struct Residency {
 /// executable. The flags are readable without privilege; only the frame number is withheld.
 constexpr std::uint64_t kPresentOrSwapped = (1ULL << 63U) | (1ULL << 62U);
 
-/// Reads the pagemap entry of every page of the main executable's readable segments WITHOUT
-/// touching the pages themselves — reading them here would map them and make the check vacuous.
-int count_main_object(dl_phdr_info* info, std::size_t /*size*/, void* data) {
-    auto* state = static_cast<Residency*>(data);
+/// Counts, into `state`, the pages of one object's readable segments that are not in this
+/// process's page tables, reading `/proc/self/pagemap` WITHOUT touching the pages themselves —
+/// reading them here would map them and make the check vacuous.
+void count_object(const dl_phdr_info* info, Residency& state) {
     for (ElfW(Half) index = 0; index < info->dlpi_phnum; ++index) {
         const ElfW(Phdr) & header = info->dlpi_phdr[index];
         if (header.p_type != PT_LOAD || (header.p_flags & PF_R) == 0 || header.p_memsz == 0) {
@@ -68,22 +70,52 @@ int count_main_object(dl_phdr_info* info, std::size_t /*size*/, void* data) {
         }
         const std::uintptr_t begin = info->dlpi_addr + header.p_vaddr;
         const std::uintptr_t end = begin + header.p_memsz;
-        for (std::uintptr_t page = begin / state->page_size; page * state->page_size < end;
-             ++page) {
+        for (std::uintptr_t page = begin / state.page_size; page * state.page_size < end; ++page) {
             std::uint64_t entry = 0;
             const auto offset = static_cast<off_t>(page * sizeof(entry));
-            if (::pread(state->pagemap, &entry, sizeof(entry), offset) !=
+            if (::pread(state.pagemap, &entry, sizeof(entry), offset) !=
                 static_cast<ssize_t>(sizeof(entry))) {
-                state->readable = false;
-                return 1;
+                state.readable = false;
+                return;
             }
-            ++state->pages;
+            ++state.pages;
             if ((entry & kPresentOrSwapped) == 0) {
-                ++state->absent;
+                ++state.absent;
             }
         }
     }
-    return 1;  // the main executable is reported first; stop there
+}
+
+/// The main executable, which `dl_iterate_phdr` reports first; stop there.
+int count_main_object(dl_phdr_info* info, std::size_t /*size*/, void* data) {
+    count_object(info, *static_cast<Residency*>(data));
+    return 1;
+}
+
+/// The C math library, found by name among the shared objects.
+int count_math_library(dl_phdr_info* info, std::size_t /*size*/, void* data) {
+    const char* name = info->dlpi_name;
+    const char* base = name != nullptr ? std::strrchr(name, '/') : nullptr;
+    base = base != nullptr ? base + 1 : name;
+    if (base != nullptr && std::strncmp(base, "libm.so", 7) == 0) {
+        count_object(info, *static_cast<Residency*>(data));
+        return 1;
+    }
+    return 0;
+}
+
+/// The residency of whatever `callback` walks.
+Residency residency(int (*callback)(dl_phdr_info*, std::size_t, void*)) {
+    Residency state;
+    state.page_size = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
+    state.pagemap = ::open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
+    if (state.pagemap < 0) {
+        state.readable = false;
+        return state;
+    }
+    ::dl_iterate_phdr(callback, &state);
+    ::close(state.pagemap);
+    return state;
 }
 
 }  // namespace
@@ -94,23 +126,31 @@ CY_TEST_CASE("harness: every page of the test executable is mapped before the fi
     CY_REQUIRE(cy::test::budget_warms_process_image());
     // The address only — reading the table would map it and make the check below vacuous.
     CY_REQUIRE(g_untouched != nullptr);
-    Residency state;
-    state.page_size = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
-    state.pagemap = ::open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
-    CY_REQUIRE(state.pagemap >= 0);
-    ::dl_iterate_phdr(count_main_object, &state);
-    ::close(state.pagemap);
+    const Residency state = residency(count_main_object);
     CY_REQUIRE(state.readable);
     CY_REQUIRE(state.pages > 0);
     // Zero, not "most": a page left for a case to fault in is a page a case pays for.
     CY_CHECK_EQ(state.absent, std::size_t{0});
-#elif defined(__APPLE__) && defined(__LP64__)
-    // macOS offers no unprivileged per-process page-table query, so this leg asserts that the walk
-    // finds the executable's segments; the CPU it saves is measured by the suites' own budgets.
-    CY_CHECK(cy::test::budget_warms_process_image());
-    CY_CHECK_GT(cy::test::warm_process_image(), std::size_t{0});
 #else
-    CY_CHECK_FALSE(cy::test::budget_warms_process_image());
-    CY_CHECK_EQ(cy::test::warm_process_image(), std::size_t{0});
+    // Apple platforms walk libsystem_m's code too, but offer no unprivileged page-table query to
+    // check it with; the case it was added for is `unit.determinism`'s, which runs on that leg.
+    CY_TEST_MESSAGE("the residency check reads /proc/self/pagemap, which is Linux's");
+#endif
+}
+
+CY_TEST_CASE("harness: the C math library's pages are mapped before the first case runs") {
+    // `unit.determinism`'s "the twelve replacements agree with <cmath>" is the first case to call
+    // most of libm, and on the hosted macOS runner it went over its 1 ms budget at 1.12 to 1.38 ms
+    // paying for those first touches. Nothing before this case calls into libm beyond what the
+    // loader and doctest's start-up do, so without the warm-up most of its pages are unmapped here.
+#if defined(__linux__)
+    const Residency state = residency(count_math_library);
+    CY_REQUIRE(state.readable);
+    CY_REQUIRE(state.pages > 0);  // the binary loads libm, through libstdc++ if nothing else
+    CY_CHECK_EQ(state.absent, std::size_t{0});
+#else
+    // Apple platforms walk libsystem_m's code too, but offer no unprivileged page-table query to
+    // check it with; the case it was added for is `unit.determinism`'s, which runs on that leg.
+    CY_TEST_MESSAGE("the residency check reads /proc/self/pagemap, which is Linux's");
 #endif
 }

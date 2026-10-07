@@ -18,10 +18,17 @@
 // has the table.
 //
 // WHAT. One read per page of every mapped segment of the main executable — every test binary links
-// the engine statically, so that is all of the code a case runs apart from the C and C++ runtimes.
-// A read is enough: whichever access first touches a page takes the fault. Nothing is written, and
-// nothing outside the executable is touched. Shared libraries are not walked: the system libraries
-// were paged in by the dynamic loader and by doctest's own start-up before this runs.
+// the engine statically, so that is all of the code a case runs apart from the C and C++ runtimes —
+// and of the C MATH LIBRARY's code. A read is enough: whichever access first touches a page takes
+// the fault. Nothing is written.
+//
+// WHY THE MATH LIBRARY TOO. The other system libraries are paged in by the dynamic loader and by
+// doctest's own start-up before this runs; libm is not, because nothing calls `acosh` or `expm1`
+// until a case does. `unit.determinism`'s "the twelve replacements agree with <cmath>" is the first
+// case to call most of libm, and it costs 0.03 to 0.12 ms on Linux and went over its 1 ms budget at
+// 1.12 to 1.38 ms on the hosted macOS runner (CI runs 36943266067, 36970436016 and 37091129342),
+// where each first touch is a 16 KiB fault. Only libm is walked, by name, rather than every library:
+// on Apple platforms the system libraries live in one shared cache of several hundred megabytes.
 //
 // WHAT IT DOES NOT DO. It does not warm data a case allocates, caches, branch predictors or the
 // governor's clock — those are the case's, or the calibration's (budget.cpp). Windows is not
@@ -36,6 +43,8 @@
 #if defined(__linux__)
 #    include <link.h>
 #    include <unistd.h>
+
+#    include <cstring>
 #elif defined(__APPLE__)
 #    include <mach-o/dyld.h>
 #    include <mach-o/loader.h>
@@ -87,11 +96,28 @@ namespace {
 struct WalkState {
     std::size_t page_size = 0;
     std::size_t pages = 0;
+    bool main_seen = false;
 };
 
-/// `dl_iterate_phdr` reports the main executable first; returning non-zero stops the walk there.
-int warm_main_object(dl_phdr_info* info, std::size_t /*size*/, void* data) noexcept {
+/// Whether `name` is the C math library: `/lib/x86_64-linux-gnu/libm.so.6` and its kin.
+[[nodiscard]] bool is_math_library(const char* name) noexcept {
+    if (name == nullptr) {
+        return false;
+    }
+    const char* base = std::strrchr(name, '/');
+    base = base != nullptr ? base + 1 : name;
+    return std::strncmp(base, "libm.so", 7) == 0 || std::strncmp(base, "libm-", 5) == 0;
+}
+
+/// `dl_iterate_phdr` reports the main executable first, then every shared object. The first is
+/// walked whole; of the rest, only the C math library's readable segments are.
+int warm_object(dl_phdr_info* info, std::size_t /*size*/, void* data) noexcept {
     auto* state = static_cast<WalkState*>(data);
+    const bool main_object = !state->main_seen;
+    state->main_seen = true;
+    if (!main_object && !is_math_library(info->dlpi_name)) {
+        return 0;
+    }
     for (ElfW(Half) index = 0; index < info->dlpi_phnum; ++index) {
         const ElfW(Phdr) & header = info->dlpi_phdr[index];
         if (header.p_type != PT_LOAD || (header.p_flags & PF_R) == 0) {
@@ -100,7 +126,7 @@ int warm_main_object(dl_phdr_info* info, std::size_t /*size*/, void* data) noexc
         state->pages += touch_pages(static_cast<std::uintptr_t>(info->dlpi_addr + header.p_vaddr),
                                     static_cast<std::size_t>(header.p_memsz), state->page_size);
     }
-    return 1;
+    return 0;
 }
 
 std::size_t warm_image() noexcept {
@@ -110,18 +136,20 @@ std::size_t warm_image() noexcept {
     }
     WalkState state;
     state.page_size = static_cast<std::size_t>(page_size);
-    ::dl_iterate_phdr(warm_main_object, &state);
+    ::dl_iterate_phdr(warm_object, &state);
     return state.pages;
 }
 
 #elif defined(__APPLE__) && defined(__LP64__)
 
-/// Image 0 is the main executable. Its readable segments are walked at their slid addresses;
-/// `__PAGEZERO` (no access) and `__LINKEDIT` (the loader's metadata, never executed) are not.
-/// Each load command is copied out rather than cast in place: the commands are only four-byte
-/// aligned, and a cast to a 64-bit segment command would raise the alignment `-Wcast-align` checks.
-std::size_t warm_image() noexcept {
-    const mach_header* raw = ::_dyld_get_image_header(0);
+/// The readable segments of loaded image `image`, walked at their slid addresses. `__PAGEZERO` (no
+/// access) and `__LINKEDIT` (the loader's metadata, never executed — and in the shared cache, one
+/// region every system library shares) are not; `code_only` keeps the executable segments alone,
+/// which is what a system library in the shared cache needs warming. Each load command is copied
+/// out rather than cast in place: the commands are only four-byte aligned, and a cast to a 64-bit
+/// segment command would raise the alignment `-Wcast-align` checks.
+std::size_t warm_loaded_image(std::uint32_t image, bool code_only) noexcept {
+    const mach_header* raw = ::_dyld_get_image_header(image);
     if (raw == nullptr || raw->magic != MH_MAGIC_64) {
         return 0;
     }
@@ -129,7 +157,7 @@ std::size_t warm_image() noexcept {
     mach_header_64 header{};
     std::memcpy(&header, cursor, sizeof(header));
     cursor += sizeof(header);
-    const std::intptr_t slide = ::_dyld_get_image_vmaddr_slide(0);
+    const std::intptr_t slide = ::_dyld_get_image_vmaddr_slide(image);
     const auto page_size = static_cast<std::size_t>(::getpagesize());
     std::size_t pages = 0;
     for (std::uint32_t index = 0; index < header.ncmds; ++index) {
@@ -138,7 +166,9 @@ std::size_t warm_image() noexcept {
         if (command.cmd == LC_SEGMENT_64) {
             segment_command_64 segment{};
             std::memcpy(&segment, cursor, sizeof(segment));
-            if ((segment.initprot & VM_PROT_READ) != 0 &&
+            const bool wanted = code_only ? (segment.initprot & VM_PROT_EXECUTE) != 0
+                                          : (segment.initprot & VM_PROT_READ) != 0;
+            if (wanted &&
                 std::strncmp(segment.segname, SEG_LINKEDIT, sizeof(segment.segname)) != 0) {
                 const auto address = static_cast<std::intptr_t>(segment.vmaddr) + slide;
                 pages += touch_pages(static_cast<std::uintptr_t>(address),
@@ -146,6 +176,28 @@ std::size_t warm_image() noexcept {
             }
         }
         cursor += command.cmdsize;
+    }
+    return pages;
+}
+
+/// Whether `name` is the C math library, `/usr/lib/system/libsystem_m.dylib`.
+[[nodiscard]] bool is_math_library(const char* name) noexcept {
+    if (name == nullptr) {
+        return false;
+    }
+    const char* base = std::strrchr(name, '/');
+    base = base != nullptr ? base + 1 : name;
+    return std::strcmp(base, "libsystem_m.dylib") == 0;
+}
+
+/// Image 0 is the main executable, walked whole; the math library's code is walked after it.
+std::size_t warm_image() noexcept {
+    std::size_t pages = warm_loaded_image(0, false);
+    const std::uint32_t count = ::_dyld_image_count();
+    for (std::uint32_t image = 1; image < count; ++image) {
+        if (is_math_library(::_dyld_get_image_name(image))) {
+            pages += warm_loaded_image(image, true);
+        }
     }
     return pages;
 }

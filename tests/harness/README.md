@@ -153,16 +153,25 @@ runner, idle, measured this as the first-case CPU of three such binaries (ms):
 
 So `main` calls `warm_process_image()` before doctest runs anything: one read of each page of every
 readable segment of the main executable (`dl_iterate_phdr` on Linux, the load commands of image 0
-on Apple platforms). Every test binary links the engine statically, so that is all the code a case
-runs apart from the system runtimes, which the loader has already paged in. The largest test
-binary has about 2.7 MB of text, so the warm-up reads a few hundred pages, once per process.
+on Apple platforms). Every test binary links the engine statically, so that is all the engine code a
+case runs. The largest test binary has about 2.7 MB of text, so the warm-up reads a few hundred
+pages, once per process.
+
+It also reads the C math library's code (`libm.so` on Linux, `libsystem_m.dylib`'s executable
+segments on Apple platforms). The loader and doctest's start-up page in most of the other system
+runtimes, but nothing calls `acosh` or `expm1` before a case does: `unit.determinism`'s "the twelve
+replacements agree with <cmath>" went over its 1 ms budget on the hosted macOS runner at 1.12 to
+1.38 ms, and on Linux the same case's CPU fell from a median of 0.042 ms to 0.021 ms once libm was
+warmed. Only libm is walked, because on Apple platforms every system library sits in one shared
+cache several hundred megabytes long.
 Windows is not walked: its clock counts cycles, and no first-case overrun has been seen there.
 
 It warms the image and nothing else. Memory a case allocates, the caches and the core's clock are
-still the case's, or the calibration's. `unit.harness_image_warmup` is the regression: it is the
-only case in its binary, and on Linux it reads `/proc/self/pagemap` to check that every page of the
-executable is mapped before it runs. The binary carries a 256 KiB table that nothing reads, so with
-the warm-up removed the check fails with 40 to 45 pages unmapped.
+still the case's, or the calibration's. `unit.harness_image_warmup` is the regression: its first
+case reads `/proc/self/pagemap` on Linux to check that every page of the executable is mapped before
+it runs. The binary carries a 256 KiB table that nothing reads, so with the warm-up removed the
+check fails with 40 to 45 pages unmapped. Its second case checks libm's pages the same way, and
+fails with 142 pages unmapped when the warm-up walks the executable only.
 
 The walk (`touch_pages`) is not instrumented by AddressSanitizer. The first byte of a page can be
 any byte of the image, including the redzone ASan places after a global, and an instrumented read
