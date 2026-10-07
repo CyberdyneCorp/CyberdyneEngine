@@ -293,10 +293,14 @@ at most 4 ms per tick on 8 workers, and at most 2.5× the same kernel in `f32`):
 
 | Benchmark | What | First measurement |
 |---|---|---|
-| `movement/kernel-f32` | the crowd kernel — integration, the grid, separation — over an `f32` policy | MOVEMENT_KERNEL_F32 |
-| `movement/kernel-fixed` | the same kernel text over `FixedPolicy` | MOVEMENT_KERNEL_FIXED |
-| `movement/step` | the whole authoritative tick, one thread | MOVEMENT_STEP |
-| `movement/step-8-workers` | the same tick on eight job workers | MOVEMENT_STEP_8 |
+| `movement/kernel-f32` | the crowd kernel — integration, the grid, separation — over an `f32` policy | 3.36 ms |
+| `movement/kernel-fixed` | the same kernel text over `FixedPolicy` | 4.31 ms: 1.28× the `f32` kernel (budget ≤ 2.5×) |
+| `movement/step` | the whole authoritative tick, one thread | 7.6 to 9.2 ms |
+| `movement/step-8-workers` | the same tick on eight job workers | 1.79 ms (budget ≤ 4 ms) |
+
+`profile` build, i9-12900K, nine repetitions. The fixed-point kernel costs little more than the
+`f32` one because a step's time is mostly the grid and the memory it walks, not the arithmetic; the
+square root and the divisions are paid only by pairs that overlap.
 
 The measured figures and the committed thresholds are in
 [`benchmarks/baseline.json`](../../benchmarks/baseline.json).

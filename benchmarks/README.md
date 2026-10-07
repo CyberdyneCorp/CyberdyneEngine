@@ -63,6 +63,17 @@ divides out neither. They were measured at 25% for `ecs/query-iterate` and 35% f
 allocate or chase pointers — chosen from the spread of repeated runs on the recording machine, wide
 enough not to fire on a busy agent and far too narrow for a doubling to hide in.
 
+### `movement/` carries 35%, and 50% for the whole tick, because its bodies are memory traffic
+
+The four `movement/` bodies step 100 000 units through a 262 144-cell grid and a 16 384-polygon mesh:
+megabytes per tick, which the calibration workload does not divide out. Their state also evolves as
+the runner repeats them — the units circle — so a one-iteration sample of `movement/step` measured
+between 7.6 and 9.2 ms across three runs of the same binary (i9-12900K, `profile` build). The two
+kernels moved by under 3 % and carry 35 %; the two whole-tick bodies carry 50 %. The budget that
+matters is design §11's and is a RATIO between two of them — `movement/kernel-fixed` over
+`movement/kernel-f32`, at most 2.5× — first measured at 1.28×, and 1.79 ms for `movement/step-8-workers`
+against its 4 ms.
+
 ### `gameplay/` carries 35%, and 50% for one, because the ratio does not divide out a hybrid CPU
 
 The four entries at 35% and `gameplay/command-record` at 50% are wide for a reason that is a
