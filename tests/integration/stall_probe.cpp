@@ -113,7 +113,7 @@ unsigned long long read_uncached_until(const std::string& path,
 
 /// Sixteen threads reading an uncached file in a directory of their own, all of it made, started,
 /// joined and removed by a FOREMAN thread so that the CASE'S thread spends no CPU on any of it:
-/// this probe runs under a 0.25 ms budget, and a temporary directory, a 4 MiB file or sixteen
+/// this probe runs under a 1 ms budget, and a temporary directory, a 4 MiB file or sixteen
 /// thread creations at -O0 each cost more than that. What the case's thread does is hold in its
 /// vfork; the reading is its process's own, and its process's own is the case's.
 class OwnReaders {
