@@ -7794,7 +7794,7 @@ note = "Thrown Swift errors are caught, logged with behaviour and callback, and 
 row = "swift-scripting"
 requirement = "Build and packaging"
 evidence = "exempt:m11e"
-note = "Only the development configuration exists: game modules build as dynamic libraries and hot-reload (`integration.swift_reload`). Missing: there is no shipping configuration with static linking, whole-module and cross-module optimisation and startup registration, and the Swift toolchain version is not pinned or verified per platform in CI (bindings/swift/README.md). Re-enter with a static shipping build that registers at startup with no dynamic load, and a pinned-version CI matrix."
+note = "Only the development configuration exists: game modules build as dynamic libraries and hot-reload (`integration.swift_reload`). Missing: there is no shipping configuration with static linking, whole-module and cross-module optimisation and startup registration. The Swift toolchain is pinned for CI (`swift_pin_version` in the justfile, held by `tools/ci/check_workflows.py`) on Linux x86_64 only: macOS takes Xcode 16.2's Swift, linux-arm64 and Windows install none, so it is not verified per platform. Re-enter with a static shipping build that registers at startup with no dynamic load, and the pin installed on every leg that builds Swift."
 
 [[coverage]]
 row = "swift-scripting"

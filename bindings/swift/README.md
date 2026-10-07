@@ -375,10 +375,13 @@ Recorded here rather than only in a report, because these are the places a reade
   load and no reload). The static path is untried; the `-O` half of it is exercised, because the
   Swift configuration follows the engine's profile and `--profile release` builds the fixture at
   `swiftc -O`.
-* **The Swift toolchain version is not pinned.** `swift-scripting` requires a pin "per engine release
-  and verified in CI"; nothing in the repository owns one. `deps/host-tools.toml` is where it belongs,
-  and `just env-doctor`'s Swift check already says it will read a `swift` entry from there when one
-  lands.
+* **The Swift toolchain is pinned in CI, not on a developer's machine.** The justfile's
+  `swift_pin_version` (6.0.3) is what every Linux CI job that builds the tree installs, and
+  `tools/ci/check_workflows.py` holds the workflow to it. Before the pin, the jobs without a
+  `setup-swift` step built with the runner image's Swift 6.4, whose default build system crashed
+  intermittently with signal 11 in libdispatch; `tools/cy_swift_module.py` now names
+  `--build-system native` and retries a crash signal, never a compile error. `just env-doctor` still
+  reports a developer's Swift version without enforcing one.
 * **`swift build` and `swift test` are exercised; Xcode and SourceKit-LSP are not.** The package is
   an ordinary one with no custom toolchain, which is what the scenario asks for, but only the two
   command-line halves have been run — this is a Linux machine.
