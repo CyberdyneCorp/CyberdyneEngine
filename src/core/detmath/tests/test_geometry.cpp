@@ -130,18 +130,18 @@ CY_TEST_CASE("detmath geometry: the 3D cross product rounds each component once"
     // The z component of (2^-32, 0, 0) x (0, y, 0) is the exact product 2^-32 y, which is below
     // one ulp for y < 1: it is rounded once, to nearest with ties toward +infinity.
     const FixedVec3 a{raw(1), raw(0), raw(0)};
-    const FixedVec3 b{raw(0), raw(kOne / 2 - 1), raw(0)};
+    const FixedVec3 b{raw(0), raw((kOne / 2) - 1), raw(0)};
     CY_CHECK_EQ(dm::cross(a, b).z.raw, 0);
     const FixedVec3 c{raw(1), raw(0), raw(0)};
     const FixedVec3 d{raw(0), raw(kOne / 2), raw(0)};
     CY_CHECK_EQ(dm::cross(c, d).z.raw, 1);  // the tie
     const FixedVec3 e{raw(1), raw(0), raw(0)};
-    const FixedVec3 f{raw(0), raw(kOne / 2 + kOne / 4 + kOne), raw(0)};
+    const FixedVec3 f{raw(0), raw((kOne / 2) + (kOne / 4) + kOne), raw(0)};
     CY_CHECK_EQ(dm::cross(e, f).z.raw, 2);
 }
 
 CY_TEST_CASE("detmath geometry: Fixed16Vec3 widens exactly and narrows by the Fixed16 rule") {
-    const FixedVec3 value{raw(3 * kOne + (kOne >> 16)), raw(-kOne), raw(kOne >> 17)};
+    const FixedVec3 value{raw((3 * kOne) + (kOne >> 16)), raw(-kOne), raw(kOne >> 17)};
     const Fixed16Vec3 stored = Fixed16Vec3::narrow(value);
     CY_CHECK_EQ(stored.x.raw, (3 << 16) + 1);
     CY_CHECK_EQ(stored.y.raw, -(1 << 16));
@@ -257,7 +257,7 @@ CY_TEST_CASE("detmath geometry: the closest point on a segment clamps to its end
 CY_TEST_CASE("detmath geometry: shapes that touch exactly do not overlap") {
     const FixedCircle left{FixedVec2{whole(0), whole(0)}, whole(1)};
     const FixedCircle touching{FixedVec2{whole(2), whole(0)}, whole(1)};
-    const FixedCircle one_ulp_in{FixedVec2{raw(2 * kOne - 1), whole(0)}, whole(1)};
+    const FixedCircle one_ulp_in{FixedVec2{raw((2 * kOne) - 1), whole(0)}, whole(1)};
     CY_CHECK(!left.overlaps(touching));
     CY_CHECK(left.overlaps(one_ulp_in));
     CY_CHECK(left.contains(FixedVec2{whole(1), whole(0)}));
@@ -266,9 +266,9 @@ CY_TEST_CASE("detmath geometry: shapes that touch exactly do not overlap") {
     const FixedCapsule2D wall{FixedVec2{whole(0), whole(5)}, FixedVec2{whole(10), whole(5)},
                               whole(1)};
     CY_CHECK(!wall.overlaps(FixedCircle{FixedVec2{whole(5), whole(3)}, whole(1)}));
-    CY_CHECK(wall.overlaps(FixedCircle{FixedVec2{whole(5), raw(3 * kOne + 1)}, whole(1)}));
+    CY_CHECK(wall.overlaps(FixedCircle{FixedVec2{whole(5), raw((3 * kOne) + 1)}, whole(1)}));
     CY_CHECK(wall.contains(FixedVec2{whole(11), whole(5)}));
-    CY_CHECK(!wall.contains(FixedVec2{whole(11), raw(5 * kOne + 1)}));
+    CY_CHECK(!wall.contains(FixedVec2{whole(11), raw((5 * kOne) + 1)}));
 
     const FixedAabb box{FixedVec3{whole(0), whole(0), whole(0)},
                         FixedVec3{whole(1), whole(1), whole(1)}};
