@@ -532,6 +532,74 @@ def openspec_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[st
     return problems
 
 
+# The Swift toolchain is pinned like the LLVM tooling, and for a reason measured rather than argued:
+# the jobs with no `setup-swift` step built the game modules with the runner image's own Swift, the
+# image moved to 6.4, and 6.4's default build system crashes intermittently with signal 11 inside
+# libdispatch. Every setup-swift step must install the justfile's version, and every x86_64 Linux
+# job that builds the tree must have one. linux-arm64 is outside the rule because the action cannot
+# install there; the build driver's `--build-system native` is what protects it.
+SETUP_SWIFT = "swift-actions/setup-swift"
+SWIFT_VERSION_KEY = re.compile(r"^\s*swift-version:\s*['\"]?(?P<version>[^'\"\s]+)")
+SWIFT_PIN_IN_JUSTFILE = re.compile(r"^swift_pin_version\s*:=\s*'(?P<version>[^']+)'", re.MULTILINE)
+X86_LINUX_RUNNER = re.compile(r"ubuntu-24\.04(?!-arm)")
+# A recipe that configures and builds the engine tree, and so builds the Swift game modules when a
+# toolchain is present. The digest comparison reads artefacts and builds nothing.
+BUILDS_THE_TREE = re.compile(
+    r"\bjust (?:build-engine|run-|roadmap-milestone|test-(?!determinism --compare-legs))"
+)
+
+
+def swift_pinned_version(root: pathlib.Path) -> str | None:
+    """The Swift version the justfile pins, which is the one the workflows must install."""
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return None
+    match = SWIFT_PIN_IN_JUSTFILE.search(justfile.read_text(encoding="utf-8"))
+    return match.group("version") if match else None
+
+
+def _job_blocks(path: pathlib.Path) -> dict[str, tuple[int, list[str]]]:
+    """Each job under `jobs:`, with the line it starts on and its lines."""
+    blocks: dict[str, tuple[int, list[str]]] = {}
+    inside = False
+    current: list[str] | None = None
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.startswith(" ") and line.strip():
+            inside = line.rstrip() == "jobs:"
+            current = None
+            continue
+        job = JOB_KEY.match(line) if inside else None
+        if job:
+            current = []
+            blocks[job.group("name")] = (number, current)
+        elif current is not None:
+            current.append(line)
+    return blocks
+
+
+def swift_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """Every setup-swift step installs the pinned version, and every job that needs one has one."""
+    pin = swift_pinned_version(root)
+    if pin is None:
+        return ["the justfile declares no swift_pin_version, so the workflows cannot be checked"]
+    problems = []
+    for path in workflows:
+        for job, (line, body) in _job_blocks(path).items():
+            # Comments are skipped: the prose above the next job sits in this job's block.
+            text = "\n".join(entry for entry in body if not entry.lstrip().startswith("#"))
+            for entry in body:
+                version = SWIFT_VERSION_KEY.match(entry)
+                if version and version.group("version") != pin:
+                    problems.append(f"{path.name}: job '{job}' installs Swift "
+                                    f"{version.group('version')}, but the justfile pins {pin}")
+            if (X86_LINUX_RUNNER.search(text) and BUILDS_THE_TREE.search(text)
+                    and SETUP_SWIFT not in text):
+                problems.append(f"{path.name}:{line} job '{job}' builds the tree on x86_64 Linux "
+                                f"without installing the pinned Swift ({SETUP_SWIFT} with "
+                                f"swift-version '{pin}'), so it builds with the image's own")
+    return problems
+
+
 # The documented Linux dependency set, and the check M9's closing gate had to write.
 #
 # SIXTY-THREE CI RUNS, NOT ONE OF THEM GREEN, AND THE CAUSE WAS FOUR PACKAGES. Every Linux job in
@@ -696,6 +764,32 @@ def selftest(root: pathlib.Path) -> int:
             else:
                 failed += 1
                 print(f"fail expected {expected!r}, got {found or ['nothing']}", file=sys.stderr)
+
+        # The Swift pin's negative fixtures: a step installing another version, and an x86_64 Linux
+        # job that builds the tree with no step at all, must both be rejected; the pinned one not.
+        swift_pin = swift_pinned_version(root) or "0.0.0"
+        install = ("      - uses: swift-actions/setup-swift@v2\n        with:\n"
+                   "          swift-version: '{version}'\n")
+        swift_cases = (
+            (install.format(version="6.4"), "but the justfile pins", True),
+            ("", "without installing the pinned Swift", True),
+            (install.format(version=swift_pin), "", False),
+        )
+        for steps, expected, rejected in swift_cases:
+            scratch.write_text(
+                "jobs:\n  case:\n    runs-on: ubuntu-24.04\n    steps:\n"
+                f"{steps}      - run: just test-unit -R ecs\n",
+                encoding="utf-8",
+            )
+            found = swift_drift(root, [scratch])
+            if rejected and any(expected in problem for problem in found):
+                print(f"ok   rejected: {expected}")
+            elif not rejected and not found:
+                print("ok   accepted: a Linux job that installs the pinned Swift")
+            else:
+                failed += 1
+                print(f"fail Swift pin case {expected or 'accepted'!r}, got "
+                      f"{found or ['nothing']}", file=sys.stderr)
 
         scratch.write_text(
             "jobs:\n  case:\n    steps:\n"
@@ -907,7 +1001,7 @@ def selftest(root: pathlib.Path) -> int:
             print("ok   accepted: a gate job guarded by a repository variable, which is a fact "
                   "about the configuration and not about this file")
 
-    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5 + len(live_cases) + 2
+    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5 + len(live_cases) + 2 + 3
     if failed:
         print(f"check-workflows selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1
@@ -1004,10 +1098,12 @@ def main() -> int:
     dead = gate_jobs_are_live(root, workflows)
     drift = pin_drift(root, workflows)
     spec_drift = openspec_drift(root, workflows)
+    swift = swift_drift(root, workflows)
     system = system_dependencies(root, workflows)
     cancellation = long_run_cancellation(root, workflows)
 
-    if violations or uncovered or dead or drift or spec_drift or system or cancellation:
+    if (violations or uncovered or dead or drift or spec_drift or swift or system
+            or cancellation):
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
@@ -1020,6 +1116,9 @@ def main() -> int:
             print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
         for gap in spec_drift:
             print(f"  {gap}\n      the pin is `openspec_pin_version` in the justfile.",
+                  file=sys.stderr)
+        for gap in swift:
+            print(f"  {gap}\n      the pin is `swift_pin_version` in the justfile.",
                   file=sys.stderr)
         for gap in system:
             print(f"  {gap}\n      {BUILD_GUIDE}'s list is the one a developer is told to run.",

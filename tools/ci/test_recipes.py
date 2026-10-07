@@ -446,6 +446,105 @@ def swift_module_builds_hold_one_swiftpm_lock(root: pathlib.Path) -> list[str]:
     return []
 
 
+def _load_swift_driver(root: pathlib.Path):
+    import importlib.util
+
+    path = root / "bindings" / "swift" / "tools" / "cy_swift_module.py"
+    spec = importlib.util.spec_from_file_location("cy_swift_module_under_test", path)
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    return driver
+
+
+def _swift_commands_with_exits(driver, exits: list[int],
+                               arguments: tuple[str, ...] = ("swift", "build"),
+                               ) -> tuple[list[str], str]:
+    """Run a Swift command (`swift build` unless named) through the driver against scripted exit codes.
+
+    Returns the shell commands it ran and what it wrote to stderr. The lock is pointed at a scratch
+    file and stderr is captured, so the case touches neither the developer's lock nor the terminal.
+    """
+    import contextlib
+    import io
+
+    commands: list[str] = []
+    remaining = list(exits)
+
+    def scripted(argv, **_kwargs):
+        commands.append(argv[-1])
+        code = remaining.pop(0) if remaining else 0
+        return subprocess.CompletedProcess(argv, code, "", "")
+
+    real_run = driver.subprocess.run
+    errors = io.StringIO()
+    with tempfile.TemporaryDirectory() as scratch:
+        driver.SWIFTPM_LOCK = pathlib.Path(scratch) / "swiftpm.lock"
+        driver.subprocess.run = scripted
+        try:
+            with contextlib.redirect_stderr(errors):
+                driver.swift(list(arguments))
+        finally:
+            driver.subprocess.run = real_run
+    return commands, errors.getvalue()
+
+
+def a_swift_toolchain_crash_is_retried_and_a_compile_error_is_not(
+        root: pathlib.Path) -> list[str]:
+    """A Swift command that died on a crash signal runs again, boundedly; a failed compile does not.
+
+    CI's game-module builds died intermittently with signal 11 inside libdispatch, in SwiftPM's own
+    build planner, before a line of the module was compiled (run 37548099658, job `authorable`). A
+    crash says nothing about the sources, so the driver asks again; an ordinary non-zero exit is a
+    compile error and is reported at once. A person or a scheduler stopping the build (SIGINT,
+    SIGTERM, SIGKILL) is not a crash either.
+    """
+    if sys.platform == "win32":
+        return []
+    driver = _load_swift_driver(root)
+    failures = []
+    classification = {
+        139: "SIGSEGV", -11: "SIGSEGV", 134: "SIGABRT", 135: "SIGBUS", 132: "SIGILL",
+        0: None, 1: None, 2: None, 130: None, 137: None, 143: None, -9: None, 255: None,
+    }
+    for code, expected in classification.items():
+        if driver.crash_signal(code) != expected:
+            failures.append(f"exit {code} classified as {driver.crash_signal(code)!r}, "
+                            f"expected {expected!r}")
+
+    commands, log = _swift_commands_with_exits(driver, [139, 0])
+    if len(commands) != 2 or "SIGSEGV" not in log:
+        failures.append(f"a build that died on SIGSEGV then succeeded ran {len(commands)} time(s) "
+                        f"and logged {log.strip()!r}; expected 2 runs and a logged reason")
+    commands, log = _swift_commands_with_exits(driver, [1, 0])
+    if len(commands) != 1 or log:
+        failures.append(f"a compile error ran {len(commands)} time(s) and logged {log.strip()!r}; "
+                        "a compile error must never be retried")
+    attempts = driver.CRASH_RETRIES + 1
+    commands, _ = _swift_commands_with_exits(driver, [139] * (attempts + 3))
+    if len(commands) != attempts:
+        failures.append(f"a toolchain that always crashes ran {len(commands)} time(s); the bound "
+                        f"is {attempts}")
+    return failures
+
+
+def swift_builds_name_the_native_build_system(root: pathlib.Path) -> list[str]:
+    """`swift build` and `swift test` name `--build-system native` rather than the default.
+
+    Swift 6.4 made Swift Build the default, and its planner is what crashed with signal 11 in CI
+    (swiftlang/swift-build#1786). A developer's or a runner image's newer toolchain must not choose
+    the build system for the driver, and `--show-bin-path` must agree with the build it reports on.
+    """
+    if sys.platform == "win32":
+        return []
+    driver = _load_swift_driver(root)
+    failures = []
+    for verb in ("build", "test"):
+        commands, _ = _swift_commands_with_exits(driver, [0], ("swift", verb))
+        if not commands or "'--build-system' 'native'" not in commands[0]:
+            failures.append(f"`swift {verb}` ran as {commands!r}, without --build-system native")
+    return failures
+
+
 def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
@@ -1493,6 +1592,10 @@ def main() -> int:
             swift_package_tests_cannot_be_silently_omitted
         ),
         "Swift module builds hold one SwiftPM lock": swift_module_builds_hold_one_swiftpm_lock,
+        "a Swift toolchain crash is retried, a compile error is not": (
+            a_swift_toolchain_crash_is_retried_and_a_compile_error_is_not
+        ),
+        "Swift builds name the native build system": swift_builds_name_the_native_build_system,
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),
