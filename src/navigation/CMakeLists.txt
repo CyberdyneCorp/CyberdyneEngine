@@ -37,6 +37,7 @@ set(cy_navigation_sources
     src/components.cpp
     src/crowd.cpp
     src/debug.cpp
+    src/determinism.cpp
     src/flow_field.cpp
     src/hierarchy.cpp
     src/navmesh.cpp
@@ -62,7 +63,8 @@ cy_add_module(
     SOURCES ${cy_navigation_sources}
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-values cy::ecs)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
+                        cy::core-values cy::ecs)
 
 # PRIVATE, and that is the point — the same line src/backends/physics-jolt/ draws around Jolt. No
 # consumer inherits Recast's include directories, so `#include <Recast.h>` does not resolve outside

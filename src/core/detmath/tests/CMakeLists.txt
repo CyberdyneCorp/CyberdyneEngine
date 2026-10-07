@@ -9,8 +9,9 @@
 # THREE SUITES, SPLIT BY COST AS THE TAXONOMY SPLITS THEM:
 #
 #   unit.detmath               the arithmetic rules case by case, the 128-bit paths against the
-#                              reference, the exact identities, the conversion boundary and the
-#                              profile seam. A millisecond of CPU per case.
+#                              reference, the exact identities, the conversion boundary, the
+#                              profile seam, the vectors, rotations and shapes, and the
+#                              conventions core-math states. A millisecond of CPU per case.
 #   integration.detmath_vectors every committed golden vector and digest, and every function against
 #                              the mpmath oracle with its declared bound. Reading and checking
 #                              ~30 000 lines and sweeping ~360 000 inputs is not a unit test.
@@ -90,9 +91,11 @@ function(cy_detmath_declare_tests)
         NAME detmath
         KIND unit
         SOURCES
+            "${cy_detmath_tests_dir}/test_conventions.cpp"
             "${cy_detmath_tests_dir}/test_convert.cpp"
             "${cy_detmath_tests_dir}/test_fixed.cpp"
             "${cy_detmath_tests_dir}/test_functions.cpp"
+            "${cy_detmath_tests_dir}/test_geometry.cpp"
             "${cy_detmath_tests_dir}/test_profile.cpp"
             "${cy_detmath_tests_dir}/test_wide.cpp"
         DEPENDENCIES cy::core-detmath cy::core-determinism cy::core-memory)

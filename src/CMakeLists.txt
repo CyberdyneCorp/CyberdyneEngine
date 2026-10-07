@@ -75,8 +75,10 @@ endif()
 # requires agents to "drive movement through the navigation system rather than implementing their
 # own pathfinding", and cmake/features.cmake encodes the same edge as CY_AI|CY_NAVIGATION. Both are
 # read after graph/, because a compiled behaviour program is `cy::graph::behaviour`'s and the AI
-# runtime is what executes it.
+# runtime is what executes it. movement/ (add-deterministic-math stage 6) follows navigation/, whose
+# baked mesh it converts into a Fixed world at load.
 add_subdirectory(navigation)
+add_subdirectory(movement)
 if(CY_AI)
     add_subdirectory(ai)
 endif()

@@ -40,7 +40,56 @@ void unmake(Allocator& allocator, T* object) noexcept {
     allocator.deallocate(object, sizeof(T), alignof(T));
 }
 
+[[nodiscard]] bool cross_platform(determinism::DeterminismProfile profile) noexcept {
+    return determinism::guarantees_of(profile).cross_platform_reproducible;
+}
+
 }  // namespace
+
+const char* payload_field_kind_name(PayloadFieldKind kind) noexcept {
+    switch (kind) {
+        case PayloadFieldKind::Integer:
+            return "Integer";
+        case PayloadFieldKind::Bool:
+            return "Bool";
+        case PayloadFieldKind::Entity:
+            return "Entity";
+        case PayloadFieldKind::Fixed:
+            return "Fixed";
+        case PayloadFieldKind::Angle:
+            return "Angle";
+        case PayloadFieldKind::Float32:
+            return "Float32";
+        case PayloadFieldKind::Float64:
+            return "Float64";
+        case PayloadFieldKind::Count:
+            break;
+    }
+    return "unknown";
+}
+
+bool payload_admitted(const CommandDeclaration& declaration,
+                      determinism::DeterminismProfile profile, PayloadRefusal& refusal) noexcept {
+    refusal = PayloadRefusal{};
+    refusal.command = declaration.name;
+    if (!cross_platform(profile)) {
+        return true;
+    }
+    if (!declaration.payload.declared()) {
+        return false;
+    }
+    refusal.type = declaration.payload.type;
+    for (u32 index = 0; index < declaration.payload.field_count; ++index) {
+        const PayloadField& field = declaration.payload.fields[index];
+        if (is_floating(field.kind)) {
+            refusal.field = field.name;
+            refusal.kind = field.kind;
+            return false;
+        }
+    }
+    refusal.type = "";
+    return true;
+}
 
 Status CommandBuffer::record(const Command& command) noexcept {
     Command stamped = command;
@@ -97,11 +146,42 @@ Expected<CommandTypeId, Error> CommandStream::declare(
         return fail(ErrorCode::AlreadyExists,
                     "gameplay: that command type's stable id is already declared");
     }
+    if (!payload_admitted(declaration, profile_, payload_refusal_)) {
+        return fail(
+            ErrorCode::PermissionDenied,
+            declaration.payload.declared()
+                ? "gameplay: a command payload declares a floating-point field, which a "
+                  "CrossPlatform or Lockstep session refuses; last_payload_refusal() names "
+                  "the type and the field"
+                : "gameplay: a command payload is undescribed, so a CrossPlatform or "
+                  "Lockstep session cannot check it for floating point; declare its layout");
+    }
     const auto id = static_cast<CommandTypeId>(declarations_.size());
     if (Status pushed = declarations_.push_back(declaration); !pushed) {
         return make_unexpected(pushed.error());
     }
     return id;
+}
+
+Status CommandStream::set_determinism_profile(determinism::DeterminismProfile profile) noexcept {
+    for (const CommandDeclaration& declaration : declarations_) {
+        if (!payload_admitted(declaration, profile, payload_refusal_)) {
+            return fail(ErrorCode::PermissionDenied,
+                        "gameplay: a declared command payload is undescribed or has a "
+                        "floating-point field, so the stream cannot run under that profile; "
+                        "last_payload_refusal() names it");
+        }
+    }
+    profile_ = profile;
+    return ok();
+}
+
+determinism::SubsystemDeterminism CommandStream::determinism_declaration() const noexcept {
+    return determinism::SubsystemDeterminism{kCommandStreamSubsystem,
+                                             cross_platform(profile_)
+                                                 ? determinism::DeterminismProfile::Lockstep
+                                                 : determinism::DeterminismProfile::SamePlatform,
+                                             true};
 }
 
 CommandTypeId CommandStream::find(u32 stable_id) const noexcept {

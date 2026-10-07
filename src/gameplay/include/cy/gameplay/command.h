@@ -48,6 +48,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/determinism/epoch.h>
+#include <cy/core/determinism/profile.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/values/name.h>
@@ -74,6 +75,61 @@ enum class Reliability : u8 {
     Reliable,
 };
 
+/// What one field of a command payload holds, as its declaration states it. The stream cannot see
+/// inside a payload's bytes, so the declaration says what they are, and a cross-platform session
+/// checks what it says.
+enum class PayloadFieldKind : u8 {
+    Integer = 0,
+    Bool,
+    Entity,
+    /// A deterministic-math `Fixed` (a raw `i64`), or a vector of them.
+    Fixed,
+    /// A deterministic-math binary `Angle` (a raw `u32`).
+    Angle,
+    /// An `f32`. Refused under `CrossPlatform` and `Lockstep`.
+    Float32,
+    /// An `f64`. Refused under `CrossPlatform` and `Lockstep`.
+    Float64,
+    Count,
+};
+
+[[nodiscard]] const char* payload_field_kind_name(PayloadFieldKind kind) noexcept;
+
+/// Whether a field of this kind is a floating-point number.
+[[nodiscard]] constexpr bool is_floating(PayloadFieldKind kind) noexcept {
+    return kind == PayloadFieldKind::Float32 || kind == PayloadFieldKind::Float64;
+}
+
+/// One field of a payload. `name` is a literal or storage outliving the stream.
+struct PayloadField {
+    const char* name = "";
+    PayloadFieldKind kind = PayloadFieldKind::Integer;
+};
+
+/// What a command type's payload holds: the type's name and its fields. `type == nullptr` means
+/// the declaration says nothing about its payload, which a cross-platform session refuses — a
+/// payload it cannot see into is a payload it cannot vouch for. A command with no payload declares
+/// a type with no fields.
+struct PayloadLayout {
+    const char* type = nullptr;
+    const PayloadField* fields = nullptr;
+    u32 field_count = 0;
+
+    [[nodiscard]] constexpr bool declared() const noexcept { return type != nullptr; }
+};
+
+/// Why `CommandStream::declare` refused a payload under a cross-platform profile, naming what to
+/// fix.
+struct PayloadRefusal {
+    /// The command type's name, as declared.
+    Name command;
+    /// The payload type's name, or "" when the payload was not described at all.
+    const char* type = "";
+    /// The offending field, or "" when the payload was not described at all.
+    const char* field = "";
+    PayloadFieldKind kind = PayloadFieldKind::Integer;
+};
+
 /// What a command type is, as declared.
 struct CommandDeclaration {
     Name name;
@@ -94,6 +150,11 @@ struct CommandDeclaration {
     Name channel;
     /// The capability bit the target must accept. Zero means none required.
     u32 required_capability = 0;
+    /// What the payload holds. Required, and free of floating point, under `CrossPlatform` and
+    /// `Lockstep`: `gameplay-framework`'s one command stream carries numbers as their issuer
+    /// converted them, so a float in a payload would be read by every peer's own float hardware
+    /// (openspec/changes/add-deterministic-math, design §9.2).
+    PayloadLayout payload;
 };
 
 /// Who produced a command. **Diagnostics only.**
@@ -209,8 +270,27 @@ public:
     CommandStream(const CommandStream&) = delete;
     CommandStream& operator=(const CommandStream&) = delete;
 
+    /// Register a command type. Under a cross-platform profile (`set_determinism_profile`), a
+    /// declaration whose payload is undescribed or has a floating-point field is refused, and
+    /// `last_payload_refusal()` names the type and the field.
     [[nodiscard]] Expected<CommandTypeId, Error> declare(
         const CommandDeclaration& declaration) noexcept;
+
+    /// The profile the session runs under. At `CrossPlatform` and above every declaration's payload
+    /// is checked, those already made included: the call refuses — and leaves the profile as it was
+    /// — when one of them would not pass.
+    [[nodiscard]] Status set_determinism_profile(determinism::DeterminismProfile profile) noexcept;
+    [[nodiscard]] determinism::DeterminismProfile determinism_profile() const noexcept {
+        return profile_;
+    }
+    /// Why the last refused declaration or profile change was refused.
+    [[nodiscard]] const PayloadRefusal& last_payload_refusal() const noexcept {
+        return payload_refusal_;
+    }
+    /// What the command stream guarantees, for `DeterminismConfiguration::declare`: `Lockstep` when
+    /// its payloads are checked (a cross-platform profile is set), `SamePlatform` otherwise, under
+    /// the name `gameplay-commands`.
+    [[nodiscard]] determinism::SubsystemDeterminism determinism_declaration() const noexcept;
     [[nodiscard]] CommandTypeId find(u32 stable_id) const noexcept;
     [[nodiscard]] const CommandDeclaration& declaration(CommandTypeId type) const noexcept {
         return declarations_[type];
@@ -344,6 +424,18 @@ private:
     CommandLog log_;
     RecordSink sink_;
     u64 records_emitted_ = 0;
+    determinism::DeterminismProfile profile_ = determinism::DeterminismProfile::None;
+    PayloadRefusal payload_refusal_;
 };
+
+/// The name the command stream declares itself under.
+inline constexpr const char* kCommandStreamSubsystem = "gameplay-commands";
+
+/// Whether `declaration` may be used under `profile`. False fills `refusal` with the first reason:
+/// an undescribed payload, or the first floating-point field in declaration order. Free, so a tool
+/// can check a declaration without a stream.
+[[nodiscard]] bool payload_admitted(const CommandDeclaration& declaration,
+                                    determinism::DeterminismProfile profile,
+                                    PayloadRefusal& refusal) noexcept;
 
 }  // namespace cy::gameplay

@@ -124,6 +124,22 @@ CY_TEST_CASE("unit_float and unit_double are in [0, 1)") {
     }
 }
 
+CY_TEST_CASE("unit_fixed_raw is the draw's top 32 bits, exactly, in [0, 1) of Q32.32") {
+    // The deterministic math module's `Fixed` in [0, 1) has exactly 32 fraction bits, so the draw's
+    // top 32 bits ARE the value: no rounding, no float, and the same bits unit_float() starts from.
+    const RandomStream stream = RandomSource(9).stream("orders");
+    for (u64 index = 0; index < 256; ++index) {
+        const u64 draw = stream.draw(kTick, index, 3);
+        const i64 raw = stream.unit_fixed_raw(kTick, index, 3);
+        CY_CHECK_EQ(static_cast<u64>(raw), draw >> 32U);
+        CY_CHECK_GE(raw, 0);
+        CY_CHECK_LT(raw, i64{1} << 32);
+        // unit_float() keeps the top 24 of the same 32 bits.
+        CY_CHECK_EQ(static_cast<u64>(stream.unit_float(kTick, index, 3) * 0x1.0p24F),
+                    static_cast<u64>(raw) >> 8U);
+    }
+}
+
 CY_TEST_CASE("a presentation stream says so") {
     // `simulation-and-determinism`: "Streams used only for presentation SHALL be declared as such
     // and SHALL NOT be required to be reproducible." The declaration is on the stream so that the

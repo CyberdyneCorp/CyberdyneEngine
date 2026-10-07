@@ -40,6 +40,7 @@ function(cy_gameplay_abilities_declare_tests)
             "${tests_dir}/test_abilities.cpp"
             "${tests_dir}/test_activation.cpp"
             "${tests_dir}/test_attributes.cpp"
+            "${tests_dir}/test_determinism.cpp"
             "${tests_dir}/test_effects.cpp"
         DEPENDENCIES cy::gameplay-abilities)
 
