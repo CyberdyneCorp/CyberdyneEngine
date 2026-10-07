@@ -329,8 +329,7 @@ fn the_stub_reports_a_connection_only_once_the_editors_hello_arrived() {
 
     use cy_editor_protocol::{Message, write_frame};
 
-    let directory =
-        std::env::temp_dir().join(format!("cy-editor-hello-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("cy-editor-hello-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let socket = directory.join("runtime.sock");
 

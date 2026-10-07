@@ -27,8 +27,9 @@
 // until a case does. `unit.determinism`'s "the twelve replacements agree with <cmath>" is the first
 // case to call most of libm, and it costs 0.03 to 0.12 ms on Linux and went over its 1 ms budget at
 // 1.12 to 1.38 ms on the hosted macOS runner (CI runs 36943266067, 36970436016 and 37091129342),
-// where each first touch is a 16 KiB fault. Only libm is walked, by name, rather than every library:
-// on Apple platforms the system libraries live in one shared cache of several hundred megabytes.
+// where each first touch is a 16 KiB fault. Only libm is walked, by name, rather than every
+// library: on Apple platforms the system libraries live in one shared cache of several hundred
+// megabytes.
 //
 // WHAT IT DOES NOT DO. It does not warm data a case allocates, caches, branch predictors or the
 // governor's clock — those are the case's, or the calibration's (budget.cpp). Windows is not
