@@ -47,6 +47,12 @@ cy_add_module(
         cy::rhi-null
         cy::rhi-vulkan)
 
+# The interface font draws through the complete text backend when CY_TEXT built it; without it the
+# sample draws its HUD in the built-in bitmap font, as it did before issue #86.
+if(CY_TEXT)
+    target_link_libraries(cy_sample_rts_selection PRIVATE cy::text-complete)
+endif()
+
 target_include_directories(cy_sample_rts_selection
                            PRIVATE "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests"
                                    "${CMAKE_SOURCE_DIR}/tests/render")

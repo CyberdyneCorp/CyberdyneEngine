@@ -108,10 +108,17 @@ public:
     /// Make an outline face of `source` as `desc` describes on a server started with a backend,
     /// with the built-in font behind it in the chain, and warm printable ASCII. Pages are
     /// `first_page` (coverage), `first_page + 1` (distance field) and `first_page + 2` (colour).
+    ///
+    /// `line_height` is the height, in reference units, of a line of text whose style names no
+    /// `size`: the face is scaled so its ascent, descent and line gap add up to it, and a label set
+    /// with `pixel_scale` 2 is twice that. Its default is the built-in font's cell height, so an
+    /// interface laid out in rows of that font's lines keeps every row when it moves to this one.
+    ///
     /// Fails, leaving the painter unstarted, on a server with no outline support — the caller then
     /// starts on the built-in font instead. The server and the bytes must outlive this.
     [[nodiscard]] Status start(cy::text::TextServer& server, const cy::text::FontSource& source,
-                               const cy::text::FontDesc& desc, u16 first_page) noexcept;
+                               const cy::text::FontDesc& desc, u16 first_page,
+                               f32 line_height = 13.0F) noexcept;
     [[nodiscard]] bool is_running() const noexcept { return server_ != nullptr; }
 
     /// Attach, or replace, an element's text. The text is copied. Marks nothing dirty: the caller
@@ -201,6 +208,8 @@ private:
     f32 face_size_ = 0.0F;
     /// The distance-field range the primary face was made with, in atlas pixels.
     f32 distance_range_ = 0.0F;
+    /// An outline face's line height for a style that names no size. See `start`.
+    f32 target_line_height_ = 0.0F;
     bool outline_ = false;
     u16 atlas_page_ = 0;
     u32 atlas_revision_ = 0;

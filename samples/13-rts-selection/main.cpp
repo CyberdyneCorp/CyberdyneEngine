@@ -49,8 +49,15 @@
 #include <cy/rendering/selection/selection_component.h>
 #include <cy/ui/console/console.h>
 #include <cy/ui/layout.h>
+#include <cy/ui/render/text_atlas.h>
 #include <cy/ui/render/ui_renderer.h>
 #include <cy/ui/text/builtin_font.h>
+#include <cy/ui/text/interface_font.h>
+#include <cy_features.h>
+
+#if defined(CY_TEXT)
+#    include <cy/backends/text/complete_backend.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -293,6 +300,10 @@ bool flag(int argc, char** argv, const char* name) {
 /// The interface's half of the game: its store, its text, the HUD and the console, and the pass
 /// that draws them.
 struct Interface {
+#if defined(CY_TEXT)
+    // Before the server, so it is destroyed after it: the server closes its faces through it.
+    cy::text::CompleteTextBackend backend;
+#endif
     cy::text::TextServer server;
     ui::TextPainter text{allocator()};
     ui::ElementStore store{allocator()};
@@ -328,6 +339,28 @@ sample::rts::MinimapDot dot_for(const Placement& placement) noexcept {
     return dot;
 }
 
+/// Start the interface's text: the interface font through the complete text backend when this build
+/// has one, and the built-in bitmap font otherwise — the fallback CyberUI keeps for a build with
+/// CY_TEXT off.
+Status start_text(Interface& ui_state) noexcept {
+#if defined(CY_TEXT)
+    if (Status started = ui_state.backend.start(); !started) {
+        return started;
+    }
+    if (Status started = ui_state.server.start_with(cy::text::TextServerConfig{}, ui_state.backend);
+        !started) {
+        return started;
+    }
+    return ui_state.text.start(ui_state.server, cy::text::FontSource{ui::interface_font_bytes()},
+                               ui::interface_font_desc(), kGlyphPage);
+#else
+    if (Status started = ui_state.server.start(cy::text::TextServerConfig{}); !started) {
+        return started;
+    }
+    return ui_state.text.start(ui_state.server, ui::builtin_font(), kGlyphPage);
+#endif
+}
+
 /// Build the HUD and the console from the game's state, lay them out and flatten them.
 Status build_interface(Interface& ui_state, rhi::Device& device, Game& game,
                        const FrameScene& scene) noexcept {
@@ -338,18 +371,8 @@ Status build_interface(Interface& ui_state, rhi::Device& device, Game& game,
     if (Status made = ui_state.renderer.create(device, description); !made) {
         return made;
     }
-    if (Status started = ui_state.server.start(cy::text::TextServerConfig{}); !started) {
+    if (Status started = start_text(ui_state); !started) {
         return started;
-    }
-    if (Status started = ui_state.text.start(ui_state.server, ui::builtin_font(), kGlyphPage);
-        !started) {
-        return started;
-    }
-    const u32 extent = ui_state.text.atlas_extent();
-    if (Status uploaded = ui_state.renderer.upload_atlas(kGlyphPage, rhi::Format::R8Unorm, extent,
-                                                         extent, ui_state.text.atlas_pixels());
-        !uploaded) {
-        return uploaded;
     }
     Expected<ui::ElementId, Error> root =
         ui_state.store.create(ui::kNoElement, Name::intern("hud"));
@@ -430,8 +453,15 @@ Status build_interface(Interface& ui_state, rhi::Device& device, Game& game,
         !done) {
         return done;
     }
-    std::printf("interface: %zu primitives in %u batches\n", ui_state.buffer.primitives().size(),
-                flattened.batches);
+    std::printf("interface: %zu primitives in %u batches, text in %s\n",
+                ui_state.buffer.primitives().size(), flattened.batches,
+                ui_state.text.outline() ? "the interface font" : "the built-in font");
+    // After every label is set: an outline face makes a label's glyphs resident when it is set, so
+    // this is the moment the pages hold everything the frame draws.
+    if (Status uploaded = ui::render::upload_text_atlases(ui_state.renderer, ui_state.text);
+        !uploaded) {
+        return uploaded;
+    }
     return ui_state.renderer.submit(ui_state.buffer, 1.0F);
 }
 

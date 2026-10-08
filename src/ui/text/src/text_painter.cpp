@@ -92,7 +92,8 @@ Status TextPainter::start(cy::text::TextServer& server, const cy::text::ImageGri
 }
 
 Status TextPainter::start(cy::text::TextServer& server, const cy::text::FontSource& source,
-                          const cy::text::FontDesc& desc, u16 first_page) noexcept {
+                          const cy::text::FontDesc& desc, u16 first_page,
+                          f32 line_height) noexcept {
     if (server_ != nullptr) {
         return fail(ErrorCode::InvalidArgument, "text painter: already started");
     }
@@ -118,6 +119,7 @@ Status TextPainter::start(cy::text::TextServer& server, const cy::text::FontSour
         return status;
     }
     face_size_ = desc.size_pixels;
+    target_line_height_ = line_height > 0.0F ? line_height : line_height_;
     distance_range_ =
         desc.mode == cy::text::RenderMode::SignedDistanceField ? desc.distance_range : 0.0F;
     outline_ = true;
@@ -296,10 +298,19 @@ std::string_view TextPainter::text_of(ElementId element) const noexcept {
 }
 
 f32 TextPainter::scale_of(const TextStyle& style) const noexcept {
-    if (style.size > 0.0F && face_size_ > 0.0F) {
+    const auto multiple = static_cast<f32>(style.pixel_scale == 0U ? 1U : style.pixel_scale);
+    if (face_size_ <= 0.0F) {
+        return multiple;
+    }
+    if (style.size > 0.0F) {
         return style.size / face_size_;
     }
-    return static_cast<f32>(style.pixel_scale == 0U ? 1U : style.pixel_scale);
+    // An outline face scaled so a line is the painter's line height, times the style's whole-number
+    // multiple; a grid face at its own pixels, times the multiple.
+    if (outline_ && line_height_ > 0.0F) {
+        return (target_line_height_ * multiple) / line_height_;
+    }
+    return multiple;
 }
 
 Vec2 TextPainter::measure(std::string_view text, const TextStyle& style) noexcept {

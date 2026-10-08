@@ -18,9 +18,10 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/encode.cpp
+        src/text_atlas.cpp
         src/ui_renderer.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::ui cy::rendering-graph cy::rendering-forward cy::rhi)
+    PUBLIC_DEPENDENCIES cy::ui cy::ui-text cy::rendering-graph cy::rendering-forward cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

@@ -405,3 +405,25 @@ CY_TEST_CASE("complete: LCD subpixel rendering is refused rather than drawn as g
     CY_REQUIRE_FALSE(refused.has_value());
     CY_CHECK_EQ(refused.error().code, ErrorCode::Unsupported);
 }
+
+CY_TEST_CASE("complete: an empty line lays out, and an empty paragraph resolves to no runs") {
+    // Regression: ICU refuses a null text pointer even at length zero, and an empty array's data
+    // is null — so an empty label failed to lay out with U_ILLEGAL_ARGUMENT_ERROR, and CyberUI's
+    // interface was not built at all once one of its labels was blank.
+    Stack stack;
+    const Array<u8> font = read_font("NotoSans-Latin-VF.ttf");
+    const FallbackChain chain = chain_of(stack.face(font, desc_of(16.0f)));
+    TextLine line;
+    const auto laid = stack.server.layout_line("", chain, line);
+    CY_REQUIRE_MESSAGE(laid.has_value(), (laid ? "" : laid.error().message));
+    CY_CHECK_EQ(line.run().glyphs.size(), 0U);
+    CY_CHECK_EQ(line.width(), 0.0f);
+
+    BidiResult bidi(current_allocator());
+    const auto resolved = stack.backend.resolve_bidi("", ParagraphDirection::RightToLeft, bidi);
+    if (resolved || resolved.error().code != ErrorCode::Unsupported) {
+        CY_REQUIRE_MESSAGE(resolved.has_value(), (resolved ? "" : resolved.error().message));
+        CY_CHECK(bidi.runs.empty());
+        CY_CHECK_EQ(bidi.paragraph_level, 1U);
+    }
+}

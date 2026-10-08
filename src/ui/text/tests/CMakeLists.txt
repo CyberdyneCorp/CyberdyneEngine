@@ -16,6 +16,24 @@ function(cy_ui_text_declare_tests)
         KIND unit
         SOURCES "${tests_dir}/test_text.cpp"
         DEPENDENCIES cy::ui-text)
+
+    # The interface font through the complete text backend: integration, because the backend reads
+    # a real font and rasterises distance fields, which is milliseconds. Issue #86.
+    if(CY_TEXT)
+        get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_integration)
+        get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_integration)
+        set(CY_TEST_BUDGET_integration "${budget}")
+        set(CY_TEST_TIMEOUT_integration "${timeout}")
+        cy_add_test(
+            NAME ui_interface_font
+            KIND integration
+            SOURCES "${tests_dir}/test_interface_font.cpp"
+            DEPENDENCIES cy::ui-text cy::text-complete)
+        target_compile_definitions(cy_test_integration_ui_interface_font PRIVATE
+            CY_TEXT_FONTS_DIR="${CMAKE_SOURCE_DIR}/deps/fonts")
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_ui_text_declare_tests)

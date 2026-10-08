@@ -43,8 +43,15 @@
 #include <cy/test/test.h>
 #include <cy/ui/console/console.h>
 #include <cy/ui/layout.h>
+#include <cy/ui/render/text_atlas.h>
 #include <cy/ui/render/ui_renderer.h>
 #include <cy/ui/text/builtin_font.h>
+#include <cy/ui/text/interface_font.h>
+#include <cy_features.h>
+
+#if defined(CY_TEXT)
+#    include <cy/backends/text/complete_backend.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -66,6 +73,8 @@ namespace {
 constexpr usize kPixels = static_cast<usize>(kWidth) * kHeight;
 constexpr u16 kGlyphPage = 1;
 constexpr u16 kImagePage = 2;
+/// The interface font's three pages — coverage, distance field, colour — clear of the two above.
+constexpr u16 kTextPages = 4;
 constexpr Vec2 kViewport{static_cast<f32>(kWidth), static_cast<f32>(kHeight)};
 
 Allocator& allocator() noexcept {
@@ -225,8 +234,12 @@ class UiRun {
 public:
     using Build = bool (*)(UiRun& run) noexcept;
 
-    UiRun(DeviceFixture& fixture, bool attached, Build build) noexcept
-        : fixture_(fixture), scene_(allocator()), attached_(attached), build_(build) {}
+    UiRun(DeviceFixture& fixture, bool attached, Build build, bool interface_font = false) noexcept
+        : fixture_(fixture),
+          scene_(allocator()),
+          attached_(attached),
+          interface_font_(interface_font),
+          build_(build) {}
 
     ~UiRun() {
         (void)fixture_.device().wait_idle();
@@ -279,6 +292,10 @@ public:
     }
 
     ElementStore store{allocator()};
+#if defined(CY_TEXT)
+    // Before the server: it closes its faces through the backend on the way out.
+    cy::text::CompleteTextBackend backend;
+#endif
     cy::text::TextServer server;
     TextPainter text{allocator()};
     UiRenderer renderer{allocator()};
@@ -295,16 +312,14 @@ private:
         description.height = kHeight;
         // The format the post chain ended in: the tonemapped output's.
         description.output_format = scene_.pipelines().setup().output_format;
-        if (!renderer.create(fixture_.device(), description).has_value() ||
-            !server.start(cy::text::TextServerConfig{}).has_value() ||
-            !text.start(server, builtin_font(), kGlyphPage).has_value()) {
+        if (!renderer.create(fixture_.device(), description).has_value() || !start_text()) {
             return false;
         }
         const u32 extent = text.atlas_extent();
-        if (!renderer
-                 .upload_atlas(kGlyphPage, rhi::Format::R8Unorm, extent, extent,
-                               text.atlas_pixels())
-                 .has_value()) {
+        if (!interface_font_ && !renderer
+                                     .upload_atlas(kGlyphPage, rhi::Format::R8Unorm, extent, extent,
+                                                   text.atlas_pixels())
+                                     .has_value()) {
             return false;
         }
         auto made = store.create(kNoElement, Name::intern("screen"));
@@ -316,7 +331,29 @@ private:
         return true;
     }
 
+    /// The built-in font, as every case before issue #86 draws; or the interface font through the
+    /// complete text backend, whose pages are uploaded once the document is built.
+    [[nodiscard]] bool start_text() noexcept {
+        if (!interface_font_) {
+            return server.start(cy::text::TextServerConfig{}).has_value() &&
+                   text.start(server, builtin_font(), kGlyphPage).has_value();
+        }
+#if defined(CY_TEXT)
+        cy::text::TextServerConfig config;
+        config.atlas.initial_extent = 512;
+        return backend.start().has_value() && server.start_with(config, backend).has_value() &&
+               text.start(server, cy::text::FontSource{interface_font_bytes(), 0},
+                          interface_font_desc(), kTextPages)
+                   .has_value();
+#else
+        return false;
+#endif
+    }
+
     [[nodiscard]] bool draw_interface() noexcept {
+        if (interface_font_ && !upload_text_atlases(renderer, text).has_value()) {
+            return false;
+        }
         ScaleSettings settings;
         settings.mode = ScaleMode::FixedPixel;
         LayoutReport laid{};
@@ -344,6 +381,7 @@ private:
     DeviceFixture& fixture_;
     FrameScene scene_;
     bool attached_ = false;
+    bool interface_font_ = false;
     Build build_ = nullptr;
     std::vector<u32> pixels_;
 };
@@ -845,3 +883,124 @@ CY_TEST_CASE("(g) on an sRGB output the interface's bytes are its colours, blend
     }
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
+
+#if defined(CY_TEXT)
+
+namespace {
+
+constexpr u32 kInk = 0xFFF2F2F2U;
+
+/// Four lines of a paragraph in the interface font, as labels with no panel of their own — so
+/// nothing between their glyphs breaks the batch.
+bool build_paragraph(UiRun& run) noexcept {
+    const char* lines[] = {
+        "Text in the interface font is a distance",
+        "field: one atlas entry draws a glyph at",
+        "any size, and a paragraph whose glyphs come",
+        "from one page is submitted as one draw.",
+    };
+    (void)run.box(run.root, 16.0F, 16.0F, 448.0F, 104.0F, kPanel);
+    TextStyle style;
+    style.colour = kInk;
+    style.size = 18.0F;
+    f32 y = 22.0F;
+    for (const char* line : lines) {
+        const ElementId label = run.box(run.root, 24.0F, y, 430.0F, 24.0F, 0);
+        if (!run.text.set_text(label, line, style).has_value()) {
+            return false;
+        }
+        y += 24.0F;
+    }
+    return true;
+}
+
+/// A title drawn the way a game draws one over a busy scene: an outline and a drop shadow, both
+/// from the glyphs' own distance-field entries.
+bool build_outlined(UiRun& run) noexcept {
+    TextStyle style;
+    style.colour = kYellow;
+    style.size = 40.0F;
+    style.outline_width = 2.5F;
+    style.outline_colour = 0xFF101010U;
+    style.shadow_colour = 0xA0000000U;
+    style.shadow_offset = Vec2{3.0F, 4.0F};
+    style.gradient_colour = 0xFFE0302AU;
+    const ElementId title = run.box(run.root, 40.0F, 60.0F, 400.0F, 60.0F, 0);
+    return run.text.set_text(title, "Victory 1250!", style).has_value();
+}
+
+/// The host reference of `run`'s interface over `bare`, with the interface font's pages.
+[[nodiscard]] std::vector<u32> reference_of(UiRun& run, const std::vector<u32>& bare) {
+    std::vector<u32> expected = bare;
+    ReferenceAtlas pages[kTextPages + cy::text::kPixelFormatCount] = {};
+    for (u32 format = 0; format < cy::text::kPixelFormatCount; ++format) {
+        const auto kind = static_cast<cy::text::PixelFormat>(format);
+        const u32 extent = run.text.atlas_extent(kind);
+        pages[run.text.atlas_page(kind)] =
+            ReferenceAtlas{run.text.atlas_pixels(kind), extent, extent,
+                           kind == cy::text::PixelFormat::Coverage ? 1U : 4U};
+    }
+    CY_REQUIRE(draw_reference(run.renderer.draws(),
+                              Span<const ReferenceAtlas>(pages, std::size(pages)), kWidth, kHeight,
+                              Span<u32>(expected.data(), expected.size()))
+                   .has_value());
+    return expected;
+}
+
+}  // namespace
+
+CY_TEST_CASE("(h) a paragraph in the interface font is one draw, shaded as the host shades it") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    std::vector<u32> bare;
+    CY_REQUIRE(render_bare(fixture, bare));
+    UiRun run(fixture, true, &build_paragraph, true);
+    CY_REQUIRE(run.render());
+    save("ui-paragraph.png", run.pixels());
+
+    // `text-and-fonts` — Batched text: the panel is one draw and the paragraph's glyphs, from one
+    // page, are ONE more, whatever the number of lines.
+    const UiDrawList& list = run.renderer.draws();
+    CY_REQUIRE_EQ(list.draws.size(), 2U);
+    CY_CHECK_EQ(list.draws[1].material, material_index(BuiltinMaterial::GlyphField));
+    CY_CHECK_EQ(list.draws[1].atlas, run.text.atlas_page(cy::text::PixelFormat::DistanceField));
+    CY_CHECK_GT(list.draws[1].count, 120U);
+    CY_CHECK_EQ(run.flattened.batches, 2U);
+
+    const std::vector<u32> expected = reference_of(run, bare);
+    u32 worst = 0;
+    usize differing = 0;
+    for (usize index = 0; index < kPixels; ++index) {
+        const u32 delta = channel_delta(run.pixels()[index], expected[index]);
+        worst = std::max(worst, delta);
+        differing += static_cast<usize>(delta > 1U);
+    }
+    std::fprintf(stderr, "(h) the largest difference from the host is %u; %zu pixels over one\n",
+                 worst, differing);
+    // One step, as (b) allows: the field is sampled linearly on both sides, and the device's
+    // filtering lands within a quantisation boundary of the host's float interpolation. A field
+    // read with the wrong sign, channel, range or page is the whole glyph, not a step.
+    CY_CHECK_LE(worst, 1U);
+    CY_CHECK_EQ(differing, 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(i) an outlined, shadowed title matches its golden image") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    UiRun run(fixture, true, &build_outlined, true);
+    CY_REQUIRE(run.render());
+    save("ui-outlined.png", run.pixels());
+    // One draw: every shadow and then every glyph, one material, one page.
+    CY_CHECK_EQ(run.renderer.draws().draws.size(), 1U);
+    check_against_reference("ui_text_outlined.png", run.pixels());
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+#endif

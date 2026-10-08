@@ -93,6 +93,13 @@ Status icu_resolve_bidi(std::string_view text, ParagraphDirection direction,
     out.runs.clear();
     out.approximated = false;
     out.overflowed = false;
+    if (text.empty()) {
+        // ICU refuses a null text even at length zero, and an empty array's data is null. An empty
+        // paragraph has no runs and the level it was asked for — left to right when it was asked
+        // to decide, since there is no strong character to decide by.
+        out.paragraph_level = direction == ParagraphDirection::RightToLeft ? 1U : 0U;
+        return ok();
+    }
     Array<UChar> units;
     Array<u32> origins;
     if (Status encoded = to_utf16(text, units, origins); !encoded) {
