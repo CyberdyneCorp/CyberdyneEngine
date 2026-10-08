@@ -639,6 +639,20 @@ CY_TEST_CASE("editor animation: what a compiled program cannot carry is named on
     CY_CHECK(has_diagnostic(decode_compile(text_of(reply)), "animation.event.outside", 3));
 }
 
+CY_TEST_CASE("editor animation: a wire the vocabulary does not have is refused on its node") {
+    // The compiler reads a transition's input whatever pin it leaves; the vocabulary does not, and
+    // a graph a canvas could not have drawn is refused rather than compiled as if it could.
+    Character character;
+    const std::string backwards = replaced(read_file(kGraph), "link 2 \"state\" -> 5 \"from\"",
+                                           "link 2 \"pose\" -> 5 \"from\"");
+    Array<u8> reply(allocator());
+    CY_REQUIRE_FALSE(
+        ask(&character.preview, "animation.compile", compile_request(backwards), reply).refused());
+    const Compiled compiled = decode_compile(text_of(reply));
+    CY_CHECK_FALSE(compiled.compiled);
+    CY_CHECK(has_diagnostic(compiled, "graph.link.output-missing", 2));
+}
+
 CY_TEST_CASE("editor animation: a scrubbed clip shows the clip sampled directly at that time") {
     Character character;
     for (const f32 time : {0.0F, 0.37F, 0.5F, 1.0F}) {

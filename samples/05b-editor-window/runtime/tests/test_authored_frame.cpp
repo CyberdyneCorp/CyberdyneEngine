@@ -1502,7 +1502,10 @@ CY_TEST_CASE("authored native frame draws the animation preview the engine posed
     }
     {
         AuthoredFrame frame(allocator(), *native);
-        CY_REQUIRE(frame.initialize(kAnimationShotWidth, kAnimationShotHeight, CY_TEST_PROJECT));
+        // No temporal accumulation: a frame is then a function of the pose alone, so drawing one
+        // pose twice gives one picture and a different pose gives another.
+        CY_REQUIRE(frame.initialize(kAnimationShotWidth, kAnimationShotHeight, CY_TEST_PROJECT,
+                                    /*temporal=*/false));
         CY_REQUIRE_MESSAGE(frame.skinned_preview_supported(),
                            "a Vulkan frame has skinned pipelines (issue #76)");
         BaseWorlds worlds;
@@ -1534,6 +1537,9 @@ CY_TEST_CASE("authored native frame draws the animation preview the engine posed
         CY_CHECK(differing_pixels(blank.span(), frame.pixels()) > 1500);
         Array<u32> contact(allocator());
         CY_REQUIRE(contact.append(frame.pixels()));
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK_EQ(differing_pixels(contact.span(), frame.pixels()), 0U);
         Array<render::GpuInstance> instances(allocator());
         Array<render::DrawItem> draws(allocator());
         CY_REQUIRE(frame.publish(view, instances, draws));

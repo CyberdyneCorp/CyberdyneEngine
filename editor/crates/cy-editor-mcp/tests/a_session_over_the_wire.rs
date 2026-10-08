@@ -5825,10 +5825,10 @@ fn author_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
             &pose_wire(14, 4, "state", 5, "to"),
             &pose_wire(15, 4, "state", 6, "from"),
             &pose_wire(16, 2, "state", 6, "to"),
-            // The timeline's three gestures: place, place, drag one to its time.
-            &event(17, "animation.event.add", r#""time":0.75"#),
-            &event(18, "animation.event.add", r#""time":0.3"#),
-            &event(19, "animation.event.move", r#""from":0.3,"to":0.25"#),
+            // The timeline's three gestures: place, place, drag the later one to its time.
+            &event(17, "animation.event.add", r#""time":0.25"#),
+            &event(18, "animation.event.add", r#""time":0.7"#),
+            &event(19, "animation.event.move", r#""from":0.7,"to":0.75"#),
             // Refused as the panel refuses them: a pose into a transition's state input, a clip
             // the character does not have, an event where one already is, an event on a state.
             &pose_wire(20, 1, "pose", 5, "from"),
@@ -5998,11 +5998,11 @@ fn undo_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
     let undo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#;
     converse(&[INITIALIZE, undo], editor);
     assert!(
-        animation_file(sandbox).contains("footstep@0.300000012; footstep@0.75"),
+        animation_file(sandbox).contains("footstep@0.25; footstep@0.699999988"),
         "undoing the drag puts the event back where it was"
     );
     converse(&[INITIALIZE, undo], editor);
-    assert!(animation_file(sandbox).contains("\"footstep@0.75\""));
+    assert!(animation_file(sandbox).contains("\"footstep@0.25\""));
     // One event, four wires, two properties, two nodes, a property, a wire, a property, two nodes,
     // a property, and the creation.
     for _ in 0..16 {
