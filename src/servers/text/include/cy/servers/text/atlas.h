@@ -69,11 +69,10 @@ struct GlyphSlot {
     /// The rectangle in atlas pixels.
     IRect rect;
     GlyphMetrics metrics;
-    /// The atlas page. Always zero at M5: the atlas grows rather than adding pages, and a caller
-    /// that batches by texture batches by this.
+    /// The atlas page: the `PixelFormat` of the raster, as an index. Each format has one page that
+    /// grows rather than several fixed ones, so a caller that batches by texture batches by this.
     u32 page = 0;
-    /// Whether the slot holds colour rather than coverage. Always false until a backend reports the
-    /// `colour_glyphs` capability.
+    /// Whether the slot holds colour rather than coverage: `page` is `PixelFormat::Colour`.
     bool colour = false;
 };
 
@@ -88,6 +87,11 @@ struct GlyphAtlasConfig {
     /// into another. One is enough for point sampling and two for a mip chain; the default is the
     /// safe one.
     u32 padding = 1;
+    /// Bytes per pixel: 1 for coverage, 4 for a distance field or colour. The text server starts
+    /// one atlas per `PixelFormat` from the same configuration with this set per page.
+    u32 bytes_per_pixel = 1;
+    /// The page number every slot of this atlas reports — the `PixelFormat` it holds, as an index.
+    u32 page = 0;
 };
 
 /// A dynamically packed, least-recently-used glyph cache over one growing texture.
@@ -113,19 +117,29 @@ public:
 
     /// Insert a rasterised glyph, growing or evicting to make room.
     ///
-    /// `coverage` is `metrics.width * metrics.height` bytes, one per pixel, top row first. It is
+    /// `pixels` is `metrics.width * metrics.height * bytes_per_pixel` bytes, top row first. It is
     /// copied into the atlas texture; the caller may free it on return.
+    ///
+    /// `preloaded` says the raster came from a cooked font rather than from a rasteriser, which
+    /// moves `glyphs_preloaded` instead of `glyphs_rasterised` and is the only difference.
     ///
     /// Fails with `OutOfRange` when the glyph is larger than the maximum extent — a 4096-pixel
     /// glyph is a font asking for something no atlas can hold, and enlarging the atlas would not
     /// help.
     [[nodiscard]] Expected<const GlyphSlot*, Error> insert(const GlyphKey& key,
                                                            const GlyphMetrics& metrics,
-                                                           Span<const u8> coverage) noexcept;
+                                                           Span<const u8> pixels,
+                                                           bool preloaded = false) noexcept;
 
-    /// The atlas texture's coverage, `extent * extent` bytes. What an uploader hands to the RHI.
+    /// The atlas texture, `extent * extent * bytes_per_pixel` bytes. What an uploader hands to the
+    /// RHI.
     [[nodiscard]] Span<const u8> pixels() const noexcept;
     [[nodiscard]] u32 extent() const noexcept { return extent_; }
+    [[nodiscard]] u32 bytes_per_pixel() const noexcept { return config_.bytes_per_pixel; }
+    /// Bumped by every repack — growth or compaction — which moves glyphs that were already
+    /// resident. A caller holding normalised texture coordinates from before a repack holds wrong
+    /// ones, and this is how it finds out.
+    [[nodiscard]] u64 repacks() const noexcept { return repacks_; }
     [[nodiscard]] usize live_glyphs() const noexcept { return entries_.size(); }
 
     /// The rectangle that has changed since `clear_dirty`, or an empty rectangle when nothing has.
@@ -168,6 +182,7 @@ private:
     Array<GlyphKey> recently_evicted_;
     static constexpr usize kThrashMemory = 256;
     u64 clock_ = 0;
+    u64 repacks_ = 0;
     IRect dirty_{};
     TextDiagnostics diagnostics_{};
 };

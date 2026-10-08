@@ -228,3 +228,48 @@ CY_TEST_CASE("atlas: occupancy is what was packed over what there is") {
     CY_CHECK(atlas.occupancy() > 0.2f);
     CY_CHECK(atlas.occupancy() < 0.3f);
 }
+
+CY_TEST_CASE("atlas: a four-byte atlas keeps whole pixels through a repack") {
+    // The distance-field and colour pages are four bytes a pixel. A repack that copied a row's
+    // WIDTH rather than its width times four would keep a quarter of every glyph — the regression
+    // this guards — and the growth below forces one.
+    GlyphAtlas atlas;
+    GlyphAtlasConfig config;
+    config.initial_extent = 16;
+    config.maximum_extent = 64;
+    config.bytes_per_pixel = 4;
+    config.page = 1;
+    CY_REQUIRE(atlas.start(config).has_value());
+
+    std::vector<u8> pixels(static_cast<usize>(8) * 8 * 4);
+    for (usize index = 0; index < pixels.size(); ++index) {
+        pixels[index] = static_cast<u8>(index % 4 == 3 ? 255 : index % 251);
+    }
+    for (u32 glyph = 1; glyph <= 6; ++glyph) {
+        CY_REQUIRE(atlas
+                       .insert(key_of(glyph), metrics_of(8),
+                               cy::Span<const u8>(pixels.data(), pixels.size()))
+                       .has_value());
+    }
+    CY_REQUIRE(atlas.diagnostics().atlas_growths >= 1);
+    CY_CHECK(atlas.pixels().size() == static_cast<usize>(atlas.extent()) * atlas.extent() * 4);
+    for (u32 glyph = 1; glyph <= 6; ++glyph) {
+        const GlyphSlot* slot = atlas.find(key_of(glyph));
+        CY_REQUIRE(slot != nullptr);
+        CY_CHECK(slot->page == 1);
+        for (u32 y = 0; y < 8; ++y) {
+            const usize row = ((static_cast<usize>(slot->rect.position.y) + y) * atlas.extent() +
+                               static_cast<usize>(slot->rect.position.x)) *
+                              4;
+            for (usize byte = 0; byte < 8 * 4; ++byte) {
+                CY_CHECK(atlas.pixels()[row + byte] == pixels[(static_cast<usize>(y) * 32) + byte]);
+            }
+        }
+    }
+    // Wrong-sized input is refused: a coverage-sized raster in a four-byte atlas.
+    const std::vector<u8> coverage = coverage_of(8, 1);
+    CY_CHECK_FALSE(
+        atlas
+            .insert(key_of(99), metrics_of(8), cy::Span<const u8>(coverage.data(), coverage.size()))
+            .has_value());
+}

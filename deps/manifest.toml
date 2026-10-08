@@ -645,3 +645,96 @@ source_subdir = "cmake"
 interface = "cy::ml::InferenceBackend in src/ml/include/cy/ml/backend.h, implemented by src/ml/src/onnxruntime_backend.cpp, which is the only translation unit that may include an onnxruntime header"
 scope = "runtime"
 justification = "Running a trained model: operator coverage across ONNX's opset, graph optimisation, and CPU kernels tuned per instruction set. `ml-inference` states outright that the engine SHALL NOT implement a neural runtime — 'operator coverage and per-device optimisation represent enormous investment with no differentiating benefit' — and names this one the portable default because it runs on every target the engine ships to and because its format is the interchange Core ML, DirectML and TensorRT import from. The asset model, the tensor and session API, the scheduling, the budget and the determinism boundary are engine code and are built with the option off."
+
+# --- M11.e: THE TEXT STACK (issue #86) -----------------------------------------------------------
+#
+# The four libraries `text-and-fonts` names, which M5 declined to integrate and said so in this
+# file's header. They are integrated here behind `cy::text::TextBackend`
+# (src/servers/text/include/cy/servers/text/backend.h), implemented by ONE layer-3 module,
+# src/backends/text-complete/, and tools/layercheck/layercheck.py fails the build if any of their
+# headers is included from anywhere else.
+#
+# ORDER MATTERS FOR ONE OF THEM. HarfBuzz's CMakeLists.txt turns on its FreeType interop whenever a
+# target called `freetype` already exists, and then links it. The engine does not use that interop —
+# HarfBuzz shapes from the font's own tables through `hb_ot_font`, and FreeType rasterises — so
+# HarfBuzz is listed BEFORE FreeType, which makes it configure with neither knowing about the other.
+#
+# WHAT EACH ONE BUILDS is decided in cmake/dependencies.cmake, and each block there says why:
+# FreeType without bzip2, libpng, Brotli or its HarfBuzz autohinter hook (so no CBDT/sbix PNG
+# bitmaps and no WOFF2, both stated limits); HarfBuzz without subset, raster, vector, GPU or any
+# platform shaper; msdfgen's core only; and ICU as the sixteen translation units of `libicuuc` that
+# its bidirectional algorithm needs, with NO DATA FILE — the data subset decision `text-and-fonts`
+# asks for, recorded in src/backends/text-complete/README.md.
+#
+# GATED BY CY_TEXT (the first three) and CY_TEXT_ICU (ICU, which requires CY_TEXT). Both default ON:
+# the capability is delivered, and a delivered capability left out of the default build is tested by
+# whoever remembers the option. `-D CY_TEXT=OFF` fetches none of the four, and the engine lays out
+# text through the minimal image-grid backend exactly as it did before this block existed.
+
+[[dependency]]
+name = "harfbuzz"
+version = "14.6.0"
+tag = "14.6.0"
+commit = "a0e2a3c00ecdfa256535300ca445b0272527b06e"
+repository = "https://github.com/harfbuzz/harfbuzz"
+licence = "MIT-Modern-Variant"
+licence_file = "COPYING"
+optional = true
+feature = "CY_TEXT"
+system_package = false
+cmake_target = "harfbuzz"
+source_subdir = ""
+interface = "cy::text::TextBackend::shape, implemented in src/backends/text-complete/src/harfbuzz_shaper.cpp, the only translation unit that includes hb.h"
+scope = "runtime"
+justification = "OpenType shaping — GSUB substitution, GPOS positioning, the Arabic, Indic and Thai shapers, mark attachment and kerning — for every script the engine displays. `text-and-fonts`: correctness for the world's writing systems is only achievable with the mature library, and the in-tree Arabic joining stays as the minimal backend's path and as a test oracle."
+
+[[dependency]]
+name = "freetype"
+version = "2.14.3"
+tag = "VER-2-14-3"
+commit = "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
+repository = "https://github.com/freetype/freetype"
+licence = "FTL"
+licence_file = "LICENSE.TXT"
+optional = true
+feature = "CY_TEXT"
+system_package = false
+cmake_target = "freetype"
+source_subdir = ""
+interface = "cy::text::TextBackend's faces and rasterisation, implemented in src/backends/text-complete/src/freetype_faces.cpp, the only translation unit that includes ft2build.h"
+scope = "runtime"
+justification = "TrueType, OpenType, TTC and WOFF parsing, variable-font instancing, hinting and anti-aliased outline rasterisation, plus COLR colour layers. Decades of format coverage and hinting refinement that are maintenance rather than differentiation. Dual-licensed FTL or GPLv2; the engine takes it under the FTL, whose only obligation is the credit THIRD_PARTY.md carries."
+
+[[dependency]]
+name = "msdfgen"
+version = "1.13"
+tag = "v1.13"
+commit = "1874bcf7d9624ccc85b4bc9a85d78116f690f35b"
+repository = "https://github.com/Chlumsky/msdfgen"
+licence = "MIT"
+licence_file = "LICENSE.txt"
+optional = true
+feature = "CY_TEXT"
+system_package = false
+cmake_target = "msdfgen-core"
+source_subdir = ""
+interface = "cy::text::RenderMode::SignedDistanceField, generated in src/backends/text-complete/src/msdf_generator.cpp from FreeType outlines; no msdfgen type leaves that file"
+scope = "runtime"
+justification = "Multi-channel signed distance fields, so one atlas entry draws a glyph sharply at any scale, rotation or in 3D. Small, focused and well solved; the core is used alone, over outlines FreeType decomposes, so it brings no dependency of its own."
+
+[[dependency]]
+name = "icu"
+version = "78.3"
+tag = "release-78.3"
+commit = "21d1eb0f306e1141c10931e914dfc038c06121da"
+repository = "https://github.com/unicode-org/icu"
+licence = "Unicode-3.0"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_TEXT_ICU"
+system_package = false
+cmake_target = "cy_icu_bidi"
+source_subdir = "cy-not-a-subproject"
+interface = "cy::text::TextBackend::resolve_bidi, implemented in src/backends/text-complete/src/icu_bidi.cpp, the only translation unit that includes a unicode/ header"
+scope = "runtime"
+justification = "The Unicode Bidirectional Algorithm in full — isolating run sequences, N0 paired brackets and mirroring, which the in-tree algorithm approximates or omits. Only the data-free part of libicuuc is compiled; ICU has no CMake project, so cmake/dependencies.cmake names its sources, and the fetch is a 390 MB working tree for a sixteen-file build, which is the cost CY_TEXT_ICU=OFF removes."

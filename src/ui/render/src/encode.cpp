@@ -92,6 +92,22 @@ void sample_linear(const ReferenceAtlas& atlas, f32 u, f32 v, f32 (&out)[4]) noe
     }
 }
 
+/// The middle one of three: what turns a multi-channel distance field's channels into one distance.
+[[nodiscard]] f32 median_of(f32 a, f32 b, f32 c) noexcept {
+    return std::max(std::min(a, b), std::min(std::max(a, b), c));
+}
+
+/// cy/ui.slang's `glyphField`: the signed distance in pixels, positive inside the outline, from a
+/// distance-field page sampled linearly at the primitive's uv.
+[[nodiscard]] f32 field_distance(const GpuUiPrimitive& row, f32 x, f32 y,
+                                 const ReferenceAtlas& atlas) noexcept {
+    const f32 u = row.uv[0] + (saturate((x - row.bounds[0]) / row.bounds[2]) * row.uv[2]);
+    const f32 v = row.uv[1] + (saturate((y - row.bounds[1]) / row.bounds[3]) * row.uv[3]);
+    f32 sampled[4] = {};
+    sample_linear(atlas, u, v, sampled);
+    return (median_of(sampled[0], sampled[1], sampled[2]) - 0.5F) * row.shape[2];
+}
+
 /// The material's texture term, multiplied into `fill`.
 void apply_material(const GpuUiPrimitive& row, f32 x, f32 y, const ReferenceAtlas* atlas,
                     f32 (&fill)[4]) noexcept {
@@ -134,6 +150,35 @@ void apply_material(const GpuUiPrimitive& row, f32 x, f32 y, const ReferenceAtla
 
 }  // namespace
 
+bool shade_glyph_field(const GpuUiPrimitive& row, f32 x, f32 y, const ReferenceAtlas* atlas,
+                       f32 (&out)[4]) noexcept {
+    // cy/ui.slang's glyph-field branch: the glyph where the distance is past the edge by half a
+    // pixel, the outline out to `border` pixels beyond it, both with a one-pixel ramp; nothing
+    // outside the quad, which the box coverage of the primitive's own bounds decides.
+    if (atlas == nullptr || atlas->texels.empty()) {
+        return false;
+    }
+    const f32 half_x = row.bounds[2] * 0.5F;
+    const f32 half_y = row.bounds[3] * 0.5F;
+    const f32 box =
+        coverage(x - (row.bounds[0] + half_x), y - (row.bounds[1] + half_y), half_x, half_y, 0.0F);
+    const f32 distance = field_distance(row, x, y, *atlas);
+    const f32 body = saturate(distance + 0.5F) * box;
+    const f32 border = row.shape[1];
+    const f32 outline =
+        (border > 0.0F ? saturate(distance + border + 0.5F) : saturate(distance + 0.5F)) * box;
+    f32 fill[4] = {};
+    f32 edge[4] = {};
+    unpack_colour(row.colour, fill);
+    unpack_colour(row.border_colour, edge);
+    bool drawn = false;
+    for (usize channel = 0; channel < 4U; ++channel) {
+        out[channel] = (fill[channel] * body) + (edge[channel] * (outline - body));
+        drawn = drawn || out[channel] != 0.0F;
+    }
+    return drawn;
+}
+
 GpuUiPrimitive encode_primitive(const Primitive& primitive, f32 scale) noexcept {
     GpuUiPrimitive row;
     row.bounds[0] = primitive.bounds.x * scale;
@@ -146,6 +191,7 @@ GpuUiPrimitive encode_primitive(const Primitive& primitive, f32 scale) noexcept 
     row.uv[3] = primitive.uv.height;
     row.shape[0] = primitive.corner_radius * scale;
     row.shape[1] = primitive.border_width * scale;
+    row.shape[2] = primitive.distance_range * scale;
     row.colour = primitive.colour;
     row.border_colour = primitive.border_colour;
     row.material = primitive.material;
@@ -161,6 +207,7 @@ Primitive decode_primitive(const GpuUiPrimitive& row, f32 scale) noexcept {
     primitive.uv = Rect{row.uv[0], row.uv[1], row.uv[2], row.uv[3]};
     primitive.corner_radius = row.shape[0] * inverse;
     primitive.border_width = row.shape[1] * inverse;
+    primitive.distance_range = row.shape[2] * inverse;
     primitive.colour = row.colour;
     primitive.border_colour = row.border_colour;
     primitive.material = static_cast<u16>(row.material);
@@ -225,6 +272,9 @@ bool shade_reference(const GpuUiPrimitive& row, u32 px, u32 py, const ReferenceA
                      f32 (&out)[4]) noexcept {
     const f32 x = static_cast<f32>(px) + 0.5F;
     const f32 y = static_cast<f32>(py) + 0.5F;
+    if (row.material == material_index(BuiltinMaterial::GlyphField)) {
+        return shade_glyph_field(row, x, y, atlas, out);
+    }
     const f32 half_x = row.bounds[2] * 0.5F;
     const f32 half_y = row.bounds[3] * 0.5F;
     const f32 local_x = x - (row.bounds[0] + half_x);

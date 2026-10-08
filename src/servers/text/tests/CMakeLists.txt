@@ -34,6 +34,7 @@ function(cy_text_declare_tests)
         KIND unit
         SOURCES
             "${tests_dir}/test_atlas.cpp"
+            "${tests_dir}/test_backend.cpp"
             "${tests_dir}/test_layout.cpp"
             "${tests_dir}/test_server.cpp"
         DEPENDENCIES cy::servers-text)

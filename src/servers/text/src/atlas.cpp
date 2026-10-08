@@ -28,6 +28,10 @@ Status GlyphAtlas::start(const GlyphAtlasConfig& config) noexcept {
     if (config.initial_extent > config.maximum_extent) {
         return fail(ErrorCode::InvalidArgument, "an atlas that starts larger than its own maximum");
     }
+    if (config.bytes_per_pixel != 1 && config.bytes_per_pixel != 4) {
+        return fail(ErrorCode::InvalidArgument,
+                    "an atlas pixel is one byte of coverage or four of distance or colour");
+    }
     config_ = config;
     entries_.clear();
     recently_evicted_.clear();
@@ -85,8 +89,9 @@ void GlyphAtlas::clear_dirty() noexcept {
 }
 
 Status GlyphAtlas::repack(u32 extent) noexcept {
+    const usize bpp = config_.bytes_per_pixel;
     Array<u8> pixels;
-    if (Status resized = pixels.resize(static_cast<usize>(extent) * extent); !resized) {
+    if (Status resized = pixels.resize(static_cast<usize>(extent) * extent * bpp); !resized) {
         return resized;
     }
     std::memset(pixels.data(), 0, pixels.size());
@@ -130,12 +135,14 @@ Status GlyphAtlas::repack(u32 extent) noexcept {
                                 IVec2{entry.slot.rect.size.x, entry.slot.rect.size.y}};
         for (i32 row = 0; row < destination.size.y; ++row) {
             const u8* source = pixels_.data() +
-                               (static_cast<usize>(entry.slot.rect.position.y + row) * extent_) +
-                               static_cast<usize>(entry.slot.rect.position.x);
-            u8* target = pixels.data() +
-                         (static_cast<usize>(destination.position.y + row) * extent) +
-                         static_cast<usize>(destination.position.x);
-            std::memcpy(target, source, static_cast<usize>(destination.size.x));
+                               (((static_cast<usize>(entry.slot.rect.position.y + row) * extent_) +
+                                 static_cast<usize>(entry.slot.rect.position.x)) *
+                                bpp);
+            u8* target =
+                pixels.data() + (((static_cast<usize>(destination.position.y + row) * extent) +
+                                  static_cast<usize>(destination.position.x)) *
+                                 bpp);
+            std::memcpy(target, source, static_cast<usize>(destination.size.x) * bpp);
         }
         entry.slot.rect = destination;
     }
@@ -143,6 +150,7 @@ Status GlyphAtlas::repack(u32 extent) noexcept {
     pixels_ = std::move(pixels);
     packer_ = std::move(packer);
     extent_ = extent;
+    ++repacks_;
     // Everything moved, so everything is dirty. An uploader that was tracking a small region has to
     // be told the whole texture changed, and saying so here is cheaper than being wrong.
     dirty_ = IRect{IVec2{0, 0}, IVec2{static_cast<i32>(extent), static_cast<i32>(extent)}};
@@ -174,13 +182,14 @@ void GlyphAtlas::evict(usize count) noexcept {
 
 Expected<const GlyphSlot*, Error> GlyphAtlas::insert(const GlyphKey& key,
                                                      const GlyphMetrics& metrics,
-                                                     Span<const u8> coverage) noexcept {
+                                                     Span<const u8> pixels,
+                                                     bool preloaded) noexcept {
     if (!is_running()) {
         return fail(ErrorCode::Unavailable, "the glyph atlas has not been started");
     }
-    if (coverage.size() != static_cast<usize>(metrics.width) * metrics.height) {
-        return fail(ErrorCode::InvalidArgument,
-                    "a glyph whose coverage does not fill its own metrics");
+    const usize bpp = config_.bytes_per_pixel;
+    if (pixels.size() != static_cast<usize>(metrics.width) * metrics.height * bpp) {
+        return fail(ErrorCode::InvalidArgument, "a glyph whose pixels do not fill its own metrics");
     }
     const auto padding = static_cast<i32>(config_.padding);
     const IVec2 wanted{static_cast<i32>(metrics.width) + padding,
@@ -222,12 +231,13 @@ Expected<const GlyphSlot*, Error> GlyphAtlas::insert(const GlyphKey& key,
 
     const IRect rect{placed.value().position,
                      IVec2{static_cast<i32>(metrics.width), static_cast<i32>(metrics.height)}};
+    const usize row_bytes = static_cast<usize>(metrics.width) * bpp;
     for (u32 row = 0; row < metrics.height; ++row) {
         u8* target = pixels_.data() +
-                     (static_cast<usize>(rect.position.y + static_cast<i32>(row)) * extent_) +
-                     static_cast<usize>(rect.position.x);
-        std::memcpy(target, coverage.data() + (static_cast<usize>(row) * metrics.width),
-                    metrics.width);
+                     (((static_cast<usize>(rect.position.y + static_cast<i32>(row)) * extent_) +
+                       static_cast<usize>(rect.position.x)) *
+                      bpp);
+        std::memcpy(target, pixels.data() + (static_cast<usize>(row) * row_bytes), row_bytes);
     }
     mark_dirty(rect);
 
@@ -235,11 +245,17 @@ Expected<const GlyphSlot*, Error> GlyphAtlas::insert(const GlyphKey& key,
     entry.key = key;
     entry.slot.rect = rect;
     entry.slot.metrics = metrics;
+    entry.slot.page = config_.page;
+    entry.slot.colour = config_.page == static_cast<u32>(PixelFormat::Colour);
     entry.used_at = ++clock_;
     if (Status pushed = entries_.push_back(entry); !pushed) {
         return make_unexpected(pushed.error());
     }
-    ++diagnostics_.glyphs_rasterised;
+    if (preloaded) {
+        ++diagnostics_.glyphs_preloaded;
+    } else {
+        ++diagnostics_.glyphs_rasterised;
+    }
     return &entries_[entries_.size() - 1].slot;
 }
 

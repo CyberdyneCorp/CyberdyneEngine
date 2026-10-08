@@ -83,6 +83,34 @@ enum class RenderMode : u8 {
 /// The enumerator's own spelling. Never null.
 [[nodiscard]] const char* render_mode_name(RenderMode mode) noexcept;
 
+/// What one pixel of a rasterised glyph holds, and therefore which atlas page it lives on.
+///
+/// The render mode is what a caller ASKS for; this is what the rasteriser PRODUCED, and the two
+/// differ in exactly one case that matters: a face asked for grayscale whose glyph has colour
+/// layers produces a colour raster, because an emoji drawn as one channel of coverage is a grey
+/// blob. So the atlas a glyph lands in is decided per glyph, by this, and not per face.
+enum class PixelFormat : u8 {
+    /// One byte of coverage per pixel. Grayscale and monochrome rasters, and image-grid fonts.
+    Coverage = 0,
+    /// Four bytes: a multi-channel signed distance in red, green and blue, and the true signed
+    /// distance in alpha, each mapped so that 0.5 is the outline and the face's `distance_range`
+    /// atlas pixels either side span [0, 1].
+    DistanceField = 1,
+    /// Four bytes of premultiplied red, green, blue and alpha, from COLR layers.
+    Colour = 2,
+};
+
+/// How many atlas pages there are: one per `PixelFormat`.
+inline constexpr u32 kPixelFormatCount = 3;
+
+/// Bytes per pixel of a format.
+[[nodiscard]] constexpr u32 bytes_per_pixel(PixelFormat format) noexcept {
+    return format == PixelFormat::Coverage ? 1U : 4U;
+}
+
+/// The enumerator's own spelling. Never null.
+[[nodiscard]] const char* pixel_format_name(PixelFormat format) noexcept;
+
 /// What overflowing text does when it will not fit.
 enum class Overflow : u8 {
     /// Draw what fits and cut the rest at the box's edge.
@@ -129,6 +157,9 @@ struct TextCapabilities {
     bool vertical_layout = false;
     /// Kashida elongation for justified Arabic.
     bool kashida_justification = false;
+    /// TrueType, OpenType, collection and WOFF faces, with hinting and synthetic styles. False is
+    /// the minimal backend, whose only face format is `ImageGridFont`.
+    bool outline_fonts = false;
     /// Which backend answered. For a diagnostic and for a log line; never for a branch — that is
     /// what the flags above are for.
     const char* backend = "";
@@ -175,6 +206,41 @@ struct TextDiagnostics {
     /// too small for the set of glyphs in use, and every frame pays to redraw what it just threw
     /// away.
     u64 thrashes = 0;
+    /// Glyphs placed in an atlas from a cooked font's pre-rendered ranges rather than rasterised.
+    /// Counted apart from `glyphs_rasterised` so that "the Latin range was cooked, so laying out
+    /// Latin rasterises nothing" is a number a test can read.
+    u64 glyphs_preloaded = 0;
+
+    // --- Per frame ------------------------------------------------------------------------------
+    //
+    // `text-and-fonts` asks for "per-frame glyph rasterisation counts", and a running total cannot
+    // answer that: a thousand rasterisations over an hour is a warm cache and a thousand in one
+    // frame is a hitch. `TextServer::end_frame` closes a frame and moves these.
+
+    /// Frames closed since the last reset.
+    u64 frames = 0;
+    /// Rasterisations in the frame most recently closed.
+    u64 rasterised_last_frame = 0;
+    /// The most rasterisations any one closed frame has paid.
+    u64 peak_frame_rasterisations = 0;
+    /// Frames whose rasterisations exceeded `TextServerConfig::rasterisation_spike` — the spike
+    /// report: each one is a frame that stalled on glyph work a pre-rendered range would have
+    /// avoided.
+    u64 rasterisation_spikes = 0;
+};
+
+/// One face's fallback count, for the report of "fonts that trigger fallback frequently".
+///
+/// Counted against the face the chain STARTED from — the primary a caller chose — because that is
+/// the decision the report is about: a primary that falls back on every second character is the
+/// wrong primary.
+struct FallbackReport {
+    /// The primary face, as its handle's bits.
+    u64 face = 0;
+    /// Codepoints this primary could not answer and a later face in its chain did.
+    u64 fallbacks = 0;
+    /// Codepoints shaped with this primary first, the denominator of the rate.
+    u64 codepoints = 0;
 };
 
 }  // namespace cy::text

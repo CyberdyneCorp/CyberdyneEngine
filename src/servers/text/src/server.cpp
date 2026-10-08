@@ -1,5 +1,7 @@
 #include <cy/servers/text/server.h>
 
+#include <cy/text/unicode.h>
+
 #include <cstring>
 
 namespace cy::text {
@@ -35,10 +37,39 @@ namespace {
     return hash;
 }
 
+/// A codepoint that belongs to the grapheme before it — a combining mark, a joiner, a variation
+/// selector. It is shaped in the face its base character was, whatever the chain would answer for
+/// it alone, because a mark split from its base into another font can neither attach nor reorder.
+[[nodiscard]] bool extends_previous(Codepoint codepoint) noexcept {
+    const GraphemeBreak property = grapheme_break_of(codepoint);
+    return property == GraphemeBreak::Extend || property == GraphemeBreak::ZeroWidthJoiner;
+}
+
+/// One stretch of text shaped in one face.
+struct FaceRun {
+    u32 begin = 0;
+    u32 end = 0;
+    FontHandle face;
+};
+
 }  // namespace
 
 TextServer::~TextServer() {
     stop();
+}
+
+Status TextServer::open(const TextServerConfig& config) noexcept {
+    GlyphAtlasConfig coverage = config.atlas;
+    coverage.bytes_per_pixel = bytes_per_pixel(PixelFormat::Coverage);
+    coverage.page = static_cast<u32>(PixelFormat::Coverage);
+    if (Status started = atlases_[0].start(coverage); !started) {
+        return started;
+    }
+    config_ = config;
+    diagnostics_ = {};
+    rasterised_at_frame_start_ = 0;
+    running_ = true;
+    return ok();
 }
 
 Status TextServer::start(const TextServerConfig& config) noexcept {
@@ -49,24 +80,54 @@ Status TextServer::start(const TextServerConfig& config) noexcept {
         // Named rather than silently downgraded. A caller that asked for shaping and got Latin has
         // a defect it cannot see; a caller told what is missing can decide.
         return fail(ErrorCode::NotImplemented,
-                    "the complete backend needs HarfBuzz, ICU and FreeType, none of which is an "
-                    "integrated dependency yet; select BackendKind::Minimal or integrate them");
+                    "the complete backend is FreeType, HarfBuzz, msdfgen and ICU behind a "
+                    "TextBackend that src/backends/text-complete/ provides (CY_TEXT); construct "
+                    "one and call start_with, or select BackendKind::Minimal");
     }
-    if (Status started = atlas_.start(config.atlas); !started) {
-        return started;
+    if (Status opened = open(config); !opened) {
+        return opened;
     }
-    config_ = config;
     capabilities_ = minimal_capabilities();
-    diagnostics_ = {};
-    running_ = true;
+    return ok();
+}
+
+Status TextServer::start_with(const TextServerConfig& config, TextBackend& backend) noexcept {
+    if (running_) {
+        return fail(ErrorCode::AlreadyExists, "the text server is already running");
+    }
+    if (Status opened = open(config); !opened) {
+        return opened;
+    }
+    backend_ = &backend;
+    capabilities_ = backend.capabilities();
+    capabilities_.backend = backend.name();
     return ok();
 }
 
 void TextServer::stop() noexcept {
-    atlas_.stop();
+    for (Face& face : faces_) {
+        if (face.live && face.outline && backend_ != nullptr) {
+            backend_->close_face(face.backend_face);
+        }
+    }
+    for (GlyphAtlas& atlas : atlases_) {
+        atlas.stop();
+    }
     faces_.clear();
     shaping_cache_.clear();
+    backend_ = nullptr;
     running_ = false;
+}
+
+Status TextServer::ensure_atlas(PixelFormat format) noexcept {
+    GlyphAtlas& target = atlases_[static_cast<u32>(format)];
+    if (target.is_running()) {
+        return ok();
+    }
+    GlyphAtlasConfig config = config_.atlas;
+    config.bytes_per_pixel = bytes_per_pixel(format);
+    config.page = static_cast<u32>(format);
+    return target.start(config);
 }
 
 // --- Faces ---------------------------------------------------------------------------------------
@@ -117,7 +178,12 @@ Expected<FontHandle, Error> TextServer::create_face(const FontDesc& desc,
     face.metrics.space_advance =
         grid.advance > 0.0f ? grid.advance : static_cast<f32>(grid.cell_width);
     face.metrics.monospace = true;
+    return add_face(face);
+}
 
+Expected<FontHandle, Error> TextServer::add_face(const Face& added) noexcept {
+    Face face = added;
+    face.live = true;
     for (usize index = 0; index < faces_.size(); ++index) {
         if (!faces_[index].live) {
             // The generation moves on REUSE, so a handle to the face that was here answers no.
@@ -133,10 +199,88 @@ Expected<FontHandle, Error> TextServer::create_face(const FontDesc& desc,
     return FontHandle::from_slot(static_cast<u32>(faces_.size() - 1), face.generation);
 }
 
+Expected<FontHandle, Error> TextServer::create_face(const FontDesc& desc,
+                                                    const FontSource& source) noexcept {
+    if (!running_) {
+        return fail(ErrorCode::Unavailable, "the text server has not been started");
+    }
+    if (backend_ == nullptr) {
+        return fail(ErrorCode::Unsupported,
+                    "an outline font needs the complete backend: build with CY_TEXT and start the "
+                    "server with start_with; the minimal backend reads image-grid fonts only");
+    }
+    if (desc.size_pixels <= 0.0f) {
+        return fail(ErrorCode::InvalidArgument, "a face size must be positive");
+    }
+    if (desc.axis_count > kMaxFontAxes) {
+        return fail(ErrorCode::OutOfRange, "more variable-font axes than a face may pin");
+    }
+    if (desc.feature_count > kMaxFontFeatures) {
+        return fail(ErrorCode::OutOfRange, "more feature settings than a face may carry");
+    }
+    if (source.bytes.empty()) {
+        return fail(ErrorCode::InvalidArgument, "an outline face needs the font's bytes");
+    }
+    Expected<BackendFace, Error> opened = backend_->open_face(desc, source);
+    if (!opened) {
+        return make_unexpected(opened.error());
+    }
+    Face face;
+    face.desc = desc;
+    face.outline = true;
+    face.backend_face = opened.value();
+    face.metrics = backend_->face_metrics(face.backend_face);
+    Expected<FontHandle, Error> handle = add_face(face);
+    if (!handle) {
+        backend_->close_face(face.backend_face);
+    }
+    return handle;
+}
+
+Expected<FontHandle, Error> TextServer::create_face(const CookedFont& cooked) noexcept {
+    Expected<FontHandle, Error> handle = create_face(cooked.desc(), cooked.source());
+    if (!handle) {
+        return handle;
+    }
+    // The pre-rendered ranges, copied out of the cooked pages into the live atlases. They are
+    // inserted rather than mapped because the live atlas is shared with every other face and packs,
+    // grows and evicts as one; a cooked page is where the pixels come from, not where they stay.
+    Array<u8> pixels;
+    for (const CookedGlyph& glyph : cooked.glyphs()) {
+        const CookedPage& page = cooked.page(glyph.format);
+        const usize bpp = bytes_per_pixel(glyph.format);
+        const usize row = static_cast<usize>(glyph.metrics.width) * bpp;
+        Status status = ensure_atlas(glyph.format);
+        status = status ? pixels.resize(row * glyph.metrics.height) : status;
+        for (u32 y = 0; status && y < glyph.metrics.height; ++y) {
+            const usize source = ((static_cast<usize>(glyph.y + y) * page.extent) + glyph.x) * bpp;
+            std::memcpy(pixels.data() + (static_cast<usize>(y) * row), page.pixels.data() + source,
+                        row);
+        }
+        GlyphKey key;
+        key.face = handle.value();
+        key.glyph = glyph.glyph;
+        if (status) {
+            Expected<const GlyphSlot*, Error> slot =
+                atlas(glyph.format)
+                    .insert(key, glyph.metrics, Span<const u8>(pixels.data(), pixels.size()), true);
+            status = slot ? ok() : Status(make_unexpected(slot.error()));
+        }
+        if (!status) {
+            destroy_face(handle.value());
+            return make_unexpected(status.error());
+        }
+    }
+    return handle;
+}
+
 void TextServer::destroy_face(FontHandle face) noexcept {
     Face* found = find_face(face);
     if (found != nullptr) {
         found->live = false;
+        if (found->outline && backend_ != nullptr) {
+            backend_->close_face(found->backend_face);
+        }
     }
 }
 
@@ -156,6 +300,9 @@ GlyphIndex TextServer::glyph_for(FontHandle face, Codepoint codepoint) const noe
     const Face* found = find_face(face);
     if (found == nullptr) {
         return kNotdef;
+    }
+    if (found->outline) {
+        return backend_->glyph_for(found->backend_face, codepoint);
     }
     if (codepoint < found->grid.first_codepoint) {
         return kNotdef;
@@ -186,7 +333,10 @@ Expected<const GlyphSlot*, Error> TextServer::glyph_slot(FontHandle face,
     GlyphKey key;
     key.face = face;
     key.glyph = glyph;
-    if (const GlyphSlot* resident = atlas_.find(key); resident != nullptr) {
+    if (found->outline) {
+        return outline_slot(*found, key);
+    }
+    if (const GlyphSlot* resident = atlases_[0].find(key); resident != nullptr) {
         return resident;
     }
 
@@ -230,12 +380,42 @@ Expected<const GlyphSlot*, Error> TextServer::glyph_slot(FontHandle face,
         }
     }
 
-    return atlas_.insert(key, metrics, Span<const u8>(coverage.data(), coverage.size()));
+    return atlases_[0].insert(key, metrics, Span<const u8>(coverage.data(), coverage.size()));
+}
+
+Expected<const GlyphSlot*, Error> TextServer::outline_slot(const Face& face,
+                                                           const GlyphKey& key) noexcept {
+    // A glyph of an outline face may be in any of the three atlases — a colour glyph of a grayscale
+    // face is in the colour one — so all three that exist are asked before anything is rasterised.
+    for (GlyphAtlas& candidate : atlases_) {
+        if (candidate.is_running()) {
+            if (const GlyphSlot* resident = candidate.find(key); resident != nullptr) {
+                return resident;
+            }
+        }
+    }
+    GlyphRaster raster;
+    if (Status rasterised = backend_->rasterise(face.backend_face, key.glyph, raster);
+        !rasterised) {
+        return make_unexpected(rasterised.error());
+    }
+    if (key.glyph == kNotdef) {
+        ++diagnostics_.notdef_served;
+    }
+    if (Status started = ensure_atlas(raster.format); !started) {
+        return make_unexpected(started.error());
+    }
+    return atlas(raster.format)
+        .insert(key, raster.metrics, Span<const u8>(raster.pixels.data(), raster.pixels.size()));
 }
 
 // --- Shaping -------------------------------------------------------------------------------------
 
 FontHandle TextServer::resolve_face(const FallbackChain& chain, Codepoint codepoint) noexcept {
+    Face* primary = chain.count != 0 ? find_face(chain.faces[0]) : nullptr;
+    if (primary != nullptr) {
+        ++primary->shaped_as_primary;
+    }
     for (u32 index = 0; index < chain.count; ++index) {
         if (has_glyph(chain.faces[index], codepoint)) {
             if (index != 0) {
@@ -243,6 +423,9 @@ FontHandle TextServer::resolve_face(const FallbackChain& chain, Codepoint codepo
                 // diagnostics `text-and-fonts` asks for: a primary font that falls back on every
                 // second character is the wrong primary font.
                 ++diagnostics_.fallbacks_taken;
+                if (primary != nullptr) {
+                    ++primary->fell_back;
+                }
             }
             return chain.faces[index];
         }
@@ -262,7 +445,11 @@ Status TextServer::shape_uncached(std::string_view text, const FallbackChain& ch
     if (chain.count == 0) {
         return fail(ErrorCode::InvalidArgument, "shaping needs at least one face");
     }
-    if (direction != Direction::LeftToRight) {
+    if (direction == Direction::TopToBottom && !capabilities_.vertical_layout) {
+        return fail(ErrorCode::Unsupported,
+                    "this backend does not lay text out vertically; query capabilities() first");
+    }
+    if (direction == Direction::RightToLeft && !capabilities_.complex_shaping) {
         // Refused rather than approximated. `capabilities().bidirectional` and `vertical_layout`
         // are both false, and a backend that produced left-to-right glyphs for a right-to-left
         // request would be lying in a way the caller cannot detect.
@@ -270,28 +457,109 @@ Status TextServer::shape_uncached(std::string_view text, const FallbackChain& ch
                     "the minimal backend lays out left to right only; query capabilities() first");
     }
 
+    // Itemise by face: consecutive codepoints the chain answers with the same face are one run, so
+    // an outline face sees whole words and can join, ligate and kern across them. A newline ends a
+    // run and produces no glyph — it is a break opportunity, and the paragraph layout acts on it.
+    Array<FaceRun> runs;
     usize cursor = 0;
     while (cursor < text.size()) {
         const auto offset = static_cast<u32>(cursor);
         const Codepoint codepoint = decode_utf8(text, cursor);
         if (codepoint == '\n') {
-            // A newline occupies no width and produces no glyph. It is a break opportunity, and the
-            // paragraph layout is what acts on it.
             continue;
         }
-        const FontHandle face = resolve_face(chain, codepoint);
-        const Face* found = find_face(face);
-        if (found == nullptr) {
+        FaceRun* current = runs.empty() ? nullptr : &runs[runs.size() - 1];
+        const bool contiguous = current != nullptr && current->end == offset;
+        const Face* current_face = contiguous ? find_face(current->face) : nullptr;
+        FontHandle face;
+        if (current_face != nullptr && current_face->outline && extends_previous(codepoint)) {
+            face = current->face;
+        } else {
+            face = resolve_face(chain, codepoint);
+        }
+        if (find_face(face) == nullptr) {
             return fail(ErrorCode::NotFound, "the fallback chain names a face that is not there");
         }
+        if (contiguous && current->face == face) {
+            current->end = static_cast<u32>(cursor);
+            continue;
+        }
+        if (Status pushed = runs.push_back(FaceRun{offset, static_cast<u32>(cursor), face});
+            !pushed) {
+            return pushed;
+        }
+    }
 
+    // Right to left, the first run in logical order is the rightmost on the page; each run comes
+    // back from its face already in visual order within itself.
+    const bool reversed = direction == Direction::RightToLeft;
+    for (usize step = 0; step < runs.size(); ++step) {
+        const FaceRun& run = runs[reversed ? runs.size() - 1 - step : step];
+        if (Status shaped = shape_face_run(text, run.begin, run.end, run.face, direction, out);
+            !shaped) {
+            return shaped;
+        }
+    }
+    return ok();
+}
+
+Status TextServer::shape_face_run(std::string_view text, u32 begin, u32 end, FontHandle face,
+                                  Direction direction, ShapedRun& out) noexcept {
+    const Face* found = find_face(face);
+    if (found == nullptr) {
+        return fail(ErrorCode::NotFound, "the fallback chain names a face that is not there");
+    }
+    if (found->outline) {
+        ShapeRequest request;
+        request.text = text.substr(begin, end - begin);
+        request.direction = direction;
+        Array<BackendGlyph> shaped;
+        if (Status status = backend_->shape(found->backend_face, request, shaped); !status) {
+            return status;
+        }
+        for (const BackendGlyph& produced : shaped) {
+            ShapedGlyph glyph;
+            glyph.face = face;
+            glyph.glyph = produced.glyph;
+            glyph.missing = produced.glyph == kNotdef;
+            glyph.source_offset = begin + produced.cluster;
+            glyph.advance = produced.advance.x;
+            glyph.offset = Vec2{out.width + produced.offset.x, produced.offset.y};
+            out.width += produced.advance.x;
+            if (Status pushed = out.glyphs.push_back(glyph); !pushed) {
+                return pushed;
+            }
+        }
+        return ok();
+    }
+
+    // An image-grid face: one glyph per codepoint, which is the whole of what the format can say.
+    // Right to left (a grid face as the fallback of an outline one) the codepoints are placed last
+    // first, so the run reads right to left like the faces around it.
+    Array<u32> offsets;
+    usize cursor = begin;
+    while (cursor < end) {
+        const auto offset = static_cast<u32>(cursor);
+        if (decode_utf8(text, cursor) == '\n') {
+            continue;
+        }
+        if (Status pushed = offsets.push_back(offset); !pushed) {
+            return pushed;
+        }
+    }
+    const f32 advance =
+        found->grid.advance > 0.0f ? found->grid.advance : static_cast<f32>(found->grid.cell_width);
+    const bool reversed = direction == Direction::RightToLeft;
+    for (usize step = 0; step < offsets.size(); ++step) {
+        const u32 offset = offsets[reversed ? offsets.size() - 1 - step : step];
+        usize at = offset;
+        const Codepoint codepoint = decode_utf8(text, at);
         ShapedGlyph glyph;
         glyph.face = face;
         glyph.glyph = glyph_for(face, codepoint);
         glyph.missing = glyph.glyph == kNotdef;
         glyph.source_offset = offset;
-        glyph.advance = found->grid.advance > 0.0f ? found->grid.advance
-                                                   : static_cast<f32>(found->grid.cell_width);
+        glyph.advance = advance;
         glyph.offset = Vec2{out.width, 0.0f};
         out.width += glyph.advance;
         if (Status pushed = out.glyphs.push_back(glyph); !pushed) {
@@ -407,6 +675,9 @@ Expected<Vec2, Error> TextServer::measure(std::string_view text,
 
 Status TextServer::build_line(std::string_view text, u32 begin, u32 end, const FallbackChain& chain,
                               Direction direction, TextLine& out) noexcept {
+    if (backend_ != nullptr && capabilities_.bidirectional && direction != Direction::TopToBottom) {
+        return build_bidi_line(text, begin, end, chain, direction, out);
+    }
     if (Status shaped = shape(text.substr(begin, end - begin), chain, direction, out.run());
         !shaped) {
         return shaped;
@@ -428,12 +699,86 @@ Status TextServer::build_line(std::string_view text, u32 begin, u32 end, const F
     return ok();
 }
 
+Status TextServer::resolve_bidi(std::string_view text, Direction direction,
+                                BidiResult& out) noexcept {
+    const ParagraphDirection paragraph = direction == Direction::RightToLeft
+                                             ? ParagraphDirection::RightToLeft
+                                             : ParagraphDirection::LeftToRight;
+    if (backend_ != nullptr) {
+        Status resolved = backend_->resolve_bidi(text, paragraph, out);
+        if (resolved || resolved.error().code != ErrorCode::Unsupported) {
+            return resolved;
+        }
+    }
+    // The backend has no bidirectional algorithm of its own (CY_TEXT_ICU off): src/text/'s, which
+    // reports through `BidiResult::approximated` where an isolate made its answer approximate.
+    out.runs.clear();
+    return resolve_levels(text, paragraph, out);
+}
+
+Status TextServer::build_bidi_line(std::string_view text, u32 begin, u32 end,
+                                   const FallbackChain& chain, Direction direction,
+                                   TextLine& out) noexcept {
+    const std::string_view slice = text.substr(begin, end - begin);
+    BidiResult bidi(current_allocator());
+    if (Status resolved = resolve_bidi(slice, direction, bidi); !resolved) {
+        return resolved;
+    }
+    Array<u32> order;
+    if (Status reordered = reorder_visual(bidi.runs.span(), bidi.paragraph_level, order);
+        !reordered) {
+        return reordered;
+    }
+
+    ShapedRun& line = out.run();
+    line.glyphs.clear();
+    line.face = chain.count != 0 ? chain.faces[0] : FontHandle{};
+    line.direction = direction;
+    line.source_begin = begin;
+    line.source_end = end;
+    line.width = 0.0f;
+    // Each level run is shaped on its own, in its own direction, through the shaping cache — so a
+    // line whose Hebrew word has not changed reuses that word's shaping while the English around it
+    // is edited — and placed at the pen in visual order.
+    for (const u32 index : order) {
+        const BidiRun& run = bidi.runs[index];
+        ShapedRun piece;
+        const Direction run_direction =
+            run.right_to_left() ? Direction::RightToLeft : Direction::LeftToRight;
+        if (Status shaped =
+                shape(slice.substr(run.begin, run.end - run.begin), chain, run_direction, piece);
+            !shaped) {
+            return shaped;
+        }
+        for (ShapedGlyph glyph : piece.glyphs) {
+            glyph.offset.x += line.width;
+            glyph.source_offset += begin + run.begin;
+            if (Status pushed = line.glyphs.push_back(glyph); !pushed) {
+                return pushed;
+            }
+        }
+        line.width += piece.width;
+    }
+
+    Expected<FontMetrics, Error> metrics = face_metrics(line.face);
+    if (!metrics) {
+        return make_unexpected(metrics.error());
+    }
+    out.set_metrics(metrics.value());
+    return ok();
+}
+
 Status TextServer::layout_line(std::string_view text, const FallbackChain& chain,
                                TextLine& out) noexcept {
+    return layout_line(text, chain, Direction::LeftToRight, out);
+}
+
+Status TextServer::layout_line(std::string_view text, const FallbackChain& chain,
+                               Direction direction, TextLine& out) noexcept {
     if (!running_) {
         return fail(ErrorCode::Unavailable, "the text server has not been started");
     }
-    return build_line(text, 0, static_cast<u32>(text.size()), chain, Direction::LeftToRight, out);
+    return build_line(text, 0, static_cast<u32>(text.size()), chain, direction, out);
 }
 
 Status TextServer::layout_paragraph(std::string_view text, const FallbackChain& chain,
@@ -448,7 +793,11 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
     if (!running_) {
         return fail(ErrorCode::Unavailable, "the text server has not been started");
     }
-    if (options.direction != Direction::LeftToRight) {
+    if (options.direction == Direction::TopToBottom && !capabilities_.vertical_layout) {
+        return fail(ErrorCode::Unsupported,
+                    "this backend does not lay text out vertically; query capabilities() first");
+    }
+    if (options.direction == Direction::RightToLeft && !capabilities_.bidirectional) {
         return fail(ErrorCode::Unsupported,
                     "the minimal backend lays out left to right only; query capabilities() first");
     }
@@ -487,7 +836,7 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
                 ShapedRun probe;
                 if (Status shaped =
                         shape(text.substr(line_begin, breaks[index].source_offset - line_begin),
-                              chain, Direction::LeftToRight, probe);
+                              chain, options.direction, probe);
                     !shaped) {
                     return shaped;
                 }
@@ -516,7 +865,7 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
                     (void)decode_utf8(text, cursor);
                     ShapedRun probe;
                     if (Status shaped = shape(text.substr(line_begin, cursor - line_begin), chain,
-                                              Direction::LeftToRight, probe);
+                                              options.direction, probe);
                         !shaped) {
                         return shaped;
                     }
@@ -532,8 +881,7 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
         }
 
         TextLine line;
-        if (Status built =
-                build_line(text, line_begin, line_end, chain, Direction::LeftToRight, line);
+        if (Status built = build_line(text, line_begin, line_end, chain, options.direction, line);
             !built) {
             return built;
         }
@@ -563,8 +911,15 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
     for (usize index = 0; index < out.lines_.size(); ++index) {
         const TextLine& line = out.lines_[index];
         f32 x = 0.0f;
+        // Start and End are the paragraph's own: a right-to-left paragraph starts at the right.
+        Alignment alignment = options.alignment;
+        if (options.direction == Direction::RightToLeft && alignment == Alignment::Start) {
+            alignment = Alignment::End;
+        } else if (options.direction == Direction::RightToLeft && alignment == Alignment::End) {
+            alignment = Alignment::Start;
+        }
         if (options.width > 0.0f) {
-            switch (options.alignment) {
+            switch (alignment) {
                 case Alignment::Start:
                 case Alignment::Justify:
                     x = 0.0f;
@@ -615,18 +970,72 @@ Status TextServer::layout_paragraph_with_objects(std::string_view text, const Fa
 // --- Diagnostics ---------------------------------------------------------------------------------
 
 TextDiagnostics TextServer::diagnostics() const noexcept {
-    TextDiagnostics combined = atlas_.diagnostics();
+    TextDiagnostics combined;
+    for (const GlyphAtlas& page : atlases_) {
+        const TextDiagnostics& own = page.diagnostics();
+        combined.glyphs_rasterised += own.glyphs_rasterised;
+        combined.glyphs_evicted += own.glyphs_evicted;
+        combined.atlas_growths += own.atlas_growths;
+        combined.thrashes += own.thrashes;
+        combined.glyphs_preloaded += own.glyphs_preloaded;
+    }
     combined.shaping_cache_hits = diagnostics_.shaping_cache_hits;
     combined.shaping_cache_misses = diagnostics_.shaping_cache_misses;
     combined.fallbacks_taken = diagnostics_.fallbacks_taken;
     combined.notdef_served = diagnostics_.notdef_served;
-    combined.atlas_occupancy = atlas_.occupancy();
+    combined.atlas_occupancy = atlases_[0].occupancy();
+    combined.frames = diagnostics_.frames;
+    combined.rasterised_last_frame = diagnostics_.rasterised_last_frame;
+    combined.peak_frame_rasterisations = diagnostics_.peak_frame_rasterisations;
+    combined.rasterisation_spikes = diagnostics_.rasterisation_spikes;
     return combined;
 }
 
 void TextServer::reset_diagnostics() noexcept {
     diagnostics_ = {};
-    atlas_.reset_diagnostics();
+    rasterised_at_frame_start_ = 0;
+    for (GlyphAtlas& page : atlases_) {
+        page.reset_diagnostics();
+    }
+    for (Face& face : faces_) {
+        face.shaped_as_primary = 0;
+        face.fell_back = 0;
+    }
+}
+
+void TextServer::end_frame() noexcept {
+    u64 total = 0;
+    for (const GlyphAtlas& page : atlases_) {
+        total += page.diagnostics().glyphs_rasterised;
+    }
+    const u64 this_frame = total - rasterised_at_frame_start_;
+    rasterised_at_frame_start_ = total;
+    ++diagnostics_.frames;
+    diagnostics_.rasterised_last_frame = this_frame;
+    if (this_frame > diagnostics_.peak_frame_rasterisations) {
+        diagnostics_.peak_frame_rasterisations = this_frame;
+    }
+    if (this_frame > config_.rasterisation_spike) {
+        ++diagnostics_.rasterisation_spikes;
+    }
+}
+
+Status TextServer::fallback_report(Array<FallbackReport>& out) const noexcept {
+    out.clear();
+    for (usize index = 0; index < faces_.size(); ++index) {
+        const Face& face = faces_[index];
+        if (!face.live || face.shaped_as_primary == 0) {
+            continue;
+        }
+        FallbackReport row;
+        row.face = FontHandle::from_slot(static_cast<u32>(index), face.generation).bits();
+        row.fallbacks = face.fell_back;
+        row.codepoints = face.shaped_as_primary;
+        if (Status pushed = out.push_back(row); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
 }
 
 }  // namespace cy::text

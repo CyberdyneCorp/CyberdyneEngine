@@ -1,3 +1,4 @@
+#include <cy/servers/text/backend.h>
 #include <cy/servers/text/font.h>
 #include <cy/servers/text/text.h>
 
@@ -27,6 +28,30 @@ const char* render_mode_name(RenderMode mode) noexcept {
             return "signed-distance-field";
     }
     return "grayscale";
+}
+
+const char* hinting_name(Hinting hinting) noexcept {
+    switch (hinting) {
+        case Hinting::None:
+            return "none";
+        case Hinting::Light:
+            return "light";
+        case Hinting::Full:
+            return "full";
+    }
+    return "light";
+}
+
+const char* pixel_format_name(PixelFormat format) noexcept {
+    switch (format) {
+        case PixelFormat::Coverage:
+            return "coverage";
+        case PixelFormat::DistanceField:
+            return "distance-field";
+        case PixelFormat::Colour:
+            return "colour";
+    }
+    return "coverage";
 }
 
 const char* overflow_name(Overflow overflow) noexcept {
@@ -86,6 +111,16 @@ Status FallbackChain::push(FontHandle face) noexcept {
     }
     faces[count++] = face;
     return ok();
+}
+
+Status TextBackend::glyph_closure(BackendFace /*face*/, Span<const Codepoint> /*codepoints*/,
+                                  Array<GlyphIndex>& /*out*/) noexcept {
+    return fail(ErrorCode::Unsupported, "this backend cannot compute a glyph closure");
+}
+
+Status TextBackend::resolve_bidi(std::string_view /*text*/, ParagraphDirection /*direction*/,
+                                 BidiResult& /*out*/) noexcept {
+    return fail(ErrorCode::Unsupported, "this backend has no bidirectional algorithm of its own");
 }
 
 }  // namespace cy::text

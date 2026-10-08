@@ -180,9 +180,23 @@ MINIAUDIO = ("miniaudio", "src/backends/audio-miniaudio/", "cy::audio::AudioBack
 ONNXRUNTIME = ("ONNX Runtime", "src/ml/src/", "cy::ml::InferenceBackend")
 PHONON = ("Steam Audio", "src/audio/src/", "cy::audio::AcousticsBackend")
 
-THIRD_PARTY_DIRECTORIES = {"Jolt": JOLT}
+# M11.e (issue #86). The text stack: four libraries and one backend module. `text-and-fonts` states
+# the rule as a requirement — "no HarfBuzz, ICU, or FreeType type SHALL appear outside the backend" —
+# and msdfgen is held to it for the same reason. ICU's headers live under `unicode/`, FreeType's
+# under `freetype/` behind `ft2build.h`, and HarfBuzz's and msdfgen's are named by file.
+TEXT_COMPLETE_ROOT = "src/backends/text-complete/"
+FREETYPE = ("FreeType", TEXT_COMPLETE_ROOT, "cy::text::TextBackend")
+HARFBUZZ = ("HarfBuzz", TEXT_COMPLETE_ROOT, "cy::text::TextBackend")
+MSDFGEN = ("msdfgen", TEXT_COMPLETE_ROOT, "cy::text::TextBackend")
+ICU = ("ICU", TEXT_COMPLETE_ROOT, "cy::text::TextBackend")
+
+THIRD_PARTY_DIRECTORIES = {"Jolt": JOLT, "freetype": FREETYPE, "msdfgen": MSDFGEN, "unicode": ICU}
 THIRD_PARTY_FILES = {
     "Jolt.h": JOLT,
+    "ft2build.h": FREETYPE,
+    "hb.h": HARFBUZZ,
+    "hb-ot.h": HARFBUZZ,
+    "msdfgen.h": MSDFGEN,
     "miniaudio.h": MINIAUDIO,
     "onnxruntime_c_api.h": ONNXRUNTIME,
     "onnxruntime_cxx_api.h": ONNXRUNTIME,
