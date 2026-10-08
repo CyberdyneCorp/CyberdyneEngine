@@ -75,11 +75,10 @@
 #                   uncompressed payload, so a build that links an encoder produces a different
 #                   derivation key and re-cooks rather than serving uncompressed pixels from the
 #                   cache.
-#   harfbuzz        shaping. `cy::text::TextServer`'s minimal backend reports
-#   icu             the Unicode algorithms.        `complex_shaping`, `bidirectional` and
-#   freetype        rasterisation and hinting.     `dictionary_line_breaking` as FALSE rather than
-#                   approximating any of them, which is the specification's own carve-out for a
-#                   minimal backend. They belong in src/backends/text-*/ at layer 3 when they land.
+#   harfbuzz        shaping.                       These three, with msdfgen, were integrated by
+#   icu             the Unicode algorithms.        issue #86 (M11.e): see the block at the end of
+#   freetype        rasterisation and hinting.     this file. They live in src/backends/
+#                   text-complete/ at layer 3, as this paragraph said they would.
 #
 # WHY NOT NOW, IN ONE SENTENCE EACH. Integrating a dependency here is not adding a table: it is a
 # `cy__configure_<name>` block in cmake/dependencies.cmake deciding what upstream builds, an
@@ -90,7 +89,8 @@
 # test suite each, rather than four fetches and no time left to use them.
 #
 # WHAT THAT COSTS, STATED. The simplifier is less tuned than meshoptimizer's at aggressive ratios;
-# the texture importer reads Targa and not PNG; the text server lays out Latin and refuses Arabic.
+# the texture importer reads Targa and not PNG; the text server laid out Latin and refused Arabic
+# until the text stack below arrived.
 # Every one of those is reported by the code that cannot do it — a capability query, a diagnostic
 # naming the missing decoder, a `false` in a struct — rather than approximated, which is the
 # property that makes the gap safe to carry.

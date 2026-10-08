@@ -8,23 +8,24 @@
 // querying, glyph rasterisation and atlas management, text shaping, line breaking, justification,
 // cursor and hit-testing, and text measurement."
 //
-// --- WHAT IS HERE AT M5, AND WHAT THE INTERFACE PROMISES ANYWAY ---------------------------------
+// --- WHAT EACH BACKEND DOES, AND WHAT THE INTERFACE PROMISES ANYWAY ----------------------------
 //
-// Everything the specification lists is on this interface. What differs between M5 and M8 is what
-// the BACKEND behind it can do, and a caller finds that out from `capabilities()` rather than from
-// which functions exist — because an interface that grew functions as backends landed would make
-// every caller a compile-time fork.
+// Everything the specification lists is on this interface, and a caller finds out what the backend
+// behind it can do from `capabilities()` rather than from which functions exist — because an
+// interface that grew functions as backends landed would make every caller a compile-time fork.
 //
-// The minimal backend, which is the only one at M5:
+// The minimal backend (`start`):
 //   * shapes one glyph per codepoint, left to right, from an image-grid font;
 //   * breaks lines on spaces, hyphens and newlines, without a dictionary;
 //   * justifies by distributing space between words, without kashida;
-//   * rasterises by copying a grid cell, so `RenderMode` is honoured only as `Monochrome` and
-//     `Grayscale` — both of which a grid font already is.
-//
+//   * rasterises by copying a grid cell.
 // Everything it cannot do is `false` in its capabilities and is refused with a diagnosis rather
-// than approximated. `shape` of Arabic returns the codepoints in logical order and says
-// `complex_shaping` is false; it does not pretend to have joined them.
+// than approximated.
+//
+// The complete backend (`start_with` and a `TextBackend` from src/backends/text-complete/) adds
+// outline faces, HarfBuzz shaping run by run of one face, bidirectional lines laid out in visual
+// order, distance-field and colour rasters in atlases of their own, and cooked fonts whose
+// pre-rendered glyphs need no rasterisation. src/servers/text/README.md has the detail.
 //
 // --- THE SERVER OWNS ITS STATE, WHICH IS WHAT MAKES IT A SERVER ---------------------------------
 //
@@ -49,7 +50,8 @@ namespace cy::text {
 
 /// Which backend to build.
 enum class BackendKind : u8 {
-    /// Left-to-right, no shaping, no ICU. The only one at M5 and the one a size-constrained build
+    /// Left-to-right, no shaping, no ICU. The only one until issue #86, and the one a
+    /// size-constrained build
     /// keeps.
     Minimal = 0,
     /// FreeType, HarfBuzz, msdfgen and ICU, behind a `TextBackend` that src/backends/text-complete/

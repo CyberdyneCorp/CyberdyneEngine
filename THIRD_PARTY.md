@@ -40,6 +40,10 @@ whole table.
 | [steam_audio](https://github.com/ValveSoftware/steam-audio) | 4.8.1 | Apache-2.0 | `CY_AUDIO_STEAM_AUDIO` is on | a shipped game |
 | [eigen](https://gitlab.com/libeigen/eigen) | 3.4.90 | MPL-2.0 | `CY_ML_ONNXRUNTIME` is on | a shipped game |
 | [onnxruntime](https://github.com/microsoft/onnxruntime) | 1.20.1 | MIT | `CY_ML_ONNXRUNTIME` is on | a shipped game |
+| [harfbuzz](https://github.com/harfbuzz/harfbuzz) | 14.6.0 | MIT-Modern-Variant | `CY_TEXT` is on | a shipped game |
+| [freetype](https://github.com/freetype/freetype) | 2.14.3 | FTL | `CY_TEXT` is on | a shipped game |
+| [msdfgen](https://github.com/Chlumsky/msdfgen) | 1.13 | MIT | `CY_TEXT` is on | a shipped game |
+| [icu](https://github.com/unicode-org/icu) | 78.3 | Unicode-3.0 | `CY_TEXT_ICU` is on | a shipped game |
 
 ## Host prerequisites, which are not linked and not shipped
 
@@ -275,6 +279,54 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: `CY_ML_ONNXRUNTIME` is on
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: Running a trained model: operator coverage across ONNX's opset, graph optimisation, and CPU kernels tuned per instruction set. `ml-inference` states outright that the engine SHALL NOT implement a neural runtime — 'operator coverage and per-device optimisation represent enormous investment with no differentiating benefit' — and names this one the portable default because it runs on every target the engine ships to and because its format is the interchange Core ML, DirectML and TensorRT import from. The asset model, the tensor and session API, the scheduling, the budget and the determinism boundary are engine code and are built with the option off.
+
+### harfbuzz 14.6.0
+
+- **Upstream**: https://github.com/harfbuzz/harfbuzz
+- **Pinned at**: `a0e2a3c00ecdfa256535300ca445b0272527b06e` (`14.6.0`)
+- **Licence**: MIT-Modern-Variant
+- **Licence text**: [`COPYING`](https://github.com/harfbuzz/harfbuzz/blob/a0e2a3c00ecdfa256535300ca445b0272527b06e/COPYING), and
+  `COPYING` at the root of the fetched source in any configured build tree
+- **Behind**: cy::text::TextBackend::shape, implemented in src/backends/text-complete/src/harfbuzz_shaper.cpp, the only translation unit that includes hb.h
+- **Included when**: `CY_TEXT` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: OpenType shaping — GSUB substitution, GPOS positioning, the Arabic, Indic and Thai shapers, mark attachment and kerning — for every script the engine displays. `text-and-fonts`: correctness for the world's writing systems is only achievable with the mature library, and the in-tree Arabic joining stays as the minimal backend's path and as a test oracle.
+
+### freetype 2.14.3
+
+- **Upstream**: https://github.com/freetype/freetype
+- **Pinned at**: `0a0221a1347e2f1e07c395263540026e9a0aa7c7` (`VER-2-14-3`)
+- **Licence**: FTL
+- **Licence text**: [`LICENSE.TXT`](https://github.com/freetype/freetype/blob/0a0221a1347e2f1e07c395263540026e9a0aa7c7/LICENSE.TXT), and
+  `LICENSE.TXT` at the root of the fetched source in any configured build tree
+- **Behind**: cy::text::TextBackend's faces and rasterisation, implemented in src/backends/text-complete/src/freetype_faces.cpp, the only translation unit that includes ft2build.h
+- **Included when**: `CY_TEXT` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: TrueType, OpenType, TTC and WOFF parsing, variable-font instancing, hinting and anti-aliased outline rasterisation, plus COLR colour layers. Decades of format coverage and hinting refinement that are maintenance rather than differentiation. Dual-licensed FTL or GPLv2; the engine takes it under the FTL, whose only obligation is the credit THIRD_PARTY.md carries.
+
+### msdfgen 1.13
+
+- **Upstream**: https://github.com/Chlumsky/msdfgen
+- **Pinned at**: `1874bcf7d9624ccc85b4bc9a85d78116f690f35b` (`v1.13`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE.txt`](https://github.com/Chlumsky/msdfgen/blob/1874bcf7d9624ccc85b4bc9a85d78116f690f35b/LICENSE.txt), and
+  `LICENSE.txt` at the root of the fetched source in any configured build tree
+- **Behind**: cy::text::RenderMode::SignedDistanceField, generated in src/backends/text-complete/src/msdf_generator.cpp from FreeType outlines; no msdfgen type leaves that file
+- **Included when**: `CY_TEXT` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Multi-channel signed distance fields, so one atlas entry draws a glyph sharply at any scale, rotation or in 3D. Small, focused and well solved; the core is used alone, over outlines FreeType decomposes, so it brings no dependency of its own.
+
+### icu 78.3
+
+- **Upstream**: https://github.com/unicode-org/icu
+- **Pinned at**: `21d1eb0f306e1141c10931e914dfc038c06121da` (`release-78.3`)
+- **Licence**: Unicode-3.0
+- **Licence text**: [`LICENSE`](https://github.com/unicode-org/icu/blob/21d1eb0f306e1141c10931e914dfc038c06121da/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::text::TextBackend::resolve_bidi, implemented in src/backends/text-complete/src/icu_bidi.cpp, the only translation unit that includes a unicode/ header
+- **Included when**: `CY_TEXT_ICU` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: The Unicode Bidirectional Algorithm in full — isolating run sequences, N0 paired brackets and mirroring, which the in-tree algorithm approximates or omits. Only the data-free part of libicuuc is compiled; ICU has no CMake project, so cmake/dependencies.cmake names its sources, and the fetch is a 390 MB working tree for a sixteen-file build, which is the cost CY_TEXT_ICU=OFF removes.
 
 ### clang 18.1.8
 
@@ -845,5 +897,16 @@ One third-party work is compiled into the engine as data rather than linked as c
 |---|---|---|
 | The built-in interface font: printable ASCII from the X Window System's `misc-fixed` 6x13 bitmap font | `src/ui/text/src/builtin_font_data.h` | **public domain** — the font's own `COPYRIGHT` property reads "Public domain font. Share and enjoy." Generated from `/usr/share/fonts/X11/misc/6x13.pcf.gz` (the `xfonts-base` package) by `src/ui/text/tools/make_builtin_font.py` |
 
-It is a stand-in: CyberUI needs glyphs to draw a console and a HUD before the engine imports real
-fonts (`text-and-fonts`, issue #86), and it goes when a cooked font replaces it.
+It was a stand-in until the engine could draw real fonts (`text-and-fonts`, issue #86). It stays as
+the interface's fallback face, and as the whole of its text in a build with `CY_TEXT` off.
+
+### Fonts
+
+Issue #86. Fonts the project carries in [`deps/fonts/`](fonts/PROVENANCE.md), every one produced by
+`tools/content/make_fonts.py` from a pinned upstream file:
+
+| what | where | provenance |
+|---|---|---|
+| CyberUI's interface font: Noto Sans, Latin and Latin-1, its weight axis kept, compiled into `cy::ui-text` with `CY_TEXT` | `deps/fonts/NotoSans-Latin-VF.ttf` | **SIL Open Font License 1.1** ([`deps/fonts/OFL.txt`](fonts/OFL.txt)), no Reserved Font Name. Copyright 2022 The Noto Project Authors. Subset from google/fonts at `5e8a3ba8` |
+| Test faces: Noto Sans Arabic, Devanagari, Thai and Hebrew, subset and instanced at Regular; the Hebrew subset as WOFF; the Thai and Hebrew subsets as a collection | `deps/fonts/NotoSans*-Subset.*`, `deps/fonts/NotoSansThaiHebrew.ttc` | **SIL Open Font License 1.1**, as above. Read by the tests; not compiled into anything |
+| `CyberColourTest.ttf`: one COLRv0 glyph | `deps/fonts/` | the project's own, licensed as this repository is; built from nothing by the same script |

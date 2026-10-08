@@ -1,34 +1,30 @@
 #ifndef CY_SERVERS_TEXT_TEXT_H
 #define CY_SERVERS_TEXT_TEXT_H
-// The text vocabulary: what a caller says about text before anything is measured. M5 task 5.3.
+// The text vocabulary: what a caller says about text before anything is measured. M5 task 5.3, and
+// issue #86 for the pixel formats, the outline-font capability and the per-frame diagnostics.
 //
-// `text-and-fonts` reaches **Seed** at M5: "interfaces, data model and invariants exist; dependents
-// can be built against it". This module is that, plus a working minimal backend — because a Seed
-// nobody can run is a Seed nobody has checked.
-//
-// --- WHAT SEED MEANS HERE, STATED BEFORE ANYTHING ELSE -------------------------------------------
+// --- TWO BACKENDS, ONE INTERFACE -----------------------------------------------------------------
 //
 // `text-and-fonts` names HarfBuzz, ICU and FreeType, and the specification is right that
 // "correctness for the world's writing systems is only achievable by using the mature libraries".
-// None of the three is integrated at M5 (`deps/manifest.toml`'s header says why), so what is
-// delivered is the half the specification itself carves out:
+// They are integrated behind `TextBackend` (backend.h) by src/backends/text-complete/, with msdfgen
+// for distance fields, and gated by `CY_TEXT`. Beside it stays the half the specification itself
+// carves out:
 //
 //   "A **minimal backend** SHALL be available for size-constrained builds, supporting only simple
 //    left-to-right layout without shaping or ICU."
 //
-// So there is one interface, `TextServer`, and one backend behind it today. The backend DECLARES
-// what it cannot do through `TextCapabilities`, and the specification requires exactly that:
-// "WHEN code needs to know whether bidirectional layout is available THEN it SHALL query the
-// capability rather than testing which backend is active." Nothing here pretends to shape Arabic.
-// A caller that asks for it is told no, in a way it can act on.
+// Each backend DECLARES what it can do through `TextCapabilities`, and the specification requires
+// exactly that: "WHEN code needs to know whether bidirectional layout is available THEN it SHALL
+// query the capability rather than testing which backend is active." A caller asking the minimal
+// backend for Arabic is told no, in a way it can act on.
 //
 // --- THE INVARIANT THIS MODULE EXISTS TO HOLD ----------------------------------------------------
 //
-// No HarfBuzz, ICU or FreeType type appears above the backend — today trivially, and in future
-// because the interface is shaped so it cannot. Every type a caller touches is defined in this
-// module: a glyph is a `GlyphIndex` and an atlas rectangle, a shaped run is an array of positions,
-// a font is a handle. The day FreeType is linked, `FT_Face` lives in one `.cpp` beneath this
-// interface and nothing above it changes.
+// No HarfBuzz, ICU, FreeType or msdfgen type appears above the backend. Every type a caller touches
+// is defined in this module: a glyph is a `GlyphIndex` and an atlas rectangle, a shaped run is an
+// array of positions, a font is a handle. `FT_Face` lives in one `.cpp` under src/backends/, and
+// tools/layercheck/layercheck.py fails the build if its header is included anywhere else.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -137,7 +133,8 @@ enum class Alignment : u8 { Start = 0, Centre = 1, End = 2, Justify = 3 };
 ///
 /// Queried rather than inferred, which is the specification's own requirement. Every `false` here
 /// is a thing a caller must handle rather than a thing that will silently produce wrong output —
-/// and every one of them is `false` in the minimal backend, which is the honest state at M5.
+/// every one of them is `false` in the minimal backend, and the complete backend's few are listed
+/// in src/backends/text-complete/README.md with the reason for each.
 struct TextCapabilities {
     /// Contextual forms, ligatures, reordering, mark positioning: what HarfBuzz does.
     bool complex_shaping = false;

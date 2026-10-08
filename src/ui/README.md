@@ -44,7 +44,7 @@ Three targets beside `cy::ui` put it on screen, each with only the dependency it
 
 | directory | target | what it holds |
 |---|---|---|
-| `text/` | `cy::ui-text` | `TextPainter` — `ContentMeasurer` and `ContentPainter` over `cy::servers-text` — and the built-in bitmap font, a stand-in until real fonts are imported (#86) |
+| `text/` | `cy::ui-text` | `TextPainter` — `ContentMeasurer` and `ContentPainter` over `cy::servers-text` — the interface font (Noto Sans as a distance field, with `CY_TEXT`, #86) and the built-in bitmap font, its fallback and the whole of the text with `CY_TEXT` off |
 | `render/` | `cy::ui-render` | the primitive stream drawn on the device at the frame's `UiAndDebug` stage ([its README](render/README.md)) |
 | `console/` | `cy::ui-console` | `DevConsole`, the developer console: commands, an input line, a virtualised scrollback |
 
@@ -81,9 +81,9 @@ Recorded rather than left for a reader to find:
   (`flatten()` multiplies opacity down the tree, so overlapping children of a faded panel each
   blend), the HDR composite before tonemapping, custom UI materials, blur-behind, transforms other
   than the identity, and world-space and surface-space documents.
-* **Text is one line in a bitmap font.** `text/`'s painter lays out a single left-aligned line at a
-  whole-number scale; wrapping, carets and selection come with the widget set and real fonts with
-  #86.
+* **Text is one line.** `text/`'s painter lays out a single left-aligned line — shaped by HarfBuzz
+  and bidirectional with `CY_TEXT`, drawn from a distance field at any size with outline, shadow,
+  gradient and per-character colour; wrapping, carets and selection come with the widget set.
 * **The forcing functions** are begun: `console/` is the developer console, and
   `samples/13-rts-selection` draws a strategy HUD on the same store. The same HUD is built from Swift
   in `samples/13-rts-api` through ABI 1.6's `ui_*` entries; the adapter that implements them over

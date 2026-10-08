@@ -4,7 +4,7 @@ Layer 7, targets `cy::import` and `cy_import_cli`, headers `<cy/import/*.h>`, na
 M5 tasks 5.1 and 5.2, governed by `asset-import-pipeline` and (for live reload) `live-editing`.
 
 The importer framework and every importer this build ships — glTF, FBX, OBJ, textures, terrain
-heightfields and generated primitives: a source file in, cooked sub-assets and two sidecars out,
+heightfields, fonts and generated primitives: a source file in, cooked sub-assets and two sidecars out,
 with a content-addressed cache in the middle so that the second run of a project costs a file open
 per asset rather than a re-cook.
 
@@ -33,6 +33,7 @@ report    what happened, with the reason, per asset and for the run
 | `gltf.h` | glTF 2.0 and GLB, and the two cooked payload formats a model import produces |
 | `fbx.h` | FBX via ufbx: the same interface, the same option names, and every post-parse step shared with `gltf.h` through `model.h` |
 | `obj.h` | Wavefront OBJ and its `.mtl`: the same interface and the same option names again, with no third-party parser, and the three steps the format cannot express DECLARED rather than warned about |
+| `font.h` | Issue #86: TrueType, OpenType, collections and WOFF cooked into `cy/servers/text/cooked_font.h` — the face (mode, size, hinting, instance, feature defaults, synthetic styles), the pre-rendered ranges plus every glyph HarfBuzz's GSUB closure reaches from them, baked into atlas pages, and the fallback chain. Needs `CY_TEXT`; without it the importer is still registered and refuses each font naming the option |
 | `primitive.h` | Generated primitives — box, sphere, cylinder, plane and capsule — as an importer over a `.cyprim` source file, so a generated mesh and an imported one differ in nothing after step 1 |
 | `json.h` | A strict JSON reader, written to be deleted when a glTF dependency is integrated |
 | `pipeline.h` | The driver: the cache, the sidecars, the parallel phase, cancellation and the report |

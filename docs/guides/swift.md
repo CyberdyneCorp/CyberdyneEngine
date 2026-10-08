@@ -922,7 +922,7 @@ final class Commander: Behaviour {
 | Kind | Node | Takes |
 |---|---|---|
 | panel | `Panel(name) { children }` | layout, style (background, border, radius, clipping) |
-| label | `Label(text, colour:, scale:)` | text in the built-in font, measured from its content |
+| label | `Label(text, colour:, scale:)` | text in the embedder's interface text (the built-in font in `samples/13-rts-api`), measured from its content |
 | image | `Image(page:, uv:)` | an atlas page the embedder uploaded, tinted by the style's background |
 | progress bar | `ProgressBar(value)` | a track (`background`) and a fill (`accent`) over `value` of it |
 | button | `Button(title) { event in … }` | text, focus, and clicks routed to the mounting behaviour |

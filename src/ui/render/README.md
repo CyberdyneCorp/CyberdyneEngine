@@ -10,9 +10,10 @@ CyberUI on the device: the flattened primitive stream drawn over the frame at it
 
 | File | What it holds |
 |---|---|
-| `encode.h` | The device-free half: `GpuUiPrimitive` (the 64-byte row the shader reads), `scissor_for`, `build_draws` (one `UiDraw` per batch), and `shade_reference` / `draw_reference` — the shader transcribed for the suites |
+| `encode.h` | The device-free half: `GpuUiPrimitive` (the 64-byte row the shader reads), `scissor_for`, `build_draws` (one `UiDraw` per batch), and `shade_reference` / `shade_glyph_field` / `draw_reference` — the shader transcribed for the suites |
+| `text_atlas.h` | `upload_text_atlases`: a `TextPainter`'s coverage, distance-field and colour pages, each in the format the shader samples it as (issue #86) |
 | `ui_renderer.h` | `UiRenderer`: the pipeline, the atlas pages, the per-frame rows and indirect arguments, and the pass declared through `FrameStageDeclaration` |
-| `shaders/ui.slang` | `cyUiVertex` and `cyUiFragment`, one shader with material-indexed behaviour |
+| `shaders/ui.slang` | `cyUiVertex` and `cyUiFragment`, one shader with material-indexed behaviour: a shape, an image, a coverage glyph, and a distance-field glyph with an outline band |
 | `shaders/regenerate.py` | recompiles it and rewrites `src/ui_spirv.h` and `src/ui_msl.h` |
 
 ## The frame
@@ -32,7 +33,7 @@ the frame from before the pass existed, byte for byte (`render.ui`, case (a)).
 
 ```cpp
 renderer.create(device, {width, height, output_format});
-renderer.upload_atlas(1, rhi::Format::R8Unorm, extent, extent, text.atlas_pixels());  // outside a frame
+upload_text_atlases(renderer, text);  // outside a frame, after the labels are set
 // per frame:
 ui::layout(store, scale_settings, viewport, &text, layout_report);
 ui::flatten(store, viewport_rect, buffer, flatten_report, &text);
@@ -61,6 +62,13 @@ hold both.
 **Atlas pages are uploaded outside the frame.** `upload_atlas` runs a graph of its own and waits, as
 grading's table upload does, and leaves the page in the sampled layout. Page 0 is one white texel,
 so a shape samples white and the set always holds a texture.
+
+**Text from a distance field is thresholded, not redrawn.** `BuiltinMaterial::GlyphField` samples a
+multi-channel distance field linearly, takes the median of red, green and blue as the distance, scales
+it to pixels by the row's `shape.z` (twice the face's range times the glyph's magnification), and
+covers the glyph from half a pixel inside the edge; an outline is the band out to `shape.y` pixels
+beyond it in the border colour. So an outlined, shadowed line is the glyphs and their shadows — one
+material, one page, one draw — and `render.ui` (h) holds the device to the host within one step.
 
 **The host reference is the test oracle.** `draw_reference` rasterises the same rows the way the
 device does; `render.ui` requires every pixel within one 8-bit step of it.
