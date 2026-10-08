@@ -23,6 +23,7 @@
 //! than by care.
 
 mod agents;
+pub mod animation;
 mod browser;
 mod diagnostics;
 mod graph_canvas;
@@ -43,12 +44,8 @@ mod source;
 mod source_control;
 pub mod specialised;
 mod terrain;
-// The shared timeline for the animation, sequencer and audio-cue editors #29 adds next; until one
-// of them draws it, only its tests do.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no panel draws the shared timeline yet")
-)]
+// The shared timeline for the animation, sequencer and audio-cue editors #29 adds: the animation
+// editor draws a clip and its events on it.
 mod timeline;
 mod vfx_graph;
 mod viewport;
@@ -312,6 +309,8 @@ pub struct Inputs {
     pub audio: audio_mixer::AudioInputs,
     /// The gameplay graph editor's state: the graph, the palette search, Play's event.
     pub script: script_graph::ScriptInputs,
+    /// The animation editor's state: the graph, the palette search, the timeline and the preview.
+    pub animation: animation::AnimationInputs,
     /// The console's command line.
     pub console: String,
     /// The Settings panel's permanent search.
@@ -429,6 +428,7 @@ impl Default for Inputs {
             lighting: lighting::LightingInputs::default(),
             audio: audio_mixer::AudioInputs::default(),
             script: script_graph::ScriptInputs::default(),
+            animation: animation::AnimationInputs::default(),
             console: String::new(),
             settings_filter: String::new(),
             settings_platform: if cfg!(target_os = "macos") {
@@ -561,6 +561,10 @@ impl egui_dock::TabViewer for Panels<'_> {
                 }
                 "editor-gameplay-and-utility-graphs" => {
                     specialised::show::<script_graph::ScriptGraphTool>(self, ui);
+                }
+                // The default workspace's Animation tab is the animation editor.
+                "editor-animation-graphs-and-clips" | "animation" => {
+                    specialised::show::<animation::AnimationTool>(self, ui);
                 }
                 "console" => diagnostics::console(self, ui),
                 "problems" => diagnostics::problems(self, ui),

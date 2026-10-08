@@ -13,6 +13,7 @@
 #include <cstring>
 #include <iterator>
 
+#include "graph_wire.h"
 #include "service_wire.h"
 
 namespace cy::editor {
@@ -84,51 +85,14 @@ constexpr std::string_view kExcludedTypes[] = {"script.entry"};
 constexpr u32 kCatalogueSchema = 3;
 constexpr u32 kCatalogueVersion = 1;
 
-/// A stable node-type identity: FNV-1a over the name, never zero.
-[[nodiscard]] u32 type_identity(std::string_view name) noexcept {
-    u32 hash = 2166136261U;
-    for (const char character : name) {
-        hash ^= static_cast<u8>(character);
-        hash *= 16777619U;
-    }
-    return hash == 0 ? 1U : hash;
-}
-
 [[nodiscard]] bool excluded(std::string_view type) noexcept {
     return std::ranges::any_of(
         kExcludedTypes, [type](std::string_view excluded_type) { return excluded_type == type; });
 }
 
-/// Writes a payload and keeps the first failure, so an encoder checks once.
-class Out {
-public:
-    explicit Out(Array<u8>& bytes) noexcept : bytes_(&bytes) {}
-
-    Out& u8v(u8 value) noexcept { return keep(wire::put_u8(*bytes_, value)); }
-    Out& u32v(u32 value) noexcept { return keep(wire::put_u32(*bytes_, value)); }
-    Out& u64v(u64 value) noexcept { return keep(wire::put_u64(*bytes_, value)); }
-    Out& f32v(f32 value) noexcept { return keep(wire::put_f32(*bytes_, value)); }
-    Out& f64v(f64 value) noexcept {
-        u64 bits = 0;
-        std::memcpy(&bits, &value, sizeof(bits));
-        return u64v(bits);
-    }
-    Out& vec3(Vec3 value) noexcept { return keep(wire::put_vec3(*bytes_, value)); }
-    Out& text(std::string_view value) noexcept { return keep(wire::put_text(*bytes_, value)); }
-
-    [[nodiscard]] Status status() const noexcept { return status_; }
-
-private:
-    Out& keep(const Status& result) noexcept {
-        if (status_ && !result) {
-            status_ = result;
-        }
-        return *this;
-    }
-
-    Array<u8>* bytes_;
-    Status status_ = ok();
-};
+using Out = wire::Writer;
+using wire::encode_diagnostics;
+using wire::type_identity;
 
 void encode_choices(Out& out, const PropertySpec& property) noexcept {
     if (property.choices == kFreeText) {
@@ -192,27 +156,6 @@ void encode_node(Out& out, const graph::NodeType& type) noexcept {
 
 [[nodiscard]] Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Editor);
-}
-
-[[nodiscard]] u8 severity_of(graph::Severity severity) noexcept {
-    switch (severity) {
-        case graph::Severity::Info:
-            return 0;
-        case graph::Severity::Warning:
-            return 1;
-        case graph::Severity::Error:
-            return 2;
-    }
-    return 2;
-}
-
-void encode_diagnostics(Out& out, const graph::DiagnosticSink& sink) noexcept {
-    out.u32v(static_cast<u32>(sink.entries().size()));
-    for (const graph::Diagnostic& diagnostic : sink.entries()) {
-        out.u8v(severity_of(diagnostic.severity)).text(diagnostic.code).u64v(diagnostic.node);
-        out.text(diagnostic.pin.text()).text(diagnostic.message).text(diagnostic.detail.text());
-        out.u64v(diagnostic.related_node);
-    }
 }
 
 void encode_program(Out& out, const script::EventProgram& compiled) noexcept {

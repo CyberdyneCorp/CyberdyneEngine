@@ -1,0 +1,21 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+node 0 - "demo" "Ground"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 4 1 4
+  component 2
+    field 4 "assets/primitives/Plane.cyprim"
+    field 5 ""
+node 1 - "demo" "Preview focus"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0.95 0
+    field 3 1 1 1

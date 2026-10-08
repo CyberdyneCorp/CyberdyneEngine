@@ -91,6 +91,8 @@ fn registry() -> Registry {
         .expect("VFX graph commands satisfy their metadata");
     cy_editor_interface::specialised::script_authoring_commands::register(&mut registry)
         .expect("gameplay graph commands satisfy their metadata");
+    cy_editor_interface::specialised::animation_authoring_commands::register(&mut registry)
+        .expect("animation graph commands satisfy their metadata");
     registry
 }
 
@@ -5604,5 +5606,412 @@ fn a_refused_reload_names_its_node(editor: &mut Editor, sandbox: &Sandbox, count
         structured(&refusal, 1, "reload_diagnostic.0").starts_with("node 7 script.reload.type"),
         "{}",
         structured(&refusal, 1, "reload_diagnostic.0")
+    );
+}
+
+// --- Animation (#29) -------------------------------------------------------------------------------
+
+const ANIMATION_GRAPH: &str = "game/animation/locomotion.cyanimgraph";
+
+/// What the animation double was asked: every `animation.*` operation with its payload.
+#[derive(Default)]
+struct AnimationAsked {
+    requests: Vec<(String, Vec<u8>)>,
+}
+
+/// A runtime that answers `animation.*` with the ENGINE'S OWN replies, byte for byte
+/// (`cy_test_integration_editor_backend_animation` writes them): its catalogue; for a compile, the
+/// program, or the refusal on the transition when the source makes it a cut; the preview character
+/// in the walk the acceptance request asks for; and the stopped preview.
+fn animation_runtime_double(editor: &mut Editor) -> Arc<Mutex<AnimationAsked>> {
+    let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    editor.runtime = RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let asked = Arc::new(Mutex::new(AnimationAsked::default()));
+    let recorded = Arc::clone(&asked);
+    let catalogue = engine_audio_fixture("animation_catalogue_v1.wire");
+    let compiled = engine_audio_fixture("animation_compile_v1.wire");
+    let cut = engine_audio_fixture("animation_compile_cut_v1.wire");
+    let previewed = engine_audio_fixture("animation_preview_state_v1.wire");
+    let stopped = engine_audio_fixture("animation_preview_stopped_v1.wire");
+    std::thread::spawn(move || {
+        let (mut reader, mut writer) = (runtime_reader, runtime_writer);
+        let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
+            let Message::ServiceRequest {
+                request,
+                operation,
+                payload,
+                ..
+            } = message
+            else {
+                return Some(Vec::new());
+            };
+            let reply = match operation.as_str() {
+                "animation.catalogue.get" => Some(catalogue.clone()),
+                "animation.compile" => Some(
+                    if String::from_utf8_lossy(&payload)
+                        .contains("\"duration\" : \"float\" = (0, 0, 0, 0, 0)")
+                    {
+                        cut.clone()
+                    } else {
+                        compiled.clone()
+                    },
+                ),
+                "animation.preview.set" | "animation.preview.get" => Some(previewed.clone()),
+                "animation.preview.stop" => Some(stopped.clone()),
+                _ => None,
+            };
+            recorded
+                .lock()
+                .unwrap()
+                .requests
+                .push((operation.clone(), payload));
+            let (kind, reply) = reply.map_or_else(
+                || {
+                    let mut failure = Writer::new();
+                    failure.u32(1);
+                    failure.text("operation-unsupported");
+                    failure.text("the animation double serves animation.* only");
+                    (ServiceEventKind::Failed, failure.finish())
+                },
+                |reply| (ServiceEventKind::Completed, reply),
+            );
+            Some(vec![Message::ServiceEvent {
+                request,
+                kind,
+                schema_version: 1,
+                payload: reply,
+            }])
+        });
+    });
+    asked
+}
+
+/// Pump the editor until the double has answered everything the editor queued.
+fn settle_animation(editor: &mut Editor) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        editor.pump();
+        if !editor.backend.animation.pending() && editor.backend.animation.catalogue().is_some() {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the animation requests were never answered"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn last_animation_payload(asked: &Arc<Mutex<AnimationAsked>>, operation: &str) -> Vec<u8> {
+    let asked = asked.lock().unwrap();
+    asked
+        .requests
+        .iter()
+        .rev()
+        .find(|(sent, _)| sent == operation)
+        .unwrap_or_else(|| panic!("the engine was never sent {operation}"))
+        .1
+        .clone()
+}
+
+fn animation_requests(asked: &Arc<Mutex<AnimationAsked>>, operation: &str) -> usize {
+    let asked = asked.lock().unwrap();
+    asked
+        .requests
+        .iter()
+        .filter(|(sent, _)| sent == operation)
+        .count()
+}
+
+fn pose_node(id: u32, node_type: &str, x: u32, y: u32) -> String {
+    call_json(
+        id,
+        "animation.node.add",
+        &format!(
+            r#"{{"reference":"{ANIMATION_GRAPH}","node_type":"{node_type}","x":{x},"y":{y}}}"#
+        ),
+    )
+}
+
+fn pose_property(id: u32, node: u32, property: &str, value: &str) -> String {
+    call_json(
+        id,
+        "animation.node.property.set",
+        &format!(
+            r#"{{"reference":"{ANIMATION_GRAPH}","node":{node},"property":"{property}","value":"{value}"}}"#
+        ),
+    )
+}
+
+fn pose_wire(id: u32, from: u32, from_pin: &str, to: u32, to_pin: &str) -> String {
+    call_json(
+        id,
+        "animation.node.connect",
+        &format!(
+            r#"{{"reference":"{ANIMATION_GRAPH}","from":{from},"from_pin":"{from_pin}","to":{to},"to_pin":"{to_pin}"}}"#
+        ),
+    )
+}
+
+fn animation_file(sandbox: &Sandbox) -> String {
+    std::fs::read_to_string(sandbox.0.join(ANIMATION_GRAPH)).unwrap()
+}
+
+/// ISSUE #29's ANIMATION ACCEPTANCE, AS AN AGENT DRIVES IT: the locomotion graph authored call by
+/// call is the text the engine's suite compiles and previews, byte for byte, events on the timeline
+/// included; it compiles in the engine; the preview the agent asks for is the request the engine's
+/// suite evaluates against the runtime directly; an edited transition is previewed again from the
+/// file; and every edit undoes, down to no file at all.
+#[test]
+fn an_animation_graph_is_authored_previewed_and_undone_over_mcp() {
+    let sandbox = Sandbox::new("animation-graph");
+    let mut editor =
+        Editor::new(Actor::human("animator")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/units.cyworld").unwrap();
+    let asked = animation_runtime_double(&mut editor);
+
+    author_locomotion(&mut editor, &sandbox);
+    compile_locomotion(&mut editor, &asked);
+    preview_locomotion(&mut editor, &asked);
+    edit_previewed_transition(&mut editor, &sandbox, &asked);
+    undo_locomotion(&mut editor, &sandbox);
+}
+
+/// The acceptance graph, call by call, compared with the engine's fixture byte for byte.
+fn author_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
+    // The first graph needs the vocabulary — its first clip is the character's — and asks for it.
+    let early = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.graph.create",
+                &[("reference", ANIMATION_GRAPH)],
+            ),
+        ],
+        editor,
+    );
+    let (refusal, refused) = tool_reply(&early, 1);
+    assert!(refused && refusal.contains("has not arrived"), "{refusal}");
+    settle_animation(editor);
+
+    let event = |id: u32, command: &str, extra: &str| {
+        call_json(
+            id,
+            command,
+            &format!(r#"{{"reference":"{ANIMATION_GRAPH}","node":3,"event":"footstep",{extra}}}"#),
+        )
+    };
+    let authored = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.graph.create",
+                &[("reference", ANIMATION_GRAPH)],
+            ),
+            &pose_property(3, 1, "duration", "2"),
+            &pose_node(4, "pose.clip", 16, 160),
+            &pose_property(5, 3, "clip", "walk"),
+            &pose_node(6, "pose.state", 230, 160),
+            &pose_property(7, 4, "name", "walk"),
+            &pose_wire(8, 3, "pose", 4, "pose"),
+            &pose_node(9, "pose.transition", 444, 16),
+            &pose_property(10, 5, "condition", "moving"),
+            &pose_node(11, "pose.transition", 444, 160),
+            &pose_property(12, 6, "condition", "stopped"),
+            &pose_wire(13, 2, "state", 5, "from"),
+            &pose_wire(14, 4, "state", 5, "to"),
+            &pose_wire(15, 4, "state", 6, "from"),
+            &pose_wire(16, 2, "state", 6, "to"),
+            // The timeline's three gestures: place, place, drag the later one to its time.
+            &event(17, "animation.event.add", r#""time":0.25"#),
+            &event(18, "animation.event.add", r#""time":0.7"#),
+            &event(19, "animation.event.move", r#""from":0.7,"to":0.75"#),
+            // Refused as the panel refuses them: a pose into a transition's state input, a clip
+            // the character does not have, an event where one already is, an event on a state.
+            &pose_wire(20, 1, "pose", 5, "from"),
+            &pose_property(21, 3, "clip", "moonwalk"),
+            &event(22, "animation.event.add", r#""time":0.75"#),
+            &call_json(
+                23,
+                "animation.event.add",
+                &format!(
+                    r#"{{"reference":"{ANIMATION_GRAPH}","node":4,"event":"footstep","time":0.1}}"#
+                ),
+            ),
+            // A drag from where no event is moves nothing, not the nearest one.
+            &event(24, "animation.event.move", r#""from":0.5,"to":0.6"#),
+        ],
+        editor,
+    );
+    for index in 1..19 {
+        let (text, is_error) = tool_reply(&authored, index);
+        assert!(!is_error, "call {index}: {text}");
+    }
+    for index in 19..24 {
+        let (text, is_error) = tool_reply(&authored, index);
+        assert!(is_error, "call {index} was not refused: {text}");
+    }
+    // BYTE FOR BYTE the graph the engine's suite compiles and previews.
+    assert_eq!(
+        animation_file(sandbox).as_bytes(),
+        engine_audio_fixture("animation_locomotion_v1.cyanimgraph")
+    );
+}
+
+/// The engine compiles exactly the authored text, and says so through `animation.status`.
+fn compile_locomotion(editor: &mut Editor, asked: &Arc<Mutex<AnimationAsked>>) {
+    let compiled = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.graph.compile",
+                &[("reference", ANIMATION_GRAPH)],
+            ),
+        ],
+        editor,
+    );
+    assert_eq!(result(&compiled, 1).get("isError"), &Json::Bool(false));
+    settle_animation(editor);
+    let payload = last_animation_payload(asked, "animation.compile");
+    let mut reader = cy_editor_core::codec::Reader::new(&payload);
+    assert_eq!(reader.u32().unwrap(), 1);
+    assert_eq!(
+        reader.text().unwrap().as_bytes(),
+        engine_audio_fixture("animation_locomotion_v1.cyanimgraph")
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "animation.status", &[("reference", ANIMATION_GRAPH)]),
+        ],
+        editor,
+    );
+    assert_eq!(structured(&status, 1, "compiled"), "true");
+    assert_eq!(structured(&status, 1, "current"), "true");
+    assert_eq!(structured(&status, 1, "states"), "idle walk");
+    assert_eq!(structured(&status, 1, "parameters"), "moving stopped");
+    assert!(structured(&status, 1, "transition.0").contains("idle -> walk on moving"));
+}
+
+/// Scrub the state machine to 0.4 s and open its condition: the request is the one the engine's
+/// suite previews, and the status is the engine's answer.
+fn preview_locomotion(editor: &mut Editor, asked: &Arc<Mutex<AnimationAsked>>) {
+    // Nothing is previewed yet, so there is nothing to set a parameter on.
+    let early = converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "animation.preview.parameter",
+                r#"{"name":"moving","value":1}"#,
+            ),
+        ],
+        editor,
+    );
+    let (refusal, refused) = tool_reply(&early, 1);
+    assert!(
+        refused && refusal.contains("nothing is previewed"),
+        "{refusal}"
+    );
+
+    let previewed = converse(
+        &[
+            INITIALIZE,
+            &call_json(
+                2,
+                "animation.preview.scrub",
+                &format!(r#"{{"reference":"{ANIMATION_GRAPH}","time":0.4,"node":0}}"#),
+            ),
+            &call_json(
+                3,
+                "animation.preview.parameter",
+                r#"{"name":"moving","value":1}"#,
+            ),
+        ],
+        editor,
+    );
+    for index in 1..3 {
+        let (text, is_error) = tool_reply(&previewed, index);
+        assert!(!is_error, "call {index}: {text}");
+    }
+    settle_animation(editor);
+    assert_eq!(
+        last_animation_payload(asked, "animation.preview.set"),
+        engine_audio_fixture("animation_preview_request_v1.wire"),
+        "the engine's suite previews this request and checks it against direct evaluation"
+    );
+    let status = converse(
+        &[INITIALIZE, &tool_call(2, "animation.status", &[])],
+        editor,
+    );
+    assert_eq!(structured(&status, 1, "previewing"), "true");
+    assert_eq!(structured(&status, 1, "state"), "walk");
+    assert_eq!(structured(&status, 1, "joints"), "12");
+}
+
+/// Lengthen the idle-to-walk blend on the canvas: the file is the engine's edited fixture, and the
+/// preview is sent again from it, parameters and time kept; undoing sends the original again.
+fn edit_previewed_transition(
+    editor: &mut Editor,
+    sandbox: &Sandbox,
+    asked: &Arc<Mutex<AnimationAsked>>,
+) {
+    let before = animation_requests(asked, "animation.preview.set");
+    let edited = converse(
+        &[INITIALIZE, &pose_property(2, 5, "duration", "0.625")],
+        editor,
+    );
+    let (text, is_error) = tool_reply(&edited, 1);
+    assert!(!is_error, "{text}");
+    assert_eq!(
+        animation_file(sandbox).as_bytes(),
+        engine_audio_fixture("animation_locomotion_edited_v1.cyanimgraph")
+    );
+    settle_animation(editor);
+    assert_eq!(
+        animation_requests(asked, "animation.preview.set"),
+        before + 1
+    );
+    let resent = last_animation_payload(asked, "animation.preview.set");
+    let edited_source = engine_audio_fixture("animation_locomotion_edited_v1.cyanimgraph");
+    assert!(
+        resent
+            .windows(edited_source.len())
+            .any(|window| window == edited_source),
+        "the preview follows the edited file"
+    );
+
+    let undo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#;
+    converse(&[INITIALIZE, undo], editor);
+    settle_animation(editor);
+    assert_eq!(
+        last_animation_payload(asked, "animation.preview.set"),
+        engine_audio_fixture("animation_preview_request_v1.wire"),
+        "undoing the edit previews the original graph again"
+    );
+}
+
+/// Undo, one transaction at a time, down to no file at all.
+fn undo_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
+    let undo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#;
+    converse(&[INITIALIZE, undo], editor);
+    assert!(
+        animation_file(sandbox).contains("footstep@0.25; footstep@0.699999988"),
+        "undoing the drag puts the event back where it was"
+    );
+    converse(&[INITIALIZE, undo], editor);
+    assert!(animation_file(sandbox).contains("\"footstep@0.25\""));
+    // One event, four wires, two properties, two nodes, a property, a wire, a property, two nodes,
+    // a property, and the creation.
+    for _ in 0..16 {
+        converse(&[INITIALIZE, undo], editor);
+    }
+    assert!(
+        !sandbox.0.join(ANIMATION_GRAPH).exists(),
+        "undoing the creation removes the graph"
     );
 }

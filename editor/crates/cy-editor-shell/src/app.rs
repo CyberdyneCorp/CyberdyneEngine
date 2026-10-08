@@ -102,6 +102,7 @@ pub struct EditorWindow {
     vfx_catalogue_revision: Revision,
     audio_vocabulary_revision: Revision,
     script_catalogue_revision: Revision,
+    animation_catalogue_revision: Revision,
     /// Last project-backed VFX source seen by this window, including an undone creation.
     vfx_committed: Option<(String, Option<String>)>,
     /// Last project-backed reusable module source seen by this window.
@@ -203,6 +204,7 @@ impl EditorWindow {
             vfx_catalogue_revision: Revision::INITIAL,
             audio_vocabulary_revision: Revision::INITIAL,
             script_catalogue_revision: Revision::INITIAL,
+            animation_catalogue_revision: Revision::INITIAL,
             vfx_committed: None,
             vfx_module_committed: None,
             documents: DocumentTabsViewModel::new(),
@@ -368,6 +370,24 @@ impl EditorWindow {
         if let Err(problem) = self.specialised.install_script_catalogue(payload) {
             self.editor.notifications.post(Notification::error(
                 "The gameplay graph catalogue is incompatible",
+                problem,
+            ));
+        }
+    }
+
+    /// Install the engine's pose vocabulary when it arrives. Issue #29.
+    fn sync_animation_catalogue(&mut self) {
+        let revision = self.editor.backend.animation.catalogue_revision();
+        if revision == self.animation_catalogue_revision {
+            return;
+        }
+        self.animation_catalogue_revision = revision;
+        let Some(payload) = self.editor.backend.animation.catalogue() else {
+            return;
+        };
+        if let Err(problem) = self.specialised.install_animation_catalogue(payload) {
+            self.editor.notifications.post(Notification::error(
+                "The animation graph catalogue is incompatible",
                 problem,
             ));
         }
@@ -1479,6 +1499,9 @@ impl EditorWindow {
                 // So do Play's gameplay graphs while the graph panel is on screen.
                 let script_seen = std::mem::take(&mut panels.inputs.script.seen);
                 panels.editor.backend.script.set_polling(script_seen);
+                // And a playing animation preview's clock while the animation panel is.
+                let animation_seen = std::mem::take(&mut panels.inputs.animation.seen);
+                panels.editor.backend.animation.set_polling(animation_seen);
             });
     }
 
@@ -1577,6 +1600,7 @@ impl eframe::App for EditorWindow {
         self.sync_vfx_catalogue();
         self.sync_audio_vocabulary();
         self.sync_script_catalogue();
+        self.sync_animation_catalogue();
         #[cfg(target_os = "linux")]
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {

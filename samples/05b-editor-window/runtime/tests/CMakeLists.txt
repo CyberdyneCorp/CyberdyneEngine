@@ -31,7 +31,8 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/test_runtime.cpp"
             "${tests_dir}/../overlay.cpp"
             "${tests_dir}/../pick_wire.cpp"
-        DEPENDENCIES cy::servers-render)
+            "${tests_dir}/../service_queue.cpp"
+        DEPENDENCIES cy::servers-render cy::abi)
 
     # The physics debug layers and the joint gizmo, rasterised into a frame from the reference
     # solver's own debug output and an authored world. No device, like the gizmo's case above.
@@ -86,7 +87,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
-                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
+                cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader
                 cy::weather
@@ -122,7 +123,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
-                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
+                cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang
                 cy::weather

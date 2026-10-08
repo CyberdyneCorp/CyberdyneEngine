@@ -1,8 +1,9 @@
 //! Panels whose capability arrives in a later milestone.
 //!
-//! The default workspace has a Script Graph tab and an Animation tab beside the viewport, because
-//! the composition `editor-visual-language` fixes has a specialised-editor region and leaving it
-//! empty would teach the wrong default. What those panels must not do is *pretend*.
+//! The default workspace has a Script Graph tab beside the viewport, because the composition
+//! `editor-visual-language` fixes has a specialised-editor region and leaving it empty would teach
+//! the wrong default. What such a panel must not do is *pretend*. (The Animation tab beside it was
+//! one until the animation editor arrived, issue #29; it opens that editor now.)
 //!
 //! `design.md` §6, "What M5.5 deliberately does not do": **no visual scripting** — graphs are M8,
 //! and an agent writes Swift, which is what M4 delivered. So the Script Graph panel says which
@@ -23,10 +24,6 @@ pub(super) fn show(panels: &mut Panels<'_>, ui: &mut egui::Ui, kind: &str) {
             "Visual scripting arrives at M8.",
             "Gameplay is authored in Swift today: write a script into the project and reload it. \
              The graph panel is docked here so the workspace does not change shape when it lands.",
-        ),
-        "animation" => (
-            "The animation editor arrives with the animation capability.",
-            "The panel is docked here so the default workspace does not change shape when it lands.",
         ),
         _ => (
             "This panel is not part of this build.",

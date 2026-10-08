@@ -484,3 +484,56 @@ CY_TEST_CASE("graph_pose: the program digest closes over the clips and the trans
     CY_CHECK_NE(base.value().digest(), by_interruption.value().digest());
     CY_CHECK_NE(base.value().digest(), by_condition.value().digest());
 }
+
+CY_TEST_CASE("graph_locomotion: the builder's graph validates against the pose vocabulary") {
+    // Issue #29, the animation panel: an editor draws a transition by wiring a state's `state`
+    // output into the transition's `from` and `to`. The builder wired them from the state's `pose`
+    // INPUT, which no canvas can draw and which `validate` reports as a wire of the wrong
+    // direction.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(pose::register_pose_nodes(registry).has_value());
+    Graph graph(allocator(), Name::intern("locomotion"));
+    CY_REQUIRE(pose::build_locomotion_graph(graph, mixamo_spec()).has_value());
+    graph.resolve(registry);
+    DiagnosticSink sink(allocator());
+    CY_REQUIRE(validate(graph, registry, nullptr, sink).has_value());
+    for (const Diagnostic& diagnostic : sink.entries()) {
+        CY_CHECK_MESSAGE(diagnostic.severity != Severity::Error, diagnostic.code, " on node ",
+                         diagnostic.node, ": ", diagnostic.message);
+    }
+}
+
+CY_TEST_CASE("graph_pose: a clip that names no clock gets a clock of its own") {
+    // A clip node fresh from a palette names no time parameter. Interned as the empty name, every
+    // such clip read ONE parameter, so the runtime advanced one clock for all of them.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(pose::register_pose_nodes(registry).has_value());
+    Graph graph(allocator(), Name::intern("clocks"));
+    Literal clip_name;
+    clip_name.type = Name::intern("name");
+    for (const NodeKey key : {NodeKey{1}, NodeKey{2}}) {
+        CY_REQUIRE(graph.add_node(key, Name::intern("pose.clip")).has_value());
+        clip_name.text = Name::intern(key == 1 ? "a" : "b");
+        CY_REQUIRE(graph.set_property(key, Name::intern("clip"), clip_name).has_value());
+    }
+    CY_REQUIRE(graph.add_node(3, Name::intern("pose.blend")).has_value());
+    CY_REQUIRE(graph.add_node(4, Name::intern("pose.state")).has_value());
+    CY_REQUIRE(graph.connect(1, Name::intern("pose"), 3, Name::intern("a")).has_value());
+    CY_REQUIRE(graph.connect(2, Name::intern("pose"), 3, Name::intern("b")).has_value());
+    CY_REQUIRE(graph.connect(3, Name::intern("pose"), 4, Name::intern("pose")).has_value());
+    graph.resolve(registry);
+    DiagnosticSink sink(allocator());
+    auto program = pose::compile_pose(graph, registry, kJoints, sink);
+    CY_REQUIRE(program.has_value());
+    u16 clocks[2] = {0xFFFFU, 0xFFFFU};
+    u32 found = 0;
+    for (const pose::PoseInstruction& instruction : program.value().code()) {
+        if (instruction.op == pose::PoseOp::SampleClip && found < 2U) {
+            clocks[found++] = instruction.time_param;
+        }
+    }
+    CY_REQUIRE_EQ(found, 2U);
+    CY_CHECK_NE(clocks[0], clocks[1]);
+    CY_CHECK_EQ(program.value().parameters()[clocks[0]], Name::intern("clock.1"));
+    CY_CHECK_EQ(program.value().parameters()[clocks[1]], Name::intern("clock.2"));
+}

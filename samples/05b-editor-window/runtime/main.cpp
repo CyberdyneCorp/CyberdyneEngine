@@ -93,6 +93,10 @@
 #    include "scene_vfx_runtime.h"
 #endif
 #include "graph_runtime.h"
+#include "service_queue.h"
+#if defined(CY_EDITOR_HAS_ANIMATION)
+#    include <cy/editor/animation_preview.h>
+#endif
 #include "scene_audio.h"
 #include "script_runtime.h"
 #include "world_view.h"
@@ -321,6 +325,8 @@ struct Host {
     /// draws.
     abi::EditorServiceBackend* editor_service = nullptr;
     CyServiceSession service_session = nullptr;
+    /// Editor requests the service was too busy to take yet, submitted as it frees up.
+    PendingServiceRequests service_queue;
     editor::MaterialService* material_service = nullptr;
     CyServiceSession material_session = nullptr;
     CyServiceSession navigation_session = nullptr;
@@ -343,6 +349,13 @@ struct Host {
     SceneAudio* audio = nullptr;
     /// When the previous frame's audio was pumped, so a frame mixes exactly the time it covered.
     f32 audio_time = -1.0F;
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    /// #29: the animation panel's preview character, evaluated by the engine and drawn skinned in
+    /// the authored frame while the panel previews.
+    editor::AnimationPreview* animation = nullptr;
+    /// When the previous frame advanced a playing preview.
+    f32 animation_time = -1.0F;
+#endif
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
     /// session that created one would create and destroy a whole backend per press of play.
@@ -998,6 +1011,11 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                     gameplay::play_mode_name(host.play_mode), detail);
 }
 
+CyResult submit_service(void* user, const CyServiceRequest& request) noexcept {
+    auto& host = *static_cast<Host*>(user);
+    return host.editor_service->submit(host.service_session, request);
+}
+
 void answer_service(Host& host, const runtime::EditorRequest& request) noexcept {
     if (host.editor_service == nullptr || host.service_session == nullptr) {
         (void)host.bridge->send_service_event(request.request, runtime::ServiceEventKind::Failed, 1,
@@ -1005,7 +1023,12 @@ void answer_service(Host& host, const runtime::EditorRequest& request) noexcept 
         return;
     }
     if (request.kind == runtime::EditorMessage::ServiceCancel) {
-        (void)host.editor_service->cancel(host.service_session, request.request);
+        if (host.service_queue.cancel(request.request)) {
+            (void)host.bridge->send_service_event(request.request,
+                                                  runtime::ServiceEventKind::Cancelled, 1, {});
+        } else {
+            (void)host.editor_service->cancel(host.service_session, request.request);
+        }
     } else {
         char operation[64] = {};
         if (request.operation.size() >= sizeof(operation)) {
@@ -1014,15 +1037,19 @@ void answer_service(Host& host, const runtime::EditorRequest& request) noexcept 
             return;
         }
         std::memcpy(operation, request.operation.data(), request.operation.size());
-        const CyServiceRequest submitted{sizeof(CyServiceRequest), request.schema_version,
-                                         request.request,          operation,
-                                         request.payload.data(),   request.payload.size()};
         if (host.nav_driver != nullptr) {
             host.nav_driver->editor_request(request.request,
                                             std::string_view(operation, request.operation.size()),
                                             request.payload);
         }
-        (void)host.editor_service->submit(host.service_session, submitted);
+        // A request the service is too busy to take waits its turn rather than being dropped; one
+        // it refuses outright is answered, so the editor is never left waiting.
+        if (host.service_queue.offer(request.request, request.schema_version,
+                                     std::string_view(operation, request.operation.size()),
+                                     request.payload, &submit_service, &host) != CY_RESULT_OK) {
+            (void)host.bridge->send_service_event(request.request,
+                                                  runtime::ServiceEventKind::Failed, 1, {});
+        }
     }
     // No poll here: `drain_service` answers every frame, so a request that takes several polls (a
     // bake emits one PROGRESS per tile) keeps reporting after the message that started it.
@@ -1049,6 +1076,12 @@ void drain_service(Host& host) noexcept {
     }
     (void)drain_service_events(*host.editor_service, host.service_session, *host.nav_driver,
                                kServiceEventsPerFrame, &forward_service_event, &host);
+    // The service answered what it held: what waited for it goes in now.
+    std::vector<u64> failed;
+    host.service_queue.retry(&submit_service, &host, failed);
+    for (const u64 request : failed) {
+        (void)host.bridge->send_service_event(request, runtime::ServiceEventKind::Failed, 1, {});
+    }
 }
 
 void serve_editor(Host& host) noexcept {
@@ -1317,9 +1350,48 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     draw_gizmo(canvas, host.layout, render::GizmoHandle::Count);
 }
 
+#if defined(CY_EDITOR_HAS_ANIMATION)
+/// Advance a playing animation preview by the time this frame covers, and hand the frame the pose
+/// the engine evaluated — or nothing, once the panel stops previewing.
+[[nodiscard]] bool pose_animation_preview(Host& host, f32 time_seconds) noexcept {
+    editor::AnimationPreview* preview = host.animation;
+    if (preview == nullptr) {
+        return true;
+    }
+    const f32 seconds = host.animation_time < 0.0F ? 0.0F : time_seconds - host.animation_time;
+    host.animation_time = time_seconds;
+    if (Status ticked = preview->tick(seconds); !ticked) {
+        report("animation preview", ticked.error());
+        return false;
+    }
+    if (!preview->state().active || !host.authored_frame->skinned_preview_supported()) {
+        return static_cast<bool>(host.authored_frame->set_skinned_preview(nullptr));
+    }
+    const editor::AnimationPreviewMesh& mesh = preview->mesh();
+    SkinnedPreview drawn;
+    drawn.mesh_identity = 1;
+    drawn.positions = mesh.positions.span();
+    drawn.normals = mesh.normals.span();
+    drawn.joints = mesh.joints.span();
+    drawn.weights = mesh.weights.span();
+    drawn.indices = mesh.indices.span();
+    drawn.matrices = preview->skinning_matrices();
+    if (Status posed = host.authored_frame->set_skinned_preview(&drawn); !posed) {
+        report("animation preview", posed.error());
+        return false;
+    }
+    return true;
+}
+#endif
+
 [[nodiscard]] bool render_frame_texels(Host& host, f32 time_seconds,
                                        Span<const u32>& texels) noexcept {
     if (host.authored_frame != nullptr) {
+#if defined(CY_EDITOR_HAS_ANIMATION)
+        if (!pose_animation_preview(host, time_seconds)) {
+            return false;
+        }
+#endif
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
         if (host.scene_vfx != nullptr) {
             const f32 seconds =
@@ -1858,6 +1930,18 @@ int main(int argc, char** argv) {
         editor::NavigationService navigation_service(allocator, &nav_source);
         editor_service.set_audio(audio.authoring());
         editor_service.set_scripts(&graphs);
+#if defined(CY_EDITOR_HAS_ANIMATION)
+        // The animation panel's character (#29). Previewed only where a world is drawn, and only on
+        // a frame with skinned pipelines; elsewhere `animation.preview.set` is refused by name.
+        editor::AnimationPreview animation(allocator);
+        if (Status built = animation.initialize(); !built) {
+            report("animation preview", built.error());
+            return 1;
+        }
+        const bool previewable = view_world.loaded() && authored_frame.skinned_preview_supported();
+        editor_service.set_animation(previewable ? &animation : nullptr);
+        host.animation = previewable ? &animation : nullptr;
+#endif
         editor::CompositeEditorService composite_service(allocator);
         CyServiceSession service_session =
             open_services(composite_service, editor_service, navigation_service);

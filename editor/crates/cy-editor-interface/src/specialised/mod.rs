@@ -39,6 +39,8 @@
 //!
 //! An empty canvas opened for `terrain` would be a specialised editor that exists in a screenshot.
 
+pub mod animation;
+pub mod animation_authoring_commands;
 pub mod graph;
 pub mod lighting;
 pub mod material;
@@ -245,13 +247,17 @@ impl Domain {
     /// not the same thing as what a document holds.
     ///
     /// Every kind the engine can dispatch, for the sequence editor; the keyed subset for the
-    /// animation timeline, which has no camera cuts and no nested sequences to offer.
+    /// animation timeline, which has no camera cuts and no nested sequences to offer, with the clip
+    /// it shows and the gameplay events placed on that clip.
     pub fn track_kinds(self) -> Vec<TrackKind> {
         match self {
             Domain::SequencesAndCinematics => TrackKind::ALL.to_vec(),
             Domain::AnimationGraphsAndClips => TrackKind::ALL
                 .into_iter()
-                .filter(|kind| kind.is_keyed() || *kind == TrackKind::Animation)
+                .filter(|kind| {
+                    kind.is_keyed()
+                        || matches!(kind, TrackKind::Animation | TrackKind::GameplayEvent)
+                })
                 .collect(),
             _ => Vec::new(),
         }
@@ -429,6 +435,7 @@ pub struct SpecialisedEditors {
     catalogues: BTreeMap<Domain, Catalogue>,
     audio_vocabulary: Option<cy_editor_services::audio::AudioVocabulary>,
     script_catalogue_ready: bool,
+    animation_catalogue_ready: bool,
 }
 
 impl SpecialisedEditors {
@@ -479,6 +486,7 @@ impl SpecialisedEditors {
             catalogues,
             audio_vocabulary: None,
             script_catalogue_ready: false,
+            animation_catalogue_ready: false,
         })
     }
 
@@ -519,6 +527,25 @@ impl SpecialisedEditors {
         }
         self.script_catalogue_ready = true;
         Ok(())
+    }
+
+    /// Install the engine's pose vocabulary (`animation.catalogue.get`): node types with their pins
+    /// and properties, and the preview character's clips as a clip node's choices. Until it arrives
+    /// the animation editor shows names only and its panel refuses to edit.
+    pub fn install_animation_catalogue(&mut self, payload: &[u8]) -> Result<()> {
+        let catalogue = animation::catalogue(payload)?;
+        self.catalogues
+            .insert(Domain::AnimationGraphsAndClips, catalogue.clone());
+        if self.active == Some(Domain::AnimationGraphsAndClips) {
+            self.canvas.replace_catalogue(catalogue);
+        }
+        self.animation_catalogue_ready = true;
+        Ok(())
+    }
+
+    /// Whether the engine's pose vocabulary is installed.
+    pub fn animation_catalogue_ready(&self) -> bool {
+        self.animation_catalogue_ready
     }
 
     /// Whether the engine's gameplay graph vocabulary is installed.

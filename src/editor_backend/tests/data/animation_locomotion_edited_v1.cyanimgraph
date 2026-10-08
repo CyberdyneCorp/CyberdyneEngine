@@ -1,0 +1,48 @@
+cygraph 1
+graph "locomotion" version 1
+capability
+deterministic true
+node 1 "pose.clip" v1 {
+    prop "clip" : "name" = "idle"
+    prop "duration" : "float" = (2, 0, 0, 0, 0)
+    prop "events" : "name" = (0, 0, 0, 0, 0)
+    prop "loop" : "bool" = (0, 0, 0, 0, 1)
+    prop "time_parameter" : "name" = (0, 0, 0, 0, 0)
+}
+node 2 "pose.state" v1 {
+    prop "name" : "name" = "idle"
+}
+node 3 "pose.clip" v1 {
+    prop "clip" : "name" = "walk"
+    prop "duration" : "float" = (1, 0, 0, 0, 0)
+    prop "events" : "name" = "footstep@0.25; footstep@0.75"
+    prop "loop" : "bool" = (0, 0, 0, 0, 1)
+    prop "time_parameter" : "name" = (0, 0, 0, 0, 0)
+}
+node 4 "pose.state" v1 {
+    prop "name" : "name" = "walk"
+}
+node 5 "pose.transition" v1 {
+    prop "condition" : "name" = "moving"
+    prop "duration" : "float" = (0.625, 0, 0, 0, 0)
+    prop "interruption" : "name" = "none"
+    prop "priority" : "int" = (0, 0, 0, 0, 0)
+}
+node 6 "pose.transition" v1 {
+    prop "condition" : "name" = "stopped"
+    prop "duration" : "float" = (0.25, 0, 0, 0, 0)
+    prop "interruption" : "name" = "none"
+    prop "priority" : "int" = (0, 0, 0, 0, 0)
+}
+link 1 "pose" -> 2 "pose"
+link 3 "pose" -> 4 "pose"
+link 2 "state" -> 5 "from"
+link 4 "state" -> 5 "to"
+link 4 "state" -> 6 "from"
+link 2 "state" -> 6 "to"
+layout 1 at 16 16
+layout 2 at 230 16
+layout 3 at 16 160
+layout 4 at 230 160
+layout 5 at 444 16
+layout 6 at 444 160

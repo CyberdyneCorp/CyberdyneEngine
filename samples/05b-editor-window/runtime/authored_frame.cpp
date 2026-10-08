@@ -15,6 +15,10 @@
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
 #include <cy/rendering/material/standard.h>
+#include <cy/rendering/skinning/frame_skinning.h>
+#include <cy/rendering/skinning/skinned_scene.h>
+#include <cy/servers/render/geometry/skin_dispatch.h>
+#include <cy/servers/render/mesh.h>
 #include <cy/servers/render/sort.h>
 #include <cy/terrain/region.h>
 
@@ -41,6 +45,14 @@ constexpr u32 kCapacity = 4096;
 constexpr u32 kVfxCapacity = 4096;
 #endif
 constexpr u32 kMaterialCapacity = 128;
+/// The material slot the skinned preview is drawn with: the last one, which authored materials
+/// never take (`material_slot` stops one short of it).
+constexpr u32 kSkinnedMaterialSlot = kMaterialCapacity - 1;
+/// The identity the skinned preview is placed under. No authored node has it: identities are the
+/// editor's stable node ids, and this one is reserved.
+constexpr u64 kSkinnedIdentity = ~u64{0} - 1;
+/// The reference its bind-pose mesh is kept under in the rigid streams, where its UVs are read.
+constexpr std::string_view kSkinnedMesh = "editor:skinned-preview";
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
 constexpr u32 kShadowExtent = 2048;
 
@@ -421,6 +433,21 @@ struct AuthoredFrame::Instance {
     std::vector<u32> materials;
 };
 
+/// The skinned preview: the scene that skins it in one dispatch, its one instance, and where it
+/// stands. Issue #29, the animation panel.
+struct AuthoredFrame::Skinned {
+    explicit Skinned(Allocator& allocator) noexcept : scene(allocator) {}
+
+    skinning::SkinnedScene scene;
+    skinning::SkinnedInstance instance;
+    u64 mesh_identity = 0;
+    Aabb bounds = Aabb::empty();
+    Vec3 position;
+    bool created = false;
+    bool visible = false;
+    u64 frame = 0;
+};
+
 struct AuthoredFrame::Readback {
     ResourceId output = kInvalidResource;
     rhi::BufferHandle buffer;
@@ -554,6 +581,9 @@ Status AuthoredFrame::preview(std::string_view reference,
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+    if (skinned_ != nullptr) {
+        skinned_->scene.destroy();
+    }
     for (MaterialVariant& variant : material_variants_) {
         release_graph_variant(variant);
     }
@@ -628,6 +658,12 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, boo
     setup.output_format = kOutputFormat;
     setup.prepass_normal = temporal;
     setup.prepass_velocity = temporal;
+    // THE SKINNED VARIANTS, where they have run: issue #76 drew skinned meshes through the frame on
+    // Vulkan only, and the Metal and D3D12 pipelines are compiled but have not run on a device. A
+    // frame without them is byte-identical to one with them and no skinned draw.
+    skinned_supported_ = device_->capabilities().backend() == rhi::BackendKind::Vulkan &&
+                         skinning::SkinnedScene::supported(*device_);
+    setup.skinned = skinned_supported_;
     if (Status status = pipelines_.initialize(*device_, setup); !status) {
         return status;
     }
@@ -777,7 +813,14 @@ Status AuthoredFrame::create_materials() noexcept {
             return status;
         }
     }
-    return ok();
+    // The preview character's warm clay, so it reads against the grey studio and the authored
+    // world alike.
+    if (Status status = table.set_color(material_program_, kSkinnedMaterialSlot,
+                                        ids.base_color_factor, Vec4{0.78F, 0.56F, 0.38F, 1.0F});
+        !status) {
+        return status;
+    }
+    return table.set_float(material_program_, kSkinnedMaterialSlot, ids.roughness_factor, 0.6F);
 }
 
 Expected<u32, Error> AuthoredFrame::material_slot(const ser::World& world,
@@ -794,7 +837,7 @@ Expected<u32, Error> AuthoredFrame::material_slot(const ser::World& world,
     if (found != material_slots_.end() && !graph_reference) {
         return found->second;
     }
-    if (found == material_slots_.end() && material_slots_.size() + 1 >= kMaterialCapacity) {
+    if (found == material_slots_.end() && material_slots_.size() + 1 >= kSkinnedMaterialSlot) {
         return fail(ErrorCode::OutOfRange, "authored frame: material capacity exceeded");
     }
     if (graph_reference) {
@@ -1429,6 +1472,173 @@ Status AuthoredFrame::set_terrain(const terrain::RegionSnapshot* snapshot,
     return upload_geometry();
 }
 
+const AuthoredFrame::Mesh* AuthoredFrame::skinned_mesh() const noexcept {
+    const auto found = std::ranges::find_if(
+        meshes_, [](const auto& mesh) { return mesh->reference == kSkinnedMesh; });
+    return found != meshes_.end() ? found->get() : nullptr;
+}
+
+u32 AuthoredFrame::skinned_draws() const noexcept {
+    return recorder_.report().skinned_draws;
+}
+
+Status AuthoredFrame::set_skinned_preview(const SkinnedPreview* preview) noexcept {
+    if (preview == nullptr) {
+        if (skinned_ != nullptr && skinned_->visible) {
+            skinned_->visible = false;
+            history_cut_ = true;
+        }
+        return ok();
+    }
+    if (!skinned_supported_) {
+        return fail(ErrorCode::Unsupported,
+                    "this device's frame has no skinned pipelines: only Vulkan has drawn them");
+    }
+    if (preview->joints.size() != preview->positions.size() * 4U ||
+        preview->weights.size() != preview->positions.size() * 4U ||
+        preview->normals.size() != preview->positions.size() || preview->matrices.empty()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a skinned preview has four influences and a normal per vertex, and a pose");
+    }
+    if (skinned_ == nullptr || !skinned_->created ||
+        skinned_->mesh_identity != preview->mesh_identity) {
+        if (Status replaced = replace_skinned_mesh(*preview); !replaced) {
+            return replaced;
+        }
+    }
+    const auto bones = static_cast<u32>(preview->matrices.size());
+    if (Status uploaded = skinned_->scene.upload_poses(preview->matrices, 0, bones); !uploaded) {
+        return uploaded;
+    }
+    if (Status posed = skinned_->scene.set_pose(skinned_->instance, 0); !posed) {
+        return posed;
+    }
+    if (!skinned_->visible) {
+        history_cut_ = true;
+    }
+    skinned_->visible = true;
+    skinned_->position = preview->position;
+    return ok();
+}
+
+Status AuthoredFrame::replace_skinned_mesh(const SkinnedPreview& preview) noexcept {
+    (void)device_->wait_idle();
+    if (skinned_ != nullptr) {
+        skinned_->scene.destroy();
+    }
+    skinned_ = std::make_unique<Skinned>(*allocator_);
+    // THE BIND POSE IN THE RIGID STREAMS, where a skinned draw reads its UVs (the mesh has none:
+    // zeros) and nothing else.
+    auto mesh = std::make_unique<Mesh>();
+    mesh->reference = std::string(kSkinnedMesh);
+    if (Status copied = mesh->data.positions.append(preview.positions); !copied) {
+        return copied;
+    }
+    if (Status copied = mesh->data.normals.append(preview.normals); !copied) {
+        return copied;
+    }
+    if (Status copied = mesh->data.indices.append(preview.indices); !copied) {
+        return copied;
+    }
+    if (Status status = mesh->data.validate(); !status) {
+        return status;
+    }
+    mesh->bounds = mesh->data.bounds();
+    // Every pose of a character stays within a metre and a half of its bind pose's box.
+    skinned_->bounds = Aabb::from_min_max(mesh->bounds.min - Vec3{1.5F, 1.5F, 1.5F},
+                                          mesh->bounds.max + Vec3{1.5F, 1.5F, 1.5F});
+    std::erase_if(meshes_, [](const auto& entry) { return entry->reference == kSkinnedMesh; });
+    meshes_.push_back(std::move(mesh));
+    if (Status uploaded = upload_geometry(); !uploaded) {
+        return uploaded;
+    }
+
+    Array<render::PackedNormalTangent> frames(*allocator_);
+    Array<render::geometry::GpuSkinInfluence> influences(*allocator_);
+    for (usize vertex = 0; vertex < preview.positions.size(); ++vertex) {
+        const Vec3 normal = preview.normals[vertex];
+        const Vec3 tangent = std::fabs(normal.y) > 0.9F
+                                 ? Vec3{1.0F, 0.0F, 0.0F}
+                                 : normalize(cross(Vec3{0.0F, 1.0F, 0.0F}, normal));
+        u8 indices[4] = {};
+        u8 bytes[4] = {};
+        u32 assigned = 0;
+        for (u32 lane = 0; lane < 4U; ++lane) {
+            indices[lane] = static_cast<u8>(preview.joints[(vertex * 4U) + lane]);
+            bytes[lane] =
+                static_cast<u8>(std::lround(preview.weights[(vertex * 4U) + lane] * 255.0F));
+            assigned += bytes[lane];
+        }
+        // The four bytes sum to 255 exactly (`skin_dispatch.h`): the rounding goes to the heaviest.
+        bytes[0] = static_cast<u8>(static_cast<i32>(bytes[0]) + (255 - static_cast<i32>(assigned)));
+        if (!frames.push_back(render::pack_normal_tangent(normal, tangent, 1.0F)) ||
+            !influences.push_back(render::geometry::skin_influence(indices, bytes))) {
+            return fail(ErrorCode::OutOfMemory, "authored frame: skinned preview streams");
+        }
+    }
+    const auto vertices = static_cast<u32>(preview.positions.size());
+    const auto bones = static_cast<u32>(preview.matrices.size());
+    skinning::SkinnedSceneDescription description;
+    description.max_mesh_vertices = vertices;
+    description.max_instance_vertices = vertices;
+    description.max_pose_matrices = bones;
+    description.max_meshes = 1;
+    description.max_instances = 1;
+    if (Status created = skinned_->scene.create(*device_, description); !created) {
+        return created;
+    }
+    skinning::SkinnedMeshDescription described;
+    described.positions = preview.positions;
+    described.frames = frames.span();
+    described.influences = influences.span();
+    described.bone_count = bones;
+    Expected<skinning::SkinnedMeshId, Error> added = skinned_->scene.add_mesh(described);
+    if (!added) {
+        return make_unexpected(added.error());
+    }
+    Expected<skinning::SkinnedInstance, Error> instance = skinned_->scene.add_instance(*added);
+    if (!instance) {
+        return make_unexpected(instance.error());
+    }
+    skinned_->instance = *instance;
+    skinned_->mesh_identity = preview.mesh_identity;
+    skinned_->created = true;
+    history_cut_ = true;
+    return ok();
+}
+
+Status AuthoredFrame::append_skinned_preview(Vec3 eye) noexcept {
+    const Mesh* mesh = skinned_mesh();
+    if (skinned_ == nullptr || !skinned_->visible || mesh == nullptr) {
+        return ok();
+    }
+    if (instances_.size() >= kCapacity) {
+        return fail(ErrorCode::OutOfRange, "authored frame: no slot for the skinned preview");
+    }
+    const Mat4 matrix = Mat4::from_translation(skinned_->position);
+    const Aabb bounds = transformed_bounds(skinned_->bounds, matrix);
+    Instance instance;
+    instance.identity = kSkinnedIdentity;
+    instance.mesh = static_cast<u32>(
+        std::ranges::find_if(meshes_, [mesh](const auto& entry) { return entry.get() == mesh; }) -
+        meshes_.begin());
+    instance.bounds = bounds;
+    instance.materials.push_back(kSkinnedMaterialSlot);
+    SpatialEntry entry;
+    entry.bounds = bounds;
+    entry.stable_id = kSkinnedIdentity;
+    entry.gpu_slot = static_cast<u32>(instances_.size());
+    entry.radius = radius_of(bounds);
+    entry.flags |= kSpatialSkinned;
+    if (Expected<u32, Error> inserted = index_.insert(entry); !inserted) {
+        return make_unexpected(inserted.error());
+    }
+    instances_.push_back(std::move(instance));
+    current_models_.emplace_back(kSkinnedIdentity, matrix);
+    sign_shading(kSkinnedIdentity);
+    return transforms_.push_back(relative_transform(matrix, eye));
+}
+
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
     if (Status status = resolve_meshes(world); !status) {
         return status;
@@ -1597,6 +1807,9 @@ Status AuthoredFrame::build_instances(const ser::World& world, Vec3 eye,
             }
         }
     }
+    if (Status status = append_skinned_preview(eye); !status) {
+        return status;
+    }
     if (lights_.empty() && editor_lighting && !authored_light_present) {
         render::LightDescription preview;
         preview.kind = render::LightKind::Directional;
@@ -1751,7 +1964,19 @@ bool AuthoredFrame::geometry(const render::DrawItem& item, const GpuDrawInstance
     if (instance.instance_slot >= frame.instances_.size()) {
         return false;
     }
-    const Mesh& mesh = *frame.meshes_[frame.instances_[instance.instance_slot].mesh];
+    const Instance& placed = frame.instances_[instance.instance_slot];
+    const Mesh& mesh = *frame.meshes_[placed.mesh];
+    if (placed.identity == kSkinnedIdentity && frame.skinned_ != nullptr) {
+        // The skinning pass's output, with the mesh's indices and its UVs in the rigid streams.
+        skinning::SkinnedDrawMesh draw;
+        draw.indices = frame.indices_;
+        draw.wide_indices = true;
+        draw.index_count = mesh.index_count;
+        draw.first_index = mesh.first_index;
+        draw.static_vertex_offset = mesh.vertex_offset;
+        return skinning::skinned_draw_geometry(frame.skinned_->scene, frame.skinned_->instance,
+                                               draw, out);
+    }
     out.indices = frame.indices_;
     out.wide_indices = true;
     out.first_index = mesh.first_index;
@@ -2186,9 +2411,23 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
     if (Status status = recorder_.bind(assembly_); !status) {
         return status;
     }
+    // THE SKINNING PASS BEFORE THE FRAME'S, so every pass that draws the preview reads vertices the
+    // graph has ordered after it. Nothing is declared without a visible preview, which leaves the
+    // frame what it was.
+    Span<const ResourceId> skinned_reads;
+    if (skinned_ != nullptr && skinned_->visible) {
+        if (Status status = skinned_->scene.declare(graph_, ++skinned_->frame); !status) {
+            return status;
+        }
+        skinned_reads = skinned_->scene.vertex_reads();
+    }
     FrameSinks sinks = recorder_.sinks();
     sinks.surfaces = &AuthoredFrame::surfaces;
     sinks.surfaces_user = this;
+    for (const FramePassKind kind : {FramePassKind::DepthPrepass, FramePassKind::Shadow,
+                                     FramePassKind::Opaque, FramePassKind::Transparent}) {
+        sinks.passes[static_cast<usize>(kind)].vertex_reads = skinned_reads;
+    }
     FrameResourceRead shadow_read{view.shadow_color, rhi::Access::FragmentSampledRead};
     if (shadow_light < lights_.size()) {
         sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =

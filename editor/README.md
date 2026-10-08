@@ -269,6 +269,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `lighting.write-lightmap-description`, `lighting.volume.create`, `lighting.volume.set`, `lighting.light.set-mobility`, `lighting.object.set-resolution`, `viewport.view-mode.lightmap-density`, `viewport.view-mode.gi-probes` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 | Gameplay graphs (#29) | `script.graph.create`, `script.node.add`, `script.node.move`, `script.node.connect`, `script.node.disconnect`, `script.node.remove`, `script.node.property.set`, `script.graph.attach`, `script.graph.read`, `script.graph.compile`, `script.event.raise`, `script.refresh`, `script.status` |
+| Animation (#29) | `animation.graph.create`, `animation.node.add`, `.move`, `.connect`, `.disconnect`, `.remove`, `.property.set`, `animation.event.add`, `.move`, `.remove`, `animation.graph.read`, `animation.graph.compile`, `animation.preview.scrub`, `.play`, `.pause`, `.parameter`, `.stop`, `animation.status` |
 | Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
 
 **Lighting & lightmaps.** The lighting and lightmap baking specialised editor bakes the open world
@@ -336,7 +337,7 @@ them.
 | The node-graph canvas | `crates/cy-editor-shell/src/panels/graph_canvas.rs` | `draw_canvas`, the node property controls, and `node_palette`/`catalogue_palette`, which host any engine-declared vocabulary (`Domain::node_types` or a backend catalogue). The material and VFX graphs draw through it |
 | The timeline | `crates/cy-editor-shell/src/panels/timeline.rs` | `show` over a `TimelineSurface`: ruler and playhead scrub, tracks, keys and clips, zoom about the pointer, selection, Escape to cancel a drag, and `TimelineEdit`s that each answer their own inverse |
 
-To add one, for example the animation editor:
+To add one:
 
 1. Put the engine's vocabulary behind the domain: node types in `Domain::node_types` or a backend
    catalogue, track kinds in `Domain::track_kinds`. A domain with neither refuses to open by name,
@@ -363,6 +364,12 @@ To add one, for example the animation editor:
 shared canvas, routes each gesture to a `script.*` command through `CanvasFeedback`, and registers its
 canvas edits itself (`SpecialisedTool::register`) because they live beside the canvas in
 `cy-editor-interface`.
+
+`panels/animation.rs` (`AnimationTool`) is the tool that uses both shared surfaces: the pose graph on the
+canvas and a clip with its events on the timeline. The timeline widget hands back one
+`TimelineEdit` per finished gesture, and the panel turns each into the command that changes the file
+(`animation.event.add`, `.move`, `.remove`), so the widget's own `apply` is for an editor whose
+timeline is its document.
 
 `panels/terrain.rs` is the worked example: `TerrainTool` is the whole panel, and its refusals appear
 in the scaffold's diagnostics area. See [Terrain tools](#terrain-tools) for how its strokes reach
@@ -562,6 +569,64 @@ Not built yet, and the next slices: the Play debugger (breakpoints, stepping, wa
 highlighting), hot reload with state migration, semantic diff and merge of `.cyscript` in the merge
 panel, Swift interop beyond shared engine services, AI behaviour and ability graphs in this panel, and
 an explicit per-tick event.
+
+## The animation editor
+
+The Animation editor (`editor-animation-graphs-and-clips`, `panels/animation.rs`, also the default
+workspace's Animation tab) authors `Domain::AnimationGraphsAndClips` on the specialised scaffold, the
+shared canvas and the shared timeline (#29, #76 stage 5). The engine compiles, evaluates and draws;
+the editor evaluates nothing.
+
+- **The palette is the engine's.** `animation.catalogue.get` declares `cy::graph::pose`'s nodes —
+  clips, blends, masked blends, additive and layer nodes, IK, states and transitions — with their pins
+  and properties. A clip node's `clip` is a choice among the preview character's clips. A transition is
+  wired from one state's `state` output into its `from` and another's into its `to`. Until the engine
+  has answered, the panel says so and edits nothing.
+- **The file is the engine's text.** A graph is a project `.cyanimgraph` holding CyberGraph's canonical
+  `cygraph 1` text, written by the same `ScriptGraph` a gameplay graph is
+  (`cy_editor_services::animation_graph`). A clip's events are its node's `events` property,
+  `name@seconds` items separated by `; `.
+- **Every edit is one undoable transaction and an MCP tool.** `animation.graph.create` (one state
+  playing the character's first clip), `animation.node.add`, `.move`, `.connect`, `.disconnect`,
+  `.remove` and `.property.set` go through the canvas's checks (a pose into a transition's state input
+  is refused, so is a clip the character does not have). `animation.event.add`, `.move` and `.remove`
+  change one clip's events; the timeline's double-click on an event row, key drag and Delete are those
+  three commands.
+- **The engine compiles every change.** `animation.compile` is `compile_pose` after `graph::validate`,
+  plus the checks a program cannot carry: a transition wired to fewer than two states, a transition
+  whose blend is not positive (a cut pops the pose; a game that wants one asks `Animator.play`), a
+  transition with no condition, a state with no pose, a clip the character lacks, and an event that
+  does not parse or lies outside its clip. Each is on its node: the canvas outlines it and a row
+  selects it.
+- **The engine previews.** Play, Pause, Stop, a scrub on the timeline's ruler and a parameter are
+  `animation.preview.play`, `.pause`, `.stop`, `.scrub` and `.parameter`, each a request the engine
+  answers with its state: the time, the state or the blend in flight, the pose's digest and joints, and
+  the events playback crossed. The hosted runtime's preview character (`cy::editor::AnimationPreview`,
+  a twelve-joint mannequin with `idle`, `walk`, `run` and `wave`) is evaluated by `cy::animation` and
+  drawn skinned in the viewport through the frame's `SkinnedScene`. The preview shows either the
+  timeline's clip alone or the state machine run from its entry state with the parameters set. Saving,
+  undoing or redoing the previewed graph previews it again. `animation.status` reports all of it.
+
+The contract between the two sides is `src/editor_backend/tests/data/animation_*`: the acceptance graph
+(`animation_locomotion_v1.cyanimgraph`, and `_edited_v1` with its idle-to-walk blend lengthened), the
+preview request this workspace encodes, and the engine's catalogue, compile, refusal and preview
+replies. The MCP suite authors the graph call by call and requires the file to equal the fixture and
+its preview request to equal the engine's; the engine's suite previews that request and checks the pose
+against the program evaluated directly. The panel's [preview](../docs/design/images/editor-animation-panel.png),
+its [timeline with a clip's events](../docs/design/images/editor-animation-timeline.png) and its
+[refusal of a cut](../docs/design/images/editor-animation-diagnostic.png) are rendered offscreen by
+`tests/panel_snapshots.rs` from those replies; the viewport photographs of the
+[walk](../docs/design/images/editor-animation-viewport-walk.png) and the
+[idle-to-walk blend](../docs/design/images/editor-animation-viewport-blend.png) are drawn by
+`smoke.editor_authored_frame_vulkan` with `CY_ANIMATION_VIEWPORT_SHOT=<directory>`.
+`python3 samples/05b-editor-window/animation_window.py` drives the real runtime and editor over MCP;
+its [window capture](../docs/design/images/editor-animation-window.png) shows the character the engine
+posed mid-blend, skinned and shadowed in the viewport.
+
+Not built yet: previewing a project's own skinned character (the editor imports no skeleton yet),
+cooking a graph's authored events into its clips, curve editing on the timeline, and the skinned
+preview on Metal and D3D12, whose skinned pipelines have not run on a device; there the runtime offers
+no preview and `animation.preview.set` is refused by name.
 
 ## The dependencies, and the rule they arrived under
 

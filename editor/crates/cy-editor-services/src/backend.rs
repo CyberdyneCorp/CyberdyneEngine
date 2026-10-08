@@ -276,6 +276,8 @@ pub struct BackendServices {
     pub audio: crate::audio_requests::AudioRequests,
     /// The `script.*` operations, the gameplay graph editor's: see `crate::script_requests`.
     pub script: crate::script_requests::ScriptRequests,
+    /// The `animation.*` operations, the animation panel's: see `crate::animation_requests`.
+    pub animation: crate::animation_requests::AnimationRequests,
 }
 
 impl Default for BackendServices {
@@ -308,6 +310,7 @@ impl Default for BackendServices {
             connected: false,
             audio: crate::audio_requests::AudioRequests::default(),
             script: crate::script_requests::ScriptRequests::default(),
+            animation: crate::animation_requests::AnimationRequests::default(),
         }
     }
 }
@@ -325,6 +328,7 @@ impl BackendServices {
             self.disconnect();
             let _ = self.audio.maintain(runtime);
             let _ = self.script.maintain(runtime);
+            let _ = self.animation.maintain(runtime);
             return None;
         }
         // Only once discovery is done, so a runtime's first answers stay in the order they always
@@ -344,6 +348,15 @@ impl BackendServices {
             && self.vfx_catalogue_request.is_none()
             && self.vfx_capabilities_request.is_none()
             && let Some(problem) = self.script.maintain(runtime)
+        {
+            return Some(problem);
+        }
+        // And for animation graphs.
+        if self.connected
+            && self.catalogue_request.is_none()
+            && self.vfx_catalogue_request.is_none()
+            && self.vfx_capabilities_request.is_none()
+            && let Some(problem) = self.animation.maintain(runtime)
         {
             return Some(problem);
         }
@@ -464,6 +477,9 @@ impl BackendServices {
             return outcome;
         }
         if let Some(outcome) = self.script.accept(message) {
+            return outcome;
+        }
+        if let Some(outcome) = self.animation.accept(message) {
             return outcome;
         }
         if Some(*request) == self.catalogue_request {

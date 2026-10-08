@@ -10,6 +10,7 @@
 #include "pose_program_access.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <utility>
 
 namespace cy::graph::pose {
@@ -68,6 +69,13 @@ struct Compilation {
 
 [[nodiscard]] Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcept;
 
+/// The clock a clip node owns when it names none: `clock.<node key>`, which no other node shares.
+[[nodiscard]] Name own_clock(NodeKey node) noexcept {
+    char name[40] = {};
+    (void)std::snprintf(name, sizeof(name), "clock.%llu", static_cast<unsigned long long>(node));
+    return Name::intern(name);
+}
+
 /// The `pose.clip` branch of `lower_value`, lifted out because it is the only one that mints a
 /// `ClipRef` and the only one with a table to deduplicate against — the rest of that function is a
 /// chain of one-line assignments, and reading them together made the chain hard to see.
@@ -117,8 +125,13 @@ struct Compilation {
             return pushed;
         }
     }
+    // A CLIP WITH NO NAMED CLOCK HAS A CLOCK OF ITS OWN. Every clip instruction's time parameter is
+    // a clock the runtime advances (`AnimationRig::time_parameters`), and two clips reading one
+    // parameter read one clock: an unnamed clock interned as the empty name made every clip that
+    // left the property blank — what a node fresh from an editor's palette is — share a single one.
     const Literal* time = state.graph->property(node, Name::intern("time_parameter"));
-    instruction.time_param = intern_parameter(program, time != nullptr ? time->text : Name{});
+    instruction.time_param = intern_parameter(
+        program, time != nullptr && !time->text.is_empty() ? time->text : own_clock(node));
     return ok();
 }
 
@@ -319,8 +332,13 @@ Status register_pose_nodes(NodeRegistry& registry) noexcept {
     if (Status added = register_node(registry, "pose.ik", Span<const PinDesc>(unary, 2)); !added) {
         return added;
     }
-    const PinDesc state_pins[] = {pin("pose", "pose", PinDirection::Input)};
-    if (Status added = register_node(registry, "pose.state", Span<const PinDesc>(state_pins, 1));
+    // A state's `state` output is what a transition's `from` and `to` are wired to: the state's
+    // identity, not a pose. Declared so a graph that draws its transitions validates — an editor's
+    // canvas wires only an output into an input of the same type — and the compiler reads the
+    // transition's input links whichever pin of the state they leave.
+    const PinDesc state_pins[] = {pin("pose", "pose", PinDirection::Input),
+                                  pin("state", "state", PinDirection::Output)};
+    if (Status added = register_node(registry, "pose.state", Span<const PinDesc>(state_pins, 2));
         !added) {
         return added;
     }

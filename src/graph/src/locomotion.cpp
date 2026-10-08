@@ -197,15 +197,15 @@ void fill_edges(const LocomotionSpec& spec, Edge (&edges)[7]) noexcept {
         !set) {
         return set;
     }
-    // The wires are state -> transition, on the `from` and `to` pins: lower_pose.cpp reads the
-    // links rather than a property, so a transition between two states is a thing an editor can
-    // draw.
-    if (Status wired = graph.connect(state_key(edge.from), Name::intern("pose"), edge.key,
+    // The wires are state -> transition, from the state's `state` output to the `from` and `to`
+    // pins: lower_pose.cpp reads the links rather than a property, so a transition between two
+    // states is a thing an editor can draw, and the graph validates against the registry.
+    if (Status wired = graph.connect(state_key(edge.from), Name::intern("state"), edge.key,
                                      Name::intern("from"));
         !wired) {
         return wired;
     }
-    return graph.connect(state_key(edge.to), Name::intern("pose"), edge.key, Name::intern("to"));
+    return graph.connect(state_key(edge.to), Name::intern("state"), edge.key, Name::intern("to"));
 }
 
 [[nodiscard]] Expected<u16, Error> parameter_index(const PoseProgram& program,

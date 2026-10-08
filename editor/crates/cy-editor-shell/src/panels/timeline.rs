@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::timeline::{
-    Key, KeyId, SectionId, TimelineSurface, Track, TrackId,
+    Key, KeyId, SectionId, TimelineSurface, Track, TrackId, TrackKind,
 };
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
@@ -89,6 +89,13 @@ pub(super) enum TimelineEdit {
 
 impl TimelineEdit {
     /// Apply the edit and answer the edit that undoes it. A refused edit changes nothing.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "an editor whose timeline IS its document (the sequencer) applies and undoes edits here; the animation editor turns each gesture into a command on its file instead"
+        )
+    )]
     pub(super) fn apply(self, surface: &mut TimelineSurface) -> Result<TimelineEdit> {
         match self {
             TimelineEdit::AddKey { track, time, value } => {
@@ -154,6 +161,12 @@ fn track_of(surface: &TimelineSurface, id: TrackId) -> Result<&Track> {
             "the timeline holds no track with that identity",
         )
     })
+}
+
+/// Whether a double-click on a track's lane keys it: a keyed track takes a value there, and an
+/// event track (the animation timeline's gameplay events) a point.
+fn accepts_keys(kind: TrackKind) -> bool {
+    kind.is_keyed() || kind == TrackKind::GameplayEvent
 }
 
 /// Something selected on the timeline.
@@ -463,7 +476,7 @@ fn track_row(
     );
     let additive = ui.input(|input| input.modifiers.shift);
     if lane.double_clicked()
-        && track.kind.is_keyed()
+        && accepts_keys(track.kind)
         && let Some(position) = lane.interact_pointer_pos()
     {
         let time = view
@@ -1128,6 +1141,38 @@ mod tests {
             (value - expected).abs() < 1e-9,
             "keyed on the curve, not at zero"
         );
+    }
+
+    #[test]
+    fn double_clicking_an_event_lane_places_one_key_and_a_clip_lane_places_none() {
+        // The animation timeline's gameplay events are points on their own track: a double-click
+        // there is the author placing one. A clip track's lane takes nothing.
+        let mut surface = TimelineSurface::new(1, 30.0).unwrap();
+        surface.load(1.0);
+        let clip = surface.add_track(TrackKind::Animation, "walk");
+        surface.add_section(clip, 0.0, 0.25, "walk").unwrap();
+        let events = surface.add_track(TrackKind::GameplayEvent, "footstep");
+        let mut view = TimelineView::default();
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        let on_events = at(&view, lanes, 0.5, 1);
+        let first = frames.click(on_events, &surface, &mut view);
+        let second = frames.click(on_events, &surface, &mut view);
+        let edits: Vec<_> = first.edits.into_iter().chain(second.edits).collect();
+        let [TimelineEdit::AddKey { track, time, .. }] = edits.as_slice() else {
+            panic!("a double click on an event lane is one key: {edits:?}");
+        };
+        assert_eq!(*track, events);
+        assert!((time - 0.5).abs() < 0.02, "{time}");
+        let mut view = TimelineView::default();
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        // Past the clip's section, so the click lands on the bare lane.
+        let on_clip = at(&view, lanes, 0.75, 0);
+        let first = frames.click(on_clip, &surface, &mut view);
+        let second = frames.click(on_clip, &surface, &mut view);
+        let edits: Vec<_> = first.edits.into_iter().chain(second.edits).collect();
+        assert!(edits.is_empty(), "a clip's lane is not keyed: {edits:?}");
     }
 
     #[test]

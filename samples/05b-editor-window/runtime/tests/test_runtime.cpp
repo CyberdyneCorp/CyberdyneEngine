@@ -17,8 +17,11 @@
 
 #include "overlay.h"
 #include "pick_wire.h"
+#include "service_queue.h"
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 using cy::f32;
 using cy::u32;
@@ -309,4 +312,87 @@ CY_TEST_CASE("an audio source's radius is projected to the pixels the frame's vi
     CY_CHECK_NEAR(projected_radius(view, ahead, right, 2.0F), 20.0F, 0.1F);
     CY_CHECK_NEAR(projected_radius(view, ahead, right * 3.0F, 1.0F), 10.0F, 0.05F);
     CY_CHECK_EQ(projected_radius(view, cy::Vec3{0.0F, 0.0F, 10.0F}, right, 1.0F), 0.0F);
+}
+
+// --- Editor service requests the service is too busy for (issue #29) ---------------------------
+
+namespace {
+
+/// A service that takes one request at a time, as `MaterialService` does, and records what it took.
+struct OneAtATime {
+    bool busy = false;
+    bool broken = false;
+    std::vector<std::string> taken;
+
+    static CyResult submit(void* user, const CyServiceRequest& request) noexcept {
+        auto& service = *static_cast<OneAtATime*>(user);
+        if (service.broken) {
+            return CY_RESULT_INVALID_ARGUMENT;
+        }
+        if (service.busy) {
+            return CY_RESULT_ALREADY_EXISTS;
+        }
+        service.busy = true;
+        service.taken.emplace_back(request.operation);
+        return CY_RESULT_OK;
+    }
+};
+
+cy::Span<const u8> no_payload() {
+    return {};
+}
+
+}  // namespace
+
+CY_TEST_CASE("a request the service is too busy for waits its turn instead of being dropped") {
+    // The animation panel's catalogue and the VFX catalogue reach one backend in one frame. The
+    // runtime ignored the second submission's refusal, so that request was never answered.
+    OneAtATime service;
+    PendingServiceRequests queue;
+    CY_CHECK_EQ(queue.offer(1, 1, "vfx.catalogue.get", no_payload(), &OneAtATime::submit, &service),
+                CY_RESULT_OK);
+    CY_CHECK_EQ(
+        queue.offer(2, 1, "animation.catalogue.get", no_payload(), &OneAtATime::submit, &service),
+        CY_RESULT_OK);
+    CY_CHECK_EQ(queue.waiting(), 1U);
+    std::vector<u64> failed;
+    queue.retry(&OneAtATime::submit, &service, failed);
+    CY_CHECK_EQ(queue.waiting(), 1U);  // still busy: nothing is lost by asking again
+
+    // The first is answered; the second goes in, and a third sent meanwhile keeps its place.
+    service.busy = false;
+    CY_CHECK_EQ(queue.offer(3, 1, "animation.compile", no_payload(), &OneAtATime::submit, &service),
+                CY_RESULT_OK);
+    CY_CHECK_EQ(service.taken, (std::vector<std::string>{"vfx.catalogue.get"}));
+    queue.retry(&OneAtATime::submit, &service, failed);
+    service.busy = false;
+    queue.retry(&OneAtATime::submit, &service, failed);
+    CY_CHECK_EQ(service.taken,
+                (std::vector<std::string>{"vfx.catalogue.get", "animation.catalogue.get",
+                                          "animation.compile"}));
+    CY_CHECK_EQ(queue.waiting(), 0U);
+    CY_CHECK(failed.empty());
+}
+
+CY_TEST_CASE("a waiting request can be cancelled, and one the service refuses outright fails") {
+    OneAtATime service;
+    service.busy = true;
+    PendingServiceRequests queue;
+    CY_REQUIRE_EQ(
+        queue.offer(7, 1, "animation.preview.set", no_payload(), &OneAtATime::submit, &service),
+        CY_RESULT_OK);
+    CY_REQUIRE_EQ(
+        queue.offer(8, 1, "animation.preview.get", no_payload(), &OneAtATime::submit, &service),
+        CY_RESULT_OK);
+    CY_CHECK(queue.cancel(7));
+    CY_CHECK_FALSE(queue.cancel(7));
+    service.busy = false;
+    service.broken = true;
+    std::vector<u64> failed;
+    queue.retry(&OneAtATime::submit, &service, failed);
+    CY_CHECK_EQ(failed, (std::vector<u64>{8}));
+    CY_CHECK_EQ(queue.waiting(), 0U);
+    // Offered while nothing waits, a refusal is the host's to answer at once.
+    CY_CHECK_EQ(queue.offer(9, 1, "animation.compile", no_payload(), &OneAtATime::submit, &service),
+                CY_RESULT_INVALID_ARGUMENT);
 }

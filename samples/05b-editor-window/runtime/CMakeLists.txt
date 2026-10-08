@@ -66,10 +66,12 @@ cy_add_module(
         pick_wire.cpp
         scene_audio.cpp
         script_runtime.cpp
+        service_queue.cpp
         wind_field_preview.cpp
         world_view.cpp
     PRIVATE_DEPENDENCIES
         cy::rendering-pipeline
+        cy::rendering-skinning
         cy::weather
         cy::import
         cy::core-assets

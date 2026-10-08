@@ -192,6 +192,7 @@ pub fn register_specialised_tools(registry: &mut Registry) -> Result<()> {
     register_tool::<super::lighting::LightingTool>(registry)?;
     register_tool::<super::audio_mixer::AudioMixerTool>(registry)?;
     register_tool::<super::script_graph::ScriptGraphTool>(registry)?;
+    register_tool::<super::animation::AnimationTool>(registry)?;
     command_parity(registry, super::physics::PANEL, super::physics::COMMANDS)
 }
 
