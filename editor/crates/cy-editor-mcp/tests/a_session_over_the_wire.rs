@@ -5841,6 +5841,8 @@ fn author_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
                     r#"{{"reference":"{ANIMATION_GRAPH}","node":4,"event":"footstep","time":0.1}}"#
                 ),
             ),
+            // A drag from where no event is moves nothing, not the nearest one.
+            &event(24, "animation.event.move", r#""from":0.5,"to":0.6"#),
         ],
         editor,
     );
@@ -5848,7 +5850,7 @@ fn author_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
         let (text, is_error) = tool_reply(&authored, index);
         assert!(!is_error, "call {index}: {text}");
     }
-    for index in 19..23 {
+    for index in 19..24 {
         let (text, is_error) = tool_reply(&authored, index);
         assert!(is_error, "call {index} was not refused: {text}");
     }
