@@ -153,8 +153,10 @@ Install Swift with `swiftly` as [the building guide](building.md#swift-m4--playa
 put the environment line in `~/.bashrc`, not only `~/.profile`: every Swift invocation in the tree
 goes through `bash -lc '. ~/.local/share/swiftly/env.sh; …'`, but a terminal or a tool that does not
 will not find `swift`. `just env-doctor` diagnoses the case. Every measurement in
-`bindings/swift/README.md` is Linux with Swift 6.3.3; the toolchain version is not pinned anywhere
-yet (section 8).
+`bindings/swift/README.md` is Linux with Swift 6.3.3. Continuous integration installs the version in
+the justfile's `swift_pin_version` (6.0.3, which is also what Xcode 16.2 ships) in every Linux job
+that builds the tree, and `tools/ci/check_workflows.py` fails a workflow that installs another or
+none; a developer's own toolchain is not checked against it.
 
 Without a Swift toolchain the engine still configures and builds: `integration.swift_package`,
 `integration.swift_reload`, `samples/04-character` and `samples/13-rts-api` are not built or
@@ -236,6 +238,19 @@ python3 bindings/swift/tools/cy_swift_module.py --work build/my-game \
 
 `samples/13-rts-api/CMakeLists.txt` runs exactly this as a custom command, choosing `release` for the
 Profile and Shipping configurations and `debug` otherwise.
+
+The tool always passes `--build-system native` to `swift build` and `swift test`. Swift 6.4 made
+Swift Build SwiftPM's default, and on Linux its build planner intermittently dies with signal 11
+inside libdispatch (`_dispatch_event_loop_drain`, right after swift-syntax resolves;
+swiftlang/swift-build#1786). A Swift command that still dies on a crash signal (SIGSEGV, SIGBUS,
+SIGILL, SIGABRT, SIGFPE, SIGTRAP) is run again, at most twice, and the tool prints why on stderr; a
+compile error, or a build stopped with SIGINT, SIGTERM or SIGKILL, is never retried.
+
+SwiftPM's scratch directory is stamped with the `swift --version` line of the toolchain that wrote it
+(`<work>/.cy-swift-toolchain`), and the tool removes it when a different toolchain builds there next.
+An older SwiftPM refuses a newer one's state outright (6.0.3 reads 6.4's `workspace-state.json` as
+"unknown 'WorkspaceStateStorage' version '7'"), which is what a restored CI cache or a changed local
+toolchain would otherwise hit. The first build after a change of toolchain rebuilds swift-syntax.
 
 ### A project from the editor's template
 
@@ -1475,6 +1490,8 @@ callback, and the instance is disabled.
 | A renamed `@Export` comes back with its default after a reload | restore is by name | claim the old key in `onMigrate` and bump `schema` |
 | A reload is refused and the old code keeps running | `SchemaTooNew`, `TypeNotRegistered` or an entry refused on version | read the `ReloadReport`; keep `@Behaviour(name:)` stable |
 | A reload changes nothing | two generations with one file name or one Swift module name | always build through `cy_swift_module.py` |
+| `swift build` dies with `Signal 11` and `_dispatch_event_loop_drain` in the backtrace | Swift 6.4's default build system, Swift Build, crashing in its planner | build through `cy_swift_module.py`, which names `--build-system native` and retries a crash |
+| `unknown 'WorkspaceStateStorage' version` | a `.build` written by a newer Swift, read by an older one | build through `cy_swift_module.py`, which discards another toolchain's state; for a bare `swift build`, delete `.build` |
 | An edited authored value is ignored on Play | not saved, or the `ScriptBehaviour` field's kind does not match the Swift type (an authored `float` is `f32`, which a `Double` refuses) | save the world; match `Float`/`Double`/`Int64` to the authored kind |
 | `@Component` rejects a field | a class, `String`, `Int`, or another type outside the storable set | use `Bool`, `Int64`, `Float`, `Double`, `Vec2`–`Vec4`, `Quat` or `Entity` |
 | A registered behaviour or component is "not found" by name | a name passed with `withCString` to an entry that keeps the pointer | Kit uses `RetainedCString` for this; do the same in any hand-written registration |

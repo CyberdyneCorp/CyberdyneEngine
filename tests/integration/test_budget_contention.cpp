@@ -660,8 +660,8 @@ CY_TEST_CASE("harness: a case that burns its own CPU is not blocked") {
 //
 // Every case above re-enacts the guard's arithmetic on a window this file measured. These run
 // stall_probe.cpp — real `CY_TEST_CASE`s under the unit tier's budget — as a child process and read
-// the verdict the guard itself printed. CY_TEST_BUDGET_SCALE=0.25 makes the budget 0.25 ms and the
-// ceiling exactly 25 ms, so each 300 ms case is twelve times over it. `757b3d9` excused the vfork
+// the verdict the guard itself printed. CY_TEST_BUDGET_SCALE=1 makes the budget 1 ms and the
+// ceiling exactly 100 ms, so each 300 ms case is three times over it. `757b3d9` excused the vfork
 // case with no pressure at all; `4a1ad21` excused it beside the case's own readers; `23b0370`
 // excused it beside the case's own ORPHANED readers. Each is `stalled:` and none may ever be
 // called `contended:`.
@@ -698,7 +698,11 @@ struct ProbeRun {
 };
 
 struct ProbeSetting {
-    const char* scale = "0.25";
+    // ONE, NOT A QUARTER (issue #80). The vfork case's own thread is charged the kernel's fork,
+    // which measured 0.02 to 0.3 ms on a busy 24-core host: at 0.25 the case failed `over budget:`
+    // in 2 of 80 runs beside 24 niced spinners (0 of 80 at 1), and the forged-marker legs read that
+    // as the marker being misjudged. A 300 ms hold is still three times a 100 ms ceiling.
+    const char* scale = "1";
     const char* extra = nullptr;
     Marker marker = Marker::Stripped;
     const char* forged = nullptr;

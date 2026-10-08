@@ -131,6 +131,19 @@ jobs:
   #
   # THE SWIFT DECISION, M5 TASK 1.4 — recorded here because this matrix is what it is about.
   #
+  # THE VERSION IS PINNED, AND EVERY LINUX x86_64 JOB THAT BUILDS THE TREE INSTALLS IT. Until
+  # October 2026 only the jobs below with a `setup-swift` step had a known toolchain; `world`,
+  # `authorable`, `agent`, `sanitize` and the rest built the game modules with the image's own Swift,
+  # which moved to 6.4. 6.4 made Swift Build SwiftPM's default build system, and its planner
+  # intermittently dies with signal 11 in libdispatch (`_dispatch_event_loop_drain`, right after
+  # swift-syntax resolves; swiftlang/swift-build#1786). Every such crash CI recorded was on 6.4 and
+  # none on the pinned jobs. So: one version, `swift_pin_version` in the justfile, which
+  # tools/ci/check_workflows.py holds every `setup-swift` step to; bindings/swift/tools/
+  # cy_swift_module.py names `--build-system native` so a developer's newer toolchain does not
+  # reintroduce the crash, and runs a command the toolchain crashed on again, a bounded number of
+  # times, never one that failed to compile. linux-arm64 cannot use the action (below), so there
+  # the driver's choice of build system is what keeps the crash out.
+  #
   # M4 left the question open: Swift is a hard requirement of `swift-scripting` and of the M4
   # artefact, and it was installed on exactly one job. Making it hard across the matrix means every
   # leg can install a toolchain, and two of the four do not.
@@ -209,7 +222,7 @@ jobs:
       - if: matrix.swift == 'action' && runner.os == 'Linux'
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - if: matrix.swift == 'action' && runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -299,7 +312,7 @@ jobs:
       - if: matrix.swift == 'action' && runner.os == 'Linux'
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - if: matrix.swift == 'action' && runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -405,6 +418,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -465,6 +483,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -500,6 +523,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -561,6 +589,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -644,7 +677,7 @@ jobs:
       # than trusting PATH. `just env-doctor` diagnoses the same case for a developer.
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - uses: actions/cache@v5
         with:
           path: build/dev
@@ -765,6 +798,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -819,6 +857,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -896,6 +939,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
@@ -977,7 +1025,7 @@ jobs:
       # by nobody. The format gate is a tree walk and needs nothing; this one needs the build.
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - uses: actions/cache@v5
         with:
           path: build/dev
@@ -1086,6 +1134,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
@@ -1144,6 +1197,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
@@ -1204,7 +1262,7 @@ jobs:
       # in continuous integration where a Swift module is built optimised.
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - uses: actions/cache@v5
         with:
           path: |
@@ -1354,6 +1412,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # The pinned Swift (`swift_pin_version` in the justfile). Without this step the job builds the
+      # game modules with whatever Swift the image ships; see the note above the `build` matrix.
+      - if: matrix.label == 'linux-x86_64'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       # The publisher is independent of the aggregate four-platform build job: `test-determinism`
       # builds the tree it executes. Depending on the whole build matrix would skip every digest
       # when one unrelated platform leg fails, leaving two healthy architectures unobserved.
@@ -1533,7 +1597,7 @@ jobs:
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '6.0'
+          swift-version: '6.0.3'
       - name: Install the pinned LLVM tooling and the specification CLI
         run: |
           pip install clang-format==22.1.8 clang-tidy==22.1.8

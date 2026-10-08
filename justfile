@@ -91,6 +91,14 @@ llvm_pin_version := '22.1.8'
 # after `just quality-specs` passes under the new version.
 openspec_pin_version := '1.14.0'
 
+# The Swift toolchain continuous integration installs, in every Linux job that builds the tree.
+# Unpinned, a job took whatever the runner image shipped, and when the image moved to Swift 6.4
+# SwiftPM's new default build system began crashing intermittently with signal 11 inside
+# libdispatch (swiftlang/swift-build#1786). 6.0.3 is also what Xcode 16.2 ships, so the macOS legs
+# and the Linux legs build the game modules with the same compiler. `tools/ci/check_workflows.py`
+# holds every `setup-swift` step to it.
+swift_pin_version := '6.0.3'
+
 # The repository root. `just` 1.21 runs a recipe in the directory of the file that *defines* it, so
 # a recipe in just/ starts in just/ rather than at the root. Every recipe that touches the tree
 # begins `cd "{{root}}"`; a recipe that forgets will fail loudly on the first path it uses.

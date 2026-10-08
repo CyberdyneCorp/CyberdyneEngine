@@ -20,6 +20,26 @@ use std::process::ExitCode;
 
 use cy_editor_protocol::{Message, serve};
 
+/// Say "connected" once the editor's `Hello` has arrived, so that a parent process can tell
+/// "listening" from "the editor reached the runtime" without Linux-only /proc inspection.
+///
+/// AT THE HELLO, NOT AT `accept`. The editor's `connect_hosted` connects, then sends its `Hello`, and
+/// fails if the session is already lost by then. `samples/05-editor-session/session.py` kills this
+/// process the moment it reads this line; printed at `accept`, the kill could land between the two,
+/// and the editor reported the dead runtime on stderr before its script started instead of
+/// surviving it mid-session. A `Hello` that arrived was sent, so the editor's attach has succeeded.
+///
+/// Written through the handle and the error swallowed, because `println!` panics on a broken pipe:
+/// `survives_a_runtime_crash.rs`'s `start_runtime` reads the single "listening" line and then
+/// drops its reader, closing the read end of this process's stdout. The stub needs the socket to
+/// work, not stdout.
+#[cfg(unix)]
+fn report_connected() {
+    use std::io::Write as _;
+    let _ = writeln!(std::io::stdout(), "connected");
+    let _ = std::io::stdout().flush();
+}
+
 fn main() -> ExitCode {
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("cy-runtime-stub: usage: cy-runtime-stub <socket-path>");
@@ -45,28 +65,19 @@ fn main() -> ExitCode {
 
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
-            // A process-level crash test must distinguish "listening" from "the editor reached
-            // the runtime" without relying on Linux-only /proc inspection.
-            //
-            // `println!` panics on a broken pipe, and `survives_a_runtime_crash.rs`'s
-            // `start_runtime` reads a single "listening" line then drops its `BufReader<ChildStdout>`
-            // — closing the read end of our stdout pipe. A `println!` here after that runs into
-            // `Broken pipe (os error 32)` and aborts the stub before the editor's Hello can reach
-            // it, so the editor's session goes straight to `Lost` and `is_connected()` reports
-            // false on line 83 of that test. Write through the handle directly and swallow the
-            // error: the stub does not need stdout to work, only the socket.
-            let _ = writeln!(std::io::stdout(), "connected");
-            let _ = std::io::stdout().flush();
             let Ok(mut reader) = stream.try_clone() else {
                 continue;
             };
             let mut writer = stream;
             let _ = serve(&mut reader, &mut writer, |message| match message {
-                Message::Hello { .. } => Some(vec![Message::Welcome {
-                    abi_major: cy_editor_sdk::abi::MAJOR,
-                    abi_minor: cy_editor_sdk::abi::MINOR,
-                    runtime: format!("cy-runtime-stub {}", env!("CARGO_PKG_VERSION")),
-                }]),
+                Message::Hello { .. } => {
+                    report_connected();
+                    Some(vec![Message::Welcome {
+                        abi_major: cy_editor_sdk::abi::MAJOR,
+                        abi_minor: cy_editor_sdk::abi::MINOR,
+                        runtime: format!("cy-runtime-stub {}", env!("CARGO_PKG_VERSION")),
+                    }])
+                }
                 Message::Apply {
                     request,
                     frame,

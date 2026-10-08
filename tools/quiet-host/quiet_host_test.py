@@ -295,8 +295,13 @@ ENFORCED = "enforced: inside cy_quiet_host"
 #: The environment variable the wrapper sets and the harness verifies.
 MARKER = "CY_QUIET_HOST"
 #: The stall probe's cases (tests/integration/stall_probe.cpp): held 300 ms by its own vfork child,
-#: and spinning 300 ms against a CPU budget of 0.25 ms.
+#: and spinning 300 ms against a CPU budget of 1 ms.
 VFORK_CASE = "probe: a case whose own vfork child holds it"
+#: The probe's budget scale: a 1 ms CPU budget and a 100 ms stall ceiling, which the 300 ms hold is
+#: three times over. NOT 0.25 (issue #80): the vfork case's thread is charged the kernel's fork,
+#: measured at 0.02 to 0.3 ms on a busy host, so at a 0.25 ms budget the case sometimes failed
+#: `over budget:` and leg 6 (c) reported it as "expected the vfork case to pass".
+PROBE_SCALE = "1"
 SPIN_CASE = "probe: a case that spins"
 
 
@@ -313,7 +318,7 @@ def probe_environment(marker: str | None) -> dict[str, str]:
     wrapper, and an inherited, genuine marker would make every "outside" run an inside one.
     """
     environment = {key: value for key, value in os.environ.items() if key != MARKER}
-    environment["CY_TEST_BUDGET_SCALE"] = "0.25"
+    environment["CY_TEST_BUDGET_SCALE"] = PROBE_SCALE
     if marker is not None:
         environment[MARKER] = marker
     return environment

@@ -35,8 +35,8 @@ delivered through a FIFO: opening a FIFO for reading blocks until a writer opens
 blocks until the writer closes. `cyberdyne-editor` attaches its runtime BEFORE it reads the script
 (see its `main.rs`), so the ordering below is decided rather than raced:
 
-    1. the editor connects to the runtime            — observed, not assumed: the runtime's open
-                                                       file descriptors go up when it accepts
+    1. the editor attaches to the runtime            — observed, not assumed: the runtime prints
+                                                       `connected` when the editor's Hello arrives
     2. the runtime is killed with SIGKILL            — the editor is blocked on the FIFO, connected
     3. the act is written to the FIFO and closed     — the whole session now runs with a dead runtime
     4. the editor finishes it, surfaces the loss, and exits zero
@@ -353,10 +353,14 @@ def start_runtime(binaries: Binaries, socket: Path) -> subprocess.Popen:
 
 
 def wait_until_connected(runtime: subprocess.Popen, timeout_s: float = 10.0) -> bool:
-    """Whether the editor has reached the runtime, observed rather than assumed.
+    """Whether the editor has attached to the runtime, observed rather than assumed.
 
-    The test runtime prints and flushes one line after `accept`, which works on every Unix host this
-    artefact supports and avoids racing the editor against an immediate kill on macOS.
+    The test runtime prints and flushes `connected` when the editor's Hello arrives, which works on
+    every Unix host this artefact supports. NOT AT `accept`: the editor sends its Hello after it
+    connects and treats a session already lost by then as a failed attach, so a kill timed by
+    `accept` sometimes landed between the two. The editor then reported the dead runtime on stderr
+    before its script started and ran the act with no runtime, which the act counted as one command
+    too many (`cy-runtime-stub`'s `report_connected` has the whole account).
     """
     if runtime.stdout is None:
         return False

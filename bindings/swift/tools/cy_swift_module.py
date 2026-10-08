@@ -45,6 +45,7 @@ import getpass
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -105,14 +106,101 @@ def swiftpm_lock():
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+# THE BUILD SYSTEM IS NAMED, NOT INHERITED FROM THE TOOLCHAIN.
+#
+# Swift 6.4 changed SwiftPM's default from its native build system to Swift Build, and on Linux Swift
+# Build's planner intermittently dies with signal 11 in libdispatch (`_dispatch_event_loop_drain`,
+# null dereference, right after swift-syntax resolves; swiftlang/swift-build#1786). Every crash CI
+# recorded was a job on the image's own Swift 6.4; no job on a pinned 6.0.3 ever crashed, and
+# `--build-system native` is accepted by every toolchain this package supports. Naming it also keeps
+# `--show-bin-path` agreeing with the build, since the two systems place products differently.
+BUILD_SYSTEM = ["--build-system", "native"]
+
+# A SWIFT COMMAND THAT THE TOOLCHAIN ITSELF CRASHED IS RUN AGAIN, A BOUNDED NUMBER OF TIMES. A crash
+# signal says nothing about the sources, so a second run is a fair question; a compile error is an
+# ordinary non-zero exit and is never retried. SIGINT, SIGTERM and SIGKILL are a person or a
+# scheduler stopping the build, which a retry would defy.
+CRASH_SIGNALS = frozenset({"SIGSEGV", "SIGBUS", "SIGILL", "SIGABRT", "SIGFPE", "SIGTRAP"})
+CRASH_RETRIES = 2
+
+
+def crash_signal(returncode: int) -> str | None:
+    """The crash signal that ended a Swift command, or None when it exited on its own.
+
+    The command runs under `bash -lc`, so a child killed by signal N is reported as 128 + N, and a
+    process that `bash` replaced with `exec` is reported by Python as -N.
+    """
+    if returncode < 0:
+        number = -returncode
+    elif 128 < returncode < 128 + 65:
+        number = returncode - 128
+    else:
+        return None
+    try:
+        name = signal.Signals(number).name
+    except ValueError:
+        return None
+    return name if name in CRASH_SIGNALS else None
+
+
+def run_swift(command: str, cwd: pathlib.Path | None) -> subprocess.CompletedProcess:
+    """Run one shell command, again when a crash signal ended it, up to CRASH_RETRIES times."""
+    def once() -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
+                              capture_output=True)
+
+    result = once()
+    attempt, attempts = 1, CRASH_RETRIES + 1
+    while (crashed := crash_signal(result.returncode)) and attempt < attempts:
+        attempt += 1
+        sys.stderr.write(f"cy_swift_module: the Swift toolchain died on {crashed} (exit "
+                         f"{result.returncode}), a crash rather than a compile error; running it "
+                         f"again, attempt {attempt} of {attempts}\n")
+        result = once()
+    return result
+
+
 def swift(arguments: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess:
     """Run a Swift command through a login-shell environment that has the toolchain on PATH."""
+    if arguments[:2] in (["swift", "build"], ["swift", "test"]):
+        arguments = [*arguments[:2], *BUILD_SYSTEM, *arguments[2:]]
     if os.environ.get("CY_SWIFT_DISABLE_SANDBOX") == "1" and arguments[:2] == ["swift", "build"]:
         arguments = [*arguments[:2], "--disable-sandbox", *arguments[2:]]
     command = ". " + SWIFTLY_ENV + " 2>/dev/null; " + " ".join(f"'{item}'" for item in arguments)
     with swiftpm_lock():
-        return subprocess.run(["bash", "-lc", command], cwd=cwd, check=False, text=True,
-                              capture_output=True)
+        return run_swift(command, cwd)
+
+
+# SWIFTPM'S STATE BELONGS TO THE TOOLCHAIN THAT WROTE IT. A scratch directory written by one Swift
+# and read by an older one is refused outright: Swift 6.4 writes `workspace-state.json` version 7 and
+# 6.0.3 throws "unknown 'WorkspaceStateStorage' version '7'". CI restores build trees from caches,
+# and the jobs that built with the runner image's 6.4 now build with the pinned 6.0.3, so a restored
+# tree would fail every game module; a developer who changes toolchains meets the same thing. The
+# scratch directory is stamped with the `swift --version` line that wrote it, and discarded when the
+# toolchain differs. Only SwiftPM's own state goes: the sources and the copied libraries stay.
+TOOLCHAIN_STAMP = ".cy-swift-toolchain"
+
+
+def toolchain_identity() -> str | None:
+    """The first line `swift --version` prints, or None when no toolchain answers."""
+    result = swift(["swift", "--version"])
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.strip().splitlines()[0]
+
+
+def forget_state_of_other_toolchains(scratch: pathlib.Path, stamp: pathlib.Path,
+                                     identity: str | None) -> None:
+    """Remove `scratch` when `stamp` names a toolchain other than `identity`, then stamp it."""
+    if identity is None:
+        return
+    previous = stamp.read_text(encoding="utf-8").strip() if stamp.exists() else None
+    if previous != identity and scratch.exists():
+        sys.stderr.write(f"cy_swift_module: {scratch} was built by "
+                         f"{previous or 'an unrecorded toolchain'}, not {identity}; removing it\n")
+        shutil.rmtree(scratch)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(identity + "\n", encoding="utf-8")
 
 
 def probe() -> int:
@@ -177,6 +265,8 @@ def main(argv: list[str]) -> int:
     if arguments.probe:
         return probe()
     if arguments.test:
+        forget_state_of_other_toolchains(SCRATCH, SCRATCH.parent / f"swift-package{TOOLCHAIN_STAMP}",
+                                         toolchain_identity())
         result = swift(["swift", "test", "--package-path", str(PACKAGE),
                         "--scratch-path", str(SCRATCH)])
         sys.stdout.write(result.stdout)
@@ -186,6 +276,8 @@ def main(argv: list[str]) -> int:
         parser.error("--work, --out and at least one --generation are required")
 
     arguments.work.mkdir(parents=True, exist_ok=True)
+    forget_state_of_other_toolchains(arguments.work / ".build", arguments.work / TOOLCHAIN_STAMP,
+                                     toolchain_identity())
     for entry in arguments.generation:
         index, _, directory = entry.partition("=")
         built = build_generation(arguments.work, int(index), pathlib.Path(directory),

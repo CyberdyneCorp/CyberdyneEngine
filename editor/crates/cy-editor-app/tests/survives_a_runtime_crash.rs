@@ -311,3 +311,68 @@ fn the_journal_survives_the_editor_stopping_and_recovers_what_was_unsaved() {
 
     std::fs::remove_dir_all(&directory).unwrap();
 }
+
+/// The stub's "connected" line means the editor's `Hello` arrived, not merely that `accept`
+/// returned.
+///
+/// `samples/05-editor-session/session.py` kills the runtime the moment it reads that line. When the
+/// line was printed at `accept`, the kill could land between the editor's `connect` and its `Hello`:
+/// the bridge's reader saw the end of stream first, `send(Hello)` returned the loss, and
+/// `connect_hosted` failed. The editor then printed `cyberdyne-editor: the hosted runtime: it closed
+/// the connection` on stderr before its script started and ran the act with no runtime at all, so
+/// the session counted one summary too many and never surfaced "The hosted runtime stopped".
+#[test]
+fn the_stub_reports_a_connection_only_once_the_editors_hello_arrived() {
+    use std::io::Write as _;
+    use std::os::unix::net::UnixStream;
+    use std::sync::mpsc;
+
+    use cy_editor_protocol::{Message, write_frame};
+
+    let directory = std::env::temp_dir().join(format!("cy-editor-hello-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let socket = directory.join("runtime.sock");
+
+    let mut runtime = Command::new(stub_binary())
+        .arg(&socket)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("the runtime stub starts");
+    let stdout = runtime.stdout.take().expect("the stub's stdout was piped");
+    let (lines_sender, lines) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { return };
+            if lines_sender.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    assert_eq!(
+        lines.recv_timeout(Duration::from_secs(10)).as_deref(),
+        Ok("listening")
+    );
+
+    let mut stream = UnixStream::connect(&socket).expect("the stub accepts a connection");
+    assert!(
+        lines.recv_timeout(Duration::from_millis(500)).is_err(),
+        "the stub said it was connected before any Hello reached it"
+    );
+
+    let hello = Message::Hello {
+        abi_major: cy_editor_sdk::abi::MAJOR,
+        abi_minor: cy_editor_sdk::abi::MINOR,
+        editor: "the hello test".to_string(),
+    };
+    write_frame(&mut stream, &hello.encode()).expect("the Hello is written");
+    stream.flush().unwrap();
+    assert_eq!(
+        lines.recv_timeout(Duration::from_secs(10)).as_deref(),
+        Ok("connected"),
+        "the stub reports the connection once the Hello arrived"
+    );
+
+    runtime.kill().unwrap();
+    runtime.wait().unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+}
