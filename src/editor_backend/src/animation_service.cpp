@@ -569,6 +569,10 @@ bool parse_animation_events(std::string_view text, Name clip,
         const usize end = text.find(';');
         const std::string_view item = trimmed(text.substr(0, end));
         text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+        // An empty item (`;;`, a leading `;`) is nothing, as the editor's `parse_events` reads it.
+        if (item.empty()) {
+            continue;
+        }
         const usize at = item.find('@');
         if (at == std::string_view::npos) {
             return false;

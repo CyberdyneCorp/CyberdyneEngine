@@ -437,6 +437,19 @@ CY_TEST_CASE("editor animation: events read as name@seconds, and anything else i
     CY_CHECK_EQ(events.size(), 2U);
 }
 
+CY_TEST_CASE("editor animation: an empty item between separators is skipped, as the editor does") {
+    // The editor's `parse_events` skips empty items, so `animation.graph.set_property` accepted
+    // `footstep@0.25;; footstep@0.5` and the compile then refused it as malformed. A trailing `;`
+    // was already accepted here; a leading or doubled one is the same nothing.
+    const Name walk = Name::intern("walk");
+    for (const char* text : {"footstep@0.25;; footstep@0.5", "; footstep@0.25; footstep@0.5",
+                             "footstep@0.25; ; footstep@0.5;"}) {
+        Array<editor::AnimationClipEvent> events(allocator());
+        CY_CHECK_MESSAGE(editor::parse_animation_events(text, walk, events), text);
+        CY_CHECK_MESSAGE(events.size() == 2U, text);
+    }
+}
+
 #if defined(CY_EDITOR_HAS_ANIMATION)
 
 namespace {
