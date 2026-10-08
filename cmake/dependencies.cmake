@@ -679,6 +679,100 @@ function(cy__finalise_doctest target)
         DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
 endfunction()
 
+# --- The text stack (M11.e, issue #86) ------------------------------------------------------------
+#
+# Four libraries behind `cy::text::TextBackend`, all in src/backends/text-complete/. Each block turns
+# off what that module does not use, and the comment beside each switch says what is lost with it —
+# because a format the engine cannot read should be a sentence somebody can find, not a surprise.
+
+function(cy__configure_harfbuzz)
+    # Shaping only. Subsetting, the rasteriser, the vector and GPU paths are separate libraries
+    # upstream builds by default and the engine never calls; the platform shapers (CoreText,
+    # Uniscribe, DirectWrite) would make the same string shape differently on different hosts, which
+    # is the opposite of what a golden test wants.
+    set(HB_BUILD_SUBSET OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_RASTER OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_VECTOR OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_GPU OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_GPU_DEMO OFF CACHE STRING "" FORCE)
+    set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_CORETEXT OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_UNISCRIBE OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_GDI OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_DIRECTWRITE OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_INTROSPECTION OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
+endfunction()
+
+function(cy__configure_freetype)
+    # FT_DISABLE_ZLIB means "not the SYSTEM zlib": FreeType then compiles its own bundled copy, which
+    # is what WOFF (version 1) decompression uses, so WOFF still loads.
+    set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+    # bzip2 is for compressed PCF bitmap fonts, which nothing the importer accepts produces.
+    set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+    # libpng is what CBDT and sbix colour bitmaps are stored as. Without it those glyphs are refused
+    # and the colour atlas is fed from COLR layers only — a stated limit, not a silent one:
+    # src/backends/text-complete/README.md.
+    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    # The autohinter's HarfBuzz hook, which would make FreeType depend on the HarfBuzz above.
+    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+    # Brotli is WOFF2's compression. A WOFF2 font is refused with a diagnostic naming the format.
+    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+endfunction()
+
+function(cy__configure_msdfgen)
+    # The core only: no Skia geometry preprocessing, no SVG or PNG I/O, no standalone tool and no
+    # vcpkg. The extensions' FreeType loader is not used either — src/backends/text-complete/
+    # decomposes FreeType outlines into msdfgen shapes itself, so this library depends on nothing.
+    set(MSDFGEN_CORE_ONLY ON CACHE BOOL "" FORCE)
+    set(MSDFGEN_BUILD_STANDALONE OFF CACHE BOOL "" FORCE)
+    set(MSDFGEN_USE_VCPKG OFF CACHE BOOL "" FORCE)
+    set(MSDFGEN_USE_SKIA OFF CACHE BOOL "" FORCE)
+    set(MSDFGEN_USE_OPENMP OFF CACHE BOOL "" FORCE)
+    set(MSDFGEN_DISABLE_SVG ON CACHE BOOL "" FORCE)
+    set(MSDFGEN_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    set(MSDFGEN_INSTALL OFF CACHE BOOL "" FORCE)
+    # msdfgen defaults to the STATIC MSVC runtime, which every other target in this tree does not
+    # use; mixing the two is a link error (LNK2038) on the first consumer.
+    set(MSDFGEN_DYNAMIC_RUNTIME ON CACHE BOOL "" FORCE)
+endfunction()
+
+# ICU ships autotools and Visual Studio projects, not a CMake project, so this is the one place a
+# dependency that is not a single file is given a target here — and it is deliberately the smallest
+# closure that links: the bidirectional algorithm (ubidi*), the character properties it reads, which
+# libicuuc compiles in as tables (ubidi_props, uchar, ucase over ucptrie/utrie2), and the string and
+# memory utilities those call. NO ICU DATA FILE IS BUILT OR SHIPPED: nothing in this list opens one.
+# Line breaking, dictionaries and locale formatting need ICU's data and are not in this build; see
+# src/backends/text-complete/README.md for the decision and what replaces each.
+#
+# A file added to this list should be a file the linker asked for. The list was found by linking a
+# program that calls ubidi_setPara, ubidi_getLevels and u_charMirror and adding exactly what was
+# undefined.
+set(CY_ICU_BIDI_SOURCES
+    cmemory.cpp cstring.cpp ubidi.cpp ubidi_props.cpp ubidiln.cpp ubidiwrt.cpp uchar.cpp ucase.cpp
+    ucptrie.cpp udataswp.cpp uinvchar.cpp ustring.cpp ustrtrns.cpp utf_impl.cpp utrie2.cpp utypes.cpp)
+
+function(cy__provide_icu source_dir)
+    set(common "${source_dir}/icu4c/source/common")
+    list(TRANSFORM CY_ICU_BIDI_SOURCES PREPEND "${common}/" OUTPUT_VARIABLE sources)
+    add_library(cy_icu_bidi STATIC ${sources})
+    target_include_directories(cy_icu_bidi SYSTEM PUBLIC "${common}")
+    # U_STATIC_IMPLEMENTATION: no dllimport/dllexport decoration, because this is a static library.
+    # U_COMMON_IMPLEMENTATION: these are libicuuc's own sources. Both PUBLIC so a consumer's view of
+    # the headers matches the library's.
+    target_compile_definitions(cy_icu_bidi
+        PUBLIC U_STATIC_IMPLEMENTATION
+        PRIVATE U_COMMON_IMPLEMENTATION)
+    set_target_properties(cy_icu_bidi PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+    if(MSVC)
+        # ICU's sources are UTF-8 and MSVC reads the system code page unless told.
+        target_compile_options(cy_icu_bidi PRIVATE /utf-8)
+    endif()
+endfunction()
+
 # --- Acquisition ------------------------------------------------------------------------------------
 
 cy_read_dependency_manifest("${CY_DEPS_MANIFEST}")

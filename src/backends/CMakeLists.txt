@@ -54,6 +54,14 @@ if(CY_PHYSICS)
     add_subdirectory(physics-jolt)
 endif()
 
+# FreeType, HarfBuzz, msdfgen and ICU behind `cy::text::TextBackend` (M11.e, issue #86). Gated by
+# CY_TEXT, which also gates the three libraries' fetch; ICU has CY_TEXT_ICU of its own. The text
+# server, its atlases, the cooked-font format and the minimal image-grid backend are in
+# src/servers/text/ and are always built, so `-D CY_TEXT=OFF` still lays out and draws text.
+if(CY_TEXT)
+    add_subdirectory(text-complete)
+endif()
+
 # The viewport transport's pixel half: the engine's rendered frames, in memory the editor imports
 # rather than copies. M7 task 5b.1.
 #

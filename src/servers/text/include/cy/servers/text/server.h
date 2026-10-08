@@ -8,23 +8,24 @@
 // querying, glyph rasterisation and atlas management, text shaping, line breaking, justification,
 // cursor and hit-testing, and text measurement."
 //
-// --- WHAT IS HERE AT M5, AND WHAT THE INTERFACE PROMISES ANYWAY ---------------------------------
+// --- WHAT EACH BACKEND DOES, AND WHAT THE INTERFACE PROMISES ANYWAY ----------------------------
 //
-// Everything the specification lists is on this interface. What differs between M5 and M8 is what
-// the BACKEND behind it can do, and a caller finds that out from `capabilities()` rather than from
-// which functions exist — because an interface that grew functions as backends landed would make
-// every caller a compile-time fork.
+// Everything the specification lists is on this interface, and a caller finds out what the backend
+// behind it can do from `capabilities()` rather than from which functions exist — because an
+// interface that grew functions as backends landed would make every caller a compile-time fork.
 //
-// The minimal backend, which is the only one at M5:
+// The minimal backend (`start`):
 //   * shapes one glyph per codepoint, left to right, from an image-grid font;
 //   * breaks lines on spaces, hyphens and newlines, without a dictionary;
 //   * justifies by distributing space between words, without kashida;
-//   * rasterises by copying a grid cell, so `RenderMode` is honoured only as `Monochrome` and
-//     `Grayscale` — both of which a grid font already is.
-//
+//   * rasterises by copying a grid cell.
 // Everything it cannot do is `false` in its capabilities and is refused with a diagnosis rather
-// than approximated. `shape` of Arabic returns the codepoints in logical order and says
-// `complex_shaping` is false; it does not pretend to have joined them.
+// than approximated.
+//
+// The complete backend (`start_with` and a `TextBackend` from src/backends/text-complete/) adds
+// outline faces, HarfBuzz shaping run by run of one face, bidirectional lines laid out in visual
+// order, distance-field and colour rasters in atlases of their own, and cooked fonts whose
+// pre-rendered glyphs need no rasterisation. src/servers/text/README.md has the detail.
 //
 // --- THE SERVER OWNS ITS STATE, WHICH IS WHAT MAKES IT A SERVER ---------------------------------
 //
@@ -37,6 +38,8 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
 #include <cy/servers/text/atlas.h>
+#include <cy/servers/text/backend.h>
+#include <cy/servers/text/cooked_font.h>
 #include <cy/servers/text/font.h>
 #include <cy/servers/text/layout.h>
 #include <cy/servers/text/text.h>
@@ -47,12 +50,15 @@ namespace cy::text {
 
 /// Which backend to build.
 enum class BackendKind : u8 {
-    /// Left-to-right, no shaping, no ICU. The only one at M5 and the one a size-constrained build
+    /// Left-to-right, no shaping, no ICU. The only one until issue #86, and the one a
+    /// size-constrained build
     /// keeps.
     Minimal = 0,
-    /// HarfBuzz, ICU and FreeType. Selecting it before those dependencies are integrated fails at
-    /// `start` with a message naming what is missing, rather than silently falling back — a caller
-    /// that asked for Arabic and got Latin has a bug it cannot see.
+    /// FreeType, HarfBuzz, msdfgen and ICU, behind a `TextBackend` that src/backends/text-complete/
+    /// provides. Layer 2 cannot construct a layer-3 object, so this kind is selected by handing
+    /// `start_with` that backend; asking `start` for it fails with a message naming the libraries
+    /// and the call, rather than silently falling back — a caller that asked for Arabic and got
+    /// Latin has a bug it cannot see.
     Complete = 1,
 };
 
@@ -63,6 +69,10 @@ struct TextServerConfig {
     /// the run's content and parameters". Zero disables the cache, which is what a measurement of
     /// the cache's own value does.
     u32 shaping_cache_entries = 256;
+    /// More rasterisations than this in one frame is a spike, counted by `end_frame`. Sixty-four
+    /// is a paragraph of text nobody pre-rendered: enough to notice, not so few that opening a
+    /// dialogue reports one.
+    u32 rasterisation_spike = 64;
 };
 
 /// The engine's text server.
@@ -78,7 +88,12 @@ public:
     TextServer(const TextServer&) = delete;
     TextServer& operator=(const TextServer&) = delete;
 
+    /// Start with the minimal backend: image-grid faces, left to right, no shaping.
     [[nodiscard]] Status start(const TextServerConfig& config) noexcept;
+    /// Start over `backend`, which must outlive the server. Outline faces, shaping, bidirectional
+    /// layout and whatever else the backend's capabilities say become available; image-grid faces
+    /// keep working beside them, so a grid font can still be the last face of a fallback chain.
+    [[nodiscard]] Status start_with(const TextServerConfig& config, TextBackend& backend) noexcept;
     void stop() noexcept;
     [[nodiscard]] bool is_running() const noexcept { return running_; }
 
@@ -93,6 +108,16 @@ public:
     /// face, which a cooked font asset held by the asset system satisfies. See font.h.
     [[nodiscard]] Expected<FontHandle, Error> create_face(const FontDesc& desc,
                                                           const ImageGridFont& grid) noexcept;
+
+    /// Create a face from an outline font through the backend. Fails with `Unsupported` on a
+    /// server started without one. The source's bytes must outlive the face; see font.h.
+    [[nodiscard]] Expected<FontHandle, Error> create_face(const FontDesc& desc,
+                                                          const FontSource& source) noexcept;
+
+    /// Create the face a cooked font describes and place its pre-rendered glyphs in the atlases,
+    /// counted as `glyphs_preloaded` rather than rasterised. The cooked font's bytes must outlive
+    /// the face.
+    [[nodiscard]] Expected<FontHandle, Error> create_face(const CookedFont& cooked) noexcept;
 
     /// Destroy a face. Its glyphs leave the atlas at the next insertion that needs the room, rather
     /// than immediately: evicting them here would cost a pass over the atlas for a face that is
@@ -117,8 +142,18 @@ public:
     [[nodiscard]] Expected<const GlyphSlot*, Error> glyph_slot(FontHandle face,
                                                                GlyphIndex glyph) noexcept;
 
-    [[nodiscard]] const GlyphAtlas& atlas() const noexcept { return atlas_; }
-    [[nodiscard]] GlyphAtlas& atlas() noexcept { return atlas_; }
+    /// The coverage atlas: grayscale and image-grid glyphs.
+    [[nodiscard]] const GlyphAtlas& atlas() const noexcept { return atlases_[0]; }
+    [[nodiscard]] GlyphAtlas& atlas() noexcept { return atlases_[0]; }
+    /// The atlas of one pixel format. The distance-field and colour atlases are started the first
+    /// time a glyph of their format is placed, so a server that never draws an emoji never
+    /// allocates a colour page; until then `is_running()` on them is false.
+    [[nodiscard]] const GlyphAtlas& atlas(PixelFormat format) const noexcept {
+        return atlases_[static_cast<u32>(format)];
+    }
+    [[nodiscard]] GlyphAtlas& atlas(PixelFormat format) noexcept {
+        return atlases_[static_cast<u32>(format)];
+    }
 
     // --- Shaping and layout ---------------------------------------------------------------------
 
@@ -140,6 +175,12 @@ public:
     /// Lay out one line, with no wrapping and no alignment.
     [[nodiscard]] Status layout_line(std::string_view text, const FallbackChain& chain,
                                      TextLine& out) noexcept;
+
+    /// Lay out one line in a paragraph direction. Where the backend is bidirectional, the line is
+    /// split into runs of one embedding level, each is shaped in its own direction and the runs are
+    /// placed in visual order; `out.run().glyphs` is then in visual order, left to right.
+    [[nodiscard]] Status layout_line(std::string_view text, const FallbackChain& chain,
+                                     Direction direction, TextLine& out) noexcept;
 
     /// Lay out a wrapped, aligned block.
     [[nodiscard]] Status layout_paragraph(std::string_view text, const FallbackChain& chain,
@@ -163,6 +204,15 @@ public:
     [[nodiscard]] TextDiagnostics diagnostics() const noexcept;
     void reset_diagnostics() noexcept;
 
+    /// Close a frame: the rasterisations since the last call become `rasterised_last_frame`, the
+    /// peak and the spike count move, and the per-frame count starts again. A caller that never
+    /// calls this still has the running totals; it does not have the per-frame report.
+    void end_frame() noexcept;
+
+    /// One row per primary face that has been shaped with, appended to `out` after clearing it.
+    /// The report of "fonts that trigger fallback frequently": sort by `fallbacks / codepoints`.
+    [[nodiscard]] Status fallback_report(Array<FallbackReport>& out) const noexcept;
+
 private:
     /// One created face.
     ///
@@ -174,10 +224,18 @@ private:
     struct Face {
         FontDesc desc;
         /// Held by value; its pixels are held by reference and must outlive the face. See font.h.
+        /// Unused by an outline face.
         ImageGridFont grid;
         FontMetrics metrics;
         u32 generation = 0;
         bool live = false;
+        /// An outline face, opened by the backend as `backend_face`. False is an image-grid face.
+        bool outline = false;
+        BackendFace backend_face = 0;
+        /// Codepoints shaped with this face first in the chain, and how many of those a later face
+        /// answered. See `fallback_report`.
+        u64 shaped_as_primary = 0;
+        u64 fell_back = 0;
     };
 
     /// One remembered shaping result.
@@ -198,6 +256,23 @@ private:
     [[nodiscard]] FontHandle resolve_face(const FallbackChain& chain, Codepoint codepoint) noexcept;
     [[nodiscard]] Status shape_uncached(std::string_view text, const FallbackChain& chain,
                                         Direction direction, ShapedRun& out) noexcept;
+    /// One run of one face: an image-grid face one glyph per codepoint, an outline face through
+    /// the backend. Appends to `out` at pen position `out.width`.
+    [[nodiscard]] Status shape_face_run(std::string_view text, u32 begin, u32 end, FontHandle face,
+                                        Direction direction, ShapedRun& out) noexcept;
+    /// The slot for a glyph of an outline face, rasterising through the backend if needed.
+    [[nodiscard]] Expected<const GlyphSlot*, Error> outline_slot(const Face& face,
+                                                                 const GlyphKey& key) noexcept;
+    /// Start the atlas of `format` if it has not been.
+    [[nodiscard]] Status ensure_atlas(PixelFormat format) noexcept;
+    /// Lay a line out run by bidirectional run, in visual order.
+    [[nodiscard]] Status build_bidi_line(std::string_view text, u32 begin, u32 end,
+                                         const FallbackChain& chain, Direction direction,
+                                         TextLine& out) noexcept;
+    [[nodiscard]] Status resolve_bidi(std::string_view text, Direction direction,
+                                      BidiResult& out) noexcept;
+    [[nodiscard]] Status open(const TextServerConfig& config) noexcept;
+    [[nodiscard]] Expected<FontHandle, Error> add_face(const Face& face) noexcept;
     [[nodiscard]] Status build_line(std::string_view text, u32 begin, u32 end,
                                     const FallbackChain& chain, Direction direction,
                                     TextLine& out) noexcept;
@@ -205,7 +280,10 @@ private:
     bool running_ = false;
     TextServerConfig config_{};
     TextCapabilities capabilities_{};
-    GlyphAtlas atlas_;
+    /// Null for the minimal backend.
+    TextBackend* backend_ = nullptr;
+    /// One per `PixelFormat`: coverage, distance field, colour.
+    GlyphAtlas atlases_[kPixelFormatCount];
     /// Faces, addressed by handle. A plain array with a generation per slot rather than
     /// `HandlePool`: a face is a description and two spans, the count is in the tens, and the
     /// pool's chunked allocation would be machinery for nothing.
@@ -217,6 +295,8 @@ private:
     /// slot.
     u64 shaping_clock_ = 0;
     TextDiagnostics diagnostics_{};
+    /// The atlases' combined `glyphs_rasterised` when the current frame began.
+    u64 rasterised_at_frame_start_ = 0;
 };
 
 }  // namespace cy::text

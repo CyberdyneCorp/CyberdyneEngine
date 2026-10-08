@@ -44,6 +44,7 @@ module ui;
 static const uint kCyUiShape = 0u;
 static const uint kCyUiImage = 1u;
 static const uint kCyUiGlyph = 2u;
+static const uint kCyUiGlyphField = 3u;
 
 /// `kUiOutputLinear` in cy/ui/render/encode.h: the target encodes sRGB itself.
 static const uint kCyUiOutputLinear = 1u;
@@ -55,7 +56,8 @@ public struct CyUiPrimitive
     public float4 bounds;
     /// u0, v0, width, height, normalised to the atlas page.
     public float4 uv;
-    /// Corner radius and border width, in pixels; the rest is zero.
+    /// Corner radius, border (or glyph outline) width, and a glyph field's distance range, in
+    /// pixels; the last is zero.
     public float4 shape;
     /// Colour, border colour (both premultiplied 0xAARRGGBB), material, atlas page.
     public uint4 words;
@@ -78,7 +80,7 @@ public struct CyUiSet
     public Texture2D<float4> atlas;
     /// Glyphs: a bitmap font's pixels stay whole at a whole-number scale.
     public SamplerState pointClamp;
-    /// Images.
+    /// Images, and distance-field glyphs, whose whole point is to be interpolated.
     public SamplerState linearClamp;
 };
 
@@ -128,6 +130,12 @@ float coverage(float2 p, float2 halfSize, float radius)
     return saturate(0.5 - roundedBoxDistance(p, halfSize, radius));
 }
 
+/// The middle one of three: a multi-channel distance field's three channels to one distance.
+float median(float a, float b, float c)
+{
+    return max(min(a, b), min(max(a, b), c));
+}
+
 /// 0xAARRGGBB to (r, g, b, a), still premultiplied.
 float4 unpackColour(uint colour)
 {
@@ -163,27 +171,41 @@ public float4 cyUiFragment(CyUiVertex input) : SV_Target
     let radius = primitive.shape.x;
     let border = primitive.shape.y;
 
-    let outer = coverage(local, halfSize, radius);
-    let inner = border > 0.0 ? coverage(local, halfSize - border, max(radius - border, 0.0))
-                             : outer;
-
-    var fill = unpackColour(primitive.words.x);
     let material = primitive.words.z;
-    if (material == kCyUiImage || material == kCyUiGlyph)
+    let along = saturate((pixel - primitive.bounds.xy) / primitive.bounds.zw);
+    let uv = primitive.uv.xy + along * primitive.uv.zw;
+
+    var result = float4(0.0, 0.0, 0.0, 0.0);
+    if (material == kCyUiGlyphField)
     {
-        let along = saturate((pixel - primitive.bounds.xy) / primitive.bounds.zw);
-        let uv = primitive.uv.xy + along * primitive.uv.zw;
+        // A distance-field glyph: the median of the three channels is the distance to the outline,
+        // shape.z turns it into pixels, and the glyph and its outline band each get a one-pixel
+        // ramp — the same rule as a box's edge, so text and panels anti-alias alike.
+        let field = cyUi.atlas.SampleLevel(cyUi.linearClamp, uv, 0.0);
+        let distance = (median(field.r, field.g, field.b) - 0.5) * primitive.shape.z;
+        let box = coverage(local, halfSize, 0.0);
+        let body = saturate(distance + 0.5) * box;
+        let outline = (border > 0.0 ? saturate(distance + border + 0.5) : saturate(distance + 0.5)) *
+                      box;
+        result = unpackColour(primitive.words.x) * body +
+                 unpackColour(primitive.words.y) * (outline - body);
+    }
+    else
+    {
+        let outer = coverage(local, halfSize, radius);
+        let inner = border > 0.0 ? coverage(local, halfSize - border, max(radius - border, 0.0))
+                                 : outer;
+        var fill = unpackColour(primitive.words.x);
         if (material == kCyUiGlyph)
         {
             fill *= cyUi.atlas.SampleLevel(cyUi.pointClamp, uv, 0.0).r;
         }
-        else
+        else if (material == kCyUiImage)
         {
             fill *= cyUi.atlas.SampleLevel(cyUi.linearClamp, uv, 0.0);
         }
+        result = fill * inner + unpackColour(primitive.words.y) * (outer - inner);
     }
-
-    var result = fill * inner + unpackColour(primitive.words.y) * (outer - inner);
     if (all(result == float4(0.0, 0.0, 0.0, 0.0)))
     {
         discard;

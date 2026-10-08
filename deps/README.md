@@ -9,6 +9,11 @@ project depends on:
 | `host-tools.toml` | software the machine must already provide and the build never links | `tools/deps/manifest.py`, `just env-doctor` |
 | `rust-crates.toml` | the crates Cargo acquires for the editor | `tools/deps/rust_crates.py` |
 
+Beside them, `fonts/` holds the third-party fonts the project carries as bytes rather than code —
+Noto subsets under the SIL Open Font License, CyberUI's interface font among them — with the licence
+text and a provenance record (`fonts/PROVENANCE.md`); `tools/content/make_fonts.py` produces every
+file from pinned upstream digests, and `shipped-content.md` credits them in `THIRD_PARTY.md`.
+
 `tools/deps/attribution.py` generates `THIRD_PARTY.md` from all three, and
 `just maintenance-deps-check` fails when the document is stale or a record has drifted from what the
 build actually acquires. It runs in CI on every pull request, and `tools/deps/selftest.py` — which

@@ -45,6 +45,13 @@ if(CY_ANIMATION)
     set(cy_import_animation_definitions PUBLIC_DEFINITIONS CY_IMPORT_ANIMATION=1)
 endif()
 
+# The font importer (issue #86) rasterises through the complete text backend, which CY_TEXT
+# builds. Without it the importer is still registered and refuses every font naming the option.
+set(cy_import_text_dependencies "")
+if(CY_TEXT)
+    set(cy_import_text_dependencies cy::text-complete)
+endif()
+
 cy_add_module(
     NAME cy_import
     LAYER tools
@@ -57,6 +64,7 @@ cy_add_module(
         src/fbx.cpp
         src/fbx_clip.cpp
         src/fbx_skeleton.cpp
+        src/font.cpp
         src/gltf.cpp
         src/heightfield.cpp
         src/image_codecs.cpp
@@ -78,14 +86,15 @@ cy_add_module(
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     ${cy_import_animation_definitions}
     PUBLIC_DEPENDENCIES cy::core-assets cy::core-base cy::core-memory cy::core-values cy::core-math
-                        cy::core-jobs
+                        cy::core-jobs cy::servers-text
     # PRIVATE, and that is the isolation `thirdparty-dependencies` requires rather than a
     # convention: a consumer of cy::import inherits neither ufbx.h nor xatlas.h, so a translation
     # unit outside src/fbx.cpp, src/fbx_skeleton.cpp and src/unwrap.cpp cannot name one of their
     # types even by accident.
     # deps/manifest.toml records those two files as the interface, and this line is what makes the
     # record true.
-    PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas ${cy_import_animation_dependencies})
+    PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas ${cy_import_animation_dependencies}
+                         ${cy_import_text_dependencies})
 
 cy_add_module(
     NAME cy_import_cli

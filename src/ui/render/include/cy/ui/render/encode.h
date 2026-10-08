@@ -35,7 +35,8 @@ struct alignas(16) GpuUiPrimitive {
     f32 bounds[4] = {};
     /// u0, v0, width, height, normalised to the atlas page.
     f32 uv[4] = {};
-    /// Corner radius and border width in pixels, then two zeros.
+    /// Corner radius, border (or glyph outline) width and a glyph field's distance range, in
+    /// pixels, then a zero.
     f32 shape[4] = {};
     /// Colour, border colour, material, atlas page.
     u32 colour = 0;
@@ -124,6 +125,13 @@ struct ReferenceAtlas {
 /// shader returns, and false where it discards. `atlas` may be null for a shape.
 [[nodiscard]] bool shade_reference(const GpuUiPrimitive& row, u32 px, u32 py,
                                    const ReferenceAtlas* atlas, f32 (&out)[4]) noexcept;
+
+/// `cyUiFragment`'s glyph-field branch at the pixel centre `x, y`: the glyph's colour where the
+/// field's distance is inside the outline, `border_colour` in the band `shape[1]` pixels wide
+/// around it, and false where neither reaches. `shade_reference` calls it for
+/// `BuiltinMaterial::GlyphField`.
+[[nodiscard]] bool shade_glyph_field(const GpuUiPrimitive& row, f32 x, f32 y,
+                                     const ReferenceAtlas* atlas, f32 (&out)[4]) noexcept;
 
 /// Draw `list` over `target` (`width * height` RGBA8 texels, red in the low byte) as the device
 /// does: each draw in order, scissored, every primitive blended `One, OneMinusSourceAlpha` and

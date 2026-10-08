@@ -143,6 +143,22 @@ function(cy_import_declare_tests)
         SOURCES "${tests_dir}/test_unwrap.cpp"
         DEPENDENCIES cy::import)
 
+    # `import_font` cooks real fonts from deps/fonts/ — reading them is I/O, and rasterising a
+    # Latin range is milliseconds — and lays text out from the cooked font through the complete
+    # backend. With CY_TEXT off it builds the one case that still means something: a font is refused
+    # naming the option. Issue #86.
+    set(cy_import_font_dependencies cy::import)
+    if(CY_TEXT)
+        list(APPEND cy_import_font_dependencies cy::text-complete)
+    endif()
+    cy_add_test(
+        NAME import_font
+        KIND integration
+        SOURCES "${tests_dir}/test_font.cpp"
+        DEPENDENCIES ${cy_import_font_dependencies})
+    target_compile_definitions(cy_test_integration_import_font PRIVATE
+        CY_TEXT_FONTS_DIR="${CMAKE_SOURCE_DIR}/deps/fonts")
+
     # `import_primitive` is integration for the reasons above and one more: its last case writes a
     # project to a scratch directory and cooks it three times, to prove a generated mesh is cached
     # and invalidated by the one key every other source uses. M8.a task 2.1.

@@ -62,6 +62,10 @@ function(cy_ui_render_declare_tests)
     target_compile_definitions(cy_test_render_ui
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
                                        CY_UI_RENDER_TEST_DIR="${tests_dir}")
+    # The interface-font cases (h) and (i) draw through the complete text backend (issue #86).
+    if(CY_TEXT)
+        target_link_libraries(cy_test_render_ui PRIVATE cy::text-complete)
+    endif()
     set_tests_properties(render.ui PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()

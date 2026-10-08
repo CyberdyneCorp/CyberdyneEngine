@@ -249,6 +249,18 @@ set(CY_FEATURE_OPTIONS
     # interface that exists in some configurations has a suite that runs in some configurations.
     # That is the line CY_PHYSICS draws between Jolt and `PhysicsServer`, drawn here between the
     # simulation and the thing that draws its output.
+    # DELIVERED AT M11.e (issue #86), AND THEREFORE ON BY DEFAULT — rule 3, read the way CY_PHYSICS
+    # and CY_AUDIO were. WHAT IT GATES, PRECISELY: FreeType, HarfBuzz and msdfgen, their fetch, and
+    # src/backends/text-complete/, the one module that names them. The TextServer interface, the
+    # glyph atlases, the cooked-font format, the minimal image-grid backend and the in-tree Unicode
+    # algorithms in src/text/ are always built, so `-D CY_TEXT=OFF` still lays out and draws text —
+    # through the image-grid face, exactly as before the option existed.
+    "CY_TEXT|ON|The complete text backend: FreeType, HarfBuzz and msdfgen behind cy::text::TextBackend (M11.e). The TextServer, its atlases, the cooked-font format and the minimal image-grid backend are always built — this gates the three libraries and their fetch"
+    # ICU's bidirectional algorithm inside CY_TEXT. Separate because its cost is not CY_TEXT's: the
+    # build is sixteen files, but the fetch is ICU's whole 390 MB tree. With it off the complete
+    # backend resolves bidirectional levels with src/text/'s algorithm, which approximates isolating
+    # run sequences and omits paired brackets, and says so.
+    "CY_TEXT_ICU|ON|ICU's Unicode Bidirectional Algorithm inside CY_TEXT (M11.e). Off, the complete backend falls back to the in-tree algorithm in src/text/ and reports its approximations"
     "CY_VFX|ON|CyberVFX: the asset model, the graph compiler and its own IR, the derived attribute layout, the unified simulation world and scheduler, data interfaces, GPU events with a bounded readback, and the importance-class budget controller (M8.c). It fetches nothing"
     # DELIVERED AT M7, AND THEREFORE ON BY DEFAULT — rule 3 again, and the same reading
     # CY_RENDERER_VULKAN, CY_PHYSICS and CY_AUDIO were given. `delivery-roadmap` fails a capability
@@ -372,6 +384,7 @@ set(CY_FEATURE_REQUIRES_ALL
     # DXIL is emitted BY the Slang front end. With CY_SHADER_SLANG off there is no session to ask
     # for it, and the 34 MB DXC fetch would be paid for a target nothing can reach.
     "CY_SHADER_DXIL|CY_SHADER_SLANG"
+    "CY_TEXT_ICU|CY_TEXT"
     CACHE INTERNAL "Feature dependencies: FEATURE|every option it requires")
 
 # Each row is FEATURE|CANDIDATE... — at least one of the named options must be on. CY_VIRTUAL_GEOMETRY

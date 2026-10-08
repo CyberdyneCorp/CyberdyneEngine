@@ -3881,7 +3881,7 @@ note = "THERE IS NO AUDIO IMPORTER. tools/import/src has importers for glTF, FBX
 row = "asset-import-pipeline"
 requirement = "Other importers"
 evidence = "exempt:m11e"
-note = "MOST OF THE LISTED IMPORTERS DO NOT EXIST. Present beyond models and textures: the primitive importer (integration.import_primitive), the heightfield importer (unit.import 'heightfield: explicit metadata produces a versioned tiled terrain asset'), and an importer registry that the editor projects (cy-editor-app 'importer_projection_preserves_names_extensions_and_option_types') and that refuses a second claim on an extension (unit.import 'importers: two importers cannot claim one extension'). Absent: font, sprite/UI image with atlas packing and nine-slice, shader-as-asset, localisation table, video and typed JSON/TOML data importers. tools/import/src/json.cpp is the glTF reader's parser, not a data-asset importer. Custom importers from Swift are not registrable. Replacement: a sprite-atlas import case requiring padded packing and one region sub-asset per source, and a case registering a project importer that then appears in the cache key, the editor's import list and dependency tracking."
+note = "MOST OF THE LISTED IMPORTERS DO NOT EXIST. Present beyond models and textures: the primitive importer (integration.import_primitive), the heightfield importer (unit.import 'heightfield: explicit metadata produces a versioned tiled terrain asset'), and an importer registry that the editor projects (cy-editor-app 'importer_projection_preserves_names_extensions_and_option_types') and that refuses a second claim on an extension (unit.import 'importers: two importers cannot claim one extension'). The font importer arrived with issue #86 (integration.import_font 'font: a cooked Latin range lays Latin out with no runtime rasterisation'). Absent: sprite/UI image with atlas packing and nine-slice, shader-as-asset, localisation table, video and typed JSON/TOML data importers. tools/import/src/json.cpp is the glTF reader's parser, not a data-asset importer. Custom importers from Swift are not registrable. Replacement: a sprite-atlas import case requiring padded packing and one region sub-asset per source, and a case registering a project importer that then appears in the cache key, the editor's import list and dependency tracking."
 
 [[coverage]]
 row = "asset-import-pipeline"
@@ -7967,49 +7967,46 @@ note = "`just ci-check` fails when a permanent gate in gates.toml is run by no C
 
 # --- text-and-fonts -------------------------------------------------------------------------------
 #
-# Swept for M11.e: every requirement this row had not yet answered. An exemption names what is
-# not built and the case that would replace it.
+# Swept for M11.e, and re-read for issue #86, which integrated FreeType, HarfBuzz, msdfgen and ICU
+# and replaced the four exemptions (font loading, rasterisation and atlas, rendering, import) with
+# the cases their notes named. Each note still says what is not built.
 
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Engine-owned text interface"
 evidence = "test:unit.text"
-case = "server: the minimal backend says what it cannot do"
-note = "The minimal backend is behind the TextServer interface, and every TextCapabilities field it lacks reads false (complex shaping, bidirectional, dictionary breaking, colour, variable fonts, SDF, vertical, kashida). 'server: asking for the complete backend names what is missing' and 'server: a right-to-left request is refused rather than approximated' cover the capability query and the refusal. No HarfBuzz, ICU or FreeType type exists in the tree to leak. The complete backend itself is not built."
-
+case = "backend: the server reports the backend's capabilities and name as its own"
+note = "TextServer is the one interface over two backends: the minimal one ('server: the minimal backend says what it cannot do' — every capability false, a right-to-left request refused, an outline face refused naming CY_TEXT) and the complete one, FreeType, HarfBuzz, msdfgen and ICU behind TextBackend in src/backends/text-complete/, handed in by start_with. The server's own logic over a backend is tested against a fake one in unit.text, so it runs with CY_TEXT off. No FreeType, HarfBuzz, ICU or msdfgen header may be included outside that directory: tools/layercheck/layercheck.py's thirdparty check fails the build, and its selftest (fixtures thirdparty-above-backends and legal) proves the rule red and green."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Font loading"
-evidence = "exempt:m11e"
-note = "ONLY IMAGE-GRID FONTS LOAD. src/servers/text/README.md: a font arrives as caller-supplied bytes, and ImageGridFont is the only face format. There is no FreeType, so no TrueType, OpenType, TTC, WOFF or WOFF2 loading, no variable-font instancing (FontDesc declares axes; TextCapabilities::variable_fonts is false), no OpenType feature selection, no synthetic bold or italic, and no system-font query. What works: unit.text 'server: a missing glyph falls back, and a missing everywhere becomes a box' is the Missing-glyph scenario minus the system fallback. Replacement: a backend case that loads an OpenType face with a weight axis, rasterises a glyph at two axis values and requires distinct cache entries."
-
+evidence = "test:integration.text_complete"
+case = "complete: a variable face rasterises one glyph at two weights into two cache entries"
+note = "Two faces of Noto Sans's variable font at wght 400 and 800 rasterise 'H' into two atlas entries with two different rasters (the heavier more than 1.3 times the ink), and the shaper widens it too; an axis the font lacks is refused. The same suite loads TrueType, a TrueType collection by face index and WOFF ('WOFF and a collection shape exactly as the face inside them'), refuses WOFF2 naming Brotli, applies synthetic bold and italic, and takes OpenType feature overrides (integration.import_font, oldstyle figures from onum). The fallback chain and the visible .notdef box are 'server: a missing glyph falls back, and a missing everywhere becomes a box' and the mixed Latin and Hebrew line. GAPS: system-font queries are not built, and bitmap fonts other than image-grid ones are not read."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Glyph rasterisation and atlas"
-evidence = "exempt:m11e"
-note = "THE ATLAS IS COMPLETE, BUT THE RENDERING MODES ARE NOT. unit.text covers dynamic packing, growth with repack, LRU eviction under pressure, thrash counting and occupancy ('atlas: under pressure it evicts the least recently used', 'atlas: re-inserting something it threw away is counted as thrashing'), which answers the Atlas-pressure scenario. Grayscale from image-grid fonts is the only mode. Subpixel (LCD), monochrome rasterisation from outlines, MSDF, colour glyphs, hinting and subpixel positioning are declared false in TextCapabilities, so the MSDF and Colour-glyphs scenarios have nothing to observe. Replacement: an MSDF rasterisation case that renders one glyph at two scales from one atlas entry within an edge-error bound, plus a COLR glyph landing in a colour atlas."
-
+evidence = "test:integration.text_complete"
+case = "complete: one distance-field entry draws a glyph at two scales within the edge bound"
+note = "One msdfgen entry per glyph, generated at 32 pixels, is drawn at 32 and 64 and compared with FreeType's own unhinted raster at each size: mean edge error under 0.035 and at most one pixel in fifty off by a quarter (measured: means 0.006 to 0.017, three of 829 pixels at the sharp corners of 'g' doubled — the documented corner limitation). 'a COLR glyph lands in the colour atlas in its palette's colours' is the colour scenario; grayscale and monochrome come from FreeType with none, light or full hinting per face. The atlas keeps one page per pixel format with packing, growth, LRU eviction and thrash counting ('atlas: under pressure it evicts the least recently used', 'atlas: a four-byte atlas keeps whole pixels through a repack'). GAPS: LCD subpixel rendering is refused rather than built, subpixel positioning is false, and CBDT, sbix and SVG colour glyphs are not read (no libpng)."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Text shaping"
-evidence = "test:unit.text_unicode"
-case = "text_shape: Arabic letters take their contextual forms"
-note = "Engine-owned Arabic joining selects isolated, initial, medial and final forms, and 'a mark is transparent and does not break a join' covers marks inside a join. 'text_itemise: runs split by script, direction and face' covers run segmentation, and 'text_cache: the same string with the same parameters is shaped once' is the shaping-cache scenario. GAPS (src/text/README.md): HarfBuzz is not integrated, so GSUB/GPOS ligatures beyond lam-alef, mark positioning from font tables, Indic reordering, kerning and vertical layout are absent. 'text_shape: the capabilities say what is missing without HarfBuzz' reports this."
-
+evidence = "test:integration.text_complete"
+case = "shaping: Arabic joins, ligates lam-alef and places its marks, in visual order"
+note = "HarfBuzz shapes through the backend and the goldens are produced by uharfbuzz 14.6.0 (HarfBuzz's own binding at the pinned version), not by the engine: Arabic joining, the lam-alef ligature and mark offsets right to left; 'Latin kerns AV and ligates ffi'; 'Devanagari moves its vowel sign before the consonant and forms conjuncts'; 'Thai decomposes sara am and moves the tone mark clear of it'. 'Arabic contextual forms agree with src/text's joining, letter by letter' compares HarfBuzz with the in-tree joining. The server segments runs by face and by bidirectional level before shaping ('backend: text is shaped a run per face') and caches shaped runs ('text_cache: the same string with the same parameters is shaped once', 'server: the shaping cache serves the second identical request'). GAP: vertical layout for East Asian scripts is not built and vertical_layout reads false."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Bidirectional layout"
-evidence = "test:unit.text_unicode"
-case = "text_bidi: a mixed paragraph resolves per-run direction"
-note = "A Hebrew and English paragraph resolves embedding levels and per-run direction. 'the paragraph level comes from the first strong character', 'an override forces a direction and a pop restores it' and 'a file path stays readable in a right-to-left context' (the structured-text scenario) cover the rest. The algorithm is engine-owned, not ICU. Isolating run sequences are approximated and reported ('an isolate is reported as approximated rather than silently different'), and paired brackets and mirroring are absent. Logical caret movement is 'text_grapheme: a caret moves by user-perceived character'."
-
+evidence = "test:integration.text_complete"
+case = "complete: a mixed line is placed in visual order, the Hebrew right to left"
+note = "A Latin and Hebrew line through the complete backend comes back in visual order with each run shaped in its own direction; the levels are ICU's ubidi ('ICU and src/text resolve a mixed paragraph to the same runs'), which also resolves N0 bracket pairs where the in-tree algorithm does not ('ICU pairs brackets in a right-to-left paragraph, which src/text does not'). With CY_TEXT_ICU off the server falls back to src/text/'s algorithm ('backend: a mixed line is placed in visual order with src/text's levels'), whose overrides, isolates (reported as approximated) and structured-text hints are unit.text_unicode's ('text_bidi: a file path stays readable in a right-to-left context'). A right-to-left paragraph aligns Start to the right. Logical caret movement is 'text_grapheme: a caret moves by user-perceived character'."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Line breaking and justification"
 evidence = "test:unit.text_unicode"
 case = "text_break: Thai needs a dictionary, and says which answer it gave"
-note = "With a WordList, Thai breaks exactly at the dictionary word's end and the report says it used the dictionary. Without one, the fallback is reported. 'text_justify: the priority order decides which lever is pulled' covers inter-word, inter-character and kashida with a configurable priority, and 'text_overflow: an end ellipsis replaces exactly the glyphs that do not fit' is the ellipsis scenario. GAP: no Thai/Khmer/Lao dictionary ships (the project supplies one), and kashida positions come from the caller, not from font tables."
-
+note = "With a WordList, Thai breaks exactly at the dictionary word's end and the report says it used the dictionary. Without one, the fallback is reported. 'text_justify: the priority order decides which lever is pulled' covers inter-word, inter-character and kashida with a configurable priority, and 'text_overflow: an end ellipsis replaces exactly the glyphs that do not fit' is the ellipsis scenario. GAP: ICU is integrated for the bidirectional algorithm only and with no data file (src/backends/text-complete/README.md, 'ICU's data subset'), so no Thai, Khmer or Lao dictionary ships and dictionary_line_breaking reads false; kashida positions come from the caller, not from font tables."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Text layout objects"
@@ -8020,9 +8017,9 @@ note = "An inline object occupies its advance in the paragraph and is placed per
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Text rendering"
-evidence = "exempt:m11e"
-note = "NOTHING RENDERS TEXT. No module outside src/servers/text and src/text includes the text server for drawing. There is no glyph-quad emission, no atlas-batched draw, and no outline, shadow, gradient or per-character colour, in 2D UI, 2D world or 3D. unit.ui 'ui_layout: text drives layout through the measurer, and only where it must' uses text only for measurement. Replacement: a render-tier case that lays out a paragraph from one atlas, requires exactly one batched draw for it, and compares an outlined string against a golden image produced by distance thresholding."
-
+evidence = "test:render.ui"
+case = "(h) a paragraph in the interface font is one draw, shaded as the host shades it"
+note = "On a Vulkan device, a four-line paragraph in the interface font is ONE indirect draw (the panel behind it a second), and the device matches the host shader within one 8-bit step at every pixel. '(i) an outlined, shadowed title matches its golden image' draws the outline from the distance field (BuiltinMaterial::GlyphField's band, not eight copies) and the shadow from the same atlas entry, with a gradient, against a committed golden. The render tier skips without a device; the same shading on the host is unit.ui_render 'a distance-field glyph is its colour inside, the outline's in the band', and per-character colour, gradients and the one-batch line are integration.ui_interface_font's. GAPS: shadow blur, and text in 2D world space and in 3D (world-space documents are the runtime UI issue's)."
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Localisation integration"
@@ -8033,9 +8030,9 @@ note = "Changing the locale invalidates the cached shaped runs that depend on la
 [[coverage]]
 row = "text-and-fonts"
 requirement = "Font import and diagnostics"
-evidence = "exempt:m11e"
-note = "THERE IS NO FONT IMPORTER. tools/import has no font importer, so rendering mode, pre-rendered glyph ranges baked into a cooked atlas, fallback chain, OpenType defaults and variable-font instances cannot be configured at import, and the Pre-rendered-range scenario has no producer. The runtime half partly exists: TextDiagnostics carries atlas occupancy, eviction and thrash counts and shaping-cache hits ('atlas: occupancy is what was packed over what there is'). No per-frame rasterisation count, spike report or frequent-fallback report is asserted. Replacement: a unit.import case cooking a font with the Latin range pre-rendered, requiring those glyphs in the cooked atlas and zero rasterisations when the text server lays out Latin text from it."
-
+evidence = "test:integration.import_font"
+case = "font: a cooked Latin range lays Latin out with no runtime rasterisation"
+note = "The font importer cooks Noto Sans with the Latin range pre-rendered: every Latin glyph and the GSUB closure's ffi ligature are in the cooked atlas, and a text server reading the cooked font lays out a Latin paragraph with ligatures and accents with zero rasterisations in the frame; the control ('text outside the cooked range is rasterised, and the frame says so') counts six. Rendering mode, size, hinting, fallback chain, feature defaults and the variable instance are recorded ('the cook records the mode, the instance, the features and the fallbacks'). Diagnostics: per-frame rasterisation counts and the spike report are unit.text 'diagnostics: a frame that rasterises past the threshold is a spike', the frequent-fallback report 'diagnostics: the fallback report counts against the primary that needed it', and occupancy, eviction, thrashing and shaping-cache hits the atlas and server cases."
 # --- thirdparty-dependencies ----------------------------------------------------------------------
 #
 # Swept for M11.e: every requirement this row had not yet answered. An exemption names what is
@@ -8051,8 +8048,7 @@ note = "The licence policy is enforced only for the editor's Rust crates (`tools
 row = "thirdparty-dependencies"
 requirement = "Intended dependency set"
 evidence = "exempt:m11e"
-note = "`deps/manifest.toml` integrates Jolt, miniaudio, Slang, volk, Vulkan-Headers, VMA, xatlas, Recast and ONNX Runtime, and Steam Audio is declared but `SteamAudioBackend::simulate` returns `NotImplemented`. Missing: HarfBuzz, ICU, FreeType, msdfgen, SPIRV-Cross, SPIRV-Tools/Reflect and meshoptimizer are not integrated. Re-enter when each is integrated behind its engine interface or recorded as a decided removal from this list."
-
+note = "`deps/manifest.toml` integrates Jolt, miniaudio, Slang, volk, Vulkan-Headers, VMA, xatlas, Recast, ONNX Runtime, and since issue #86 HarfBuzz, FreeType, msdfgen and ICU behind cy::text::TextBackend (ICU as the data-free bidirectional algorithm; src/backends/text-complete/README.md records the empty data subset). Steam Audio is declared but `SteamAudioBackend::simulate` returns `NotImplemented`. Missing: SPIRV-Cross, SPIRV-Tools/Reflect and meshoptimizer (#85). Re-enter when each is integrated behind its engine interface or recorded as a decided removal from this list."
 [[coverage]]
 row = "thirdparty-dependencies"
 requirement = "What the engine builds itself"

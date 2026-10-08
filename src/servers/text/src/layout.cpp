@@ -1,14 +1,8 @@
 #include <cy/servers/text/layout.h>
+#include <cy/text/unicode.h>
 
 namespace cy::text {
 namespace {
-
-/// The replacement character, which is what a malformed UTF-8 sequence becomes.
-constexpr Codepoint kReplacement = 0xFFFD;
-
-[[nodiscard]] bool is_continuation(char byte) noexcept {
-    return (static_cast<u8>(byte) & 0xC0U) == 0x80U;
-}
 
 /// Whether a break is allowed between two characters of a script that does not use spaces.
 ///
@@ -26,57 +20,9 @@ constexpr Codepoint kReplacement = 0xFFFD;
 
 }  // namespace
 
-Codepoint decode_utf8(std::string_view text, usize& cursor) noexcept {
-    if (cursor >= text.size()) {
-        return 0;
-    }
-    const auto lead = static_cast<u8>(text[cursor]);
-    if (lead < 0x80U) {
-        ++cursor;
-        return lead;
-    }
-
-    u32 length = 0;
-    Codepoint codepoint = 0;
-    if ((lead & 0xE0U) == 0xC0U) {
-        length = 2;
-        codepoint = lead & 0x1FU;
-    } else if ((lead & 0xF0U) == 0xE0U) {
-        length = 3;
-        codepoint = lead & 0x0FU;
-    } else if ((lead & 0xF8U) == 0xF0U) {
-        length = 4;
-        codepoint = lead & 0x07U;
-    } else {
-        // A continuation byte or an invalid lead. One byte is consumed and the replacement is
-        // returned, which is the Unicode standard's own substitution and what keeps a corrupted
-        // string from becoming an infinite loop.
-        ++cursor;
-        return kReplacement;
-    }
-
-    if (cursor + length > text.size()) {
-        ++cursor;
-        return kReplacement;
-    }
-    for (u32 index = 1; index < length; ++index) {
-        if (!is_continuation(text[cursor + index])) {
-            ++cursor;
-            return kReplacement;
-        }
-        codepoint = (codepoint << 6U) | (static_cast<u8>(text[cursor + index]) & 0x3FU);
-    }
-    cursor += length;
-    // An overlong encoding and a surrogate are both invalid and both decode to something that looks
-    // plausible, which is exactly why they are refused here rather than passed on.
-    const bool overlong = (length == 2 && codepoint < 0x80) || (length == 3 && codepoint < 0x800) ||
-                          (length == 4 && codepoint < 0x10000);
-    const bool surrogate = codepoint >= 0xD800 && codepoint <= 0xDFFF;
-    if (overlong || surrogate || codepoint > 0x10FFFF) {
-        return kReplacement;
-    }
-    return codepoint;
-}
+// `decode_utf8` is src/text/'s: the two modules share the namespace and once carried two identical
+// definitions of it, which is a duplicate symbol the moment one binary links both — and since M11.e
+// every binary that links the text server links src/text/ too.
 
 Status find_break_opportunities(std::string_view text, Array<BreakOpportunity>& out) noexcept {
     usize cursor = 0;

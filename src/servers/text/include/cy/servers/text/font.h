@@ -97,6 +97,51 @@ struct ImageGridFont {
     [[nodiscard]] Status validate() const noexcept;
 };
 
+/// How strongly an outline is fitted to the pixel grid before it is rasterised.
+///
+/// A property of the face rather than of the call, like the size: two hinting modes produce two
+/// different rasters of the same glyph, so they are two faces with two sets of atlas entries.
+/// Ignored by an image-grid face, which has no outline to fit, and by a distance-field face, whose
+/// whole point is a raster that is NOT fitted to one size.
+enum class Hinting : u8 {
+    /// The outline as designed. Positions are exact and stems blur across pixel boundaries.
+    None = 0,
+    /// Vertical fitting only: crisper baselines and x-heights without distorting widths. The
+    /// default, and what every modern desktop renders interface text with.
+    Light = 1,
+    /// The font's own instructions, or the autohinter's, in both directions.
+    Full = 2,
+};
+
+/// The enumerator's own spelling. Never null.
+[[nodiscard]] const char* hinting_name(Hinting hinting) noexcept;
+
+/// One OpenType feature setting: `liga` off, `ss01` on, `kern` off.
+///
+/// Four bytes, for the reason `FontAxis` is: the tag is the format's, and a table translating it
+/// into names would have to grow every time a foundry registered a feature. `value` is 0 to turn a
+/// feature off, 1 to turn it on, and an index into the alternates for a feature that has several.
+struct FontFeature {
+    char tag[4] = {' ', ' ', ' ', ' '};
+    u32 value = 1;
+};
+
+/// The most feature settings one face may carry. Defaults are the font's; this is for the handful a
+/// caller overrides — tabular figures in a table, ligatures off in a code view.
+inline constexpr usize kMaxFontFeatures = 8;
+
+/// The bytes of an outline font: TrueType, OpenType (TrueType or CFF outlines), a TrueType
+/// collection, or WOFF.
+///
+/// NOT copied, for the reason `ImageGridFont::pixels` is not: a cooked font asset held by the asset
+/// system outlives every face made from it by construction, and a backend that parses the tables
+/// lazily reads them for as long as the face exists.
+struct FontSource {
+    Span<const u8> bytes;
+    /// Which face of a collection. Zero for a single-face file.
+    u32 face_index = 0;
+};
+
 /// What a caller asks for when it creates a face.
 struct FontDesc {
     /// The family name, for a diagnostic and for a system-font query. Never used to resolve
@@ -115,6 +160,15 @@ struct FontDesc {
     bool synthetic_bold = false;
     /// A shear applied by the rasteriser when the family has no italic face.
     bool synthetic_italic = false;
+    /// Grid fitting for an outline face. See `Hinting`.
+    Hinting hinting = Hinting::Light;
+    /// OpenType feature overrides, applied on top of the font's defaults when it is shaped.
+    FontFeature features[kMaxFontFeatures] = {};
+    u32 feature_count = 0;
+    /// For `RenderMode::SignedDistanceField`: how many atlas pixels the field spans on each side of
+    /// the outline. A wider range survives more magnification and allows a thicker outline effect,
+    /// at the cost of padding every glyph by that much.
+    f32 distance_range = 4.0f;
 };
 
 /// A face and the faces to search after it.

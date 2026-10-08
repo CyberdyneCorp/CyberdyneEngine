@@ -59,6 +59,12 @@ enum class BuiltinMaterial : u16 {
     Image = 1,
     /// The atlas page's red channel as coverage — a glyph — multiplied by the colour.
     Glyph = 2,
+    /// A glyph from a multi-channel signed distance field (`text-and-fonts`' MSDF), so it draws
+    /// sharply at any scale: the median of the page's red, green and blue, sampled linearly, is
+    /// the distance to the outline, and `Primitive::distance_range` says how many document units
+    /// its whole [0, 1] spans. `border_width` draws an OUTLINE of that width around the glyph in
+    /// `border_colour`, from the same field — which is what a distance field is for.
+    GlyphField = 3,
 };
 
 /// The first material index that is not a built-in behaviour.
@@ -94,6 +100,11 @@ struct Primitive {
     f32 border_width = 0.0F;
     /// The border's premultiplied colour, with the opacity folded in as `colour`'s is.
     u32 border_colour = 0;
+    /// `BuiltinMaterial::GlyphField`'s distance range: the document units the field's [0, 1]
+    /// spans on the page as drawn — twice the face's range in atlas pixels, times the units one
+    /// atlas pixel covers. Scaled to pixels by the renderer like `corner_radius`. Zero for every
+    /// other material.
+    f32 distance_range = 0.0F;
 };
 
 /// A premultiplied colour scaled by an opacity: every channel, alpha included, rounded to the

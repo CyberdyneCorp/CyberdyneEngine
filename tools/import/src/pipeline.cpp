@@ -5,6 +5,7 @@
 #include <cy/core/jobs/job_system.h>
 #include <cy/core/jobs/parallel.h>
 #include <cy/import/fbx.h>
+#include <cy/import/font.h>
 #include <cy/import/gltf.h>
 #include <cy/import/heightfield.h>
 #include <cy/import/model.h>
@@ -837,6 +838,7 @@ FbxImporter g_fbx;
 ObjImporter g_obj;
 TextureImporter g_texture;
 HeightfieldImporter g_heightfield;
+FontImporter g_font;
 PrimitiveImporter g_primitive;
 }  // namespace
 
@@ -867,7 +869,12 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
     if (Status registered = registry.register_importer(&g_texture); !registered) {
         return registered;
     }
-    return registry.register_importer(&g_heightfield);
+    if (Status registered = registry.register_importer(&g_heightfield); !registered) {
+        return registered;
+    }
+    // M11.e (issue #86). Registered in every build: with CY_TEXT off it refuses each import naming
+    // the option, so a .ttf in a project is a diagnosed failure rather than an unclaimed file.
+    return registry.register_importer(&g_font);
 }
 
 Status encode_import_bundle(const ImportResult& result, Array<u8>& out) noexcept {

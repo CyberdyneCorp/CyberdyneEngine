@@ -26,5 +26,16 @@ One third-party work is compiled into the engine as data rather than linked as c
 |---|---|---|
 | The built-in interface font: printable ASCII from the X Window System's `misc-fixed` 6x13 bitmap font | `src/ui/text/src/builtin_font_data.h` | **public domain** — the font's own `COPYRIGHT` property reads "Public domain font. Share and enjoy." Generated from `/usr/share/fonts/X11/misc/6x13.pcf.gz` (the `xfonts-base` package) by `src/ui/text/tools/make_builtin_font.py` |
 
-It is a stand-in: CyberUI needs glyphs to draw a console and a HUD before the engine imports real
-fonts (`text-and-fonts`, issue #86), and it goes when a cooked font replaces it.
+It was a stand-in until the engine could draw real fonts (`text-and-fonts`, issue #86). It stays as
+the interface's fallback face, and as the whole of its text in a build with `CY_TEXT` off.
+
+### Fonts
+
+Issue #86. Fonts the project carries in [`deps/fonts/`](fonts/PROVENANCE.md), every one produced by
+`tools/content/make_fonts.py` from a pinned upstream file:
+
+| what | where | provenance |
+|---|---|---|
+| CyberUI's interface font: Noto Sans, Latin and Latin-1, its weight axis kept, compiled into `cy::ui-text` with `CY_TEXT` | `deps/fonts/NotoSans-Latin-VF.ttf` | **SIL Open Font License 1.1** ([`deps/fonts/OFL.txt`](fonts/OFL.txt)), no Reserved Font Name. Copyright 2022 The Noto Project Authors. Subset from google/fonts at `5e8a3ba8` |
+| Test faces: Noto Sans Arabic, Devanagari, Thai and Hebrew, subset and instanced at Regular; the Hebrew subset as WOFF; the Thai and Hebrew subsets as a collection | `deps/fonts/NotoSans*-Subset.*`, `deps/fonts/NotoSansThaiHebrew.ttc` | **SIL Open Font License 1.1**, as above. Read by the tests; not compiled into anything |
+| `CyberColourTest.ttf`: one COLRv0 glyph | `deps/fonts/` | the project's own, licensed as this repository is; built from nothing by the same script |

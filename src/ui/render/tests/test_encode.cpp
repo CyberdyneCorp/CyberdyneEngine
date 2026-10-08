@@ -7,6 +7,8 @@
 #include <cy/ui/paint.h>
 #include <cy/ui/render/encode.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -247,4 +249,57 @@ CY_TEST_CASE("ui_render: a glyph samples its page's coverage by point, an image 
     CY_CHECK_EQ(out[0], 1.0F);
     CY_CHECK_EQ(out[1], 128.0F / 255.0F);
     CY_CHECK_EQ(out[2], 0.0F);
+}
+
+CY_TEST_CASE("ui_render: a distance-field glyph is its colour inside, the outline's in the band") {
+    // A field that falls by one pixel per texel across a 16-texel page: the outline is at x = 6.5.
+    // Drawn one texel a pixel with a range of four atlas pixels (shape[2] = 2 x 4 = 8 pixels for
+    // the field's whole [0, 1]), pixels up to 6 are the glyph, 7 and 8 are a two-pixel outline,
+    // and 9 on are nothing — the distance thresholding `text-and-fonts` asks outlined text to be
+    // drawn by, rather than by drawing the text eight times.
+    std::vector<u8> field(usize{16} * 4U, 0);
+    for (u32 texel = 0; texel < 16U; ++texel) {
+        const f32 value = 0.5F + ((6.5F - static_cast<f32>(texel)) / 8.0F);
+        const auto byte = static_cast<u8>(std::lround(std::clamp(value, 0.0F, 1.0F) * 255.0F));
+        for (u32 channel = 0; channel < 4U; ++channel) {
+            field[(texel * 4U) + channel] = byte;
+        }
+    }
+    const ReferenceAtlas page{Span<const u8>(field.data(), field.size()), 16, 1, 4};
+    Primitive primitive;
+    primitive.bounds = ui::Rect{0.0F, 0.0F, 16.0F, 1.0F};
+    primitive.uv = ui::Rect{0.0F, 0.0F, 1.0F, 1.0F};
+    primitive.material = material_index(BuiltinMaterial::GlyphField);
+    primitive.colour = 0xFFFFFFFFU;
+    primitive.border_width = 2.0F;
+    primitive.border_colour = 0xFF000000U;
+    primitive.distance_range = 8.0F;
+    const GpuUiPrimitive row = encode_primitive(primitive, 1.0F);
+    CY_CHECK_EQ(row.shape[2], 8.0F);
+    CY_CHECK_EQ(decode_primitive(row, 2.0F).distance_range, 4.0F);
+
+    f32 out[4] = {};
+    CY_REQUIRE(shade_reference(row, 3, 0, &page, out));
+    CY_CHECK_NEAR(out[0], 1.0F, 0.03F);  // white: the glyph
+    CY_CHECK_NEAR(out[3], 1.0F, 0.03F);
+    for (const u32 band : {7U, 8U}) {
+        CY_REQUIRE(shade_reference(row, band, 0, &page, out));
+        CY_CHECK_NEAR(out[0], 0.0F, 0.03F);  // black: the outline
+        CY_CHECK_NEAR(out[3], 1.0F, 0.03F);
+    }
+    CY_CHECK_FALSE(shade_reference(row, 10, 0, &page, out));
+
+    // Without an outline the band is empty: the glyph stops at its edge.
+    GpuUiPrimitive plain = row;
+    plain.shape[1] = 0.0F;
+    CY_CHECK_FALSE(shade_reference(plain, 8, 0, &page, out));
+    // And magnified twice, the same page draws the same edge twice as far out: one atlas entry,
+    // any size.
+    primitive.bounds.width = 32.0F;
+    primitive.distance_range = 16.0F;
+    const GpuUiPrimitive large = encode_primitive(primitive, 1.0F);
+    CY_REQUIRE(shade_reference(large, 12, 0, &page, out));
+    CY_CHECK_NEAR(out[0], 1.0F, 0.03F);
+    CY_REQUIRE(shade_reference(large, 15, 0, &page, out));
+    CY_CHECK_NEAR(out[0], 0.0F, 0.03F);
 }
