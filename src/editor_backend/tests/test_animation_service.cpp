@@ -26,6 +26,8 @@
 #    include <cy/editor/animation_preview.h>
 #endif
 
+#include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -308,12 +310,30 @@ editor::AnimationRefusal ask(editor::AnimationPreviewRuntime* preview, std::stri
 }
 
 bool has_diagnostic(const Compiled& compiled, std::string_view code, u64 node) {
-    for (const Diagnosed& diagnostic : compiled.diagnostics) {
-        if (diagnostic.code == code && diagnostic.node == node) {
-            return true;
+    return std::ranges::any_of(compiled.diagnostics, [&](const Diagnosed& diagnostic) {
+        return diagnostic.code == code && diagnostic.node == node;
+    });
+}
+
+/// Bit for bit, component by component: -0 and +0 are different answers here.
+bool same_bits(f32 a, f32 b) {
+    return std::bit_cast<u32>(a) == std::bit_cast<u32>(b);
+}
+
+bool same_bits(const Quat& a, const Quat& b) {
+    return same_bits(a.x, b.x) && same_bits(a.y, b.y) && same_bits(a.z, b.z) && same_bits(a.w, b.w);
+}
+
+bool same_bits(const Mat4& a, const Mat4& b) {
+    for (usize column = 0; column < 4; ++column) {
+        const Vec4& x = a.columns[column];
+        const Vec4& y = b.columns[column];
+        if (!same_bits(x.x, y.x) || !same_bits(x.y, y.y) || !same_bits(x.z, y.z) ||
+            !same_bits(x.w, y.w)) {
+            return false;
         }
     }
-    return false;
+    return true;
 }
 
 }  // namespace
@@ -443,9 +463,9 @@ graph::pose::PoseProgram compile_directly(const std::string& source, u32 joints)
 /// The graph's pose at `time`, evaluated with `cy::animation` alone: the program bound to the
 /// character's skeleton and clips, the parameters set, advanced from zero in the preview's steps
 /// (`kAnimationPreviewStep`, the last one shorter), and evaluated.
-std::vector<Transform> evaluate_directly(const editor::AnimationPreview& character,
-                                         const std::string& source, f32 time,
-                                         std::vector<std::pair<std::string, f32>> parameters) {
+std::vector<Transform> evaluate_directly(
+    const editor::AnimationPreview& character, const std::string& source, f32 time,
+    const std::vector<std::pair<std::string, f32>>& parameters) {
     const graph::pose::PoseProgram program =
         compile_directly(source, character.skeleton().joint_count());
     std::vector<const animation::Clip*> table;
@@ -502,9 +522,7 @@ void check_same_pose(const std::vector<Transform>& shown, const std::vector<Tran
     CY_CHECK_EQ(editor::animation_pose_digest(Span<const Transform>(shown.data(), shown.size())),
                 editor::animation_pose_digest(Span<const Transform>(direct.data(), direct.size())));
     for (usize joint = 0; joint < shown.size(); ++joint) {
-        CY_CHECK_MESSAGE(
-            std::memcmp(&shown[joint].rotation, &direct[joint].rotation, sizeof(Quat)) == 0,
-            "joint ", joint);
+        CY_CHECK_MESSAGE(same_bits(shown[joint].rotation, direct[joint].rotation), "joint ", joint);
     }
 }
 
@@ -598,8 +616,8 @@ CY_TEST_CASE("editor animation: the editor's graph compiles to two states and th
 CY_TEST_CASE("editor animation: a zero-duration transition is refused on that transition") {
     Character character;
     const std::string cut =
-        replaced(read_file(kGraph), "prop \"duration\" : \"float\" = (0.25, 0, 0, 0, 0)",
-                 "prop \"duration\" : \"float\" = (0, 0, 0, 0, 0)");
+        replaced(read_file(kGraph), R"(prop "duration" : "float" = (0.25, 0, 0, 0, 0))",
+                 R"(prop "duration" : "float" = (0, 0, 0, 0, 0))");
     Array<u8> reply(allocator());
     CY_REQUIRE_FALSE(
         ask(&character.preview, "animation.compile", compile_request(cut), reply).refused());
@@ -643,8 +661,8 @@ CY_TEST_CASE("editor animation: a wire the vocabulary does not have is refused o
     // The compiler reads a transition's input whatever pin it leaves; the vocabulary does not, and
     // a graph a canvas could not have drawn is refused rather than compiled as if it could.
     Character character;
-    const std::string backwards = replaced(read_file(kGraph), "link 2 \"state\" -> 5 \"from\"",
-                                           "link 2 \"pose\" -> 5 \"from\"");
+    const std::string backwards = replaced(read_file(kGraph), R"(link 2 "state" -> 5 "from")",
+                                           R"(link 2 "pose" -> 5 "from")");
     Array<u8> reply(allocator());
     CY_REQUIRE_FALSE(
         ask(&character.preview, "animation.compile", compile_request(backwards), reply).refused());
@@ -751,7 +769,7 @@ CY_TEST_CASE("editor animation: a playing preview runs on the engine's clock") {
     const Mat4 identity = Mat4::identity();
     bool moved = false;
     for (const Mat4& matrix : character.preview.skinning_matrices()) {
-        moved = moved || std::memcmp(&matrix, &identity, sizeof(Mat4)) != 0;
+        moved = moved || !same_bits(matrix, identity);
     }
     CY_CHECK(moved);
     // Stopping hides it.

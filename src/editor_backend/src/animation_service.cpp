@@ -6,6 +6,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/graph/text.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -266,12 +267,7 @@ void check_events(const graph::GraphNode& node, std::string_view events, Name cl
 
 /// Clip nodes are visited in key order; the first node naming a clip owns its events.
 [[nodiscard]] bool events_owned(Span<const Name> owners, Name clip) noexcept {
-    for (const Name owner : owners) {
-        if (owner == clip) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(owners, [clip](const Name owner) { return owner == clip; });
 }
 
 void check_clip(const graph::Graph& graph, const graph::GraphNode& node,
@@ -324,12 +320,9 @@ void check_authoring(const graph::Graph& graph, const AnimationPreviewRuntime* p
 }
 
 [[nodiscard]] bool has_error(const graph::DiagnosticSink& sink) noexcept {
-    for (const graph::Diagnostic& diagnostic : sink.entries()) {
-        if (diagnostic.severity == graph::Severity::Error) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(sink.entries(), [](const graph::Diagnostic& diagnostic) {
+        return diagnostic.severity == graph::Severity::Error;
+    });
 }
 
 /// A parsed, checked and compiled graph: what both `animation.compile` and a preview start from.
@@ -377,12 +370,10 @@ void compile(const AnimationPreviewRuntime* preview, std::string_view source,
 }
 
 [[nodiscard]] bool is_clock(const pose::PoseProgram& program, u16 parameter) noexcept {
-    for (const pose::PoseInstruction& instruction : program.code()) {
-        if (instruction.op == pose::PoseOp::SampleClip && instruction.time_param == parameter) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(program.code(), [parameter](
+                                                   const pose::PoseInstruction& instruction) {
+        return instruction.op == pose::PoseOp::SampleClip && instruction.time_param == parameter;
+    });
 }
 
 [[nodiscard]] u32 events_of(Span<const AnimationClipEvent> events, Name clip) noexcept {
@@ -562,16 +553,11 @@ struct PreviewArguments {
     if (name.empty()) {
         return false;
     }
-    for (const char character : name) {
-        const bool fine = (character >= 'a' && character <= 'z') ||
-                          (character >= 'A' && character <= 'Z') ||
-                          (character >= '0' && character <= '9') || character == '_' ||
-                          character == '.' || character == '-';
-        if (!fine) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(name, [](const char character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '_' || character == '.' ||
+               character == '-';
+    });
 }
 
 }  // namespace

@@ -32,8 +32,8 @@ enum Joint : u16 {
 };
 
 struct JointRow {
-    const char* name;
-    u16 parent;
+    const char* name = nullptr;
+    u16 parent = 0;
     Vec3 offset;
 };
 
@@ -55,7 +55,7 @@ constexpr JointRow kSkeleton[kJoints] = {
 /// One box of the mesh: the bone it moves with, its centre relative to that joint's bind position,
 /// and its half extents.
 struct BoxRow {
-    u16 joint;
+    u16 joint = 0;
     Vec3 centre;
     Vec3 half;
 };
@@ -97,9 +97,9 @@ constexpr Vec3 kForward{0.0F, 0.0F, 1.0F};
 
 /// One joint's rotation about one axis, as a function of time.
 struct Swing {
-    u16 joint;
+    u16 joint = 0;
     Vec3 axis;
-    f32 (*angle)(f32 time);
+    f32 (*angle)(f32 time) = nullptr;
 };
 
 f32 idle_spine(f32 time) {
