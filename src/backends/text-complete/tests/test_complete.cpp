@@ -409,12 +409,12 @@ CY_TEST_CASE("complete: the glyph closure reaches the ligature the character map
     Array<GlyphIndex> closure;
     CY_REQUIRE(backend.glyph_closure(face.value(), codepoints, closure).has_value());
     const auto contains = [&closure](GlyphIndex glyph) {
-        return std::find(closure.begin(), closure.end(), glyph) != closure.end();
+        return std::ranges::find(closure, glyph) != closure.end();
     };
     CY_CHECK(contains(backend.glyph_for(face.value(), 'f')));
     CY_CHECK(contains(backend.glyph_for(face.value(), 'i')));
     CY_CHECK(contains(220));
-    CY_CHECK(std::is_sorted(closure.begin(), closure.end()));
+    CY_CHECK(std::ranges::is_sorted(closure));
 }
 
 CY_TEST_CASE("complete: LCD subpixel rendering is refused rather than drawn as grayscale") {

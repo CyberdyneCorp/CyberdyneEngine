@@ -31,12 +31,16 @@ Array<u8> read_font(const char* name) {
     Array<u8> bytes;
     std::FILE* file = std::fopen(path.c_str(), "rb");
     CY_REQUIRE_MESSAGE(file != nullptr, "missing test font " << path);
-    u8 chunk[4096];
-    usize read = 0;
-    while ((read = std::fread(chunk, 1, sizeof(chunk), file)) > 0) {
-        CY_REQUIRE(bytes.append(Span<const u8>(chunk, read)).has_value());
-    }
+    // Sized first and read in one call: a read loop that stops on a short read leaves the stream at
+    // its end, which the analyser rightly calls a read with no effect.
+    const bool sized = std::fseek(file, 0, SEEK_END) == 0;
+    const long length = sized ? std::ftell(file) : -1L;
+    const bool rewound = length > 0 && std::fseek(file, 0, SEEK_SET) == 0;
+    CY_REQUIRE(rewound);
+    CY_REQUIRE(bytes.resize(static_cast<usize>(length)).has_value());
+    const usize read = std::fread(bytes.data(), 1, bytes.size(), file);
     std::fclose(file);
+    CY_REQUIRE_EQ(read, bytes.size());
     return bytes;
 }
 
@@ -53,12 +57,9 @@ Array<u8> read_font(const char* name) {
 }
 
 [[nodiscard]] bool reported(const ImportResult& result, std::string_view code) {
-    for (const ImportDiagnostic& diagnostic : result.diagnostics()) {
-        if (code == diagnostic.code) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(result.diagnostics(), [code](const ImportDiagnostic& diagnostic) {
+        return code == diagnostic.code;
+    });
 }
 
 }  // namespace

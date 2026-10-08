@@ -73,16 +73,20 @@ public:
     [[nodiscard]] Status rasterise(BackendFace face, GlyphIndex glyph,
                                    GlyphRaster& out) noexcept override {
         ++rasterisations;
-        out.format = glyph == kColourGlyph ? PixelFormat::Colour
-                     : faces_[face].mode == RenderMode::SignedDistanceField
-                         ? PixelFormat::DistanceField
-                         : PixelFormat::Coverage;
+        out.format = PixelFormat::Coverage;
+        if (faces_[face].mode == RenderMode::SignedDistanceField) {
+            out.format = PixelFormat::DistanceField;
+        }
+        if (glyph == kColourGlyph) {
+            out.format = PixelFormat::Colour;
+        }
         out.metrics.advance = kAdvance;
         out.metrics.bearing_x = 1.0f;
         out.metrics.bearing_y = -8.0f;
         out.metrics.width = kWidth;
         out.metrics.height = kHeight;
-        if (Status resized = out.pixels.resize(kWidth * kHeight * bytes_per_pixel(out.format));
+        if (Status resized =
+                out.pixels.resize(usize{kWidth} * kHeight * bytes_per_pixel(out.format));
             !resized) {
             return resized;
         }

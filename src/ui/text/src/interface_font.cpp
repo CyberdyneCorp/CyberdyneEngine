@@ -25,8 +25,7 @@ bool has_interface_font() noexcept {
 
 Span<const u8> interface_font_bytes() noexcept {
 #if defined(CY_TEXT)
-    return Span<const u8>(embedded::interface_font,
-                          static_cast<usize>(embedded::interface_font_size));
+    return {embedded::interface_font, static_cast<usize>(embedded::interface_font_size)};
 #else
     return {};
 #endif

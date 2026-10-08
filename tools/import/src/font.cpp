@@ -207,6 +207,26 @@ constexpr assets::AssetKind kProduces[] = {assets::AssetKind::Font};
     return dot == std::string_view::npos ? name : name.substr(0, dot);
 }
 
+[[nodiscard]] text::RenderMode mode_of(std::string_view name) noexcept {
+    if (name == "grayscale") {
+        return text::RenderMode::Grayscale;
+    }
+    if (name == "monochrome") {
+        return text::RenderMode::Monochrome;
+    }
+    return text::RenderMode::SignedDistanceField;
+}
+
+[[nodiscard]] text::Hinting hinting_of(std::string_view name) noexcept {
+    if (name == "none") {
+        return text::Hinting::None;
+    }
+    if (name == "full") {
+        return text::Hinting::Full;
+    }
+    return text::Hinting::Light;
+}
+
 /// Every option the cook reads, gathered so the import is one call to `cook_font`.
 struct GatheredOptions {
     FontCookOptions cook;
@@ -229,14 +249,8 @@ struct GatheredOptions {
         Expected<OptionValue, Error> value = request.option(schema, name);
         return value && value->as_bool();
     };
-    const std::string_view mode = text_of("mode");
-    desc.mode = mode == "grayscale"    ? text::RenderMode::Grayscale
-                : mode == "monochrome" ? text::RenderMode::Monochrome
-                                       : text::RenderMode::SignedDistanceField;
-    const std::string_view hinting = text_of("hinting");
-    desc.hinting = hinting == "none"   ? text::Hinting::None
-                   : hinting == "full" ? text::Hinting::Full
-                                       : text::Hinting::Light;
+    desc.mode = mode_of(text_of("mode"));
+    desc.hinting = hinting_of(text_of("hinting"));
     desc.size_pixels = real_of("size-pixels", 32.0);
     desc.distance_range = real_of("distance-range", 4.0);
     desc.synthetic_bold = flag_of("synthetic-bold");
@@ -308,22 +322,20 @@ struct GatheredOptions {
     if (!status) {
         return status;
     }
-    std::sort(mapped.begin(), mapped.end());
-    for (const text::GlyphIndex glyph : mapped) {
-        if (!std::binary_search(glyphs.begin(), glyphs.end(), glyph)) {
-            if (Status pushed = glyphs.push_back(glyph); !pushed) {
-                return pushed;
-            }
-        }
+    // The closure and the character map's glyphs together, each once: a closure includes its
+    // inputs, but `.notdef` and a backend without a closure need the map's set added.
+    if (Status appended = glyphs.append(mapped.span()); !appended) {
+        return appended;
     }
-    std::sort(glyphs.begin(), glyphs.end());
-    const auto unique_end = std::unique(glyphs.begin(), glyphs.end());
-    while (glyphs.end() != unique_end) {
+    std::ranges::sort(glyphs);
+    const auto duplicates = std::ranges::unique(glyphs);
+    for (usize count = duplicates.size(); count > 0; --count) {
         glyphs.pop_back();
     }
+    std::ranges::sort(mapped);
     report.glyphs = static_cast<u32>(glyphs.size());
     for (const text::GlyphIndex glyph : glyphs) {
-        if (!std::binary_search(mapped.begin(), mapped.end(), glyph)) {
+        if (!std::ranges::binary_search(mapped, glyph)) {
             ++report.substituted;
         }
     }

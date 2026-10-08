@@ -131,13 +131,18 @@ Status harfbuzz_shape(HarfBuzzFace& face, const ShapeRequest& request,
     hb_buffer_t* buffer = face.buffer;
     hb_buffer_clear_contents(buffer);
     const auto length = static_cast<int>(request.text.size());
+    // The length is passed, so HarfBuzz never looks for a terminator; the check cannot see that a
+    // C API's second argument is the size.
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     hb_buffer_add_utf8(buffer, request.text.data(), length, 0, length);
     hb_buffer_set_direction(
         buffer, request.direction == Direction::RightToLeft ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-    if (!request.language.empty()) {
-        hb_buffer_set_language(buffer,
-                               hb_language_from_string(request.language.data(),
-                                                       static_cast<int>(request.language.size())));
+    if (!request.language.empty() && request.language.size() < 64) {
+        // HarfBuzz reads a language tag up to a terminator when given no length, and the request's
+        // view has none; a copy with one is the unambiguous form.
+        char tag[64] = {};
+        (void)request.language.copy(tag, request.language.size());
+        hb_buffer_set_language(buffer, hb_language_from_string(tag, -1));
     }
     // The script — and the language, when the request names none — from the text itself. A run is
     // one script by construction, so the guess is the run's script.

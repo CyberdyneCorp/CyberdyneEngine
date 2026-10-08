@@ -2,6 +2,7 @@
 
 #include <cy/text/unicode.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace cy::text {
@@ -181,22 +182,22 @@ Expected<FontHandle, Error> TextServer::create_face(const FontDesc& desc,
     return add_face(face);
 }
 
-Expected<FontHandle, Error> TextServer::add_face(const Face& added) noexcept {
-    Face face = added;
-    face.live = true;
+Expected<FontHandle, Error> TextServer::add_face(const Face& face) noexcept {
+    Face added = face;
+    added.live = true;
     for (usize index = 0; index < faces_.size(); ++index) {
         if (!faces_[index].live) {
             // The generation moves on REUSE, so a handle to the face that was here answers no.
-            face.generation = faces_[index].generation + 1;
-            faces_[index] = face;
-            return FontHandle::from_slot(static_cast<u32>(index), face.generation);
+            added.generation = faces_[index].generation + 1;
+            faces_[index] = added;
+            return FontHandle::from_slot(static_cast<u32>(index), added.generation);
         }
     }
-    face.generation = 1;
-    if (Status pushed = faces_.push_back(face); !pushed) {
+    added.generation = 1;
+    if (Status pushed = faces_.push_back(added); !pushed) {
         return make_unexpected(pushed.error());
     }
-    return FontHandle::from_slot(static_cast<u32>(faces_.size() - 1), face.generation);
+    return FontHandle::from_slot(static_cast<u32>(faces_.size() - 1), added.generation);
 }
 
 Expected<FontHandle, Error> TextServer::create_face(const FontDesc& desc,
@@ -301,7 +302,7 @@ GlyphIndex TextServer::glyph_for(FontHandle face, Codepoint codepoint) const noe
     if (found == nullptr) {
         return kNotdef;
     }
-    if (found->outline) {
+    if (found->outline && backend_ != nullptr) {
         return backend_->glyph_for(found->backend_face, codepoint);
     }
     if (codepoint < found->grid.first_codepoint) {
@@ -509,7 +510,9 @@ Status TextServer::shape_face_run(std::string_view text, u32 begin, u32 end, Fon
     if (found == nullptr) {
         return fail(ErrorCode::NotFound, "the fallback chain names a face that is not there");
     }
-    if (found->outline) {
+    // An outline face exists only on a server with a backend; the second test says so to a reader
+    // and to the analyser.
+    if (found->outline && backend_ != nullptr) {
         ShapeRequest request;
         request.text = text.substr(begin, end - begin);
         request.direction = direction;
@@ -1012,9 +1015,8 @@ void TextServer::end_frame() noexcept {
     rasterised_at_frame_start_ = total;
     ++diagnostics_.frames;
     diagnostics_.rasterised_last_frame = this_frame;
-    if (this_frame > diagnostics_.peak_frame_rasterisations) {
-        diagnostics_.peak_frame_rasterisations = this_frame;
-    }
+    diagnostics_.peak_frame_rasterisations =
+        std::max(diagnostics_.peak_frame_rasterisations, this_frame);
     if (this_frame > config_.rasterisation_spike) {
         ++diagnostics_.rasterisation_spikes;
     }

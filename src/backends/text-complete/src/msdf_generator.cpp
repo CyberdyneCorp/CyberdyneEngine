@@ -15,7 +15,21 @@ namespace {
 constexpr double kCornerAngle = 3.0;
 
 [[nodiscard]] msdfgen::Point2 point_of(const GlyphOutline::Point& point) noexcept {
-    return msdfgen::Point2(point.x, point.y);
+    return {point.x, point.y};
+}
+
+/// How many points a verb consumes.
+[[nodiscard]] usize points_of(GlyphOutline::Verb verb) noexcept {
+    switch (verb) {
+        case GlyphOutline::Verb::Cubic:
+            return 3;
+        case GlyphOutline::Verb::Quadratic:
+            return 2;
+        case GlyphOutline::Verb::Move:
+        case GlyphOutline::Verb::Line:
+            break;
+    }
+    return 1;
 }
 
 /// The engine's outline as msdfgen's shape: one contour per Move, the segments kept as the curves
@@ -26,9 +40,7 @@ void build_shape(const GlyphOutline& outline, msdfgen::Shape& shape) noexcept {
     msdfgen::Point2 pen;
     usize next = 0;
     for (const GlyphOutline::Verb verb : outline.verbs) {
-        const usize used = verb == GlyphOutline::Verb::Cubic       ? 3
-                           : verb == GlyphOutline::Verb::Quadratic ? 2
-                                                                   : 1;
+        const usize used = points_of(verb);
         const usize first = next;
         next += used;
         const msdfgen::Point2 end = point_of(outline.points[next - 1]);

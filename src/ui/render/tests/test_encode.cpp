@@ -257,7 +257,7 @@ CY_TEST_CASE("ui_render: a distance-field glyph is its colour inside, the outlin
     // the field's whole [0, 1]), pixels up to 6 are the glyph, 7 and 8 are a two-pixel outline,
     // and 9 on are nothing — the distance thresholding `text-and-fonts` asks outlined text to be
     // drawn by, rather than by drawing the text eight times.
-    std::vector<u8> field(16U * 4U, 0);
+    std::vector<u8> field(usize{16} * 4U, 0);
     for (u32 texel = 0; texel < 16U; ++texel) {
         const f32 value = 0.5F + ((6.5F - static_cast<f32>(texel)) / 8.0F);
         const auto byte = static_cast<u8>(std::lround(std::clamp(value, 0.0F, 1.0F) * 255.0F));

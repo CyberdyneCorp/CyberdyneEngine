@@ -109,15 +109,15 @@ Status icu_resolve_bidi(std::string_view text, ParagraphDirection direction,
     UErrorCode error = U_ZERO_ERROR;
     BidiObject object;
     UBiDi* bidi = object.open(length, error);
-    if (U_SUCCESS(error)) {
+    if (U_SUCCESS(error) != 0) {
         ubidi_setPara(bidi, units.data(), length, paragraph_level_of(direction), nullptr, &error);
     }
     const UBiDiLevel* levels =
-        U_SUCCESS(error) && length > 0 ? ubidi_getLevels(bidi, &error) : nullptr;
-    if (U_FAILURE(error)) {
+        U_SUCCESS(error) != 0 && length > 0 ? ubidi_getLevels(bidi, &error) : nullptr;
+    if (U_FAILURE(error) != 0) {
         return fail(ErrorCode::Internal, u_errorName(error));
     }
-    out.paragraph_level = U_SUCCESS(error) && bidi != nullptr ? ubidi_getParaLevel(bidi) : 0;
+    out.paragraph_level = bidi != nullptr ? ubidi_getParaLevel(bidi) : 0;
 
     // One run per maximal stretch of one level, in byte offsets, coalesced the way src/text/'s
     // algorithm coalesces them so the two can be compared run for run.

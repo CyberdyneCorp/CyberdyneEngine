@@ -148,9 +148,11 @@ Expected<BackendFace, Error> CompleteTextBackend::open_face(const FontDesc& desc
             return slot;
         }
     }
+    detail::HarfBuzzFace* const opened_harfbuzz = face.harfbuzz;
+    detail::FreeTypeFace* const opened_freetype = face.freetype;
     if (Status pushed = state_->faces.push_back(std::move(face)); !pushed) {
-        detail::harfbuzz_close_face(*allocator_, face.harfbuzz);
-        detail::freetype_close_face(*allocator_, face.freetype);
+        detail::harfbuzz_close_face(*allocator_, opened_harfbuzz);
+        detail::freetype_close_face(*allocator_, opened_freetype);
         return make_unexpected(pushed.error());
     }
     return static_cast<BackendFace>(state_->faces.size() - 1);

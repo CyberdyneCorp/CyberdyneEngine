@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cy/servers/text/cooked_font.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace cy::text {
@@ -143,20 +144,20 @@ void read_desc(Reader& reader, FontDesc& desc) noexcept {
     }
     desc.distance_range = reader.f32_le("distance range");
     desc.axis_count = reader.u32_le("axis count");
-    for (usize index = 0; index < kMaxFontAxes; ++index) {
+    for (FontAxis& axis : desc.axes) {
         const Span<const u8> tag = reader.take(4, "axis tag");
         if (!tag.empty()) {
-            std::memcpy(desc.axes[index].tag, tag.data(), 4);
+            std::memcpy(axis.tag, tag.data(), 4);
         }
-        desc.axes[index].value = reader.f32_le("axis value");
+        axis.value = reader.f32_le("axis value");
     }
     desc.feature_count = reader.u32_le("feature count");
-    for (usize index = 0; index < kMaxFontFeatures; ++index) {
+    for (FontFeature& feature : desc.features) {
         const Span<const u8> tag = reader.take(4, "feature tag");
         if (!tag.empty()) {
-            std::memcpy(desc.features[index].tag, tag.data(), 4);
+            std::memcpy(feature.tag, tag.data(), 4);
         }
-        desc.features[index].value = reader.u32_le("feature value");
+        feature.value = reader.u32_le("feature value");
     }
     if (desc.axis_count > kMaxFontAxes) {
         reader.fail_on("axis count");
@@ -318,12 +319,9 @@ Status CookedFont::parse(Span<const u8> bytes) noexcept {
 }
 
 bool CookedFont::covers(Codepoint codepoint) const noexcept {
-    for (const CodepointRange& range : ranges_) {
-        if (codepoint >= range.first && codepoint <= range.last) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(ranges_, [codepoint](const CodepointRange& range) {
+        return codepoint >= range.first && codepoint <= range.last;
+    });
 }
 
 }  // namespace cy::text

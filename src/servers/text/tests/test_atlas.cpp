@@ -258,10 +258,10 @@ CY_TEST_CASE("atlas: a four-byte atlas keeps whole pixels through a repack") {
         CY_REQUIRE(slot != nullptr);
         CY_CHECK(slot->page == 1);
         for (u32 y = 0; y < 8; ++y) {
-            const usize row = ((static_cast<usize>(slot->rect.position.y) + y) * atlas.extent() +
+            const usize row = (((static_cast<usize>(slot->rect.position.y) + y) * atlas.extent()) +
                                static_cast<usize>(slot->rect.position.x)) *
-                              4;
-            for (usize byte = 0; byte < 8 * 4; ++byte) {
+                              4U;
+            for (usize byte = 0; byte < usize{8} * 4U; ++byte) {
                 CY_CHECK(atlas.pixels()[row + byte] == pixels[(static_cast<usize>(y) * 32) + byte]);
             }
         }

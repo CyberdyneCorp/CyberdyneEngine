@@ -34,6 +34,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/servers/text/font.h>
 #include <cy/servers/text/text.h>
+#include <cy/text/unicode.h>
 
 #include <string_view>
 
@@ -243,11 +244,8 @@ struct BreakOpportunity {
 [[nodiscard]] Status find_break_opportunities(std::string_view text,
                                               Array<BreakOpportunity>& out) noexcept;
 
-/// Decode one UTF-8 sequence, returning the codepoint and advancing `cursor`.
-///
-/// A malformed sequence yields U+FFFD and advances one byte, which is the substitution the Unicode
-/// standard specifies and is what keeps a corrupted string from becoming an infinite loop.
-[[nodiscard]] Codepoint decode_utf8(std::string_view text, usize& cursor) noexcept;
+// `decode_utf8(text, cursor)` — one UTF-8 sequence decoded, U+FFFD for a malformed one, `cursor`
+// advanced — is declared by <cy/text/unicode.h>, included above: src/text/ owns the one definition.
 
 }  // namespace cy::text
 
