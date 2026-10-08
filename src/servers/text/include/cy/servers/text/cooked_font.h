@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef CY_SERVERS_TEXT_COOKED_FONT_H
 #define CY_SERVERS_TEXT_COOKED_FONT_H
 // The cooked font: what the font importer writes and what the text server reads. M11.e, issue #86.

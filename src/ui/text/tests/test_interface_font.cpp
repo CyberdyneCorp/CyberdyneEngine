@@ -219,7 +219,7 @@ CY_TEST_CASE(
     TextStyle style;
     // Not ASCII, so not warmed at start: setting it is what rasterises it.
     const ElementId label = ui.label(
-        "Caf\xc3\xa9 \xc3\xb1"
+        "Na\xc3\xafve \xc3\xb1"
         "and\xc3\xba",
         style);
     CY_CHECK_GT(ui.server.atlas(PixelFormat::DistanceField).live_glyphs(), warmed);

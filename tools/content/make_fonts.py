@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Produce the fonts the engine carries in deps/fonts/ from their pinned upstream files.
 
 --- WHAT THIS IS FOR -----------------------------------------------------------------------------

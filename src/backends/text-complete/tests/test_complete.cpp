@@ -286,6 +286,26 @@ CY_TEST_CASE("complete: a mixed line is placed in visual order, the Hebrew right
     CY_CHECK_EQ(report[0].fallbacks, 4U);
 }
 
+CY_TEST_CASE(
+    "complete: a number in Hebrew keeps its digits in order and the runs in visual order") {
+    // "של 12 אב" with ICU's levels: Hebrew at level 1 around digits at level 2, so the line draws
+    // "אב", then "12" left to right, then "של" — L2's order of the level runs, not their logical
+    // one.
+    Stack stack;
+    const Array<u8> hebrew = read_font("NotoSansHebrew-Subset.ttf");
+    const Array<u8> latin = read_font("NotoSans-Latin-VF.ttf");
+    const FallbackChain chain =
+        chain_of(stack.face(hebrew, desc_of(24.0f)), stack.face(latin, desc_of(24.0f)));
+    TextLine line;
+    CY_REQUIRE(
+        stack.server.layout_line("\xd7\xa9\xd7\x9c 12 \xd7\x90\xd7\x91", chain, line).has_value());
+    const u32 visual[] = {10, 8, 7, 5, 6, 4, 2, 0};
+    CY_REQUIRE_EQ(line.run().glyphs.size(), std::size(visual));
+    for (usize index = 0; index < std::size(visual); ++index) {
+        CY_CHECK_EQ(line.run().glyphs[index].source_offset, visual[index]);
+    }
+}
+
 CY_TEST_CASE("complete: WOFF and a collection shape exactly as the face inside them") {
     Stack stack;
     const Array<u8> plain = read_font("NotoSansHebrew-Subset.ttf");

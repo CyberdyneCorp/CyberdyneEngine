@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The text server over a backend: runs by face, bidirectional lines, the three atlases, cooked
 // fonts and the per-frame report. M11.e, issue #86.
 //
@@ -153,6 +154,24 @@ CY_TEST_CASE("backend: a mixed line is placed in visual order with src/text's le
                     static_cast<f32>(index) * test::FakeBackend::kAdvance);
     }
     CY_CHECK_EQ(line.width(), 100.0f);
+}
+
+CY_TEST_CASE(
+    "backend: a number in right-to-left text keeps its digits in order and its runs in place") {
+    // "של 12 אב": the digits are a level-2 run inside level-1 Hebrew, so the three level runs are
+    // drawn last first — "אב", then "12" left to right, then "של" — which is L2's visual order and
+    // not the runs' logical one. A line that placed its runs in logical order would draw "של"
+    // first.
+    Faked faked;
+    const FallbackChain chain = chain_of(faked.face("hebrew"), faked.face("latin"));
+    TextLine line;
+    CY_REQUIRE(
+        faked.server.layout_line("\xd7\xa9\xd7\x9c 12 \xd7\x90\xd7\x91", chain, line).has_value());
+    const u32 visual[] = {10, 8, 7, 5, 6, 4, 2, 0};
+    CY_REQUIRE_EQ(line.run().glyphs.size(), std::size(visual));
+    for (usize index = 0; index < std::size(visual); ++index) {
+        CY_CHECK_EQ(line.run().glyphs[index].source_offset, visual[index]);
+    }
 }
 
 CY_TEST_CASE("backend: a right-to-left paragraph starts at the right") {

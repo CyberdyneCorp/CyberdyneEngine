@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/servers/text/cooked_font.h>
 
 #include <cstring>

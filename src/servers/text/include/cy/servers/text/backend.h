@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef CY_SERVERS_TEXT_BACKEND_H
 #define CY_SERVERS_TEXT_BACKEND_H
 // `TextBackend` — the seam the outline-font libraries sit beneath. M11.e, issue #86.

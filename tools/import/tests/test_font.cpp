@@ -145,7 +145,7 @@ CY_TEST_CASE("font: a cooked Latin range lays Latin out with no runtime rasteris
     text::ParagraphOptions layout;
     layout.width = 300.0f;
     CY_REQUIRE(runtime.server
-                   .layout_paragraph("The quick brown fox jumps over the lazy dog. Caf\xc3\xa9 "
+                   .layout_paragraph("The quick brown fox jumps over the lazy dog. Na\xc3\xafve "
                                      "office, \xc2\xbf\xc3\x91"
                                      "and\xc3\xba? 0123456789 \xc2\xa9",
                                      chain, layout, paragraph)

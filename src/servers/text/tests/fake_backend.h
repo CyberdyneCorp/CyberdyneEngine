@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef CY_SERVERS_TEXT_TESTS_FAKE_BACKEND_H
 #define CY_SERVERS_TEXT_TESTS_FAKE_BACKEND_H
 // A `TextBackend` with no font library behind it, for the server's own logic.
