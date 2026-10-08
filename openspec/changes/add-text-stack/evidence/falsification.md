@@ -43,6 +43,7 @@ final rebuild. `render.ui` rows ran on the development machine's Vulkan device (
 | 33 | `src/ui/render/src/encode.cpp` | the host reference samples the field by point | `render.ui` | (h) a paragraph in the interface font is one draw, shaded as the host shades it |
 | 34 | `src/ui/render/src/text_atlas.cpp` | the distance-field page uploaded as one byte a texel | `render.ui` | (h) a paragraph in the interface font is one draw, shaded as the host shades it |
 | 35 | `src/ui/text/src/text_painter.cpp` | the outline drawn transparent | `render.ui` | (i) an outlined, shadowed title matches its golden image |
+| 36 | `src/servers/text/src/server.cpp` | a combining mark resolved through the chain rather than kept with its base | `unit.text` | backend: a combining mark stays in its base character's face |
 
 The layer rule: deleting `"unicode": ICU` from `THIRD_PARTY_DIRECTORIES` in
 `tools/layercheck/layercheck.py` turns `tools/layercheck/selftest.py`'s `thirdparty-above-backends`

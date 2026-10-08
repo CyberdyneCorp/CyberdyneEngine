@@ -108,6 +108,26 @@ CY_TEST_CASE("backend: text is shaped a run per face, and the fallback face gets
     CY_CHECK_EQ(run.width, 50.0f);
 }
 
+CY_TEST_CASE("backend: a combining mark stays in its base character's face") {
+    // U+0301 is in the Latin primary and not in the Hebrew fallback, U+05B8 the other way round.
+    // Each follows a base from the other face, and each is shaped with its base, in one run.
+    Faked faked;
+    const FallbackChain chain = chain_of(faked.face("latin"), faked.face("hebrew"));
+    ShapedRun run;
+    CY_REQUIRE(
+        faked.server.shape("\xd7\xa9\xcc\x81", chain, Direction::LeftToRight, run).has_value());
+    CY_CHECK_EQ(faked.backend.shapes, 1U);
+    CY_REQUIRE_EQ(run.glyphs.size(), 2U);
+    CY_CHECK(run.glyphs[0].face == chain.faces[1]);
+    CY_CHECK(run.glyphs[1].face == chain.faces[1]);
+
+    ShapedRun latin;
+    CY_REQUIRE(faked.server.shape("a\xd6\xb8", chain, Direction::LeftToRight, latin).has_value());
+    CY_CHECK_EQ(faked.backend.shapes, 2U);
+    CY_REQUIRE_EQ(latin.glyphs.size(), 2U);
+    CY_CHECK(latin.glyphs[1].face == chain.faces[0]);
+}
+
 CY_TEST_CASE("backend: a newline ends a run and draws nothing") {
     Faked faked;
     ShapedRun run;
