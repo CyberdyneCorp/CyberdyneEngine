@@ -532,25 +532,7 @@ fn apply_sources(
             _ => None,
         })
         .collect();
-    let graphs: Vec<(String, Option<String>, Option<String>)> = transaction
-        .operations
-        .iter()
-        .filter_map(|operation| match operation {
-            cy_editor_documents::operation::Operation::Domain {
-                kind,
-                before,
-                after,
-                ..
-            } => {
-                let reference = kind.strip_prefix(crate::material_graph::GRAPH_DOMAIN_PREFIX)?;
-                let (graph, source) =
-                    crate::material_graph::decode_pair(if forward { after } else { before })
-                        .ok()?;
-                Some((reference.to_owned(), graph, source))
-            }
-            _ => None,
-        })
-        .collect();
+    let graphs = material_graph_sources(transaction, forward);
     let vfx_documents = vfx_sources(transaction, forward);
     let audio_assets = audio_sources(transaction, forward);
     let script_graphs = script_sources(transaction, forward);
@@ -592,6 +574,33 @@ fn apply_sources(
     restore_script_graphs(project, script_graphs);
     restore_animation_graphs(project, animation_graphs);
     restore_audio(project, audio_assets);
+}
+
+/// The material graphs a transaction saved: each reference with the graph and canvas text it must
+/// hold now.
+fn material_graph_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+) -> Vec<(String, Option<String>, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => {
+                let reference = kind.strip_prefix(crate::material_graph::GRAPH_DOMAIN_PREFIX)?;
+                let (graph, source) =
+                    crate::material_graph::decode_pair(if forward { after } else { before })
+                        .ok()?;
+                Some((reference.to_owned(), graph, source))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Put gameplay graphs back. An undone or redone graph edit during Play reloads the running

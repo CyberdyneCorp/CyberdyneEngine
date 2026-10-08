@@ -195,12 +195,12 @@ mod tests {
         assert_eq!(drawn.keys.len(), 2);
         let (key, event) = &drawn.keys[1];
         assert_eq!(drawn.event(*key), Some(event));
-        assert_eq!(event.time, 0.75);
+        assert!((event.time - 0.75).abs() < f32::EPSILON);
         assert!(
             (surface.playhead() - 0.5).abs() < 1e-9,
             "the playhead stays put"
         );
-        assert_eq!(surface.duration(), 1.0);
+        assert!((surface.duration() - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]

@@ -419,9 +419,11 @@ mod tests {
     fn a_playing_preview_is_followed_without_a_panel_on_screen() {
         // An agent reads `animation.status` with no panel drawn; the engine's clock must reach it.
         let (runtime, _reader, _writer) = silent_runtime();
-        let mut requests = AnimationRequests::default();
         // The vocabulary arrived long ago.
-        requests.catalogue_requested = true;
+        let mut requests = AnimationRequests {
+            catalogue_requested: true,
+            ..AnimationRequests::default()
+        };
         let sent = requests
             .preview(&runtime, settings(0.4), "graph")
             .unwrap()

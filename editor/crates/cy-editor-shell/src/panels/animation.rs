@@ -820,7 +820,7 @@ fn machine_timeline(
 /// Zoom the timeline so `length` seconds fill its lanes, once per clip shown.
 fn fit(frame: &mut ToolFrame<'_>, ui: &egui::Ui, node: u64, length: f32) {
     let shown = (node, length.to_bits());
-    if frame.inputs.animation.fitted == Some(shown) || !(length > 0.0) {
+    if frame.inputs.animation.fitted == Some(shown) || length.is_nan() || length <= 0.0 {
         return;
     }
     frame.inputs.animation.fitted = Some(shown);
@@ -949,12 +949,13 @@ fn parameter_rows(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target)
                 .or_insert(0.0);
             ui.label(&name);
             let response = ui.add(egui::DragValue::new(value).speed(0.05).range(0.0..=1.0));
+            let open = value.abs() > 0.0;
             let toggled = ui
-                .small_button(if *value != 0.0 { "Close" } else { "Open" })
+                .small_button(if open { "Close" } else { "Open" })
                 .on_hover_text("A condition opens its transitions while it is not zero")
                 .clicked();
             if toggled {
-                *value = if *value != 0.0 { 0.0 } else { 1.0 };
+                *value = if open { 0.0 } else { 1.0 };
             }
             if response.drag_stopped() || response.lost_focus() || toggled {
                 let arguments = Arguments::new()

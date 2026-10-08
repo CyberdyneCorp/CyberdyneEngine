@@ -1369,21 +1369,37 @@ fn animation_snapshots() {
         "editor-animation-timeline.png",
     );
 
+    cut_snapshot(&mut desk, &project, &source, &fixture);
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// The locomotion graph with its idle-to-walk transition made a cut, and the engine's refusal on
+/// that transition.
+fn cut_snapshot(
+    desk: &mut Desk,
+    project: &std::path::Path,
+    source: &str,
+    fixture: &dyn Fn(&str) -> Vec<u8>,
+) {
+    let reference = "game/animation/locomotion.cyanimgraph";
     let cut = source.replacen(
         "prop \"duration\" : \"float\" = (0.25, 0, 0, 0, 0)",
         "prop \"duration\" : \"float\" = (0, 0, 0, 0, 0)",
         1,
     );
     std::fs::write(project.join(reference), &cut).unwrap();
-    answer_animation(
-        &mut desk,
-        &compile(cut.clone()),
-        fixture("animation_compile_cut_v1.wire"),
-    );
+    let compile = move |editor: &mut Editor| {
+        editor
+            .backend
+            .animation
+            .compile(&editor.runtime, reference, &cut)
+            .unwrap()
+            .unwrap()
+    };
+    answer_animation(desk, &compile, fixture("animation_compile_cut_v1.wire"));
     snapshot(
-        &mut desk,
+        desk,
         "editor-animation-graphs-and-clips",
         "editor-animation-diagnostic.png",
     );
-    let _ = std::fs::remove_dir_all(&project);
 }
