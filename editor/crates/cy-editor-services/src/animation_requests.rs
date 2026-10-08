@@ -11,8 +11,9 @@
 //! clip node, the time, playing or not, and the author's parameters ([`PreviewSettings`]) — and
 //! sends all of it with the graph's text in one `animation.preview.set` whenever any of it changes.
 //! Only the newest request matters, so a queued one is replaced rather than appended: a scrub drag
-//! sends one request per frame, and the engine evaluates the last. While the panel is drawn and the
-//! preview plays, the state is polled ten times a second so the playhead follows the engine's clock.
+//! sends one request per frame, and the engine evaluates the last. While the preview plays, its state
+//! is polled ten times a second so the playhead — and `animation.status`, for an agent with no panel
+//! on screen — follows the engine's clock. A paused or stopped preview is not polled.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -55,7 +56,6 @@ impl Queued {
 #[derive(Debug)]
 pub struct AnimationRequests {
     wanted: bool,
-    polling: bool,
     last_poll: Option<Instant>,
     catalogue: Versioned<Option<Vec<u8>>>,
     catalogue_requested: bool,
@@ -73,7 +73,6 @@ impl Default for AnimationRequests {
     fn default() -> Self {
         Self {
             wanted: false,
-            polling: false,
             last_poll: None,
             catalogue: Versioned::new(None),
             catalogue_requested: false,
@@ -89,9 +88,8 @@ impl Default for AnimationRequests {
 }
 
 impl AnimationRequests {
-    /// Ask for the engine's vocabulary now, and follow a playing preview while `polling`.
+    /// Ask for the engine's vocabulary now: the panel is drawn.
     pub fn set_polling(&mut self, polling: bool) {
-        self.polling = polling;
         if polling {
             self.wanted = true;
         }
@@ -220,8 +218,7 @@ impl AnimationRequests {
             .is_some_and(|state| state.active && state.playing)
     }
 
-    /// Once a frame: the catalogue, the queue, and a playing preview's clock while the panel is
-    /// drawn.
+    /// Once a frame: the catalogue, the queue, and a playing preview's clock.
     pub fn maintain(&mut self, runtime: &RuntimeSession) -> Option<Problem> {
         if !runtime.is_connected() {
             self.disconnect();
@@ -237,12 +234,7 @@ impl AnimationRequests {
         let due = self
             .last_poll
             .is_none_or(|last| last.elapsed() >= POLL_INTERVAL);
-        if self.polling
-            && self.playing()
-            && due
-            && self.in_flight.is_none()
-            && self.queue.is_empty()
-        {
+        if self.playing() && due && self.in_flight.is_none() && self.queue.is_empty() {
             self.last_poll = Some(Instant::now());
             self.queue.push_back(Queued::plain(PREVIEW_GET));
         }
@@ -388,5 +380,104 @@ fn refusal(operation: &str, payload: &[u8]) -> Problem {
             format!("run {operation} in the engine"),
             "the engine refused with an unreadable diagnostic",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A session to a runtime that never answers: the first request stays in flight.
+    fn silent_runtime() -> (RuntimeSession, std::io::PipeReader, std::io::PipeWriter) {
+        let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+        let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+        let runtime = RuntimeSession::over(cy_editor_protocol::Session::over(
+            editor_reader,
+            editor_writer,
+        ));
+        (runtime, runtime_reader, runtime_writer)
+    }
+
+    fn settings(time: f32) -> PreviewSettings {
+        PreviewSettings {
+            reference: "game/animation/locomotion.cyanimgraph".into(),
+            focus: 3,
+            time,
+            playing: false,
+            parameters: BTreeMap::new(),
+        }
+    }
+
+    fn engine_fixture(name: &str) -> Vec<u8> {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../src/editor_backend/tests/data")
+            .join(name);
+        std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    }
+
+    #[test]
+    fn a_playing_preview_is_followed_without_a_panel_on_screen() {
+        // An agent reads `animation.status` with no panel drawn; the engine's clock must reach it.
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests::default();
+        // The vocabulary arrived long ago.
+        requests.catalogue_requested = true;
+        let sent = requests
+            .preview(&runtime, settings(0.4), "graph")
+            .unwrap()
+            .expect("the preview goes out at once");
+        let mut playing = engine_fixture("animation_preview_state_v1.wire");
+        playing[5] = 1;
+        let answered = requests.accept(&Message::ServiceEvent {
+            request: sent,
+            kind: ServiceEventKind::Completed,
+            schema_version: SCHEMA,
+            payload: playing,
+        });
+        assert!(matches!(answered, Some(None)), "{answered:?}");
+        assert!(requests.preview_state().is_some_and(|state| state.playing));
+        assert!(!requests.pending());
+        assert!(requests.maintain(&runtime).is_none());
+        assert!(
+            requests
+                .in_flight
+                .as_ref()
+                .is_some_and(|(_, queued)| queued.operation == PREVIEW_GET),
+            "a playing preview's state is asked for again"
+        );
+    }
+
+    #[test]
+    fn a_newer_preview_replaces_one_still_queued() {
+        // A scrub drag asks for a pose every frame; only the last one the engine has not started
+        // is worth evaluating, so a queued preview is replaced, never appended behind.
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests::default();
+        let first = requests.preview(&runtime, settings(0.1), "graph").unwrap();
+        assert!(first.is_some(), "the first preview goes out at once");
+        assert!(
+            requests
+                .preview(&runtime, settings(0.2), "graph")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            requests
+                .preview(&runtime, settings(0.3), "graph")
+                .unwrap()
+                .is_none()
+        );
+        let queued: Vec<&Queued> = requests
+            .queue
+            .iter()
+            .filter(|queued| queued.operation == PREVIEW_SET)
+            .collect();
+        assert_eq!(
+            queued.len(),
+            1,
+            "one preview waits behind the one in flight"
+        );
+        assert_eq!(queued[0].payload, preview_payload("graph", &settings(0.3)));
+        assert_eq!(requests.settings().map(|kept| kept.time), Some(0.3));
     }
 }

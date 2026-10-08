@@ -6,6 +6,7 @@
 #include <cy/core/math/quat.h>
 
 #include <cmath>
+#include <iterator>
 #include <utility>
 
 namespace cy::editor {

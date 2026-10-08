@@ -594,6 +594,25 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 # "Compiler-grade diagnostics" (no path, no unused-output or loop warnings), "Function and node
 # metadata" (no purity, determinism or thread-safety metadata) — stay unmapped until they are.
 
+# `openspec/changes/add-editor-animation-panel` (#29 Animation, #76 stage 5) adds one requirement to
+# this row and one to `animation-and-skinning`. Map them on archive, not before:
+#   "Animation graphs and clips editor"
+#     rust:cy-editor-mcp::a_session_over_the_wire::an_animation_graph_is_authored_previewed_and_undone_over_mcp
+#     (and cy-editor-shell's a_zero_duration_transition_is_refused_on_that_transition and
+#     a_click_on_the_timelines_ruler_scrubs_the_engines_preview_of_the_clip); the engine half is
+#     test:integration.editor_backend_animation, cases "editor animation: the previewed machine is
+#     the program evaluated directly", "editor animation: a scrubbed clip shows the clip sampled
+#     directly at that time", "editor animation: an edited transition changes what the engine
+#     evaluates" and "editor animation: scrubbing forward across an authored event fires it"; the
+#     drawn half is test:smoke.editor_authored_frame_vulkan, case "authored native frame draws the
+#     animation preview the engine posed"
+#   animation-and-skinning "The pose vocabulary validates as an editor draws it"
+#     test:integration.graph_compiler, cases "graph_locomotion: the builder's graph validates against
+#     the pose vocabulary" and "graph_pose: a clip that names no clock gets a clock of its own"
+# The existing "Specialised editors" requirement keeps its criterion: the panel opens
+# `Domain::AnimationGraphsAndClips` on the shared canvas and the shared timeline, which is what
+# m11b:specialised-editors checks the domain table for.
+
 [[coverage]]
 row = "editor-architecture"
 requirement = "Specialised editors"

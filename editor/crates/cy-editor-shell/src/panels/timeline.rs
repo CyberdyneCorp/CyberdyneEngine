@@ -1144,6 +1144,38 @@ mod tests {
     }
 
     #[test]
+    fn double_clicking_an_event_lane_places_one_key_and_a_clip_lane_places_none() {
+        // The animation timeline's gameplay events are points on their own track: a double-click
+        // there is the author placing one. A clip track's lane takes nothing.
+        let mut surface = TimelineSurface::new(1, 30.0).unwrap();
+        surface.load(1.0);
+        let clip = surface.add_track(TrackKind::Animation, "walk");
+        surface.add_section(clip, 0.0, 0.25, "walk").unwrap();
+        let events = surface.add_track(TrackKind::GameplayEvent, "footstep");
+        let mut view = TimelineView::default();
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        let on_events = at(&view, lanes, 0.5, 1);
+        let first = frames.click(on_events, &surface, &mut view);
+        let second = frames.click(on_events, &surface, &mut view);
+        let edits: Vec<_> = first.edits.into_iter().chain(second.edits).collect();
+        let [TimelineEdit::AddKey { track, time, .. }] = edits.as_slice() else {
+            panic!("a double click on an event lane is one key: {edits:?}");
+        };
+        assert_eq!(*track, events);
+        assert!((time - 0.5).abs() < 0.02, "{time}");
+        let mut view = TimelineView::default();
+        let mut frames = Frames::new();
+        let (_, lanes) = frames.quiet(&surface, &mut view);
+        // Past the clip's section, so the click lands on the bare lane.
+        let on_clip = at(&view, lanes, 0.75, 0);
+        let first = frames.click(on_clip, &surface, &mut view);
+        let second = frames.click(on_clip, &surface, &mut view);
+        let edits: Vec<_> = first.edits.into_iter().chain(second.edits).collect();
+        assert!(edits.is_empty(), "a clip's lane is not keyed: {edits:?}");
+    }
+
+    #[test]
     fn dragging_a_clip_end_is_one_trim_on_release() {
         let (surface, _, _, clips, clip) = surface();
         let mut view = TimelineView::default();

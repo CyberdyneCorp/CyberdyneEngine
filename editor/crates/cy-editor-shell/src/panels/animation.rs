@@ -69,6 +69,10 @@ pub struct AnimationInputs {
     pub parameters: BTreeMap<String, f32>,
     /// The timeline's zoom, scroll, selection and gesture.
     pub(super) view: TimelineView,
+    /// What the timeline was last fitted to: a clip node (zero for the state machine) and its
+    /// length's bits. Showing something else fits the zoom to it once; after that the zoom is the
+    /// author's.
+    pub fitted: Option<(u64, u32)>,
 }
 
 impl Default for AnimationInputs {
@@ -87,6 +91,7 @@ impl Default for AnimationInputs {
             new_event: "footstep".into(),
             parameters: BTreeMap::new(),
             view: TimelineView::default(),
+            fitted: None,
         }
     }
 }
@@ -495,28 +500,29 @@ fn preview_bar(
             invoke(frame, "animation.preview.stop", Arguments::new());
         }
     });
-    let (role, line) = match previewing {
-        Some(state) => (
-            if state.playing {
+    match previewing {
+        Some(state) => {
+            let role = if state.playing {
                 Semantic::Live
             } else {
                 Semantic::Active
-            },
-            format!(
+            };
+            let line = format!(
                 "Engine: {} · pose {:016x} · {} joint(s)",
                 state.describe(),
                 state.pose_digest,
                 state.joints.len()
-            ),
-        ),
-        None => (
-            Semantic::Neutral,
-            "Not previewing: scrub the timeline or press Play to show the character in the \
-             viewport"
-                .into(),
-        ),
-    };
-    status(ui, frame.shell, role, &line);
+            );
+            status(ui, frame.shell, role, &line);
+        }
+        None => {
+            ui.label(secondary(
+                frame.shell,
+                "Not previewing: scrub the timeline or press Play to show the character in the \
+                 viewport",
+            ));
+        }
+    }
 }
 
 /// The engine's diagnostics, as the canvas outlines them.
@@ -768,6 +774,7 @@ fn timeline_area(
         surface.scrub(f64::from(state.time));
     }
     heading(ui, frame.shell, &format!("Clip {clip} · node {node}"));
+    fit(frame, ui, node, clip_length(target, node));
     let response = timeline::show(ui, frame.shell, surface, &mut frame.inputs.animation.view);
     if let Some(time) = response.scrub {
         invoke(
@@ -799,6 +806,7 @@ fn machine_timeline(
         surface.scrub(f64::from(state.time));
     }
     heading(ui, frame.shell, "State machine");
+    fit(frame, ui, 0, length);
     let response = timeline::show(ui, frame.shell, surface, &mut frame.inputs.animation.view);
     if let Some(time) = response.scrub {
         invoke(
@@ -807,6 +815,19 @@ fn machine_timeline(
             scrub_arguments(&target.reference, 0, time),
         );
     }
+}
+
+/// Zoom the timeline so `length` seconds fill its lanes, once per clip shown.
+fn fit(frame: &mut ToolFrame<'_>, ui: &egui::Ui, node: u64, length: f32) {
+    let shown = (node, length.to_bits());
+    if frame.inputs.animation.fitted == Some(shown) || !(length > 0.0) {
+        return;
+    }
+    frame.inputs.animation.fitted = Some(shown);
+    let lanes = (ui.available_width() - timeline::LABEL_WIDTH).max(1.0);
+    let view = &mut frame.inputs.animation.view;
+    view.pixels_per_second = (lanes / length).clamp(timeline::ZOOM_RANGE.0, timeline::ZOOM_RANGE.1);
+    view.scroll = 0.0;
 }
 
 /// The `animation.event.*` command one timeline gesture is.

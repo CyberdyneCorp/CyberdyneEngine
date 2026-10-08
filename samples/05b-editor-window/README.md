@@ -125,6 +125,35 @@ graph. `script.reload` recompiles a graph Play runs and swaps it in at the next 
 entity's variables. `integration.editor_window_graph_debugger`
 (`runtime/tests/test_graph_debugger_runtime.cpp`) holds both without a device or a Swift toolchain.
 
+## Animation preview (#29)
+
+The editor's Animation panel previews pose graphs on a character the engine evaluates and this
+runtime draws. `main.cpp` builds `cy::editor::AnimationPreview` (a twelve-joint mannequin with `idle`,
+`walk`, `run` and `wave`), binds it with `MaterialService::set_animation`, advances a playing preview
+by each frame's time, and hands `AuthoredFrame::set_skinned_preview` the character's mesh and the
+skinning matrices the engine computed. The frame skins it in one `SkinnedScene` dispatch and draws it
+through the skinned pipelines with a shadow, standing at the world origin. Only a Vulkan frame has
+skinned pipelines (issue #76 ran them nowhere else), so on Metal the runtime offers no preview and
+`animation.preview.set` is refused by name. `smoke.editor_authored_frame_vulkan`, "authored native frame
+draws the animation preview the engine posed", draws it, scrubs it and takes it away, and photographs
+it when `CY_ANIMATION_VIEWPORT_SHOT` names a directory.
+
+`python3 samples/05b-editor-window/animation_window.py` runs both ends at once over MCP on
+`project/worlds/animation-preview.cyworld` (a ground and an empty node at the character's hips to frame
+it by): it authors the locomotion graph with its footsteps, scrubs the walk and reads the viewport,
+previews the state machine before and after lengthening a transition, plays and stops. It needs a
+display and a Vulkan device, and exits 3 without them. `--shots <directory>` keeps the captures.
+
+Driving it found a defect in this runtime. The editor service takes one request at a time per backend
+(`MaterialService::submit` refuses a second while one is pending), and the editor keeps one request in
+flight per kind — material, VFX, audio, scripts, animation — so two kinds routed to one backend in one
+frame are two requests at once. The runtime ignored the refusal of the second, the request was never
+answered, and that kind of request stalled for the rest of the session (here: the VFX catalogue, so the
+animation preview's state was never polled again). `runtime/service_queue.h` keeps a refused request and
+submits it, in arrival order, once the service has answered what it held; a request refused for any
+other reason is answered as failed. `unit.editor_window_runtime`, "a request the service is too busy
+for waits its turn instead of being dropped", is the regression case.
+
 ## Material Graph cube
 
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,
@@ -634,6 +663,7 @@ Neither is in this artefact's files.
 | | |
 |---|---|
 | `window.py` | the artefact |
+| `animation_window.py` | the animation panel's preview (#29) against the real runtime, over MCP |
 | `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world. Since issue #28 also the navigation seam (`nav_runtime.*`) and the navmesh overlay (`nav_overlay.*`) |
 | `one_world.py` | the M8.a probe: it speaks the editor's protocol to the runtime, creates an object, asks where the gizmo is and picks it there |
 | `project/` | a project with a world in it — three entities in `worlds/city.cyworld`, written by the engine's own authoring schema. Copied into the work directory on every run, so a run never edits it |

@@ -9,10 +9,10 @@
 // encoder writes. This suite compiles and previews exactly those bytes, and checks every previewed
 // pose against the program evaluated DIRECTLY — compiled here, bound to the character's skeleton
 // and clips, advanced and evaluated through `cy::animation` with no service in between.
-// `data/animation_catalogue_v1.wire`, `animation_compile_v1.wire`, `animation_compile_cut_v1.wire`
-// and `animation_preview_state_v1.wire` are the engine's answers, which the Rust suites decode and
-// replay to an MCP client as the runtime's. Regenerate them with `CY_UPDATE_ANIMATION_WIRE=1` after
-// a deliberate change to a reply.
+// `data/animation_catalogue_v1.wire`, `animation_compile_v1.wire`, `animation_compile_cut_v1.wire`,
+// `animation_preview_state_v1.wire` and `animation_preview_stopped_v1.wire` are the engine's
+// answers, which the Rust suites decode and replay to an MCP client as the runtime's. Regenerate
+// them with `CY_UPDATE_ANIMATION_WIRE=1` after a deliberate change to a reply.
 
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/host.h>
@@ -125,29 +125,29 @@ class Request {
 public:
     Request() : bytes_(allocator()) {}
 
-    Request&& u8v(u8 value) && {
+    Request& u8v(u8 value) {
         put(&value, 1);
-        return std::move(*this);
+        return *this;
     }
-    Request&& u32v(u32 value) && {
+    Request& u32v(u32 value) {
         put(&value, 4);
-        return std::move(*this);
+        return *this;
     }
-    Request&& u64v(u64 value) && {
+    Request& u64v(u64 value) {
         put(&value, 8);
-        return std::move(*this);
+        return *this;
     }
-    Request&& f32v(f32 value) && {
+    Request& f32v(f32 value) {
         put(&value, 4);
-        return std::move(*this);
+        return *this;
     }
-    Request&& text(std::string_view value) && {
+    Request& text(std::string_view value) {
         const auto size = static_cast<u32>(value.size());
         put(&size, 4);
         put(value.data(), value.size());
-        return std::move(*this);
+        return *this;
     }
-    [[nodiscard]] Array<u8> take() && { return std::move(bytes_); }
+    [[nodiscard]] Array<u8> take() { return std::move(bytes_); }
 
 private:
     void put(const void* data, usize size) {
@@ -158,17 +158,20 @@ private:
 };
 
 Array<u8> compile_request(std::string_view source) {
-    return Request().u32v(1).text(source).take();
+    Request request;
+    request.u32v(1).text(source);
+    return request.take();
 }
 
 Array<u8> preview_request(std::string_view source, u64 focus, f32 time,
-                          std::vector<std::pair<std::string, f32>> parameters = {}) {
-    Request request = Request().u32v(1).text(source).u64v(focus).f32v(time).u8v(0).u32v(
-        static_cast<u32>(parameters.size()));
+                          const std::vector<std::pair<std::string, f32>>& parameters = {}) {
+    Request request;
+    request.u32v(1).text(source).u64v(focus).f32v(time).u8v(0);
+    request.u32v(static_cast<u32>(parameters.size()));
     for (const auto& [name, value] : parameters) {
-        request = std::move(request).text(name).f32v(value);
+        request.text(name).f32v(value);
     }
-    return std::move(request).take();
+    return request.take();
 }
 
 struct Diagnosed {
@@ -742,6 +745,23 @@ CY_TEST_CASE("editor animation: a playing preview runs on the engine's clock") {
         ask(&character.preview, "animation.preview.stop", Array<u8>(allocator()), reply).refused());
     CY_CHECK_EQ(text_of(reply), committed("animation_preview_stopped_v1.wire", reply));
     CY_CHECK_FALSE(decode_state(text_of(reply)).active);
+}
+
+CY_TEST_CASE("editor animation: a playing state machine runs on in whole steps") {
+    Character character;
+    Request request;
+    request.u32v(1).text(read_file(kGraph)).u64v(0).f32v(0.4F).u8v(1).u32v(1);
+    request.text("moving").f32v(1.0F);
+    Array<u8> reply(allocator());
+    CY_REQUIRE_FALSE(
+        ask(&character.preview, "animation.preview.set", request.take(), reply).refused());
+    CY_REQUIRE(character.preview.tick(0.5F).has_value());
+    // Half a second of wall time is whole sixtieths: what is left over waits for the next frame,
+    // so the machine is at most one step short of 0.9 s and never past it.
+    CY_CHECK_GT(character.preview.state().time, 0.9F - editor::kAnimationPreviewStep - 1e-4F);
+    CY_CHECK_LE(character.preview.state().time, 0.9F + 1e-4F);
+    CY_CHECK(character.preview.state().playing);
+    CY_CHECK_EQ(character.preview.state().state_name, Name::intern("walk"));
 }
 
 CY_TEST_CASE("editor animation: the character's mesh is one box per bone, bound to that bone") {

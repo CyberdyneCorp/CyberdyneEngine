@@ -1240,3 +1240,150 @@ fn lighting_panel_snapshots() {
     snapshot(&mut desk, "inspector", "editor-lighting-inspector.png");
     std::fs::remove_dir_all(&project).ok();
 }
+
+/// Answer one `animation.*` request with an engine reply over a real session.
+fn answer_animation(
+    desk: &mut Desk,
+    send: &dyn Fn(&mut Editor) -> cy_editor_protocol::RequestId,
+    reply: Vec<u8>,
+) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    desk.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = send(&mut desk.editor);
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    while desk.editor.backend.animation.pending() {
+        for message in desk.editor.runtime.pump(&mut notifications) {
+            let _ = desk.editor.backend.accept(&message);
+        }
+        std::thread::yield_now();
+    }
+}
+
+/// The animation editor over the engine's own fixtures (#29): the locomotion graph as the engine
+/// compiled it with the engine's preview of the state machine walking at 0.4 s, and the same graph
+/// with its idle-to-walk transition made a cut and the engine's refusal on that transition.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn animation_snapshots() {
+    let fixture = |name: &str| {
+        std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../src/editor_backend/tests/data")
+                .join(name),
+        )
+        .expect("the engine's animation fixture")
+    };
+    let reference = "game/animation/locomotion.cyanimgraph";
+    let source = String::from_utf8(fixture("animation_locomotion_v1.cyanimgraph")).unwrap();
+    let project =
+        std::env::temp_dir().join(format!("cy-animation-snapshot-{}", std::process::id()));
+    std::fs::create_dir_all(project.join("game/animation")).unwrap();
+    let mut desk = Desk::new();
+    desk.editor = Editor::new(Actor::human("animator"))
+        .with_project(cy_editor_services::ProjectService::new(&project));
+    desk.editor.open_document("worlds/units.cyworld").unwrap();
+    desk.specialised
+        .install_animation_catalogue(&fixture("animation_catalogue_v1.wire"))
+        .unwrap();
+    let compile = |source: String| {
+        move |editor: &mut Editor| {
+            editor
+                .backend
+                .animation
+                .compile(&editor.runtime, reference, &source)
+                .unwrap()
+                .unwrap()
+        }
+    };
+
+    std::fs::write(project.join(reference), &source).unwrap();
+    answer_animation(
+        &mut desk,
+        &compile(source.clone()),
+        fixture("animation_compile_v1.wire"),
+    );
+    let settings = cy_editor_services::animation_graph::PreviewSettings {
+        reference: reference.into(),
+        focus: 0,
+        time: 0.4,
+        playing: false,
+        parameters: std::collections::BTreeMap::from([("moving".to_owned(), 1.0)]),
+    };
+    let previewed = source.clone();
+    answer_animation(
+        &mut desk,
+        &move |editor: &mut Editor| {
+            editor
+                .backend
+                .animation
+                .preview(&editor.runtime, settings.clone(), &previewed)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("animation_preview_state_v1.wire"),
+    );
+    desk.inputs
+        .animation
+        .parameters
+        .insert("moving".into(), 1.0);
+    snapshot(
+        &mut desk,
+        "editor-animation-graphs-and-clips",
+        "editor-animation-panel.png",
+    );
+
+    // The clip on the timeline, with its two footsteps.
+    desk.inputs.animation.machine = false;
+    desk.inputs.animation.clip_node = Some(3);
+    let stop = |editor: &mut Editor| {
+        editor
+            .backend
+            .animation
+            .stop(&editor.runtime)
+            .unwrap()
+            .unwrap()
+    };
+    answer_animation(
+        &mut desk,
+        &stop,
+        fixture("animation_preview_stopped_v1.wire"),
+    );
+    desk.inputs.animation.preview_asked = Some(reference.into());
+    snapshot(
+        &mut desk,
+        "editor-animation-graphs-and-clips",
+        "editor-animation-timeline.png",
+    );
+
+    let cut = source.replacen(
+        "prop \"duration\" : \"float\" = (0.25, 0, 0, 0, 0)",
+        "prop \"duration\" : \"float\" = (0, 0, 0, 0, 0)",
+        1,
+    );
+    std::fs::write(project.join(reference), &cut).unwrap();
+    answer_animation(
+        &mut desk,
+        &compile(cut.clone()),
+        fixture("animation_compile_cut_v1.wire"),
+    );
+    snapshot(
+        &mut desk,
+        "editor-animation-graphs-and-clips",
+        "editor-animation-diagnostic.png",
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

@@ -354,8 +354,8 @@ target, or when a cut makes it current — and NOT when a blend into it complete
 
 ### A machine the engine writes: `locomotion.h`
 
-The editor cannot save an animation graph asset yet (section 8), so
-[`cy/graph/locomotion.h`](../../src/graph/include/cy/graph/locomotion.h) writes one in code, at
+The cook path has no authored graph asset yet (the editor's `.cyanimgraph`, below, is not cooked),
+so [`cy/graph/locomotion.h`](../../src/graph/include/cy/graph/locomotion.h) writes one in code, at
 cook time: `cook_locomotion_set` (section 2) compiles it and writes the cooked program a game loads. It
 builds `pose.clip`, `pose.state` and `pose.transition` nodes and passes them to `compile_pose`. This
 is not a second compiler:
@@ -377,6 +377,27 @@ duration is refused.** `die` has no outgoing transition, and its clip is `loopin
 0.25 s, `to_die` 0.30 s). `compile_locomotion` is the one call a cook makes. `LocomotionDriver` binds the eight
 parameters (four requests, four clocks) by name, and `request(state)` raises exactly one request.
 With `AnimationSystem` the clocks are the runtime's and only the four requests are the game's.
+
+### Authoring a graph in the editor (issue #29)
+
+The editor's **Animation** panel ([`editor/README.md`](../../editor/README.md#the-animation-editor))
+draws a pose graph on the shared canvas and saves it as a project `.cyanimgraph` of canonical
+`cygraph 1` text. A transition is wired from one state's `state` output into its `from` and another's
+into its `to`; that output exists so a drawn machine validates, and the compiler reads a transition's
+inputs whatever pin they leave. A clip node that names no `time_parameter` gets a clock of its own,
+`clock.<node key>`. A clip's **events** are its node's `events` property, `name@seconds` items
+separated by `; `, placed and dragged on the timeline.
+
+The engine compiles each change (`animation.compile`: `compile_pose` after `graph::validate`, plus
+authoring checks) and refuses an authored transition whose blend is not positive, on that transition,
+as `build_locomotion_graph` does. It previews on a twelve-joint mannequin
+(`cy::editor::AnimationPreview`, clips `idle`, `walk`, `run`, `wave`): either one clip sampled at the
+scrubbed time, or the state machine advanced from its entry state in sixtieths of a second with the
+author's parameters — exactly what `advance` and `evaluate` give for the same steps, which
+`integration.editor_backend_animation` checks bit for bit. The hosted runtime draws the pose skinned in
+the viewport through `SkinnedScene` on Vulkan.
+
+![The walk, previewed](../design/images/editor-animation-viewport-walk.png)
 
 ### Layers, additive, masks, sync groups, curves
 
@@ -951,13 +972,11 @@ From `src/animation/README.md`'s own table, and from the tree:
   HOST registered, so a module cannot load one itself; a requested blend cannot be interrupted by a
   program transition; there is no per-frame bone write (IK targets go through float parameters); and
   the events a frame delivers are those of its ticks, with no history.
-- **Editor** (issue #76 stage 5). The model has the pieces and the app has no animation editor.
-  `cy-editor-interface`'s `specialised` module declares `Domain::AnimationGraphsAndClips` with a
-  graph palette of the nine `pose.*` node names (`POSE_NODES`, *"names only"*, with no pins) and the
-  shared timeline surface (`specialised/timeline.rs`, whose `TrackKind::Animation` is *"An animation
-  clip on a bound skeleton"*). The desktop shell docks an **Animation** tab, but it is the pending
-  panel: *"The animation editor arrives with the animation capability."* There is no rigging
-  workspace, weight painting or retarget preview, and the editor cannot save an animation graph.
+- **Editor** (issue #76 stage 5 built the Animation panel, section 3). It previews on the engine's
+  built-in mannequin, not on a project's character: the editor imports no skeleton or skin yet. A
+  graph's authored events reach the preview's clips but are not cooked into a game's clips, the
+  `.cyanimgraph` is not a cook input yet, and the timeline has no curve editing. The skinned preview
+  runs on Vulkan only. There is no rigging workspace, weight painting or retarget preview.
 - **What the frame's skinning does not do** (issue #76 stage 3 built it, section 5): blend shapes in
   `SkinnedScene` (a mesh with active shapes is a `SkinPass`), frames in flight over one scene (a
   host that overlaps frames keeps a scene per frame), a skinned draw through a material's own vertex

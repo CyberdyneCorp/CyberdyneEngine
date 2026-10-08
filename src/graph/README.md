@@ -110,6 +110,26 @@ instead of wrapping it. The second one is why `pose.clip` carries a `loop` prope
 `ClipRef` is the whole of what a compiled program says about a clip, and until M8.d the field was
 compiled-in dead data that was always true.
 
+## The vocabulary an editor draws (issue #29)
+
+Since the animation panel the editor saves pose graphs too (`.cyanimgraph`, canonical `cygraph 1`
+text), and two things changed so a graph drawn on a canvas compiles to what was meant:
+
+- **`pose.state` has a `state` output.** A transition's `from` and `to` are inputs of type `state`, and
+  the builders wired a state's `pose` INPUT into them, which `validate` reports as a wire of the wrong
+  direction and a canvas cannot draw. The compiler reads a transition's inputs whatever pin of the
+  state they leave, so programs are unchanged; `locomotion.h` now wires from `state`, and its graph
+  validates (`integration.graph_compiler`, "graph_locomotion: the builder's graph validates against the
+  pose vocabulary").
+- **A clip that names no clock has its own.** Every clip instruction's time parameter is a clock the
+  runtime advances, and a clip node fresh from a palette names none. Interned as the empty name, every
+  such clip read one clock; now an unnamed clock is `clock.<node key>` ("graph_pose: a clip that names
+  no clock gets a clock of its own").
+
+The editor's service (`src/editor_backend/`, `animation.compile`) adds the authoring checks a program
+cannot carry — among them refusing an authored cut, as `build_locomotion_graph` does — without changing
+`compile_pose`, which still reads a zero duration as a cut for a host that asks for one.
+
 ## `src/rendering/material/` is not touched, and the anchor is why
 
 An open operation table invalidates every material cook key, and re-testing M7's closed work

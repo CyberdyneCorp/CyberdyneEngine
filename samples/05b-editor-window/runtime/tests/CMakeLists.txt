@@ -31,7 +31,8 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/test_runtime.cpp"
             "${tests_dir}/../overlay.cpp"
             "${tests_dir}/../pick_wire.cpp"
-        DEPENDENCIES cy::servers-render)
+            "${tests_dir}/../service_queue.cpp"
+        DEPENDENCIES cy::servers-render cy::abi)
 
     # The physics debug layers and the joint gizmo, rasterised into a frame from the reference
     # solver's own debug output and an authored world. No device, like the gizmo's case above.

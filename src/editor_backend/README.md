@@ -56,6 +56,22 @@ The first vertical slice supports:
   `MaterialService::set_scripts`, and are refused with `script.play.unavailable` otherwise.
   `tests/data/script_*` holds the wire the Rust editor's suites read and write.
 
+- `animation.catalogue.get`, `animation.compile`, `animation.preview.set`, `animation.preview.get`
+  and `animation.preview.stop` — the animation panel's (#29; `include/cy/editor/animation_service.h`
+  gives the payloads). The catalogue is the material catalogue's schema 3 over `cy::graph::pose`'s
+  vocabulary, with a clip node's choices the host's preview clips. A compile always completes:
+  `graph::validate`, `compile_pose`, and the authoring checks a program cannot carry (an unwired
+  transition, a cut, a missing condition, an empty state, an unknown clip, an event that does not parse
+  or lies outside its clip), then the states, transitions, clips and parameters or the diagnostics. The
+  previews reach the host's `cy::editor::AnimationPreviewRuntime` once it calls
+  `MaterialService::set_animation`, and are refused with `animation.preview.unavailable` otherwise.
+  `cy::editor::AnimationPreview` (`include/cy/editor/animation_preview.h`, built with `CY_ANIMATION`)
+  is that runtime: a twelve-joint preview character whose pose `cy::animation` evaluates — a state
+  machine advanced from its entry state in sixtieths of a second, or one clip sampled — with the events
+  each clip's node authors, and the skinning matrices a host draws it with.
+  `tests/data/animation_*` holds the wire the Rust editor's suites read and write; the suite is
+  `integration.editor_backend_animation`.
+
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of
 the live message framing.

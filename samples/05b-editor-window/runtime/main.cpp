@@ -93,6 +93,7 @@
 #    include "scene_vfx_runtime.h"
 #endif
 #include "graph_runtime.h"
+#include "service_queue.h"
 #if defined(CY_EDITOR_HAS_ANIMATION)
 #    include <cy/editor/animation_preview.h>
 #endif
@@ -324,6 +325,8 @@ struct Host {
     /// draws.
     abi::EditorServiceBackend* editor_service = nullptr;
     CyServiceSession service_session = nullptr;
+    /// Editor requests the service was too busy to take yet, submitted as it frees up.
+    PendingServiceRequests service_queue;
     editor::MaterialService* material_service = nullptr;
     CyServiceSession material_session = nullptr;
     CyServiceSession navigation_session = nullptr;
@@ -1008,6 +1011,11 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                     gameplay::play_mode_name(host.play_mode), detail);
 }
 
+CyResult submit_service(void* user, const CyServiceRequest& request) noexcept {
+    auto& host = *static_cast<Host*>(user);
+    return host.editor_service->submit(host.service_session, request);
+}
+
 void answer_service(Host& host, const runtime::EditorRequest& request) noexcept {
     if (host.editor_service == nullptr || host.service_session == nullptr) {
         (void)host.bridge->send_service_event(request.request, runtime::ServiceEventKind::Failed, 1,
@@ -1015,7 +1023,12 @@ void answer_service(Host& host, const runtime::EditorRequest& request) noexcept 
         return;
     }
     if (request.kind == runtime::EditorMessage::ServiceCancel) {
-        (void)host.editor_service->cancel(host.service_session, request.request);
+        if (host.service_queue.cancel(request.request)) {
+            (void)host.bridge->send_service_event(request.request,
+                                                  runtime::ServiceEventKind::Cancelled, 1, {});
+        } else {
+            (void)host.editor_service->cancel(host.service_session, request.request);
+        }
     } else {
         char operation[64] = {};
         if (request.operation.size() >= sizeof(operation)) {
@@ -1024,15 +1037,19 @@ void answer_service(Host& host, const runtime::EditorRequest& request) noexcept 
             return;
         }
         std::memcpy(operation, request.operation.data(), request.operation.size());
-        const CyServiceRequest submitted{sizeof(CyServiceRequest), request.schema_version,
-                                         request.request,          operation,
-                                         request.payload.data(),   request.payload.size()};
         if (host.nav_driver != nullptr) {
             host.nav_driver->editor_request(request.request,
                                             std::string_view(operation, request.operation.size()),
                                             request.payload);
         }
-        (void)host.editor_service->submit(host.service_session, submitted);
+        // A request the service is too busy to take waits its turn rather than being dropped; one
+        // it refuses outright is answered, so the editor is never left waiting.
+        if (host.service_queue.offer(request.request, request.schema_version,
+                                     std::string_view(operation, request.operation.size()),
+                                     request.payload, &submit_service, &host) != CY_RESULT_OK) {
+            (void)host.bridge->send_service_event(request.request,
+                                                  runtime::ServiceEventKind::Failed, 1, {});
+        }
     }
     // No poll here: `drain_service` answers every frame, so a request that takes several polls (a
     // bake emits one PROGRESS per tile) keeps reporting after the message that started it.
@@ -1059,6 +1076,12 @@ void drain_service(Host& host) noexcept {
     }
     (void)drain_service_events(*host.editor_service, host.service_session, *host.nav_driver,
                                kServiceEventsPerFrame, &forward_service_event, &host);
+    // The service answered what it held: what waited for it goes in now.
+    std::vector<u64> failed;
+    host.service_queue.retry(&submit_service, &host, failed);
+    for (const u64 request : failed) {
+        (void)host.bridge->send_service_event(request, runtime::ServiceEventKind::Failed, 1, {});
+    }
 }
 
 void serve_editor(Host& host) noexcept {

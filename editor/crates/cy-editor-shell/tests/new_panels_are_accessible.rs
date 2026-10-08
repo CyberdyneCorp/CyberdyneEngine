@@ -319,7 +319,10 @@ fn labelled_bounds(update: &egui::accesskit::TreeUpdate) -> Vec<(String, egui::a
     update
         .nodes
         .iter()
-        .filter_map(|(_, node)| Some((node.label()?.to_owned(), node.bounds()?)))
+        .filter_map(|(_, node)| {
+            let text = node.label().or_else(|| node.value())?;
+            Some((text.to_owned(), node.bounds()?))
+        })
         .collect()
 }
 
@@ -1962,7 +1965,7 @@ fn the_animation_panel_offers_the_engines_pose_vocabulary_and_shows_its_preview(
         "＋ Transition",
         "＋ Blend",
         "Undo",
-        "Pause",
+        "Play",
         "Stop",
         "State machine",
         "Parameters",
@@ -2028,6 +2031,8 @@ fn a_click_on_the_timelines_ruler_scrubs_the_engines_preview_of_the_clip() {
         false,
     );
     harness.inputs.animation.preview_asked = Some(ANIMATION_GRAPH.into());
+    // The idle clip, at the timeline's default hundred points a second rather than fitted.
+    harness.inputs.animation.fitted = Some((1, 2.0_f32.to_bits()));
     let size = egui::vec2(1200.0, 900.0);
     let evidence = harness.frame(ANIMATION, size, Vec::new());
     let (_, heading) = evidence

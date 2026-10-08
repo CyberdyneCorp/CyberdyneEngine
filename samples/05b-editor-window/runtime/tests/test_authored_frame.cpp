@@ -1416,8 +1416,8 @@ CY_TEST_CASE("authored native frame draws the terrain the engine evaluated for t
 #if defined(CY_EDITOR_HAS_ANIMATION)
 namespace {
 
-constexpr u32 kAnimationShotWidth = 320;
-constexpr u32 kAnimationShotHeight = 240;
+constexpr u32 kAnimationShotWidth = 480;
+constexpr u32 kAnimationShotHeight = 360;
 
 std::string animation_graph() {
     std::ifstream input(std::string(CY_TEST_PROJECT) +
@@ -1512,10 +1512,12 @@ CY_TEST_CASE("authored native frame draws the animation preview the engine posed
         ser::AuthoringSchema schema(allocator());
         CY_REQUIRE(ser::build_authoring_schema(registry, schema));
         resolve_base_worlds(worlds, schema);
+        // Three quarters on, so a leg's swing about the body's x axis shows.
         first_light::Camera view = camera();
-        view.position[1] = 1.0;
-        view.position[2] = 3.4;
-        view.forward = normalize(Vec3{0.0F, -0.04F, -1.0F});
+        view.position[0] = 2.0;
+        view.position[1] = 1.5;
+        view.position[2] = 2.9;
+        view.forward = normalize(Vec3{0.0F, 0.85F, 0.0F} - Vec3{2.0F, 1.5F, 2.9F});
 
         CY_REQUIRE(frame.render(worlds.empty, view));
         Array<u32> blank(allocator());
