@@ -1841,3 +1841,258 @@ fn the_debuggers_controls_and_gutter_are_the_registered_debug_commands() {
         removed.intents
     );
 }
+
+// --- The animation editor (#29) --------------------------------------------------------------------
+
+const ANIMATION: &str = "editor-animation-graphs-and-clips";
+const ANIMATION_GRAPH: &str = "game/animation/locomotion.cyanimgraph";
+
+/// Answer one `animation.*` request with an engine reply over a real session, the way the window
+/// does.
+fn engine_answers_animation(
+    harness: &mut Harness,
+    send: impl FnOnce(&mut Editor) -> cy_editor_protocol::RequestId,
+    reply: Vec<u8>,
+) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    harness.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = send(&mut harness.editor);
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.editor.backend.animation.pending() && std::time::Instant::now() < deadline {
+        for message in harness.editor.runtime.pump(&mut notifications) {
+            assert!(harness.editor.backend.accept(&message).is_none());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        !harness.editor.backend.animation.pending(),
+        "the engine's reply was not taken"
+    );
+    harness.runtime_ends.push(Box::new(runtime_writer));
+    harness.runtime_ends.push(Box::new(runtime_reader));
+}
+
+fn locomotion_graph() -> String {
+    String::from_utf8(engine_audio("animation_locomotion_v1.cyanimgraph")).unwrap()
+}
+
+/// A world, `source` as the locomotion graph, the engine's pose catalogue, its compile of that
+/// source, and — with `previewed` — the engine's preview of the walking state machine.
+fn animation_harness(project: &Project, source: &str, compiled: &str, previewed: bool) -> Harness {
+    std::fs::create_dir_all(project.0.join("game/animation")).unwrap();
+    std::fs::write(project.0.join(ANIMATION_GRAPH), source).unwrap();
+    let mut harness = Harness::new();
+    harness.editor = Editor::new(Actor::human("animator"))
+        .with_project(cy_editor_services::ProjectService::new(&project.0));
+    harness
+        .editor
+        .open_document("worlds/units.cyworld")
+        .unwrap();
+    harness
+        .specialised
+        .install_animation_catalogue(&engine_audio("animation_catalogue_v1.wire"))
+        .unwrap();
+    let source = source.to_owned();
+    let compile_source = source.clone();
+    engine_answers_animation(
+        &mut harness,
+        |editor| {
+            editor
+                .backend
+                .animation
+                .compile(&editor.runtime, ANIMATION_GRAPH, &compile_source)
+                .unwrap()
+                .expect("nothing else is in flight")
+        },
+        engine_audio(compiled),
+    );
+    if previewed {
+        let settings = cy_editor_services::animation_graph::PreviewSettings {
+            reference: ANIMATION_GRAPH.into(),
+            focus: 0,
+            time: 0.4,
+            playing: false,
+            parameters: std::collections::BTreeMap::from([("moving".to_owned(), 1.0)]),
+        };
+        engine_answers_animation(
+            &mut harness,
+            |editor| {
+                editor
+                    .backend
+                    .animation
+                    .preview(&editor.runtime, settings, &source)
+                    .unwrap()
+                    .expect("nothing else is in flight")
+            },
+            engine_audio("animation_preview_state_v1.wire"),
+        );
+    }
+    harness
+}
+
+#[test]
+fn the_animation_panel_offers_the_engines_pose_vocabulary_and_shows_its_preview() {
+    let project = Project::new("animation");
+    let mut harness = animation_harness(
+        &project,
+        &locomotion_graph(),
+        "animation_compile_v1.wire",
+        true,
+    );
+    let evidence = harness.frame(ANIMATION, egui::vec2(1200.0, 900.0), Vec::new());
+    for label in [
+        "Animation",
+        "＋ Clip",
+        "＋ State",
+        "＋ Transition",
+        "＋ Blend",
+        "Undo",
+        "Pause",
+        "Stop",
+        "State machine",
+        "Parameters",
+        "moving",
+    ] {
+        assert!(
+            has(&evidence, label),
+            "the panel lacks {label:?}: {:?}",
+            evidence.labels
+        );
+    }
+    for line in [
+        "Compiled: 2 state(s) (idle, walk)",
+        "Engine: state walk at 0.400 s",
+    ] {
+        assert!(
+            evidence.labels.iter().any(|label| label.starts_with(line)),
+            "no {line:?}: {:?}",
+            evidence.labels
+        );
+    }
+    // The engine previews the state machine, so the panel says so and asks for nothing.
+    assert!(harness.inputs.animation.machine);
+    assert!(evidence.intents.is_empty(), "{:?}", evidence.intents.len());
+    assert!(harness.inputs.animation.seen);
+
+    // Choosing the clip asks the engine to show the timeline's clip from its start.
+    let clicked = harness.frame(
+        ANIMATION,
+        egui::vec2(1200.0, 900.0),
+        vec![click_named(&evidence, "Clip")],
+    );
+    let scrub = clicked
+        .intents
+        .iter()
+        .find_map(|intent| match intent {
+            Intent::Invoke(command, arguments) if command == "animation.preview.scrub" => {
+                Some(arguments.clone())
+            }
+            _ => None,
+        })
+        .expect("choosing the clip previews it");
+    assert_eq!(
+        scrub
+            .get("node")
+            .and_then(cy_editor_core::value::Value::as_int),
+        Some(1),
+        "the graph's first clip"
+    );
+}
+
+#[test]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "AccessKit reports bounds in f64 points; egui takes f32"
+)]
+fn a_click_on_the_timelines_ruler_scrubs_the_engines_preview_of_the_clip() {
+    let project = Project::new("animation-scrub");
+    let mut harness = animation_harness(
+        &project,
+        &locomotion_graph(),
+        "animation_compile_v1.wire",
+        false,
+    );
+    harness.inputs.animation.preview_asked = Some(ANIMATION_GRAPH.into());
+    let size = egui::vec2(1200.0, 900.0);
+    let evidence = harness.frame(ANIMATION, size, Vec::new());
+    let (_, heading) = evidence
+        .bounds
+        .iter()
+        .find(|(label, _)| label == "Clip idle · node 1")
+        .unwrap_or_else(|| panic!("no clip heading in {:?}", evidence.labels));
+    // A hundred points a second from the ruler's left edge, past the 140-point track labels.
+    let at = egui::pos2(heading.x0 as f32 + 140.0 + 50.0, heading.y1 as f32 + 14.0);
+    let _ = harness.frame(ANIMATION, size, pointer(at, None));
+    let _ = harness.frame(ANIMATION, size, pointer(at, Some(true)));
+    let released = harness.frame(ANIMATION, size, pointer(at, Some(false)));
+    let scrub = released
+        .intents
+        .iter()
+        .find_map(|intent| match intent {
+            Intent::Invoke(command, arguments) if command == "animation.preview.scrub" => {
+                Some(arguments.clone())
+            }
+            _ => None,
+        })
+        .expect("a click on the ruler scrubs the preview");
+    assert_eq!(
+        scrub
+            .get("node")
+            .and_then(cy_editor_core::value::Value::as_int),
+        Some(1)
+    );
+    let time = scrub
+        .get("time")
+        .and_then(cy_editor_core::value::Value::as_float)
+        .unwrap();
+    assert!((time - 0.5).abs() < 0.05, "{time}");
+}
+
+#[test]
+fn a_zero_duration_transition_is_refused_on_that_transition() {
+    let project = Project::new("animation-cut");
+    let cut = locomotion_graph().replacen(
+        "prop \"duration\" : \"float\" = (0.25, 0, 0, 0, 0)",
+        "prop \"duration\" : \"float\" = (0, 0, 0, 0, 0)",
+        1,
+    );
+    let mut harness = animation_harness(&project, &cut, "animation_compile_cut_v1.wire", false);
+    let evidence = harness.frame(ANIMATION, egui::vec2(1200.0, 900.0), Vec::new());
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.contains("node 5 — animation.transition.cut")),
+        "no refusal on the transition: {:?}",
+        evidence.labels
+    );
+    assert!(
+        evidence
+            .labels
+            .iter()
+            .any(|label| label.starts_with("Does not compile: 1 error(s)")),
+        "{:?}",
+        evidence.labels
+    );
+    // A graph that does not compile is not previewed.
+    assert!(
+        !evidence.intents.iter().any(
+            |intent| matches!(intent, Intent::Invoke(command, _) if command.starts_with("animation.preview"))
+        )
+    );
+}

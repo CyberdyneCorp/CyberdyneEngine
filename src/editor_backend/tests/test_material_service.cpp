@@ -874,12 +874,13 @@ CY_TEST_CASE("editor_backend: capabilities are discoverable and schema mismatche
     CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
     CY_REQUIRE(event.payload_size >= 8U);
     CY_CHECK_EQ(read_u32(event.payload), 1U);
-    // Ten material, preview and terrain operations, the eight VFX ones, and the eight `script.*`
-    // (four for authoring and Play, four for the Play debugger and hot reload).
+    // Ten material, preview and terrain operations, the eight VFX ones, the eight `script.*`
+    // (four for authoring and Play, four for the Play debugger and hot reload), and the five
+    // `animation.*` (the vocabulary, the compiler and the preview's set, get and stop).
 #if defined(CY_EDITOR_HAS_VFX)
-    CY_CHECK_EQ(read_u32(event.payload + 4), 26U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 31U);
 #else
-    CY_CHECK_EQ(read_u32(event.payload + 4), 18U);
+    CY_CHECK_EQ(read_u32(event.payload + 4), 23U);
 #endif
 
     const CyServiceRequest too_new{sizeof(CyServiceRequest), 2, 2, "capabilities.get", nullptr, 0};

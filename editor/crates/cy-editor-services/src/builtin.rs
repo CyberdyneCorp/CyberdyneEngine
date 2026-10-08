@@ -68,6 +68,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // `crate::audio_commands`.
     crate::audio_commands::register(registry)?;
     crate::script_commands::register(registry)?;
+    crate::animation_commands::register(registry)?;
     crate::script_debug_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
     crate::settings::register(registry)?;
@@ -553,12 +554,15 @@ fn apply_sources(
     let vfx_documents = vfx_sources(transaction, forward);
     let audio_assets = audio_sources(transaction, forward);
     let script_graphs = script_sources(transaction, forward);
+    let animation_graphs =
+        domain_sources(transaction, forward, crate::animation_graph::DOMAIN_PREFIX);
     if wanted.is_empty()
         && moves.is_empty()
         && graphs.is_empty()
         && vfx_documents.is_empty()
         && audio_assets.is_empty()
         && script_graphs.is_empty()
+        && animation_graphs.is_empty()
     {
         return;
     }
@@ -586,6 +590,7 @@ fn apply_sources(
         let _ = project.put_source(&reference, source.as_deref());
     }
     restore_script_graphs(project, script_graphs);
+    restore_animation_graphs(project, animation_graphs);
     restore_audio(project, audio_assets);
 }
 
@@ -599,6 +604,42 @@ fn restore_script_graphs(
         let _ = project.put_source(&reference, source.as_deref());
         project.script_graph_changed(&reference, source.as_deref());
     }
+}
+
+/// Put animation graphs back. An undone or redone edit to the graph the engine previews previews
+/// it again, as the edit did.
+fn restore_animation_graphs(
+    project: &mut dyn cy_editor_commands::ProjectHost,
+    graphs: Vec<(String, Option<String>)>,
+) {
+    for (reference, source) in graphs {
+        let _ = project.put_source(&reference, source.as_deref());
+        project.animation_graph_changed(&reference, source.as_deref());
+    }
+}
+
+/// The sources a transaction saved under one domain prefix, with the text each must hold now.
+fn domain_sources(
+    transaction: &cy_editor_documents::transaction::Transaction,
+    forward: bool,
+    prefix: &str,
+) -> Vec<(String, Option<String>)> {
+    transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } => Some((
+                kind.strip_prefix(prefix)?.to_owned(),
+                crate::project::decode_source(if forward { after } else { before }),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Put audio assets back, and send the engine the mixer the file now says. A mixer undone out of
@@ -764,9 +805,13 @@ mod tests {
         let lighting = 1 + 4 + 1;
         // The Play debugger and hot reload (#84) add nine reads in `crate::script_debug_commands`.
         let gameplay_graphs = 1 + 5 + 9;
+        // The animation panel (#29) adds eight reads and engine requests in
+        // `crate::animation_commands`: read, compile, the preview's scrub, play, pause, parameter
+        // and stop, and the status. Its canvas and event edits are the interface's.
+        let animation = 8;
         assert_eq!(
             registry.len(),
-            earlier + audio + navigation + lighting + gameplay_graphs
+            earlier + audio + navigation + lighting + gameplay_graphs + animation
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

@@ -146,6 +146,37 @@ private:
     bool failed_ = false;
 };
 
+/// Writes a payload and keeps the first failure, so an encoder checks once.
+class Writer {
+public:
+    explicit Writer(Array<u8>& bytes) noexcept : bytes_(&bytes) {}
+
+    Writer& u8v(u8 value) noexcept { return keep(put_u8(*bytes_, value)); }
+    Writer& u32v(u32 value) noexcept { return keep(put_u32(*bytes_, value)); }
+    Writer& u64v(u64 value) noexcept { return keep(put_u64(*bytes_, value)); }
+    Writer& f32v(f32 value) noexcept { return keep(put_f32(*bytes_, value)); }
+    Writer& f64v(f64 value) noexcept {
+        u64 bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return u64v(bits);
+    }
+    Writer& vec3(Vec3 value) noexcept { return keep(put_vec3(*bytes_, value)); }
+    Writer& text(std::string_view value) noexcept { return keep(put_text(*bytes_, value)); }
+
+    [[nodiscard]] Status status() const noexcept { return status_; }
+
+private:
+    Writer& keep(const Status& result) noexcept {
+        if (status_ && !result) {
+            status_ = result;
+        }
+        return *this;
+    }
+
+    Array<u8>* bytes_;
+    Status status_ = ok();
+};
+
 /// The schema-1 failure payload every service shares: `u32 1, text code, text detail`.
 [[nodiscard]] inline Status encode_failure(Array<u8>& out, std::string_view code,
                                            std::string_view detail) noexcept {

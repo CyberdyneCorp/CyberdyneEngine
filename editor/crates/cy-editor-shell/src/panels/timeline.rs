@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_interface::shell::Shell;
 use cy_editor_interface::specialised::timeline::{
-    Key, KeyId, SectionId, TimelineSurface, Track, TrackId,
+    Key, KeyId, SectionId, TimelineSurface, Track, TrackId, TrackKind,
 };
 use cy_editor_visual::colour::{Semantic, Surface};
 use cy_editor_visual::density::TextRole;
@@ -89,6 +89,13 @@ pub(super) enum TimelineEdit {
 
 impl TimelineEdit {
     /// Apply the edit and answer the edit that undoes it. A refused edit changes nothing.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "an editor whose timeline IS its document (the sequencer) applies and undoes edits here; the animation editor turns each gesture into a command on its file instead"
+        )
+    )]
     pub(super) fn apply(self, surface: &mut TimelineSurface) -> Result<TimelineEdit> {
         match self {
             TimelineEdit::AddKey { track, time, value } => {
@@ -154,6 +161,12 @@ fn track_of(surface: &TimelineSurface, id: TrackId) -> Result<&Track> {
             "the timeline holds no track with that identity",
         )
     })
+}
+
+/// Whether a double-click on a track's lane keys it: a keyed track takes a value there, and an
+/// event track (the animation timeline's gameplay events) a point.
+fn accepts_keys(kind: TrackKind) -> bool {
+    kind.is_keyed() || kind == TrackKind::GameplayEvent
 }
 
 /// Something selected on the timeline.
@@ -463,7 +476,7 @@ fn track_row(
     );
     let additive = ui.input(|input| input.modifiers.shift);
     if lane.double_clicked()
-        && track.kind.is_keyed()
+        && accepts_keys(track.kind)
         && let Some(position) = lane.interact_pointer_pos()
     {
         let time = view

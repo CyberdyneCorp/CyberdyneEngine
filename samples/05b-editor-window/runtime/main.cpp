@@ -93,6 +93,9 @@
 #    include "scene_vfx_runtime.h"
 #endif
 #include "graph_runtime.h"
+#if defined(CY_EDITOR_HAS_ANIMATION)
+#    include <cy/editor/animation_preview.h>
+#endif
 #include "scene_audio.h"
 #include "script_runtime.h"
 #include "world_view.h"
@@ -343,6 +346,13 @@ struct Host {
     SceneAudio* audio = nullptr;
     /// When the previous frame's audio was pumped, so a frame mixes exactly the time it covered.
     f32 audio_time = -1.0F;
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    /// #29: the animation panel's preview character, evaluated by the engine and drawn skinned in
+    /// the authored frame while the panel previews.
+    editor::AnimationPreview* animation = nullptr;
+    /// When the previous frame advanced a playing preview.
+    f32 animation_time = -1.0F;
+#endif
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
     /// session that created one would create and destroy a whole backend per press of play.
@@ -1317,9 +1327,48 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     draw_gizmo(canvas, host.layout, render::GizmoHandle::Count);
 }
 
+#if defined(CY_EDITOR_HAS_ANIMATION)
+/// Advance a playing animation preview by the time this frame covers, and hand the frame the pose
+/// the engine evaluated — or nothing, once the panel stops previewing.
+[[nodiscard]] bool pose_animation_preview(Host& host, f32 time_seconds) noexcept {
+    editor::AnimationPreview* preview = host.animation;
+    if (preview == nullptr) {
+        return true;
+    }
+    const f32 seconds = host.animation_time < 0.0F ? 0.0F : time_seconds - host.animation_time;
+    host.animation_time = time_seconds;
+    if (Status ticked = preview->tick(seconds); !ticked) {
+        report("animation preview", ticked.error());
+        return false;
+    }
+    if (!preview->state().active || !host.authored_frame->skinned_preview_supported()) {
+        return static_cast<bool>(host.authored_frame->set_skinned_preview(nullptr));
+    }
+    const editor::AnimationPreviewMesh& mesh = preview->mesh();
+    SkinnedPreview drawn;
+    drawn.mesh_identity = 1;
+    drawn.positions = mesh.positions.span();
+    drawn.normals = mesh.normals.span();
+    drawn.joints = mesh.joints.span();
+    drawn.weights = mesh.weights.span();
+    drawn.indices = mesh.indices.span();
+    drawn.matrices = preview->skinning_matrices();
+    if (Status posed = host.authored_frame->set_skinned_preview(&drawn); !posed) {
+        report("animation preview", posed.error());
+        return false;
+    }
+    return true;
+}
+#endif
+
 [[nodiscard]] bool render_frame_texels(Host& host, f32 time_seconds,
                                        Span<const u32>& texels) noexcept {
     if (host.authored_frame != nullptr) {
+#if defined(CY_EDITOR_HAS_ANIMATION)
+        if (!pose_animation_preview(host, time_seconds)) {
+            return false;
+        }
+#endif
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
         if (host.scene_vfx != nullptr) {
             const f32 seconds =
@@ -1858,6 +1907,18 @@ int main(int argc, char** argv) {
         editor::NavigationService navigation_service(allocator, &nav_source);
         editor_service.set_audio(audio.authoring());
         editor_service.set_scripts(&graphs);
+#if defined(CY_EDITOR_HAS_ANIMATION)
+        // The animation panel's character (#29). Previewed only where a world is drawn, and only on
+        // a frame with skinned pipelines; elsewhere `animation.preview.set` is refused by name.
+        editor::AnimationPreview animation(allocator);
+        if (Status built = animation.initialize(); !built) {
+            report("animation preview", built.error());
+            return 1;
+        }
+        const bool previewable = view_world.loaded() && authored_frame.skinned_preview_supported();
+        editor_service.set_animation(previewable ? &animation : nullptr);
+        host.animation = previewable ? &animation : nullptr;
+#endif
         editor::CompositeEditorService composite_service(allocator);
         CyServiceSession service_session =
             open_services(composite_service, editor_service, navigation_service);

@@ -760,6 +760,79 @@ pub trait ProjectHost {
         let _ = reference;
         Outcome::new("Gameplay graph debugger unavailable")
     }
+
+    /// Save an animation graph's `.cyanimgraph` in one undoable project transaction. Issue #29.
+    fn animation_graph_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "save an animation graph",
+            "this host has no project to save it in",
+        ))
+    }
+
+    /// The engine's pose vocabulary once it has answered. Asking is what makes the editor request
+    /// it, so the first call on a fresh connection answers `None`.
+    fn animation_catalogue(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Send an animation graph to the engine's compiler. The request's identity, or `0` when it
+    /// was queued behind one still in flight.
+    fn animation_compile(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "compile an animation graph",
+            "this host has no engine animation service",
+        ))
+    }
+
+    /// Change what the engine's animation preview shows and send it, with the graph's current
+    /// text. What `change` leaves `None` keeps what the preview last showed.
+    fn animation_preview(&mut self, change: &AnimationPreviewChange) -> Result<u64> {
+        let _ = change;
+        Err(cy_editor_core::problem::Problem::new(
+            "preview an animation",
+            "this host has no engine animation service",
+        ))
+    }
+
+    /// Stop the engine's animation preview.
+    fn animation_preview_stop(&mut self) -> Result<u64> {
+        Err(cy_editor_core::problem::Problem::new(
+            "stop the animation preview",
+            "this host has no engine animation service",
+        ))
+    }
+
+    /// The engine's last compile of `reference` and its preview's state.
+    fn animation_status(&self, reference: &str) -> Outcome {
+        let _ = reference;
+        Outcome::new("Engine animation unavailable")
+    }
+
+    /// An animation graph's saved text changed — an edit, an undo or a redo. A host previewing it
+    /// sends the preview the new text, so the character follows the file. Ignored by default.
+    fn animation_graph_changed(&mut self, reference: &str, source: Option<&str>) {
+        let _ = (reference, source);
+    }
+}
+
+/// A change to what the engine's animation preview shows. Issue #29.
+///
+/// Plain data, so a command at this layer can say it: the host that holds the preview merges it
+/// into what the preview last showed. `None` keeps a field as it was.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct AnimationPreviewChange {
+    /// The project-relative `.cyanimgraph` to preview.
+    pub reference: Option<String>,
+    /// The `pose.clip` node to preview alone, or zero for the state machine.
+    pub focus: Option<u64>,
+    /// The time to show, in seconds.
+    pub time: Option<f32>,
+    /// Whether the engine plays it on.
+    pub playing: Option<bool>,
+    /// One author parameter to set: its name and value.
+    pub parameter: Option<(String, f32)>,
 }
 
 /// Result of a fingerprint-guarded source write.

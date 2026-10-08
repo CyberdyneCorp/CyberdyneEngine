@@ -16,12 +16,13 @@ namespace cy::editor {
 class TerrainPreview;
 class AudioAuthoring;
 class ScriptPlayRuntime;
+class AnimationPreviewRuntime;
 
 /// Every operation prefix `MaterialService` serves. A host that routes one binding over several
 /// services (`CompositeEditorService`) routes each of these here, so an operation this service
 /// gains is not lost to a routing table that forgot it.
-inline constexpr std::array<std::string_view, 6> kMaterialServicePrefixes{
-    "material.", "vfx.", "preview.", "terrain.", "audio.", "script."};
+inline constexpr std::array<std::string_view, 7> kMaterialServicePrefixes{
+    "material.", "vfx.", "preview.", "terrain.", "audio.", "script.", "animation."};
 
 /// One exact renderer binding named by a preview reload request.
 struct MaterialPreviewTarget {
@@ -104,12 +105,18 @@ public:
     /// the two Play operations with `script.play.unavailable`.
     void set_scripts(ScriptPlayRuntime* play) noexcept { scripts_ = play; }
 
+    /// Serve `animation.preview.*` from the host's preview character (animation_service.h).
+    /// `animation.catalogue.get` and `animation.compile` need no host. `preview` is borrowed; null
+    /// refuses the previews with `animation.preview.unavailable`.
+    void set_animation(AnimationPreviewRuntime* preview) noexcept { animation_ = preview; }
+
 private:
     Allocator* allocator_;
     MaterialPreviewRuntime* preview_runtime_;
     MaterialAuthoringRuntime* authoring_runtime_;
     AudioAuthoring* audio_ = nullptr;
     ScriptPlayRuntime* scripts_ = nullptr;
+    AnimationPreviewRuntime* animation_ = nullptr;
 };
 
 }  // namespace cy::editor

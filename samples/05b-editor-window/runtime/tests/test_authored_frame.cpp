@@ -15,6 +15,9 @@
 #    include <cy/editor/material_service.h>
 #endif
 #include <cy/editor/terrain_service.h>
+#if defined(CY_EDITOR_HAS_ANIMATION)
+#    include <cy/editor/animation_preview.h>
+#endif
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/terrain/region.h>
 #include <cy/test/test.h>
@@ -1409,6 +1412,154 @@ CY_TEST_CASE("authored native frame draws the terrain the engine evaluated for t
     }
     rhi::destroy_device(allocator(), native);
 }
+
+#if defined(CY_EDITOR_HAS_ANIMATION)
+namespace {
+
+constexpr u32 kAnimationShotWidth = 320;
+constexpr u32 kAnimationShotHeight = 240;
+
+std::string animation_graph() {
+    std::ifstream input(std::string(CY_TEST_PROJECT) +
+                            "/src/editor_backend/tests/data/animation_locomotion_v1.cyanimgraph",
+                        std::ios::binary);
+    CY_REQUIRE(input.good());
+    std::ostringstream text;
+    text << input.rdbuf();
+    return text.str();
+}
+
+/// `animation.preview.set` for the acceptance graph: the walk clip (node 3) alone, or the state
+/// machine with `moving` raised, at `time`.
+void preview_at(editor::AnimationPreview& preview, const std::string& graph, u64 focus, f32 time) {
+    std::vector<u8> request;
+    put_u32(request, 1);
+    put_u32(request, static_cast<u32>(graph.size()));
+    request.insert(request.end(), graph.begin(), graph.end());
+    for (u32 byte = 0; byte < 8; ++byte) {
+        request.push_back(static_cast<u8>((focus >> (byte * 8U)) & 0xFFU));
+    }
+    put_f32(request, time);
+    request.push_back(0);
+    put_u32(request, focus == 0 ? 1U : 0U);
+    if (focus == 0) {
+        put_u32(request, 6);
+        for (const char letter : std::string_view("moving")) {
+            request.push_back(static_cast<u8>(letter));
+        }
+        put_f32(request, 1.0F);
+    }
+    Array<u8> reply(allocator());
+    const editor::AnimationRefusal refusal = editor::answer_animation(
+        &preview, "animation.preview.set", {request.data(), request.size()}, reply);
+    CY_REQUIRE_MESSAGE(!refusal.refused(), refusal.code, ": ", refusal.detail);
+}
+
+/// What the runtime hands the frame: the character's mesh and the matrices the engine evaluated.
+SkinnedPreview drawn_preview(const editor::AnimationPreview& preview) {
+    SkinnedPreview drawn;
+    drawn.mesh_identity = 1;
+    drawn.positions = preview.mesh().positions.span();
+    drawn.normals = preview.mesh().normals.span();
+    drawn.joints = preview.mesh().joints.span();
+    drawn.weights = preview.mesh().weights.span();
+    drawn.indices = preview.mesh().indices.span();
+    drawn.matrices = preview.skinning_matrices();
+    return drawn;
+}
+
+// With CY_ANIMATION_VIEWPORT_SHOT naming a directory, photograph the previewed walk and the state
+// machine as the viewport draws them: how `docs/design/images/editor-animation-viewport-*.png`
+// are made.
+void write_animation_shot(const AuthoredFrame& frame, const char* name) {
+    const char* directory = std::getenv("CY_ANIMATION_VIEWPORT_SHOT");
+    if (directory == nullptr || directory[0] == '\0') {
+        return;
+    }
+#    if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
+    const std::string path = std::string(directory) + "/" + name;
+    render_test::Image shot(allocator());
+    CY_REQUIRE(render_test::adopt(shot, frame.pixels(), kAnimationShotWidth, kAnimationShotHeight)
+                   .has_value());
+    CY_REQUIRE(render_test::write_png(path.c_str(), shot).has_value());
+    std::fprintf(stderr, "wrote %s\n", path.c_str());
+#    else
+    (void)frame;
+    (void)name;
+    std::fprintf(stderr, "CY_ANIMATION_VIEWPORT_SHOT: this build has no PNG encoder\n");
+#    endif
+}
+
+}  // namespace
+
+// Issue #29, the animation panel: the character the engine posed is drawn skinned in the viewport,
+// a scrub redraws it in the new pose, and stopping the preview leaves the frame as it was.
+CY_TEST_CASE("authored native frame draws the animation preview the engine posed") {
+    register_backend();
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
+    {
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(kAnimationShotWidth, kAnimationShotHeight, CY_TEST_PROJECT));
+        CY_REQUIRE_MESSAGE(frame.skinned_preview_supported(),
+                           "a Vulkan frame has skinned pipelines (issue #76)");
+        BaseWorlds worlds;
+        read_base_worlds(worlds);
+        reflect::TypeRegistry registry;
+        CY_REQUIRE(reflect::register_scene_types(registry));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(registry, schema));
+        resolve_base_worlds(worlds, schema);
+        first_light::Camera view = camera();
+        view.position[1] = 1.0;
+        view.position[2] = 3.4;
+        view.forward = normalize(Vec3{0.0F, -0.04F, -1.0F});
+
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        Array<u32> blank(allocator());
+        CY_REQUIRE(blank.append(frame.pixels()));
+
+        editor::AnimationPreview preview(allocator());
+        CY_REQUIRE(preview.initialize());
+        const std::string graph = animation_graph();
+        preview_at(preview, graph, 3, 0.0F);
+        SkinnedPreview drawn = drawn_preview(preview);
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK(frame.skinned_draws() > 0U);
+        CY_CHECK(differing_pixels(blank.span(), frame.pixels()) > 1500);
+        Array<u32> contact(allocator());
+        CY_REQUIRE(contact.append(frame.pixels()));
+        Array<render::GpuInstance> instances(allocator());
+        Array<render::DrawItem> draws(allocator());
+        CY_REQUIRE(frame.publish(view, instances, draws));
+        CY_CHECK_EQ(instances.size(), 1U);
+
+        // A scrub to the passing pose: the engine's new matrices, a different picture.
+        preview_at(preview, graph, 3, 0.25F);
+        drawn = drawn_preview(preview);
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK(differing_pixels(contact.span(), frame.pixels()) > 200);
+        write_animation_shot(frame, "editor-animation-viewport-walk.png");
+
+        // The state machine blending from idle into the walk.
+        preview_at(preview, graph, 0, 0.12F);
+        drawn = drawn_preview(preview);
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        write_animation_shot(frame, "editor-animation-viewport-blend.png");
+
+        CY_REQUIRE(frame.set_skinned_preview(nullptr));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK_EQ(frame.skinned_draws(), 0U);
+        CY_CHECK(differing_pixels(blank.span(), frame.pixels()) < 16);
+    }
+    rhi::destroy_device(allocator(), native);
+}
+#endif
 
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {

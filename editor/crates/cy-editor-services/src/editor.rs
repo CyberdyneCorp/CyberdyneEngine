@@ -793,12 +793,49 @@ impl Editor {
     fn save_script_graph(&mut self, reference: &str, source: &str) -> Result<()> {
         crate::script_graph::validate_reference(reference)?;
         crate::script_graph::ScriptGraph::decode(source)?;
+        if self.save_graph_source(
+            reference,
+            source,
+            crate::script_graph::DOMAIN_PREFIX,
+            "gameplay graph",
+        )? {
+            self.reload_running_graph(reference, Some(source));
+        }
+        Ok(())
+    }
+
+    /// Save an animation graph as one transaction in the open world's history. Issue #29. A graph
+    /// the engine is previewing is previewed again from its new text.
+    fn save_animation_graph(&mut self, reference: &str, source: &str) -> Result<()> {
+        crate::animation_graph::validate_reference(reference)?;
+        crate::script_graph::ScriptGraph::decode(source)?;
+        if self.save_graph_source(
+            reference,
+            source,
+            crate::animation_graph::DOMAIN_PREFIX,
+            "animation graph",
+        )? {
+            self.preview_follows(reference, Some(source));
+        }
+        Ok(())
+    }
+
+    /// Write a graph's text and record its prior and new contents as one transaction in the open
+    /// world's history, under `prefix` and the reference. False when the file already held `source`,
+    /// which records nothing.
+    fn save_graph_source(
+        &mut self,
+        reference: &str,
+        source: &str,
+        prefix: &str,
+        what: &str,
+    ) -> Result<bool> {
         let document_id = self.workspace.active().ok_or_else(|| {
             Problem::new(
-                "save a gameplay graph",
+                format!("save a {what}"),
                 "no scene document is active for undo history",
             )
-            .with_remedy("open a world; gameplay graph edits undo in its history")
+            .with_remedy(format!("open a world; {what} edits undo in its history"))
         })?;
         let prior = if self.project.source_exists(reference) {
             Some(self.project.read_source(reference)?)
@@ -806,20 +843,17 @@ impl Editor {
             None
         };
         if prior.as_deref() == Some(source) {
-            return Ok(());
+            return Ok(false);
         }
         self.project.put_source(reference, Some(source))?;
         let recorded = (|| {
             let document = self.documents.get_mut(document_id).ok_or_else(|| {
-                Problem::new("save a gameplay graph", "the active scene document closed")
+                Problem::new(format!("save a {what}"), "the active scene document closed")
             })?;
-            document.begin(
-                format!("Save gameplay graph {reference}"),
-                self.actor.clone(),
-            );
+            document.begin(format!("Save {what} {reference}"), self.actor.clone());
             document.record(cy_editor_documents::operation::Operation::Domain {
                 node: None,
-                kind: format!("{}{reference}", crate::script_graph::DOMAIN_PREFIX),
+                kind: format!("{prefix}{reference}"),
                 before: crate::project::encode_source(prior.as_deref()),
                 after: crate::project::encode_source(Some(source)),
             })?;
@@ -829,8 +863,26 @@ impl Editor {
             let _ = self.project.put_source(reference, prior.as_deref());
             return Err(problem);
         }
-        self.reload_running_graph(reference, Some(source));
-        Ok(())
+        Ok(true)
+    }
+
+    /// THE PREVIEW FOLLOWS THE FILE: a graph the engine is previewing is sent again with its new
+    /// text after an edit, an undo or a redo, so the character shows what the file now says. A
+    /// graph undone out of existence stops the preview.
+    fn preview_follows(&mut self, reference: &str, source: Option<&str>) {
+        let Some(settings) = self.backend.animation.settings().cloned() else {
+            return;
+        };
+        if settings.reference != reference || !self.runtime.is_connected() {
+            return;
+        }
+        let _ = match source {
+            Some(source) => self
+                .backend
+                .animation
+                .preview(&self.runtime, settings, source),
+            None => self.backend.animation.stop(&self.runtime),
+        };
     }
 
     /// HOT RELOAD (#84): a graph saved while Play runs it is recompiled there and swapped in at
@@ -2033,6 +2085,88 @@ impl cy_editor_commands::ProjectHost for Editor {
 
     fn script_debug_status(&self, reference: &str) -> cy_editor_commands::Outcome {
         crate::script_debug_commands::debug_outcome(&self.backend.script, reference)
+    }
+
+    fn animation_graph_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        self.save_animation_graph(reference, source)
+    }
+
+    fn animation_catalogue(&mut self) -> Option<Vec<u8>> {
+        self.backend.animation.want();
+        self.backend.animation.catalogue().map(<[u8]>::to_vec)
+    }
+
+    fn animation_compile(&mut self, reference: &str, source: &str) -> Result<u64> {
+        let sent = self
+            .backend
+            .animation
+            .compile(&self.runtime, reference, source)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn animation_preview(
+        &mut self,
+        change: &cy_editor_commands::AnimationPreviewChange,
+    ) -> Result<u64> {
+        let mut settings = self
+            .backend
+            .animation
+            .settings()
+            .cloned()
+            .unwrap_or_default();
+        if change.time.is_none() && change.playing == Some(false) {
+            // A pause holds the pose the engine reached, not the one the editor last asked for.
+            if let Some(state) = self.backend.animation.preview_state().filter(|s| s.active) {
+                settings.time = state.time;
+            }
+        }
+        if let Some(reference) = &change.reference {
+            reference.clone_into(&mut settings.reference);
+        }
+        if settings.reference.is_empty() {
+            return Err(
+                Problem::new("change the animation preview", "nothing is previewed yet")
+                    .with_remedy("scrub or play a graph first: animation.preview.scrub"),
+            );
+        }
+        if let Some(focus) = change.focus {
+            settings.focus = focus;
+        }
+        if let Some(time) = change.time {
+            settings.time = time;
+        }
+        if let Some(playing) = change.playing {
+            settings.playing = playing;
+        }
+        if let Some((name, value)) = &change.parameter {
+            settings.parameters.insert(name.clone(), *value);
+        }
+        let source = self.project.read_source(&settings.reference)?;
+        let sent = self
+            .backend
+            .animation
+            .preview(&self.runtime, settings, &source)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn animation_preview_stop(&mut self) -> Result<u64> {
+        let sent = self.backend.animation.stop(&self.runtime)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn animation_status(&self, reference: &str) -> cy_editor_commands::Outcome {
+        let current = (!reference.is_empty() && self.project.source_exists(reference))
+            .then(|| self.project.read_source(reference).ok())
+            .flatten();
+        crate::animation_commands::status_outcome(
+            &self.backend.animation,
+            reference,
+            current.as_deref(),
+        )
+    }
+
+    fn animation_graph_changed(&mut self, reference: &str, source: Option<&str>) {
+        self.preview_follows(reference, source);
     }
 
     fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {

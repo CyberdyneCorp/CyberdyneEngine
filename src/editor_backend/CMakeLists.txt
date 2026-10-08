@@ -4,6 +4,7 @@ cy_add_module(
     ALIAS cy::editor-backend
     TYPE STATIC
     SOURCES
+        src/animation_service.cpp
         src/audio_authoring.cpp
         src/audio_service.cpp
         src/composite_service.cpp
@@ -26,6 +27,16 @@ cy_add_module(
 if(CY_VFX)
     target_link_libraries(cy_editor_backend PRIVATE cy::vfx)
     target_compile_definitions(cy_editor_backend PRIVATE CY_EDITOR_HAS_VFX=1)
+endif()
+
+# THE ANIMATION PANEL'S PREVIEW CHARACTER (#29). `animation.catalogue.get` and `animation.compile`
+# need only cy::graph's pose compiler, which every build has; the character that previews a program
+# evaluates it with the animation runtime, which `-D CY_ANIMATION=OFF` removes. PUBLIC, because a
+# host that draws the preview names `AnimationPreview` and its skeleton.
+if(CY_ANIMATION)
+    target_sources(cy_editor_backend PRIVATE src/animation_preview.cpp)
+    target_link_libraries(cy_editor_backend PUBLIC cy::animation)
+    target_compile_definitions(cy_editor_backend PUBLIC CY_EDITOR_HAS_ANIMATION=1)
 endif()
 
 if(CY_BUILD_TESTS)
@@ -75,6 +86,14 @@ if(CY_BUILD_TESTS)
             SOURCES "${tests_dir}/test_script_service.cpp"
             DEPENDENCIES cy::editor-backend cy::game-backend cy::graph cy::scene
             DEFINITIONS "CY_SCRIPT_WIRE_DIR=\"${tests_dir}/data\"")
+        # THE ANIMATION PANEL, ENGINE SIDE (#29, animation). `integration` because it reads the
+        # committed wire and evaluates the preview character's program against the runtime.
+        cy_add_test(
+            NAME editor_backend_animation
+            KIND integration
+            SOURCES "${tests_dir}/test_animation_service.cpp"
+            DEPENDENCIES cy::editor-backend cy::graph
+            DEFINITIONS "CY_ANIMATION_WIRE_DIR=\"${tests_dir}/data\"")
         cy_add_test(
             NAME editor_backend_terrain
             KIND integration

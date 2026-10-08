@@ -86,7 +86,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
-                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
+                cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader
                 cy::weather
@@ -122,7 +122,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
-                cy::rendering-pipeline cy::import cy::core-assets cy::graph-material
+                cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
                 cy::rendering-material-slang cy::shader cy::shader-slang
                 cy::weather

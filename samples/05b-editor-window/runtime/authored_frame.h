@@ -64,6 +64,25 @@ struct CameraMarker {
     Vec3 forward;
 };
 
+/// A skinned character the engine evaluated, for the frame to draw: its mesh in the bind pose and
+/// this frame's skinning matrices. The animation panel's preview (#29) is one: the matrices are
+/// `editor::AnimationPreview::skinning_matrices()`, so the frame draws exactly the pose the engine
+/// evaluated.
+struct SkinnedPreview {
+    /// Names the mesh. A new identity replaces the mesh; the same one keeps it uploaded.
+    u64 mesh_identity = 0;
+    Span<const Vec3> positions;
+    Span<const Vec3> normals;
+    /// Four joint indices and four weights per vertex.
+    Span<const u16> joints;
+    Span<const f32> weights;
+    Span<const u32> indices;
+    /// One matrix per joint: `model * inverse bind`.
+    Span<const Mat4> matrices;
+    /// Where the character stands in the world.
+    Vec3 position;
+};
+
 class AuthoredFrame {
 public:
     AuthoredFrame(Allocator& allocator, rhi::Device& device) noexcept;
@@ -82,6 +101,13 @@ public:
                                      u64 generation) noexcept;
     [[nodiscard]] Status preview(std::string_view reference,
                                  std::string_view canonical_graph) noexcept;
+    /// Draw `preview` from the next frame on, posed by its matrices; null draws none. Refused on a
+    /// device whose skinned pipelines have not run: only Vulkan has drawn them (issue #76).
+    [[nodiscard]] Status set_skinned_preview(const SkinnedPreview* preview) noexcept;
+    /// Whether this frame can draw a skinned preview at all.
+    [[nodiscard]] bool skinned_preview_supported() const noexcept { return skinned_supported_; }
+    /// The skinned draws the last frame recorded, over every pass that drew them.
+    [[nodiscard]] u32 skinned_draws() const noexcept;
     [[nodiscard]] Status render(const scene::serialization::World& world,
                                 const first_light::Camera& camera, bool editor_lighting = true,
                                 const vfx::SimulationWorld* preview = nullptr,
@@ -118,6 +144,7 @@ public:
 private:
     struct Mesh;
     struct Instance;
+    struct Skinned;
     struct Readback;
     struct MaterialVariant;
 
@@ -145,6 +172,9 @@ private:
                                          const Mat4& matrix, Vec3 eye) noexcept;
     [[nodiscard]] Status update_previous_transform(u64 identity, const Mat4& matrix, Vec3 eye,
                                                    Span<const u32> materials) noexcept;
+    [[nodiscard]] Status replace_skinned_mesh(const SkinnedPreview& preview) noexcept;
+    [[nodiscard]] Status append_skinned_preview(Vec3 eye) noexcept;
+    [[nodiscard]] const Mesh* skinned_mesh() const noexcept;
     [[nodiscard]] Status capture(u32 slot, const first_light::Camera& camera, bool editor_lighting,
                                  std::optional<f32> time_seconds) noexcept;
     void record_motion_capture(Readback& motion) noexcept;
@@ -208,6 +238,8 @@ private:
     Array<u32> motion_texels_;
 
     std::vector<std::unique_ptr<Mesh>> meshes_;
+    std::unique_ptr<Skinned> skinned_;
+    bool skinned_supported_ = false;
     u64 terrain_generation_ = 0;
     std::vector<Instance> instances_;
     std::vector<std::pair<u64, Mat4>> current_models_;

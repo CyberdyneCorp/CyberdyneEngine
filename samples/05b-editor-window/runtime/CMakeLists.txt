@@ -70,6 +70,7 @@ cy_add_module(
         world_view.cpp
     PRIVATE_DEPENDENCIES
         cy::rendering-pipeline
+        cy::rendering-skinning
         cy::weather
         cy::import
         cy::core-assets
