@@ -230,6 +230,7 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
     host_.bind_vfx_effects(scene_vfx_ != nullptr ? this : nullptr);
 #endif
     host_.game.audio = audio_;
+    host_.game.animation = animation_;
     Expected<UniquePtr<abi::BehaviourRuntime>, Error> runtime =
         make_unique<abi::BehaviourRuntime>(*allocator_, *allocator_, host_);
     if (!runtime) {
@@ -288,6 +289,7 @@ void ScriptRuntime::stop() noexcept {
     host_.bind_world(nullptr);
     host_.bind_vfx_effects(nullptr);
     host_.game.audio = nullptr;
+    host_.game.animation = nullptr;
     play_ = nullptr;
     authored_ = nullptr;
     binding_.reset();
@@ -319,6 +321,12 @@ Status ScriptRuntime::tick(gameplay::PlaySession& play, f32 dt) noexcept {
         }
     }
     return ok();
+}
+
+void ScriptRuntime::frame(f32 dt) noexcept {
+    if (runtime_) {
+        runtime_->frame_update(dt);
+    }
 }
 
 u64 ScriptRuntime::scene_node(CyEntity entity) const noexcept {

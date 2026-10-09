@@ -96,6 +96,10 @@
 #include "service_queue.h"
 #if defined(CY_EDITOR_HAS_ANIMATION)
 #    include <cy/editor/animation_preview.h>
+#    include <cy/editor/animation_rig.h>
+
+#    include "animation_assets.h"
+#    include "play_animation.h"
 #endif
 #include "scene_audio.h"
 #include "script_runtime.h"
@@ -355,6 +359,8 @@ struct Host {
     editor::AnimationPreview* animation = nullptr;
     /// When the previous frame advanced a playing preview.
     f32 animation_time = -1.0F;
+    /// Play's animation: the project's baked rigs, animated for the Swift behaviours.
+    PlayAnimation* play_animation = nullptr;
 #endif
     /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
     /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
@@ -802,7 +808,47 @@ Status tick_gameplay(void* user, gameplay::PlaySession& play, f32 dt) noexcept {
     if (Status scripted = host.scripts->tick(play, dt); !scripted) {
         return scripted;
     }
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    // The tick's animation, after the behaviours asked for it, then the frame that reads its
+    // events. See play_animation.h.
+    if (Status animated = host.play_animation->tick(dt); !animated) {
+        return animated;
+    }
+#endif
+    host.scripts->frame(dt);
     return host.graphs->tick(dt);
+}
+
+/// Load the project's baked rigs for the Play just entered and hand the behaviours their backend.
+[[nodiscard]] Status start_play_animation(Host& host) noexcept {
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    if (Status started = host.play_animation->start(*host.play); !started) {
+        return started;
+    }
+    for (const std::string& problem : host.play_animation->problems()) {
+        std::fprintf(stderr, "%s: animation rig skipped: %s\n", kTag, problem.c_str());
+    }
+    host.scripts->bind_animation(host.play_animation->backend());
+#else
+    (void)host;
+#endif
+    return ok();
+}
+
+void stop_play_animation(Host& host) noexcept {
+    host.scripts->bind_animation(nullptr);
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    host.play_animation->stop();
+#endif
+}
+
+[[nodiscard]] u32 play_rigs(const Host& host) noexcept {
+#if defined(CY_EDITOR_HAS_ANIMATION)
+    return static_cast<u32>(host.play_animation->rigs().size());
+#else
+    (void)host;
+    return 0;
+#endif
 }
 
 void answer_reload(Host& host, const runtime::EditorRequest& request) noexcept {
@@ -925,8 +971,17 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                                 entered.error().message);
                 return;
             }
+            if (Status animated = start_play_animation(host); !animated) {
+                stop_play_animation(host);
+                (void)host.play->stop();
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
+                                                animated.error().message);
+                return;
+            }
             if (Status started = host.scripts->start(*host.play, host.view_world->world());
                 !started) {
+                stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
@@ -938,6 +993,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             // Play with the reason rather than playing a silent world.
             if (Status sounding = host.audio->start_play(host.view_world->world()); !sounding) {
                 host.scripts->stop();
+                stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
@@ -955,6 +1011,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                 host.graphs->stop();
                 host.audio->stop_play();
                 host.scripts->stop();
+                stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
                                                 gameplay::play_mode_name(host.play_mode),
@@ -966,10 +1023,10 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             (void)std::snprintf(detail, sizeof(detail),
                                 "%u entities, %u bodies, %u colliders; "
                                 "%u Swift behaviour(s); %u graph instance(s); "
-                                "audio: %u source(s) on %s",
+                                "%u animation rig(s); audio: %u source(s) on %s",
                                 host.play->report().entities, host.play->report().bodies,
                                 host.play->report().colliders, host.scripts->count(),
-                                host.graphs->count(), host.audio->play_voices(),
+                                host.graphs->count(), play_rigs(host), host.audio->play_voices(),
                                 host.audio->backend());
             break;
         }
@@ -987,6 +1044,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             host.graphs->stop();
             host.audio->stop_play();
             host.scripts->stop();
+            stop_play_animation(host);
             if (Status stopped = host.play->stop(); !stopped) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
                 break;
@@ -1369,7 +1427,7 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     }
     const editor::AnimationPreviewMesh& mesh = preview->mesh();
     SkinnedPreview drawn;
-    drawn.mesh_identity = 1;
+    drawn.mesh_identity = preview->mesh_generation();
     drawn.positions = mesh.positions.span();
     drawn.normals = mesh.normals.span();
     drawn.joints = mesh.joints.span();
@@ -1933,14 +1991,22 @@ int main(int argc, char** argv) {
 #if defined(CY_EDITOR_HAS_ANIMATION)
         // The animation panel's character (#29). Previewed only where a world is drawn, and only on
         // a frame with skinned pipelines; elsewhere `animation.preview.set` is refused by name.
+        // A project's own characters are read from its cooked assets, which the bake reads too:
+        // a graph is baked into the rigs Play loads whether or not a preview can be drawn.
+        ProjectAnimationAssets animation_assets(allocator, options.project);
         editor::AnimationPreview animation(allocator);
         if (Status built = animation.initialize(); !built) {
             report("animation preview", built.error());
             return 1;
         }
+        animation.set_source(&animation_assets);
         const bool previewable = view_world.loaded() && authored_frame.skinned_preview_supported();
         editor_service.set_animation(previewable ? &animation : nullptr);
         host.animation = previewable ? &animation : nullptr;
+        editor::AnimationRigBaker animation_baker(allocator, animation_assets);
+        editor_service.set_animation_baker(&animation_baker);
+        PlayAnimation play_animation(allocator, options.project);
+        host.play_animation = &play_animation;
 #endif
         editor::CompositeEditorService composite_service(allocator);
         CyServiceSession service_session =

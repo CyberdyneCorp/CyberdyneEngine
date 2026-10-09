@@ -18,6 +18,11 @@
 #if defined(CY_EDITOR_HAS_ANIMATION)
 #    include <cy/editor/animation_preview.h>
 #endif
+#if defined(CY_EDITOR_HAS_ANIMATION) && defined(CY_EDITOR_WINDOW_TEST_PROJECT_CHARACTER)
+#    include <filesystem>
+
+#    include "play_animation_fixture.h"
+#endif
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/terrain/region.h>
 #include <cy/test/test.h>
@@ -1564,6 +1569,78 @@ CY_TEST_CASE("authored native frame draws the animation preview the engine posed
         CY_REQUIRE(frame.render(worlds.empty, view));
         CY_CHECK_EQ(frame.skinned_draws(), 0U);
         CY_CHECK(differing_pixels(blank.span(), frame.pixels()) < 16);
+    }
+    rhi::destroy_device(allocator(), native);
+}
+#endif
+
+#if defined(CY_EDITOR_HAS_ANIMATION) && defined(CY_EDITOR_WINDOW_TEST_PROJECT_CHARACTER)
+// #112's gaps: a project's own character — an FBX the importer cooked, read back through the
+// hosted runtime's `ProjectAnimationAssets` from the project's cooked directory — is posed by the
+// engine and drawn skinned with its own mesh; a scrub of its own clip redraws it in the new pose.
+CY_TEST_CASE("authored native frame draws an imported character the engine posed") {
+    register_backend();
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
+    {
+        const std::filesystem::path project =
+            cy::sample::editor_window::testing::baked_project("viewport-imported-character");
+        ProjectAnimationAssets assets(allocator(), project.string().c_str());
+        editor::AnimationPreview preview(allocator());
+        CY_REQUIRE(preview.initialize());
+        preview.set_source(&assets);
+        const editor::AnimationCharacterClip clips[] = {
+            {Name::intern("hero"), cy::sample::editor_window::testing::kClipId}};
+        editor::AnimationCharacterRequest character;
+        character.model = "characters/hero.fbx";
+        character.skeleton = cy::sample::editor_window::testing::kSkeletonId;
+        character.mesh = cy::sample::editor_window::testing::kMeshId;
+        character.clips = Span<const editor::AnimationCharacterClip>(clips, 1);
+        CY_REQUIRE(preview.set_character(character));
+        CY_REQUIRE(preview.character_skinned());
+
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(kAnimationShotWidth, kAnimationShotHeight, CY_TEST_PROJECT,
+                                    /*temporal=*/false));
+        CY_REQUIRE(frame.skinned_preview_supported());
+        BaseWorlds worlds;
+        read_base_worlds(worlds);
+        reflect::TypeRegistry registry;
+        CY_REQUIRE(reflect::register_scene_types(registry));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(registry, schema));
+        resolve_base_worlds(worlds, schema);
+        first_light::Camera view = camera();
+        view.position[0] = 0.0;
+        view.position[1] = 1.3;
+        view.position[2] = 1.6;
+        view.forward = normalize(Vec3{0.0F, 1.3F, 0.0F} - Vec3{0.0F, 1.3F, 1.6F});
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        Array<u32> blank(allocator());
+        CY_REQUIRE(blank.append(frame.pixels()));
+
+        const std::string graph(cy::sample::editor_window::testing::kGraph);
+        preview_at(preview, graph, 1, 0.0F);
+        SkinnedPreview drawn = drawn_preview(preview);
+        drawn.mesh_identity = preview.mesh_generation();
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK(frame.skinned_draws() > 0U);
+        CY_CHECK(differing_pixels(blank.span(), frame.pixels()) > 1500);
+        Array<u32> rest(allocator());
+        CY_REQUIRE(rest.append(frame.pixels()));
+        write_animation_shot(frame, "editor-animation-viewport-imported-rest.png");
+
+        // Its own clip at the end: the spine and the head have turned 45 degrees about z.
+        preview_at(preview, graph, 1, 1.0F);
+        drawn = drawn_preview(preview);
+        drawn.mesh_identity = preview.mesh_generation();
+        CY_REQUIRE(frame.set_skinned_preview(&drawn));
+        CY_REQUIRE(frame.render(worlds.empty, view));
+        CY_CHECK(differing_pixels(rest.span(), frame.pixels()) > 500);
+        write_animation_shot(frame, "editor-animation-viewport-imported-turned.png");
     }
     rhi::destroy_device(allocator(), native);
 }

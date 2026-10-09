@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cy/abi/game/animation.h>
 #include <cy/abi/game/audio.h>
 #include <cy/abi/host.h>
 #include <cy/abi/module.h>
@@ -26,7 +27,12 @@ public:
     [[nodiscard]] Status start(gameplay::PlaySession& play,
                                const scene::serialization::World& authored) noexcept;
     void stop() noexcept;
+    /// One fixed step of every behaviour.
     [[nodiscard]] Status tick(gameplay::PlaySession& play, f32 dt) noexcept;
+    /// One frame of every behaviour that has `onUpdate`: Play runs one per fixed tick, after the
+    /// tick's animation, so a behaviour reads the tick's animation events
+    /// (`Animation.events(for:)`) where a game reads them.
+    void frame(f32 dt) noexcept;
     [[nodiscard]] Expected<abi::ReloadReport, Error> reload(const char* library) noexcept;
     [[nodiscard]] bool active() const noexcept { return static_cast<bool>(runtime_); }
     [[nodiscard]] u32 count() const noexcept { return static_cast<u32>(identities_.size()); }
@@ -37,6 +43,10 @@ public:
     /// adapter, so a Swift behaviour plays the cues and buses the author sees in the mixer — and
     /// the same adapter the gameplay graphs play through. Null: unavailable.
     void bind_audio(abi::game::AudioBackend* audio) noexcept { audio_ = audio; }
+    /// What ABI 1.7's `animation_*` entries reach during Play: the adapter over Play's own
+    /// animation system and the project's baked rigs (`play_animation.h`). Bound before `start`, so
+    /// a behaviour's `onCreate` can attach an animator. Null: unavailable.
+    void bind_animation(abi::game::AnimationBackend* animation) noexcept { animation_ = animation; }
 
 private:
     [[nodiscard]] CyResult set(CyEntity entity, const char* emitter, const char* parameter,
@@ -56,6 +66,7 @@ private:
     gameplay::PlaySession* play_ = nullptr;
     const scene::serialization::World* authored_ = nullptr;
     abi::game::AudioBackend* audio_ = nullptr;
+    abi::game::AnimationBackend* animation_ = nullptr;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     SceneVfxRuntime* scene_vfx_ = nullptr;
 #endif

@@ -104,6 +104,17 @@ function(cy_editor_window_runtime_declare_tests)
                        "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
         target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                    CY_EDITOR_WINDOW_HAS_GOLDEN=1)
+        # #112's gaps: a project's imported character drawn skinned, read from its cooked
+        # directory through the hosted runtime's own reader.
+        if(CY_ANIMATION)
+            target_sources(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                           "${tests_dir}/../animation_assets.cpp")
+            target_include_directories(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                                       "${CMAKE_SOURCE_DIR}/src/editor_backend/tests")
+            target_compile_definitions(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
+                CY_EDITOR_WINDOW_TEST_PROJECT_CHARACTER=1
+                "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+        endif()
         if(CY_SHADER_SLANG)
             target_link_libraries(cy_test_smoke_editor_authored_frame_vulkan PRIVATE
                                   cy::shader-slang)
@@ -284,6 +295,27 @@ function(cy_editor_window_runtime_declare_tests)
         endif()
     endif()
 
+    # #112's gaps: a graph baked for an imported character and played by Play's animation, the
+    # events placed on the Animation panel's timeline arriving on their ticks. INTEGRATION because
+    # it imports an FBX, writes a project and runs a Play session. With the animation runtime and
+    # the importer only.
+    if(CY_ANIMATION AND TARGET cy::import)
+        cy_add_test(
+            NAME editor_window_play_animation
+            KIND integration
+            SOURCES
+                "${tests_dir}/test_play_animation.cpp"
+                "${tests_dir}/../animation_assets.cpp"
+                "${tests_dir}/../play_animation.cpp"
+            DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::animation-assets
+                         cy::game-backend-animation cy::gameplay-play cy::physics-reference
+                         cy::scene-serialization cy::scene cy::abi
+            DEFINITIONS
+                "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+        target_include_directories(cy_test_integration_editor_window_play_animation PRIVATE
+                                   "${tests_dir}/.." "${CMAKE_SOURCE_DIR}/src/editor_backend/tests")
+    endif()
+
     # #29, VISUAL SCRIPTING: the editor's unit-command graph against its Swift twin. Declared
     # wherever a Swift toolchain is, not only on macOS, because the claim is about the engine's
     # compiled program and the C ABI, neither of which is Apple's. Smoke because it builds and loads
@@ -325,6 +357,26 @@ function(cy_editor_window_runtime_declare_tests)
             add_dependencies(cy_test_smoke_editor_graph_equivalence cy_editor_twin_module)
             target_include_directories(cy_test_smoke_editor_graph_equivalence PRIVATE
                                        "${tests_dir}/..")
+            # #112's gaps: the timeline's events reaching the project's `AnimatedHero` behaviour
+            # in onUpdate, through the same twin module, which builds every project behaviour.
+            if(CY_ANIMATION AND TARGET cy::import)
+                cy_add_test(
+                    NAME editor_animation_events
+                    KIND smoke
+                    SOURCES "${tests_dir}/test_animation_events.cpp"
+                            "${tests_dir}/../script_runtime.cpp"
+                            "${tests_dir}/../animation_assets.cpp"
+                            "${tests_dir}/../play_animation.cpp"
+                    DEPENDENCIES cy::abi cy::gameplay-play cy::physics-reference
+                                 cy::scene-serialization cy::scene cy::game-backend
+                                 cy::editor-backend cy::import cy::core-assets
+                                 cy::animation-assets cy::game-backend-animation
+                    DEFINITIONS "CY_TWIN_MODULE=\"${twin_module}\""
+                                "CY_TEST_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+                add_dependencies(cy_test_smoke_editor_animation_events cy_editor_twin_module)
+                target_include_directories(cy_test_smoke_editor_animation_events PRIVATE
+                    "${tests_dir}/.." "${CMAKE_SOURCE_DIR}/src/editor_backend/tests")
+            endif()
         endif()
     endif()
 
