@@ -1370,7 +1370,129 @@ fn animation_snapshots() {
     );
 
     cut_snapshot(&mut desk, &project, &source, &fixture);
+    character_snapshot(&mut desk, &project, &fixture);
     let _ = std::fs::remove_dir_all(&project);
+}
+
+/// The hero imported into `project` as the importer leaves it, its graph and its character file.
+fn write_hero_project(project: &std::path::Path, fixture: &dyn Fn(&str) -> Vec<u8>) -> String {
+    let reference = "game/animation/hero.cyanimgraph";
+    let source = String::from_utf8(fixture("animation_hero_v1.cyanimgraph")).unwrap();
+    std::fs::create_dir_all(project.join("characters")).unwrap();
+    std::fs::write(
+        project.join("characters/hero.fbx"),
+        b"; FBX 7.4.0 project file\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("characters/hero.fbx.import"),
+        "version = 1\nimporter = \"fbx\"\n\
+         sub_asset.\"animation/hero\" = \"0000000000005e1e0000000000000002\"\n\
+         sub_asset.\"mesh/Body\" = \"0000000000005e1e0000000000000003\"\n\
+         sub_asset.\"skeleton/Hips\" = \"0000000000005e1e0000000000000001\"\n",
+    )
+    .unwrap();
+    std::fs::write(project.join(reference), &source).unwrap();
+    std::fs::write(
+        project.join("game/animation/hero.cyanimcharacter"),
+        cy_editor_services::animation_graph::format_character("characters/hero.fbx"),
+    )
+    .unwrap();
+    source
+}
+
+/// #112's gaps: the hero the project imported, chosen for its graph, played by the engine on its
+/// own clip, and baked — every reply the engine's suite wrote for that character.
+fn character_snapshot(
+    desk: &mut Desk,
+    project: &std::path::Path,
+    fixture: &dyn Fn(&str) -> Vec<u8>,
+) {
+    let reference = "game/animation/hero.cyanimgraph";
+    let source = write_hero_project(project, fixture);
+    let character = |editor: &mut Editor| {
+        let choice = cy_editor_services::animation_graph::CharacterChoice::for_model(
+            {
+                editor.asset_catalogue.refresh().unwrap();
+                editor.asset_catalogue.entries()
+            },
+            "characters/hero.fbx",
+        )
+        .unwrap();
+        editor
+            .backend
+            .animation
+            .character(&editor.runtime, choice)
+            .unwrap()
+            .unwrap()
+    };
+    answer_animation(desk, &character, fixture("animation_character_v1.wire"));
+    let compiled = source.clone();
+    answer_animation(
+        desk,
+        &move |editor: &mut Editor| {
+            editor
+                .backend
+                .animation
+                .compile(&editor.runtime, reference, &compiled)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("animation_compile_hero_v1.wire"),
+    );
+    let settings = cy_editor_services::animation_graph::PreviewSettings {
+        reference: reference.into(),
+        focus: 1,
+        time: 0.5,
+        playing: false,
+        parameters: std::collections::BTreeMap::new(),
+    };
+    let previewed = source.clone();
+    answer_animation(
+        desk,
+        &move |editor: &mut Editor| {
+            editor
+                .backend
+                .animation
+                .preview(&editor.runtime, settings.clone(), &previewed)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("animation_preview_hero_v1.wire"),
+    );
+    let baked = source.clone();
+    answer_animation(
+        desk,
+        &move |editor: &mut Editor| {
+            let choice = cy_editor_services::animation_graph::CharacterChoice::for_model(
+                editor.asset_catalogue.entries(),
+                "characters/hero.fbx",
+            )
+            .unwrap();
+            editor
+                .backend
+                .animation
+                .bake(&editor.runtime, reference, &baked, &choice)
+                .unwrap()
+                .unwrap()
+        },
+        fixture("animation_bake_v1.wire"),
+    );
+    // The hero's vocabulary: its clip is the clip node's one choice.
+    desk.specialised
+        .install_animation_catalogue(&fixture("animation_catalogue_hero_v1.wire"))
+        .unwrap();
+    desk.inputs.animation.reference = reference.into();
+    desk.inputs.animation.preview_asked = Some(reference.into());
+    desk.inputs.animation.characters = None;
+    desk.inputs.animation.loaded = None;
+    desk.inputs.animation.clip_node = Some(1);
+    desk.inputs.animation.new_event = "land".into();
+    snapshot(
+        desk,
+        "editor-animation-graphs-and-clips",
+        "editor-animation-character.png",
+    );
 }
 
 /// The locomotion graph with its idle-to-walk transition made a cut, and the engine's refusal on

@@ -815,6 +815,53 @@ pub trait ProjectHost {
     fn animation_graph_changed(&mut self, reference: &str, source: Option<&str>) {
         let _ = (reference, source);
     }
+
+    /// The project's characters: every imported model whose import cooked a skeleton, and every
+    /// clip the project's imports cooked. #29, #112.
+    fn animation_characters(&mut self) -> Result<AnimationCharacters> {
+        Err(cy_editor_core::problem::Problem::new(
+            "list the project's characters",
+            "this host has no project",
+        ))
+    }
+
+    /// The model `reference` plays on, or `None` for the built-in mannequin.
+    fn animation_character_of(&self, reference: &str) -> Result<Option<String>> {
+        let _ = reference;
+        Ok(None)
+    }
+
+    /// Play `reference` on the character imported from `model`, or on the mannequin with `None`:
+    /// written beside the graph as one undoable transaction, and sent to the engine when it
+    /// previews the graph.
+    fn animation_character_set(&mut self, reference: &str, model: Option<&str>) -> Result<()> {
+        let _ = (reference, model);
+        Err(cy_editor_core::problem::Problem::new(
+            "choose an animation graph's character",
+            "this host has no project",
+        ))
+    }
+
+    /// Ask the engine to bake `reference` for its character into the rig a game loads, which the
+    /// host writes under `.cy/cooked/animation/<rig>/` when it answers. The request's identity,
+    /// or `0` when it was queued behind one in flight.
+    fn animation_bake(&mut self, reference: &str) -> Result<u64> {
+        let _ = reference;
+        Err(cy_editor_core::problem::Problem::new(
+            "bake an animation graph",
+            "this host has no engine animation service",
+        ))
+    }
+}
+
+/// A project's characters and clips, as `animation.character.list` reports them. #112.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct AnimationCharacters {
+    /// `(model, skeleton id, mesh id)` of every imported model with a skeleton; the mesh id is
+    /// empty when the model has no mesh.
+    pub characters: Vec<(String, String, String)>,
+    /// `(name, source)` of every cooked clip, by the name a graph gives it.
+    pub clips: Vec<(String, String)>,
 }
 
 /// A change to what the engine's animation preview shows. Issue #29.

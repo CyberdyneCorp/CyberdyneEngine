@@ -45,6 +45,16 @@ pub const PREVIEW_SET: &str = "animation.preview.set";
 pub const PREVIEW_GET: &str = "animation.preview.get";
 /// Stop previewing.
 pub const PREVIEW_STOP: &str = "animation.preview.stop";
+/// Play the preview on the built-in mannequin or on one of the project's imported characters.
+pub const CHARACTER_SET: &str = "animation.character.set";
+/// Cook a graph, for its character, into the rig a game loads.
+pub const BAKE: &str = "animation.bake";
+
+/// What a graph's character file is called, beside the graph: `hero.cyanimgraph` ->
+/// `hero.cyanimcharacter`.
+pub const CHARACTER_EXTENSION: &str = "cyanimcharacter";
+/// Where the engine's bake of a graph is written, project-relative: one directory per rig.
+pub const RIG_DIRECTORY: &str = ".cy/cooked/animation";
 
 /// The wire format every `animation.*` payload begins with.
 const WIRE_FORMAT: u32 = 1;
@@ -85,6 +95,224 @@ pub fn validate_reference(reference: &str) -> Result<()> {
         )
         .with_remedy("for example game/animation/locomotion.cyanimgraph"))
     }
+}
+
+/// The character file beside a graph: the same path with the `.cyanimcharacter` extension.
+#[must_use]
+pub fn character_reference(reference: &str) -> String {
+    std::path::Path::new(reference)
+        .with_extension(CHARACTER_EXTENSION)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// The graph a character file belongs to, when `reference` is one.
+#[must_use]
+pub fn graph_of_character(reference: &str) -> Option<String> {
+    let path = std::path::Path::new(reference);
+    (path.extension().and_then(|extension| extension.to_str()) == Some(CHARACTER_EXTENSION)).then(
+        || {
+            path.with_extension(EXTENSION)
+                .to_string_lossy()
+                .replace('\\', "/")
+        },
+    )
+}
+
+/// The name a baked graph's rig is registered under, which a game attaches by: the file's stem.
+#[must_use]
+pub fn rig_name(reference: &str) -> String {
+    crate::script_graph::graph_name(reference)
+}
+
+/// The character file's text for a model: `cyanimcharacter 1` and the model's project-relative
+/// source. The mannequin has no file.
+#[must_use]
+pub fn format_character(model: &str) -> String {
+    format!("cyanimcharacter 1\nmodel \"{model}\"\n")
+}
+
+/// Read a character file: the model it names.
+///
+/// # Errors
+///
+/// Anything but `cyanimcharacter 1` and one quoted `model`.
+pub fn parse_character(text: &str) -> Result<String> {
+    let refuse = || {
+        Problem::new(
+            "read an animation graph's character",
+            "a character file is `cyanimcharacter 1` and one `model \"<source>\"` line",
+        )
+    };
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    if lines.next().map(str::trim) != Some("cyanimcharacter 1") {
+        return Err(refuse());
+    }
+    let model = lines
+        .next()
+        .and_then(|line| line.trim().strip_prefix("model "))
+        .and_then(|quoted| quoted.strip_prefix('"')?.strip_suffix('"'))
+        .filter(|model| !model.is_empty() && !model.contains('"'))
+        .ok_or_else(refuse)?;
+    if lines.next().is_some() {
+        return Err(refuse());
+    }
+    Ok(model.to_owned())
+}
+
+/// One character a project can preview: an imported model whose import cooked a skeleton.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct ProjectCharacter {
+    /// The model's project-relative source, `characters/hero.fbx`.
+    pub model: String,
+    /// The cooked skeleton's id.
+    pub skeleton: String,
+    /// The model's first mesh's id, which the engine draws skinned; empty when it has none.
+    pub mesh: String,
+}
+
+/// One clip a project's imports cooked: the name a graph gives it and its id.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ProjectClip {
+    /// The sub-asset's leaf: `animation/Walking` -> `Walking`.
+    pub name: String,
+    /// The cooked clip's id.
+    pub id: String,
+    /// The source that cooked it.
+    pub source: String,
+}
+
+/// Every imported model with a skeleton, in source order.
+#[must_use]
+pub fn project_characters(entries: &[crate::asset_catalogue::AssetEntry]) -> Vec<ProjectCharacter> {
+    let mut characters: Vec<ProjectCharacter> = Vec::new();
+    for entry in entries {
+        let (Some(name), Some(identity)) = (&entry.sub_asset, &entry.identity) else {
+            continue;
+        };
+        if name.starts_with("skeleton/")
+            && !characters.iter().any(|known| known.model == entry.source)
+        {
+            let mesh = entries
+                .iter()
+                .find(|other| {
+                    other.source == entry.source
+                        && other
+                            .sub_asset
+                            .as_deref()
+                            .is_some_and(|sub| sub.starts_with("mesh/"))
+                })
+                .and_then(|other| other.identity.clone())
+                .unwrap_or_default();
+            characters.push(ProjectCharacter {
+                model: entry.source.clone(),
+                skeleton: identity.clone(),
+                mesh,
+            });
+        }
+    }
+    characters.sort_by(|a, b| a.model.cmp(&b.model));
+    characters
+}
+
+/// Every clip the project's imports cooked, by the name a graph gives it, in name order.
+#[must_use]
+pub fn project_clips(entries: &[crate::asset_catalogue::AssetEntry]) -> Vec<ProjectClip> {
+    let mut clips: Vec<ProjectClip> = entries
+        .iter()
+        .filter_map(|entry| {
+            let leaf = entry.sub_asset.as_deref()?.strip_prefix("animation/")?;
+            Some(ProjectClip {
+                name: leaf.to_owned(),
+                id: entry.identity.clone()?,
+                source: entry.source.clone(),
+            })
+        })
+        .collect();
+    clips.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.source.cmp(&b.source)));
+    clips
+}
+
+/// What the engine is asked to play: the mannequin (the default, every field empty) or a project
+/// character with every clip the project has, which the engine checks against its skeleton.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct CharacterChoice {
+    /// The model's project-relative source; empty for the mannequin.
+    pub model: String,
+    /// The cooked skeleton's id; empty for the mannequin.
+    pub skeleton: String,
+    /// The skinned mesh's id, or empty to draw one box per bone.
+    pub mesh: String,
+    /// `(name, id)` of every clip offered.
+    pub clips: Vec<(String, String)>,
+}
+
+impl CharacterChoice {
+    /// The project character imported from `model`, with every clip the project has.
+    ///
+    /// # Errors
+    ///
+    /// When no import of `model` cooked a skeleton.
+    pub fn for_model(entries: &[crate::asset_catalogue::AssetEntry], model: &str) -> Result<Self> {
+        let character = project_characters(entries)
+            .into_iter()
+            .find(|character| character.model == model)
+            .ok_or_else(|| {
+                Problem::new(
+                    format!("play an animation graph on {model}"),
+                    "no import of that model cooked a skeleton",
+                )
+                .with_remedy(
+                    "import a rigged FBX, then choose it; animation.character.list lists them",
+                )
+            })?;
+        Ok(Self {
+            model: character.model,
+            skeleton: character.skeleton,
+            mesh: character.mesh,
+            clips: project_clips(entries)
+                .into_iter()
+                .map(|clip| (clip.name, clip.id))
+                .collect(),
+        })
+    }
+
+    /// Whether this is the built-in mannequin.
+    #[must_use]
+    pub fn is_mannequin(&self) -> bool {
+        self.skeleton.is_empty()
+    }
+
+    fn write(&self, out: &mut Writer) {
+        out.text(&self.model);
+        out.text(&self.skeleton);
+        out.text(&self.mesh);
+        out.u32(u32::try_from(self.clips.len()).unwrap_or(u32::MAX));
+        for (name, id) in &self.clips {
+            out.text(name);
+            out.text(id);
+        }
+    }
+}
+
+/// The `animation.character.set` request.
+#[must_use]
+pub fn character_payload(choice: &CharacterChoice) -> Vec<u8> {
+    let mut out = Writer::new();
+    out.u32(WIRE_FORMAT);
+    choice.write(&mut out);
+    out.finish()
+}
+
+/// The `animation.bake` request: the rig's name, the graph's text and its character.
+#[must_use]
+pub fn bake_payload(rig: &str, source: &str, choice: &CharacterChoice) -> Vec<u8> {
+    let mut out = Writer::new();
+    out.u32(WIRE_FORMAT);
+    out.text(rig);
+    out.text(source);
+    choice.write(&mut out);
+    out.finish()
 }
 
 /// An empty animation graph named after its file. A pose graph is granted nothing: it reads no
@@ -503,6 +731,118 @@ impl PreviewState {
     }
 }
 
+/// The character the engine's preview plays, as it answered `animation.character.set`.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct PlayedCharacter {
+    /// The model it was imported from; empty for the mannequin.
+    pub model: String,
+    /// Whether it is a project's own.
+    pub project: bool,
+    /// Its skeleton's joints.
+    pub joints: u32,
+    /// Whether it is drawn with its skin rather than one box per bone.
+    pub skinned: bool,
+    /// `(name, seconds, looping)` of every clip it took.
+    pub clips: Vec<(String, f32, bool)>,
+    /// `(name, why)` of every clip it refused.
+    pub refused: Vec<(String, String)>,
+}
+
+impl PlayedCharacter {
+    /// Decode an `animation.character.set` reply.
+    ///
+    /// # Errors
+    ///
+    /// Another format, a truncated reply, or bytes left over.
+    pub fn decode(payload: &[u8]) -> Result<Self> {
+        let action = "read the engine's animation character";
+        let mut reader = Reader::new(payload);
+        expect_format(&mut reader, action)?;
+        let mut played = Self {
+            model: reader.text()?,
+            project: reader.u8()? != 0,
+            joints: reader.u32()?,
+            skinned: reader.u8()? != 0,
+            ..Self::default()
+        };
+        for _ in 0..reader.u32()? {
+            played
+                .clips
+                .push((reader.text()?, reader.f32()?, reader.u8()? != 0));
+        }
+        for _ in 0..reader.u32()? {
+            played.refused.push((reader.text()?, reader.text()?));
+        }
+        finished(&reader, action)?;
+        Ok(played)
+    }
+
+    /// One line a person reads about it.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let who = if self.project {
+            self.model.clone()
+        } else {
+            "the mannequin".to_owned()
+        };
+        let refused = if self.refused.is_empty() {
+            String::new()
+        } else {
+            format!(", {} refused", self.refused.len())
+        };
+        format!(
+            "{who}: {} joint(s), {} clip(s){refused}",
+            self.joints,
+            self.clips.len()
+        )
+    }
+}
+
+/// The engine's answer to an `animation.bake`.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct BakeReport {
+    /// Whether the rig was cooked; false when the graph has an error.
+    pub baked: bool,
+    /// `(path in the rig's directory, bytes)` of every file to write.
+    pub files: Vec<(String, Vec<u8>)>,
+    /// What the compiler and the authoring checks said.
+    pub diagnostics: Vec<CompileDiagnostic>,
+}
+
+impl BakeReport {
+    /// Decode an `animation.bake` reply.
+    ///
+    /// # Errors
+    ///
+    /// Another format, a truncated reply, a path that would leave the rig's directory, or bytes
+    /// left over.
+    pub fn decode(payload: &[u8]) -> Result<Self> {
+        let action = "read the engine's animation bake";
+        let mut reader = Reader::new(payload);
+        expect_format(&mut reader, action)?;
+        let mut report = Self {
+            baked: reader.u8()? != 0,
+            ..Self::default()
+        };
+        for _ in 0..reader.u32()? {
+            let path = reader.text()?;
+            let inside = std::path::Path::new(&path)
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)));
+            if path.is_empty() || !inside {
+                return Err(Problem::new(
+                    action,
+                    format!("the engine named a file outside the rig: {path:?}"),
+                ));
+            }
+            report.files.push((path, reader.bytes()?));
+        }
+        report.diagnostics = crate::script_graph::read_diagnostics(&mut reader)?;
+        finished(&reader, action)?;
+        Ok(report)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,6 +947,147 @@ mod tests {
             "a b.cyanimgraph",
         ] {
             assert!(validate_reference(bad).is_err(), "{bad}");
+        }
+    }
+
+    /// The hero's import records, as the importer leaves them, with the engine suite's ids.
+    fn hero_entries() -> Vec<crate::asset_catalogue::AssetEntry> {
+        let entry =
+            |source: &str, sub: Option<&str>, id: &str| crate::asset_catalogue::AssetEntry {
+                path: sub.map_or_else(|| source.to_owned(), |sub| format!("{source}#{sub}")),
+                kind: String::new(),
+                fingerprint: String::new(),
+                identity: Some(id.to_owned()),
+                source: source.to_owned(),
+                sub_asset: sub.map(str::to_owned),
+            };
+        vec![
+            entry(
+                "characters/hero.fbx",
+                None,
+                "0000000000005e1e0000000000000000",
+            ),
+            entry(
+                "characters/hero.fbx",
+                Some("animation/hero"),
+                "0000000000005e1e0000000000000002",
+            ),
+            entry(
+                "characters/hero.fbx",
+                Some("mesh/Body"),
+                "0000000000005e1e0000000000000003",
+            ),
+            entry(
+                "characters/hero.fbx",
+                Some("skeleton/Hips"),
+                "0000000000005e1e0000000000000001",
+            ),
+            entry(
+                "props/crate.obj",
+                Some("mesh/Crate"),
+                "00000000000000000000000000000009",
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_project_character_is_a_model_whose_import_cooked_a_skeleton() {
+        let entries = hero_entries();
+        let characters = project_characters(&entries);
+        assert_eq!(characters.len(), 1, "the crate has a mesh and no skeleton");
+        assert_eq!(characters[0].model, "characters/hero.fbx");
+        assert_eq!(characters[0].mesh, "0000000000005e1e0000000000000003");
+        let clips = project_clips(&entries);
+        assert_eq!(clips.len(), 1);
+        assert_eq!(
+            clips[0].name, "hero",
+            "the sub-asset's leaf, not the stack's name"
+        );
+        assert!(CharacterChoice::for_model(&entries, "props/crate.obj").is_err());
+        assert!(CharacterChoice::default().is_mannequin());
+    }
+
+    #[test]
+    fn the_character_request_is_the_one_the_engine_plays() {
+        // The engine's suite plays this request on the imported hero and commits it; the editor
+        // writes it from the project's import records, byte for byte.
+        let choice = CharacterChoice::for_model(&hero_entries(), "characters/hero.fbx").unwrap();
+        assert_eq!(
+            character_payload(&choice),
+            engine_fixture("animation_character_request_v1.wire")
+        );
+        let source = String::from_utf8(engine_fixture("animation_hero_v1.cyanimgraph")).unwrap();
+        assert_eq!(rig_name("game/animation/hero.cyanimgraph"), "hero");
+        assert_eq!(
+            bake_payload("hero", &source, &choice),
+            engine_fixture("animation_bake_request_v1.wire")
+        );
+    }
+
+    #[test]
+    fn the_engines_character_and_bake_replies_decode() {
+        let played =
+            PlayedCharacter::decode(&engine_fixture("animation_character_v1.wire")).unwrap();
+        assert!(played.project);
+        assert_eq!(played.model, "characters/hero.fbx");
+        assert_eq!(played.joints, 3);
+        assert!(played.skinned);
+        assert_eq!(played.clips.len(), 1);
+        assert_eq!(played.clips[0].0, "hero");
+        assert!(played.refused.is_empty());
+        assert!(played.describe().contains("3 joint(s)"));
+
+        let baked = BakeReport::decode(&engine_fixture("animation_bake_v1.wire")).unwrap();
+        assert!(baked.baked);
+        let paths: Vec<&str> = baked.files.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(paths, ["clips/0.cyasset", "program.cyasset", "rig.cyrig"]);
+        let manifest = String::from_utf8(baked.files[2].1.clone()).unwrap();
+        assert!(
+            manifest.starts_with("cyrig 1\nrig \"hero\"\n"),
+            "{manifest}"
+        );
+        assert!(
+            manifest.contains("clip \"hero\" \"clips/0.cyasset\""),
+            "{manifest}"
+        );
+        assert_eq!(&baked.files[0].1[..6], b"CYCOOK");
+    }
+
+    #[test]
+    fn a_bake_that_names_a_file_outside_its_rig_is_refused() {
+        let mut out = Writer::new();
+        out.u32(WIRE_FORMAT);
+        out.u8(1);
+        out.u32(1);
+        out.text("../escape.cyasset");
+        out.bytes(b"x");
+        out.u32(0);
+        assert!(BakeReport::decode(&out.finish()).is_err());
+    }
+
+    #[test]
+    fn a_graphs_character_lives_beside_it() {
+        assert_eq!(
+            character_reference("game/animation/hero.cyanimgraph"),
+            "game/animation/hero.cyanimcharacter"
+        );
+        assert_eq!(
+            graph_of_character("game/animation/hero.cyanimcharacter").as_deref(),
+            Some("game/animation/hero.cyanimgraph")
+        );
+        assert!(graph_of_character("game/animation/hero.cyanimgraph").is_none());
+        let text = format_character("characters/hero.fbx");
+        assert_eq!(text, "cyanimcharacter 1\nmodel \"characters/hero.fbx\"\n");
+        assert_eq!(parse_character(&text).unwrap(), "characters/hero.fbx");
+        for bad in [
+            "",
+            "cyanimcharacter 2\nmodel \"a.fbx\"\n",
+            "cyanimcharacter 1\n",
+            "cyanimcharacter 1\nmodel a.fbx\n",
+            "cyanimcharacter 1\nmodel \"\"\n",
+            "cyanimcharacter 1\nmodel \"a.fbx\"\nmodel \"b.fbx\"\n",
+        ] {
+            assert!(parse_character(bad).is_err(), "{bad:?}");
         }
     }
 }

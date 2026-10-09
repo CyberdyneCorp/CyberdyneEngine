@@ -15,6 +15,12 @@
 //! one previewed, or the clip node selected on the canvas — with one event track per event name;
 //! adding, dragging and deleting a key there are `animation.event.add`, `.move` and `.remove`.
 //! Nothing here evaluates a pose.
+//!
+//! THE CHARACTER is chosen in the panel's character row: the built-in mannequin or a model the
+//! project imported with a skeleton (`animation.character.set`, one undoable transaction). The
+//! engine loads the model's cooked skeleton, mesh and clips, names any clip it refused, and the
+//! palette's clip choices become that character's. **Bake** (`animation.bake`) cooks the graph for
+//! its character into the rig a game loads, the timeline's events in its clips.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -29,7 +35,8 @@ use cy_editor_interface::specialised::graph::{GraphCanvas, Layout, NodeKey};
 use cy_editor_interface::specialised::script;
 use cy_editor_interface::specialised::timeline::{TimelineSurface, TrackKind};
 use cy_editor_services::animation_graph::{
-    CLIP_NODE, CompileReport, NO_STATE, PreviewState, validate_reference,
+    BakeReport, CLIP_NODE, CompileReport, NO_STATE, PlayedCharacter, PreviewState, RIG_DIRECTORY,
+    rig_name, validate_reference,
 };
 use cy_editor_services::script_graph::{CompileDiagnostic, ScriptGraph, Severity};
 use cy_editor_services::{AssetCatalogueService, MaterialCatalogueState};
@@ -73,6 +80,9 @@ pub struct AnimationInputs {
     /// length's bits. Showing something else fits the zoom to it once; after that the zoom is the
     /// author's.
     pub fitted: Option<(u64, u32)>,
+    /// The project's characters' models, looked up when the panel first draws and on Refresh:
+    /// listing them walks the project's import records, which a frame must not do.
+    pub characters: Option<Vec<String>>,
 }
 
 impl Default for AnimationInputs {
@@ -92,6 +102,7 @@ impl Default for AnimationInputs {
             parameters: BTreeMap::new(),
             view: TimelineView::default(),
             fitted: None,
+            characters: None,
         }
     }
 }
@@ -110,6 +121,12 @@ pub(crate) struct Target {
     problem: Option<String>,
     connected: bool,
     pending: bool,
+    /// The model the graph plays on, from its character file; `None` for the mannequin.
+    model: Option<String>,
+    /// The character the engine's preview plays.
+    played: Option<PlayedCharacter>,
+    /// The engine's last bake of this graph.
+    bake: Option<BakeReport>,
 }
 
 impl Target {
@@ -142,7 +159,11 @@ impl SpecialisedTool for AnimationTool {
         "animation.preview.pause",
         "animation.preview.parameter",
         "animation.preview.stop",
+        "animation.character.list",
+        "animation.character.set",
     ];
+    /// The bake reaches the engine and writes the project's cooked rig, which undo does not reverse.
+    const OPERATIONS: &'static [&'static str] = &["animation.bake"];
 
     type Target = Target;
 
@@ -195,6 +216,13 @@ impl SpecialisedTool for AnimationTool {
         let connected = panels.editor.runtime.is_connected();
         ask_for_compile(panels, &reference, &source, report.as_ref());
         ask_for_preview(panels, &reference, &graph, report.as_ref(), previewed);
+        if panels.inputs.animation.characters.is_none() {
+            panels.inputs.animation.characters = Some(project_models(panels));
+        }
+        let model = panels
+            .editor
+            .animation_character_model(&reference)
+            .unwrap_or_default();
         let requests = &panels.editor.backend.animation;
         Some(Target {
             graph,
@@ -203,6 +231,9 @@ impl SpecialisedTool for AnimationTool {
             problem: requests.problem().map(str::to_owned),
             connected,
             pending: requests.pending(),
+            model,
+            played: requests.played_character().cloned(),
+            bake: requests.bake_report(&reference).cloned(),
             reference,
             source,
         })
@@ -231,6 +262,7 @@ impl SpecialisedTool for AnimationTool {
             status(ui, frame.shell, Semantic::Error, problem);
         }
         toolbar(frame, ui, &target);
+        character_bar(frame, ui, &target);
         preview_bar(frame, ui, &target, canvas);
         let height = (ui.available_height() * 0.5).max(260.0);
         ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
@@ -413,6 +445,122 @@ fn compile_line(target: &Target) -> (Semantic, String) {
         ),
         _ if target.pending => (Semantic::Active, "Compiling…".into()),
         _ => (Semantic::Neutral, "Not compiled yet".into()),
+    }
+}
+
+/// The models of the project's imported characters, or none when its imports cannot be read.
+fn project_models(panels: &mut Panels<'_>) -> Vec<String> {
+    panels
+        .editor
+        .list_animation_characters()
+        .map(|found| {
+            found
+                .characters
+                .into_iter()
+                .map(|(model, _, _)| model)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The character the graph plays on, what the engine made of it, and the bake.
+fn character_bar(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
+    const MANNEQUIN: &str = "Mannequin (built in)";
+    let models = frame
+        .inputs
+        .animation
+        .characters
+        .clone()
+        .unwrap_or_default();
+    ui.horizontal(|ui| {
+        ui.label(secondary(frame.shell, "Character"));
+        let shown = target.model.as_deref().unwrap_or(MANNEQUIN).to_owned();
+        let mut chosen = target.model.clone();
+        egui::ComboBox::from_id_salt("animation-character")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut chosen, None, MANNEQUIN);
+                for model in &models {
+                    ui.selectable_value(&mut chosen, Some(model.clone()), model.as_str());
+                }
+            })
+            .response
+            .on_hover_text(
+                "What the graph plays on: the built-in mannequin, or a model this project \
+                 imported with a skeleton. Its clips become the clip node's choices.",
+            );
+        if chosen != target.model {
+            invoke(
+                frame,
+                "animation.character.set",
+                with_reference(target)
+                    .with("model", Value::Text(chosen.clone().unwrap_or_default())),
+            );
+        }
+        if ui
+            .button("Refresh")
+            .on_hover_text("Look at the project's imports again")
+            .clicked()
+        {
+            frame.inputs.animation.characters = None;
+        }
+        let bakeable = target.connected
+            && target.model.is_some()
+            && target
+                .report
+                .as_ref()
+                .is_some_and(|(current, report)| *current && report.compiled);
+        if ui
+            .add_enabled(bakeable, egui::Button::new("Bake"))
+            .on_hover_text(format!(
+                "Cook the graph for its character into the rig a game loads, the timeline's \
+                 events in its clips: {RIG_DIRECTORY}/{}",
+                rig_name(&target.reference)
+            ))
+            .on_disabled_hover_text(
+                "The engine bakes a graph that compiles, for an imported character",
+            )
+            .clicked()
+        {
+            invoke(frame, "animation.bake", with_reference(target));
+        }
+    });
+    if let Some(played) = &target.played {
+        let role = if played.refused.is_empty() {
+            Semantic::Active
+        } else {
+            Semantic::Warning
+        };
+        status(
+            ui,
+            frame.shell,
+            role,
+            &format!("Engine plays {}", played.describe()),
+        );
+        for (clip, why) in &played.refused {
+            ui.label(secondary(frame.shell, format!("Refused {clip}: {why}")));
+        }
+    }
+    if let Some(bake) = &target.bake {
+        let (role, line) = if bake.baked {
+            (
+                Semantic::Live,
+                format!(
+                    "Baked rig {}: {} file(s)",
+                    rig_name(&target.reference),
+                    bake.files.len()
+                ),
+            )
+        } else {
+            (
+                Semantic::Error,
+                format!(
+                    "Not baked: {} diagnostic(s) on the graph",
+                    bake.diagnostics.len()
+                ),
+            )
+        };
+        status(ui, frame.shell, role, &line);
     }
 }
 
@@ -1105,6 +1253,9 @@ mod tests {
             problem: None,
             connected: true,
             pending: false,
+            model: None,
+            played: None,
+            bake: None,
         }
     }
 

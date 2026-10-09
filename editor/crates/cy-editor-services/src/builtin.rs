@@ -816,8 +816,10 @@ mod tests {
         let gameplay_graphs = 1 + 5 + 9;
         // The animation panel (#29) adds eight reads and engine requests in
         // `crate::animation_commands`: read, compile, the preview's scrub, play, pause, parameter
-        // and stop, and the status. Its canvas and event edits are the interface's.
-        let animation = 8;
+        // and stop, and the status. Its canvas and event edits are the interface's. A project's
+        // own characters (#112's gaps) add the character list, the undoable character choice and
+        // the bake.
+        let animation = 8 + 3;
         assert_eq!(
             registry.len(),
             earlier + audio + navigation + lighting + gameplay_graphs + animation
