@@ -352,6 +352,20 @@ void print_persistence(const World::PersistenceReport& report) {
         report.samples_compared);
 }
 
+/// One device timing as a CSV cell: empty when the device measured nothing — or, for the water's
+/// pictures, when none were drawn — because zero would read as work that cost nothing.
+struct GpuCell {
+    char text[32] = {};
+};
+
+[[nodiscard]] GpuCell gpu_cell(bool measured, f64 milliseconds) noexcept {
+    GpuCell cell;
+    if (measured) {
+        std::snprintf(cell.text, sizeof(cell.text), "%.4f", milliseconds);
+    }
+    return cell;
+}
+
 /// The budget curve M10 tasks.md 7.3 asks for: every frame of the cycle, per producer, in
 /// milliseconds. A CSV rather than a summary, because "measured as a curve across the cycle rather
 /// than asserted at one time of day" is a request for every point and not for a maximum.
@@ -367,7 +381,7 @@ void print_persistence(const World::PersistenceReport& report) {
                  "frame,day_fraction,sun_elevation_degrees,precipitation_mm_per_hour,weather_ms,"
                  "water_ms,ocean_ms,sky_ms,terrain_shade_ms,foliage_ms,producers_ms,"
                  "stage_build_ms,stage_submit_ms,frame_ms,field_points,field_throttled,"
-                 "plants_drawn,stars_drawn,triangles\n");
+                 "plants_drawn,stars_drawn,triangles,gpu_ms,water_gpu_ms\n");
     for (usize frame = 0; frame < costs.size(); ++frame) {
         const FrameCosts& cost = costs[frame];
         const StageReport& drawn = stage[frame];
@@ -375,7 +389,7 @@ void print_persistence(const World::PersistenceReport& report) {
         std::fprintf(
             file,
             "%llu,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%llu,%u,%u,%u,"
-            "%u\n",
+            "%u,%s,%s\n",
             static_cast<unsigned long long>(frame), static_cast<double>(day[frame]),
             static_cast<double>(sun_elevation[frame]), static_cast<double>(rain[frame]),
             cost.weather_ms, cost.water_ms, cost.ocean_ms, cost.sky_ms, cost.terrain_shade_ms,
@@ -383,7 +397,9 @@ void print_persistence(const World::PersistenceReport& report) {
             static_cast<unsigned long long>(cost.field_points),
             cost.field_publication_throttled ? 1U : 0U, drawn.plants_drawn, drawn.stars_drawn,
             drawn.sky_triangles + drawn.terrain_triangles + drawn.water_triangles +
-                drawn.foliage_triangles);
+                drawn.foliage_triangles,
+            gpu_cell(drawn.gpu_measured, drawn.gpu_ms).text,
+            gpu_cell(drawn.gpu_measured && drawn.water_shaded, drawn.water_gpu_ms).text);
     }
     (void)std::fclose(file);
     return true;
@@ -522,6 +538,45 @@ void print_hour(u64 frame, const WorldState& state) {
     return ok();
 }
 
+/// THE DEVICE'S OWN TIME, from the frame's timestamps: the whole frame and the water's two
+/// pictures, mean and worst. `stage_submit_ms` is the processor waiting for the device and says
+/// nothing about which pass the device spent it in; #77's cost was two passes reading the world's
+/// streams across the bus, and this is the line that shows it. Says so when the device measured
+/// nothing rather than printing zeroes.
+void print_device_time(const Take& take) {
+    f64 frame_mean = 0.0;
+    f64 frame_worst = 0.0;
+    f64 water_mean = 0.0;
+    f64 water_worst = 0.0;
+    usize measured = 0;
+    bool water_drawn = false;
+    for (const StageReport& drawn : take.drawn.span()) {
+        if (!drawn.gpu_measured) {
+            continue;
+        }
+        ++measured;
+        water_drawn = water_drawn || drawn.water_shaded;
+        frame_mean += drawn.gpu_ms;
+        water_mean += drawn.water_gpu_ms;
+        frame_worst = drawn.gpu_ms > frame_worst ? drawn.gpu_ms : frame_worst;
+        water_worst = drawn.water_gpu_ms > water_worst ? drawn.water_gpu_ms : water_worst;
+    }
+    if (measured == 0) {
+        std::printf("  device time: not measured (no frame drawn, or no timestamp queries)\n");
+        return;
+    }
+    const auto count = static_cast<f64>(measured);
+    std::printf("  device time over %llu frames: %.2f ms mean, %.2f ms worst",
+                static_cast<unsigned long long>(measured), frame_mean / count, frame_worst);
+    if (water_drawn) {
+        std::printf(
+            "; the water's refraction and reflection pictures %.2f ms mean, %.2f ms worst\n",
+            water_mean / count, water_worst);
+    } else {
+        std::printf("; water shading off, so no water pictures were drawn\n");
+    }
+}
+
 /// The three numbers a reader wants from the curve, and where the worst frame was.
 void print_budget(const Take& take) {
     f64 worst = 0.0;
@@ -543,6 +598,7 @@ void print_budget(const Take& take) {
     std::printf("  %.2f ms best, %.2f ms mean, %.2f ms worst (frame %llu, sun %+.1f deg)\n", best,
                 mean, worst, static_cast<unsigned long long>(worst_frame),
                 take.sun.empty() ? 0.0 : static_cast<double>(take.sun[worst_frame]));
+    print_device_time(take);
     // A BUDGET HELD BY DROPPING WORK IS NOT A BUDGET HELD, so the one lever in this world that
     // actually throttles says so on its own line rather than only in a column. Weather defers a
     // field publication whose lattice would exceed the tick's allowance, and a frame that published

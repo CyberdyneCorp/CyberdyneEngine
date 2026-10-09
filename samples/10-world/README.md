@@ -368,8 +368,31 @@ band-limited by each pixel's footprint so that a distant shallow does not turn t
 
 `--no-water-shading` draws the frame as it was before: 192 of 192 frames of a day compare
 byte-identical against a build of the tree before the change, and the authoritative digest does not
-move (`openspec/changes/add-water-shading/evidence/`). The two passes cost about 1.8 ms of
-`stage_submit_ms` at the median on the loaded Linux host they were measured on.
+move (`openspec/changes/add-water-shading/evidence/`).
+
+**What the two pictures cost, and why it was more than it should have been (#77).** Each picture
+redraws the world, so each reads the world's streams again: about sixteen megabytes of terrain
+positions and colours, plant proxies, sky, stars and sea. Until #77 those streams were in `Upload`
+memory, which on a discrete GPU is system memory, so all three draws of a frame pulled them across
+the bus. The device timed it (the frame's own timestamps, `gpu_ms` and `water_gpu_ms` in the budget
+CSV): 4 to 5 ms of device time a frame on the RTX 5060, 2.0 to 2.7 ms of it the two water pictures,
+and the M11.a take's worst frame landed within a millisecond of 16.7 ms either way. The streams now
+live where `geometry_memory()` (`geometry_memory.h`) says: device-local memory the processor maps,
+when the device offers it, and `Upload` otherwise. The Vulkan backend now reports
+`Capability::HostVisibleDeviceLocalMemory` from the device's memory types; before #77 it never
+set it. On the same quiet host, running the M11.a criterion's own command line and alternating with the
+build before, the device time fell to 1.3 ms a frame, 0.56 ms of it the water pictures.
+`stage_submit_ms` fell from 6.4 to 3.7 ms. `stage_build_ms` rose from 2.4 to 3.1 ms, because the
+processor now writes the eleven-megabyte dynamic streams across the bus instead of the device
+reading them across it twice. The take's mean fell from 13.6–13.7 to 11.4–11.7 ms. Six of seven
+takes after the change passed, with worst frames of 13.8–15.6 ms. The seventh missed by 0.02 ms on a
+frame whose `sky_ms` was 6.5 ms instead of 4.3, and whose every other processor band rose with it.
+The device's share of that frame was what it always was. The worst frame is now set by the
+processor bands and not by the device
+(`openspec/changes/place-world-streams-device-local/evidence/budget.txt`). All 64 frames of the take
+compare byte-identical, PNG for PNG, against the build before, with water shading on and with it off
+(`openspec/changes/place-world-streams-device-local/evidence/`). `render.geometry_memory` checks
+both halves on a device. The take prints a `device time` line under the budget summary.
 `render.world_water` draws with `water_spirv.h` and this directory's `water_surface.cpp` on a
 device and holds the absorption law, the reflected sky, the foam band and the caustics to the pixel.
 

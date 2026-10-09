@@ -1,0 +1,30 @@
+Mutations of place-world-streams-device-local, each applied to the tree, the two suites rebuilt and
+run (`ctest -R "unit.rhi$|render.geometry_memory"`, RTX 5060, driver 580.95.05, Development
+build), the file restored and verified against its md5 before the next.
+
+M1  src/backends/rhi/vulkan/src/vulkan_instance.cpp
+    capabilities_.set_memory_observation(observe_memory(physical_))
+    -> capabilities_.set_memory_observation(MemoryObservation{})
+    The backend before #77: the device's memory types are never looked at.
+    unit.rhi                 Passed
+    render.geometry_memory   FAILED  (observed.types > 0)
+
+M2  samples/10-world/geometry_memory.h
+    geometry_memory() answers MemoryUse::Upload where the capability holds
+    The stage before #77: its streams in system memory.
+    unit.rhi                 Passed
+    render.geometry_memory   FAILED  (chosen == HostVisibleDeviceLocal; 3 reads x 16 MiB no
+                                      longer at most half the Upload time)
+
+M3  src/backends/rhi/src/types.cpp
+    device_offers_host_visible_device_local() ignores observed.types
+    unit.rhi                 FAILED  ("an observation of nothing reports nothing")
+    render.geometry_memory   Passed
+
+Restored: unit.rhi Passed, render.geometry_memory Passed, 0 validation errors.
+
+render.geometry_memory on this host:
+  NVIDIA GeForce RTX 5060: 5 memory types, 1 device-local and mappable, 2 system memory alone ->
+  HostVisibleDeviceLocalMemory=1
+  NVIDIA GeForce RTX 5060: 3 reads of 16 MiB take 0.418 ms from the stage's memory and 2.053 ms
+  from Upload memory

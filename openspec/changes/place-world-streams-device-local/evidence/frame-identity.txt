@@ -1,0 +1,16 @@
+The take with the streams in device-local memory against the build before, PNG for PNG.
+
+Command (both builds, same host, RTX 5060, Development, Vulkan with validation and synchronisation
+validation on):
+  cy_sample_world --seed 20260913 --seconds 8 --fps 8 --frames <dir> --budget <csv> [--no-water-shading]
+
+Before: origin/main at 090fe919, with measurement switches added that were left unset.
+After:  this change.
+
+water shading on    64 of 64 frames byte-identical (cmp)
+water shading off   64 of 64 frames byte-identical (cmp)
+
+RHI validation errors: 0 in every take. The terrain and cloud agreement checks the take runs at
+open read the device-written colours back through the same mappings, now in device-local memory:
+terrain worst channel error 0.00000000 over 152100 vertices, cloud 0.00000489 over 6384, the same
+as before.

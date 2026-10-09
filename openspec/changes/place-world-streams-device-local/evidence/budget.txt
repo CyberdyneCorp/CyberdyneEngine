@@ -1,0 +1,33 @@
+m11a:world-budget-on-a-device's own command line, alternated between the build before and this
+change on one host (RTX 5060, driver 580.95.05, 24 cores, Development, Vulkan with validation and
+synchronisation validation on). Other work was running on the machine. `--quiet-host` judged every
+take but before1 quiet. "device" and "water pictures" are the frame's own timestamps (`gpu_ms`,
+`water_gpu_ms`). The build before carried the same timestamps and placed its streams in `Upload`,
+as main does.
+
+  cy_sample_world --seed 20260913 --seconds 8 --fps 8 --frames <dir> --budget-ms 16.7 \
+      --quiet-host --budget <csv>
+
+run      verdict  mean     worst    device mean  water pictures mean  stage_submit  stage_build
+before1  busy     16.10 ms  21.42 ms   4.78 ms      2.50 ms              7.90 ms       2.87 ms
+after1   pass     11.69 ms  15.46 ms   1.27 ms      0.56 ms              3.75 ms       3.15 ms
+before2  pass     13.59 ms  15.58 ms   4.00 ms      2.05 ms              6.43 ms       2.38 ms
+after2   pass     11.59 ms  14.54 ms   1.26 ms      0.56 ms              3.68 ms       3.12 ms
+before3  OVER     13.70 ms  17.15 ms   3.93 ms      2.01 ms              6.47 ms       2.41 ms
+after3   pass     11.51 ms  15.61 ms   1.28 ms      0.56 ms              3.70 ms       3.08 ms
+after4   pass     11.50 ms  14.33 ms   1.25 ms      0.55 ms              3.65 ms       3.07 ms
+after5   pass     11.50 ms  13.78 ms   1.26 ms      0.56 ms              3.59 ms       3.15 ms
+after6   OVER     11.74 ms  16.72 ms   1.27 ms      0.56 ms              3.69 ms       3.18 ms
+after7   pass     11.38 ms  13.97 ms   1.26 ms      0.56 ms              3.58 ms       3.09 ms
+
+The water pictures' device time fell from 2.0-2.5 to 0.56 ms, and the frame's from 3.9-4.8 to
+1.26-1.28 ms. `stage_submit_ms` fell by about 2.7 ms. `stage_build_ms` rose by about 0.7 ms,
+because the processor now writes the dynamic streams across the bus once. Before, the device read
+them across it twice. The mean frame fell from 13.6-13.7 to 11.4-11.7 ms.
+
+after6 missed by 0.02 ms. Its worst frame, frame 10, had a `sky_ms` of 6.51 ms. Frame 10's
+`sky_ms` in the other six takes was 4.21-4.40 ms, and every other band of that frame rose with
+it. The README's budget section describes this shape: the process losing its processor, not one
+band stalling. The water passes were 0.56 ms on that frame as on every other. The worst frames of
+the other six takes were 13.8-15.6 ms. They are now set by the processor bands (`sky_ms`
+4.2-4.8 ms, `stage_build_ms` and `stage_submit_ms` about 3 ms each), not by the device.

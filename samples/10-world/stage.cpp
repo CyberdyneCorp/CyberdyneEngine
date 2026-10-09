@@ -28,6 +28,7 @@
 #    include <cy/backends/rhi-metal/backend.h>
 #endif
 
+#include "geometry_memory.h"
 #include "golden.h"
 #include "shaders/world_msl.h"
 #include "shaders/world_spirv.h"
@@ -175,6 +176,24 @@ struct WorldPush {
 static_assert(sizeof(WorldPush) == 128,
               "the push block must fit the 128-byte portability limit exactly");
 
+/// THE FRAME'S GPU TIME, from four timestamps the frame's own passes write. Slot 0 when the first
+/// pass begins, 1 and 2 around the water's two pictures, 3 when the read-back has copied. A device
+/// without timestamp queries has no pool, and every recorder below then writes nothing.
+enum GpuMark : u32 {
+    kMarkFrameBegin = 0,
+    kMarkWaterBegin = 1,
+    kMarkWaterEnd = 2,
+    kMarkFrameEnd = 3,
+    kMarkCount = 4,
+    kNoMark = 0xFFFFFFFFU,
+};
+
+void write_mark(const PassContext& context, rhi::QueryPoolHandle pool, u32 mark) noexcept {
+    if (!pool.is_null() && mark != kNoMark) {
+        context.commands->write_timestamp(pool, mark);
+    }
+}
+
 struct VisualPush {
     u32 terrain_count = 0;
     u32 sky_start = 0;
@@ -206,10 +225,16 @@ struct VisualPassState {
     VisualPush push;
     u32 groups = 0;
     u32* dispatches = nullptr;
+    /// The first pass of the frame resets the timestamps and writes the first.
+    rhi::QueryPoolHandle timer;
 };
 
 void record_visual(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<VisualPassState*>(user);
+    if (!state->timer.is_null()) {
+        context.commands->reset_queries(state->timer, 0, kMarkCount);
+        write_mark(context, state->timer, kMarkFrameBegin);
+    }
     context.commands->bind_compute_pipeline(state->pipeline);
     context.commands->bind_descriptor_sets(
         state->layout, 0, Span<const rhi::DescriptorSetHandle>(&state->descriptors, 1));
@@ -234,6 +259,49 @@ void write_vec3(f32 (&out)[4], Vec3 value, f32 w) noexcept {
     out[1] = value.y;
     out[2] = value.z;
     out[3] = w;
+}
+
+/// Milliseconds between two of the frame's timestamps, read once the device is idle.
+[[nodiscard]] Expected<f64, Error> gpu_interval(rhi::Device& device, rhi::QueryPoolHandle pool,
+                                                u32 begin, u32 end) noexcept {
+    u64 stamps[2] = {};
+    const u32 marks[2] = {begin, end};
+    for (u32 index = 0; index < 2; ++index) {
+        Expected<u32, Error> read =
+            device.read_query_results(pool, marks[index], 1, Span<u64>(&stamps[index], 1));
+        if (!read) {
+            return make_unexpected(read.error());
+        }
+    }
+    if (stamps[1] < stamps[0]) {
+        return fail(ErrorCode::Internal, "a later timestamp precedes an earlier one");
+    }
+    return static_cast<f64>(stamps[1] - stamps[0]) / 1.0e6;
+}
+
+/// The frame's GPU time and the water pictures' share of it. Leaves the report unmeasured when the
+/// device has no timestamps or a read fails: a timing is never invented.
+void read_gpu_time(rhi::Device& device, rhi::QueryPoolHandle pool, bool water,
+                   StageReport& out) noexcept {
+    if (pool.is_null()) {
+        return;
+    }
+    const Expected<f64, Error> frame = gpu_interval(device, pool, kMarkFrameBegin, kMarkFrameEnd);
+    if (!frame) {
+        return;
+    }
+    f64 water_ms = 0.0;
+    if (water) {
+        const Expected<f64, Error> pictures =
+            gpu_interval(device, pool, kMarkWaterBegin, kMarkWaterEnd);
+        if (!pictures) {
+            return;
+        }
+        water_ms = *pictures;
+    }
+    out.gpu_measured = true;
+    out.gpu_ms = *frame;
+    out.water_gpu_ms = water_ms;
 }
 
 /// One run of the frame: a vertex range, an index range and the push block it is drawn with.
@@ -271,6 +339,11 @@ struct DrawState {
     WaterTargets water_targets;
     rhi::Device* device = nullptr;
     Status water_bound = ok();
+    /// Timestamps written before the pass begins rendering and after it ends. Only the water's
+    /// two pictures write any.
+    rhi::QueryPoolHandle timer;
+    u32 mark_before = kNoMark;
+    u32 mark_after = kNoMark;
 };
 
 /// Bind the pipeline a run is drawn with, and the sets that pipeline reads.
@@ -293,6 +366,7 @@ struct ReadbackState {
     rhi::BufferHandle buffer;
     u32 width = 0;
     u32 height = 0;
+    rhi::QueryPoolHandle timer;
 };
 
 void record_draw(const PassContext& context, void* user) noexcept {
@@ -327,6 +401,7 @@ void record_draw(const PassContext& context, void* user) noexcept {
     // Reversed Z, so the clear is zero and a nearer fragment has a GREATER depth.
     info.depth_attachment.clear = rhi::reversed_z_depth_clear();
 
+    write_mark(context, state->timer, state->mark_before);
     context.commands->begin_rendering(info);
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
@@ -359,6 +434,7 @@ void record_draw(const PassContext& context, void* user) noexcept {
         context.commands->draw_indexed(run.index_count, 1, run.first_index, run.vertex_offset, 0);
     }
     context.commands->end_rendering();
+    write_mark(context, state->timer, state->mark_after);
 }
 
 void record_readback(const PassContext& context, void* user) noexcept {
@@ -367,6 +443,7 @@ void record_readback(const PassContext& context, void* user) noexcept {
     region.texture_extent = rhi::Extent3D{state->width, state->height, 1};
     context.commands->copy_texture_to_buffer(state->executor->texture(state->color), state->buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
+    write_mark(context, state->timer, kMarkFrameEnd);
 }
 
 /// What the tonemapping resolve reads. `cy::rendering-pipeline` owns the pipeline and the sets;
@@ -645,6 +722,8 @@ struct Stage::Device {
     rhi::BufferHandle foam_next;
     rhi::BufferHandle terrain_fields[4];
     rhi::BufferHandle readback;
+    /// The frame's four timestamps (`GpuMark`). Null on a device without timestamp queries.
+    rhi::QueryPoolHandle timer;
     /// Set 0 of the lit pipeline: the cloud shadow field's image and where it sits. See
     /// `shaders/world.slang`, which reads both in the fragment stage.
     rhi::DescriptorSetLayoutHandle world_set_layout;
@@ -894,6 +973,17 @@ Status Stage::create_pipeline() noexcept {
         return make_unexpected(buffer.error());
     }
     device_->readback = *buffer;
+    if (device.capabilities().has(rhi::Capability::TimestampQueries)) {
+        rhi::QueryPoolDescription timer;
+        timer.name = "world frame timestamps";
+        timer.kind = rhi::QueryKind::Timestamp;
+        timer.count = kMarkCount;
+        Expected<rhi::QueryPoolHandle, Error> pool = device.create_query_pool(timer);
+        if (!pool) {
+            return make_unexpected(pool.error());
+        }
+        device_->timer = *pool;
+    }
     if (Status sized = pixels_.resize(static_cast<usize>(width_) * height_); !sized) {
         return sized;
     }
@@ -1411,7 +1501,9 @@ Status Stage::stage_world(const World& world) noexcept {
     description.name = "world terrain geometry";
     description.size = vertices.size() * sizeof(Vertex);
     description.usage = rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage;
-    description.memory = rhi::MemoryUse::Upload;
+    // EVERY STREAM BELOW IS CREATED FROM THIS DESCRIPTION, so this one line places all six: the
+    // terrain's three and the dynamic three. See geometry_memory.h for why and what it costs.
+    description.memory = geometry_memory(device.capabilities());
     Expected<rhi::BufferHandle, Error> buffer = device.create_buffer(description);
     if (!buffer) {
         return make_unexpected(buffer.error());
@@ -2144,15 +2236,15 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     device_->last_visual = visual;
 
     VisualPassState terrain_visual{
-        device_->visual_pipelines[0],    device_->visual_layout, device_->visual_set, visual,
-        (terrain_vertices_ + 63U) / 64U, &out.terrain_dispatches};
-    VisualPassState cloud_visual{device_->visual_pipelines[1], device_->visual_layout,
-                                 device_->visual_set,          visual,
-                                 (sky_vertices_ + 63U) / 64U,  &out.cloud_dispatches};
+        device_->visual_pipelines[0],    device_->visual_layout,  device_->visual_set, visual,
+        (terrain_vertices_ + 63U) / 64U, &out.terrain_dispatches, device_->timer};
+    VisualPassState cloud_visual{
+        device_->visual_pipelines[1], device_->visual_layout, device_->visual_set,   visual,
+        (sky_vertices_ + 63U) / 64U,  &out.cloud_dispatches,  rhi::QueryPoolHandle{}};
     const u32 foam_work = water_vertices_ > (128U * 128U) ? water_vertices_ : (128U * 128U);
-    VisualPassState foam_visual{device_->visual_pipelines[2], device_->visual_layout,
-                                device_->visual_set,          visual,
-                                (foam_work + 63U) / 64U,      &out.foam_dispatches};
+    VisualPassState foam_visual{
+        device_->visual_pipelines[2], device_->visual_layout, device_->visual_set,   visual,
+        (foam_work + 63U) / 64U,      &out.foam_dispatches,   rhi::QueryPoolHandle{}};
     graph.add_pass("world terrain substrate", QueueKind::Graphics)
         .read(terrain_vertices, Access::ComputeStorageRead)
         .read(terrain_fields[0], Access::ComputeStorageRead)
@@ -2372,6 +2464,10 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
             (void)device.end_frame();
             return declared;
         }
+        water_frame.refraction.timer = device_->timer;
+        water_frame.refraction.mark_before = kMarkWaterBegin;
+        water_frame.reflection.timer = device_->timer;
+        water_frame.reflection.mark_after = kMarkWaterEnd;
         state.runs[2].water = true;
         state.water = &device_->water;
         state.water_targets = water_frame.targets;
@@ -2480,6 +2576,7 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     readback.buffer = device_->readback;
     readback.width = width_;
     readback.height = height_;
+    readback.timer = device_->timer;
 
     cy::rendering::BufferRequest readback_request;
     readback_request.name = "world colour readback";
@@ -2514,6 +2611,9 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
             frame = state.water_bound;
         }
         out.submit_ms = now_millis() - mark;
+        if (frame) {
+            read_gpu_time(device, device_->timer, water_shading_, out);
+        }
         if (frame && png_path != nullptr) {
             frame = write_png(png_path);
         }
@@ -2815,6 +2915,9 @@ void Stage::close() noexcept {
             device.destroy_buffer(field);
         }
         device.destroy_buffer(device_->readback);
+        if (!device_->timer.is_null()) {
+            device.destroy_query_pool(device_->timer);
+        }
         device.destroy_buffer(device_->cloud_shadow_field);
         device.destroy_buffer(device_->cloud_shadow_placement);
         device_->water.destroy(device);
