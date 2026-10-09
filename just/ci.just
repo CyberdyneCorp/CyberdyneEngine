@@ -123,7 +123,10 @@ ci-build-tree-unpack *args:
         exit 1
     fi
     echo "==> unpack      ${archive} -> ${tree}"
-    zstd -dc "${archive}" | tar -xf -
+    # MSYS's tar, which Git Bash runs on Windows, emulates a symlink by copying its target, so a link
+    # extracted before its target fails ("Cannot create symlink to 'zstd'", in _deps/zstd-src's test
+    # data). A shortcut needs no target and no privilege; elsewhere the variable means nothing.
+    zstd -dc "${archive}" | MSYS="${MSYS:+${MSYS} }winsymlinks:lnk" tar -xf -
     rm -f "${archive}"
     head="$(git rev-parse HEAD)"
     built="$(cat "${tree}/.cy-build-tree-commit" 2>/dev/null || echo "an unrecorded commit")"

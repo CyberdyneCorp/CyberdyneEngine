@@ -1659,6 +1659,27 @@ def a_build_tree_is_trusted_only_at_its_own_commit(root: pathlib.Path) -> list[s
     return failures
 
 
+def a_build_tree_with_a_link_before_its_target_unpacks_on_windows(root: pathlib.Path) -> list[str]:
+    """`ci-build-tree-unpack` extracts symlinks MSYS cannot copy yet.
+
+    The first CI run of the hand-off failed on windows-x86_64 at
+    `_deps/zstd-src/tests/cli-tests/bin/unzstd: Cannot create symlink to 'zstd'`. Git Bash's tar
+    emulates a symlink by copying its target, and the archive held the link before the target.
+    Only a Windows host can reproduce that, so this checks the setting that avoids it: tar runs with
+    MSYS's `winsymlinks:lnk`, which writes a shortcut that does not need the target.
+    """
+    bodies = dict(_recipe_bodies((root / "just" / "ci.just").read_text(encoding="utf-8")))
+    commands = [line for line in bodies.get("ci-build-tree-unpack", [])
+                if not line.lstrip().startswith("#")]
+    extraction = [line for line in commands if re.search(r"\btar -x", line)]
+    if not extraction:
+        return ["ci.just: `ci-build-tree-unpack` extracts nothing with tar"]
+    if not all("winsymlinks:lnk" in line for line in extraction):
+        return ["ci.just: `ci-build-tree-unpack` runs tar without MSYS=winsymlinks:lnk, so Git Bash "
+                "fails on a symlink archived before its target"]
+    return []
+
+
 SHIP_STILLS = ("m11d-ship-sdl3.png", "m11d-ship-native.png")
 
 
@@ -1782,6 +1803,9 @@ def main() -> int:
         "run-ship leaves the committed stills alone": run_ship_leaves_the_committed_stills_alone,
         "a build tree is trusted only at its own commit": (
             a_build_tree_is_trusted_only_at_its_own_commit
+        ),
+        "a build tree with a link before its target unpacks on Windows": (
+            a_build_tree_with_a_link_before_its_target_unpacks_on_windows
         ),
     }
 
