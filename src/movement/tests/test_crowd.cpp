@@ -100,9 +100,11 @@ struct PairRun {
     return run;
 }
 
-/// The ring scenario of the f32 suite's determinism case, in `Fixed`: 64 agents on a circle of
-/// 8 m, each walking through the centre. Every quantity comes from an integer or a detmath
-/// function, so the run is the same bits everywhere.
+/// A ring of agents on a circle of 6 m, each walking through the centre: 24 of them, 1.57 m apart
+/// and so clear of each other at the start, which keeps every candidate's time to collision a real
+/// question rather than "already touching" — the share, the side bias and the lattice all decide.
+/// Every quantity comes from an integer or a detmath function, so the run is the same bits
+/// everywhere.
 [[nodiscard]] u64 ring_digest(u32 agents, u32 ticks) noexcept {
     FixedCrowd crowd(allocator(), Fixed::from_int(4));
     for (u32 index = 0; index < agents; ++index) {
@@ -111,7 +113,7 @@ struct PairRun {
         FixedAvoidanceParams params = walker();
         params.priority = static_cast<u8>(index % 3);
         const auto id =
-            crowd.add(FixedVec2{at.cos * Fixed::from_int(8), at.sin * Fixed::from_int(8)}, params);
+            crowd.add(FixedVec2{at.cos * Fixed::from_int(6), at.sin * Fixed::from_int(6)}, params);
         if (!id) {
             return 0;
         }
@@ -135,7 +137,7 @@ struct PairRun {
 
 /// The ring's digest, committed. Computed by this file on x86-64 with GCC 13; every leg must
 /// reproduce it, and a change to the solver, the policy or detmath that moves any bit moves it.
-constexpr u64 kRingDigest = 0x5986'07E8'07D7'F9C7ULL;
+constexpr u64 kRingDigest = 0x2FC8'A66A'0AB2'5CBCULL;
 
 }  // namespace
 
@@ -218,8 +220,8 @@ CY_TEST_CASE("the Fixed and the f32 crowd are one algorithm: they walk the same 
 }
 
 CY_TEST_CASE("a Fixed crowd is the same crowd twice, and the committed one on every leg") {
-    const u64 first = ring_digest(64, 90);
-    const u64 second = ring_digest(64, 90);
+    const u64 first = ring_digest(24, 240);
+    const u64 second = ring_digest(24, 240);
     CY_REQUIRE_NE(first, 0ULL);
     CY_CHECK_EQ(first, second);
     CY_TEST_MESSAGE("ring digest " << first);
