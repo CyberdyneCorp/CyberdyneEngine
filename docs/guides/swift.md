@@ -18,7 +18,9 @@ Rust SDK overlay). The game services were added by the open change
 per-entry reference for phases, determinism, ownership and errors; ABI 1.5's scheduled systems, tree
 callbacks, node paths, bodies and characters by
 [`add-swift-m12-gaps`](../../openspec/changes/add-swift-m12-gaps/design.md); ABI 1.7's animation by
-[`add-swift-animation-api`](../../openspec/changes/add-swift-animation-api/design.md). The module READMEs linked below
+[`add-swift-animation-api`](../../openspec/changes/add-swift-animation-api/design.md); ABI 1.8's
+deterministic math and lockstep path by
+[`add-deterministic-math`](../../openspec/changes/add-deterministic-math/design.md) (§13). The module READMEs linked below
 are the detailed reference; this guide is the route through them.
 
 | Where | What |
@@ -951,6 +953,30 @@ without a HUD.
 `integration.game_backend_ui`; `render.rts_api_hud` holds a Swift HUD to the C++ HUD it was written
 from, primitive for primitive and byte for byte on a device.
 
+### Deterministic math and the lockstep path (ABI 1.8)
+
+`openspec/changes/add-deterministic-math` stage 8. Three files of CyberdyneKit:
+
+| | What | How it matches the engine |
+|---|---|---|
+| `Fixed.swift` | `Fixed` (Q32.32 in an `Int64`), `Fixed16`, `Angle` (a binary angle in a `UInt32`), `FixedVec2`, `FixedVec3`, `FixedQuat` | `+` and `-` are `&+` and `&-` (Swift's `+` traps; the engine wraps); `*` is `multipliedFullWidth(by:)`, plus 2^31, shifted right 32; `/` divides the magnitudes a limb at a time with `UInt64.dividingFullWidth` and applies the engine's division-by-zero rule. `FixedTests` checks every committed vector line of `add`, `sub`, `mul`, `div`, `narrow16` and `angle_scale`, and reproduces the C++ sweep digests in `tools/detmath/vectors/digests.txt` |
+| `Detmath.swift` | `sqrt`, `sin`, `cos`, `tan`, `atan`, `atan2`, `asin`, `acos`, `exp2`, `log2`, `exp`, `log`, `pow`, and `evaluate` over spans | one `detmath_*` call each: the engine's polynomial, never a Swift copy |
+| `Lockstep.swift` | `enlist`, `order`, `unit`, `status` | the host's lockstep session (`cy::game_backend::LockstepAdapter`) |
+
+```swift
+let index = try Lockstep.enlist(.init(group: 0, position: FixedVec2(x: Fixed(4), y: Fixed(6))))
+let angle = Angle(raw: order &* 0x3333_3333)                   // integer arithmetic on a turn
+let target = FixedVec2(x: centre + Detmath.cos(angle) * radius,
+                       y: centre + Detmath.sin(angle) * radius)
+try Lockstep.order(.move(group: 0, to: target))                 // for the session's next tick
+if try Lockstep.unit(index).justArrived { … }
+```
+
+A component field of type `Fixed` is a `CY_VAR_FIXED` field, read and written as its raw integer
+with `world.fixed(…)` and `world.setFixed(…)`. `samples/13-rts-api`'s commander orders a lockstep
+company this way (`game/Company.swift`), and the digest its session ends in is the one every CI leg
+computes from the same orders in C++ (`host/company.h`, `determinism.cross_leg`).
+
 ### Diagnostics
 
 ```swift
@@ -1405,8 +1431,16 @@ The engine enforces the phase rules; these are the ones it cannot:
   (as `Commander` does with `squad`) or sort first.
 * **No randomness or time from Foundation in a fixed step.** Nothing in the ABI can check it.
 * **Arrival and failure are events.** Use `justArrived` / `justFailed`, not a distance threshold.
-* **Lockstep is not available yet.** A multiplayer order needs a command stream between `U` and
-  `F`; `design.md`'s Risks name the `gameplay_submit_command` append that closes it. See
+* **Use `Fixed` for anything a fixed step writes to authoritative state in a `CrossPlatform` or
+  `Lockstep` session.** A float is the same bits only on the same binary and architecture; `Fixed`
+  (ABI 1.8) is the same bits everywhere, and `+`, `-`, `*` and `/` on it are the engine's own rules
+  (see "Deterministic math and the lockstep path" below). Convert a float into `Fixed` only where
+  the design allows it — at cook, in session configuration, or when the peer that issues a command
+  creates it (`Fixed(cooking:)`) — and never in the middle of a step. A float write to a `Fixed`
+  component field is refused with `.permissionDenied` in such a session.
+* **A lockstep order goes through the command stream.** `Lockstep.order` records it for the
+  session's next tick, from a fixed step or a frame; every peer executes the same log. Keep its
+  payload `Fixed`: the stream refuses a float payload under `Lockstep`. See
   [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) for the
   profiles.
 
@@ -1515,8 +1549,12 @@ specs; listed here so a game does not plan around them:
   to it and it has no custom executor tying it to the simulation thread; no entry is asynchronous;
   and a task still running in a retired generation after a reload is unmeasured. Do not start
   `Task`s from behaviours.
-* **Lockstep commands** (`gameplay_submit_command`), **split-screen cameras** (`camera_active` is
-  the primary view only), and **cooked `EntityTemplate` prefabs** through `spawn_*`.
+* **Arbitrary lockstep commands.** ABI 1.8's lockstep path carries one command, the group order
+  (move or stop) of a session the host runs; a module cannot declare a command type of its own.
+  `FixedQuat` composition, which normalises through the engine's wide square root, is not exposed
+  either — a Swift `FixedQuat` is storage.
+* **Split-screen cameras** (`camera_active` is the primary view only), and **cooked
+  `EntityTemplate` prefabs** through `spawn_*`.
 * **A shipping configuration.** Static linking and no dynamic load are specified and untried.
 * **A pinned Swift toolchain**, and verified macOS and Windows loaders: every measurement is Linux,
   and the editor's `ScriptRuntime` looks only for `libCyGame_g<N>.so`.

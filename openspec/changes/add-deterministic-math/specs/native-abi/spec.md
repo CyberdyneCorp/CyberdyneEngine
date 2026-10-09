@@ -29,3 +29,21 @@ write a component field declared as a deterministic type, with `CY_RESULT_PERMIS
 - **WHEN** a module calls a floating-point setter on a deterministic field during a `Lockstep`
   session
 - **THEN** the call SHALL return `CY_RESULT_PERMISSION_DENIED` with a message naming the field
+
+### Requirement: Lockstep orders at the boundary
+The ABI SHALL let a module enlist units in a fixed-point lockstep session before its first tick,
+record orders for the session's next tick whose targets are raw fixed-point values, and read each
+unit's authoritative state and the session's state hash and digest. An order SHALL enter the
+session's command stream, so that every peer executing the same command log computes the same
+state, on every architecture.
+
+#### Scenario: Orders from a module drive the same session everywhere
+- **WHEN** a module computes its orders' targets in fixed point and records them through the ABI
+- **THEN** the session's digest SHALL equal the digest the same orders produce when given by
+  engine code on every continuous-integration leg, and a follower peer driven by the issuer's
+  command log alone SHALL agree with it on every tick
+
+#### Scenario: Enlisting after the first tick is refused
+- **WHEN** a module enlists a unit after the session has run a tick
+- **THEN** the call SHALL return `CY_RESULT_PERMISSION_DENIED`
+
