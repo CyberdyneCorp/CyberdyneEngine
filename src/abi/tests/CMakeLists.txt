@@ -100,7 +100,7 @@ function(cy_abi_declare_tests)
     # compiled when it exists; test_game_services.cpp — the shared rules — always is.
     set(game_sources "${tests_dir}/test_game_services.cpp")
     foreach(group IN ITEMS time input camera physics navigation audio spawn systems scene bodies
-                           character ui animation)
+                           character ui animation detmath lockstep)
         if(EXISTS "${tests_dir}/test_game_${group}.cpp")
             list(APPEND game_sources "${tests_dir}/test_game_${group}.cpp")
         endif()
@@ -114,7 +114,8 @@ function(cy_abi_declare_tests)
             "${tests_dir}/test_layout.cpp"
             "${tests_dir}/test_manifest.cpp"
             ${game_sources}
-        DEPENDENCIES cy::abi)
+        # ABI 1.8's `detmath_*` entries are held to the kernel's own functions.
+        DEPENDENCIES cy::abi cy::core-detmath)
 
     # The module paths are compiled in rather than searched for at run time: a test that guessed a
     # path would pass on the machine it was written on and skip everywhere else, and a reload suite

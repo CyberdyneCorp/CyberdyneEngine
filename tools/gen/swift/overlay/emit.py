@@ -82,6 +82,9 @@ ENUM_SPECS = {
     # ADDED AT ABI 1.7 with animation (issue #76 stage 4).
     "CyRootMotionMode": ("RootMotionMode", "CY_ROOT_MOTION_", "UInt32"),
     "CyAnimationTier": ("AnimationTier", "CY_ANIMATION_TIER_", "UInt32"),
+    # ADDED AT ABI 1.8 with deterministic math and the lockstep path.
+    "CyDetmathFunction": ("DetmathFunction", "CY_DETMATH_", "UInt32"),
+    "CyLockstepOrderKind": ("LockstepOrderKind", "CY_LOCKSTEP_ORDER_", "UInt32"),
 }
 
 
@@ -191,6 +194,8 @@ def enums(description: dict) -> str:
         ("CyUiVisibility", "/// `CyUiVisibility`: shown, hidden, or out of layout too."),
         ("CyRootMotionMode", "/// `CyRootMotionMode`: where an animator's root motion goes."),
         ("CyAnimationTier", "/// `CyAnimationTier`: an animator's level of detail."),
+        ("CyDetmathFunction", "/// `CyDetmathFunction`: a deterministic math function over a span."),
+        ("CyLockstepOrderKind", "/// `CyLockstepOrderKind`: what an order tells a lockstep group."),
     ))
     return f"""{BANNER}
 {status}

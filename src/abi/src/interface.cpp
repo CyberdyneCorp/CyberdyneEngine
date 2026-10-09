@@ -21,6 +21,7 @@
 #include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "game/thunks.h"
@@ -189,6 +190,14 @@ CyVar var_from_field(const cy::abi::FieldRecord& field, const cy::u8* bytes) noe
             std::memcpy(&value, bytes, sizeof(value));
             return cy::abi::var_entity(value);
         }
+        // ABI 1.8: the raw Q32.32 integer, in `as_i64`, tagged as what it is.
+        case CY_VAR_FIXED: {
+            cy::i64 value = 0;
+            std::memcpy(&value, bytes, sizeof(value));
+            CyVar var = cy::abi::var_i64(value);
+            var.type = CY_VAR_FIXED;
+            return var;
+        }
         case CY_VAR_VEC2:
         case CY_VAR_VEC3:
         case CY_VAR_VEC4:
@@ -207,8 +216,39 @@ CyVar var_from_field(const cy::abi::FieldRecord& field, const cy::u8* bytes) noe
     return cy::abi::var_nil();
 }
 
-CyResult var_into_field(const cy::abi::FieldRecord& field, const CyVar& value,
-                        cy::u8* bytes) noexcept {
+/// Whether `type` is one of the kinds whose payload is floating point.
+bool is_float_kind(cy::u32 type) noexcept {
+    return type == CY_VAR_F32 || type == CY_VAR_F64 || type == CY_VAR_VEC2 || type == CY_VAR_VEC3 ||
+           type == CY_VAR_VEC4 || type == CY_VAR_QUAT;
+}
+
+/// ABI 1.8, openspec/changes/add-deterministic-math task 8.2: a float written to a CY_VAR_FIXED
+/// field, in a world whose session runs under `CrossPlatform` or `Lockstep`, is refused with
+/// PERMISSION_DENIED naming the field — the float boundary (design §7.1) is cook, configuration and
+/// command creation, never a component write in the middle of a session. Outside such a session it
+/// is the ordinary type mismatch the caller's own check reports. CY_RESULT_OK when it does not
+/// apply.
+CyResult refuse_float_into_fixed(const cy::abi::World& world,
+                                 const cy::abi::FieldRecord& field) noexcept {
+    if (field.type != CY_VAR_FIXED || !world.fixed_fields_locked()) {
+        return CY_RESULT_OK;
+    }
+    char message[192] = {};
+    std::snprintf(message, sizeof(message),
+                  "the field '%s' is fixed-point: a %s session refuses a float write to it; write "
+                  "its raw value with component_set_fixed",
+                  field.name, cy::determinism::determinism_profile_name(world.profile));
+    return cy::abi::report(CY_RESULT_PERMISSION_DENIED, message);
+}
+
+CyResult var_into_field(const cy::abi::World& world, const cy::abi::FieldRecord& field,
+                        const CyVar& value, cy::u8* bytes) noexcept {
+    if (is_float_kind(value.type)) {
+        if (const CyResult refused = refuse_float_into_fixed(world, field);
+            refused != CY_RESULT_OK) {
+            return refused;
+        }
+    }
     if (value.type != static_cast<cy::u32>(field.type)) {
         return cy::abi::report(CY_RESULT_INVALID_ARGUMENT,
                                "the value's type is not the field's type");
@@ -224,7 +264,8 @@ CyResult var_into_field(const cy::abi::FieldRecord& field, const CyVar& value,
         case CY_VAR_U8:
         case CY_VAR_U16:
         case CY_VAR_U32:
-        case CY_VAR_U64: {
+        case CY_VAR_U64:
+        case CY_VAR_FIXED: {
             // NARROWED WITH A RANGE CHECK, NOT TRUNCATED. Writing 300 into a `u8` field is a
             // caller's mistake, and silently storing 44 is the shape of bug that is found weeks
             // later in a save file. The check is the round trip: narrow, widen back, compare.
@@ -574,7 +615,7 @@ static CyResult abi_component_set_var(CyWorld world_handle, CyEntity entity,
     if (bytes == nullptr) {
         return cy::abi::last_error_code();
     }
-    return var_into_field(*found, *value, bytes);
+    return var_into_field(*world_handle, *found, *value, bytes);
 }
 
 // The typed fast paths. One type check and a memcpy — no CyVar is constructed, which is the whole
@@ -606,6 +647,10 @@ static CyResult abi_component_set_f32(CyWorld world_handle, CyEntity entity,
     cy::u8* bytes = write_field(world_handle, entity, component, field, &found);
     if (bytes == nullptr) {
         return cy::abi::last_error_code();
+    }
+    if (const CyResult refused = refuse_float_into_fixed(*world_handle, *found);
+        refused != CY_RESULT_OK) {
+        return refused;
     }
     if (found->type != CY_VAR_F32) {
         return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "that field is not a float");
@@ -645,10 +690,51 @@ static CyResult abi_component_set_vec3(CyWorld world_handle, CyEntity entity,
     if (bytes == nullptr) {
         return cy::abi::last_error_code();
     }
+    if (const CyResult refused = refuse_float_into_fixed(*world_handle, *found);
+        refused != CY_RESULT_OK) {
+        return refused;
+    }
     if (found->type != CY_VAR_VEC3) {
         return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "that field is not a vec3");
     }
     std::memcpy(bytes, xyz, sizeof(float) * 3);
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
+// ABI 1.8's typed fast path for a fixed-point field: the raw integer both ways, no CyVar, no float.
+
+static CyResult abi_component_get_fixed(CyWorld world_handle, CyEntity entity,
+                                        CyComponentTypeId component, uint32_t field,
+                                        CyFixed* out_value) {
+    if (out_value == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "output pointer is null");
+    }
+    const cy::abi::FieldRecord* found = nullptr;
+    const cy::u8* bytes = read_field(world_handle, entity, component, field, &found);
+    if (bytes == nullptr) {
+        return cy::abi::last_error_code();
+    }
+    if (found->type != CY_VAR_FIXED) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "that field is not fixed-point");
+    }
+    std::memcpy(out_value, bytes, sizeof(CyFixed));
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
+static CyResult abi_component_set_fixed(CyWorld world_handle, CyEntity entity,
+                                        CyComponentTypeId component, uint32_t field,
+                                        CyFixed value) {
+    const cy::abi::FieldRecord* found = nullptr;
+    cy::u8* bytes = write_field(world_handle, entity, component, field, &found);
+    if (bytes == nullptr) {
+        return cy::abi::last_error_code();
+    }
+    if (found->type != CY_VAR_FIXED) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "that field is not fixed-point");
+    }
+    std::memcpy(bytes, &value, sizeof(CyFixed));
     cy::abi::clear_last_error();
     return CY_RESULT_OK;
 }
@@ -1082,6 +1168,28 @@ const CyInterface kInterface = {
     &cy::abi::game::animation_take_root_motion,
     &cy::abi::game::animation_set_root_motion,
     &cy::abi::game::animation_joint_pose,
+    // 1.8: deterministic math and the lockstep path
+    &abi_component_get_fixed,
+    &abi_component_set_fixed,
+    &cy::abi::game::detmath_kernel_version,
+    &cy::abi::game::detmath_sqrt,
+    &cy::abi::game::detmath_sin,
+    &cy::abi::game::detmath_cos,
+    &cy::abi::game::detmath_tan,
+    &cy::abi::game::detmath_atan,
+    &cy::abi::game::detmath_atan2,
+    &cy::abi::game::detmath_asin,
+    &cy::abi::game::detmath_acos,
+    &cy::abi::game::detmath_exp2,
+    &cy::abi::game::detmath_log2,
+    &cy::abi::game::detmath_exp,
+    &cy::abi::game::detmath_log,
+    &cy::abi::game::detmath_pow,
+    &cy::abi::game::detmath_evaluate,
+    &cy::abi::game::lockstep_enlist,
+    &cy::abi::game::lockstep_order,
+    &cy::abi::game::lockstep_unit,
+    &cy::abi::game::lockstep_status,
 };
 
 }  // namespace
@@ -1100,9 +1208,9 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         // The sentence names the minor, so bumping CY_ABI_MINOR without it is a compile error.
-        static_assert(CY_ABI_MINOR == 7U, "update the version in the message below");
+        static_assert(CY_ABI_MINOR == 8U, "update the version in the message below");
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.7 and the module requires a later minor");
+                              "this engine exports ABI 1.8 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

@@ -668,4 +668,109 @@ public struct Interface: @unchecked Sendable {
     public func animationJointPose(engine: CyEngine, entity: CyEntity, joint: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPose>?) throws {
         try check(table.pointee.animation_joint_pose(engine, entity, joint, into))
     }
+
+    @inlinable
+    public func componentGetFixed(world: CyWorld, entity: CyEntity, component: CyComponentTypeId, field: UInt32, into: UnsafeMutablePointer<CyFixed>?) throws {
+        try check(table.pointee.component_get_fixed(world, entity, component, field, into))
+    }
+
+    @inlinable
+    public func componentSetFixed(world: CyWorld, entity: CyEntity, component: CyComponentTypeId, field: UInt32, value: CyFixed) throws {
+        try check(table.pointee.component_set_fixed(world, entity, component, field, value))
+    }
+
+    @inlinable
+    public func detmathKernelVersion() -> UInt32 {
+        table.pointee.detmath_kernel_version()
+    }
+
+    @inlinable
+    public func detmathSqrt(x: CyFixed) -> CyFixed {
+        table.pointee.detmath_sqrt(x)
+    }
+
+    @inlinable
+    public func detmathSin(angle: CyAngle) -> CyFixed {
+        table.pointee.detmath_sin(angle)
+    }
+
+    @inlinable
+    public func detmathCos(angle: CyAngle) -> CyFixed {
+        table.pointee.detmath_cos(angle)
+    }
+
+    @inlinable
+    public func detmathTan(angle: CyAngle) -> CyFixed {
+        table.pointee.detmath_tan(angle)
+    }
+
+    @inlinable
+    public func detmathAtan(x: CyFixed) -> CyAngle {
+        table.pointee.detmath_atan(x)
+    }
+
+    @inlinable
+    public func detmathAtan2(y: CyFixed, x: CyFixed) -> CyAngle {
+        table.pointee.detmath_atan2(y, x)
+    }
+
+    @inlinable
+    public func detmathAsin(x: CyFixed) -> CyAngle {
+        table.pointee.detmath_asin(x)
+    }
+
+    @inlinable
+    public func detmathAcos(x: CyFixed) -> CyAngle {
+        table.pointee.detmath_acos(x)
+    }
+
+    @inlinable
+    public func detmathExp2(x: CyFixed) -> CyFixed {
+        table.pointee.detmath_exp2(x)
+    }
+
+    @inlinable
+    public func detmathLog2(x: CyFixed) -> CyFixed {
+        table.pointee.detmath_log2(x)
+    }
+
+    @inlinable
+    public func detmathExp(x: CyFixed) -> CyFixed {
+        table.pointee.detmath_exp(x)
+    }
+
+    @inlinable
+    public func detmathLog(x: CyFixed) -> CyFixed {
+        table.pointee.detmath_log(x)
+    }
+
+    @inlinable
+    public func detmathPow(x: CyFixed, y: CyFixed) -> CyFixed {
+        table.pointee.detmath_pow(x, y)
+    }
+
+    @inlinable
+    public func detmathEvaluate(function: UInt32, x: UnsafePointer<CyFixed>?, y: UnsafePointer<CyFixed>?, into: UnsafeMutablePointer<CyFixed>?, count: UInt64) throws {
+        try check(table.pointee.detmath_evaluate(function, x, y, into, count))
+    }
+
+    @inlinable
+    public func lockstepEnlist(engine: CyEngine, desc: UnsafePointer<CyLockstepUnitDesc>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.lockstep_enlist(engine, desc, into))
+    }
+
+    @inlinable
+    public func lockstepOrder(engine: CyEngine, order: UnsafePointer<CyLockstepOrder>?) throws {
+        try check(table.pointee.lockstep_order(engine, order))
+    }
+
+    @inlinable
+    public func lockstepUnit(engine: CyEngine, unit: UInt32, into: UnsafeMutablePointer<CyLockstepUnit>?) throws {
+        try check(table.pointee.lockstep_unit(engine, unit, into))
+    }
+
+    @inlinable
+    public func lockstepStatus(engine: CyEngine, into: UnsafeMutablePointer<CyLockstepStatus>?) throws {
+        try check(table.pointee.lockstep_status(engine, into))
+    }
 }

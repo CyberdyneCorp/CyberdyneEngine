@@ -3137,4 +3137,422 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Read a fixed-point field's raw value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn component_get_fixed(
+        &self,
+        world: ffi::CyWorld,
+        entity: ffi::CyEntity,
+        component: ffi::CyComponentTypeId,
+        field: u32,
+        into: *mut ffi::CyFixed,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .component_get_fixed
+            .ok_or(CallError::Missing("component_get_fixed"))?;
+        let raw = unsafe { entry(world, entity, component, field, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Write a fixed-point field's raw value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn component_set_fixed(
+        &self,
+        world: ffi::CyWorld,
+        entity: ffi::CyEntity,
+        component: ffi::CyComponentTypeId,
+        field: u32,
+        value: ffi::CyFixed,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .component_set_fixed
+            .ok_or(CallError::Missing("component_set_fixed"))?;
+        let raw = unsafe { entry(world, entity, component, field, value) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The deterministic math kernel's version.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_kernel_version(&self) -> Result<u32, CallError> {
+        let entry = self
+            .table()
+            .detmath_kernel_version
+            .ok_or(CallError::Missing("detmath_kernel_version"))?;
+        Ok(unsafe { entry() })
+    }
+
+    /// The fixed-point square root, correctly rounded.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_sqrt(&self, x: ffi::CyFixed) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_sqrt
+            .ok_or(CallError::Missing("detmath_sqrt"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// The fixed-point sine of a binary angle.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_sin(&self, angle: ffi::CyAngle) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_sin
+            .ok_or(CallError::Missing("detmath_sin"))?;
+        Ok(unsafe { entry(angle) })
+    }
+
+    /// The fixed-point cosine of a binary angle.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_cos(&self, angle: ffi::CyAngle) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_cos
+            .ok_or(CallError::Missing("detmath_cos"))?;
+        Ok(unsafe { entry(angle) })
+    }
+
+    /// The fixed-point tangent of a binary angle.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_tan(&self, angle: ffi::CyAngle) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_tan
+            .ok_or(CallError::Missing("detmath_tan"))?;
+        Ok(unsafe { entry(angle) })
+    }
+
+    /// The binary angle whose tangent is `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_atan(&self, x: ffi::CyFixed) -> Result<ffi::CyAngle, CallError> {
+        let entry = self
+            .table()
+            .detmath_atan
+            .ok_or(CallError::Missing("detmath_atan"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// The binary angle of the vector (x, y).
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_atan2(
+        &self,
+        y: ffi::CyFixed,
+        x: ffi::CyFixed,
+    ) -> Result<ffi::CyAngle, CallError> {
+        let entry = self
+            .table()
+            .detmath_atan2
+            .ok_or(CallError::Missing("detmath_atan2"))?;
+        Ok(unsafe { entry(y, x) })
+    }
+
+    /// The binary angle whose sine is `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_asin(&self, x: ffi::CyFixed) -> Result<ffi::CyAngle, CallError> {
+        let entry = self
+            .table()
+            .detmath_asin
+            .ok_or(CallError::Missing("detmath_asin"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// The binary angle whose cosine is `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_acos(&self, x: ffi::CyFixed) -> Result<ffi::CyAngle, CallError> {
+        let entry = self
+            .table()
+            .detmath_acos
+            .ok_or(CallError::Missing("detmath_acos"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// Two to the fixed-point power `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_exp2(&self, x: ffi::CyFixed) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_exp2
+            .ok_or(CallError::Missing("detmath_exp2"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// The base-two logarithm of a fixed-point value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_log2(&self, x: ffi::CyFixed) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_log2
+            .ok_or(CallError::Missing("detmath_log2"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// e to the fixed-point power `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_exp(&self, x: ffi::CyFixed) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_exp
+            .ok_or(CallError::Missing("detmath_exp"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// The natural logarithm of a fixed-point value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_log(&self, x: ffi::CyFixed) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_log
+            .ok_or(CallError::Missing("detmath_log"))?;
+        Ok(unsafe { entry(x) })
+    }
+
+    /// `x` to the power `y`, for positive `x`.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_pow(
+        &self,
+        x: ffi::CyFixed,
+        y: ffi::CyFixed,
+    ) -> Result<ffi::CyFixed, CallError> {
+        let entry = self
+            .table()
+            .detmath_pow
+            .ok_or(CallError::Missing("detmath_pow"))?;
+        Ok(unsafe { entry(x, y) })
+    }
+
+    /// A deterministic math function over a span of raw inputs.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn detmath_evaluate(
+        &self,
+        function: u32,
+        x: *const ffi::CyFixed,
+        y: *const ffi::CyFixed,
+        into: *mut ffi::CyFixed,
+        count: u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .detmath_evaluate
+            .ok_or(CallError::Missing("detmath_evaluate"))?;
+        let raw = unsafe { entry(function, x, y, into, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Enlist a unit in the lockstep session before its first tick.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_enlist(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CyLockstepUnitDesc,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_enlist
+            .ok_or(CallError::Missing("lockstep_enlist"))?;
+        let raw = unsafe { entry(engine, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Record an order for the lockstep session's next tick.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_order(
+        &self,
+        engine: ffi::CyEngine,
+        order: *const ffi::CyLockstepOrder,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_order
+            .ok_or(CallError::Missing("lockstep_order"))?;
+        let raw = unsafe { entry(engine, order) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A lockstep unit's authoritative state.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_unit(
+        &self,
+        engine: ffi::CyEngine,
+        unit: u32,
+        into: *mut ffi::CyLockstepUnit,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_unit
+            .ok_or(CallError::Missing("lockstep_unit"))?;
+        let raw = unsafe { entry(engine, unit, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The lockstep session's tick, log, hash and digest.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn lockstep_status(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyLockstepStatus,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .lockstep_status
+            .ok_or(CallError::Missing("lockstep_status"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

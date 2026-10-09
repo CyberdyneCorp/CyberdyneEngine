@@ -53,6 +53,7 @@ public enum VarType: UInt32, Sendable, CaseIterable {
     case u16 = 16
     case u32 = 17
     case u64 = 18
+    case fixed = 19
 }
 
 /// `CyInitLevel`: when a module registers what. Types are registered at `.scene`.
@@ -209,6 +210,29 @@ public enum AnimationTier: UInt32, Sendable, CaseIterable {
     case simplified = 1
     case cached = 2
     case baked = 3
+}
+
+/// `CyDetmathFunction`: a deterministic math function over a span.
+public enum DetmathFunction: UInt32, Sendable, CaseIterable {
+    case sqrt = 0
+    case sin = 1
+    case cos = 2
+    case tan = 3
+    case atan = 4
+    case atan2 = 5
+    case asin = 6
+    case acos = 7
+    case exp2 = 8
+    case log2 = 9
+    case exp = 10
+    case log = 11
+    case pow = 12
+}
+
+/// `CyLockstepOrderKind`: what an order tells a lockstep group.
+public enum LockstepOrderKind: UInt32, Sendable, CaseIterable {
+    case move = 0
+    case stop = 1
 }
 
 /// The error every throwing overlay call raises.

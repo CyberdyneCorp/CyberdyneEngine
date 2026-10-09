@@ -1466,6 +1466,213 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyFixedVec2>() == 16,
+    "CyFixedVec2 is not 16 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFixedVec2>() == 8,
+    "CyFixedVec2 is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedVec2, x) == 0,
+    "CyFixedVec2::x is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedVec2, y) == 8,
+    "CyFixedVec2::y is not at byte 8"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyFixedVec3>() == 24,
+    "CyFixedVec3 is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFixedVec3>() == 8,
+    "CyFixedVec3 is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedVec3, x) == 0,
+    "CyFixedVec3::x is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedVec3, y) == 8,
+    "CyFixedVec3::y is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedVec3, z) == 16,
+    "CyFixedVec3::z is not at byte 16"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyFixedQuat>() == 32,
+    "CyFixedQuat is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFixedQuat>() == 8,
+    "CyFixedQuat is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedQuat, x) == 0,
+    "CyFixedQuat::x is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedQuat, y) == 8,
+    "CyFixedQuat::y is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedQuat, z) == 16,
+    "CyFixedQuat::z is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFixedQuat, w) == 24,
+    "CyFixedQuat::w is not at byte 24"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepUnitDesc>() == 48,
+    "CyLockstepUnitDesc is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepUnitDesc>() == 8,
+    "CyLockstepUnitDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, struct_size) == 0,
+    "CyLockstepUnitDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, group) == 4,
+    "CyLockstepUnitDesc::group is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, entity) == 8,
+    "CyLockstepUnitDesc::entity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, position) == 16,
+    "CyLockstepUnitDesc::position is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, radius) == 32,
+    "CyLockstepUnitDesc::radius is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnitDesc, max_speed) == 40,
+    "CyLockstepUnitDesc::max_speed is not at byte 40"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepOrder>() == 32,
+    "CyLockstepOrder is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepOrder>() == 8,
+    "CyLockstepOrder is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepOrder, struct_size) == 0,
+    "CyLockstepOrder::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepOrder, kind) == 4,
+    "CyLockstepOrder::kind is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepOrder, group) == 8,
+    "CyLockstepOrder::group is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepOrder, reserved) == 12,
+    "CyLockstepOrder::reserved is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepOrder, target) == 16,
+    "CyLockstepOrder::target is not at byte 16"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepUnit>() == 64,
+    "CyLockstepUnit is not 64 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepUnit>() == 8,
+    "CyLockstepUnit is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, struct_size) == 0,
+    "CyLockstepUnit::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, group) == 4,
+    "CyLockstepUnit::group is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, entity) == 8,
+    "CyLockstepUnit::entity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, position) == 16,
+    "CyLockstepUnit::position is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, velocity) == 32,
+    "CyLockstepUnit::velocity is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, height) == 48,
+    "CyLockstepUnit::height is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, heading) == 56,
+    "CyLockstepUnit::heading is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepUnit, flags) == 60,
+    "CyLockstepUnit::flags is not at byte 60"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLockstepStatus>() == 48,
+    "CyLockstepStatus is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLockstepStatus>() == 8,
+    "CyLockstepStatus is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, struct_size) == 0,
+    "CyLockstepStatus::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, units) == 4,
+    "CyLockstepStatus::units is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, tick) == 8,
+    "CyLockstepStatus::tick is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, commands) == 16,
+    "CyLockstepStatus::commands is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, state_hash) == 24,
+    "CyLockstepStatus::state_hash is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, digest) == 32,
+    "CyLockstepStatus::digest is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, kernel_version) == 40,
+    "CyLockstepStatus::kernel_version is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLockstepStatus, disagreements) == 44,
+    "CyLockstepStatus::disagreements is not at byte 44"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -1491,8 +1698,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 992,
-    "CyInterface is not 992 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1160,
+    "CyInterface is not 1160 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -1990,6 +2197,90 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, animation_joint_pose) == 984,
     "CyInterface::animation_joint_pose is not at byte 984"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, component_get_fixed) == 992,
+    "CyInterface::component_get_fixed is not at byte 992"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, component_set_fixed) == 1000,
+    "CyInterface::component_set_fixed is not at byte 1000"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_kernel_version) == 1008,
+    "CyInterface::detmath_kernel_version is not at byte 1008"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_sqrt) == 1016,
+    "CyInterface::detmath_sqrt is not at byte 1016"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_sin) == 1024,
+    "CyInterface::detmath_sin is not at byte 1024"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_cos) == 1032,
+    "CyInterface::detmath_cos is not at byte 1032"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_tan) == 1040,
+    "CyInterface::detmath_tan is not at byte 1040"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_atan) == 1048,
+    "CyInterface::detmath_atan is not at byte 1048"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_atan2) == 1056,
+    "CyInterface::detmath_atan2 is not at byte 1056"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_asin) == 1064,
+    "CyInterface::detmath_asin is not at byte 1064"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_acos) == 1072,
+    "CyInterface::detmath_acos is not at byte 1072"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_exp2) == 1080,
+    "CyInterface::detmath_exp2 is not at byte 1080"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_log2) == 1088,
+    "CyInterface::detmath_log2 is not at byte 1088"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_exp) == 1096,
+    "CyInterface::detmath_exp is not at byte 1096"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_log) == 1104,
+    "CyInterface::detmath_log is not at byte 1104"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_pow) == 1112,
+    "CyInterface::detmath_pow is not at byte 1112"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, detmath_evaluate) == 1120,
+    "CyInterface::detmath_evaluate is not at byte 1120"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_enlist) == 1128,
+    "CyInterface::lockstep_enlist is not at byte 1128"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_order) == 1136,
+    "CyInterface::lockstep_order is not at byte 1136"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_unit) == 1144,
+    "CyInterface::lockstep_unit is not at byte 1144"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, lockstep_status) == 1152,
+    "CyInterface::lockstep_status is not at byte 1152"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2036,7 +2327,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        122,
+        143,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

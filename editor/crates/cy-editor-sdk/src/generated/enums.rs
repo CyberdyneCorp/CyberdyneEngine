@@ -239,11 +239,13 @@ pub enum VarType {
     U32 = 17,
     /// `CY_VAR_U64` = 18.
     U64 = 18,
+    /// `CY_VAR_FIXED` = 19.
+    Fixed = 19,
 }
 
 impl VarType {
     /// Every value, in declaration order. Lets a caller enumerate without a range.
-    pub const ALL: [VarType; 19] = [
+    pub const ALL: [VarType; 20] = [
         VarType::Nil,
         VarType::Bool,
         VarType::I64,
@@ -263,6 +265,7 @@ impl VarType {
         VarType::U16,
         VarType::U32,
         VarType::U64,
+        VarType::Fixed,
     ];
 
     /// The value the ABI carries, or `None` when this build has no name for it.
@@ -288,6 +291,7 @@ impl VarType {
             16 => Some(VarType::U16),
             17 => Some(VarType::U32),
             18 => Some(VarType::U64),
+            19 => Some(VarType::Fixed),
             _ => None,
         }
     }
@@ -321,6 +325,7 @@ impl VarType {
             VarType::U16 => "CY_VAR_U16",
             VarType::U32 => "CY_VAR_U32",
             VarType::U64 => "CY_VAR_U64",
+            VarType::Fixed => "CY_VAR_FIXED",
         }
     }
 }
@@ -1346,6 +1351,152 @@ impl AnimationTier {
             AnimationTier::Simplified => "CY_ANIMATION_TIER_SIMPLIFIED",
             AnimationTier::Cached => "CY_ANIMATION_TIER_CACHED",
             AnimationTier::Baked => "CY_ANIMATION_TIER_BAKED",
+        }
+    }
+}
+/// `CyDetmathFunction`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum DetmathFunction {
+    /// `CY_DETMATH_SQRT` = 0.
+    Sqrt = 0,
+    /// `CY_DETMATH_SIN` = 1.
+    Sin = 1,
+    /// `CY_DETMATH_COS` = 2.
+    Cos = 2,
+    /// `CY_DETMATH_TAN` = 3.
+    Tan = 3,
+    /// `CY_DETMATH_ATAN` = 4.
+    Atan = 4,
+    /// `CY_DETMATH_ATAN2` = 5.
+    Atan2 = 5,
+    /// `CY_DETMATH_ASIN` = 6.
+    Asin = 6,
+    /// `CY_DETMATH_ACOS` = 7.
+    Acos = 7,
+    /// `CY_DETMATH_EXP2` = 8.
+    Exp2 = 8,
+    /// `CY_DETMATH_LOG2` = 9.
+    Log2 = 9,
+    /// `CY_DETMATH_EXP` = 10.
+    Exp = 10,
+    /// `CY_DETMATH_LOG` = 11.
+    Log = 11,
+    /// `CY_DETMATH_POW` = 12.
+    Pow = 12,
+}
+
+impl DetmathFunction {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [DetmathFunction; 13] = [
+        DetmathFunction::Sqrt,
+        DetmathFunction::Sin,
+        DetmathFunction::Cos,
+        DetmathFunction::Tan,
+        DetmathFunction::Atan,
+        DetmathFunction::Atan2,
+        DetmathFunction::Asin,
+        DetmathFunction::Acos,
+        DetmathFunction::Exp2,
+        DetmathFunction::Log2,
+        DetmathFunction::Exp,
+        DetmathFunction::Log,
+        DetmathFunction::Pow,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(DetmathFunction::Sqrt),
+            1 => Some(DetmathFunction::Sin),
+            2 => Some(DetmathFunction::Cos),
+            3 => Some(DetmathFunction::Tan),
+            4 => Some(DetmathFunction::Atan),
+            5 => Some(DetmathFunction::Atan2),
+            6 => Some(DetmathFunction::Asin),
+            7 => Some(DetmathFunction::Acos),
+            8 => Some(DetmathFunction::Exp2),
+            9 => Some(DetmathFunction::Log2),
+            10 => Some(DetmathFunction::Exp),
+            11 => Some(DetmathFunction::Log),
+            12 => Some(DetmathFunction::Pow),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            DetmathFunction::Sqrt => "CY_DETMATH_SQRT",
+            DetmathFunction::Sin => "CY_DETMATH_SIN",
+            DetmathFunction::Cos => "CY_DETMATH_COS",
+            DetmathFunction::Tan => "CY_DETMATH_TAN",
+            DetmathFunction::Atan => "CY_DETMATH_ATAN",
+            DetmathFunction::Atan2 => "CY_DETMATH_ATAN2",
+            DetmathFunction::Asin => "CY_DETMATH_ASIN",
+            DetmathFunction::Acos => "CY_DETMATH_ACOS",
+            DetmathFunction::Exp2 => "CY_DETMATH_EXP2",
+            DetmathFunction::Log2 => "CY_DETMATH_LOG2",
+            DetmathFunction::Exp => "CY_DETMATH_EXP",
+            DetmathFunction::Log => "CY_DETMATH_LOG",
+            DetmathFunction::Pow => "CY_DETMATH_POW",
+        }
+    }
+}
+/// `CyLockstepOrderKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LockstepOrderKind {
+    /// `CY_LOCKSTEP_ORDER_MOVE` = 0.
+    Move = 0,
+    /// `CY_LOCKSTEP_ORDER_STOP` = 1.
+    Stop = 1,
+}
+
+impl LockstepOrderKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LockstepOrderKind; 2] = [LockstepOrderKind::Move, LockstepOrderKind::Stop];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LockstepOrderKind::Move),
+            1 => Some(LockstepOrderKind::Stop),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LockstepOrderKind::Move => "CY_LOCKSTEP_ORDER_MOVE",
+            LockstepOrderKind::Stop => "CY_LOCKSTEP_ORDER_STOP",
         }
     }
 }

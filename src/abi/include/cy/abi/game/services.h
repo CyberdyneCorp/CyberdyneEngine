@@ -55,6 +55,7 @@ class PhysicsBodyBackend;
 class CharacterBackend;
 class UiBackend;
 class AnimationBackend;
+class LockstepBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -105,6 +106,8 @@ struct GameServices {
     UiBackend* ui = nullptr;
     /// ABI 1.7: `animation_*`.
     AnimationBackend* animation = nullptr;
+    /// ABI 1.8: `lockstep_*`. Null in a host that runs no lockstep session.
+    LockstepBackend* lockstep = nullptr;
     GameClock clock;
 };
 

@@ -343,3 +343,42 @@ CY_TEST_CASE("the 1.6 interface structs have the layout the description computes
     CY_CHECK_EQ(offsetof(CyUiStyle, border_width), 20U);
     CY_CHECK_EQ(offsetof(CyUiStyle, corner_radius), 24U);
 }
+
+CY_TEST_CASE("the 1.8 structs have the offsets the description generator computes") {
+    // ABI 1.8 (add-deterministic-math): every member is a fixed-width integer, so the model and
+    // the compiler must agree everywhere — and a CyFixed is never padded or split.
+    CY_CHECK_EQ(sizeof(CyFixedVec2), 16U);
+    CY_CHECK_EQ(offsetof(CyFixedVec2, y), 8U);
+    CY_CHECK_EQ(sizeof(CyFixedVec3), 24U);
+    CY_CHECK_EQ(offsetof(CyFixedVec3, z), 16U);
+    CY_CHECK_EQ(sizeof(CyFixedQuat), 32U);
+    CY_CHECK_EQ(offsetof(CyFixedQuat, w), 24U);
+
+    CY_CHECK_EQ(sizeof(CyLockstepUnitDesc), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnitDesc, group), 4U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnitDesc, entity), 8U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnitDesc, position), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnitDesc, radius), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnitDesc, max_speed), 40U);
+
+    CY_CHECK_EQ(sizeof(CyLockstepOrder), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepOrder, kind), 4U);
+    CY_CHECK_EQ(offsetof(CyLockstepOrder, group), 8U);
+    CY_CHECK_EQ(offsetof(CyLockstepOrder, target), 16U);
+
+    CY_CHECK_EQ(sizeof(CyLockstepUnit), 64U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, entity), 8U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, position), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, velocity), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, height), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, heading), 56U);
+    CY_CHECK_EQ(offsetof(CyLockstepUnit, flags), 60U);
+
+    CY_CHECK_EQ(sizeof(CyLockstepStatus), 48U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, tick), 8U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, commands), 16U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, state_hash), 24U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, digest), 32U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, kernel_version), 40U);
+    CY_CHECK_EQ(offsetof(CyLockstepStatus, disagreements), 44U);
+}

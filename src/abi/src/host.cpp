@@ -32,6 +32,7 @@ u32 var_type_storage_size(CyVarType type) noexcept {
         case CY_VAR_F64:
         case CY_VAR_VEC2:
         case CY_VAR_ENTITY:
+        case CY_VAR_FIXED:
             return 8;
         case CY_VAR_VEC3:
             return 12;

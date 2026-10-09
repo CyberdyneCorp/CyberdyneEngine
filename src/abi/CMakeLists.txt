@@ -56,17 +56,24 @@ cy_add_module(
         src/game/ui_thunks.cpp
         # ABI 1.7: animation, over a backend cy::game-backend-animation binds.
         src/game/animation_thunks.cpp
+        # ABI 1.8: deterministic math, and the lockstep path over a backend
+        # cy::game-backend-lockstep binds.
+        src/game/detmath_thunks.cpp
+        src/game/lockstep_thunks.cpp
         src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation
     # (M5 task 1.1). PRIVATE would be wrong only if the header exposed it, and it does not: the
     # watcher's interface is three `const char*` and a report, so nothing that includes
     # cy/abi/live_reload.h needs the filesystem on its include path.
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::ecs
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-determinism cy::ecs
     # The dynamic loader. `${CMAKE_DL_LIBS}` is empty on the platforms whose libc already has
     # dlopen, and is `dl` on the ones that keep it separate — which is why it is spelled with the
     # variable rather than with the name.
-    PRIVATE_DEPENDENCIES cy::core-assets ${CMAKE_DL_LIBS})
+    # ABI 1.8's `detmath_*` entries call the deterministic math kernel. PRIVATE, so the module's
+    # `CY_DETERMINISM_MATH` definition does not reach every consumer of the ABI: the table carries
+    # the functions, and claiming deterministic math stays the business of what links cy::movement.
+    PRIVATE_DEPENDENCIES cy::core-assets cy::core-detmath ${CMAKE_DL_LIBS})
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
