@@ -9,6 +9,7 @@
 #include <cy/movement/determinism.h>
 #include <cy/navigation/determinism.h>
 
+#include <algorithm>
 #include <initializer_list>
 
 namespace cy::game_backend {
@@ -152,12 +153,7 @@ Status LockstepSession::start() noexcept {
 }
 
 bool LockstepSession::has_group(u32 group) const noexcept {
-    for (const u32 member : groups_.span()) {
-        if (member == group) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(groups_, [group](u32 member) noexcept { return member == group; });
 }
 
 Status LockstepSession::record_command(gameplay::Command command) noexcept {

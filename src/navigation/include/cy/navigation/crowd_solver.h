@@ -73,11 +73,11 @@ struct CrowdReport {
 template <class Policy>
 class BasicCrowd {
 public:
-    using Scalar = typename Policy::Scalar;
-    using Vec = typename Policy::Vec;
-    using Wide = typename Policy::Wide;
-    using Agent = typename Policy::Agent;
-    using Params = typename Policy::Params;
+    using Scalar = Policy::Scalar;
+    using Vec = Policy::Vec;
+    using Wide = Policy::Wide;
+    using Agent = Policy::Agent;
+    using Params = Policy::Params;
 
     BasicCrowd(Allocator& allocator, Scalar cell_size) noexcept;
 
