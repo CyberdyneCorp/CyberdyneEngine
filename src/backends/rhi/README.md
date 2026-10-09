@@ -93,7 +93,7 @@ reports 12 of 12 answered and fails if a requirement, suite or named case disapp
 | Shader modules and pipelines | Satisfied | `integration.rhi_pipeline_cache` covers persistence and cold start; backend suites cover SPIR-V, MSL and DXIL creation. |
 | Descriptor management | Satisfied | `unit.rhi` covers classic sets, the global table, its single sampler and capability-selected compatibility behavior; Metal and D3D12 device suites exercise native materialization. |
 | Memory management | Satisfied | `unit.rhi` accounts categories and pressure, render-graph suites cover transient aliasing, and backend suites cover VMA, Metal heaps and D3D12 placed heaps. |
-| Backend capability model | Satisfied | `unit.rhi` mutates device answers and verifies the derived capability; renderer decisions consume the capability rather than backend identity. |
+| Backend capability model | Satisfied | `unit.rhi` mutates device answers and verifies the derived capability; renderer decisions consume the capability rather than backend identity. `render.ray_tracing_capability` and `render.geometry_memory` check that the Vulkan backend fills the observations for `RayTracing` and `HostVisibleDeviceLocalMemory` from what the driver reported. Vulkan never set the latter before #77. |
 | Backend roadmap | Satisfied | `render.golden_backends` records matched Vulkan, native Metal and native D3D12 frames on NVIDIA, Apple and AMD hardware. |
 | Validation and debugging | Satisfied | backend suites enable validation; `integration.render_graph_scale` checks text and Graphviz dumps; graph passes emit tool labels and breadcrumbs. |
 | Null backend | Satisfied | `render.null_frame` runs the first-light frame without a GPU while `unit.rhi` preserves validation and comparable command logs. |

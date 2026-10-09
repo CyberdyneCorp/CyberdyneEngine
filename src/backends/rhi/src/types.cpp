@@ -236,6 +236,12 @@ bool device_reports_ray_tracing(const RayTracingObservation& observed) noexcept 
     return reported;
 }
 
+bool device_offers_host_visible_device_local(const MemoryObservation& observed) noexcept {
+    // Both counts are needed: a backend that observed no types at all has reported nothing,
+    // whatever the other count says.
+    return observed.types != 0 && observed.device_local_mappable != 0;
+}
+
 const char* backend_kind_name(BackendKind kind) noexcept {
     switch (kind) {
         case BackendKind::Null:

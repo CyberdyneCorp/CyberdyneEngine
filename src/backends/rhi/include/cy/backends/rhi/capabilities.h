@@ -174,6 +174,35 @@ struct RayTracingObservation {
 /// exactly the defect `m11c:ray-tracing-capability-honest` is proven against.
 [[nodiscard]] bool device_reports_ray_tracing(const RayTracingObservation& observed) noexcept;
 
+/// WHAT A BACKEND OBSERVED ABOUT A DEVICE'S MEMORY TYPES, before anything decided anything.
+///
+/// THE DEFECT THIS STRUCT EXISTS FOR (#77). `Capability::HostVisibleDeviceLocalMemory` was an
+/// enumerator the Vulkan backend NEVER SET, so every Vulkan device reported it absent — including
+/// the RTX 5060 whose driver lists a device-local, host-visible, host-coherent memory type — and a
+/// caller that asked before choosing `MemoryUse::HostVisibleDeviceLocal` was always told to use
+/// `Upload`. On a discrete GPU, `Upload` is system memory: every draw that reads a buffer there
+/// pulls it across the bus, every time it is drawn. `samples/10-world` draws its streams three
+/// times a frame, and that bus traffic was most of its device time.
+///
+/// So the backend records what it saw, `device_offers_host_visible_device_local()` decides, and a
+/// test can put any device in front of that decision without owning a GPU.
+struct MemoryObservation {
+    /// Memory types the device listed. Zero means the backend observed nothing, which is not the
+    /// same answer as a device that has none of the kind below.
+    u32 types = 0;
+    /// Types that are device-local, host-visible AND host-coherent: memory the processor writes
+    /// through a mapping with no flush, and the device reads without crossing the bus.
+    u32 device_local_mappable = 0;
+    /// Types that are host-visible and NOT device-local: system memory the device reads across the
+    /// bus. Zero on a unified-memory device, where every type is both and nothing is gained by
+    /// choosing one over the other.
+    u32 host_only = 0;
+};
+
+/// Whether a device that reported this may be told it has host-visible device-local memory.
+[[nodiscard]] bool device_offers_host_visible_device_local(
+    const MemoryObservation& observed) noexcept;
+
 /// Which backend answered. Reported for a log line and a crash artefact — never branched on. The
 /// renderer branches on Capability; this exists so a bug report says which backend produced it.
 enum class BackendKind : u8 {
@@ -283,6 +312,14 @@ public:
         set(Capability::RayTracing, device_reports_ray_tracing(observed));
     }
 
+    /// What the backend saw of the device's memory types, and the capability decided from it.
+    [[nodiscard]] const MemoryObservation& memory_observation() const noexcept { return memory_; }
+    void set_memory_observation(const MemoryObservation& observed) noexcept {
+        memory_ = observed;
+        set(Capability::HostVisibleDeviceLocalMemory,
+            device_offers_host_visible_device_local(observed));
+    }
+
     /// GPU-driven rendering needs bindless. `rhi-and-render-graph` requires the compatibility
     /// path's limitations to be reported rather than to degrade silently, and this is the one
     /// question the renderer asks to find out which path it is on.
@@ -303,6 +340,7 @@ private:
     u32 vendor_id_ = 0;
     char driver_version_[64] = {};
     RayTracingObservation ray_tracing_{};
+    MemoryObservation memory_{};
 };
 
 /// THE ENGINE'S OWN FORMAT CHOICE, MADE AGAINST WHAT THE DEVICE REPORTS — Metal gap 7.
