@@ -43,7 +43,7 @@ still runs.
 | Renderer-neutral debug overlays and aggregate diagnostics | `debug.h` |
 | Regions, the abstract graph, deferred refinement | `hierarchy.h` |
 | Flow fields and the cache that shares them | `flow_field.h` |
-| Local avoidance, the crowd, path and field following | `crowd.h` |
+| Local avoidance, the crowd, path and field following | `crowd.h`; the solver over a scalar policy, `crowd_solver.h` and `crowd_solver_impl.h` |
 | `NavMeshSurface`, `NavAgent`, `NavObstacle`, `NavLink`, `NavArea` | `components.h` |
 | Path following written once, for `f32` and `Fixed` arithmetic | `follow.h` |
 | What navigation guarantees, declared from its worlds' arithmetic | `determinism.h` |
@@ -196,6 +196,14 @@ Two agents exactly head-on are a degenerate case that floating-point noise resol
 and a deterministic simulation must not rely on. Each agent perceives its neighbour displaced along
 the perpendicular of the vector to it; that vector points opposite ways for the two of them, so the
 bias sends them to opposite sides — with no identity comparison, no shared state and no randomness.
+
+**One solver, two kinds of arithmetic** (`openspec/changes/add-deterministic-math` task 6.2). The solver —
+grid, neighbour order, lattice, scoring, acceleration limit — is written once as
+`BasicCrowd<Policy>` (`crowd_solver.h`, defined in `crowd_solver_impl.h`). `Crowd` is its f32
+instantiation (`FloatCrowdPolicy`, which spells every operation as the solver did before it was a
+template, so its bits did not change), and `cy::movement::FixedCrowd` is the same text over `Fixed`
+for a `Lockstep` world. This module still does not link the deterministic math module: the policy
+carries the arithmetic, and the `Fixed` instantiation lives in `cy::movement`.
 
 ## Streaming has no class, and that is the design
 

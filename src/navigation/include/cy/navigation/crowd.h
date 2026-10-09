@@ -35,6 +35,12 @@
 //      SHALL use cheaper avoidance" asks for, with the fidelity difference documented: see
 //      `CrowdTier` below, whose rows say how many candidates and neighbours each tier gets.
 //
+// WRITTEN ONCE, FOR TWO KINDS OF ARITHMETIC. The solver is `BasicCrowd<Policy>`
+// (crowd_solver.h, defined in crowd_solver_impl.h). `Crowd` below is its f32 instantiation, and
+// computes the bits the solver computed before it was a template; `cy::movement::FixedCrowd` is the
+// same text over `Fixed`, a `Lockstep` world's avoidance (openspec/changes/add-deterministic-math
+// task 6.2).
+//
 // RECIPROCITY AND PRIORITY ARE THE SAME NUMBER. Each agent takes a share of the avoidance; two
 // equals take half each, which is what stops the oscillation two agents each dodging fully would
 // produce. `navigation`'s "lower-priority agents SHALL yield, avoiding deadlock" is that share
@@ -43,25 +49,11 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
+#include <cy/navigation/crowd_solver.h>
 #include <cy/navigation/flow_field.h>
 #include <cy/navigation/query.h>
 
 namespace cy::navigation {
-
-using CrowdAgentId = u32;
-inline constexpr CrowdAgentId kInvalidCrowdAgent = 0xFFFFFFFFu;
-
-/// How much thinking one agent gets. `navigation` requires crowd cost to be "tiered consistently
-/// with AI LOD", and `ai-system`'s tier table is the one these three mirror.
-///
-/// | Tier      | Candidates | Neighbours | Steering |
-/// |-----------|-----------:|-----------:|----------|
-/// | `Full`    |         25 |          6 | full sampled RVO |
-/// | `Reduced` |          9 |          3 | sampled RVO over a coarser lattice |
-/// | `Minimal` |          0 |          3 | separation only — no time-to-collision term |
-enum class CrowdTier : u8 { Full = 0, Reduced, Minimal, Count };
-
-[[nodiscard]] const char* crowd_tier_name(CrowdTier tier) noexcept;
 
 /// `navigation`'s agent parameters, by name: "radius, height, maximum speed, neighbour distance,
 /// maximum neighbours, time horizon for agents, and time horizon for obstacles".
@@ -96,91 +88,73 @@ struct CrowdAgent {
     bool active = false;
 };
 
-/// What one `step()` cost and what it decided, so a budget is a measurement.
-struct CrowdReport {
-    u32 agents = 0;
-    u32 agents_by_tier[static_cast<usize>(CrowdTier::Count)] = {};
-    u32 neighbour_tests = 0;
-    u32 candidates_scored = 0;
-    u32 agents_adjusted = 0;  ///< whose velocity differs from the desired one
-    u32 grid_cells_used = 0;
-    /// Grid cells the neighbour queries looked at, summed over every agent. Bounded by the block
-    /// of cells one query's radius covers, times the agents — NOT by the cells the crowd occupies,
-    /// which is what a grid that scanned its whole cell table per query would show here.
-    u32 cells_examined = 0;
+/// The f32 arithmetic of `BasicCrowd` (crowd_solver.h). Each operation is spelled exactly as the
+/// solver spelled it before it was a template, in the same order, so a float world's crowd computes
+/// the bits it always did. Defined in crowd.cpp, the one translation unit that instantiates it.
+struct FloatCrowdPolicy {
+    using Scalar = f32;
+    using Vec = Vec3;
+    /// Squared lengths and dot products are compared in f32 itself.
+    using Wide = f32;
+    using Agent = CrowdAgent;
+    using Params = AvoidanceParams;
+
+    /// The XZ plane: y dropped.
+    [[nodiscard]] static Vec3 flatten(Vec3 v) noexcept;
+    [[nodiscard]] static f32 across(Vec3 v) noexcept { return v.x; }
+    [[nodiscard]] static f32 along(Vec3 v) noexcept { return v.z; }
+    [[nodiscard]] static f32 length_squared(Vec3 v) noexcept;
+    [[nodiscard]] static f32 dot(Vec3 a, Vec3 b) noexcept;
+    [[nodiscard]] static f32 square(f32 s) noexcept { return s * s; }
+    [[nodiscard]] static f32 product(f32 a, f32 b) noexcept { return a * b; }
+    [[nodiscard]] static f32 narrow(f32 w) noexcept { return w; }
+    [[nodiscard]] static f32 sqrt(f32 w) noexcept;
+    [[nodiscard]] static f32 length(Vec3 v) noexcept;
+    [[nodiscard]] static Vec3 clamp_speed(Vec3 v, f32 max_speed) noexcept;
+    /// The XZ perpendicular, rotated a quarter turn.
+    [[nodiscard]] static Vec3 perpendicular(Vec3 v) noexcept;
+    /// The `spoke`-th of `count` directions around the circle, at `magnitude`.
+    [[nodiscard]] static Vec3 lattice(u32 spoke, u32 count, f32 magnitude) noexcept;
+    [[nodiscard]] static f32 ratio(u32 numerator, u32 denominator) noexcept;
+    [[nodiscard]] static f32 lesser(f32 a, f32 b) noexcept;
+    [[nodiscard]] static f32 greater(f32 a, f32 b) noexcept;
+    [[nodiscard]] static i32 cell(f32 coordinate, f32 size) noexcept;
+    [[nodiscard]] static i32 cell_span(f32 range, f32 size) noexcept;
+    [[nodiscard]] static f32 responsibility(u8 mine, u8 theirs) noexcept;
+    [[nodiscard]] static Vec3 zero_vec() noexcept { return Vec3{}; }
+    [[nodiscard]] static f32 zero() noexcept { return 0.0F; }
+    [[nodiscard]] static f32 wide_zero() noexcept { return 0.0F; }
+    [[nodiscard]] static f32 one() noexcept { return 1.0F; }
+    [[nodiscard]] static f32 two() noexcept { return 2.0F; }
+    [[nodiscard]] static f32 half() noexcept { return 0.5F; }
+    [[nodiscard]] static f32 infinity() noexcept;
+    [[nodiscard]] static f32 default_cell_size() noexcept { return 4.0F; }
+    /// How far to one side an agent perceives a neighbour that is exactly ahead of it, as a
+    /// fraction of the distance — the side bias, explained in `soonest_collision`.
+    [[nodiscard]] static f32 side_bias() noexcept { return 0.15F; }
+    /// Closer than this, two agents have no direction to separate along.
+    [[nodiscard]] static f32 separation_floor() noexcept { return 1e-4F; }
+    /// A relative speed squared below this never closes.
+    [[nodiscard]] static f32 still_speed_squared() noexcept { return 1e-9F; }
+    /// A velocity change below this is applied whole, whatever the acceleration limit.
+    [[nodiscard]] static f32 change_floor() noexcept { return 1e-6F; }
+    /// A velocity this far from the desired one counts as adjusted in the report.
+    [[nodiscard]] static f32 adjusted_floor() noexcept { return 1e-3F; }
 };
 
 /// A crowd: packed agents, a uniform grid for neighbour queries, and one velocity per agent per
-/// step.
-///
-/// NOT a world. It holds no mesh and no field: `set_desired_velocity` is how a follower, a flow
-/// field or a scripted order reaches it, and that keeps the avoidance solver testable without a
-/// navigation mesh in existence.
-class Crowd {
+/// step — `BasicCrowd` over f32. The `Fixed` instantiation is `cy::movement::FixedCrowd`.
+class Crowd : public BasicCrowd<FloatCrowdPolicy> {
 public:
-    Crowd(Allocator& allocator, f32 cell_size) noexcept;
-
-    Crowd(const Crowd&) = delete;
-    Crowd& operator=(const Crowd&) = delete;
-    Crowd(Crowd&&) noexcept = default;
-    Crowd& operator=(Crowd&&) noexcept = default;
-
-    [[nodiscard]] Expected<CrowdAgentId, Error> add(Vec3 position,
-                                                    const AvoidanceParams& params) noexcept;
-    [[nodiscard]] Status remove(CrowdAgentId id) noexcept;
-    [[nodiscard]] u32 size() const noexcept { return live_; }
-    [[nodiscard]] u32 capacity() const noexcept { return static_cast<u32>(agents_.size()); }
-
-    [[nodiscard]] CrowdAgent* agent(CrowdAgentId id) noexcept;
-    [[nodiscard]] const CrowdAgent* agent(CrowdAgentId id) const noexcept;
-    /// The packed array, for a caller that iterates in bulk. Inactive slots carry `active = false`.
-    [[nodiscard]] Span<const CrowdAgent> agents() const noexcept { return agents_.span(); }
-
-    void set_desired_velocity(CrowdAgentId id, Vec3 velocity) noexcept;
-    void set_tier(CrowdAgentId id, CrowdTier tier) noexcept;
+    Crowd(Allocator& allocator, f32 cell_size) noexcept
+        : BasicCrowd<FloatCrowdPolicy>(allocator, cell_size) {}
 
     /// Steer every agent toward the point it is heading for, along `field` or along `corridor`'s
     /// next point. A convenience over `set_desired_velocity` and not a requirement of `step()`.
     void steer_towards(CrowdAgentId id, Vec3 target, f32 arrival_distance) noexcept;
-
-    /// Resolve avoidance for every active agent and write `velocity`. POSITIONS ARE NOT TOUCHED.
-    [[nodiscard]] Status step(f32 dt, CrowdReport& report) noexcept;
-
-    /// Advance positions by the velocities `step()` produced.
-    ///
-    /// THIS IS A STAND-IN FOR THE CHARACTER CONTROLLER, not part of avoidance — see the header.
-    /// A project with a controller feeds `velocity` to it and never calls this.
-    void integrate(f32 dt) noexcept;
-
-private:
-    /// One occupied cell. `cells_` is ordered by `key`, which is `cell_key(x, z)`.
-    struct GridCell {
-        u64 key = 0;
-        u32 first = 0;  ///< into `cell_agents_`
-        u32 count = 0;
-    };
-
-    [[nodiscard]] Status rebuild_grid(CrowdReport& report) noexcept;
-    [[nodiscard]] i32 cell_of(f32 coordinate) const noexcept;
-    [[nodiscard]] static u64 cell_key(i32 x, i32 z) noexcept;
-    void gather_neighbours(CrowdAgentId id, u32 wanted, CrowdReport& report) noexcept;
-    void consider_cell(CrowdAgentId id, const GridCell& cell, u32 wanted,
-                       CrowdReport& report) noexcept;
-    [[nodiscard]] Vec3 solve(const CrowdAgent& self, f32 dt, CrowdReport& report) noexcept;
-
-    Array<CrowdAgent> agents_;
-    Array<GridCell> cells_;
-    /// Every active agent's index, ordered by (cell key, index); a cell is a run of it.
-    Array<u32> cell_agents_;
-    /// Scratch, reused every step: each agent's cell key, indexed by agent.
-    Array<u64> cell_keys_;
-    /// Scratch, reused every step: the neighbour set of the agent being solved, ordered by
-    /// (distance, id) so the solver's input does not depend on the grid's iteration order.
-    Array<u32> neighbours_;
-    Array<f32> neighbour_distance_;
-    f32 cell_size_ = 4.0F;
-    u32 live_ = 0;
 };
+
+extern template class BasicCrowd<FloatCrowdPolicy>;
 
 /// Follow a straightened path: the desired velocity that carries an agent toward the next point,
 /// and the index of the point it should now be aiming at.
