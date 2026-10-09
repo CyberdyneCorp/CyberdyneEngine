@@ -23,6 +23,9 @@ public struct ComponentMacro: MemberMacro, ExtensionMacro {
     static let storable: [String: String] = [
         "Bool": ".bool", "Int64": ".i64", "Float": ".f32", "Double": ".f64",
         "Vec2": ".vec2", "Vec3": ".vec3", "Vec4": ".vec4", "Quat": ".quat", "Entity": ".entity",
+        // ABI 1.8: a deterministic-math value, stored as its raw Int64 and tagged CY_VAR_FIXED, so
+        // a float written to it in a `Lockstep` session is refused by name.
+        "Fixed": ".fixed",
     ]
 
     public static func expansion(

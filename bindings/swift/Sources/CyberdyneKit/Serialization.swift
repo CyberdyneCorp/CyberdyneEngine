@@ -93,6 +93,7 @@ struct BlobWriter {
         case .vec4(let inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
         case .quat(let inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
         case .entity(let inner): append(inner.bits)
+        case .fixed(let inner): append(UInt64(bitPattern: inner.raw))
         case .string(let inner):
             let utf8 = Array(inner.utf8)
             append(UInt32(utf8.count))
@@ -198,6 +199,7 @@ struct BlobReader {
         case .vec4: return .vec4(Vec4(lanes: try lanes(4)))
         case .quat: return .quat(Quat(lanes: try lanes(4)))
         case .entity: return .entity(Entity(bits: try doubleWord()))
+        case .fixed: return .fixed(Fixed(raw: Int64(bitPattern: try doubleWord())))
         case .string:
             let length = Int(try word())
             return .string(String(decoding: try take(length), as: UTF8.self))
