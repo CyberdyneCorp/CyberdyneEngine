@@ -128,6 +128,9 @@ public:
         return {reinterpret_cast<const char*>(bytes_.data() + cursor_ - length), length};
     }
 
+    /// True once a read went past the end.
+    [[nodiscard]] bool failed() const noexcept { return failed_; }
+
     /// True when every read so far was in bounds and nothing is left over.
     [[nodiscard]] bool complete() const noexcept { return !failed_ && cursor_ == bytes_.size(); }
 
@@ -162,6 +165,8 @@ public:
     }
     Writer& vec3(Vec3 value) noexcept { return keep(put_vec3(*bytes_, value)); }
     Writer& text(std::string_view value) noexcept { return keep(put_text(*bytes_, value)); }
+    /// The bytes alone, with no length: a caller that wants one writes it first.
+    Writer& bytes(Span<const u8> value) noexcept { return keep(bytes_->append(value)); }
 
     [[nodiscard]] Status status() const noexcept { return status_; }
 

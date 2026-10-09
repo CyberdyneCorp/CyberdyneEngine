@@ -14,6 +14,32 @@
 //                             n x (text name, f32))
 //   animation.preview.get    ()                      -> the preview's state
 //   animation.preview.stop   ()                      -> the preview's state, inactive
+//   animation.character.set  (u32 1, character)      -> the character the preview now plays
+//   animation.bake           (u32 1, text rig,       -> the rig's cooked records, or what
+//                             text source, character)   refused the graph
+//
+// A CHARACTER (in a request): text model (the project-relative source it was imported from, empty
+// for the built-in mannequin), text skeleton id, text mesh id (32 hex digits, or empty), u32 n and
+// per clip (text name, text id). The ids are cooked assets (`<project>/.cy/cooked/<id>.cyasset`)
+// the host reads through its `AnimationAssetSource`: the skeleton is an imported `skeleton/`
+// sub-asset, the mesh a skinned `mesh/` one (empty: one box per bone), and each clip an imported
+// `animation/` sub-asset, named as a graph names it. A clip cooked for another skeleton is refused
+// by name and the rest are kept. An empty skeleton is the mannequin, whatever else is given.
+//
+// THE CHARACTER (a reply): u32 1, text model, u8 project (0 the mannequin), u32 joints, u8 skinned
+// mesh (0: one box per bone), u32 clips and per clip (text name, f32 duration, u8 looping), u32
+// refused and per refusal (text clip, text reason). Setting a character stops the preview: a
+// program compiled for one skeleton does not play on another.
+//
+// A BAKE compiles the graph against the character it names (not the preview's) and cooks what a
+// game loads: the program, and every clip the program names with the graph's authored events in
+// place of the clip's own, named as the graph names it and looping as its node says. Its reply:
+// u32 1, u8 baked, u32 files and per file (text path, u32 size, size bytes), then the diagnostics
+// as a compile writes them. The paths are relative to the rig's directory
+// (`<project>/.cy/cooked/animation/<rig>/`): `rig.cyrig` (`cy/editor/animation_rig.h` reads it),
+// `program.cyasset` and `clips/<n>.cyasset`, each a cooked asset of kind animation. A graph with
+// an error bakes nothing and says why; a mannequin is refused (`animation.bake.character`), as it
+// has no cooked skeleton a game could load.
 //
 // THE CATALOGUE is the material catalogue's schema 3 (`material.catalogue.get`), as `script.*`'s
 // is, so one decoder reads all three. Its node types are `graph::pose::register_pose_nodes`', with
@@ -58,7 +84,10 @@
 // animation.schema.unsupported, animation.operation.unsupported, animation.preview.unavailable (no
 // preview runtime: the host has no character, or the build has no animation), animation.preview.
 // uncompiled (the graph has an error; `animation.compile` names it), animation.preview.focus (the
-// focus is not a clip node of the graph), animation.preview.failed (the runtime refused it).
+// focus is not a clip node of the graph), animation.preview.failed (the runtime refused it),
+// animation.character.failed (the skeleton or the mesh did not load), animation.bake.unavailable
+// (no host can read the project's cooked assets), animation.bake.character (no project
+// character), animation.bake.failed (a record did not load or encode).
 
 #pragma once
 
@@ -66,6 +95,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/math/transform.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/values/asset_id.h>
 #include <cy/core/values/name.h>
 #include <cy/graph/lower_pose.h>
 
@@ -78,9 +108,10 @@ namespace cy::editor {
 inline constexpr u32 kAnimationWireFormat = 1;
 
 /// Every operation `animation.*` serves, in the order `capabilities.get` lists them.
-inline constexpr std::array<std::string_view, 5> kAnimationOperations{
-    "animation.catalogue.get", "animation.compile", "animation.preview.set",
-    "animation.preview.get", "animation.preview.stop"};
+inline constexpr std::array<std::string_view, 7> kAnimationOperations{
+    "animation.catalogue.get", "animation.compile",      "animation.preview.set",
+    "animation.preview.get",   "animation.preview.stop", "animation.character.set",
+    "animation.bake"};
 
 /// The step a state machine preview is advanced in, so a scrub lands on the pose a run of the
 /// same ticks reaches: sixty per second.
@@ -156,22 +187,62 @@ struct AnimationPreviewState {
     u64 generation = 0;
 };
 
-/// The host's preview character, as the animation panel reaches it. Implemented by
-/// `AnimationPreview` (`cy/editor/animation_preview.h`) in a build with animation; the service
-/// never evaluates a pose itself.
-class AnimationPreviewRuntime {
+/// One clip of a project character: the name a graph gives it and the cooked clip it is.
+struct AnimationCharacterClip {
+    Name name;
+    AssetId id;
+};
+
+/// Which character to play: the mannequin (a nil skeleton) or a project's imported one.
+struct AnimationCharacterRequest {
+    /// The project-relative source it was imported from, as the editor shows it.
+    std::string_view model;
+    AssetId skeleton;
+    /// A skinned mesh bound to `skeleton`, or nil for one box per bone.
+    AssetId mesh;
+    Span<const AnimationCharacterClip> clips;
+};
+
+/// A clip a character did not take, and why.
+struct AnimationClipRefusal {
+    Name clip;
+    /// A static string.
+    const char* reason = "";
+};
+
+/// What a graph is compiled against: a character's clips and its skeleton's joint count.
+class AnimationClipCatalogue {
 public:
-    AnimationPreviewRuntime() = default;
-    virtual ~AnimationPreviewRuntime() = default;
-    AnimationPreviewRuntime(const AnimationPreviewRuntime&) = delete;
-    AnimationPreviewRuntime& operator=(const AnimationPreviewRuntime&) = delete;
-    AnimationPreviewRuntime(AnimationPreviewRuntime&&) = delete;
-    AnimationPreviewRuntime& operator=(AnimationPreviewRuntime&&) = delete;
+    AnimationClipCatalogue() = default;
+    virtual ~AnimationClipCatalogue() = default;
+    AnimationClipCatalogue(const AnimationClipCatalogue&) = delete;
+    AnimationClipCatalogue& operator=(const AnimationClipCatalogue&) = delete;
+    AnimationClipCatalogue(AnimationClipCatalogue&&) = delete;
+    AnimationClipCatalogue& operator=(AnimationClipCatalogue&&) = delete;
 
     /// The clips a graph can name.
     [[nodiscard]] virtual Span<const AnimationClipInfo> clips() const noexcept = 0;
     /// The skeleton's joint count, which the graph is compiled for.
     [[nodiscard]] virtual u32 joint_count() const noexcept = 0;
+};
+
+/// The host's preview character, as the animation panel reaches it. Implemented by
+/// `AnimationPreview` (`cy/editor/animation_preview.h`) in a build with animation; the service
+/// never evaluates a pose itself.
+class AnimationPreviewRuntime : public AnimationClipCatalogue {
+public:
+    /// Play `character` from now on, stopping the preview. Refused, keeping the character it had,
+    /// when the skeleton or the mesh does not load; a clip that does not is refused alone.
+    [[nodiscard]] virtual Status set_character(
+        const AnimationCharacterRequest& character) noexcept = 0;
+    /// The source the character was imported from; empty for the mannequin.
+    [[nodiscard]] virtual std::string_view character_model() const noexcept = 0;
+    /// Whether the character is a project's rather than the mannequin.
+    [[nodiscard]] virtual bool character_from_project() const noexcept = 0;
+    /// Whether it is drawn with its own skinned mesh rather than one box per bone.
+    [[nodiscard]] virtual bool character_skinned() const noexcept = 0;
+    /// The clips the last `set_character` refused.
+    [[nodiscard]] virtual Span<const AnimationClipRefusal> refused_clips() const noexcept = 0;
     /// Show `program` as `request` says, replacing what was shown.
     [[nodiscard]] virtual Status preview(graph::pose::PoseProgram&& program,
                                          const AnimationPreviewRequest& request) noexcept = 0;
@@ -182,6 +253,51 @@ public:
     [[nodiscard]] virtual Span<const Transform> pose() const noexcept = 0;
     /// The most recent events, oldest first.
     [[nodiscard]] virtual Span<const AnimationFiredEvent> events() const noexcept = 0;
+};
+
+/// One cooked file a bake writes, relative to the rig's directory.
+struct AnimationBakedFile {
+    explicit AnimationBakedFile(Allocator& allocator) noexcept
+        : path(allocator), bytes(allocator) {}
+
+    Array<char> path;
+    Array<u8> bytes;
+};
+
+/// What `animation.bake` asks for.
+struct AnimationBakeRequest {
+    /// The name a game attaches by, `Animator.attach(to:rig:)`: the graph's file stem.
+    std::string_view rig;
+    std::string_view source;
+    AnimationCharacterRequest character;
+};
+
+/// What a bake produced: every file, or the diagnostics that refused the graph.
+struct AnimationBakeResult {
+    explicit AnimationBakeResult(Allocator& allocator) noexcept
+        : files(allocator), sink(allocator) {}
+
+    bool baked = false;
+    Array<AnimationBakedFile> files;
+    graph::DiagnosticSink sink;
+};
+
+/// The host's cook for `animation.bake`. Implemented by `AnimationRigBaker`
+/// (`cy/editor/animation_rig.h`) in a build with animation.
+class AnimationBakeRuntime {
+public:
+    AnimationBakeRuntime() = default;
+    virtual ~AnimationBakeRuntime() = default;
+    AnimationBakeRuntime(const AnimationBakeRuntime&) = delete;
+    AnimationBakeRuntime& operator=(const AnimationBakeRuntime&) = delete;
+    AnimationBakeRuntime(AnimationBakeRuntime&&) = delete;
+    AnimationBakeRuntime& operator=(AnimationBakeRuntime&&) = delete;
+
+    /// Compile `request.source` against `request.character` and cook its rig into `out`. A graph
+    /// with an error is not a failure: `out.baked` is false and `out.sink` says why. Fails, naming
+    /// the record, when a cooked asset does not load or a record does not encode.
+    [[nodiscard]] virtual Status bake(const AnimationBakeRequest& request,
+                                      AnimationBakeResult& out) noexcept = 0;
 };
 
 /// Why an `animation.*` request was refused, or an empty code when it was answered.
@@ -202,6 +318,29 @@ struct AnimationRefusal {
 [[nodiscard]] Status encode_animation_compile(const AnimationPreviewRuntime* preview,
                                               std::string_view source, Array<u8>& out) noexcept;
 
+/// A graph compiled as `animation.compile` compiles it, against `character` (may be null: then
+/// no clip is checked): the program, every clip's authored events, and the diagnostics.
+struct AnimationCompilation {
+    explicit AnimationCompilation(Allocator& allocator) noexcept
+        : sink(allocator), events(allocator), program(allocator) {}
+
+    graph::DiagnosticSink sink;
+    Array<AnimationClipEvent> events;
+    u64 semantic = 0;
+    /// No error was reported and the program was compiled.
+    bool compiled = false;
+    graph::pose::PoseProgram program;
+};
+
+/// Compile `source` into `out`. Fails only for memory.
+[[nodiscard]] Status compile_animation_graph(const AnimationClipCatalogue* character,
+                                             std::string_view source,
+                                             AnimationCompilation& out) noexcept;
+
+/// Encode the character `preview` plays, as `animation.character.set` answers.
+[[nodiscard]] Status encode_animation_character(const AnimationPreviewRuntime& preview,
+                                                Array<u8>& out) noexcept;
+
 /// Encode the preview's state. `preview` may be null, which encodes "inactive".
 [[nodiscard]] Status encode_animation_state(const AnimationPreviewRuntime* preview,
                                             Array<u8>& out) noexcept;
@@ -214,9 +353,10 @@ struct AnimationRefusal {
 [[nodiscard]] bool parse_animation_events(std::string_view text, Name clip,
                                           Array<AnimationClipEvent>& out) noexcept;
 
-/// Answer one `animation.*` request into `reply`.
+/// Answer one `animation.*` request into `reply`. `baker` (may be null) cooks `animation.bake`.
 [[nodiscard]] AnimationRefusal answer_animation(AnimationPreviewRuntime* preview,
                                                 std::string_view operation, Span<const u8> payload,
-                                                Array<u8>& reply) noexcept;
+                                                Array<u8>& reply,
+                                                AnimationBakeRuntime* baker = nullptr) noexcept;
 
 }  // namespace cy::editor

@@ -262,6 +262,9 @@ public:
     [[nodiscard]] Status add_key(u32 track, f32 time, Vec4 value) noexcept;
     [[nodiscard]] Status add_marker(Name name, f32 time) noexcept;
     [[nodiscard]] Status add_event(Name name, f32 time, f32 parameter = 0.0F) noexcept;
+    /// Forget every event, keeping tracks, keys and markers: what an editor does before it gives
+    /// a cooked clip the events its author placed, which replace the ones the clip carried.
+    void clear_events() noexcept { events_.clear(); }
 
     /// Compress the authored keys. Idempotent in effect: calling it again recompresses from the
     /// authored keys, which are kept so the error report is measured rather than estimated.

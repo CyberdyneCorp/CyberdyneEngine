@@ -8,18 +8,15 @@
 // matrices in its viewport (the editor window's runtime does, through `SkinnedScene`), so what the
 // panel previews is what the engine evaluates and draws, not a picture the editor made.
 //
-// THE CHARACTER is built in code, as `samples/13-rts-api`'s worker is: a twelve-joint mannequin
-// (root, hips, spine, head, two arms of two bones, two legs of two bones), four clips, and a mesh
-// of one box per bone, each vertex bound to its bone. The editor imports no skinned model yet, so a
-// project's own character cannot be previewed; the panel says so.
-//
-//   idle  2 s, looping: the spine sways and the arms hang.
-//   walk  1 s, looping: legs and arms swing against each other, knees bend on the passing leg.
-//   run   0.6 s, looping: the walk's swing, wider, with the elbows bent.
-//   wave  1.5 s, held: the right arm rises and the forearm waves.
+// THE CHARACTER is the mannequin until the editor names a project's own
+// (`animation.character.set`): `cy/editor/animation_character.h` says what each is. A host that
+// can read the project's cooked assets hands the preview an `AnimationAssetSource`; one that cannot
+// plays the mannequin alone, and a project character is refused by name.
 //
 // The clips carry no events of their own: a clip's events are the graph's (`events` on its
-// `pose.clip` node), given to the clip at each preview, so what fires is what was authored.
+// `pose.clip` node), given to the clip at each preview, so what fires is what was authored. A
+// project clip also loops or holds as its node says, as the bake writes it for a game; the
+// mannequin's clips keep their own.
 
 #pragma once
 
@@ -27,29 +24,12 @@
 #include <cy/animation/evaluate.h>
 #include <cy/animation/skeleton.h>
 #include <cy/core/math/matrix.h>
+#include <cy/editor/animation_character.h>
 #include <cy/editor/animation_service.h>
 
 #include <memory>
 
 namespace cy::editor {
-
-/// The preview character's mesh in its bind pose: one box per bone, four influences per vertex.
-struct AnimationPreviewMesh {
-    explicit AnimationPreviewMesh(Allocator& allocator) noexcept
-        : positions(allocator),
-          normals(allocator),
-          joints(allocator),
-          weights(allocator),
-          indices(allocator) {}
-
-    Array<Vec3> positions;
-    Array<Vec3> normals;
-    /// Four joint indices per vertex.
-    Array<u16> joints;
-    /// Four weights per vertex, summing to one.
-    Array<f32> weights;
-    Array<u32> indices;
-};
 
 /// The engine's animation preview. See the file comment.
 class AnimationPreview final : public AnimationPreviewRuntime {
@@ -57,11 +37,25 @@ public:
     explicit AnimationPreview(Allocator& allocator) noexcept;
     ~AnimationPreview() override;
 
-    /// Build the character. Refused when the skeleton, a clip or the mesh cannot be built.
+    /// Build the mannequin. Refused when the skeleton, a clip or the mesh cannot be built.
     [[nodiscard]] Status initialize() noexcept;
+
+    /// Where a project character's cooked records are read. Null: the mannequin alone.
+    void set_source(AnimationAssetSource* source) noexcept { source_ = source; }
 
     [[nodiscard]] Span<const AnimationClipInfo> clips() const noexcept override;
     [[nodiscard]] u32 joint_count() const noexcept override;
+    [[nodiscard]] Status set_character(const AnimationCharacterRequest& request) noexcept override;
+    [[nodiscard]] std::string_view character_model() const noexcept override {
+        return character_->model();
+    }
+    [[nodiscard]] bool character_from_project() const noexcept override {
+        return character_->from_project();
+    }
+    [[nodiscard]] bool character_skinned() const noexcept override { return character_->skinned(); }
+    [[nodiscard]] Span<const AnimationClipRefusal> refused_clips() const noexcept override {
+        return character_->refused();
+    }
     [[nodiscard]] Status preview(graph::pose::PoseProgram&& program,
                                  const AnimationPreviewRequest& request) noexcept override;
     void stop() noexcept override;
@@ -80,8 +74,14 @@ public:
     [[nodiscard]] Span<const Mat4> skinning_matrices() const noexcept { return skinning_.span(); }
     /// Each joint's model-space transform this evaluation.
     [[nodiscard]] Span<const Transform> model_pose() const noexcept { return model_.span(); }
-    [[nodiscard]] const AnimationPreviewMesh& mesh() const noexcept { return mesh_; }
-    [[nodiscard]] const animation::Skeleton& skeleton() const noexcept { return skeleton_; }
+    [[nodiscard]] const AnimationPreviewMesh& mesh() const noexcept { return character_->mesh(); }
+    [[nodiscard]] const animation::Skeleton& skeleton() const noexcept {
+        return character_->skeleton();
+    }
+    /// Changes whenever another character is set, so a host uploads its mesh again.
+    [[nodiscard]] u64 mesh_generation() const noexcept { return mesh_generation_; }
+    /// The character being played.
+    [[nodiscard]] const AnimationCharacter& character() const noexcept { return *character_; }
     /// The character's clip of that name with the authored events of the last preview, or null.
     [[nodiscard]] const animation::Clip* clip(Name name) const noexcept;
 
@@ -96,12 +96,14 @@ private:
     [[nodiscard]] Status finish() noexcept;
     void remember(const animation::EmittedEvent& event, f32 at) noexcept;
 
+    /// Size the pose buffers for the character and show its reference pose.
+    [[nodiscard]] Status adopt_character() noexcept;
+
     Allocator* allocator_;
-    animation::Skeleton skeleton_;
+    std::unique_ptr<AnimationCharacter> character_;
+    AnimationAssetSource* source_ = nullptr;
     Array<animation::Clip> clips_;
-    Array<AnimationClipInfo> infos_;
     Array<AnimationClipEvent> events_;
-    AnimationPreviewMesh mesh_;
     graph::pose::PoseProgram program_;
     std::unique_ptr<animation::AnimationRig> rig_;
     std::unique_ptr<animation::AnimationInstance> instance_;
@@ -119,6 +121,7 @@ private:
     /// Wall time a playing state machine has not yet spent in whole steps.
     f32 pending_ = 0.0F;
     u64 sequence_ = 0;
+    u64 mesh_generation_ = 1;
     bool initialized_ = false;
 };
 

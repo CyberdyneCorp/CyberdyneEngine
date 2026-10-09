@@ -34,8 +34,9 @@ endif()
 # evaluates it with the animation runtime, which `-D CY_ANIMATION=OFF` removes. PUBLIC, because a
 # host that draws the preview names `AnimationPreview` and its skeleton.
 if(CY_ANIMATION)
-    target_sources(cy_editor_backend PRIVATE src/animation_preview.cpp)
-    target_link_libraries(cy_editor_backend PUBLIC cy::animation)
+    target_sources(cy_editor_backend PRIVATE src/animation_character.cpp
+                                             src/animation_preview.cpp src/animation_rig.cpp)
+    target_link_libraries(cy_editor_backend PUBLIC cy::animation cy::animation-assets)
     target_compile_definitions(cy_editor_backend PUBLIC CY_EDITOR_HAS_ANIMATION=1)
 endif()
 
@@ -94,6 +95,15 @@ if(CY_BUILD_TESTS)
             SOURCES "${tests_dir}/test_animation_service.cpp"
             DEPENDENCIES cy::editor-backend cy::graph
             DEFINITIONS "CY_ANIMATION_WIRE_DIR=\"${tests_dir}/data\"")
+        # A project's own character arrives through the real FBX importer, as it does in a
+        # project: `animation_character_fixture.h` builds the document and imports it. The cases
+        # are compiled wherever the importer is (`CY_BUILD_TOOLS`).
+        if(TARGET cy::import)
+            target_link_libraries(cy_test_integration_editor_backend_animation PRIVATE
+                                  cy::import cy::core-assets)
+            target_compile_definitions(cy_test_integration_editor_backend_animation PRIVATE
+                                       CY_EDITOR_TEST_HAS_IMPORT=1)
+        endif()
         cy_add_test(
             NAME editor_backend_terrain
             KIND integration

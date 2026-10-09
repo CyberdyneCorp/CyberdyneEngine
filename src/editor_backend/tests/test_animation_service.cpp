@@ -22,12 +22,22 @@
 #include <cy/graph/text.h>
 #include <cy/test/test.h>
 #if defined(CY_EDITOR_HAS_ANIMATION)
+#    include <cy/animation/cooked.h>
 #    include <cy/animation/evaluate.h>
+#    include <cy/core/assets/cooked.h>
 #    include <cy/editor/animation_preview.h>
+#    include <cy/editor/animation_rig.h>
+#endif
+#if defined(CY_EDITOR_HAS_ANIMATION) && defined(CY_EDITOR_TEST_HAS_IMPORT)
+#    include <cy/import/gltf.h>
+#    include <cy/import/mesh.h>
+
+#    include "animation_character_fixture.h"
 #endif
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -341,7 +351,7 @@ bool same_bits(const Mat4& a, const Mat4& b) {
 CY_TEST_CASE("editor animation: the acceptance graph is the engine's canonical text") {
     // The Rust editor writes it call by call; the engine reads it back to the same bytes, so a text
     // diff of the file is a semantic diff and the engine's merge reads it unchanged.
-    for (const char* name : {kGraph, kEdited}) {
+    for (const char* name : {kGraph, kEdited, "animation_hero_v1.cyanimgraph"}) {
         const std::string source = read_file(name);
         graph::NodeRegistry registry(allocator());
         CY_REQUIRE(graph::pose::register_pose_nodes(registry).has_value());
@@ -539,12 +549,16 @@ void check_same_pose(const std::vector<Transform>& shown, const std::vector<Tran
     }
 }
 
-Shown preview(Character& character, const Array<u8>& request) {
+Shown preview(editor::AnimationPreview& previewed, const Array<u8>& request) {
     Array<u8> reply(allocator());
     const editor::AnimationRefusal refusal =
-        ask(&character.preview, "animation.preview.set", request, reply);
+        ask(&previewed, "animation.preview.set", request, reply);
     CY_REQUIRE_MESSAGE(!refusal.refused(), refusal.code, ": ", refusal.detail);
     return decode_state(text_of(reply));
+}
+
+Shown preview(Character& character, const Array<u8>& request) {
+    return preview(character.preview, request);
 }
 
 }  // namespace
@@ -820,5 +834,744 @@ CY_TEST_CASE("editor animation: the character's mesh is one box per bone, bound 
         CY_CHECK_LT(joint, character.preview.joint_count());
     }
 }
+
+#    if defined(CY_EDITOR_TEST_HAS_IMPORT)
+
+// --- A project's own character (#112's gaps) -----------------------------------------------------
+
+namespace {
+
+constexpr AssetId kSkeletonId{0x5e1e, 1};
+constexpr AssetId kClipId{0x5e1e, 2};
+constexpr AssetId kMeshId{0x5e1e, 3};
+constexpr AssetId kForeignClipId{0x5e1e, 4};
+constexpr const char* kModel = "characters/hero.fbx";
+
+/// The cooked assets of a project, in memory: what `.cy/cooked/<id>.cyasset` holds, by id.
+class MemoryAssets final : public editor::AnimationAssetSource {
+public:
+    void put(AssetId id, const std::vector<u8>& payload) {
+        for (auto& [held, bytes] : records_) {
+            if (held == id) {
+                bytes = payload;
+                return;
+            }
+        }
+        records_.emplace_back(id, payload);
+    }
+    /// Bind every vertex this many joints further on: a mesh rigged to a bigger skeleton.
+    u16 joint_offset = 0;
+
+    Status read(AssetId id, Array<u8>& payload) noexcept override {
+        for (const auto& [held, bytes] : records_) {
+            if (held == id) {
+                payload.clear();
+                return payload.append(Span<const u8>(bytes.data(), bytes.size()));
+            }
+        }
+        return fail(ErrorCode::NotFound, "no such cooked asset");
+    }
+
+    Status read_mesh(AssetId id, editor::AnimationPreviewMesh& out) noexcept override {
+        Array<u8> record(allocator());
+        if (Status read_ok = read(id, record); !read_ok) {
+            return read_ok;
+        }
+        import::MeshData mesh;
+        if (Status decoded = import::read_cooked_mesh(record.span(), mesh); !decoded) {
+            return decoded;
+        }
+        if (mesh.skin.size() != mesh.positions.size()) {
+            return fail(ErrorCode::InvalidArgument, "no skin");
+        }
+        if (mesh.normals.size() != mesh.positions.size()) {
+            if (Status made = import::generate_normals(mesh, 180.0F); !made) {
+                return made;
+            }
+        }
+        out.clear();
+        (void)out.positions.append(mesh.positions.span());
+        (void)out.normals.append(mesh.normals.span());
+        for (import::SkinInfluence influence : mesh.skin) {
+            for (u16& joint : influence.joints) {
+                joint = static_cast<u16>(joint + joint_offset);
+            }
+            (void)out.joints.append({influence.joints, import::kSkinInfluences});
+            (void)out.weights.append({influence.weights, import::kSkinInfluences});
+        }
+        return out.indices.append(mesh.indices.span());
+    }
+
+private:
+    std::vector<std::pair<AssetId, std::vector<u8>>> records_;
+};
+
+/// The imported hero, its cooked records in memory, and a preview reading them.
+struct Project {
+    Project() : hero(editor::testing::import_character()), preview(allocator()) {
+        assets.put(kSkeletonId, hero.skeleton.payload);
+        assets.put(kClipId, hero.clip.payload);
+        assets.put(kMeshId, hero.mesh.payload);
+        CY_REQUIRE(preview.initialize().has_value());
+        preview.set_source(&assets);
+    }
+
+    editor::testing::ImportedCharacter hero;
+    MemoryAssets assets;
+    editor::AnimationPreview preview;
+};
+
+std::string id_text(AssetId id) {
+    char text[AssetId::kTextLength + 1] = {};
+    (void)id.format(text);
+    return text;
+}
+
+/// A character block as the editor writes it.
+void put_character(Request& request, std::string_view model, AssetId skeleton, AssetId mesh,
+                   const std::vector<std::pair<std::string, AssetId>>& clips) {
+    request.text(model).text(skeleton.is_nil() ? "" : id_text(skeleton));
+    request.text(mesh.is_nil() ? "" : id_text(mesh)).u32v(static_cast<u32>(clips.size()));
+    for (const auto& [name, id] : clips) {
+        request.text(name).text(id_text(id));
+    }
+}
+
+Array<u8> character_request(AssetId skeleton = kSkeletonId, AssetId mesh = kMeshId,
+                            const std::vector<std::pair<std::string, AssetId>>& clips = {
+                                {"hero", kClipId}}) {
+    Request request;
+    request.u32v(1);
+    put_character(request, skeleton.is_nil() ? "" : kModel, skeleton, mesh, clips);
+    return request.take();
+}
+
+struct Played {
+    std::string model;
+    bool project = false;
+    u32 joints = 0;
+    bool skinned = false;
+    std::vector<std::pair<std::string, f32>> clips;
+    std::vector<bool> looping;
+    std::vector<std::pair<std::string, std::string>> refused;
+};
+
+Played decode_character(const std::string& bytes) {
+    Reply reply(bytes);
+    Played out;
+    CY_REQUIRE_EQ(reply.u32v(), 1U);
+    out.model = reply.text();
+    out.project = reply.u8v() != 0;
+    out.joints = reply.u32v();
+    out.skinned = reply.u8v() != 0;
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        std::string name = reply.text();
+        out.clips.emplace_back(std::move(name), reply.f32v());
+        out.looping.push_back(reply.u8v() != 0);
+    }
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        std::string clip = reply.text();
+        out.refused.emplace_back(std::move(clip), reply.text());
+    }
+    CY_CHECK(reply.done());
+    return out;
+}
+
+Played set_character(Project& project, const Array<u8>& request) {
+    Array<u8> reply(allocator());
+    const editor::AnimationRefusal refusal =
+        ask(&project.preview, "animation.character.set", request, reply);
+    CY_REQUIRE_MESSAGE(!refusal.refused(), refusal.code, ": ", refusal.detail);
+    return decode_character(text_of(reply));
+}
+
+/// The hero's graph: one state playing its clip, with two events placed on the timeline — between
+/// ticks of a 60 Hz clock, so the tick that crosses each is not a question of rounding.
+std::string hero_graph(std::string_view events = "land@0.76; footstep@0.26",
+                       std::string_view loop = "(0, 0, 0, 0, 1)") {
+    std::string text =
+        "cygraph 1\n"
+        "graph \"hero\" version 1\n"
+        "capability\n"
+        "deterministic true\n"
+        "node 1 \"pose.clip\" v1 {\n"
+        "    prop \"clip\" : \"name\" = \"hero\"\n"
+        "    prop \"duration\" : \"float\" = (1, 0, 0, 0, 0)\n";
+    text.append(R"(    prop "events" : "name" = ")").append(events).append("\"\n");
+    text.append(R"(    prop "loop" : "bool" = )").append(loop).append("\n");
+    text +=
+        "    prop \"time_parameter\" : \"name\" = (0, 0, 0, 0, 0)\n"
+        "}\n"
+        "node 2 \"pose.state\" v1 {\n"
+        "    prop \"name\" : \"name\" = \"idle\"\n"
+        "}\n"
+        "link 1 \"pose\" -> 2 \"pose\"\n"
+        "layout 1 at 16 16\n"
+        "layout 2 at 230 16\n";
+    return text;
+}
+
+/// The hero's skeleton and clip decoded straight from the importer's records, with no preview,
+/// no character and no service in between.
+struct Direct {
+    Direct() : skeleton(allocator()), clip(allocator()) {
+        const editor::testing::ImportedCharacter hero = editor::testing::import_character();
+        animation::SkeletonProfile humanoid;
+        CY_REQUIRE(animation::decode_skeleton(
+                       Span<const u8>(hero.skeleton.payload.data(), hero.skeleton.payload.size()),
+                       skeleton, humanoid)
+                       .has_value());
+        Array<Name> joints(allocator());
+        CY_REQUIRE(
+            animation::decode_clip(
+                Span<const u8>(hero.clip.payload.data(), hero.clip.payload.size()), clip, joints)
+                .has_value());
+    }
+
+    [[nodiscard]] std::vector<Transform> sample(f32 time) const {
+        std::vector<Transform> pose(skeleton.joint_count());
+        skeleton.reference_pose(Span<Transform>(pose.data(), pose.size()));
+        animation::ClipCursor cursor(allocator());
+        CY_REQUIRE(cursor.reset(clip.track_count()).has_value());
+        animation::SampleStats stats;
+        CY_REQUIRE(clip.sample_unwrapped(time, skeleton.retained(0), cursor,
+                                         Span<Transform>(pose.data(), pose.size()), stats)
+                       .has_value());
+        return pose;
+    }
+
+    animation::Skeleton skeleton;
+    animation::Clip clip;
+};
+
+}  // namespace
+
+CY_TEST_CASE(
+    "editor animation: an imported character plays its own clips, named as a graph names them") {
+    Project project;
+    Array<u8> answer(allocator());
+    CY_REQUIRE_FALSE(
+        ask(&project.preview, "animation.character.set", character_request(), answer).refused());
+    // The Rust suites decode this reply and replay it as the runtime's, and their encoder writes
+    // this request byte for byte from the project's import records.
+    CY_CHECK_EQ(text_of(answer), committed("animation_character_v1.wire", answer));
+    const Array<u8> asked = character_request();
+    CY_CHECK_EQ(text_of(asked), committed("animation_character_request_v1.wire", asked));
+    const Played played = decode_character(text_of(answer));
+    CY_CHECK_EQ(played.model, kModel);
+    CY_CHECK(played.project);
+    CY_CHECK_EQ(played.joints, 3U);
+    CY_CHECK(played.skinned);
+    // The sub-asset's leaf, not the stack's `mixamo.com`.
+    CY_REQUIRE_EQ(played.clips.size(), 1U);
+    CY_CHECK_EQ(played.clips[0].first, "hero");
+    CY_CHECK_NEAR(played.clips[0].second, 1.0F, 1e-5F);
+    CY_CHECK(played.refused.empty());
+    // The palette now offers the character's clips, and a compile checks against them.
+    Array<u8> reply(allocator());
+    CY_REQUIRE_FALSE(
+        ask(&project.preview, "animation.catalogue.get", Array<u8>(allocator()), reply).refused());
+    CY_CHECK_EQ(text_of(reply), committed("animation_catalogue_hero_v1.wire", reply));
+    CY_CHECK_NE(text_of(reply).find("hero"), std::string::npos);
+    CY_CHECK_EQ(text_of(reply).find("wave"), std::string::npos);
+    CY_REQUIRE_FALSE(
+        ask(&project.preview, "animation.compile", compile_request(hero_graph()), reply).refused());
+    CY_CHECK_EQ(text_of(reply), committed("animation_compile_hero_v1.wire", reply));
+    CY_CHECK(decode_compile(text_of(reply)).compiled);
+    CY_REQUIRE_FALSE(
+        ask(&project.preview, "animation.compile", compile_request(read_file(kGraph)), reply)
+            .refused());
+    const Compiled mannequin_graph = decode_compile(text_of(reply));
+    CY_CHECK_FALSE(mannequin_graph.compiled);
+    CY_CHECK(has_diagnostic(mannequin_graph, "animation.clip.unknown", 1));
+}
+
+CY_TEST_CASE("editor animation: the imported mesh is the character's skin, drawn by its joints") {
+    Project project;
+    (void)set_character(project, character_request());
+    const editor::AnimationPreviewMesh& mesh = project.preview.mesh();
+    // Two quads: four triangles over six vertices (the importer may split none of them).
+    CY_CHECK_EQ(mesh.indices.size(), 12U);
+    CY_CHECK_EQ(mesh.joints.size(), mesh.positions.size() * 4U);
+    // Each row of vertices moves with its own bone, and the head row sits 0.6 m above the hips.
+    f32 highest = 0.0F;
+    for (usize vertex = 0; vertex < mesh.positions.size(); ++vertex) {
+        highest = std::max(highest, mesh.positions[vertex].y);
+        CY_CHECK_LT(mesh.joints[vertex * 4], 3U);
+        CY_CHECK_EQ(mesh.weights[vertex * 4], 1.0F);
+    }
+    CY_CHECK_NEAR(highest, 1.6F, 1e-4F);
+    // A skeleton with no mesh is drawn as its bones, one box each, bound to the bone it shows.
+    (void)set_character(project, character_request(kSkeletonId, AssetId{}));
+    CY_CHECK_FALSE(project.preview.character_skinned());
+    CY_CHECK_EQ(project.preview.mesh().positions.size(), 3U * 24U);
+}
+
+CY_TEST_CASE("editor animation: a scrubbed imported clip is the importer's clip sampled directly") {
+    Project project;
+    (void)set_character(project, character_request());
+    Direct direct;
+    const std::string source = hero_graph();
+    for (const f32 time : {0.0F, 0.3F, 0.5F, 1.0F}) {
+        const Shown shown = preview(project.preview, preview_request(source, 1, time));
+        CY_CHECK_EQ(shown.clip, "hero");
+        CY_CHECK_EQ(shown.length, 1.0F);
+        check_same_pose(shown.joints, direct.sample(time));
+    }
+    // The spine turns: halfway through it is about 22.5 degrees about Z.
+    Array<u8> answer(allocator());
+    CY_REQUIRE_FALSE(
+        ask(&project.preview, "animation.preview.set", preview_request(source, 1, 0.5F), answer)
+            .refused());
+    CY_CHECK_EQ(text_of(answer), committed("animation_preview_hero_v1.wire", answer));
+    const Shown half = decode_state(text_of(answer));
+    CY_REQUIRE_EQ(half.joints.size(), 3U);
+    const f32 angle = 2.0F * std::asin(half.joints[1].rotation.z) * 57.2957795F;
+    CY_CHECK_NEAR(angle, 22.5F, 0.5F);
+}
+
+CY_TEST_CASE(
+    "editor animation: the imported character's machine is the program evaluated directly") {
+    Project project;
+    (void)set_character(project, character_request());
+    Direct direct;
+    const std::string source = hero_graph();
+    // The program bound to the importer's own skeleton and clip, decoded here, and advanced in
+    // the preview's steps with `cy::animation` alone.
+    const graph::pose::PoseProgram program =
+        compile_directly(source, direct.skeleton.joint_count());
+    const animation::Clip* table[] = {&direct.clip};
+    animation::AnimationRig rig(allocator());
+    CY_REQUIRE(rig.bind(direct.skeleton, program, Span<const animation::Clip* const>(table, 1))
+                   .has_value());
+    for (const f32 time : {0.2F, 0.7F, 1.4F}) {
+        const Shown shown = preview(project.preview, preview_request(source, 0, time));
+        CY_CHECK_EQ(shown.state_name, "idle");
+        animation::AnimationInstance instance(allocator());
+        CY_REQUIRE(instance.prepare(rig).has_value());
+        f32 remaining = time;
+        while (remaining > 0.0F) {
+            const f32 step = std::fmin(remaining, editor::kAnimationPreviewStep);
+            CY_REQUIRE(animation::advance(rig, instance, step, nullptr).has_value());
+            remaining -= step;
+        }
+        animation::PoseScratch scratch(allocator());
+        CY_REQUIRE(scratch.prepare(rig).has_value());
+        std::vector<Transform> pose(direct.skeleton.joint_count());
+        direct.skeleton.reference_pose(Span<Transform>(pose.data(), pose.size()));
+        animation::EvaluationStats stats;
+        CY_REQUIRE(animation::evaluate(rig, instance, 0, scratch,
+                                       Span<Transform>(pose.data(), pose.size()), stats)
+                       .has_value());
+        check_same_pose(shown.joints, pose);
+        // And it moved: the spine has turned by about 45 degrees a second, wrapped.
+        const f32 angle = 2.0F * std::asin(shown.joints[1].rotation.z) * 57.2957795F;
+        CY_CHECK_NEAR(angle, 45.0F * std::fmod(time, 1.0F), 1.0F);
+    }
+}
+
+CY_TEST_CASE("editor animation: events placed on the timeline fire on the imported clip") {
+    Project project;
+    (void)set_character(project, character_request());
+    const std::string source = hero_graph();
+    (void)preview(project.preview, preview_request(source, 1, 0.1F));
+    const Shown crossed = preview(project.preview, preview_request(source, 1, 0.8F));
+    // In time order, whatever order they were written in.
+    CY_REQUIRE_EQ(crossed.events.size(), 2U);
+    CY_CHECK_EQ(crossed.events[0].name, "footstep");
+    CY_CHECK_EQ(crossed.events[0].at, 0.26F);
+    CY_CHECK_EQ(crossed.events[1].name, "land");
+    CY_CHECK_EQ(crossed.events[1].at, 0.76F);
+    // The clip the importer cooked carried none of them: they are the graph's.
+    Direct direct;
+    CY_CHECK(direct.clip.events().empty());
+}
+
+CY_TEST_CASE("editor animation: a clip cooked for another skeleton is refused by name") {
+    Project project;
+    const editor::testing::ImportedCharacter other =
+        editor::testing::import_character(30.0, "characters/robot.fbx", "robot:");
+    project.assets.put(kForeignClipId, other.clip.payload);
+    const Played played = set_character(
+        project,
+        character_request(kSkeletonId, kMeshId, {{"hero", kClipId}, {"robot", kForeignClipId}}));
+    CY_REQUIRE_EQ(played.clips.size(), 1U);
+    CY_CHECK_EQ(played.clips[0].first, "hero");
+    CY_REQUIRE_EQ(played.refused.size(), 1U);
+    CY_CHECK_EQ(played.refused[0].first, "robot");
+    CY_CHECK_NE(played.refused[0].second.find("another skeleton"), std::string::npos);
+}
+
+CY_TEST_CASE("editor animation: a character that does not load leaves the one that played") {
+    Project project;
+    (void)set_character(project, character_request());
+    Array<u8> reply(allocator());
+    // A skeleton id the project does not have.
+    const editor::AnimationRefusal missing =
+        ask(&project.preview, "animation.character.set", character_request(AssetId{9, 9}), reply);
+    CY_REQUIRE(missing.refused());
+    CY_CHECK_EQ(std::string_view(missing.code), "animation.character.failed");
+    CY_CHECK_EQ(project.preview.character_model(), kModel);
+    CY_CHECK_EQ(project.preview.joint_count(), 3U);
+    // A mesh that is not a skin of it.
+    const editor::AnimationRefusal unskinned = ask(&project.preview, "animation.character.set",
+                                                   character_request(kSkeletonId, kClipId), reply);
+    CY_CHECK_EQ(std::string_view(unskinned.code), "animation.character.failed");
+    // An empty skeleton is the mannequin again, and a preview stops when the character changes.
+    (void)preview(project.preview, preview_request(hero_graph(), 1, 0.2F));
+    CY_CHECK(project.preview.state().active);
+    const Played mannequin = set_character(project, character_request(AssetId{}, AssetId{}, {}));
+    CY_CHECK_FALSE(mannequin.project);
+    CY_CHECK_EQ(mannequin.joints, 12U);
+    CY_CHECK_EQ(mannequin.clips.size(), 4U);
+    CY_CHECK_FALSE(project.preview.state().active);
+    // A host with no cooked assets plays only the mannequin, and says so.
+    editor::AnimationPreview bare(allocator());
+    CY_REQUIRE(bare.initialize().has_value());
+    const editor::AnimationRefusal unhosted =
+        ask(&bare, "animation.character.set", character_request(), reply);
+    CY_CHECK_EQ(std::string_view(unhosted.code), "animation.character.failed");
+    // A malformed id is the request's fault.
+    Request bad;
+    bad.u32v(1).text(kModel).text("not-an-id").text("").u32v(0);
+    CY_CHECK_EQ(std::string_view(ask(&bare, "animation.character.set", bad.take(), reply).code),
+                "animation.request.malformed");
+}
+
+// --- Baking a graph into the rig a game loads ----------------------------------------------------
+
+namespace {
+
+Array<u8> bake_request(std::string_view rig, std::string_view source,
+                       AssetId skeleton = kSkeletonId) {
+    Request request;
+    request.u32v(1).text(rig).text(source);
+    put_character(request, kModel, skeleton, kMeshId, {{"hero", kClipId}});
+    return request.take();
+}
+
+struct Baked {
+    bool baked = false;
+    std::vector<std::pair<std::string, std::string>> files;
+    std::vector<Diagnosed> diagnostics;
+
+    [[nodiscard]] const std::string& file(std::string_view path) const {
+        for (const auto& [name, bytes] : files) {
+            if (name == path) {
+                return bytes;
+            }
+        }
+        CY_TEST_FAIL("no such baked file: ", path);
+        static const std::string none;
+        return none;
+    }
+};
+
+Baked decode_bake(const std::string& bytes) {
+    Reply reply(bytes);
+    Baked out;
+    CY_REQUIRE_EQ(reply.u32v(), 1U);
+    out.baked = reply.u8v() != 0;
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        std::string path = reply.text();
+        out.files.emplace_back(std::move(path), reply.text());
+    }
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        Diagnosed diagnostic;
+        diagnostic.severity = reply.u8v();
+        diagnostic.code = reply.text();
+        diagnostic.node = reply.u64v();
+        (void)reply.text();
+        (void)reply.text();
+        diagnostic.detail = reply.text();
+        (void)reply.u64v();
+        out.diagnostics.push_back(std::move(diagnostic));
+    }
+    CY_CHECK(reply.done());
+    return out;
+}
+
+Baked bake(Project& project, const Array<u8>& request, std::string_view committed_as = {}) {
+    editor::AnimationRigBaker baker(allocator(), project.assets);
+    Array<u8> reply(allocator());
+    const editor::AnimationRefusal refusal =
+        editor::answer_animation(nullptr, "animation.bake", request.span(), reply, &baker);
+    CY_REQUIRE_MESSAGE(!refusal.refused(), refusal.code, ": ", refusal.detail);
+    if (!committed_as.empty()) {
+        CY_CHECK_EQ(text_of(reply), committed(committed_as, reply));
+    }
+    return decode_bake(text_of(reply));
+}
+
+/// A baked file's cooked record, its header checked.
+Span<const u8> record_of(const std::string& file) {
+    Expected<Span<const u8>, Error> payload =
+        assets::read_cooked_payload(reinterpret_cast<const u8*>(file.data()), file.size(), true);
+    CY_REQUIRE(payload.has_value());
+    Expected<assets::CookedAssetHeader, Error> header =
+        assets::read_cooked_header(reinterpret_cast<const u8*>(file.data()), file.size());
+    CY_REQUIRE(header.has_value());
+    CY_CHECK(header->kind == assets::AssetKind::Animation);
+    return *payload;
+}
+
+}  // namespace
+
+CY_TEST_CASE("editor animation: a project clip's own events give way to the graph's") {
+    // A clip cooked with an event of its own (a v2 record): the graph's events replace it.
+    Project project;
+    animation::Clip clip(allocator());
+    Array<Name> joints(allocator());
+    CY_REQUIRE(animation::decode_clip(Span<const u8>(project.hero.clip.payload.data(),
+                                                     project.hero.clip.payload.size()),
+                                      clip, joints)
+                   .has_value());
+    CY_REQUIRE(clip.add_event(Name::intern("stale"), 0.5F).has_value());
+    Array<u8> record(allocator());
+    CY_REQUIRE(animation::encode_clip(clip, joints.span(), record).has_value());
+    project.assets.put(kClipId, std::vector<u8>(record.begin(), record.end()));
+    (void)set_character(project, character_request());
+    const std::string source = hero_graph("footstep@0.26");
+    (void)preview(project.preview, preview_request(source, 1, 0.1F));
+    const Shown crossed = preview(project.preview, preview_request(source, 1, 0.9F));
+    CY_REQUIRE_EQ(crossed.events.size(), 1U);
+    CY_CHECK_EQ(crossed.events[0].name, "footstep");
+    const Baked baked = bake(project, bake_request("hero", source));
+    CY_REQUIRE(baked.baked);
+    animation::Clip cooked(allocator());
+    CY_REQUIRE(animation::decode_clip(record_of(baked.file("clips/0.cyasset")), cooked, joints)
+                   .has_value());
+    CY_REQUIRE_EQ(cooked.events().size(), 1U);
+    CY_CHECK_EQ(cooked.events()[0].name, Name::intern("footstep"));
+}
+
+CY_TEST_CASE(
+    "editor animation: two clips of one name, and a mesh rigged to other joints, are refused") {
+    Project project;
+    const Played played = set_character(
+        project, character_request(kSkeletonId, kMeshId, {{"hero", kClipId}, {"hero", kClipId}}));
+    CY_REQUIRE_EQ(played.clips.size(), 1U);
+    CY_REQUIRE_EQ(played.refused.size(), 1U);
+    CY_CHECK_NE(played.refused[0].second.find("already has this name"), std::string::npos);
+    const u64 generation = project.preview.mesh_generation();
+    project.assets.joint_offset = 3;
+    Array<u8> reply(allocator());
+    const editor::AnimationRefusal refusal =
+        ask(&project.preview, "animation.character.set", character_request(), reply);
+    CY_CHECK_EQ(std::string_view(refusal.code), "animation.character.failed");
+    CY_CHECK_EQ(project.preview.mesh_generation(), generation);
+    // A character that loads is a new mesh for the host to upload.
+    project.assets.joint_offset = 0;
+    (void)set_character(project, character_request());
+    CY_CHECK_GT(project.preview.mesh_generation(), generation);
+}
+
+CY_TEST_CASE("editor animation: a project clip plays on or holds as its node says") {
+    Project project;
+    (void)set_character(project, character_request());
+    // The node says hold: playing past the end stops on the last frame, as the bake writes it.
+    const std::string held = hero_graph("", "(0, 0, 0, 0, 0)");
+    Array<u8> request = Request().u32v(1).text(held).u64v(1).f32v(0.5F).u8v(1).u32v(0).take();
+    Array<u8> reply(allocator());
+    CY_REQUIRE_FALSE(ask(&project.preview, "animation.preview.set", request, reply).refused());
+    CY_REQUIRE(project.preview.tick(1.0F).has_value());
+    CY_CHECK_EQ(project.preview.state().time, 1.0F);
+    CY_CHECK_FALSE(project.preview.state().playing);
+    // The node says loop: it wraps.
+    request = Request().u32v(1).text(hero_graph("")).u64v(1).f32v(0.5F).u8v(1).u32v(0).take();
+    CY_REQUIRE_FALSE(ask(&project.preview, "animation.preview.set", request, reply).refused());
+    CY_REQUIRE(project.preview.tick(1.0F).has_value());
+    CY_CHECK_NEAR(project.preview.state().time, 0.5F, 1e-5F);
+    CY_CHECK(project.preview.state().playing);
+}
+
+CY_TEST_CASE("editor animation: a clip two nodes sample is baked once") {
+    Project project;
+    std::string twice = hero_graph("footstep@0.26");
+    twice = replaced(twice, "link 1 \"pose\" -> 2 \"pose\"\n",
+                     "node 3 \"pose.clip\" v1 {\n"
+                     "    prop \"clip\" : \"name\" = \"hero\"\n"
+                     "    prop \"duration\" : \"float\" = (1, 0, 0, 0, 0)\n"
+                     "    prop \"events\" : \"name\" = (0, 0, 0, 0, 0)\n"
+                     "    prop \"loop\" : \"bool\" = (0, 0, 0, 0, 1)\n"
+                     "    prop \"time_parameter\" : \"name\" = (0, 0, 0, 0, 0)\n"
+                     "}\n"
+                     "node 4 \"pose.state\" v1 {\n"
+                     "    prop \"name\" : \"name\" = \"again\"\n"
+                     "}\n"
+                     "link 1 \"pose\" -> 2 \"pose\"\n"
+                     "link 3 \"pose\" -> 4 \"pose\"\n");
+    const Baked baked = bake(project, bake_request("hero", twice));
+    CY_REQUIRE(baked.baked);
+    CY_CHECK_EQ(baked.files.size(), 3U);
+    editor::AnimationRigManifest manifest(allocator());
+    CY_REQUIRE(editor::read_animation_rig(baked.file("rig.cyrig"), manifest).has_value());
+    CY_CHECK_EQ(manifest.clips.size(), 1U);
+}
+
+CY_TEST_CASE("editor animation: a bake cooks the authored events into the clip a game loads") {
+    Project project;
+    // The graph is the one the Rust suites write, and the request the one their encoder sends.
+    const std::string graph = hero_graph();
+    Array<u8> graph_text(allocator());
+    CY_REQUIRE(
+        graph_text.append({reinterpret_cast<const u8*>(graph.data()), graph.size()}).has_value());
+    CY_CHECK_EQ(graph, committed("animation_hero_v1.cyanimgraph", graph_text));
+    const Array<u8> request = bake_request("hero", hero_graph());
+    CY_CHECK_EQ(text_of(request), committed("animation_bake_request_v1.wire", request));
+    const Baked baked = bake(project, request, "animation_bake_v1.wire");
+    CY_REQUIRE(baked.baked);
+    CY_CHECK(baked.diagnostics.empty());
+    CY_REQUIRE_EQ(baked.files.size(), 3U);
+    // The manifest names the character's own skeleton and mesh, and every file it baked.
+    editor::AnimationRigManifest manifest(allocator());
+    CY_REQUIRE(editor::read_animation_rig(baked.file("rig.cyrig"), manifest).has_value());
+    CY_CHECK_EQ(manifest.rig, Name::intern("hero"));
+    CY_CHECK_EQ(manifest.model, Name::intern(kModel));
+    CY_CHECK(manifest.skeleton == kSkeletonId);
+    CY_CHECK(manifest.mesh == kMeshId);
+    CY_REQUIRE_EQ(manifest.clips.size(), 1U);
+    CY_CHECK_EQ(manifest.clips[0].name, Name::intern("hero"));
+    // The clip: named as the graph names it, the importer's motion untouched, the graph's events
+    // in time order in place of none.
+    animation::Clip clip(allocator());
+    Array<Name> joints(allocator());
+    CY_REQUIRE(
+        animation::decode_clip(record_of(baked.file(manifest.clips[0].path.text())), clip, joints)
+            .has_value());
+    CY_CHECK_EQ(clip.name(), Name::intern("hero"));
+    CY_REQUIRE_EQ(clip.events().size(), 2U);
+    CY_CHECK_EQ(clip.events()[0].name, Name::intern("footstep"));
+    CY_CHECK_EQ(clip.events()[0].time, 0.26F);
+    CY_CHECK_EQ(clip.events()[1].name, Name::intern("land"));
+    CY_CHECK_EQ(clip.events()[1].time, 0.76F);
+    CY_CHECK(clip.loop_mode() == animation::LoopMode::Loop);
+    Direct direct;
+    u16 offending = 0;
+    CY_CHECK(animation::clip_matches_skeleton(clip, joints.span(), direct.skeleton, offending));
+    // The program loads without the compiler, binds to the hero's skeleton and that clip, and a
+    // tick across 0.26 s emits the footstep — what a game's animation system delivers.
+    Expected<graph::pose::PoseProgram, Error> program =
+        animation::decode_program(allocator(), record_of(baked.file("program.cyasset")));
+    CY_REQUIRE(program.has_value());
+    const animation::Clip* table[] = {&clip};
+    animation::AnimationRig rig(allocator());
+    CY_REQUIRE(rig.bind(direct.skeleton, *program, Span<const animation::Clip* const>(table, 1))
+                   .has_value());
+    animation::AnimationInstance instance(allocator());
+    CY_REQUIRE(instance.prepare(rig).has_value());
+    animation::EventBuffer events(allocator());
+    std::vector<std::pair<std::string, u32>> fired;
+    for (u32 tick = 1; tick <= 60; ++tick) {
+        events.clear();
+        CY_REQUIRE(animation::advance(rig, instance, 1.0F / 60.0F, &events).has_value());
+        for (const animation::EmittedEvent& event : events.events()) {
+            fired.emplace_back(std::string(event.name.text()), tick);
+        }
+    }
+    CY_REQUIRE_EQ(fired.size(), 2U);
+    CY_CHECK_EQ(fired[0].first, "footstep");
+    CY_CHECK_EQ(fired[0].second, 16U);
+    CY_CHECK_EQ(fired[1].first, "land");
+    CY_CHECK_EQ(fired[1].second, 46U);
+}
+
+CY_TEST_CASE("editor animation: a baked clip holds or loops as its node says") {
+    Project project;
+    const Baked held = bake(project, bake_request("hero", hero_graph("", "(0, 0, 0, 0, 0)")));
+    CY_REQUIRE(held.baked);
+    animation::Clip clip(allocator());
+    Array<Name> joints(allocator());
+    CY_REQUIRE(
+        animation::decode_clip(record_of(held.file("clips/0.cyasset")), clip, joints).has_value());
+    CY_CHECK(clip.loop_mode() == animation::LoopMode::None);
+    CY_CHECK(clip.events().empty());
+    // And its motion is the importer's, sample for sample.
+    Direct direct;
+    for (const f32 time : {0.0F, 0.4F, 1.0F}) {
+        std::vector<Transform> pose(direct.skeleton.joint_count());
+        direct.skeleton.reference_pose(Span<Transform>(pose.data(), pose.size()));
+        animation::ClipCursor cursor(allocator());
+        CY_REQUIRE(cursor.reset(clip.track_count()).has_value());
+        animation::SampleStats stats;
+        CY_REQUIRE(clip.sample_unwrapped(time, direct.skeleton.retained(0), cursor,
+                                         Span<Transform>(pose.data(), pose.size()), stats)
+                       .has_value());
+        check_same_pose(pose, direct.sample(time));
+    }
+}
+
+CY_TEST_CASE("editor animation: a graph with an error bakes nothing and says where") {
+    Project project;
+    const Baked refused = bake(project, bake_request("hero", hero_graph("footstep@1.5")));
+    CY_CHECK_FALSE(refused.baked);
+    CY_CHECK(refused.files.empty());
+    CY_CHECK(std::ranges::any_of(refused.diagnostics, [](const Diagnosed& diagnostic) {
+        return diagnostic.code == "animation.event.outside" && diagnostic.node == 1;
+    }));
+    // The mannequin's walk is not the hero's: the bake checks against the character it bakes for.
+    const Baked unknown = bake(project, bake_request("hero", read_file(kGraph)));
+    CY_CHECK_FALSE(unknown.baked);
+}
+
+CY_TEST_CASE("editor animation: a bake is refused without a cook, a character or a rig name") {
+    Project project;
+    Array<u8> reply(allocator());
+    CY_CHECK_EQ(
+        std::string_view(editor::answer_animation(nullptr, "animation.bake",
+                                                  bake_request("hero", hero_graph()).span(), reply)
+                             .code),
+        "animation.bake.unavailable");
+    editor::AnimationRigBaker baker(allocator(), project.assets);
+    CY_CHECK_EQ(
+        std::string_view(editor::answer_animation(
+                             nullptr, "animation.bake",
+                             bake_request("hero", hero_graph(), AssetId{}).span(), reply, &baker)
+                             .code),
+        "animation.bake.character");
+    CY_CHECK_EQ(std::string_view(editor::answer_animation(
+                                     nullptr, "animation.bake",
+                                     bake_request("../hero", hero_graph()).span(), reply, &baker)
+                                     .code),
+                "animation.request.malformed");
+    CY_CHECK_EQ(std::string_view(editor::answer_animation(
+                                     nullptr, "animation.bake",
+                                     bake_request("hero", hero_graph(), AssetId{7, 7}).span(),
+                                     reply, &baker)
+                                     .code),
+                "animation.bake.failed");
+}
+
+CY_TEST_CASE("editor animation: a rig manifest reads back what was written, and nothing else") {
+    editor::AnimationRigManifest manifest(allocator());
+    manifest.rig = Name::intern("hero");
+    manifest.model = Name::intern(kModel);
+    manifest.skeleton = kSkeletonId;
+    manifest.program = Name::intern("program.cyasset");
+    CY_REQUIRE(manifest.clips
+                   .push_back(editor::AnimationRigClip{Name::intern("Walking"),
+                                                       Name::intern("clips/0.cyasset")})
+                   .has_value());
+    Array<char> text(allocator());
+    CY_REQUIRE(editor::write_animation_rig(manifest, text).has_value());
+    const std::string written(text.data(), text.size());
+    CY_CHECK_NE(written.find("mesh \"\"\n"), std::string::npos);
+    editor::AnimationRigManifest read(allocator());
+    CY_REQUIRE(editor::read_animation_rig(written, read).has_value());
+    CY_CHECK_EQ(read.rig, manifest.rig);
+    CY_CHECK(read.skeleton == kSkeletonId);
+    CY_CHECK(read.mesh.is_nil());
+    CY_REQUIRE_EQ(read.clips.size(), 1U);
+    CY_CHECK_EQ(read.clips[0].path, Name::intern("clips/0.cyasset"));
+    for (const char* bad :
+         {"cyrig 2\nrig \"a\"\n", "cyrig 1\nrig a\n", "cyrig 1\nrig \"a\"\nprogram \"p\"\n",
+          "cyrig 1\nwhat \"a\"\n", "cyrig 1\nclip \"only-one\"\n"}) {
+        CY_CHECK_MESSAGE(!editor::read_animation_rig(bad, read).has_value(), bad);
+    }
+    manifest.model = Name::intern("a\"b");
+    CY_CHECK_FALSE(editor::write_animation_rig(manifest, text).has_value());
+}
+
+#    endif  // CY_EDITOR_TEST_HAS_IMPORT
 
 #endif

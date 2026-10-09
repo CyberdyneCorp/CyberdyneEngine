@@ -212,6 +212,24 @@ CY_TEST_CASE("clip: events fire once per crossing, in time order, and again on t
     CY_CHECK_EQ(buffer.suppressed(), 5U);
 }
 
+CY_TEST_CASE("clip: clearing the events keeps the motion and fires nothing until new ones arrive") {
+    Clip clip(allocator());
+    CY_REQUIRE(build_walk(clip, 1.0F).has_value());
+    const u32 tracks = clip.track_count();
+    const usize keys = clip.keys().size();
+    clip.clear_events();
+    CY_CHECK_EQ(clip.events().size(), 0U);
+    CY_CHECK_EQ(clip.track_count(), tracks);
+    CY_CHECK_EQ(clip.keys().size(), keys);
+    EventBuffer buffer(allocator());
+    CY_REQUIRE(emit_events(clip, 0, 0.0F, 0.99F, EventPolicy::Emit, buffer).has_value());
+    CY_CHECK_EQ(buffer.events().size(), 0U);
+    CY_REQUIRE(clip.add_event(Name::intern("land"), 0.25F).has_value());
+    CY_REQUIRE(emit_events(clip, 0, 0.0F, 0.99F, EventPolicy::Emit, buffer).has_value());
+    CY_REQUIRE_EQ(buffer.events().size(), 1U);
+    CY_CHECK_EQ(buffer.events()[0].name, Name::intern("land"));
+}
+
 CY_TEST_CASE("clip: a property binding keys on identity, and one that cannot resolve is reported") {
     Clip clip(allocator());
     clip.set_duration(1.0F);
