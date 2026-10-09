@@ -5207,6 +5207,12 @@ note = "`check_workflows.py` (with `--selftest` negative fixtures) requires ever
 
 [[coverage]]
 row = "developer-workflow-and-just"
+requirement = "Continuous integration tests the build it made"
+evidence = "gate:workflows"
+note = "`check_workflows.py`'s hand-off rule requires the `build` job to run `just ci-build-tree-pack` after its build and upload `build-tree-<label>`. It fails any job that needs `build` and restores `build/dev` from the cache, a `test` job that does not run `just ci-build-tree-unpack`, an unpack with no artifact downloaded first, and a cache restore or editor build after the unpack. Six negative fixtures in `--selftest` cover these cases. The `test_recipes.py` case `a build tree is trusted only at its own commit` shows that the unpack makes the tree current at its own commit, and that it refuses another commit or modified sources without changing any file time. NOT CLAIMED: nothing checks that the commit is absent from every cache key."
+
+[[coverage]]
+row = "developer-workflow-and-just"
 requirement = "Cross-platform and cross-compilation"
 evidence = "exempt:m11e"
 note = "`just env-targets` reports what this host can build and why not (`tools/workflow/targets.py`, with a selftest), and recipes resolve `--platform` through `just/targets.toml`. Missing: `deploy-device` refuses because there is no device transport (`just/deploy.just`), so deployment does not produce a runtime the editor can host remotely, and the targets selftest is run by no gate or criterion. Re-enter with a device deploy recipe that hosts a remote play session, and the targets selftest under a declared gate."
