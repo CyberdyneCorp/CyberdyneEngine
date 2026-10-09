@@ -62,6 +62,18 @@
 // `render.rts_api_hud` draws the same HUD on a device.
 //
 // ================================================================================================
+// WHAT ABI 1.8 ADDED: A LOCKSTEP COMPANY THE GAME ORDERS IN FIXED POINT
+// ================================================================================================
+//
+// A second world beside the level: the company's field (company.h), converted into a `Fixed` world
+// and run as a lockstep session — an ISSUER the `LockstepAdapter` answers `lockstep_*` from, and a
+// FOLLOWER that sees only the issuer's command log. The commander enlists sixteen units and orders
+// them through the ABI, its waypoints computed with CyberdyneKit's `Fixed` and the engine's
+// `Detmath`; the host runs one session tick per fixed step, after the behaviours' fixed updates
+// recorded their orders for it. The company has no scene presentation: this host draws nothing,
+// and the session's state is what the report and the cross-leg digest are about.
+//
+// ================================================================================================
 // THE HAND
 // ================================================================================================
 //
@@ -85,6 +97,8 @@
 #include <cy/game_backend/camera_backend.h>
 #include <cy/game_backend/character_backend.h>
 #include <cy/game_backend/input_backend.h>
+#include <cy/game_backend/lockstep_backend.h>
+#include <cy/game_backend/lockstep_session.h>
 #include <cy/game_backend/navigation_backend.h>
 #include <cy/game_backend/physics_backend.h>
 #include <cy/game_backend/scene_bridge.h>
@@ -206,6 +220,24 @@ struct Observation {
         cy::f32 cheer_events = 0.0F;
     };
     Animation animation;
+    /// ABI 1.8: the lockstep company, from the session, and what the commander reported about it.
+    struct Lockstep {
+        cy::u32 units = 0;
+        cy::u64 ticks = 0;
+        cy::u64 commands = 0;
+        cy::u32 orders_executed = 0;
+        cy::u32 paths_found = 0;
+        cy::u32 paths_planned = 0;
+        cy::u64 digest = 0;
+        cy::u64 follower_digest = 0;
+        cy::u32 disagreements = 0;
+        /// The first unit's x, raw: the session's, and the `Fixed` field the game wrote.
+        cy::i64 lead = 0;
+        cy::i64 reported_lead = 0;
+        cy::f32 orders = 0.0F;    ///< the commander's count
+        cy::f32 arrivals = 0.0F;  ///< arrivals the commander heard
+    };
+    Lockstep lockstep;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -268,6 +300,9 @@ private:
     [[nodiscard]] cy::Status ui_layout() noexcept;
     void observe_hud(Observation& seen) noexcept;
     [[nodiscard]] cy::Status start_animation() noexcept;
+    [[nodiscard]] cy::Status start_lockstep() noexcept;
+    void observe_lockstep(Observation& seen, const cy::abi::ComponentRecord* report,
+                          const void* bytes) noexcept;
     /// After every frame: what each unit's animator was doing, for the report.
     [[nodiscard]] cy::Status track_animation() noexcept;
     [[nodiscard]] cy::Status load_module(const char** detail) noexcept;
@@ -351,6 +386,11 @@ private:
         bool left_idle = false;
     };
     cy::Array<UnitAnimation> unit_animation_;
+    // ABI 1.8: the company's field, the two peers of its lockstep session, and the adapter.
+    cy::navigation::NavMesh company_field_;
+    std::unique_ptr<cy::game_backend::LockstepSession> company_;
+    std::unique_ptr<cy::game_backend::LockstepSession> company_follower_;
+    std::unique_ptr<cy::game_backend::LockstepAdapter> lockstep_adapter_;
 
     // Content.
     cy::Array<cy::f32> click_samples_;

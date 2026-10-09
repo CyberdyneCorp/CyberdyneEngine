@@ -37,6 +37,17 @@
 //                                path, a cheer on arrival, idle again on the cheer's own event
 //                                (animation_events); the engine's AnimationSystem ran them
 //
+// and, at ABI 1.8:
+//
+//   the company is lockstep      lockstep_enlist, then lockstep_order every 90 ticks to waypoints
+//                                the game computes in Fixed with detmath_cos and detmath_sin;
+//                                two peers of the session — one driven by the other's log alone —
+//                                agree on every tick, and the digest the Swift-driven session
+//                                ends in is host/company.h's committed one, which every CI leg
+//                                reproduces from the same orders given in C++ (cross_leg)
+//   a Fixed field from Swift     component_set_fixed: the company's lead, written by the game, is
+//                                the session's raw value
+//
 // and the negative controls: the same host with no behaviours does none of the behaviour work and
 // animates nothing, the same host with the systems left out of the schedule never runs
 // `trainUnits`, and the same host with no interface has no HUD and its Build click lands on the
@@ -90,11 +101,12 @@ struct Run {
     std::string body;
     std::string hud;
     std::string anim;
+    std::string lockstep;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
                !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
-               !hero.empty() && !body.empty() && !hud.empty() && !anim.empty();
+               !hero.empty() && !body.empty() && !hud.empty() && !anim.empty() && !lockstep.empty();
     }
 };
 
@@ -114,7 +126,17 @@ struct Run {
     run.body = line_with(run.process.output, "rts body ");
     run.hud = line_with(run.process.output, "rts hud ");
     run.anim = line_with(run.process.output, "rts anim ");
+    run.lockstep = line_with(run.process.output, "rts lockstep ");
     return run;
+}
+
+/// The hexadecimal word after `key`, or zero.
+[[nodiscard]] unsigned long long hex_after(const std::string& line, const char* key) {
+    const std::string::size_type found = line.find(key);
+    if (found == std::string::npos) {
+        return 0;
+    }
+    return std::strtoull(line.c_str() + found + std::char_traits<char>::length(key), nullptr, 16);
 }
 
 /// The whole output, when a run did not end in a parseable report.
@@ -229,6 +251,39 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.7 — units walk, cheer on arrival and s
     CY_CHECK_EQ(number_after(run.anim, "cheer_events="), 1.0);
 }
 
+CY_TEST_CASE("samples/13-rts-api: ABI 1.8 — the company's orders run through the lockstep path") {
+    const Run run = run_sample("");
+    report_if_broken(run);
+    CY_REQUIRE(run.process.ran);
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+
+    // The commander enlisted sixteen units and gave each group an order every 90 ticks of the
+    // 420: five order ticks, two groups — ten commands in the session's log, all executed, every
+    // path found.
+    CY_CHECK_EQ(number_after(run.lockstep, "units="), 16.0);
+    CY_CHECK_EQ(number_after(run.lockstep, "ticks="), 420.0);
+    CY_CHECK_EQ(number_after(run.lockstep, "commands="), 10.0);
+    CY_CHECK_EQ(number_after(run.lockstep, "executed="), 10.0);
+    CY_CHECK_EQ(number_after(run.lockstep, "orders="), 10.0);
+    CY_CHECK(number_after(run.lockstep, "paths=") > 0.0);
+    CY_CHECK(run.lockstep.find("paths=80/80 ") != std::string::npos);
+    // Units reached their waypoints, and the game heard it through the one-tick ARRIVED flag.
+    CY_CHECK(number_after(run.lockstep, "arrivals=") > 0.0);
+    // The follower, driven by the issuer's log alone, agreed on every tick and ends in its digest.
+    CY_CHECK_EQ(number_after(run.lockstep, "disagreements="), 0.0);
+    const unsigned long long digest = hex_after(run.lockstep, "digest=");
+    CY_CHECK(digest != 0ULL);
+    CY_CHECK_EQ(hex_after(run.lockstep, "follower="), digest);
+    // THE CROSS-LANGUAGE, CROSS-ARCHITECTURE CLAIM. The session the Swift game ordered ends in the
+    // committed digest of host/company.h, which `determinism.cross_leg` reproduces on every CI leg
+    // from the same orders computed in C++, and `cross-leg-compare` compares between them.
+    CY_CHECK_EQ(digest, hex_after(run.lockstep, "committed="));
+    // The game wrote the lead unit's x into a Fixed field (component_set_fixed); it is the
+    // session's raw value, one tick behind — read in the fixed update before the tick ran.
+    CY_CHECK(number_after(run.lockstep, "reported_lead=") != 0.0);
+}
+
 CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, none of them runs") {
     const Run control = run_sample(" --no-systems");
     report_if_broken(control);
@@ -280,6 +335,11 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.anim, "departure="), 0.0);
     CY_CHECK_EQ(number_after(control.anim, "footsteps="), 0.0);
     CY_CHECK_EQ(number_after(control.anim, "cheer_events="), 0.0);
+    // The lockstep session ran every tick and had no unit and no order: the company is the game's.
+    CY_CHECK_EQ(number_after(control.lockstep, "units="), 0.0);
+    CY_CHECK_EQ(number_after(control.lockstep, "ticks="), 420.0);
+    CY_CHECK_EQ(number_after(control.lockstep, "commands="), 0.0);
+    CY_CHECK(hex_after(control.lockstep, "digest=") != hex_after(control.lockstep, "committed="));
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
@@ -370,4 +430,5 @@ CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
     CY_CHECK_EQ(first.body, second.body);
     CY_CHECK_EQ(first.hud, second.hud);
     CY_CHECK_EQ(first.anim, second.anim);
+    CY_CHECK_EQ(first.lockstep, second.lockstep);
 }

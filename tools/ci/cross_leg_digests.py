@@ -81,11 +81,20 @@ CLAIMS = {
         "add-deterministic-math — a lockstep peer's RTS session from one command log between two "
         "architectures",
     ),
+    # Stage 8: samples/13-rts-api's lockstep company — orders the Swift game computes in fixed
+    # point, through ABI 1.8's lockstep path. The legs run the C++ twin of those orders
+    # (host/company.h); the sample's own test holds the Swift-driven run to the same committed value.
+    "detmath-company": (
+        ("detmath-company-digest", "detmath-company-final-hash"),
+        "detmath-company-ticks",
+        "add-deterministic-math — the Swift sample's lockstep company, ordered in fixed point, "
+        "between two architectures",
+    ),
 }
 
-#: The claims `--detmath` asks for, together: the kernel, the movement it computes, and the lockstep
-#: session built on both.
-DETMATH_CLAIMS = ("detmath", "detmath-movement", "detmath-lockstep")
+#: The claims `--detmath` asks for, together: the kernel, the movement it computes, the lockstep
+#: session built on both, and the sample's company ordered through the ABI's lockstep path.
+DETMATH_CLAIMS = ("detmath", "detmath-movement", "detmath-lockstep", "detmath-company")
 
 #: Fields a digest file must carry before it is compared at all. A file missing one is a publisher
 #: this comparator cannot read, never a leg that agreed.

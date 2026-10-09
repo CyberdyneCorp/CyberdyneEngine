@@ -94,6 +94,7 @@ cy_add_module(
         cy::core-jobs
         cy::game-backend
         cy::game-backend-animation
+        cy::game-backend-lockstep
         cy::game-backend-ui
         cy::graph
         cy::physics-reference

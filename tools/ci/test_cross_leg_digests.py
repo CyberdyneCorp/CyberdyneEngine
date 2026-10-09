@@ -57,6 +57,10 @@ BASE = {
     "detmath-lockstep-ticks": "480",
     "detmath-lockstep-digest": "1aed05ed2c54f3fb",
     "detmath-lockstep-final-hash": "3e5a699a41b71076",
+    "detmath-company-units": "16",
+    "detmath-company-ticks": "420",
+    "detmath-company-digest": "a61e5414c179f54a",
+    "detmath-company-final-hash": "64606123d75e9118",
 }
 
 
@@ -202,6 +206,23 @@ CASES = (
     ("a leg whose publisher predates the lockstep digest is refused by name under --detmath",
      [leg(label="a", detmath_lockstep_final_hash=None), leg(label="b", arch="arm64")],
      ("--detmath",), 2, "no 'detmath-lockstep-final-hash'"),
+
+    ("the sample's lockstep company disagreeing between architectures is a finding under --detmath",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_company_digest="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-company-digest"),
+
+    ("a company whose last tick disagrees is a finding, even when the folds agree",
+     [leg(label="a"), leg(label="b", arch="arm64", detmath_company_final_hash="0123456789abcdef")],
+     ("--detmath",), 1, "detmath-company-final-hash"),
+
+    ("a company session of no ticks is an empty workload",
+     [leg(label="a", detmath_company_ticks="0"),
+      leg(label="b", arch="arm64", detmath_company_ticks="0")], ("--detmath",), 2,
+     "agrees with every other digest of an empty workload"),
+
+    ("a leg whose publisher predates the company digest is refused by name under --detmath",
+     [leg(label="a", detmath_company_digest=None), leg(label="b", arch="arm64")], ("--detmath",), 2,
+     "no 'detmath-company-digest'"),
 
     ("--gpu-domain refuses on every leg this tree can produce, and says which two things are absent",
      [leg(label="a"), leg(label="b", arch="arm64")], ("--pcg", "--gpu-domain"), 2,

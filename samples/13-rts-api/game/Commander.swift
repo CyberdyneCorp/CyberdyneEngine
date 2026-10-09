@@ -12,7 +12,8 @@
 //                                show the game on the HUD
 //   onUIEvent      (frame)       the HUD's Build button was clicked (ABI 1.6), before `onUpdate`
 //   onFixedUpdate  (fixed step)  hand the recorded order to navigation, hear arrivals, build,
-//                                and play each unit's animation from what its agent is doing
+//                                play each unit's animation from what its agent is doing, and
+//                                order the lockstep company (ABI 1.8, Company.swift)
 //
 // ABI 1.7: EVERY UNIT ANIMATES FROM HERE. A unit is given an animator over the host's `worker` rig
 // when it is enlisted. Each fixed step the game plays `walk` while its agent follows a path and
@@ -82,6 +83,9 @@ final class Commander: Behaviour {
     /// worker arrives at less than full strength.
     private var health: [Entity: (current: UInt32, max: UInt32)] = [:]
 
+    /// ABI 1.8: the lockstep company, ordered in fixed point (Company.swift).
+    private var company = Company()
+
     /// The state each unit was last asked to play, so a request is made only when it changes.
     private var playing: [Entity: String] = [:]
     /// Units whose cheer has finished, waiting for the next fixed step to stand them down.
@@ -114,7 +118,8 @@ final class Commander: Behaviour {
             try enlist(unit, health: hp)
         }
         hud = try mountHud()
-        Log.info("Commander: \(squad.count) units ready")
+        _ = try company.enlist()
+        Log.info("Commander: \(squad.count) units ready, \(company.units.count) in the company")
     }
 
     /// The HUD, with the Build button wired to the next fixed step. Nil, and said once, when the
@@ -182,6 +187,7 @@ final class Commander: Behaviour {
             tally.orders += 1
         }
         pendingOrder = nil
+        try company.step()
         for unit in squad {
             try listen(to: unit)
         }
@@ -300,6 +306,9 @@ final class Commander: Behaviour {
         try world.setFloat(hud == nil ? 0 : 1, entity, report, field: reportFields.hud)
         try world.setFloat(tally.footsteps, entity, report, field: reportFields.footsteps)
         try world.setFloat(tally.cheerEvents, entity, report, field: reportFields.cheerEvents)
+        try world.setFloat(company.orders, entity, report, field: reportFields.companyOrders)
+        try world.setFloat(company.arrivals, entity, report, field: reportFields.companyArrivals)
+        try world.setFixed(company.lead, entity, report, field: reportFields.companyLead)
     }
 }
 
@@ -333,4 +342,7 @@ private struct ReportFields {
     let hud = RtsReport.field("hud")
     let footsteps = RtsReport.field("footsteps")
     let cheerEvents = RtsReport.field("cheerEvents")
+    let companyOrders = RtsReport.field("companyOrders")
+    let companyArrivals = RtsReport.field("companyArrivals")
+    let companyLead = RtsReport.field("companyLead")
 }
