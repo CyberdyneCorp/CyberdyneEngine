@@ -66,7 +66,7 @@ Status BasicCrowd<Policy>::remove(CrowdAgentId id) noexcept {
 }
 
 template <class Policy>
-typename Policy::Agent* BasicCrowd<Policy>::agent(CrowdAgentId id) noexcept {
+Policy::Agent* BasicCrowd<Policy>::agent(CrowdAgentId id) noexcept {
     if (id >= agents_.size() || !agents_[id].active) {
         return nullptr;
     }
@@ -74,7 +74,7 @@ typename Policy::Agent* BasicCrowd<Policy>::agent(CrowdAgentId id) noexcept {
 }
 
 template <class Policy>
-const typename Policy::Agent* BasicCrowd<Policy>::agent(CrowdAgentId id) const noexcept {
+const Policy::Agent* BasicCrowd<Policy>::agent(CrowdAgentId id) const noexcept {
     if (id >= agents_.size() || !agents_[id].active) {
         return nullptr;
     }
@@ -245,9 +245,8 @@ void BasicCrowd<Policy>::consider_cell(CrowdAgentId id, const GridCell& cell, u3
 /// The standard ray-versus-disc solve on the plane: the future separation is `w - v t`, so
 /// `|w - v t| = r` gives `t^2 |v|^2 - 2 t (w.v) + |w|^2 - r^2 = 0`.
 template <class Policy>
-typename Policy::Scalar BasicCrowd<Policy>::time_to_collision(Vec relative_position,
-                                                              Vec relative_velocity,
-                                                              Scalar radius) noexcept {
+Policy::Scalar BasicCrowd<Policy>::time_to_collision(Vec relative_position, Vec relative_velocity,
+                                                     Scalar radius) noexcept {
     const Wide c = Policy::length_squared(relative_position) - Policy::square(radius);
     if (c < Policy::wide_zero()) {
         return Policy::zero();  // already overlapping
@@ -271,7 +270,7 @@ typename Policy::Scalar BasicCrowd<Policy>::time_to_collision(Vec relative_posit
 /// `Minimal`: a crowd standing still has no velocities to avoid, and without it a bottleneck
 /// compacts into one point.
 template <class Policy>
-typename Policy::Vec BasicCrowd<Policy>::separation(const Agent& self) const noexcept {
+Policy::Vec BasicCrowd<Policy>::separation(const Agent& self) const noexcept {
     const Scalar two = Policy::two();
     Vec push = Policy::zero_vec();
     for (const u32 neighbour : neighbours_.span()) {
@@ -289,8 +288,8 @@ typename Policy::Vec BasicCrowd<Policy>::separation(const Agent& self) const noe
 
 /// When `candidate` first collides with any neighbour, under the reciprocal assumption.
 template <class Policy>
-typename Policy::Scalar BasicCrowd<Policy>::soonest_collision(const Agent& self,
-                                                              Vec candidate) const noexcept {
+Policy::Scalar BasicCrowd<Policy>::soonest_collision(const Agent& self,
+                                                     Vec candidate) const noexcept {
     Scalar soonest = Policy::infinity();
     for (const u32 neighbour : neighbours_.span()) {
         const Agent& other = agents_[neighbour];
@@ -323,8 +322,7 @@ typename Policy::Scalar BasicCrowd<Policy>::soonest_collision(const Agent& self,
 }
 
 template <class Policy>
-typename Policy::Vec BasicCrowd<Policy>::solve(const Agent& self, Scalar dt,
-                                               CrowdReport& report) noexcept {
+Policy::Vec BasicCrowd<Policy>::solve(const Agent& self, Scalar dt, CrowdReport& report) noexcept {
     const auto tier = static_cast<usize>(self.tier);
     const Scalar max_speed = self.params.max_speed;
     const Vec preferred = Policy::clamp_speed(self.desired_velocity, max_speed);

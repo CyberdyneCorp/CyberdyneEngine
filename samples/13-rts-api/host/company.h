@@ -69,7 +69,7 @@ inline constexpr cy::u32 kGroupTurn = 0x8000'0000U;     // half a turn
 
 /// Whether quad (`row`, `column`) of the field is walkable: a pillar block off the centre.
 [[nodiscard]] constexpr bool walkable(cy::u32 row, cy::u32 column) noexcept {
-    return !(row >= 9 && row < 12 && column >= 13 && column < 16);
+    return row < 9 || row >= 12 || column < 13 || column >= 16;
 }
 
 /// The field, baked: what a cook would have written, in float, as a cooked asset holds it.
