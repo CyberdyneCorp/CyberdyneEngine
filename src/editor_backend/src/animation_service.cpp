@@ -92,11 +92,11 @@ constexpr u32 kCatalogueVersion = 1;
 }
 
 [[nodiscard]] Span<const AnimationClipInfo> clips_of(
-    const AnimationPreviewRuntime* preview) noexcept {
+    const AnimationClipCatalogue* preview) noexcept {
     return preview != nullptr ? preview->clips() : Span<const AnimationClipInfo>{};
 }
 
-[[nodiscard]] const AnimationClipInfo* find_clip(const AnimationPreviewRuntime* preview,
+[[nodiscard]] const AnimationClipInfo* find_clip(const AnimationClipCatalogue* preview,
                                                  Name name) noexcept {
     for (const AnimationClipInfo& clip : clips_of(preview)) {
         if (clip.name == name) {
@@ -271,13 +271,13 @@ void check_events(const graph::GraphNode& node, std::string_view events, Name cl
 }
 
 void check_clip(const graph::Graph& graph, const graph::GraphNode& node,
-                const AnimationPreviewRuntime* preview, graph::DiagnosticSink& sink,
+                const AnimationClipCatalogue* preview, graph::DiagnosticSink& sink,
                 Array<Name>& owners, Array<AnimationClipEvent>* events) noexcept {
     const Name clip = text_property(graph, node.key, "clip");
     const AnimationClipInfo* known = find_clip(preview, clip);
     if (preview != nullptr && known == nullptr) {
         report(sink, graph::Severity::Error, "animation.clip.unknown", node.key,
-               "the preview character has no clip of this name", clip);
+               "the character has no clip of this name", clip);
     }
     const Name text = text_property(graph, node.key, "events");
     if (events_owned(owners.span(), clip)) {
@@ -293,7 +293,7 @@ void check_clip(const graph::Graph& graph, const graph::GraphNode& node,
 }
 
 /// The checks a compiled program cannot carry. Collects every clip's events into `events`.
-void check_authoring(const graph::Graph& graph, const AnimationPreviewRuntime* preview,
+void check_authoring(const graph::Graph& graph, const AnimationClipCatalogue* preview,
                      graph::DiagnosticSink& sink, Array<AnimationClipEvent>* events) noexcept {
     Array<const graph::GraphNode*> ordered(allocator());
     for (const graph::GraphNode& node : graph.nodes()) {
@@ -325,21 +325,17 @@ void check_authoring(const graph::Graph& graph, const AnimationPreviewRuntime* p
     });
 }
 
-/// A parsed, checked and compiled graph: what both `animation.compile` and a preview start from.
-struct Compiled {
-    explicit Compiled(Allocator& memory) noexcept : sink(memory), events(memory), program(memory) {}
+/// A parsed, checked and compiled graph: what `animation.compile`, a preview and a bake start
+/// from.
+struct Compiled : AnimationCompilation {
+    explicit Compiled(Allocator& memory) noexcept : AnimationCompilation(memory) {}
 
-    graph::DiagnosticSink sink;
-    Array<AnimationClipEvent> events;
-    u64 semantic = 0;
     bool parsed = false;
-    bool compiled = false;
-    pose::PoseProgram program;
     /// The graph, for a preview's focus.
     Expected<graph::Graph, Error> graph = make_unexpected(Error{});
 };
 
-void compile(const AnimationPreviewRuntime* preview, std::string_view source,
+void compile(const AnimationClipCatalogue* preview, std::string_view source,
              Compiled& out) noexcept {
     graph::NodeRegistry registry(allocator());
     if (Status registered = pose::register_pose_nodes(registry); !registered) {
@@ -509,6 +505,151 @@ struct PreviewArguments {
     return answered(encode_animation_state(preview, reply));
 }
 
+/// A rig's name is a file stem: letters, digits, underscores and hyphens.
+[[nodiscard]] bool rig_name(std::string_view name) noexcept {
+    return !name.empty() && std::ranges::all_of(name, [](const char character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '_' || character == '-';
+    });
+}
+
+/// A character block's ids and clips, read; the views point into the payload.
+struct CharacterArguments {
+    explicit CharacterArguments(Allocator& memory) noexcept : clips(memory) {}
+
+    AnimationCharacterRequest request;
+    Array<AnimationCharacterClip> clips;
+};
+
+/// An empty text is the nil id; anything else is 32 hex digits.
+[[nodiscard]] bool read_id(std::string_view text, AssetId& out) noexcept {
+    if (text.empty()) {
+        out = AssetId{};
+        return true;
+    }
+    Expected<AssetId, Error> parsed = AssetId::parse(text);
+    if (!parsed) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
+/// The most clips one character carries over the wire: the editor offers every clip a project's
+/// imports cooked, and the engine keeps the ones cooked for the character's skeleton.
+constexpr u32 kMostCharacterClips = 4096;
+
+[[nodiscard]] AnimationRefusal read_character(wire::Reader& reader,
+                                              CharacterArguments& out) noexcept {
+    out.request.model = reader.read_text();
+    bool ids = read_id(reader.read_text(), out.request.skeleton);
+    ids = read_id(reader.read_text(), out.request.mesh) && ids;
+    const u32 count = reader.read_u32();
+    for (u32 index = 0; index < count && index < kMostCharacterClips && !reader.failed(); ++index) {
+        AnimationCharacterClip clip;
+        const std::string_view name = reader.read_text();
+        ids = read_id(reader.read_text(), clip.id) && ids;
+        if (name.empty() || clip.id.is_nil()) {
+            ids = false;
+        }
+        clip.name = Name::intern(name);
+        if (!out.clips.push_back(clip)) {
+            return refused("animation.request.malformed", "out of memory");
+        }
+    }
+    if (count > kMostCharacterClips) {
+        return refused("animation.request.malformed", "a character carries at most 4096 clips");
+    }
+    if (!ids) {
+        return refused("animation.request.malformed",
+                       "an asset id is 32 hex digits, and a clip has a name and an id");
+    }
+    out.request.clips = out.clips.span();
+    return {};
+}
+
+[[nodiscard]] AnimationRefusal character_set(AnimationPreviewRuntime* preview,
+                                             Span<const u8> payload, Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    CharacterArguments arguments(allocator());
+    const AnimationRefusal bad = read_character(reader, arguments);
+    if (!reader.complete()) {
+        return refused("animation.request.malformed",
+                       "a character is format, model, skeleton, mesh and (name, id) clips");
+    }
+    if (bad.refused()) {
+        return bad;
+    }
+    if (format != kAnimationWireFormat) {
+        return refused("animation.schema.unsupported", "this engine reads animation format 1");
+    }
+    if (preview == nullptr) {
+        return refused("animation.preview.unavailable",
+                       "the engine has no preview character: the host has none, or the build has "
+                       "no animation");
+    }
+    if (Status set = preview->set_character(arguments.request); !set) {
+        return refused("animation.character.failed", set.error().message);
+    }
+    return answered(encode_animation_character(*preview, reply));
+}
+
+[[nodiscard]] Status encode_bake(const AnimationBakeResult& result, Array<u8>& reply) noexcept {
+    reply.clear();
+    Out writer(reply);
+    writer.u32v(kAnimationWireFormat).u8v(result.baked ? 1 : 0);
+    writer.u32v(static_cast<u32>(result.files.size()));
+    for (const AnimationBakedFile& file : result.files) {
+        writer.text({file.path.data(), file.path.size()});
+        writer.u32v(static_cast<u32>(file.bytes.size()));
+        writer.bytes(file.bytes.span());
+    }
+    wire::encode_diagnostics(writer, result.sink);
+    return writer.status();
+}
+
+[[nodiscard]] AnimationRefusal bake(AnimationBakeRuntime* baker, Span<const u8> payload,
+                                    Array<u8>& reply) noexcept {
+    wire::Reader reader(payload);
+    const u32 format = reader.read_u32();
+    AnimationBakeRequest request;
+    request.rig = reader.read_text();
+    request.source = reader.read_text();
+    CharacterArguments arguments(allocator());
+    const AnimationRefusal bad = read_character(reader, arguments);
+    if (!reader.complete()) {
+        return refused("animation.request.malformed",
+                       "a bake is format, rig, source and a character");
+    }
+    if (bad.refused()) {
+        return bad;
+    }
+    if (format != kAnimationWireFormat) {
+        return refused("animation.schema.unsupported", "this engine reads animation format 1");
+    }
+    if (!rig_name(request.rig)) {
+        return refused("animation.request.malformed",
+                       "a rig is named by letters, digits, underscores and hyphens");
+    }
+    if (baker == nullptr) {
+        return refused("animation.bake.unavailable",
+                       "the engine cannot read this project's cooked assets: the host has no "
+                       "cook, or the build has no animation");
+    }
+    if (arguments.request.skeleton.is_nil()) {
+        return refused("animation.bake.character",
+                       "a rig is baked for a project's imported character; the mannequin has no "
+                       "cooked skeleton a game could load");
+    }
+    request.character = arguments.request;
+    AnimationBakeResult result(allocator());
+    if (Status baked = baker->bake(request, result); !baked) {
+        return refused("animation.bake.failed", baked.error().message);
+    }
+    return answered(encode_bake(result, reply));
+}
+
 [[nodiscard]] AnimationRefusal compile_request(const AnimationPreviewRuntime* preview,
                                                Span<const u8> payload, Array<u8>& reply) noexcept {
     wire::Reader reader(payload);
@@ -670,8 +811,43 @@ Status encode_animation_state(const AnimationPreviewRuntime* preview, Array<u8>&
     return writer.status();
 }
 
+Status compile_animation_graph(const AnimationClipCatalogue* character, std::string_view source,
+                               AnimationCompilation& out) noexcept {
+    Compiled compiled(allocator());
+    compile(character, source, compiled);
+    out.semantic = compiled.semantic;
+    out.compiled = compiled.compiled;
+    out.program = std::move(compiled.program);
+    out.events.clear();
+    if (Status copied = out.events.append(compiled.events.span()); !copied) {
+        return copied;
+    }
+    for (const graph::Diagnostic& diagnostic : compiled.sink.entries()) {
+        out.sink.report(diagnostic);
+    }
+    return ok();
+}
+
+Status encode_animation_character(const AnimationPreviewRuntime& preview, Array<u8>& out) noexcept {
+    out.clear();
+    Out writer(out);
+    writer.u32v(kAnimationWireFormat).text(preview.character_model());
+    writer.u8v(preview.character_from_project() ? 1 : 0).u32v(preview.joint_count());
+    writer.u8v(preview.character_skinned() ? 1 : 0);
+    writer.u32v(static_cast<u32>(preview.clips().size()));
+    for (const AnimationClipInfo& clip : preview.clips()) {
+        writer.text(clip.name.text()).f32v(clip.duration).u8v(clip.looping ? 1 : 0);
+    }
+    writer.u32v(static_cast<u32>(preview.refused_clips().size()));
+    for (const AnimationClipRefusal& refusal : preview.refused_clips()) {
+        writer.text(refusal.clip.text()).text(refusal.reason);
+    }
+    return writer.status();
+}
+
 AnimationRefusal answer_animation(AnimationPreviewRuntime* preview, std::string_view operation,
-                                  Span<const u8> payload, Array<u8>& reply) noexcept {
+                                  Span<const u8> payload, Array<u8>& reply,
+                                  AnimationBakeRuntime* baker) noexcept {
     if (operation == "animation.catalogue.get") {
         return answered(encode_animation_catalogue(preview, reply));
     }
@@ -680,6 +856,12 @@ AnimationRefusal answer_animation(AnimationPreviewRuntime* preview, std::string_
     }
     if (operation == "animation.preview.set") {
         return preview_set(preview, payload, reply);
+    }
+    if (operation == "animation.character.set") {
+        return character_set(preview, payload, reply);
+    }
+    if (operation == "animation.bake") {
+        return bake(baker, payload, reply);
     }
     if (operation == "animation.preview.get" || operation == "animation.preview.stop") {
         if (preview != nullptr && operation == "animation.preview.stop") {

@@ -14,6 +14,12 @@
 //! sends one request per frame, and the engine evaluates the last. While the preview plays, its state
 //! is polled ten times a second so the playhead — and `animation.status`, for an agent with no panel
 //! on screen — follows the engine's clock. A paused or stopped preview is not polled.
+//!
+//! THE CHARACTER is the engine's too: the editor sends which one a graph plays on
+//! (`animation.character.set`) before the preview that needs it, and only when it differs from the
+//! one it last sent. Its answer changes the clips a clip node can name, so the vocabulary is asked
+//! for again and every kept compile is dropped. A BAKE's answer is kept per graph and handed to the
+//! editor once ([`AnimationRequests::take_baked`]), which writes its files into the project.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -23,8 +29,9 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_protocol::{Message, RequestId, ServiceEventKind};
 
 use crate::animation_graph::{
-    CATALOGUE, COMPILE, CompileReport, PREVIEW_GET, PREVIEW_SET, PREVIEW_STOP, PreviewSettings,
-    PreviewState, compile_payload, preview_payload,
+    BAKE, BakeReport, CATALOGUE, CHARACTER_SET, COMPILE, CharacterChoice, CompileReport,
+    PREVIEW_GET, PREVIEW_SET, PREVIEW_STOP, PlayedCharacter, PreviewSettings, PreviewState,
+    bake_payload, character_payload, compile_payload, preview_payload,
 };
 use crate::runtime::RuntimeSession;
 
@@ -66,6 +73,14 @@ pub struct AnimationRequests {
     settings: Option<PreviewSettings>,
     /// The source the last `animation.preview.set` carried, so an edit is resent once.
     previewed: Option<String>,
+    /// The character the editor last asked the engine to play.
+    character_sent: Option<CharacterChoice>,
+    /// The engine's answer: the character its preview plays.
+    character: Versioned<Option<PlayedCharacter>>,
+    /// The engine's last bake of each graph.
+    bakes: Versioned<BTreeMap<String, BakeReport>>,
+    /// Bakes answered and not yet written into the project.
+    baked: Vec<(String, BakeReport)>,
     problem: Option<String>,
 }
 
@@ -82,6 +97,10 @@ impl Default for AnimationRequests {
             preview: Versioned::new(None),
             settings: None,
             previewed: None,
+            character_sent: None,
+            character: Versioned::new(None),
+            bakes: Versioned::new(BTreeMap::new()),
+            baked: Vec::new(),
             problem: None,
         }
     }
@@ -144,6 +163,90 @@ impl AnimationRequests {
         self.queue
             .retain(|waiting| waiting.operation != PREVIEW_SET && waiting.operation != PREVIEW_GET);
         self.enqueue(runtime, queued)
+    }
+
+    /// Whether the engine has not been asked to play `choice`: the last character sent differs, or
+    /// nothing was sent on this connection.
+    #[must_use]
+    pub fn wants_character(&self, choice: &CharacterChoice) -> bool {
+        self.character_sent.as_ref() != Some(choice)
+    }
+
+    /// Ask the engine's preview to play `choice`. Replaces a character request still queued; a
+    /// preview queued after it is shown on it.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached.
+    pub fn character(
+        &mut self,
+        runtime: &RuntimeSession,
+        choice: CharacterChoice,
+    ) -> Result<Option<RequestId>> {
+        let queued = Queued {
+            operation: CHARACTER_SET,
+            payload: character_payload(&choice),
+            reference: String::new(),
+            source: String::new(),
+        };
+        self.queue
+            .retain(|waiting| waiting.operation != CHARACTER_SET);
+        let sent = self.enqueue(runtime, queued)?;
+        self.character_sent = Some(choice);
+        Ok(sent)
+    }
+
+    /// Cook `source`, the text of `reference`, for `choice` into the rig `rig`.
+    ///
+    /// # Errors
+    ///
+    /// When no runtime is attached: the engine cooks.
+    pub fn bake(
+        &mut self,
+        runtime: &RuntimeSession,
+        reference: &str,
+        source: &str,
+        choice: &CharacterChoice,
+    ) -> Result<Option<RequestId>> {
+        let rig = crate::animation_graph::rig_name(reference);
+        self.enqueue(
+            runtime,
+            Queued {
+                operation: BAKE,
+                payload: bake_payload(&rig, source, choice),
+                reference: reference.to_owned(),
+                source: source.to_owned(),
+            },
+        )
+    }
+
+    /// The character the engine's preview plays, once it has answered.
+    #[must_use]
+    pub fn played_character(&self) -> Option<&PlayedCharacter> {
+        self.character.get().as_ref()
+    }
+
+    /// Moves when the engine answers a character.
+    #[must_use]
+    pub const fn character_revision(&self) -> Revision {
+        self.character.revision()
+    }
+
+    /// The engine's last bake of `reference`.
+    #[must_use]
+    pub fn bake_report(&self, reference: &str) -> Option<&BakeReport> {
+        self.bakes.get().get(reference)
+    }
+
+    /// Moves when a bake is answered.
+    #[must_use]
+    pub const fn bake_revision(&self) -> Revision {
+        self.bakes.revision()
+    }
+
+    /// The bakes answered since the last call, each to be written into the project once.
+    pub fn take_baked(&mut self) -> Vec<(String, BakeReport)> {
+        std::mem::take(&mut self.baked)
     }
 
     /// Stop previewing.
@@ -252,6 +355,11 @@ impl AnimationRequests {
             self.preview.set(None);
         }
         self.previewed = None;
+        // A runtime that starts again plays the mannequin until it is told otherwise.
+        self.character_sent = None;
+        if self.character.get().is_some() {
+            self.character.set(None);
+        }
     }
 
     /// Take the engine's answer to the request in flight; `None` for a message that is not one.
@@ -277,6 +385,11 @@ impl AnimationRequests {
         }
         let (_, queued) = self.in_flight.take().expect("checked above");
         let result = self.settle(&queued, *kind, *schema_version, payload);
+        if result.is_err() && queued.operation == CHARACTER_SET {
+            // The engine kept the character it had, which is not the one asked for: the next
+            // preview asks again rather than being shown on the wrong skeleton.
+            self.character_sent = None;
+        }
         match &result {
             Ok(()) => self.problem = None,
             Err(problem) => self.problem = Some(problem.to_string()),
@@ -302,6 +415,23 @@ impl AnimationRequests {
                     let mut reports = self.reports.get().clone();
                     reports.insert(queued.reference.clone(), (queued.source.clone(), report));
                     self.reports.set(reports);
+                    Ok(())
+                }
+                CHARACTER_SET => {
+                    self.character.set(Some(PlayedCharacter::decode(payload)?));
+                    // Another character, other clips: the palette and every compile were the old
+                    // one's. The engine stopped its preview.
+                    self.catalogue_requested = false;
+                    self.reports.set(BTreeMap::new());
+                    self.preview.set(None);
+                    Ok(())
+                }
+                BAKE => {
+                    let report = BakeReport::decode(payload)?;
+                    let mut bakes = self.bakes.get().clone();
+                    bakes.insert(queued.reference.clone(), report.clone());
+                    self.bakes.set(bakes);
+                    self.baked.push((queued.reference.clone(), report));
                     Ok(())
                 }
                 _ => {
@@ -481,5 +611,162 @@ mod tests {
         );
         assert_eq!(queued[0].payload, preview_payload("graph", &settings(0.3)));
         assert_eq!(requests.settings().map(|kept| kept.time), Some(0.3));
+    }
+
+    fn hero() -> CharacterChoice {
+        CharacterChoice {
+            model: "characters/hero.fbx".into(),
+            skeleton: "0000000000005e1e0000000000000001".into(),
+            mesh: "0000000000005e1e0000000000000003".into(),
+            clips: vec![("hero".into(), "0000000000005e1e0000000000000002".into())],
+        }
+    }
+
+    fn answer(requests: &mut AnimationRequests, sent: RequestId, payload: Vec<u8>) {
+        let answered = requests.accept(&Message::ServiceEvent {
+            request: sent,
+            kind: ServiceEventKind::Completed,
+            schema_version: SCHEMA,
+            payload,
+        });
+        assert!(matches!(answered, Some(None)), "{answered:?}");
+    }
+
+    #[test]
+    fn a_character_is_sent_once_and_its_answer_asks_for_the_vocabulary_again() {
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests {
+            catalogue_requested: true,
+            catalogue: Versioned::new(Some(vec![1])),
+            ..AnimationRequests::default()
+        };
+        assert!(requests.wants_character(&CharacterChoice::default()));
+        let sent = requests
+            .character(&runtime, hero())
+            .unwrap()
+            .expect("the character goes out at once");
+        assert!(!requests.wants_character(&hero()));
+        assert!(requests.wants_character(&CharacterChoice::default()));
+        // A compile kept from the last character is not this one's.
+        let mut reports = BTreeMap::new();
+        reports.insert("g".to_owned(), (String::new(), CompileReport::default()));
+        requests.reports.set(reports);
+        answer(
+            &mut requests,
+            sent,
+            engine_fixture("animation_character_v1.wire"),
+        );
+        assert_eq!(
+            requests
+                .played_character()
+                .map(|played| played.model.as_str()),
+            Some("characters/hero.fbx")
+        );
+        assert!(requests.report("g").is_none());
+        assert!(requests.maintain(&runtime).is_none());
+        assert!(
+            requests
+                .in_flight
+                .as_ref()
+                .is_some_and(|(_, queued)| queued.operation == CATALOGUE),
+            "another character, other clips: the vocabulary is asked for again"
+        );
+    }
+
+    #[test]
+    fn a_preview_after_a_character_is_shown_on_it() {
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests {
+            catalogue_requested: true,
+            ..AnimationRequests::default()
+        };
+        // Something in flight, so both wait in the queue in the order they were asked.
+        assert!(requests.refresh(&runtime).unwrap().is_some());
+        requests.character(&runtime, hero()).unwrap();
+        requests.preview(&runtime, settings(0.5), "graph").unwrap();
+        let order: Vec<&str> = requests
+            .queue
+            .iter()
+            .map(|queued| queued.operation)
+            .collect();
+        assert_eq!(order, [CHARACTER_SET, PREVIEW_SET]);
+        // The editor always sends a character with the preview that needs it: a newer pair
+        // replaces the queued one, character first.
+        requests
+            .character(&runtime, CharacterChoice::default())
+            .unwrap();
+        requests.preview(&runtime, settings(0.6), "graph").unwrap();
+        let order: Vec<&str> = requests
+            .queue
+            .iter()
+            .map(|queued| queued.operation)
+            .collect();
+        assert_eq!(order, [CHARACTER_SET, PREVIEW_SET]);
+        assert_eq!(
+            requests.queue[0].payload,
+            character_payload(&CharacterChoice::default())
+        );
+    }
+
+    #[test]
+    fn a_bake_is_handed_over_once_and_kept_for_its_graph() {
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests {
+            catalogue_requested: true,
+            ..AnimationRequests::default()
+        };
+        let sent = requests
+            .bake(
+                &runtime,
+                "game/animation/hero.cyanimgraph",
+                "graph",
+                &hero(),
+            )
+            .unwrap()
+            .expect("the bake goes out at once");
+        answer(
+            &mut requests,
+            sent,
+            engine_fixture("animation_bake_v1.wire"),
+        );
+        let baked = requests.take_baked();
+        assert_eq!(baked.len(), 1);
+        assert_eq!(baked[0].0, "game/animation/hero.cyanimgraph");
+        assert!(baked[0].1.baked);
+        assert!(requests.take_baked().is_empty(), "written once");
+        assert!(
+            requests
+                .bake_report("game/animation/hero.cyanimgraph")
+                .is_some_and(|report| report.files.len() == 3)
+        );
+    }
+
+    #[test]
+    fn a_refused_character_is_asked_for_again() {
+        // The engine keeps the character it had when it refuses one (a model not cooked yet): the
+        // editor must not believe it plays the refused one.
+        let (runtime, _reader, _writer) = silent_runtime();
+        let mut requests = AnimationRequests {
+            catalogue_requested: true,
+            ..AnimationRequests::default()
+        };
+        let sent = requests.character(&runtime, hero()).unwrap().unwrap();
+        let mut failure = cy_editor_core::codec::Writer::new();
+        failure.u32(1);
+        failure.text("animation.character.failed");
+        failure.text("the character's cooked skeleton could not be read");
+        let answered = requests.accept(&Message::ServiceEvent {
+            request: sent,
+            kind: ServiceEventKind::Failed,
+            schema_version: SCHEMA,
+            payload: failure.finish(),
+        });
+        assert!(matches!(answered, Some(Some(_))), "{answered:?}");
+        assert!(requests.wants_character(&hero()));
+        assert!(
+            requests
+                .problem()
+                .is_some_and(|problem| problem.contains("animation.character.failed"))
+        );
     }
 }

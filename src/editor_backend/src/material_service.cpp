@@ -1114,10 +1114,11 @@ CyResult dispatch_script(CyServiceSession_T& session, std::string_view operation
 }
 
 CyResult dispatch_animation(CyServiceSession_T& session, std::string_view operation,
-                            cy::editor::AnimationPreviewRuntime* preview) noexcept {
+                            cy::editor::AnimationPreviewRuntime* preview,
+                            cy::editor::AnimationBakeRuntime* baker) noexcept {
     const cy::editor::AnimationRefusal refusal = cy::editor::answer_animation(
         preview, operation, {session.request_payload.data(), session.request_payload.size()},
-        session.event_payload);
+        session.event_payload, baker);
     return refusal.refused() ? failed(session, refusal.code, refusal.detail) : CY_RESULT_OK;
 }
 
@@ -1402,7 +1403,7 @@ CyResult MaterialService::poll(CyServiceSession session, CyServiceEvent& out_eve
     } else if (!session->cancelled && operation.starts_with("script.")) {
         result = dispatch_script(*session, operation, scripts_);
     } else if (!session->cancelled && operation.starts_with("animation.")) {
-        result = dispatch_animation(*session, operation, animation_);
+        result = dispatch_animation(*session, operation, animation_, animation_baker_);
     } else if (!session->cancelled) {
         result = failed(*session, "operation-unsupported",
                         "this backend does not support the operation");

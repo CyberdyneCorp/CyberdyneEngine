@@ -56,9 +56,9 @@ The first vertical slice supports:
   `MaterialService::set_scripts`, and are refused with `script.play.unavailable` otherwise.
   `tests/data/script_*` holds the wire the Rust editor's suites read and write.
 
-- `animation.catalogue.get`, `animation.compile`, `animation.preview.set`, `animation.preview.get`
-  and `animation.preview.stop` — the animation panel's (#29; `include/cy/editor/animation_service.h`
-  gives the payloads). The catalogue is the material catalogue's schema 3 over `cy::graph::pose`'s
+- `animation.catalogue.get`, `animation.compile`, `animation.preview.set`, `animation.preview.get`,
+  `animation.preview.stop`, `animation.character.set` and `animation.bake` — the animation panel's
+  (#29; `include/cy/editor/animation_service.h` gives the payloads). The catalogue is the material catalogue's schema 3 over `cy::graph::pose`'s
   vocabulary, with a clip node's choices the host's preview clips. A compile always completes:
   `graph::validate`, `compile_pose`, and the authoring checks a program cannot carry (an unwired
   transition, a cut, a missing condition, an empty state, an unknown clip, an event that does not parse
@@ -68,9 +68,18 @@ The first vertical slice supports:
   `cy::editor::AnimationPreview` (`include/cy/editor/animation_preview.h`, built with `CY_ANIMATION`)
   is that runtime: a twelve-joint preview character whose pose `cy::animation` evaluates — a state
   machine advanced from its entry state in sixtieths of a second, or one clip sampled — with the events
-  each clip's node authors, and the skinning matrices a host draws it with.
+  each clip's node authors, and the skinning matrices a host draws it with. Its character
+  (`include/cy/editor/animation_character.h`) is the built-in mannequin or, after
+  `animation.character.set`, a project's imported one: the cooked skeleton, skinned mesh and clips the
+  importer wrote, read through the host's `cy::editor::AnimationAssetSource`, a clip cooked for another
+  skeleton refused by name. `animation.bake` reaches the host's `cy::editor::AnimationBakeRuntime`
+  (`MaterialService::set_animation_baker`); `cy::editor::AnimationRigBaker`
+  (`include/cy/editor/animation_rig.h`) is that cook: the graph compiled for the character it names,
+  its program and clips written as cooked assets with the graph's events in the clips, and a `cyrig 1`
+  manifest a host's Play loads.
   `tests/data/animation_*` holds the wire the Rust editor's suites read and write; the suite is
-  `integration.editor_backend_animation`.
+  `integration.editor_backend_animation`, which imports its project character from an FBX with the
+  real importer (`tests/animation_character_fixture.h`).
 
 Requests are copied at submission, identified by nonzero request IDs, cancelled cooperatively, and
 publish exactly one terminal event. Payload schemas are versioned independently of ABI 1.2 and of

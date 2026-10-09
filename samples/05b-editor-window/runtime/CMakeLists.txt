@@ -94,6 +94,15 @@ cy_add_module(
         cy::rhi-null
         ${CY_EDITOR_WINDOW_RHI})
 
+# A project's own animated characters (#112's gaps): the panel's preview reads their cooked records,
+# the bake cooks a graph into a rig, and Play animates the baked rigs for the Swift behaviours. With
+# the animation runtime only, as cy::editor-backend's preview is.
+if(CY_ANIMATION)
+    target_sources(cy_editor_window_runtime PRIVATE animation_assets.cpp play_animation.cpp)
+    target_link_libraries(cy_editor_window_runtime PRIVATE cy::animation-assets
+                                                           cy::game-backend-animation)
+endif()
+
 # The output device the editor's audio tools are heard through (#29). Without CY_AUDIO the runtime
 # still mixes, on the null backend, and says so.
 if(CY_AUDIO)

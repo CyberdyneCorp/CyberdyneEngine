@@ -190,6 +190,8 @@ pub struct Editor {
     pending_graph_save: Option<PendingGraphSave>,
     graph_save_status: String,
     reload_revision: Revision,
+    /// The character last resolved for an animation graph; see `crate::animation_character`.
+    pub(crate) animation_choice: Option<crate::animation_character::CachedChoice>,
 }
 
 impl Default for Editor {
@@ -244,6 +246,7 @@ impl Editor {
             pending_graph_save: None,
             graph_save_status: "idle".into(),
             reload_revision: Revision::INITIAL,
+            animation_choice: None,
         }
     }
 
@@ -823,10 +826,31 @@ impl Editor {
     /// Write a graph's text and record its prior and new contents as one transaction in the open
     /// world's history, under `prefix` and the reference. False when the file already held `source`,
     /// which records nothing.
-    fn save_graph_source(
+    pub(crate) fn save_graph_source(
         &mut self,
         reference: &str,
         source: &str,
+        prefix: &str,
+        what: &str,
+    ) -> Result<bool> {
+        self.record_graph_source(reference, Some(source), prefix, what)
+    }
+
+    /// Remove a file saved by [`Self::save_graph_source`], recording its prior contents as one
+    /// transaction so an undo writes it back. False when there was no such file.
+    pub(crate) fn remove_graph_source(
+        &mut self,
+        reference: &str,
+        prefix: &str,
+        what: &str,
+    ) -> Result<bool> {
+        self.record_graph_source(reference, None, prefix, what)
+    }
+
+    fn record_graph_source(
+        &mut self,
+        reference: &str,
+        source: Option<&str>,
         prefix: &str,
         what: &str,
     ) -> Result<bool> {
@@ -842,20 +866,21 @@ impl Editor {
         } else {
             None
         };
-        if prior.as_deref() == Some(source) {
+        if prior.as_deref() == source {
             return Ok(false);
         }
-        self.project.put_source(reference, Some(source))?;
+        self.project.put_source(reference, source)?;
         let recorded = (|| {
             let document = self.documents.get_mut(document_id).ok_or_else(|| {
                 Problem::new(format!("save a {what}"), "the active scene document closed")
             })?;
-            document.begin(format!("Save {what} {reference}"), self.actor.clone());
+            let verb = if source.is_some() { "Save" } else { "Remove" };
+            document.begin(format!("{verb} {what} {reference}"), self.actor.clone());
             document.record(cy_editor_documents::operation::Operation::Domain {
                 node: None,
                 kind: format!("{prefix}{reference}"),
                 before: crate::project::encode_source(prior.as_deref()),
-                after: crate::project::encode_source(Some(source)),
+                after: crate::project::encode_source(source),
             })?;
             document.commit()
         })();
@@ -874,6 +899,9 @@ impl Editor {
             return;
         };
         if settings.reference != reference || !self.runtime.is_connected() {
+            return;
+        }
+        if source.is_some() && self.ensure_animation_character(reference).is_err() {
             return;
         }
         let _ = match source {
@@ -1058,6 +1086,7 @@ impl Editor {
         self.send_project_mixer();
         self.finish_graph_save();
         self.finish_nav_bake();
+        self.finish_animation_bakes();
         if !self.runtime.is_connected() && !self.pending_reloads.is_empty() {
             let pending = std::mem::take(&mut self.pending_reloads);
             if let Some((request, (module, generation))) = pending.into_iter().next_back() {
@@ -2142,6 +2171,8 @@ impl cy_editor_commands::ProjectHost for Editor {
             settings.parameters.insert(name.clone(), *value);
         }
         let source = self.project.read_source(&settings.reference)?;
+        // The character first, when it is not the one the engine plays: the queue keeps the order.
+        self.ensure_animation_character(&settings.reference)?;
         let sent = self
             .backend
             .animation
@@ -2166,7 +2197,28 @@ impl cy_editor_commands::ProjectHost for Editor {
     }
 
     fn animation_graph_changed(&mut self, reference: &str, source: Option<&str>) {
+        // A graph's character file is undone and redone in the graph's own domain.
+        if let Some(graph) = crate::animation_graph::graph_of_character(reference) {
+            self.character_follows(&graph);
+            return;
+        }
         self.preview_follows(reference, source);
+    }
+
+    fn animation_characters(&mut self) -> Result<cy_editor_commands::AnimationCharacters> {
+        self.list_animation_characters()
+    }
+
+    fn animation_character_of(&self, reference: &str) -> Result<Option<String>> {
+        self.animation_character_model(reference)
+    }
+
+    fn animation_character_set(&mut self, reference: &str, model: Option<&str>) -> Result<()> {
+        self.save_animation_character(reference, model)
+    }
+
+    fn animation_bake(&mut self, reference: &str) -> Result<u64> {
+        self.request_animation_bake(reference)
     }
 
     fn audio_request(&mut self, operation: &str, payload: Vec<u8>) -> Result<u64> {

@@ -154,6 +154,26 @@ submits it, in arrival order, once the service has answered what it held; a requ
 other reason is answered as failed. `unit.editor_window_runtime`, "a request the service is too busy
 for waits its turn instead of being dropped", is the regression case.
 
+### A project's own character, and its events in Play (#112's gaps)
+
+`runtime/animation_assets.h` (`ProjectAnimationAssets`) reads the project's cooked records,
+`<project>/.cy/cooked/<id>.cyasset`, for the preview's character and for the bake: `main.cpp` hands it
+to `AnimationPreview::set_source` and to the `AnimationRigBaker` it binds with
+`MaterialService::set_animation_baker`. So `animation.character.set` previews a model the project
+imported, drawn with its own skin, and `animation.bake` cooks a graph for it into
+`.cy/cooked/animation/<graph name>/`. `smoke.editor_authored_frame_vulkan`, "authored native frame draws
+an imported character the engine posed", draws an FBX-imported character read back that way.
+
+`runtime/play_animation.h` (`PlayAnimation`) is Play's animation: at Play it loads every baked rig
+through the asset system and `AnimationLibrary`, as a shipped game loads one, registers each with an
+`AnimationSystem` over the Play world under its graph's name, and binds ABI 1.7's animation backend into
+the Swift behaviours (`ScriptRuntime::bind_animation`). Each fixed tick runs the behaviours' fixed step,
+one animation tick, then their `onUpdate` (`ScriptRuntime::frame`) with the tick's events. A rig that
+does not load is skipped and named on stderr. `project/game/AnimatedHero.swift` attaches to the `hero`
+rig and records the events it is given; `smoke.editor_animation_events` checks that the events placed
+on the timeline arrive in its `onUpdate` on the ticks their times fall in, and
+`integration.editor_window_play_animation` checks the same through the ABI backend without Swift.
+
 ## Material Graph cube
 
 Open `project/worlds/material-graph.cyworld` to see a Plane, a Cube, a directional light,

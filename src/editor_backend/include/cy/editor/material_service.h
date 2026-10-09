@@ -17,6 +17,7 @@ class TerrainPreview;
 class AudioAuthoring;
 class ScriptPlayRuntime;
 class AnimationPreviewRuntime;
+class AnimationBakeRuntime;
 
 /// Every operation prefix `MaterialService` serves. A host that routes one binding over several
 /// services (`CompositeEditorService`) routes each of these here, so an operation this service
@@ -109,6 +110,9 @@ public:
     /// `animation.catalogue.get` and `animation.compile` need no host. `preview` is borrowed; null
     /// refuses the previews with `animation.preview.unavailable`.
     void set_animation(AnimationPreviewRuntime* preview) noexcept { animation_ = preview; }
+    /// Serve `animation.bake` from the host's cook over the project's cooked assets. `baker` is
+    /// borrowed; null refuses bakes with `animation.bake.unavailable`.
+    void set_animation_baker(AnimationBakeRuntime* baker) noexcept { animation_baker_ = baker; }
 
 private:
     Allocator* allocator_;
@@ -117,6 +121,7 @@ private:
     AudioAuthoring* audio_ = nullptr;
     ScriptPlayRuntime* scripts_ = nullptr;
     AnimationPreviewRuntime* animation_ = nullptr;
+    AnimationBakeRuntime* animation_baker_ = nullptr;
 };
 
 }  // namespace cy::editor

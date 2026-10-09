@@ -25,6 +25,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod animation_character;
 pub mod animation_commands;
 pub mod animation_graph;
 pub mod animation_requests;

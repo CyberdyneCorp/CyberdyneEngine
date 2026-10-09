@@ -2,6 +2,10 @@
 //! The animation commands that need no canvas: read a graph, compile it, drive the engine's
 //! preview, and read the engine's answers. Issue #29, animation.
 //!
+//! The character a graph plays on (`animation.character.*`) and its bake into the rig a game loads
+//! (`animation.bake`) are here too: the first is one undoable transaction on the graph's character
+//! file, the second asks the engine to cook and writes what it answers.
+//!
 //! The canvas and timeline edits (`animation.graph.create`, `animation.node.*`,
 //! `animation.event.*`) live beside the shared canvas in
 //! `cy_editor_interface::specialised::animation_authoring_commands`, because they validate against
@@ -16,7 +20,10 @@ use cy_editor_commands::{
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
 
-use crate::animation_graph::{CompileReport, NO_STATE, PreviewState, validate_reference};
+use crate::animation_graph::{
+    BakeReport, CompileReport, NO_STATE, PlayedCharacter, PreviewState, RIG_DIRECTORY, rig_name,
+    validate_reference,
+};
 use crate::animation_requests::AnimationRequests;
 use crate::authoring::within_scope;
 use crate::script_graph::ScriptGraph;
@@ -38,6 +45,9 @@ pub fn register(registry: &mut Registry) -> Result<()> {
         parameter(),
         stop(),
         status(),
+        list_characters(),
+        set_character(),
+        bake(),
     ] {
         registry.register(command)?;
     }
@@ -350,6 +360,113 @@ fn status() -> Command {
     )
 }
 
+fn list_characters() -> Command {
+    Command::new(
+        read_class(
+            "animation.character.list",
+            "List Animation Characters",
+            "Lists the characters a graph can play on: every imported model whose import cooked a \
+             skeleton, with its skeleton and mesh, and every clip the project's imports cooked, by \
+             the name a pose.clip node gives it. The built-in mannequin is always available.",
+        ),
+        |context, _| {
+            let found = host(context)?.animation_characters()?;
+            let mut outcome = Outcome::new(format!(
+                "{} character(s), {} clip(s)",
+                found.characters.len(),
+                found.clips.len()
+            ));
+            for (index, (model, skeleton, mesh)) in found.characters.iter().enumerate() {
+                outcome = outcome.with(
+                    format!("character.{index}"),
+                    Value::Text(format!("{model} skeleton={skeleton} mesh={mesh}")),
+                );
+            }
+            for (index, (name, source)) in found.clips.iter().enumerate() {
+                outcome = outcome.with(
+                    format!("clip.{index}"),
+                    Value::Text(format!("{name} from {source}")),
+                );
+            }
+            Ok(outcome)
+        },
+    )
+}
+
+fn set_character() -> Command {
+    Command::new(
+        Metadata::new(
+            "animation.character.set",
+            "Set Animation Character",
+            CATEGORY,
+            "Chooses the character an animation graph plays on: a model the project imported \
+             with a skeleton (animation.character.list), or the built-in mannequin when the model \
+             is empty. Written beside the graph as one undoable transaction; the engine's preview \
+             and the bake use it, and a clip node can then name that character's clips.",
+            EffectClass::ReversibleMutation,
+        )
+        .with(reference_parameter())
+        .with(ParameterSpec::optional(
+            "model",
+            ValueKind::Text,
+            "The imported model's project-relative source, for example characters/hero.fbx; \
+             empty for the mannequin.",
+            Value::Text(String::new()),
+        )),
+        |context, arguments| {
+            let reference = text(arguments, "reference").to_owned();
+            writable(context, &reference)?;
+            let model = text(arguments, "model").to_owned();
+            let host = host(context)?;
+            source_of(host, &reference)?;
+            host.animation_character_set(
+                &reference,
+                (!model.is_empty()).then_some(model.as_str()),
+            )?;
+            let who = if model.is_empty() {
+                "the mannequin".to_owned()
+            } else {
+                model
+            };
+            Ok(Outcome::new(format!("{reference} plays on {who}")))
+        },
+    )
+}
+
+fn bake() -> Command {
+    Command::new(
+        Metadata::new(
+            "animation.bake",
+            "Bake Animation Graph",
+            CATEGORY,
+            "Asks the engine to bake a saved animation graph for its character into the rig a \
+             game loads: the compiled program and every clip it names, with the events placed on \
+             the timeline cooked into them, written under .cy/cooked/animation/<graph name>/. Play \
+             registers the rig under the graph's name, so Animator.attach(to:rig:) plays it and \
+             Animation.events(for:) delivers its events. Read animation.status for the result.",
+            EffectClass::ExternalEffect,
+        )
+        .with(reference_parameter()),
+        |context, arguments| {
+            let reference = text(arguments, "reference").to_owned();
+            writable(context, &reference)?;
+            let host = host(context)?;
+            source_of(host, &reference)?;
+            let request = host.animation_bake(&reference)?;
+            Ok(Outcome::new(format!(
+                "Sent {reference} to the engine's bake, rig {}",
+                rig_name(&reference)
+            ))
+            .with("rig", Value::Text(rig_name(&reference)))
+            .with(
+                "directory",
+                Value::Text(format!("{RIG_DIRECTORY}/{}", rig_name(&reference))),
+            )
+            .with("request", request_value(request)))
+        },
+    )
+}
+
 /// `animation.status`: what the engine last said about `reference` and about the preview. Every
 /// number here was decoded from an engine reply.
 #[must_use]
@@ -377,10 +494,56 @@ pub fn status_outcome(
             Value::Bool(current.is_some_and(|source| source == compiled_source.as_str())),
         );
     }
+    if let Some(character) = requests.played_character() {
+        outcome = character_outcome(outcome, character);
+    }
+    if let Some(report) = requests.bake_report(reference) {
+        outcome = bake_outcome(outcome, report);
+    }
     match requests.preview_state() {
         Some(state) => preview_outcome(outcome, state),
         None => outcome.with("previewing", Value::Bool(false)),
     }
+}
+
+fn character_outcome(mut outcome: Outcome, character: &PlayedCharacter) -> Outcome {
+    outcome = outcome
+        .with("character", Value::Text(character.describe()))
+        .with("character_model", Value::Text(character.model.clone()))
+        .with("character_skinned", Value::Bool(character.skinned));
+    let clips: Vec<&str> = character
+        .clips
+        .iter()
+        .map(|(name, _, _)| name.as_str())
+        .collect();
+    outcome = outcome.with("character_clips", Value::Text(clips.join(" ")));
+    for (index, (clip, why)) in character.refused.iter().enumerate() {
+        outcome = outcome.with(
+            format!("character_refused.{index}"),
+            Value::Text(format!("{clip}: {why}")),
+        );
+    }
+    outcome
+}
+
+fn bake_outcome(mut outcome: Outcome, report: &BakeReport) -> Outcome {
+    let files: Vec<&str> = report.files.iter().map(|(path, _)| path.as_str()).collect();
+    outcome = outcome
+        .with("baked", Value::Bool(report.baked))
+        .with("baked_files", Value::Text(files.join(" ")));
+    for (index, diagnostic) in report.diagnostics.iter().enumerate() {
+        outcome = outcome.with(
+            format!("bake_diagnostic.{index}"),
+            Value::Text(format!(
+                "{:?} node {} {}: {}",
+                diagnostic.severity,
+                diagnostic.node,
+                diagnostic.code,
+                diagnostic.describe()
+            )),
+        );
+    }
+    outcome
 }
 
 fn count(value: usize) -> Value {

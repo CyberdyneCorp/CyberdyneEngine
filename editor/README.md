@@ -269,7 +269,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `lighting.write-lightmap-description`, `lighting.volume.create`, `lighting.volume.set`, `lighting.light.set-mobility`, `lighting.object.set-resolution`, `viewport.view-mode.lightmap-density`, `viewport.view-mode.gi-probes` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 | Gameplay graphs (#29) | `script.graph.create`, `script.node.add`, `script.node.move`, `script.node.connect`, `script.node.disconnect`, `script.node.remove`, `script.node.property.set`, `script.graph.attach`, `script.graph.read`, `script.graph.compile`, `script.event.raise`, `script.refresh`, `script.status` |
-| Animation (#29) | `animation.graph.create`, `animation.node.add`, `.move`, `.connect`, `.disconnect`, `.remove`, `.property.set`, `animation.event.add`, `.move`, `.remove`, `animation.graph.read`, `animation.graph.compile`, `animation.preview.scrub`, `.play`, `.pause`, `.parameter`, `.stop`, `animation.status` |
+| Animation (#29) | `animation.graph.create`, `animation.node.add`, `.move`, `.connect`, `.disconnect`, `.remove`, `.property.set`, `animation.event.add`, `.move`, `.remove`, `animation.character.set`, `animation.graph.read`, `animation.graph.compile`, `animation.preview.scrub`, `.play`, `.pause`, `.parameter`, `.stop`, `animation.character.list`, `animation.status`, `animation.bake` |
 | Navigation | `navigation.world.create`, `navigation.settings.set`, `navigation.bake`, `navigation.bake.status`, `navigation.{surface,obstacle,area,link}.add`, `navigation.path.query`, `navigation.point.pick` and the rest of the eighteen `navigation.*` commands (issue #28) |
 
 **Lighting & lightmaps.** The lighting and lightmap baking specialised editor bakes the open world
@@ -606,6 +606,21 @@ the editor evaluates nothing.
   drawn skinned in the viewport through the frame's `SkinnedScene`. The preview shows either the
   timeline's clip alone or the state machine run from its entry state with the parameters set. Saving,
   undoing or redoing the previewed graph previews it again. `animation.status` reports all of it.
+- **The character is the project's.** The Character row (`animation.character.list`,
+  `animation.character.set`) plays the graph on the built-in mannequin or on a model the project
+  imported whose import cooked a skeleton. The choice is the graph's `.cyanimcharacter` file beside
+  it, one undoable transaction. The editor reads the project's `.import` records
+  (`cy_editor_services::animation_graph::project_characters` and `project_clips`) and sends the engine
+  the model's skeleton and mesh and every cooked clip, each named by its sub-asset's leaf
+  (`animation/Walking` is `Walking`) — before the preview that needs it, and only when it is not the
+  character the engine plays. The engine loads the cooked records, names any clip cooked for another
+  skeleton as refused, and draws the model's own skin (one box per bone for a model with none); the
+  palette's clip choices become its clips.
+- **Bake carries the events to the game.** `animation.bake` (the Bake button) asks the engine to cook
+  the graph for its character: the program, and each clip it names with the timeline's events cooked
+  in. The editor replaces `.cy/cooked/animation/<graph name>/` with what it answers, and Play
+  registers the rig under the graph's name, so a Swift behaviour's `Animator.attach(to:rig:)` plays it
+  and `Animation.events(for:)` delivers the events in `onUpdate`.
 
 The contract between the two sides is `src/editor_backend/tests/data/animation_*`: the acceptance graph
 (`animation_locomotion_v1.cyanimgraph`, and `_edited_v1` with its idle-to-walk blend lengthened), the
@@ -623,10 +638,23 @@ its [timeline with a clip's events](../docs/design/images/editor-animation-timel
 its [window capture](../docs/design/images/editor-animation-window.png) shows the character the engine
 posed mid-blend, skinned and shadowed in the viewport.
 
-Not built yet: previewing a project's own skinned character (the editor imports no skeleton yet),
-cooking a graph's authored events into its clips, curve editing on the timeline, and the skinned
-preview on Metal and D3D12, whose skinned pipelines have not run on a device; there the runtime offers
-no preview and `animation.preview.set` is refused by name.
+The project character and the bake have their own contract in the same directory: the imported hero's
+graph (`animation_hero_v1.cyanimgraph`), the character and bake requests this workspace encodes from
+the project's import records, and the engine's character and bake replies. The engine's suite imports
+the hero from an FBX with the real importer and checks every pose against the importer's clip sampled
+directly; `an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp` chooses it, previews
+and bakes it over MCP and requires the requests to be the engine's, the rig written, and the choice to
+undo. The [imported hero at rest](../docs/design/images/editor-animation-viewport-imported-rest.png)
+and [turned by its own clip](../docs/design/images/editor-animation-viewport-imported-turned.png) are
+drawn by `smoke.editor_authored_frame_vulkan`, and the panel with the hero chosen and baked is
+[`editor-animation-character.png`](../docs/design/images/editor-animation-character.png).
+
+Not built yet: curve editing on the timeline (a clip's curve tracks have no reader in the pose graph
+or the ABI, so an authored curve would reach nothing a game runs), retargeting a project clip cooked
+for another skeleton (it is refused), a baked rig in the content cook and its packages (Play loads it
+from `.cy/cooked/animation/`), Play's viewport drawing the animated characters, and the skinned preview
+on Metal and D3D12, whose skinned pipelines have not run on a device; there the runtime offers no
+preview and `animation.preview.set` is refused by name.
 
 ## The dependencies, and the rule they arrived under
 

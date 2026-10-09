@@ -613,6 +613,25 @@ note = "the twenty-one extension points, the eight lifecycle phases, resolution 
 # `Domain::AnimationGraphsAndClips` on the shared canvas and the shared timeline, which is what
 # m11b:specialised-editors checks the domain table for.
 
+# `openspec/changes/add-animation-project-characters` (#29 Animation, #112's gaps) adds two
+# requirements to this row and one to `animation-and-skinning`. Map them on archive, not before:
+#   "Animation preview on the project's own characters"
+#     rust:cy-editor-mcp::a_session_over_the_wire::an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp;
+#     the engine half is test:integration.editor_backend_animation, cases "editor animation: a
+#     scrubbed imported clip is the importer's clip sampled directly", "editor animation: the
+#     imported character's machine is the program evaluated directly" and "editor animation: a clip
+#     cooked for another skeleton is refused by name"; the drawn half is
+#     test:smoke.editor_authored_frame_vulkan, case "authored native frame draws an imported
+#     character the engine posed"
+#   "Baking an animation graph for the game"
+#     test:smoke.editor_animation_events, case "a Swift behaviour receives the timeline's events in
+#     onUpdate on their ticks"; test:integration.editor_window_play_animation, case "Play loads a
+#     baked rig, and the timeline's events arrive on the ticks they fall in"; and the MCP case above
+#   animation-and-skinning "Authored events reach a game's clips"
+#     test:unit.animation, case "clip: clearing the events keeps the motion and fires nothing until
+#     new ones arrive"; test:integration.editor_backend_animation, case "editor animation: a bake
+#     cooks the authored events into the clip a game loads"
+
 [[coverage]]
 row = "editor-architecture"
 requirement = "Specialised editors"

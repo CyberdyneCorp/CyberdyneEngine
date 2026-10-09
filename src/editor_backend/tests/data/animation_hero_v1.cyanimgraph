@@ -1,0 +1,17 @@
+cygraph 1
+graph "hero" version 1
+capability
+deterministic true
+node 1 "pose.clip" v1 {
+    prop "clip" : "name" = "hero"
+    prop "duration" : "float" = (1, 0, 0, 0, 0)
+    prop "events" : "name" = "land@0.76; footstep@0.26"
+    prop "loop" : "bool" = (0, 0, 0, 0, 1)
+    prop "time_parameter" : "name" = (0, 0, 0, 0, 0)
+}
+node 2 "pose.state" v1 {
+    prop "name" : "name" = "idle"
+}
+link 1 "pose" -> 2 "pose"
+layout 1 at 16 16
+layout 2 at 230 16

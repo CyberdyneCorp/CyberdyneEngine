@@ -5622,7 +5622,8 @@ struct AnimationAsked {
 /// A runtime that answers `animation.*` with the ENGINE'S OWN replies, byte for byte
 /// (`cy_test_integration_editor_backend_animation` writes them): its catalogue; for a compile, the
 /// program, or the refusal on the transition when the source makes it a cut; the preview character
-/// in the walk the acceptance request asks for; and the stopped preview.
+/// in the walk the acceptance request asks for; the stopped preview; the imported hero it plays;
+/// and the hero's graph baked into its rig.
 fn animation_runtime_double(editor: &mut Editor) -> Arc<Mutex<AnimationAsked>> {
     let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
     let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
@@ -5634,6 +5635,8 @@ fn animation_runtime_double(editor: &mut Editor) -> Arc<Mutex<AnimationAsked>> {
     let cut = engine_audio_fixture("animation_compile_cut_v1.wire");
     let previewed = engine_audio_fixture("animation_preview_state_v1.wire");
     let stopped = engine_audio_fixture("animation_preview_stopped_v1.wire");
+    let character = engine_audio_fixture("animation_character_v1.wire");
+    let baked = engine_audio_fixture("animation_bake_v1.wire");
     std::thread::spawn(move || {
         let (mut reader, mut writer) = (runtime_reader, runtime_writer);
         let _ = cy_editor_protocol::server::serve(&mut reader, &mut writer, |message| {
@@ -5659,6 +5662,8 @@ fn animation_runtime_double(editor: &mut Editor) -> Arc<Mutex<AnimationAsked>> {
                 ),
                 "animation.preview.set" | "animation.preview.get" => Some(previewed.clone()),
                 "animation.preview.stop" => Some(stopped.clone()),
+                "animation.character.set" => Some(character.clone()),
+                "animation.bake" => Some(baked.clone()),
                 _ => None,
             };
             recorded
@@ -6014,4 +6019,275 @@ fn undo_locomotion(editor: &mut Editor, sandbox: &Sandbox) {
         !sandbox.0.join(ANIMATION_GRAPH).exists(),
         "undoing the creation removes the graph"
     );
+}
+
+// --- A project's own character, and the bake that reaches the game (#112's gaps) -----------------
+
+const HERO_GRAPH: &str = "game/animation/hero.cyanimgraph";
+
+/// The hero as the importer leaves it in a project: its source and its import record, with the ids
+/// the engine's suite gave the records it cooked.
+fn import_hero(sandbox: &Sandbox) {
+    let characters = sandbox.0.join("characters");
+    std::fs::create_dir_all(&characters).unwrap();
+    std::fs::write(characters.join("hero.fbx"), b"; FBX 7.4.0 project file\n").unwrap();
+    std::fs::write(
+        characters.join("hero.fbx.import"),
+        "version = 1\nimporter = \"fbx\"\n\
+         sub_asset.\"animation/hero\" = \"0000000000005e1e0000000000000002\"\n\
+         sub_asset.\"mesh/Body\" = \"0000000000005e1e0000000000000003\"\n\
+         sub_asset.\"skeleton/Hips\" = \"0000000000005e1e0000000000000001\"\n",
+    )
+    .unwrap();
+    let graph = sandbox.0.join(HERO_GRAPH);
+    std::fs::create_dir_all(graph.parent().unwrap()).unwrap();
+    std::fs::write(
+        &graph,
+        engine_audio_fixture("animation_hero_v1.cyanimgraph"),
+    )
+    .unwrap();
+}
+
+/// #112's GAPS, AS AN AGENT DRIVES THEM: the project's imported hero is listed, chosen for a graph
+/// as one undoable transaction, sent to the engine before the preview that plays on it — the very
+/// request the engine's suite plays on the imported character — and the graph is baked: the
+/// request is the one the engine's suite bakes, and the rig it answers is written where Play loads
+/// it. Undoing the choice puts the mannequin back, and the mannequin cannot be baked.
+#[test]
+fn an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp() {
+    let sandbox = Sandbox::new("animation-character");
+    import_hero(&sandbox);
+    let mut editor =
+        Editor::new(Actor::human("animator")).with_project(ProjectService::new(&sandbox.0));
+    editor.open_document("worlds/units.cyworld").unwrap();
+    let asked = animation_runtime_double(&mut editor);
+    settle_animation_catalogue(&mut editor);
+
+    list_hero(&mut editor);
+    choose_hero(&mut editor, &sandbox, &asked);
+    bake_hero(&mut editor, &sandbox, &asked);
+    undo_hero(&mut editor, &sandbox, &asked);
+}
+
+/// The project's characters, as its import records say.
+fn list_hero(editor: &mut Editor) {
+    let listed = converse(
+        &[INITIALIZE, &tool_call(2, "animation.character.list", &[])],
+        editor,
+    );
+    assert_eq!(
+        structured(&listed, 1, "character.0"),
+        "characters/hero.fbx skeleton=0000000000005e1e0000000000000001 \
+         mesh=0000000000005e1e0000000000000003"
+    );
+    assert_eq!(
+        structured(&listed, 1, "clip.0"),
+        "hero from characters/hero.fbx"
+    );
+}
+
+/// Chosen as one transaction, sent before the preview that plays on it, once.
+fn choose_hero(editor: &mut Editor, sandbox: &Sandbox, asked: &Arc<Mutex<AnimationAsked>>) {
+    let chosen = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.character.set",
+                &[("reference", HERO_GRAPH), ("model", "characters/hero.fbx")],
+            ),
+            &call_json(
+                3,
+                "animation.preview.scrub",
+                &format!(r#"{{"reference":"{HERO_GRAPH}","node":1,"time":0.5}}"#),
+            ),
+        ],
+        editor,
+    );
+    assert!(!tool_reply(&chosen, 1).1, "{}", tool_reply(&chosen, 1).0);
+    assert!(!tool_reply(&chosen, 2).1, "{}", tool_reply(&chosen, 2).0);
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/animation/hero.cyanimcharacter")).unwrap(),
+        "cyanimcharacter 1\nmodel \"characters/hero.fbx\"\n"
+    );
+    settle_animation(editor);
+    {
+        let asked = asked.lock().unwrap();
+        let order: Vec<&str> = asked
+            .requests
+            .iter()
+            .map(|(operation, _)| operation.as_str())
+            .filter(|operation| {
+                matches!(
+                    *operation,
+                    "animation.character.set" | "animation.preview.set"
+                )
+            })
+            .collect();
+        assert_eq!(
+            order,
+            ["animation.character.set", "animation.preview.set"],
+            "the character goes first, once"
+        );
+    }
+    assert_eq!(
+        last_animation_payload(asked, "animation.character.set"),
+        engine_audio_fixture("animation_character_request_v1.wire")
+    );
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "animation.status", &[("reference", HERO_GRAPH)]),
+        ],
+        editor,
+    );
+    assert_eq!(
+        structured(&status, 1, "character_model"),
+        "characters/hero.fbx"
+    );
+    assert_eq!(structured(&status, 1, "character_clips"), "hero");
+    assert_eq!(structured(&status, 1, "character_skinned"), "true");
+}
+
+/// The engine's request, the engine's files, written where Play loads them, the directory replaced
+/// whole by a bake again.
+fn bake_hero(editor: &mut Editor, sandbox: &Sandbox, asked: &Arc<Mutex<AnimationAsked>>) {
+    let bake = || {
+        [
+            INITIALIZE.to_owned(),
+            tool_call(2, "animation.bake", &[("reference", HERO_GRAPH)]),
+        ]
+    };
+    let lines = bake();
+    let baked = converse_with_external_effects(&[&lines[0], &lines[1]], editor);
+    assert!(!tool_reply(&baked, 1).1, "{}", tool_reply(&baked, 1).0);
+    assert_eq!(structured(&baked, 1, "rig"), "hero");
+    settle_animation(editor);
+    assert_eq!(
+        last_animation_payload(asked, "animation.bake"),
+        engine_audio_fixture("animation_bake_request_v1.wire")
+    );
+    let rig = sandbox.0.join(".cy/cooked/animation/hero");
+    let manifest = std::fs::read_to_string(rig.join("rig.cyrig")).unwrap();
+    assert!(
+        manifest.contains("clip \"hero\" \"clips/0.cyasset\""),
+        "{manifest}"
+    );
+    assert_eq!(
+        &std::fs::read(rig.join("program.cyasset")).unwrap()[..6],
+        b"CYCOOK"
+    );
+    assert!(rig.join("clips/0.cyasset").exists());
+    let status = converse(
+        &[
+            INITIALIZE,
+            &tool_call(2, "animation.status", &[("reference", HERO_GRAPH)]),
+        ],
+        editor,
+    );
+    assert_eq!(structured(&status, 1, "baked"), "true");
+
+    std::fs::write(rig.join("clips/9.cyasset"), b"stale").unwrap();
+    converse_with_external_effects(&[&lines[0], &lines[1]], editor);
+    settle_animation(editor);
+    assert!(!rig.join("clips/9.cyasset").exists());
+}
+
+/// Undo the choice: the file goes, and the preview goes back to the mannequin, which cannot be
+/// baked; redo chooses the hero again.
+fn undo_hero(editor: &mut Editor, sandbox: &Sandbox, asked: &Arc<Mutex<AnimationAsked>>) {
+    let before = animation_requests(asked, "animation.character.set");
+    let undo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#;
+    converse(&[INITIALIZE, undo], editor);
+    settle_animation(editor);
+    assert!(
+        !sandbox
+            .0
+            .join("game/animation/hero.cyanimcharacter")
+            .exists()
+    );
+    assert_eq!(
+        animation_requests(asked, "animation.character.set"),
+        before + 1
+    );
+    let mut mannequin = Writer::new();
+    mannequin.u32(1);
+    for _ in 0..3 {
+        mannequin.text("");
+    }
+    mannequin.u32(0);
+    assert_eq!(
+        last_animation_payload(asked, "animation.character.set"),
+        mannequin.finish()
+    );
+    let refused = converse_with_external_effects(
+        &[
+            INITIALIZE,
+            &tool_call(2, "animation.bake", &[("reference", HERO_GRAPH)]),
+        ],
+        editor,
+    );
+    let (why, failed) = tool_reply(&refused, 1);
+    assert!(failed && why.contains("mannequin"), "{why}");
+    let redo = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#;
+    converse(&[INITIALIZE, redo], editor);
+    assert!(
+        sandbox
+            .0
+            .join("game/animation/hero.cyanimcharacter")
+            .exists()
+    );
+    // Choosing the mannequin by name removes the file, as one transaction of its own.
+    let mannequin = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.character.set",
+                &[("reference", HERO_GRAPH), ("model", "")],
+            ),
+        ],
+        editor,
+    );
+    assert!(
+        !tool_reply(&mannequin, 1).1,
+        "{}",
+        tool_reply(&mannequin, 1).0
+    );
+    assert!(
+        !sandbox
+            .0
+            .join("game/animation/hero.cyanimcharacter")
+            .exists()
+    );
+    converse(&[INITIALIZE, undo], editor);
+    assert!(
+        sandbox
+            .0
+            .join("game/animation/hero.cyanimcharacter")
+            .exists()
+    );
+    // A model with no skeleton is refused before anything is written.
+    let refused = converse(
+        &[
+            INITIALIZE,
+            &tool_call(
+                2,
+                "animation.character.set",
+                &[("reference", HERO_GRAPH), ("model", "props/crate.obj")],
+            ),
+        ],
+        editor,
+    );
+    assert!(tool_reply(&refused, 1).1);
+    assert_eq!(
+        std::fs::read_to_string(sandbox.0.join("game/animation/hero.cyanimcharacter")).unwrap(),
+        "cyanimcharacter 1\nmodel \"characters/hero.fbx\"\n"
+    );
+}
+
+/// Ask for the vocabulary and wait for it, as a panel opening does.
+fn settle_animation_catalogue(editor: &mut Editor) {
+    editor.backend.animation.want();
+    settle_animation(editor);
 }
