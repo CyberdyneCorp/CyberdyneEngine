@@ -333,3 +333,22 @@ buffers; the 400-dispatch result identifies cross-emitter batching as the next m
 The build and test matrix covers Linux x86_64 and ARM64, macOS ARM64, and Windows x86_64; macOS
 x86_64 and Windows ARM64 are not CI targets. Windows x86_64 is a supported CI target; see
 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) for building from a Developer Command Prompt.
+
+### How a CI run hands its build to its tests
+
+Each `build` leg builds `build/dev` once and runs `just ci-build-tree-pack`, which records the
+commit in the tree and packs it as the run artefact `build-tree-<label>`. The `test` legs, and the
+Linux jobs that need the build (`world`, `render`, `playable`, `authorable`, `scale`, `agent`),
+download that artefact and run `just ci-build-tree-unpack`. That recipe refuses a tree built at any
+other commit or over modified tracked files. Then it backdates every tracked file to 2000-01-01, so
+Ninja treats the tree as current. Without that step, the fresh checkout's file times are later than
+every object, and Ninja rebuilds the whole engine. Anything a job restores from a cache made at an
+older commit, such as the editor's Cargo tree, must be built before the unpack. `just ci-check`
+enforces that order.
+
+The actions cache is only a warm start for the jobs that compile, and most of what it saves is
+third-party build output. Its keys contain the dependency manifest and the build scripts but no
+commit, so an entry is written only when those inputs change or the old entry was evicted. Before
+this, every push wrote a new multi-gigabyte entry for each job, which pushed the repository past
+GitHub's 10 GB limit. Then a test leg's cache could be evicted before it ran, and the leg rebuilt
+everything. To start a cache from scratch, delete it with `gh cache delete <key>`.

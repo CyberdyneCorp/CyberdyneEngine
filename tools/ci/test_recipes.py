@@ -1550,6 +1550,136 @@ def a_refusing_recipe_names_an_open_rung(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def _scratch_repository(root: pathlib.Path, directory: pathlib.Path) -> dict[str, str]:
+    """A one-commit git repository carrying this repository's recipes, and the environment to run them."""
+    shutil.copy2(root / "justfile", directory / "justfile")
+    shutil.copytree(root / "just", directory / "just")
+    (directory / "source.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("CY_")}
+    environment.update({
+        "CY_PROFILE": "dev",
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+    })
+    for command in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "one"]):
+        subprocess.run(command, cwd=directory, env=environment, check=True, capture_output=True)
+    return environment
+
+
+def _packed_tree(directory: pathlib.Path, environment: dict[str, str]) -> subprocess.CompletedProcess:
+    """Configure a stand-in tree with one output, pack it, and remove it, as a fresh job sees it."""
+    tree = directory / "build" / "dev"
+    tree.mkdir(parents=True)
+    (tree / "CMakeCache.txt").write_text("CMAKE_GENERATOR:INTERNAL=Ninja\n", encoding="utf-8")
+    (tree / "source.o").write_bytes(b"object")
+    packed = subprocess.run(["just", "ci-build-tree-pack"], cwd=directory, env=environment,
+                            capture_output=True, text=True)
+    shutil.rmtree(tree)
+    # The next job's checkout: every source is newer than every output in the tree.
+    later = time.time() + 60
+    os.utime(directory / "source.cpp", (later, later))
+    return packed
+
+
+def a_build_tree_is_trusted_only_at_its_own_commit(root: pathlib.Path) -> list[str]:
+    """The test legs reuse the build job's tree, and only at the commit it was built from.
+
+    THE DEFECT: the `test` legs restored the build job's tree from the actions cache and rebuilt
+    every engine target anyway, because a fresh checkout dates each source after each object, and
+    Ninja compares dates. The cure dates the tracked sources back, which is correct for exactly one
+    tree: one built from these bytes. So `ci-build-tree-unpack` must make Ninja see the tree as
+    current at its own commit, and refuse it — leaving every date alone — at any other commit or
+    over modified sources, where the same backdating would hide a real change from the build.
+    """
+    if shutil.which("zstd") is None:
+        return ["zstd is not on PATH, so the build-tree recipes cannot be exercised on this host"]
+    failures = []
+    unpack = ["just", "ci-build-tree-unpack"]
+
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = pathlib.Path(scratch)
+        environment = _scratch_repository(root, directory)
+        packed = _packed_tree(directory, environment)
+        if packed.returncode != 0:
+            return [f"ci-build-tree-pack failed on a clean commit: {packed.stderr.strip()}"]
+        result = subprocess.run(unpack, cwd=directory, env=environment, capture_output=True,
+                                text=True)
+        output = directory / "build" / "dev" / "source.o"
+        if result.returncode != 0:
+            failures.append(f"the tree was refused at its own commit: {result.stderr.strip()}")
+        elif not output.exists():
+            failures.append("ci-build-tree-unpack succeeded and restored no tree")
+        elif (directory / "source.cpp").stat().st_mtime >= output.stat().st_mtime:
+            failures.append("after unpacking, a tracked source is still newer than the tree's "
+                            "outputs, so Ninja rebuilds everything the build job built")
+        if (directory / "build-tree.tar.zst").exists():
+            failures.append("the archive was left beside the tree after unpacking")
+
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = pathlib.Path(scratch)
+        environment = _scratch_repository(root, directory)
+        _packed_tree(directory, environment)
+        (directory / "source.cpp").write_text("int main() { return 1; }\n", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "two"], cwd=directory, env=environment,
+                       check=True, capture_output=True)
+        before = (directory / "source.cpp").stat().st_mtime
+        result = subprocess.run(unpack, cwd=directory, env=environment, capture_output=True,
+                                text=True)
+        if result.returncode == 0:
+            failures.append("a tree built at another commit was accepted")
+        elif "was built from" not in result.stderr:
+            failures.append(f"a tree from another commit was refused without saying why: "
+                            f"{result.stderr.strip()}")
+        if (directory / "build" / "dev").exists():
+            failures.append("a tree from another commit was left in place after the refusal")
+        if (directory / "source.cpp").stat().st_mtime != before:
+            failures.append("sources were backdated under a tree built from other sources")
+
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = pathlib.Path(scratch)
+        environment = _scratch_repository(root, directory)
+        _packed_tree(directory, environment)
+        (directory / "source.cpp").write_text("int main() { return 2; }\n", encoding="utf-8")
+        before = (directory / "source.cpp").stat().st_mtime
+        result = subprocess.run(unpack, cwd=directory, env=environment, capture_output=True,
+                                text=True)
+        if result.returncode == 0 or "tracked files differ" not in result.stderr:
+            failures.append("a tree was unpacked over a modified tracked source")
+        if (directory / "source.cpp").stat().st_mtime != before:
+            failures.append("a modified source was backdated, hiding the change from the build")
+
+        # And the packing side: a tree built from modified sources corresponds to no commit.
+        tree = directory / "build" / "dev"
+        tree.mkdir(parents=True, exist_ok=True)
+        (tree / "CMakeCache.txt").write_text("", encoding="utf-8")
+        result = subprocess.run(["just", "ci-build-tree-pack"], cwd=directory, env=environment,
+                                capture_output=True, text=True)
+        if result.returncode == 0 or "tracked files differ" not in result.stderr:
+            failures.append("a tree built from modified sources was packed as if from a commit")
+    return failures
+
+
+def a_build_tree_with_a_link_before_its_target_unpacks_on_windows(root: pathlib.Path) -> list[str]:
+    """`ci-build-tree-unpack` extracts symlinks MSYS cannot copy yet.
+
+    The first CI run of the hand-off failed on windows-x86_64 at
+    `_deps/zstd-src/tests/cli-tests/bin/unzstd: Cannot create symlink to 'zstd'`. Git Bash's tar
+    emulates a symlink by copying its target, and the archive held the link before the target.
+    Only a Windows host can reproduce that, so this checks the setting that avoids it: tar runs with
+    MSYS's `winsymlinks:lnk`, which writes a shortcut that does not need the target.
+    """
+    bodies = dict(_recipe_bodies((root / "just" / "ci.just").read_text(encoding="utf-8")))
+    commands = [line for line in bodies.get("ci-build-tree-unpack", [])
+                if not line.lstrip().startswith("#")]
+    extraction = [line for line in commands if re.search(r"\btar -x", line)]
+    if not extraction:
+        return ["ci.just: `ci-build-tree-unpack` extracts nothing with tar"]
+    if not all("winsymlinks:lnk" in line for line in extraction):
+        return ["ci.just: `ci-build-tree-unpack` runs tar without MSYS=winsymlinks:lnk, so Git Bash "
+                "fails on a symlink archived before its target"]
+    return []
+
+
 SHIP_STILLS = ("m11d-ship-sdl3.png", "m11d-ship-native.png")
 
 
@@ -1671,6 +1801,12 @@ def main() -> int:
             a_refusing_recipe_names_an_open_rung
         ),
         "run-ship leaves the committed stills alone": run_ship_leaves_the_committed_stills_alone,
+        "a build tree is trusted only at its own commit": (
+            a_build_tree_is_trusted_only_at_its_own_commit
+        ),
+        "a build tree with a link before its target unpacks on Windows": (
+            a_build_tree_with_a_link_before_its_target_unpacks_on_windows
+        ),
     }
 
     failed = 0

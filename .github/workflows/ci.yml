@@ -249,15 +249,22 @@ jobs:
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
-      # Keyed on the dependency manifest, per task 2.4.3: a change to deps/manifest.toml is exactly
-      # the change that invalidates the fetched sources, and nothing else does. The build tree rides
-      # in the same cache so that the test job restores what this job produced.
+      # A WARM START, NOT A HAND-OFF. Keyed on the dependency manifest and the build scripts, per
+      # task 2.4.3: a change to them is exactly the change that invalidates the fetched and built
+      # third-party trees, which are what this cache is for — Slang alone is 4 GB of a Linux tree.
+      # The engine's own objects in it are rebuilt every run whatever the key says, because the
+      # checkout dates every source after them. So the key carries no commit: with one, every push
+      # saved a new 3.6–5 GB entry per leg into a repository cache GitHub caps at 10 GB, and each
+      # evicted the entries the other jobs were about to restore. Without one, an entry is written
+      # when the dependencies change, or when it was evicted, and only then.
+      #
+      # The jobs that TEST this build do not come through here; they download the tree this job
+      # packs below, which no eviction can take away.
       - uses: actions/cache@v5
         with:
           path: build/dev
-          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
             cy-build-${{ matrix.label }}-
       - name: Diagnose the environment
         run: just env-doctor
@@ -266,6 +273,21 @@ jobs:
       # run. build-all is a one-line alias to it; the gate list is the thing that must not drift.
       - name: Build
         run: just build-engine
+      # THE BUILD, HANDED TO THE JOBS THAT TEST IT. An artefact of this run rather than a cache
+      # entry: the cache is shared by the whole repository and over its limit, and an evicted entry
+      # used to send a test leg back to an empty tree — run 37730586551's windows-x86_64 leg
+      # rebuilt the engine for 36 of its 59 minutes. `ci-build-tree-unpack` on the other side
+      # takes it only at the commit it was built from. One day is enough: a re-run of a failed job
+      # is the only later reader.
+      - name: The build tree, packed for the jobs that test it
+        run: just ci-build-tree-pack
+      - uses: actions/upload-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+          path: build-tree.tar.zst
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
 
   # --- The graduated test set --------------------------------------------------------------------
   test:
@@ -325,13 +347,11 @@ jobs:
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-${{ matrix.label }}-
+          python-version: '3.12'
       # THE EDITOR, BUILT BEFORE THE SUITES THAT DRIVE IT. `integration.editor_session_selftest`,
       # `smoke.agent_authoring` and `smoke.authoring` drive the desktop editor, and until this step
       # nothing built it before them: the first two ran `just build-editor` themselves, from a cold
@@ -345,15 +365,26 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: build/editor
-          key: cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          key: cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}
           restore-keys: |
-            cy-editor-test-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-editor-test-${{ matrix.label }}-
       # NOT `shell: bash`. On Windows that is Git Bash, which puts its own /usr/bin first on PATH,
       # and its coreutils `link` then answers for MSVC's link.exe: every build script failed with
       # "/usr/bin/link: extra operand". The default shell keeps MSVC's PATH as msvc-dev-cmd left it.
       - name: The editor the session suites drive
         run: just build-editor
+      # THE TREE THE BUILD JOB BUILT, NOT A REBUILD OF IT. Until October 2026 this job restored
+      # build/dev from the cache and then recompiled every engine target — 4 512 Ninja steps and
+      # 14 to 17 minutes on windows-x86_64 with an exact hit, 36 minutes when the entry had been
+      # evicted — because the checkout dates every source after every object. The unpack dates the
+      # tracked sources back, which is right only for a tree built from these bytes, so it checks
+      # the commit and comes AFTER the editor build: a Cargo tree restored from an older commit's
+      # cache must be rebuilt while its sources still look new.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       - name: Unit, integration and smoke
         run: just test-all
       # Issue #28's acceptance ledger on the tree just built: each native probe runs its one doctest
@@ -532,13 +563,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-world-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-world-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-world-
+          python-version: '3.12'
+      # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
+      # a cache.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # A structural change attempted mid-iteration is refused and counted, in every profile — a
       # returned error and a counter, never an assertion that two profiles compile out.
       - name: Structural change is observable only at flush points
@@ -598,13 +634,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-render-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-render-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-render-
+          python-version: '3.12'
+      # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
+      # a cache.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # The milestone's whole point: a pass declares reads and writes, and the graph derives the
       # barriers, the aliasing, the schedule, the semaphores and the ownership transfers.
       - name: Barriers, aliasing and scheduling are derived from the declarations
@@ -678,13 +719,18 @@ jobs:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-playable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-playable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-playable-
+          python-version: '3.12'
+      # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
+      # a cache.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # The compatibility obligation, and it needs no build: it is a comparison between the header
       # and a committed baseline, so it runs first and costs nothing.
       - name: The C ABI's compatibility gate
@@ -767,9 +813,8 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: build/editor
-          key: cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          key: cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}
           restore-keys: |
-            cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-editor-${{ matrix.label }}-
       # The registry is reached now, which it was not before M5.5: this workspace depended on
       # nothing but the standard library for five milestones, and the milestone with a window in it
@@ -807,13 +852,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-authorable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-authorable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-authorable-
+          python-version: '3.12'
+      # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
+      # a cache.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # The importer's purity and the cache's honesty, neither of which a functional test notices
       # being lost.
       - name: The importer framework, its options and its glTF reader
@@ -866,13 +916,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
-      - uses: actions/cache@v5
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
         with:
-          path: build/dev
-          key: cy-build-scale-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
-          restore-keys: |
-            cy-build-scale-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-scale-
+          python-version: '3.12'
+      # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
+      # a cache.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # Cell identity, spatial binding, the ECS-native cook, layers, HLOD and the overlay that
       # answers for a region which has never been loaded.
       - name: A cell's identity, its binding and its cooked form
@@ -953,14 +1008,24 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: build/editor
-          key: cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          key: cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}
           restore-keys: |
-            cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-agent-
       # Built before the suite for the reason the test job gives: the suite's own `just build-editor`
       # from a cold cache ran out of CTest's 300-second timeout, and the timeout is for the session.
       - name: The editor the agent drives
         run: just build-editor
+      # The interpreter the build job configured the tree with, so that CMake finds the same one
+      # and the unpacked tree stays current.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # After the editor build, for the reason the `test` job's twin step gives.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       - name: An agent composes, authors, is refused, and is told what it spent
         run: just test-smoke -R agent_authoring
       - name: The artefact runs through the workflow recipe
@@ -1026,13 +1091,15 @@ jobs:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
-      - uses: actions/cache@v5
+      # The linux-x86_64 build leg's warm start, read and never written: the same profile on the
+      # same image, so one entry serves every such job instead of one 5 GB entry each. The build
+      # job's comment on its own cache step says why the key carries no commit.
+      - uses: actions/cache/restore@v5
         with:
           path: build/dev
-          key: cy-build-quality-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-linux-x86_64-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-quality-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-quality-
+            cy-build-linux-x86_64-
       - name: Formatting
         run: just quality-format-check
       # The layer rule is checked in two places and this recipe runs both: the source-level scan,
@@ -1156,13 +1223,15 @@ jobs:
       # bit, which `generate-check` would then report as drift rather than hide.
       - name: Install the deterministic math generators' arithmetic
         run: pip install --user mpmath==1.3.0
-      - uses: actions/cache@v5
+      # The linux-x86_64 build leg's warm start, read and never written: the same profile on the
+      # same image, so one entry serves every such job instead of one 5 GB entry each. The build
+      # job's comment on its own cache step says why the key carries no commit.
+      - uses: actions/cache/restore@v5
         with:
           path: build/dev
-          key: cy-build-generated-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-linux-x86_64-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-generated-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-generated-
+            cy-build-linux-x86_64-
       # THIRD_PARTY.md is generated from deps/manifest.toml and needs nothing configured.
       - name: Attribution matches the dependency manifest
         run: just maintenance-deps-check
@@ -1210,13 +1279,15 @@ jobs:
         run: |
           sudo apt-get install -y libclang1-18
           pip install --user clang==18.1.8
-      - uses: actions/cache@v5
+      # The linux-x86_64 build leg's warm start, read and never written: the same profile on the
+      # same image, so one entry serves every such job instead of one 5 GB entry each. The build
+      # job's comment on its own cache step says why the key carries no commit.
+      - uses: actions/cache/restore@v5
         with:
           path: build/dev
-          key: cy-build-identity-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-linux-x86_64-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-identity-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
-            cy-build-identity-
+            cy-build-linux-x86_64-
       # The identity gate reads the argument vector src/core/reflect/CMakeLists.txt writes at
       # configure time, so the configure comes first.
       - name: Configure
@@ -1269,9 +1340,8 @@ jobs:
             build/debug
             build/profile
             build/release
-          key: cy-build-profiles-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-profiles-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-profiles-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
             cy-build-profiles-
       - name: Build debug
         run: just build-engine --profile debug
@@ -1443,14 +1513,15 @@ jobs:
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
-      # Reuse a matching build-leg cache when one exists; otherwise the recipe below creates the
+      # Reuse the build leg's warm start when one exists; otherwise the recipe below creates the
       # tree itself. Correctness never depends on the aggregate build matrix completing first.
-      - uses: actions/cache@v5
+      # Restore only: this job used to save under the build job's key too, and whichever finished
+      # first decided which of two trees the next reader got.
+      - uses: actions/cache/restore@v5
         with:
           path: build/dev
-          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}
           restore-keys: |
-            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
             cy-build-${{ matrix.label }}-
       # The label is an annotation and never the comparator's evidence: the architecture compared is
       # the one `determinism.cross_leg` detected in the binary that computed the digest, so two
