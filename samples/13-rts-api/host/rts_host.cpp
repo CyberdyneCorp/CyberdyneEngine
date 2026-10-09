@@ -13,6 +13,7 @@
 #include <string_view>
 #include <utility>
 
+#include "company.h"
 #include "level.h"
 
 namespace sample::rts {
@@ -177,6 +178,8 @@ RtsHost::RtsHost(cy::Allocator& allocator, const HostOptions& options) noexcept
       roll_(allocator, world_),
       worker_rig_(allocator),
       unit_animation_(allocator),
+      company_field_(allocator, cy::Name::intern("rts.company"),
+                     static_cast<f32>(company::kCells * company::kCellMetres)),
       click_samples_(allocator),
       mix_scratch_(allocator) {}
 
@@ -194,6 +197,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         {"camera", &RtsHost::start_camera},         {"physics", &RtsHost::start_physics},
         {"navigation", &RtsHost::start_navigation}, {"audio", &RtsHost::start_audio},
         {"props", &RtsHost::start_props},           {"animation", &RtsHost::start_animation},
+        {"lockstep", &RtsHost::start_lockstep},
     };
     for (const auto& step : steps) {
         if (cy::Status done = (this->*step.step)(); !done) {
@@ -219,6 +223,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         cy::game_backend::bind(host_, ui_adapter_.get());
     }
     cy::game_backend::bind_animation(host_, animation_adapter_.get());
+    cy::game_backend::bind_lockstep(host_, lockstep_adapter_.get());
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -232,6 +237,26 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         return attached;
     }
     *detail = "";
+    return cy::ok();
+}
+
+cy::Status RtsHost::start_lockstep() noexcept {
+    // The company's field, baked as a cook would have, converted into each peer's own Fixed world.
+    if (!company::bake_field(company_field_)) {
+        return cy::make_unexpected(
+            cy::Error{cy::ErrorCode::Internal, "baking the company's field"});
+    }
+    company_ = std::make_unique<cy::game_backend::LockstepSession>(allocator_, company::config());
+    company_follower_ =
+        std::make_unique<cy::game_backend::LockstepSession>(allocator_, company::config());
+    if (cy::Status loaded = company_->load(company_field_); !loaded) {
+        return loaded;
+    }
+    if (cy::Status loaded = company_follower_->load(company_field_); !loaded) {
+        return loaded;
+    }
+    lockstep_adapter_ =
+        std::make_unique<cy::game_backend::LockstepAdapter>(*company_, company_follower_.get());
     return cy::ok();
 }
 
@@ -729,6 +754,10 @@ cy::Status RtsHost::fixed_tick() noexcept {
     if (cy::Status navigated = nav_adapter_->update(kStep); !navigated) {
         return navigated;
     }
+    // The company's tick, with the orders the commander recorded in its fixed update.
+    if (cy::Status ticked = lockstep_adapter_->tick(); !ticked) {
+        return ticked;
+    }
     if (cy::Status followed = bodies_->sync(); !followed) {
         return followed;
     }
@@ -766,6 +795,9 @@ void RtsHost::shutdown() noexcept {
     // calls a game service gets UNAVAILABLE rather than an adapter that no longer exists.
     host_.game = cy::abi::game::GameServices{};
     host_.bind_world(nullptr);
+    lockstep_adapter_.reset();
+    company_follower_.reset();
+    company_.reset();
     ui_adapter_.reset();
     animation_adapter_.reset();
     animation_.reset();
@@ -911,6 +943,7 @@ Observation RtsHost::observe() noexcept {
 
     const cy::abi::ComponentRecord* record = binding_.find("RtsReport");
     if (record == nullptr) {
+        observe_lockstep(seen, nullptr, nullptr);
         return seen;
     }
     const void* bytes = world_.get(commander_.entity(), record->id);
@@ -929,7 +962,34 @@ Observation RtsHost::observe() noexcept {
     seen.hud.heard = read_field<f32>(bytes, field("hudClicks"));
     seen.animation.footsteps = read_field<f32>(bytes, field("footsteps"));
     seen.animation.cheer_events = read_field<f32>(bytes, field("cheerEvents"));
+    observe_lockstep(seen, record, bytes);
     return seen;
+}
+
+void RtsHost::observe_lockstep(Observation& seen, const cy::abi::ComponentRecord* report,
+                               const void* bytes) noexcept {
+    if (!company_) {
+        return;
+    }
+    seen.lockstep.units = company_->units();
+    seen.lockstep.ticks = company_->tick();
+    seen.lockstep.commands = company_->log().size();
+    seen.lockstep.orders_executed = company_->orders_executed();
+    seen.lockstep.paths_found = company_->paths_found();
+    seen.lockstep.paths_planned = company_->paths_planned();
+    seen.lockstep.digest = company_->digest();
+    seen.lockstep.follower_digest = company_follower_->digest();
+    seen.lockstep.disagreements = lockstep_adapter_->disagreements();
+    if (company_->units() > 0) {
+        seen.lockstep.lead = company_->mover().position(0).x.raw;
+    }
+    if (report == nullptr) {
+        return;
+    }
+    const auto field = [&](const char* name) { return report_field(binding_, *report, name); };
+    seen.lockstep.orders = read_field<f32>(bytes, field("companyOrders"));
+    seen.lockstep.arrivals = read_field<f32>(bytes, field("companyArrivals"));
+    seen.lockstep.reported_lead = read_field<cy::i64>(bytes, field("companyLead"));
 }
 
 void RtsHost::observe_hud(Observation& seen) noexcept {

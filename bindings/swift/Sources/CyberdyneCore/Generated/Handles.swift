@@ -498,6 +498,26 @@ public struct Engine: @unchecked Sendable {
     public func animationJointPose(entity: CyEntity, joint: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyPose>?) throws {
         try interface.animationJointPose(engine: raw, entity: entity, joint: joint, into: into)
     }
+
+    @inlinable
+    public func lockstepEnlist(desc: UnsafePointer<CyLockstepUnitDesc>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.lockstepEnlist(engine: raw, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func lockstepOrder(order: UnsafePointer<CyLockstepOrder>?) throws {
+        try interface.lockstepOrder(engine: raw, order: order)
+    }
+
+    @inlinable
+    public func lockstepUnit(unit: UInt32, into: UnsafeMutablePointer<CyLockstepUnit>?) throws {
+        try interface.lockstepUnit(engine: raw, unit: unit, into: into)
+    }
+
+    @inlinable
+    public func lockstepStatus(into: UnsafeMutablePointer<CyLockstepStatus>?) throws {
+        try interface.lockstepStatus(engine: raw, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {
@@ -633,6 +653,16 @@ public struct World: @unchecked Sendable {
     @inlinable
     public func chunks(component: CyComponentTypeId, into: UnsafeMutablePointer<CyChunk>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
         try interface.worldChunks(world: raw, component: component, into: into, capacity: capacity, count: count)
+    }
+
+    @inlinable
+    public func componentGetFixed(entity: CyEntity, component: CyComponentTypeId, field: UInt32, into: UnsafeMutablePointer<CyFixed>?) throws {
+        try interface.componentGetFixed(world: raw, entity: entity, component: component, field: field, into: into)
+    }
+
+    @inlinable
+    public func componentSetFixed(entity: CyEntity, component: CyComponentTypeId, field: UInt32, value: CyFixed) throws {
+        try interface.componentSetFixed(world: raw, entity: entity, component: component, field: field, value: value)
     }
 }
 

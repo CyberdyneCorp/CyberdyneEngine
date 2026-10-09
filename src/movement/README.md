@@ -18,6 +18,7 @@ architecture computes the same bits. Physics stays presentation under `Lockstep`
 | `flow_field.h` | `FixedFlowField`: a Dijkstra integration of `Fixed` costs over eight neighbours, in (cost, cell) order, with exact unit directions |
 | `height_field.h` | `FixedHeightField`: terrain heights cooked to `Fixed16` once, read per tick by a shift, a mask and a bilinear blend |
 | `crowd_kernel.h` | `CrowdKernel<Policy>`: integration, the neighbour grid and pairwise separation, written once over a scalar policy |
+| `crowd.h` | `FixedCrowd`: navigation's sampled reciprocal-velocity-obstacle solver (`navigation::BasicCrowd`) instantiated over `Fixed`, and `avoid()`, which runs it over the mover's units and hands back avoided desired velocities |
 | `mover.h` | `KinematicMover`, `FixedPolicy`, `MoverParams`, `UnitDesc`, `heading_of` |
 | `components.h` | `AuthoritativeTransform`, `publish_units`, `sync_presentation` |
 | `determinism.h` | `movement_determinism()`: the mover declares `Lockstep` |
@@ -86,8 +87,11 @@ for (u32 i = 0; i < mover.size(); ++i) {
   `SamePlatform` until they are, and the profile check names it.
 - **Runtime navigation rebuilds** are refused as authoritative input (`FixedNavMesh::check_source`);
   dynamic obstacles in a `Fixed` world are polygon flags set through commands.
-- **Avoidance** is separation, not `navigation`'s sampled reciprocal velocity obstacles: the
-  `Crowd` in `src/navigation/` stays `f32` and `SamePlatform`.
+- **Avoidance is opt-in per tick.** `avoid()` runs `FixedCrowd` — navigation's solver over
+  `Fixed` — before `step()`; a session that does not call it gets the mover's separation alone,
+  which resolves overlaps but steers no one round anyone. The lockstep session behind ABI 1.8
+  (`src/game_backend/lockstep/`) calls it every tick. Obstacle avoidance in the crowd's own sense
+  (time horizon for obstacles) is not used: static obstacles are the mover's and the mesh clamp's.
 - **A converted world is one walkable layer** — an RTS map. Multi-storey meshes are not converted
   faithfully.
 - **Unit radius at the mesh edge.** The clamp keeps a unit's centre on the surface; a project that
@@ -111,6 +115,7 @@ world, an unchecked stream or authoritative abilities is refused by name.
 | Suite | What |
 |---|---|
 | `unit.movement` | The conversion, the queries, the paths, the flow field, the heights, each mover pass, the authoritative transform and its sync, the profile check |
+| `integration.movement_crowd` | `FixedCrowd`: a head-on pair passes, priority yields, the same paths as the f32 `Crowd` within 3 µm, a committed digest every leg must reproduce, avoidance through the mover |
 | `integration.movement_lockstep` | `tests/rts_scenario.h`: two peers driven by one command log agree on every tick; a peer missing one command diverges; job workers against one thread; the committed digest |
 | `determinism.cross_leg` | The movement and lockstep digests, published for the four-leg comparison |
 | `benchmarks/movement/` | 100 000 units: the crowd kernel in `Fixed` against the same kernel in `f32`, the whole tick on one thread and on eight workers (design §11) |

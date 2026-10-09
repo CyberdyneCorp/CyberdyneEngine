@@ -368,6 +368,17 @@ tie-breaking rules require. Height comes from heightfield samples converted at c
   once over a scalar policy (`cy::movement::CrowdKernel`) and instantiated for `Fixed` in the mover
   and for `f32` in `benchmarks/movement/`, where §11's ratio is measured. Instantiating `Crowd`'s
   sampled steering over `Fixed` remains open in task 6.2.
+
+  *As built (stage 8):* it is instantiated. The sampled solver is `navigation::BasicCrowd<Policy>`
+  (`crowd_solver.h`, `crowd_solver_impl.h`); `navigation::Crowd` is its `f32` instantiation, whose
+  policy spells every operation as the solver did before, so its bits are unchanged; and
+  `movement::FixedCrowd` is the `Fixed` one, with exact `WideFixed` squares and dot products, the
+  correctly rounded wide square root, and lattice directions from `sincos` of a binary angle.
+  `movement::avoid()` runs it over the mover's units each tick and hands the avoided velocities
+  back as desired velocities, so the mover's separation remains what resolves an overlap and the
+  crowd is what steers units round each other. The design's ORCA linear programs are still not
+  what runs: the solver is the sampled one `crowd.h` argues for, and the policy split is the
+  design's "one algorithm text with two arithmetic instantiations".
 - **Runtime navmesh rebuild is refused as an authoritative input under `Lockstep`.** A Recast tile
   rebuild at run time is float work on each peer. Dynamic obstacles in a `Lockstep` world use
   integer per-polygon flags and flow-field cost overlays instead. A world that needs runtime
@@ -561,6 +572,21 @@ point of the profile.
   setters refuse a component field declared `Fixed`, with `CY_RESULT_PERMISSION_DENIED`. The
   `docs/guides/swift.md` determinism rules gain one line: "use `Fixed` for anything a fixed step
   writes to authoritative state".
+
+*As built (stage 8), ABI 1.8:* everything above, plus `CyFixedVec2` (the mover's plane vector),
+one scalar entry per function with `detmath_kernel_version`, and one span entry,
+`detmath_evaluate`, over a `CyDetmathFunction`. A float written to a `CY_VAR_FIXED` field is refused
+by `component_set_f32`, `component_set_vec3` and `component_set_var` in a world whose embedder
+declared `CrossPlatform` or `Lockstep` (`CyWorld_T::set_determinism_profile`). And a LOCKSTEP PATH
+the design did not list: `lockstep_enlist`, `lockstep_order`, `lockstep_unit` and
+`lockstep_status`, over `cy::game_backend::LockstepAdapter` and its `LockstepSession` — the mover,
+the converted mesh, A* and the funnel, `FixedCrowd`, and a `CommandStream` under `Lockstep` whose
+one command is a group order with raw `Fixed` targets. It is what lets a Swift game's orders reach
+an authoritative fixed-point world at all; a module cannot yet declare command types of its own.
+`samples/13-rts-api` orders a company through it with waypoints computed in Swift `Fixed`, and
+`determinism.cross_leg` publishes the C++ twin of that scenario as `detmath-company-digest`, which
+the sample's Swift-driven run is held to as well. `FixedQuat` in Swift is storage only: composition
+normalises through the wide square root, which is the engine's.
 
 ## 14. Risks and trade-offs
 

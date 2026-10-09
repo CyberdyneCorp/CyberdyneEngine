@@ -16,7 +16,9 @@ profiles. The module's [README](../../src/core/detmath/README.md) is the detaile
 | [`src/movement/`](../../src/movement/README.md) | The fixed-point kinematic mover and the `Fixed` navigation world it moves units in |
 | [`tools/detmath/`](../../tools/detmath/) | The coefficient generator, the Python model of the rules, the golden vectors and the oracle |
 | [`benchmarks/detmath/`](../../benchmarks/detmath/bench_detmath.cpp), [`benchmarks/movement/`](../../benchmarks/movement/bench_movement.cpp) | The costs against the design's budgets |
-| [`tests/determinism/test_cross_leg.cpp`](../../tests/determinism/test_cross_leg.cpp) | Publishes the kernel, movement and lockstep digests for the four-leg comparison |
+| [`tests/determinism/test_cross_leg.cpp`](../../tests/determinism/test_cross_leg.cpp) | Publishes the kernel, movement, lockstep and company digests for the four-leg comparison |
+| [`src/game_backend/lockstep/`](../../src/game_backend/lockstep/) | The lockstep session and the adapter behind ABI 1.8's `lockstep_*` entries |
+| [`bindings/swift/`](../../bindings/swift/README.md) | CyberdyneKit's `Fixed`, `Angle`, `FixedVec2`/`3`, `Detmath` and `Lockstep` (ABI 1.8) |
 
 ![How far each function's worst measured error sits inside its declared bound, and the error of sin
 across a quarter turn](../design/images/detmath-errors.png)
@@ -35,11 +37,12 @@ committed oracle and the model the golden vectors hold the C++ to.*
 5. [The conversion boundary](#5-the-conversion-boundary)
 6. [Profiles: what linking the module changes](#6-profiles-what-linking-the-module-changes)
 7. [Authoritative movement under Lockstep](#7-authoritative-movement-under-lockstep)
-8. [How it is proven](#8-how-it-is-proven)
-9. [Performance](#9-performance)
-10. [Changing the kernel](#10-changing-the-kernel)
-11. [Pitfalls](#11-pitfalls)
-12. [What is not built yet](#12-what-is-not-built-yet)
+8. [From Swift, through the ABI](#8-from-swift-through-the-abi)
+9. [How it is proven](#9-how-it-is-proven)
+10. [Performance](#10-performance)
+11. [Changing the kernel](#11-changing-the-kernel)
+12. [Pitfalls](#12-pitfalls)
+13. [What is not built yet](#13-what-is-not-built-yet)
 
 ## 1. Why fixed point
 
@@ -229,10 +232,13 @@ fixed-point kinematic mover in [`src/movement/`](../../src/movement/README.md):
    the command; every other peer reads the raw value from the log.
 3. **Paths are `Fixed`.** A* with `Fixed` g-costs, ties by polygon index; the funnel on exact
    cross-product signs; a `FixedFlowField` when many units share a destination.
-4. **The mover steps.** Integration, pairwise separation over a `Fixed` grid, static circles and
+4. **Units avoid each other.** `movement::avoid()` runs `FixedCrowd` — navigation's sampled
+   reciprocal-velocity-obstacle solver, written once over a scalar policy and instantiated over
+   `Fixed` — and hands each unit's avoided velocity to the mover as its desired velocity.
+5. **The mover steps.** Integration, pairwise separation over a `Fixed` grid, static circles and
    capsules, the clamp to the navigation surface, heights, headings — in entity order, with the
    same bits on any number of job workers.
-5. **The scene is derived.** `publish_units` writes each unit's `AuthoritativeTransform`
+6. **The scene is derived.** `publish_units` writes each unit's `AuthoritativeTransform`
    (`FixedTransform`, the hashed state); `sync_presentation` converts it camera-relative into the
    node's `LocalTransform` once per tick, and interpolation does the rest.
 
@@ -241,7 +247,32 @@ by four participants through a `Lockstep` command stream. Two peers in one proce
 driven by the first's command log alone, agree on every tick (`integration.movement_lockstep`), and
 the second's digest is compared between the four CI legs.
 
-## 8. How it is proven
+## 8. From Swift, through the ABI
+
+ABI 1.8 carries a `Fixed` as its raw `int64_t` (`CyFixed`), an `Angle` as its `uint32_t`, and the
+vectors as structs of those; `CY_VAR_FIXED` is the dynamic value's tag for one. CyberdyneKit states
+the arithmetic a third time — `&+`, `&-`, `multipliedFullWidth(by:)` with the engine's rounding, a
+limb-at-a-time division with its zero rule — and calls the engine for every transcendental
+(`Detmath.sin` is `detmath_sin`). `FixedTests` checks every committed vector line of the Swift
+operators and reproduces the C++ sweep digests in `digests.txt`.
+
+```swift
+let angle = Angle(raw: order &* 0x3333_3333)
+let target = FixedVec2(x: centre + Detmath.cos(angle) * radius,
+                       y: centre + Detmath.sin(angle) * radius)
+try Lockstep.order(.move(group: 0, to: target))
+```
+
+`lockstep_*` reach a lockstep session the host runs (`cy::game_backend::LockstepSession`): the
+mover, the converted mesh, A* and the funnel, `FixedCrowd`, and a `CommandStream` under `Lockstep`
+whose group order carries raw `Fixed` targets. `samples/13-rts-api`'s commander orders a company of
+sixteen units this way; `host/company.h` gives the same orders in C++, `determinism.cross_leg`
+publishes that run's `detmath-company-digest` on all four legs, and `integration.rts_api_sample`
+holds the Swift-driven session to the same committed digest. In a world whose embedder declared
+`CrossPlatform` or `Lockstep`, a float written to a `CY_VAR_FIXED` component field is refused with
+`CY_RESULT_PERMISSION_DENIED`, naming the field.
+
+## 9. How it is proven
 
 | Evidence | Where | Fails when |
 |---|---|---|
@@ -254,6 +285,15 @@ the second's digest is compared between the four CI legs.
 | Four legs, one answer | `determinism.cross_leg` publishes `detmath-kernel-digest`; `cross-leg-compare` runs `--detmath` | two architectures disagree |
 | A fixed-point simulation, four legs | `determinism.cross_leg` publishes `detmath-movement-digest` (2 000 units, 600 ticks) and the lockstep follower's `detmath-lockstep-digest`, each checked against a committed value on the leg first | a leg's movement moved, or two architectures disagree |
 | Two peers, one command log | `integration.movement_lockstep` and `determinism.cross_leg`: the follower agrees with the issuer on every tick; a follower missing one command does not | a peer reads anything but the log |
+| One crowd solver, two kinds of arithmetic | `integration.movement_crowd`: the `Fixed` crowd traces the `f32` crowd's paths within 3 µm, and a committed digest | the `Fixed` instantiation moves, or stops being the same algorithm |
+| Swift's arithmetic is the engine's | `FixedTests` (CyberdyneKit): every vector line, and each function's whole sweep digest | a Swift operator rounds or wraps differently |
+| A Swift game's orders, four legs | `integration.rts_api_sample` holds the Swift-driven company to `kCompanyDigest`; `determinism.cross_leg` publishes the C++ twin's `detmath-company-digest` | Swift and C++ compute a different order, or two architectures disagree |
+| No float on a cross-platform path | `float-on-cross-platform-path` in `integration.determinism_lint` | a `CrossPlatform` or `Lockstep` target uses a float outside the conversion boundary |
+
+The four legs are linux-x86_64 and linux-arm64 (GCC 13.3), macos-arm64 (Apple Clang 16) and
+windows-x86_64 (MSVC 19.44); the first four-leg comparisons are recorded, with their run numbers, in
+[`tests/determinism/README.md`](../../tests/determinism/README.md). Nothing is claimed for a platform
+that is not a leg.
 
 The golden vectors and digests come from `tools/detmath/model.py`, the rules written a second time
 in Python integers; the oracle comes from mpmath and shares no code with either. Run them:
@@ -265,7 +305,7 @@ just test-determinism -R cross_leg
 just test-determinism --compare-legs --pcg --detmath --digests cross-leg-digests
 ```
 
-## 9. Performance
+## 10. Performance
 
 `just test-bench` runs `benchmarks/detmath/`, one dependent chain per operation, against the
 budgets of design §11 (x86-64 reference runner):
@@ -305,7 +345,7 @@ square root and the divisions are paid only by pairs that overlap.
 The measured figures and the committed thresholds are in
 [`benchmarks/baseline.json`](../../benchmarks/baseline.json).
 
-## 10. Changing the kernel
+## 11. Changing the kernel
 
 Any change that moves any output for any input — a coefficient, a reduction, a rounding rule —
 bumps `detmath::kKernelVersion` (`version.h`) in the same change. The kernel version is folded into
@@ -318,7 +358,7 @@ just generate-detmath --check    # what `just generate-check` runs in CI
 CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites, and FAILS
 ```
 
-## 11. Pitfalls
+## 12. Pitfalls
 
 - **Squaring a distance in `Fixed`.** `d * d` overflows beyond 46 341 m. Use `WideFixed::product`.
 - **Dividing by a value that may be zero.** It does not trap; it saturates and is counted. Test the
@@ -326,8 +366,9 @@ CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites
 - **Converting per tick.** A `from_f32_cooked` inside a system is a float on the authoritative path.
   It is legal C++ and it defeats the module.
 - **Comparing angles with `<`.** `Angle` has no order; compare `signed_turns()` of a difference.
-- **Swift's `+`.** It traps on overflow; the engine's rule is wrapping. The Swift `Fixed` (a later
-  stage) uses `&+`.
+- **Swift's `+`.** It traps on overflow; the engine's rule is wrapping. CyberdyneKit's `Fixed` uses
+  `&+` — and `Int64.dividingFullWidth` traps where the engine's division wraps, so its `/` divides a
+  limb at a time.
 - **A float field in a command payload.** It is read by every peer's own float hardware. Under a
   cross-platform profile the declaration is refused; carry the raw `Fixed` the issuer converted.
 - **Adding units out of entity order.** The mover refuses it: its passes rely on unit order being
@@ -339,9 +380,9 @@ CY_DETMATH_RECORD_GOLDEN=1 just test-integration -R detmath_vectors   # rewrites
   template argument (`src/digest.cpp`), and the `profiles` job runs the vectors in `release`. The
   committed digests are why this showed up as a failure rather than as a new answer.
 
-## 12. What is not built yet
+## 13. What is not built yet
 
-The remaining stages of the change: the `float-on-cross-platform-path` lint rule, networking's
-simulation identity and replay's kernel version, `Crowd`'s sampled reciprocal-velocity steering and
-off-mesh links in a `Fixed` world, the ABI and Swift types (stage 8), the Jolt measurement and the
+The remaining tasks of the change: networking's simulation identity and replay's kernel version
+(tasks 5.3 to 5.5), off-mesh links in a `Fixed` world, module-declared command types through the
+ABI (1.8 carries one group order), `FixedQuat` composition from Swift, the Jolt measurement and the
 strategy-scale `Lockstep` scenario (stage 9).

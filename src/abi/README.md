@@ -189,6 +189,41 @@ Tests: `unit.abi` (`test_game_animation.cpp`, the phases, the argument checks, `
 events' sizing pattern, the epoch and the hash, and the 1.7 table shape), and
 `integration.game_backend_animation` against a real `AnimationSystem` in a `runtime::Simulation`.
 
+## What ABI 1.8 adds, and why
+
+`openspec/changes/add-deterministic-math` stage 8 (design §13). A `Lockstep` session's state is
+`cy::detmath::Fixed`, and until 1.8 a module could neither carry one across the boundary without a
+float in between, nor evaluate the engine's transcendentals, nor give a lockstep session an order.
+1.8 appends 21 entries and the types they need.
+
+| Added | Phases | Notes |
+|---|---|---|
+| `CyFixed` (`int64_t`, Q32.32), `CyAngle` (`uint32_t`, a binary angle), `CyFixedVec2`, `CyFixedVec3`, `CyFixedQuat` | | Raw integers, never converted through floating point |
+| `CY_VAR_FIXED` | | The raw value in `as_i64`; the tag names the format, as 1.1's integer tags name a width |
+| `component_get_fixed`, `component_set_fixed` | N F U | The typed fast path for a `CY_VAR_FIXED` field |
+| `detmath_kernel_version`, `detmath_sqrt` … `detmath_pow` | (pure) | One call into `cy::detmath` each, raw in and raw out (`src/game/detmath_thunks.cpp`); no engine handle, no phase, no failure: every function is defined for every input |
+| `detmath_evaluate` | (pure) | A `CyDetmathFunction` over spans of `CyFixed`; angles in the low 32 bits |
+| `lockstep_enlist` | N | A unit joins the session before its first tick; its index is its identity, its entity only presentation |
+| `lockstep_order` | F U | A move or stop order for a group, recorded into the session's command stream for its next tick, payload raw `CyFixed` |
+| `lockstep_unit`, `lockstep_status` | N F U | A unit's authoritative state (`CY_LOCKSTEP_UNIT_MOVING`, the one-tick `CY_LOCKSTEP_UNIT_ARRIVED`); the session's tick, log, hash, digest and peer disagreements |
+
+THE FLOAT BOUNDARY HOLDS AT THE ABI (task 8.2). `CyWorld_T::set_determinism_profile` is the
+embedder's statement of its session's profile; under `CrossPlatform` or `Lockstep`,
+`component_set_f32`, `component_set_vec3` and `component_set_var` with a float kind refuse a
+`CY_VAR_FIXED` field with `CY_RESULT_PERMISSION_DENIED`, naming it. Below those profiles the same
+write is the ordinary type mismatch.
+
+`cy::core-detmath` is a PRIVATE dependency of this module: it defines `CY_DETERMINISM_MATH` for
+whatever links it publicly, and every consumer of the ABI is not a deterministic-math session. The
+lockstep path's session lives in `cy::game-backend-lockstep` (`src/game_backend/lockstep/`), which
+does link it.
+
+Tests: `unit.abi` (`test_game_detmath.cpp`: every entry against the kernel's function, the span
+entry, the raw round trip of a fixed field and the profile refusal; `test_game_lockstep.cpp`: the
+phases, the argument checks and `struct_size` against a fake backend; the 1.8 table shape and
+layouts) and `integration.game_backend_lockstep` (two peers driven through the table agree on every
+tick; a peer that misses an order diverges).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

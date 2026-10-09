@@ -33,6 +33,8 @@ public enum Value: Equatable, Sendable {
     case string(String)
     case bytes([UInt8])
     case entity(Entity)
+    /// ABI 1.8's `CY_VAR_FIXED`: a deterministic-math value, carried as its raw integer.
+    case fixed(Fixed)
 
     /// The ABI tag this case carries. Derived from the generated `VarType`, so a kind appended to
     /// `CyVarType` shows up here as a missing case rather than as a silent zero.
@@ -50,6 +52,7 @@ public enum Value: Equatable, Sendable {
         case .string: return .string
         case .bytes: return .bytes
         case .entity: return .entity
+        case .fixed: return .fixed
         }
     }
 }
@@ -83,6 +86,8 @@ extension Value {
         case .vec4: self = .vec4(Value.vector(variable, Vec4.init(lanes:)))
         case .quat: self = .quat(Value.vector(variable, Quat.init(lanes:)))
         case .entity: self = .entity(Entity(bits: variable.payload.as_entity))
+        // The raw value, never through a float: the tag names the format, as 1.1's name a width.
+        case .fixed: self = .fixed(Fixed(raw: variable.payload.as_i64))
         case .string:
             self = .string(Value.string(variable))
         case .bytes:
@@ -175,6 +180,7 @@ extension Value {
         case .vec4(let value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
         case .quat(let value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
         case .entity(let value): variable.payload.as_entity = value.bits
+        case .fixed(let value): variable.payload.as_i64 = value.raw
         case .string, .bytes:
             // Unreachable through `withCyVar`, which handles both before it gets here. Left as a
             // nil value rather than a trap: a module that traps takes the engine's process with it,
@@ -318,6 +324,16 @@ extension Entity: Exportable {
     public var cyValue: Value { .entity(self) }
     public init?(cyValue: Value) {
         guard case .entity(let value) = cyValue else { return nil }
+        self = value
+    }
+}
+
+/// ABI 1.8: a `Fixed` crosses as `CY_VAR_FIXED`, its raw integer, so an exported fixed-point
+/// property never passes through a float on its way to the inspector or a save.
+extension Fixed: Exportable {
+    public var cyValue: Value { .fixed(self) }
+    public init?(cyValue: Value) {
+        guard case .fixed(let value) = cyValue else { return nil }
         self = value
     }
 }

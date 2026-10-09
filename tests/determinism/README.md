@@ -57,8 +57,25 @@ design §10.2): `detmath-kernel-version`, `detmath-sweep-count` and `detmath-ker
 function of `cy::core-detmath` over its seeded sweep, folded. Each leg first checks the digest
 against the committed `tools/detmath/vectors/digests.txt` on its own ("the published kernel digest
 is the committed one, on this leg alone"), and `cross-leg-compare` then compares it between
-architectures under `--detmath`. No four-leg run has been recorded for it yet; the first one belongs
-here, with its run number, and names the legs the claim covers.
+architectures under `--detmath`.
+
+**The first four-leg comparison** is run
+[`37548099658`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/37548099658), the merge
+of #108 (`2d59c319`): `detmath-kernel-digest` `e034ac1da6722b97` on all four legs. The movement and
+lockstep digests below were first compared on four legs by run
+[`37697927753`](https://github.com/CyberdyneCorp/CyberdyneEngine/actions/runs/37697927753), the
+merge of #110 (`4847a2e7`): `a4bd1ab8dad86434`, and `1aed05ed2c54f3fb` / `3e5a699a41b71076`,
+identical everywhere. THE CLAIM COVERS EXACTLY THESE LEGS, and no others:
+
+| Leg | OS | Architecture | Compiler |
+|---|---|---|---|
+| `linux-x86_64` | Ubuntu 24.04 | x86-64 | GCC 13.3 |
+| `linux-arm64` | Ubuntu 24.04 | arm64 | GCC 13.3 |
+| `macos-arm64` | macOS 14 | arm64 | Apple Clang 16.0 |
+| `windows-x86_64` | Windows Server 2022 | x86-64 | MSVC 19.44 |
+
+iOS, Android, Windows arm64 and macOS x86-64 are not legs, so nothing here is claimed for them
+(design §14); adding a leg to `cross-leg-publish` widens the claim and needs no other change.
 
 Two fixed-point simulations join it (tasks 4.2 and 7.2), both from
 `src/movement/tests/rts_scenario.h`:
@@ -72,6 +89,19 @@ Each leg first checks both against committed values ("the movement and lockstep 
 committed ones, on this leg") and that its two peers agreed on every tick, then the comparator
 compares them between architectures under `--detmath` (claims `detmath-movement` and
 `detmath-lockstep`). Folding either with `+` instead of `hash_combine` turns the first case red.
+
+Stage 8 adds a fourth, from `samples/13-rts-api/host/company.h`:
+
+| Field | What |
+|---|---|
+| `detmath-company-digest`, `detmath-company-final-hash` (`-units`, `-ticks`) | samples/13-rts-api's lockstep company: 16 units in two groups on a `Fixed` field, ordered every 90 ticks to waypoints computed in fixed point, through the session ABI 1.8's `lockstep_*` entries reach, avoidance by navigation's crowd solver instantiated over `Fixed`, 420 ticks, two peers |
+
+In the sample the SWIFT game computes those orders (CyberdyneKit's `Fixed`, the engine's `Detmath`
+through the ABI); here C++ computes the same ones. Each leg checks the digest against
+`company::kCompanyDigest`, and `integration.rts_api_sample` holds the Swift-driven run to that same
+constant, so the comparator's `detmath-company` claim covers the Swift-driven session too: one
+number for two languages and four legs. The same session given no orders must end elsewhere ("the
+company's digest is a function of its orders").
 
 **What this does not answer**, said here rather than left to be assumed: `cy::pcg::ExecutionDomain`
 is Editor, Cook, Runtime, Streaming and Dynamic — there is **no GPU execution domain in this tree**

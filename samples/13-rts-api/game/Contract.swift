@@ -89,6 +89,11 @@ struct RtsReport {
     /// finished.
     var footsteps: Float = 0
     var cheerEvents: Float = 0
+    /// ABI 1.8. The lockstep company: orders given through `Lockstep.order`, arrivals heard, and
+    /// the first unit's authoritative x — a `Fixed` field, written through `component_set_fixed`.
+    var companyOrders: Float = 0
+    var companyArrivals: Float = 0
+    var companyLead: Fixed = .zero
 }
 
 extension Component {

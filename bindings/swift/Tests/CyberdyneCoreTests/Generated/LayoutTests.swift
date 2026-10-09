@@ -490,6 +490,77 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyRootMotion>.offset(of: \CyRootMotion.travelled), 40, "CyRootMotion.travelled offset")
     }
 
+    func testFixedVec2Layout() {
+        XCTAssertEqual(MemoryLayout<CyFixedVec2>.size, 16, "CyFixedVec2 size")
+        XCTAssertEqual(MemoryLayout<CyFixedVec2>.alignment, 8, "CyFixedVec2 alignment")
+        XCTAssertEqual(MemoryLayout<CyFixedVec2>.offset(of: \CyFixedVec2.x), 0, "CyFixedVec2.x offset")
+        XCTAssertEqual(MemoryLayout<CyFixedVec2>.offset(of: \CyFixedVec2.y), 8, "CyFixedVec2.y offset")
+    }
+
+    func testFixedVec3Layout() {
+        XCTAssertEqual(MemoryLayout<CyFixedVec3>.size, 24, "CyFixedVec3 size")
+        XCTAssertEqual(MemoryLayout<CyFixedVec3>.alignment, 8, "CyFixedVec3 alignment")
+        XCTAssertEqual(MemoryLayout<CyFixedVec3>.offset(of: \CyFixedVec3.x), 0, "CyFixedVec3.x offset")
+        XCTAssertEqual(MemoryLayout<CyFixedVec3>.offset(of: \CyFixedVec3.y), 8, "CyFixedVec3.y offset")
+        XCTAssertEqual(MemoryLayout<CyFixedVec3>.offset(of: \CyFixedVec3.z), 16, "CyFixedVec3.z offset")
+    }
+
+    func testFixedQuatLayout() {
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.size, 32, "CyFixedQuat size")
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.alignment, 8, "CyFixedQuat alignment")
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.offset(of: \CyFixedQuat.x), 0, "CyFixedQuat.x offset")
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.offset(of: \CyFixedQuat.y), 8, "CyFixedQuat.y offset")
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.offset(of: \CyFixedQuat.z), 16, "CyFixedQuat.z offset")
+        XCTAssertEqual(MemoryLayout<CyFixedQuat>.offset(of: \CyFixedQuat.w), 24, "CyFixedQuat.w offset")
+    }
+
+    func testLockstepUnitDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.size, 48, "CyLockstepUnitDesc size")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.alignment, 8, "CyLockstepUnitDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.struct_size), 0, "CyLockstepUnitDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.group), 4, "CyLockstepUnitDesc.group offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.entity), 8, "CyLockstepUnitDesc.entity offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.position), 16, "CyLockstepUnitDesc.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.radius), 32, "CyLockstepUnitDesc.radius offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnitDesc>.offset(of: \CyLockstepUnitDesc.max_speed), 40, "CyLockstepUnitDesc.max_speed offset")
+    }
+
+    func testLockstepOrderLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.size, 32, "CyLockstepOrder size")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.alignment, 8, "CyLockstepOrder alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.offset(of: \CyLockstepOrder.struct_size), 0, "CyLockstepOrder.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.offset(of: \CyLockstepOrder.kind), 4, "CyLockstepOrder.kind offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.offset(of: \CyLockstepOrder.group), 8, "CyLockstepOrder.group offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.offset(of: \CyLockstepOrder.reserved), 12, "CyLockstepOrder.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepOrder>.offset(of: \CyLockstepOrder.target), 16, "CyLockstepOrder.target offset")
+    }
+
+    func testLockstepUnitLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.size, 64, "CyLockstepUnit size")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.alignment, 8, "CyLockstepUnit alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.struct_size), 0, "CyLockstepUnit.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.group), 4, "CyLockstepUnit.group offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.entity), 8, "CyLockstepUnit.entity offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.position), 16, "CyLockstepUnit.position offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.velocity), 32, "CyLockstepUnit.velocity offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.height), 48, "CyLockstepUnit.height offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.heading), 56, "CyLockstepUnit.heading offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepUnit>.offset(of: \CyLockstepUnit.flags), 60, "CyLockstepUnit.flags offset")
+    }
+
+    func testLockstepStatusLayout() {
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.size, 48, "CyLockstepStatus size")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.alignment, 8, "CyLockstepStatus alignment")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.struct_size), 0, "CyLockstepStatus.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.units), 4, "CyLockstepStatus.units offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.tick), 8, "CyLockstepStatus.tick offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.commands), 16, "CyLockstepStatus.commands offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.state_hash), 24, "CyLockstepStatus.state_hash offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.digest), 32, "CyLockstepStatus.digest offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.kernel_version), 40, "CyLockstepStatus.kernel_version offset")
+        XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.disagreements), 44, "CyLockstepStatus.disagreements offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -500,7 +571,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 992, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1160, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -625,6 +696,27 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_take_root_motion), 968, "CyInterface.animation_take_root_motion offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_set_root_motion), 976, "CyInterface.animation_set_root_motion offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.animation_joint_pose), 984, "CyInterface.animation_joint_pose offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.component_get_fixed), 992, "CyInterface.component_get_fixed offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.component_set_fixed), 1000, "CyInterface.component_set_fixed offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_kernel_version), 1008, "CyInterface.detmath_kernel_version offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_sqrt), 1016, "CyInterface.detmath_sqrt offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_sin), 1024, "CyInterface.detmath_sin offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_cos), 1032, "CyInterface.detmath_cos offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_tan), 1040, "CyInterface.detmath_tan offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_atan), 1048, "CyInterface.detmath_atan offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_atan2), 1056, "CyInterface.detmath_atan2 offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_asin), 1064, "CyInterface.detmath_asin offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_acos), 1072, "CyInterface.detmath_acos offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_exp2), 1080, "CyInterface.detmath_exp2 offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_log2), 1088, "CyInterface.detmath_log2 offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_exp), 1096, "CyInterface.detmath_exp offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_log), 1104, "CyInterface.detmath_log offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_pow), 1112, "CyInterface.detmath_pow offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.detmath_evaluate), 1120, "CyInterface.detmath_evaluate offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_enlist), 1128, "CyInterface.lockstep_enlist offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_order), 1136, "CyInterface.lockstep_order offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_unit), 1144, "CyInterface.lockstep_unit offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_status), 1152, "CyInterface.lockstep_status offset")
     }
 
     func testModuleInitLayout() {
@@ -642,7 +734,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 992,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1160,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -688,8 +780,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 122)
+        XCTAssertEqual(ABI.entryNames.count, 143)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "animation_joint_pose")
+        XCTAssertEqual(ABI.entryNames.last, "lockstep_status")
     }
 }

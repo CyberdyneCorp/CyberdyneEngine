@@ -90,7 +90,9 @@ pub(crate) fn read_var(var: &ffi::CyVar) -> Result<Value> {
         | VarType::U8
         | VarType::U16
         | VarType::U32
-        | VarType::U64 => Value::Int(unsafe { payload.as_i64 }),
+        | VarType::U64
+        // ABI 1.8: the raw Q32.32 value, as the engine stores it (see `kind_of`).
+        | VarType::Fixed => Value::Int(unsafe { payload.as_i64 }),
         VarType::F32 => Value::Float(unsafe { payload.as_f32 }),
         VarType::F64 => Value::Double(unsafe { payload.as_f64 }),
         VarType::Vec2 => {
@@ -287,6 +289,22 @@ mod tests {
         assert_eq!(
             round_trip(&Value::Text(String::new())),
             Value::Text(String::new())
+        );
+    }
+
+    #[test]
+    fn a_fixed_point_var_reads_as_its_raw_integer() {
+        // ABI 1.8's CY_VAR_FIXED: 2^62 + 1 is no f64, so a read through a float would lose it.
+        let raw = (1_i64 << 62) + 1;
+        let var = ffi::CyVar {
+            r#type: VarType::Fixed.as_raw(),
+            flags: 0,
+            length: 0,
+            payload: ffi::CyVarPayload { as_i64: raw },
+        };
+        assert_eq!(
+            read_var(&var).expect("a fixed var is readable"),
+            Value::Int(raw)
         );
     }
 

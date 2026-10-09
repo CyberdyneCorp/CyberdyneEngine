@@ -686,6 +686,10 @@ CASES["detmath"] = (
      [_leg(label="alpha", detmath_movement_units="0"),
       _leg(label="beta", arch="arm64", detmath_movement_units="0")],
      "a digest of an empty workload agrees with every other digest of an empty workload"),
+    ("the Swift sample's lockstep company differs between the two architectures", 1,
+     [_leg(label="alpha"),
+      _leg(label="beta", arch="arm64", detmath_company_digest="0123456789abcdef")],
+     "orders a Swift game computes in fixed point must drive the same session everywhere"),
 )
 
 #: `m11a:cross-leg-digest-job` claims the job itself, so it is answerable only by every case at once.

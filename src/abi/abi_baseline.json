@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 7,
+    "minor": 8,
     "patch": 0
   },
   "functions": [
@@ -637,10 +637,115 @@
         "index": 122,
         "name": "animation_joint_pose",
         "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyPose*)"
+      },
+      {
+        "index": 123,
+        "name": "component_get_fixed",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed*)"
+      },
+      {
+        "index": 124,
+        "name": "component_set_fixed",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed)"
+      },
+      {
+        "index": 125,
+        "name": "detmath_kernel_version",
+        "type": "uint32_t(*)()"
+      },
+      {
+        "index": 126,
+        "name": "detmath_sqrt",
+        "type": "CyFixed(*)(CyFixed)"
+      },
+      {
+        "index": 127,
+        "name": "detmath_sin",
+        "type": "CyFixed(*)(CyAngle)"
+      },
+      {
+        "index": 128,
+        "name": "detmath_cos",
+        "type": "CyFixed(*)(CyAngle)"
+      },
+      {
+        "index": 129,
+        "name": "detmath_tan",
+        "type": "CyFixed(*)(CyAngle)"
+      },
+      {
+        "index": 130,
+        "name": "detmath_atan",
+        "type": "CyAngle(*)(CyFixed)"
+      },
+      {
+        "index": 131,
+        "name": "detmath_atan2",
+        "type": "CyAngle(*)(CyFixed, CyFixed)"
+      },
+      {
+        "index": 132,
+        "name": "detmath_asin",
+        "type": "CyAngle(*)(CyFixed)"
+      },
+      {
+        "index": 133,
+        "name": "detmath_acos",
+        "type": "CyAngle(*)(CyFixed)"
+      },
+      {
+        "index": 134,
+        "name": "detmath_exp2",
+        "type": "CyFixed(*)(CyFixed)"
+      },
+      {
+        "index": 135,
+        "name": "detmath_log2",
+        "type": "CyFixed(*)(CyFixed)"
+      },
+      {
+        "index": 136,
+        "name": "detmath_exp",
+        "type": "CyFixed(*)(CyFixed)"
+      },
+      {
+        "index": 137,
+        "name": "detmath_log",
+        "type": "CyFixed(*)(CyFixed)"
+      },
+      {
+        "index": 138,
+        "name": "detmath_pow",
+        "type": "CyFixed(*)(CyFixed, CyFixed)"
+      },
+      {
+        "index": 139,
+        "name": "detmath_evaluate",
+        "type": "CyResult(*)(uint32_t, const CyFixed*, const CyFixed*, CyFixed*, uint64_t)"
+      },
+      {
+        "index": 140,
+        "name": "lockstep_enlist",
+        "type": "CyResult(*)(CyEngine, const CyLockstepUnitDesc*, uint32_t*)"
+      },
+      {
+        "index": 141,
+        "name": "lockstep_order",
+        "type": "CyResult(*)(CyEngine, const CyLockstepOrder*)"
+      },
+      {
+        "index": 142,
+        "name": "lockstep_unit",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepUnit*)"
+      },
+      {
+        "index": 143,
+        "name": "lockstep_status",
+        "type": "CyResult(*)(CyEngine, CyLockstepStatus*)"
       }
     ],
     "name": "CyInterface",
-    "size": 992
+    "size": 1160
   },
   "types": [
     {
@@ -857,6 +962,10 @@
         {
           "name": "CY_VAR_U64",
           "value": 18
+        },
+        {
+          "name": "CY_VAR_FIXED",
+          "value": 19
         }
       ]
     },
@@ -3534,6 +3643,396 @@
       "size": 52
     },
     {
+      "kind": "alias",
+      "name": "CyFixed",
+      "underlying": "int64_t"
+    },
+    {
+      "kind": "alias",
+      "name": "CyAngle",
+      "underlying": "uint32_t"
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "x",
+          "offset": 0,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "y",
+          "offset": 8,
+          "size": 8,
+          "type": "CyFixed"
+        }
+      ],
+      "name": "CyFixedVec2",
+      "size": 16
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "x",
+          "offset": 0,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "y",
+          "offset": 8,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "z",
+          "offset": 16,
+          "size": 8,
+          "type": "CyFixed"
+        }
+      ],
+      "name": "CyFixedVec3",
+      "size": 24
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "x",
+          "offset": 0,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "y",
+          "offset": 8,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "z",
+          "offset": 16,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "w",
+          "offset": 24,
+          "size": 8,
+          "type": "CyFixed"
+        }
+      ],
+      "name": "CyFixedQuat",
+      "size": 32
+    },
+    {
+      "kind": "enum",
+      "name": "CyDetmathFunction",
+      "values": [
+        {
+          "name": "CY_DETMATH_SQRT",
+          "value": 0
+        },
+        {
+          "name": "CY_DETMATH_SIN",
+          "value": 1
+        },
+        {
+          "name": "CY_DETMATH_COS",
+          "value": 2
+        },
+        {
+          "name": "CY_DETMATH_TAN",
+          "value": 3
+        },
+        {
+          "name": "CY_DETMATH_ATAN",
+          "value": 4
+        },
+        {
+          "name": "CY_DETMATH_ATAN2",
+          "value": 5
+        },
+        {
+          "name": "CY_DETMATH_ASIN",
+          "value": 6
+        },
+        {
+          "name": "CY_DETMATH_ACOS",
+          "value": 7
+        },
+        {
+          "name": "CY_DETMATH_EXP2",
+          "value": 8
+        },
+        {
+          "name": "CY_DETMATH_LOG2",
+          "value": 9
+        },
+        {
+          "name": "CY_DETMATH_EXP",
+          "value": 10
+        },
+        {
+          "name": "CY_DETMATH_LOG",
+          "value": 11
+        },
+        {
+          "name": "CY_DETMATH_POW",
+          "value": 12
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyLockstepOrderKind",
+      "values": [
+        {
+          "name": "CY_LOCKSTEP_ORDER_MOVE",
+          "value": 0
+        },
+        {
+          "name": "CY_LOCKSTEP_ORDER_STOP",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "group",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "entity",
+          "offset": 8,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 16,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "radius",
+          "offset": 32,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 8,
+          "name": "max_speed",
+          "offset": 40,
+          "size": 8,
+          "type": "CyFixed"
+        }
+      ],
+      "name": "CyLockstepUnitDesc",
+      "size": 48
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "group",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "target",
+          "offset": 16,
+          "size": 16,
+          "type": "CyFixedVec2"
+        }
+      ],
+      "name": "CyLockstepOrder",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "group",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "entity",
+          "offset": 8,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "position",
+          "offset": 16,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "velocity",
+          "offset": 32,
+          "size": 16,
+          "type": "CyFixedVec2"
+        },
+        {
+          "alignment": 8,
+          "name": "height",
+          "offset": 48,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 4,
+          "name": "heading",
+          "offset": 56,
+          "size": 4,
+          "type": "CyAngle"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 60,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyLockstepUnit",
+      "size": 64
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "units",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "tick",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "commands",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "state_hash",
+          "offset": 24,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "digest",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kernel_version",
+          "offset": 40,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "disagreements",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyLockstepStatus",
+      "size": 48
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -4433,10 +4932,157 @@
           "offset": 984,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyEntity, const char*, CyPose*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_get_fixed",
+          "offset": 992,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_set_fixed",
+          "offset": 1000,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_kernel_version",
+          "offset": 1008,
+          "size": 8,
+          "type": "uint32_t(*)()"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_sqrt",
+          "offset": 1016,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_sin",
+          "offset": 1024,
+          "size": 8,
+          "type": "CyFixed(*)(CyAngle)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_cos",
+          "offset": 1032,
+          "size": 8,
+          "type": "CyFixed(*)(CyAngle)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_tan",
+          "offset": 1040,
+          "size": 8,
+          "type": "CyFixed(*)(CyAngle)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_atan",
+          "offset": 1048,
+          "size": 8,
+          "type": "CyAngle(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_atan2",
+          "offset": 1056,
+          "size": 8,
+          "type": "CyAngle(*)(CyFixed, CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_asin",
+          "offset": 1064,
+          "size": 8,
+          "type": "CyAngle(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_acos",
+          "offset": 1072,
+          "size": 8,
+          "type": "CyAngle(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_exp2",
+          "offset": 1080,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_log2",
+          "offset": 1088,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_exp",
+          "offset": 1096,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_log",
+          "offset": 1104,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_pow",
+          "offset": 1112,
+          "size": 8,
+          "type": "CyFixed(*)(CyFixed, CyFixed)"
+        },
+        {
+          "alignment": 8,
+          "name": "detmath_evaluate",
+          "offset": 1120,
+          "size": 8,
+          "type": "CyResult(*)(uint32_t, const CyFixed*, const CyFixed*, CyFixed*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_enlist",
+          "offset": 1128,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyLockstepUnitDesc*, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_order",
+          "offset": 1136,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyLockstepOrder*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_unit",
+          "offset": 1144,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyLockstepUnit*)"
+        },
+        {
+          "alignment": 8,
+          "name": "lockstep_status",
+          "offset": 1152,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLockstepStatus*)"
         }
       ],
       "name": "CyInterface",
-      "size": 992
+      "size": 1160
     },
     {
       "kind": "enum",

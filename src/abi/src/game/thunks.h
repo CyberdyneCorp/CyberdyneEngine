@@ -140,4 +140,26 @@ CyResult animation_set_root_motion(CyEngine engine, CyEntity entity, uint32_t mo
 CyResult animation_joint_pose(CyEngine engine, CyEntity entity, const char* joint,
                               CyPose* out_pose);
 
+// --- 1.8: deterministic math and the lockstep path -----------------------------------------------
+uint32_t detmath_kernel_version();
+CyFixed detmath_sqrt(CyFixed x);
+CyFixed detmath_sin(CyAngle a);
+CyFixed detmath_cos(CyAngle a);
+CyFixed detmath_tan(CyAngle a);
+CyAngle detmath_atan(CyFixed x);
+CyAngle detmath_atan2(CyFixed y, CyFixed x);
+CyAngle detmath_asin(CyFixed x);
+CyAngle detmath_acos(CyFixed x);
+CyFixed detmath_exp2(CyFixed x);
+CyFixed detmath_log2(CyFixed x);
+CyFixed detmath_exp(CyFixed x);
+CyFixed detmath_log(CyFixed x);
+CyFixed detmath_pow(CyFixed x, CyFixed y);
+CyResult detmath_evaluate(uint32_t function, const CyFixed* x, const CyFixed* y, CyFixed* out,
+                          uint64_t count);
+CyResult lockstep_enlist(CyEngine engine, const CyLockstepUnitDesc* desc, uint32_t* out_unit);
+CyResult lockstep_order(CyEngine engine, const CyLockstepOrder* order);
+CyResult lockstep_unit(CyEngine engine, uint32_t unit, CyLockstepUnit* out_unit);
+CyResult lockstep_status(CyEngine engine, CyLockstepStatus* out_status);
+
 }  // namespace cy::abi::game

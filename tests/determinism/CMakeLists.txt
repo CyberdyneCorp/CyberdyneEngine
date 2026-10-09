@@ -76,12 +76,15 @@ endif()
 # add-deterministic-math, design §10.2), checked against the committed tools/detmath/vectors/
 # digests.txt on each leg before the comparator sees it. So do the fixed-point movement scenario and
 # the two-peer lockstep RTS scenario of src/movement/tests/rts_scenario.h (tasks 4.2 and 7.2), which
-# this suite runs header-only, as it runs the replay and PCG fixtures.
+# this suite runs header-only, as it runs the replay and PCG fixtures — and samples/13-rts-api's
+# lockstep company (host/company.h), whose Swift-driven run the sample's own test holds to the same
+# committed digest (ABI 1.8, stage 8).
 cy_add_test(
     NAME    cross_leg
     KIND    determinism
     SOURCES test_cross_leg.cpp
     DEPENDENCIES cy::replay cy::pcg cy::core-detmath cy::movement cy::gameplay
+                 cy::game-backend-lockstep
     DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
                 CY_DETMATH_VECTORS_DIR="${CMAKE_SOURCE_DIR}/tools/detmath/vectors")
 
@@ -89,4 +92,5 @@ target_include_directories(cy_test_determinism_golden_replay PRIVATE "${cy_repla
 target_include_directories(cy_test_determinism_replay_fuzz PRIVATE "${cy_replay_fixture_dir}")
 target_include_directories(cy_test_determinism_cross_leg
                            PRIVATE "${cy_replay_fixture_dir}" "${cy_pcg_fixture_dir}"
-                                   "${CMAKE_SOURCE_DIR}/src/movement/tests")
+                                   "${CMAKE_SOURCE_DIR}/src/movement/tests"
+                                   "${CMAKE_SOURCE_DIR}/samples/13-rts-api/host")

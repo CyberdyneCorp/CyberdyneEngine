@@ -31,7 +31,7 @@
  *
  * The engine exports exactly one symbol for discovery, `cy_get_interface`. A module reaches
  * everything else through the returned table rather than by linking engine symbols, which is what
- * lets a module built against 1.2 keep running against 1.7 with no recompilation.
+ * lets a module built against 1.2 keep running against 1.8 with no recompilation.
  *
  * A module is a shared library exporting `cy_module_entry`; its `module.toml` declares the entry
  * symbol, the minimum ABI version, its per-platform library paths, and whether it is
@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 7u
+#define CY_ABI_MINOR 8u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -211,7 +211,16 @@ typedef enum CyVarType {
     CY_VAR_U8 = 15,
     CY_VAR_U16 = 16,
     CY_VAR_U32 = 17,
-    CY_VAR_U64 = 18
+    CY_VAR_U64 = 18,
+
+    /* --- Appended at 1.8: the deterministic math scalar -------------------------------------
+     *
+     * `cy::detmath::Fixed`, Q32.32, stored as its raw `int64_t`. The payload is `as_i64` holding
+     * the RAW value (value times 2^32), never a conversion through floating point; the tag names
+     * the storage format, as 1.1's integer tags name a width. A float written to a field of this
+     * kind is refused — with CY_RESULT_PERMISSION_DENIED, naming the field, when the session's
+     * profile is `CrossPlatform` or `Lockstep` (openspec/changes/add-deterministic-math §13). */
+    CY_VAR_FIXED = 19
 } CyVarType;
 
 /* The receiver owns this value and must pass it to `var_release` exactly once. Set by every
@@ -1139,6 +1148,122 @@ typedef struct CyRootMotion {
     float travelled[3];   /* everything since the animator was attached, metres */
 } CyRootMotion;
 
+/* --- 1.8: deterministic math and the lockstep path ----------------------------------------------
+ *
+ * openspec/changes/add-deterministic-math, stage 8 (design §13). A fixed-point value crosses as its
+ * RAW integer and is never converted through floating point on the way:
+ *
+ *   CyFixed   `cy::detmath::Fixed`, Q32.32: the value times 2^32, two's complement
+ *   CyAngle   `cy::detmath::Angle`: raw / 2^32 of a turn, counter-clockwise, wrapping
+ *
+ * The arithmetic is a module's own (CyberdyneKit's `Fixed` states the engine's rules bit for bit);
+ * the TRANSCENDENTALS are the engine's, reached through `detmath_*`, so a module never carries a
+ * second copy of a polynomial. Every `detmath_*` entry is a pure function of its arguments, legal
+ * in every phase, and defined for every input: out of domain it answers what
+ * src/core/detmath/include/cy/core/detmath/functions.h states.
+ *
+ * THE LOCKSTEP PATH. `lockstep_*` reach a fixed-point session the host runs
+ * (`cy::abi::game::LockstepBackend`, implemented by `cy::game_backend::LockstepAdapter` over
+ * `cy::movement` and a `cy::gameplay::CommandStream` under `Lockstep`): units are enlisted before
+ * the first tick, an ORDER is recorded into the session's command stream as a command whose payload
+ * is raw `CyFixed` values, and every peer executes the same log. Whatever produced the order — a
+ * click converted once by the issuing peer, or arithmetic in `CyFixed` — the session reads the same
+ * bits on every architecture. */
+
+typedef int64_t CyFixed;
+typedef uint32_t CyAngle;
+
+typedef struct CyFixedVec2 {
+    CyFixed x;
+    CyFixed y; /* the lockstep mover reads it as world Z */
+} CyFixedVec2;
+
+typedef struct CyFixedVec3 {
+    CyFixed x;
+    CyFixed y;
+    CyFixed z;
+} CyFixedVec3;
+
+typedef struct CyFixedQuat {
+    CyFixed x;
+    CyFixed y;
+    CyFixed z;
+    CyFixed w;
+} CyFixedQuat;
+
+/* The transcendentals `detmath_evaluate` applies over a span. A span is of `CyFixed` slots: an
+ * `Angle` argument is the low 32 bits of its slot and an `Angle` result is zero-extended into one.
+ */
+typedef enum CyDetmathFunction {
+    CY_DETMATH_SQRT = 0,  /* Fixed -> Fixed, correctly rounded */
+    CY_DETMATH_SIN = 1,   /* Angle -> Fixed */
+    CY_DETMATH_COS = 2,   /* Angle -> Fixed */
+    CY_DETMATH_TAN = 3,   /* Angle -> Fixed */
+    CY_DETMATH_ATAN = 4,  /* Fixed -> Angle */
+    CY_DETMATH_ATAN2 = 5, /* (y Fixed, x Fixed) -> Angle */
+    CY_DETMATH_ASIN = 6,  /* Fixed -> Angle */
+    CY_DETMATH_ACOS = 7,  /* Fixed -> Angle */
+    CY_DETMATH_EXP2 = 8,  /* Fixed -> Fixed */
+    CY_DETMATH_LOG2 = 9,  /* Fixed -> Fixed */
+    CY_DETMATH_EXP = 10,  /* Fixed -> Fixed */
+    CY_DETMATH_LOG = 11,  /* Fixed -> Fixed */
+    CY_DETMATH_POW = 12   /* (x Fixed, y Fixed) -> Fixed */
+} CyDetmathFunction;
+
+/* What an order tells a group of lockstep units to do. */
+typedef enum CyLockstepOrderKind {
+    CY_LOCKSTEP_ORDER_MOVE = 0, /* plan a path to `target` and form up around it */
+    CY_LOCKSTEP_ORDER_STOP = 1  /* drop the path and stand */
+} CyLockstepOrderKind;
+
+/* A unit, as `lockstep_enlist` takes it. Zero `radius` and `max_speed` are the mover's defaults,
+ * half a metre and four metres a second. */
+typedef struct CyLockstepUnitDesc {
+    uint32_t struct_size;
+    uint32_t group;       /* the squad an order addresses */
+    CyEntity entity;      /* the scene entity that PRESENTS the unit, or CY_ENTITY_NULL */
+    CyFixedVec2 position; /* x and world Z */
+    CyFixed radius;
+    CyFixed max_speed;
+} CyLockstepUnitDesc;
+
+/* An order, recorded for the session's next tick. */
+typedef struct CyLockstepOrder {
+    uint32_t struct_size;
+    uint32_t kind; /* CyLockstepOrderKind */
+    uint32_t group;
+    uint32_t reserved;
+    CyFixedVec2 target; /* raw CyFixed: the issuer converted, every peer reads these bits */
+} CyLockstepOrder;
+
+#define CY_LOCKSTEP_UNIT_MOVING 0x1u  /* it has a path it has not finished */
+#define CY_LOCKSTEP_UNIT_ARRIVED 0x2u /* it finished its path on the last tick, and only then */
+
+/* One unit's authoritative state, as the last tick left it. */
+typedef struct CyLockstepUnit {
+    uint32_t struct_size;
+    uint32_t group;
+    CyEntity entity;
+    CyFixedVec2 position;
+    CyFixedVec2 velocity;
+    CyFixed height;
+    CyAngle heading;
+    uint32_t flags; /* CY_LOCKSTEP_UNIT_* */
+} CyLockstepUnit;
+
+/* The session. `digest` folds every tick's state hash in order from the session's world hash, so
+ * two peers — or two architectures — that agree on it agreed on every tick. */
+typedef struct CyLockstepStatus {
+    uint32_t struct_size;
+    uint32_t units;
+    uint64_t tick;       /* ticks advanced */
+    uint64_t commands;   /* commands in the session's log */
+    uint64_t state_hash; /* the last tick's */
+    uint64_t digest;
+    uint32_t kernel_version; /* `cy::detmath::kKernelVersion` */
+    uint32_t disagreements;  /* ticks a follower peer's state hash differed on; zero without one */
+} CyLockstepStatus;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -1663,6 +1788,50 @@ typedef struct CyInterface {
      * an effect is attached to. Presentation, so not in F. */
     CyResult (*animation_joint_pose)(CyEngine engine, CyEntity entity, const char* joint,
                                      CyPose* out_pose);
+    /* --- 1.8: deterministic math and the lockstep path ---
+     *
+     * The typed fast path for a CY_VAR_FIXED field, and the deterministic transcendentals, all
+     * [N F U] and pure; then the lockstep session. */
+
+    /* [N F U] A CY_VAR_FIXED field's raw value. INVALID_ARGUMENT for a field of another kind. */
+    CyResult (*component_get_fixed)(CyWorld world, CyEntity entity, CyComponentTypeId component,
+                                    uint32_t field, CyFixed* out_value);
+    /* [N F U] Write a CY_VAR_FIXED field's raw value. INVALID_ARGUMENT for another kind. */
+    CyResult (*component_set_fixed)(CyWorld world, CyEntity entity, CyComponentTypeId component,
+                                    uint32_t field, CyFixed value);
+    /* `cy::detmath::kKernelVersion`: a different number is a different kernel, and a replay or a
+     * peer recorded with another is not this session's. */
+    uint32_t (*detmath_kernel_version)(void);
+    /* Each `cy::detmath` function of the same name; see CyDetmathFunction for the formats. */
+    CyFixed (*detmath_sqrt)(CyFixed x);
+    CyFixed (*detmath_sin)(CyAngle a);
+    CyFixed (*detmath_cos)(CyAngle a);
+    CyFixed (*detmath_tan)(CyAngle a);
+    CyAngle (*detmath_atan)(CyFixed x);
+    CyAngle (*detmath_atan2)(CyFixed y, CyFixed x);
+    CyAngle (*detmath_asin)(CyFixed x);
+    CyAngle (*detmath_acos)(CyFixed x);
+    CyFixed (*detmath_exp2)(CyFixed x);
+    CyFixed (*detmath_log2)(CyFixed x);
+    CyFixed (*detmath_exp)(CyFixed x);
+    CyFixed (*detmath_log)(CyFixed x);
+    CyFixed (*detmath_pow)(CyFixed x, CyFixed y);
+    /* `function` over `count` inputs: `out[i] = f(x[i])`, or `f(x[i], y[i])` for ATAN2 and POW,
+     * which need `y`; `y` may be null for the others. INVALID_ARGUMENT for an unknown function or a
+     * null span with a non-zero count, having written nothing. */
+    CyResult (*detmath_evaluate)(uint32_t function, const CyFixed* x, const CyFixed* y,
+                                 CyFixed* out, uint64_t count);
+    /* [N] Enlist a unit in the lockstep session, in the order units are to be processed: before
+     * the first tick only (PERMISSION_DENIED after it). `*out_unit` is its index, which is its
+     * identity in the session's hash — the entity is presentation and is not hashed. */
+    CyResult (*lockstep_enlist)(CyEngine engine, const CyLockstepUnitDesc* desc,
+                                uint32_t* out_unit);
+    /* [F U] Record an order for the session's next tick. NOT_FOUND for a group no unit is in. */
+    CyResult (*lockstep_order)(CyEngine engine, const CyLockstepOrder* order);
+    /* [N F U] A unit's authoritative state. NOT_FOUND for an index never enlisted. */
+    CyResult (*lockstep_unit)(CyEngine engine, uint32_t unit, CyLockstepUnit* out_unit);
+    /* [N F U] The session: its tick, its log, its hash and its digest. */
+    CyResult (*lockstep_status)(CyEngine engine, CyLockstepStatus* out_status);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -1781,6 +1950,14 @@ CY_ABI_STATIC_ASSERT(sizeof(CyAnimatorDesc) == 32, "CyAnimatorDesc is 32 bytes")
 CY_ABI_STATIC_ASSERT(sizeof(CyAnimatorState) == 32, "CyAnimatorState is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyAnimationEvent) == 24, "CyAnimationEvent is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyRootMotion) == 52, "CyRootMotion is 52 bytes");
+/* 1.8 */
+CY_ABI_STATIC_ASSERT(sizeof(CyFixedVec2) == 16, "CyFixedVec2 is 16 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyFixedVec3) == 24, "CyFixedVec3 is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyFixedQuat) == 32, "CyFixedQuat is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepUnitDesc) == 48, "CyLockstepUnitDesc is 48 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepOrder) == 32, "CyLockstepOrder is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepUnit) == 64, "CyLockstepUnit is 64 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLockstepStatus) == 48, "CyLockstepStatus is 48 bytes");
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,10 @@ THE LINT HAS TWO JOBS AND THE SECOND ONE IS M9'S SPIKE FINDING
 ================================================================================================
 
 SOURCE.  The five rules above, over the translation units of every module that declares a
-         determinism profile.
+         determinism profile. "Use of floating-point operations disallowed by the active profile"
+         is two rules: `forbidden-cmath` for every profile, and `float-on-cross-platform-path`
+         (openspec/changes/add-deterministic-math design §7.3) for a target declaring
+         `CrossPlatform` or `Lockstep`, where no float may appear outside the conversion boundary.
 
 BUILD.   Assert that each of those modules was actually compiled with floating-point contraction
          off. `design.md` §1.2 measured why: two builds of identical source, differing only in
@@ -85,7 +88,28 @@ EXEMPTIONS = {
     "src/core/detmath/src/digest.cpp": ("forbidden-cmath",),
     # The suite of exactly those functions; every call in it is `dm::atan2` of `Fixed` arguments.
     "src/core/detmath/tests/test_functions.cpp": ("forbidden-cmath",),
+    # THE FLOAT BOUNDARY, design §7.1 and §7.2 of openspec/changes/add-deterministic-math. These
+    # files ARE the conversions a `CrossPlatform` or `Lockstep` target is allowed: the cooked
+    # conversion into `Fixed` (once, at cook or load, never in a tick) and the presentation
+    # conversion out of it. `grep -rn "from_f32_cooked\|from_f64_cooked"` audits the first.
+    "src/core/detmath/src/convert.cpp": ("float-on-cross-platform-path",),
+    "src/movement/src/convert_mesh.cpp": ("float-on-cross-platform-path",),
+    "src/movement/src/height_field_cook.cpp": ("float-on-cross-platform-path",),
+    "src/movement/src/presentation.cpp": ("float-on-cross-platform-path",),
+    # The suites of that boundary: they hand the conversions floats and compare floats back, and
+    # build the float terrain a cook would have baked. The authoritative arithmetic they check is
+    # the module's, which the rule covers.
+    "src/core/detmath/tests/test_convert.cpp": ("float-on-cross-platform-path",),
+    "src/movement/tests/test_height_field.cpp": ("float-on-cross-platform-path",),
 }
+
+# `float-on-cross-platform-path`: the tokens design §7.3 names — the two float types, the engine's
+# aliases for them, and the core-math vector types built of them. Matched as whole words, so
+# `FixedVec3` and `f32_count` are not findings, and only in a target whose declared profile is
+# `CrossPlatform` or `Lockstep`: below that profile, floating point is the subsystem's arithmetic.
+FLOAT_TOKENS = re.compile(r"(?<![A-Za-z0-9_])(float|double|f32|f64|Vec2|Vec3|Vec4|Quat|Mat3|Mat4)"
+                          r"(?![A-Za-z0-9_])")
+CROSS_PLATFORM_PROFILES = ("CrossPlatform", "Lockstep")
 
 WALL_CLOCK = (
     "std::chrono::system_clock",
@@ -171,7 +195,7 @@ def strip_comments_and_strings(line: str) -> str:
 
 
 def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = (),
-                system: str = "") -> list[Finding]:
+                system: str = "", profile: str = "") -> list[Finding]:
     relative = str(path.relative_to(root))
     findings: list[Finding] = []
     try:
@@ -214,6 +238,14 @@ def scan_source(path: Path, root: Path, exempt: tuple[str, ...] = (),
             findings.append(Finding("unordered-iteration", relative, number, raw,
                                     "iteration over a container with unspecified order; lookup is "
                                     "permitted, iteration as a decision order is not", system))
+        if (profile in CROSS_PLATFORM_PROFILES and "float-on-cross-platform-path" not in exempt):
+            float_token = FLOAT_TOKENS.search(code)
+            if float_token is not None:
+                findings.append(Finding(
+                    "float-on-cross-platform-path", relative, number, raw,
+                    f"'{float_token.group(1)}' in a {profile} target: authoritative arithmetic is "
+                    f"cy::detmath's, and floats cross only at the conversion boundary "
+                    f"(convert.h)", system))
         if PRESENTATION_READ.search(code) and "presentation-read" not in exempt:
             findings.append(Finding("presentation-read", relative, number, raw,
                                     "bypass_classification() reads a value without its witness; "
@@ -353,6 +385,13 @@ SELFTEST_CASES = (
     ("forbidden-cmath", "const double a = std::atan2(dy, dx);"),
 )
 
+#: `float-on-cross-platform-path` fires only under a profile, so its cases carry one.
+SELFTEST_PROFILE_CASES = (
+    ("float-on-cross-platform-path", "Lockstep", "const f32 speed = unit.speed;"),
+    ("float-on-cross-platform-path", "CrossPlatform", "double scale = 0.5;"),
+    ("float-on-cross-platform-path", "Lockstep", "const Vec3 at = transform.translation;"),
+)
+
 SELFTEST_CLEAN = """
 // acos and cbrt and atan2 named in a comment are not calls.
 const char* kNames[] = {"acos", "cbrt", "sinh"};
@@ -361,6 +400,15 @@ const double root = cy::determinism::fp::cbrt(x);
 const Angle heading = cy::detmath::atan2(dz, dx) + detmath::asin(sine) - detmath::acos(cosine);
 const double safe = std::sqrt(x) + std::exp(y) + std::log(z) + std::atan(w);
 const auto value = map.find(key);
+"""
+
+#: Silent under `Lockstep`: a float named in a comment or a string, and identifiers that merely
+#: contain a float type's name.
+SELFTEST_CLEAN_LOCKSTEP = """
+const FixedVec3 at = fixed_forward();  // a float, a double and a Vec3 named in a comment
+const char* kKinds[] = {"f32", "f64", "float"};
+const u32 f32_count = 0;
+const FixedQuat facing = FixedQuat::identity();
 """
 
 
@@ -378,6 +426,19 @@ def run_selftest(root: Path) -> int:
                 print(f"determinism-lint selftest: rule '{rule}' did not fire on: {line}")
                 failures += 1
 
+        for rule, profile, line in SELFTEST_PROFILE_CASES:
+            path = base / f"profile_{profile}_{abs(hash(line))}.cpp"
+            path.write_text(f"void f() {{\n    {line}\n}}\n", encoding="utf-8")
+            if not any(finding.rule == rule for finding in scan_source(path, base, profile=profile)):
+                print(f"determinism-lint selftest: rule '{rule}' did not fire under {profile} on: "
+                      f"{line}")
+                failures += 1
+            # The same line under SamePlatform is a float subsystem doing float arithmetic.
+            if any(finding.rule == rule
+                   for finding in scan_source(path, base, profile="SamePlatform")):
+                print(f"determinism-lint selftest: rule '{rule}' fired under SamePlatform on: {line}")
+                failures += 1
+
         # A finding names the system as well as the file and line: the requirement's own words.
         named = base / "named.cpp"
         named.write_text("void f() {\n    int roll = std::rand();\n}\n", encoding="utf-8")
@@ -390,6 +451,9 @@ def run_selftest(root: Path) -> int:
         clean = base / "clean.cpp"
         clean.write_text(SELFTEST_CLEAN, encoding="utf-8")
         noise = scan_source(clean, base)
+        clean_lockstep = base / "clean_lockstep.cpp"
+        clean_lockstep.write_text(SELFTEST_CLEAN_LOCKSTEP, encoding="utf-8")
+        noise += scan_source(clean_lockstep, base, profile="Lockstep")
         for finding in noise:
             print(f"determinism-lint selftest: false positive: {finding.render()}")
             failures += 1
@@ -416,8 +480,8 @@ def run_selftest(root: Path) -> int:
     if failures != 0:
         print(f"determinism-lint selftest: {failures} failure(s)")
         return 1
-    print(f"determinism-lint selftest: {len(SELFTEST_CASES)} rules fire and the clean fixture is "
-          f"silent")
+    print(f"determinism-lint selftest: {len(SELFTEST_CASES) + len(SELFTEST_PROFILE_CASES)} rules "
+          f"fire and the clean fixture is silent")
     return 0
 
 
@@ -468,7 +532,8 @@ def main() -> int:
             continue
         resolved = path.resolve()
         source_findings.extend(
-            scan_source(resolved, root, exempt=exemptions.get(str(resolved), ()), system=system))
+            scan_source(resolved, root, exempt=exemptions.get(str(resolved), ()), system=system,
+                        profile=profiles.get(system, "")))
 
     findings = build_findings + source_findings
 

@@ -912,6 +912,126 @@ pub struct CyRootMotion {
     pub travelled: [f32; 3],
 }
 
+/// `CyFixed`, the ABI's alias for `int64_t`.
+pub type CyFixed = i64;
+
+/// `CyAngle`, the ABI's alias for `uint32_t`.
+pub type CyAngle = u32;
+
+/// `CyFixedVec2` — 16 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFixedVec2 {
+    /// `CyFixed` at byte 0.
+    pub x: CyFixed,
+    /// `CyFixed` at byte 8.
+    pub y: CyFixed,
+}
+
+/// `CyFixedVec3` — 24 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFixedVec3 {
+    /// `CyFixed` at byte 0.
+    pub x: CyFixed,
+    /// `CyFixed` at byte 8.
+    pub y: CyFixed,
+    /// `CyFixed` at byte 16.
+    pub z: CyFixed,
+}
+
+/// `CyFixedQuat` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFixedQuat {
+    /// `CyFixed` at byte 0.
+    pub x: CyFixed,
+    /// `CyFixed` at byte 8.
+    pub y: CyFixed,
+    /// `CyFixed` at byte 16.
+    pub z: CyFixed,
+    /// `CyFixed` at byte 24.
+    pub w: CyFixed,
+}
+
+/// `CyLockstepUnitDesc` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepUnitDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub group: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `CyFixedVec2` at byte 16.
+    pub position: CyFixedVec2,
+    /// `CyFixed` at byte 32.
+    pub radius: CyFixed,
+    /// `CyFixed` at byte 40.
+    pub max_speed: CyFixed,
+}
+
+/// `CyLockstepOrder` — 32 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepOrder {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `uint32_t` at byte 8.
+    pub group: u32,
+    /// `uint32_t` at byte 12.
+    pub reserved: u32,
+    /// `CyFixedVec2` at byte 16.
+    pub target: CyFixedVec2,
+}
+
+/// `CyLockstepUnit` — 64 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepUnit {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub group: u32,
+    /// `CyEntity` at byte 8.
+    pub entity: CyEntity,
+    /// `CyFixedVec2` at byte 16.
+    pub position: CyFixedVec2,
+    /// `CyFixedVec2` at byte 32.
+    pub velocity: CyFixedVec2,
+    /// `CyFixed` at byte 48.
+    pub height: CyFixed,
+    /// `CyAngle` at byte 56.
+    pub heading: CyAngle,
+    /// `uint32_t` at byte 60.
+    pub flags: u32,
+}
+
+/// `CyLockstepStatus` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLockstepStatus {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub units: u32,
+    /// `uint64_t` at byte 8.
+    pub tick: u64,
+    /// `uint64_t` at byte 16.
+    pub commands: u64,
+    /// `uint64_t` at byte 24.
+    pub state_hash: u64,
+    /// `uint64_t` at byte 32.
+    pub digest: u64,
+    /// `uint32_t` at byte 40.
+    pub kernel_version: u32,
+    /// `uint32_t` at byte 44.
+    pub disagreements: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -926,7 +1046,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 992 bytes, 8-byte aligned.
+/// `CyInterface` — 1160 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1340,6 +1460,53 @@ pub struct CyInterface {
     pub animation_joint_pose: Option<
         unsafe extern "C" fn(CyEngine, CyEntity, *const ::std::ffi::c_char, *mut CyPose) -> i32,
     >,
+    /// `CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed*)` at byte 992.
+    pub component_get_fixed: Option<
+        unsafe extern "C" fn(CyWorld, CyEntity, CyComponentTypeId, u32, *mut CyFixed) -> i32,
+    >,
+    /// `CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyFixed)` at byte 1000.
+    pub component_set_fixed:
+        Option<unsafe extern "C" fn(CyWorld, CyEntity, CyComponentTypeId, u32, CyFixed) -> i32>,
+    /// `uint32_t(*)()` at byte 1008.
+    pub detmath_kernel_version: Option<unsafe extern "C" fn() -> u32>,
+    /// `CyFixed(*)(CyFixed)` at byte 1016.
+    pub detmath_sqrt: Option<unsafe extern "C" fn(CyFixed) -> CyFixed>,
+    /// `CyFixed(*)(CyAngle)` at byte 1024.
+    pub detmath_sin: Option<unsafe extern "C" fn(CyAngle) -> CyFixed>,
+    /// `CyFixed(*)(CyAngle)` at byte 1032.
+    pub detmath_cos: Option<unsafe extern "C" fn(CyAngle) -> CyFixed>,
+    /// `CyFixed(*)(CyAngle)` at byte 1040.
+    pub detmath_tan: Option<unsafe extern "C" fn(CyAngle) -> CyFixed>,
+    /// `CyAngle(*)(CyFixed)` at byte 1048.
+    pub detmath_atan: Option<unsafe extern "C" fn(CyFixed) -> CyAngle>,
+    /// `CyAngle(*)(CyFixed, CyFixed)` at byte 1056.
+    pub detmath_atan2: Option<unsafe extern "C" fn(CyFixed, CyFixed) -> CyAngle>,
+    /// `CyAngle(*)(CyFixed)` at byte 1064.
+    pub detmath_asin: Option<unsafe extern "C" fn(CyFixed) -> CyAngle>,
+    /// `CyAngle(*)(CyFixed)` at byte 1072.
+    pub detmath_acos: Option<unsafe extern "C" fn(CyFixed) -> CyAngle>,
+    /// `CyFixed(*)(CyFixed)` at byte 1080.
+    pub detmath_exp2: Option<unsafe extern "C" fn(CyFixed) -> CyFixed>,
+    /// `CyFixed(*)(CyFixed)` at byte 1088.
+    pub detmath_log2: Option<unsafe extern "C" fn(CyFixed) -> CyFixed>,
+    /// `CyFixed(*)(CyFixed)` at byte 1096.
+    pub detmath_exp: Option<unsafe extern "C" fn(CyFixed) -> CyFixed>,
+    /// `CyFixed(*)(CyFixed)` at byte 1104.
+    pub detmath_log: Option<unsafe extern "C" fn(CyFixed) -> CyFixed>,
+    /// `CyFixed(*)(CyFixed, CyFixed)` at byte 1112.
+    pub detmath_pow: Option<unsafe extern "C" fn(CyFixed, CyFixed) -> CyFixed>,
+    /// `CyResult(*)(uint32_t, const CyFixed*, const CyFixed*, CyFixed*, uint64_t)` at byte 1120.
+    pub detmath_evaluate:
+        Option<unsafe extern "C" fn(u32, *const CyFixed, *const CyFixed, *mut CyFixed, u64) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyLockstepUnitDesc*, uint32_t*)` at byte 1128.
+    pub lockstep_enlist:
+        Option<unsafe extern "C" fn(CyEngine, *const CyLockstepUnitDesc, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyLockstepOrder*)` at byte 1136.
+    pub lockstep_order: Option<unsafe extern "C" fn(CyEngine, *const CyLockstepOrder) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyLockstepUnit*)` at byte 1144.
+    pub lockstep_unit: Option<unsafe extern "C" fn(CyEngine, u32, *mut CyLockstepUnit) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLockstepStatus*)` at byte 1152.
+    pub lockstep_status: Option<unsafe extern "C" fn(CyEngine, *mut CyLockstepStatus) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1504,5 +1671,26 @@ impl CyInterface {
         animation_take_root_motion: None,
         animation_set_root_motion: None,
         animation_joint_pose: None,
+        component_get_fixed: None,
+        component_set_fixed: None,
+        detmath_kernel_version: None,
+        detmath_sqrt: None,
+        detmath_sin: None,
+        detmath_cos: None,
+        detmath_tan: None,
+        detmath_atan: None,
+        detmath_atan2: None,
+        detmath_asin: None,
+        detmath_acos: None,
+        detmath_exp2: None,
+        detmath_log2: None,
+        detmath_exp: None,
+        detmath_log: None,
+        detmath_pow: None,
+        detmath_evaluate: None,
+        lockstep_enlist: None,
+        lockstep_order: None,
+        lockstep_unit: None,
+        lockstep_status: None,
     };
 }

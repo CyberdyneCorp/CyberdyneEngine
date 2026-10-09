@@ -50,6 +50,10 @@ if(CY_ANIMATION)
     add_subdirectory(animation)
 endif()
 
+# ABI 1.8's lockstep adapter, a module of its own because it links the deterministic math module;
+# see lockstep/CMakeLists.txt.
+add_subdirectory(lockstep)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

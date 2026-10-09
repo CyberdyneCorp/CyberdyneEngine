@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "company.h"
 #include "rts_host.h"
 #include "script.h"
 
@@ -93,6 +94,21 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
         now.animation.animated, now.animation.walked, now.animation.cheered,
         now.animation.idle_after, now.animation.only_idle, wide(now.animation.departure),
         wide(now.animation.footsteps), wide(now.animation.cheer_events));
+    // ABI 1.8: the lockstep company — ordered by the game in fixed point, run by two peers — and
+    // the digest every CI leg computes from the same orders in C++ (company.h).
+    std::printf(
+        "rts lockstep units=%u ticks=%llu commands=%llu executed=%u paths=%u/%u orders=%.0f "
+        "arrivals=%.0f disagreements=%u lead=%lld reported_lead=%lld digest=%016llx "
+        "follower=%016llx committed=%016llx\n",
+        now.lockstep.units, static_cast<unsigned long long>(now.lockstep.ticks),
+        static_cast<unsigned long long>(now.lockstep.commands), now.lockstep.orders_executed,
+        now.lockstep.paths_found, now.lockstep.paths_planned, wide(now.lockstep.orders),
+        wide(now.lockstep.arrivals), now.lockstep.disagreements,
+        static_cast<long long>(now.lockstep.lead),
+        static_cast<long long>(now.lockstep.reported_lead),
+        static_cast<unsigned long long>(now.lockstep.digest),
+        static_cast<unsigned long long>(now.lockstep.follower_digest),
+        static_cast<unsigned long long>(sample::rts::company::kCompanyDigest));
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5, 1.6 and 1.7
+# samples/13-rts-api — an RTS unit, written in Swift, through ABI 1.3, 1.5, 1.6, 1.7 and 1.8
 
 The end-to-end proof of `add-swift-game-api`. A Swift behaviour runs a small RTS: a camera the
 keyboard and the screen edges pan, a unit picked under the pointer, sent to a clicked ground point,
@@ -38,6 +38,19 @@ state — into a memory mount, loads it back by asset id through the asset syste
 `AnimationLibrary`, and installs the engine's `AnimationSystem` in its schedule
 (`host/worker_rig.*`).
 
+ABI 1.8 (`add-deterministic-math` stage 8) gives the commander a LOCKSTEP COMPANY: sixteen units
+in two groups on a field of their own, which the host runs as a fixed-point lockstep session — an
+issuer, and a follower driven by the issuer's command log alone. The commander enlists them in
+`onCreate` and, every 90 ticks, orders each group to the next waypoint of a patrol, a point it
+computes entirely in fixed point: the waypoint's angle is integer arithmetic on a binary `Angle`, its
+cosine and sine are the engine's (`Detmath.cos`, `Detmath.sin`), and the point is CyberdyneKit's
+`Fixed` `*` and `+` (`game/Company.swift`). `host/company.h` states the same scenario in C++, and
+`determinism.cross_leg` runs that C++ twin on all four CI legs, publishing `detmath-company-digest`
+for `cross-leg-compare`; the sample's test holds the digest the SWIFT-driven session ends in to the
+same committed `company::kCompanyDigest`. So the orders a Swift game computes are bits, and the
+session they drive is the same on x86-64 and arm64, Linux, macOS and Windows. The commander also
+writes the lead unit's authoritative x into a `Fixed` field of `RtsReport` (`component_set_fixed`).
+
 ## What is here
 
 | | |
@@ -46,6 +59,8 @@ state — into a memory mount, loads it back by asset id through the asset syste
 | `host/rts_host.*` | Servers, the adapters bound on the ABI host, the scene bridge, the schedule with the script systems in it, the Swift module, the interface (store, text, `UiAdapter`), and the frame loop. |
 | `host/level.*` | Content built in code: the ground, a navigation tile, the worker prefab, the arrival click, the input actions, and the `/Level` nodes with the crate. |
 | `host/worker_rig.*` | ABI 1.7: the worker's rig authored, cooked into the records a build would write, and loaded back by asset id. |
+| `host/company.h` | ABI 1.8: the lockstep company's field, spawn layout and waypoints, and `run_company()`, its C++ twin, which `determinism.cross_leg` runs on every leg. |
+| `game/Company.swift` | ABI 1.8: the commander's company — enlisting, fixed-point waypoints, orders through `Lockstep.order`. |
 | `host/units.*` | Plumbing for navigation agents (an agent's position is its scene node, and it has a kinematic capsule on collision layer 1), the one entity-to-body map, and the native `Veterancy` reader. |
 | `host/script.*` | The scripted player: synthetic key and mouse events, aimed with the camera projection. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
@@ -73,6 +88,9 @@ state — into a memory mount, loads it back by asset id through the asset syste
 | gives every unit an animator over the `worker` rig | `animation_attach` | none (`onCreate`) or fixed (the build key) |
 | plays walk while a unit's agent follows a path, idle when it stands, the cheer on arrival | `animation_play` | fixed |
 | reads the footfalls and the cheer finishing, and stands the unit down on the next tick | `animation_events`, then `animation_play` | frame, then fixed |
+| enlists the lockstep company | `lockstep_enlist` | none (`onCreate`) |
+| computes each waypoint in fixed point and orders the company every 90 ticks | `detmath_cos`, `detmath_sin`, `lockstep_status`, `lockstep_order` | fixed |
+| hears arrivals and reports the lead unit's x as a `Fixed` field | `lockstep_unit`, `component_set_fixed` | fixed |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern

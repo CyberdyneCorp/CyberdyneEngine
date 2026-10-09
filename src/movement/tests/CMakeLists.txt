@@ -11,6 +11,11 @@
 #                          the profile check with this module linked. Every case
 #                          builds a mesh of a few dozen polygons and a handful of units.
 #
+#   integration.movement_crowd
+#                          navigation's crowd solver instantiated over Fixed (task 6.2): a head-on
+#                          pair passes, priority yields, it chooses the f32 crowd's side, its
+#                          committed digest, and avoidance fed through the mover.
+#
 #   integration.movement_lockstep
 #                          the lockstep RTS scenario (rts_scenario.h): two sessions in one process
 #                          driven by one command log, compared tick by tick; the serial step
@@ -53,6 +58,12 @@ function(cy_movement_declare_tests)
         DEPENDENCIES cy::movement cy::gameplay cy::gameplay-abilities)
     target_include_directories(cy_test_unit_movement
                                PRIVATE "${CMAKE_SOURCE_DIR}/src/navigation/tests")
+
+    cy_add_test(
+        NAME movement_crowd
+        KIND integration
+        SOURCES "${tests_dir}/test_crowd.cpp"
+        DEPENDENCIES cy::movement)
 
     cy_add_test(
         NAME movement_lockstep

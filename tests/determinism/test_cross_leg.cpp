@@ -59,6 +59,15 @@
 //                       agreed on every tick; the comparator then checks the follower across
 //                       architectures. Both digests are also checked against committed values on
 //                       each leg alone, as the PCG world is.
+//   detmath-company-digest, detmath-company-final-hash
+//                       samples/13-rts-api's lockstep company (samples/13-rts-api/host/company.h):
+//                       sixteen units in two groups on a Fixed field, ordered every 90 ticks to
+//                       waypoints computed in fixed point, through the lockstep session ABI 1.8's
+//                       `lockstep_*` entries reach, avoidance by navigation's crowd solver
+//                       instantiated over Fixed; issuer and follower. In the sample the SWIFT game
+//                       gives these orders; here C++ gives the same ones, and
+//                       `integration.rts_api_sample` holds the Swift run to this same committed
+//                       digest, so the comparator's agreement covers the Swift-driven session too.
 //
 // The leg's identity — os, architecture, compiler, endianness and the four build-time
 // floating-point facts `determinism::BuildConfiguration` reads — is published beside the digests,
@@ -89,6 +98,7 @@
 //     reported a speed-up on a mutation that made the content constant, because one live field
 //     carried the aggregate. Two legs agreeing on a constant are not two legs that agreed.
 
+#include "company.h"
 #include "golden_session.h"
 #include "rts_scenario.h"
 
@@ -272,6 +282,14 @@ constexpr u64 kMovementDigest = 0xa4bd'1ab8'dad8'6434ULL;
 constexpr u64 kLockstepDigest = 0x1aed'05ed'2c54'f3fbULL;
 constexpr u64 kLockstepFinalHash = 0x3e5a'699a'41b7'1076ULL;
 
+/// The sample's lockstep company, run by C++ with the orders the Swift commander gives. Measured
+/// once. Its committed digest is `sample::rts::company::kCompanyDigest`, which the Swift-driven
+/// sample is held to as well.
+[[nodiscard]] const sample::rts::company::CompanyRun& company_measurement() {
+    static const sample::rts::company::CompanyRun taken = sample::rts::company::run_company();
+    return taken;
+}
+
 /// Both measurements, taken once for the whole binary. Two of them, because "the same digest twice
 /// in one process" is a case rather than an assumption — a publisher that was not repeatable within
 /// one process could not be compared between two.
@@ -348,6 +366,11 @@ struct Measurements {
     text += "detmath-lockstep-ticks " + std::to_string(movement.lockstep.follower.ticks) + "\n";
     text += "detmath-lockstep-digest " + hex(movement.lockstep.follower.digest) + "\n";
     text += "detmath-lockstep-final-hash " + hex(movement.lockstep.follower.final_hash) + "\n";
+    const sample::rts::company::CompanyRun& company = company_measurement();
+    text += "detmath-company-units " + std::to_string(company.units) + "\n";
+    text += "detmath-company-ticks " + std::to_string(company.ticks) + "\n";
+    text += "detmath-company-digest " + hex(company.digest) + "\n";
+    text += "detmath-company-final-hash " + hex(company.final_hash) + "\n";
     // Which 128-bit multiply and divide this leg's binary used. An annotation: the comparison is of
     // the digest, and the point of the claim is that the paths do not matter.
     text += "detmath-paths " + std::string(cy::detmath::wide::kNativeMultiply) + " / " +
@@ -391,6 +414,10 @@ constexpr const char* kRequiredKeys[] = {
     "detmath-lockstep-ticks",
     "detmath-lockstep-digest",
     "detmath-lockstep-final-hash",
+    "detmath-company-units",
+    "detmath-company-ticks",
+    "detmath-company-digest",
+    "detmath-company-final-hash",
 };
 
 }  // namespace
@@ -479,6 +506,30 @@ CY_TEST_CASE("cross-leg: the published lockstep digest is a function of the sess
     const cy::movement_test::RtsDigest other = cy::movement_test::run_rts(moved);
     CY_REQUIRE(other.complete);
     CY_CHECK_NE(other.digest, movement_measurements().lockstep.follower.digest);
+}
+
+CY_TEST_CASE("cross-leg: the sample's lockstep company is the committed session, on this leg") {
+    // The digest the Swift-driven samples/13-rts-api reports is held to the same constant by
+    // `integration.rts_api_sample`; here C++ gives the orders, on every leg.
+    const sample::rts::company::CompanyRun& company = company_measurement();
+    CY_REQUIRE(company.complete);
+    CY_CHECK_EQ(company.units, 16U);
+    CY_CHECK_EQ(company.ticks, sample::rts::company::kTicks);
+    // Five order ticks (0, 90, 180, 270, 360), one order per group each.
+    CY_CHECK_EQ(company.commands, 10U);
+    CY_CHECK_EQ(company.disagreements, 0U);
+    CY_CHECK_EQ(company.digest, sample::rts::company::kCompanyDigest);
+}
+
+CY_TEST_CASE("cross-leg: the company's digest is a function of its orders") {
+    // Two legs agreeing on a session that ignored its orders would be two legs that agreed on
+    // standing still. The same session given no orders must end elsewhere.
+    const sample::rts::company::CompanyRun idle =
+        sample::rts::company::run_company(sample::rts::company::kTicks, false);
+    CY_REQUIRE(idle.complete);
+    CY_CHECK_EQ(idle.commands, 0U);
+    CY_CHECK_NE(idle.digest, company_measurement().digest);
+    CY_CHECK_NE(idle.final_hash, company_measurement().final_hash);
 }
 
 CY_TEST_CASE("cross-leg: the PCG world matches the cross-architecture golden") {

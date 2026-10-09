@@ -39,6 +39,7 @@
 #include <cy/abi/game/services.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/determinism/profile.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/ecs/component.h>
@@ -185,8 +186,22 @@ struct CyWorld_T {
     /// calls it, which is what makes a stale `CyBorrow` detectable rather than merely unlucky.
     void bump_epoch() noexcept { ++epoch; }
 
+    /// Whether a float write to a CY_VAR_FIXED field is refused with PERMISSION_DENIED (ABI 1.8,
+    /// openspec/changes/add-deterministic-math task 8.2): true when this world's session runs under
+    /// `CrossPlatform` or `Lockstep`. The embedder sets it from the profile its session declares —
+    /// `set_determinism_profile` — before any module writes to the world.
+    [[nodiscard]] bool fixed_fields_locked() const noexcept {
+        return profile >= cy::determinism::DeterminismProfile::CrossPlatform;
+    }
+    void set_determinism_profile(cy::determinism::DeterminismProfile declared) noexcept {
+        profile = declared;
+    }
+
     cy::ecs::World& world;
     cy::u64 epoch = 1;  ///< Never zero, so a default-constructed CyBorrow is never valid.
+    /// The determinism profile of the session this world belongs to. `SamePlatform` until the
+    /// embedder says otherwise, which is the profile every world had before 1.8.
+    cy::determinism::DeterminismProfile profile = cy::determinism::DeterminismProfile::SamePlatform;
     cy::Array<cy::abi::ComponentRecord> components;
     cy::Array<cy::abi::FieldRecord> fields;
 };

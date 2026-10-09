@@ -140,10 +140,47 @@ CY_TEST_CASE("the 1.7 table appends animation after every 1.6 entry") {
         CY_CHECK(set);
     }
     // Appended, never inserted: the first 1.7 entry is one pointer after the last 1.6 one, and the
-    // last 1.7 entry is the table's last member, so nothing was declared and not listed.
+    // last 1.7 entry is followed directly by the first 1.8 one, so nothing was declared and not
+    // listed. The case below holds the 1.8 entries to the end of the table.
     CY_CHECK_EQ(offsetof(CyInterface, animation_attach),
                 offsetof(CyInterface, ui_set_focus) + sizeof(void*));
-    CY_CHECK_EQ(offsetof(CyInterface, animation_joint_pose) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, animation_joint_pose) + sizeof(void*),
+                offsetof(CyInterface, component_get_fixed));
+}
+
+CY_TEST_CASE(
+    "the 1.8 table appends deterministic math and the lockstep path after every 1.7 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 8U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.component_get_fixed != nullptr,
+        iface.component_set_fixed != nullptr,
+        iface.detmath_kernel_version != nullptr,
+        iface.detmath_sqrt != nullptr,
+        iface.detmath_sin != nullptr,
+        iface.detmath_cos != nullptr,
+        iface.detmath_tan != nullptr,
+        iface.detmath_atan != nullptr,
+        iface.detmath_atan2 != nullptr,
+        iface.detmath_asin != nullptr,
+        iface.detmath_acos != nullptr,
+        iface.detmath_exp2 != nullptr,
+        iface.detmath_log2 != nullptr,
+        iface.detmath_exp != nullptr,
+        iface.detmath_log != nullptr,
+        iface.detmath_pow != nullptr,
+        iface.detmath_evaluate != nullptr,
+        iface.lockstep_enlist != nullptr,
+        iface.lockstep_order != nullptr,
+        iface.lockstep_unit != nullptr,
+        iface.lockstep_status != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 21U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, lockstep_status) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

@@ -70,6 +70,9 @@ ENUM_SPECS = {
     # ABI 1.7, animation (issue #76 stage 4).
     "CyRootMotionMode": ("RootMotionMode", "CY_ROOT_MOTION_", "u32"),
     "CyAnimationTier": ("AnimationTier", "CY_ANIMATION_TIER_", "u32"),
+    # ABI 1.8, deterministic math and the lockstep path (add-deterministic-math stage 8).
+    "CyDetmathFunction": ("DetmathFunction", "CY_DETMATH_", "u32"),
+    "CyLockstepOrderKind": ("LockstepOrderKind", "CY_LOCKSTEP_ORDER_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

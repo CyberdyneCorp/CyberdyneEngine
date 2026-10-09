@@ -357,6 +357,30 @@ Tested through `FakeEngine` in `AnimationTests.swift`; end to end in `samples/13
 units walk, cheer and stand down from Swift (`integration.rts_api_sample`). The engine side is
 `integration.game_backend_animation`.
 
+## Deterministic math and the lockstep path (ABI 1.8)
+
+`openspec/changes/add-deterministic-math` stage 8. Three files:
+
+* **`Fixed.swift`** — `Fixed` (Q32.32 in an `Int64`), `Fixed16`, `Angle` (a binary angle in a
+  `UInt32`), `FixedVec2`, `FixedVec3`, and `FixedQuat` as storage. The arithmetic is the engine's
+  rules stated a third time (after `fixed.h` and `tools/detmath/model.py`): `&+` and `&-` because
+  Swift's `+` traps where the engine wraps; `*` through `multipliedFullWidth(by:)`, plus 2^31,
+  shifted right 32; `/` on magnitudes, a 64-bit limb at a time through `UInt64.dividingFullWidth`
+  (`Int64.dividingFullWidth` traps when the quotient does not fit, and the engine wraps), with the
+  engine's division-by-zero rule. `Fixed(cooking:)` is `from_f64_cooked`, for cook time, session
+  configuration and command creation only. A `Fixed` is `Value.fixed` (`CY_VAR_FIXED`) and an
+  `@Component` field of type `Fixed` is a fixed-point field (`world.fixed`, `world.setFixed`).
+* **`Detmath.swift`** — the transcendentals, each one `detmath_*` call: the engine's polynomial,
+  never a second copy.
+* **`Lockstep.swift`** — `enlist`, `order(.move(group:to:))`, `unit`, `status`, over the host's
+  lockstep session.
+
+`FixedTests.swift` checks every committed line of `tools/detmath/vectors/{add,sub,mul,div,narrow16,
+angle_scale}.txt` through the Swift operators, and reproduces each of those functions' whole
+16 384-input sweep digest from `digests.txt` — the number every C++ leg is held to — with the same
+SplitMix64 draws and fold. End to end, `samples/13-rts-api`'s commander orders a lockstep company in
+fixed point, and the session ends in the digest `determinism.cross_leg` computes on all four legs.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

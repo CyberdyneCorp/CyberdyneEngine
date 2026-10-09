@@ -112,7 +112,10 @@ pub const fn kind_of(var_type: VarType) -> ValueKind {
         | VarType::U8
         | VarType::U16
         | VarType::U32
-        | VarType::U64 => ValueKind::Int,
+        | VarType::U64
+        // ABI 1.8: a fixed-point field presents as its raw Q32.32 integer — exact, and never
+        // converted through a float. The editor has no fixed-point kind of its own yet.
+        | VarType::Fixed => ValueKind::Int,
         VarType::F32 => ValueKind::Float,
         VarType::F64 => ValueKind::Double,
         VarType::Vec2 => ValueKind::Vec2,

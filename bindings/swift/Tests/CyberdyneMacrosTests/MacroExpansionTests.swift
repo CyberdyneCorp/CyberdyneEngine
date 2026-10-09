@@ -229,6 +229,32 @@ final class ComponentMacroTests: XCTestCase {
             macroSpecs: macros)
     }
 
+    /// ABI 1.8: a `Fixed` property is a CY_VAR_FIXED field, its raw integer in chunk memory.
+    func testAFixedPropertyIsAFixedField() {
+        assertMacroExpansion(
+            """
+            @Component
+            struct Position {
+                var x: Fixed = .zero
+            }
+            """,
+            expandedSource: """
+                struct Position {
+                    var x: Fixed = .zero
+
+                    public static let componentName: String = "Position"
+
+                    public static let componentFields: [FieldDescriptor] = [
+                            FieldDescriptor(name: "x", type: .fixed, offset: MemoryLayout<Self>.offset(of: \\Self.x) ?? 0, size: MemoryLayout<Fixed>.size),
+                    ]
+                }
+
+                extension Position: Component {
+                }
+                """,
+            macroSpecs: macros)
+    }
+
     /// `swift-scripting`, "Invalid component is rejected at compile time": a struct marked
     /// `@Component` containing a Swift class reference is a compile error explaining that components
     /// must be trivially relocatable value types.

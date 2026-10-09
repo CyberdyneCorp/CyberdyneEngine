@@ -3,7 +3,7 @@
 # shrink: a line here that has since been documented, renamed or deleted FAILS the gate.
 #
 # Regenerate with `just quality-docs --update`, and only when you have just documented
-# something. Backlog at last write: 529 of 3305 public symbols.
+# something. Backlog at last write: 527 of 3464 public symbols.
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::afterReload
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::create
 bindings/swift/Sources/CyberdyneKit/Behaviour.swift::destroy
@@ -263,8 +263,6 @@ src/navigation/include/cy/navigation/components.h::kNavAreaComponentName
 src/navigation/include/cy/navigation/components.h::kNavLinkComponentName
 src/navigation/include/cy/navigation/components.h::kNavMeshSurfaceComponentName
 src/navigation/include/cy/navigation/components.h::kNavObstacleComponentName
-src/navigation/include/cy/navigation/crowd.h::CrowdAgentId
-src/navigation/include/cy/navigation/crowd.h::kInvalidCrowdAgent
 src/navigation/include/cy/navigation/flow_field.h::FlowFieldParams
 src/navigation/include/cy/navigation/hierarchy.h::RegionId
 src/navigation/include/cy/navigation/hierarchy.h::kInvalidRegion
