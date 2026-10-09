@@ -1,0 +1,267 @@
+Mutations that turn the project-character and bake tests red (#29 Animation, #112's gaps),
+Development profile. Each mutation was applied, its tests run, the file restored and
+md5-verified. Listed under each: the tests (Rust) or test cases (C++) that failed.
+
+== c01_clearing_keeps_the_events: src/animation/include/cy/animation/clip.h
+<   void clear_events() noexcept { events_.clear(); }
+>   void clear_events() noexcept {}
+FAILED  clip: clearing the events keeps the motion and fires nothing until new ones arrive
+[doctest] test cases:  1 | 0 passed | 1 failed | 40 skipped
+RESTORED md5 ok
+
+== c02_a_clips_own_events_are_kept: src/editor_backend/src/animation_character.cpp
+<   clip.set_name(source.name);
+<   clip.clear_events();
+>   clip.set_name(source.name);
+FAILED  editor animation: a project clip's own events give way to the graph's
+[doctest] test cases:   1 |   0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c03_events_in_written_order: src/editor_backend/src/animation_character.cpp
+<   return a.time < b.time;
+>   return a.time < b.time && false;
+FAILED  editor animation: events placed on the timeline fire on the imported clip
+[doctest] test cases:   1 |   0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c04_a_clip_keeps_its_stack_name: src/editor_backend/src/animation_character.cpp
+<   clip.set_name(source.name);
+>   
+FAILED  editor animation: a scrubbed imported clip is the importer's clip sampled directly
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c05_a_foreign_clip_is_taken: src/editor_backend/src/animation_character.cpp
+<   if (!animation::clip_matches_skeleton(decoded, joints.span(), skeleton_, offending)) {
+>   if (!animation::clip_matches_skeleton(decoded, joints.span(), skeleton_, offending) && false) {
+FAILED  editor animation: a clip cooked for another skeleton is refused by name
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c06_two_clips_of_one_name: src/editor_backend/src/animation_character.cpp
+<   if (taken.name == wanted.name) {
+>   if (taken.name == wanted.name && false) {
+FAILED  editor animation: two clips of one name, and a mesh rigged to other joints, are refused
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c07_a_bare_skeleton_draws_nothing: src/editor_backend/src/animation_character.cpp
+<   if (Status boxed = bone_boxes(); !boxed) {
+>   if (Status boxed = ok(); !boxed) {
+FAILED  editor animation: the imported mesh is the character's skin, drawn by its joints
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c08_a_mesh_of_other_joints_is_taken: src/editor_backend/src/animation_character.cpp
+<   [this](const u16 joint) { return joint < skeleton_.joint_count(); }
+>   [](const u16 joint) { return joint < 0xFFFFU; }
+FAILED  editor animation: two clips of one name, and a mesh rigged to other joints, are refused
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c09_a_project_clip_loops_as_cooked: src/editor_backend/src/animation_preview.cpp
+<   if (found != nullptr && character_->from_project()) {
+>   if (found != nullptr && character_->from_project() && false) {
+FAILED  editor animation: a project clip plays on or holds as its node says
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c10_a_failed_character_replaces_the_one_that_played: src/editor_backend/src/animation_preview.cpp
+<   } else if (Status read = loaded->load(request, *source_); !read) {
+<   return read;
+<   }
+>   } else {
+>   (void)loaded->load(request, *source_);
+>   }
+FAILED  editor animation: a character that does not load leaves the one that played
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c11_a_new_character_keeps_the_preview: src/editor_backend/src/animation_preview.cpp
+<   stop();
+<   state_ = AnimationPreviewState{};
+>   
+FAILED  editor animation: a character that does not load leaves the one that played
+[doctest] test cases:   1 |   0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c12_the_mesh_is_not_uploaded_again: src/editor_backend/src/animation_preview.cpp
+<   ++mesh_generation_;
+>   
+FAILED  editor animation: two clips of one name, and a mesh rigged to other joints, are refused
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c13_a_bake_checks_no_clip: src/editor_backend/src/animation_rig.cpp
+<   compile_animation_graph(&character, request.source, compilation)
+>   compile_animation_graph(nullptr, request.source, compilation)
+FAILED  editor animation: a graph with an error bakes nothing and says where
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c14_a_bake_drops_the_events: src/editor_backend/src/animation_rig.cpp
+<   character.build_clips(compilation.events.span(), clips)
+>   character.build_clips({}, clips)
+FAILED  editor animation: a bake cooks the authored events into the clip a game loads
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c15_a_bake_keeps_the_cooked_loop: src/editor_backend/src/animation_rig.cpp
+<   clip->set_loop_mode(reference.looping ? animation::LoopMode::Loop
+<   : animation::LoopMode::None);
+>   
+FAILED  editor animation: a baked clip holds or loops as its node says
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c17_a_manifest_keeps_what_it_held: src/editor_backend/src/animation_rig.cpp
+<   out.rig = Name{};
+<   out.model = Name{};
+<   out.skeleton = AssetId{};
+>   
+FAILED  editor animation: a rig manifest reads back what was written, and nothing else
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c18_a_quote_is_written: src/editor_backend/src/animation_rig.cpp
+<   return character == '"' || character == '\n' || character == '\r';
+>   return character == '\n' || character == '\r';
+FAILED  editor animation: a rig manifest reads back what was written, and nothing else
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c19_the_mannequin_is_baked: src/editor_backend/src/animation_service.cpp
+<   if (arguments.request.skeleton.is_nil()) {
+>   if (arguments.request.skeleton.is_nil() && false) {
+FAILED  editor animation: a bake is refused without a cook, a character or a rig name
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c20_any_rig_name: src/editor_backend/src/animation_service.cpp
+<   if (!rig_name(request.rig)) {
+>   if (!rig_name(request.rig) && false) {
+FAILED  editor animation: a bake is refused without a cook, a character or a rig name
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== c21_no_character_operation: src/editor_backend/src/animation_service.cpp
+<   if (operation == "animation.character.set") {
+>   if (operation == "animation.character.none") {
+FAILED  editor animation: an imported character plays its own clips, named as a graph names them
+[doctest] test cases:  1 |  0 passed | 1 failed | 33 skipped
+RESTORED md5 ok
+
+== p01_no_frame_of_events: samples/05b-editor-window/runtime/play_animation.cpp
+<   return loaded_->adapter->begin_frame();
+>   return ok();
+FAILED  Play loads a baked rig, and the timeline's events arrive on the ticks they fall in
+[doctest] test cases:  1 |  0 passed | 1 failed | 3 skipped
+RESTORED md5 ok
+
+== p02_the_rig_is_misnamed: samples/05b-editor-window/runtime/play_animation.cpp
+<   loaded_->adapter->add_rig(name.c_str(), *added)
+>   loaded_->adapter->add_rig("rig", *added)
+FAILED  Play loads a baked rig, and the timeline's events arrive on the ticks they fall in
+[doctest] test cases:  1 |  0 passed | 1 failed | 3 skipped
+RESTORED md5 ok
+
+== p03_a_manifest_reaches_anywhere: samples/05b-editor-window/runtime/play_animation.cpp
+<   return !path.empty() && path.front() != '/' && path.find("..") == std::string_view::npos &&
+>   return !path.empty() &&
+FAILED  Play skips a rig that does not load, names it, and plays the rest
+[doctest] test cases:  1 |  0 passed | 1 failed | 3 skipped
+RESTORED md5 ok
+
+== p04_the_tick_runs_no_animation: samples/05b-editor-window/runtime/play_animation.cpp
+<   if (Status ran = loaded_->system->run(1, seconds, nullptr); !ran) {
+>   if (Status ran = loaded_->system->run(0, seconds, nullptr); !ran) {
+FAILED  Play loads a baked rig, and the timeline's events arrive on the ticks they fall in
+[doctest] test cases:  1 |  0 passed | 1 failed | 3 skipped
+RESTORED md5 ok
+
+== p05_no_on_update: samples/05b-editor-window/runtime/script_runtime.cpp
+<   runtime_->frame_update(dt);
+>   (void)dt;
+FAILED  a Swift behaviour receives the timeline's events in onUpdate on their ticks
+[doctest] test cases:  1 |  0 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== p06_swift_reaches_no_animation: samples/05b-editor-window/runtime/script_runtime.cpp
+<   host_.game.animation = animation_;
+>   host_.game.animation = nullptr;
+FAILED  a Swift behaviour receives the timeline's events in onUpdate on their ticks
+[doctest] test cases:  1 |  0 passed | 1 failed | 0 skipped
+RESTORED md5 ok
+
+== r01_the_character_is_always_wanted: editor/crates/cy-editor-services/src/animation_requests.rs
+<   self.character_sent.as_ref() != Some(choice)
+>   self.character_sent.as_ref() != Some(choice) || true
+FAILED  animation_requests::tests::a_character_is_sent_once_and_its_answer_asks_for_the_vocabulary_again
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 271 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r02_the_vocabulary_is_kept: editor/crates/cy-editor-services/src/animation_requests.rs
+<   // one's. The engine stopped its preview.
+<   self.catalogue_requested = false;
+>   // one's. The engine stopped its preview.
+FAILED  animation_requests::tests::a_character_is_sent_once_and_its_answer_asks_for_the_vocabulary_again
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 271 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r03_the_preview_goes_without_its_character: editor/crates/cy-editor-services/src/editor.rs
+<   self.ensure_animation_character(&settings.reference)?;
+>   
+FAILED  an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r04_an_undone_choice_is_not_shown: editor/crates/cy-editor-services/src/editor.rs
+<   self.character_follows(&graph);
+>   let _ = graph;
+FAILED  an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.25s
+RESTORED md5 ok
+
+== r05_a_bake_keeps_stale_files: editor/crates/cy-editor-services/src/animation_character.rs
+<   match std::fs::remove_dir_all(directory) {
+>   match Ok::<(), std::io::Error>(()) {
+FAILED  an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+== r06_a_bake_writes_anywhere: editor/crates/cy-editor-services/src/animation_graph.rs
+<   if path.is_empty() || !inside {
+>   if path.is_empty() {
+FAILED  animation_graph::tests::a_bake_that_names_a_file_outside_its_rig_is_refused
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 271 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r07_a_mesh_is_a_character: editor/crates/cy-editor-services/src/animation_graph.rs
+<   if name.starts_with("skeleton/")
+>   if name.starts_with("mesh/")
+FAILED  animation_graph::tests::a_project_character_is_a_model_whose_import_cooked_a_skeleton
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 271 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r08_a_clip_keeps_its_prefix: editor/crates/cy-editor-services/src/animation_graph.rs
+<   let leaf = entry.sub_asset.as_deref()?.strip_prefix("animation/")?;
+>   let leaf = entry.sub_asset.as_deref().filter(|sub| sub.starts_with("animation/"))?;
+FAILED  animation_graph::tests::a_project_character_is_a_model_whose_import_cooked_a_skeleton
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 271 filtered out; finished in 0.00s
+RESTORED md5 ok
+
+== r09_the_mannequin_is_sent_to_bake: editor/crates/cy-editor-services/src/animation_character.rs
+<   if choice.is_mannequin() {
+>   if choice.is_mannequin() && false {
+FAILED  an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.04s
+RESTORED md5 ok
+
+== r10_choosing_the_mannequin_keeps_the_file: editor/crates/cy-editor-services/src/animation_character.rs
+<   self.remove_graph_source(&file, DOMAIN_PREFIX, "animation character")?;
+>   
+FAILED  an_imported_character_is_chosen_previewed_baked_and_undone_over_mcp
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.01s
+RESTORED md5 ok
+
+36 of 36 mutations killed.

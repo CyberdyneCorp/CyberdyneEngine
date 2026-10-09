@@ -354,8 +354,9 @@ target, or when a cut makes it current — and NOT when a blend into it complete
 
 ### A machine the engine writes: `locomotion.h`
 
-The cook path has no authored graph asset yet (the editor's `.cyanimgraph`, below, is not cooked),
-so [`cy/graph/locomotion.h`](../../src/graph/include/cy/graph/locomotion.h) writes one in code, at
+The content cook (`cook_locomotion_set`, the `animation` producer) takes no authored graph — the
+editor bakes its `.cyanimgraph` itself (below) — so
+[`cy/graph/locomotion.h`](../../src/graph/include/cy/graph/locomotion.h) writes one in code, at
 cook time: `cook_locomotion_set` (section 2) compiles it and writes the cooked program a game loads. It
 builds `pose.clip`, `pose.state` and `pose.transition` nodes and passes them to `compile_pose`. This
 is not a second compiler:
@@ -398,6 +399,47 @@ author's parameters — exactly what `advance` and `evaluate` give for the same 
 the viewport through `SkinnedScene` on Vulkan.
 
 ![The walk, previewed](../design/images/editor-animation-viewport-walk.png)
+
+**A project's own character.** A graph can play on a model the project imported instead of the
+mannequin: any FBX whose import cooked a skeleton (steps 7 and 8 of the model import, and M11.b's skin).
+The panel's **Character** row and `animation.character.set` choose it, writing the model's path
+beside the graph in `<graph>.cyanimcharacter` as one undoable transaction. The editor reads the
+project's `.import` records and sends the engine the model's `skeleton/` and first `mesh/` sub-asset
+ids and every `animation/` sub-asset the project has (`animation.character.set`); the engine
+(`cy::editor::AnimationCharacter`) decodes the cooked records the importer wrote
+(`<project>/.cy/cooked/<id>.cyasset`) with `cy/animation/cooked.h`, refuses by name a clip whose
+tracks mean another skeleton's joints (`clip_matches_skeleton`), and plays the rest. **A clip is
+named by its sub-asset's leaf** (`animation/Walking` is `Walking`), not by the FBX stack's name,
+which is `mixamo.com` for every Mixamo export. A model with no skin is drawn one box per bone. The
+pose previewed on an imported clip is the importer's clip sampled directly, bit for bit
+(`integration.editor_backend_animation`).
+
+![An imported character, turned by its own clip](../design/images/editor-animation-viewport-imported-turned.png)
+
+**Baking for the game.** `animation.bake` (the panel's **Bake**) cooks the graph for its character
+into the rig a game loads, `cy/editor/animation_rig.h`: the compiled program, and every clip the
+program names decoded from the character's cooked clip, renamed as the graph names it, looping or
+holding as its node says, **with the timeline's events in place of the clip's own** (a clip record of
+version 2). The editor writes the files under `<project>/.cy/cooked/animation/<graph name>/` beside a
+`cyrig 1` manifest. **In Play**, the editor window's runtime loads every baked rig through the asset
+system and `AnimationLibrary`, as a shipped game loads one, registers it with an `AnimationSystem`
+over the Play world under the graph's name, and installs ABI 1.7's animation backend. A Swift
+behaviour then plays it and receives the events where they were placed:
+
+```swift
+override func onCreate() throws {
+    try Animator.attach(to: entity, rig: "hero")          // the graph hero.cyanimgraph, baked
+}
+override func onUpdate(_ delta: Double) throws {
+    for event in try Animation.events(for: entity) where event.name == "footstep" { … }
+}
+```
+
+Play runs the behaviours' fixed step, then one animation tick, then their `onUpdate` with that tick's
+events. `smoke.editor_animation_events` runs `samples/05b-editor-window/project/game/AnimatedHero.swift`
+this way and checks that `footstep@0.26` arrives on tick 16 of a 60 Hz Play and `land@0.76` on tick 46;
+`integration.editor_window_play_animation` checks the same through the ABI backend where Swift is not
+built.
 
 ### Layers, additive, masks, sync groups, curves
 
@@ -972,11 +1014,15 @@ From `src/animation/README.md`'s own table, and from the tree:
   HOST registered, so a module cannot load one itself; a requested blend cannot be interrupted by a
   program transition; there is no per-frame bone write (IK targets go through float parameters); and
   the events a frame delivers are those of its ticks, with no history.
-- **Editor** (issue #76 stage 5 built the Animation panel, section 3). It previews on the engine's
-  built-in mannequin, not on a project's character: the editor imports no skeleton or skin yet. A
-  graph's authored events reach the preview's clips but are not cooked into a game's clips, the
-  `.cyanimgraph` is not a cook input yet, and the timeline has no curve editing. The skinned preview
-  runs on Vulkan only. There is no rigging workspace, weight painting or retarget preview.
+- **Editor** (issue #76 stage 5 built the Animation panel; #112's gaps added project characters and
+  the bake, section 3). A project character's clips are used as cooked for its skeleton: a clip
+  cooked for another rig is refused, not retargeted. The bake writes the editor's
+  `.cy/cooked/animation/`, which Play loads; the content cook and a package do not take a baked rig
+  yet, so a shipped build cooks its rigs as `cook_locomotion_set` does. The timeline has no curve
+  editing: a clip's curve tracks (`Clip::sample_curve`) have no reader in the pose graph or the ABI,
+  so a curve authored there would reach nothing a game runs. Play's viewport does not draw the
+  animated characters (the preview does). The skinned preview runs on Vulkan only. There is no
+  rigging workspace, weight painting or retarget preview.
 - **What the frame's skinning does not do** (issue #76 stage 3 built it, section 5): blend shapes in
   `SkinnedScene` (a mesh with active shapes is a `SkinPass`), frames in flight over one scene (a
   host that overlaps frames keeps a scene per frame), a skinned draw through a material's own vertex
