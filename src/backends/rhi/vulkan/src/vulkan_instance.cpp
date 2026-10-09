@@ -74,6 +74,27 @@ bool vulkan_available() noexcept {
     return available;
 }
 
+/// What the device's memory types are, counted by the kinds `MemoryObservation` names.
+MemoryObservation observe_memory(VkPhysicalDevice physical) noexcept {
+    VkPhysicalDeviceMemoryProperties properties{};
+    vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+    constexpr VkMemoryPropertyFlags kMappable =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    MemoryObservation observed;
+    observed.types = properties.memoryTypeCount;
+    for (u32 index = 0; index < properties.memoryTypeCount; ++index) {
+        const VkMemoryPropertyFlags flags = properties.memoryTypes[index].propertyFlags;
+        const bool device_local = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+        if (device_local && (flags & kMappable) == kMappable) {
+            ++observed.device_local_mappable;
+        }
+        if (!device_local && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+            ++observed.host_only;
+        }
+    }
+    return observed;
+}
+
 }  // namespace
 
 void StoredName::assign(const char* source) noexcept {
@@ -636,6 +657,7 @@ void VulkanDevice::fill_capabilities() noexcept {
                       model_ == DescriptorModel::Bindless);
     capabilities_.set(Capability::BufferDeviceAddress, true);
     capabilities_.set(Capability::TimestampQueries, limits.timestampComputeAndGraphics == VK_TRUE);
+    capabilities_.set_memory_observation(observe_memory(physical_));
     capabilities_.set(Capability::MemoryBudgetReporting, memory_budget_);
     capabilities_.set(Capability::DebugMarkers, debug_markers_);
     capabilities_.set(Capability::SubgroupBallot,

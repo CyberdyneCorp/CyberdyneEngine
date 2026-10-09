@@ -172,6 +172,22 @@ Each was seen red under a mutation, regenerated and restored:
 `openspec/changes/add-water-shading/evidence/falsification.txt`. `CY_RENDER_UPDATE_GOLDEN=1 ctest -R
 render.world_water` rewrites the reference and fails, as `render.golden` does.
 
+## Where the world's streams live — `render.geometry_memory`
+
+#77. `samples/10-world` reads its vertex, colour and index streams three times a frame with water
+shading on, and kept them in `Upload` memory: system memory on a discrete GPU, so every read crossed
+the bus. The stage now creates them where `geometry_memory()` says, and the Vulkan backend now
+reports the capability that function asks about.
+
+| Case | Asserts |
+|---|---|
+| the capability is what the memory types say | the Vulkan backend counted the device's memory types (more than zero), and `Capability::HostVisibleDeviceLocalMemory` is exactly `device_offers_host_visible_device_local()` of that count — the derivation `unit.rhi` drives without a device |
+| the stage's choice reads the world's streams cheaper | where the capability holds, `geometry_memory()` answers `HostVisibleDeviceLocal`, and three device reads of a 16 MiB stream written through its mapping take at most half the device time, by the device's own timestamps, that they take from `Upload` memory. On the RTX 5060: 0.42 ms against 2.05 ms. A device without the capability, or one whose every memory type is device-local, has nothing to compare and the case says so |
+
+Each was seen red under a mutation and restored: the Vulkan backend observing no types, and
+`geometry_memory()` answering `Upload`
+(`openspec/changes/place-world-streams-device-local/evidence/falsification.txt`).
+
 ## Aerial perspective in the world frame — `render.world_aerial_perspective`
 
 Draws with the same committed lit-pipeline SPIR-V, looking level along -Z from 100 m: a dome

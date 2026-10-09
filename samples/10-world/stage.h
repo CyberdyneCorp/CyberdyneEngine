@@ -129,6 +129,13 @@ struct StageReport {
     /// The part of `build_ms` spent integrating the atmosphere for this camera: the clear sky the
     /// dome is drawn with and the aerial perspective volume. Zero with aerial perspective off.
     f64 aerial_ms = 0.0;
+    /// THE DEVICE'S OWN TIME, from timestamps the frame's passes write: `gpu_ms` from the first
+    /// pass to the read-back, `water_gpu_ms` across the water's refraction and reflection pictures.
+    /// `gpu_measured` is false on a device without timestamp queries, where both stay zero — which
+    /// is "not measured" and not a fast frame.
+    bool gpu_measured = false;
+    f64 gpu_ms = 0.0;
+    f64 water_gpu_ms = 0.0;
 
     // --- WHAT THE ASSEMBLED FRAME DID. M11.c task 3.1. -----------------------------------------
     //

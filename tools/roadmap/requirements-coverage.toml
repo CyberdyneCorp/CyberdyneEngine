@@ -347,7 +347,7 @@ row = "rhi-and-render-graph"
 requirement = "Memory management"
 evidence = "test:unit.rhi"
 case = "GPU memory is accounted per category and reported as one figure"
-note = "The adjacent pressure case publishes the device heap through MemoryDomain::Gpu; backend conformance covers unified-memory mapping and render-graph tests cover transient placement and aliasing."
+note = "The adjacent pressure case publishes the device heap through MemoryDomain::Gpu; backend conformance covers unified-memory mapping and render-graph tests cover transient placement and aliasing. HOST-VISIBLE DEVICE-LOCAL MEMORY IS OFFERED ON VULKAN SINCE #77: the backend never set `Capability::HostVisibleDeviceLocalMemory`, so `samples/10-world` kept the streams its frame draws three times in system memory, and that bus traffic was most of the frame's device time. `unit.rhi`'s `memory capability:` cases drive the derivation from the device's memory types; `render.geometry_memory` requires the Vulkan backend's capability to be that derivation of what the driver listed, and three reads of a world-sized stream from the memory `geometry_memory()` chooses to take at most half the device time they take from `Upload` (0.42 against 2.05 ms on the RTX 5060)."
 
 [[coverage]]
 row = "rhi-and-render-graph"

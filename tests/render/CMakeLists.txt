@@ -267,6 +267,20 @@ function(cy_render_declare_tests)
     target_include_directories(cy_test_render_world_water
                                PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
 
+    # WHERE THE WORLD'S STREAMS LIVE. #77. `samples/10-world` reads its vertex streams three times a
+    # frame with water shading on, and kept them in system memory the device reads across the bus.
+    # Two cases on a device: the Vulkan backend's `Capability::HostVisibleDeviceLocalMemory` is
+    # what its memory types say (`unit.rhi` drives the derivation without one), and three reads of a
+    # world-sized stream from the memory `geometry_memory()` chooses take at most half the device
+    # time they take from `Upload` memory, where the device has system memory apart from its own.
+    cy_add_test(
+        NAME geometry_memory
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_geometry_memory.cpp"
+        DEPENDENCIES cy::rhi cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_geometry_memory
+                               PRIVATE "${cy_render_tests_dir}" "${CMAKE_SOURCE_DIR}/samples")
+
     # AERIAL PERSPECTIVE IN THE WORLD FRAME. `atmosphere-sky-and-clouds` — "Aerial perspective".
     # The same pipeline's committed SPIR-V, a dome coloured from the atmosphere's clear sky and
     # flat walls at known distances: the device applies the processor's table texel for texel, a

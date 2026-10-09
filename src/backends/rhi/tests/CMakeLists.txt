@@ -43,6 +43,7 @@ function(cy_rhi_declare_tests)
             "${cy_rhi_tests_dir}/test_device_identity.cpp"
             "${cy_rhi_tests_dir}/test_interface_gaps.cpp"
             "${cy_rhi_tests_dir}/test_limits.cpp"
+            "${cy_rhi_tests_dir}/test_memory_capability.cpp"
             "${cy_rhi_tests_dir}/test_null_device.cpp"
             "${cy_rhi_tests_dir}/test_ray_tracing_capability.cpp"
         DEPENDENCIES cy::rhi cy::rhi-null)
