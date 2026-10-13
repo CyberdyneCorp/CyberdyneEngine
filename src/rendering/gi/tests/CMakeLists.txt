@@ -17,6 +17,8 @@
 #                       Also the host half of the device surface cache (issue #35): the field's
 #                       change journal, the card snapshot against the cache's own lookup, the shadow
 #                       map against the field, and the shading seam `system.h` chooses CPU or GPU by.
+#                       And a mesh's cards and distance grid as a cook builds them: brute force over
+#                       every triangle, which is over the unit budget by design.
 #   render_gi_signals   the five stochastic signals the denoiser declares, PRODUCED — indirect
 #                       diffuse, indirect specular, ray-traced shadows, ambient occlusion and
 #                       stochastic direct — and each routed through `denoise::Denoiser`. M11.c task
@@ -71,6 +73,7 @@ function(cy_render_gi_declare_tests)
             "${tests_dir}/test_card_lighting.cpp"
             "${tests_dir}/test_probe_gather.cpp"
             "${tests_dir}/test_field.cpp"
+            "${tests_dir}/test_mesh_cards.cpp"
             "${tests_dir}/test_system.cpp"
             "${tests_dir}/test_tiers.cpp"
         DEPENDENCIES cy::rendering-gi)

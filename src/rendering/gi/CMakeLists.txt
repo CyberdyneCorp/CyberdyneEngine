@@ -31,6 +31,7 @@ cy_add_module(
         src/emissive.cpp
         src/gi_volume.cpp
         src/irradiance_volume.cpp
+        src/mesh_cards.cpp
         src/proxy_scene.cpp
         src/radiance_cache.cpp
         src/reflections.cpp
