@@ -192,7 +192,7 @@ few steps; both answers are the same answer.
   accident, which is why every 16-brick field of stage 1 traced correctly; the radiance cache's
   nine-cell window found no probe at any negative cell. It is unsigned arithmetic now, and
   `render.gi_gpu`'s "a window whose brick count is not a power of two addresses the same bricks" is
-  the regression (233 of 1 024 rays disagreed before).
+  the regression, red on the old wrap with the device query beside it.
 - *The device scene lived in system memory.* Every host-written buffer was `MemoryUse::Upload`, so a
   march read its page table, bricks and depth across the bus per step: a 1080p screen-tier batch
   took 44 ms. They are `HostVisibleDeviceLocal` now (resizable BAR on this device; the RHI falls back

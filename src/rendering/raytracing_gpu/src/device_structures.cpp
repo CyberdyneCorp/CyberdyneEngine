@@ -8,7 +8,7 @@ namespace cy::rendering::rt_gpu {
 namespace {
 
 /// Four `float4` per traced instance; see `DeviceStructureBinding`.
-constexpr u64 kInstanceRecordBytes = 4U * 16U;
+constexpr u64 kInstanceRecordBytes = 64;
 
 [[nodiscard]] u32 bits(f32 value) noexcept {
     u32 word = 0;
@@ -26,7 +26,7 @@ void rows_of(const Mat4& m, f32 (&out)[12]) noexcept {
 }
 
 [[nodiscard]] bool same_matrix(const Mat4& a, const Mat4& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(Mat4)) == 0;
+    return a == b;
 }
 
 }  // namespace

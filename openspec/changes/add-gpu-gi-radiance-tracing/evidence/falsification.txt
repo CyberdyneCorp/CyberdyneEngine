@@ -1,0 +1,182 @@
+render.gi_gpu_tracing, render.gi_gpu, integration.render_gi_pipeline, unit.render_raytracing and
+unit.render_graph mutations, Development build, Vulkan on the RTX 5060 (driver 580.95.05). Each
+mutation was applied, the gi_gpu SPIR-V/MSL regenerated through shaders/regenerate.py where the
+mutation is in a shader, the named suites rebuilt and run, the file restored (headers restored with
+it) and the source plus both headers md5-verified against the original. Every case each mutation
+turned red is listed under its suite.
+
+m13 first SURVIVED: "a backend's results land on the next update, and every probe is reached" only
+asked that every probe become valid, which the priority's age term delivers on its own given time.
+The case now measures the longest any probe waits (46 frames against a bound of 90 with the rule,
+110 without it), and the record below is the rerun.
+
+Three defects the adversarial review of this change found, each with its regression proven red on
+the code before the fix (review-red.txt beside this file): the software tier's grazing scale was a
+constant that matched only quarter-metre fields (m17), the probe mirror kept a reconfigured cache's
+old probes (m18), and an unconfigured tier batch had zero reach and zero budget (m19).
+
+== m1_gather_one_radiance: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   gpEncode(encoding, data, direction, gpRayRadiance[ray]);
+>   gpEncode(encoding, data, direction, gpRayRadiance[0]);
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions
+TEST CASE:  the device gather matches the host radiance cache through the hardware tier
+TEST CASE:  the device gather matches the host radiance cache, every encoding, software tier
+TEST CASE:  the floor's indirect light: host gather, device software tier, device hardware tier
+TEST CASE:  the hardware and software tiers on the device agree within the fallback tolerance
+RESTORED md5 ok
+
+== m2_gather_drops_last_ray: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   if (lane < rays) {
+>   if (lane + 1u < rays) {
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions
+TEST CASE:  the device gather matches the host radiance cache through the hardware tier
+TEST CASE:  the device gather matches the host radiance cache, every encoding, software tier
+TEST CASE:  the floor's indirect light: host gather, device software tier, device hardware tier
+TEST CASE:  the hardware and software tiers on the device agree within the fallback tolerance
+RESTORED md5 ok
+
+== m3_query_no_visibility: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   weight *= gpVisibilityWeight(probe, at, position);
+>   weight *= 1.0f;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the device query answers as RadianceCache::sample does
+RESTORED md5 ok
+
+== m4_pyramid_skip_unproven: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   return furthest < nearest - (abs(nearest) * 1.0e-4f) - 1.0e-4f;
+>   return furthest < nearest + 2.0f;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  an escalation nobody configured answers as a default TieredTracer does
+TEST CASE:  the escalation answers as TieredTracer does, and a spent budget refuses as it does
+TEST CASE:  the screen tier answers as ScreenTracer does, and the pyramid changes no answer
+RESTORED md5 ok
+
+== m5_budget_never_refuses: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   if (attempt >= limit) {
+>   if (attempt >= limit && false) {
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  an escalation nobody configured answers as a default TieredTracer does
+TEST CASE:  the escalation answers as TieredTracer does, and a spent budget refuses as it does
+RESTORED md5 ok
+
+== m6_hardware_normal_unflipped: src/rendering/gi_gpu/shaders/gi_hardware.slang
+<   normal = -normal;
+>   normal = normal;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  switching ray queries off moves the image no more than an ordinary frame does
+TEST CASE:  the device gather matches the host radiance cache through the hardware tier
+TEST CASE:  the escalation answers as TieredTracer does, and a spent budget refuses as it does
+TEST CASE:  the hardware and software tiers on the device agree within the fallback tolerance
+TEST CASE:  the world tiers answer as SoftwareTracer and HardwareTracer do, through the cache
+RESTORED md5 ok
+
+== m7_signed_wrap: src/rendering/gi_gpu/shaders/gi_gpu_common.slang
+<   return int(lifted % uint(modulus));
+>   return ((value % modulus) + modulus) % modulus;
+[cy_test_render_gi_gpu]
+TEST CASE:  a window whose brick count is not a power of two addresses the same bricks
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the device query answers as RadianceCache::sample does
+RESTORED md5 ok
+
+== m8_top_level_always_built: src/rendering/raytracing_gpu/src/device_structures.cpp
+<   top_update_ = same;
+>   top_update_ = false;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the device builds, refits and updates exactly what the acceleration service decided
+RESTORED md5 ok
+
+== m9_refit_is_a_build: src/rendering/raytracing_gpu/src/device_structures.cpp
+<   bottom.pending_update = true;
+>   bottom.pending_build = true;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the device builds, refits and updates exactly what the acceleration service decided
+RESTORED md5 ok
+
+== m10_world_tier_ignores_profile: src/rendering/gi_gpu/src/gpu_radiance_cache.cpp
+<   service_->active() && structures_ != nullptr && structures_->traceable();
+>   structures_ != nullptr && structures_->traceable();
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  switching ray queries off moves the image no more than an ordinary frame does
+RESTORED md5 ok
+
+== m11_mirror_uploads_nothing: src/rendering/gi_gpu/src/gpu_radiance_cache.cpp
+<   if (seen_[handle] != 0 && revisions_[handle] == probe.revision) {
+>   if (true) {
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions
+TEST CASE:  the device gather matches the host radiance cache through the hardware tier
+TEST CASE:  the device gather matches the host radiance cache, every encoding, software tier
+TEST CASE:  the device query answers as RadianceCache::sample does
+TEST CASE:  the floor's indirect light: host gather, device software tier, device hardware tier
+TEST CASE:  the hardware and software tiers on the device agree within the fallback tolerance
+RESTORED md5 ok
+
+== m12_apply_ignores_revision: src/rendering/gi/src/radiance_cache.cpp
+<   if (!entry.live || entry.revision != result.revision) {
+>   if (!entry.live) {
+[cy_test_integration_render_gi_pipeline]
+TEST CASE:  a result for a probe invalidated while it was in flight is dropped
+RESTORED md5 ok
+
+== m13_select_starves: src/rendering/gi/src/radiance_cache.cpp
+<   if (starved_a != starved_b) {
+>   if (false && starved_a != starved_b) {
+[cy_test_integration_render_gi_pipeline]
+TEST CASE:  a backend's results land on the next update, and every probe is reached
+RESTORED md5 ok
+
+== m14_mirror_never_told_top_level: src/rendering/raytracing/src/acceleration.cpp
+<   mirror_->top_level(traced.span());
+>   (void)traced;
+[cy_test_unit_render_raytracing]
+TEST CASE:  a mirror is told every build, refit and eviction the service decides
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  switching ray queries off moves the image no more than an ordinary frame does
+TEST CASE:  the device builds, refits and updates exactly what the acceleration service decided
+TEST CASE:  the device gather matches the host radiance cache through the hardware tier
+TEST CASE:  the escalation answers as TieredTracer does, and a spent budget refuses as it does
+TEST CASE:  the hardware and software tiers on the device agree within the fallback tolerance
+TEST CASE:  the world tiers answer as SoftwareTracer and HardwareTracer do, through the cache
+TEST CASE:  what stage 3 costs on this device: the gather at its budget and the tiers at 1080p
+RESTORED md5 ok
+
+== m15_import_twice: src/rendering/graph/src/graph.cpp
+<   return existing != kInvalidResource ? existing : import_buffer(request, buffer);
+>   (void)existing;
+    return import_buffer(request, buffer);
+[cy_test_unit_render_graph]
+TEST CASE:  one buffer imported once orders a structure's build before the trace that reads it
+RESTORED md5 ok
+
+== m17_grazing_scale_constant: src/rendering/gi_gpu/shaders/gi_probe_common.slang
+<   traced.closest / max(grazing, 1.0e-4f)
+>   traced.closest / max(1.0f, 1.0e-4f)
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the software tier's confidence follows the field's own resolution
+RESTORED md5 ok
+
+== m18_mirror_ignores_generation: src/rendering/gi_gpu/src/gpu_radiance_cache.cpp
+<   if (cache.generation() != generation_) {
+>   if (false) {
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions
+RESTORED md5 ok
+
+== m19_tiers_without_defaults: src/rendering/gi_gpu/src/gpu_radiance_cache.cpp
+<   constants_[kWordBudget + 0] = budget.world_rays;
+>   (void)budget;
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  an escalation nobody configured answers as a default TieredTracer does
+RESTORED md5 ok
+
+== m16_reflection_refuses_structures: src/backends/shader/src/reflection.cpp
+<   binding.kind = rhi::DescriptorKind::AccelerationStructure;
+            break;
+>   return fail(ErrorCode::NotImplemented, "refused");
+[cy_test_render_gi_gpu_tracing]
+TEST CASE:  the set layouts the C++ creates are the ones the compiled entry points declare
+RESTORED md5 ok
+

@@ -161,8 +161,8 @@ private:
         u32 count = 0;
     };
 
-    [[nodiscard]] bool allocate(Array<Range>& free, u32 capacity, u32& high, u32 count,
-                                u32& base) noexcept;
+    [[nodiscard]] static bool allocate(Array<Range>& free, u32 capacity, u32& high, u32 count,
+                                       u32& base) noexcept;
     static void release(Array<Range>& free, u32 base, u32 count) noexcept;
     void release_bottom(Bottom& bottom) noexcept;
     void write_positions(const Bottom& bottom, Span<const Vec3> positions) noexcept;

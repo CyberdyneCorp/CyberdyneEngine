@@ -1,0 +1,10 @@
+    worst axis distance 3.81e-06 m, worst error 0.959, 0 validity mismatches
+TEST CASE:  a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions
+  values: CHECK_LT( 0.958776, 0.001 )
+software tier, half-metre field: 9216 rays, 5016 disagreements, worst confidence 0.000786, worst radiance 0
+TEST CASE:  the software tier's confidence follows the field's own resolution
+  values: CHECK_LE( 5016, 92 )
+  default escalation: world rays 64/0, refused 2023/0 (host/device)
+TEST CASE:  an escalation nobody configured answers as a default TieredTracer does
+  values: CHECK_EQ( 0, 64 )
+  values: CHECK_EQ( 0, 2023 )

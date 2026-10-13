@@ -949,6 +949,7 @@ struct DeviceRoom {
 [[nodiscard]] std::vector<Vec3> resolve_all(const gi::IlluminationSystem& system,
                                             const std::vector<std::pair<Vec3, Vec3>>& points) {
     std::vector<Vec3> values;
+    values.reserve(points.size());
     const gi::SurfaceProperties surface;
     for (const auto& point : points) {
         values.push_back(system.indirect_diffuse(point.first, point.second, surface).radiance);
@@ -1197,7 +1198,7 @@ struct ScreenFixture {
                 GpuTierRay ray;
                 ray.origin = position[at] + (normal[at] * 0.05F);
                 ray.direction =
-                    gi::hemisphere_direction(normal[at], (x / stride + y / stride) % 8U, 8);
+                    gi::hemisphere_direction(normal[at], ((x / stride) + (y / stride)) % 8U, 8);
                 ray.max_distance = reach;
                 out.push_back(ray);
             }
@@ -1746,10 +1747,12 @@ void paint_floor(const gi::IlluminationSystem& system, u32 size, u32 x_offset, u
     const gi::SurfaceProperties surface;
     for (u32 y = 0; y < size; ++y) {
         for (u32 x = 0; x < size; ++x) {
-            const f32 wx = (((static_cast<f32>(x) + 0.5F) / static_cast<f32>(size)) * 2.0F - 1.0F) *
-                           (gi_support::kRoomX - 0.05F);
-            const f32 wz = (((static_cast<f32>(y) + 0.5F) / static_cast<f32>(size)) * 2.0F - 1.0F) *
-                           (gi_support::kRoomZ - 0.05F);
+            const f32 wx =
+                ((((static_cast<f32>(x) + 0.5F) / static_cast<f32>(size)) * 2.0F) - 1.0F) *
+                (gi_support::kRoomX - 0.05F);
+            const f32 wz =
+                ((((static_cast<f32>(y) + 0.5F) / static_cast<f32>(size)) * 2.0F) - 1.0F) *
+                (gi_support::kRoomZ - 0.05F);
             const Vec3 radiance = system
                                       .indirect_diffuse(Vec3{wx, -gi_support::kRoomY + 0.05F, wz},
                                                         Vec3{0.0F, 1.0F, 0.0F}, surface)
