@@ -33,7 +33,7 @@ static const uint kGiShadowCentre = 5u;   // xyz centre, w half extent
 static const uint kGiShadowDir = 6u;      // xyz direction the light travels, w depth range
 static const uint kGiShadowRight = 7u;    // xyz right, w resolution (a uint)
 static const uint kGiShadowUp = 8u;       // xyz up, w bias
-static const uint kGiShadowEnabled = 9u;  // x enabled, y finest voxel size
+static const uint kGiShadowEnabled = 9u;  // x enabled, y finest voxel size, z grazing scale
 static const uint kGiLevels = 16u;        // two words per level: [voxel, brick, far], [origin]
 
 static const uint kGiEmptyBrick = 0xFFFFFFFFu;

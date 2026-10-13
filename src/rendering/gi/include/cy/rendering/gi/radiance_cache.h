@@ -283,6 +283,11 @@ public:
     /// One probe's payload, `encoding_traits(settings().encoding).floats_per_probe` floats.
     [[nodiscard]] Span<const f32> probe_payload(u32 probe) const noexcept;
 
+    /// Bumped by every `configure`, which starts the probe slots — and so their revisions — over. A
+    /// device mirror that keyed its uploads on revisions alone would take a new probe in slot 0 for
+    /// the old one; it starts over when this moves.
+    [[nodiscard]] u64 generation() const noexcept { return generation_; }
+
     /// The camera the clipmaps were last centred on. A device mirror of the probe layout addresses
     /// each level's window from it.
     [[nodiscard]] Vec3 camera() const noexcept { return camera_; }
@@ -332,6 +337,7 @@ private:
     ProbeGatherBackend* backend_ = nullptr;
     u32 live_probes_ = 0;
     u32 stride_ = 0;
+    u64 generation_ = 0;
     Vec3 camera_{0.0F, 0.0F, 0.0F};
     mutable RadianceCacheDiagnostics diagnostics_{};
 };

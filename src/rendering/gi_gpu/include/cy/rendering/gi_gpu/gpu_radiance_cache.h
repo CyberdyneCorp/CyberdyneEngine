@@ -155,8 +155,9 @@ public:
     /// Bring the device copy of `cache`'s probes up to date without gathering anything: what a
     /// query between updates, or a cache whose probes the host gathered, needs first.
     [[nodiscard]] Status upload(const gi::RadianceCache& cache) noexcept;
-    /// Forget what was uploaded, so the next `upload` or `submit` writes every probe. What a
-    /// `RadianceCache::configure` — which starts the probe slots and their revisions over — needs.
+    /// Forget what was uploaded, so the next `upload` or `submit` writes every probe. A mirror does
+    /// it on its own when `RadianceCache::generation()` moves — a configure starts the probe slots
+    /// and their revisions over.
     void reset_mirror() noexcept;
     [[nodiscard]] Status set_queries(Span<const GpuProbeQuery> queries) noexcept;
     /// Declare the query over the batch `set_queries` wrote, at `frame` for the staleness.
@@ -277,6 +278,8 @@ private:
     /// The revision of each probe slot as last uploaded, and whether the slot has been seen.
     Array<u32> revisions_;
     Array<u8> seen_;
+    /// `RadianceCache::generation()` as last mirrored.
+    u64 generation_ = ~0ULL;
     /// The clipmap centre the layout was last written for, per level.
     i32 centres_[kMaxProbeLevels][3] = {};
     bool layout_valid_ = false;

@@ -2354,7 +2354,7 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// cyGiGatherProbes.metal, 37665 bytes.
+/// cyGiGatherProbes.metal, 37696 bytes.
 inline constexpr char kGiGatherProbesMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -2411,7 +2411,7 @@ struct GiDispatch_0
 };
 
 
-#line 374 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 375 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -3025,9 +3025,10 @@ GiWorldHit_0 GiSoftwareTier_trace_0(float3 origin_2, float3 direction_2, float m
     (&hit_2)->t_0 = _S47.t_1;
     (&hit_2)->position_0 = _S47.position_1;
     (&hit_2)->normal_0 = _S47.normal_1;
-    float4 tier_0 = (as_type<float4>((kernelContext_8->giProbes_0->constants_0[25U])));
-    (&hit_2)->confidence_0 = tier_0.y * gpClamp_0(_S47.closest_0 / max(tier_0.x, 0.00009999999747379), 0.25, 1.0);
 
+
+
+    (&hit_2)->confidence_0 = (as_type<float4>((kernelContext_8->giProbes_0->constants_0[25U]))).y * gpClamp_0(_S47.closest_0 / max((as_type<float>((kernelContext_8->giScene_0->constants_1[9U].z))), 0.00009999999747379), 0.25, 1.0);
     return hit_2;
 }
 
@@ -3266,11 +3267,11 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
                     uint best_3;
 
 
-                    if(better_0)
+)cy_msl"
+    R"cy_msl(                    if(better_0)
                     {
 
-)cy_msl"
-    R"cy_msl(#line 451
+#line 451
                         bestScore_3 = score_0;
 
 #line 451
@@ -3972,16 +3973,16 @@ void gpNormalise_0(uint encoding_2, uint floats_1, array<float, int(48)> thread*
 }
 
 
-#line 348
+#line 349
 void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 349
+#line 350
     uint4 counts_0 = kernelContext_11->giProbes_0->constants_0[0U];
     if(index_2 >= (counts_0.w))
     {
 
-#line 351
+#line 352
         return;
     }
     uint encoding_3 = counts_0.x;
@@ -3991,26 +3992,26 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
     uint probe_1 = kernelContext_11->giProbes_0->selection_0[index_2];
     uint _S92 = probe_1 * 4U;
 
-#line 358
+#line 359
     float3 position_4 = (*(kernelContext_11->giProbes_0->probes_0+_S92)).xyz;
 
-#line 358
+#line 359
     float3 previous_0;
 
-#line 358
+#line 359
     float totalWeight_1;
 
     if(lane_0 < _S91)
     {
 
-#line 361
+#line 362
         uint _S93 = lane_0 * 2U;
         float3 unit_0 = kernelContext_11->giProbes_0->directions_0[_S93 + 1U].xyz;
 
-#line 362
+#line 363
         float3 _S94 = gpSky_0(kernelContext_11->giProbes_0->directions_0[_S93].xyz, kernelContext_11);
 
-#line 362
+#line 363
         GiWorldHit_0 _S95 = GiSoftwareTier_trace_0(position_4, unit_0, maxDistance_2, kernelContext_11);
 
 
@@ -4018,7 +4019,7 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
         if(_S95.hit_0)
         {
 
-#line 366
+#line 367
             uint _S96 = giFindCard_0(_S95.position_0, _S95.normal_0, kernelContext_11);
 
 
@@ -4026,385 +4027,385 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
             if(_S96 != 4294967295U)
             {
 
-#line 370
+#line 371
                 previous_0 = (*(kernelContext_11->giScene_0->cardState_0+_S96 * 2U)).xyz;
 
-#line 370
+#line 371
             }
             else
             {
 
-#line 370
+#line 371
                 previous_0 = float3(0.0, 0.0, 0.0);
 
-#line 370
+#line 371
             }
 
-#line 370
+#line 371
             totalWeight_1 = _S95.t_0;
 
-#line 366
+#line 367
         }
         else
         {
 
-#line 366
+#line 367
             previous_0 = _S94;
 
-#line 366
+#line 367
             totalWeight_1 = maxDistance_2;
 
-#line 366
+#line 367
         }
 
-#line 373
+#line 374
         (*kernelContext_11->gpRayRadiance_0)[lane_0] = previous_0;
         (*kernelContext_11->gpRayDistance_0)[lane_0] = totalWeight_1;
 
-#line 360
+#line 361
     }
 
-#line 376
+#line 377
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 378
+#line 379
         return;
     }
 
     thread array<float, int(48)> data_0;
 
-#line 381
+#line 382
     gpLoadPayload_0(probe_1, floats_2, &data_0, kernelContext_11);
 
     float3 _S97 = float3(0.0, 0.0, 0.0);
 
-#line 383
+#line 384
     previous_0 = _S97;
 
-#line 383
+#line 384
     uint axis_0 = 0U;
     for(;;)
     {
 
-#line 384
+#line 385
         if(axis_0 < 6U)
         {
         }
         else
         {
 
-#line 384
+#line 385
             break;
         }
 
-#line 384
+#line 385
         thread array<float, int(48)> _S98 = data_0;
 
-#line 384
+#line 385
         float3 _S99 = gpDecode_0(encoding_3, &_S98, kGpAxes_0[axis_0]);
         float3 _S100 = previous_0 + _S99;
 
-#line 384
+#line 385
         uint axis_1 = axis_0 + 1U;
 
-#line 384
+#line 385
         previous_0 = _S100;
 
-#line 384
+#line 385
         axis_0 = axis_1;
 
-#line 384
+#line 385
     }
 
-#line 384
+#line 385
     uint i_0 = 0U;
 
 
     for(;;)
     {
 
-#line 387
+#line 388
         if(i_0 < 48U)
         {
         }
         else
         {
 
-#line 387
+#line 388
             break;
         }
 
-#line 388
+#line 389
         data_0[i_0] = 0.0;
 
-#line 387
+#line 388
         i_0 = i_0 + 1U;
 
-#line 387
+#line 388
     }
 
 
     thread array<float, int(6)> axisDistance_0;
     thread array<float, int(6)> axisWeight_0;
 
-#line 391
+#line 392
     uint a_1 = 0U;
     for(;;)
     {
 
-#line 392
+#line 393
         if(a_1 < 6U)
         {
         }
         else
         {
 
-#line 392
+#line 393
             break;
         }
 
-#line 393
+#line 394
         axisDistance_0[a_1] = 0.0;
         axisWeight_0[a_1] = 0.0;
 
-#line 392
+#line 393
         a_1 = a_1 + 1U;
 
-#line 392
+#line 393
     }
 
-#line 392
+#line 393
     uint ray_0 = 0U;
 
 )cy_msl"
-    R"cy_msl(#line 392
+    R"cy_msl(#line 393
     totalWeight_1 = 0.0;
 
-#line 398
+#line 399
     for(;;)
     {
 
-#line 398
+#line 399
         if(ray_0 < _S91)
         {
         }
         else
         {
 
-#line 398
+#line 399
             break;
         }
 
-#line 399
+#line 400
         float3 direction_7 = kernelContext_11->giProbes_0->directions_0[ray_0 * 2U].xyz;
         gpEncode_0(encoding_3, &data_0, direction_7, (*kernelContext_11->gpRayRadiance_0)[ray_0]);
         float totalWeight_2 = totalWeight_1 + 1.0;
 
-#line 401
+#line 402
         a_1 = 0U;
         for(;;)
         {
 
-#line 402
+#line 403
             if(a_1 < 6U)
             {
             }
             else
             {
 
-#line 402
+#line 403
                 break;
             }
 
-#line 403
+#line 404
             float _S101 = max(0.0, dot(kGpAxes_0[a_1], direction_7));
             axisDistance_0[a_1] = axisDistance_0[a_1] + (*kernelContext_11->gpRayDistance_0)[ray_0] * _S101;
             axisWeight_0[a_1] = axisWeight_0[a_1] + _S101;
 
-#line 402
+#line 403
             a_1 = a_1 + 1U;
 
-#line 402
+#line 403
         }
 
-#line 398
+#line 399
         ray_0 = ray_0 + 1U;
 
-#line 398
+#line 399
         totalWeight_1 = totalWeight_2;
 
-#line 398
+#line 399
     }
 
-#line 408
+#line 409
     gpNormalise_0(encoding_3, floats_2, &data_0, totalWeight_1);
 
-#line 408
+#line 409
     float3 current_0 = _S97;
 
-#line 408
+#line 409
     axis_0 = 0U;
 
 
     for(;;)
     {
 
-#line 411
+#line 412
         if(axis_0 < 6U)
         {
         }
         else
         {
 
-#line 411
+#line 412
             break;
         }
 
-#line 411
+#line 412
         thread array<float, int(48)> _S102 = data_0;
 
-#line 411
+#line 412
         float3 _S103 = gpDecode_0(encoding_3, &_S102, kGpAxes_0[axis_0]);
         float3 _S104 = current_0 + _S103;
 
-#line 411
+#line 412
         uint axis_2 = axis_0 + 1U;
 
-#line 411
+#line 412
         current_0 = _S104;
 
-#line 411
+#line 412
         axis_0 = axis_2;
 
-#line 411
+#line 412
     }
 
 
     float magnitude_0 = length(previous_0) + length(current_0);
 
-#line 414
+#line 415
     float error_0;
     if(magnitude_0 > 0.00000999999974738)
     {
 
-#line 415
+#line 416
         error_0 = length(current_0 - previous_0) / magnitude_0;
 
-#line 415
+#line 416
     }
     else
     {
 
-#line 415
+#line 416
         error_0 = 0.0;
 
-#line 415
+#line 416
     }
 
     uint record_0 = index_2 * 14U;
 
-#line 417
+#line 418
     uint v_5 = 0U;
     for(;;)
     {
 
-#line 418
+#line 419
         if(v_5 < 12U)
         {
         }
         else
         {
 
-#line 418
+#line 419
             break;
         }
         uint _S105 = v_5 * 4U;
 
-#line 419
+#line 420
         *(kernelContext_11->giProbes_0->results_0+(record_0 + v_5)) = float4(data_0[_S105], data_0[_S105 + 1U], data_0[_S105 + 2U], data_0[_S105 + 3U]);
 
-#line 418
+#line 419
         v_5 = v_5 + 1U;
 
-#line 418
+#line 419
     }
 
 
 
     thread array<float, int(6)> distances_0;
 
-#line 422
+#line 423
     a_1 = 0U;
     for(;;)
     {
 
-#line 423
+#line 424
         if(a_1 < 6U)
         {
         }
         else
         {
 
-#line 423
+#line 424
             break;
         }
 
-#line 424
+#line 425
         if((axisWeight_0[a_1]) > 0.0)
         {
 
-#line 424
+#line 425
             totalWeight_1 = axisDistance_0[a_1] / axisWeight_0[a_1];
 
-#line 424
+#line 425
         }
         else
         {
 
-#line 424
+#line 425
             totalWeight_1 = maxDistance_2;
 
-#line 424
+#line 425
         }
 
-#line 424
+#line 425
         distances_0[a_1] = totalWeight_1;
 
-#line 423
+#line 424
         a_1 = a_1 + 1U;
 
-#line 423
+#line 424
     }
 
 
     *(kernelContext_11->giProbes_0->results_0+(record_0 + 12U)) = float4(distances_0[int(0)], distances_0[int(1)], distances_0[int(2)], distances_0[int(3)]);
     *(kernelContext_11->giProbes_0->results_0+(record_0 + 13U)) = float4(distances_0[int(4)], distances_0[int(5)], error_0, (as_type<float>((probe_1))));
 
-#line 427
+#line 428
     uint f_0 = 0U;
     for(;;)
     {
 
-#line 428
+#line 429
         if(f_0 < floats_2)
         {
         }
         else
         {
 
-#line 428
+#line 429
             break;
         }
 
-#line 429
+#line 430
         *(kernelContext_11->giProbes_0->payloads_0+(probe_1 * floats_2 + f_0)) = data_0[f_0];
 
-#line 428
+#line 429
         f_0 = f_0 + 1U;
 
-#line 428
+#line 429
     }
 
 
@@ -4462,11 +4463,11 @@ using namespace metal;
 #line 114 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 constant array<float3, int(6)> kGpAxes_0 = { float3(1.0, 0.0, 0.0), float3(-1.0, 0.0, 0.0), float3(0.0, 1.0, 0.0), float3(0.0, -1.0, 0.0), float3(0.0, 0.0, 1.0), float3(0.0, 0.0, -1.0) };
 
-#line 439
+#line 440
 int gpFloorDiv_0(float value_0, float divisor_0)
 {
 
-#line 440
+#line 441
     return int(floor(value_0 / divisor_0));
 }
 
@@ -4523,57 +4524,57 @@ struct KernelContext_0
 };
 
 
-#line 475
+#line 476
 uint gpLayoutProbe_0(uint level_0, int3 cell_0, KernelContext_0 thread* kernelContext_0)
 {
 
-#line 476
+#line 477
     int3 centre_0 = (as_type<int3>((kernelContext_0->giProbes_0->constants_0[6U + level_0].xyz)));
     int half_0 = int(kernelContext_0->giProbes_0->constants_0[1U].w);
     int3 _S3 = int3(half_0, half_0, half_0);
 
-#line 478
+#line 479
     bool _S4;
 
-#line 478
+#line 479
     if(any(cell_0 < (centre_0 - _S3)))
     {
 
-#line 478
+#line 479
         _S4 = true;
 
-#line 478
+#line 479
     }
     else
     {
 
-#line 478
+#line 479
         _S4 = any(cell_0 > (centre_0 + _S3));
 
-#line 478
+#line 479
     }
 
-#line 478
+#line 479
     if(_S4)
     {
 
-#line 479
+#line 480
         return 4294967295U;
     }
     int edge_0 = int(kernelContext_0->giProbes_0->constants_0[5U].z);
     uint cells_0 = uint(edge_0 * edge_0 * edge_0);
     int _S5 = giWrap_0(cell_0.z, edge_0);
 
-#line 483
+#line 484
     uint _S6 = uint(edge_0);
 
-#line 483
+#line 484
     uint _S7 = uint(_S5) * _S6;
 
-#line 483
+#line 484
     int _S8 = giWrap_0(cell_0.y, edge_0);
 
-#line 483
+#line 484
     uint _S9 = (_S7 + uint(_S8)) * _S6;
 
     int _S10 = giWrap_0(cell_0.x, edge_0);
@@ -4624,73 +4625,73 @@ float gpClamp_0(float value_2, float lo_0, float hi_0)
 }
 
 
-#line 444
+#line 445
 float gpVisibilityWeight_0(uint probe_0, float3 position_0, float3 query_0, KernelContext_0 thread* kernelContext_1)
 {
 
-#line 445
+#line 446
     float3 offset_0 = query_0 - position_0;
     float span_0 = length(offset_0);
     if(span_0 <= 0.00009999999747379)
     {
 
-#line 448
+#line 449
         return 1.0;
     }
     float3 _S12 = offset_0 / float3(span_0) ;
     uint _S13 = probe_0 * 4U;
 
-#line 451
+#line 452
     float4 device* _S14 = kernelContext_1->giProbes_0->probes_0+(_S13 + 2U);
     float4 device* _S15 = kernelContext_1->giProbes_0->probes_0+(_S13 + 3U);
     array<float, int(6)> _S16 = { (*_S14).x, (*_S14).y, (*_S14).z, (*_S14).w, (*_S15).x, (*_S15).y };
 
-#line 453
+#line 454
     uint axis_0 = 0U;
 
-#line 453
+#line 454
     float expected_0 = 0.0;
 
-#line 453
+#line 454
     float weight_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 456
+#line 457
         if(axis_0 < 6U)
         {
         }
         else
         {
 
-#line 456
+#line 457
             break;
         }
 
-#line 457
+#line 458
         float _S17 = max(0.0, dot(kGpAxes_0[axis_0], _S12));
         float expected_1 = expected_0 + _S16[axis_0] * _S17;
         float weight_1 = weight_0 + _S17;
 
-#line 456
+#line 457
         axis_0 = axis_0 + 1U;
 
-#line 456
+#line 457
         expected_0 = expected_1;
 
-#line 456
+#line 457
         weight_0 = weight_1;
 
-#line 456
+#line 457
     }
 
-#line 461
+#line 462
     if(weight_0 <= 0.0)
     {
 
-#line 462
+#line 463
         return 1.0;
     }
 
@@ -4699,11 +4700,11 @@ float gpVisibilityWeight_0(uint probe_0, float3 position_0, float3 query_0, Kern
     float slack_0 = (as_type<float>((kernelContext_1->giProbes_0->constants_0[1U].y)));
     float _S18 = expected_0 / weight_0 + slack_0;
 
-#line 468
+#line 469
     if(span_0 > _S18)
     {
 
-#line 469
+#line 470
         return 0.0;
     }
     return gpClamp_0((_S18 - span_0) / max(slack_0, 0.00009999999747379), 0.0, 1.0);
@@ -5042,28 +5043,28 @@ float3 gpDecode_0(uint encoding_0, const array<float, int(48)> thread* payload_1
 }
 
 
-#line 494
+#line 495
 float4 gpSample_0(float3 position_1, float3 normal_0, uint frame_1, KernelContext_0 thread* kernelContext_3)
 {
 
-#line 495
+#line 496
     uint4 counts_0 = kernelContext_3->giProbes_0->constants_0[0U];
     uint _S37 = counts_0.x;
     uint _S38 = counts_0.y;
     uint _S39 = kernelContext_3->giProbes_0->constants_0[1U].z;
     float _S40 = (as_type<float>((kernelContext_3->giProbes_0->constants_0[5U].x)));
 
-#line 499
+#line 500
     float3 total_2 = float3(0.0, 0.0, 0.0);
 
-#line 499
+#line 500
     float oldest_0 = 0.0;
 
 )cy_msl"
-    R"cy_msl(#line 499
+    R"cy_msl(#line 500
     uint level_1 = 0U;
 
-#line 499
+#line 500
     float totalWeight_0 = 0.0;
 
 
@@ -5071,109 +5072,109 @@ float4 gpSample_0(float3 position_1, float3 normal_0, uint frame_1, KernelContex
     for(;;)
     {
 
-#line 503
+#line 504
         if(level_1 < _S39)
         {
         }
         else
         {
 
-#line 503
+#line 504
             break;
         }
 
-#line 504
+#line 505
         float spacing_0 = _S40 * float(1U << level_1);
         float radius_0 = spacing_0 * 1.5;
         float _S41 = position_1.x;
 
-#line 506
+#line 507
         int _S42 = gpFloorDiv_0(_S41 - radius_0, spacing_0);
         float _S43 = position_1.y;
 
-#line 507
+#line 508
         int _S44 = gpFloorDiv_0(_S43 - radius_0, spacing_0);
         float _S45 = position_1.z;
         int _S46 = gpFloorDiv_0(_S41 + radius_0, spacing_0);
         int _S47 = gpFloorDiv_0(_S43 + radius_0, spacing_0);
         int _S48 = gpFloorDiv_0(_S45 + radius_0, spacing_0);
 
-#line 511
+#line 512
         int z_0 = gpFloorDiv_0(_S45 - radius_0, spacing_0);
         for(;;)
         {
 
-#line 512
+#line 513
             if(z_0 <= _S48)
             {
             }
             else
             {
 
-#line 512
+#line 513
                 break;
             }
 
-#line 512
+#line 513
             float3 total_3 = total_2;
 
-#line 512
+#line 513
             float oldest_1 = oldest_0;
 
-#line 512
+#line 513
             int y_0 = _S44;
 
-#line 512
+#line 513
             float totalWeight_1 = totalWeight_0;
             for(;;)
             {
 
-#line 513
+#line 514
                 if(y_0 <= _S47)
                 {
                 }
                 else
                 {
 
-#line 513
+#line 514
                     break;
                 }
 
-#line 513
+#line 514
                 float3 total_4 = total_3;
 
-#line 513
+#line 514
                 float oldest_2 = oldest_1;
 
-#line 513
+#line 514
                 int x_0 = _S42;
 
-#line 513
+#line 514
                 float totalWeight_2 = totalWeight_1;
                 for(;;)
                 {
 
-#line 514
+#line 515
                     if(x_0 <= _S46)
                     {
                     }
                     else
                     {
 
-#line 514
+#line 515
                         break;
                     }
 
-#line 514
+#line 515
                     uint _S49 = gpLayoutProbe_0(level_1, int3(x_0, y_0, z_0), kernelContext_3);
 
                     if(_S49 == 4294967295U)
                     {
 
-#line 517
+#line 518
                         x_0 = x_0 + int(1);
 
-#line 514
+#line 515
                         continue;
                     }
 
@@ -5181,79 +5182,79 @@ float4 gpSample_0(float3 position_1, float3 normal_0, uint frame_1, KernelContex
 
                     uint _S50 = _S49 * 4U;
 
-#line 519
+#line 520
                     float4 device* _S51 = kernelContext_3->giProbes_0->probes_0+(_S50 + 1U);
 
-#line 519
+#line 520
                     float4 record_0 = *_S51;
 
-#line 519
+#line 520
                     bool _S52;
                     if(((*_S51).y) == 0.0)
                     {
 
-#line 520
+#line 521
                         _S52 = true;
 
-#line 520
+#line 521
                     }
                     else
                     {
 
-#line 520
+#line 521
                         _S52 = (record_0.z) == 0.0;
 
-#line 520
+#line 521
                     }
 
-#line 520
+#line 521
                     if(_S52)
                     {
 
-#line 521
+#line 522
                         x_0 = x_0 + int(1);
 
-#line 514
+#line 515
                         continue;
                     }
 
-#line 523
+#line 524
                     float3 at_0 = (*(kernelContext_3->giProbes_0->probes_0+_S50)).xyz;
                     float3 offset_1 = position_1 - at_0;
                     float span_1 = length(offset_1);
                     if(span_1 > radius_0)
                     {
 
-#line 527
+#line 528
                         x_0 = x_0 + int(1);
 
-#line 514
+#line 515
                         continue;
                     }
 
-#line 529
+#line 530
                     float weight_2 = 1.0 - gpClamp_0(span_1 / radius_0, 0.0, 1.0);
 
-#line 529
+#line 530
                     float weight_3;
                     if(span_1 > 0.00009999999747379)
                     {
 
-#line 530
+#line 531
                         weight_3 = weight_2 * gpClamp_0((dot(normal_0, - offset_1 / float3(span_1) ) + 1.0) * 0.5, 0.0, 1.0);
 
-#line 530
+#line 531
                     }
                     else
                     {
 
-#line 530
+#line 531
                         weight_3 = weight_2;
 
-#line 530
+#line 531
                     }
 
-#line 530
+#line 531
                     float _S53 = gpVisibilityWeight_0(_S49, at_0, position_1, kernelContext_3);
 
 
@@ -5262,112 +5263,112 @@ float4 gpSample_0(float3 position_1, float3 normal_0, uint frame_1, KernelContex
                     if(weight_4 <= 0.0)
                     {
 
-#line 536
+#line 537
                         x_0 = x_0 + int(1);
 
-#line 514
+#line 515
                         continue;
                     }
 
-#line 538
+#line 539
                     thread array<float, int(48)> data_0;
 
-#line 538
+#line 539
                     gpLoadPayload_0(_S49, _S38, &data_0, kernelContext_3);
 
-#line 538
+#line 539
                     thread array<float, int(48)> _S54 = data_0;
 
-#line 538
+#line 539
                     float3 _S55 = gpDecode_0(_S37, &_S54, normal_0);
 
                     float3 _S56 = total_4 + _S55 * float3(weight_4) ;
                     float totalWeight_3 = totalWeight_2 + weight_4;
                     uint last_0 = (as_type<uint>((record_0.x)));
 
-#line 542
+#line 543
                     float age_0;
                     if(frame_1 > last_0)
                     {
 
-#line 543
+#line 544
                         age_0 = float(frame_1 - last_0);
 
-#line 543
+#line 544
                     }
                     else
                     {
 
-#line 543
+#line 544
                         age_0 = 0.0;
 
-#line 543
+#line 544
                     }
                     float _S57 = max(oldest_2, age_0);
 
-#line 544
+#line 545
                     total_4 = _S56;
 
-#line 544
+#line 545
                     oldest_2 = _S57;
 
-#line 544
+#line 545
                     totalWeight_2 = totalWeight_3;
 
-#line 514
+#line 515
                     x_0 = x_0 + int(1);
 
-#line 514
+#line 515
                 }
 
-#line 513
+#line 514
                 int y_1 = y_0 + int(1);
 
-#line 513
+#line 514
                 total_3 = total_4;
 
-#line 513
+#line 514
                 oldest_1 = oldest_2;
 
-#line 513
+#line 514
                 y_0 = y_1;
 
-#line 513
+#line 514
                 totalWeight_1 = totalWeight_2;
 
-#line 513
+#line 514
             }
 
-#line 512
+#line 513
             int z_1 = z_0 + int(1);
 
-#line 512
+#line 513
             total_2 = total_3;
 
-#line 512
+#line 513
             oldest_0 = oldest_1;
 
-#line 512
+#line 513
             z_0 = z_1;
 
-#line 512
+#line 513
             totalWeight_0 = totalWeight_1;
 
-#line 512
+#line 513
         }
 
-#line 503
+#line 504
         level_1 = level_1 + 1U;
 
-#line 503
+#line 504
     }
 
 )cy_msl"
-    R"cy_msl(#line 549
+    R"cy_msl(#line 550
     if(totalWeight_0 <= 0.0)
     {
 
-#line 550
+#line 551
         return float4(0.0, 0.0, 0.0, 0.0);
     }
 
@@ -5556,7 +5557,7 @@ inline constexpr char kGiTraceScreenMsl[] =
 #include <metal_texture>
 using namespace metal;
 
-#line 677 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 678 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct GiTierSample_0
 {
     float3 radiance_0;
@@ -5566,11 +5567,11 @@ struct GiTierSample_0
 };
 
 
-#line 684
+#line 685
 GiTierSample_0 gpTierSample_0(uint source_1)
 {
 
-#line 685
+#line 686
     thread GiTierSample_0 sample_0;
     (&sample_0)->radiance_0 = float3(0.0, 0.0, 0.0);
     (&sample_0)->confidence_0 = 0.0;
@@ -5619,7 +5620,7 @@ struct KernelContext_0
 };
 
 
-#line 576
+#line 577
 float3 gpTransformPoint_0(uint first_0, float3 p_0, KernelContext_0 thread* kernelContext_0)
 {
 
@@ -5636,18 +5637,18 @@ float3 gpProjectPoint_0(uint first_1, float3 p_1, KernelContext_0 thread* kernel
     float4 clip_0 = (as_type<float4>((kernelContext_1->giProbes_0->constants_0[first_1]))) * float4(p_1.x)  + (as_type<float4>((kernelContext_1->giProbes_0->constants_0[first_1 + 1U]))) * float4(p_1.y)  + (as_type<float4>((kernelContext_1->giProbes_0->constants_0[first_1 + 2U]))) * float4(p_1.z)  + (as_type<float4>((kernelContext_1->giProbes_0->constants_0[first_1 + 3U])));
     float _S1 = clip_0.w;
 
-#line 590
+#line 591
     if(_S1 == 0.0)
     {
 
-#line 591
+#line 592
         return clip_0.xyz;
     }
     return clip_0.xyz * float3((1.0 / _S1)) ;
 }
 
 
-#line 605
+#line 606
 struct GiScreenStep_0
 {
     bool outside_0;
@@ -5659,99 +5660,99 @@ struct GiScreenStep_0
 GiScreenStep_0 gpScreenStep_0(float3 point_0, uint width_0, uint height_0, KernelContext_0 thread* kernelContext_2)
 {
 
-#line 613
+#line 614
     float3 _S2 = gpTransformPoint_0(16U, point_0, kernelContext_2);
     thread GiScreenStep_0 step_0;
 
     float _S3 = - _S2.z;
 
-#line 616
+#line 617
     (&step_0)->depth_0 = _S3;
 
-#line 616
+#line 617
     float3 _S4 = gpProjectPoint_0(20U, point_0, kernelContext_2);
 
     float _S5 = float(width_0);
 
-#line 618
+#line 619
     (&step_0)->x_0 = (_S4.x * 0.5 + 0.5) * _S5;
     float _S6 = float(height_0);
 
-#line 619
+#line 620
     (&step_0)->y_0 = (0.5 - _S4.y * 0.5) * _S6;
 
-#line 619
+#line 620
     bool _S7;
     if(_S3 <= 0.0)
     {
 
-#line 620
+#line 621
         _S7 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S7 = ((&step_0)->x_0) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S7)
     {
 
-#line 620
+#line 621
         _S7 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S7 = ((&step_0)->y_0) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S7)
     {
 
-#line 620
+#line 621
         _S7 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S7 = ((&step_0)->x_0) >= _S5;
 
-#line 620
+#line 621
     }
     if(_S7)
     {
 
-#line 621
+#line 622
         _S7 = true;
 
-#line 621
+#line 622
     }
     else
     {
 
-#line 621
+#line 622
         _S7 = ((&step_0)->y_0) >= _S6;
 
-#line 621
+#line 622
     }
 
-#line 620
+#line 621
     (&step_0)->outside_0 = _S7;
 
     return step_0;
@@ -5801,7 +5802,7 @@ float gpClamp_0(float value_0, float lo_0, float hi_0)
 }
 
 
-#line 597
+#line 598
 float gpEdgeConfidence_0(float x_1, float y_1, uint width_1, uint height_1)
 {
     float u_0 = x_1 / float(width_1);
@@ -5811,45 +5812,45 @@ float gpEdgeConfidence_0(float x_1, float y_1, uint width_1, uint height_1)
 }
 
 
-#line 627
+#line 628
 float gpNearestDepth_0(int x0_0, int y0_0, int x1_0, int y1_0, uint thread* reads_0, KernelContext_0 thread* kernelContext_3)
 {
 
-#line 628
+#line 629
     uint _S9 = kernelContext_3->giProbes_0->constants_0[15U].x;
     int _S10 = max(x1_0 - x0_0, y1_0 - y0_0);
 
-#line 629
+#line 630
     uint level_0 = 0U;
 
     for(;;)
     {
 
-#line 631
+#line 632
         uint _S11 = level_0 + 1U;
 
-#line 631
+#line 632
         bool _S12;
 
-#line 631
+#line 632
         if(_S11 < _S9)
         {
 
-#line 631
+#line 632
             _S12 = (int(1) << uint(int(level_0))) <= _S10;
 
-#line 631
+#line 632
         }
         else
         {
 
-#line 631
+#line 632
             _S12 = false;
 
-#line 631
+#line 632
         }
 
-#line 631
+#line 632
         if(_S12)
         {
         }
@@ -5857,88 +5858,88 @@ float gpNearestDepth_0(int x0_0, int y0_0, int x1_0, int y1_0, uint thread* read
         {
 
 )cy_msl"
-    R"cy_msl(#line 631
+    R"cy_msl(#line 632
             break;
         }
 
-#line 631
+#line 632
         level_0 = _S11;
 
-#line 631
+#line 632
     }
 
 
     uint4 shape_0 = kernelContext_3->giProbes_0->constants_0[26U + level_0];
 
-#line 634
+#line 635
     uint _S13 = uint(int(level_0));
     int _S14 = x0_0 >> _S13;
     int ly0_0 = y0_0 >> _S13;
     uint _S15 = shape_0.y;
 
-#line 637
+#line 638
     int _S16 = min(x1_0 >> _S13, int(_S15) - int(1));
     int _S17 = min(y1_0 >> _S13, int(shape_0.z) - int(1));
 
-#line 638
+#line 639
     float nearest_0 = 1.00000001504746622e+30;
 
-#line 638
+#line 639
     int y_2 = ly0_0;
 
     for(;;)
     {
 
-#line 640
+#line 641
         if(y_2 <= _S17)
         {
         }
         else
         {
 
-#line 640
+#line 641
             break;
         }
 
-#line 640
+#line 641
         int x_2 = _S14;
         for(;;)
         {
 
-#line 641
+#line 642
             if(x_2 <= _S16)
             {
             }
             else
             {
 
-#line 641
+#line 642
                 break;
             }
 
-#line 642
+#line 643
             float _S18 = min(nearest_0, *(kernelContext_3->giProbes_0->screenHzb_0+(shape_0.x + uint(y_2) * _S15 + uint(x_2))));
             *reads_0 = *reads_0 + 1U;
 
-#line 641
+#line 642
             int x_3 = x_2 + int(1);
 
-#line 641
+#line 642
             nearest_0 = _S18;
 
-#line 641
+#line 642
             x_2 = x_3;
 
-#line 641
+#line 642
         }
 
-#line 640
+#line 641
         y_2 = y_2 + int(1);
 
-#line 640
+#line 641
     }
 
-#line 646
+#line 647
     return nearest_0;
 }
 
@@ -5948,168 +5949,168 @@ float gpNearestDepth_0(int x0_0, int y0_0, int x1_0, int y1_0, uint thread* read
 bool gpScreenRunEmpty_0(float3 origin_0, float3 direction_0, float step_1, uint index_0, uint run_0, const GiScreenStep_0 thread* here_0, uint width_2, uint height_2, uint thread* reads_1, KernelContext_0 thread* kernelContext_4)
 {
 
-#line 653
+#line 654
     GiScreenStep_0 _S19 = gpScreenStep_0(origin_0 + direction_0 * float3((step_1 * float(index_0 + run_0))) , width_2, height_2, kernelContext_4);
 
-#line 653
+#line 654
     bool inside_0;
 
-#line 658
+#line 659
     if(!_S19.outside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S19.x_0) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S19.y_0) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S19.x_0) < (float(width_2) - 1.0);
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
     if(inside_0)
     {
 
-#line 659
+#line 660
         inside_0 = (_S19.y_0) < (float(height_2) - 1.0);
 
-#line 659
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
 
-#line 659
+#line 660
     if(inside_0)
     {
 
-#line 659
+#line 660
         inside_0 = (here_0->x_0) >= 1.0;
 
-#line 659
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_0) >= 1.0;
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->x_0) < (float(width_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_0) < (float(height_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
     if(!inside_0)
     {
 
-#line 663
+#line 664
         return false;
     }
 
-#line 663
+#line 664
     float _S20 = gpNearestDepth_0(max(int(floor(min(here_0->x_0, _S19.x_0))) - int(1), int(0)), max(int(floor(min(here_0->y_0, _S19.y_0))) - int(1), int(0)), min(int(floor(max(here_0->x_0, _S19.x_0))) + int(1), int(width_2) - int(1)), min(int(floor(max(here_0->y_0, _S19.y_0))) + int(1), int(height_2) - int(1)), reads_1, kernelContext_4);
 
-#line 674
+#line 675
     return (max(here_0->depth_0, _S19.depth_0)) < (_S20 - abs(_S20) * 0.00009999999747379 - 0.00009999999747379);
 }
 
 
-#line 694
+#line 695
 GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDistance_0, bool accelerated_0, uint thread* reads_2, KernelContext_0 thread* kernelContext_5)
 {
     thread GiTierSample_0 sample_1 = gpTierSample_0(5U);
@@ -6117,47 +6118,47 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDis
     uint width_3 = screen_0.x;
     uint height_3 = screen_0.y;
 
-#line 699
+#line 700
     bool _S21;
     if(width_3 == 0U)
     {
 
-#line 700
+#line 701
         _S21 = true;
 
-#line 700
+#line 701
     }
     else
     {
 
-#line 700
+#line 701
         _S21 = height_3 == 0U;
 
-#line 700
+#line 701
     }
 
-#line 700
+#line 701
     if(_S21)
     {
 
-#line 701
+#line 702
         return sample_1;
     }
     float _S22 = (as_type<float>((screen_0.w)));
     uint _S23 = max(1U, screen_0.z);
     float _S24 = maxDistance_0 / float(_S23);
 
-#line 705
+#line 706
     uint run_1 = 8U;
 
-#line 705
+#line 706
     uint index_1 = 1U;
 
-#line 710
+#line 711
     for(;;)
     {
 
-#line 710
+#line 711
         if(index_1 <= _S23)
         {
         }
@@ -6165,14 +6166,14 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDis
         {
 
 )cy_msl"
-    R"cy_msl(#line 710
+    R"cy_msl(#line 711
             break;
         }
 
-#line 711
+#line 712
         float t_0 = _S24 * float(index_1);
 
-#line 711
+#line 712
         GiScreenStep_0 _S25 = gpScreenStep_0(origin_1 + direction_1 * float3(t_0) , width_3, height_3, kernelContext_5);
 
 
@@ -6189,35 +6190,35 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDis
 
         bool _S26 = bufferDepth_0 > 0.0;
 
-#line 725
+#line 726
         float gap_0;
 
-#line 725
+#line 726
         if(_S26)
         {
 
-#line 725
+#line 726
             gap_0 = bufferDepth_0 - _S25.depth_0;
 
-#line 725
+#line 726
         }
         else
         {
 
-#line 725
+#line 726
             gap_0 = 1.00000001504746622e+30;
 
-#line 725
+#line 726
         }
         if(_S26)
         {
 
-#line 727
+#line 728
             float behind_0 = _S25.depth_0 - bufferDepth_0;
             if(behind_0 > 0.0)
             {
 
-#line 729
+#line 730
                 if(behind_0 > _S22)
                 {
                     (&sample_1)->confidence_0 = 0.0;
@@ -6231,78 +6232,78 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDis
                 return sample_1;
             }
 
-#line 726
+#line 727
         }
 
-#line 743
+#line 744
         if(accelerated_0)
         {
 
-#line 743
+#line 744
             _S21 = (index_1 + 1U) < _S23;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S21 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         bool _S27;
 
-#line 743
+#line 744
         if(_S21)
         {
 
-#line 743
+#line 744
             _S27 = gap_0 > (_S22 * 2.0);
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S27 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         uint skip_0;
 
-#line 743
+#line 744
         if(_S27)
         {
 
-#line 744
+#line 745
             uint _S28 = min(run_1, _S23 - index_1);
 
-#line 744
+#line 745
             thread GiScreenStep_0 _S29 = _S25;
 
-#line 744
+#line 745
             bool _S30 = gpScreenRunEmpty_0(origin_1, direction_1, _S24, index_1, _S28, &_S29, width_3, height_3, reads_2, kernelContext_5);
 
-#line 744
+#line 745
             uint run_2;
             if(_S30)
             {
 
                 uint _S31 = min(run_1 * 2U, 32U);
 
-#line 748
+#line 749
                 skip_0 = _S28;
 
-#line 748
+#line 749
                 run_2 = _S31;
 
-#line 745
+#line 746
             }
             else
             {
@@ -6310,79 +6311,79 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_1, float3 direction_1, float maxDis
 
                 uint _S32 = max(run_1 / 2U, 2U);
 
-#line 750
+#line 751
                 skip_0 = 0U;
 
-#line 750
+#line 751
                 run_2 = _S32;
 
-#line 745
+#line 746
             }
 
-#line 745
+#line 746
             run_1 = run_2;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             skip_0 = 0U;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         index_1 = index_1 + (1U + skip_0);
 
-#line 710
+#line 711
     }
 
-#line 756
+#line 757
     (&sample_1)->confidence_0 = 0.20000000298023224;
     (&sample_1)->hitDistance_0 = -1.0;
     return sample_1;
 }
 
 
-#line 802
+#line 803
 void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelContext_6)
 {
 
-#line 803
+#line 804
     uint total_0 = simd_sum(amount_0);
     bool _S33 = simd_is_first();
 
-#line 804
+#line 805
     bool _S34;
 
-#line 804
+#line 805
     if(_S33)
     {
 
-#line 804
+#line 805
         _S34 = total_0 != 0U;
 
-#line 804
+#line 805
     }
     else
     {
 
-#line 804
+#line 805
         _S34 = false;
 
-#line 804
+#line 805
     }
 
-#line 804
+#line 805
     if(_S34)
     {
 
-#line 805
+#line 806
         uint _S35 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_6->giProbes_0->counters_0+counter_0)), total_0, memory_order_relaxed);
 
-#line 804
+#line 805
     }
 
 
@@ -6390,14 +6391,14 @@ void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelCont
 }
 
 
-#line 871
+#line 872
 void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_2, uint reads_3, KernelContext_0 thread* kernelContext_7)
 {
 
-#line 872
+#line 873
     uint _S36 = ray_0 * 2U;
 
-#line 872
+#line 873
     *(kernelContext_7->giProbes_0->tierResults_0+_S36) = float4(sample_2->radiance_0, sample_2->confidence_0);
     *(kernelContext_7->giProbes_0->tierResults_0+(_S36 + 1U)) = float4(sample_2->hitDistance_0, (as_type<float>((sample_2->source_0))), (as_type<float>((reads_3))), 0.0);
 
@@ -6450,14 +6451,14 @@ void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_2, uint
 
 )cy_msl";
 
-/// cyGiTraceSoftware.metal, 23434 bytes.
+/// cyGiTraceSoftware.metal, 23465 bytes.
 inline constexpr char kGiTraceSoftwareMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 677 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 678 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct GiTierSample_0
 {
     float3 radiance_0;
@@ -7106,27 +7107,28 @@ GiWorldHit_0 GiSoftwareTier_trace_0(float3 origin_2, float3 direction_1, float m
     (&hit_2)->t_0 = _S46.t_1;
     (&hit_2)->position_0 = _S46.position_1;
     (&hit_2)->normal_0 = _S46.normal_1;
-    float4 tier_0 = (as_type<float4>((kernelContext_7->giProbes_0->constants_0[25U])));
-    (&hit_2)->confidence_1 = tier_0.y * gpClamp_0(_S46.closest_0 / max(tier_0.x, 0.00009999999747379), 0.25, 1.0);
 
+
+
+    (&hit_2)->confidence_1 = (as_type<float4>((kernelContext_7->giProbes_0->constants_0[25U]))).y * gpClamp_0(_S46.closest_0 / max((as_type<float>((kernelContext_7->giScene_0->constants_1[9U].z))), 0.00009999999747379), 0.25, 1.0);
     return hit_2;
 }
 
 
-#line 324
+#line 325
 uint GiSoftwareTier_source_0()
 {
 
-#line 325
+#line 326
     return 6U;
 }
 
 
-#line 684
+#line 685
 GiTierSample_0 gpTierSample_0(uint source_1)
 {
 
-#line 685
+#line 686
     thread GiTierSample_0 sample_0;
     (&sample_0)->radiance_0 = float3(0.0, 0.0, 0.0);
     (&sample_0)->confidence_0 = 0.0;
@@ -7357,13 +7359,13 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
 #line 448
                         better_0 = score_0 < bestScore_2;
 
-#line 448
+)cy_msl"
+    R"cy_msl(#line 448
                     }
                     else
                     {
 
-)cy_msl"
-    R"cy_msl(#line 449
+#line 449
                         if(alignment_0 != bestAlignment_2)
                         {
 
@@ -7485,19 +7487,19 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
 }
 
 
-#line 764 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 765 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direction_3, uint source_2, uint cacheFrame_0, KernelContext_0 thread* kernelContext_10)
 {
 
-#line 765
+#line 766
     thread GiTierSample_0 sample_1 = gpTierSample_0(source_2);
     if(!hit_3->hit_0)
     {
 
-#line 767
+#line 768
         (&sample_1)->source_0 = 9U;
 
-#line 767
+#line 768
         float3 _S61 = gpSky_0(direction_3, kernelContext_10);
         (&sample_1)->radiance_0 = _S61;
         (&sample_1)->confidence_0 = 1.0;
@@ -7506,36 +7508,36 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
     }
     (&sample_1)->hitDistance_0 = hit_3->t_0;
 
-#line 773
+#line 774
     uint _S62 = giFindCard_0(hit_3->position_0, hit_3->normal_0, kernelContext_10);
 
     if(_S62 != 4294967295U)
     {
 
-#line 776
+#line 777
         uint _S63 = _S62 * 2U;
 
-#line 776
+#line 777
         (&sample_1)->radiance_0 = (*(kernelContext_10->giScene_0->cardState_0+_S63)).xyz;
         uint last_0 = (as_type<uint>(((*(kernelContext_10->giScene_0->cardState_0+(_S63 + 1U))).w)));
 
-#line 777
+#line 778
         float age_0;
         if(cacheFrame_0 > last_0)
         {
 
-#line 778
+#line 779
             age_0 = float(cacheFrame_0 - last_0);
 
-#line 778
+#line 779
         }
         else
         {
 
-#line 778
+#line 779
             age_0 = 0.0;
 
-#line 778
+#line 779
         }
 
 
@@ -7550,33 +7552,33 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
 GiTierSample_0 gpWorldTrace_0(float3 origin_3, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 790
+#line 791
     uint cacheFrame_1 = kernelContext_11->giProbes_0->constants_0[24U].w;
 
-#line 790
+#line 791
     GiWorldHit_0 _S64 = GiSoftwareTier_trace_0(origin_3, unit_0, reach_0, kernelContext_11);
 
     uint _S65 = GiSoftwareTier_source_0();
 
-#line 792
+#line 793
     thread GiWorldHit_0 _S66 = _S64;
 
-#line 792
+#line 793
     GiTierSample_0 _S67 = gpWorldRadiance_0(&_S66, unit_0, _S65, cacheFrame_1, kernelContext_11);
 
-#line 792
+#line 793
     return _S67;
 }
 
 
-#line 871
+#line 872
 void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_2, uint reads_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 872
+#line 873
     uint _S68 = ray_0 * 2U;
 
-#line 872
+#line 873
     *(kernelContext_12->giProbes_0->tierResults_0+_S68) = float4(sample_2->radiance_0, sample_2->confidence_0);
     *(kernelContext_12->giProbes_0->tierResults_0+(_S68 + 1U)) = float4(sample_2->hitDistance_0, (as_type<float>((sample_2->source_0))), (as_type<float>((reads_0))), 0.0);
 
@@ -7627,14 +7629,14 @@ void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_2, uint
 
 )cy_msl";
 
-/// cyGiTraceTiered.metal, 39283 bytes.
+/// cyGiTraceTiered.metal, 39314 bytes.
 inline constexpr char kGiTraceTieredMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 677 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 678 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct GiTierSample_0
 {
     float3 radiance_0;
@@ -8283,27 +8285,28 @@ GiWorldHit_0 GiSoftwareTier_trace_0(float3 origin_2, float3 direction_1, float m
     (&hit_2)->t_0 = _S46.t_1;
     (&hit_2)->position_0 = _S46.position_1;
     (&hit_2)->normal_0 = _S46.normal_1;
-    float4 tier_0 = (as_type<float4>((kernelContext_7->giProbes_0->constants_0[25U])));
-    (&hit_2)->confidence_1 = tier_0.y * gpClamp_0(_S46.closest_0 / max(tier_0.x, 0.00009999999747379), 0.25, 1.0);
 
+
+
+    (&hit_2)->confidence_1 = (as_type<float4>((kernelContext_7->giProbes_0->constants_0[25U]))).y * gpClamp_0(_S46.closest_0 / max((as_type<float>((kernelContext_7->giScene_0->constants_1[9U].z))), 0.00009999999747379), 0.25, 1.0);
     return hit_2;
 }
 
 
-#line 324
+#line 325
 uint GiSoftwareTier_source_0()
 {
 
-#line 325
+#line 326
     return 6U;
 }
 
 
-#line 684
+#line 685
 GiTierSample_0 gpTierSample_0(uint source_1)
 {
 
-#line 685
+#line 686
     thread GiTierSample_0 sample_0;
     (&sample_0)->radiance_0 = float3(0.0, 0.0, 0.0);
     (&sample_0)->confidence_0 = 0.0;
@@ -8534,13 +8537,13 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
 #line 448
                         better_0 = score_0 < bestScore_2;
 
-#line 448
+)cy_msl"
+    R"cy_msl(#line 448
                     }
                     else
                     {
 
-)cy_msl"
-    R"cy_msl(#line 449
+#line 449
                         if(alignment_0 != bestAlignment_2)
                         {
 
@@ -8662,19 +8665,19 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
 }
 
 
-#line 764 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 765 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direction_3, uint source_2, uint cacheFrame_0, KernelContext_0 thread* kernelContext_10)
 {
 
-#line 765
+#line 766
     thread GiTierSample_0 sample_1 = gpTierSample_0(source_2);
     if(!hit_3->hit_0)
     {
 
-#line 767
+#line 768
         (&sample_1)->source_0 = 9U;
 
-#line 767
+#line 768
         float3 _S61 = gpSky_0(direction_3, kernelContext_10);
         (&sample_1)->radiance_0 = _S61;
         (&sample_1)->confidence_0 = 1.0;
@@ -8683,36 +8686,36 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
     }
     (&sample_1)->hitDistance_0 = hit_3->t_0;
 
-#line 773
+#line 774
     uint _S62 = giFindCard_0(hit_3->position_0, hit_3->normal_0, kernelContext_10);
 
     if(_S62 != 4294967295U)
     {
 
-#line 776
+#line 777
         uint _S63 = _S62 * 2U;
 
-#line 776
+#line 777
         (&sample_1)->radiance_0 = (*(kernelContext_10->giScene_0->cardState_0+_S63)).xyz;
         uint last_0 = (as_type<uint>(((*(kernelContext_10->giScene_0->cardState_0+(_S63 + 1U))).w)));
 
-#line 777
+#line 778
         float age_0;
         if(cacheFrame_0 > last_0)
         {
 
-#line 778
+#line 779
             age_0 = float(cacheFrame_0 - last_0);
 
-#line 778
+#line 779
         }
         else
         {
 
-#line 778
+#line 779
             age_0 = 0.0;
 
-#line 778
+#line 779
         }
 
 
@@ -8727,62 +8730,62 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_3, float3 direct
 GiTierSample_0 gpWorldTrace_0(float3 origin_3, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 790
+#line 791
     uint cacheFrame_1 = kernelContext_11->giProbes_0->constants_0[24U].w;
 
-#line 790
+#line 791
     GiWorldHit_0 _S64 = GiSoftwareTier_trace_0(origin_3, unit_0, reach_0, kernelContext_11);
 
     uint _S65 = GiSoftwareTier_source_0();
 
-#line 792
+#line 793
     thread GiWorldHit_0 _S66 = _S64;
 
-#line 792
+#line 793
     GiTierSample_0 _S67 = gpWorldRadiance_0(&_S66, unit_0, _S65, cacheFrame_1, kernelContext_11);
 
-#line 792
+#line 793
     return _S67;
 }
 
 
-#line 802
+#line 803
 void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelContext_12)
 {
 
-#line 803
+#line 804
     uint total_0 = simd_sum(amount_0);
     bool _S68 = simd_is_first();
 
-#line 804
+#line 805
     bool _S69;
 
-#line 804
+#line 805
     if(_S68)
     {
 
-#line 804
+#line 805
         _S69 = total_0 != 0U;
 
-#line 804
+#line 805
     }
     else
     {
 
-#line 804
+#line 805
         _S69 = false;
 
-#line 804
+#line 805
     }
 
-#line 804
+#line 805
     if(_S69)
     {
 
-#line 805
+#line 806
         uint _S70 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_12->giProbes_0->counters_0+counter_0)), total_0, memory_order_relaxed);
 
-#line 804
+#line 805
     }
 
 
@@ -8790,7 +8793,7 @@ void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelCont
 }
 
 
-#line 605
+#line 606
 struct GiScreenStep_0
 {
     bool outside_0;
@@ -8800,7 +8803,7 @@ struct GiScreenStep_0
 };
 
 
-#line 576
+#line 577
 float3 gpTransformPoint_0(uint first_1, float3 p_2, KernelContext_0 thread* kernelContext_13)
 {
 
@@ -8817,122 +8820,122 @@ float3 gpProjectPoint_0(uint first_2, float3 p_3, KernelContext_0 thread* kernel
     float4 clip_0 = (as_type<float4>((kernelContext_14->giProbes_0->constants_0[first_2]))) * float4(p_3.x)  + (as_type<float4>((kernelContext_14->giProbes_0->constants_0[first_2 + 1U]))) * float4(p_3.y)  + (as_type<float4>((kernelContext_14->giProbes_0->constants_0[first_2 + 2U]))) * float4(p_3.z)  + (as_type<float4>((kernelContext_14->giProbes_0->constants_0[first_2 + 3U])));
     float _S71 = clip_0.w;
 
-#line 590
+#line 591
     if(_S71 == 0.0)
     {
 
-#line 591
+#line 592
         return clip_0.xyz;
     }
     return clip_0.xyz * float3((1.0 / _S71)) ;
 }
 
 
-#line 613
+#line 614
 GiScreenStep_0 gpScreenStep_0(float3 point_0, uint width_0, uint height_0, KernelContext_0 thread* kernelContext_15)
 {
 
-#line 613
+#line 614
     float3 _S72 = gpTransformPoint_0(16U, point_0, kernelContext_15);
     thread GiScreenStep_0 step_2;
 
-    float _S73 = - _S72.z;
+)cy_msl"
+    R"cy_msl(    float _S73 = - _S72.z;
 
-#line 616
+#line 617
     (&step_2)->depth_0 = _S73;
 
-)cy_msl"
-    R"cy_msl(#line 616
+#line 617
     float3 _S74 = gpProjectPoint_0(20U, point_0, kernelContext_15);
 
     float _S75 = float(width_0);
 
-#line 618
+#line 619
     (&step_2)->x_3 = (_S74.x * 0.5 + 0.5) * _S75;
     float _S76 = float(height_0);
 
-#line 619
+#line 620
     (&step_2)->y_3 = (0.5 - _S74.y * 0.5) * _S76;
 
-#line 619
+#line 620
     bool _S77;
     if(_S73 <= 0.0)
     {
 
-#line 620
+#line 621
         _S77 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S77 = ((&step_2)->x_3) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S77)
     {
 
-#line 620
+#line 621
         _S77 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S77 = ((&step_2)->y_3) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S77)
     {
 
-#line 620
+#line 621
         _S77 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S77 = ((&step_2)->x_3) >= _S75;
 
-#line 620
+#line 621
     }
     if(_S77)
     {
 
-#line 621
+#line 622
         _S77 = true;
 
-#line 621
+#line 622
     }
     else
     {
 
-#line 621
+#line 622
         _S77 = ((&step_2)->y_3) >= _S76;
 
-#line 621
+#line 622
     }
 
-#line 620
+#line 621
     (&step_2)->outside_0 = _S77;
 
     return step_2;
 }
 
 
-#line 597
+#line 598
 float gpEdgeConfidence_0(float x_4, float y_4, uint width_1, uint height_1)
 {
     float u_0 = x_4 / float(width_1);
@@ -8942,133 +8945,133 @@ float gpEdgeConfidence_0(float x_4, float y_4, uint width_1, uint height_1)
 }
 
 
-#line 627
+#line 628
 float gpNearestDepth_0(int x0_1, int y0_1, int x1_0, int y1_0, uint thread* reads_0, KernelContext_0 thread* kernelContext_16)
 {
 
-#line 628
+#line 629
     uint _S78 = kernelContext_16->giProbes_0->constants_0[15U].x;
     int _S79 = max(x1_0 - x0_1, y1_0 - y0_1);
 
-#line 629
+#line 630
     uint level_3 = 0U;
 
     for(;;)
     {
 
-#line 631
+#line 632
         uint _S80 = level_3 + 1U;
 
-#line 631
+#line 632
         bool _S81;
 
-#line 631
+#line 632
         if(_S80 < _S78)
         {
 
-#line 631
+#line 632
             _S81 = (int(1) << uint(int(level_3))) <= _S79;
 
-#line 631
+#line 632
         }
         else
         {
 
-#line 631
+#line 632
             _S81 = false;
 
-#line 631
+#line 632
         }
 
-#line 631
+#line 632
         if(_S81)
         {
         }
         else
         {
 
-#line 631
+#line 632
             break;
         }
 
-#line 631
+#line 632
         level_3 = _S80;
 
-#line 631
+#line 632
     }
 
 
     uint4 shape_1 = kernelContext_16->giProbes_0->constants_0[26U + level_3];
 
-#line 634
+#line 635
     uint _S82 = uint(int(level_3));
     int _S83 = x0_1 >> _S82;
     int ly0_0 = y0_1 >> _S82;
     uint _S84 = shape_1.y;
 
-#line 637
+#line 638
     int _S85 = min(x1_0 >> _S82, int(_S84) - int(1));
     int _S86 = min(y1_0 >> _S82, int(shape_1.z) - int(1));
 
-#line 638
+#line 639
     float nearest_0 = 1.00000001504746622e+30;
 
-#line 638
+#line 639
     int y_5 = ly0_0;
 
     for(;;)
     {
 
-#line 640
+#line 641
         if(y_5 <= _S86)
         {
         }
         else
         {
 
-#line 640
+#line 641
             break;
         }
 
-#line 640
+#line 641
         int x_5 = _S83;
         for(;;)
         {
 
-#line 641
+#line 642
             if(x_5 <= _S85)
             {
             }
             else
             {
 
-#line 641
+#line 642
                 break;
             }
 
-#line 642
+#line 643
             float _S87 = min(nearest_0, *(kernelContext_16->giProbes_0->screenHzb_0+(shape_1.x + uint(y_5) * _S84 + uint(x_5))));
             *reads_0 = *reads_0 + 1U;
 
-#line 641
+#line 642
             int x_6 = x_5 + int(1);
 
-#line 641
+#line 642
             nearest_0 = _S87;
 
-#line 641
+#line 642
             x_5 = x_6;
 
-#line 641
+#line 642
         }
 
-#line 640
+#line 641
         y_5 = y_5 + int(1);
 
-#line 640
+#line 641
     }
 
-#line 646
+#line 647
     return nearest_0;
 }
 
@@ -9078,169 +9081,169 @@ float gpNearestDepth_0(int x0_1, int y0_1, int x1_0, int y1_0, uint thread* read
 bool gpScreenRunEmpty_0(float3 origin_4, float3 direction_4, float step_3, uint index_0, uint run_0, const GiScreenStep_0 thread* here_0, uint width_2, uint height_2, uint thread* reads_1, KernelContext_0 thread* kernelContext_17)
 {
 
-#line 653
+#line 654
     GiScreenStep_0 _S88 = gpScreenStep_0(origin_4 + direction_4 * float3((step_3 * float(index_0 + run_0))) , width_2, height_2, kernelContext_17);
 
-#line 653
+#line 654
     bool inside_0;
 
-#line 658
+#line 659
     if(!_S88.outside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S88.x_3) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S88.y_3) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S88.x_3) < (float(width_2) - 1.0);
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
     if(inside_0)
     {
-
-#line 659
-        inside_0 = (_S88.y_3) < (float(height_2) - 1.0);
 
 )cy_msl"
-    R"cy_msl(#line 659
+    R"cy_msl(#line 660
+        inside_0 = (_S88.y_3) < (float(height_2) - 1.0);
+
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
 
-#line 659
+#line 660
     if(inside_0)
     {
 
-#line 659
+#line 660
         inside_0 = (here_0->x_3) >= 1.0;
 
-#line 659
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_3) >= 1.0;
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->x_3) < (float(width_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_3) < (float(height_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
     if(!inside_0)
     {
 
-#line 663
+#line 664
         return false;
     }
 
-#line 663
+#line 664
     float _S89 = gpNearestDepth_0(max(int(floor(min(here_0->x_3, _S88.x_3))) - int(1), int(0)), max(int(floor(min(here_0->y_3, _S88.y_3))) - int(1), int(0)), min(int(floor(max(here_0->x_3, _S88.x_3))) + int(1), int(width_2) - int(1)), min(int(floor(max(here_0->y_3, _S88.y_3))) + int(1), int(height_2) - int(1)), reads_1, kernelContext_17);
 
-#line 674
+#line 675
     return (max(here_0->depth_0, _S88.depth_0)) < (_S89 - abs(_S89) * 0.00009999999747379 - 0.00009999999747379);
 }
 
 
-#line 694
+#line 695
 GiTierSample_0 gpScreenTrace_0(float3 origin_5, float3 direction_5, float maxDistance_2, bool accelerated_0, uint thread* reads_2, KernelContext_0 thread* kernelContext_18)
 {
     thread GiTierSample_0 sample_2 = gpTierSample_0(5U);
@@ -9248,61 +9251,61 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_5, float3 direction_5, float maxDis
     uint width_3 = screen_0.x;
     uint height_3 = screen_0.y;
 
-#line 699
+#line 700
     bool _S90;
     if(width_3 == 0U)
     {
 
-#line 700
+#line 701
         _S90 = true;
 
-#line 700
+#line 701
     }
     else
     {
 
-#line 700
+#line 701
         _S90 = height_3 == 0U;
 
-#line 700
+#line 701
     }
 
-#line 700
+#line 701
     if(_S90)
     {
 
-#line 701
+#line 702
         return sample_2;
     }
     float _S91 = (as_type<float>((screen_0.w)));
     uint _S92 = max(1U, screen_0.z);
     float _S93 = maxDistance_2 / float(_S92);
 
-#line 705
+#line 706
     uint run_1 = 8U;
 
-#line 705
+#line 706
     uint index_1 = 1U;
 
-#line 710
+#line 711
     for(;;)
     {
 
-#line 710
+#line 711
         if(index_1 <= _S92)
         {
         }
         else
         {
 
-#line 710
+#line 711
             break;
         }
 
-#line 711
+#line 712
         float t_5 = _S93 * float(index_1);
 
-#line 711
+#line 712
         GiScreenStep_0 _S94 = gpScreenStep_0(origin_5 + direction_5 * float3(t_5) , width_3, height_3, kernelContext_18);
 
 
@@ -9319,35 +9322,35 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_5, float3 direction_5, float maxDis
 
         bool _S95 = bufferDepth_0 > 0.0;
 
-#line 725
+#line 726
         float gap_0;
 
-#line 725
+#line 726
         if(_S95)
         {
 
-#line 725
+#line 726
             gap_0 = bufferDepth_0 - _S94.depth_0;
 
-#line 725
+#line 726
         }
         else
         {
 
-#line 725
+#line 726
             gap_0 = 1.00000001504746622e+30;
 
-#line 725
+#line 726
         }
         if(_S95)
         {
 
-#line 727
+#line 728
             float behind_0 = _S94.depth_0 - bufferDepth_0;
             if(behind_0 > 0.0)
             {
 
-#line 729
+#line 730
                 if(behind_0 > _S91)
                 {
                     (&sample_2)->confidence_0 = 0.0;
@@ -9361,78 +9364,78 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_5, float3 direction_5, float maxDis
                 return sample_2;
             }
 
-#line 726
+#line 727
         }
 
-#line 743
+#line 744
         if(accelerated_0)
         {
 
-#line 743
+#line 744
             _S90 = (index_1 + 1U) < _S92;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S90 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         bool _S96;
 
-#line 743
+#line 744
         if(_S90)
         {
 
-#line 743
+#line 744
             _S96 = gap_0 > (_S91 * 2.0);
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S96 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         uint skip_0;
 
-#line 743
+#line 744
         if(_S96)
         {
 
-#line 744
+#line 745
             uint _S97 = min(run_1, _S92 - index_1);
 
-#line 744
+#line 745
             thread GiScreenStep_0 _S98 = _S94;
 
-#line 744
+#line 745
             bool _S99 = gpScreenRunEmpty_0(origin_5, direction_5, _S93, index_1, _S97, &_S98, width_3, height_3, reads_2, kernelContext_18);
 
-#line 744
+#line 745
             uint run_2;
             if(_S99)
             {
 
                 uint _S100 = min(run_1 * 2U, 32U);
 
-#line 748
+#line 749
                 skip_0 = _S97;
 
-#line 748
+#line 749
                 run_2 = _S100;
 
-#line 745
+#line 746
             }
             else
             {
@@ -9440,44 +9443,44 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_5, float3 direction_5, float maxDis
 
                 uint _S101 = max(run_1 / 2U, 2U);
 
-#line 750
+#line 751
                 skip_0 = 0U;
 
-#line 750
+)cy_msl"
+    R"cy_msl(#line 751
                 run_2 = _S101;
 
-)cy_msl"
-    R"cy_msl(#line 745
+#line 746
             }
 
-#line 745
+#line 746
             run_1 = run_2;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             skip_0 = 0U;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         index_1 = index_1 + (1U + skip_0);
 
-#line 710
+#line 711
     }
 
-#line 756
+#line 757
     (&sample_2)->confidence_0 = 0.20000000298023224;
     (&sample_2)->hitDistance_0 = -1.0;
     return sample_2;
 }
 
 
-#line 811
+#line 812
 uint gpTicket_0(uint counter_1, KernelContext_0 thread* kernelContext_19)
 {
     uint count_1 = simd_sum(1U);
@@ -9485,39 +9488,39 @@ uint gpTicket_0(uint counter_1, KernelContext_0 thread* kernelContext_19)
 
     bool _S102 = simd_is_first();
 
-#line 816
+#line 817
     uint base_1;
 
-#line 816
+#line 817
     if(_S102)
     {
 
-#line 817
+#line 818
         uint _S103 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_19->giProbes_0->counters_0+counter_1)), count_1, memory_order_relaxed);
 
-#line 817
+#line 818
         base_1 = _S103;
 
-#line 816
+#line 817
     }
     else
     {
 
-#line 816
+#line 817
         base_1 = 0U;
 
-#line 816
+#line 817
     }
 
 
     uint _S104 = simd_broadcast_first(base_1);
 
-#line 819
+#line 820
     return _S104 + rank_0;
 }
 
 
-#line 826
+#line 827
 GiTierSample_0 gpTieredTrace_0(float3 origin_6, float3 direction_6, float maxDistance_3, bool screenPresent_0, uint thread* reads_3, KernelContext_0 thread* kernelContext_20)
 {
     float3 unit_1 = giNormalisedOr_0(direction_6, float3(0.0, 0.0, -1.0));
@@ -9528,68 +9531,68 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_6, float3 direction_6, float maxDis
 
     GiTierSample_0 _S106 = gpTierSample_0(0U);
 
-#line 834
+#line 835
     GiTierSample_0 screen_1;
     if(screenPresent_0)
     {
 
-#line 835
+#line 836
         gpCount_0(4U, 1U, kernelContext_20);
 
-#line 835
+#line 836
         GiTierSample_0 _S107 = gpScreenTrace_0(origin_6, unit_1, _S105, accelerated_1, reads_3, kernelContext_20);
 
 
         if((_S107.confidence_0) >= threshold_0)
         {
 
-#line 839
+#line 840
             return _S107;
         }
 
-#line 839
+#line 840
         screen_1 = _S107;
 
-#line 835
+#line 836
     }
     else
     {
 
-#line 835
+#line 836
         screen_1 = _S106;
 
-#line 835
+#line 836
     }
 
-#line 846
+#line 847
     uint4 budget_0 = kernelContext_20->giProbes_0->constants_0[24U];
 
-#line 846
+#line 847
     uint limit_0;
     if(screenPresent_0)
     {
 
-#line 847
+#line 848
         limit_0 = min(budget_0.x, budget_0.y);
 
-#line 847
+#line 848
     }
     else
     {
 
-#line 847
+#line 848
         limit_0 = budget_0.x;
 
-#line 847
+#line 848
     }
 
-#line 847
+#line 848
     uint _S108 = gpTicket_0(0U, kernelContext_20);
 
     if(_S108 >= limit_0)
     {
 
-#line 849
+#line 850
         gpCount_0(2U, 1U, kernelContext_20);
 
         return screen_1;
@@ -9597,80 +9600,80 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_6, float3 direction_6, float maxDis
     if(screenPresent_0)
     {
 
-#line 853
+#line 854
         gpCount_0(1U, 1U, kernelContext_20);
 
-#line 853
+#line 854
     }
 
 
     if((GiSoftwareTier_source_0()) == 7U)
     {
 
-#line 856
+#line 857
         limit_0 = 6U;
 
-#line 856
+#line 857
     }
     else
     {
 
-#line 856
+#line 857
         limit_0 = 5U;
 
-#line 856
+#line 857
     }
 
-#line 856
+#line 857
     gpCount_0(limit_0, 1U, kernelContext_20);
 
-#line 856
+#line 857
     GiTierSample_0 _S109 = gpWorldTrace_0(origin_6, unit_1, _S105, kernelContext_20);
 
     if((_S109.source_0) == 9U)
     {
 
-#line 858
+#line 859
         limit_0 = 1U;
 
-#line 858
+#line 859
     }
     else
     {
 
-#line 858
+#line 859
         limit_0 = 0U;
 
-#line 858
+#line 859
     }
 
-#line 858
+#line 859
     gpCount_0(7U, limit_0, kernelContext_20);
 
-#line 858
+#line 859
     bool _S110;
     if(!screenPresent_0)
     {
 
-#line 859
+#line 860
         _S110 = true;
 
-#line 859
+#line 860
     }
     else
     {
 
-#line 859
+#line 860
         _S110 = (screen_1.confidence_0) <= 0.0;
 
-#line 859
+#line 860
     }
 
-#line 859
+#line 860
     if(_S110)
     {
 
-#line 860
+#line 861
         return _S109;
     }
     thread GiTierSample_0 blended_0;
@@ -9678,48 +9681,48 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_6, float3 direction_6, float maxDis
     (&blended_0)->confidence_0 = max(screen_1.confidence_0, _S109.confidence_0);
     bool _S111 = (screen_1.confidence_0) >= (_S109.confidence_0);
 
-#line 865
+#line 866
     if(_S111)
     {
 
-#line 865
+#line 866
         limit_0 = screen_1.source_0;
 
-#line 865
+#line 866
     }
     else
     {
 
-#line 865
+#line 866
         limit_0 = _S109.source_0;
 
-#line 865
+#line 866
     }
 
-#line 865
+#line 866
     (&blended_0)->source_0 = limit_0;
 
-#line 865
+#line 866
     float _S112;
 
     if(_S111)
     {
 
-#line 867
+#line 868
         _S112 = screen_1.hitDistance_0;
 
-#line 867
+#line 868
     }
     else
     {
 
-#line 867
+#line 868
         _S112 = _S109.hitDistance_0;
 
-#line 867
+#line 868
     }
 
-#line 866
+#line 867
     (&blended_0)->hitDistance_0 = _S112;
 
     return blended_0;
@@ -9728,10 +9731,10 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_6, float3 direction_6, float maxDis
 void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_3, uint reads_4, KernelContext_0 thread* kernelContext_21)
 {
 
-#line 872
+#line 873
     uint _S113 = ray_0 * 2U;
 
-#line 872
+#line 873
     *(kernelContext_21->giProbes_0->tierResults_0+_S113) = float4(sample_3->radiance_0, sample_3->confidence_0);
     *(kernelContext_21->giProbes_0->tierResults_0+(_S113 + 1U)) = float4(sample_3->hitDistance_0, (as_type<float>((sample_3->source_0))), (as_type<float>((reads_4))), 0.0);
 
@@ -9746,11 +9749,11 @@ void gpWriteTierResult_0(uint ray_0, const GiTierSample_0 thread* sample_3, uint
 #line 96
     thread KernelContext_0 kernelContext_22;
 
-#line 96
-    (&kernelContext_22)->giDispatch_0 = giDispatch_1;
-
 )cy_msl"
     R"cy_msl(#line 96
+    (&kernelContext_22)->giDispatch_0 = giDispatch_1;
+
+#line 96
     (&kernelContext_22)->giProbes_0 = giProbes_1;
 
 #line 96
@@ -9891,7 +9894,7 @@ struct GiHardwareSet_default_0
 };
 
 
-#line 374 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 375 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct KernelContext_0
 {
     GiProbeSet_default_0 constant* giProbes_0;
@@ -11089,16 +11092,16 @@ void gpNormalise_0(uint encoding_2, uint floats_1, array<float, int(48)> thread*
 }
 
 
-#line 348
+#line 349
 void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 349
+#line 350
     uint4 counts_0 = kernelContext_5->giProbes_0->constants_0[0U];
     if(index_2 >= (counts_0.w))
     {
 
-#line 351
+#line 352
         return;
     }
     uint encoding_3 = counts_0.x;
@@ -11108,26 +11111,26 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
     uint probe_1 = kernelContext_5->giProbes_0->selection_0[index_2];
     uint _S56 = probe_1 * 4U;
 
-#line 358
+#line 359
     float3 position_2 = (*(kernelContext_5->giProbes_0->probes_0+_S56)).xyz;
 
-#line 358
+#line 359
     float3 previous_0;
 
-#line 358
+#line 359
     float totalWeight_1;
 
     if(lane_0 < _S55)
     {
 
-#line 361
+#line 362
         uint _S57 = lane_0 * 2U;
         float3 unit_0 = kernelContext_5->giProbes_0->directions_0[_S57 + 1U].xyz;
 
-#line 362
+#line 363
         float3 _S58 = gpSky_0(kernelContext_5->giProbes_0->directions_0[_S57].xyz, kernelContext_5);
 
-#line 362
+#line 363
         GiWorldHit_0 _S59 = GiHardwareTier_trace_0(position_2, unit_0, maxDistance_1, kernelContext_5);
 
 
@@ -11135,7 +11138,7 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
         if(_S59.hit_0)
         {
 
-#line 366
+#line 367
             uint _S60 = giFindCard_0(_S59.position_0, _S59.normal_0, kernelContext_5);
 
 
@@ -11143,385 +11146,385 @@ void gpGatherProbe_0(uint index_2, uint lane_0, KernelContext_0 thread* kernelCo
             if(_S60 != 4294967295U)
             {
 
-#line 370
+#line 371
                 previous_0 = (*(kernelContext_5->giScene_0->cardState_0+_S60 * 2U)).xyz;
 
-#line 370
+#line 371
             }
             else
             {
 
-#line 370
+#line 371
                 previous_0 = float3(0.0, 0.0, 0.0);
 
-#line 370
+#line 371
             }
 
-#line 370
+#line 371
             totalWeight_1 = _S59.t_0;
 
-#line 366
+#line 367
         }
         else
         {
 
-#line 366
+#line 367
             previous_0 = _S58;
 
-#line 366
+#line 367
             totalWeight_1 = maxDistance_1;
 
-#line 366
+#line 367
         }
 
-#line 373
+#line 374
         (*kernelContext_5->gpRayRadiance_0)[lane_0] = previous_0;
         (*kernelContext_5->gpRayDistance_0)[lane_0] = totalWeight_1;
 
-#line 360
+#line 361
     }
 
-#line 376
+#line 377
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if(lane_0 != 0U)
     {
 
-#line 378
+#line 379
         return;
     }
 
     thread array<float, int(48)> data_0;
 
-#line 381
+#line 382
     gpLoadPayload_0(probe_1, floats_2, &data_0, kernelContext_5);
 
     float3 _S61 = float3(0.0, 0.0, 0.0);
 
-#line 383
+#line 384
     previous_0 = _S61;
 
-#line 383
+#line 384
     uint axis_0 = 0U;
     for(;;)
     {
 
-#line 384
+#line 385
         if(axis_0 < 6U)
         {
         }
         else
         {
 
-#line 384
+#line 385
             break;
         }
 
-#line 384
+#line 385
         thread array<float, int(48)> _S62 = data_0;
 
-#line 384
+#line 385
         float3 _S63 = gpDecode_0(encoding_3, &_S62, kGpAxes_0[axis_0]);
         float3 _S64 = previous_0 + _S63;
 
-#line 384
+#line 385
         uint axis_1 = axis_0 + 1U;
 
-#line 384
+#line 385
         previous_0 = _S64;
 
-#line 384
+#line 385
         axis_0 = axis_1;
 
-#line 384
+#line 385
     }
 
-#line 384
+#line 385
     uint i_0 = 0U;
 
 
     for(;;)
     {
 
-#line 387
+#line 388
         if(i_0 < 48U)
         {
         }
         else
         {
 
-#line 387
+#line 388
             break;
         }
 
-#line 388
+#line 389
         data_0[i_0] = 0.0;
 
-#line 387
+#line 388
         i_0 = i_0 + 1U;
 
-#line 387
+#line 388
     }
 
 
     thread array<float, int(6)> axisDistance_0;
     thread array<float, int(6)> axisWeight_0;
 
-#line 391
+#line 392
     uint a_0 = 0U;
     for(;;)
     {
 
-#line 392
+#line 393
         if(a_0 < 6U)
         {
         }
         else
         {
 
-#line 392
+#line 393
             break;
         }
 
-#line 393
+#line 394
         axisDistance_0[a_0] = 0.0;
         axisWeight_0[a_0] = 0.0;
 
-#line 392
+#line 393
         a_0 = a_0 + 1U;
 
-#line 392
+#line 393
     }
 
-#line 392
+#line 393
     uint ray_1 = 0U;
 
-#line 392
+#line 393
     totalWeight_1 = 0.0;
 
-#line 398
+#line 399
     for(;;)
     {
 
-#line 398
+#line 399
         if(ray_1 < _S55)
         {
         }
         else
         {
 
-#line 398
+#line 399
             break;
         }
 
-#line 399
+#line 400
         float3 direction_6 = kernelContext_5->giProbes_0->directions_0[ray_1 * 2U].xyz;
         gpEncode_0(encoding_3, &data_0, direction_6, (*kernelContext_5->gpRayRadiance_0)[ray_1]);
         float totalWeight_2 = totalWeight_1 + 1.0;
 
 )cy_msl"
-    R"cy_msl(#line 401
+    R"cy_msl(#line 402
         a_0 = 0U;
         for(;;)
         {
 
-#line 402
+#line 403
             if(a_0 < 6U)
             {
             }
             else
             {
 
-#line 402
+#line 403
                 break;
             }
 
-#line 403
+#line 404
             float _S65 = max(0.0, dot(kGpAxes_0[a_0], direction_6));
             axisDistance_0[a_0] = axisDistance_0[a_0] + (*kernelContext_5->gpRayDistance_0)[ray_1] * _S65;
             axisWeight_0[a_0] = axisWeight_0[a_0] + _S65;
 
-#line 402
+#line 403
             a_0 = a_0 + 1U;
 
-#line 402
+#line 403
         }
 
-#line 398
+#line 399
         ray_1 = ray_1 + 1U;
 
-#line 398
+#line 399
         totalWeight_1 = totalWeight_2;
 
-#line 398
+#line 399
     }
 
-#line 408
+#line 409
     gpNormalise_0(encoding_3, floats_2, &data_0, totalWeight_1);
 
-#line 408
+#line 409
     float3 current_0 = _S61;
 
-#line 408
+#line 409
     axis_0 = 0U;
 
 
     for(;;)
     {
 
-#line 411
+#line 412
         if(axis_0 < 6U)
         {
         }
         else
         {
 
-#line 411
+#line 412
             break;
         }
 
-#line 411
+#line 412
         thread array<float, int(48)> _S66 = data_0;
 
-#line 411
+#line 412
         float3 _S67 = gpDecode_0(encoding_3, &_S66, kGpAxes_0[axis_0]);
         float3 _S68 = current_0 + _S67;
 
-#line 411
+#line 412
         uint axis_2 = axis_0 + 1U;
 
-#line 411
+#line 412
         current_0 = _S68;
 
-#line 411
+#line 412
         axis_0 = axis_2;
 
-#line 411
+#line 412
     }
 
 
     float magnitude_0 = length(previous_0) + length(current_0);
 
-#line 414
+#line 415
     float error_0;
     if(magnitude_0 > 0.00000999999974738)
     {
 
-#line 415
+#line 416
         error_0 = length(current_0 - previous_0) / magnitude_0;
 
-#line 415
+#line 416
     }
     else
     {
 
-#line 415
+#line 416
         error_0 = 0.0;
 
-#line 415
+#line 416
     }
 
     uint record_1 = index_2 * 14U;
 
-#line 417
+#line 418
     uint v_5 = 0U;
     for(;;)
     {
 
-#line 418
+#line 419
         if(v_5 < 12U)
         {
         }
         else
         {
 
-#line 418
+#line 419
             break;
         }
         uint _S69 = v_5 * 4U;
 
-#line 419
+#line 420
         *(kernelContext_5->giProbes_0->results_0+(record_1 + v_5)) = float4(data_0[_S69], data_0[_S69 + 1U], data_0[_S69 + 2U], data_0[_S69 + 3U]);
 
-#line 418
+#line 419
         v_5 = v_5 + 1U;
 
-#line 418
+#line 419
     }
 
 
 
     thread array<float, int(6)> distances_0;
 
-#line 422
+#line 423
     a_0 = 0U;
     for(;;)
     {
 
-#line 423
+#line 424
         if(a_0 < 6U)
         {
         }
         else
         {
 
-#line 423
+#line 424
             break;
         }
 
-#line 424
+#line 425
         if((axisWeight_0[a_0]) > 0.0)
         {
 
-#line 424
+#line 425
             totalWeight_1 = axisDistance_0[a_0] / axisWeight_0[a_0];
 
-#line 424
+#line 425
         }
         else
         {
 
-#line 424
+#line 425
             totalWeight_1 = maxDistance_1;
 
-#line 424
+#line 425
         }
 
-#line 424
+#line 425
         distances_0[a_0] = totalWeight_1;
 
-#line 423
+#line 424
         a_0 = a_0 + 1U;
 
-#line 423
+#line 424
     }
 
 
     *(kernelContext_5->giProbes_0->results_0+(record_1 + 12U)) = float4(distances_0[int(0)], distances_0[int(1)], distances_0[int(2)], distances_0[int(3)]);
     *(kernelContext_5->giProbes_0->results_0+(record_1 + 13U)) = float4(distances_0[int(4)], distances_0[int(5)], error_0, (as_type<float>((probe_1))));
 
-#line 427
+#line 428
     uint f_0 = 0U;
     for(;;)
     {
 
-#line 428
+#line 429
         if(f_0 < floats_2)
         {
         }
         else
         {
 
-#line 428
+#line 429
             break;
         }
 
-#line 429
+#line 430
         *(kernelContext_5->giProbes_0->payloads_0+(probe_1 * floats_2 + f_0)) = data_0[f_0];
 
-#line 428
+#line 429
         f_0 = f_0 + 1U;
 
-#line 428
+#line 429
     }
 
 
@@ -11615,7 +11618,7 @@ using namespace metal;
                 }
             
 
-#line 677 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 678 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct GiTierSample_0
 {
     float3 radiance_0;
@@ -11927,11 +11930,11 @@ uint GiHardwareTier_source_0()
 }
 
 
-#line 684 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 685 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpTierSample_0(uint source_1)
 {
 
-#line 685
+#line 686
     thread GiTierSample_0 sample_0;
     (&sample_0)->radiance_0 = float3(0.0, 0.0, 0.0);
     (&sample_0)->confidence_0 = 0.0;
@@ -12290,19 +12293,19 @@ uint giFindCard_0(float3 position_1, float3 normal_3, KernelContext_0 thread* ke
 }
 
 
-#line 764 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 765 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direction_2, uint source_2, uint cacheFrame_0, KernelContext_0 thread* kernelContext_4)
 {
 
-#line 765
+#line 766
     thread GiTierSample_0 sample_1 = gpTierSample_0(source_2);
     if(!hit_2->hit_0)
     {
 
-#line 767
+#line 768
         (&sample_1)->source_0 = 9U;
 
-#line 767
+#line 768
         float3 _S25 = gpSky_0(direction_2, kernelContext_4);
         (&sample_1)->radiance_0 = _S25;
         (&sample_1)->confidence_0 = 1.0;
@@ -12311,36 +12314,36 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
     }
     (&sample_1)->hitDistance_0 = hit_2->t_0;
 
-#line 773
+#line 774
     uint _S26 = giFindCard_0(hit_2->position_0, hit_2->normal_0, kernelContext_4);
 
     if(_S26 != 4294967295U)
     {
 
-#line 776
+#line 777
         uint _S27 = _S26 * 2U;
 
-#line 776
+#line 777
         (&sample_1)->radiance_0 = (*(kernelContext_4->giScene_0->cardState_0+_S27)).xyz;
         uint last_0 = (as_type<uint>(((*(kernelContext_4->giScene_0->cardState_0+(_S27 + 1U))).w)));
 
-#line 777
+#line 778
         float age_0;
         if(cacheFrame_0 > last_0)
         {
 
-#line 778
+#line 779
             age_0 = float(cacheFrame_0 - last_0);
 
-#line 778
+#line 779
         }
         else
         {
 
-#line 778
+#line 779
             age_0 = 0.0;
 
-#line 778
+#line 779
         }
 
 
@@ -12355,33 +12358,33 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
 GiTierSample_0 gpWorldTrace_0(float3 origin_1, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 790
+#line 791
     uint cacheFrame_1 = kernelContext_5->giProbes_0->constants_0[24U].w;
 
-#line 790
+#line 791
     GiWorldHit_0 _S28 = GiHardwareTier_trace_0(origin_1, unit_0, reach_0, kernelContext_5);
 
     uint _S29 = GiHardwareTier_source_0();
 
-#line 792
+#line 793
     thread GiWorldHit_0 _S30 = _S28;
 
-#line 792
+#line 793
     GiTierSample_0 _S31 = gpWorldRadiance_0(&_S30, unit_0, _S29, cacheFrame_1, kernelContext_5);
 
-#line 792
+#line 793
     return _S31;
 }
 
 
-#line 871
+#line 872
 void gpWriteTierResult_0(uint ray_1, const GiTierSample_0 thread* sample_2, uint reads_0, KernelContext_0 thread* kernelContext_6)
 {
 
-#line 872
+#line 873
     uint _S32 = ray_1 * 2U;
 
-#line 872
+#line 873
     *(kernelContext_6->giProbes_0->tierResults_0+_S32) = float4(sample_2->radiance_0, sample_2->confidence_0);
     *(kernelContext_6->giProbes_0->tierResults_0+(_S32 + 1U)) = float4(sample_2->hitDistance_0, (as_type<float>((sample_2->source_0))), (as_type<float>((reads_0))), 0.0);
 
@@ -12478,7 +12481,7 @@ using namespace metal;
                 }
             
 
-#line 677 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 678 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 struct GiTierSample_0
 {
     float3 radiance_0;
@@ -12790,11 +12793,11 @@ uint GiHardwareTier_source_0()
 }
 
 
-#line 684 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 685 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpTierSample_0(uint source_1)
 {
 
-#line 685
+#line 686
     thread GiTierSample_0 sample_0;
     (&sample_0)->radiance_0 = float3(0.0, 0.0, 0.0);
     (&sample_0)->confidence_0 = 0.0;
@@ -13153,19 +13156,19 @@ uint giFindCard_0(float3 position_1, float3 normal_3, KernelContext_0 thread* ke
 }
 
 
-#line 764 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
+#line 765 "src/rendering/gi_gpu/shaders/gi_probe_common.slang"
 GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direction_2, uint source_2, uint cacheFrame_0, KernelContext_0 thread* kernelContext_4)
 {
 
-#line 765
+#line 766
     thread GiTierSample_0 sample_1 = gpTierSample_0(source_2);
     if(!hit_2->hit_0)
     {
 
-#line 767
+#line 768
         (&sample_1)->source_0 = 9U;
 
-#line 767
+#line 768
         float3 _S25 = gpSky_0(direction_2, kernelContext_4);
         (&sample_1)->radiance_0 = _S25;
         (&sample_1)->confidence_0 = 1.0;
@@ -13174,36 +13177,36 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
     }
     (&sample_1)->hitDistance_0 = hit_2->t_0;
 
-#line 773
+#line 774
     uint _S26 = giFindCard_0(hit_2->position_0, hit_2->normal_0, kernelContext_4);
 
     if(_S26 != 4294967295U)
     {
 
-#line 776
+#line 777
         uint _S27 = _S26 * 2U;
 
-#line 776
+#line 777
         (&sample_1)->radiance_0 = (*(kernelContext_4->giScene_0->cardState_0+_S27)).xyz;
         uint last_0 = (as_type<uint>(((*(kernelContext_4->giScene_0->cardState_0+(_S27 + 1U))).w)));
 
-#line 777
+#line 778
         float age_0;
         if(cacheFrame_0 > last_0)
         {
 
-#line 778
+#line 779
             age_0 = float(cacheFrame_0 - last_0);
 
-#line 778
+#line 779
         }
         else
         {
 
-#line 778
+#line 779
             age_0 = 0.0;
 
-#line 778
+#line 779
         }
 
 
@@ -13218,62 +13221,62 @@ GiTierSample_0 gpWorldRadiance_0(const GiWorldHit_0 thread* hit_2, float3 direct
 GiTierSample_0 gpWorldTrace_0(float3 origin_1, float3 unit_0, float reach_0, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 790
+#line 791
     uint cacheFrame_1 = kernelContext_5->giProbes_0->constants_0[24U].w;
 
-#line 790
+#line 791
     GiWorldHit_0 _S28 = GiHardwareTier_trace_0(origin_1, unit_0, reach_0, kernelContext_5);
 
     uint _S29 = GiHardwareTier_source_0();
 
-#line 792
+#line 793
     thread GiWorldHit_0 _S30 = _S28;
 
-#line 792
+#line 793
     GiTierSample_0 _S31 = gpWorldRadiance_0(&_S30, unit_0, _S29, cacheFrame_1, kernelContext_5);
 
-#line 792
+#line 793
     return _S31;
 }
 
 
-#line 802
+#line 803
 void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelContext_6)
 {
 
-#line 803
+#line 804
     uint total_0 = simd_sum(amount_0);
     bool _S32 = simd_is_first();
 
-#line 804
+#line 805
     bool _S33;
 
-#line 804
+#line 805
     if(_S32)
     {
 
-#line 804
+#line 805
         _S33 = total_0 != 0U;
 
-#line 804
+#line 805
     }
     else
     {
 
-#line 804
+#line 805
         _S33 = false;
 
-#line 804
+#line 805
     }
 
-#line 804
+#line 805
     if(_S33)
     {
 
-#line 805
+#line 806
         uint _S34 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_6->giProbes_0->counters_0+counter_0)), total_0, memory_order_relaxed);
 
-#line 804
+#line 805
     }
 
 
@@ -13281,7 +13284,7 @@ void gpCount_0(uint counter_0, uint amount_0, KernelContext_0 thread* kernelCont
 }
 
 
-#line 605
+#line 606
 struct GiScreenStep_0
 {
     bool outside_0;
@@ -13291,7 +13294,7 @@ struct GiScreenStep_0
 };
 
 
-#line 576
+#line 577
 float3 gpTransformPoint_0(uint first_2, float3 p_0, KernelContext_0 thread* kernelContext_7)
 {
 
@@ -13308,122 +13311,122 @@ float3 gpProjectPoint_0(uint first_3, float3 p_1, KernelContext_0 thread* kernel
     float4 clip_0 = (as_type<float4>((kernelContext_8->giProbes_0->constants_0[first_3]))) * float4(p_1.x)  + (as_type<float4>((kernelContext_8->giProbes_0->constants_0[first_3 + 1U]))) * float4(p_1.y)  + (as_type<float4>((kernelContext_8->giProbes_0->constants_0[first_3 + 2U]))) * float4(p_1.z)  + (as_type<float4>((kernelContext_8->giProbes_0->constants_0[first_3 + 3U])));
     float _S35 = clip_0.w;
 
-#line 590
+#line 591
     if(_S35 == 0.0)
     {
 
-#line 591
+#line 592
         return clip_0.xyz;
     }
     return clip_0.xyz * float3((1.0 / _S35)) ;
 }
 
 
-#line 613
+#line 614
 GiScreenStep_0 gpScreenStep_0(float3 point_0, uint width_0, uint height_0, KernelContext_0 thread* kernelContext_9)
 {
 
-#line 613
+#line 614
     float3 _S36 = gpTransformPoint_0(16U, point_0, kernelContext_9);
     thread GiScreenStep_0 step_0;
 
     float _S37 = - _S36.z;
 
-#line 616
+#line 617
     (&step_0)->depth_0 = _S37;
 
-#line 616
+#line 617
     float3 _S38 = gpProjectPoint_0(20U, point_0, kernelContext_9);
 
     float _S39 = float(width_0);
 
-#line 618
+#line 619
     (&step_0)->x_3 = (_S38.x * 0.5 + 0.5) * _S39;
     float _S40 = float(height_0);
 
-#line 619
+#line 620
     (&step_0)->y_3 = (0.5 - _S38.y * 0.5) * _S40;
 
 )cy_msl"
-    R"cy_msl(#line 619
+    R"cy_msl(#line 620
     bool _S41;
     if(_S37 <= 0.0)
     {
 
-#line 620
+#line 621
         _S41 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S41 = ((&step_0)->x_3) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S41)
     {
 
-#line 620
+#line 621
         _S41 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S41 = ((&step_0)->y_3) < 0.0;
 
-#line 620
+#line 621
     }
 
-#line 620
+#line 621
     if(_S41)
     {
 
-#line 620
+#line 621
         _S41 = true;
 
-#line 620
+#line 621
     }
     else
     {
 
-#line 620
+#line 621
         _S41 = ((&step_0)->x_3) >= _S39;
 
-#line 620
+#line 621
     }
     if(_S41)
     {
 
-#line 621
+#line 622
         _S41 = true;
 
-#line 621
+#line 622
     }
     else
     {
 
-#line 621
+#line 622
         _S41 = ((&step_0)->y_3) >= _S40;
 
-#line 621
+#line 622
     }
 
-#line 620
+#line 621
     (&step_0)->outside_0 = _S41;
 
     return step_0;
 }
 
 
-#line 597
+#line 598
 float gpEdgeConfidence_0(float x_4, float y_4, uint width_1, uint height_1)
 {
     float u_0 = x_4 / float(width_1);
@@ -13433,133 +13436,133 @@ float gpEdgeConfidence_0(float x_4, float y_4, uint width_1, uint height_1)
 }
 
 
-#line 627
+#line 628
 float gpNearestDepth_0(int x0_0, int y0_0, int x1_0, int y1_0, uint thread* reads_0, KernelContext_0 thread* kernelContext_10)
 {
 
-#line 628
+#line 629
     uint _S42 = kernelContext_10->giProbes_0->constants_0[15U].x;
     int _S43 = max(x1_0 - x0_0, y1_0 - y0_0);
 
-#line 629
+#line 630
     uint level_0 = 0U;
 
     for(;;)
     {
 
-#line 631
+#line 632
         uint _S44 = level_0 + 1U;
 
-#line 631
+#line 632
         bool _S45;
 
-#line 631
+#line 632
         if(_S44 < _S42)
         {
 
-#line 631
+#line 632
             _S45 = (int(1) << uint(int(level_0))) <= _S43;
 
-#line 631
+#line 632
         }
         else
         {
 
-#line 631
+#line 632
             _S45 = false;
 
-#line 631
+#line 632
         }
 
-#line 631
+#line 632
         if(_S45)
         {
         }
         else
         {
 
-#line 631
+#line 632
             break;
         }
 
-#line 631
+#line 632
         level_0 = _S44;
 
-#line 631
+#line 632
     }
 
 
     uint4 shape_0 = kernelContext_10->giProbes_0->constants_0[26U + level_0];
 
-#line 634
+#line 635
     uint _S46 = uint(int(level_0));
     int _S47 = x0_0 >> _S46;
     int ly0_0 = y0_0 >> _S46;
     uint _S48 = shape_0.y;
 
-#line 637
+#line 638
     int _S49 = min(x1_0 >> _S46, int(_S48) - int(1));
     int _S50 = min(y1_0 >> _S46, int(shape_0.z) - int(1));
 
-#line 638
+#line 639
     float nearest_0 = 1.00000001504746622e+30;
 
-#line 638
+#line 639
     int y_5 = ly0_0;
 
     for(;;)
     {
 
-#line 640
+#line 641
         if(y_5 <= _S50)
         {
         }
         else
         {
 
-#line 640
+#line 641
             break;
         }
 
-#line 640
+#line 641
         int x_5 = _S47;
         for(;;)
         {
 
-#line 641
+#line 642
             if(x_5 <= _S49)
             {
             }
             else
             {
 
-#line 641
+#line 642
                 break;
             }
 
-#line 642
+#line 643
             float _S51 = min(nearest_0, *(kernelContext_10->giProbes_0->screenHzb_0+(shape_0.x + uint(y_5) * _S48 + uint(x_5))));
             *reads_0 = *reads_0 + 1U;
 
-#line 641
+#line 642
             int x_6 = x_5 + int(1);
 
-#line 641
+#line 642
             nearest_0 = _S51;
 
-#line 641
+#line 642
             x_5 = x_6;
 
-#line 641
+#line 642
         }
 
-#line 640
+#line 641
         y_5 = y_5 + int(1);
 
-#line 640
+#line 641
     }
 
-#line 646
+#line 647
     return nearest_0;
 }
 
@@ -13569,169 +13572,169 @@ float gpNearestDepth_0(int x0_0, int y0_0, int x1_0, int y1_0, uint thread* read
 bool gpScreenRunEmpty_0(float3 origin_2, float3 direction_3, float step_1, uint index_0, uint run_0, const GiScreenStep_0 thread* here_0, uint width_2, uint height_2, uint thread* reads_1, KernelContext_0 thread* kernelContext_11)
 {
 
-#line 653
+#line 654
     GiScreenStep_0 _S52 = gpScreenStep_0(origin_2 + direction_3 * float3((step_1 * float(index_0 + run_0))) , width_2, height_2, kernelContext_11);
 
-#line 653
+#line 654
     bool inside_0;
 
-#line 658
+#line 659
     if(!_S52.outside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S52.x_3) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S52.y_3) >= 1.0;
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
 
-#line 658
+#line 659
     if(inside_0)
     {
 
-#line 658
+#line 659
         inside_0 = (_S52.x_3) < (float(width_2) - 1.0);
 
-#line 658
+#line 659
     }
     else
     {
 
-#line 658
+#line 659
         inside_0 = false;
 
-#line 658
+#line 659
     }
     if(inside_0)
     {
 
-#line 659
+#line 660
         inside_0 = (_S52.y_3) < (float(height_2) - 1.0);
 
-#line 659
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
 
-#line 659
+#line 660
     if(inside_0)
     {
 
 )cy_msl"
-    R"cy_msl(#line 659
+    R"cy_msl(#line 660
         inside_0 = (here_0->x_3) >= 1.0;
 
-#line 659
+#line 660
     }
     else
     {
 
-#line 659
+#line 660
         inside_0 = false;
 
-#line 659
+#line 660
     }
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_3) >= 1.0;
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->x_3) < (float(width_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
-#line 660
+#line 661
     if(inside_0)
     {
 
-#line 660
+#line 661
         inside_0 = (here_0->y_3) < (float(height_2) - 1.0);
 
-#line 660
+#line 661
     }
     else
     {
 
-#line 660
+#line 661
         inside_0 = false;
 
-#line 660
+#line 661
     }
 
     if(!inside_0)
     {
 
-#line 663
+#line 664
         return false;
     }
 
-#line 663
+#line 664
     float _S53 = gpNearestDepth_0(max(int(floor(min(here_0->x_3, _S52.x_3))) - int(1), int(0)), max(int(floor(min(here_0->y_3, _S52.y_3))) - int(1), int(0)), min(int(floor(max(here_0->x_3, _S52.x_3))) + int(1), int(width_2) - int(1)), min(int(floor(max(here_0->y_3, _S52.y_3))) + int(1), int(height_2) - int(1)), reads_1, kernelContext_11);
 
-#line 674
+#line 675
     return (max(here_0->depth_0, _S52.depth_0)) < (_S53 - abs(_S53) * 0.00009999999747379 - 0.00009999999747379);
 }
 
 
-#line 694
+#line 695
 GiTierSample_0 gpScreenTrace_0(float3 origin_3, float3 direction_4, float maxDistance_1, bool accelerated_0, uint thread* reads_2, KernelContext_0 thread* kernelContext_12)
 {
     thread GiTierSample_0 sample_2 = gpTierSample_0(5U);
@@ -13739,61 +13742,61 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_3, float3 direction_4, float maxDis
     uint width_3 = screen_0.x;
     uint height_3 = screen_0.y;
 
-#line 699
+#line 700
     bool _S54;
     if(width_3 == 0U)
     {
 
-#line 700
+#line 701
         _S54 = true;
 
-#line 700
+#line 701
     }
     else
     {
 
-#line 700
+#line 701
         _S54 = height_3 == 0U;
 
-#line 700
+#line 701
     }
 
-#line 700
+#line 701
     if(_S54)
     {
 
-#line 701
+#line 702
         return sample_2;
     }
     float _S55 = (as_type<float>((screen_0.w)));
     uint _S56 = max(1U, screen_0.z);
     float _S57 = maxDistance_1 / float(_S56);
 
-#line 705
+#line 706
     uint run_1 = 8U;
 
-#line 705
+#line 706
     uint index_1 = 1U;
 
-#line 710
+#line 711
     for(;;)
     {
 
-#line 710
+#line 711
         if(index_1 <= _S56)
         {
         }
         else
         {
 
-#line 710
+#line 711
             break;
         }
 
-#line 711
+#line 712
         float t_2 = _S57 * float(index_1);
 
-#line 711
+#line 712
         GiScreenStep_0 _S58 = gpScreenStep_0(origin_3 + direction_4 * float3(t_2) , width_3, height_3, kernelContext_12);
 
 
@@ -13810,35 +13813,35 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_3, float3 direction_4, float maxDis
 
         bool _S59 = bufferDepth_0 > 0.0;
 
-#line 725
+#line 726
         float gap_0;
 
-#line 725
+#line 726
         if(_S59)
         {
 
-#line 725
+#line 726
             gap_0 = bufferDepth_0 - _S58.depth_0;
 
-#line 725
+#line 726
         }
         else
         {
 
-#line 725
+#line 726
             gap_0 = 1.00000001504746622e+30;
 
-#line 725
+#line 726
         }
         if(_S59)
         {
 
-#line 727
+#line 728
             float behind_0 = _S58.depth_0 - bufferDepth_0;
             if(behind_0 > 0.0)
             {
 
-#line 729
+#line 730
                 if(behind_0 > _S55)
                 {
                     (&sample_2)->confidence_0 = 0.0;
@@ -13852,78 +13855,78 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_3, float3 direction_4, float maxDis
                 return sample_2;
             }
 
-#line 726
+#line 727
         }
 
-#line 743
+#line 744
         if(accelerated_0)
         {
 
-#line 743
+#line 744
             _S54 = (index_1 + 1U) < _S56;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S54 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         bool _S60;
 
-#line 743
+#line 744
         if(_S54)
         {
 
-#line 743
+#line 744
             _S60 = gap_0 > (_S55 * 2.0);
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             _S60 = false;
 
-#line 743
+#line 744
         }
 
-#line 743
+#line 744
         uint skip_0;
 
-#line 743
+#line 744
         if(_S60)
         {
 
-#line 744
+#line 745
             uint _S61 = min(run_1, _S56 - index_1);
 
-#line 744
+#line 745
             thread GiScreenStep_0 _S62 = _S58;
 
-#line 744
+#line 745
             bool _S63 = gpScreenRunEmpty_0(origin_3, direction_4, _S57, index_1, _S61, &_S62, width_3, height_3, reads_2, kernelContext_12);
 
-#line 744
+#line 745
             uint run_2;
             if(_S63)
             {
 
                 uint _S64 = min(run_1 * 2U, 32U);
 
-#line 748
+#line 749
                 skip_0 = _S61;
 
-#line 748
+#line 749
                 run_2 = _S64;
 
-#line 745
+#line 746
             }
             else
             {
@@ -13931,44 +13934,44 @@ GiTierSample_0 gpScreenTrace_0(float3 origin_3, float3 direction_4, float maxDis
 
                 uint _S65 = max(run_1 / 2U, 2U);
 
-#line 750
+#line 751
                 skip_0 = 0U;
 
-#line 750
+#line 751
                 run_2 = _S65;
 
-#line 745
+#line 746
             }
 
-#line 745
+#line 746
             run_1 = run_2;
 
-#line 743
+#line 744
         }
         else
         {
 
-#line 743
+#line 744
             skip_0 = 0U;
 
 )cy_msl"
-    R"cy_msl(#line 743
+    R"cy_msl(#line 744
         }
 
-#line 743
+#line 744
         index_1 = index_1 + (1U + skip_0);
 
-#line 710
+#line 711
     }
 
-#line 756
+#line 757
     (&sample_2)->confidence_0 = 0.20000000298023224;
     (&sample_2)->hitDistance_0 = -1.0;
     return sample_2;
 }
 
 
-#line 811
+#line 812
 uint gpTicket_0(uint counter_1, KernelContext_0 thread* kernelContext_13)
 {
     uint count_1 = simd_sum(1U);
@@ -13976,39 +13979,39 @@ uint gpTicket_0(uint counter_1, KernelContext_0 thread* kernelContext_13)
 
     bool _S66 = simd_is_first();
 
-#line 816
+#line 817
     uint base_0;
 
-#line 816
+#line 817
     if(_S66)
     {
 
-#line 817
+#line 818
         uint _S67 = atomic_fetch_add_explicit(((atomic_uint device*)(kernelContext_13->giProbes_0->counters_0+counter_1)), count_1, memory_order_relaxed);
 
-#line 817
+#line 818
         base_0 = _S67;
 
-#line 816
+#line 817
     }
     else
     {
 
-#line 816
+#line 817
         base_0 = 0U;
 
-#line 816
+#line 817
     }
 
 
     uint _S68 = simd_broadcast_first(base_0);
 
-#line 819
+#line 820
     return _S68 + rank_0;
 }
 
 
-#line 826
+#line 827
 GiTierSample_0 gpTieredTrace_0(float3 origin_4, float3 direction_5, float maxDistance_2, bool screenPresent_0, uint thread* reads_3, KernelContext_0 thread* kernelContext_14)
 {
     float3 unit_1 = giNormalisedOr_0(direction_5, float3(0.0, 0.0, -1.0));
@@ -14019,68 +14022,68 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_4, float3 direction_5, float maxDis
 
     GiTierSample_0 _S70 = gpTierSample_0(0U);
 
-#line 834
+#line 835
     GiTierSample_0 screen_1;
     if(screenPresent_0)
     {
 
-#line 835
+#line 836
         gpCount_0(4U, 1U, kernelContext_14);
 
-#line 835
+#line 836
         GiTierSample_0 _S71 = gpScreenTrace_0(origin_4, unit_1, _S69, accelerated_1, reads_3, kernelContext_14);
 
 
         if((_S71.confidence_0) >= threshold_0)
         {
 
-#line 839
+#line 840
             return _S71;
         }
 
-#line 839
+#line 840
         screen_1 = _S71;
 
-#line 835
+#line 836
     }
     else
     {
 
-#line 835
+#line 836
         screen_1 = _S70;
 
-#line 835
+#line 836
     }
 
-#line 846
+#line 847
     uint4 budget_0 = kernelContext_14->giProbes_0->constants_0[24U];
 
-#line 846
+#line 847
     uint limit_0;
     if(screenPresent_0)
     {
 
-#line 847
+#line 848
         limit_0 = min(budget_0.x, budget_0.y);
 
-#line 847
+#line 848
     }
     else
     {
 
-#line 847
+#line 848
         limit_0 = budget_0.x;
 
-#line 847
+#line 848
     }
 
-#line 847
+#line 848
     uint _S72 = gpTicket_0(0U, kernelContext_14);
 
     if(_S72 >= limit_0)
     {
 
-#line 849
+#line 850
         gpCount_0(2U, 1U, kernelContext_14);
 
         return screen_1;
@@ -14088,80 +14091,80 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_4, float3 direction_5, float maxDis
     if(screenPresent_0)
     {
 
-#line 853
+#line 854
         gpCount_0(1U, 1U, kernelContext_14);
 
-#line 853
+#line 854
     }
 
 
     if((GiHardwareTier_source_0()) == 7U)
     {
 
-#line 856
+#line 857
         limit_0 = 6U;
 
-#line 856
+#line 857
     }
     else
     {
 
-#line 856
+#line 857
         limit_0 = 5U;
 
-#line 856
+#line 857
     }
 
-#line 856
+#line 857
     gpCount_0(limit_0, 1U, kernelContext_14);
 
-#line 856
+#line 857
     GiTierSample_0 _S73 = gpWorldTrace_0(origin_4, unit_1, _S69, kernelContext_14);
 
     if((_S73.source_0) == 9U)
     {
 
-#line 858
+#line 859
         limit_0 = 1U;
 
-#line 858
+#line 859
     }
     else
     {
 
-#line 858
+#line 859
         limit_0 = 0U;
 
-#line 858
+#line 859
     }
 
-#line 858
+#line 859
     gpCount_0(7U, limit_0, kernelContext_14);
 
-#line 858
+#line 859
     bool _S74;
     if(!screenPresent_0)
     {
 
-#line 859
+#line 860
         _S74 = true;
 
-#line 859
+#line 860
     }
     else
     {
 
-#line 859
+#line 860
         _S74 = (screen_1.confidence_0) <= 0.0;
 
-#line 859
+#line 860
     }
 
-#line 859
+#line 860
     if(_S74)
     {
 
-#line 860
+#line 861
         return _S73;
     }
     thread GiTierSample_0 blended_0;
@@ -14169,48 +14172,48 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_4, float3 direction_5, float maxDis
     (&blended_0)->confidence_0 = max(screen_1.confidence_0, _S73.confidence_0);
     bool _S75 = (screen_1.confidence_0) >= (_S73.confidence_0);
 
-#line 865
+#line 866
     if(_S75)
     {
 
-#line 865
+#line 866
         limit_0 = screen_1.source_0;
 
-#line 865
+#line 866
     }
     else
     {
 
-#line 865
+#line 866
         limit_0 = _S73.source_0;
 
-#line 865
+#line 866
     }
 
-#line 865
+#line 866
     (&blended_0)->source_0 = limit_0;
 
-#line 865
+#line 866
     float _S76;
 
     if(_S75)
     {
 
-#line 867
+#line 868
         _S76 = screen_1.hitDistance_0;
 
-#line 867
+#line 868
     }
     else
     {
 
-#line 867
+#line 868
         _S76 = _S73.hitDistance_0;
 
-#line 867
+#line 868
     }
 
-#line 866
+#line 867
     (&blended_0)->hitDistance_0 = _S76;
 
     return blended_0;
@@ -14219,10 +14222,10 @@ GiTierSample_0 gpTieredTrace_0(float3 origin_4, float3 direction_5, float maxDis
 void gpWriteTierResult_0(uint ray_1, const GiTierSample_0 thread* sample_3, uint reads_4, KernelContext_0 thread* kernelContext_15)
 {
 
-#line 872
+#line 873
     uint _S77 = ray_1 * 2U;
 
-#line 872
+#line 873
     *(kernelContext_15->giProbes_0->tierResults_0+_S77) = float4(sample_3->radiance_0, sample_3->confidence_0);
     *(kernelContext_15->giProbes_0->tierResults_0+(_S77 + 1U)) = float4(sample_3->hitDistance_0, (as_type<float>((sample_3->source_0))), (as_type<float>((reads_4))), 0.0);
 

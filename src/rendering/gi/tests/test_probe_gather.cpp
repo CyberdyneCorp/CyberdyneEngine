@@ -215,4 +215,11 @@ CY_TEST_CASE("a probe's revision moves with every change the host makes, and onl
     result.revision = cache.probe(probe).revision;
     result.payload = {short_payload.data(), short_payload.size()};
     CY_CHECK_FALSE(cache.apply(result));
+
+    // A configure starts the slots over, revisions included, so it moves the cache's generation —
+    // the one signal a mirror keyed on revisions has that its probes are not the same probes.
+    const u64 before = cache.generation();
+    const ProbeCacheSettings same = cache.settings();
+    CY_REQUIRE(cache.configure(same).has_value());
+    CY_CHECK_GT(cache.generation(), before);
 }

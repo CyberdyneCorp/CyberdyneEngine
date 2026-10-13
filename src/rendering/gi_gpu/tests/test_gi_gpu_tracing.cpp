@@ -64,6 +64,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -222,8 +224,8 @@ struct FrozenRoom {
     rt::AccelerationService service{active_service()};
     gi::HardwareTracer hardware;
 
-    FrozenRoom() {
-        CY_REQUIRE(field.configure(gi_support::room_settings().field).has_value());
+    explicit FrozenRoom(const gi::ClipmapSettings& clipmaps = gi_support::room_settings().field) {
+        CY_REQUIRE(field.configure(clipmaps).has_value());
         CY_REQUIRE(field.place(1, room.asset(), Mat4::identity()).has_value());
         (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
         // Off the lattice the cards stand on: see `render.gi_gpu`'s pair for the ties a half-metre
@@ -657,6 +659,8 @@ constexpr f64 kPayloadMean = 1.0e-3;
 constexpr f64 kPayloadBeyondFraction = 0.02;
 /// The visibility term: how far each probe sees along each axis, in metres.
 constexpr f32 kAxisTolerance = 1.0e-2F;
+/// A probe's error, which is already a relative change.
+constexpr f32 kErrorTolerance = 1.0e-3F;
 
 void check_gather(const char* what, const GatherAgreement& agreement) {
     agreement.payload.print(what);
@@ -670,6 +674,9 @@ void check_gather(const char* what, const GatherAgreement& agreement) {
     CY_CHECK_LE(static_cast<f64>(agreement.payload.beyond),
                 static_cast<f64>(agreement.payload.compared) * kPayloadBeyondFraction);
     CY_CHECK_LT(agreement.worst_axis, kAxisTolerance);
+    // The error the scheduler ranks on is the change from the PREVIOUS payload, so it is also the
+    // check that the device's previous payload was the host's.
+    CY_CHECK_LT(agreement.worst_error, kErrorTolerance);
 }
 
 }  // namespace
@@ -773,6 +780,37 @@ CY_TEST_CASE("the device query answers as RadianceCache::sample does") {
     CY_CHECK_EQ(confidence_mismatches, 0U);
     CY_CHECK_LT(radiance.mean, 1.0e-5);
     CY_CHECK_LT(radiance.worst, 1.0e-3);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions") {
+    // REGRESSION. `RadianceCache::configure` starts the probe slots over, so the probe created in
+    // slot 0 after it carries the same revision as the probe slot 0 held before — and a mirror that
+    // keyed its uploads on revision alone kept the old probe's payload, in the old encoding's
+    // stride. The cache's `generation()` moves at every configure and the mirror starts over when
+    // it does.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    FrozenRoom room;
+    ProbePair pair(gpu.device(), room, gi::ProbeEncoding::SphericalHarmonicsL1, false);
+    for (u64 frame = 1; frame <= 2; ++frame) {
+        CY_REQUIRE(pair.step(gpu.device(), frame));
+    }
+    // The same placement in another encoding: every probe comes back in its old slot.
+    gi::ProbePlacementContext placement;
+    placement.field = &room.field;
+    placement.lights = {room.lights.data(), room.lights.size()};
+    for (gi::RadianceCache* cache : {&pair.host, &pair.device}) {
+        CY_REQUIRE(cache->configure(probe_settings(gi::ProbeEncoding::Octahedral)).has_value());
+        (void)cache->scroll_to(Vec3{0.0F, 0.0F, 0.0F}, placement);
+    }
+    // ONE frame: the first gather after the reconfigure is the one whose previous payload — and so
+    // whose error — is the stale probe's when the mirror kept it; a second frame overwrites it.
+    CY_REQUIRE(pair.step(gpu.device(), 3));
+    check_gather("gather after a reconfigure, Octahedral",
+                 agree(pair.host, pair.device, kPayloadTolerance));
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
@@ -1424,6 +1462,76 @@ CY_TEST_CASE("the world tiers answer as SoftwareTracer and HardwareTracer do, th
     print("hardware tier", agreement);
     CY_CHECK_LE(agreement.disagreements, agreement.rays / 100U);
     room.service.set_mirror(nullptr);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("the software tier's confidence follows the field's own resolution") {
+    // REGRESSION. `SoftwareTracer` measures a grazing ray against four of the field's finest
+    // voxels, and the device's scale was a constant 1.0 — which is exactly four quarter-metre
+    // voxels, the only field every other case here uses. A half-metre field grazes at two metres.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    gi::ClipmapSettings coarse = gi_support::room_settings().field;
+    coarse.resolution = 32;
+    FrozenRoom room(coarse);
+    const ScreenFixture screen(room, 128, 72);
+    const std::vector<GpuTierRay> rays = screen.rays(1, 12.0F);
+    TierRig rig(gpu.device(), room, false);
+    GpuTierTracer tiers(rig.cache);
+    gi::TieredTracer::Config config;
+    tiers.set_config(config);
+    tiers.set_cache_frame(kCacheFrame);
+    std::vector<gi::RadianceSample> device;
+    GpuTierCounters counters;
+    CY_REQUIRE(run_tiers(gpu.device(), tiers, rays, GpuTierMode::World, device, counters));
+    TierAgreement agreement;
+    for (usize index = 0; index < rays.size(); ++index) {
+        const Vec3 unit = normalized_or(rays[index].direction, Vec3{0.0F, 0.0F, -1.0F});
+        gi::SceneHit hit;
+        (void)room.software.trace(rays[index].origin, unit, rays[index].max_distance, hit);
+        (void)same_answer(room.software.radiance(hit, config.sky, unit), device[index], agreement);
+    }
+    print("software tier, half-metre field", agreement);
+    CY_CHECK_GT(agreement.rays, 1000U);
+    CY_CHECK_LE(agreement.disagreements, agreement.rays / 100U);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("an escalation nobody configured answers as a default TieredTracer does") {
+    // REGRESSION. The device tiers' configuration, budget and sky were zero until a caller set
+    // them: a batch declared without `set_config` and `set_budget` reached nothing — every world
+    // ray had zero reach and zero budget — where a default `TieredTracer` and `TraceBudget` trace
+    // sixty metres, sixty-four rays, under the default sky.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    FrozenRoom room;
+    const ScreenFixture screen(room, 256, 144);
+    const gi::ScreenView view = screen.view();
+    const std::vector<GpuTierRay> rays = screen.rays(4, 8.0F);
+    TierRig rig(gpu.device(), room, false);
+    GpuTierTracer tiers(rig.cache);
+    tiers.set_cache_frame(kCacheFrame);
+    CY_REQUIRE(tiers.set_view(&view).has_value());
+    std::vector<gi::RadianceSample> device;
+    GpuTierCounters counters;
+    CY_REQUIRE(run_tiers(gpu.device(), tiers, rays, GpuTierMode::Tiered, device, counters));
+    gi::TieredTracer host;
+    host.set_screen(&view);
+    host.set_software(&room.software);
+    gi::TraceBudget budget;
+    for (const GpuTierRay& ray : rays) {
+        (void)host.trace(ray.origin, ray.direction, ray.max_distance, budget);
+    }
+    std::fprintf(stderr, "  default escalation: world rays %u/%u, refused %u/%u (host/device)\n",
+                 host.diagnostics().software_rays, counters.world_rays,
+                 host.diagnostics().budget_refusals, counters.budget_refusals);
+    CY_CHECK_GT(host.diagnostics().software_rays, 0U);
+    CY_CHECK_EQ(counters.world_rays, host.diagnostics().software_rays);
+    CY_CHECK_EQ(counters.budget_refusals, host.diagnostics().budget_refusals);
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 

@@ -35,7 +35,7 @@ static const uint kGpScreenHzb = 15u;    // hzb levels, use hzb, reach cap, esca
 static const uint kGpWorldToView = 16u;  // four columns
 static const uint kGpWorldToClip = 20u;  // four columns
 static const uint kGpBudget = 24u;       // world rays, escalations, tier ray count, cache frame
-static const uint kGpTier = 25u;         // grazing scale, software base, hardware base, tier
+static const uint kGpTier = 25u;         // unused, software base, hardware base, unused
 static const uint kGpHzbLevels = 26u;    // one uint4 per pyramid level: offset, width, height
 
 static const uint kGpMaxPayload = 48u;
@@ -316,9 +316,10 @@ struct GiSoftwareTier : IGiWorldTier {
         hit.t = traced.t;
         hit.position = traced.position;
         hit.normal = traced.normal;
+        // The grazing scale is the field's (`GpuGiScene::upload_field`), the base the tier's.
+        const float grazing = asfloat(giScene.constants[kGiShadowEnabled].z);
         const float4 tier = asfloat(giProbes.constants[kGpTier]);
-        hit.confidence =
-            tier.y * gpClamp(traced.closest / max(tier.x, 1.0e-4f), 0.25f, 1.0f);
+        hit.confidence = tier.y * gpClamp(traced.closest / max(grazing, 1.0e-4f), 0.25f, 1.0f);
         return hit;
     }
     static uint source() {

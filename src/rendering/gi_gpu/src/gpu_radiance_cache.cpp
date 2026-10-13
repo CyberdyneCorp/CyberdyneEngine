@@ -49,7 +49,6 @@ constexpr u64 kQueryVec4s = 2;
 constexpr u64 kTierRayVec4s = 2;
 constexpr u64 kTierResultVec4s = 2;
 constexpr u32 kCounterCount = 8;
-constexpr u32 kNoProbe = 0xFFFFFFFFU;
 
 /// What `SoftwareTracer` and `HardwareTracer` trust a hit, before the proxy and the cache.
 constexpr f32 kSoftwareBaseConfidence = 0.85F;
@@ -162,9 +161,17 @@ Status GpuRadianceCache::create(Allocator& allocator, rhi::Device& device, GpuGi
         seen_[index] = 0;
     }
     std::memset(constants_, 0, sizeof(constants_));
-    constants_[kWordTier + 0] = bits(1.0F);
     constants_[kWordTier + 1] = bits(kSoftwareBaseConfidence);
     constants_[kWordTier + 2] = bits(kHardwareBaseConfidence);
+    // The tiers' defaults are the host's defaults: a batch nobody configured answers as a default
+    // `TieredTracer` under a default `TraceBudget` would, not with zero reach and zero budget.
+    const gi::TieredTracer::Config tiers;
+    constants_[kWordScreenHzb + 2] = bits(tiers.max_distance_metres);
+    constants_[kWordScreenHzb + 3] = bits(tiers.escalation_threshold);
+    write_sky(tiers.sky);
+    const gi::TraceBudget budget;
+    constants_[kWordBudget + 0] = budget.world_rays;
+    constants_[kWordBudget + 1] = budget.escalations;
     write_constants();
     return ok();
 }
@@ -565,6 +572,12 @@ Status GpuRadianceCache::mirror(const gi::RadianceCache& cache) noexcept {
         return fail(ErrorCode::OutOfRange,
                     "the radiance cache's clipmap is larger than the device layout addresses: at "
                     "most eight levels of a 15-cell window");
+    }
+    // A CONFIGURE STARTS THE SLOTS OVER, and with them the revisions: the probe created in slot 0
+    // after it carries the revision slot 0's old probe had. So the mirror starts over too.
+    if (cache.generation() != generation_) {
+        reset_mirror();
+        generation_ = cache.generation();
     }
     const gi::EncodingTraits traits = gi::encoding_traits(settings.encoding);
     const u32 stride = traits.floats_per_probe;

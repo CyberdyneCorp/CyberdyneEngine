@@ -273,6 +273,7 @@ Status RadianceCache::configure(const ProbeCacheSettings& settings) noexcept {
     }
     settings_ = settings;
     stride_ = encoding_traits(settings.encoding).floats_per_probe;
+    generation_ += 1;
     probes_.clear();
     payloads_.clear();
     proxies_.clear();

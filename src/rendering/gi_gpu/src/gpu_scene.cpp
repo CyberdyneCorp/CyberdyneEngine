@@ -3,6 +3,7 @@
 
 #include <cy/backends/rhi/validation.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "gi_gpu_msl.h"
@@ -467,6 +468,11 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
         constants_[kLevels + (level * 8U) + 7U] = 0;
     }
     constants_[kShadowEnabled + 1] = bits(field.voxel_size());
+    // `SoftwareTracer::trace`'s grazing scale: four of the field's finest voxels, in the host's own
+    // expression, so a hit's confidence is the host's for every field resolution.
+    const gi::ClipmapSettings& clipmaps = field.settings();
+    constants_[kShadowEnabled + 2] = bits(
+        clipmaps.base_extent_metres / static_cast<f32>(std::max(clipmaps.resolution, 1U)) * 4.0F);
     write_constants();
 
     field_generation_ = field.generation();
