@@ -35,6 +35,41 @@ namespace {
     return normalized_or((tangent * x) + (bitangent * y) + (normal * z), normal);
 }
 
+/// Whether `point` lies within the square a card of `surfel.area` covers in its own plane.
+[[nodiscard]] bool inside_footprint(const Surfel& surfel, Vec3 point) noexcept {
+    Vec3 tangent;
+    Vec3 bitangent;
+    emitter_basis(normalized_or(surfel.normal, Vec3{0.0F, 1.0F, 0.0F}), tangent, bitangent);
+    const f32 half = (std::sqrt(std::max(surfel.area, 0.0F)) * 0.5F) + 1.0e-4F;
+    const Vec3 offset = point - surfel.position;
+    return std::abs(dot(offset, tangent)) <= half && std::abs(dot(offset, bitangent)) <= half;
+}
+
+/// The card whose own square holds `point`: facing within the lookup cone of `normal`, nearest
+/// its plane, then the lower slot. `kInvalidSurfel` when no card's footprint holds the point.
+///
+/// Not `nearest_surfel`: a card smaller than its neighbours' spacing is the nearest card over only
+/// part of its own square, and a reference that asked for the nearest would lose its corners.
+[[nodiscard]] u32 footprint_surfel(const GiScene& scene, Vec3 point, Vec3 normal) noexcept {
+    // A square of up to a square metre holds no point further than its half-diagonal away.
+    constexpr f32 kReach = 0.75F;
+    u32 best = GiScene::kInvalidSurfel;
+    f32 best_height = 1.0e9F;
+    const Aabb box = Aabb::from_center_extents(point, Vec3{kReach, kReach, kReach});
+    scene.query_box(box, [&](const Surfel& surfel, u32 slot) {
+        if (dot(surfel.normal, normal) <= kCardLookupAlignment ||
+            !inside_footprint(surfel, point)) {
+            return;
+        }
+        const f32 height = std::abs(dot(point - surfel.position, surfel.normal));
+        if (height < best_height || (height == best_height && slot < best)) {
+            best_height = height;
+            best = slot;
+        }
+    });
+    return best;
+}
+
 [[nodiscard]] Vec3 modulate(Vec3 a, Vec3 b) noexcept {
     return Vec3{a.x * b.x, a.y * b.y, a.z * b.z};
 }
@@ -58,12 +93,30 @@ Vec3 PathTracer::radiance(Vec3 origin, Vec3 direction, u32 bounces, f32 max_dist
 
         // The shared representation: the surface's material comes from the GI scene, which is the
         // same set of cards the surface cache is built from and the software tier resolves against.
-        const u32 slot = scene_->nearest_surfel(hit.position, hit.normal, 1.0F);
+        u32 slot = scene_->nearest_surfel(hit.position, hit.normal, 1.0F);
         Vec3 albedo{0.5F, 0.5F, 0.5F};
         Vec3 emission{0.0F, 0.0F, 0.0F};
+        if (footprints_) {
+            // A hit takes the card whose square it lies in; one in no card's square reflects with
+            // the nearest card's albedo and emits nothing.
+            // The nearest card almost always holds it — in its square and in its plane, so that no
+            // other card's square can be nearer — and is checked first.
+            const bool nearest_holds = slot != GiScene::kInvalidSurfel &&
+                                       inside_footprint(scene_->surfel(slot), hit.position) &&
+                                       std::abs(dot(hit.position - scene_->surfel(slot).position,
+                                                    scene_->surfel(slot).normal)) <= 1.0e-3F;
+            const u32 owner =
+                nearest_holds ? slot : footprint_surfel(*scene_, hit.position, hit.normal);
+            if (owner != GiScene::kInvalidSurfel) {
+                slot = owner;
+                emission = scene_->surfel(slot).emission;
+            }
+        }
         if (slot != GiScene::kInvalidSurfel) {
             albedo = scene_->surfel(slot).albedo;
-            emission = scene_->surfel(slot).emission;
+            if (!footprints_) {
+                emission = scene_->surfel(slot).emission;
+            }
         }
 
         total = total + modulate(throughput, emission);

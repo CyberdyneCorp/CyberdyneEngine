@@ -52,6 +52,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/card_lighting.h>
 #include <cy/rendering/gi/distance_field.h>
+#include <cy/rendering/gi/emissive.h>
 #include <cy/rendering/gi/surface_cache.h>
 #include <cy/rendering/gi/tracing.h>
 #include <cy/rendering/gi_gpu/gpu_scene.h>
@@ -634,6 +635,85 @@ CY_TEST_CASE("the device card radiance matches the host surface cache") {
     CY_CHECK_GT(lit, 0U);
     CY_CHECK_GT(dark, 0U);
     CY_CHECK_GT(bounced_only, 0U);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("a promoted emitter lights the device cards as it lights the host ones") {
+    // `rendering-global-illumination` — "Emissive surfaces as illumination", on the device. The
+    // room with its point light, a small bright lamp on the ceiling that the classification
+    // promotes to a light, and a large dim sign on a wall that stays in the cache: the device
+    // integrates the lamp with the transcribed form factor and gathers the sign's emission through
+    // the cards, and both sides must agree page for page.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    RoomScene room;
+    std::vector<Surfel> surfels = gi_support::room_surfels(1.0F);
+    Surfel lamp;
+    lamp.position = Vec3{-2.0F, gi_support::kRoomY - 0.01F, 2.0F};
+    lamp.normal = Vec3{0.0F, -1.0F, 0.0F};
+    lamp.albedo = Vec3{0.7F, 0.7F, 0.7F};
+    lamp.area = 0.09F;
+    lamp.emission = Vec3{300.0F, 250.0F, 200.0F};
+    lamp.instance_id = 40;
+    lamp.material_id = 40;
+    surfels.push_back(lamp);
+    for (Surfel& surfel : surfels) {
+        if (surfel.normal.x > 0.5F && surfel.position.z > 1.0F && surfel.position.z < 3.5F) {
+            surfel.emission = Vec3{0.0F, 0.4F, 0.6F};  // the sign, on the red wall
+            surfel.instance_id = 41;
+            surfel.material_id = 41;
+        }
+    }
+    Array<Surfel> cached;
+    Array<GiLight> promoted;
+    Array<rendering::gi::EmitterRecord> records;
+    rendering::gi::EmissiveReport report;
+    CY_REQUIRE(rendering::gi::classify_emitters({surfels.data(), surfels.size()},
+                                                rendering::gi::EmissiveSettings{}, 1, 100, cached,
+                                                promoted, records, report)
+                   .has_value());
+    CY_REQUIRE_EQ(promoted.size(), 1U);
+    CY_REQUIRE_EQ(report.cached_emitters, 1U);
+    std::vector<GiLight> lights = gi_support::room_lights();
+    lights.push_back(promoted[0]);
+    const std::vector<Surfel> cards(cached.begin(), cached.end());
+    Pair pair(gpu.fixture.device(), room.field, cards, nullptr, lights, 8);
+
+    for (u64 frame = 1; frame <= 6; ++frame) {
+        CY_REQUIRE(pair.step(gpu.fixture.device(), frame, 0, true));
+        const Agreement direct = agree(pair.host, pair.device, 1.0e-3,
+                                       [](const SurfacePage& page) { return page.direct; });
+        const Agreement bounce = agree(pair.host, pair.device, 1.0e-2,
+                                       [](const SurfacePage& page) { return page.accumulated; });
+        std::fprintf(stderr, "emitters, frame %llu\n", static_cast<unsigned long long>(frame));
+        print("  direct", direct);
+        print("  accumulated", bounce);
+        CY_CHECK_LE(direct.beyond, direct.compared / 100U);
+        CY_CHECK_LT(direct.mean_relative, 1.0e-3);
+        CY_CHECK_LE(bounce.beyond, bounce.compared / 20U);
+        CY_CHECK_LT(bounce.mean_relative, 1.0e-2);
+    }
+
+    // Not trivial: the floor under the lamp takes the lamp's light. The device's direct term there,
+    // less what the room's own light gives it through the host occluder, is the lamp's closed form.
+    const Vec3 floor{-2.0F, -gi_support::kRoomY, 2.0F};
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    Vec3 device_direct{0.0F, 0.0F, 0.0F};
+    for (const SurfacePage& page : pair.device.pages()) {
+        if (page.live && page.normal.y > 0.5F && distance(page.position, floor) < 0.1F) {
+            device_direct = page.direct;
+        }
+    }
+    const Vec3 room_light =
+        rendering::gi::shaded_direct({lights.data(), 1}, floor, up, &pair.occluder);
+    const Vec3 lamp_only = rendering::gi::direct_radiance(promoted[0], floor, up);
+    std::fprintf(stderr, "floor under the lamp: device direct %.4f, room light %.4f, lamp %.4f\n",
+                 static_cast<double>(device_direct.x), static_cast<double>(room_light.x),
+                 static_cast<double>(lamp_only.x));
+    CY_CHECK_GT(lamp_only.x, 0.1F);
+    CY_CHECK_NEAR_REL(device_direct.x - room_light.x, lamp_only.x, 1.0e-3F);
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 

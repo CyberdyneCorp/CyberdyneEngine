@@ -65,7 +65,40 @@ struct GiLight {
     u64 id = 0;
     /// Read by the lightmap bake only; every real-time consumer shades every light.
     LightMobility mobility = LightMobility::Stationary;
+    /// AN EMISSIVE CARD PROMOTED TO A LIGHT, when positive (emissive.h). The light is then a
+    /// one-sided Lambertian square of this many square metres, centred on `position` and facing
+    /// `emitter_normal`, whose radiance is `colour * intensity`; `direct_radiance` integrates it
+    /// exactly with `emitter_form_factor` instead of treating it as a point. Zero, the default, is
+    /// every light this record described before emitters existed.
+    f32 emitter_area = 0.0F;
+    Vec3 emitter_normal{0.0F, 0.0F, 0.0F};
 };
+
+/// How far in front of an emitter a shadow ray toward it stops. A card sits on a surface the
+/// distance field resolves only to a voxel: a lamp recessed a few centimetres into a ceiling is,
+/// as far as the field knows, inside solid, and a segment that ended on it would be answered by the
+/// ceiling (`render_gi_emissive`'s recessed-lamp case). Occluders nearer the emitter than this do
+/// not shadow it, which is the approximation, and the device transcribes the same number.
+inline constexpr f32 kEmitterShadowLiftMetres = 0.3F;
+
+/// The square an emitter card covers: `tangent` and `bitangent` span its plane. The construction
+/// `bake.cpp`'s cosine sampler uses, so a card's footprint has one orientation everywhere.
+void emitter_basis(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept;
+
+/// THE POINT-TO-POLYGON FORM FACTOR of a one-sided emitter card: the cosine-weighted fraction of
+/// the hemisphere about `normal` at `position` that the card covers, divided by pi — so a card of
+/// radiance L delivers `L * emitter_form_factor(...)` in the units `direct_radiance` uses, which
+/// is the mean cosine-weighted incoming radiance the path tracer's `irradiance` estimates.
+///
+/// Lambert's closed form over the card clipped to the receiver's horizon, with each edge's angle
+/// taken by `atan2` rather than `acos` so a small, distant card keeps its precision. Zero behind
+/// the card, below the horizon, or for a non-positive area.
+[[nodiscard]] f32 emitter_form_factor(Vec3 centre, Vec3 emitter_normal, f32 area, Vec3 position,
+                                      Vec3 normal) noexcept;
+
+/// Where a shadow ray from `position` toward `light` ends: far along a directional light's reverse
+/// direction, lifted off an emitter's surface by `kEmitterShadowLiftMetres`, or the light itself.
+[[nodiscard]] Vec3 shadow_target(const GiLight& light, Vec3 position) noexcept;
 
 /// Whether the segment between two points is blocked.
 class Occluder {

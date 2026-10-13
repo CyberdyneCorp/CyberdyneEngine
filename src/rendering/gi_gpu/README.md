@@ -125,6 +125,8 @@ and Debug builds. The suite prints each row; the bounds it asserts are in parent
 | room, six converged frames, accumulated | mean relative 3.7e-8, worst 2.4e-7, 0 pages beyond 1e-2 |
 | courtyard under the shadow-mapped sun, direct | mean relative 1.3e-8, worst 1.6e-7, 0 pages beyond 1e-3; 47 floor cards in the pillar's shadow |
 | courtyard, accumulated | mean relative 2.0e-8, worst 2.2e-7, 0 pages beyond 1e-2 |
+| room with a promoted lamp and a cache-only sign, direct | mean relative 2.4e-6, worst 1.5e-4, 0 pages beyond 1e-3; the lamp's share of the floor under it equal to `direct_radiance` within 1e-3 |
+| the same, accumulated | mean relative 9.9e-8 at frame six, 0 pages beyond 1e-2 |
 | budget 48 over the room's 402 pages | exactly the host selection each frame; every page valid after 9 = ceil(402 / 48) frames |
 
 Every case has been proven red by a mutation, applied and restored with an md5 check:
@@ -198,6 +200,13 @@ few steps; both answers are the same answer.
   march read its page table, bricks and depth across the bus per step: a 1080p screen-tier batch
   took 44 ms. They are `HostVisibleDeviceLocal` now (resizable BAR on this device; the RHI falls back
   where there is none), and the same batch takes about a millisecond.
+
+## Promoted emitters
+
+A light record is four `float4`s and the fourth was always zero; it now carries a promoted emissive
+card's normal and area (`GiLight::emitter_area`), and `giDirectRadiance` integrates such a light
+with `giEmitterFormFactor`, the transcription of `gi::emitter_form_factor`. Every other light still
+uploads zeros there, so a scene with no promoted emitter writes the same bytes as before.
 
 ## What is not here
 

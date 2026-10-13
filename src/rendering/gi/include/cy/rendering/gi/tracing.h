@@ -46,6 +46,7 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/gi/distance_field.h>
+#include <cy/rendering/gi/gi_volume.h>
 #include <cy/rendering/gi/lighting.h>
 #include <cy/rendering/gi/scene.h>
 #include <cy/rendering/raytracing/acceleration.h>
@@ -191,6 +192,15 @@ public:
     /// Request radiance along a ray.
     [[nodiscard]] RadianceSample trace(Vec3 origin, Vec3 direction, f32 max_distance,
                                        TraceBudget& budget) noexcept;
+
+    /// The same, for a region whose GI volume prefers a tier (gi_volume.h): `SoftwareOnly` never
+    /// takes the hardware tier and `WorldOnly` skips the screen tier. `Automatic` is the call
+    /// above, exactly. The consumer still does not learn which tier answered.
+    [[nodiscard]] RadianceSample trace(Vec3 origin, Vec3 direction, f32 max_distance,
+                                       TraceBudget& budget, GiTierPreference preference) noexcept;
+
+    /// The world tier a ray with `preference` would take.
+    [[nodiscard]] RadianceSource world_tier_for(GiTierPreference preference) const noexcept;
 
     [[nodiscard]] const TracingDiagnostics& diagnostics() const noexcept { return diagnostics_; }
     void reset_diagnostics() noexcept { diagnostics_ = TracingDiagnostics{}; }

@@ -1770,8 +1770,8 @@ note = "the six operators the requirement enumerates, each driven to the ends of
 # encoding, software tier" (siblings: the query, the tiers, the fallback cases in the same suite).
 #
 # TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
-# and `src/rendering/sky_illumination/`. Twenty of them are answered by a named case, one by a
-# criterion the falsifiability record proves can fail, and EIGHT ARE DEFERRED WITH A REASON — they
+# and `src/rendering/sky_illumination/`. Most are answered by a named case, one by a criterion the
+# falsifiability record proves can fail, and THE REST ARE DEFERRED WITH A REASON — they
 # are the subsystems this row does not have at Working, and each entry below names what is missing
 # and what would observe it rather than saying `not tested`. `src/rendering/gi/README.md`'s "What is
 # here at Working, and what is not" is the same list from the code's side.
@@ -1889,8 +1889,9 @@ note = "ON A DEVICE SINCE ISSUE #35 STAGE 3, with real ray queries: the same roo
 [[coverage]]
 row = "rendering-global-illumination"
 requirement = "Emissive surfaces as illumination"
-evidence = "exempt:m11e"
-note = "NOT IMPLEMENTED, and nothing in the tree claims it is. The requirement asks emissive materials to light their surroundings through the surface cache and to be CLASSIFIED by radiant power and area, with bright small emitters promoted to sampled lights rather than left to stochastic sampling. `Surfel` and `SurfacePage` carry an emission channel and `SurfaceCache::outgoing` adds it — on the host, and the device card lighting of issue #35 stage 2 (`cy::rendering-gi-gpu`) transcribes it — so an emissive card already feeds the bounce; what is missing is the rest of the requirement: there is no classifier by radiant power and area and no promotion to a light anywhere under src/rendering/gi/ or src/rendering/gi_gpu/, and no case measures an emitter lighting a room. The next slice is its own issue, after #35's stage 4 puts the surface cache in the frame. What would observe it: an emissive surfel in a dark room raising the irradiance of the wall opposite with no `GiLight` placed, and a small high-power emitter arriving in the direct lighting path's light list instead — both cheap to write once the classification exists."
+evidence = "test:integration.render_gi_emissive"
+case = "a tiny bright emitter is promoted and lights the floor without fireflies"
+note = "`gi/emissive.h` classifies every emitter by radiant power (pi * Y(L) * A) and area; a small bright one is promoted — its emission leaves the cache and each card becomes a `GiLight` with `emitter_area`, integrated in closed form by `emitter_form_factor` in every `shaded_direct` consumer and on the device. This case measures a 30 cm lamp at radiance 400 against the path tracer: promoted, energy within 5% (measured 1.3%) and a per-receiver ratio variance at the reference's own noise (0.018); left to the cache, variance 3.7 and a receiver at 6.4x — the fireflies. Siblings: `a glowing panel promoted to lights lights the room within 5% of the path tracer` (1.5%), `a glowing panel left to the cache still lights the room it is in` (the neon-sign scenario, 7.1%), `emitters are classified by radiant power and area, and every watt is accounted for` and `an emitter over the light budget is demoted to the cache and its power reported` (no clamping: clamped_power is zero and checked), the form-factor cases, and `render.gi_gpu`'s `a promoted emitter lights the device cards as it lights the host ones`. Not yet: promoted emitters in the forward frame's clustered lights, which needs a runtime owner of the GI system (#35 stage 4)."
 
 [[coverage]]
 row = "rendering-global-illumination"
@@ -1927,8 +1928,9 @@ note = "the requirement asks the system to hold an allocation and distribute it 
 [[coverage]]
 row = "rendering-global-illumination"
 requirement = "GI volumes"
-evidence = "exempt:m11e"
-note = "NOT IMPLEMENTED. There is no `GiVolume` type, no per-region override of quality, probe density, update rate, intensity, tier preference or far-field distance, and no priority or blend-distance resolution between overlapping ones; `IlluminationSettings` is global and the budget's importance region is an AABB with a weight, not an authored volume with a priority. The requirement's own second scenario — a scene with no volumes is correctly lit — is the state the tree is in, which is exactly why a green here would be indistinguishable from the feature existing. What would observe it: two identical rooms, one inside a volume asking for higher probe density, resolving to different probe counts within one allocation."
+evidence = "test:integration.render_gi_volumes"
+case = "an important interior gets more probes and more updates within one allocation"
+note = "`gi/gi_volume.h`: `GiVolume` overrides quality (the probe ray multiplier), probe density, update rate, diffuse and specular intensity, tier preference and the far-field distance, per parameter, with priority, blend distance and a master weight; `GiVolumeSet::resolve` applies them per sample from the lowest priority up. This case is the requirement's own scenario on two mirror-image interiors: the marked one gets more probes (122 against 114), twice the rays per probe, and 2.7 times the updates per probe over sixty frames while every frame spends exactly the probe budget. Siblings: `a scene with no GI volume reaching it resolves exactly as one with none placed` (bit for bit — the 'no volumes needed' scenario), `removing a GI volume places its region again at the global density`, `a GI volume scales indirect intensity where it reaches`, `a GI volume moves the far-field transition where it reaches`, `a GI volume that prefers the software tier keeps its rays off the hardware tier`, and `unit.render_gi`'s resolution cases (override, blend band, priority whatever the order, refusal). Not yet: authoring them from the editor or Swift, and a per-page rate for the surface cache."
 
 [[coverage]]
 row = "rendering-global-illumination"

@@ -256,31 +256,45 @@ RadianceSource TieredTracer::selected_world_tier() const noexcept {
     return RadianceSource::None;
 }
 
+RadianceSource TieredTracer::world_tier_for(GiTierPreference preference) const noexcept {
+    if (preference == GiTierPreference::SoftwareOnly) {
+        return software_ != nullptr ? RadianceSource::SoftwareTrace : RadianceSource::None;
+    }
+    return selected_world_tier();
+}
+
 RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance,
                                    TraceBudget& budget) noexcept {
+    return trace(origin, direction, max_distance, budget, GiTierPreference::Automatic);
+}
+
+RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance,
+                                   TraceBudget& budget, GiTierPreference preference) noexcept {
+    // A region that prefers the world skips the screen tier as if the view had none.
+    const ScreenView* screen_view = preference == GiTierPreference::WorldOnly ? nullptr : screen_;
     const Vec3 unit = normalized_or(direction, Vec3{0.0F, 0.0F, -1.0F});
     const f32 reach = std::min(max_distance, config_.max_distance_metres);
 
     RadianceSample screen;
-    if (screen_ != nullptr) {
+    if (screen_view != nullptr) {
         diagnostics_.screen_rays += 1;
-        screen = ScreenTracer::trace(*screen_, origin, unit, reach);
+        screen = ScreenTracer::trace(*screen_view, origin, unit, reach);
         if (screen.confidence >= config_.escalation_threshold) {
             // "WHEN a screen trace hits with high confidence THEN no world trace SHALL be issued."
             return screen;
         }
     }
 
-    const RadianceSource tier = selected_world_tier();
+    const RadianceSource tier = world_tier_for(preference);
     if (tier == RadianceSource::None) {
         return screen;
     }
-    if (budget.world_rays == 0 || (screen_ != nullptr && budget.escalations == 0)) {
+    if (budget.world_rays == 0 || (screen_view != nullptr && budget.escalations == 0)) {
         diagnostics_.budget_refusals += 1;
         return screen;
     }
     budget.world_rays -= 1;
-    if (screen_ != nullptr) {
+    if (screen_view != nullptr) {
         budget.escalations -= 1;
         diagnostics_.escalations += 1;
     }
@@ -302,7 +316,7 @@ RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance
         diagnostics_.cache_misses += 1;
     }
 
-    if (screen_ == nullptr || screen.confidence <= 0.0F) {
+    if (screen_view == nullptr || screen.confidence <= 0.0F) {
         return world;
     }
     // Both answered. Blend by the screen's confidence rather than switching: a ray approaching the

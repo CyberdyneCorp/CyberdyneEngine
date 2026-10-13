@@ -82,6 +82,16 @@ public:
     [[nodiscard]] u64 rays_traced() const noexcept { return rays_; }
     void reset_ray_count() noexcept { rays_ = 0; }
 
+    /// Take a card's emission only where the hit lies inside the card's own square — its area,
+    /// oriented by `emitter_basis` — rather than anywhere the card is the nearest one.
+    ///
+    /// Off by default, which is the tracer every bake has used: a lightmap bake's surfels stand
+    /// for triangles, whose footprint is not a square. On for a reference over CARDS, where it is
+    /// the definition: without it an emitter smaller than its neighbours' spacing emits over the
+    /// whole region it is nearest to, and the reference would measure that inflation instead of
+    /// the emitter.
+    void set_emission_footprints(bool enabled) noexcept { footprints_ = enabled; }
+
 private:
     const SceneTracer* tracer_;
     const GiScene* scene_;
@@ -89,6 +99,7 @@ private:
     SkyTerm sky_;
     const Occluder* occluder_ = nullptr;
     mutable u64 rays_ = 0;
+    bool footprints_ = false;
 };
 
 struct BakeReport {

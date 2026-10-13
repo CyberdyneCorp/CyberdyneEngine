@@ -26,6 +26,75 @@ namespace {
 
 }  // namespace
 
+void emitter_basis(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
+    tangent = std::abs(normal.y) < 0.99F ? cross(Vec3{0.0F, 1.0F, 0.0F}, normal)
+                                         : cross(Vec3{1.0F, 0.0F, 0.0F}, normal);
+    tangent = normalized_or(tangent, Vec3{1.0F, 0.0F, 0.0F});
+    bitangent = cross(normal, tangent);
+}
+
+f32 emitter_form_factor(Vec3 centre, Vec3 emitter_normal, f32 area, Vec3 position,
+                        Vec3 normal) noexcept {
+    if (area <= 0.0F || dot(position - centre, emitter_normal) <= 0.0F) {
+        return 0.0F;
+    }
+    Vec3 tangent;
+    Vec3 bitangent;
+    emitter_basis(emitter_normal, tangent, bitangent);
+    const f32 half = std::sqrt(area) * 0.5F;
+    const Vec3 u = tangent * half;
+    const Vec3 v = bitangent * half;
+    const Vec3 base = centre - position;
+    const Vec3 corners[4] = {base - u - v, base + u - v, base + u + v, base - u + v};
+
+    // Sutherland-Hodgman against the receiver's horizon: a square loses at most one corner to a
+    // plane and gains two, so five vertices hold the clipped polygon.
+    Vec3 polygon[5];
+    u32 count = 0;
+    for (u32 index = 0; index < 4; ++index) {
+        const Vec3 a = corners[index];
+        const Vec3 b = corners[(index + 1U) % 4U];
+        const f32 height_a = dot(a, normal);
+        const f32 height_b = dot(b, normal);
+        if (height_a > 0.0F) {
+            polygon[count++] = a;
+        }
+        if ((height_a > 0.0F) != (height_b > 0.0F)) {
+            polygon[count++] = a + ((b - a) * (height_a / (height_a - height_b)));
+        }
+    }
+    if (count < 3) {
+        return 0.0F;
+    }
+
+    // Lambert: the cosine-weighted solid angle of a polygon is half the sum, over its edges, of the
+    // angle each edge subtends times the cosine between the edge's plane normal and the receiver's.
+    f32 sum = 0.0F;
+    for (u32 index = 0; index < count; ++index) {
+        const Vec3 from = normalized_or(polygon[index], normal);
+        const Vec3 to = normalized_or(polygon[(index + 1U) % count], normal);
+        const Vec3 edge = cross(from, to);
+        const f32 sine = length(edge);
+        if (sine <= 1.0e-12F) {
+            continue;
+        }
+        sum += std::atan2(sine, dot(from, to)) * (dot(edge, normal) / sine);
+    }
+    return std::abs(sum) * (0.5F * math::kInvPi);
+}
+
+Vec3 shadow_target(const GiLight& light, Vec3 position) noexcept {
+    // A directional light has no position; the shadow ray goes a long way along its reverse
+    // direction instead, which is the same test with a different endpoint.
+    if (light.directional) {
+        return position - (normalized_or(light.direction, Vec3{0.0F, 1.0F, 0.0F}) * 1000.0F);
+    }
+    if (light.emitter_area > 0.0F) {
+        return light.position + (light.emitter_normal * kEmitterShadowLiftMetres);
+    }
+    return light.position;
+}
+
 Vec3 direct_radiance(const GiLight& light, Vec3 position, Vec3 normal) noexcept {
     if (light.directional) {
         const Vec3 to_light = -normalized_or(light.direction, Vec3{0.0F, 1.0F, 0.0F});
@@ -36,6 +105,11 @@ Vec3 direct_radiance(const GiLight& light, Vec3 position, Vec3 normal) noexcept 
     const f32 distance_squared_metres = std::max(length_squared(offset), 1.0e-6F);
     if (light.range > 0.0F && distance_squared_metres > light.range * light.range) {
         return Vec3{0.0F, 0.0F, 0.0F};
+    }
+    if (light.emitter_area > 0.0F) {
+        return light.colour *
+               (light.intensity * emitter_form_factor(light.position, light.emitter_normal,
+                                                      light.emitter_area, position, normal));
     }
     const Vec3 to_light = offset / std::sqrt(distance_squared_metres);
     const f32 cosine = std::max(0.0F, dot(normal, to_light));
@@ -51,13 +125,7 @@ Vec3 shaded_direct(Span<const GiLight> lights, Vec3 position, Vec3 normal,
             continue;
         }
         if (occluder != nullptr) {
-            // A directional light has no position; the shadow ray goes a long way along its
-            // reverse direction instead, which is the same test with a different endpoint.
-            const Vec3 target =
-                light.directional
-                    ? position - (normalized_or(light.direction, Vec3{0.0F, 1.0F, 0.0F}) * 1000.0F)
-                    : light.position;
-            if (occluder->occluded(position + (normal * 1.0e-2F), target)) {
+            if (occluder->occluded(position + (normal * 1.0e-2F), shadow_target(light, position))) {
                 continue;
             }
         }

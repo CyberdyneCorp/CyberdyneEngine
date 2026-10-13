@@ -11,10 +11,12 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | File | What it holds |
 |---|---|
 | `scene.h` | `GiMode`, `RadianceSource`, `RadianceSample`, `Surfel`, the error targets, `select_detail_level`, and `GiScene` — cell-scoped ingestion, eviction and attributable invalidation |
-| `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` and the analytic `SkyTerm` |
+| `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` (a point, a directional light, or a promoted emissive card), `emitter_form_factor` and the analytic `SkyTerm` |
 | `distance_field.h` | camera-centred sparse clipmaps of bricks, per-asset fields composited by transform, sphere tracing and sky visibility |
 | `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update (`SurfaceCache::select`), the one line the multi-bounce approximation is, and `SurfaceShadingBackend` — the seam a device shades the selected pages behind |
 | `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot` and `CardGather` (issue #35) |
+| `emissive.h` | emitters classified by radiant power and area: `classify_emitters`, the per-cell `EmissiveLights`, and `EmissiveReport`, which accounts for every watt |
+| `gi_volume.h` | `GiVolume` and `GiVolumeSet`: per-region overrides of quality, probe density, update rate, intensity, tier preference and far-field distance, with priority and blend distance |
 | `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
 | `proxy_scene.h` | `BoxProxyScene`: axis-aligned proxy boxes as a `SceneTracer`, `Occluder` and `RadianceLookup`, so a volume can be captured from blockout geometry |
 | `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, the scheduler that guarantees progress (`RadianceCache::select`), and `ProbeGatherBackend` — the seam a device gathers the selected probes behind |
@@ -92,6 +94,43 @@ the only library in the tree that depends on both. What this module gained is `s
 installs a term without paying for `configure()`, and `InvalidationCause::SkyChanged`, which is the
 one cause `service_invalidations` does NOT hand to the distance field — a sun that rotated moved no
 geometry.
+
+## Emitters: a card or a light, by measurement
+
+An emissive card lights its surroundings through the surface cache (`SurfaceCache::outgoing` adds
+its emission), which is right for a large, dim emitter and the source of fireflies for a small,
+bright one — and a card smaller than the cache's lookup cell is worse than noisy, because every
+gather hit in that cell resolves to it. `classify_emitters` sorts emitters by radiant power and
+area: one at least `promotion_power` strong and at most `promotion_max_area_m2` large is PROMOTED,
+its emission taken out of the cache and each card handed to the direct lighting path as a `GiLight`
+with `emitter_area`, which `direct_radiance` integrates in closed form (Lambert over the card,
+clipped to the receiver's horizon) and shadows with one ray to a point `kEmitterShadowLiftMetres`
+in front of it. `IlluminationSystem::ingest_cell` runs it and adds the promoted lights to every
+frame's (`frame_lights()`); `scene().ingest_cell` without it is still every emitter through the
+cache. Nothing is clamped, and `EmissiveReport::clamped_power` is checked to be zero.
+
+Measured against the path tracer over the same cards (`integration.render_gi_emissive`; the
+reference uses `PathTracer::set_emission_footprints`, which is off for every bake):
+
+| a 4 x 2 x 4 m room, no light placed | energy error | per-receiver |
+|---|---|---|
+| 2.25 m^2 panel, promoted (20 receivers, 5 bounces) | 0.015 | mean relative 0.070 (reference noise) |
+| the same panel, cache only, 64 gather rays | 0.071 | mean relative 0.130 |
+| 30 cm lamp at radiance 400, promoted (25 floor cards, direct) | 0.013 | ratio variance 0.018, max ratio 1.28 |
+| the same lamp, cache only | 0.77 | ratio variance 3.7, max ratio 6.4: fireflies |
+
+## GI volumes
+
+`IlluminationSystem::set_volumes` places `GiVolume`s; `region_settings(point)` is what they resolve
+to there, and with none reaching a point it is the global settings, bit for bit. Per parameter,
+lowest priority first, each volume moves the value toward its own by `weight * fade` (one inside,
+falling to zero over `blend_distance_metres`); the tier preference switches at one half. Probe
+density, update rate, quality and tier are decided when a probe is PLACED and recorded on it
+(`Probe::update_rate`, `ray_scale`, `tier`), so `set_volumes` retires the probes in reach of a
+volume that sets one of them; intensity and the far-field distance are resolved per sample in
+`indirect_diffuse` and `indirect_specular`. The scheduler ages a probe at its rate and scales its
+error by it, which on `integration.render_gi_volumes`'s two mirror-image interiors gives the marked
+one 2.7 times the updates per probe within one budget.
 
 ## Irradiance volumes: the first slice that reaches a frame
 
