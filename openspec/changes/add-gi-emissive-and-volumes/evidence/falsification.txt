@@ -2,9 +2,12 @@ Mutations proving the cases of add-gi-emissive-and-volumes red.
 
 Each was applied to the tree, the named suites rebuilt (dev profile, GCC 13) and run, and the file
 restored and md5-verified. Each replaces one exact string; RED lists the test cases that failed.
-Two first survived and each gained the case that now kills it: [2] (the emitter shadow lift: the
-recessed-lamp case) and [5] (the area threshold: a whole bright wall in the classification case).
-[7] and [16] first failed to compile as written and were rewritten.
+Three first survived and each gained the case that now kills it: [2] the emitter shadow lift (the
+recessed-lamp case), [5] the area threshold (a whole bright wall in the classification case) and
+[7] the reference's footprint owner (the square case, once the lamp's reference went to 8192
+samples and its noise could hide a 5% bias). [16] first failed to compile as written and was
+rewritten. [4], [7], [14], [15] and [16] were run again after the suites were made cheaper for the
+debug profile's one-second budget.
 
 [0] lighting: horizon clip removed (every corner kept) (src/rendering/gi/src/surface_cache.cpp)
     -> RED  integration_render_gi_emissive: an emitter card's form factor is the closed form, the far-field limit and zero behind | integration_render_gi_emissive: an emitter the receiver's horizon cuts through is clipped, not counted whole
@@ -21,7 +24,7 @@ recessed-lamp case) and [5] (the area threshold: a whole bright wall in the clas
 [6] emissive: light budget ignored (src/rendering/gi/src/emissive.cpp)
     -> RED  integration_render_gi_emissive: an emitter over the light budget is demoted to the cache and its power reported
 [7] bake: the nearest card answers a hit outside its plane (the fast path without its plane test) (src/rendering/gi/src/bake.cpp)
-    -> RED  integration_render_gi_emissive: a tiny bright emitter is promoted and lights the floor without fireflies
+    -> RED  integration_render_gi_emissive: the reference takes a small card's emission over exactly its own square
 [8] system: promoted lights not added to the frame (src/rendering/gi/src/system.cpp)
     -> RED  integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction
 [9] system: promoted lights invalidate nothing (src/rendering/gi/src/system.cpp)
@@ -55,3 +58,5 @@ recessed-lamp case) and [5] (the area threshold: a whole bright wall in the clas
     -> RED  render.gi_gpu: a promoted emitter lights the device cards as it lights the host ones
 [23] device: upload_lights writes zeros in the fourth float4 (gpu_scene.cpp)
     -> RED  render.gi_gpu: a promoted emitter lights the device cards as it lights the host ones
+Both on the RTX 5060 (Vulkan); the headers were regenerated from the restored source and checked
+byte-identical to the committed ones.

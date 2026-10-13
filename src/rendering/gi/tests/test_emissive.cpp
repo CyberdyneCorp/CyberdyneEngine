@@ -337,8 +337,8 @@ Agreement agree(const std::vector<Vec3>& measured, const std::vector<Vec3>& refe
     f64 sum_ratio = 0.0;
     f64 sum_ratio_squared = 0.0;
     for (usize index = 0; index < measured.size(); ++index) {
-        const f64 m = luminance(measured[index]);
-        const f64 r = luminance(reference[index]);
+        const auto m = static_cast<f64>(luminance(measured[index]));
+        const auto r = static_cast<f64>(luminance(reference[index]));
         sum_measured += m;
         sum_reference += r;
         sum_absolute += std::abs(m - r);
@@ -582,6 +582,37 @@ CY_TEST_CASE("an emitter over the light budget is demoted to the cache and its p
 
 // --- Against the path tracer ---------------------------------------------------------------------
 
+CY_TEST_CASE("the reference takes a small card's emission over exactly its own square") {
+    // Rays straight up at the lamp from the floor, over a grid that covers its square and a band
+    // around it. Inside the square every ray must see the lamp's radiance — including the corners,
+    // where a ceiling card is NEARER than the lamp's own card — and outside it none may.
+    const Vec3 radiance{400.0F, 400.0F, 400.0F};
+    const Reference reference(with_lamp(radiance), true);
+    PathTracer tracer(reference.slabs, reference.scene, {}, dark_sky(), &reference.slabs);
+    tracer.set_emission_footprints(true);
+    const f32 half = kLampSide * 0.5F;
+    u32 inside = 0;
+    for (u32 i = 0; i <= 12; ++i) {
+        for (u32 j = 0; j <= 12; ++j) {
+            const f32 x = kLampCentre.x - 0.2F + (0.4F * static_cast<f32>(i) / 12.0F);
+            const f32 z = kLampCentre.z - 0.2F + (0.4F * static_cast<f32>(j) / 12.0F);
+            const f32 dx = std::abs(x - kLampCentre.x);
+            const f32 dz = std::abs(z - kLampCentre.z);
+            if (std::abs(dx - half) < 0.01F || std::abs(dz - half) < 0.01F) {
+                continue;  // on the edge: either answer is the square
+            }
+            u32 sequence = 1;
+            const Vec3 seen = tracer.radiance(Vec3{x, -kHalf.y + 0.01F, z}, Vec3{0.0F, 1.0F, 0.0F},
+                                              0, 12.0F, sequence);
+            const bool in_square = dx < half && dz < half;
+            CY_TEST_INFO("x " << x << " z " << z);
+            CY_CHECK_EQ(seen.x, in_square ? radiance.x : 0.0F);
+            inside += in_square ? 1U : 0U;
+        }
+    }
+    CY_CHECK_GT(inside, 40U);
+}
+
 CY_TEST_CASE("a glowing panel promoted to lights lights the room within 5% of the path tracer") {
     // No light placed: the panel is the only source. It is 2.25 m^2 and promoted (power 22.8),
     // so its direct term is the closed form and only the bounce is gathered.
@@ -604,7 +635,7 @@ CY_TEST_CASE("a glowing panel promoted to lights lights the room within 5% of th
     }
     const Agreement agreement = agree(measured, expected);
     print("panel, promoted, 22 receivers, path tracer 1024 samples x 5 bounces", agreement);
-    // MEASURED: energy 0.015; mean relative 0.070, which is the reference's own noise at 1024
+    // MEASURED: energy 0.020; mean relative 0.071, which is the reference's own noise at 1024
     // samples per receiver.
     CY_CHECK_LT(agreement.energy_error, 0.05F);
     CY_CHECK_LT(agreement.mean_relative_error, 0.12F);
@@ -636,28 +667,28 @@ CY_TEST_CASE("a glowing panel left to the cache still lights the room it is in")
     }
     const Agreement agreement = agree(measured, expected);
     print("panel, cache only, 22 receivers, 64 gather rays", agreement);
-    // MEASURED: energy 0.071, mean relative 0.130 (the promoted panel: 0.015 and 0.070).
+    // MEASURED: energy 0.086, mean relative 0.140 (the promoted panel: 0.020 and 0.071).
     CY_CHECK_LT(agreement.energy_error, 0.10F);
     CY_CHECK_LT(agreement.mean_relative_error, 0.20F);
 }
 
 CY_TEST_CASE("a tiny bright emitter is promoted and lights the floor without fireflies") {
     // A 30 cm lamp at radiance 400 (power 113) under the ceiling. Measured: the light arriving
-    // DIRECTLY from it at 25 floor cards — the path tracer with no bounce, 16384 samples each,
+    // DIRECTLY from it at 25 floor cards — the path tracer with no bounce, 8192 samples each,
     // against one update of the card lighting — once promoted and once left to the cache.
     const std::vector<Surfel> cards = with_lamp(Vec3{400.0F, 400.0F, 400.0F});
     const Reference reference(cards, true);
     std::vector<Vec3> expected;
     u32 seed = 1;
     for (const Receiver& receiver : floor_grid()) {
-        expected.push_back(reference.irradiance(receiver.position, receiver.normal, 0, 16384,
+        expected.push_back(reference.irradiance(receiver.position, receiver.normal, 0, 8192,
                                                 0x9E3779B9U + (seed++ * 7919U)));
     }
 
     const Classified promoted(cards, EmissiveSettings{});
     CY_REQUIRE_EQ(promoted.lights.size(), 1U);
     CardRoom lit(promoted.cache.span());
-    lit.run(promoted.lights.span(), 64, 1);
+    lit.run(promoted.lights.span(), 0, 1);  // the direct term only: no gather to pay for
     std::vector<Vec3> direct;
     for (const Receiver& receiver : floor_grid()) {
         direct.push_back(lit.page_at(receiver.position, receiver.normal).direct);
@@ -671,7 +702,7 @@ CY_TEST_CASE("a tiny bright emitter is promoted and lights the floor without fir
     const Classified cached(cards, cache_only());
     CY_REQUIRE_EQ(cached.lights.size(), 0U);
     CardRoom gathered(cached.cache.span());
-    gathered.run({}, 64, 2);
+    gathered.run({}, 32, 2);
     std::vector<Vec3> injected;
     for (const Receiver& receiver : floor_grid()) {
         injected.push_back(gathered.incoming(receiver.position, receiver.normal));
@@ -679,17 +710,17 @@ CY_TEST_CASE("a tiny bright emitter is promoted and lights the floor without fir
     const Agreement cache = agree(injected, expected);
     print("tiny lamp, cache only, 25 floor cards, first gather", cache);
 
-    // Promoted: the energy within 5% of the path tracer (measured 0.013) and a ratio variance at
-    // the level of the reference's own noise at these sample counts (measured 0.018; at 262 144
-    // samples it falls to 0.001 and the energy error to 0.003, so it is the reference that is
-    // noisy, not the light). No receiver over 1.5 times its reference: no fireflies.
+    // Promoted: the energy within 5% of the path tracer (measured 0.005) and a ratio variance at
+    // the level of the reference's own noise at 8192 samples (measured 0.027; at 262 144 samples
+    // it falls to 0.001 and the energy error to 0.003, so it is the reference that is noisy, not
+    // the light). No receiver over 1.5 times its reference (measured 1.33): no fireflies.
     CY_CHECK_LT(light.energy_error, 0.05F);
     CY_CHECK_LT(light.ratio_variance, 0.05F);
     CY_CHECK_LT(light.max_ratio, 1.5F);
     // Left to the cache, the same lamp is the firefly field the requirement is written against —
-    // measured ratio variance 3.7, a receiver at 6.4 times its reference, and the energy 77% off
-    // because every gather hit in the region of the ceiling the lamp is nearest to resolves to it.
-    // The comparison is what makes the bound above mean something.
+    // measured ratio variance 4.6, receivers from nothing to 7.8 times their reference, because a
+    // gather hit anywhere in the region of the ceiling the lamp is the nearest card for resolves
+    // to it. The comparison is what makes the bound above mean something.
     CY_CHECK_GT(cache.ratio_variance, 20.0F * light.ratio_variance);
 }
 

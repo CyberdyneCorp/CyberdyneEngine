@@ -114,10 +114,10 @@ reference uses `PathTracer::set_emission_footprints`, which is off for every bak
 
 | a 4 x 2 x 4 m room, no light placed | energy error | per-receiver |
 |---|---|---|
-| 2.25 m^2 panel, promoted (20 receivers, 5 bounces) | 0.015 | mean relative 0.070 (reference noise) |
-| the same panel, cache only, 64 gather rays | 0.071 | mean relative 0.130 |
-| 30 cm lamp at radiance 400, promoted (25 floor cards, direct) | 0.013 | ratio variance 0.018, max ratio 1.28 |
-| the same lamp, cache only | 0.77 | ratio variance 3.7, max ratio 6.4: fireflies |
+| 2.25 m^2 panel, promoted (22 receivers, 5 bounces) | 0.020 | mean relative 0.071 (reference noise) |
+| the same panel, cache only, 64 gather rays | 0.086 | mean relative 0.140 |
+| 30 cm lamp at radiance 400, promoted (25 floor cards, direct) | 0.005 | ratio variance 0.027 (reference noise), max ratio 1.33 |
+| the same lamp, cache only, 32 gather rays | 0.067 | ratio variance 4.6, receivers from 0 to 7.8x: fireflies |
 
 ## GI volumes
 
@@ -130,7 +130,7 @@ density, update rate, quality and tier are decided when a probe is PLACED and re
 volume that sets one of them; intensity and the far-field distance are resolved per sample in
 `indirect_diffuse` and `indirect_specular`. The scheduler ages a probe at its rate and scales its
 error by it, which on `integration.render_gi_volumes`'s two mirror-image interiors gives the marked
-one 2.7 times the updates per probe within one budget.
+one 3.9 times the updates per probe within one budget.
 
 ## Irradiance volumes: the first slice that reaches a frame
 

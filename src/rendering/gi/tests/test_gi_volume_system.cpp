@@ -53,7 +53,7 @@ struct Interiors {
     gi_support::BoxField pillar{Vec3{0.5F, 1.5F, 0.5F}};
     IlluminationSystem system;
 
-    explicit Interiors(f32 far_field_begins = 60.0F, u32 half_extent_probes = 7) {
+    explicit Interiors(f32 far_field_begins = 60.0F, u32 half_extent_probes = 6) {
         IlluminationSettings settings;
         settings.error_targets.far_field_begins_metres = far_field_begins;
         settings.field.levels = 1;
@@ -62,7 +62,7 @@ struct Interiors {
         settings.probes.levels = 2;
         settings.probes.base_spacing_metres = 1.0F;
         settings.probes.half_extent_probes = half_extent_probes;
-        settings.rays_per_probe = 4;
+        settings.rays_per_probe = 2;
         CY_REQUIRE(system.configure(settings).has_value());
         CY_REQUIRE(
             system.field().place(1, pillar.asset(), cy::Mat4::from_translation(kLeft)).has_value());
@@ -201,14 +201,14 @@ CY_TEST_CASE("an important interior gets more probes and more updates within one
         CY_CHECK_EQ(probe.ray_scale, inside ? 2.0F : 1.0F);
     }
 
-    // Forty frames to place and first shade every probe (2 600 of them at 256 an update), then
-    // sixty under the same budget: every frame spends exactly what the budget allows, and a probe
-    // in the volume is updated several times as often as its mirror image.
-    for (u64 index = 2; index <= 41; ++index) {
+    // Twenty frames to place and first shade every probe (about 2 000 of them at 256 an update),
+    // then forty under the same budget: every frame spends exactly what the budget allows, and a
+    // probe in the volume is updated several times as often as its mirror image.
+    for (u64 index = 2; index <= 21; ++index) {
         (void)marked.system.update(Interiors::frame(index));
     }
     std::vector<u32> updates(marked.system.radiance().probes().size(), 0);
-    for (u64 index = 42; index <= 101; ++index) {
+    for (u64 index = 22; index <= 61; ++index) {
         const auto report = marked.system.update(Interiors::frame(index));
         const auto budget = static_cast<u32>(
             marked.system.budget().value(cy::rendering::gi::GiLever::ProbeUpdates));
@@ -219,7 +219,7 @@ CY_TEST_CASE("an important interior gets more probes and more updates within one
             if (probes[handle].live && probes[handle].last_update_frame == index) {
                 updates[handle] += 1;
                 // High quality: twice the rays per probe in the volume, the base count elsewhere.
-                expected_rays += volume.bounds.contains(probes[handle].position) ? 8U : 4U;
+                expected_rays += volume.bounds.contains(probes[handle].position) ? 4U : 2U;
             }
         }
         CY_CHECK_EQ(report.probes.rays, expected_rays);
@@ -244,7 +244,7 @@ CY_TEST_CASE("an important interior gets more probes and more updates within one
     }
     const f32 right_rate = static_cast<f32>(right_updates) / static_cast<f32>(right_probes);
     const f32 left_rate = static_cast<f32>(left_updates) / static_cast<f32>(left_probes);
-    std::printf("  updates per probe over 60 frames: %.2f unmarked, %.2f in the volume\n",
+    std::printf("  updates per probe over 40 frames: %.2f unmarked, %.2f in the volume\n",
                 static_cast<double>(left_rate), static_cast<double>(right_rate));
     CY_CHECK_GT(left_rate, 0.0F);
     CY_CHECK_GT(right_rate, 2.5F * left_rate);
