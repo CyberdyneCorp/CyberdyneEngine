@@ -4,7 +4,32 @@
 
 #include <cy/core/base/types.h>
 
+#include <cstddef>
+#include <initializer_list>
+
 namespace cy::rendering::gi_gpu {
+
+namespace detail {
+
+/// One MSL module assembled from several raw-string chunks. See embed_msl.py for why.
+template <std::size_t Size>
+struct MslText {
+    char text[Size];
+};
+
+template <std::size_t... Sizes>
+consteval MslText<(Sizes + ...) - sizeof...(Sizes) + 1> join_msl(const char (&... chunks)[Sizes]) {
+    MslText<(Sizes + ...) - sizeof...(Sizes) + 1> joined{};
+    std::size_t at = 0;
+    for (const char* chunk : {static_cast<const char*>(chunks)...}) {
+        for (; *chunk != '\0'; ++chunk) {
+            joined.text[at++] = *chunk;
+        }
+    }
+    return joined;
+}
+
+}  // namespace detail
 
 /// cyGiTraceRays.metal, 11415 bytes.
 inline constexpr char kGiTraceRaysMsl[] =
@@ -14733,7 +14758,7 @@ struct KernelContext_0
 )cy_msl";
 
 /// cyGiResolve.metal, 69461 bytes.
-inline constexpr char kGiResolveMsl[] =
+inline constexpr auto kGiResolveMslText = detail::join_msl(
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -15035,8 +15060,7 @@ float giSampleLevel_0(uint level_0, float3 p_0, float thread* farDistance_0, Ker
     if(_S16)
     {
 
-)cy_msl"
-    R"cy_msl(#line 186
+#line 186
         _S16 = true;
 
 #line 186
@@ -15339,8 +15363,7 @@ GiWorldHit_0 gpMiss_0()
     return miss_0;
 }
 
-)cy_msl"
-    R"cy_msl(
+
 #line 106
 float gpClamp_0(float value_1, float lo_0, float hi_0)
 {
@@ -15559,7 +15582,8 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
             else
             {
 
-#line 498
+)cy_msl",
+    R"cy_msl(#line 498
                 break;
             }
 
@@ -15644,8 +15668,7 @@ uint giFindCard_0(float3 position_3, float3 normal_2, KernelContext_0 thread* ke
                         continue;
                     }
 
-)cy_msl"
-    R"cy_msl(#line 513
+#line 513
                     float3 offset_0 = kernelContext_10->giScene_0->cards_0[_S60].xyz - position_3;
                     float squared_1 = dot(offset_0, offset_0);
                     if(squared_1 > _S48)
@@ -15951,8 +15974,7 @@ GrCombine_0 grCombineBegin_0()
     return state_0;
 }
 
-)cy_msl"
-    R"cy_msl(
+
 #line 188
 uint grReflectionRays_0(float roughness_0, KernelContext_0 thread* kernelContext_13)
 {
@@ -16253,8 +16275,7 @@ float3 grResolveSpecular_0(uint pixel_2, float3 position_5, float3 normal_5, flo
     thread GrCombine_0 state_3 = grCombineBegin_0();
 
 
-)cy_msl"
-    R"cy_msl(    GrSample_0 _S79 = grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
+    GrSample_0 _S79 = grSample_0(float3(0.0, 0.0, 0.0), 0.0, 0U);
     float _S80 = cached_0.w;
 
 #line 428
@@ -16415,7 +16436,8 @@ float grFarFieldWeight_0(float distance_0, KernelContext_0 thread* kernelContext
 {
 
 #line 157
-    float4 far_0 = (as_type<float4>((kernelContext_15->giResolve_0->constants_2[3U])));
+)cy_msl",
+    R"cy_msl(    float4 far_0 = (as_type<float4>((kernelContext_15->giResolve_0->constants_2[3U])));
     float begin_0 = far_0.x;
     if(begin_0 <= 0.0)
     {
@@ -16557,8 +16579,7 @@ float3 grResolveDiffuse_0(uint pixel_3, float3 position_7, float3 normal_10, flo
 #line 388
     thread GrSample_0 _S101 = cache_1;
 
-)cy_msl"
-    R"cy_msl(#line 388
+#line 388
     grCombineAdd_0(&state_4, &_S101, excluded_2);
 
 
@@ -16861,8 +16882,7 @@ float giTrilinear_1(uint slot_2, float fx_1, float fy_1, float fz_1, KernelConte
     uint _S133 = uint(x0_1 + int(1));
     uint _S134 = uint(y0_1 + int(1));
 
-)cy_msl"
-    R"cy_msl(#line 143
+#line 143
     uint _S135 = base_1 + (_S129 + _S134) * 5U;
 
     uint _S136 = uint(z0_1 + int(1)) * 5U;
@@ -17163,8 +17183,7 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_4, float3 direction_4, float maxDista
         if(_S156 < surface_1)
         {
 
-)cy_msl"
-    R"cy_msl(#line 251
+#line 251
             (&result_1)->hit_1 = true;
             (&result_1)->t_1 = t_6;
             (&result_1)->position_1 = position_9;
@@ -17198,7 +17217,8 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_4, float3 direction_4, float maxDista
             float _S166 = giDistance_0(position_9 + _S165, kernelContext_25);
 
 #line 260
-            float _S167 = giDistance_0(position_9 - _S165, kernelContext_25);
+)cy_msl",
+    R"cy_msl(            float _S167 = giDistance_0(position_9 - _S165, kernelContext_25);
 
             (&result_1)->normal_1 = giNormalisedOr_0(float3(_S160, _S164, _S166 - _S167), - direction_4);
             (&result_1)->closest_0 = closest_2;
@@ -17471,8 +17491,7 @@ float3 gpDecode_0(uint encoding_0, const array<float, int(48)> thread* payload_1
             else
             {
 
-)cy_msl"
-    R"cy_msl(#line 229
+#line 229
                 break;
             }
 
@@ -17773,8 +17792,7 @@ void grSampleTraced_0(float3 position_10, float3 normal_12, float3 reflection_2,
                     if(_S206 == 4294967295U)
                     {
 
-)cy_msl"
-    R"cy_msl(#line 332
+#line 332
                         x_4 = x_4 + int(1);
 
 #line 329
@@ -18024,7 +18042,8 @@ void grSampleTraced_0(float3 position_10, float3 normal_12, float3 reflection_2,
                         diffuseOldest_3 = diffuseOldest_2;
 
 #line 359
-                        diffuseWeight_3 = diffuseWeight_2;
+)cy_msl",
+    R"cy_msl(                        diffuseWeight_3 = diffuseWeight_2;
 
 #line 359
                     }
@@ -18075,8 +18094,7 @@ void grSampleTraced_0(float3 position_10, float3 normal_12, float3 reflection_2,
 #line 364
                         specularWeight_3 = specularWeight_2;
 
-)cy_msl"
-    R"cy_msl(#line 364
+#line 364
                     }
 
 #line 364
@@ -18255,10 +18273,11 @@ void grResolvePixel_0(uint pixel_4, KernelContext_0 thread* kernelContext_29)
     return;
 }
 
-)cy_msl";
+)cy_msl");
+inline constexpr const auto& kGiResolveMsl = kGiResolveMslText.text;
 
 /// cyGiResolveHardware.metal, 74783 bytes.
-inline constexpr char kGiResolveHardwareMsl[] =
+inline constexpr auto kGiResolveHardwareMslText = detail::join_msl(
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -18564,8 +18583,7 @@ GiWorldHit_0 GiHardwareTier_trace_0(float3 origin_0, float3 direction_0, float m
     uint primitive_0 = ((&query_0)->get_committed_primitive_id());
     uint _S6 = instance_0 * 4U;
 
-)cy_msl"
-    R"cy_msl(#line 49
+#line 49
     uint4 record_0 = kernelContext_2->giHardware_0->instances_0[_S6];
     uint first_0 = record_0.y + primitive_0 * 3U;
     uint _S7 = record_0.x;
@@ -18866,8 +18884,7 @@ uint giFindCard_0(float3 position_1, float3 normal_3, KernelContext_0 thread* ke
                         continue;
                     }
 
-)cy_msl"
-    R"cy_msl(#line 519
+#line 519
                     float score_0 = squared_1 / alignment_0;
 
 #line 519
@@ -18935,7 +18952,8 @@ uint giFindCard_0(float3 position_1, float3 normal_3, KernelContext_0 thread* ke
                         bestScore_3 = bestScore_2;
 
 #line 523
-                        bestAlignment_3 = bestAlignment_2;
+)cy_msl",
+    R"cy_msl(                        bestAlignment_3 = bestAlignment_2;
 
 #line 523
                         best_3 = best_2;
@@ -19173,8 +19191,7 @@ uint grReflectionRays_0(float roughness_0, KernelContext_0 thread* kernelContext
     if(roughness_0 <= mirror_0)
     {
 
-)cy_msl"
-    R"cy_msl(#line 194
+#line 194
         return _S34;
     }
     if(roughness_0 < cacheMin_0)
@@ -19475,8 +19492,7 @@ float3 grResolveSpecular_0(uint pixel_2, float3 position_3, float3 normal_6, flo
 #line 428
         cache_0 = grSample_0(cached_0.xyz, _S44 * gpClamp_0(roughness_2, 0.15000000596046448, 1.0), 3U);
 
-)cy_msl"
-    R"cy_msl(#line 428
+#line 428
     }
     else
     {
@@ -19779,8 +19795,7 @@ float giTrilinear_0(uint slot_0, float fx_0, float fy_0, float fz_0, KernelConte
 #line 141
     uint _S64 = uint(y0_0);
 
-)cy_msl"
-    R"cy_msl(#line 141
+#line 141
     uint _S65 = base_0 + (_S63 + _S64) * 5U;
 
 #line 141
@@ -19799,7 +19814,8 @@ float giTrilinear_0(uint slot_0, float fx_0, float fy_0, float fz_0, KernelConte
     uint _S72 = base_0 + (_S70 + _S68) * 5U;
 
 #line 153
-    return giLerp_0(giLerp_0(giLerp_0(kernelContext_13->giScene_0->bricks_0[_S65 + _S66], kernelContext_13->giScene_0->bricks_0[_S65 + _S67], tx_0), giLerp_0(kernelContext_13->giScene_0->bricks_0[_S69 + _S66], kernelContext_13->giScene_0->bricks_0[_S69 + _S67], tx_0), ty_0), giLerp_0(giLerp_0(kernelContext_13->giScene_0->bricks_0[_S71 + _S66], kernelContext_13->giScene_0->bricks_0[_S71 + _S67], tx_0), giLerp_0(kernelContext_13->giScene_0->bricks_0[_S72 + _S66], kernelContext_13->giScene_0->bricks_0[_S72 + _S67], tx_0), ty_0), clamp(fz_0 - float(z0_0), 0.0, 1.0));
+)cy_msl",
+    R"cy_msl(    return giLerp_0(giLerp_0(giLerp_0(kernelContext_13->giScene_0->bricks_0[_S65 + _S66], kernelContext_13->giScene_0->bricks_0[_S65 + _S67], tx_0), giLerp_0(kernelContext_13->giScene_0->bricks_0[_S69 + _S66], kernelContext_13->giScene_0->bricks_0[_S69 + _S67], tx_0), ty_0), giLerp_0(giLerp_0(kernelContext_13->giScene_0->bricks_0[_S71 + _S66], kernelContext_13->giScene_0->bricks_0[_S71 + _S67], tx_0), giLerp_0(kernelContext_13->giScene_0->bricks_0[_S72 + _S66], kernelContext_13->giScene_0->bricks_0[_S72 + _S67], tx_0), ty_0), clamp(fz_0 - float(z0_0), 0.0, 1.0));
 }
 
 
@@ -20083,8 +20099,7 @@ GiTraceHit_0 giSphereTrace_0(float3 origin_2, float3 direction_3, float maxDista
         }
         float3 position_5 = origin_2 + direction_3 * float3(t_5) ;
 
-)cy_msl"
-    R"cy_msl(#line 248
+#line 248
         float _S90 = giDistance_0(position_5, kernelContext_16);
 
         if(_S90 < surface_0)
@@ -20385,8 +20400,7 @@ uint gpLayoutProbe_0(uint level_3, int3 cell_2, KernelContext_0 thread* kernelCo
     return kernelContext_19->giProbes_0->layout_0[level_3 * cells_0 + (_S127 + uint(_S128))];
 }
 
-)cy_msl"
-    R"cy_msl(
+
 #line 114
 constant array<float3, int(6)> kGpAxes_0 = { float3(1.0, 0.0, 0.0), float3(-1.0, 0.0, 0.0), float3(0.0, 1.0, 0.0), float3(0.0, -1.0, 0.0), float3(0.0, 0.0, 1.0), float3(0.0, 0.0, -1.0) };
 
@@ -20553,7 +20567,8 @@ float giSampleLevel_1(uint level_4, float3 p_2, float thread* farDistance_2, Ker
     uint _S146 = 16U + level_4 * 2U;
 
 #line 176
-    float4 shape_1 = (as_type<float4>((kernelContext_24->giScene_0->constants_1[_S146])));
+)cy_msl",
+    R"cy_msl(    float4 shape_1 = (as_type<float4>((kernelContext_24->giScene_0->constants_1[_S146])));
     int4 origin_3 = (as_type<int4>((kernelContext_24->giScene_0->constants_1[_S146 + 1U])));
     float voxel_1 = shape_1.x;
     float brick_1 = shape_1.y;
@@ -20687,8 +20702,7 @@ float giSampleLevel_1(uint level_4, float3 p_2, float thread* farDistance_2, Ker
 
     float3 local_2 = (p_2 - float3(float(bx_1) * brick_1, float(by_1) * brick_1, float(bz_1) * brick_1)) / float3(voxel_1) ;
 
-)cy_msl"
-    R"cy_msl(#line 196
+#line 196
     float _S156 = giTrilinear_1(slot_3, local_2.x, local_2.y, local_2.z, kernelContext_24);
     return _S156;
 }
@@ -20989,8 +21003,7 @@ void gpLoadPayload_0(uint probe_1, uint floats_0, array<float, int(48)> thread* 
 #line 274
     }
 
-)cy_msl"
-    R"cy_msl(
+
     return;
 }
 
@@ -21300,8 +21313,7 @@ void grSampleTraced_0(float3 position_10, float3 normal_14, float3 reflection_2,
     float3 _S203 = position_10 + normal_14 * float3((as_type<float>((kernelContext_29->giProbes_0->constants_0[1U].y)))) ;
     float3 _S204 = float3(0.0, 0.0, 0.0);
 
-)cy_msl"
-    R"cy_msl(#line 313
+#line 313
     float3 diffuseTotal_0 = _S204;
 
 #line 313
@@ -21434,7 +21446,8 @@ void grSampleTraced_0(float3 position_10, float3 normal_14, float3 reflection_2,
 
 #line 329
                         break;
-                    }
+)cy_msl",
+    R"cy_msl(                    }
 
 #line 329
                     uint _S213 = gpLayoutProbe_0(level_7, int3(x_4, y_4, z_3), kernelContext_29);
@@ -21606,8 +21619,7 @@ void grSampleTraced_0(float3 position_10, float3 normal_14, float3 reflection_2,
                     else
                     {
 
-)cy_msl"
-    R"cy_msl(#line 351
+#line 351
                         bool _S221 = grProbeOccluded_0(_S203, at_0, kernelContext_29);
 
 #line 351
@@ -21908,8 +21920,7 @@ void grResolvePixel_0(uint pixel_4, KernelContext_0 thread* kernelContext_30)
 #line 18
     thread KernelContext_0 kernelContext_31;
 
-)cy_msl"
-    R"cy_msl(#line 18
+#line 18
     (&kernelContext_31)->giProbes_0 = giProbes_1;
 
 #line 18
@@ -21927,7 +21938,8 @@ void grResolvePixel_0(uint pixel_4, KernelContext_0 thread* kernelContext_30)
     return;
 }
 
-)cy_msl";
+)cy_msl");
+inline constexpr const auto& kGiResolveHardwareMsl = kGiResolveHardwareMslText.text;
 
 /// cyGiReproject.metal, 8639 bytes.
 inline constexpr char kGiReprojectMsl[] =

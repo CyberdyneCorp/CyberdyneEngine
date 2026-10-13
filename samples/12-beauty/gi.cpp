@@ -389,6 +389,9 @@ Status BeautyGi::build(const Shot& shot,
             }
         }
     }
+    if (state.cards.empty()) {
+        return fail(ErrorCode::InvalidArgument, "the shot's meshes gave the GI scene no card");
+    }
     Aabb bounds = Aabb::from_min_max(state.cards[0].position, state.cards[0].position);
     for (const gi::Surfel& card : state.cards.span()) {
         bounds = Aabb::from_min_max(cwise_min(bounds.min, card.position),
