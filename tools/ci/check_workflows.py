@@ -600,6 +600,112 @@ def swift_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
     return problems
 
 
+# --- The build tree reaches the jobs that test it -----------------------------------------------
+#
+# MEASURED BEFORE IT WAS RULED. On windows-x86_64 the `test` leg took 59 of its 60 minutes in run
+# 37730586551: the build job's tree had been evicted from the repository cache — every push wrote
+# a new multi-gigabyte entry for each of a dozen jobs into a cache GitHub caps at 10 GB — so the leg
+# rebuilt the engine from nothing, and even with an exact hit it recompiled every engine target,
+# because a fresh checkout dates each source after each object. The structure that fixes both: the
+# build job packs its tree as an artefact of the run, and a job that needs the build unpacks it at
+# the commit it was built from, after anything it rebuilds from an older cache.
+BUILD_JOB = "build"
+PACK = "just ci-build-tree-pack"
+UNPACK = "just ci-build-tree-unpack"
+TREE_ARTEFACT = "build-tree-"
+STEP_START = re.compile(r"^      - ")
+NEEDS_KEY = re.compile(r"^    needs:\s*(?P<inline>.*?)\s*$")
+CACHE_ACTION = re.compile(r"uses:\s*actions/cache(?:/restore)?@")
+EDITOR_BUILD = re.compile(r"\bjust build-editor(?![\w-])")
+
+
+def _steps(body: list[str]) -> list[str]:
+    """Each step of a job, as its lines joined, comments dropped."""
+    steps: list[list[str]] = []
+    inside = False
+    for line in body:
+        if re.match(r"^    \S", line):
+            inside = line.strip() == "steps:"
+            continue
+        if not inside or line.lstrip().startswith("#"):
+            continue
+        if STEP_START.match(line):
+            steps.append([])
+        if steps:
+            steps[-1].append(line)
+    return ["\n".join(step) for step in steps]
+
+
+def _needs(body: list[str]) -> set[str]:
+    """The jobs a job's `needs:` names, inline or as a block list."""
+    for index, line in enumerate(body):
+        match = NEEDS_KEY.match(line)
+        if not match:
+            continue
+        inline = match.group("inline")
+        if inline:
+            return {name.strip() for name in inline.strip("[]").split(",") if name.strip()}
+        names = set()
+        for entry in body[index + 1:]:
+            item = re.match(r"^      -\s*(\S+)\s*$", entry)
+            if not item:
+                break
+            names.add(item.group(1))
+        return names
+    return set()
+
+
+def _first(steps: list[str], predicate) -> int:
+    return next((index for index, step in enumerate(steps) if predicate(step)), -1)
+
+
+def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """The build job hands its tree on as an artefact, and nothing that needs it rebuilds it."""
+    problems: list[str] = []
+    for path in workflows:
+        jobs = _job_blocks(path)
+        if BUILD_JOB not in jobs:
+            continue
+        build_line, build_body = jobs[BUILD_JOB]
+        steps = _steps(build_body)
+        built = _first(steps, lambda step: "just build-engine" in step)
+        packed = _first(steps, lambda step: PACK in step)
+        uploaded = _first(steps, lambda step: "actions/upload-artifact" in step
+                          and TREE_ARTEFACT in step)
+        if built >= 0 and not built < packed < uploaded:
+            problems.append(f"{path.name}:{build_line} job '{BUILD_JOB}' does not run `{PACK}` "
+                            f"after its build and upload the `{TREE_ARTEFACT}<label>` artefact, so "
+                            "the jobs that test the build must rebuild it")
+        for job, (line, body) in jobs.items():
+            steps = _steps(body)
+            cached = [index for index, step in enumerate(steps)
+                      if CACHE_ACTION.search(step) and "build/dev" in step]
+            if BUILD_JOB in _needs(body) and cached:
+                problems.append(f"{path.name}:{line} job '{job}' needs '{BUILD_JOB}' and restores "
+                                "build/dev from the cache, which is evicted under load and is "
+                                "rebuilt in full even on a hit; unpack the build job's "
+                                f"`{TREE_ARTEFACT}` artefact with `{UNPACK}` instead")
+            unpacked = _first(steps, lambda step: UNPACK in step)
+            if job == "test" and BUILD_JOB in _needs(body) and unpacked < 0:
+                problems.append(f"{path.name}:{line} job 'test' does not run `{UNPACK}`, so it "
+                                "tests a tree it rebuilt rather than the one the build job built")
+            if unpacked < 0:
+                continue
+            downloaded = _first(steps, lambda step: "actions/download-artifact" in step
+                                and TREE_ARTEFACT in step)
+            if not 0 <= downloaded < unpacked:
+                problems.append(f"{path.name}:{line} job '{job}' runs `{UNPACK}` without first "
+                                f"downloading a `{TREE_ARTEFACT}` artefact")
+            late = [index for index, step in enumerate(steps)
+                    if index > unpacked and (CACHE_ACTION.search(step)
+                                             or EDITOR_BUILD.search(step))]
+            if late:
+                problems.append(f"{path.name}:{line} job '{job}' restores a cache or builds the "
+                                f"editor after `{UNPACK}`, which dates the sources back: whatever "
+                                "that cache held from an older commit would then look current")
+    return problems
+
+
 # The documented Linux dependency set, and the check M9's closing gate had to write.
 #
 # SIXTY-THREE CI RUNS, NOT ONE OF THEM GREEN, AND THE CAUSE WAS FOUR PACKAGES. Every Linux job in
@@ -1001,7 +1107,66 @@ def selftest(root: pathlib.Path) -> int:
             print("ok   accepted: a gate job guarded by a repository variable, which is a fact "
                   "about the configuration and not about this file")
 
-    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5 + len(live_cases) + 2 + 3
+
+        # --- THE BUILD-TREE HAND-OFF'S OWN NEGATIVE FIXTURES ---------------------------------------
+        #
+        # THE DEFECT, RESTORED in each of its shapes: a build job that hands nothing on, a test job
+        # that restores build/dev from the cache (this file's state until October 2026), one that
+        # never unpacks, one that unpacks with nothing downloaded, and one that builds the editor or
+        # restores a cache after the unpack has dated the sources back. The legal shape, with
+        # `needs:` written as a block list, must pass.
+        build_job = ("  build:\n    runs-on: ubuntu-24.04\n    steps:\n"
+                     "      - run: just build-engine\n{pack}")
+        pack = ("      - run: just ci-build-tree-pack\n      - uses: actions/upload-artifact@v5\n"
+                "        with:\n          name: build-tree-x\n")
+        download = ("      - uses: actions/download-artifact@v5\n        with:\n"
+                    "          name: build-tree-x\n")
+        unpack = "      - run: just ci-build-tree-unpack\n"
+        cache = "      - uses: actions/cache@v5\n        with:\n          path: build/dev\n"
+        editor = "      - run: just build-editor\n"
+
+        def handoff_of(build_steps: str, test_steps: str) -> list[str]:
+            scratch.write_text(
+                "jobs:\n" + build_job.format(pack=build_steps)
+                + "  test:\n    needs:\n      - build\n    runs-on: ubuntu-24.04\n    steps:\n"
+                + test_steps + "      - run: just test-all\n",
+                encoding="utf-8",
+            )
+            return build_tree_handoff(root, [scratch])
+
+        handoff_cases = (
+            ("", download + unpack, "does not run `just ci-build-tree-pack`",
+             "a build job that hands no tree on"),
+            (pack, cache, "restores build/dev from the cache",
+             "a test job that restores build/dev from the cache"),
+            (pack, "", "does not run `just ci-build-tree-unpack`",
+             "a test job that rebuilds rather than unpacks"),
+            (pack, unpack, "without first downloading",
+             "an unpack with no artefact downloaded"),
+            (pack, download + unpack + editor, "after `just ci-build-tree-unpack`",
+             "an editor build after the sources were dated back"),
+            (pack, download + unpack + cache.replace("build/dev", "build/editor"),
+             "after `just ci-build-tree-unpack`",
+             "a cache restored after the sources were dated back"),
+        )
+        for build_steps, test_steps, expected, description in handoff_cases:
+            found = handoff_of(build_steps, test_steps)
+            if any(expected in problem for problem in found):
+                print(f"ok   rejected: {description}")
+            else:
+                failed += 1
+                print(f"fail {description} was accepted: {found or ['nothing']}",
+                      file=sys.stderr)
+        found = handoff_of(pack, editor + download + unpack)
+        if found:
+            failed += 1
+            print(f"fail the hand-off itself was rejected: {found}", file=sys.stderr)
+        else:
+            print("ok   accepted: a build job that packs its tree and a test job that builds the "
+                  "editor, then downloads and unpacks it")
+
+    total = (len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5 + len(live_cases) + 2 + 3
+             + len(handoff_cases) + 1)
     if failed:
         print(f"check-workflows selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1
@@ -1101,9 +1266,10 @@ def main() -> int:
     swift = swift_drift(root, workflows)
     system = system_dependencies(root, workflows)
     cancellation = long_run_cancellation(root, workflows)
+    handoff = build_tree_handoff(root, workflows)
 
     if (violations or uncovered or dead or drift or spec_drift or swift or system
-            or cancellation):
+            or cancellation or handoff):
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
@@ -1126,6 +1292,9 @@ def main() -> int:
         for gap in cancellation:
             print(f"  {gap}\n      measured: 65 of this repository's first 66 runs were "
                   "cancelled, none ever succeeded.", file=sys.stderr)
+        for gap in handoff:
+            print(f"  {gap}\n      measured: run 37730586551's windows-x86_64 test leg spent 59 "
+                  "of its 60 minutes rebuilding the build job's tree.", file=sys.stderr)
         return 1
 
     print(
@@ -1133,7 +1302,8 @@ def main() -> int:
         "every one a recipe or a tool install, every permanent gate run, every closed "
         "milestone's criteria evaluated, every gate's job actually scheduled by a declared "
         "trigger and forgiven by nothing, every Linux job given the documented system "
-        "libraries, and no long workflow cancelling its own runs on the trunk"
+        "libraries, no long workflow cancelling its own runs on the trunk, and the build "
+        "job's tree handed to the jobs that test it"
     )
     return 0
 

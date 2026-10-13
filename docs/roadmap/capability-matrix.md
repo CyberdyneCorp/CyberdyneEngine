@@ -100,7 +100,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |  |  | W |  | **C** |  |  |  |  |  |  |  | M11.a |
 | [`xr-support`](../../openspec/specs/xr-support/spec.md) | 8 |  |  |  | ◇ |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** | M13 |
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | 13 | S |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
-| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 15 | S |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
+| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 16 | S |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | 12 | S |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  | M10 |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | 9 | S |  |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |

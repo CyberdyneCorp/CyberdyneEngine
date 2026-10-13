@@ -77,3 +77,6 @@ crash-reports/
 perf.data
 perf.data.old
 .cy-build.lock
+
+# The build tree a CI build job packs for the jobs that test it (`just ci-build-tree-pack`)
+/build-tree.tar.zst
