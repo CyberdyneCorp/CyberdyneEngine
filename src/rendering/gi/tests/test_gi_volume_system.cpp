@@ -95,7 +95,7 @@ struct Interiors {
         sun.directional = true;
         sun.direction = cy::normalize(Vec3{0.3F, -1.0F, 0.2F});
         sun.intensity = 2.0F;
-        sun_ = {sun};
+        sun_.assign(1, sun);
         FrameContext context = frame(1);
         context.lights = {sun_.data(), sun_.size()};
         (void)system.advance_to_convergence(context, 0.95F, 3);
