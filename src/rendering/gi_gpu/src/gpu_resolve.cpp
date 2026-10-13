@@ -29,6 +29,7 @@ constexpr u32 kWordPreviousToClip = 10 * 4;
 constexpr u32 kWordUnpack = 14 * 4;
 constexpr u32 kWordViewToRelative = 15 * 4;
 constexpr u32 kWordFrame = 18 * 4;
+constexpr u32 kWordJitter = 19 * 4;
 constexpr u32 kWordSignals = 20 * 4;
 constexpr u32 kWordInvalid = 26 * 4;
 
@@ -649,6 +650,10 @@ Status GpuScreenResolve::begin_frame(const GpuResolveView& view, u64 frame) noex
     for (u32 index = 0; index < 4; ++index) {
         words_[kWordUnpack + index] = bits(view.projection[index]);
     }
+    // The jittered image shows the unjittered point at (x - jx, y + jy): +y is up in the temporal
+    // framework's convention and down in a pixel row, as GTAO's reconstruction has it.
+    words_[kWordJitter + 0] = bits(-view.jitter.x);
+    words_[kWordJitter + 1] = bits(view.jitter.y);
     // View to camera-relative is the rotation's transpose: row i is column i.
     for (u32 row = 0; row < 3; ++row) {
         words_[kWordViewToRelative + (row * 4U) + 0] = bits(view.relative_to_view.columns[row].x);
@@ -667,6 +672,14 @@ Status GpuScreenResolve::begin_frame(const GpuResolveView& view, u64 frame) noex
     began_ = true;
     write_constants();
     return ok();
+}
+
+void GpuScreenResolve::set_jitter(Vec2 jitter) noexcept {
+    words_[kWordJitter + 0] = bits(-jitter.x);
+    words_[kWordJitter + 1] = bits(jitter.y);
+    if (device_ != nullptr && began_) {
+        write_constants();
+    }
 }
 
 void GpuScreenResolve::set_invalidated(Span<const Aabb> regions) noexcept {

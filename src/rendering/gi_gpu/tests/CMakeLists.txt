@@ -84,6 +84,28 @@ function(cy_gi_gpu_declare_tests)
                                        "${CMAKE_SOURCE_DIR}/tests/render")
     set_tests_properties(render.gi_gpu_resolve PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # Stage 4 in the frame: the pipeline suites' scene with the `ScreenSpaceGi` stage produced by
+    # `GpuScreenResolve` and composited by cy/frame.slang — inert until bound, the double-counting
+    # rule at the composite, and the prepass unpacked into the resolve's surfaces. It compiles
+    # src/rendering/pipeline/tests/frame_scene.cpp, the one scene, rather than a second.
+    set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+    cy_add_test(
+        NAME gi_gpu_frame
+        KIND render
+        SOURCES
+            "${tests_dir}/test_gi_gpu_frame.cpp"
+            "${pipeline_tests}/frame_scene.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-pipeline
+                     cy::rendering-particles cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_gi_gpu_frame
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
+                                       "${pipeline_tests}" "${CMAKE_SOURCE_DIR}/tests/render")
+    target_compile_definitions(cy_test_render_gi_gpu_frame
+                               PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(render.gi_gpu_frame PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gi_gpu_declare_tests)

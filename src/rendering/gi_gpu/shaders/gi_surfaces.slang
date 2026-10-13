@@ -17,6 +17,7 @@ static const uint kGsCounts = 0u;          // width, height, pixels, current slo
 static const uint kGsCamera = 1u;          // camera xyz (world)
 static const uint kGsUnpack = 14u;         // P00, P11, m22, m32
 static const uint kGsViewToRelative = 15u; // three rows
+static const uint kGsJitter = 19u;         // xy: what to add to a jittered pixel centre
 
 struct GiSurfaceSet {
     StructuredBuffer<uint4> constants;
@@ -45,7 +46,8 @@ void cyGiUnpackSurfaces(uint3 thread : SV_DispatchThreadID) {
     }
     const float4 projection = asfloat(giSurfaces.constants[kGsUnpack]);
     const float viewDepth = projection.w / (depth + projection.z);
-    const float2 uv = (float2(thread.xy) + 0.5f) / float2(float(counts.x), float(counts.y));
+    const float2 jitter = asfloat(giSurfaces.constants[kGsJitter].xy);
+    const float2 uv = (float2(thread.xy) + 0.5f + jitter) / float2(float(counts.x), float(counts.y));
     const float2 ndc = float2((uv.x * 2.0f) - 1.0f, 1.0f - (uv.y * 2.0f));
     const float3 view =
         float3(ndc.x * viewDepth / projection.x, ndc.y * viewDepth / projection.y, -viewDepth);

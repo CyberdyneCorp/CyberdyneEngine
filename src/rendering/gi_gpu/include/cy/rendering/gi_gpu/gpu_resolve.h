@@ -79,6 +79,9 @@ struct GpuResolveView {
     /// `occlusion::GtaoView` carries — and the view's rotation, camera-relative to view space.
     f32 projection[4] = {1.0F, 1.0F, 0.0F, 0.1F};
     Mat4 relative_to_view = Mat4::identity();
+    /// The sub-pixel jitter the prepass was rasterised with, in pixels, in the temporal
+    /// framework's convention (+y up) — `occlusion::GtaoView::jitter`'s, undone as GTAO undoes it.
+    Vec2 jitter{0.0F, 0.0F};
 };
 
 /// GPU time of one frame of the resolve, per stage, from timestamps around the dispatches.
@@ -149,6 +152,9 @@ public:
     /// Start frame `frame` at `view`: the surface and history slots turn over, and last frame's
     /// view becomes the one the reprojection reads.
     [[nodiscard]] Status begin_frame(const GpuResolveView& view, u64 frame) noexcept;
+    /// The prepass's jitter for this frame, which a frame knows once it is assembled — after
+    /// `begin_frame`. Pixels, the temporal framework's convention (+y up).
+    void set_jitter(Vec2 jitter) noexcept;
     /// The regions this frame invalidated — `gi::ScreenHistoryInputs::invalidated` — after
     /// `begin_frame`, which clears them. At most `gi::kScreenHistoryRegions` are kept.
     void set_invalidated(Span<const Aabb> regions) noexcept;

@@ -31,6 +31,7 @@ static const uint kGrPreviousToClip = 10u;  // four columns
 static const uint kGrUnpack = 14u;        // P00, P11, m22, m32 of the frame's projection
 static const uint kGrViewToRelative = 15u;  // three rows: view space to camera-relative
 static const uint kGrFrame = 18u;         // resolve frame, filter passes, final buffer (0 A, 1 B), 0
+static const uint kGrJitter = 19u;        // the prepass's jitter undone, in pixels: gi_surfaces.slang
 static const uint kGrSignals = 20u;       // three uint4 per signal: diffuse 20..22, specular 23..25
 static const uint kGrInvalid = 26u;       // x region count; then two uint4 a region: min, max
 
