@@ -35,13 +35,13 @@ cy_add_module(
     ALIAS cy::rendering-gi-gpu
     TYPE STATIC
     SOURCES src/gpu_scene.cpp src/gpu_surface_cache.cpp src/gpu_radiance_cache.cpp
-            src/gpu_resolve.cpp
+            src/gpu_resolve.cpp src/gpu_budget.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::rendering-raytracing-gpu for the hardware tier: the structures a ray query traverses are
     # the acceleration service's, built on the device by that module and never by this one.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rendering-gi
                         cy::rendering-graph cy::rendering-raytracing cy::rendering-raytracing-gpu
-                        cy::rendering-forward cy::rhi)
+                        cy::rendering-forward cy::rendering-arbiter cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

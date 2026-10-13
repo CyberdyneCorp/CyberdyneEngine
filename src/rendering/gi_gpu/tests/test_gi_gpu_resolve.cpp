@@ -28,6 +28,9 @@
 #include <cy/backends/rhi/device.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/screen_resolve.h>
+#include <cy/rendering/arbiter/arbiter.h>
+#include <cy/rendering/arbiter/profiles.h>
+#include <cy/rendering/gi_gpu/gpu_budget.h>
 #include <cy/rendering/gi_gpu/gpu_radiance_cache.h>
 #include <cy/rendering/gi_gpu/gpu_resolve.h>
 #include <cy/rendering/gi_gpu/gpu_scene.h>
@@ -49,6 +52,15 @@ using namespace cy;
 namespace gi = cy::rendering::gi;
 namespace rt = cy::rendering::rt;
 namespace rt_gpu = cy::rendering::rt_gpu;
+using cy::rendering::apply_profile;
+using cy::rendering::ArbiterReport;
+using cy::rendering::BudgetArbiter;
+using cy::rendering::BudgetSubsystem;
+using cy::rendering::cost_source_name;
+using cy::rendering::CostSource;
+using cy::rendering::named_profile;
+using cy::rendering::ProfileName;
+using cy::rendering::QualityLadder;
 using cy::rendering::gi_gpu::GpuGiScene;
 using cy::rendering::gi_gpu::GpuGiSceneDescription;
 using cy::rendering::gi_gpu::GpuRadianceCache;
@@ -477,4 +489,199 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage and per 
         }
     }
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+// --- Stage 5: the device cost into the GI budget, and the budget's levers back onto the device ----
+
+namespace {
+
+using cy::rendering::gi_gpu::GpuGiBudget;
+using cy::rendering::gi_gpu::GpuGiCost;
+
+/// One frame of the GI with its cost measured on the device and fed back: the system updates
+/// against the last frame's device time, the levers reach the device resolve, and the resolve's
+/// timestamps become the next frame's measurement.
+struct BudgetedFrame {
+    gi_support::ScreenScene& host;
+    DeviceResolve& device;
+    GpuGiBudget& link;
+    gi::ScreenResolveSettings authored;
+
+    [[nodiscard]] gi::IlluminationFrameReport step(rhi::Device& rhi_device, u64 frame,
+                                                   bool permit) {
+        gi::FrameContext context;
+        context.camera = host.view.camera;
+        context.lights = {host.lights.data(), host.lights.size()};
+        context.frame = frame;
+        context.measured_gi_ms = link.measured_ms();
+        context.permit_relaxation = permit;
+        const gi::IlluminationFrameReport report = host.system.update(context);
+        cy::rendering::gi_gpu::apply_levers(host.system, authored, device.resolve);
+        CY_REQUIRE(device.frame(rhi_device, host, frame));
+        const GpuResolveTimes times = device.resolve.last_times();
+        GpuGiCost cost;
+        cost.resolve_ms = times.total_ms;
+        cost.resolve_valid = times.valid;
+        link.observe(cost);
+        return report;
+    }
+};
+
+[[nodiscard]] std::vector<u32> lever_positions(const gi::GiBudget& budget) {
+    std::vector<u32> positions;
+    for (u32 lever = 0; lever < gi::kGiLeverCount; ++lever) {
+        positions.push_back(budget.position(static_cast<gi::GiLever>(lever)));
+    }
+    return positions;
+}
+
+}  // namespace
+
+CY_TEST_CASE("over budget, the GI drops its levers in the declared order, its device cost falls "
+             "with them, and it relaxes only with the arbiter's permission") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    gi_support::ScreenScene host;
+    gi_support::make_room(host, 960, 540, false, false);
+    for (u64 frame = 0; frame < 4; ++frame) {
+        gi::FrameContext context;
+        context.camera = host.view.camera;
+        context.lights = {host.lights.data(), host.lights.size()};
+        context.frame = frame;
+        (void)host.system.update(context);
+    }
+    DeviceResolve device;
+    CY_REQUIRE(device.create(gpu.device(), host, false, false));
+    device.resolve.set_timing(true);
+    GpuGiBudget link;
+    BudgetedFrame frames{host, device, link, host.settings};
+    gi::GiBudget& budget = host.system.budget();
+
+    // Authored quality, with room to spare: nothing moves.
+    budget.set_allocation_ms(50.0F);
+    u64 frame = 4;
+    for (; frame < 8; ++frame) {
+        (void)frames.step(gpu.device(), frame, false);
+    }
+    const f32 authored_ms = link.measured_ms();
+    CY_CHECK(link.measured());
+    for (const u32 position : lever_positions(budget)) {
+        CY_CHECK_EQ(position, 0U);
+    }
+
+    // FORCED OVER BUDGET: an allocation a tenth of what the device measures. The levers go down in
+    // ascending reduction order, one step at a time, and none moves before every lever ahead of
+    // it in the order has nothing left to give.
+    budget.set_allocation_ms(authored_ms * 0.1F);
+    std::vector<u32> tightened;
+    for (u32 count = 0; count < 40 && !budget.at_reserved_minimum(); ++count, ++frame) {
+        const std::vector<u32> before = lever_positions(budget);
+        (void)frames.step(gpu.device(), frame, false);
+        const std::vector<u32> after = lever_positions(budget);
+        // Within one update the steps were taken in ascending order too: unfold them so.
+        std::vector<u32> moved;
+        for (u32 lever = 0; lever < gi::kGiLeverCount; ++lever) {
+            for (u32 step = before[lever]; step < after[lever]; ++step) {
+                moved.push_back(lever);
+            }
+        }
+        std::sort(moved.begin(), moved.end(), [&](u32 a, u32 b) {
+            return budget.schedule(static_cast<gi::GiLever>(a)).reduction_order <
+                   budget.schedule(static_cast<gi::GiLever>(b)).reduction_order;
+        });
+        tightened.insert(tightened.end(), moved.begin(), moved.end());
+    }
+    // Two more frames at the floor, so the measurement is of the reduced levers.
+    for (u32 count = 0; count < 2; ++count, ++frame) {
+        (void)frames.step(gpu.device(), frame, false);
+    }
+    const f32 reduced_ms = link.measured_ms();
+    std::fprintf(stderr, "levers in the order they went down:");
+    for (const u32 lever : tightened) {
+        std::fprintf(stderr, " %s", gi::gi_lever_name(static_cast<gi::GiLever>(lever)));
+    }
+    std::fprintf(stderr,
+                 "\nthe device GI at 960x540: %.3f ms at authored quality, %.3f ms with every "
+                 "lever at its floor\n",
+                 static_cast<double>(authored_ms), static_cast<double>(reduced_ms));
+    CY_CHECK(budget.at_reserved_minimum());
+    CY_REQUIRE_FALSE(tightened.empty());
+    CY_CHECK_EQ(tightened.front(), static_cast<u32>(gi::GiLever::DenoiserQuality));
+    for (usize index = 1; index < tightened.size(); ++index) {
+        CY_CHECK_LE(budget.schedule(static_cast<gi::GiLever>(tightened[index - 1])).reduction_order,
+                    budget.schedule(static_cast<gi::GiLever>(tightened[index])).reduction_order);
+    }
+    // The levers reached the device: its own cost fell with them.
+    CY_CHECK_LT(reduced_ms, authored_ms * 0.6F);
+
+    // RECOVERY IS THE ARBITER'S: the allocation comes back, and without the arbiter's grant
+    // nothing relaxes however many frames pass.
+    ArbiterReport report;
+    report.registered[static_cast<u32>(BudgetSubsystem::GlobalIllumination)] = true;
+    report.allocation_ms[static_cast<u32>(BudgetSubsystem::GlobalIllumination)] = 50.0F;
+    const std::vector<u32> floor = lever_positions(budget);
+    for (u32 count = 0; count < 12; ++count, ++frame) {
+        link.apply(report, budget);
+        const gi::IlluminationFrameReport update = frames.step(gpu.device(), frame, false);
+        CY_CHECK_EQ(update.budget.levers_relaxed, 0U);
+    }
+    CY_CHECK(lever_positions(budget) == floor);
+    // Granted, one step back a grant, the lever that went down last first.
+    report.relax_granted[static_cast<u32>(BudgetSubsystem::GlobalIllumination)] = true;
+    u32 relaxed = 0;
+    gi::GiLever first = gi::GiLever::Count;
+    for (u32 count = 0; count < 12; ++count, ++frame) {
+        link.apply(report, budget);
+        const gi::IlluminationFrameReport update = frames.step(gpu.device(), frame, false);
+        CY_CHECK_LE(update.budget.levers_relaxed, 1U);
+        if (update.budget.levers_relaxed == 1U && first == gi::GiLever::Count) {
+            first = update.budget.last_lever;
+        }
+        relaxed += update.budget.levers_relaxed;
+    }
+    std::fprintf(stderr, "granted: %u steps back in 12 frames, the first %s\n", relaxed,
+                 first == gi::GiLever::Count ? "none" : gi::gi_lever_name(first));
+    CY_CHECK_GT(relaxed, 0U);
+    CY_CHECK_EQ(static_cast<u32>(first), tightened.back());
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("the device GI reports its measured cost to the arbiter on the rung its levers add up to") {
+    // No device: the link's arithmetic over a real arbiter, so the cost the arbiter sees is the
+    // one the device measured and the rung is the one the GI budget's levers predict.
+    BudgetArbiter arbiter;
+    CY_REQUIRE(apply_profile(named_profile(ProfileName::Standard), arbiter).has_value());
+    gi::GiBudget budget;
+    budget.set_allocation_ms(4.0F);
+    GpuGiBudget link;
+    GpuGiCost cost;
+    cost.resolve_ms = 2.5;
+    cost.resolve_valid = true;
+    // A measurement that moves is a measurement: the arbiter confirms the claim against the
+    // numbers, never the claim alone.
+    for (u32 frame = 0; frame < 4; ++frame) {
+        cost.resolve_ms = 2.5 + (0.1 * frame);
+        link.observe(cost);
+        arbiter.report_frame_ms(12.0F);
+        link.submit(arbiter, budget);
+        (void)arbiter.update();
+    }
+    const ArbiterReport report = arbiter.update();
+    const auto gi_index = static_cast<u32>(BudgetSubsystem::GlobalIllumination);
+    std::fprintf(stderr, "arbiter: GI measured %.3f ms (%s), allocated %.3f ms\n",
+                 static_cast<double>(report.measured_ms[gi_index]),
+                 cost_source_name(report.cost_source[gi_index]),
+                 static_cast<double>(report.allocation_ms[gi_index]));
+    CY_CHECK_EQ(report.cost_source[gi_index], CostSource::Measured);
+    CY_CHECK_GT(report.measured_ms[gi_index], 2.4F);
+    const QualityLadder& ladder = arbiter.declaration(BudgetSubsystem::GlobalIllumination)->ladder;
+    CY_CHECK_EQ(cy::rendering::gi_gpu::arbiter_position(budget, ladder), 0U);
+    // Every lever at its floor predicts the bottom of the declared ladder.
+    for (u32 count = 0; count < 20; ++count) {
+        (void)budget.update(100.0F, count);
+    }
+    CY_CHECK(budget.at_reserved_minimum());
+    CY_CHECK_EQ(cy::rendering::gi_gpu::arbiter_position(budget, ladder), ladder.last_position());
 }

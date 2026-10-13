@@ -77,8 +77,8 @@ function(cy_gi_gpu_declare_tests)
         KIND render
         SOURCES "${tests_dir}/test_gi_gpu_resolve.cpp"
         DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-graph
-                     cy::rendering-raytracing cy::rendering-raytracing-gpu cy::rhi cy::rhi-null
-                     cy::rhi-vulkan)
+                     cy::rendering-arbiter cy::rendering-raytracing cy::rendering-raytracing-gpu
+                     cy::rhi cy::rhi-null cy::rhi-vulkan)
     target_include_directories(cy_test_render_gi_gpu_resolve
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
                                        "${CMAKE_SOURCE_DIR}/tests/render")

@@ -228,6 +228,7 @@ public:
     [[nodiscard]] GiBudget& budget() noexcept { return budget_; }
     [[nodiscard]] const GiBudget& budget() const noexcept { return budget_; }
     [[nodiscard]] denoise::Denoiser& denoiser() noexcept { return denoiser_; }
+    [[nodiscard]] const denoise::Denoiser& denoiser() const noexcept { return denoiser_; }
     [[nodiscard]] rt::AccelerationService& acceleration() noexcept { return acceleration_; }
     [[nodiscard]] TieredTracer& tracer() noexcept { return tracer_; }
     [[nodiscard]] const WorldTracer& world_tracer() const noexcept { return world_; }
