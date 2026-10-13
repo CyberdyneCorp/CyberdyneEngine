@@ -244,6 +244,28 @@ GrSample grWorldRay<T : IGiWorldTier>(float3 position, float3 normal, float3 uni
     return grSample(tier.radiance, tier.confidence, tier.source);
 }
 
+/// `gather_sample` in screen_resolve.cpp: the final-gather ray counts in full whatever it met, and
+/// its confidence says how much of its value is its own — the rest is `standIn`'s, the cache's
+/// answer for the pixel, where there is one the mode admits. A back face with no stand-in is no
+/// sample.
+GrSample grGatherSample(GrSample ray, GrSample standIn, uint excluded) {
+    const bool hasStandIn = standIn.source != kGrSourceNone && standIn.confidence > 0.0f &&
+                            (excluded & (1u << standIn.source)) == 0u;
+    GrSample sample = ray;
+    if (ray.source == kGrSourceNone) {
+        if (!hasStandIn) {
+            return ray;
+        }
+        sample.source = standIn.source;
+        sample.radiance = standIn.radiance;
+    } else if (hasStandIn) {
+        const float trust = gpClamp(ray.confidence, 0.0f, 1.0f);
+        sample.radiance = standIn.radiance + ((ray.radiance - standIn.radiance) * trust);
+    }
+    sample.confidence = 1.0f;
+    return sample;
+}
+
 // --- The cache through the field: `RadianceCache::sample_traced` ------------------------------------
 
 /// `probe_occluded` in radiance_cache.cpp: whether the field stops a trace from `from` before the
@@ -363,14 +385,18 @@ float3 grResolveDiffuse<T : IGiWorldTier>(uint pixel, float3 position, float3 no
     const float density = asfloat(giResolve.constants[kGrCamera].w);
     GrCombine state = grCombineBegin();
 
-    grCombineAdd(state, grSample(cached.xyz, cached.w, kGrSourceCache), excluded);
+    const GrSample cache = grSample(cached.xyz, cached.w, kGrSourceCache);
+    grCombineAdd(state, cache, excluded);
 
     if (grTraces(pixel, frame, density)) {
         const uint hash = grHash(pixel, frame, kGrStreamDirection);
         const float3 direction =
             grCosineDirection(normal, grUnit(hash), grUnit(hash * 0x27220A95u));
         const float3 unit = giNormalisedOr(direction, float3(0.0f, 0.0f, -1.0f));
-        grCombineAdd(state, grWorldRay<T>(position, normal, unit, rays.y, rays.x), excluded);
+        grCombineAdd(state,
+                     grGatherSample(grWorldRay<T>(position, normal, unit, rays.y, rays.x), cache,
+                                    excluded),
+                     excluded);
     }
 
     // `far_sky`: zero confidence in the near field, where it is not even traced.
@@ -396,19 +422,25 @@ float3 grResolveSpecular<T : IGiWorldTier>(uint pixel, float3 position, float3 n
     const float4 rays = asfloat(giResolve.constants[kGrRays]);
     const float density = asfloat(giResolve.constants[kGrCamera].w);
     GrCombine state = grCombineBegin();
+    // `indirect_specular`'s rule: a rough surface trusts the cache as much as anything, a mirror
+    // barely at all.
+    GrSample cache = grSample(float3(0.0f, 0.0f, 0.0f), 0.0f, kGrSourceNone);
+    if (cached.w > 0.0f) {
+        cache = grSample(cached.xyz, cached.w * gpClamp(roughness, 0.15f, 1.0f), kGrSourceCache);
+    }
     const uint count = grReflectionRays(roughness);
     if (count > 0u && grTraces(pixel, frame, density)) {
         const uint hash = grHash(pixel, frame, kGrStreamSpecular);
         const float3 direction =
             grLobeDirection(reflection, normal, roughness, hash % count, count, frame);
         const float3 unit = giNormalisedOr(direction, float3(0.0f, 0.0f, -1.0f));
-        grCombineAdd(state, grWorldRay<T>(position, normal, unit, rays.y, rays.x), 0u);
-    }
-    if (cached.w > 0.0f) {
         grCombineAdd(state,
-                     grSample(cached.xyz, cached.w * gpClamp(roughness, 0.15f, 1.0f),
-                              kGrSourceCache),
+                     grGatherSample(grWorldRay<T>(position, normal, unit, rays.y, rays.x), cache,
+                                    0u),
                      0u);
+    }
+    if (cache.confidence > 0.0f) {
+        grCombineAdd(state, cache, 0u);
     }
     return grCombineEnd(state) * asfloat(giResolve.constants[kGrIntensity].y);
 }

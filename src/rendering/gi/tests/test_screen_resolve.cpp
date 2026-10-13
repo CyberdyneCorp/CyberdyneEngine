@@ -122,6 +122,89 @@ CY_TEST_CASE("a pixel takes the cache, one ray and the far sky, combined by conf
     CY_CHECK_LT(fraction, 0.32F);
 }
 
+namespace {
+
+/// Every card the wall has, shaded long ago: a bright answer the tracer distrusts as stale.
+class StaleWall final : public RadianceLookup {
+public:
+    static constexpr u32 kAge = 240;
+    [[nodiscard]] bool radiance_at(Vec3 /*position*/, Vec3 /*normal*/, Vec3& radiance,
+                                   u32& age_frames) const noexcept override {
+        radiance = Vec3{40.0F, 30.0F, 20.0F};
+        age_frames = kAge;
+        return true;
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("a final-gather ray counts in full whatever it met: a stale wall does not lose to the sky") {
+    // A floor point beside a tall wall, open to the sky: about a third of its rays meet the wall,
+    // whose every card is stale, and the rest escape. Far enough from the camera that the far
+    // sky is a second sample of the pixel beside the ray — the combine the ray's weight decides.
+    DistanceField field;
+    ClipmapSettings clipmap;
+    clipmap.levels = 2;
+    clipmap.resolution = 32;
+    clipmap.base_extent_metres = 8.0F;
+    CY_REQUIRE(field.configure(clipmap).has_value());
+    const gi_support::BoxField wall(Vec3{0.5F, 4.0F, 4.0F}, 0.5F, 17);
+    CY_REQUIRE(field.place(1, wall.asset(), cy::Mat4::from_translation(Vec3{1.5F, 0.0F, 0.0F}))
+                   .has_value());
+    (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
+    const StaleWall cards;
+    const SoftwareTracer tracer(field, &cards);
+    ScreenResolveSources sources;
+    sources.field = &field;
+    sources.software = &tracer;
+    ScreenResolveSettings settings;
+    settings.ray_density = 1.0F;
+    const Vec3 position{0.0F, -0.5F, 0.0F};
+    const Vec3 normal{0.0F, 1.0F, 0.0F};
+    const f32 camera_distance = 200.0F;
+    const f32 far = far_field_weight(camera_distance, settings.error_targets);
+    CY_REQUIRE(far > 0.0F);
+
+    // Each frame against what it must be: the far sky and the ray, the ray counted in full with
+    // whatever value it met. The ray is drawn and traced as the resolve does.
+    constexpr u32 kFrames = 512;
+    f64 resolved_sum = 0.0;
+    f64 expected_sum = 0.0;
+    f64 worst = 0.0;
+    u32 met_wall = 0;
+    const f32 lift = std::max(settings.origin_lift_metres, field.voxel_size());
+    for (u32 frame = 0; frame < kFrames; ++frame) {
+        sources.frame = frame;
+        const ScreenPixel pixel = resolve_screen_pixel(0, position, normal, 1.0F, camera_distance,
+                                                       Vec3{0.0F, -1.0F, 0.0F}, settings, sources);
+        const u32 hash = screen_hash(0, frame, kScreenStreamDirection);
+        const Vec3 direction =
+            screen_cosine_direction(normal, screen_unit(hash), screen_unit(hash * 0x27220A95U));
+        SceneHit hit;
+        (void)tracer.trace(position + (normal * lift), direction, settings.max_ray_distance_metres,
+                           hit);
+        const RadianceSample ray = tracer.radiance(hit, sources.sky, direction);
+        met_wall += hit.hit ? 1U : 0U;
+        const u32 count = settings.sky_visibility_rays;
+        const f32 openness = field.sky_visibility_ray(position, normal, frame % count, count);
+        const Vec3 sky = sources.sky.radiance(normal) * openness;
+        const f32 sky_weight = std::min(far * openness, 1.0F);
+        const Vec3 expected = ((ray.radiance * 1.0F) + (sky * sky_weight)) / (1.0F + sky_weight);
+        const f64 difference = static_cast<f64>(cy::length(pixel.diffuse.radiance - expected)) /
+                               static_cast<f64>(std::max(cy::length(expected), 1.0e-3F));
+        worst = std::max(worst, difference);
+        resolved_sum += static_cast<f64>(luminance(pixel.diffuse.radiance));
+        expected_sum += static_cast<f64>(luminance(expected));
+    }
+    std::fprintf(stderr,
+                 "stale wall: %u of %u rays met it; mean luminance resolved %.4f, a ray counted "
+                 "in full %.4f; worst frame %.2g\n",
+                 met_wall, kFrames, resolved_sum / kFrames, expected_sum / kFrames, worst);
+    CY_CHECK_GT(met_wall, kFrames / 8U);
+    CY_CHECK_LT(met_wall, kFrames - (kFrames / 8U));
+    CY_CHECK_LT(worst, 1.0e-5);
+}
+
 CY_TEST_CASE("the history is the temporal framework's reprojection, and an invalidated region keeps none") {
     std::vector<gi_support::AxisQuad> quads =
         gi_support::room_quads(gi_support::kRoomX, gi_support::kRoomY, gi_support::kRoomZ, true);

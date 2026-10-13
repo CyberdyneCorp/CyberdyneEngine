@@ -57,6 +57,43 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
 }
 
 /// The mirror direction of `view_direction` about `normal`.
+/// THE FINAL-GATHER RAY AS ONE SAMPLE OF ITS HEMISPHERE: its weight in the combine is the same
+/// whatever it met, and what it met decides only its value.
+///
+/// A pixel's ray picks one direction at random, so its answer is an estimate of the hemisphere only
+/// on average over the directions it picks — and an average whose WEIGHT depends on the direction
+/// drawn is not that average. Combined by its own confidence, a ray that escaped to the sky (whose
+/// answer is certain) outweighed one that met a card shaded a few frames ago (whose answer is
+/// distrusted as stale), so over a few frames the denoiser accumulated an estimate pulled toward
+/// the sky: the colonnade's shadowed faces, half lit by sunlit gravel, resolved two thirds of the
+/// bounce the path tracer finds there (`samples/12-beauty`'s reference).
+///
+/// So the ray always counts in full, and its confidence says how much of its value is its own:
+/// what it does not trust — a stale card, a hit no card covers, a hit on a back face — the
+/// cache's answer for the same pixel (`stand_in`) stands in for, as "stale cache is distrusted"
+/// asks. With no stand-in the ray's own answer is all there is; a back face with none is no
+/// sample.
+[[nodiscard]] RadianceSample gather_sample(const RadianceSample& ray,
+                                           const RadianceSample& stand_in,
+                                           u32 excluded_sources) noexcept {
+    const bool has_stand_in = stand_in.source != RadianceSource::None &&
+                              stand_in.confidence > 0.0F &&
+                              (excluded_sources & source_bit(stand_in.source)) == 0U;
+    RadianceSample sample = ray;
+    if (ray.source == RadianceSource::None) {
+        if (!has_stand_in) {
+            return ray;
+        }
+        sample.source = stand_in.source;
+        sample.radiance = stand_in.radiance;
+    } else if (has_stand_in) {
+        const f32 trust = math::clamp(ray.confidence, 0.0F, 1.0F);
+        sample.radiance = lerp(stand_in.radiance, ray.radiance, trust);
+    }
+    sample.confidence = 1.0F;
+    return sample;
+}
+
 [[nodiscard]] Vec3 reflect_view(Vec3 view_direction, Vec3 normal) noexcept {
     const Vec3 incident = normalized_or(view_direction, Vec3{0.0F, 0.0F, -1.0F});
     return normalized_or(incident - (normal * (2.0F * dot(incident, normal))), normal);
@@ -116,8 +153,11 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamDirection);
         const Vec3 direction =
             screen_cosine_direction(normal, screen_unit(hash), screen_unit(hash * 0x27220A95U));
-        samples[count] = world_ray(sources, position, normal, direction,
-                                   settings.origin_lift_metres, settings.max_ray_distance_metres);
+        samples[count] = gather_sample(world_ray(sources, position, normal, direction,
+                                                 settings.origin_lift_metres,
+                                                 settings.max_ray_distance_metres),
+                                       sources.cache != nullptr ? cached : RadianceSample{},
+                                       exclusion_for(settings.mode, false, false));
         count += 1;
     }
     samples[count] = far_sky(pixel, position, normal, camera_distance, settings, sources);
@@ -135,21 +175,26 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
                                              bool& traced) noexcept {
     RadianceSample samples[2];
     usize count = 0;
+    RadianceSample cached{};
+    if (sources.cache != nullptr && cache.confidence > 0.0F) {
+        cached = cache;
+        // `indirect_specular`'s rule: a rough surface trusts the cache as much as anything, a
+        // mirror barely at all.
+        cached.confidence *= math::clamp(roughness, 0.15F, 1.0F);
+    }
     const u32 rays = reflection_ray_count(roughness, settings.reflection_thresholds);
     traced = rays > 0 && screen_traces(pixel, sources.frame, settings.ray_density);
     if (traced) {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamSpecular);
         const Vec3 direction = reflection_lobe_direction(
             reflection, normal, roughness, hash % rays, rays, static_cast<u32>(sources.frame));
-        samples[count] = world_ray(sources, position, normal, direction,
-                                   settings.origin_lift_metres, settings.max_ray_distance_metres);
+        samples[count] = gather_sample(world_ray(sources, position, normal, direction,
+                                                 settings.origin_lift_metres,
+                                                 settings.max_ray_distance_metres),
+                                       cached, 0U);
         count += 1;
     }
-    if (sources.cache != nullptr && cache.confidence > 0.0F) {
-        RadianceSample cached = cache;
-        // `indirect_specular`'s rule: a rough surface trusts the cache as much as anything, a
-        // mirror barely at all.
-        cached.confidence *= math::clamp(roughness, 0.15F, 1.0F);
+    if (cached.confidence > 0.0F) {
         samples[count] = cached;
         count += 1;
     }
