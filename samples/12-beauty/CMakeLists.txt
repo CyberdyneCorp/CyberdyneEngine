@@ -30,8 +30,16 @@
 #                           own TRANSPARENT stage, through `PassExtension` — so the motes are
 #                           depth-tested against the colonnade and graded by the same resolve.
 #
-# WHAT IS DELIBERATELY NOT HERE. `cy::rendering-gi` — no global illumination pass runs and the
-# manifest says so. `cy::rendering-virtual-geometry` — the geometry is six primitives and a cluster
+#   cy::rendering-gi        the GI, only when a capture asks for it (`--gi on`, gi.h): the GI scene
+#   cy::rendering-gi-gpu    built from the shot's meshes, its caches, and the frame's per-pixel
+#                           resolve and denoiser on the device. The published still runs none of it
+#                           and its manifest says so.
+#   cy::rendering-raytracing(-gpu)  the hardware tier's structures over the shot's meshes, where the
+#                           device has ray queries.
+#   cy::rendering-lightmap-bake  `MeshSceneTracer`: the exact triangles the GI's path-traced
+#                           reference is measured against.
+#
+# WHAT IS DELIBERATELY NOT HERE. `cy::rendering-virtual-geometry` — the geometry is six primitives and a cluster
 # hierarchy over them would be a claim about a mechanism this picture does not exercise.
 #
 # `embers.cpp` IS COMPILED BY THIS TARGET AND BY `src/vfx/tests/`, which is the same arrangement as
@@ -91,6 +99,7 @@ cy_add_module(
     TYPE EXECUTABLE
     SOURCES
         embers.cpp
+        gi.cpp
         main.cpp
         shot.cpp
         stage.cpp
@@ -102,13 +111,18 @@ cy_add_module(
         cy::rendering-depth-of-field
         cy::rendering-decals
         cy::rendering-fog
+        cy::rendering-gi
+        cy::rendering-gi-gpu
         cy::rendering-grading
         cy::rendering-graph
         cy::rendering-lighting
+        cy::rendering-lightmap-bake
         cy::rendering-motion-blur
         cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline
+        cy::rendering-raytracing
+        cy::rendering-raytracing-gpu
         cy::rendering-sky
         cy::rhi
         cy::rhi-null

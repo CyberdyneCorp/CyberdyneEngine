@@ -37,6 +37,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -211,6 +212,20 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 report.trail_vertices, report.trail_strips, report.trail_segments,
                 report.trail_draws, report.trail_dropped);
     std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms, report.submit_ms);
+    if (report.gi_cards != 0U) {
+        std::printf("gi            %u cards, %u placements, traced through the %s\n",
+                    report.gi_cards, report.gi_placements, report.gi_tier);
+        std::printf("gi cost       host cache update %.2f ms; converged mode took %u frames, "
+                    "%.0f ms, before the first\n",
+                    report.gi_update_ms, report.gi_converged_frames, report.gi_converge_ms);
+        if (report.gi_timed) {
+            std::printf("gi gpu        unpack %.3f, reproject %.3f, resolve %.3f, accumulate %.3f, "
+                        "variance %.3f, filter %.3f, publish %.3f = %.3f ms\n",
+                        report.gi_unpack_ms, report.gi_reproject_ms, report.gi_resolve_ms,
+                        report.gi_accumulate_ms, report.gi_variance_ms, report.gi_filter_ms,
+                        report.gi_publish_ms, report.gi_total_ms);
+        }
+    }
     std::printf("validation    %u error(s)\n", report.validation_errors);
 }
 
@@ -275,6 +290,24 @@ int main(int argc, char** argv) {
     // it, and `just capture-beauty-motion-blur` photographs one turntable frame both ways.
     const std::string motion_blur = option(argc, argv, "--motion-blur", "");
     const std::string orbit_still = option(argc, argv, "--orbit-still", "");
+    // GLOBAL ILLUMINATION. Off by default, which is the published M11.c frame; `on` is what `just
+    // capture-beauty-gi` photographs beside it. The still is drawn after `--gi-frames` frames of
+    // the same view, because the GI's caches and its denoiser's history converge over frames as a
+    // game's do. `--gi-reference <pixels>` path traces that many pixels of the last frame and
+    // reports how far the GI and the flat ambient it replaces are from them.
+    const std::string gi = option(argc, argv, "--gi", "off");
+    if (gi != "on" && gi != "off") {
+        std::fprintf(stderr, "cy_sample_beauty: --gi is `on` or `off`\n");
+        return 1;
+    }
+    const std::string gi_tier = option(argc, argv, "--gi-tier", "hardware");
+    if (gi_tier != "hardware" && gi_tier != "software") {
+        std::fprintf(stderr, "cy_sample_beauty: --gi-tier is `hardware` or `software`\n");
+        return 1;
+    }
+    const u32 gi_frames = option_number(argc, argv, "--gi-frames", 48);
+    const u32 gi_reference = option_number(argc, argv, "--gi-reference", 0);
+    const u32 gi_reference_samples = option_number(argc, argv, "--gi-reference-samples", 256);
     const u32 orbit_frame = option_number(argc, argv, "--orbit-frame", 1);
 
     std::string problem;
@@ -370,9 +403,29 @@ int main(int argc, char** argv) {
         stage.set_motion_blur(true, degrees);
         std::printf("motion blur   on, shutter %.0f degrees\n", static_cast<double>(degrees));
     }
+    BeautyGiSettings gi_settings;
+    gi_settings.enabled = gi == "on";
+    gi_settings.hardware = gi_tier == "hardware";
+    gi_settings.divisor = std::max(1U, option_number(argc, argv, "--gi-divisor", 1));
+    gi_settings.readback = gi_reference != 0U;
+    gi_settings.converged = option(argc, argv, "--gi-converged", "on") == "on";
+    stage.set_global_illumination(gi_settings);
+    std::printf("gi            %s, %s tier asked for, resolve grid divisor %u\n", gi.c_str(),
+                gi_tier.c_str(), gi_settings.divisor);
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;
+    }
+    if (gi_settings.enabled) {
+        // THE GI CONVERGES OVER FRAMES, as a game's does: the same view drawn and written nowhere,
+        // so the still is the frame a player standing here would see after `gi_frames` frames.
+        for (u32 index = 1; index < gi_frames; ++index) {
+            ShotReport warm;
+            if (Status drawn = stage.render(shot, nullptr, nullptr, warm); !drawn) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
+                return 1;
+            }
+        }
     }
     if (Status drawn = stage.render(shot, still.empty() ? nullptr : still.c_str(),
                                     no_post.empty() ? nullptr : no_post.c_str(), report);
@@ -381,6 +434,18 @@ int main(int argc, char** argv) {
         return 1;
     }
     print_report(shot, report);
+    if (gi_reference != 0U) {
+        auto measured = stage.measure_gi_reference(gi_reference, gi_reference_samples, 3);
+        if (!measured) {
+            std::fprintf(stderr, "cy_sample_beauty: %s\n", measured.error().message);
+            return 1;
+        }
+        std::printf("gi reference  %u pixels path traced (%u paths, 3 bounces): the GI's indirect "
+                    "diffuse %.3f relative error, the flat ambient's %.3f\n",
+                    measured.value().pixels, gi_reference_samples,
+                    static_cast<double>(measured.value().gi_relative_error),
+                    static_cast<double>(measured.value().ambient_relative_error));
+    }
     if (!still.empty()) {
         std::printf("still         %s\n", still.c_str());
     }

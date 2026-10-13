@@ -249,6 +249,32 @@ struct Shot {
     [[nodiscard]] const Vec3* focus_target(std::string_view target) const noexcept;
 };
 
+/// How the GI runs, when a capture asks for it (`--gi on`). The frame's own quality choices, not
+/// content. See gi.h.
+struct BeautyGiSettings {
+    bool enabled = false;
+    /// Trace with ray queries where the device has them. False forces the software field.
+    bool hardware = true;
+    /// The resolve grid's divisor: one resolves every pixel, two a quarter of them.
+    u32 divisor = 1;
+    /// Keep host copies of the published targets and the surfaces, for the path-traced reference.
+    bool readback = false;
+    /// Bring the caches to convergence before the first frame — converged mode, which the GI's
+    /// specification asks of a capture. False runs every frame at the budget's rates.
+    bool converged = true;
+};
+
+/// The path tracer's verdict on one frame of the GI. See gi.h.
+struct BeautyGiReference {
+    u32 pixels = 0;
+    /// The published indirect diffuse against the path tracer: mean |difference| over the mean
+    /// reference magnitude.
+    f32 gi_relative_error = 0.0F;
+    /// The flat ambient the GI replaces, against the same reference.
+    f32 ambient_relative_error = 0.0F;
+    f32 mean_reference = 0.0F;
+};
+
 /// What one run measured and produced.
 struct ShotReport {
     u32 validation_errors = 0;
@@ -282,6 +308,23 @@ struct ShotReport {
     Vec3 sky_irradiance{0.0F, 0.0F, 0.0F};
     rendering::assembly::CaptureManifest manifest;
     bool manifest_valid = false;
+    /// The GI, when the run asked for it: the scene it built, the tier it traced through, the host
+    /// cache update and the device resolve's stages, in milliseconds, for the last frame drawn.
+    u32 gi_cards = 0;
+    u32 gi_placements = 0;
+    const char* gi_tier = "off";
+    f64 gi_update_ms = 0.0;
+    u32 gi_converged_frames = 0;
+    f64 gi_converge_ms = 0.0;
+    f64 gi_unpack_ms = 0.0;
+    f64 gi_reproject_ms = 0.0;
+    f64 gi_resolve_ms = 0.0;
+    f64 gi_accumulate_ms = 0.0;
+    f64 gi_variance_ms = 0.0;
+    f64 gi_filter_ms = 0.0;
+    f64 gi_publish_ms = 0.0;
+    f64 gi_total_ms = 0.0;
+    bool gi_timed = false;
 };
 
 /// The device, the content on it, and the frame.
@@ -342,6 +385,17 @@ public:
     /// with the assembly's lists in it is uploaded into the frame's own graph, and `beauty.slang`
     /// applies the decals to each surface before the sun and the sky light it.
     void set_decals(bool enabled) noexcept { decals_ = enabled; }
+
+    /// GLOBAL ILLUMINATION, before `stage_shot`. Off — the default, and the published M11.c frame —
+    /// draws exactly the frame this program always drew. On builds the shot's GI scene (gi.h), adds
+    /// the depth and normal prepass with each material's roughness, declares the frame's
+    /// `ScreenSpaceGi` stage through `gi_gpu::GpuScreenResolve`, and shades through
+    /// `sceneFragmentGi`, whose indirect diffuse and specular replace the flat sky term. The sun
+    /// is not touched; ambient occlusion and soft shadows compose with it.
+    void set_global_illumination(const BeautyGiSettings& settings) noexcept { gi_ = settings; }
+    /// After a render with `BeautyGiSettings::readback`: the path tracer's verdict on its GI.
+    [[nodiscard]] Expected<BeautyGiReference, Error> measure_gi_reference(u32 pixels, u32 samples,
+                                                                          u32 bounces) noexcept;
 
     /// VOLUMETRIC FOG, before `stage_shot`. Off — the default, and the published M11.c frame —
     /// draws exactly the frame this program always drew. On switches the post chain's
@@ -427,12 +481,10 @@ private:
     /// Pack this frame's table — the assembly's ranks and lists — into the upload declared for it.
     [[nodiscard]] Status stage_decals(const Mat4& camera) noexcept;
     [[nodiscard]] Status create_fog() noexcept;
-    /// Whether the frame has a depth and normal prepass: ambient occlusion or the contact trace
-    /// reads it.
-    /// Whether the frame has a depth and normal prepass: ambient occlusion, the contact trace or
-    /// motion blur reads it.
+    /// Whether the frame has a depth and normal prepass: ambient occlusion, the contact trace,
+    /// motion blur or the GI reads it.
     [[nodiscard]] bool has_prepass() const noexcept {
-        return ambient_occlusion_ || soft_shadows_ || motion_blur_;
+        return ambient_occlusion_ || soft_shadows_ || motion_blur_ || gi_.enabled;
     }
     [[nodiscard]] Status create_motion_blur() noexcept;
     [[nodiscard]] Status create_grading(rhi::Device& device) noexcept;
@@ -458,6 +510,9 @@ private:
     f32 occlusion_power_ = 1.0F;
     bool soft_shadows_ = false;
     bool decals_ = false;
+    BeautyGiSettings gi_{};
+    /// The GI's own frame counter: its caches and its history count frames drawn with it.
+    u64 gi_frame_ = 0;
     f32 sun_angular_radius_ = 0.0F;
     f32 contact_length_ = 0.0F;
     f32 contact_thickness_ = 0.0F;
