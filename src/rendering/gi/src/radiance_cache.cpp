@@ -11,6 +11,20 @@
 namespace cy::rendering::gi {
 namespace {
 
+/// The rays one probe gathers: the update's count, scaled by the quality its GI volume asked for.
+[[nodiscard]] u32 rays_for(const Probe& entry, const ProbeUpdateContext& context) noexcept {
+    const auto scaled =
+        static_cast<u32>(std::lround(static_cast<f32>(context.rays_per_probe) * entry.ray_scale));
+    return std::max(1U, scaled);
+}
+
+/// The progress guarantee, in the probe's own time: a probe whose GI volume doubles its update
+/// rate is starved at half the age. In f64 so a rate of one is the plain comparison exactly.
+[[nodiscard]] bool starved(const Probe& entry, u64 age, u64 max_age_frames) noexcept {
+    return static_cast<f64>(age) * static_cast<f64>(entry.update_rate) >=
+           static_cast<f64>(max_age_frames);
+}
+
 constexpr Vec3 kAxes[6] = {{1.0F, 0.0F, 0.0F},  {-1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F},
                            {0.0F, -1.0F, 0.0F}, {0.0F, 0.0F, 1.0F},  {0.0F, 0.0F, -1.0F}};
 
@@ -370,28 +384,52 @@ bool RadianceCache::accept_candidate(Vec3 position, u32 level, f32 spacing,
         report.rejected_inside_geometry += 1;
         return false;
     }
-    if (distance < spacing * 1.5F) {
-        // Near a surface: this is where indirect light varies and where the density belongs.
+    const bool by_geometry = accept_by_geometry(position, level, spacing, distance, context, false);
+    const f32 density = context.volumes != nullptr && !context.volumes->empty()
+                            ? context.volumes->resolve(position, GiRegionSettings{}).probe_density
+                            : 1.0F;
+    if (density > 1.0F) {
+        // A GI volume asked for more: full density here, as inside an importance region, but
+        // never inside geometry.
+        report.placed_by_volume_density += by_geometry ? 0U : 1U;
         return true;
     }
-    for (const GiLight& light : context.lights) {
-        if (!light.directional && cy::distance(light.position, position) < spacing * 3.0F) {
-            // A lighting transition. The other place the field varies quickly.
+    if (density < 1.0F) {
+        // And for less: the sparse lattice only, even near surfaces and lights.
+        const bool sparse = accept_by_geometry(position, level, spacing, distance, context, true);
+        report.rejected_by_volume_density += by_geometry && !sparse ? 1U : 0U;
+        return sparse;
+    }
+    if (!by_geometry) {
+        report.rejected_open_space += 1;
+    }
+    return by_geometry;
+}
+
+bool RadianceCache::accept_by_geometry(Vec3 position, u32 level, f32 spacing, f32 distance,
+                                       const ProbePlacementContext& context,
+                                       bool sparse_only) const noexcept {
+    if (!sparse_only) {
+        if (distance < spacing * 1.5F) {
+            // Near a surface: this is where indirect light varies and where the density belongs.
             return true;
+        }
+        for (const GiLight& light : context.lights) {
+            if (!light.directional && cy::distance(light.position, position) < spacing * 3.0F) {
+                // A lighting transition. The other place the field varies quickly.
+                return true;
+            }
         }
     }
     // Open space, and the coarsest level still covers it. Placing one probe in eight here is the
     // whole of "density SHALL be lower in open space and at distance": the region is still lit, at
-    // a quarter of the probes.
+    // a quarter of the probes. A volume asking for less density takes the same lattice everywhere,
+    // the coarsest level included.
     const i32 cell_x = floor_div(position.x, spacing);
     const i32 cell_y = floor_div(position.y, spacing);
     const i32 cell_z = floor_div(position.z, spacing);
     const bool sparse_slot = ((cell_x & 1) == 0) && ((cell_y & 1) == 0) && ((cell_z & 1) == 0);
-    if (!sparse_slot && level + 1 < settings_.levels) {
-        report.rejected_open_space += 1;
-        return false;
-    }
-    return true;
+    return sparse_slot || (!sparse_only && level + 1 >= settings_.levels);
 }
 
 /// Retire probes whose CELL has left the window.
@@ -456,7 +494,15 @@ void RadianceCache::populate_level(u32 level, Vec3 camera, i32 half,
                 if (!created) {
                     continue;
                 }
-                probes_[created.value()].camera_distance = cy::distance(position, camera);
+                Probe& placed = probes_[created.value()];
+                placed.camera_distance = cy::distance(position, camera);
+                if (context.volumes != nullptr && !context.volumes->empty()) {
+                    const GiRegionSettings region =
+                        context.volumes->resolve(position, GiRegionSettings{});
+                    placed.update_rate = region.update_rate;
+                    placed.ray_scale = region.ray_scale;
+                    placed.tier = region.tier;
+                }
                 if (Expected<u32*, Error> stored = occupancy_.insert(key, created.value());
                     !stored) {
                     retire_probe(created.value());
@@ -489,6 +535,24 @@ ProbePlacementReport RadianceCache::scroll_to(Vec3 camera,
     return report;
 }
 
+u32 RadianceCache::retire_region(const Aabb& region) noexcept {
+    u32 count = 0;
+    for (u32 handle = 0; handle < probes_.size(); ++handle) {
+        Probe& entry = probes_[handle];
+        if (!entry.live || !region.contains(entry.position)) {
+            continue;
+        }
+        const f32 spacing = settings_.base_spacing_metres * static_cast<f32>(1U << entry.level);
+        (void)occupancy_.remove(cell_key(entry.level, floor_div(entry.position.x, spacing),
+                                         floor_div(entry.position.y, spacing),
+                                         floor_div(entry.position.z, spacing)));
+        retire_probe(handle);
+        count += 1;
+    }
+    account();
+    return count;
+}
+
 u32 RadianceCache::invalidate(const Aabb& region) noexcept {
     u32 count = 0;
     index_.query_aabb(region, [&](u32 /*proxy*/, u64 user_data) {
@@ -505,8 +569,12 @@ u32 RadianceCache::invalidate(const Aabb& region) noexcept {
     return count;
 }
 
-f32 RadianceCache::priority_of(const Probe& entry, u64 frame) noexcept {
+f32 RadianceCache::scheduled_age(const Probe& entry, u64 frame) noexcept {
     const u64 age = frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
+    return static_cast<f32>(age) * entry.update_rate;
+}
+
+f32 RadianceCache::priority_of(const Probe& entry, u64 frame) noexcept {
     f32 priority = 0.0F;
     if (entry.visible) {
         priority += 1000.0F;
@@ -515,8 +583,11 @@ f32 RadianceCache::priority_of(const Probe& entry, u64 frame) noexcept {
         priority += 500.0F;
     }
     priority += entry.importance * 50.0F;
-    priority += entry.error * 20.0F;
-    priority += std::min(static_cast<f32>(age), 4000.0F) * 0.05F;
+    // A GI volume's update rate scales both halves of how urgent a probe becomes — how wrong it
+    // was and how long ago — so a probe at rate four is due about four times as often. A rate of
+    // one multiplies by one, exactly.
+    priority += entry.error * 20.0F * entry.update_rate;
+    priority += std::min(scheduled_age(entry, frame), 4000.0F) * 0.05F;
     // Distance is a cost, not a benefit: a probe at the far end of the coarsest clipmap serves
     // fewer pixels than one at the camera.
     priority -= entry.camera_distance * 0.5F;
@@ -542,17 +613,21 @@ void RadianceCache::gather_probe(u32 handle, const ProbeUpdateContext& context) 
         axis_weight[axis] = 0.0F;
     }
 
-    const u32 rays = std::max(1U, context.rays_per_probe);
+    const u32 rays = rays_for(entry, context);
+    // A GI volume that prefers the software tier keeps its probes off the hardware one.
+    const SceneTracer* tracer =
+        entry.tier == GiTierPreference::SoftwareOnly && context.software_tracer != nullptr
+            ? context.software_tracer
+            : context.tracer;
     const u32 rotation = probe_ray_rotation(context.frame);
     f32 total_weight = 0.0F;
     for (u32 index = 0; index < rays; ++index) {
         const Vec3 direction = probe_ray_direction(index, rays, rotation);
         Vec3 radiance = context.sky.radiance(direction);
         f32 hit_distance = context.max_ray_distance_metres;
-        if (context.tracer != nullptr) {
+        if (tracer != nullptr) {
             SceneHit hit;
-            if (context.tracer->trace(entry.position, direction, context.max_ray_distance_metres,
-                                      hit)) {
+            if (tracer->trace(entry.position, direction, context.max_ray_distance_metres, hit)) {
                 hit_distance = hit.t;
                 Vec3 surface{0.0F, 0.0F, 0.0F};
                 u32 age = 0;
@@ -611,8 +686,8 @@ Status RadianceCache::select(Span<const Probe> probes, const ProbeUpdateContext&
     std::ranges::sort(selected, [&](u32 a, u32 b) {
         // The progress guarantee. Without it a region that is never visible is never updated, and
         // that is not low priority but starvation.
-        const bool starved_a = age_of(probes[a]) >= context.max_age_frames;
-        const bool starved_b = age_of(probes[b]) >= context.max_age_frames;
+        const bool starved_a = starved(probes[a], age_of(probes[a]), context.max_age_frames);
+        const bool starved_b = starved(probes[b], age_of(probes[b]), context.max_age_frames);
         if (starved_a != starved_b) {
             return starved_a;
         }
@@ -719,7 +794,7 @@ ProbeUpdateReport RadianceCache::update(const ProbeUpdateContext& context) noexc
         gather_probe(handle, context);
         error_total += probes_[handle].error;
         report.probes_updated += 1;
-        report.rays += std::max(1U, context.rays_per_probe);
+        report.rays += rays_for(probes_[handle], context);
     }
     report.mean_error =
         report.probes_updated == 0 ? 0.0F : error_total / static_cast<f32>(report.probes_updated);

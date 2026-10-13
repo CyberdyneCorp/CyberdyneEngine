@@ -6,8 +6,9 @@
 # than restated.
 #
 #   render_gi           the decisions that are arithmetic — detail selection, the exclusion mask,
-#                       the far-field ramp, the reflection table, the probe encodings and the GI
-#                       budget's control law. Fits the unit budget because none of it traces.
+#                       the far-field ramp, the reflection table, the probe encodings, the GI
+#                       budget's control law and the GI volumes' resolution. Fits the unit budget
+#                       because none of it traces.
 #   render_gi_pipeline  the subsystems on a real room: the sparse field and its scroll, the surface
 #                       cache's multi-bounce feedback, adaptive probe placement and the leak the
 #                       visibility term stops, the tiers and their confidence, the reflection
@@ -29,6 +30,9 @@
 #                       bleeding near a coloured wall and not far from it, an unlit wall lit by
 #                       bounce, the visibility term, the update policy, and a capture through the
 #                       composed system's own tracer and surface cache.
+#   render_gi_emissive  emissive surfaces as illumination: classification, promotion, the form
+#                       factor, and the path tracer as the reference for both paths.
+#   render_gi_volumes   GI volumes through the composed system.
 set_property(GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_render_gi_declare_tests)
@@ -51,7 +55,9 @@ function(cy_render_gi_declare_tests)
     cy_add_test(
         NAME render_gi
         KIND unit
-        SOURCES "${tests_dir}/test_policy.cpp"
+        SOURCES
+            "${tests_dir}/test_gi_volumes.cpp"
+            "${tests_dir}/test_policy.cpp"
         DEPENDENCIES cy::rendering-gi)
 
     cy_add_test(
@@ -88,6 +94,25 @@ function(cy_render_gi_declare_tests)
         NAME render_gi_volume
         KIND integration
         SOURCES "${tests_dir}/test_irradiance_volume.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    # EMISSIVE SURFACES AS ILLUMINATION: the promoted emitter's form factor against its closed
+    # form and a quadrature, the classification and its energy accounting, a glowing panel and a
+    # tiny lamp measured against the path tracer — promoted and left to the cache — and the
+    # composed system's ingestion. Integration because the reference traces real paths.
+    cy_add_test(
+        NAME render_gi_emissive
+        KIND integration
+        SOURCES "${tests_dir}/test_emissive.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    # GI VOLUMES THROUGH THE COMPOSED SYSTEM: an important interior's probes and updates within one
+    # allocation, the region placed again when the volume goes, a scene with none bit for bit, the
+    # intensity and far-field overrides, and the tier preference. Resolution alone is render_gi.
+    cy_add_test(
+        NAME render_gi_volumes
+        KIND integration
+        SOURCES "${tests_dir}/test_gi_volume_system.cpp"
         DEPENDENCIES cy::rendering-gi)
 endfunction()
 

@@ -60,7 +60,9 @@ struct GiSceneSet {
     /// `CardGrid::ranges()` and `::items()`.
     StructuredBuffer<uint> gridRanges;
     StructuredBuffer<uint> gridItems;
-    /// Four float4 per light: [position, intensity], [direction, range], [colour, directional], 0.
+    /// Four float4 per light: [position, intensity], [direction, range], [colour, directional],
+    /// [emitter normal, emitter area] — the last zero for every light that is not a promoted
+    /// emissive card (`GiLight::emitter_area`).
     StructuredBuffer<float4> lights;
     /// `ShadowMap::depths()`.
     StructuredBuffer<float> shadowDepths;
@@ -337,6 +339,67 @@ bool giOccluded(float3 from, float3 to) {
     return giFieldOccluded(from, to);
 }
 
+// --- Promoted emitters: `emitter_basis`, `emitter_form_factor` ----------------------------------
+
+/// `kEmitterShadowLiftMetres`.
+static const float kGiEmitterShadowLift = 0.3f;
+
+void giEmitterBasis(float3 normal, out float3 tangent, out float3 bitangent) {
+    tangent = abs(normal.y) < 0.99f ? cross(float3(0.0f, 1.0f, 0.0f), normal)
+                                    : cross(float3(1.0f, 0.0f, 0.0f), normal);
+    tangent = giNormalisedOr(tangent, float3(1.0f, 0.0f, 0.0f));
+    bitangent = cross(normal, tangent);
+}
+
+/// Lambert's closed form over the card clipped to the receiver's horizon.
+float giEmitterFormFactor(float3 centre, float3 emitterNormal, float area, float3 position,
+                          float3 normal) {
+    if (area <= 0.0f || dot(position - centre, emitterNormal) <= 0.0f) {
+        return 0.0f;
+    }
+    float3 tangent;
+    float3 bitangent;
+    giEmitterBasis(emitterNormal, tangent, bitangent);
+    const float halfSide = sqrt(area) * 0.5f;
+    const float3 u = tangent * halfSide;
+    const float3 v = bitangent * halfSide;
+    const float3 base = centre - position;
+    float3 corners[4] = { base - u - v, base + u - v, base + u + v, base - u + v };
+
+    float3 polygon[5];
+    uint count = 0u;
+    for (uint index = 0u; index < 4u; ++index) {
+        const float3 a = corners[index];
+        const float3 b = corners[(index + 1u) % 4u];
+        const float heightA = dot(a, normal);
+        const float heightB = dot(b, normal);
+        if (heightA > 0.0f) {
+            polygon[count] = a;
+            count += 1u;
+        }
+        if ((heightA > 0.0f) != (heightB > 0.0f)) {
+            polygon[count] = a + ((b - a) * (heightA / (heightA - heightB)));
+            count += 1u;
+        }
+    }
+    if (count < 3u) {
+        return 0.0f;
+    }
+
+    float sum = 0.0f;
+    for (uint index = 0u; index < count; ++index) {
+        const float3 from = giNormalisedOr(polygon[index], normal);
+        const float3 to = giNormalisedOr(polygon[(index + 1u) % count], normal);
+        const float3 edge = cross(from, to);
+        const float sine = length(edge);
+        if (sine <= 1.0e-12f) {
+            continue;
+        }
+        sum += atan2(sine, dot(from, to)) * (dot(edge, normal) / sine);
+    }
+    return abs(sum) * (0.5f * 0.318309886f);
+}
+
 // --- Direct light: `direct_radiance` and `shaded_direct` ----------------------------------------
 
 float3 giDirectRadiance(uint light, float3 position, float3 normal) {
@@ -352,6 +415,10 @@ float3 giDirectRadiance(uint light, float3 position, float3 normal) {
     const float distanceSquared = max(dot(offset, offset), 1.0e-6f);
     if (b.w > 0.0f && distanceSquared > b.w * b.w) {
         return float3(0.0f, 0.0f, 0.0f);
+    }
+    const float4 d = giScene.lights[(light * 4u) + 3u];
+    if (d.w > 0.0f) {
+        return c.xyz * (a.w * giEmitterFormFactor(a.xyz, d.xyz, d.w, position, normal));
     }
     const float3 toLight = offset / sqrt(distanceSquared);
     const float cosine = max(0.0f, dot(normal, toLight));
@@ -369,9 +436,12 @@ float3 giShadedDirect(float3 position, float3 normal) {
         const float4 a = giScene.lights[(light * 4u) + 0u];
         const float4 b = giScene.lights[(light * 4u) + 1u];
         const float4 c = giScene.lights[(light * 4u) + 2u];
+        const float4 d = giScene.lights[(light * 4u) + 3u];
+        // `shadow_target`.
         const float3 target =
             c.w != 0.0f ? position - (giNormalisedOr(b.xyz, float3(0.0f, 1.0f, 0.0f)) * 1000.0f)
-                        : a.xyz;
+            : d.w > 0.0f ? a.xyz + (d.xyz * kGiEmitterShadowLift)
+                         : a.xyz;
         if (giOccluded(position + (normal * 1.0e-2f), target)) {
             continue;
         }

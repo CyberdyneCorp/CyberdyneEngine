@@ -28,6 +28,8 @@ cy_add_module(
         src/budget.cpp
         src/card_lighting.cpp
         src/distance_field.cpp
+        src/emissive.cpp
+        src/gi_volume.cpp
         src/irradiance_volume.cpp
         src/proxy_scene.cpp
         src/radiance_cache.cpp

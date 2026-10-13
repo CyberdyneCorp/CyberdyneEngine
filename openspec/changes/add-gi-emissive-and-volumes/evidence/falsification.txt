@@ -1,0 +1,64 @@
+Mutations proving the cases of add-gi-emissive-and-volumes red.
+
+Each was applied to the tree, the named suites rebuilt (dev profile, GCC 13) and run, and the file
+restored and md5-verified. Each replaces one exact string; RED lists the test cases that failed.
+Three first survived and each gained the case that now kills it: [2] the emitter shadow lift (the
+recessed-lamp case), [5] the area threshold (a whole bright wall in the classification case) and
+[7] the reference's footprint owner (the square case, once the lamp's reference went to 8192
+samples and its noise could hide a 5% bias). [16] first failed to compile as written and was
+rewritten. [4], [7], [14], [15] and [16] were run again after the suites were made cheaper for the
+debug profile's one-second budget.
+
+[0] lighting: horizon clip removed (every corner kept) (src/rendering/gi/src/surface_cache.cpp)
+    -> RED  integration_render_gi_emissive: an emitter card's form factor is the closed form, the far-field limit and zero behind | integration_render_gi_emissive: an emitter the receiver's horizon cuts through is clipped, not counted whole
+[1] lighting: form factor normalised by 1/pi instead of 1/(2 pi) (src/rendering/gi/src/surface_cache.cpp)
+    -> RED  integration_render_gi_emissive: an emitter card's form factor is the closed form, the far-field limit and zero behind | integration_render_gi_emissive: an emitter the receiver's horizon cuts through is clipped, not counted whole | integration_render_gi_emissive: a glowing panel promoted to lights lights the room within 5% of the path tracer | integration_render_gi_emissive: a tiny bright emitter is promoted and lights the floor without fireflies
+[2] lighting: emitter shadow ray ends on the emitter (no lift) (src/rendering/gi/src/surface_cache.cpp)
+    -> RED  integration_render_gi_emissive: a shadow ray toward a recessed emitter is not answered by the surface around it
+[3] emissive: promoted card keeps its emission in the cache (src/rendering/gi/src/emissive.cpp)
+    -> RED  integration_render_gi_emissive: emitters are classified by radiant power and area, and every watt is accounted for | integration_render_gi_emissive: a glowing panel promoted to lights lights the room within 5% of the path tracer | integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction
+[4] emissive: power threshold ignored (src/rendering/gi/src/emissive.cpp)
+    -> RED  integration_render_gi_emissive: emitters are classified by radiant power and area, and every watt is accounted for | integration_render_gi_emissive: a glowing panel left to the cache still lights the room it is in | integration_render_gi_emissive: a tiny bright emitter is promoted and lights the floor without fireflies
+[5] emissive: area threshold ignored (src/rendering/gi/src/emissive.cpp)
+    -> RED  integration_render_gi_emissive: emitters are classified by radiant power and area, and every watt is accounted for
+[6] emissive: light budget ignored (src/rendering/gi/src/emissive.cpp)
+    -> RED  integration_render_gi_emissive: an emitter over the light budget is demoted to the cache and its power reported
+[7] bake: the nearest card answers a hit outside its plane (the fast path without its plane test) (src/rendering/gi/src/bake.cpp)
+    -> RED  integration_render_gi_emissive: the reference takes a small card's emission over exactly its own square
+[8] system: promoted lights not added to the frame (src/rendering/gi/src/system.cpp)
+    -> RED  integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction
+[9] system: promoted lights invalidate nothing (src/rendering/gi/src/system.cpp)
+    -> RED  integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction
+[10] volumes: resolved highest priority first (src/rendering/gi/src/gi_volume.cpp)
+    -> RED  unit_render_gi: where GI volumes overlap the higher priority dominates, whatever the order given
+[11] volumes: no blend band (fade switches at the boundary) (src/rendering/gi/src/gi_volume.cpp)
+    -> RED  unit_render_gi: a GI volume fades in over its blend distance, and a discrete override switches halfway | unit_render_gi: where GI volumes overlap the higher priority dominates, whatever the order given
+[12] volumes: tier switches at any weight (src/rendering/gi/src/gi_volume.cpp)
+    -> RED  unit_render_gi: a GI volume fades in over its blend distance, and a discrete override switches halfway
+[13] volumes: validation accepts everything (src/rendering/gi/src/gi_volume.cpp)
+    -> RED  unit_render_gi: a GI volume whose numbers cannot mean anything is refused, and the set is unchanged
+[14] radiance cache: volume density ignored (src/rendering/gi/src/radiance_cache.cpp)
+    -> RED  integration_render_gi_volumes: an important interior gets more probes and more updates within one allocation | integration_render_gi_volumes: removing a GI volume places its region again at the global density
+[15] radiance cache: update rate ignored by the scheduler (src/rendering/gi/src/radiance_cache.cpp)
+    -> RED  integration_render_gi_volumes: an important interior gets more probes and more updates within one allocation
+[16] radiance cache: quality's ray scale ignored (src/rendering/gi/src/radiance_cache.cpp)
+    -> RED  integration_render_gi_volumes: an important interior gets more probes and more updates within one allocation
+[17] radiance cache: SoftwareOnly probes trace the frame's tier (src/rendering/gi/src/radiance_cache.cpp)
+    -> RED  integration_render_gi_volumes: a GI volume that prefers the software tier keeps its rays off the hardware tier
+[18] tracing: tier preference ignored (src/rendering/gi/src/tracing.cpp)
+    -> RED  integration_render_gi_volumes: a GI volume that prefers the software tier keeps its rays off the hardware tier
+[19] system: diffuse intensity not applied (src/rendering/gi/src/system.cpp)
+    -> RED  integration_render_gi_volumes: a GI volume scales indirect intensity where it reaches
+[20] system: far-field override not applied (src/rendering/gi/src/system.cpp)
+    -> RED  integration_render_gi_volumes: a GI volume moves the far-field transition where it reaches
+[21] system: removing volumes retires nothing (src/rendering/gi/src/system.cpp)
+    -> RED  integration_render_gi_volumes: removing a GI volume places its region again at the global density | integration_render_gi_volumes: a GI volume that prefers the software tier keeps its rays off the hardware tier
+
+[22] device: giDirectRadiance never takes the emitter branch (gi_gpu_common.slang, headers regenerated)
+    -> RED  render.gi_gpu: a promoted emitter lights the device cards as it lights the host ones
+[23] device: upload_lights writes zeros in the fourth float4 (gpu_scene.cpp)
+    -> RED  render.gi_gpu: a promoted emitter lights the device cards as it lights the host ones
+Both on the RTX 5060 (Vulkan); the headers were regenerated from the restored source and checked
+byte-identical to the committed ones.
+[24] system: evict_cell does not release the pages ingest_cell allocated (system.cpp; debug profile)
+    -> RED  integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction

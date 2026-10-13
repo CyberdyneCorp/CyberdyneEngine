@@ -1,8 +1,9 @@
 # Global illumination in CyberEngine
 
 A walkthrough for a contributor or an agent: how CyberGI is put together, how its host and device
-halves meet, how the tracing tiers are chosen, how every device result is held to the host oracle,
-and what is not built yet.
+halves meet, how the tracing tiers are chosen, how emissive surfaces light a scene, how GI volumes
+override the global settings in a region, how every result is held to the host oracle and the path
+tracer, and what is not built yet.
 
 **Governed by**: [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md)
 and [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md). The
@@ -103,7 +104,75 @@ and skips them. It changes no answer (the suite compares with and without it bit
 where a ray crosses open screen. The engine's HZB keeps the furthest depth and proves occlusion; the
 march needs the dual, so the screen tier builds it.
 
-## 4. Measuring it: against the oracle, and against the engines it competes with
+## 4. Emissive surfaces
+
+A surfel's `emission` is radiance. Ingested through `IlluminationSystem::ingest_cell`, every emitter
+— the cards of one (instance, material) — is classified by `classify_emitters` (`gi/emissive.h`):
+
+| | radiant power `pi * Y(L) * A` | area | what happens |
+|---|---|---|---|
+| cache only | below `promotion_power` | any | lights its surroundings through the surface cache's bounce |
+| cache only | any | above `promotion_max_area_m2` | the same: large enough for the gather to sample densely |
+| promoted | at least `promotion_power` | at most `promotion_max_area_m2` | its emission leaves the cache; each card becomes a `GiLight` with `emitter_area` |
+| demoted | promoted, but past `max_promoted_lights` for the cell | | back in the cache, its power reported |
+
+A promoted card is integrated by every consumer of `shaded_direct` — the surface cache, the device
+card shading, the path tracer's next-event term, the irradiance volume capture — with
+`emitter_form_factor`: Lambert's closed form over the card clipped to the receiver's horizon. It is
+deterministic, so it has no variance at all, and its energy is exact rather than estimated. The
+shadow is one ray to a point 30 cm in front of the card (`kEmitterShadowLiftMetres`).
+
+**Why promote.** A small bright emitter left to a gather is hit by a few rays and returns an
+enormous value when it is: fireflies. In the surface cache it is worse, because a card smaller than
+the lookup cell answers every gather hit in that cell, so its energy is inflated by the cell's area
+over its own. `integration.render_gi_emissive` measures both on a 30 cm lamp: promoted, the floor's
+direct light is within 0.5% of the path tracer with a per-receiver ratio variance of 0.027 (the
+reference's own noise); left to the cache, the variance is 4.6 and the receivers range from
+nothing to 7.8 times their reference.
+
+**Energy is never clamped.** `EmissiveLights::report()` gives `total = cached + promoted + demoted`
+and `clamped_power`, which is zero and is checked.
+
+## 5. GI volumes
+
+A `GiVolume` (`gi/gi_volume.h`) is a box, a priority, a blend distance, a master weight, and the
+parameters it SETS (`sets`, a bit per `GiVolumeParameter`):
+
+| parameter | what it changes | decided |
+|---|---|---|
+| `Quality` | a probe's rays per update: Low 0.5x, Medium 1x, High 2x, Epic 4x | at probe placement |
+| `ProbeDensity` | above one, probes at full density whatever the geometry; below one, the sparse lattice only | at probe placement |
+| `UpdateRate` | how fast a probe ages in the scheduler, and how much its error weighs | at probe placement |
+| `TierPreference` | `SoftwareOnly` keeps rays off the hardware tier; `WorldOnly` skips the screen tier | at placement (probes) and per sample (specular) |
+| `DiffuseIntensity`, `SpecularIntensity` | scale the resolved indirect term | per sample |
+| `FarFieldDistance` | where the far-field ramp begins | per sample |
+
+Resolution is per parameter and per sample: starting from the global settings, the volumes that
+reach the sample are applied from the lowest priority to the highest, each moving the value toward
+its own by `weight * fade`. A higher priority therefore dominates, and the blend band interpolates
+from the global value rather than switching. The tier preference switches at weight one half.
+`set_volumes` validates every volume first and refuses the whole set on one bad volume, then
+retires the probes in reach of every volume that sets a placement parameter, so the next update
+places them again.
+
+```cpp
+GiVolume interior;
+interior.bounds = Aabb::from_min_max({-4, 0, -3}, {4, 3, 3});
+interior.priority = 10;
+interior.blend_distance_metres = 1.0F;
+interior.sets = gi_volume_bit(GiVolumeParameter::ProbeDensity) |
+                gi_volume_bit(GiVolumeParameter::UpdateRate) |
+                gi_volume_bit(GiVolumeParameter::Quality);
+interior.probe_density = 2.0F;
+interior.update_rate = 4.0F;
+interior.quality = GiQuality::High;
+gi.set_volumes({&interior, 1});
+```
+
+With no volume reaching a sample, everything resolves exactly as it did before volumes existed —
+`integration.render_gi_volumes` checks that bit for bit.
+
+## 6. Measuring it: against the oracle, and against the engines it competes with
 
 "Better than Lumen or Unity's adaptive probe volumes" is only worth saying as numbers a suite fails on.
 The claims and where each is measured:
@@ -117,9 +186,22 @@ The claims and where each is measured:
 | Close to the path tracer | `integration.render_gi_fallback` against `gi/bake.h` | host only until stage 4 composites |
 | Fast convergence after a change | `ConvergenceTracker`, `integration.render_gi_pipeline` | host only until stage 4 |
 | Temporally stable | — | **not yet measured**: an ordinary converged frame moves the probes' answer by 14 % because the gather replaces rather than accumulates; stage 4's temporal filter is where shimmer is measured and bounded |
+| Emitters lit without fireflies, within a stated error | `integration.render_gi_emissive` | a promoted 30 cm lamp 0.5 % from the path tracer with a per-receiver ratio variance of 0.027 (the reference's noise); left to the cache, 4.6; a promoted panel 2.0 % |
+| A region gets the quality it is marked for, within one budget | `integration.render_gi_volumes` | 3.9x the probe updates and 2x the rays in the marked interior, the frame's probe budget unchanged; no volume reaching a point is bit for bit no volume at all |
 | Explicit cost | `render.gi_gpu_tracing`'s cost case | gather at budget 0.078 ms (software) / 0.043 ms (hardware); a full 1080p gather ray per pixel, escalated, 3.4 / 2.1 ms |
 
-## 5. Running and changing it
+**The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
+reference over cards turn on `set_emission_footprints(true)`: a hit then takes the emission of the
+card whose square holds it, rather than of the nearest card — without it an emitter smaller than its
+neighbours' spacing loses its corners and the reference reads 5.6% low (measured, and the reason the
+mode exists). Compare in the units the caches use: `irradiance()` returns the mean cosine-weighted
+incoming radiance, which is a card's `direct + accumulated / albedo`.
+
+Report the energy over a set of receivers and the per-receiver error separately: the first averages
+the reference's noise out, the second includes it. `render_gi_emissive`'s `Agreement` does both,
+and prints them.
+
+## 7. Running and changing it
 
 ```sh
 just build-engine
@@ -136,7 +218,7 @@ writes it in the same order, because a reordering that is equal in exact arithme
 in float. Change the host function and its transcription together, regenerate the headers, and run
 both suites. The [Slang guide](slang.md) has the shader rules.
 
-## 6. Pitfalls this code has already met
+## 8. Pitfalls this code has already met
 
 - **A signed remainder is not a modulo on every driver.** The RTX 5060 answered `-4 % 9` with 0 when
   the divisor was read at run time. Toroidal addressing (`giWrap`) is unsigned arithmetic for that
@@ -154,14 +236,30 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   sphere or between two cards; the lookup's tie rule (`card_lookup_prefers`) and an off-lattice
   lookup radius keep a comparison about the transcription rather than about the last bit.
 
-## 7. What is not built yet
+- **A snapshot of a cache nothing has shaded is empty.** `CardSnapshot` skips invalid pages, so the
+  first card update gathers nothing; emission reaches a neighbour at the second.
+- **`scene().ingest_cell` does not classify emitters.** It still lights every emitter through the
+  cache. `IlluminationSystem::ingest_cell` classifies, and `evict_cell` releases what it allocated.
+- **A volume that only sets intensity or far field re-places nothing** — those are per sample. One
+  that sets density, rate, quality or tier re-places its region's probes, which then converge again.
+- **Compare a struct's floats as bits field by field, not with `memcmp`**: `GiRegionSettings` has
+  padding.
+
+## 9. What is not built yet
 
 - **The composite** (stage 4): the per-pixel resolve from the radiance cache, the denoiser on the
   device, per-frame staging for frames in flight, and the forward frame's ambient term.
 - **The budget on the device** (stage 5): the device cost in `GiBudget` and the arbiter's ladders.
 - **DXR and Metal acceleration structures**: the RHI vocabulary is theirs too, and both backends
   refuse until they implement it; the software tier answers.
-- **The editor and Swift**: no editor view or Swift API exposes the device GI yet. The GI rows the
-  requirements map still exempts — emissive classification, dynamic classification, transparency
-  and media, GI volumes, diagnostics and debug views — are listed with reasons in
+- **Promoted emitters in the frame's own lights**: the forward frame's clustered lights and the
+  stochastic many-light path do not read `frame_lights()` yet — the frame reads nothing of this
+  system before stage 4.
+- **GI volumes and probe quality on the device gather**: placement, density and the update rate are
+  host decisions and hold on both paths; the device gather traces the update's ray count through
+  the frame's tier for every probe, so `Quality` and `TierPreference` reach probes on the host
+  gather only.
+- **The editor and Swift**: no editor view or Swift API exposes GI, its volumes or its emitter
+  settings yet. The GI rows the requirements map still exempts — dynamic classification,
+  transparency and media, diagnostics and debug views — are listed with reasons in
   `tools/roadmap/requirements-coverage.toml`.

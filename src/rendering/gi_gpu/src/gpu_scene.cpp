@@ -572,7 +572,8 @@ Status GpuGiScene::upload_lights(Span<const gi::GiLight> lights) noexcept {
         put(target, base + 0U, light.position, light.intensity);
         put(target, base + 4U, light.direction, light.range);
         put(target, base + 8U, light.colour, light.directional ? 1.0F : 0.0F);
-        put(target, base + 12U, Vec3{0.0F, 0.0F, 0.0F}, 0.0F);
+        // A promoted emitter's card; zeros, as before emitters existed, for every other light.
+        put(target, base + 12U, light.emitter_normal, light.emitter_area);
     }
     constants_[kCounts + 2] = static_cast<u32>(lights.size());
     write_constants();

@@ -41,6 +41,8 @@
 #include <cy/rendering/denoise/denoiser.h>
 #include <cy/rendering/gi/budget.h>
 #include <cy/rendering/gi/distance_field.h>
+#include <cy/rendering/gi/emissive.h>
+#include <cy/rendering/gi/gi_volume.h>
 #include <cy/rendering/gi/lighting.h>
 #include <cy/rendering/gi/radiance_cache.h>
 #include <cy/rendering/gi/reflections.h>
@@ -67,6 +69,8 @@ struct IlluminationSettings {
     f32 convergence_region_metres = 4.0F;
     /// Rays a probe gathers per update at lever position 0. The budget scales it down from here.
     u32 rays_per_probe = 32;
+    /// How `ingest_cell` classifies emissive cards (emissive.h).
+    EmissiveSettings emissive{};
 };
 
 struct FrameContext {
@@ -159,6 +163,38 @@ public:
         radiance_.set_gather_backend(backend);
     }
 
+    /// Ingest one world cell THROUGH THE EMISSIVE CLASSIFICATION, and allocate a surface page for
+    /// each of its cards.
+    ///
+    /// `scene().ingest_cell` followed by `surfaces().allocate_from` is what a caller did before
+    /// emitters were classified, and it still works: every emissive card then lights the room
+    /// through the cache alone. This is the same with `EmissiveLights` in front, so a small, bright
+    /// emitter arrives as a light in `frame_lights()` with its emission out of the cache, and its
+    /// arrival invalidates the region it lights (`InvalidationCause::LightChanged`, attributed to
+    /// the light's id). The pages are remembered by cell, and `evict_cell` releases them.
+    [[nodiscard]] Status ingest_cell(u64 cell, const Aabb& bounds, Span<const Surfel> surfels,
+                                     u64 frame) noexcept;
+
+    /// Evict a cell `ingest_cell` took: from the GI scene, its promoted lights, and its pages.
+    void evict_cell(u64 cell, u64 frame) noexcept;
+
+    /// The emitter classification of every cell `ingest_cell` took.
+    [[nodiscard]] const EmissiveLights& emitters() const noexcept { return emissive_; }
+
+    /// The lights the last `update()` shaded with: the frame's own, then every promoted emitter.
+    /// Exactly the frame's span, not a copy, when nothing is promoted.
+    [[nodiscard]] Span<const GiLight> frame_lights() const noexcept { return last_lights_; }
+
+    /// Place the GI volumes (gi_volume.h), replacing any placed before. Every probe inside the
+    /// old and the new volumes' reach is retired, so the next `update()` places those regions
+    /// again at the density, rate and quality now asked for. A refused volume changes nothing.
+    [[nodiscard]] Status set_volumes(Span<const GiVolume> volumes) noexcept;
+    [[nodiscard]] const GiVolumeSet& volumes() const noexcept { return volumes_; }
+
+    /// What the volumes resolve to at `point`, from the global settings. The global settings,
+    /// bit for bit, where no volume reaches.
+    [[nodiscard]] GiRegionSettings region_settings(Vec3 point) const noexcept;
+
     // The named subsystems. Public because they are separate subsystems and not private state:
     // a renderer ingests cells into the scene, a residency system places distance fields, and an
     // editor inspects the caches, and none of that should go through a forwarding method here.
@@ -206,6 +242,9 @@ public:
 private:
     void service_invalidations(IlluminationFrameReport& report, u64 frame) noexcept;
     [[nodiscard]] bool dynamic_enabled() const noexcept;
+    [[nodiscard]] Span<const GiLight> lights_for(Span<const GiLight> frame) noexcept;
+    void invalidate_emitters(Span<const GiLight> lights, u64 frame) noexcept;
+    void retire_volume_regions() noexcept;
 
     IlluminationSettings settings_{};
     GiScene scene_;
@@ -221,6 +260,17 @@ private:
     HardwareTracer hardware_;
     WorldTracer world_;
     TieredTracer tracer_;
+    struct CellPage {
+        u64 cell = 0;
+        u32 page = 0;
+    };
+
+    EmissiveLights emissive_;
+    Array<Surfel> cache_surfels_;
+    Array<CellPage> cell_pages_;
+    Array<GiLight> frame_lights_;
+    Span<const GiLight> last_lights_;
+    GiVolumeSet volumes_;
 };
 
 }  // namespace cy::rendering::gi

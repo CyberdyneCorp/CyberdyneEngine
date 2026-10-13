@@ -46,6 +46,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/hash_map.h>
 #include <cy/rendering/gi/distance_field.h>
+#include <cy/rendering/gi/gi_volume.h>
 #include <cy/rendering/gi/lighting.h>
 #include <cy/rendering/gi/scene.h>
 
@@ -113,6 +114,11 @@ struct Probe {
     /// a result for a probe invalidated while its gather was in flight is dropped rather than
     /// undoing the invalidation. The same contract as `SurfacePage::revision`.
     u32 revision = 0;
+    /// What the GI volumes resolved to at this probe when it was placed (gi_volume.h). Neutral —
+    /// one, one, `Automatic` — where no volume reaches, which is every probe of a scene with none.
+    f32 update_rate = 1.0F;
+    f32 ray_scale = 1.0F;
+    GiTierPreference tier = GiTierPreference::Automatic;
 };
 
 struct ProbeUpdateReport {
@@ -129,6 +135,10 @@ struct ProbePlacementReport {
     u32 probes_retired = 0;
     u32 rejected_inside_geometry = 0;
     u32 rejected_open_space = 0;
+    /// Candidates a GI volume's density placed although the geometry would not have, and ones it
+    /// refused although the geometry would have.
+    u32 placed_by_volume_density = 0;
+    u32 rejected_by_volume_density = 0;
 };
 
 struct RadianceCacheDiagnostics {
@@ -156,6 +166,9 @@ struct ProbeUpdateContext {
     /// Converged mode: every probe is updated, however many there are. Used by golden-image tests,
     /// cinematic capture and the bake's seeding.
     bool converged = false;
+    /// The tracer a probe whose GI volume prefers `SoftwareOnly` gathers through. Null means every
+    /// probe uses `tracer`.
+    const SceneTracer* software_tracer = nullptr;
 };
 
 /// What the placement pass needs in order to decide where a probe buys something.
@@ -166,6 +179,9 @@ struct ProbePlacementContext {
     /// density inside it whatever the geometry says.
     Aabb importance_region{};
     bool has_importance_region = false;
+    /// The placed GI volumes, or null. Their probe density decides acceptance where they reach, and
+    /// what they resolve to is recorded on each probe placed.
+    const GiVolumeSet* volumes = nullptr;
 };
 
 class RadianceCache;
@@ -236,6 +252,11 @@ public:
     /// Invalidate the probes inside `region`. Returns how many, which fills in an invalidation
     /// record's `probes`.
     u32 invalidate(const Aabb& region) noexcept;
+
+    /// Retire the probes inside `region`, so the next `scroll_to` places that region again. What a
+    /// change to the GI volumes does to the regions it touched: their density and the settings
+    /// recorded on each probe are decided at placement. Returns how many.
+    u32 retire_region(const Aabb& region) noexcept;
 
     ProbeUpdateReport update(const ProbeUpdateContext& context) noexcept;
 
@@ -316,6 +337,9 @@ private:
     [[nodiscard]] bool accept_candidate(Vec3 position, u32 level, f32 spacing,
                                         const ProbePlacementContext& context,
                                         ProbePlacementReport& report) const noexcept;
+    [[nodiscard]] bool accept_by_geometry(Vec3 position, u32 level, f32 spacing, f32 distance,
+                                          const ProbePlacementContext& context,
+                                          bool sparse_only) const noexcept;
     void retire_outside_window(Vec3 camera, i32 half, ProbePlacementReport& report) noexcept;
     void populate_level(u32 level, Vec3 camera, i32 half, const ProbePlacementContext& context,
                         ProbePlacementReport& report) noexcept;
@@ -323,6 +347,8 @@ private:
     ProbeUpdateReport submit_to_backend(Span<const u32> selected,
                                         const ProbeUpdateContext& context) noexcept;
     [[nodiscard]] static f32 priority_of(const Probe& entry, u64 frame) noexcept;
+    /// The probe's age as the scheduler sees it: frames since its update, times its update rate.
+    [[nodiscard]] static f32 scheduled_age(const Probe& entry, u64 frame) noexcept;
     [[nodiscard]] f32 visibility_weight(const Probe& entry, Vec3 query) const noexcept;
     void account() noexcept;
 

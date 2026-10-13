@@ -26,6 +26,7 @@ Status IlluminationSystem::configure(const IlluminationSettings& settings) noexc
         return configured;
     }
     budget_.configure(settings.budget);
+    emissive_.configure(settings.emissive);
     convergence_.configure(settings.convergence_region_metres, 0.25F);
 
     acceleration_ = rt::AccelerationService{settings.ray_tracing};
@@ -48,6 +49,112 @@ void IlluminationSystem::set_sky_term(const SkyTerm& sky) noexcept {
     TieredTracer::Config config = tracer_.config();
     config.sky = sky;
     tracer_.set_config(config);
+}
+
+Status IlluminationSystem::ingest_cell(u64 cell, const Aabb& bounds, Span<const Surfel> surfels,
+                                       u64 frame) noexcept {
+    if (scene_.cell_resident(cell)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "IlluminationSystem::ingest_cell: the cell is already resident");
+    }
+    if (Status classified = emissive_.ingest(cell, surfels, cache_surfels_); !classified) {
+        return classified;
+    }
+    if (Status ingested = scene_.ingest_cell(cell, bounds, cache_surfels_.span(), frame);
+        !ingested) {
+        emissive_.evict(cell);
+        return ingested;
+    }
+    invalidate_emitters(emissive_.last_changed(), frame);
+    // A page per card this ingest added, remembered by cell so `evict_cell` releases exactly them.
+    Status allocated = ok();
+    for (const Surfel& surfel : cache_surfels_) {
+        Expected<u32, Error> handle = surfaces_.allocate(surfel);
+        if (!handle) {
+            allocated = make_unexpected(handle.error());
+            break;
+        }
+        if (Status pushed = cell_pages_.push_back(CellPage{cell, handle.value()}); !pushed) {
+            surfaces_.release(handle.value());
+            allocated = pushed;
+            break;
+        }
+    }
+    return allocated;
+}
+
+void IlluminationSystem::evict_cell(u64 cell, u64 frame) noexcept {
+    scene_.evict_cell(cell, frame);
+    emissive_.evict(cell);
+    invalidate_emitters(emissive_.last_changed(), frame);
+    for (usize index = cell_pages_.size(); index > 0; --index) {
+        if (cell_pages_[index - 1].cell == cell) {
+            surfaces_.release(cell_pages_[index - 1].page);
+            cell_pages_.remove_unordered(index - 1);
+        }
+    }
+}
+
+void IlluminationSystem::invalidate_emitters(Span<const GiLight> lights, u64 frame) noexcept {
+    // A promoted light lights beyond its own cell, so its arrival or departure invalidates the
+    // region it reaches above the threshold — attributed to it, as any light change is.
+    for (const GiLight& light : lights) {
+        const f32 reach =
+            emitter_influence_radius(light, settings_.emissive.invalidation_irradiance);
+        scene_.invalidate(Aabb::from_center_extents(light.position, Vec3{reach, reach, reach}),
+                          InvalidationCause::LightChanged, light.id, frame);
+    }
+}
+
+Span<const GiLight> IlluminationSystem::lights_for(Span<const GiLight> frame) noexcept {
+    const Span<const GiLight> promoted = emissive_.lights();
+    if (promoted.empty()) {
+        return frame;
+    }
+    frame_lights_.clear();
+    if (!frame_lights_.append(frame) || !frame_lights_.append(promoted)) {
+        // Out of memory: shade with the frame's own lights rather than a partial list.
+        return frame;
+    }
+    return frame_lights_.span();
+}
+
+Status IlluminationSystem::set_volumes(Span<const GiVolume> volumes) noexcept {
+    for (const GiVolume& volume : volumes) {
+        if (Status valid = validate_gi_volume(volume); !valid) {
+            return valid;
+        }
+    }
+    retire_volume_regions();
+    if (Status assigned = volumes_.assign(volumes); !assigned) {
+        return assigned;
+    }
+    retire_volume_regions();
+    return ok();
+}
+
+void IlluminationSystem::retire_volume_regions() noexcept {
+    // Only what is decided when a probe is placed needs the probes placed again. An intensity or a
+    // far-field distance is resolved per sample, and a volume setting only those touches no probe.
+    constexpr u32 kPlacement = gi_volume_bit(GiVolumeParameter::Quality) |
+                               gi_volume_bit(GiVolumeParameter::ProbeDensity) |
+                               gi_volume_bit(GiVolumeParameter::UpdateRate) |
+                               gi_volume_bit(GiVolumeParameter::TierPreference);
+    for (const GiVolume& volume : volumes_.volumes()) {
+        if ((volume.sets & kPlacement) == 0U) {
+            continue;
+        }
+        const f32 blend = volume.blend_distance_metres;
+        const Aabb reach = Aabb::from_min_max(volume.bounds.min - Vec3{blend, blend, blend},
+                                              volume.bounds.max + Vec3{blend, blend, blend});
+        (void)radiance_.retire_region(reach);
+    }
+}
+
+GiRegionSettings IlluminationSystem::region_settings(Vec3 point) const noexcept {
+    GiRegionSettings global;
+    global.far_field_begins_metres = settings_.error_targets.far_field_begins_metres;
+    return volumes_.empty() ? global : volumes_.resolve(point, global);
 }
 
 bool IlluminationSystem::dynamic_enabled() const noexcept {
@@ -82,6 +189,10 @@ void IlluminationSystem::service_invalidations(IlluminationFrameReport& report,
 
 IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) noexcept {
     IlluminationFrameReport report;
+    // The frame's lights and every promoted emitter, which the direct lighting path below shades
+    // like any other light.
+    const Span<const GiLight> lights = lights_for(context.lights);
+    last_lights_ = lights;
 
     // 1. The budget. Every step below reads a lever value from it.
     if (context.permit_relaxation) {
@@ -109,9 +220,10 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
     // 5. Probe placement.
     ProbePlacementContext placement;
     placement.field = &field_;
-    placement.lights = context.lights;
+    placement.lights = lights;
     placement.importance_region = context.importance_region;
     placement.has_importance_region = context.has_importance_region;
+    placement.volumes = volumes_.empty() ? nullptr : &volumes_;
     report.placement = radiance_.scroll_to(context.camera, placement);
 
     if (!dynamic_enabled()) {
@@ -123,7 +235,7 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
 
     // 6. The surface cache: the probes gather from it.
     SurfaceUpdateContext surfaces;
-    surfaces.lights = context.lights;
+    surfaces.lights = lights;
     surfaces.occluder = &world_;
     surfaces.indirect = &radiance_;
     surfaces.frame = context.frame;
@@ -144,6 +256,7 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
         std::max(1U, static_cast<u32>(std::min(static_cast<f32>(settings_.rays_per_probe),
                                                budget_.value(GiLever::TracedRays))));
     probes.converged = context.converged_mode;
+    probes.software_tracer = &software_;
     report.probes = radiance_.update(probes);
 
     // 8. The reflection probes: the same tracer, the same surface cache.
@@ -203,7 +316,10 @@ ResolveResult IlluminationSystem::indirect_diffuse(
     // The sky, weighted by how much of it the surface can actually see and by how far into the far
     // field the query is. Both terms are needed: an indoor surface that took full sky would be the
     // leak the field's sky visibility exists to prevent.
-    const f32 far = far_field_weight(surface.camera_distance_metres, settings_.error_targets);
+    const GiRegionSettings region = region_settings(position);
+    ErrorTargets targets = settings_.error_targets;
+    targets.far_field_begins_metres = region.far_field_begins_metres;
+    const f32 far = far_field_weight(surface.camera_distance_metres, targets);
     const f32 openness = field_.sky_visibility(position, normal, 8);
     samples[count].source = RadianceSource::Sky;
     samples[count].radiance = settings_.sky.radiance(normal) * openness;
@@ -213,7 +329,11 @@ ResolveResult IlluminationSystem::indirect_diffuse(
 
     const u32 excluded =
         exclusion_for(settings_.mode, surface.has_lightmap, surface.has_irradiance_volume);
-    return combine(Span<const RadianceSample>{samples, count}, excluded);
+    ResolveResult result = combine(Span<const RadianceSample>{samples, count}, excluded);
+    if (region.diffuse_intensity != 1.0F) {
+        result.radiance = result.radiance * region.diffuse_intensity;
+    }
+    return result;
 }
 
 ResolveResult IlluminationSystem::indirect_specular(Vec3 position, Vec3 normal, Vec3 view_direction,
@@ -223,6 +343,7 @@ ResolveResult IlluminationSystem::indirect_specular(Vec3 position, Vec3 normal, 
     const Vec3 reflection =
         normalized_or(incident - (normal * (2.0F * dot(incident, normal))), normal);
     const u32 rays = reflection_ray_count(roughness, settings_.reflection_thresholds);
+    const GiRegionSettings region = region_settings(position);
 
     RadianceSample samples[3];
     usize count = 0;
@@ -237,8 +358,9 @@ ResolveResult IlluminationSystem::indirect_specular(Vec3 position, Vec3 normal, 
         for (u32 index = 0; index < rays; ++index) {
             const Vec3 direction =
                 reflection_lobe_direction(reflection, normal, roughness, index, rays, frame);
-            const RadianceSample answer = tracer_.trace(position + (normal * 1.0e-3F), direction,
-                                                        settings_.max_ray_distance_metres, budget);
+            const RadianceSample answer =
+                tracer_.trace(position + (normal * 1.0e-3F), direction,
+                              settings_.max_ray_distance_metres, budget, region.tier);
             if (answer.confidence <= 0.0F) {
                 continue;
             }
@@ -271,7 +393,11 @@ ResolveResult IlluminationSystem::indirect_specular(Vec3 position, Vec3 normal, 
         count += 1;
     }
 
-    return combine(Span<const RadianceSample>{samples, count}, 0);
+    ResolveResult result = combine(Span<const RadianceSample>{samples, count}, 0);
+    if (region.specular_intensity != 1.0F) {
+        result.radiance = result.radiance * region.specular_intensity;
+    }
+    return result;
 }
 
 u32 IlluminationSystem::advance_to_convergence(const FrameContext& context, f32 threshold,
