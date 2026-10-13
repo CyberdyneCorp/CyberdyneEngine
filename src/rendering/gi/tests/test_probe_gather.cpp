@@ -14,6 +14,7 @@
 #include <cy/rendering/gi/radiance_cache.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -163,7 +164,7 @@ CY_TEST_CASE("a backend's results land on the next update, and every probe is re
     // first rule the probes at the window's far corners would wait until their age outweighed
     // their distance, far past the cap. With it, the longest wait is the cap plus a budget's lap.
     u64 longest = 0;
-    for (u64 frame = needed + 8U; frame < needed + 80U; ++frame) {
+    for (u64 frame = needed + 8U; frame < needed + 400U; ++frame) {
         update.frame = frame;
         (void)cache.update(update);
         (void)cache.collect();
@@ -173,6 +174,9 @@ CY_TEST_CASE("a backend's results land on the next update, and every probe is re
             }
         }
     }
+    std::printf("  longest wait %llu frames, over %u probes at %u a frame (cap %llu)\n",
+                static_cast<unsigned long long>(longest), probes, update.budget,
+                static_cast<unsigned long long>(update.max_age_frames));
     CY_CHECK_LE(longest, update.max_age_frames + needed);
 }
 
