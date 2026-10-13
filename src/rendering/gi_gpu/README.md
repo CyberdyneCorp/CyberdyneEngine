@@ -208,6 +208,11 @@ card's normal and area (`GiLight::emitter_area`), and `giDirectRadiance` integra
 with `giEmitterFormFactor`, the transcription of `gi::emitter_form_factor`. Every other light still
 uploads zeros there, so a scene with no promoted emitter writes the same bytes as before.
 
+What it costs, measured with timestamps around the update's passes on the RTX 5060 (`render.gi_gpu`,
+`what a promoted emitter costs the device card update`, median of nine): the room's 403 cards with
+8 gather rays each take 0.348 ms with the point light alone and 0.363 ms with a lamp promoted
+beside it — 0.015 ms for one promoted light's form factor and shadow ray over every card.
+
 ## What is not here
 
 - **The composite.** Stage 4: the per-pixel resolve, the denoiser transcription, and the forward

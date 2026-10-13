@@ -119,6 +119,16 @@ reference uses `PathTracer::set_emission_footprints`, which is off for every bak
 | 30 cm lamp at radiance 400, promoted (25 floor cards, direct) | 0.005 | ratio variance 0.027 (reference noise), max ratio 1.33 |
 | the same lamp, cache only, 32 gather rays | 0.067 | ratio variance 4.6, receivers from 0 to 7.8x: fireflies |
 
+![The light arriving from the lamp over a 3 m patch of floor: the path tracer at 256 samples, the
+promoted lamp, and the lamp left to the cache](../../../docs/design/images/gi-emissive-lamp.png)
+
+*The light arriving directly from the 30 cm lamp over a 3 x 3 m patch of floor, 64 x 64 points:
+left, the path tracer at 256 samples a point (its noise is what a stochastic estimator of a small
+emitter looks like); centre, the lamp promoted, exactly the closed form; right, the lamp left to
+the cache — every gather hit in the region of the ceiling it is the nearest card for returns its
+full radiance, which is the blotches. The same quantities `render_gi_emissive`'s lamp case measures,
+sampled densely once for the picture.*
+
 ## GI volumes
 
 `IlluminationSystem::set_volumes` places `GiVolume`s; `region_settings(point)` is what they resolve
