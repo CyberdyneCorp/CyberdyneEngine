@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Acceleration structures: what a device builds for ray queries. Issue #35, stage 3.
 //

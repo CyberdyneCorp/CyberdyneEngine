@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Acceleration structures in the RHI's vocabulary, and the refusal of a device that builds none.
 // Issue #35, stage 3.
 //

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The device mirror seam: what `AccelerationService` tells a `StructureMirror`, in the order it
 // decided it. Issue #35, stage 3.
 //

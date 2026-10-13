@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The radiance cache's gather seam: `ProbeGatherBackend`, `RadianceCache::select`, `apply` and the
 // probe revision. Issue #35, stage 3 — the headless half of what `render.gi_gpu_tracing` holds the
 // device to.
@@ -156,6 +157,23 @@ CY_TEST_CASE("a backend's results land on the next update, and every probe is re
     }
     (void)cache.collect();
     CY_CHECK_EQ(cache.diagnostics().valid_probes, probes);
+
+    // AND NO PROBE WAITS LONGER THAN THE CAP ALLOWS. Every probe is valid now and the backend
+    // answers each with the same error, so priority is distance against age: without the starved-
+    // first rule the probes at the window's far corners would wait until their age outweighed
+    // their distance, far past the cap. With it, the longest wait is the cap plus a budget's lap.
+    u64 longest = 0;
+    for (u64 frame = needed + 8U; frame < needed + 80U; ++frame) {
+        update.frame = frame;
+        (void)cache.update(update);
+        (void)cache.collect();
+        for (const Probe& probe : cache.probes()) {
+            if (probe.live) {
+                longest = std::max(longest, frame - probe.last_update_frame);
+            }
+        }
+    }
+    CY_CHECK_LE(longest, update.max_age_frames + needed);
 }
 
 CY_TEST_CASE("a result for a probe invalidated while it was in flight is dropped") {

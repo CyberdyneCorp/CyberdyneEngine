@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Acceleration structures on Vulkan: `VK_KHR_acceleration_structure`, traversed by
 // `VK_KHR_ray_query`. Issue #35, stage 3. See cy/backends/rhi/acceleration.h for the vocabulary.
 //
