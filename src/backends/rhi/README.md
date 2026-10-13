@@ -61,6 +61,13 @@ carries where each stands as data.
 - `include/cy/backends/rhi/access.h` — the closed enum of access intents. A pass's entire
   synchronisation vocabulary; every barrier in every frame is two rows of the table beside it.
 - `include/cy/backends/rhi/barrier.h` — the invariant, expressed as a passkey.
+- `include/cy/backends/rhi/acceleration.h` — acceleration structures (issue #35 stage 3): a
+  structure owns its storage, its scratch and — for a top level — its instance records; a build, a
+  top-level build and a ray query are three access intents against the storage, so the graph orders
+  them. `Device::create_acceleration_structure` is NOT pure: the base refuses with
+  `ErrorCode::Unsupported`, which is the whole answer of the null, D3D12 and Metal backends, and
+  `vulkan/src/vulkan_acceleration.cpp` is the one implementation. `DeviceDescription::
+  request_ray_tracing = false` creates a device without ray queries on hardware that has them.
 - `include/cy/backends/rhi/device.h` — resources, frames in flight, submission, the transient pool
   the render graph places into, and the GPU memory report that feeds the engine's own budget tree.
 - `include/cy/backends/rhi/device_identity.h` — a device's class (hardware, software,

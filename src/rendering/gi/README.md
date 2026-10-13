@@ -17,7 +17,7 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot` and `CardGather` (issue #35) |
 | `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
 | `proxy_scene.h` | `BoxProxyScene`: axis-aligned proxy boxes as a `SceneTracer`, `Occluder` and `RadianceLookup`, so a volume can be captured from blockout geometry |
-| `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, and the scheduler that guarantees progress |
+| `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, the scheduler that guarantees progress (`RadianceCache::select`), and `ProbeGatherBackend` — the seam a device gathers the selected probes behind |
 | `tracing.h` | `ScreenTracer`, `SoftwareTracer`, `HardwareTracer`, `WorldTracer` and `TieredTracer` — one interface, cheapest sufficient tier, blended escalation |
 | `reflections.h` | the roughness strategy table, the lobe distribution, and `ReflectionProbeSet` with box projection and amortised realtime capture |
 | `resolve.h` | `combine()` by confidence, `exclusion_for()` (the double-counting rule), the far-field ramp, and `ConvergenceTracker` |
@@ -122,6 +122,24 @@ card lookup — `SurfaceCache::radiance_at`, `CardSnapshot::find` and the shader
 with `card_lookup_prefers`: score, then alignment, then handle. Before it, a hit exactly on two
 coincident cards (an edge) scored zero against both and went to whichever the index visited first.
 
+## On the device: the radiance cache and the tiers (issue #35, stage 3)
+
+The same split for the radiance cache: `ProbeGatherBackend` (`radiance_cache.h`) is the seam,
+`RadianceCache::select` is the scheduler lifted out of `update()` unchanged — every live probe older
+than the age cap first, then by priority, then by handle — and `RadianceCache::apply` is the one door
+a backend's results come back through, refused for a probe whose `revision` moved while its gather
+was in flight. `probe_ray_direction` is the golden-ratio sequence `gather_probe` traces, public so a
+device traces the same directions to the last bit. `IlluminationSystem::set_probe_gather` installs
+`cy::rendering-gi-gpu`'s `GpuRadianceCache`; null is the host gather, and with no backend the host
+GI computes exactly what main computed (`openspec/changes/add-gpu-gi-radiance-tracing/evidence/
+off-reference.txt`). `tests/test_probe_gather.cpp` holds the seam to the scheduler headlessly.
+
+**The hardware tier has hardware behind it now — on the device.** `HardwareTracer` here still asks
+`AccelerationService::trace`, which still traces `cy::Bvh` on the processor, and that is the oracle.
+The device's hardware tier issues Vulkan ray queries over structures `cy::rendering-raytracing-gpu`
+builds from the service's decisions, and `render.gi_gpu_tracing` holds it to this module's
+`HardwareTracer` ray for ray. Its README has the numbers.
+
 ## What is here at Working, and what is not
 
 **Lightmap atlases are built, one module up** (M11.e, #36): `src/rendering/lightmap_bake/` packs a
@@ -136,7 +154,8 @@ stationary light's shadow mask and rebakes a moved object's region incrementally
 in this module still shades every light.
 
 The **screen tier's colour input is last frame's**, which is why its confidence is capped below one.
-The **hardware tier executes on the CPU** for the reason above.
+The **hardware tier executes on the CPU** in this module for the reason above; on a device it is
+`cy::rendering-gi-gpu`'s (stage 3).
 
 ## What it does not depend on
 
