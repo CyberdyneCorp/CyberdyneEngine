@@ -272,6 +272,8 @@ const char* descriptor_kind_name(DescriptorKind kind) noexcept {
             return "combined-texture-sampler";
         case DescriptorKind::InputAttachment:
             return "input-attachment";
+        case DescriptorKind::AccelerationStructure:
+            return "acceleration-structure";
     }
     return "unknown";
 }

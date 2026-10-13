@@ -337,10 +337,45 @@ Status AccelerationService::build_bottom(Bottom& bottom) noexcept {
     return ok();
 }
 
+void AccelerationService::mirror_built(u32 slot, bool refit) noexcept {
+    if (mirror_ == nullptr) {
+        return;
+    }
+    const Bottom& bottom = bottoms_[slot];
+    BottomLevelView view;
+    view.id = bottom.id;
+    view.maintenance = bottom.input.maintenance;
+    view.positions = bottom.positions.span();
+    view.indices = bottom.indices.span();
+    view.procedural = bottom.input.procedural;
+    view.declared_error_metres = bottom.input.declared_error_metres;
+    if (refit) {
+        mirror_->bottom_refit(slot, view);
+    } else {
+        mirror_->bottom_built(slot, view);
+    }
+}
+
+void AccelerationService::catch_up_mirror() noexcept {
+    if (mirror_ == nullptr || !mirror_stale_) {
+        return;
+    }
+    for (usize slot = 0; slot < bottoms_.size(); ++slot) {
+        if (bottoms_[slot].live && bottoms_[slot].built) {
+            mirror_built(static_cast<u32>(slot), false);
+        }
+    }
+    mirror_stale_ = false;
+}
+
 void AccelerationService::evict_unreferenced() noexcept {
-    for (Bottom& bottom : bottoms_) {
+    for (usize slot = 0; slot < bottoms_.size(); ++slot) {
+        Bottom& bottom = bottoms_[slot];
         if (!bottom.live || bottom.declared || bottom.instance_refs != 0) {
             continue;
+        }
+        if (mirror_ != nullptr && bottom.built) {
+            mirror_->bottom_evicted(static_cast<u32>(slot));
         }
         bottom.tree.clear();
         bottom.positions.clear();
@@ -357,7 +392,8 @@ void AccelerationService::evict_unreferenced() noexcept {
 
 void AccelerationService::service_refits(FrameReport& report) noexcept {
     u32 refits = 0;
-    for (Bottom& bottom : bottoms_) {
+    for (usize slot = 0; slot < bottoms_.size(); ++slot) {
+        Bottom& bottom = bottoms_[slot];
         if (!bottom.live || !bottom.needs_refit) {
             continue;
         }
@@ -385,6 +421,7 @@ void AccelerationService::service_refits(FrameReport& report) noexcept {
         refits += 1;
         report.refits += 1;
         top_dirty_ = true;
+        mirror_built(static_cast<u32>(slot), true);
     }
 }
 
@@ -442,6 +479,7 @@ void AccelerationService::service_builds(FrameReport& report) noexcept {
             report.builds += 1;
         }
         top_dirty_ = true;
+        mirror_built(slot, false);
     }
 }
 
@@ -468,6 +506,22 @@ void AccelerationService::rebuild_top_level(FrameReport& report) noexcept {
     top_.clear();
     if (!top_payloads_.empty()) {
         (void)top_.build(top_bounds_.data(), top_payloads_.data(), top_payloads_.size(), 2);
+    }
+    if (mirror_ != nullptr) {
+        // The device's top level, from the same instances in the same order — the ones excluded
+        // above are excluded there too, so the two traced worlds are the same world.
+        Array<TopLevelInstance> traced;
+        if (traced.reserve(top_payloads_.size())) {
+            for (const u32 slot : top_payloads_) {
+                const Instance& instance = instances_[slot];
+                TopLevelInstance entry;
+                entry.bottom = instance.bottom;
+                entry.transform = instance.descriptor.transform;
+                entry.instance_id = instance.descriptor.instance_id;
+                (void)traced.push_back(entry);
+            }
+            mirror_->top_level(traced.span());
+        }
     }
     report.traced_instances = static_cast<u32>(top_payloads_.size());
     top_dirty_ = false;
@@ -505,6 +559,7 @@ FrameReport AccelerationService::update() noexcept {
         return report;
     }
 
+    catch_up_mirror();
     evict_unreferenced();
     service_refits(report);
     service_builds(report);

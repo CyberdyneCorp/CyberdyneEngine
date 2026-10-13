@@ -126,6 +126,7 @@ VulkanDevice::VulkanDevice(Allocator& allocator, const DeviceDescription& desc) 
       fences_(MemoryDomain::Gpu, "rhi.vulkan.fences"),
       semaphores_(MemoryDomain::Gpu, "rhi.vulkan.semaphores"),
       command_buffers_(MemoryDomain::Gpu, "rhi.vulkan.command-buffers"),
+      acceleration_structures_(MemoryDomain::Gpu, "rhi.vulkan.acceleration-structures"),
       swapchains_(MemoryDomain::Gpu, "rhi.vulkan.swapchains"),
       live_command_buffers_(allocator),
       live_transient_textures_(allocator),
@@ -503,7 +504,7 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
     ray_query_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
     RayTracingObservation asked = ray_tracing_;
     asked.enabled_on_the_device = true;
-    if (device_reports_ray_tracing(asked)) {
+    if (desc.request_ray_tracing && device_reports_ray_tracing(asked)) {
         const char* const wanted[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
                                       VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                       VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
@@ -754,6 +755,9 @@ Status VulkanDevice::create_frames(const DeviceDescription& desc) noexcept {
         // `DescriptorKind::Sampler` are separate bindings in this RHI (the standard material binds
         // a texture and a comparison sampler independently), and a pool that sizes only the
         // combined type has nothing to hand out for either.
+        //
+        // The acceleration-structure type is LAST and counted only where the extension is enabled:
+        // naming it in a pool on a device without `VK_KHR_acceleration_structure` is invalid usage.
         const VkDescriptorPoolSize sizes[] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512},
@@ -761,11 +765,14 @@ Status VulkanDevice::create_frames(const DeviceDescription& desc) noexcept {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256},
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 512},
             {VK_DESCRIPTOR_TYPE_SAMPLER, 64},
+            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 16},
         };
+        const u32 size_count = sizeof(sizes) / sizeof(sizes[0]);
         VkDescriptorPoolCreateInfo descriptors{};
         descriptors.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         descriptors.maxSets = 512;
-        descriptors.poolSizeCount = sizeof(sizes) / sizeof(sizes[0]);
+        descriptors.poolSizeCount =
+            ray_tracing_.enabled_on_the_device ? size_count : size_count - 1;
         descriptors.pPoolSizes = sizes;
         CY_VK_TRY(vkCreateDescriptorPool(device_, &descriptors, nullptr, &frame.descriptor_pool),
                   "vkCreateDescriptorPool");
@@ -784,15 +791,21 @@ Status VulkanDevice::create_frames(const DeviceDescription& desc) noexcept {
     // FREE_DESCRIPTOR_SET, unlike the frame pools: sets here are released one at a time when the
     // owner destroys them, never wholesale, so the pool must support individual frees.
     const VkDescriptorPoolSize persistent_sizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512},         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 512},          {VK_DESCRIPTOR_TYPE_SAMPLER, 64},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 256},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 512},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 64},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 16},
     };
+    const u32 persistent_count = sizeof(persistent_sizes) / sizeof(persistent_sizes[0]);
     VkDescriptorPoolCreateInfo persistent{};
     persistent.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     persistent.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     persistent.maxSets = 512;
-    persistent.poolSizeCount = sizeof(persistent_sizes) / sizeof(persistent_sizes[0]);
+    persistent.poolSizeCount =
+        ray_tracing_.enabled_on_the_device ? persistent_count : persistent_count - 1;
     persistent.pPoolSizes = persistent_sizes;
     CY_VK_TRY(vkCreateDescriptorPool(device_, &persistent, nullptr, &persistent_descriptor_pool_),
               "vkCreateDescriptorPool (persistent)");

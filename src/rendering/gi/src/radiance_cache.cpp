@@ -28,21 +28,6 @@ constexpr u32 kOctahedralEdge = 4;
     return static_cast<i32>(std::floor(value / divisor));
 }
 
-/// The golden-ratio sphere sequence: uniform, deterministic, and stable under any count. A probe
-/// gather that changed direction set between two frames would make its own convergence metric
-/// noise.
-[[nodiscard]] Vec3 sphere_direction(u32 index, u32 count, u32 rotation) noexcept {
-    constexpr f32 kGolden = 2.39996323F;
-    const f32 offset = ((2.0F * static_cast<f32>(index)) + 1.0F) / static_cast<f32>(count);
-    const f32 z = 1.0F - offset;
-    const f32 radius = std::sqrt(std::max(0.0F, 1.0F - (z * z)));
-    // Rays are distributed across frames rather than resolved fully per frame; the rotation is
-    // which subset this frame took, and it is why successive frames converge rather than repeat.
-    const f32 angle =
-        (kGolden * static_cast<f32>(index)) + (static_cast<f32>(rotation) * 0.61803399F);
-    return Vec3{radius * std::cos(angle), radius * std::sin(angle), z};
-}
-
 /// Direction to octahedral texel coordinates in [0, edge).
 void octahedral_uv(Vec3 direction, f32& u, f32& v) noexcept {
     const f32 norm = std::abs(direction.x) + std::abs(direction.y) + std::abs(direction.z);
@@ -77,6 +62,21 @@ void octahedral_uv(Vec3 direction, f32& u, f32& v) noexcept {
 }
 
 }  // namespace
+
+/// The golden-ratio sphere sequence: uniform, deterministic, and stable under any count. A probe
+/// gather that changed direction set between two frames would make its own convergence metric
+/// noise.
+Vec3 probe_ray_direction(u32 index, u32 count, u32 rotation) noexcept {
+    constexpr f32 kGolden = 2.39996323F;
+    const f32 offset = ((2.0F * static_cast<f32>(index)) + 1.0F) / static_cast<f32>(count);
+    const f32 z = 1.0F - offset;
+    const f32 radius = std::sqrt(std::max(0.0F, 1.0F - (z * z)));
+    // Rays are distributed across frames rather than resolved fully per frame; the rotation is
+    // which subset this frame took, and it is why successive frames converge rather than repeat.
+    const f32 angle =
+        (kGolden * static_cast<f32>(index)) + (static_cast<f32>(rotation) * 0.61803399F);
+    return Vec3{radius * std::cos(angle), radius * std::sin(angle), z};
+}
 
 Vec3 SkyTerm::radiance(Vec3 direction) const noexcept {
     const Vec3 unit = normalized_or(direction, Vec3{0.0F, 1.0F, 0.0F});
@@ -273,6 +273,7 @@ Status RadianceCache::configure(const ProbeCacheSettings& settings) noexcept {
     }
     settings_ = settings;
     stride_ = encoding_traits(settings.encoding).floats_per_probe;
+    generation_ += 1;
     probes_.clear();
     payloads_.clear();
     proxies_.clear();
@@ -312,7 +313,11 @@ Expected<u32, Error> RadianceCache::create_probe(Vec3 position, u32 level) noexc
     }
 
     Probe& entry = probes_[handle];
+    // The slot's revision survives its reuse and moves: a device mirror that last saw the retired
+    // probe in this slot must see that it changed, and a gather in flight for it must be dropped.
+    const u32 revision = entry.revision + 1U;
     entry = Probe{};
+    entry.revision = revision;
     entry.position = position;
     entry.level = level;
     entry.live = true;
@@ -344,6 +349,7 @@ void RadianceCache::retire_probe(u32 probe) noexcept {
     (void)index_.remove(proxies_[probe]);
     probes_[probe].live = false;
     probes_[probe].valid = false;
+    probes_[probe].revision += 1U;
     (void)free_probes_.push_back(probe);
     live_probes_ -= 1;
 }
@@ -491,6 +497,7 @@ u32 RadianceCache::invalidate(const Aabb& region) noexcept {
             region.contains(probes_[handle].position)) {
             probes_[handle].valid = false;
             probes_[handle].error = 1.0F;
+            probes_[handle].revision += 1U;
             count += 1;
         }
         return true;
@@ -536,10 +543,10 @@ void RadianceCache::gather_probe(u32 handle, const ProbeUpdateContext& context) 
     }
 
     const u32 rays = std::max(1U, context.rays_per_probe);
-    const auto rotation = static_cast<u32>(context.frame & 0xFFU);
+    const u32 rotation = probe_ray_rotation(context.frame);
     f32 total_weight = 0.0F;
     for (u32 index = 0; index < rays; ++index) {
-        const Vec3 direction = sphere_direction(index, rays, rotation);
+        const Vec3 direction = probe_ray_direction(index, rays, rotation);
         Vec3 radiance = context.sky.radiance(direction);
         f32 hit_distance = context.max_ray_distance_metres;
         if (context.tracer != nullptr) {
@@ -585,36 +592,32 @@ void RadianceCache::gather_probe(u32 handle, const ProbeUpdateContext& context) 
     entry.valid = true;
 }
 
-ProbeUpdateReport RadianceCache::update(const ProbeUpdateContext& context) noexcept {
-    ProbeUpdateReport report;
-
-    Array<u32> queue;
-    for (u32 handle = 0; handle < probes_.size(); ++handle) {
-        if (probes_[handle].live) {
-            (void)queue.push_back(handle);
+Status RadianceCache::select(Span<const Probe> probes, const ProbeUpdateContext& context,
+                             Array<u32>& selected, ProbeUpdateReport& report) noexcept {
+    selected.clear();
+    for (u32 handle = 0; handle < probes.size(); ++handle) {
+        if (probes[handle].live) {
+            if (Status pushed = selected.push_back(handle); !pushed) {
+                return pushed;
+            }
         }
     }
-    report.queue_depth = static_cast<u32>(queue.size());
-    if (queue.empty()) {
-        diagnostics_.last_update = report;
-        return report;
-    }
+    report.queue_depth = static_cast<u32>(selected.size());
 
     const u64 frame = context.frame;
-    std::ranges::sort(queue, [&](u32 a, u32 b) {
-        const u64 age_a =
-            frame > probes_[a].last_update_frame ? frame - probes_[a].last_update_frame : 0;
-        const u64 age_b =
-            frame > probes_[b].last_update_frame ? frame - probes_[b].last_update_frame : 0;
+    const auto age_of = [frame](const Probe& entry) {
+        return frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
+    };
+    std::ranges::sort(selected, [&](u32 a, u32 b) {
         // The progress guarantee. Without it a region that is never visible is never updated, and
         // that is not low priority but starvation.
-        const bool starved_a = age_a >= context.max_age_frames;
-        const bool starved_b = age_b >= context.max_age_frames;
+        const bool starved_a = age_of(probes[a]) >= context.max_age_frames;
+        const bool starved_b = age_of(probes[b]) >= context.max_age_frames;
         if (starved_a != starved_b) {
             return starved_a;
         }
-        const f32 priority_a = priority_of(probes_[a], frame);
-        const f32 priority_b = priority_of(probes_[b], frame);
+        const f32 priority_a = priority_of(probes[a], frame);
+        const f32 priority_b = priority_of(probes[b], frame);
         if (priority_a != priority_b) {
             return priority_a > priority_b;
         }
@@ -622,18 +625,101 @@ ProbeUpdateReport RadianceCache::update(const ProbeUpdateContext& context) noexc
     });
 
     const usize limit =
-        context.converged ? queue.size() : std::min<usize>(queue.size(), context.budget);
+        context.converged ? selected.size() : std::min<usize>(selected.size(), context.budget);
+    for (usize index = limit; index < selected.size(); ++index) {
+        report.oldest_unserviced_age =
+            std::max(report.oldest_unserviced_age, age_of(probes[selected[index]]));
+    }
+    return selected.resize(limit);
+}
+
+u32 RadianceCache::collect() noexcept {
+    if (backend_ == nullptr) {
+        return 0;
+    }
+    const u32 written = backend_->retire(*this);
+    if (written != 0) {
+        account();
+    }
+    return written;
+}
+
+bool RadianceCache::apply(const ProbeGatherResult& result) noexcept {
+    if (result.probe >= probes_.size() || result.payload.size() != stride_) {
+        return false;
+    }
+    Probe& entry = probes_[result.probe];
+    if (!entry.live || entry.revision != result.revision) {
+        return false;
+    }
+    f32* data = payload(result.probe);
+    for (u32 index = 0; index < stride_; ++index) {
+        data[index] = result.payload[index];
+    }
+    for (u32 axis = 0; axis < 6; ++axis) {
+        entry.axis_distance[axis] = result.axis_distance[axis];
+    }
+    entry.error = result.error;
+    entry.last_update_frame = result.frame;
+    entry.valid = true;
+    return true;
+}
+
+Span<const f32> RadianceCache::probe_payload(u32 probe) const noexcept {
+    if (probe >= probes_.size()) {
+        return {};
+    }
+    return {payload(probe), stride_};
+}
+
+ProbeUpdateReport RadianceCache::submit_to_backend(Span<const u32> selected,
+                                                   const ProbeUpdateContext& context) noexcept {
+    // The mean error of this selection is not known until it is retired; the one reported is what
+    // the probes carried when they were chosen, which is what the scheduler ranked on — the same
+    // convention `SurfaceCache` keeps for its backend.
+    ProbeUpdateReport report;
+    report.probes_updated = backend_->submit(*this, selected, context);
     f32 error_total = 0.0F;
-    for (usize index = 0; index < limit; ++index) {
-        gather_probe(queue[index], context);
-        error_total += probes_[queue[index]].error;
+    for (usize index = 0; index < report.probes_updated; ++index) {
+        error_total += probes_[selected[index]].error;
+    }
+    report.rays = report.probes_updated * std::max(1U, context.rays_per_probe);
+    report.mean_error =
+        report.probes_updated == 0 ? 0.0F : error_total / static_cast<f32>(report.probes_updated);
+    return report;
+}
+
+ProbeUpdateReport RadianceCache::update(const ProbeUpdateContext& context) noexcept {
+    // A backend's previous submission lands before this one is chosen, so the selection below sees
+    // its errors and ages — which is what makes the device path schedule as the host one does.
+    (void)collect();
+
+    ProbeUpdateReport report;
+    Array<u32> selected;
+    if (Status chosen = select(probes_.span(), context, selected, report); !chosen) {
+        diagnostics_.last_update = report;
+        return report;
+    }
+    if (selected.empty()) {
+        diagnostics_.last_update = report;
+        return report;
+    }
+
+    if (backend_ != nullptr) {
+        const ProbeUpdateReport submitted = submit_to_backend(selected.span(), context);
+        report.probes_updated = submitted.probes_updated;
+        report.rays = submitted.rays;
+        report.mean_error = submitted.mean_error;
+        diagnostics_.last_update = report;
+        return report;
+    }
+
+    f32 error_total = 0.0F;
+    for (const u32 handle : selected) {
+        gather_probe(handle, context);
+        error_total += probes_[handle].error;
         report.probes_updated += 1;
         report.rays += std::max(1U, context.rays_per_probe);
-    }
-    for (usize index = limit; index < queue.size(); ++index) {
-        const Probe& entry = probes_[queue[index]];
-        const u64 age = frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
-        report.oldest_unserviced_age = std::max(report.oldest_unserviced_age, age);
     }
     report.mean_error =
         report.probes_updated == 0 ? 0.0F : error_total / static_cast<f32>(report.probes_updated);
@@ -758,6 +844,7 @@ Status RadianceCache::seed(u32 probe, Span<const Vec3> directions,
                       static_cast<u32>(directions.size()));
     probes_[probe].valid = true;
     probes_[probe].error = 0.0F;
+    probes_[probe].revision += 1U;
     return ok();
 }
 

@@ -123,6 +123,9 @@ VkPipelineStageFlags2 to_vulkan(Stage stage) noexcept {
     if (any(stage & Stage::Host)) {
         out |= VK_PIPELINE_STAGE_2_HOST_BIT;
     }
+    if (any(stage & Stage::AccelerationStructureBuild)) {
+        out |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    }
     return out;
 }
 
@@ -172,6 +175,12 @@ VkAccessFlags2 to_vulkan(AccessFlags access) noexcept {
     }
     if (any(access & AccessFlags::HostWrite)) {
         out |= VK_ACCESS_2_HOST_WRITE_BIT;
+    }
+    if (any(access & AccessFlags::AccelerationStructureRead)) {
+        out |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    }
+    if (any(access & AccessFlags::AccelerationStructureWrite)) {
+        out |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
     }
     return out;
 }
@@ -351,6 +360,10 @@ VkBufferUsageFlags to_vulkan(BufferUsage usage) noexcept {
     }
     if (has_usage(usage, BufferUsage::ShaderDeviceAddress)) {
         out |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
+    if (has_usage(usage, BufferUsage::AccelerationStructureInput)) {
+        out |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     }
     return out;
 }
@@ -581,6 +594,8 @@ VkDescriptorType to_vulkan(DescriptorKind kind) noexcept {
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         case DescriptorKind::InputAttachment:
             return VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        case DescriptorKind::AccelerationStructure:
+            return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         case DescriptorKind::UniformBuffer:
             break;
     }

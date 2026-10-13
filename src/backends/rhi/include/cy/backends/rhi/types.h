@@ -110,6 +110,8 @@ enum class Stage : u64 {
     /// queue-family ownership transfer — and never as a shortcut for "I did not work out the
     /// stage": a barrier that names it is a barrier that synchronises everything.
     AllCommands = 1ULL << 13,
+    /// Building or updating an acceleration structure (acceleration.h).
+    AccelerationStructureBuild = 1ULL << 14,
 };
 
 [[nodiscard]] constexpr Stage operator|(Stage a, Stage b) noexcept {
@@ -145,6 +147,11 @@ enum class AccessFlags : u64 {
     TransferWrite = 1ULL << 12,
     HostRead = 1ULL << 13,
     HostWrite = 1ULL << 14,
+    /// An acceleration structure read: by a ray query, or by a top-level build reading the bottom
+    /// levels it instances.
+    AccelerationStructureRead = 1ULL << 15,
+    /// An acceleration structure written by a build or an update, and the scratch it used.
+    AccelerationStructureWrite = 1ULL << 16,
 };
 
 [[nodiscard]] constexpr AccessFlags operator|(AccessFlags a, AccessFlags b) noexcept {

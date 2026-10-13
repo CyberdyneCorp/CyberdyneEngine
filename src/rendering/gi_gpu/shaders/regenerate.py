@@ -7,8 +7,8 @@ one a Development build stages at <build>/Development/bin/slangc.
 
     python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 
-One module per ENTRY POINT rather than per file: gi_cards.slang holds two, and each is its own
-pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
+One module per ENTRY POINT rather than per file: gi_cards.slang holds two, gi_radiance.slang six
+and gi_hardware.slang three, and each is its own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
 the repository root: the committed text is then the same on every machine that regenerates it.
 """
 
@@ -24,6 +24,19 @@ MODULES = (
     ("gi_trace", "cyGiTraceRays", "kGiTraceRaysSpirv", "kGiTraceRaysMsl"),
     ("gi_cards", "cyGiShadeCards", "kGiShadeCardsSpirv", "kGiShadeCardsMsl"),
     ("gi_cards", "cyGiCommitCards", "kGiCommitCardsSpirv", "kGiCommitCardsMsl"),
+    # Stage 3: the radiance cache and the tracing tiers. gi_hardware.slang's three are the ray
+    # query tier; a device without ray queries never creates them.
+    ("gi_radiance", "cyGiGatherProbes", "kGiGatherProbesSpirv", "kGiGatherProbesMsl"),
+    ("gi_radiance", "cyGiSampleProbes", "kGiSampleProbesSpirv", "kGiSampleProbesMsl"),
+    ("gi_radiance", "cyGiBuildScreenHzb", "kGiBuildScreenHzbSpirv", "kGiBuildScreenHzbMsl"),
+    ("gi_radiance", "cyGiTraceScreen", "kGiTraceScreenSpirv", "kGiTraceScreenMsl"),
+    ("gi_radiance", "cyGiTraceSoftware", "kGiTraceSoftwareSpirv", "kGiTraceSoftwareMsl"),
+    ("gi_radiance", "cyGiTraceTiered", "kGiTraceTieredSpirv", "kGiTraceTieredMsl"),
+    ("gi_hardware", "cyGiGatherProbesHardware", "kGiGatherProbesHardwareSpirv",
+     "kGiGatherProbesHardwareMsl"),
+    ("gi_hardware", "cyGiTraceHardware", "kGiTraceHardwareSpirv", "kGiTraceHardwareMsl"),
+    ("gi_hardware", "cyGiTraceTieredHardware", "kGiTraceTieredHardwareSpirv",
+     "kGiTraceTieredHardwareMsl"),
 )
 
 

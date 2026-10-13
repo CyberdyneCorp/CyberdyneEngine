@@ -101,6 +101,8 @@ enum class DescriptorKind : u8 {
     Sampler,
     CombinedTextureSampler,
     InputAttachment,
+    /// A top-level acceleration structure a ray query traverses (acceleration.h). Appended.
+    AccelerationStructure,
 };
 
 /// "uniform-buffer", "storage-buffer", "sampled-texture", … The spelling a report and a diagnostic
@@ -165,6 +167,8 @@ struct DescriptorWrite {
     /// What the image is being used as through this binding — `SampledRead` for a sampled texture,
     /// `Storage` for a storage image. Engine vocabulary, not a `VkImageLayout`; see types.h.
     ImageUse use = ImageUse::SampledRead;
+    /// The top level a `DescriptorKind::AccelerationStructure` binding names.
+    AccelerationStructureHandle acceleration_structure;
 };
 
 // --- Pipeline layouts -----------------------------------------------------------------------

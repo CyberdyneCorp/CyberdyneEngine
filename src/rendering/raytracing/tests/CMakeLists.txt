@@ -39,6 +39,7 @@ function(cy_render_raytracing_declare_tests)
         SOURCES
             "${tests_dir}/test_acceleration.cpp"
             "${tests_dir}/test_capability.cpp"
+            "${tests_dir}/test_mirror.cpp"
         DEPENDENCIES cy::rendering-raytracing)
 
     cy_add_test(

@@ -114,6 +114,59 @@ struct Diagnostics {
     u64 queries_while_inactive = 0;
 };
 
+/// One bottom level as a device mirror sees it: the triangles the service holds for it, in the
+/// geometry's own space. Valid for the call it is handed to.
+struct BottomLevelView {
+    GeometryId id = 0;
+    MaintenancePolicy maintenance = MaintenancePolicy::Static;
+    Span<const Vec3> positions;
+    Span<const u32> indices;
+    /// Procedural geometry has bounds and no triangles; a device mirror builds nothing for it.
+    bool procedural = false;
+    /// `BuildInput::declared_error_metres`: how far the proxy may be from the rasterised surface,
+    /// which a device hit carries into its confidence exactly as `HardwareTracer` does.
+    f32 declared_error_metres = 0.0F;
+};
+
+/// One instance of the top level the service just rebuilt, in the order it traced them.
+struct TopLevelInstance {
+    /// The bottom level's slot, as `StructureMirror::bottom_built` named it.
+    u32 bottom = kInvalidHandle;
+    Mat4 transform = Mat4::identity();
+    u32 instance_id = kInvalidInstance;
+};
+
+/// WHERE THE STRUCTURES ARE ALSO BUILT: the seam a device's structures are kept in step with the
+/// service behind (`cy::rendering-raytracing-gpu`). Issue #35, stage 3.
+///
+/// The service keeps every DECISION — which geometry is built this frame under the budget, which is
+/// refit and which rebuilt because its refit degraded, what is evicted, which instances are traced
+/// and which excluded — and tells a mirror what it decided, in the order it decided it. A mirror
+/// builds what it is told and nothing else, so "they SHALL NOT build, refit, or own acceleration
+/// structures themselves" holds for a device exactly as it holds for a consumer.
+///
+/// Called from `update()` only, and only while the service is active: a profile that disables ray
+/// tracing stops the calls without tearing anything down, which is the service's own rule.
+class StructureMirror {
+public:
+    StructureMirror() = default;
+    StructureMirror(const StructureMirror&) = delete;
+    StructureMirror(StructureMirror&&) = delete;
+    StructureMirror& operator=(const StructureMirror&) = delete;
+    StructureMirror& operator=(StructureMirror&&) = delete;
+    virtual ~StructureMirror() = default;
+
+    /// `slot` was built, or rebuilt, from `view`.
+    virtual void bottom_built(u32 slot, const BottomLevelView& view) noexcept = 0;
+    /// `slot` was refit: the same triangles, moved to `view.positions`.
+    virtual void bottom_refit(u32 slot, const BottomLevelView& view) noexcept = 0;
+    /// `slot` was evicted. A later `bottom_built` may reuse the slot for another geometry.
+    virtual void bottom_evicted(u32 slot) noexcept = 0;
+    /// The top level, rebuilt from these instances this frame. Called every active frame, like the
+    /// service's own rebuild; a mirror decides whether that is a build, an update or nothing.
+    virtual void top_level(Span<const TopLevelInstance> instances) noexcept = 0;
+};
+
 /// The renderer service that owns acceleration structures.
 ///
 /// Not thread-safe and not internally threaded. `declare_geometry`, `add_instance` and `update` are
@@ -202,6 +255,17 @@ public:
     [[nodiscard]] const Diagnostics& diagnostics() const noexcept { return diagnostics_; }
     void reset_ray_counts() noexcept;
 
+    // --- The device mirror ----------------------------------------------------------------------
+
+    /// Keep a device's structures in step with this service. Null removes the mirror. A mirror
+    /// installed after structures exist is brought up to date at the next active `update()`: every
+    /// built bottom level is handed to it as built, then the top level.
+    void set_mirror(StructureMirror* mirror) noexcept {
+        mirror_ = mirror;
+        mirror_stale_ = mirror != nullptr;
+    }
+    [[nodiscard]] StructureMirror* mirror() const noexcept { return mirror_; }
+
 private:
     struct Bottom {
         GeometryId id = 0;
@@ -240,6 +304,8 @@ private:
     void service_refits(FrameReport& report) noexcept;
     void service_builds(FrameReport& report) noexcept;
     void rebuild_top_level(FrameReport& report) noexcept;
+    void mirror_built(u32 slot, bool refit) noexcept;
+    void catch_up_mirror() noexcept;
     void account_structure_bytes() noexcept;
     [[nodiscard]] RayHit trace_instance(const Instance& instance, const RayQuery& query,
                                         f32 t_max) const noexcept;
@@ -255,6 +321,9 @@ private:
     Array<u32> top_payloads_;
     bool top_dirty_ = true;
     Diagnostics diagnostics_{};
+    StructureMirror* mirror_ = nullptr;
+    /// The mirror has not yet been told about the structures built before it was installed.
+    bool mirror_stale_ = false;
 };
 
 }  // namespace cy::rendering::rt

@@ -60,6 +60,7 @@ function(cy_render_gi_declare_tests)
         SOURCES
             "${tests_dir}/test_caches.cpp"
             "${tests_dir}/test_card_lighting.cpp"
+            "${tests_dir}/test_probe_gather.cpp"
             "${tests_dir}/test_field.cpp"
             "${tests_dir}/test_system.cpp"
             "${tests_dir}/test_tiers.cpp"

@@ -224,6 +224,10 @@ void VulkanDevice::release_retirements(u64 up_to_frame) noexcept {
                 break;
             case Retirement::Kind::Framebuffer:
                 break;
+            case Retirement::Kind::AccelerationStructure:
+                vkDestroyAccelerationStructureKHR(
+                    device_, static_cast<VkAccelerationStructureKHR>(entry.object), nullptr);
+                break;
         }
         ++stats_.resources_freed;
     }
@@ -258,6 +262,14 @@ Expected<BufferHandle, Error> VulkanDevice::create_buffer(const BufferDescriptio
     if (Status valid = validate_buffer(desc, message); !valid) {
         report_validation(ValidationSeverity::Error, message.text);
         return make_unexpected(valid.error());
+    }
+    if (has_usage(desc.usage, BufferUsage::AccelerationStructureInput) &&
+        !ray_tracing_.enabled_on_the_device) {
+        // The usage bit it maps to exists only with VK_KHR_acceleration_structure enabled, and a
+        // structure input on a device that builds no structure is a caller that skipped the gate.
+        return make_unexpected(Error{ErrorCode::Unsupported,
+                                     "BufferUsage::AccelerationStructureInput on a device that "
+                                     "builds no acceleration structures"});
     }
 
     VkBufferCreateInfo info{};
@@ -972,10 +984,19 @@ Status VulkanDevice::update_descriptor_set(DescriptorSetHandle set,
     Array<VkWriteDescriptorSet> vulkan_writes(*allocator_);
     Array<VkDescriptorBufferInfo> buffer_infos(*allocator_);
     Array<VkDescriptorImageInfo> image_infos(*allocator_);
+    // Reserved up front, like the two above, because each write keeps a POINTER into its array.
+    Array<VkWriteDescriptorSetAccelerationStructureKHR> structure_infos(*allocator_);
+    Array<VkAccelerationStructureKHR> structures(*allocator_);
     if (Status reserved = buffer_infos.reserve(writes.size()); !reserved) {
         return reserved;
     }
     if (Status reserved = image_infos.reserve(writes.size()); !reserved) {
+        return reserved;
+    }
+    if (Status reserved = structure_infos.reserve(writes.size()); !reserved) {
+        return reserved;
+    }
+    if (Status reserved = structures.reserve(writes.size()); !reserved) {
         return reserved;
     }
 
@@ -988,7 +1009,25 @@ Status VulkanDevice::update_descriptor_set(DescriptorSetHandle set,
         out.descriptorCount = 1;
         out.descriptorType = to_vulkan(write.kind);
 
-        if (!write.buffer.is_null()) {
+        if (write.kind == DescriptorKind::AccelerationStructure) {
+            const VulkanAccelerationStructure* structure =
+                acceleration_structures_.resolve(write.acceleration_structure);
+            if (structure == nullptr || !ray_tracing_.enabled_on_the_device) {
+                return fail(ErrorCode::NotFound,
+                            "descriptor write names a stale acceleration structure handle");
+            }
+            if (Status pushed = structures.push_back(structure->structure); !pushed) {
+                return pushed;
+            }
+            VkWriteDescriptorSetAccelerationStructureKHR info{};
+            info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+            info.accelerationStructureCount = 1;
+            info.pAccelerationStructures = &structures[structures.size() - 1];
+            if (Status pushed = structure_infos.push_back(info); !pushed) {
+                return pushed;
+            }
+            out.pNext = &structure_infos[structure_infos.size() - 1];
+        } else if (!write.buffer.is_null()) {
             const VulkanBuffer* buffer = buffers_.resolve(write.buffer);
             if (buffer == nullptr) {
                 return fail(ErrorCode::NotFound, "descriptor write names a stale buffer handle");

@@ -64,8 +64,10 @@ class DeviceFixture {
 public:
     /// `request_multiview` off creates a device that reports no `Capability::Multiview`, which is
     /// how `render.msaa_multiview` runs the per-view baseline on hardware that has the feature.
-    DeviceFixture(const char* backend, const char* application,
-                  bool request_multiview = true) noexcept
+    /// `request_ray_tracing` off creates a device that reports no `Capability::RayTracing`: a
+    /// device without ray queries, on hardware that has them.
+    DeviceFixture(const char* backend, const char* application, bool request_multiview = true,
+                  bool request_ray_tracing = true) noexcept
         : allocator_(system_allocator(MemoryDomain::Gpu)) {
         (void)rhi::vulkan::register_vulkan_backend();
         (void)rhi::null::register_null_backend();
@@ -78,6 +80,7 @@ public:
         description.enable_synchronisation_validation = true;
         description.request_async_compute = false;
         description.request_multiview = request_multiview;
+        description.request_ray_tracing = request_ray_tracing;
         device_ = rhi::create_device(allocator_, backend, description, selection_);
         if (device_.has_value()) {
             device_.value()->set_validation_callback(&count_validation, &validation_errors_);

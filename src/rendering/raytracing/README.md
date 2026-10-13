@@ -15,6 +15,10 @@ budget, and the capability gate.
 | `acceleration.h` | `AccelerationService`: declare, instance, budget, `update()`, `trace()`, and the diagnostics |
 | `capability.h` | `service_config_for()` and `ray_tracing_refusal()` — the one place an `rhi::DeviceCapabilities` becomes this service's configuration. M11.c task 2.6 |
 
+`acceleration.h` also holds `StructureMirror`, `BottomLevelView` and `TopLevelInstance`: the seam a
+device's structures are kept in step with the service behind (issue #35 stage 3). `tests/test_mirror.cpp`
+holds it to the service's decisions with a recording mirror and no device.
+
 ## The one thing to read before anything else: where the rays actually go
 
 **This service executes its queries on the CPU**, over the `cy::Bvh` structures it builds. That was
@@ -39,13 +43,17 @@ since M7: `service_config_for()` is the one expression that turns the capability
 `ServiceConfig::device_supports_ray_tracing`, and `ray_tracing_refusal()` says which of the device's
 six answers stopped it when the capability is false.
 
-**WHAT HAS NOT CHANGED, AND IT IS THE HALF THAT MATTERS FOR AN IMAGE.** The queries still execute on
-the processor. What the capability decides is whether the service reports `Available` on a device
-that can trace, instead of reporting `Unsupported` on hardware that has the extension; acceleration
-structures built by the driver and ray queries issued from a shader are not in this tree. A default
-`ServiceConfig` still reports `Unsupported`, so every suite that does not ask a device still measures
-the software tier — which is what `src/rendering/gi/tests/test_fallback.cpp` does and why its numbers
-did not move.
+**WHAT CHANGED AT ISSUE #35 STAGE 3, AND WHAT DID NOT.** `trace()` still executes on the processor,
+over `cy::Bvh` — it is the host oracle, and every headless suite measures it. What is new is that the
+service's structures can ALSO exist on a device: `StructureMirror` (`acceleration.h`) is told every
+build, refit, eviction and top level `update()` decides, and `cy::rendering-raytracing-gpu`
+(`src/rendering/raytracing_gpu/`) builds them through the RHI's acceleration structures, where
+`cy::rendering-gi-gpu`'s hardware tier traces them with Vulkan ray queries. The mirror makes no
+decision of its own, so "consumers SHALL NOT build, refit, or own structures" holds on the device
+too, and `render.gi_gpu_tracing` holds the device's ray queries to `trace()` after every kind of
+change. A default `ServiceConfig` still reports `Unsupported`, so every suite that does not ask a
+device still measures the software tier — which is what `src/rendering/gi/tests/test_fallback.cpp`
+does and why its numbers did not move.
 
 ## Four things worth knowing before changing anything here
 

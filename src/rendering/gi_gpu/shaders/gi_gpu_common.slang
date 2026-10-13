@@ -33,7 +33,7 @@ static const uint kGiShadowCentre = 5u;   // xyz centre, w half extent
 static const uint kGiShadowDir = 6u;      // xyz direction the light travels, w depth range
 static const uint kGiShadowRight = 7u;    // xyz right, w resolution (a uint)
 static const uint kGiShadowUp = 8u;       // xyz up, w bias
-static const uint kGiShadowEnabled = 9u;  // x enabled, y finest voxel size
+static const uint kGiShadowEnabled = 9u;  // x enabled, y finest voxel size, z grazing scale
 static const uint kGiLevels = 16u;        // two words per level: [voxel, brick, far], [origin]
 
 static const uint kGiEmptyBrick = 0xFFFFFFFFu;
@@ -54,8 +54,8 @@ struct GiSceneSet {
     StructuredBuffer<float> bricks;
     /// Four float4 per card: [position, area], [normal, roughness], [albedo, live], [emission, 0].
     StructuredBuffer<float4> cards;
-    /// Two float4 per card: [outgoing, valid], [accumulated, 0]. Last frame's radiance while a
-    /// shading dispatch reads it; this frame's once the commit has run.
+    /// Two float4 per card: [outgoing, valid], [accumulated, last update frame as bits]. Last
+    /// frame's radiance while a shading dispatch reads it; this frame's once the commit has run.
     RWStructuredBuffer<float4> cardState;
     /// `CardGrid::ranges()` and `::items()`.
     StructuredBuffer<uint> gridRanges;
@@ -149,8 +149,20 @@ float giTrilinear(uint slot, float fx, float fy, float fz) {
     return giLerp(giLerp(c00, c10, ty), giLerp(c01, c11, ty), tz);
 }
 
+/// `value` modulo `modulus`, in [0, modulus): the toroidal address of a brick or a probe cell.
+///
+/// NOT `((value % modulus) + modulus) % modulus`, which is what this was. On the RTX 5060 (driver
+/// 580.95.05) a signed remainder whose dividend is negative and whose divisor is read at run time
+/// came back as the UNSIGNED remainder of the dividend's bits — `-4 % 9` answered 0 — and for a
+/// power-of-two window that happens to be the right answer, which is why the 16-brick fields never
+/// showed it. So the arithmetic is unsigned throughout: the value is lifted by a multiple of the
+/// modulus large enough for any brick or cell coordinate this engine addresses (2^20 windows), and
+/// an unsigned remainder of a non-negative number means one thing on every target.
+/// `render.gi_gpu`'s "a window whose brick count is not a power of two addresses the same bricks"
+/// is the regression.
 int giWrap(int value, int modulus) {
-    return ((value % modulus) + modulus) % modulus;
+    const uint lifted = uint(value) + (uint(modulus) << 20u);
+    return int(lifted % uint(modulus));
 }
 
 /// `DistanceField::sample_level`. The host finds a brick in a hash and treats a missing key as far;

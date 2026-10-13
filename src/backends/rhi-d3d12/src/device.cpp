@@ -1265,6 +1265,13 @@ Expected<DescriptorSetLayoutHandle, Error> D3D12Device::create_descriptor_set_la
     u32 sampler_register = 0;
     for (usize index = 0; index < desc.bindings.size(); ++index) {
         const DescriptorBinding& source = desc.bindings[index];
+        if (source.kind == DescriptorKind::AccelerationStructure) {
+            // DXR would bind a top level as an SRV; this backend builds none yet (it does not
+            // override `create_acceleration_structure`), so the layout is refused by name.
+            return fail(ErrorCode::Unsupported,
+                        "the D3D12 backend builds no acceleration structures; a ray query layout "
+                        "is Vulkan-only until DXR lands");
+        }
         D3D12LayoutBinding& binding = layout.bindings[layout.binding_count++];
         binding.binding = source.binding;
         binding.kind = source.kind;
@@ -1294,6 +1301,7 @@ Expected<DescriptorSetLayoutHandle, Error> D3D12Device::create_descriptor_set_la
                 case DescriptorKind::SampledTexture:
                 case DescriptorKind::CombinedTextureSampler:
                 case DescriptorKind::InputAttachment:
+                case DescriptorKind::AccelerationStructure:
                     binding.shader_register = srv_register;
                     srv_register += binding.count;
                     break;
@@ -1369,6 +1377,7 @@ Expected<PipelineLayoutHandle, Error> D3D12Device::create_pipeline_layout(
                 case DescriptorKind::SampledTexture:
                 case DescriptorKind::CombinedTextureSampler:
                 case DescriptorKind::InputAttachment:
+                case DescriptorKind::AccelerationStructure:
                     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
                     break;
                 case DescriptorKind::Sampler:

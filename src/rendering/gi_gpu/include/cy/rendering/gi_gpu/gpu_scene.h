@@ -106,6 +106,8 @@ struct GpuTraceHit {
 };
 
 class GpuSurfaceShading;
+class GpuRadianceCache;
+class GpuTierTracer;
 
 class GpuGiScene {
 public:
@@ -137,6 +139,12 @@ public:
     [[nodiscard]] Expected<CardUploadReport, Error> upload_cards(Span<const gi::SurfacePage> pages,
                                                                  f32 lookup_radius) noexcept;
 
+    /// Write every live page's radiance, validity and last update, whatever its revision: what a
+    /// HOST-shaded surface cache needs each frame, because host shading moves no revision. A device
+    /// gather or tier then reads exactly the radiance `SurfaceCache::radiance_at` would answer.
+    /// Call after `upload_cards`, which places the cards and builds the lookup this reads through.
+    [[nodiscard]] Status upload_card_radiance(Span<const gi::SurfacePage> pages) noexcept;
+
     [[nodiscard]] Status upload_lights(Span<const gi::GiLight> lights) noexcept;
     /// The directional light's depth map, or null for none: every shadow ray then goes to the
     /// field, as `ShadowMapOccluder` with no map sends it to its fallback.
@@ -159,6 +167,8 @@ public:
 
 private:
     friend class GpuSurfaceShading;
+    friend class GpuRadianceCache;
+    friend class GpuTierTracer;
 
     // The descriptor bindings first, in `GiSceneSet` order, then the two readback buffers no
     // shader binds.

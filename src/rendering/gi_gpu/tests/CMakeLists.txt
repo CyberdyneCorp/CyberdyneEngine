@@ -1,4 +1,4 @@
-# src/rendering/gi_gpu/tests/ — CyberGI on a device. Issue #35, stages 1 and 2.
+# src/rendering/gi_gpu/tests/ — CyberGI on a device. Issue #35, stages 1 to 3.
 #
 #   gi_gpu   KIND render, Vulkan only. Every dispatch against the host implementation it transcribes:
 #            the uploaded field sphere traced ray for ray against `DistanceField::sphere_trace`, a
@@ -45,6 +45,28 @@ function(cy_gi_gpu_declare_tests)
     target_compile_definitions(cy_test_render_gi_gpu
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     set_tests_properties(render.gi_gpu PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # Stage 3: the radiance cache's gather and query and the screen, software and hardware tiers,
+    # each against the host function it transcribes; the device's acceleration structures against
+    # the service's decisions; the fallback, including a device created without ray queries.
+    cy_add_test(
+        NAME gi_gpu_tracing
+        KIND render
+        SOURCES
+            "${tests_dir}/test_gi_gpu_tracing.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-graph
+                     cy::rendering-raytracing cy::rendering-raytracing-gpu cy::rhi cy::rhi-null
+                     cy::rhi-vulkan cy::shader)
+    # The module's own src/ for gi_gpu_spirv.h: the layout case reflects the committed SPIR-V.
+    target_include_directories(cy_test_render_gi_gpu_tracing
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
+                                       "${CMAKE_SOURCE_DIR}/tests/render"
+                                       "${tests_dir}/../src")
+    target_compile_definitions(cy_test_render_gi_gpu_tracing
+                               PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(render.gi_gpu_tracing PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 

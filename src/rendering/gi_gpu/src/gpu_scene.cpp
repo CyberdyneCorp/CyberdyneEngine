@@ -3,6 +3,7 @@
 
 #include <cy/backends/rhi/validation.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "gi_gpu_msl.h"
@@ -70,6 +71,17 @@ void put(f32* floats, u64 at, Vec3 value, f32 w) noexcept {
         count <<= 1U;
     }
     return count;
+}
+
+/// One card's state: [outgoing, valid], [accumulated, last update frame as bits]. The frame is what
+/// a traced hit's staleness is measured from (`SurfaceCache::radiance_at`'s age).
+void write_state(f32* state, u32 handle, const gi::SurfacePage& page) noexcept {
+    const u64 entry = static_cast<u64>(handle) * kStateVec4s * 4U;
+    put(state, entry + 0U, gi::SurfaceCache::outgoing(page), page.live && page.valid ? 1.0F : 0.0F);
+    const auto frame = static_cast<u32>(page.last_update_frame & 0xFFFFFFFFULL);
+    f32 frame_bits = 0.0F;
+    std::memcpy(&frame_bits, &frame, sizeof(frame_bits));
+    put(state, entry + 4U, page.accumulated, frame_bits);
 }
 
 [[nodiscard]] u32 groups(u32 count) noexcept {
@@ -237,11 +249,15 @@ Status GpuGiScene::create_pipelines() noexcept {
 }
 
 Status GpuGiScene::create_buffers() noexcept {
-    // WHICH MEMORY EACH BUFFER LIVES IN. Everything the host writes is Upload and mapped, written
-    // in place — the scene representation, the lights, the selection, the constants, and the card
-    // state, which the host writes for a page it allocated or invalidated and the commit dispatch
-    // writes for a page it shaded. The two outputs the dispatches write for the host to read are
-    // device-local and copied into Readback buffers by a declared transfer.
+    // WHICH MEMORY EACH BUFFER LIVES IN. Everything the host writes is host-visible and mapped,
+    // written in place — and DEVICE-LOCAL where the device offers that (resizable BAR on the RTX
+    // 5060; the RHI falls back to system memory where it does not), because every dispatch reads
+    // these per step of a march. In system memory each of those reads crossed the bus: issue #35
+    // stage 3 measured a 1080p screen-tier batch at 44 ms that way and at 1.2 ms in device memory.
+    // Host-written: the scene representation, the lights, the selection, the constants, and the
+    // card state, which the host writes for a page it allocated or invalidated and the commit
+    // dispatch writes for a page it shaded. The two outputs the dispatches write for the host to
+    // read are device-local and copied into Readback buffers by a declared transfer.
     const u64 window = desc_.max_window_bricks;
     const u64 shadow = desc_.max_shadow_resolution;
     struct Request {
@@ -254,24 +270,28 @@ Status GpuGiScene::create_buffers() noexcept {
     const auto output = rhi::BufferUsage::Storage | rhi::BufferUsage::TransferSource;
     const auto host = rhi::BufferUsage::TransferDestination;
     const Request requests[kBufferCount] = {
-        {"gi constants", sizeof(constants_), storage, rhi::MemoryUse::Upload},
+        {"gi constants", sizeof(constants_), storage, rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi page table", desc_.max_levels * window * window * window * 4U, storage,
-         rhi::MemoryUse::Upload},
+         rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi brick pool", static_cast<u64>(desc_.max_brick_slots) * gi::kBrickVoxels * 4U, storage,
-         rhi::MemoryUse::Upload},
-        {"gi cards", desc_.max_cards * kCardVec4s * kVec4, storage, rhi::MemoryUse::Upload},
-        {"gi card state", desc_.max_cards * kStateVec4s * kVec4, storage, rhi::MemoryUse::Upload},
+         rhi::MemoryUse::HostVisibleDeviceLocal},
+        {"gi cards", desc_.max_cards * kCardVec4s * kVec4, storage,
+         rhi::MemoryUse::HostVisibleDeviceLocal},
+        {"gi card state", desc_.max_cards * kStateVec4s * kVec4, storage,
+         rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi card grid ranges", static_cast<u64>(max_buckets(desc_.max_cards)) * 2U * 4U, storage,
-         rhi::MemoryUse::Upload},
+         rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi card grid items", static_cast<u64>(desc_.max_cards) * 4U, storage,
-         rhi::MemoryUse::Upload},
-        {"gi lights", desc_.max_lights * kLightVec4s * kVec4, storage, rhi::MemoryUse::Upload},
-        {"gi shadow depths", shadow * shadow * 4U, storage, rhi::MemoryUse::Upload},
+         rhi::MemoryUse::HostVisibleDeviceLocal},
+        {"gi lights", desc_.max_lights * kLightVec4s * kVec4, storage,
+         rhi::MemoryUse::HostVisibleDeviceLocal},
+        {"gi shadow depths", shadow * shadow * 4U, storage, rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi selection", static_cast<u64>(desc_.max_selection) * 4U, storage,
-         rhi::MemoryUse::Upload},
+         rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi card results", desc_.max_selection * kResultVec4s * kVec4, output,
          rhi::MemoryUse::DeviceLocal},
-        {"gi rays", desc_.max_rays * kRayVec4s * kVec4, storage, rhi::MemoryUse::Upload},
+        {"gi rays", desc_.max_rays * kRayVec4s * kVec4, storage,
+         rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi hits", desc_.max_rays * kHitVec4s * kVec4, output, rhi::MemoryUse::DeviceLocal},
         {"gi card results readback", desc_.max_selection * kResultVec4s * kVec4, host,
          rhi::MemoryUse::Readback},
@@ -291,7 +311,7 @@ Status GpuGiScene::create_buffers() noexcept {
         sizes_[index] = requests[index].size;
         // Zeroed, so a card that was never written reads as not live and not valid, and a page
         // table that was never written reads as nothing rather than as slot zero.
-        if (requests[index].memory == rhi::MemoryUse::Upload) {
+        if (requests[index].memory == rhi::MemoryUse::HostVisibleDeviceLocal) {
             if (void* pointer = device_->buffer_mapped_pointer(*buffer); pointer != nullptr) {
                 std::memset(pointer, index == kPageTable ? 0xFF : 0,
                             static_cast<usize>(requests[index].size));
@@ -448,6 +468,11 @@ Expected<FieldUploadReport, Error> GpuGiScene::upload_field(
         constants_[kLevels + (level * 8U) + 7U] = 0;
     }
     constants_[kShadowEnabled + 1] = bits(field.voxel_size());
+    // `SoftwareTracer::trace`'s grazing scale: four of the field's finest voxels, in the host's own
+    // expression, so a hit's confidence is the host's for every field resolution.
+    const gi::ClipmapSettings& clipmaps = field.settings();
+    constants_[kShadowEnabled + 2] = bits(
+        clipmaps.base_extent_metres / static_cast<f32>(std::max(clipmaps.resolution, 1U)) * 4.0F);
     write_constants();
 
     field_generation_ = field.generation();
@@ -482,10 +507,7 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
         put(cards, card + 4U, page.normal, page.roughness);
         put(cards, card + 8U, page.albedo, page.live ? 1.0F : 0.0F);
         put(cards, card + 12U, page.emission, 0.0F);
-        const u64 entry = static_cast<u64>(handle) * kStateVec4s * 4U;
-        put(state, entry + 0U, gi::SurfaceCache::outgoing(page),
-            page.live && page.valid ? 1.0F : 0.0F);
-        put(state, entry + 4U, page.accumulated, 0.0F);
+        write_state(state, handle, page);
 
         const u8 live = page.live ? 1U : 0U;
         if (live != card_live_[handle] ||
@@ -518,6 +540,21 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
     }
     card_report_ = report;
     return report;
+}
+
+Status GpuGiScene::upload_card_radiance(Span<const gi::SurfacePage> pages) noexcept {
+    if (device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "the GI scene is not created");
+    }
+    if (pages.size() > desc_.max_cards) {
+        return fail(ErrorCode::OutOfRange,
+                    "the surface cache holds more pages than the device GI scene was created for");
+    }
+    auto* state = static_cast<f32*>(mapped(kCardState));
+    for (u32 handle = 0; handle < pages.size(); ++handle) {
+        write_state(state, handle, pages[handle]);
+    }
+    return ok();
 }
 
 Status GpuGiScene::upload_lights(Span<const gi::GiLight> lights) noexcept {
@@ -586,7 +623,9 @@ ResourceId GpuGiScene::import(RenderGraph& graph, Binding binding) noexcept {
     BufferRequest request;
     request.name = kNames[binding];
     request.size = sizes_[binding];
-    return graph.import_buffer(request, buffers_[binding]);
+    // Once per graph: the surface cache's passes write the card state the radiance cache's gather
+    // reads, and the graph derives the barrier between them only if both name one resource.
+    return graph.import_buffer_once(request, buffers_[binding]);
 }
 
 void GpuGiScene::record_dispatch(const PassContext& context, void* user) noexcept {

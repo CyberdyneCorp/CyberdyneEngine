@@ -1,0 +1,94 @@
+// Built twice: g++ -O2 -std=c++20 -fno-exceptions -fno-rtti -DCY_DEVELOPMENT <the include path of
+// build/dev/compile_commands.json for gi/src/radiance_cache.cpp, plus src/rendering/gi/tests> probe.cpp
+// <main or branch>/src/rendering/gi/src/*.cpp <build/dev core, raytracing, denoise, rhi libraries>.
+// The host GI with no backend installed, hashed frame by frame: main against this branch.
+#include <cy/rendering/gi/system.h>
+#include "support.h"
+#include <cstdio>
+#include <cstring>
+
+namespace {
+using namespace cy;
+using namespace cy::rendering::gi;
+struct Fnv {
+    u64 h = 1469598103934665603ULL;
+    void bytes(const void* p, usize n) { const auto* b = static_cast<const u8*>(p); for (usize i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ULL; } }
+    void f(f32 v) { bytes(&v, 4); }
+    void u(u64 v) { bytes(&v, 8); }
+    void v3(Vec3 v) { f(v.x); f(v.y); f(v.z); }
+};
+void hash_cache(Fnv& fnv, const RadianceCache& cache) {
+    for (u32 i = 0; i < cache.probes().size(); ++i) {
+        const Probe& p = cache.probe(i);
+        fnv.v3(p.position); fnv.u(p.level); for (f32 a : p.axis_distance) fnv.f(a);
+        fnv.u(p.last_update_frame); fnv.f(p.error); fnv.f(p.importance); fnv.f(p.camera_distance);
+        fnv.u(p.visible); fnv.u(p.valid); fnv.u(p.live);
+        for (u32 d = 0; d < 6; ++d) {
+            const Vec3 axes[6] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+            fnv.v3(cache.gather(p.position + axes[d] * 0.3F, axes[d]));
+        }
+    }
+}
+void hash_report(Fnv& fnv, const ProbeUpdateReport& r) { fnv.u(r.probes_updated); fnv.u(r.queue_depth); fnv.u(r.oldest_unserviced_age); fnv.u(r.rays); fnv.f(r.mean_error); }
+}  // namespace
+
+int main() {
+    Fnv all;
+    // 1. A whole system: the room with its divider, hardware tier on, an invalidation and a moving camera.
+    gi_support::RoomField field{Vec3{gi_support::kRoomX, gi_support::kRoomY, gi_support::kRoomZ}};
+    gi_support::RoomTriangles triangles{true};
+    std::vector<Surfel> surfels = gi_support::room_surfels(1.0F, true);
+    std::vector<GiLight> lights = gi_support::room_lights();
+    IlluminationSystem system;
+    IlluminationSettings settings = gi_support::room_settings();
+    settings.ray_tracing.device_supports_ray_tracing = true;
+    settings.probes.levels = 2;
+    settings.probes.base_spacing_metres = 1.0F;
+    settings.probes.half_extent_probes = 3;
+    if (!system.configure(settings)) return 1;
+    if (!system.field().place(1, field.asset(), Mat4::identity())) return 1;
+    const Aabb bounds = Aabb::from_center_extents(Vec3{}, Vec3{5.0F, 3.0F, 5.0F});
+    if (!system.scene().ingest_cell(1, bounds, {surfels.data(), surfels.size()}, 0)) return 1;
+    if (!system.surfaces().allocate_from(system.scene(), bounds)) return 1;
+    if (!system.acceleration().declare_geometry(1, cy::rendering::rt::adapt_static_mesh(triangles.geometry(), 0))) return 1;
+    cy::rendering::rt::InstanceDescriptor instance; instance.geometry = 1; instance.instance_id = 1;
+    if (!system.acceleration().add_instance(instance)) return 1;
+    for (u64 frame = 0; frame < 14; ++frame) {
+        FrameContext ctx;
+        ctx.camera = Vec3{frame >= 8 ? 0.7F * static_cast<f32>(frame - 7) : 0.0F, 0.0F, 0.0F};
+        ctx.lights = {lights.data(), lights.size()};
+        ctx.frame = frame;
+        ctx.measured_gi_ms = 1.0F;
+        if (frame == 6) {
+            system.scene().invalidate(Aabb::from_center_extents(Vec3{-2.0F, 0.0F, -2.0F}, Vec3{1.5F, 1.5F, 1.5F}), InvalidationCause::LightChanged, 1, frame);
+        }
+        const IlluminationFrameReport report = system.update(ctx);
+        hash_report(all, report.probes);
+        all.u(report.placement.probes_created); all.u(report.placement.probes_retired); all.u(report.placement.probes_reused);
+        all.u(report.surfaces.pages_updated); all.f(report.convergence);
+        hash_cache(all, system.radiance());
+    }
+    for (i32 ix = -3; ix <= 3; ++ix) for (i32 iz = -3; iz <= 3; ++iz) {
+        const ResolveResult r = system.indirect_diffuse(Vec3{static_cast<f32>(ix) * 1.1F, -1.9F, static_cast<f32>(iz) * 1.1F}, Vec3{0,1,0}, SurfaceProperties{});
+        all.v3(r.radiance);
+    }
+    const u64 system_hash = all.h;
+    // 2. A budgeted cache on its own: every encoding, a small budget, an age cap, invalidations, scrolls.
+    for (u32 encoding = 0; encoding < 3; ++encoding) {
+        RadianceCache cache;
+        ProbeCacheSettings s; s.levels = 2; s.base_spacing_metres = 1.0F; s.half_extent_probes = 3; s.encoding = static_cast<ProbeEncoding>(encoding);
+        if (!cache.configure(s)) return 1;
+        ProbePlacementContext placement; placement.field = &system.field();
+        for (u64 frame = 1; frame <= 24; ++frame) {
+            hash_report(all, {});
+            const ProbePlacementReport moved = cache.scroll_to(Vec3{frame > 12 ? 0.5F * static_cast<f32>(frame - 12) : 0.0F, 0.0F, 0.0F}, placement);
+            all.u(moved.probes_created); all.u(moved.probes_retired);
+            if (frame == 9) all.u(cache.invalidate(Aabb::from_center_extents(Vec3{1.0F, 0.0F, 1.0F}, Vec3{2.0F, 2.0F, 2.0F})));
+            ProbeUpdateContext u; u.tracer = &system.world_tracer(); u.radiance = &system.surfaces(); u.budget = 7; u.rays_per_probe = 12; u.frame = frame; u.max_age_frames = 5;
+            hash_report(all, cache.update(u));
+            hash_cache(all, cache);
+        }
+    }
+    std::printf("system %016llx  all %016llx  probes=%u\n", static_cast<unsigned long long>(system_hash), static_cast<unsigned long long>(all.h), system.radiance().probe_count());
+    return 0;
+}

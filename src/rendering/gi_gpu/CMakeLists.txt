@@ -1,8 +1,9 @@
-# src/rendering/gi_gpu/ — layer 4: CyberGI on the device. Issue #35, stages 1 and 2.
+# src/rendering/gi_gpu/ — layer 4: CyberGI on the device. Issue #35, stages 1 to 3.
 #
 # `rendering-global-illumination` — "Surface cache" and "Distance field representation", on a
 # device: the GI scene's distance-field clipmaps and surface cards uploaded incrementally (stage 1),
-# and the surface cache's card lighting in compute (stage 2). The algorithms, and the oracle every
+# the surface cache's card lighting in compute (stage 2), and the radiance cache's gather and query
+# with the screen, software and hardware tracing tiers (stage 3). The algorithms, and the oracle every
 # dispatch here is checked against, are cy::rendering-gi, which stays device-free; this module is
 # the one place the two meet, for the reason src/rendering/light_probes/ is a module of its own.
 #
@@ -30,10 +31,13 @@ cy_add_module(
     LAYER rendering
     ALIAS cy::rendering-gi-gpu
     TYPE STATIC
-    SOURCES src/gpu_scene.cpp src/gpu_surface_cache.cpp
+    SOURCES src/gpu_scene.cpp src/gpu_surface_cache.cpp src/gpu_radiance_cache.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    # cy::rendering-raytracing-gpu for the hardware tier: the structures a ray query traverses are
+    # the acceleration service's, built on the device by that module and never by this one.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rendering-gi
-                        cy::rendering-graph cy::rhi)
+                        cy::rendering-graph cy::rendering-raytracing cy::rendering-raytracing-gpu
+                        cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
