@@ -40,6 +40,7 @@
 #include <cy/core/base/types.h>
 #include <cy/rendering/denoise/denoiser.h>
 #include <cy/rendering/gi/budget.h>
+#include <cy/rendering/gi/card_lighting.h>
 #include <cy/rendering/gi/distance_field.h>
 #include <cy/rendering/gi/emissive.h>
 #include <cy/rendering/gi/gi_volume.h>
@@ -53,6 +54,16 @@
 #include <cy/rendering/raytracing/acceleration.h>
 
 namespace cy::rendering::gi {
+
+/// Where the surface cache's bounce comes from.
+enum class SurfaceBounce : u8 {
+    /// The radiance cache's probes, interpolated at each card: the host's bounce since M7.
+    Probes = 0,
+    /// A gather of the cards themselves through the field (`card_lighting.h`'s `CardGather`):
+    /// what the device surface cache does. Each card sees its own side of a wall, where a probe a
+    /// metre away interpolates across it — which is why the per-pixel resolve's frame uses it.
+    Cards,
+};
 
 struct IlluminationSettings {
     GiMode mode = GiMode::Dynamic;
@@ -71,6 +82,10 @@ struct IlluminationSettings {
     u32 rays_per_probe = 32;
     /// How `ingest_cell` classifies emissive cards (emissive.h).
     EmissiveSettings emissive{};
+    /// The surface cache's bounce, and the card gather's settings when it is `Cards` (its sky is
+    /// the system's). Appended, so a brace-initialised settings block keeps its meaning.
+    SurfaceBounce surface_bounce = SurfaceBounce::Probes;
+    CardGatherSettings card_gather{};
 };
 
 struct FrameContext {
@@ -216,6 +231,10 @@ public:
     [[nodiscard]] rt::AccelerationService& acceleration() noexcept { return acceleration_; }
     [[nodiscard]] TieredTracer& tracer() noexcept { return tracer_; }
     [[nodiscard]] const WorldTracer& world_tracer() const noexcept { return world_; }
+    /// The two world tiers on their own: what a per-pixel resolve traces its final-gather ray
+    /// through (screen_resolve.h's `ScreenResolveSources`).
+    [[nodiscard]] const SoftwareTracer& software_tracer() const noexcept { return software_; }
+    [[nodiscard]] const HardwareTracer& hardware_tracer() const noexcept { return hardware_; }
     [[nodiscard]] const ConvergenceTracker& convergence() const noexcept { return convergence_; }
 
     /// One frame. See the header comment for the order and why it is that order.
@@ -266,6 +285,9 @@ private:
     };
 
     EmissiveLights emissive_;
+    /// The cards as the card gather reads them, captured each update when the bounce is `Cards`.
+    CardSnapshot card_snapshot_;
+    CardGather card_gather_;
     Array<Surfel> cache_surfels_;
     Array<CellPage> cell_pages_;
     Array<GiLight> frame_lights_;

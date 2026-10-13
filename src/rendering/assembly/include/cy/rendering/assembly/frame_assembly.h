@@ -187,6 +187,12 @@ struct AssemblyDescription {
     /// `FrameSinks::selection_outlines`. Off by default, and absent when off. Requires the depth
     /// prepass, against which a marked surface is found hidden.
     bool selection_outlines = false;
+    /// Dynamic global illumination: the frame's `ScreenSpaceGi` stage, declared by
+    /// `gi_gpu::GpuScreenResolve` through `FrameSinks::screen_space_gi` from the depth and normal
+    /// prepass, and composited by the forward pass where the irradiance volume's ambient sits. Off
+    /// by default, and absent when off — no pass, no target, and the frame it always was. Requires
+    /// the depth prepass. Appended, so a brace-initialised description keeps its meaning.
+    bool global_illumination = false;
 };
 
 /// One view of one world, this frame.
@@ -263,6 +269,12 @@ struct AssemblyView {
     /// records is the decal's RANK IN APPLICATION ORDER (`decal_order()`), so a list is walked in
     /// sort order by construction: `assign_clusters` writes every list ascending.
     Span<const DecalInstance> decals;
+    /// The two targets of the per-pixel GI resolve, imported by their producer
+    /// (`gi_gpu::GpuScreenResolve::import_diffuse` and `import_specular`). Read only with
+    /// `AssemblyDescription::global_illumination` with a `FrameSinks::screen_space_gi` producer, and
+    /// then the diffuse one is required. Appended.
+    ResourceId screen_space_gi = kInvalidResource;
+    ResourceId screen_space_gi_specular = kInvalidResource;
 };
 
 /// What the caller supplies for the parts the assembly does not own: how a mesh becomes draws, and
@@ -300,6 +312,10 @@ struct FrameSinks {
     /// The producer that declares the interface stage — `ui::render::UiRenderer::stage()`. Null
     /// keeps the stage the single pass recorded by `passes[UiAndDebug]`.
     FrameStageDeclaration ui;
+    /// The producer that declares the screen-space GI stage — `gi_gpu::GpuScreenResolve::stage()`.
+    /// Null keeps the stage the single pass recorded by `passes[ScreenSpaceGi]`, over a transient
+    /// target, that it has always been. Appended.
+    FrameStageDeclaration screen_space_gi;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than

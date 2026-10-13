@@ -124,11 +124,18 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         resources.volumetric_fog = description.volumetric_fog_target;
     }
     if (description.features.screen_space_gi) {
-        request.name = "screen-space gi";
-        request.format = description.color_format;
-        request.extra_usage = rhi::TextureUsage::Storage;
-        resources.screen_space_gi = graph.create_texture(request);
-        request.extra_usage = rhi::TextureUsage::None;
+        if (description.screen_space_gi_stage.declare != nullptr) {
+            // The producer's, as the contact shadows' are: the opaque pass samples both targets
+            // through texture-table slots, and a transient's view is recreated every frame.
+            resources.screen_space_gi = description.screen_space_gi_target;
+            resources.screen_space_gi_specular = description.screen_space_gi_specular_target;
+        } else {
+            request.name = "screen-space gi";
+            request.format = description.color_format;
+            request.extra_usage = rhi::TextureUsage::Storage;
+            resources.screen_space_gi = graph.create_texture(request);
+            request.extra_usage = rhi::TextureUsage::None;
+        }
     }
     if (description.features.screen_space_reflections) {
         request.name = "reflections";
@@ -339,6 +346,9 @@ PassId declare_opaque(RenderGraph& graph, FrameState& state) noexcept {
     }
     if (valid(resources.screen_space_gi)) {
         builder.read(resources.screen_space_gi, Access::FragmentSampledRead);
+    }
+    if (valid(resources.screen_space_gi_specular)) {
+        builder.read(resources.screen_space_gi_specular, Access::FragmentSampledRead);
     }
     if (valid(resources.volumetric_fog)) {
         // A texture the opaque pass samples through the frame's table, or — for a caller that
@@ -587,9 +597,15 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
                                resources_.contact_shadows);
     }
     if (features.screen_space_gi) {
-        stage(FramePassKind::ScreenSpaceGi, "screen-space gi",
-              declare_screen_space(graph, state, "screen-space gi", resources_.screen_space_gi,
-                                   FramePassKind::ScreenSpaceGi));
+        const FrameStageDeclaration& producer = state.description->screen_space_gi_stage;
+        if (producer.declare != nullptr) {
+            declare_produced_stage(graph, state, producer, FramePassKind::ScreenSpaceGi,
+                                   "screen-space gi", resources_.screen_space_gi);
+        } else {
+            stage(FramePassKind::ScreenSpaceGi, "screen-space gi",
+                  declare_screen_space(graph, state, "screen-space gi",
+                                       resources_.screen_space_gi, FramePassKind::ScreenSpaceGi));
+        }
     }
 
     // Volumetric fog, after the shadow pass whose map it reads.
@@ -806,6 +822,13 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                                      !valid(description.contact_shadows_target))) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: contact shadows need their producer's stage and target");
+    }
+    // A PRODUCED SCREEN-SPACE GI STAGE NEEDS ITS TARGET: the opaque pass samples the producer's
+    // texture, so a producer without one would leave the read on a resource nothing declared.
+    if (features.screen_space_gi && description.screen_space_gi_stage.declare != nullptr &&
+        !valid(description.screen_space_gi_target)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: a screen-space GI producer needs its diffuse target");
     }
     // NOR DOES THE FOG VOLUME, for the same reason: its producer owns the texture the opaque pass
     // samples.

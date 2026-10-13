@@ -238,6 +238,13 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
     surfaces.lights = lights;
     surfaces.occluder = &world_;
     surfaces.indirect = &radiance_;
+    if (settings_.surface_bounce == SurfaceBounce::Cards &&
+        card_snapshot_.capture(surfaces_, context.frame).has_value()) {
+        CardGatherSettings gather = settings_.card_gather;
+        gather.sky = settings_.sky;
+        card_gather_.bind(&field_, &card_snapshot_, gather);
+        surfaces.indirect = &card_gather_;
+    }
     surfaces.frame = context.frame;
     surfaces.budget = static_cast<u32>(budget_.value(GiLever::SurfaceCacheRate));
     report.surfaces =

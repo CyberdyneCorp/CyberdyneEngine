@@ -1,4 +1,4 @@
-# src/rendering/gi_gpu/tests/ — CyberGI on a device. Issue #35, stages 1 to 3.
+# src/rendering/gi_gpu/tests/ — CyberGI on a device. Issue #35, stages 1 to 5.
 #
 #   gi_gpu   KIND render, Vulkan only. Every dispatch against the host implementation it transcribes:
 #            the uploaded field sphere traced ray for ray against `DistanceField::sphere_trace`, a
@@ -67,6 +67,22 @@ function(cy_gi_gpu_declare_tests)
     target_compile_definitions(cy_test_render_gi_gpu_tracing
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     set_tests_properties(render.gi_gpu_tracing PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # Stage 4: the per-pixel resolve and its denoiser against `gi::ScreenResolve` and
+    # `denoise::Denoiser`, through both tiers, and what every stage costs at 1080p. The image's
+    # quality is integration.render_gi_screen's, measured on the oracle this holds the device to.
+    cy_add_test(
+        NAME gi_gpu_resolve
+        KIND render
+        SOURCES "${tests_dir}/test_gi_gpu_resolve.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-graph
+                     cy::rendering-raytracing cy::rendering-raytracing-gpu cy::rhi cy::rhi-null
+                     cy::rhi-vulkan)
+    target_include_directories(cy_test_render_gi_gpu_resolve
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
+                                       "${CMAKE_SOURCE_DIR}/tests/render")
+    set_tests_properties(render.gi_gpu_resolve PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 

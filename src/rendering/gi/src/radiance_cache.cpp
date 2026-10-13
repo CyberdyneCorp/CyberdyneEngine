@@ -75,6 +75,27 @@ void octahedral_uv(Vec3 direction, f32& u, f32& v) noexcept {
     return normalized_or(direction, Vec3{0.0F, 0.0F, 1.0F});
 }
 
+/// Whether the field stops a sphere trace from `from` before it reaches the probe at `to`. The
+/// last voxel short of the probe is not traced: a probe stands in open space, and a trace that
+/// reached its voxel has reached it.
+[[nodiscard]] bool probe_occluded(const DistanceField& field, Vec3 from, Vec3 to) noexcept {
+    const Vec3 offset = to - from;
+    const f32 span = length(offset);
+    const f32 voxel = field.voxel_size();
+    if (span <= voxel * 2.0F) {
+        return false;
+    }
+    // The empty spheres about the two ends cover the segment: nothing can stand in it. The trace
+    // would step through those spheres and reach the probe; this is its answer, for two reads.
+    if (field.distance(from) + field.distance(to) >= span) {
+        return false;
+    }
+    Ray ray;
+    ray.origin = from;
+    ray.direction = offset / span;
+    return field.sphere_trace(ray, span - voxel).hit;
+}
+
 }  // namespace
 
 /// The golden-ratio sphere sequence: uniform, deterministic, and stable under any count. A probe
@@ -895,6 +916,92 @@ RadianceSample RadianceCache::sample(Vec3 position, Vec3 normal, u64 frame) cons
     const f32 staleness = math::clamp(oldest / 240.0F, 0.0F, 1.0F);
     answer.confidence = math::clamp(1.0F - (staleness * 0.75F), 0.0F, 1.0F);
     return answer;
+}
+
+namespace {
+
+/// One signal's sums over the probes `sample_traced` visits.
+struct TracedSums {
+    Vec3 total{0.0F, 0.0F, 0.0F};
+    f32 weight = 0.0F;
+    f32 oldest = 0.0F;
+
+    [[nodiscard]] RadianceSample finish() const noexcept {
+        RadianceSample answer;
+        answer.source = RadianceSource::RadianceCache;
+        if (weight <= 0.0F) {
+            return answer;
+        }
+        answer.radiance = total / weight;
+        const f32 staleness = math::clamp(oldest / 240.0F, 0.0F, 1.0F);
+        answer.confidence = math::clamp(1.0F - (staleness * 0.75F), 0.0F, 1.0F);
+        return answer;
+    }
+};
+
+/// `sample`'s wrap term: a probe behind the query's surface contributes less.
+[[nodiscard]] f32 facing_weight(Vec3 direction_to_probe, Vec3 normal) noexcept {
+    return math::clamp((dot(normal, direction_to_probe) + 1.0F) * 0.5F, 0.0F, 1.0F);
+}
+
+}  // namespace
+
+TracedCacheSamples RadianceCache::sample_traced(Vec3 position, Vec3 normal, Vec3 reflection,
+                                                u64 frame,
+                                                const DistanceField& field) const noexcept {
+    diagnostics_.gathers += 1;
+    const f32 reach = settings_.base_spacing_metres * static_cast<f32>(1U << (settings_.levels - 1));
+    const Vec3 extent{reach, reach, reach};
+    const Aabb box{position - extent, position + extent};
+    const Vec3 lifted = position + (normal * settings_.visibility_bias_metres);
+
+    TracedSums diffuse;
+    TracedSums specular;
+    index_.query_aabb(box, [&](u32 /*proxy*/, u64 user_data) {
+        const u32 handle = static_cast<u32>(user_data);
+        if (handle >= probes_.size()) {
+            return true;
+        }
+        const Probe& entry = probes_[handle];
+        if (!entry.live || !entry.valid) {
+            return true;
+        }
+        const f32 spacing = settings_.base_spacing_metres * static_cast<f32>(1U << entry.level);
+        const Vec3 offset = position - entry.position;
+        const f32 span = length(offset);
+        if (span > spacing) {
+            return true;
+        }
+        const f32 falloff = (1.0F - math::clamp(span / spacing, 0.0F, 1.0F)) *
+                            visibility_weight(entry, position);
+        const Vec3 toward = span > 1.0e-4F ? -offset / span : normal;
+        const f32 diffuse_weight = span > 1.0e-4F ? falloff * facing_weight(toward, normal) : falloff;
+        const f32 specular_weight =
+            span > 1.0e-4F ? falloff * facing_weight(toward, reflection) : falloff;
+        if ((diffuse_weight <= 0.0F && specular_weight <= 0.0F) ||
+            probe_occluded(field, lifted, entry.position)) {
+            return true;
+        }
+        const f32* data = payload(handle);
+        const u64 age = frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
+        if (diffuse_weight > 0.0F) {
+            diffuse.total =
+                diffuse.total + (decode_payload(settings_.encoding, data, normal) * diffuse_weight);
+            diffuse.weight += diffuse_weight;
+            diffuse.oldest = std::max(diffuse.oldest, static_cast<f32>(age));
+        }
+        if (specular_weight > 0.0F) {
+            specular.total = specular.total +
+                             (decode_payload(settings_.encoding, data, reflection) * specular_weight);
+            specular.weight += specular_weight;
+            specular.oldest = std::max(specular.oldest, static_cast<f32>(age));
+        }
+        return true;
+    });
+    if (diffuse.weight <= 0.0F) {
+        diagnostics_.gather_misses += 1;
+    }
+    return TracedCacheSamples{diffuse.finish(), specular.finish()};
 }
 
 Status RadianceCache::seed(u32 probe, Span<const Vec3> directions,

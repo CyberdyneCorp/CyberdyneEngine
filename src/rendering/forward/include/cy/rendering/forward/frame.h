@@ -313,6 +313,11 @@ struct FrameResources {
     /// The volumetric fog volume, imported by its producer. Only with
     /// `FrameFeatures::volumetric_fog`.
     ResourceId volumetric_fog = kInvalidResource;
+    /// The screen-space GI stage's SECOND target — the indirect specular a producer that resolves
+    /// both signals writes beside `screen_space_gi` — imported by that producer and read by the
+    /// opaque pass. Only with `FrameFeatures::screen_space_gi` and a
+    /// `FrameDescription::screen_space_gi_specular_target`. Appended.
+    ResourceId screen_space_gi_specular = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -392,6 +397,15 @@ struct FrameDescription {
     /// Null keeps the stage the single pass recorded by `callbacks[UiAndDebug]`. Only with
     /// `features.ui`. Appended, so a brace-initialised description keeps its meaning.
     FrameStageDeclaration ui_stage;
+    /// The screen-space GI stage's producer and its two targets — `gi_gpu::GpuScreenResolve`, the
+    /// per-pixel resolve and its denoiser. With a producer the stage is ITS passes, handed the
+    /// prepass depth and normals and `screen_space_gi_target` as the target, and the opaque pass
+    /// reads both targets; the specular one may be absent. A null `declare` keeps the stage the
+    /// single pass, with a transient target and the caller's record callback, that it has always
+    /// been. Only with `features.screen_space_gi`. Appended, as `ui_stage` is.
+    ResourceId screen_space_gi_target = kInvalidResource;
+    ResourceId screen_space_gi_specular_target = kInvalidResource;
+    FrameStageDeclaration screen_space_gi_stage;
 };
 
 /// Declares one view's frame into a graph.

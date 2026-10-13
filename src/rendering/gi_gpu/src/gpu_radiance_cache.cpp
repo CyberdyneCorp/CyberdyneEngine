@@ -142,6 +142,9 @@ Status GpuRadianceCache::create(Allocator& allocator, rhi::Device& device, GpuGi
     if (made) {
         made = seen_.resize(desc.max_probes);
     }
+    if (made) {
+        made = updated_.resize(desc.max_probes);
+    }
     if (made && device.capabilities().has(rhi::Capability::TimestampQueries)) {
         rhi::QueryPoolDescription timer;
         timer.name = "gi stage 3 timestamps";
@@ -159,6 +162,7 @@ Status GpuRadianceCache::create(Allocator& allocator, rhi::Device& device, GpuGi
     for (u32 index = 0; index < desc.max_probes; ++index) {
         revisions_[index] = 0;
         seen_[index] = 0;
+        updated_[index] = 0;
     }
     std::memset(constants_, 0, sizeof(constants_));
     constants_[kWordTier + 1] = bits(kSoftwareBaseConfidence);
@@ -556,6 +560,21 @@ void GpuRadianceCache::write_layout(const gi::RadianceCache& cache) noexcept {
     layout_valid_ = true;
 }
 
+void GpuRadianceCache::upload_payload(const gi::RadianceCache& cache, u32 handle, f32* records,
+                                      f32* payloads, u32 stride) noexcept {
+    const gi::Probe& probe = cache.probes()[handle];
+    f32* record = records + (static_cast<usize>(handle) * kProbeVec4s * 4U);
+    record[4] = float_of(static_cast<u32>(probe.last_update_frame & 0xFFFFFFFFULL));
+    record[5] = probe.live && probe.valid ? 1.0F : 0.0F;
+    for (u32 axis = 0; axis < 6; ++axis) {
+        record[8 + axis] = probe.axis_distance[axis];
+    }
+    const Span<const f32> payload = cache.probe_payload(handle);
+    std::memcpy(payloads + (static_cast<usize>(handle) * stride), payload.data(),
+                static_cast<usize>(stride) * sizeof(f32));
+    updated_[handle] = probe.last_update_frame;
+}
+
 Status GpuRadianceCache::mirror(const gi::RadianceCache& cache) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the device radiance cache is not created");
@@ -589,6 +608,12 @@ Status GpuRadianceCache::mirror(const gi::RadianceCache& cache) noexcept {
     for (u32 handle = 0; handle < probes.size(); ++handle) {
         const gi::Probe& probe = probes[handle];
         if (seen_[handle] != 0 && revisions_[handle] == probe.revision) {
+            // Placement and validity as uploaded; only the payload can have moved, and only
+            // through a gather the host ran — a device gather wrote it here already.
+            if (updated_[handle] != probe.last_update_frame) {
+                upload_payload(cache, handle, records, payloads, stride);
+                uploaded += 1;
+            }
             continue;
         }
         // A revision moves at creation, retirement, invalidation and a seed. The first two are a
@@ -608,9 +633,7 @@ Status GpuRadianceCache::mirror(const gi::RadianceCache& cache) noexcept {
         }
         record[14] = 0.0F;
         record[15] = 0.0F;
-        const Span<const f32> payload = cache.probe_payload(handle);
-        std::memcpy(payloads + (static_cast<usize>(handle) * stride), payload.data(),
-                    static_cast<usize>(stride) * sizeof(f32));
+        upload_payload(cache, handle, records, payloads, stride);
         revisions_[handle] = probe.revision;
         seen_[handle] = 1;
         uploaded += 1;
@@ -847,6 +870,10 @@ u32 GpuRadianceCache::retire(gi::RadianceCache& cache) noexcept {
         result.error = record[54];
         result.frame = submission_.frame;
         if (cache.apply(result)) {
+            // The device holds this payload already: the gather wrote it in place.
+            if (result.probe < updated_.size()) {
+                updated_[result.probe] = result.frame;
+            }
             written += 1;
         }
     }

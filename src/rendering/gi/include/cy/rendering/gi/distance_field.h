@@ -51,6 +51,18 @@ namespace cy::rendering::gi {
 inline constexpr u32 kBrickEdge = 4;
 inline constexpr u32 kBrickVoxels = kBrickEdge * kBrickEdge * kBrickEdge;
 
+/// Samples per brick edge: the voxel CORNERS, both faces included, so a brick shares its faces
+/// with its neighbours and the field is continuous across them.
+///
+/// Four, one per voxel's near corner, was what a brick stored until issue #35's stage 4: a point
+/// in a brick's last voxel then had no sample beyond it to interpolate toward, and read the
+/// brick's last sample flat across the whole voxel. Measured: a 10 cm wall at a brick face read
+/// 0.20 m away from every point of the quarter-metre voxel before it, so a ray leaving that voxel
+/// toward the wall stepped through it and lit the sealed room behind it.
+inline constexpr u32 kBrickSampleEdge = kBrickEdge + 1;
+/// Floats per brick slot in `DistanceField::brick_pool()`.
+inline constexpr u32 kBrickSamples = kBrickSampleEdge * kBrickSampleEdge * kBrickSampleEdge;
+
 struct ClipmapSettings {
     /// Clipmap levels. Each doubles the previous level's extent at the same voxel count, so
     /// resolution halves and coverage grows geometrically: four levels from an 8 m level 0 reach
@@ -195,6 +207,12 @@ public:
     /// answer reproducible, which a golden image needs.
     [[nodiscard]] f32 sky_visibility(Vec3 position, Vec3 normal, u32 rays) const noexcept;
 
+    /// One of `sky_visibility`'s rays: ray `index` of `count`, in [0, 1]. `sky_visibility` is the
+    /// mean of these over every index, and a per-pixel resolve walks the sequence one ray a frame
+    /// (screen_resolve.h).
+    [[nodiscard]] f32 sky_visibility_ray(Vec3 position, Vec3 normal, u32 index,
+                                         u32 count) const noexcept;
+
     [[nodiscard]] const FieldDiagnostics& diagnostics() const noexcept { return diagnostics_; }
 
     // --- The mirror's view --------------------------------------------------------------------
@@ -212,10 +230,10 @@ public:
     [[nodiscard]] u32 window_bricks() const noexcept { return settings_.resolution / kBrickEdge; }
     [[nodiscard]] u32 level_count() const noexcept { return static_cast<u32>(levels_.size()); }
     [[nodiscard]] FieldLevelView level_view(u32 level) const noexcept;
-    /// Every brick's samples, `kBrickVoxels` floats per slot, indexed `((z * 4) + y) * 4 + x`.
+    /// Every brick's samples, `kBrickSamples` floats per slot, indexed `((z * 5) + y) * 5 + x`.
     [[nodiscard]] Span<const f32> brick_pool() const noexcept { return brick_pool_.span(); }
     [[nodiscard]] u32 brick_slot_count() const noexcept {
-        return static_cast<u32>(brick_pool_.size() / kBrickVoxels);
+        return static_cast<u32>(brick_pool_.size() / kBrickSamples);
     }
     /// Every brick a level holds, as a change record: what a mirror that missed a generation
     /// rebuilds from. `fn(const FieldBrickChange&)`.
@@ -280,7 +298,7 @@ private:
     ClipmapSettings settings_{};
     Array<Level> levels_;
     Array<Placement> placements_;
-    /// Brick storage, `kBrickVoxels` floats each, with a free list. One pool for every level: a
+    /// Brick storage, `kBrickSamples` floats each, with a free list. One pool for every level: a
     /// brick is the same size everywhere and a per-level pool would fragment four ways.
     Array<f32> brick_pool_;
     Array<u32> free_bricks_;

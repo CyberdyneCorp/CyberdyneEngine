@@ -9,7 +9,7 @@
 //
 //   page table   one word per brick of every clipmap level's window, toroidally addressed: the
 //                slot in the brick pool, or empty. A brick outside the level's window is far.
-//   brick pool   `DistanceField::brick_pool()`, slot for slot — 64 samples per brick.
+//   brick pool   `DistanceField::brick_pool()`, slot for slot — 125 samples per brick.
 //   cards        one record per surface-cache page: position, normal, albedo, emission.
 //   card state   the page's outgoing radiance, validity and accumulated indirect.
 //   card grid    `gi::CardGrid` over the live cards, the lookup a traced hit resolves through.
@@ -108,6 +108,7 @@ struct GpuTraceHit {
 class GpuSurfaceShading;
 class GpuRadianceCache;
 class GpuTierTracer;
+class GpuScreenResolve;
 
 class GpuGiScene {
 public:
@@ -169,6 +170,7 @@ private:
     friend class GpuSurfaceShading;
     friend class GpuRadianceCache;
     friend class GpuTierTracer;
+    friend class GpuScreenResolve;
 
     // The descriptor bindings first, in `GiSceneSet` order, then the two readback buffers no
     // shader binds.

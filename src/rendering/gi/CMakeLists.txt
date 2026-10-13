@@ -36,13 +36,14 @@ cy_add_module(
         src/reflections.cpp
         src/resolve.cpp
         src/scene.cpp
+        src/screen_resolve.cpp
         src/signals.cpp
         src/surface_cache.cpp
         src/system.cpp
         src/tracing.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory
-                        cy::rendering-denoise cy::rendering-raytracing
+                        cy::rendering-denoise cy::rendering-raytracing cy::rendering-temporal
     PRIVATE_DEPENDENCIES cy::core-jobs)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
