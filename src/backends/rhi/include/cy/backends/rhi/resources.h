@@ -31,6 +31,9 @@ enum class BufferUsage : u32 {
     Vertex = 1U << 5,
     Indirect = 1U << 6,
     ShaderDeviceAddress = 1U << 7,
+    /// Read by an acceleration-structure build: a bottom level's vertices and indices. Implies a
+    /// device address, which is how every backend that builds one addresses its inputs.
+    AccelerationStructureInput = 1U << 8,
 };
 
 [[nodiscard]] constexpr BufferUsage operator|(BufferUsage a, BufferUsage b) noexcept {

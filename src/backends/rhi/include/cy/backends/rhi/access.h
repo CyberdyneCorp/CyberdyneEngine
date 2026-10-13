@@ -69,6 +69,16 @@ enum class Access : u8 {
     /// by the pass that finishes with it, so the transition is derived like every other one.
     Present,
 
+    // Acceleration structures (acceleration.h). Declared against `AccelerationStructureInfo::
+    // storage`, the buffer a structure lives in. Appended, so every earlier intent keeps its value.
+
+    /// A build or an update writes the structure, and its scratch.
+    AccelerationStructureBuildWrite,
+    /// A top-level build reads the bottom levels it instances.
+    AccelerationStructureBuildRead,
+    /// A compute shader's ray query traverses the structure.
+    ComputeAccelerationStructureRead,
+
     Count,
 };
 

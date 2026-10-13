@@ -82,6 +82,18 @@ constexpr AccessInfo kAccessTable[kAccessCount] = {
     // AllCommands is what the signal operation's own first scope is, so the transition is ordered
     // before it. Regression cases: test_access.cpp, test_barriers.cpp and smoke.ship_present.
     {Stage::AllCommands, AccessFlags::None, ImageUse::Presentable, false, true, false, "Present"},
+
+    // --- Acceleration structures -----------------------------------------------------------------
+    //
+    // Buffer-only: a structure is never an image. The build row names READ as well as WRITE
+    // because a build reads its scratch and an update reads the structure it rewrites.
+    {Stage::AccelerationStructureBuild,
+     AccessFlags::AccelerationStructureRead | AccessFlags::AccelerationStructureWrite,
+     ImageUse::Undefined, true, false, true, "AccelerationStructureBuildWrite"},
+    {Stage::AccelerationStructureBuild, AccessFlags::AccelerationStructureRead, ImageUse::Undefined,
+     false, false, true, "AccelerationStructureBuildRead"},
+    {Stage::ComputeShader, AccessFlags::AccelerationStructureRead, ImageUse::Undefined, false,
+     false, true, "ComputeAccelerationStructureRead"},
 };
 
 static_assert(sizeof(kAccessTable) / sizeof(kAccessTable[0]) == kAccessCount,

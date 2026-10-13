@@ -26,6 +26,7 @@
 // natural thing for a worker to hold, and it keeps "this worker owns this command buffer" a fact
 // about the object graph rather than a convention about which handle a worker was given.
 
+#include <cy/backends/rhi/acceleration.h>
 #include <cy/backends/rhi/handles.h>
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/backends/rhi/resources.h>
@@ -135,6 +136,20 @@ public:
                                         Span<const BufferTextureCopy> regions) noexcept = 0;
     virtual void copy_texture_to_buffer(TextureHandle source, BufferHandle destination,
                                         Span<const BufferTextureCopy> regions) noexcept = 0;
+
+    // --- Acceleration structures (acceleration.h) -----------------------------------------------
+
+    /// Record builds or in-place updates. The builds of one call must be independent of each other:
+    /// a top level that instances a bottom level built in the same frame is built in a LATER pass,
+    /// so the graph orders the two through `AccelerationStructureBuildWrite` and
+    /// `AccelerationStructureBuildRead` on the bottom level's storage.
+    ///
+    /// Not pure, for the reason `Device::create_acceleration_structure` gives: a backend that
+    /// cannot create a structure has none to build, and this body records nothing.
+    virtual void build_acceleration_structures(
+        Span<const AccelerationStructureBuild> builds) noexcept {
+        (void)builds;
+    }
 
     // --- Queries and debugging ------------------------------------------------------------------
     //

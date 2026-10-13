@@ -603,10 +603,12 @@ Status Parser::build_descriptor(u32 id, u32 pointee, Reflection& out) noexcept {
                 binding.kind = rhi::DescriptorKind::SampledTexture;
             }
             break;
+        case spirv::OpTypeAccelerationStructureKHR:
+            // A ray query's top level. `rhi::DescriptorKind::AccelerationStructure` exists since
+            // issue #35 stage 3, when the Vulkan backend began building the structures it names.
+            binding.kind = rhi::DescriptorKind::AccelerationStructure;
+            break;
         default:
-            // An acceleration structure lands here. `rhi::DescriptorKind` has no enumerator for one
-            // because ray tracing is capability-gated and unbuilt; reporting it by name is better
-            // than mapping it onto a kind that would bind the wrong thing.
             return fail(ErrorCode::NotImplemented,
                         "the shader declares a descriptor type the RHI does not model yet");
     }

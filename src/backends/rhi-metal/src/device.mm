@@ -1886,6 +1886,13 @@ public:
                 return fail(ErrorCode::Unsupported,
                             "Metal argument buffers require separate texture and sampler bindings");
             }
+            if (binding.kind == DescriptorKind::AccelerationStructure) {
+                // This backend builds no acceleration structure yet (it does not override
+                // `create_acceleration_structure`), so a layout that binds one has nothing to bind.
+                return fail(ErrorCode::Unsupported,
+                            "the Metal backend builds no acceleration structures; a ray query "
+                            "layout is Vulkan-only until MTLAccelerationStructure lands");
+            }
             for (u32 prior = 0; prior < layout.binding_count; ++prior) {
                 if (layout.bindings[prior].binding == binding.binding) {
                     return fail(ErrorCode::InvalidArgument,
@@ -1922,6 +1929,7 @@ public:
                     argument.dataType = MTLDataTypeSampler;
                     break;
                 case DescriptorKind::CombinedTextureSampler:
+                case DescriptorKind::AccelerationStructure:
                     break;
             }
             [arguments addObject:argument];
@@ -2082,6 +2090,9 @@ public:
                 case DescriptorKind::CombinedTextureSampler:
                     return fail(ErrorCode::Unsupported,
                                 "Metal requires separate texture and sampler descriptor writes");
+                case DescriptorKind::AccelerationStructure:
+                    return fail(ErrorCode::Unsupported,
+                                "the Metal backend builds no acceleration structures");
             }
         }
         return ok();

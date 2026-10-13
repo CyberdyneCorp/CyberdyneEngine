@@ -151,6 +151,14 @@ public:
         surfaces_.set_shading_backend(backend);
     }
 
+    /// Gather the radiance cache's probes somewhere else, or on the host again with null. The same
+    /// choice for the radiance cache (issue #35 stage 3): the cache keeps its placement, scrolling,
+    /// invalidation, selection and query, and the backend — `cy::rendering-gi-gpu`'s
+    /// `GpuRadianceCache` — traces the rays of the probes it selected. See `ProbeGatherBackend`.
+    void set_probe_gather(ProbeGatherBackend* backend) noexcept {
+        radiance_.set_gather_backend(backend);
+    }
+
     // The named subsystems. Public because they are separate subsystems and not private state:
     // a renderer ingests cells into the scene, a residency system places distance fields, and an
     // editor inspects the caches, and none of that should go through a forwarding method here.

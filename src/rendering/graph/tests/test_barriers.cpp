@@ -367,3 +367,51 @@ CY_TEST_CASE("an ordinary Undefined import still has no outside reader to wait f
     CY_CHECK_EQ(draw_pre.images[0].src_stage, Stage::None);
     CY_CHECK_EQ(draw_pre.images[0].old_use, ImageUse::Undefined);
 }
+
+CY_TEST_CASE("one buffer imported once orders a structure's build before the trace that reads it") {
+    // Issue #35 stage 3. Two modules share a buffer — the acceleration structures one builds and
+    // the GI tracer that queries them, the surface cache one shades and the probe gather that reads
+    // it — and the graph derives a barrier between a write and a read only when both name ONE
+    // resource. Two `import_buffer` calls of the same handle are two resources and NO barrier; that
+    // is the hazard `import_buffer_once` closes.
+    const cy::rhi::BufferHandle storage = cy::rhi::BufferHandle::from_slot(3, 1);
+    cy::rendering::BufferRequest request;
+    request.name = "top level";
+    request.size = 4096;
+
+    RenderGraph shared(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId built = shared.import_buffer_once(request, storage);
+    CY_CHECK_EQ(shared.imported(storage), built);
+    shared.add_pass("build", cy::rhi::QueueKind::Graphics)
+        .write(built, Access::AccelerationStructureBuildWrite);
+    const ResourceId traced = shared.import_buffer_once(request, storage);
+    CY_CHECK_EQ(traced, built);
+    shared.add_pass("trace", cy::rhi::QueueKind::Graphics)
+        .read(traced, Access::ComputeAccelerationStructureRead)
+        .side_effect();
+    cy::Expected<CompiledGraph, cy::Error> plan = shared.compile(single_queue_options());
+    CY_REQUIRE(plan.has_value());
+    // A whole-buffer hazard is a global barrier (barrier.h), which is also what covers the build's
+    // scratch: a second buffer no pass names.
+    const cy::rhi::BarrierBatch& trace_pre = plan->submits[0].passes[1].pre;
+    CY_REQUIRE_EQ(trace_pre.memory.size(), 1U);
+    const cy::rhi::MemoryBarrier& barrier = trace_pre.memory[0];
+    CY_CHECK_EQ(barrier.src_stage, Stage::AccelerationStructureBuild);
+    CY_CHECK(cy::rhi::any(barrier.src_access & AccessFlags::AccelerationStructureWrite));
+    CY_CHECK_EQ(barrier.dst_stage, Stage::ComputeShader);
+    CY_CHECK_EQ(barrier.dst_access, AccessFlags::AccelerationStructureRead);
+
+    // The control: the same two passes over two imports of the same handle derive nothing at all.
+    RenderGraph twice(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId first = twice.import_buffer(request, storage);
+    twice.add_pass("build", cy::rhi::QueueKind::Graphics)
+        .write(first, Access::AccelerationStructureBuildWrite);
+    const ResourceId second = twice.import_buffer(request, storage);
+    CY_CHECK_NE(first, second);
+    twice.add_pass("trace", cy::rhi::QueueKind::Graphics)
+        .read(second, Access::ComputeAccelerationStructureRead)
+        .side_effect();
+    cy::Expected<CompiledGraph, cy::Error> unordered = twice.compile(single_queue_options());
+    CY_REQUIRE(unordered.has_value());
+    CY_CHECK(unordered->submits[0].passes[1].pre.empty());
+}

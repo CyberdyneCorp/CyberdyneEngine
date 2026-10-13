@@ -122,6 +122,27 @@ struct VulkanSemaphore {
     VkSemaphore semaphore = VK_NULL_HANDLE;
 };
 
+/// One acceleration structure and everything it owns (acceleration.h): the structure object, the
+/// buffer it lives in — registered in the buffer pool, so a render graph pass can name it — its
+/// scratch, and for a top level its instance records, host-visible and written at record time.
+struct VulkanAccelerationStructure {
+    AccelerationStructureDescription desc{};
+    StoredName name{};
+    VkAccelerationStructureKHR structure = VK_NULL_HANDLE;
+    VkDeviceAddress address = 0;
+    BufferHandle storage;
+    VkBuffer scratch = VK_NULL_HANDLE;
+    VmaAllocation scratch_allocation = nullptr;
+    VkDeviceAddress scratch_address = 0;
+    VkBuffer instances = VK_NULL_HANDLE;
+    VmaAllocation instance_allocation = nullptr;
+    void* instance_mapped = nullptr;
+    VkDeviceAddress instance_address = 0;
+    u64 structure_bytes = 0;
+    u64 scratch_bytes = 0;
+    u64 instance_bytes = 0;
+};
+
 class VulkanDevice;
 
 /// The recording interface. Every method is a direct translation into one or two Vulkan calls; the
@@ -178,6 +199,8 @@ public:
     void write_timestamp(QueryPoolHandle pool, u32 index) noexcept override;
     void reset_queries(QueryPoolHandle pool, u32 first, u32 count) noexcept override;
     void write_breadcrumb(u32 slot, u32 value) noexcept override;
+    void build_acceleration_structures(
+        Span<const AccelerationStructureBuild> builds) noexcept override;
 
     /// The escape hatch `rhi-and-render-graph` permits: the VkCommandBuffer, documented as unsafe
     /// and excluded from the portability guarantees. It is not a way to emit a barrier — task
@@ -249,7 +272,16 @@ struct FrameContext {
 /// round again, which is the same epoch mechanism the engine uses for CPU memory rather than a
 /// GPU-specific deferral scheme.
 struct Retirement {
-    enum class Kind : u8 { Buffer, Image, ImageView, Sampler, Pipeline, ShaderModule, Framebuffer };
+    enum class Kind : u8 {
+        Buffer,
+        Image,
+        ImageView,
+        Sampler,
+        Pipeline,
+        ShaderModule,
+        Framebuffer,
+        AccelerationStructure,
+    };
     Kind kind = Kind::Buffer;
     u64 frame = 0;
     /// The Vulkan object. Every handle retired here is non-dispatchable, which on every platform
@@ -388,6 +420,14 @@ public:
                                                    u32 index) const noexcept override;
     Status present(SwapchainHandle handle, u32 image_index, SemaphoreHandle wait) override;
 
+    Expected<AccelerationStructureHandle, Error> create_acceleration_structure(
+        const AccelerationStructureDescription& desc) override;
+    void destroy_acceleration_structure(AccelerationStructureHandle handle) noexcept override;
+    [[nodiscard]] bool acceleration_structure_valid(
+        AccelerationStructureHandle handle) const noexcept override;
+    [[nodiscard]] AccelerationStructureInfo acceleration_structure_info(
+        AccelerationStructureHandle handle) const noexcept override;
+
     [[nodiscard]] GpuMemoryReport memory_report() const noexcept override;
     [[nodiscard]] const DeviceStatistics& statistics() const noexcept override { return stats_; }
     void reset_statistics() noexcept override { stats_ = DeviceStatistics{}; }
@@ -432,6 +472,16 @@ public:
     [[nodiscard]] VulkanCommandBuffer* vulkan_command_buffer(CommandBufferHandle handle) noexcept {
         return command_buffers_.resolve(handle);
     }
+    [[nodiscard]] VulkanAccelerationStructure* acceleration_structure(
+        AccelerationStructureHandle handle) noexcept {
+        return acceleration_structures_.resolve(handle);
+    }
+    /// Whether `VK_KHR_acceleration_structure` and `VK_KHR_ray_query` were ENABLED on this device,
+    /// which is what every acceleration-structure entry point and descriptor type requires.
+    [[nodiscard]] bool ray_tracing_enabled() const noexcept {
+        return ray_tracing_.enabled_on_the_device;
+    }
+    [[nodiscard]] VkDeviceAddress buffer_address(BufferHandle handle) noexcept;
     [[nodiscard]] VkBuffer breadcrumb_buffer() const noexcept { return breadcrumb_buffer_; }
     [[nodiscard]] static u32 breadcrumb_slots() noexcept { return kBreadcrumbSlots; }
 
@@ -454,6 +504,13 @@ private:
     /// use, under the acquire lock.
     [[nodiscard]] Expected<VkCommandPool, Error> pool_for_this_thread(QueueKind queue) noexcept;
     void retire(Retirement::Kind kind, void* object, VmaAllocation allocation) noexcept;
+    [[nodiscard]] Status size_acceleration_structure(
+        const AccelerationStructureDescription& desc,
+        VkAccelerationStructureBuildSizesInfoKHR& sizes) const noexcept;
+    [[nodiscard]] Expected<VkBuffer, Error> create_raw_buffer(u64 size, VkBufferUsageFlags usage,
+                                                              bool host_visible, u64 alignment,
+                                                              VmaAllocation& allocation,
+                                                              void** mapped) noexcept;
     void release_retirements(u64 up_to_frame) noexcept;
     void charge(GpuMemoryCategory category, u64 bytes) noexcept;
     void discharge(GpuMemoryCategory category, u64 bytes) noexcept;
@@ -542,6 +599,9 @@ private:
     HandlePool<VulkanFence, FenceTag> fences_;
     HandlePool<VulkanSemaphore, SemaphoreTag> semaphores_;
     HandlePool<VulkanCommandBuffer, CommandBufferTag> command_buffers_;
+    HandlePool<VulkanAccelerationStructure, AccelerationStructureTag> acceleration_structures_;
+    /// `minAccelerationStructureScratchOffsetAlignment`, read when the first structure is created.
+    u64 scratch_alignment_ = 0;
 
     struct SwapchainRecord {
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;

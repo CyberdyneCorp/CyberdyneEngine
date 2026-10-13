@@ -91,6 +91,11 @@ add_subdirectory(shadows)
 # CMakeLists.txt gives.
 add_subdirectory(raytracing)
 
+# CyberRay on the device (issue #35 stage 3): a `rt::StructureMirror` that builds, refits and
+# updates the service's structures through the RHI. After raytracing/ and graph/, which it
+# depends on; gi_gpu/ below traces what it builds.
+add_subdirectory(raytracing_gpu)
+
 # CyberDenoiser: the ONE accumulation and edge-aware filter every stochastic signal goes through —
 # indirect diffuse, indirect specular, ray-traced shadows, ambient occlusion and stochastic direct
 # lighting. Task 9.3. Above raytracing/ only because neither depends on the other; gi/ depends on

@@ -32,6 +32,7 @@ CY_HANDLE_TAG(Fence);
 CY_HANDLE_TAG(Semaphore);
 CY_HANDLE_TAG(QueryPool);
 CY_HANDLE_TAG(Swapchain);
+CY_HANDLE_TAG(AccelerationStructure);
 
 using BufferHandle = Handle<BufferTag>;
 using TextureHandle = Handle<TextureTag>;
@@ -48,6 +49,8 @@ using FenceHandle = Handle<FenceTag>;
 using SemaphoreHandle = Handle<SemaphoreTag>;
 using QueryPoolHandle = Handle<QueryPoolTag>;
 using SwapchainHandle = Handle<SwapchainTag>;
+/// A bottom- or top-level acceleration structure. See acceleration.h.
+using AccelerationStructureHandle = Handle<AccelerationStructureTag>;
 
 /// A bindless slot: an index into a global descriptor array, which is what a shader receives
 /// instead of a bound descriptor set. Distinct from a handle because it is what crosses to the GPU

@@ -465,6 +465,41 @@ CY_TEST_CASE("the uploaded field traces as the host field does") {
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
+CY_TEST_CASE("a window whose brick count is not a power of two addresses the same bricks") {
+    // REGRESSION, issue #35 stage 3. The page table is toroidal, and `giWrap` took a brick
+    // coordinate modulo the window as `((value % modulus) + modulus) % modulus`. On the RTX 5060
+    // (driver 580.95.05) a signed remainder of a NEGATIVE dividend by a value the shader reads at
+    // run time came back as the UNSIGNED remainder of its two's-complement bits: -4 % 9 answered 0.
+    // For a window of 16 bricks — every field in the suites above — the unsigned remainder of a
+    // power of two IS the modulo, so nothing showed; the radiance cache's 9-cell window found no
+    // probe at any negative cell. Here the field's window is 9 bricks, centred so that half the
+    // room's bricks have negative coordinates.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    gi_support::RoomField room{Vec3{gi_support::kRoomX, gi_support::kRoomY, gi_support::kRoomZ}};
+    DistanceField field;
+    ClipmapSettings settings;
+    settings.levels = 1;
+    settings.resolution = 36;
+    // Nine bricks of 1.33 m: the whole room inside the window, and half its bricks below zero.
+    settings.base_extent_metres = 12.0F;
+    CY_REQUIRE(field.configure(settings).has_value());
+    CY_REQUIRE(field.place(1, room.asset(), Mat4::identity()).has_value());
+    (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
+    CY_REQUIRE_EQ(field.window_bricks(), 9U);
+    GpuGiScene scene;
+    CY_REQUIRE(
+        scene.create(allocator(), gpu.fixture.device(), GpuGiSceneDescription{}).has_value());
+    CY_REQUIRE(scene.upload_field(field).has_value());
+    const TraceAgreement agreement = trace_both(gpu.fixture.device(), scene, field, room_rays());
+    CY_CHECK_GT(agreement.hits, agreement.rays * 9U / 10U);
+    CY_CHECK_LE(agreement.hit_disagreements, agreement.rays / 100U);
+    CY_CHECK_LE(agreement.t_beyond, agreement.hits / 100U);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
 CY_TEST_CASE("a moved object re-uploads only the bricks it touched") {
     Gpu gpu;
     if (!gpu.available()) {

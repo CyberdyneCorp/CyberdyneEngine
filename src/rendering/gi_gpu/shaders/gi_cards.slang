@@ -64,5 +64,6 @@ void cyGiCommitCards(uint3 thread : SV_DispatchThreadID) {
     const float4 accumulated = giScene.results[(index * 3u) + 1u];
     const uint handle = asuint(accumulated.w);
     giScene.cardState[handle * 2u] = float4(giScene.results[(index * 3u) + 2u].xyz, 1.0f);
-    giScene.cardState[(handle * 2u) + 1u] = float4(accumulated.xyz, 0.0f);
+    // The w word is the frame the card was shaded in, as bits: a traced hit's staleness.
+    giScene.cardState[(handle * 2u) + 1u] = float4(accumulated.xyz, asfloat(giDispatch.frame));
 }

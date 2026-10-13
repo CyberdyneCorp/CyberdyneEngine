@@ -25,6 +25,7 @@ cy_add_module(
     ALIAS cy::rhi-vulkan
     TYPE STATIC
     SOURCES
+        src/vulkan_acceleration.cpp
         src/vulkan_command_buffer.cpp
         src/vulkan_device.cpp
         src/vulkan_instance.cpp

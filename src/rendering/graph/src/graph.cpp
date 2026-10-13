@@ -50,6 +50,9 @@ rhi::TextureUsage texture_usage_for(rhi::Access access) noexcept {
         case rhi::Access::FragmentUniformRead:
         case rhi::Access::HostRead:
         case rhi::Access::Present:
+        case rhi::Access::AccelerationStructureBuildWrite:
+        case rhi::Access::AccelerationStructureBuildRead:
+        case rhi::Access::ComputeAccelerationStructureRead:
         case rhi::Access::Count:
             break;
     }
@@ -86,6 +89,11 @@ rhi::BufferUsage buffer_usage_for(rhi::Access access) noexcept {
         case rhi::Access::DepthStencilAttachmentRead:
         case rhi::Access::HostRead:
         case rhi::Access::Present:
+        // A structure's storage is the backend's own buffer, created with the usage it needs; a
+        // transient is never one, so there is no usage for the graph to add.
+        case rhi::Access::AccelerationStructureBuildWrite:
+        case rhi::Access::AccelerationStructureBuildRead:
+        case rhi::Access::ComputeAccelerationStructureRead:
         case rhi::Access::Count:
             break;
     }
@@ -223,6 +231,22 @@ ResourceId RenderGraph::import_buffer(const BufferRequest& request, rhi::BufferH
         return kInvalidResource;
     }
     return static_cast<ResourceId>(resources_.size() - 1);
+}
+
+ResourceId RenderGraph::imported(rhi::BufferHandle buffer) const noexcept {
+    for (usize index = 0; index < resources_.size(); ++index) {
+        const ResourceInfo& info = resources_[index];
+        if (info.imported && !info.is_texture && info.imported_buffer == buffer) {
+            return static_cast<ResourceId>(index);
+        }
+    }
+    return kInvalidResource;
+}
+
+ResourceId RenderGraph::import_buffer_once(const BufferRequest& request,
+                                           rhi::BufferHandle buffer) noexcept {
+    const ResourceId existing = imported(buffer);
+    return existing != kInvalidResource ? existing : import_buffer(request, buffer);
 }
 
 PassBuilder RenderGraph::add_pass(const char* name, rhi::QueueKind queue) noexcept {

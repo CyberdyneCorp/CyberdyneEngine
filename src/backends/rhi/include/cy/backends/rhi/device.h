@@ -21,6 +21,7 @@
 // above this. And a barrier: `barrier_recorder()` below needs a key only the graph's executor can
 // construct.
 
+#include <cy/backends/rhi/acceleration.h>
 #include <cy/backends/rhi/access.h>
 #include <cy/backends/rhi/barrier.h>
 #include <cy/backends/rhi/capabilities.h>
@@ -179,6 +180,11 @@ struct DeviceDescription {
     /// false, and a pass declaring several views is recorded once per view instead — which is how a
     /// device that HAS the feature can still run, and be compared against, the baseline path.
     bool request_multiview = true;
+    /// Ask for ray queries and acceleration structures where the device has them. A device created
+    /// with this off reports no `Capability::RayTracing` on hardware that has it, which is how a
+    /// suite runs "a device without ray queries" on the machine it compares against — the same
+    /// role `request_multiview` plays for the per-view baseline.
+    bool request_ray_tracing = true;
     /// Bytes reserved for the render graph's transient pool. Grown on demand; a starting size stops
     /// the first frame from reallocating five times.
     u64 transient_pool_bytes = 64ULL * 1024 * 1024;
@@ -258,6 +264,46 @@ public:
     /// device's timestamp period so a caller never multiplies by a backend constant.
     virtual Expected<u32, Error> read_query_results(QueryPoolHandle pool, u32 first, u32 count,
                                                     Span<u64> out) = 0;
+
+    // --- Acceleration structures (acceleration.h)
+    // -------------------------------------------------
+    //
+    // NOT PURE, AND THAT IS THE CAPABILITY GATE RATHER THAN A CONVENIENCE. A device that cannot
+    // trace rays — the null backend, and D3D12 and Metal until their builds land — inherits these
+    // bodies, which refuse by name and hold nothing; only a backend whose device reports
+    // `Capability::RayTracing` overrides them. So "a device without ray queries" is one answer in
+    // one place, and a consumer that asks gets `ErrorCode::Unsupported` and takes its software
+    // tier, exactly as `cy::rendering-raytracing`'s service reports `Unsupported` for the same
+    // device.
+
+    /// Create a structure sized by `desc`, with its storage, its scratch and — for a top level —
+    /// its instance records. Fails with `ErrorCode::Unsupported` on a device without ray tracing.
+    virtual Expected<AccelerationStructureHandle, Error> create_acceleration_structure(
+        const AccelerationStructureDescription& desc) {
+        (void)desc;
+        return make_unexpected(Error{ErrorCode::Unsupported,
+                                     "this device builds no acceleration structures: it does not "
+                                     "report Capability::RayTracing, so a ray query has nothing to "
+                                     "traverse and the caller's software tier is the answer"});
+    }
+    /// Deferred like every other resource: freed after the frames that could reference it.
+    virtual void destroy_acceleration_structure(AccelerationStructureHandle handle) noexcept {
+        (void)handle;
+    }
+    /// Named rather than an `is_valid` overload: a backend that overrides the other `is_valid`s
+    /// and not this one would hide it (-Woverloaded-virtual), and three backends do not override
+    /// it.
+    [[nodiscard]] virtual bool acceleration_structure_valid(
+        AccelerationStructureHandle handle) const noexcept {
+        (void)handle;
+        return false;
+    }
+    /// What `handle` was created as. A default record (a null `storage`) for a stale handle.
+    [[nodiscard]] virtual AccelerationStructureInfo acceleration_structure_info(
+        AccelerationStructureHandle handle) const noexcept {
+        (void)handle;
+        return AccelerationStructureInfo{};
+    }
 
     // --- Transient resources: the render graph's memory ---------------------------------------
     //

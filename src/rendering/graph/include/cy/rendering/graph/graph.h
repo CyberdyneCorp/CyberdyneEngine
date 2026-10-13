@@ -410,6 +410,17 @@ public:
     ResourceId import_buffer(const BufferRequest& request, rhi::BufferHandle buffer,
                              rhi::QueueOwner owner = {}) noexcept;
 
+    /// The resource `buffer` was imported as in this graph, or `kInvalidResource`.
+    ///
+    /// ONE BUFFER, ONE RESOURCE. Two imports of the same handle are two resources to the graph, and
+    /// it derives no barrier between a pass that writes one and a pass that reads the other — so a
+    /// module whose passes share a buffer with another module's (a structure one builds and the
+    /// other traces, a cache one shades and the other gathers from) imports through this first.
+    [[nodiscard]] ResourceId imported(rhi::BufferHandle buffer) const noexcept;
+
+    /// `imported(buffer)` when the graph already has it, and a fresh `import_buffer` otherwise.
+    ResourceId import_buffer_once(const BufferRequest& request, rhi::BufferHandle buffer) noexcept;
+
     /// The image `Device::acquire_next_image` just returned. Its contents are undefined, and the
     /// presentation engine may still be READING it until the acquire semaphore is signalled — which
     /// is what an ordinary `import_texture(..., ImageUse::Undefined)` cannot say. The graph records
