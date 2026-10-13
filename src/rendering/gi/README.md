@@ -28,6 +28,10 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `budget.h` | the GI allocation, seven priced lever ladders, the declared reduction order, and importance |
 | `bake.h` | the offline path tracer, ground truth, the reference comparison, and the seeds it leaves in the caches |
 | `signals.h` | `StochasticSignals` — the FIVE stochastic signals `denoising` declares, produced from this system's own tracer and caches and each routed through `denoise::Denoiser`. M11.c task 2.5 |
+| `classification.h` | `IlluminationClass` — Static, SlowDynamic, FastDynamic, TransientIgnored — derived from mobility and size with a per-object override, `GiObject`, the proxy fidelity of a skinned object, and `sphere_occlusion` |
+| `media.h` | the transparency staging table, the reserved `RefractionSolver` and `CausticsSource`, thin transmission's back-face offset, and `MediaIndirectGrid` — the radiance cache's mean radiance a participating medium reads |
+| `diagnostics.h` | `IlluminationQuery` (what lit a point, its probes and their leak suspicion, and a `DarknessCause`), `IlluminationRegionReport`, and `GiProfile` — the per-frame stage costs, rays per tier, hit rates and cost attribution |
+| `debug_views.h` | the nineteen GI debug views, named as `render::DebugViewMode`'s, drawn into an `Rgba8Unorm` image the forward frame composites |
 | `system.h` | the composition: the named subsystems, wired, and one frame |
 
 ## Five things worth knowing before changing anything here
@@ -135,6 +139,79 @@ emitter looks like); centre, the lamp promoted, exactly the closed form; right, 
 the cache — every gather hit in the region of the ceiling it is the nearest card for returns its
 full radiance, which is the blotches. The same quantities `render_gi_emissive`'s lamp case measures,
 sampled densely once for the picture.*
+
+## Moving objects, by illumination class
+
+`IlluminationSystem::add_object` classes an object once (`classify_illumination`: `Static` mobility
+is `Static`; a movable object under `transient_max_size_metres` is `TransientIgnored`, at least
+`slow_dynamic_min_size_metres` is `SlowDynamic`, between is `FastDynamic`; `GiObjectDesc` carries an
+override), and the class decides what `move_object` costs. Static and SlowDynamic objects are cells
+of their own in the GI scene (`object_cell_id`), with their own field placement: a Static move
+re-ingests them and invalidates now; a SlowDynamic move is coalesced and the next `update()` at least
+`slow_dynamic_interval_frames` after the last flush re-ingests once, invalidating the union of where
+it went. A FastDynamic object is never in a cache. Each frame it becomes proxy spheres — the coarse
+proxy is one sphere of its bounds' volume; a skinned object within
+`deformed_proxy_distance_metres * importance` of the camera uses the spheres `pose_object` handed over
+— and `indirect_diffuse` takes the light each sphere covers away (`sphere_occlusion`, the exact
+cosine-weighted solid angle, clipped at the horizon) and adds back what the sphere reflects of the
+radiance cache's light on its near side; `indirect_specular`'s rays that meet a sphere before the
+world see it. A TransientIgnored object is recorded and nothing else.
+
+Measured (`integration.render_gi_classes`): a projectile crossing the room for thirty frames files
+no invalidation and leaves the field exactly as a twin room without it; a 4.4 m vehicle moved every
+frame for 32 frames is flushed 4 times — 8 records, every one naming it — instead of 32; a
+character standing on the floor keeps between 0.74 and 0.82 of the indirect light under and beside
+it where the path tracer, tracing a sphere of triangles in the same place, keeps between 0.65 and
+0.85: mean difference 0.045 of the open light. Forty skinned walkers 60 m out are one sphere each;
+the hero beside the camera is its four posed bones.
+
+## Transparency and participating media
+
+`transmission_support` is the specification's staging table. Thin transmission:
+`SurfaceProperties::transmission` makes `indirect_diffuse` add `ResolveResult::transmitted` — the
+radiance cache sampled about the reversed normal `kThinTransmissionBackOffsetMetres` behind the
+surface, tinted — which a shader adds; with no transmission the resolve is bit for bit what it was.
+Twelve backlit leaf points in the room: mean relative error 0.131 against the path tracer's
+irradiance about the reversed normal. Volumetric media: `media_indirect` builds a
+`MediaIndirectGrid` of the cache's mean radiance over the sphere (the six-direction average, exact
+for SH L1) that `fog::FogIndirect` hands to the volumetric fog's march, on the host and the device;
+over 32 points of the room with probes a metre apart the grid is within 0.151 (mean relative) of the
+path tracer's six-hemisphere mean — the cache's spatial resolution is the error. True refraction and
+caustics are DEFERRED: `RefractionSolver` and `CausticsSource` are declared, and
+`set_refraction_solver` / `set_caustics_source` refuse with `ErrorCode::NotImplemented` naming it.
+
+## Diagnostics: why is this dark, and what did it cost
+
+`explain(position, normal, surface, settings)` resolves the point with the function
+`indirect_diffuse` uses (`diffuse_samples`), so its `diffuse` is that answer bit for bit, and reports
+every source's confidence and weight share, every contributing probe with its falloff, facing and
+visibility terms (`RadianceCache::contributions`, the same function `sample` weights with), its age
+and error, whether the field blocks the line from the probe to the point (a LEAK SUSPECT), the tier a
+ray takes there, the region's convergence, and a `DarknessCause`: `Lit`, `Occluded`, `Unconverged`,
+`MissingProbes`, `LowConfidence` or `Invalidated`. `explain_region` asks the same of a box, with the
+pending and recent invalidations touching it. `profile()` is the frame the last `update()` began:
+allocation and measured cost, wall time per stage (screen trace, world trace, probe update, surface
+cache, denoise, reflection resolve — exclusive; the probe gather's rays are in probe update),
+probes and updates, rays per tier, the screen hit rate, both caches' hit rates, and the frame's
+invalidations attributed to the light, object or cell that filed them, costliest first.
+
+**The leak query found a leak.** Four probes a metre behind the divider lit its face with 0.135 of
+the probe weight: the visibility term averaged the wall's distance with the open air beside it.
+`RadianceCache::visibility_weight` now also requires every axis the query lies within sixty degrees
+of to reach the query on its own (the device transcribes it); that takes the face to 0.080. The
+remaining suspects sit on the doorway's edge, where six axis distances cannot tell an edge from a
+wall — a directional depth per probe would.
+
+## Debug views
+
+`render_gi_debug_view(system, view, camera, inputs, out)` draws each of `debug_views.h`'s nineteen
+views from the functions the illumination is computed by, into an image the frame composites
+(`lightmaps::GiDebugOverlayTexture`, `pipeline::kGiDebugOverlayView`); the two lightmap views are the
+frame's own (`LightmapDensity`, `LightmapCharts`). `integration.render_gi_debug_views` holds each to
+a committed golden image (`tests/references/gi_view_*.png`, `CY_RENDER_UPDATE_GOLDEN=1` rewrites
+them) and requires every pair to differ; `render.lightmaps` (o) and (p) hold the frame's half.
+
+![The nineteen GI debug views of the divided room](../../../docs/design/images/gi-debug-views.png)
 
 ## GI volumes
 

@@ -55,6 +55,13 @@ struct ResolveResult {
     /// One bit per source that contributed. The other half of the same diagnostic.
     u32 sources_used = 0;
     u32 sources_excluded = 0;
+    /// Thin transmission (media.h): the indirect light the surface's back face received, already
+    /// tinted by its transmission. A shader ADDS it to the shaded colour. Zero for an opaque
+    /// surface, which is every surface that declares no transmission.
+    Vec3 transmitted{0.0F, 0.0F, 0.0F};
+    /// The fraction of the indirect light the FastDynamic proxies near the point took away
+    /// (classification.h). Already applied to `radiance`; reported for the diagnostics.
+    f32 proxy_occlusion = 0.0F;
 };
 
 /// Combine samples by confidence, skipping any source in `excluded_sources`.

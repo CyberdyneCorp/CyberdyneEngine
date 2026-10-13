@@ -234,9 +234,12 @@ public struct CyFrameData
     /// indices into `cyLights`, light i in bit i % 32 of word i / 32. A lightmapped surface does
     /// not shade them again. Zero, the default, names none.
     public uint4 lightmapDirectLights;
-    /// The lightmap texel-density view. x: `kCyLightmapDensityView` draws every surface as the
-    /// density its lightmap gives it against y — the target, texels per metre, as float bits —
-    /// instead of lit. Zero, the default, is the lit frame. zw: reserved.
+    /// The frame's debug views. x: `kCyLightmapDensityView` draws every surface as the density its
+    /// lightmap gives it against y — the target, texels per metre, as float bits — instead of lit;
+    /// `kCyLightmapChartView` draws it as the atlas rectangle it samples; `kCyGiDebugOverlayView`
+    /// draws the GI debug view in the texture at slot z (`gi::render_gi_debug_view`'s image, the
+    /// frame's size) wherever its alpha is not zero, and the lit surface elsewhere. Zero, the
+    /// default, is the lit frame. w: reserved.
     public uint4 lightmapDebug;
     /// Dynamic global illumination, appended for the reason `materialTextures` gives. x: the frame
     /// texture slot of `gi_gpu::GpuScreenResolve`'s indirect diffuse target, or
@@ -290,6 +293,11 @@ public static const uint kCyLightmapShL1 = 3u;
 public static const uint kCyNoLightmapLight = 0xFFFFFFFFu;
 /// `lightmapDebug.x`: the texel-density view. `lightmaps::kLightmapDensityView` is the same number.
 public static const uint kCyLightmapDensityView = 1u;
+/// `lightmapDebug.x`: the chart view. `pipeline::kLightmapChartView` is the same number.
+public static const uint kCyLightmapChartView = 2u;
+/// `lightmapDebug.x`: a GI debug view's image over the frame. `pipeline::kGiDebugOverlayView` is
+/// the same number.
+public static const uint kCyGiDebugOverlayView = 3u;
 
 /// `GpuDrawInstance` — 32 bytes, the per-draw indirection `first_instance` names.
 public struct CyDrawInstance
@@ -1201,6 +1209,33 @@ float3 lightmapDensityHue(bool lightmapped, float2 uv, float3 relativePosition)
     return ((cell.x + cell.y) & 1u) == 0u ? colour : colour * 0.55;
 }
 
+/// The chart view: one hue per atlas rectangle — the draw's `giAddress` names it — with the texel
+/// grid it is sampled at, and the same flat grey as the density view for a surface with none.
+float3 lightmapChartColour(bool lightmapped, uint address, float2 uv)
+{
+    if (!lightmapped)
+    {
+        return kCyDensityUnlit * exp2(-frameExposureStops());
+    }
+    // An integer hash first: the address's bits are the rectangle's corner and extent, and two
+    // neighbouring rectangles differ in a few low bits a float multiply would not separate.
+    let hashed = (address * 2654435761u) ^ (address >> 15u);
+    let hue = float(hashed >> 8u) * (6.0 / 16777216.0);
+    let rising = frac(hue);
+    let sector = uint(hue) % 6u;
+    float3 colour = float3(0.9, 0.9 * (1.0 - 0.65 * (1.0 - rising)), 0.315);
+    if (sector == 1u) colour = float3(0.9 * (1.0 - 0.65 * rising), 0.9, 0.315);
+    if (sector == 2u) colour = float3(0.315, 0.9, 0.9 * (1.0 - 0.65 * (1.0 - rising)));
+    if (sector == 3u) colour = float3(0.315, 0.9 * (1.0 - 0.65 * rising), 0.9);
+    if (sector == 4u) colour = float3(0.9 * (1.0 - 0.65 * (1.0 - rising)), 0.315, 0.9);
+    if (sector == 5u) colour = float3(0.9, 0.315, 0.9 * (1.0 - 0.65 * rising));
+    let size = float2(float(cyFrame.lightmapLayout.x),
+                      float(cyFrame.lightmapLayout.x * cyFrame.lightmapLayout.y));
+    let cell = uint2(floor(uv * size));
+    let checker = ((cell.x + cell.y) & 1u) == 0u ? 1.0 : 0.7;
+    return colour * checker * exp2(-frameExposureStops());
+}
+
 /// Shared forward lighting for the standard material and a compiled scene material surface.
 /// The caller supplies a resolved surface; both paths keep the frame's decals, lights, lightmap,
 /// probes, AO and fog.
@@ -1216,6 +1251,21 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
     if (cyFrame.lightmapDebug.x == kCyLightmapDensityView)
     {
         return float4(lightmapDensityColour(lightmapped, lightmapUv, input.relativePosition), 1.0);
+    }
+    if (cyFrame.lightmapDebug.x == kCyLightmapChartView)
+    {
+        return float4(lightmapChartColour(lightmapped, draw.giAddress, lightmapUv), 1.0);
+    }
+    if (cyFrame.lightmapDebug.x == kCyGiDebugOverlayView)
+    {
+        // The image is the frame's size, so a fragment's centre is a texel's centre and the read
+        // is that texel. Divided by the exposure the resolve multiplies by, as the density view is.
+        let overlay = cyMaterialSampleTextureLevel(
+            cyFrame.lightmapDebug.z, input.position.xy * cyFrame.extentAndInverse.zw, 0.0);
+        if (overlay.a > 0.0)
+        {
+            return float4(overlay.rgb * exp2(-frameExposureStops()), 1.0);
+        }
     }
 
     var normal = normalize(input.normal);

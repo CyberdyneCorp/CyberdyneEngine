@@ -224,3 +224,93 @@ CY_TEST_CASE("the lookup starts at the eye and meets each column at its slices' 
         last_s = fog.in_scattering.x;
     }
 }
+
+CY_TEST_CASE("the radiance cache's indirect grid replaces the ambient term, and a flat one is it") {
+    // `rendering-global-illumination`, "Transparency and participating media": fog takes its
+    // indirect light from the radiance cache. A grid holding the ambient radiance at every point
+    // marches to exactly the ambient march; a grid that brightens toward one side scatters more
+    // there; and the march still converges to the single-scattering integral read through the grid.
+    const FogSettings settings = small_settings();
+    FogView view;
+    FogMedium medium;
+    medium.height.extinction = 0.05F;
+    medium.height.base_height = 10.0F;
+    medium.height.scale_height = 4.0F;
+    medium.height.albedo = Vec3{0.9F, 0.9F, 0.9F};
+    FogLight ambient = daylight_light();
+    ambient.sun_illuminance = Vec3{};
+
+    std::vector<Vec3> flat(usize{50}, ambient.ambient_radiance);
+    FogIndirect grid;
+    grid.origin = Vec3{-20.0F, -5.0F, -40.0F};
+    grid.spacing = 10.0F;
+    grid.dimensions[0] = 5;
+    grid.dimensions[1] = 2;
+    grid.dimensions[2] = 5;
+    grid.radiance = {flat.data(), flat.size()};
+    FogLight through_grid = ambient;
+    through_grid.indirect = &grid;
+    const std::vector<Vec4> plain = march_volume(settings, view, ambient, medium);
+    const std::vector<Vec4> gridded = march_volume(settings, view, through_grid, medium);
+    CY_REQUIRE_EQ(plain.size(), gridded.size());
+    usize differing = 0;
+    for (usize index = kFogHeaderTexels; index < plain.size(); ++index) {
+        differing += (plain[index].x != gridded[index].x || plain[index].y != gridded[index].y ||
+                      plain[index].z != gridded[index].z)
+                         ? 1U
+                         : 0U;
+    }
+    CY_CHECK_EQ(differing, 0U);
+
+    // Brighter on the left (negative x): the left columns scatter more than the right ones.
+    std::vector<Vec3> ramp;
+    for (u32 z = 0; z < 5; ++z) {
+        for (u32 y = 0; y < 2; ++y) {
+            for (u32 x = 0; x < 5; ++x) {
+                ramp.push_back(Vec3{0.4F, 0.3F, 0.2F} *
+                               (1.0F - (0.15F * static_cast<f32>(x)) -
+                                (0.2F * static_cast<f32>(y)) - (0.05F * static_cast<f32>(z))));
+            }
+        }
+    }
+    grid.radiance = {ramp.data(), ramp.size()};
+    // A grid linear along every axis is reproduced exactly by a trilinear blend between its points,
+    // and clamped to its edge beyond them.
+    const Vec3 inside = grid.origin + (Vec3{1.3F, 0.4F, 2.7F} * grid.spacing);
+    const Vec3 expected =
+        Vec3{0.4F, 0.3F, 0.2F} * (1.0F - (0.15F * 1.3F) - (0.2F * 0.4F) - (0.05F * 2.7F));
+    CY_CHECK_LT(cy::max_component(cy::cwise_abs(fog_indirect_at(grid, inside) - expected)),
+                1.0e-5F);
+    const Vec3 beyond = fog_indirect_at(grid, grid.origin - Vec3{50.0F, 50.0F, 50.0F});
+    CY_CHECK_LT(cy::max_component(cy::cwise_abs(beyond - ramp[0])), 1.0e-6F);
+    const cy::rendering::FroxelVolume& volume = settings.volume;
+    std::vector<Vec3> t(volume.depth);
+    std::vector<Vec3> left(volume.depth);
+    std::vector<Vec3> right(volume.depth);
+    CY_REQUIRE(integrate_fog_column(settings, view, through_grid, FogShadow{}, HostShadowMap{},
+                                    medium, 1, 4, cy::Span<Vec3>(t), cy::Span<Vec3>(left))
+                   .has_value());
+    CY_REQUIRE(integrate_fog_column(settings, view, through_grid, FogShadow{}, HostShadowMap{},
+                                    medium, 14, 4, cy::Span<Vec3>(t), cy::Span<Vec3>(right))
+                   .has_value());
+    CY_CHECK_GT(left[volume.depth - 1].x, right[volume.depth - 1].x * 1.2F);
+
+    const Vec3 direction = fog_column_direction(settings, view, 1, 4);
+    const f32 distance = cy::rendering::froxel_slice_depth(volume, volume.depth - 1) /
+                         cy::math::max(cy::dot(direction, view.forward), 1.0e-3F);
+    const FogAtPoint reference = single_scattering_reference(
+        view, through_grid, FogShadow{}, HostShadowMap{}, medium, direction, distance, 20000);
+    const f32 error = relative_error(left[volume.depth - 1], reference.in_scattering);
+    std::printf("indirect grid: march against the single-scattering integral %.2e\n",
+                static_cast<double>(error));
+    CY_CHECK_LT(error, 2.0e-3F);
+
+    // A grid the block cannot hold, or one whose span does not match its dimensions, is refused.
+    std::vector<Vec4> words(kFogIndirectWords);
+    CY_CHECK(pack_fog_indirect(grid, cy::Span<Vec4>(words)).has_value());
+    grid.dimensions[0] = 6;
+    CY_CHECK_FALSE(pack_fog_indirect(grid, cy::Span<Vec4>(words)).has_value());
+    grid.dimensions[0] = 64;
+    grid.dimensions[1] = 64;
+    CY_CHECK_FALSE(pack_fog_indirect(grid, cy::Span<Vec4>(words)).has_value());
+}

@@ -25,6 +25,10 @@ namespace {
            static_cast<f64>(max_age_frames);
 }
 
+/// The cosine above which a query counts as lying along a probe axis for the per-axis visibility
+/// test: sixty degrees. The device transcribes the same number.
+constexpr f32 kAxisVisibilityCosine = 0.5F;
+
 constexpr Vec3 kAxes[6] = {{1.0F, 0.0F, 0.0F},  {-1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F},
                            {0.0F, -1.0F, 0.0F}, {0.0F, 0.0F, 1.0F},  {0.0F, 0.0F, -1.0F}};
 
@@ -850,7 +854,24 @@ f32 RadianceCache::visibility_weight(const Probe& entry, Vec3 query) const noexc
         return 0.0F;
     }
     // A soft edge over the bias, so a query crossing the boundary does not pop.
-    return math::clamp((expected + slack - span) / std::max(slack, 1.0e-4F), 0.0F, 1.0F);
+    f32 visible = math::clamp((expected + slack - span) / std::max(slack, 1.0e-4F), 0.0F, 1.0F);
+    // AND EVERY AXIS THE QUERY LIES WELL ALONG MUST REACH IT ON ITS OWN. The mean above blends the
+    // axes, so a probe a metre behind a wall, whose query is up and to the side of it as well as
+    // through it, averages the wall's metre with the clear air above and beside and is let through:
+    // `render_gi_diagnostics` found four such probes lighting the face of the divider. A query
+    // whose distance along an axis it lies at least sixty degrees toward is past that axis's
+    // measured distance is behind what the axis hit, whatever the other axes saw.
+    for (u32 axis = 0; axis < 6; ++axis) {
+        const f32 cosine = dot(kAxes[axis], direction);
+        if (cosine < kAxisVisibilityCosine) {
+            continue;
+        }
+        const f32 along = span * cosine;
+        visible = std::min(visible, math::clamp((entry.axis_distance[axis] + slack - along) /
+                                                    std::max(slack, 1.0e-4F),
+                                                0.0F, 1.0F));
+    }
+    return visible;
 }
 
 Vec3 RadianceCache::gather(Vec3 position, Vec3 normal) const noexcept {
@@ -858,13 +879,44 @@ Vec3 RadianceCache::gather(Vec3 position, Vec3 normal) const noexcept {
     return answer.radiance;
 }
 
+f32 RadianceCache::query_reach() const noexcept {
+    return settings_.base_spacing_metres * static_cast<f32>(1U << (settings_.levels - 1)) * 1.5F;
+}
+
+bool RadianceCache::contribution(const Probe& entry, Vec3 position, Vec3 normal,
+                                 ProbeContribution& out) const noexcept {
+    if (!entry.live || !entry.valid) {
+        return false;
+    }
+    const f32 spacing = settings_.base_spacing_metres * static_cast<f32>(1U << entry.level);
+    const Vec3 offset = position - entry.position;
+    const f32 span = length(offset);
+    if (span > spacing * 1.5F) {
+        return false;
+    }
+    // Trilinear-shaped falloff over the probe's own spacing, a wrap term so a probe behind the
+    // query's surface does not contribute, and the visibility term so a probe behind a wall does
+    // not either. All three are needed; dropping any one is a recognisable artefact.
+    out.falloff = 1.0F - math::clamp(span / (spacing * 1.5F), 0.0F, 1.0F);
+    f32 weight = out.falloff;
+    out.facing = 1.0F;
+    if (span > 1.0e-4F) {
+        const f32 facing = dot(normal, -offset / span);
+        out.facing = math::clamp((facing + 1.0F) * 0.5F, 0.0F, 1.0F);
+        weight *= out.facing;
+    }
+    out.visibility = visibility_weight(entry, position);
+    weight *= out.visibility;
+    out.weight = weight;
+    return weight > 0.0F;
+}
+
 RadianceSample RadianceCache::sample(Vec3 position, Vec3 normal, u64 frame) const noexcept {
     diagnostics_.gathers += 1;
     RadianceSample answer;
     answer.source = RadianceSource::RadianceCache;
 
-    const f32 reach =
-        settings_.base_spacing_metres * static_cast<f32>(1U << (settings_.levels - 1)) * 1.5F;
+    const f32 reach = query_reach();
     const Vec3 extent{reach, reach, reach};
     const Aabb box{position - extent, position + extent};
 
@@ -877,27 +929,11 @@ RadianceSample RadianceCache::sample(Vec3 position, Vec3 normal, u64 frame) cons
             return true;
         }
         const Probe& entry = probes_[handle];
-        if (!entry.live || !entry.valid) {
+        ProbeContribution terms;
+        if (!contribution(entry, position, normal, terms)) {
             return true;
         }
-        const f32 spacing = settings_.base_spacing_metres * static_cast<f32>(1U << entry.level);
-        const Vec3 offset = position - entry.position;
-        const f32 span = length(offset);
-        if (span > spacing * 1.5F) {
-            return true;
-        }
-        // Trilinear-shaped falloff over the probe's own spacing, a wrap term so a probe behind the
-        // query's surface does not contribute, and the visibility term so a probe behind a wall
-        // does not either. All three are needed; dropping any one is a recognisable artefact.
-        f32 weight = 1.0F - math::clamp(span / (spacing * 1.5F), 0.0F, 1.0F);
-        if (span > 1.0e-4F) {
-            const f32 facing = dot(normal, -offset / span);
-            weight *= math::clamp((facing + 1.0F) * 0.5F, 0.0F, 1.0F);
-        }
-        weight *= visibility_weight(entry, position);
-        if (weight <= 0.0F) {
-            return true;
-        }
+        const f32 weight = terms.weight;
         total = total + (decode_payload(settings_.encoding, payload(handle), normal) * weight);
         total_weight += weight;
         const u64 age = frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
@@ -1005,6 +1041,36 @@ TracedCacheSamples RadianceCache::sample_traced(Vec3 position, Vec3 normal, Vec3
         diagnostics_.gather_misses += 1;
     }
     return TracedCacheSamples{diffuse.finish(), specular.finish()};
+}
+
+u32 RadianceCache::contributions(Vec3 position, Vec3 normal,
+                                 Span<ProbeContribution> out) const noexcept {
+    const f32 reach = query_reach();
+    const Vec3 extent{reach, reach, reach};
+    const Aabb box{position - extent, position + extent};
+    u32 count = 0;
+    index_.query_aabb(box, [&](u32 /*proxy*/, u64 user_data) {
+        const u32 handle = static_cast<u32>(user_data);
+        if (handle >= probes_.size()) {
+            return true;
+        }
+        ProbeContribution terms;
+        if (!contribution(probes_[handle], position, normal, terms)) {
+            return true;
+        }
+        terms.probe = handle;
+        if (count < out.size()) {
+            out[count] = terms;
+        }
+        count += 1;
+        return true;
+    });
+    // The order the index visits in is not a contract; the list is, so it is by handle.
+    const usize kept = std::min<usize>(count, out.size());
+    std::sort(
+        out.data(), out.data() + kept,
+        [](const ProbeContribution& a, const ProbeContribution& b) { return a.probe < b.probe; });
+    return count;
 }
 
 Status RadianceCache::seed(u32 probe, Span<const Vec3> directions,

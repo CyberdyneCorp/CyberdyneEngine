@@ -65,6 +65,9 @@ static const float kCyFogPi = 3.14159265358979;
 static const uint kCyFogHeaderWords = 17u;
 static const uint kCyFogVolumeWords = 4u;
 static const uint kCyFogHeaderTexels = 6u;
+/// Where the indirect grid's words start: after the header and the eight volumes
+/// (`fog::kFogConstantWords`). `fog::pack_fog_indirect` is the layout.
+static const uint kCyFogIndirectBase = 17u + (4u * 8u);
 
 struct CyFogSet
 {
@@ -88,6 +91,41 @@ struct CyFogSet
 float4 fogWord(uint index)
 {
     return cyFogSet.words[index];
+}
+
+/// `fog_indirect_at`: the radiance cache's mean radiance on its grid, trilinear and clamped, each
+/// lerp written `a + (b - a) t` as the host writes it.
+float3 fogIndirectPoint(uint3 cell, float4 dims)
+{
+    const uint index = (cell.z * uint(dims.y) + cell.y) * uint(dims.x) + cell.x;
+    return fogWord(kCyFogIndirectBase + 2u + index).xyz;
+}
+
+float3 fogIndirectAt(float3 world)
+{
+    const float4 origin = fogWord(kCyFogIndirectBase);
+    const float4 dims = fogWord(kCyFogIndirectBase + 1u);
+    const float3 local = (world - origin.xyz) / max(origin.w, 1e-6);
+    const float3 coordinate = clamp(local, float3(0.0), dims.xyz - 1.0);
+    const float3 lowF = floor(coordinate);
+    const uint3 low = uint3(lowF);
+    const uint3 high = min(low + 1u, uint3(dims.xyz) - 1u);
+    const float3 t = coordinate - lowF;
+    const float3 a00 = fogIndirectPoint(uint3(low.x, low.y, low.z), dims);
+    const float3 b00 = fogIndirectPoint(uint3(high.x, low.y, low.z), dims);
+    const float3 a10 = fogIndirectPoint(uint3(low.x, high.y, low.z), dims);
+    const float3 b10 = fogIndirectPoint(uint3(high.x, high.y, low.z), dims);
+    const float3 a01 = fogIndirectPoint(uint3(low.x, low.y, high.z), dims);
+    const float3 b01 = fogIndirectPoint(uint3(high.x, low.y, high.z), dims);
+    const float3 a11 = fogIndirectPoint(uint3(low.x, high.y, high.z), dims);
+    const float3 b11 = fogIndirectPoint(uint3(high.x, high.y, high.z), dims);
+    const float3 x00 = a00 + (b00 - a00) * t.x;
+    const float3 x10 = a10 + (b10 - a10) * t.x;
+    const float3 x01 = a01 + (b01 - a01) * t.x;
+    const float3 x11 = a11 + (b11 - a11) * t.x;
+    const float3 y0 = x00 + (x10 - x00) * t.y;
+    const float3 y1 = x01 + (x11 - x01) * t.y;
+    return y0 + (y1 - y0) * t.z;
 }
 
 /// `froxel_slice_depth`: slice i's far edge, metres along the forward axis.
@@ -298,6 +336,8 @@ void cyVolumetricFog(uint3 id : SV_DispatchThreadID)
     const float3 worldOffset = fogWord(6u).xyz;
     const float3 sunIlluminance = fogWord(8u).xyz;
     const float3 ambient = fogWord(9u).xyz;
+    // The radiance cache's indirect light on its grid, where the frame gave one (`words[9].w`).
+    const bool indirect = fogWord(9u).w > 0.5;
     const uint steps = max(uint(planes.z), 1u);
 
     float previous = 0.0;
@@ -326,8 +366,9 @@ void cyVolumetricFog(uint3 id : SV_DispatchThreadID)
             const float3 point = eye + (direction * along);
             const FogMediumSample medium = fogSampleMedium(point + worldOffset, cosToSun);
             const float visibility = fogShadowVisibility(point);
+            const float3 lit = indirect ? fogIndirectAt(point + worldOffset) : ambient;
             const float3 source = (medium.sunScattering * sunIlluminance * visibility) +
-                                  (medium.scattering * ambient) + medium.emission;
+                                  (medium.scattering * lit) + medium.emission;
 #if defined(CY_FOG_AIR_TABLE)
             // Fog and air as one medium over the sub-step, per channel.
             const float3 extinction3 = (max(medium.extinction, 0.0) + airExtinction) * step;

@@ -341,9 +341,11 @@ struct alignas(16) FrameViewData {
     /// light indices, light i in bit i % 32 of word i / 32. A lightmapped surface does not shade
     /// them again. Zero, the default, names none.
     u32 lightmap_direct_lights[4] = {0, 0, 0, 0};
-    /// The lightmap texel-density view. x: `kLightmapDensityView` draws every surface as the
-    /// density its lightmap gives it against y (texels per metre, as `f32` bits) instead of lit.
-    /// Zero, the default, is the lit frame. zw: reserved.
+    /// The frame's debug views. x: `kLightmapDensityView` draws every surface as the density its
+    /// lightmap gives it against y (texels per metre, as `f32` bits) instead of lit;
+    /// `kLightmapChartView` as the atlas rectangle it samples; `kGiDebugOverlayView` draws the GI
+    /// debug view image at the set 0 texture slot z over the lit frame wherever its alpha is not
+    /// zero (`write_gi_debug_overlay`). Zero, the default, is the lit frame. w: reserved.
     u32 lightmap_debug[4] = {0, 0, 0, 0};
     /// Dynamic global illumination. x: the set 0 texture slot of `gi_gpu::GpuScreenResolve`'s
     /// indirect diffuse target, or `kNoMaterialTexture` — the default, and the frame every caller
@@ -359,6 +361,21 @@ struct alignas(16) FrameViewData {
 inline constexpr u32 kNoLightmapLight = 0xFFFFFFFFU;
 /// `lightmap_debug[0]` for the texel-density view — `cy/frame.slang`'s `kCyLightmapDensityView`.
 inline constexpr u32 kLightmapDensityView = 1U;
+/// `lightmap_debug[0]` for the chart view — `cy/frame.slang`'s `kCyLightmapChartView`.
+inline constexpr u32 kLightmapChartView = 2U;
+/// `lightmap_debug[0]` for a GI debug view's image over the frame — `cy/frame.slang`'s
+/// `kCyGiDebugOverlayView`.
+inline constexpr u32 kGiDebugOverlayView = 3U;
+
+/// Switch the frame to a GI debug view: the `Rgba8Unorm` image `gi::render_gi_debug_view` drew for
+/// this view, at the frame's size, uploaded at set 0 texture slot `texture_slot`. The forward pass
+/// draws it wherever its alpha is not zero and the lit surface elsewhere.
+inline void write_gi_debug_overlay(u32 texture_slot, FrameViewData& view) noexcept {
+    view.lightmap_debug[0] = kGiDebugOverlayView;
+    view.lightmap_debug[1] = 0;
+    view.lightmap_debug[2] = texture_slot;
+    view.lightmap_debug[3] = 0;
+}
 /// Frame lights `lightmap_direct_lights` can name.
 inline constexpr u32 kMaxLightmapDirectLights = 128;
 

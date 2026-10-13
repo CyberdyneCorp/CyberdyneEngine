@@ -61,6 +61,7 @@
 #include <cy/rendering/lightmap_bake/asset.h>
 #include <cy/rendering/lightmap_bake/bake.h>
 #include <cy/rendering/lightmap_bake/mips.h>
+#include <cy/rendering/lightmaps/gi_debug_overlay.h>
 #include <cy/rendering/lightmaps/lightmap_textures.h>
 #include <cy/test/test.h>
 
@@ -93,6 +94,7 @@ namespace {
 
 constexpr u32 kLightmapSlot = 116;  // three consecutive slots: 116, 117, 118
 constexpr u32 kVolumeSlot = 121;
+constexpr u32 kOverlaySlot = 122;
 constexpr u32 kShadowMaskSlot = 119;
 constexpr u32 kShadowMapSlot = 120;
 /// The level's texel density, texels per metre: the bake's, and the density view's target.
@@ -577,6 +579,10 @@ struct RunOptions {
     /// The density view's target, texels per metre, and a shift of the frame's exposure in stops.
     f32 density_target = kTexelDensity;
     f32 exposure_shift = 0.0F;
+    /// Draw the chart view instead of the lit frame.
+    bool chart_view = false;
+    /// Draw this GI debug view image over the frame (`kWidth * kHeight` `Rgba8Unorm` texels).
+    const std::vector<u32>* gi_overlay = nullptr;
 };
 
 struct Corner {
@@ -590,6 +596,7 @@ struct Corner {
     const bake::BakedLightmap* lightmap = nullptr;
     lightmaps::LightmapTextures* textures = nullptr;
     light_probes::ProbeVolumeTexture* volume_texture = nullptr;
+    lightmaps::GiDebugOverlayTexture* overlay = nullptr;
     const gi::IrradianceVolume* volume = nullptr;
     Vec3 flat{0.0F, 0.0F, 0.0F};
     bool attach = false;
@@ -750,7 +757,7 @@ void address_draws(Corner& corner, pipeline::FrameUpload& upload) noexcept {
 /// set 0, and the slots the lightmap's planes and mask landed in.
 [[nodiscard]] Status bind_frame_textures(Corner& corner,
                                          lightmaps::LightmapSlots& lightmap_slots) noexcept {
-    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 3];
+    pipeline::MaterialTextureSlot slots[lightmaps::kMaxPlanes + 4];
     u32 count = 0;
     if (corner.options.shadow_map) {
         slots[count++] = pipeline::MaterialTextureSlot{kShadowMapSlot, corner.shadow_view};
@@ -766,6 +773,9 @@ void address_draws(Corner& corner, pipeline::FrameUpload& upload) noexcept {
     }
     if (corner.attach && corner.options.volume) {
         slots[count++] = corner.volume_texture->slot(kVolumeSlot);
+    }
+    if (corner.options.gi_overlay != nullptr) {
+        slots[count++] = corner.overlay->slot(kOverlaySlot);
     }
     return corner.scene->set_frame_textures(
         Span<const pipeline::MaterialTextureSlot>(slots, count));
@@ -799,6 +809,11 @@ void address_draws(Corner& corner, pipeline::FrameUpload& upload) noexcept {
                                               corner.options.density_target, upload.view)) {
         return fail(ErrorCode::Internal, "the density view wrote nothing");
     }
+    if (corner.options.chart_view &&
+        !lightmaps::write_lightmap_debug_view(render::DebugViewMode::LightmapCharts, 0.0F,
+                                              upload.view)) {
+        return fail(ErrorCode::Internal, "the chart view wrote nothing");
+    }
     if (corner.options.lightmap != Lightmap::Unaddressed) {
         address_draws(corner, upload);
     }
@@ -814,12 +829,17 @@ Status before_upload(pipeline::FrameUpload& upload, void* user) noexcept {
     if (corner->options.shadow_map) {
         write_shadow_words(upload);
     }
-    if (!corner->attach && !corner->options.shadow_map) {
+    if (!corner->attach && !corner->options.shadow_map && corner->options.gi_overlay == nullptr) {
         return ok();
     }
     lightmaps::LightmapSlots lightmap_slots;
     if (Status bound = bind_frame_textures(*corner, lightmap_slots); !bound) {
         return bound;
+    }
+    if (corner->options.gi_overlay != nullptr &&
+        !lightmaps::write_gi_debug_view(render::DebugViewMode::GiProbes, kOverlaySlot,
+                                        upload.view)) {
+        return fail(ErrorCode::Internal, "the GI overlay wrote nothing");
     }
     return corner->attach ? write_corner_lightmap(*corner, lightmap_slots, upload) : ok();
 }
@@ -879,6 +899,7 @@ public:
         corner_.options = options;
         corner_.textures = &textures_;
         corner_.volume_texture = &volume_texture_;
+        corner_.overlay = &overlay_;
         corner_.volume = &volume_;
         render::LightDescription& sun = corner_.lights[0];
         sun.kind = render::LightKind::Directional;
@@ -908,6 +929,14 @@ public:
         scene_.set_read_back(true);
         textures_.initialize(fixture.device(), allocator());
         volume_texture_.initialize(fixture.device(), allocator());
+        overlay_.initialize(fixture.device(), allocator());
+        if (ready_ && options.gi_overlay != nullptr) {
+            ready_ =
+                overlay_
+                    .upload(Span<const u32>(options.gi_overlay->data(), options.gi_overlay->size()),
+                            kWidth, kHeight)
+                    .has_value();
+        }
     }
 
     ~CornerRun() {
@@ -1098,6 +1127,7 @@ private:
     Corner corner_;
     lightmaps::LightmapTextures textures_;
     light_probes::ProbeVolumeTexture volume_texture_;
+    lightmaps::GiDebugOverlayTexture overlay_;
     gi::IrradianceVolume volume_;
     gi::BoxProxyScene proxies_;
     gi::GiLight light_{};
@@ -2345,5 +2375,168 @@ CY_TEST_CASE("(n) the frame's time without the lightmap, with it, and with its m
     std::fprintf(stderr,
                  "(n) the lightmap moves the median by %+.1f us, and its mask by %+.1f us\n",
                  (medians[1] - medians[0]) / 1000.0, (medians[2] - medians[1]) / 1000.0);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(o) the chart view colours each lightmapped surface by the rectangle it samples") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    RunOptions charts;
+    charts.lightmap = Lightmap::Enabled;
+    charts.chart_view = true;
+    charts.unaddressed_box = kCubeFar;
+    RunOptions brighter = charts;
+    brighter.exposure_shift = 2.0F;
+    CornerRun view(fixture, charts);
+    CornerRun exposed(fixture, brighter);
+    CY_REQUIRE(view.render());
+    CY_REQUIRE(exposed.render());
+    save("lightmaps-charts.png", view.pixels());
+    const Picture picture = classify_all(view.scene());
+    Tally wall;
+    Tally cube;
+    Tally unlit;
+    for (usize index = 0; index < picture.pixels.size(); ++index) {
+        const Pixel& pixel = picture.pixels[index];
+        if (!picture.interior[index]) {
+            continue;
+        }
+        const u32 texel = view.pixels()[index];
+        if (pixel.surface == Surface::BackWall) {
+            wall.add(texel);
+        } else if (pixel.surface == Surface::CubeFront && pixel.box == kCubeNear) {
+            cube.add(texel);
+        } else if (pixel.box == kCubeFar && pixel.surface != Surface::None) {
+            unlit.add(texel);
+        }
+    }
+    const Vec3 wall_mean = mean_of(wall);
+    const Vec3 cube_mean = mean_of(cube);
+    const Vec3 unlit_mean = mean_of(unlit);
+    std::vector<usize> every_pixel(view.pixels().size());
+    std::iota(every_pixel.begin(), every_pixel.end(), usize{0});
+    const Change exposure = change_over(view.pixels(), exposed.pixels(), every_pixel);
+    std::fprintf(stderr,
+                 "(o) back wall rgb %.0f %.0f %.0f; near cube rgb %.0f %.0f %.0f; unlightmapped "
+                 "cube rgb %.0f %.0f %.0f; two stops of exposure move a pixel by worst %d\n",
+                 static_cast<f64>(wall_mean.x), static_cast<f64>(wall_mean.y),
+                 static_cast<f64>(wall_mean.z), static_cast<f64>(cube_mean.x),
+                 static_cast<f64>(cube_mean.y), static_cast<f64>(cube_mean.z),
+                 static_cast<f64>(unlit_mean.x), static_cast<f64>(unlit_mean.y),
+                 static_cast<f64>(unlit_mean.z), exposure.worst);
+    CY_REQUIRE(wall.count > 200U);
+    CY_REQUIRE(cube.count > 100U);
+    CY_REQUIRE(unlit.count > 100U);
+    // Two rectangles, two hues: the wall's and the cube's colours are far apart.
+    CY_CHECK_GT(length(wall_mean - cube_mean), 40.0F);
+    // A surface with no lightmap is the flat grey the density view gives it.
+    CY_CHECK_LT(std::fabs(unlit_mean.x - unlit_mean.y), (0.02F * unlit_mean.x) + 1.0F);
+    CY_CHECK_LT(std::fabs(unlit_mean.y - unlit_mean.z), (0.02F * unlit_mean.y) + 1.0F);
+    CY_CHECK_LE(exposure.worst, 1);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(p) a GI debug view is drawn over the frame where it is opaque, and nowhere else") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // An overlay as `gi::render_gi_debug_view` draws one: opaque discs of a few colours on a
+    // transparent field, here in a known pattern so every pixel's expected source is known.
+    std::vector<u32> overlay(static_cast<usize>(kWidth) * kHeight, 0U);
+    const u32 colours[4] = {0xFF26D926U, 0xFFF2261AU, 0xFFF2F2F2U, 0xFF808080U};
+    for (u32 y = 0; y < kHeight; ++y) {
+        for (u32 x = 0; x < kWidth; ++x) {
+            const u32 cell = ((x / 16U) + (y / 12U)) % 5U;
+            if (cell < 4U) {
+                overlay[(static_cast<usize>(y) * kWidth) + x] = colours[cell];
+            }
+        }
+    }
+    RunOptions lit;
+    RunOptions drawn;
+    drawn.gi_overlay = &overlay;
+    RunOptions brighter = drawn;
+    brighter.exposure_shift = 2.0F;
+    CornerRun plain(fixture, lit);
+    CornerRun view(fixture, drawn);
+    CornerRun exposed(fixture, brighter);
+    CY_REQUIRE(plain.render());
+    CY_REQUIRE(view.render());
+    CY_REQUIRE(exposed.render());
+    save("lightmaps-gi-overlay.png", view.pixels());
+    const Picture picture = classify_all(view.scene());
+    u32 kept = 0;
+    u32 replaced = 0;
+    u32 mismatched = 0;
+    i32 worst_exposure = 0;
+    // The colour each overlay texel shows as, wherever it lands on a surface: one per texel value.
+    u32 shown[4] = {0, 0, 0, 0};
+    bool seen[4] = {false, false, false, false};
+    for (usize index = 0; index < overlay.size(); ++index) {
+        if (!picture.interior[index] || picture.pixels[index].surface == Surface::None) {
+            continue;
+        }
+        const u32 source = overlay[index];
+        if ((source >> 24U) == 0U) {
+            // Transparent: the lit frame, byte for byte.
+            kept += view.pixels()[index] == plain.pixels()[index] ? 1U : 0U;
+            mismatched += view.pixels()[index] == plain.pixels()[index] ? 0U : 1U;
+            continue;
+        }
+        replaced += 1;
+        for (u32 colour = 0; colour < 4U; ++colour) {
+            if (source != colours[colour]) {
+                continue;
+            }
+            if (!seen[colour]) {
+                seen[colour] = true;
+                shown[colour] = view.pixels()[index];
+            }
+            mismatched += view.pixels()[index] == shown[colour] ? 0U : 1U;
+        }
+        for (u32 c = 0; c < 3U; ++c) {
+            worst_exposure = std::max(
+                worst_exposure,
+                std::abs(channel(view.pixels()[index], c) - channel(exposed.pixels()[index], c)));
+        }
+    }
+    std::fprintf(stderr,
+                 "(p) %u surface pixels kept the lit frame, %u took the overlay, %u did not match "
+                 "their source; two stops of exposure move an overlay pixel by worst %d\n",
+                 kept, replaced, mismatched, worst_exposure);
+    // What drawing the view costs the frame: the median of 24 frames each way, host clock.
+    std::vector<f64> lit_times;
+    std::vector<f64> view_times;
+    for (u32 frame = 0; frame < 24U; ++frame) {
+        f64 nanoseconds = 0.0;
+        CY_REQUIRE(plain.time_frame(nanoseconds));
+        lit_times.push_back(nanoseconds);
+        CY_REQUIRE(view.time_frame(nanoseconds));
+        view_times.push_back(nanoseconds);
+    }
+    std::ranges::sort(lit_times);
+    std::ranges::sort(view_times);
+    std::fprintf(stderr, "(p) frame time, median of 24: lit %.3f ms, with the GI view %.3f ms\n",
+                 lit_times[12] * 1.0e-6, view_times[12] * 1.0e-6);
+    CY_REQUIRE(kept > 1000U);
+    CY_REQUIRE(replaced > 1000U);
+    CY_CHECK_EQ(mismatched, 0U);
+    // Four texel values, four different colours on the screen, in the overlay's order of
+    // brightness: the frame shows the image, not an approximation of it.
+    for (u32 a = 0; a < 4U; ++a) {
+        CY_CHECK(seen[a]);
+        for (u32 b = a + 1U; b < 4U; ++b) {
+            CY_CHECK_NE(shown[a], shown[b]);
+        }
+    }
+    CY_CHECK_GT(channel(shown[2], 0), channel(shown[3], 0));
+    CY_CHECK_GT(channel(shown[0], 1), channel(shown[0], 0));
+    CY_CHECK_GT(channel(shown[1], 2), channel(shown[1], 0));
+    CY_CHECK_LE(worst_exposure, 1);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

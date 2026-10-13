@@ -820,9 +820,11 @@ mod tests {
         // own characters (#112's gaps) add the character list, the undoable character choice and
         // the bake.
         let animation = 8 + 3;
+        // The GI debug views and the lightmap chart view: one `viewport.view-mode.*` each.
+        let gi_view_modes = 19;
         assert_eq!(
             registry.len(),
-            earlier + audio + navigation + lighting + gameplay_graphs + animation
+            earlier + audio + navigation + lighting + gameplay_graphs + animation + gi_view_modes
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

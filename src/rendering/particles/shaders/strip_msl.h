@@ -96,7 +96,7 @@ struct Light_0
 };
 
 
-#line 295 "src/rendering/shaders/cy/frame.slang"
+#line 303 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -131,7 +131,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 317
+#line 325
 struct KernelContext_0
 {
     CyStripVertex_0 device* cyStrips_0;
@@ -139,7 +139,7 @@ struct KernelContext_0
 };
 
 
-#line 372
+#line 380
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);

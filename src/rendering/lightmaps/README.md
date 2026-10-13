@@ -132,6 +132,22 @@ to the byte.
 
 ![The density view](../../../docs/design/images/lightmaps-density-metal.png)
 
+## The chart view, and GI debug views over the frame
+
+`write_lightmap_debug_view(render::DebugViewMode::LightmapCharts, 0, view)` (or
+`write_lightmap_chart_view`) draws every lightmapped surface in one hue per atlas rectangle it
+samples — the hue is a hash of the draw's `gi_address` — checkered at its texels, and every other
+surface the density view's grey. (o) on the RTX 5060: the back wall rgb 87 91 78, the near cube
+55 59 115, the unlightmapped cube 39 39 39, the same at two stops more exposure.
+
+`GiDebugOverlayTexture` uploads the image `gi::render_gi_debug_view` drew for the frame's camera, and
+`write_gi_debug_view(mode, slot, view)` — true for each of the nineteen `Gi*` modes the GI module
+draws — sets `lightmapDebug.x = kCyGiDebugOverlayView` and `.z = slot`, so the forward pass returns
+the image's texel, divided by the exposure, wherever its alpha is not zero, and lights the surface as
+always elsewhere. (p): 97 573 surface pixels showing the overlay, each exactly the colour every
+other pixel of the same texel value shows; 24 304 transparent ones byte for byte the lit frame;
+exposure-invariant. The words reuse `lightmapDebug`'s reserved `z` rather than growing the block.
+
 ## What it costs
 
 `render.lightmaps` (n) times the corner (480x270) three ways, one frame of each in turn over 96

@@ -31,18 +31,21 @@
 
 #include "frame_scene.h"
 #include "golden.h"
+#include "rooms.h"
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/fog/fog_pass.h>
+#include <cy/rendering/gi/media.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/sky/atmosphere.h>
 #include <cy/rendering/sky/tables.h>
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -265,6 +268,8 @@ struct FogCase {
     bool shadowed_fog = true;
     /// The medium lit by the frame's ambient term as well as the sun.
     bool fog_ambient = true;
+    /// The radiance cache's grid, which replaces the ambient term in the march.
+    const cy::rendering::fog::FogIndirect* indirect = nullptr;
     FogFrame fog{};
     rendering::FrameResourceRead reads[1] = {};
     std::vector<rendering::GpuLight> lights;
@@ -368,6 +373,7 @@ Status before_upload(rendering::pipeline::FrameUpload& upload, void* user) noexc
             ? Vec3{upload.view.ambient_and_occlusion[0], upload.view.ambient_and_occlusion[1],
                    upload.view.ambient_and_occlusion[2]}
             : Vec3{0.0F, 0.0F, 0.0F};
+    frame->fog.light.indirect = frame->indirect;
     if (frame->attached) {
         if (Status set = frame->pass->set_frame(frame->fog); !set) {
             return set;
@@ -404,6 +410,7 @@ public:
         bool shadowed_fog = true;
         bool fog_ambient = true;
         FogMedium medium{};
+        const cy::rendering::fog::FogIndirect* indirect = nullptr;
     };
 
     FrameRun(DeviceFixture& fixture, const Options& options)
@@ -414,6 +421,7 @@ public:
         frame_.applied = options.applied;
         frame_.shadowed_fog = options.shadowed_fog;
         frame_.fog_ambient = options.fog_ambient;
+        frame_.indirect = options.indirect;
         ready_ = create_shadow_map();
         if (options.attached) {
             FogPassDescription description;
@@ -1045,5 +1053,123 @@ CY_TEST_CASE("the atmosphere-table variant composites the air the processor buil
     CY_CHECK_LT(worst, 2e-3F);
     pass.destroy();
     device.destroy_buffer(*air_buffer);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "(g) the device's fog takes the radiance cache's indirect grid, as the host march does") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // The grid `gi::build_media_indirect` samples from a converged radiance cache — the GI suites'
+    // room, lit on one side — laid over this scene's froxels: the same values, at a spacing that
+    // spans the view.
+    gi_rooms::LitRoom room;
+    (void)room.converge();
+    cy::rendering::gi::MediaIndirectGrid sampled;
+    CY_REQUIRE(
+        room.system
+            .media_indirect(Aabb::from_min_max(Vec3{-3.0F, -1.5F, -3.0F}, Vec3{3.0F, 1.5F, 3.0F}),
+                            1.5F, Vec3{0.0F, 0.0F, 0.0F}, sampled)
+            .has_value());
+    std::vector<Vec3> radiance(sampled.radiance.begin(), sampled.radiance.end());
+    for (Vec3& value : radiance) {
+        value = value * 40.0F;
+    }
+    cy::rendering::fog::FogIndirect grid;
+    grid.origin = Vec3{-6.0F, kFloorTop, -16.0F};
+    grid.spacing = 3.0F;
+    for (u32 axis = 0; axis < 3; ++axis) {
+        grid.dimensions[axis] = sampled.dimensions[axis];
+    }
+    grid.radiance = {radiance.data(), radiance.size()};
+
+    FrameRun::Options options;
+    options.attached = true;
+    options.applied = true;
+    options.shadowed_fog = false;
+    options.fog_ambient = false;
+    options.indirect = &grid;
+    options.medium.height.extinction = 0.1F;
+    options.medium.height.base_height = kFloorTop + 1.0F;
+    options.medium.height.scale_height = 2.0F;
+    options.medium.height.albedo = Vec3{0.9F, 0.9F, 0.9F};
+    FrameRun run(fixture, options);
+    CY_REQUIRE(run.render());
+    save("volumetric_fog_indirect.png", run.pixels());
+
+    const FogSettings settings = fog_settings();
+    FogFrame fog = run.fog();
+    fog.light.indirect = &grid;
+    FogFrame flat = fog;
+    flat.light.indirect = nullptr;
+    std::vector<Vec3> t(settings.volume.depth);
+    std::vector<Vec3> s(settings.volume.depth);
+    std::vector<Vec3> unlit(settings.volume.depth);
+    f32 worst = 0.0F;
+    f32 brightest = 0.0F;
+    f32 added = 0.0F;
+    usize compared = 0;
+    for (u32 y = 1; y < settings.volume.height; y += 3) {
+        for (u32 x = 1; x < settings.volume.width; x += 3) {
+            CY_REQUIRE(cy::rendering::fog::integrate_fog_column(
+                           settings, fog.view, fog.light, fog.shadow, HostShadowMap{},
+                           run.pass().medium(), x, y, Span<Vec3>(t), Span<Vec3>(s))
+                           .has_value());
+            CY_REQUIRE(cy::rendering::fog::integrate_fog_column(
+                           settings, flat.view, flat.light, flat.shadow, HostShadowMap{},
+                           run.pass().medium(), x, y, Span<Vec3>(t), Span<Vec3>(unlit))
+                           .has_value());
+            for (u32 slice = 0; slice < settings.volume.depth; ++slice) {
+                const Froxel froxel = froxel_at(run.volume(), x, y, slice);
+                worst = std::max(worst, relative_error(froxel.in_scattering, s[slice]));
+                brightest = std::max(brightest, max_component(froxel.in_scattering));
+                ++compared;
+            }
+            // Without the grid and with no ambient, the medium is lit by the sun alone: what the
+            // grid adds is the cache's indirect light.
+            added = std::max(added, max_component(s[settings.volume.depth - 1] -
+                                                  unlit[settings.volume.depth - 1]));
+        }
+    }
+    std::fprintf(stderr,
+                 "(g) %zu froxels lit by the radiance cache's grid: worst against the host march "
+                 "%.3g, brightest in-scattering %.3g, of which the grid's light %.3g\n",
+                 compared, static_cast<double>(worst), static_cast<double>(brightest),
+                 static_cast<double>(added));
+    // What reading the grid costs the frame on this device: the median of 24 frames each way, on
+    // the host's clock from recording to idle — the fog pass and every other pass of the frame.
+    FrameRun::Options ambient_only = options;
+    ambient_only.indirect = nullptr;
+    FrameRun flat_run(fixture, ambient_only);
+    CY_REQUIRE(flat_run.render());
+    const auto median_frame = [&](FrameRun& timed) {
+        timed.scene().set_read_back(false);
+        std::vector<f64> samples;
+        for (u32 frame = 0; frame < 24U; ++frame) {
+            rendering::assembly::AssemblyReport report{};
+            const auto started = std::chrono::steady_clock::now();
+            if (!timed.scene().render(RecordMode::Callbacks, report).has_value() ||
+                !fixture.device().wait_idle().has_value()) {
+                return -1.0;
+            }
+            samples.push_back(
+                std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started)
+                    .count());
+        }
+        std::ranges::sort(samples);
+        return samples[samples.size() / 2U];
+    };
+    const f64 with_grid = median_frame(run);
+    const f64 without_grid = median_frame(flat_run);
+    std::fprintf(stderr,
+                 "(g) frame time, median of 24: with the grid %.3f ms, ambient only %.3f ms\n",
+                 with_grid, without_grid);
+    CY_CHECK_GT(with_grid, 0.0);
+    CY_REQUIRE(compared > 100U);
+    CY_CHECK_GT(added, 0.0F);
+    CY_CHECK_LT(worst, 1e-3F);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

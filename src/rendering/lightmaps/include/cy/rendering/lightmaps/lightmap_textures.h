@@ -168,9 +168,14 @@ struct LightmapSlots {
 void write_lightmap_density_view(f32 target_texels_per_metre,
                                  pipeline::FrameViewData& view) noexcept;
 
+/// Switch the frame to the lightmap chart view: every lightmapped surface drawn in one hue per
+/// atlas rectangle it samples, checkered at its texels; every other surface flat grey. Needs
+/// `write_lightmaps` for the same frame.
+void write_lightmap_chart_view(pipeline::FrameViewData& view) noexcept;
+
 /// The engine half of a viewport's debug view, for the views this module draws: writes the
-/// density view's words for `render::DebugViewMode::LightmapDensity` and returns true; writes
-/// nothing and returns false for every other mode.
+/// density view's words for `render::DebugViewMode::LightmapDensity` and the chart view's for
+/// `LightmapCharts`, and returns true; writes nothing and returns false for every other mode.
 [[nodiscard]] bool write_lightmap_debug_view(render::DebugViewMode mode,
                                              f32 target_texels_per_metre,
                                              pipeline::FrameViewData& view) noexcept;

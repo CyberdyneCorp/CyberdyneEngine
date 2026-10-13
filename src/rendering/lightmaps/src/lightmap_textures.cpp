@@ -492,8 +492,17 @@ void write_lightmap_density_view(f32 target_texels_per_metre,
     std::memcpy(&view.lightmap_debug[1], &target_texels_per_metre, sizeof(f32));
 }
 
+void write_lightmap_chart_view(pipeline::FrameViewData& view) noexcept {
+    view.lightmap_debug[0] = pipeline::kLightmapChartView;
+    view.lightmap_debug[1] = 0;
+}
+
 bool write_lightmap_debug_view(render::DebugViewMode mode, f32 target_texels_per_metre,
                                pipeline::FrameViewData& view) noexcept {
+    if (mode == render::DebugViewMode::LightmapCharts) {
+        write_lightmap_chart_view(view);
+        return true;
+    }
     if (mode != render::DebugViewMode::LightmapDensity) {
         return false;
     }

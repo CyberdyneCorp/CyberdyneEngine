@@ -184,6 +184,18 @@ struct ProbePlacementContext {
     const GiVolumeSet* volumes = nullptr;
 };
 
+/// One probe's share of a query, term by term: what `RadianceCache::sample` weighted it by. The
+/// "which probes contributed" half of `rendering-global-illumination`'s "Illumination diagnostics".
+struct ProbeContribution {
+    u32 probe = 0;
+    /// The falloff over the probe's spacing, the wrap term about the query's normal, and the
+    /// visibility term. `weight` is their product, exactly the weight the sample used.
+    f32 falloff = 0.0F;
+    f32 facing = 1.0F;
+    f32 visibility = 1.0F;
+    f32 weight = 0.0F;
+};
+
 class RadianceCache;
 
 /// One probe's gather, as a backend hands it back. `payload` is
@@ -292,6 +304,11 @@ public:
     [[nodiscard]] TracedCacheSamples sample_traced(Vec3 position, Vec3 normal, Vec3 reflection,
                                                    u64 frame,
                                                    const DistanceField& field) const noexcept;
+    /// The probes `sample(position, normal, ...)` combines and the weight it gives each, by
+    /// handle. Writes up to `out.size()` and returns how many there are. The same function computes
+    /// both, so a diagnostic built on this cannot disagree with the answer it explains.
+    [[nodiscard]] u32 contributions(Vec3 position, Vec3 normal,
+                                    Span<ProbeContribution> out) const noexcept;
 
     /// Write a probe's payload directly. What a bake's seeding uses, and the only way a probe
     /// becomes valid without a gather.
@@ -373,6 +390,11 @@ private:
     /// The probe's age as the scheduler sees it: frames since its update, times its update rate.
     [[nodiscard]] static f32 scheduled_age(const Probe& entry, u64 frame) noexcept;
     [[nodiscard]] f32 visibility_weight(const Probe& entry, Vec3 query) const noexcept;
+    /// How far from a query a contributing probe can be: the coarsest level's falloff.
+    [[nodiscard]] f32 query_reach() const noexcept;
+    /// `entry`'s terms for a query; false when it contributes nothing.
+    [[nodiscard]] bool contribution(const Probe& entry, Vec3 position, Vec3 normal,
+                                    ProbeContribution& out) const noexcept;
     void account() noexcept;
 
     ProbeCacheSettings settings_{};

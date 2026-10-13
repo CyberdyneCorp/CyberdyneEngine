@@ -326,6 +326,15 @@ Expected<SignalProduction, Error> StochasticSignals::produce(
     if (!routed) {
         return make_unexpected(routed.error());
     }
+    // The framework measures its own cost per signal; the illumination profile's Denoise stage is
+    // the sum over the signals this frame routed.
+    u64 denoise_ns = 0;
+    for (u32 index = 0; index < denoise::kSignalCount; ++index) {
+        if (report.produced[index]) {
+            denoise_ns += denoiser.diagnostics(static_cast<SignalKind>(index)).cost_ns;
+        }
+    }
+    system.add_stage_time(GiStage::Denoise, denoise_ns);
     return report;
 }
 

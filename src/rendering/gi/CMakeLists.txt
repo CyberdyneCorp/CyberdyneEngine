@@ -27,11 +27,15 @@ cy_add_module(
         src/bake.cpp
         src/budget.cpp
         src/card_lighting.cpp
+        src/classification.cpp
+        src/debug_views.cpp
+        src/diagnostics.cpp
         src/distance_field.cpp
         src/emissive.cpp
         src/gi_volume.cpp
         src/irradiance_volume.cpp
         src/mesh_cards.cpp
+        src/media.cpp
         src/proxy_scene.cpp
         src/radiance_cache.cpp
         src/reflections.cpp

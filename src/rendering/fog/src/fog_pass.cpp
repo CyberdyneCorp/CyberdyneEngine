@@ -22,6 +22,8 @@ constexpr u32 kGroupSize = 8;
 constexpr u32 kTextureBindings = 3;
 constexpr u32 kTableBindings = 4;
 constexpr u64 kConstantBytes = sizeof(FogConstants);
+/// The block and, after it, room for the largest indirect grid.
+constexpr u64 kWordsBytes = kConstantBytes + (static_cast<u64>(kFogIndirectWords) * sizeof(Vec4));
 
 [[nodiscard]] u32 groups(u32 extent) noexcept {
     return (extent + kGroupSize - 1U) / kGroupSize;
@@ -221,7 +223,7 @@ Status FogPass::create_resources() noexcept {
     for (u32 slot = 0; slot < slots; ++slot) {
         rhi::BufferDescription words;
         words.name = "volumetric fog constants";
-        words.size = kConstantBytes;
+        words.size = kWordsBytes;
         words.usage = rhi::BufferUsage::Storage;
         words.memory = rhi::MemoryUse::Upload;
         Expected<rhi::BufferHandle, Error> buffer = device_->create_buffer(words);
@@ -309,7 +311,21 @@ Status FogPass::set_frame(const FogFrame& frame) noexcept {
     if (!constants.has_value()) {
         return make_unexpected(constants.error());
     }
+    indirect_words_.clear();
+    if (frame.light.indirect != nullptr) {
+        const FogIndirect& grid = *frame.light.indirect;
+        const usize points =
+            static_cast<usize>(grid.dimensions[0]) * grid.dimensions[1] * grid.dimensions[2];
+        if (Status sized = indirect_words_.resize(kFogIndirectHeaderWords + points); !sized) {
+            return sized;
+        }
+        if (Status packed = pack_fog_indirect(grid, indirect_words_.span()); !packed) {
+            indirect_words_.clear();
+            return packed;
+        }
+    }
     frame_ = frame;
+    frame_.light.indirect = nullptr;
     constants_ = *constants;
     // `words[4].w`: whether the table variant reads the atmosphere's table.
     constants_.words[4].w = frame.air != kInvalidResource ? 1.0F : 0.0F;
@@ -404,6 +420,10 @@ void FogPass::record_march(const PassContext& context, void* user) noexcept {
         return;
     }
     std::memcpy(mapped, self.constants_.words, kConstantBytes);
+    if (!self.indirect_words_.empty()) {
+        std::memcpy(static_cast<u8*>(mapped) + kConstantBytes, self.indirect_words_.data(),
+                    self.indirect_words_.size() * sizeof(Vec4));
+    }
 
     Expected<rhi::DescriptorSetHandle, Error> set =
         self.device_->allocate_descriptor_set(self.set_layout_, true);
@@ -417,7 +437,7 @@ void FogPass::record_march(const PassContext& context, void* user) noexcept {
     writes[0].texture_view = context.executor->view(march->shadow);
     writes[0].use = rhi::ImageUse::SampledRead;
     writes[1] = buffer_write(1, words);
-    writes[1].buffer_range = kConstantBytes;
+    writes[1].buffer_range = kWordsBytes;
     if (table) {
         writes[2] = buffer_write(2, context.executor->buffer(march->output));
         writes[3] =
