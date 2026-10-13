@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // One scene the per-pixel resolve runs over, the host half: its quads, cards, field, light, the
 // composed system, one camera's surfaces, the resolve and the denoiser, a frame of each per
-// `step`. `integration.render_gi_screen` measures it; `render.gi_gpu_resolve` runs the device beside
-// it and compares. Issue #35, stage 4.
+// `step`. `integration.render_gi_screen` measures it; `render.gi_gpu_resolve` runs the device
+// beside it and compares. Issue #35, stage 4.
 
 #include <cy/test/test.h>
 
@@ -88,8 +89,7 @@ struct ScreenScene {
                            .has_value());
         }
         const cy::Aabb bounds = cy::Aabb::from_center_extents(
-            Vec3{0.0F, 0.0F, 0.0F},
-            Vec3{kRoomX + 1.0F, kRoomY + 1.0F, kRoomZ + 1.0F});
+            Vec3{0.0F, 0.0F, 0.0F}, Vec3{kRoomX + 1.0F, kRoomY + 1.0F, kRoomZ + 1.0F});
         CY_REQUIRE(
             system.scene().ingest_cell(1, bounds, {surfels.data(), surfels.size()}, 0).has_value());
         CY_REQUIRE(system.surfaces().allocate_from(system.scene(), bounds).has_value());
@@ -142,30 +142,33 @@ struct ScreenScene {
         history.previous_world_to_clip = previous_clip;
         history.previous_depth = {previous_depth.data(), previous_depth.size()};
         history.invalidated = {invalidated.data(), invalidated.size()};
-        CY_REQUIRE(cy::rendering::gi::screen_history(surfaces, history, {source.data(), source.size()},
-                                  {confidence.data(), confidence.size()})
+        CY_REQUIRE(cy::rendering::gi::screen_history(surfaces, history,
+                                                     {source.data(), source.size()},
+                                                     {confidence.data(), confidence.size()})
                        .has_value());
         cy::rendering::denoise::HistoryGuidance guidance;
         guidance.source = {source.data(), source.size()};
         guidance.confidence = {confidence.data(), confidence.size()};
-        auto filtered = denoiser.denoise(cy::rendering::denoise::SignalKind::IndirectDiffuse,
-                                         resolve.noisy(cy::rendering::denoise::SignalKind::IndirectDiffuse),
-                                         cy::rendering::gi::screen_guidance(surfaces), guidance);
+        auto filtered =
+            denoiser.denoise(cy::rendering::denoise::SignalKind::IndirectDiffuse,
+                             resolve.noisy(cy::rendering::denoise::SignalKind::IndirectDiffuse),
+                             cy::rendering::gi::screen_guidance(surfaces), guidance);
         CY_REQUIRE(filtered.has_value());
         grid_diffuse = filtered.value();
-        auto reflected = denoiser.denoise(cy::rendering::denoise::SignalKind::IndirectSpecular,
-                                          resolve.noisy(cy::rendering::denoise::SignalKind::IndirectSpecular),
-                                          cy::rendering::gi::screen_guidance(surfaces), guidance);
+        auto reflected =
+            denoiser.denoise(cy::rendering::denoise::SignalKind::IndirectSpecular,
+                             resolve.noisy(cy::rendering::denoise::SignalKind::IndirectSpecular),
+                             cy::rendering::gi::screen_guidance(surfaces), guidance);
         CY_REQUIRE(reflected.has_value());
         grid_specular = reflected.value();
         CY_REQUIRE(cy::rendering::gi::screen_upsample(view.surfaces(), surfaces, divisor,
                                                       grid_diffuse,
                                                       {diffuse_frame.data(), diffuse_frame.size()})
                        .has_value());
-        CY_REQUIRE(cy::rendering::gi::screen_upsample(view.surfaces(), surfaces, divisor,
-                                                      grid_specular,
-                                                      {specular_frame.data(), specular_frame.size()})
-                       .has_value());
+        CY_REQUIRE(
+            cy::rendering::gi::screen_upsample(view.surfaces(), surfaces, divisor, grid_specular,
+                                               {specular_frame.data(), specular_frame.size()})
+                .has_value());
         diffuse = {diffuse_frame.data(), diffuse_frame.size()};
         specular = {specular_frame.data(), specular_frame.size()};
         previous_depth.assign(surfaces.depth.begin(), surfaces.depth.end());
@@ -188,21 +191,18 @@ struct ScreenScene {
 /// slabs either side of the doorway, and a camera in the lit half looking across it.
 inline void make_room(ScreenScene& scene, u32 width = kScreenWidth, u32 height = kScreenHeight,
                       bool ray_tracing = false, bool host_resolve = true) {
-    scene.quads = room_quads(kRoomX, kRoomY,
-                                         kRoomZ, true);
+    scene.quads = room_quads(kRoomX, kRoomY, kRoomZ, true);
     scene.surfels = surfels_from_quads(scene.quads, 1.0F);
     const f32 half_span = (kRoomX - 1.0F) * 0.5F;
-    scene.add_solid(Vec3{-1.0F - half_span, 0.0F, 0.0F},
-                    Vec3{half_span, kRoomY, 0.05F}, 33);
-    scene.add_solid(Vec3{1.0F + half_span, 0.0F, 0.0F}, Vec3{half_span, kRoomY, 0.05F},
-                    33);
+    scene.add_solid(Vec3{-1.0F - half_span, 0.0F, 0.0F}, Vec3{half_span, kRoomY, 0.05F}, 33);
+    scene.add_solid(Vec3{1.0F + half_span, 0.0F, 0.0F}, Vec3{half_span, kRoomY, 0.05F}, 33);
     scene.build(Vec3{2.5F, 0.4F, -3.4F}, Vec3{-1.5F, -0.9F, 0.2F}, width, height, ray_tracing,
                 host_resolve);
 }
 
 /// Mean relative difference between two images over the pixels with a surface.
 [[nodiscard]] inline f32 image_difference(const std::vector<Vec3>& a, const std::vector<Vec3>& b,
-                                   const std::vector<f32>& depth) {
+                                          const std::vector<f32>& depth) {
     f64 total = 0.0;
     f64 scale = 0.0;
     for (usize index = 0; index < a.size(); ++index) {

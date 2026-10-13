@@ -86,7 +86,8 @@ void put_matrix(u32* words, u32 at, const Mat4& m) noexcept {
     return write;
 }
 
-[[nodiscard]] rhi::DescriptorWrite sampled_write(u32 binding, rhi::TextureViewHandle view) noexcept {
+[[nodiscard]] rhi::DescriptorWrite sampled_write(u32 binding,
+                                                 rhi::TextureViewHandle view) noexcept {
     rhi::DescriptorWrite write;
     write.binding = binding;
     write.kind = rhi::DescriptorKind::SampledTexture;
@@ -95,7 +96,8 @@ void put_matrix(u32* words, u32 at, const Mat4& m) noexcept {
     return write;
 }
 
-[[nodiscard]] rhi::DescriptorWrite storage_write(u32 binding, rhi::TextureViewHandle view) noexcept {
+[[nodiscard]] rhi::DescriptorWrite storage_write(u32 binding,
+                                                 rhi::TextureViewHandle view) noexcept {
     rhi::DescriptorWrite write;
     write.binding = binding;
     write.kind = rhi::DescriptorKind::StorageTexture;
@@ -211,10 +213,12 @@ Status GpuScreenResolve::create_layouts() noexcept {
         for (u32 index = 0; index < shape.count; ++index) {
             const u32 bit = 1U << index;
             bindings[index].binding = index;
-            bindings[index].kind = (shape.textures & bit) == 0U ? rhi::DescriptorKind::StorageBuffer
-                                   : (shape.storage_textures & bit) != 0U
-                                       ? rhi::DescriptorKind::StorageTexture
-                                       : rhi::DescriptorKind::SampledTexture;
+            bindings[index].kind = rhi::DescriptorKind::StorageBuffer;
+            if ((shape.textures & bit) != 0U) {
+                bindings[index].kind = (shape.storage_textures & bit) != 0U
+                                           ? rhi::DescriptorKind::StorageTexture
+                                           : rhi::DescriptorKind::SampledTexture;
+            }
             bindings[index].count = 1;
             bindings[index].stages = rhi::ShaderStage::Compute;
         }
@@ -230,8 +234,7 @@ Status GpuScreenResolve::create_layouts() noexcept {
     }
 
     const auto make = [this](const char* name, Span<const rhi::DescriptorSetLayoutHandle> sets,
-                             u32 push_bytes,
-                             rhi::PipelineLayoutHandle& out) noexcept -> Status {
+                             u32 push_bytes, rhi::PipelineLayoutHandle& out) noexcept -> Status {
         const rhi::PushConstantRange range{rhi::ShaderStage::Compute, 0, push_bytes};
         rhi::PipelineLayoutDescription description;
         description.name = name;
@@ -249,8 +252,8 @@ Status GpuScreenResolve::create_layouts() noexcept {
     };
     const u32 dispatch_bytes = static_cast<u32>(sizeof(GpuGiScene::Dispatch));
     const u32 denoise_bytes = static_cast<u32>(sizeof(DenoisePush));
-    if (Status made = make("gi surface layout", {&layouts_[kSurfaceLayout], 1}, 0,
-                           surface_pipeline_layout_);
+    if (Status made =
+            make("gi surface layout", {&layouts_[kSurfaceLayout], 1}, 0, surface_pipeline_layout_);
         !made) {
         return made;
     }
@@ -259,14 +262,13 @@ Status GpuScreenResolve::create_layouts() noexcept {
         !made) {
         return made;
     }
-    if (Status made = make("gi publish layout", {&layouts_[kPublishLayout], 1}, 0,
-                           publish_pipeline_layout_);
+    if (Status made =
+            make("gi publish layout", {&layouts_[kPublishLayout], 1}, 0, publish_pipeline_layout_);
         !made) {
         return made;
     }
-    const rhi::DescriptorSetLayoutHandle software[3] = {cache_->scene_->set_layout_,
-                                                        cache_->probe_layout_,
-                                                        layouts_[kResolveLayout]};
+    const rhi::DescriptorSetLayoutHandle software[3] = {
+        cache_->scene_->set_layout_, cache_->probe_layout_, layouts_[kResolveLayout]};
     if (Status made =
             make("gi resolve layout", {software, 3}, dispatch_bytes, resolve_pipeline_layout_);
         !made) {
@@ -301,8 +303,8 @@ Status GpuScreenResolve::create_pipelines() noexcept {
         CY_GI_RESOLVE_SOURCE("gi unpack surfaces", GiUnpackSurfaces, "cyGiUnpackSurfaces",
                              kTileGroup, kTileGroup),
         CY_GI_RESOLVE_SOURCE("gi reproject", GiReproject, "cyGiReproject", kLinearGroup, 1),
-        CY_GI_RESOLVE_SOURCE("gi denoise accumulate", GiDenoiseAccumulate,
-                             "cyGiDenoiseAccumulate", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi denoise accumulate", GiDenoiseAccumulate, "cyGiDenoiseAccumulate",
+                             kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi denoise variance", GiDenoiseVariance, "cyGiDenoiseVariance",
                              kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi denoise filter", GiDenoiseFilter, "cyGiDenoiseFilter",
@@ -314,13 +316,13 @@ Status GpuScreenResolve::create_pipelines() noexcept {
     };
 #undef CY_GI_RESOLVE_SOURCE
     const rhi::PipelineLayoutHandle layouts[kPipelineCount] = {
-        surface_pipeline_layout_, denoise_pipeline_layout_,  denoise_pipeline_layout_,
-        denoise_pipeline_layout_, denoise_pipeline_layout_,  publish_pipeline_layout_,
+        surface_pipeline_layout_, denoise_pipeline_layout_,          denoise_pipeline_layout_,
+        denoise_pipeline_layout_, denoise_pipeline_layout_,          publish_pipeline_layout_,
         resolve_pipeline_layout_, resolve_hardware_pipeline_layout_,
     };
     // The ray query pipeline exists only where the device has ray queries, as stage 3's do.
-    const u32 count = hardware_pipeline_ ? static_cast<u32>(kPipelineCount)
-                                         : static_cast<u32>(kResolveHardware);
+    const u32 count =
+        hardware_pipeline_ ? static_cast<u32>(kPipelineCount) : static_cast<u32>(kResolveHardware);
     for (u32 which = 0; which < count; ++which) {
         const Source& source = sources[which];
         rhi::ShaderModuleBundle bundle;
@@ -358,7 +360,7 @@ Status GpuScreenResolve::create_pipelines() noexcept {
 
 Status GpuScreenResolve::create_resources() noexcept {
     const u64 pixels = static_cast<u64>(desc_.width) * desc_.height;
-    for (u32 index = 0; index < rhi::kMaxFramesInFlight; ++index) {
+    for (rhi::BufferHandle& ring : ring_) {
         rhi::BufferDescription description;
         description.name = "gi resolve constants";
         description.size = sizeof(words_);
@@ -368,7 +370,7 @@ Status GpuScreenResolve::create_resources() noexcept {
         if (!buffer) {
             return make_unexpected(buffer.error());
         }
-        ring_[index] = *buffer;
+        ring = *buffer;
     }
     struct Request {
         const char* name;
@@ -390,14 +392,14 @@ Status GpuScreenResolve::create_resources() noexcept {
         {"gi resolve noisy", pixels * kSignals * kVec4, device_only, rhi::MemoryUse::DeviceLocal,
          false},
         {"gi resolve sources", pixels * 8U, device_only, rhi::MemoryUse::DeviceLocal, false},
-        {"gi resolve history", 2U * kSignals * pixels * 2U * kVec4, device_only,
+        {"gi resolve history", pixels * 2U * kSignals * 2U * kVec4, device_only,
          rhi::MemoryUse::DeviceLocal, false},
         {"gi resolve variance", kSignals * pixels * 4U, device_only, rhi::MemoryUse::DeviceLocal,
          false},
-        {"gi resolve filter a", kSignals * pixels * kVec4, device_only,
-         rhi::MemoryUse::DeviceLocal, false},
-        {"gi resolve filter b", kSignals * pixels * kVec4, device_only,
-         rhi::MemoryUse::DeviceLocal, false},
+        {"gi resolve filter a", kSignals * pixels * kVec4, device_only, rhi::MemoryUse::DeviceLocal,
+         false},
+        {"gi resolve filter b", kSignals * pixels * kVec4, device_only, rhi::MemoryUse::DeviceLocal,
+         false},
         {"gi resolve noisy host", pixels * kSignals * kVec4, host, rhi::MemoryUse::Readback, true},
         {"gi resolve sources host", pixels * 8U, host, rhi::MemoryUse::Readback, true},
         {"gi resolve final host", kSignals * pixels * kVec4, host, rhi::MemoryUse::Readback, true},
@@ -409,8 +411,8 @@ Status GpuScreenResolve::create_resources() noexcept {
         {"gi resolve guidance upload", pixels * kVec4, rhi::BufferUsage::TransferSource,
          rhi::MemoryUse::Upload, false},
         // Readback-only: a frame never keeps a copy of what it sampled.
-        {"gi resolve published", pixels * kSignals * kVec4, device_only, rhi::MemoryUse::DeviceLocal,
-         true},
+        {"gi resolve published", pixels * kSignals * kVec4, device_only,
+         rhi::MemoryUse::DeviceLocal, true},
         {"gi resolve published host", pixels * kSignals * kVec4, host, rhi::MemoryUse::Readback,
          true},
     };
@@ -453,7 +455,8 @@ Status GpuScreenResolve::create_resources() noexcept {
         rhi::TextureViewDescription description;
         description.name = name;
         description.texture = texture;
-        Expected<rhi::TextureViewHandle, Error> made_view = device_->create_texture_view(description);
+        Expected<rhi::TextureViewHandle, Error> made_view =
+            device_->create_texture_view(description);
         if (!made_view) {
             return make_unexpected(made_view.error());
         }
@@ -553,9 +556,8 @@ void GpuScreenResolve::set_settings(const gi::ScreenResolveSettings& settings) n
 }
 
 void GpuScreenResolve::set_denoiser(const denoise::Denoiser& denoiser) noexcept {
-    const denoise::QualityPosition& quality =
-        denoise::quality_ladder()[std::min(denoiser.quality_position(),
-                                           denoise::kQualityPositionCount - 1)];
+    const denoise::QualityPosition& quality = denoise::quality_ladder()[std::min(
+        denoiser.quality_position(), denoise::kQualityPositionCount - 1)];
     const denoise::SignalKind kinds[kSignals] = {denoise::SignalKind::IndirectDiffuse,
                                                  denoise::SignalKind::IndirectSpecular};
     u32 passes = 0;
@@ -719,8 +721,7 @@ void GpuScreenResolve::set_jitter(Vec2 jitter) noexcept {
 }
 
 void GpuScreenResolve::set_invalidated(Span<const Aabb> regions) noexcept {
-    const auto count =
-        static_cast<u32>(std::min<usize>(regions.size(), gi::kScreenHistoryRegions));
+    const auto count = static_cast<u32>(std::min<usize>(regions.size(), gi::kScreenHistoryRegions));
     words_[kWordInvalid] = count;
     for (u32 index = 0; index < count; ++index) {
         const u32 at = kWordInvalid + 4U + (index * 8U);
@@ -757,8 +758,8 @@ Status GpuScreenResolve::set_surfaces(const gi::ScreenSurfaces& surfaces) noexce
             continue;
         }
         rhi::BufferDescription description;
-        description.name = upload == kSurfacesUpload ? "gi resolve surfaces upload"
-                                                     : "gi resolve guidance upload";
+        description.name =
+            upload == kSurfacesUpload ? "gi resolve surfaces upload" : "gi resolve guidance upload";
         description.size = sizes_[upload];
         description.usage = rhi::BufferUsage::TransferSource;
         description.memory = rhi::MemoryUse::Upload;
@@ -823,11 +824,11 @@ ResourceId GpuScreenResolve::import_specular(RenderGraph& graph) noexcept {
 
 ResourceId GpuScreenResolve::import(RenderGraph& graph, Buffer buffer) noexcept {
     static constexpr const char* kNames[kBufferCount] = {
-        "gi resolve surfaces",      "gi resolve noisy",        "gi resolve sources",
-        "gi resolve history",       "gi resolve variance",     "gi resolve filter a",
-        "gi resolve filter b",      "gi resolve noisy host",   "gi resolve sources host",
-        "gi resolve final host",    "gi resolve surfaces host", "gi resolve surfaces upload",
-        "gi resolve guidance",      "gi resolve guidance upload", "gi resolve published",
+        "gi resolve surfaces",       "gi resolve noisy",           "gi resolve sources",
+        "gi resolve history",        "gi resolve variance",        "gi resolve filter a",
+        "gi resolve filter b",       "gi resolve noisy host",      "gi resolve sources host",
+        "gi resolve final host",     "gi resolve surfaces host",   "gi resolve surfaces upload",
+        "gi resolve guidance",       "gi resolve guidance upload", "gi resolve published",
         "gi resolve published host",
     };
     BufferRequest request;
@@ -967,9 +968,8 @@ void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
     copies_[1] = Copy{this, kSources, kSourcesHost, 0, pixels * 8U};
     copies_[2] =
         Copy{this, final_in_b_ ? kFilterB : kFilterA, kFinalHost, 0, pixels * kSignals * kVec4};
-    copies_[3] =
-        Copy{this, kSurfaces, kSurfacesHost, static_cast<u64>(slot_) * pixels * 2U * kVec4,
-             pixels * 2U * kVec4};
+    copies_[3] = Copy{this, kSurfaces, kSurfacesHost, static_cast<u64>(slot_) * pixels * 2U * kVec4,
+                      pixels * 2U * kVec4};
     copies_[4] = Copy{this, kPublished, kPublishedHost, 0, frame_pixels * kSignals * kVec4};
     declare_copy(graph, copies_[0], "gi resolve noisy readback");
     declare_copy(graph, copies_[1], "gi resolve sources readback");
@@ -978,7 +978,8 @@ void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
     declare_copy(graph, copies_[4], "gi resolve published readback");
 }
 
-PassId GpuScreenResolve::declare(RenderGraph& graph, const ScreenSpaceStageInputs& inputs) noexcept {
+PassId GpuScreenResolve::declare(RenderGraph& graph,
+                                 const ScreenSpaceStageInputs& inputs) noexcept {
     // Each refusal is a frame that would sample a term nothing wrote.
     if (device_ == nullptr || !began_ || inputs.target == kInvalidResource ||
         inputs.target != imported_diffuse_ || imported_specular_ == kInvalidResource ||
@@ -1073,8 +1074,8 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
             writes[3] = buffer_write(3, buffers_[kGuidance]);
             // Bound whether or not the flag asks for a copy — a set's every binding is written —
             // and with no copy kept, to a buffer the shader then never writes.
-            writes[4] = buffer_write(4, buffers_[kPublished] ? buffers_[kPublished]
-                                                             : buffers_[kGuidance]);
+            writes[4] =
+                buffer_write(4, buffers_[kPublished] ? buffers_[kPublished] : buffers_[kGuidance]);
             writes[5] = storage_write(5, context.executor->view(step.diffuse));
             writes[6] = storage_write(6, context.executor->view(step.specular));
             count = kPublishBindings;
@@ -1139,18 +1140,17 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
         case kResolve:
         case kResolveHardware: {
             const bool hardware = step->pipeline == kResolveHardware;
-            const rhi::PipelineLayoutHandle layout = hardware
-                                                         ? self.resolve_hardware_pipeline_layout_
-                                                         : self.resolve_pipeline_layout_;
+            const rhi::PipelineLayoutHandle layout =
+                hardware ? self.resolve_hardware_pipeline_layout_ : self.resolve_pipeline_layout_;
             const rhi::DescriptorSetHandle sets[4] = {self.cache_->scene_->set_,
                                                       self.cache_->probe_set_, *set,
                                                       self.cache_->hardware_set_};
             commands.bind_descriptor_sets(
                 layout, 0, Span<const rhi::DescriptorSetHandle>(sets, hardware ? 4U : 3U));
             const GpuGiScene::Dispatch dispatch{step->count, self.words_[kWordFrame], {0, 0}};
-            commands.push_constants(layout, rhi::ShaderStage::Compute, 0,
-                                    Span<const u8>(reinterpret_cast<const u8*>(&dispatch),
-                                                   sizeof(dispatch)));
+            commands.push_constants(
+                layout, rhi::ShaderStage::Compute, 0,
+                Span<const u8>(reinterpret_cast<const u8*>(&dispatch), sizeof(dispatch)));
             commands.dispatch(linear_groups(step->count), 1, 1);
             break;
         }
@@ -1162,9 +1162,9 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
             commands.bind_descriptor_sets(self.denoise_pipeline_layout_, 0,
                                           Span<const rhi::DescriptorSetHandle>(&*set, 1));
             const DenoisePush push{step->count, step->pass, step->direction, 0};
-            commands.push_constants(self.denoise_pipeline_layout_, rhi::ShaderStage::Compute, 0,
-                                    Span<const u8>(reinterpret_cast<const u8*>(&push),
-                                                   sizeof(push)));
+            commands.push_constants(
+                self.denoise_pipeline_layout_, rhi::ShaderStage::Compute, 0,
+                Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
             commands.dispatch(linear_groups(step->count), 1, 1);
             break;
         }
@@ -1211,8 +1211,9 @@ GpuResolveTimes GpuScreenResolve::last_times() const noexcept {
 Status GpuScreenResolve::read_back_noisy(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept {
     const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
-        desc_.readback ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kNoisyHost]))
-                       : nullptr;
+        desc_.readback
+            ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kNoisyHost]))
+            : nullptr;
     if (data == nullptr || diffuse.size() != pixels || specular.size() != pixels) {
         return fail(ErrorCode::InvalidArgument,
                     "read_back_noisy needs `readback` and one entry a pixel for each signal");
@@ -1229,8 +1230,9 @@ Status GpuScreenResolve::read_back_denoised(Span<Vec3> diffuse,
                                             Span<Vec3> specular) const noexcept {
     const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
-        desc_.readback ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kFinalHost]))
-                       : nullptr;
+        desc_.readback
+            ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kFinalHost]))
+            : nullptr;
     if (data == nullptr || diffuse.size() != pixels || specular.size() != pixels) {
         return fail(ErrorCode::InvalidArgument,
                     "read_back_denoised needs `readback` and one entry a pixel for each signal");
@@ -1265,8 +1267,7 @@ Status GpuScreenResolve::read_back_history(Span<i32> source, Span<f32> confidenc
     return ok();
 }
 
-Status GpuScreenResolve::read_back_surfaces(Span<Vec3> position, Span<f32> depth,
-                                            Span<Vec3> normal,
+Status GpuScreenResolve::read_back_surfaces(Span<Vec3> position, Span<f32> depth, Span<Vec3> normal,
                                             Span<f32> roughness) const noexcept {
     const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =

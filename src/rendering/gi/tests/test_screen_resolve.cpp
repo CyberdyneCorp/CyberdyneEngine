@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The per-pixel resolve and its denoiser on the host: the oracle issue #35's stage 4 transcribes to
 // the device, and the quality bars the frame's GI is held to.
 //
@@ -37,6 +38,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -49,7 +51,6 @@ using cy::u64;
 using cy::usize;
 using cy::Vec3;
 using namespace cy::rendering::gi;  // NOLINT(google-build-using-namespace)
-namespace denoise = cy::rendering::denoise;
 
 using gi_support::image_difference;
 using gi_support::kScreenHeight;
@@ -76,8 +77,8 @@ CY_TEST_CASE("a pixel takes the cache, one ray and the far sky, combined by conf
     // With no ray to spend and the pixel in the near field, the answer IS the radiance cache's.
     ScreenResolveSettings cache_only = scene.settings;
     cache_only.ray_density = 0.0F;
-    const ScreenPixel cached = resolve_screen_pixel(pixel, position, normal, 0.8F, cy::length(offset),
-                                                    offset, cache_only, scene.sources(6));
+    const ScreenPixel cached = resolve_screen_pixel(
+        pixel, position, normal, 0.8F, cy::length(offset), offset, cache_only, scene.sources(6));
     // The diffuse answer reads no reflection direction; any will do.
     const RadianceSample sample =
         scene.system.radiance()
@@ -91,9 +92,9 @@ CY_TEST_CASE("a pixel takes the cache, one ray and the far sky, combined by conf
     CY_CHECK_EQ(cached.diffuse.sources_used, source_bit(RadianceSource::RadianceCache));
 
     // With a ray, the pixel's own view of the room is combined with the lattice's, not chosen.
-    const ScreenPixel traced = resolve_screen_pixel(pixel, position, normal, 0.8F,
-                                                    cy::length(offset), offset, scene.settings,
-                                                    scene.sources(6));
+    const ScreenPixel traced =
+        resolve_screen_pixel(pixel, position, normal, 0.8F, cy::length(offset), offset,
+                             scene.settings, scene.sources(6));
     CY_CHECK(traced.traced_diffuse);
     CY_CHECK_NE(traced.diffuse.sources_used & source_bit(RadianceSource::RadianceCache), 0U);
     CY_CHECK_NE(traced.diffuse.sources_used & source_bit(RadianceSource::SoftwareTrace), 0U);
@@ -101,9 +102,8 @@ CY_TEST_CASE("a pixel takes the cache, one ray and the far sky, combined by conf
     // A mode that admits no dynamic bounce takes none: the closed room has no far sky, so nothing.
     ScreenResolveSettings none = scene.settings;
     none.mode = GiMode::None;
-    const ScreenPixel excluded = resolve_screen_pixel(pixel, position, normal, 0.8F,
-                                                      cy::length(offset), offset, none,
-                                                      scene.sources(6));
+    const ScreenPixel excluded = resolve_screen_pixel(
+        pixel, position, normal, 0.8F, cy::length(offset), offset, none, scene.sources(6));
     CY_CHECK_EQ(excluded.diffuse.sources_used, 0U);
     CY_CHECK_EQ(cy::length(excluded.diffuse.radiance), 0.0F);
 
@@ -138,7 +138,8 @@ public:
 
 }  // namespace
 
-CY_TEST_CASE("a final-gather ray counts in full whatever it met: a stale wall does not lose to the sky") {
+CY_TEST_CASE(
+    "a final-gather ray counts in full whatever it met: a stale wall does not lose to the sky") {
     // A floor point beside a tall wall, open to the sky: about a third of its rays meet the wall,
     // whose every card is stale, and the rest escape. Far enough from the camera that the far
     // sky is a second sample of the pixel beside the ray — the combine the ray's weight decides.
@@ -205,12 +206,14 @@ CY_TEST_CASE("a final-gather ray counts in full whatever it met: a stale wall do
     CY_CHECK_LT(worst, 1.0e-5);
 }
 
-CY_TEST_CASE("the history is the temporal framework's reprojection, and an invalidated region keeps none") {
+CY_TEST_CASE(
+    "the history is the temporal framework's reprojection, and an invalidated region keeps none") {
     std::vector<gi_support::AxisQuad> quads =
         gi_support::room_quads(gi_support::kRoomX, gi_support::kRoomY, gi_support::kRoomZ, true);
     const Vec3 eye{2.5F, 0.4F, -3.4F};
     const Vec3 target{-1.5F, -0.9F, 0.2F};
-    const gi_support::ScreenView still = gi_support::render_view(quads, eye, target, kWidth, kHeight);
+    const gi_support::ScreenView still =
+        gi_support::render_view(quads, eye, target, kWidth, kHeight);
     const usize pixels = still.depth.size();
     std::vector<i32> source(pixels, 0);
     std::vector<f32> confidence(pixels, 0.0F);
@@ -231,16 +234,16 @@ CY_TEST_CASE("the history is the temporal framework's reprojection, and an inval
             continue;
         }
         surfaces += 1;
-        own += source[index] == static_cast<i32>(index) && confidence[index] == 1.0F ? 1U : 0U;
+        own += std::cmp_equal(source[index], index) && confidence[index] == 1.0F ? 1U : 0U;
     }
     CY_CHECK_EQ(own, surfaces);
 
     // The camera slides 30 cm to its right: the surfaces land a pixel or two to the left of where
     // they were, and the strip the camera uncovered has no history.
-    const Vec3 right = cy::normalized_or(cy::cross(target - eye, Vec3{0.0F, 1.0F, 0.0F}),
-                                         Vec3{1.0F, 0.0F, 0.0F});
-    const gi_support::ScreenView moved =
-        gi_support::render_view(quads, eye + (right * 0.3F), target + (right * 0.3F), kWidth, kHeight);
+    const Vec3 right =
+        cy::normalized_or(cy::cross(target - eye, Vec3{0.0F, 1.0F, 0.0F}), Vec3{1.0F, 0.0F, 0.0F});
+    const gi_support::ScreenView moved = gi_support::render_view(
+        quads, eye + (right * 0.3F), target + (right * 0.3F), kWidth, kHeight);
     inputs.current_world_to_clip = moved.world_to_clip;
     CY_REQUIRE(screen_history(moved.surfaces(), inputs, {source.data(), pixels},
                               {confidence.data(), pixels})
@@ -252,13 +255,14 @@ CY_TEST_CASE("the history is the temporal framework's reprojection, and an inval
             continue;
         }
         kept += 1;
-        shifted += source[index] != static_cast<i32>(index) ? 1U : 0U;
+        shifted += std::cmp_not_equal(source[index], index) ? 1U : 0U;
     }
     CY_CHECK_GT(kept, surfaces / 2U);
     CY_CHECK_GT(shifted, kept / 2U);
 
     // A region invalidated this frame — a light moved there — keeps no history, and only there.
-    const cy::Aabb floor_half = cy::Aabb::from_min_max(Vec3{-5.0F, -2.5F, -5.0F}, Vec3{5.0F, -1.9F, 0.0F});
+    const cy::Aabb floor_half =
+        cy::Aabb::from_min_max(Vec3{-5.0F, -2.5F, -5.0F}, Vec3{5.0F, -1.9F, 0.0F});
     inputs.current_world_to_clip = still.world_to_clip;
     inputs.invalidated = {&floor_half, 1};
     CY_REQUIRE(screen_history(still.surfaces(), inputs, {source.data(), pixels},
@@ -278,7 +282,7 @@ CY_TEST_CASE("the history is the temporal framework's reprojection, and an inval
             CY_CHECK_EQ(source[index], -1);
         } else {
             others += 1;
-            others_kept += source[index] == static_cast<i32>(index) ? 1U : 0U;
+            others_kept += std::cmp_equal(source[index], index) ? 1U : 0U;
         }
     }
     CY_CHECK_GT(floor_rejected, 0U);
@@ -306,8 +310,9 @@ CY_TEST_CASE("converged, the frame is nearer the path tracer than the probes alo
     scene.run(0, 40);
 
     gi_support::QuadTracer exact(scene.quads);
-    const PathTracer reference(exact, scene.system.scene(), {scene.lights.data(), scene.lights.size()},
-                               scene.system.sky_term(), &exact);
+    const PathTracer reference(exact, scene.system.scene(),
+                               {scene.lights.data(), scene.lights.size()}, scene.system.sky_term(),
+                               &exact);
     BakeSettings bake;
     bake.bounces = 3;
     bake.samples = 192;
@@ -327,10 +332,10 @@ CY_TEST_CASE("converged, the frame is nearer the path tracer than the probes alo
             probes.push_back(scene.system.indirect_diffuse(p, n, SurfaceProperties{}).radiance);
         }
     }
-    const ReferenceComparison resolved = compare_against_reference(
-        {frame.data(), frame.size()}, {truth.data(), truth.size()});
-    const ReferenceComparison cached = compare_against_reference(
-        {probes.data(), probes.size()}, {truth.data(), truth.size()});
+    const ReferenceComparison resolved =
+        compare_against_reference({frame.data(), frame.size()}, {truth.data(), truth.size()});
+    const ReferenceComparison cached =
+        compare_against_reference({probes.data(), probes.size()}, {truth.data(), truth.size()});
     std::fprintf(stderr,
                  "GI test room, %u points against the path tracer (3 bounces, 192 paths): "
                  "per-pixel resolve %.3f relative, probes alone %.3f\n",
@@ -352,8 +357,9 @@ CY_TEST_CASE("on a half-resolution grid the frame stays near the path tracer") {
     scene.resize_grid();
     scene.run(0, 40);
     gi_support::QuadTracer exact(scene.quads);
-    const PathTracer reference(exact, scene.system.scene(), {scene.lights.data(), scene.lights.size()},
-                               scene.system.sky_term(), &exact);
+    const PathTracer reference(exact, scene.system.scene(),
+                               {scene.lights.data(), scene.lights.size()}, scene.system.sky_term(),
+                               &exact);
     BakeSettings bake;
     bake.bounces = 3;
     bake.samples = 192;
@@ -365,13 +371,13 @@ CY_TEST_CASE("on a half-resolution grid the frame stays near the path tracer") {
             if (scene.view.depth[index] <= 0.0F) {
                 continue;
             }
-            truth.push_back(reference.irradiance(scene.view.position[index],
-                                                 scene.view.normal[index], bake));
+            truth.push_back(
+                reference.irradiance(scene.view.position[index], scene.view.normal[index], bake));
             frame.push_back(scene.diffuse[index]);
         }
     }
-    const ReferenceComparison upsampled = compare_against_reference(
-        {frame.data(), frame.size()}, {truth.data(), truth.size()});
+    const ReferenceComparison upsampled =
+        compare_against_reference({frame.data(), frame.size()}, {truth.data(), truth.size()});
     std::fprintf(stderr,
                  "GI test room at a half-resolution grid, %u points (each between grid samples): "
                  "%.3f relative to the path tracer\n",
@@ -387,10 +393,18 @@ CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wa
     const auto build = [](ScreenScene& scene, Vec3 eye, Vec3 target) {
         scene.quads = gi_support::room_quads(gi_support::kRoomX, gi_support::kRoomY,
                                              gi_support::kRoomZ, false);
-        scene.quads.push_back({2, -0.05F, {-gi_support::kRoomX, -gi_support::kRoomY},
-                               {gi_support::kRoomX, gi_support::kRoomY}, {0.6F, 0.6F, 0.6F}, -1.0F});
-        scene.quads.push_back({2, 0.05F, {-gi_support::kRoomX, -gi_support::kRoomY},
-                               {gi_support::kRoomX, gi_support::kRoomY}, {0.6F, 0.6F, 0.6F}, 1.0F});
+        scene.quads.push_back({2,
+                               -0.05F,
+                               {-gi_support::kRoomX, -gi_support::kRoomY},
+                               {gi_support::kRoomX, gi_support::kRoomY},
+                               {0.6F, 0.6F, 0.6F},
+                               -1.0F});
+        scene.quads.push_back({2,
+                               0.05F,
+                               {-gi_support::kRoomX, -gi_support::kRoomY},
+                               {gi_support::kRoomX, gi_support::kRoomY},
+                               {0.6F, 0.6F, 0.6F},
+                               1.0F});
         scene.surfels = gi_support::surfels_from_quads(scene.quads, 1.0F);
         scene.add_solid(Vec3{0.0F, 0.0F, 0.0F}, Vec3{gi_support::kRoomX, gi_support::kRoomY, 0.05F},
                         43);
@@ -435,7 +449,8 @@ CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wa
     CY_CHECK_LT(sealed_worst / lit_mean, 2.0e-2);
 }
 
-CY_TEST_CASE("after a light moves, the frame converges on the new light within a stated frame count") {
+CY_TEST_CASE(
+    "after a light moves, the frame converges on the new light within a stated frame count") {
     // The scene converged under one light, the light moved across the room, and the region filed
     // as invalidated with the scene and with the resolve's history, as a renderer does. Measured
     // against the same scene converged under the moved light from the start.
@@ -450,10 +465,9 @@ CY_TEST_CASE("after a light moves, the frame converges on the new light within a
     make_room(scene);
     scene.run(0, 32);
     const f32 before = image_difference(scene.copy_diffuse(), target, scene.view.depth);
-    const cy::Aabb room = cy::Aabb::from_center_extents(Vec3{0.0F, 0.0F, 0.0F},
-                                                        Vec3{gi_support::kRoomX + 0.5F,
-                                                             gi_support::kRoomY + 0.5F,
-                                                             gi_support::kRoomZ + 0.5F});
+    const cy::Aabb room = cy::Aabb::from_center_extents(
+        Vec3{0.0F, 0.0F, 0.0F},
+        Vec3{gi_support::kRoomX + 0.5F, gi_support::kRoomY + 0.5F, gi_support::kRoomZ + 0.5F});
     scene.lights[0].position = moved;
     scene.system.scene().invalidate(room, InvalidationCause::LightChanged, scene.lights[0].id, 32);
     scene.invalidated.push_back(room);

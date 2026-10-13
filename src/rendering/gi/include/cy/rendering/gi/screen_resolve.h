@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The per-pixel resolve: the final gather a frame shades with, and the history its denoiser
 // accumulates through. Issue #35, stage 4.
@@ -142,9 +143,8 @@ inline constexpr u32 kScreenStreamSpecular = 7;
 [[nodiscard]] bool screen_traces(u32 pixel, u64 frame, f32 density) noexcept;
 
 /// One pixel of the resolve. `view_direction` is from the eye to the surface.
-[[nodiscard]] ScreenPixel resolve_screen_pixel(u32 pixel, Vec3 position, Vec3 normal,
-                                               f32 roughness, f32 camera_distance,
-                                               Vec3 view_direction,
+[[nodiscard]] ScreenPixel resolve_screen_pixel(u32 pixel, Vec3 position, Vec3 normal, f32 roughness,
+                                               f32 camera_distance, Vec3 view_direction,
                                                const ScreenResolveSettings& settings,
                                                const ScreenResolveSources& sources) noexcept;
 
@@ -179,10 +179,10 @@ private:
     Array<f32> samples_;
 };
 
-/// A view's surfaces on the resolve's GRID: every `divisor`-th pixel of the frame in each direction,
-/// the block's top-left one. What the `TracingResolution` lever buys at its coarse end — a quarter
-/// of the pixels resolved and denoised at a divisor of two, and `screen_upsample` back to the
-/// frame's.
+/// A view's surfaces on the resolve's GRID: every `divisor`-th pixel of the frame in each
+/// direction, the block's top-left one. What the `TracingResolution` lever buys at its coarse end —
+/// a quarter of the pixels resolved and denoised at a divisor of two, and `screen_upsample` back to
+/// the frame's.
 class ScreenGrid {
 public:
     ScreenGrid() noexcept = default;

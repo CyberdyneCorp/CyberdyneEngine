@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // A view of a scene of axis-aligned quads, ray cast into the surfaces a per-pixel resolve reads.
 // Shared by the host suite (`integration.render_gi_screen`) and the device suite
@@ -35,7 +36,10 @@ struct AxisQuad {
 };
 
 [[nodiscard]] inline cy::f32 component(cy::Vec3 v, cy::u32 axis) noexcept {
-    return axis == 0 ? v.x : (axis == 1 ? v.y : v.z);
+    if (axis == 0) {
+        return v.x;
+    }
+    return axis == 1 ? v.y : v.z;
 }
 
 /// The nearest quad a ray meets, its distance and its normal facing the ray.
@@ -127,13 +131,12 @@ struct ScreenView {
     view.roughness.assign(pixels, roughness);
     for (cy::u32 y = 0; y < height; ++y) {
         for (cy::u32 x = 0; x < width; ++x) {
-            const cy::f32 ndc_x = (((static_cast<cy::f32>(x) + 0.5F) / static_cast<cy::f32>(width)) *
-                                   2.0F) -
-                                  1.0F;
-            const cy::f32 ndc_y = 1.0F - (((static_cast<cy::f32>(y) + 0.5F) /
-                                           static_cast<cy::f32>(height)) *
-                                          2.0F);
-            const cy::Vec3 far_point = cy::project_point(clip_to_world, cy::Vec3{ndc_x, ndc_y, 0.5F});
+            const cy::f32 ndc_x =
+                (((static_cast<cy::f32>(x) + 0.5F) / static_cast<cy::f32>(width)) * 2.0F) - 1.0F;
+            const cy::f32 ndc_y =
+                1.0F - (((static_cast<cy::f32>(y) + 0.5F) / static_cast<cy::f32>(height)) * 2.0F);
+            const cy::Vec3 far_point =
+                cy::project_point(clip_to_world, cy::Vec3{ndc_x, ndc_y, 0.5F});
             const cy::Vec3 direction =
                 cy::normalized_or(far_point - eye, cy::Vec3{0.0F, 0.0F, -1.0F});
             cy::f32 t = 0.0F;
@@ -153,7 +156,7 @@ struct ScreenView {
 /// The room of support.h as quads: floor, ceiling, four walls, and — 10 cm thick, as the screen
 /// suites' field holds it — its divider either side of the doorway, with the cards' albedos.
 [[nodiscard]] inline std::vector<AxisQuad> room_quads(cy::f32 x, cy::f32 y, cy::f32 z,
-                                                     bool with_divider = true) {
+                                                      bool with_divider = true) {
     std::vector<AxisQuad> quads;
     quads.push_back({1, -y, {-x, -z}, {x, z}, {0.6F, 0.6F, 0.6F}, 1.0F});
     quads.push_back({1, y, {-x, -z}, {x, z}, {0.7F, 0.7F, 0.7F}, -1.0F});

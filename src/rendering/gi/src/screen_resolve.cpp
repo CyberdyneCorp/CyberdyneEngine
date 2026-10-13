@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/gi/screen_resolve.h>
 
 #include <cy/core/math/scalar.h>
@@ -33,8 +34,7 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
 /// hit threshold is half of one — closer than that, a ray leaving its own surface at any but a
 /// steep angle is answered by that surface, the pixel lit by itself.
 [[nodiscard]] RadianceSample world_ray(const ScreenResolveSources& sources, Vec3 position,
-                                       Vec3 normal, Vec3 direction, f32 lift,
-                                       f32 reach) noexcept {
+                                       Vec3 normal, Vec3 direction, f32 lift, f32 reach) noexcept {
     const Vec3 unit = normalized_or(direction, Vec3{0.0F, 0.0F, -1.0F});
     SceneHit hit;
     if (sources.hardware != nullptr && sources.hardware->available()) {
@@ -153,11 +153,11 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamDirection);
         const Vec3 direction =
             screen_cosine_direction(normal, screen_unit(hash), screen_unit(hash * 0x27220A95U));
-        samples[count] = gather_sample(world_ray(sources, position, normal, direction,
-                                                 settings.origin_lift_metres,
-                                                 settings.max_ray_distance_metres),
-                                       sources.cache != nullptr ? cached : RadianceSample{},
-                                       exclusion_for(settings.mode, false, false));
+        samples[count] =
+            gather_sample(world_ray(sources, position, normal, direction,
+                                    settings.origin_lift_metres, settings.max_ray_distance_metres),
+                          sources.cache != nullptr ? cached : RadianceSample{},
+                          exclusion_for(settings.mode, false, false));
         count += 1;
     }
     samples[count] = far_sky(pixel, position, normal, camera_distance, settings, sources);
@@ -186,12 +186,12 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
     traced = rays > 0 && screen_traces(pixel, sources.frame, settings.ray_density);
     if (traced) {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamSpecular);
-        const Vec3 direction = reflection_lobe_direction(
-            reflection, normal, roughness, hash % rays, rays, static_cast<u32>(sources.frame));
-        samples[count] = gather_sample(world_ray(sources, position, normal, direction,
-                                                 settings.origin_lift_metres,
-                                                 settings.max_ray_distance_metres),
-                                       cached, 0U);
+        const Vec3 direction = reflection_lobe_direction(reflection, normal, roughness, hash % rays,
+                                                         rays, static_cast<u32>(sources.frame));
+        samples[count] =
+            gather_sample(world_ray(sources, position, normal, direction,
+                                    settings.origin_lift_metres, settings.max_ray_distance_metres),
+                          cached, 0U);
         count += 1;
     }
     if (cached.confidence > 0.0F) {
@@ -284,8 +284,7 @@ Status ScreenResolve::resize(u32 width, u32 height) noexcept {
     return ok();
 }
 
-Status ScreenResolve::produce(const ScreenSurfaces& surfaces,
-                              const ScreenResolveSettings& settings,
+Status ScreenResolve::produce(const ScreenSurfaces& surfaces, const ScreenResolveSettings& settings,
                               const ScreenResolveSources& sources) noexcept {
     const usize pixels = static_cast<usize>(width_) * height_;
     if (surfaces.width != width_ || surfaces.height != height_ || surfaces.depth.size() != pixels ||
@@ -318,7 +317,8 @@ Status ScreenResolve::produce(const ScreenSurfaces& surfaces,
 
 denoise::NoisySignal ScreenResolve::noisy(denoise::SignalKind kind) const noexcept {
     denoise::NoisySignal signal;
-    signal.values = kind == denoise::SignalKind::IndirectSpecular ? specular_.span() : diffuse_.span();
+    signal.values =
+        kind == denoise::SignalKind::IndirectSpecular ? specular_.span() : diffuse_.span();
     signal.samples = samples_.span();
     return signal;
 }
@@ -350,7 +350,8 @@ Status ScreenGrid::build(const ScreenSurfaces& frame, u32 divisor) noexcept {
     for (u32 y = 0; y < height_; ++y) {
         for (u32 x = 0; x < width_; ++x) {
             const usize cell = (static_cast<usize>(y) * width_) + x;
-            const usize pixel = (static_cast<usize>(y * divisor) * frame.width) + (x * divisor);
+            const usize pixel =
+                (static_cast<usize>(y) * divisor * frame.width) + (static_cast<usize>(x) * divisor);
             depth_[cell] = frame.depth[pixel];
             position_[cell] = frame.position[pixel];
             normal_[cell] = frame.normal[pixel];
@@ -498,13 +499,11 @@ Status screen_history(const ScreenSurfaces& surfaces, const ScreenHistoryInputs&
         const f32 fx = std::floor(uv.x * width);
         const f32 fy = std::floor((1.0F - uv.y) * height);
         const bool on_screen = fx >= 0.0F && fy >= 0.0F && fx < width && fy < height;
-        const usize landing = on_screen ? (static_cast<usize>(fy) * surfaces.width) +
-                                              static_cast<usize>(fx)
-                                        : 0;
+        const usize landing =
+            on_screen ? (static_cast<usize>(fy) * surfaces.width) + static_cast<usize>(fx) : 0;
         reprojection.history_depth = on_screen ? inputs.previous_depth[landing] : 0.0F;
         const ReprojectionResult result = classify_history(reprojection);
-        if (!history_usable(result.state) || !on_screen ||
-            inputs.previous_depth[landing] <= 0.0F ||
+        if (!history_usable(result.state) || !on_screen || inputs.previous_depth[landing] <= 0.0F ||
             invalidated_at(inputs.invalidated, surfaces.position[index])) {
             continue;
         }

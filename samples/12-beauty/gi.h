@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // samples/12-beauty — the shot's global illumination. Issue #35, stages 4 and 5.
 //
@@ -14,13 +15,15 @@
 //
 //   the GI scene   built from the shot's own meshes and instances (`gi::append_mesh_cards`,
 //                  `gi::MeshDistanceField`): a card every half metre over every surface, and each
-//                  mesh's signed distance grid placed by its instance's transform into the clipmapped
-//                  field. The cards' albedo is the material's mean — its albedo map's mean in linear
-//                  light times the authored base colour, less its metallic share — because a card is
-//                  half a metre of surface and the map's detail is below it.
-//   the caches     `gi::IlluminationSystem`: the surface cache's cards lit by the shot's sun through
-//                  the field and bounced card to card (`SurfaceBounce::Cards`), the radiance cache's
-//                  probes gathered from them, and the sky term fitted to the engine's own atmosphere.
+//                  mesh's signed distance grid placed by its instance's transform into the
+//                  clipmapped field. The cards' albedo is the material's mean — its albedo map's
+//                  mean in linear light times the authored base colour, less its metallic share —
+//                  because a card is half a metre of surface and the map's detail is below it.
+//   the caches     `gi::IlluminationSystem`: the surface cache's cards lit by the shot's sun
+//   through
+//                  the field and bounced card to card (`SurfaceBounce::Cards`), the radiance
+//                  cache's probes gathered from them, and the sky term fitted to the engine's own
+//                  atmosphere.
 //   the frame      `gi_gpu::GpuScreenResolve`, the frame's `ScreenSpaceGi` stage: the depth and
 //                  normal prepass unpacked, a final-gather ray a pixel through the hardware tier
 //                  where the device has ray queries (the software field otherwise), combined with
@@ -37,9 +40,9 @@
 // ================================================================================================
 //
 // `measure_reference` path traces the same scene — the same meshes, through
-// `lightmap_bake::MeshSceneTracer`'s exact triangles rather than the field the real-time tiers trace —
-// at pixels spread over the frame, and reports how far the published indirect diffuse is from it, and
-// how far the flat ambient it replaces was.
+// `lightmap_bake::MeshSceneTracer`'s exact triangles rather than the field the real-time tiers
+// trace — at pixels spread over the frame, and reports how far the published indirect diffuse is
+// from it, and how far the flat ambient it replaces was.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/core/base/expected.h>

@@ -603,8 +603,8 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
                                    "screen-space gi", resources_.screen_space_gi);
         } else {
             stage(FramePassKind::ScreenSpaceGi, "screen-space gi",
-                  declare_screen_space(graph, state, "screen-space gi",
-                                       resources_.screen_space_gi, FramePassKind::ScreenSpaceGi));
+                  declare_screen_space(graph, state, "screen-space gi", resources_.screen_space_gi,
+                                       FramePassKind::ScreenSpaceGi));
         }
     }
 

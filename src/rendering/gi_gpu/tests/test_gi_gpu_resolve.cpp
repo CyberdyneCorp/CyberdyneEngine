@@ -6,7 +6,8 @@
 // WHAT THIS SUITE ASSERTS
 // ================================================================================================
 //
-//   the resolve     `GpuScreenResolve`'s noisy diffuse and specular against `ScreenResolve::produce`
+//   the resolve     `GpuScreenResolve`'s noisy diffuse and specular against
+//   `ScreenResolve::produce`
 //                   over the same surfaces, the same radiance cache, the same field and cards, the
 //                   same frame — through the software tier, and through the hardware tier with ray
 //                   queries over the structures `cy::rendering-raytracing-gpu` built;
@@ -27,9 +28,9 @@
 
 #include <cy/backends/rhi/device.h>
 #include <cy/core/memory/system_allocator.h>
-#include <cy/rendering/gi/screen_resolve.h>
 #include <cy/rendering/arbiter/arbiter.h>
 #include <cy/rendering/arbiter/profiles.h>
+#include <cy/rendering/gi/screen_resolve.h>
 #include <cy/rendering/gi_gpu/gpu_budget.h>
 #include <cy/rendering/gi_gpu/gpu_radiance_cache.h>
 #include <cy/rendering/gi_gpu/gpu_resolve.h>
@@ -216,8 +217,8 @@ struct DeviceResolve {
     QuadTriangles* triangles = nullptr;
     bool hardware = false;
 
-    [[nodiscard]] bool create(rhi::Device& device, gi_support::ScreenScene& host, bool with_hardware,
-                              bool readback = true) {
+    [[nodiscard]] bool create(rhi::Device& device, gi_support::ScreenScene& host,
+                              bool with_hardware, bool readback = true) {
         hardware = with_hardware;
         if (!scene.create(allocator(), device, scene_description()).has_value() ||
             !cache.create(allocator(), device, scene, GpuRadianceCacheDescription{}).has_value()) {
@@ -298,6 +299,16 @@ struct Comparison {
     gi_support::ScreenScene host;
     gi_support::make_room(host, gi_support::kScreenWidth, gi_support::kScreenHeight, hardware);
     if (divisor != 1) {
+        // A RIPPLE OF A FEW DEGREES ON EVERY NORMAL, for the half grid. The room is flat, so
+        // neighbouring normals agree exactly and the upsample's facing term — raised to its power
+        // — would weigh nothing a transcription could get wrong; rippled, it weighs every tap.
+        for (usize index = 0; index < host.view.normal.size(); ++index) {
+            const u32 hash = gi::screen_hash(static_cast<u32>(index), 0, 11);
+            const Vec3 ripple{gi::screen_unit(hash) - 0.5F,
+                              gi::screen_unit(hash * 0x27220A95U) - 0.5F,
+                              gi::screen_unit(hash * 0x9E3779B9U) - 0.5F};
+            host.view.normal[index] = normalize(host.view.normal[index] + (ripple * 0.3F));
+        }
         host.divisor = divisor;
         host.resize_grid();
     }
@@ -332,8 +343,9 @@ struct Comparison {
         }
         out.tier = device.resolve.last_tier();
         const bool last = frame + 1 == frames;
-        CY_REQUIRE(device.resolve.read_back_noisy({diffuse.data(), pixels}, {specular.data(), pixels})
-                       .has_value());
+        CY_REQUIRE(
+            device.resolve.read_back_noisy({diffuse.data(), pixels}, {specular.data(), pixels})
+                .has_value());
         for (usize index = 0; index < pixels; ++index) {
             if (grid.depth[index] <= 0.0F) {
                 continue;
@@ -341,19 +353,19 @@ struct Comparison {
             out.noisy_diffuse.add(diffuse[index], host.resolve.diffuse()[index], 1.0e-3);
             out.noisy_specular.add(specular[index], host.resolve.specular()[index], 1.0e-3);
         }
-        CY_REQUIRE(device.resolve.read_back_history({source.data(), pixels},
-                                                    {confidence.data(), pixels})
-                       .has_value());
+        CY_REQUIRE(
+            device.resolve.read_back_history({source.data(), pixels}, {confidence.data(), pixels})
+                .has_value());
         for (usize index = 0; index < pixels; ++index) {
             out.history_pixels += 1;
-            out.history_mismatches += source[index] != host.source[index] ||
-                                              confidence[index] != host.confidence[index]
-                                          ? 1U
-                                          : 0U;
+            out.history_mismatches +=
+                source[index] != host.source[index] || confidence[index] != host.confidence[index]
+                    ? 1U
+                    : 0U;
         }
-        CY_REQUIRE(device.resolve.read_back_denoised({diffuse.data(), pixels},
-                                                     {specular.data(), pixels})
-                       .has_value());
+        CY_REQUIRE(
+            device.resolve.read_back_denoised({diffuse.data(), pixels}, {specular.data(), pixels})
+                .has_value());
         if (last) {
             for (usize index = 0; index < pixels; ++index) {
                 if (grid.depth[index] <= 0.0F) {
@@ -373,8 +385,7 @@ struct Comparison {
                     continue;
                 }
                 out.published_diffuse.add(published_diffuse[index], host.diffuse[index], 1.0e-2);
-                out.published_specular.add(published_specular[index], host.specular[index],
-                                           1.0e-2);
+                out.published_specular.add(published_specular[index], host.specular[index], 1.0e-2);
             }
         }
     }
@@ -427,8 +438,11 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, software tier") {
     if (!gpu.available()) {
         return;
     }
+    // FORTY FRAMES, past the longest history either signal keeps (the indirect diffuse's 32): the
+    // accumulation's floor on its blend weight is reached only there, and a transcription that
+    // floored it wrongly agrees with the host for every frame before it.
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 8, result));
+    CY_REQUIRE(compare_room(gpu, false, 40, result));
     CY_CHECK_EQ(result.tier, gi::RadianceSource::SoftwareTrace);
     check(result, "software");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
@@ -525,7 +539,7 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tie
         // THE FASTEST FRAME, not the median: a device another process shares time-slices its
         // work into ours, and a timestamp interval then counts the other process's dispatch. The
         // fastest of five is the frame nothing interrupted.
-        std::sort(times.begin(), times.end(), [](const GpuResolveTimes& a, const GpuResolveTimes& b) {
+        std::ranges::sort(times, [](const GpuResolveTimes& a, const GpuResolveTimes& b) {
             return a.total_ms < b.total_ms;
         });
         const GpuResolveTimes& fastest = times.front();
@@ -533,8 +547,7 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tie
                      "1920x1080, %s: reproject %.3f, resolve %.3f, accumulate %.3f, variance "
                      "%.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
                      run.name, fastest.reproject_ms, fastest.resolve_ms, fastest.accumulate_ms,
-                     fastest.variance_ms, fastest.filter_ms, fastest.publish_ms,
-                     fastest.total_ms);
+                     fastest.variance_ms, fastest.filter_ms, fastest.publish_ms, fastest.total_ms);
         CY_CHECK_EQ(device.resolve.last_tier(), run.hardware ? gi::RadianceSource::HardwareTrace
                                                              : gi::RadianceSource::SoftwareTrace);
         // A ceiling, not the claim: the claim is the printed line. A frame at 60 Hz is 16.7 ms.
@@ -546,7 +559,8 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tie
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-// --- Stage 5: the device cost into the GI budget, and the budget's levers back onto the device ----
+// --- Stage 5: the device cost into the GI budget, and the budget's levers back onto the device
+// ----
 
 namespace {
 
@@ -584,6 +598,7 @@ struct BudgetedFrame {
 
 [[nodiscard]] std::vector<u32> lever_positions(const gi::GiBudget& budget) {
     std::vector<u32> positions;
+    positions.reserve(gi::kGiLeverCount);
     for (u32 lever = 0; lever < gi::kGiLeverCount; ++lever) {
         positions.push_back(budget.position(static_cast<gi::GiLever>(lever)));
     }
@@ -592,8 +607,9 @@ struct BudgetedFrame {
 
 }  // namespace
 
-CY_TEST_CASE("over budget, the GI drops its levers in the declared order, its device cost falls "
-             "with them, and it relaxes only with the arbiter's permission") {
+CY_TEST_CASE(
+    "over budget, the GI drops its levers in the declared order, its device cost falls "
+    "with them, and it relaxes only with the arbiter's permission") {
     Gpu gpu(false);
     if (!gpu.available()) {
         return;
@@ -642,7 +658,7 @@ CY_TEST_CASE("over budget, the GI drops its levers in the declared order, its de
                 moved.push_back(lever);
             }
         }
-        std::sort(moved.begin(), moved.end(), [&](u32 a, u32 b) {
+        std::ranges::sort(moved, [&](u32 a, u32 b) {
             return budget.schedule(static_cast<gi::GiLever>(a)).reduction_order <
                    budget.schedule(static_cast<gi::GiLever>(b)).reduction_order;
         });
@@ -703,7 +719,8 @@ CY_TEST_CASE("over budget, the GI drops its levers in the declared order, its de
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("the device GI reports its measured cost to the arbiter on the rung its levers add up to") {
+CY_TEST_CASE(
+    "the device GI reports its measured cost to the arbiter on the rung its levers add up to") {
     // No device: the link's arithmetic over a real arbiter, so the cost the arbiter sees is the
     // one the device measured and the rung is the one the GI budget's levers predict.
     BudgetArbiter arbiter;

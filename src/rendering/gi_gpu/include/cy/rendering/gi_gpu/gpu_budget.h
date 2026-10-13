@@ -11,8 +11,8 @@
 //                         stages, the probe gather and the card shading where they ran on the
 //                         device — timed with timestamps around the dispatches. It is what a frame
 //                         hands `FrameContext::measured_gi_ms`, and `GiBudget::update` tightens on
-//                         it in its declared reduction order. THE GI'S OWN COST, NEVER A FRAME TIME:
-//                         budget.h's rule, kept.
+//                         it in its declared reduction order. THE GI'S OWN COST, NEVER A FRAME
+//                         TIME: budget.h's rule, kept.
 //   GiBudget -> device    `apply_levers`: the two levers the device resolve reads.
 //                         `TracingResolution` is a linear scale, so the pixels it pays for are its
 //                         square — the resolve's grid and its ray density; `DenoiserQuality` is the
@@ -47,9 +47,7 @@ struct GpuGiCost {
     bool cards_valid = false;
 
     [[nodiscard]] f64 total_ms() const noexcept { return resolve_ms + gather_ms + cards_ms; }
-    [[nodiscard]] bool any() const noexcept {
-        return resolve_valid || gather_valid || cards_valid;
-    }
+    [[nodiscard]] bool any() const noexcept { return resolve_valid || gather_valid || cards_valid; }
 };
 
 /// The rung of an arbiter ladder a GI budget's levers add up to: the one whose declared relative

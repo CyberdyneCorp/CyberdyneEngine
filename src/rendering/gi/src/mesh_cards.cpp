@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/gi/mesh_cards.h>
 
 #include <cy/core/math/scalar.h>
@@ -135,8 +136,8 @@ struct Piece {
     }
     const Vec3 normal = winding / twice_area;
     const u64 facing = facing_of(normal);
-    const f32 longest = std::max(
-        {length(world.b - world.a), length(world.c - world.b), length(world.a - world.c)});
+    const f32 longest =
+        std::max({length(world.b - world.a), length(world.c - world.b), length(world.a - world.c)});
     const u32 steps = std::max(
         1U, static_cast<u32>(std::ceil(longest * kPiecesPerCell / settings.spacing_metres)));
     const f32 area = 0.5F * twice_area / static_cast<f32>(steps * steps);
@@ -171,9 +172,8 @@ struct Piece {
 
 }  // namespace
 
-Status append_mesh_cards(Span<const Vec3> positions, Span<const u32> indices,
-                         const Mat4& transform, const MeshCardSettings& settings,
-                         Array<Surfel>& out) noexcept {
+Status append_mesh_cards(Span<const Vec3> positions, Span<const u32> indices, const Mat4& transform,
+                         const MeshCardSettings& settings, Array<Surfel>& out) noexcept {
     if (indices.size() % 3 != 0 || !(settings.spacing_metres > 0.0F)) {
         return fail(ErrorCode::InvalidArgument,
                     "append_mesh_cards: whole triangles and a positive spacing");
@@ -193,8 +193,8 @@ Status append_mesh_cards(Span<const Vec3> positions, Span<const u32> indices,
             return cut;
         }
     }
-    std::sort(pieces.begin(), pieces.end(),
-              [](const Piece& a, const Piece& b) noexcept { return a.key < b.key; });
+    std::ranges::sort(pieces,
+                      [](const Piece& a, const Piece& b) noexcept { return a.key < b.key; });
     for (usize begin = 0; begin < pieces.size();) {
         usize end = begin;
         Vec3 weighted_position{0.0F, 0.0F, 0.0F};
@@ -234,15 +234,15 @@ Status append_mesh_cards(Span<const Vec3> positions, Span<const u32> indices,
 
 Status MeshDistanceField::build(Span<const Vec3> positions, Span<const u32> indices,
                                 const MeshFieldSettings& settings) noexcept {
-    if (positions.empty() || indices.empty() || indices.size() % 3 != 0 ||
-        settings.dimension < 2) {
+    if (positions.empty() || indices.empty() || indices.size() % 3 != 0 || settings.dimension < 2) {
         return fail(ErrorCode::InvalidArgument,
                     "MeshDistanceField::build: a mesh of whole triangles and a grid of two or "
                     "more samples an axis");
     }
     for (const u32 index : indices) {
         if (index >= positions.size()) {
-            return fail(ErrorCode::OutOfRange, "MeshDistanceField::build: an index past the positions");
+            return fail(ErrorCode::OutOfRange,
+                        "MeshDistanceField::build: an index past the positions");
         }
     }
     Vec3 lo = positions[0];

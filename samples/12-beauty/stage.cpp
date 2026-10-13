@@ -1614,7 +1614,8 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // and, with motion blur, the motion vectors into the frame's velocity target.
     // WITH THE GI, THE MATERIAL'S ROUGHNESS TOO: the resolve's rough specular reads it from the
     // normal target's third channel, which the published prepass leaves at one.
-    const char* prepass_entry = motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment";
+    const char* prepass_entry =
+        motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment";
     if (gi_.enabled) {
         prepass_entry = motion_blur_ ? "scenePrepassGiMotionFragment" : "scenePrepassGiFragment";
     }
@@ -2027,8 +2028,8 @@ Status Stage::stage_shot(Shot& shot, ShotReport& report) noexcept {
         light.horizon = sky.horizon;
         light.mean_sky = sky.sky_irradiance;
         const f64 gi_mark = now_millis();
-        if (Status built = device_->gi.build(shot, device_->gi_meshes, light, gi_, device, width_,
-                                             height_);
+        if (Status built =
+                device_->gi.build(shot, device_->gi_meshes, light, gi_, device, width_, height_);
             !built) {
             return built;
         }

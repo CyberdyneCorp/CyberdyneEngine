@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "gi.h"
 
 #include <cy/core/assets/file.h>
@@ -93,7 +94,8 @@ constexpr f32 kMeshFieldMargin = 0.5F;
     const usize count = static_cast<usize>(image.width) * image.height;
     for (usize pixel = 0; pixel < count; ++pixel) {
         for (u32 channel = 0; channel < 3; ++channel) {
-            sum[channel] += static_cast<f64>(table[image.pixels[(pixel * image.channels) + channel]]);
+            sum[channel] +=
+                static_cast<f64>(table[image.pixels[(pixel * image.channels) + channel]]);
         }
     }
     const f64 inverse = 1.0 / static_cast<f64>(count);
@@ -133,12 +135,10 @@ constexpr f32 kMeshFieldMargin = 0.5F;
     rotation.at(0, 2) = sine;
     rotation.at(2, 0) = -sine;
     rotation.at(2, 2) = cosine;
-    const Vec3 offset{static_cast<f32>(static_cast<f64>(instance.position.x) -
-                                       static_cast<f64>(camera.x)),
-                      static_cast<f32>(static_cast<f64>(instance.position.y) -
-                                       static_cast<f64>(camera.y)),
-                      static_cast<f32>(static_cast<f64>(instance.position.z) -
-                                       static_cast<f64>(camera.z))};
+    const Vec3 offset{
+        static_cast<f32>(static_cast<f64>(instance.position.x) - static_cast<f64>(camera.x)),
+        static_cast<f32>(static_cast<f64>(instance.position.y) - static_cast<f64>(camera.y)),
+        static_cast<f32>(static_cast<f64>(instance.position.z) - static_cast<f64>(camera.z))};
     return Mat4::from_translation(offset) * rotation;
 }
 
@@ -258,7 +258,8 @@ Status BeautyGi::build(const Shot& shot,
     state.height = height;
     state.hardware = settings.hardware && rt_gpu::DeviceStructures::supported(device);
 
-    // --- The caches -------------------------------------------------------------------------------
+    // --- The caches
+    // -------------------------------------------------------------------------------
     gi::IlluminationSettings configured;
     configured.field.levels = kFieldLevels;
     configured.field.resolution = kFieldResolution;
@@ -278,7 +279,8 @@ Status BeautyGi::build(const Shot& shot,
         return made;
     }
 
-    // --- The meshes: a distance grid each, and their triangles for the tiers that need them -------
+    // --- The meshes: a distance grid each, and their triangles for the tiers that need them
+    // -------
     for (const auto& entry : meshes) {
         State::Mesh mesh;
         mesh.name = entry.first;
@@ -340,7 +342,8 @@ Status BeautyGi::build(const Shot& shot,
             ++material_index;
         }
         if (mesh_index == state.meshes.size() || material_index == shot.materials.size()) {
-            return fail(ErrorCode::NotFound, "a GI instance names a mesh or material the shot lacks");
+            return fail(ErrorCode::NotFound,
+                        "a GI instance names a mesh or material the shot lacks");
         }
         const State::Mesh& mesh = state.meshes[mesh_index];
         const Mat4 transform = instance_transform(instance, shot.camera_position);
@@ -377,7 +380,7 @@ Status BeautyGi::build(const Shot& shot,
         state.bake_instances.push_back(bake);
         if (state.hardware) {
             rt::InstanceDescriptor descriptor;
-            descriptor.geometry = static_cast<rt::GeometryId>(mesh_index + 1U);
+            descriptor.geometry = static_cast<rt::GeometryId>(mesh_index) + 1U;
             descriptor.transform = transform;
             descriptor.instance_id = instance_id;
             descriptor.material_id = material_index;
@@ -406,8 +409,8 @@ Status BeautyGi::build(const Shot& shot,
     gi::GiLight sun;
     sun.directional = true;
     sun.direction = -light.to_sun;
-    const f32 peak = std::max({light.sun_illuminance.x, light.sun_illuminance.y,
-                               light.sun_illuminance.z, 1.0e-6F});
+    const f32 peak = std::max(
+        {light.sun_illuminance.x, light.sun_illuminance.y, light.sun_illuminance.z, 1.0e-6F});
     sun.colour = light.sun_illuminance / peak;
     sun.intensity = peak / std::numbers::pi_v<f32>;
     sun.radius = light.sun_angular_radius;
@@ -429,8 +432,7 @@ Status BeautyGi::build(const Shot& shot,
     gi_gpu::GpuRadianceCacheDescription cache;
     const u32 side = (kProbeHalfExtent * 2U) + 1U;
     cache.max_probes = kProbeLevels * side * side * side;
-    if (Status made = state.cache.create(*allocator_, device, state.scene, cache);
-        !made) {
+    if (Status made = state.cache.create(*allocator_, device, state.scene, cache); !made) {
         return made;
     }
     state.cache.bind_field(state.system.field());
@@ -443,9 +445,10 @@ Status BeautyGi::build(const Shot& shot,
         (void)state.system.acceleration().update();
         // THE STRUCTURES ARE BUILT ONCE, BEFORE THE FIRST FRAME, so the probe gather that frame
         // runs and the resolve's ray queries both find a traceable scene.
-        if (Status begun = device.begin_frame().has_value()
-                               ? ok()
-                               : fail(ErrorCode::Internal, "the GI's structure frame did not begin");
+        if (Status begun =
+                device.begin_frame().has_value()
+                    ? ok()
+                    : fail(ErrorCode::Internal, "the GI's structure frame did not begin");
             !begun) {
             return begun;
         }
@@ -453,8 +456,8 @@ Status BeautyGi::build(const Shot& shot,
         Status declared = state.structures.declare(graph);
         if (declared) {
             rendering::GraphExecutor executor(*allocator_, device);
-            auto executed = executor.execute(graph, rendering::CompileOptions{},
-                                             rendering::ExecuteOptions{});
+            auto executed =
+                executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
             if (!executed) {
                 declared = make_unexpected(executed.error());
             }
@@ -464,8 +467,8 @@ Status BeautyGi::build(const Shot& shot,
         if (!declared) {
             return declared;
         }
-        if (Status bound = state.cache.bind_hardware(&state.system.acceleration(),
-                                                     &state.structures);
+        if (Status bound =
+                state.cache.bind_hardware(&state.system.acceleration(), &state.structures);
             !bound) {
             return bound;
         }
@@ -508,8 +511,8 @@ Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::Ass
         // than wherever a budgeted schedule had reached by its frame. Every frame after this one
         // runs at the budget's rates, as a game's does.
         const f64 converge_mark = now_millis();
-        converged_frames_ = state.system.advance_to_convergence(context, kConvergedThreshold,
-                                                                kConvergedFrames);
+        converged_frames_ =
+            state.system.advance_to_convergence(context, kConvergedThreshold, kConvergedFrames);
         converge_ms_ = now_millis() - converge_mark;
         context.frame = converged_frames_;
     }
@@ -594,9 +597,9 @@ Expected<BeautyGiReference, Error> BeautyGi::measure_reference(u32 pixels, u32 s
     std::vector<f32> depth(cells);
     std::vector<Vec3> normal(cells);
     std::vector<f32> roughness(cells);
-    if (Status read = state.resolve.read_back_surfaces(
-            {position.data(), cells}, {depth.data(), cells}, {normal.data(), cells},
-            {roughness.data(), cells});
+    if (Status read =
+            state.resolve.read_back_surfaces({position.data(), cells}, {depth.data(), cells},
+                                             {normal.data(), cells}, {roughness.data(), cells});
         !read) {
         return make_unexpected(read.error());
     }
@@ -610,8 +613,8 @@ Expected<BeautyGiReference, Error> BeautyGi::measure_reference(u32 pixels, u32 s
     }
 
     const gi::PathTracer tracer(state.exact, state.system.scene(),
-                                {state.lights.data(), state.lights.size()},
-                                state.system.sky_term(), &state.exact);
+                                {state.lights.data(), state.lights.size()}, state.system.sky_term(),
+                                &state.exact);
     gi::BakeSettings bake;
     bake.samples = samples;
     bake.bounces = bounces;
@@ -624,8 +627,8 @@ Expected<BeautyGiReference, Error> BeautyGi::measure_reference(u32 pixels, u32 s
     const u32 side = std::max(1U, static_cast<u32>(std::sqrt(static_cast<f32>(pixels))));
     for (u32 row = 0; row < side; ++row) {
         for (u32 column = 0; column < side; ++column) {
-            const u32 x = ((column * 2U + 1U) * grid_width) / (side * 2U);
-            const u32 y = ((row * 2U + 1U) * grid_height) / (side * 2U);
+            const u32 x = (((column * 2U) + 1U) * grid_width) / (side * 2U);
+            const u32 y = (((row * 2U) + 1U) * grid_height) / (side * 2U);
             const usize cell = (static_cast<usize>(y) * grid_width) + x;
             if (depth[cell] <= 0.0F) {
                 continue;

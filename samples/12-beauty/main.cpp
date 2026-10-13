@@ -215,15 +215,17 @@ void print_report(const Shot& shot, const ShotReport& report) {
     if (report.gi_cards != 0U) {
         std::printf("gi            %u cards, %u placements, traced through the %s\n",
                     report.gi_cards, report.gi_placements, report.gi_tier);
-        std::printf("gi cost       host cache update %.2f ms; converged mode took %u frames, "
-                    "%.0f ms, before the first\n",
-                    report.gi_update_ms, report.gi_converged_frames, report.gi_converge_ms);
+        std::printf(
+            "gi cost       host cache update %.2f ms; converged mode took %u frames, "
+            "%.0f ms, before the first\n",
+            report.gi_update_ms, report.gi_converged_frames, report.gi_converge_ms);
         if (report.gi_timed) {
-            std::printf("gi gpu        unpack %.3f, reproject %.3f, resolve %.3f, accumulate %.3f, "
-                        "variance %.3f, filter %.3f, publish %.3f = %.3f ms\n",
-                        report.gi_unpack_ms, report.gi_reproject_ms, report.gi_resolve_ms,
-                        report.gi_accumulate_ms, report.gi_variance_ms, report.gi_filter_ms,
-                        report.gi_publish_ms, report.gi_total_ms);
+            std::printf(
+                "gi gpu        unpack %.3f, reproject %.3f, resolve %.3f, accumulate %.3f, "
+                "variance %.3f, filter %.3f, publish %.3f = %.3f ms\n",
+                report.gi_unpack_ms, report.gi_reproject_ms, report.gi_resolve_ms,
+                report.gi_accumulate_ms, report.gi_variance_ms, report.gi_filter_ms,
+                report.gi_publish_ms, report.gi_total_ms);
         }
     }
     std::printf("validation    %u error(s)\n", report.validation_errors);
@@ -440,11 +442,12 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "cy_sample_beauty: %s\n", measured.error().message);
             return 1;
         }
-        std::printf("gi reference  %u pixels path traced (%u paths, 3 bounces): the GI's indirect "
-                    "diffuse %.3f relative error, the flat ambient's %.3f\n",
-                    measured.value().pixels, gi_reference_samples,
-                    static_cast<double>(measured.value().gi_relative_error),
-                    static_cast<double>(measured.value().ambient_relative_error));
+        std::printf(
+            "gi reference  %u pixels path traced (%u paths, 3 bounces): the GI's indirect "
+            "diffuse %.3f relative error, the flat ambient's %.3f\n",
+            measured.value().pixels, gi_reference_samples,
+            static_cast<double>(measured.value().gi_relative_error),
+            static_cast<double>(measured.value().ambient_relative_error));
     }
     if (!still.empty()) {
         std::printf("still         %s\n", still.c_str());

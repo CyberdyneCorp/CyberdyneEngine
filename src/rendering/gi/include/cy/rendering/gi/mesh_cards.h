@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // A triangle mesh as the GI scene holds it: surface cards over its faces, and a signed distance
 // grid in its own space for the field to composite. Issue #35, stage 4.
@@ -10,7 +11,8 @@
 // a box's field in closed form (`box_distance`). A frame draws meshes, and the per-pixel resolve's
 // first real scene (the beauty shot) is a dozen of them: boxes, cylinders, a sphere, a ground
 // plane. So the two things the GI scene needs of any mesh are built here, from its triangles, the
-// way a cook would: cards at a stated spacing (`append_mesh_cards`), and a dense signed distance grid
+// way a cook would: cards at a stated spacing (`append_mesh_cards`), and a dense signed distance
+// grid
 // (`MeshDistanceField`) — the nearest triangle for the distance, the parity of a ray's crossings
 // for the sign, so a closed mesh is negative inside and an open one (a ground plane) negative
 // below it.

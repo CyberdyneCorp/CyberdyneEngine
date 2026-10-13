@@ -950,7 +950,8 @@ TracedCacheSamples RadianceCache::sample_traced(Vec3 position, Vec3 normal, Vec3
                                                 u64 frame,
                                                 const DistanceField& field) const noexcept {
     diagnostics_.gathers += 1;
-    const f32 reach = settings_.base_spacing_metres * static_cast<f32>(1U << (settings_.levels - 1));
+    const f32 reach =
+        settings_.base_spacing_metres * static_cast<f32>(1U << (settings_.levels - 1));
     const Vec3 extent{reach, reach, reach};
     const Aabb box{position - extent, position + extent};
     const Vec3 lifted = position + (normal * settings_.visibility_bias_metres);
@@ -972,10 +973,11 @@ TracedCacheSamples RadianceCache::sample_traced(Vec3 position, Vec3 normal, Vec3
         if (span > spacing) {
             return true;
         }
-        const f32 falloff = (1.0F - math::clamp(span / spacing, 0.0F, 1.0F)) *
-                            visibility_weight(entry, position);
+        const f32 falloff =
+            (1.0F - math::clamp(span / spacing, 0.0F, 1.0F)) * visibility_weight(entry, position);
         const Vec3 toward = span > 1.0e-4F ? -offset / span : normal;
-        const f32 diffuse_weight = span > 1.0e-4F ? falloff * facing_weight(toward, normal) : falloff;
+        const f32 diffuse_weight =
+            span > 1.0e-4F ? falloff * facing_weight(toward, normal) : falloff;
         const f32 specular_weight =
             span > 1.0e-4F ? falloff * facing_weight(toward, reflection) : falloff;
         if ((diffuse_weight <= 0.0F && specular_weight <= 0.0F) ||
@@ -991,8 +993,9 @@ TracedCacheSamples RadianceCache::sample_traced(Vec3 position, Vec3 normal, Vec3
             diffuse.oldest = std::max(diffuse.oldest, static_cast<f32>(age));
         }
         if (specular_weight > 0.0F) {
-            specular.total = specular.total +
-                             (decode_payload(settings_.encoding, data, reflection) * specular_weight);
+            specular.total =
+                specular.total +
+                (decode_payload(settings_.encoding, data, reflection) * specular_weight);
             specular.weight += specular_weight;
             specular.oldest = std::max(specular.oldest, static_cast<f32>(age));
         }

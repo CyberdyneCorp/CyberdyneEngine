@@ -271,8 +271,8 @@ struct AssemblyView {
     Span<const DecalInstance> decals;
     /// The two targets of the per-pixel GI resolve, imported by their producer
     /// (`gi_gpu::GpuScreenResolve::import_diffuse` and `import_specular`). Read only with
-    /// `AssemblyDescription::global_illumination` with a `FrameSinks::screen_space_gi` producer, and
-    /// then the diffuse one is required. Appended.
+    /// `AssemblyDescription::global_illumination` with a `FrameSinks::screen_space_gi` producer,
+    /// and then the diffuse one is required. Appended.
     ResourceId screen_space_gi = kInvalidResource;
     ResourceId screen_space_gi_specular = kInvalidResource;
 };

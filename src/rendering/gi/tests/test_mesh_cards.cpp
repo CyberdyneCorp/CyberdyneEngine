@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // A mesh as the GI scene holds it: cards pooled per cell and facing, and a signed distance grid
 // from its triangles. Issue #35, stage 4.
 
@@ -34,13 +35,20 @@ cy::Allocator& allocator() noexcept {
 
 /// A box of half-extent `h` about the origin, wound outward.
 struct BoxMesh {
-    Vec3 positions[8];
+    Vec3 positions[8]{};
     u32 indices[36] = {0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
                        3, 7, 6, 3, 6, 2, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5};
 
-    explicit BoxMesh(Vec3 h) noexcept
-        : positions{{-h.x, -h.y, -h.z}, {h.x, -h.y, -h.z}, {h.x, h.y, -h.z}, {-h.x, h.y, -h.z},
-                    {-h.x, -h.y, h.z},  {h.x, -h.y, h.z},  {h.x, h.y, h.z},  {-h.x, h.y, h.z}} {}
+    explicit BoxMesh(Vec3 h) noexcept {
+        // Corners 1, 2, 5 and 6 are at +x, 2, 3, 6 and 7 at +y, 4 to 7 at +z: the order the
+        // indices are wound outward over.
+        constexpr bool kPlusX[8] = {false, true, true, false, false, true, true, false};
+        constexpr bool kPlusY[8] = {false, false, true, true, false, false, true, true};
+        for (u32 corner = 0; corner < 8; ++corner) {
+            positions[corner] = Vec3{kPlusX[corner] ? h.x : -h.x, kPlusY[corner] ? h.y : -h.y,
+                                     corner >= 4U ? h.z : -h.z};
+        }
+    }
 
     [[nodiscard]] Span<const Vec3> vertices() const noexcept { return {positions, 8}; }
     [[nodiscard]] Span<const u32> triangles() const noexcept { return {indices, 36}; }
@@ -55,7 +63,8 @@ struct CylinderSide {
         for (u32 segment = 0; segment < segments; ++segment) {
             const f32 angle = 2.0F * std::numbers::pi_v<f32> * static_cast<f32>(segment) /
                               static_cast<f32>(segments);
-            (void)positions.push_back(Vec3{radius * std::cos(angle), 0.0F, radius * std::sin(angle)});
+            (void)positions.push_back(
+                Vec3{radius * std::cos(angle), 0.0F, radius * std::sin(angle)});
             (void)positions.push_back(
                 Vec3{radius * std::cos(angle), height, radius * std::sin(angle)});
         }
@@ -115,8 +124,8 @@ CY_TEST_CASE("a box's grid is the box's distance at every sample, signed") {
 }
 
 CY_TEST_CASE("an open plane's grid is negative below it and positive above") {
-    const Vec3 positions[4] = {{-2.0F, 0.0F, -2.0F}, {2.0F, 0.0F, -2.0F}, {2.0F, 0.0F, 2.0F},
-                               {-2.0F, 0.0F, 2.0F}};
+    const Vec3 positions[4] = {
+        {-2.0F, 0.0F, -2.0F}, {2.0F, 0.0F, -2.0F}, {2.0F, 0.0F, 2.0F}, {-2.0F, 0.0F, 2.0F}};
     const u32 indices[6] = {0, 2, 1, 0, 3, 2};
     MeshDistanceField field;
     MeshFieldSettings settings;
@@ -142,9 +151,8 @@ CY_TEST_CASE("a box's cards cover its faces once, on them and facing out") {
     settings.spacing_metres = 0.5F;
     settings.albedo = Vec3{0.3F, 0.4F, 0.5F};
     settings.instance_id = 7;
-    CY_REQUIRE(append_mesh_cards(box.vertices(), box.triangles(), Mat4::from_translation(
-                                     Vec3{4.0F, 0.0F, 0.0F}),
-                                 settings, cards)
+    CY_REQUIRE(append_mesh_cards(box.vertices(), box.triangles(),
+                                 Mat4::from_translation(Vec3{4.0F, 0.0F, 0.0F}), settings, cards)
                    .has_value());
     // Six faces of four cells by four.
     CY_CHECK_EQ(cards.size(), static_cast<usize>(96));
@@ -181,8 +189,8 @@ CY_TEST_CASE("a column of slivers has the cards its surface needs, not its trian
     CY_CHECK(static_cast<f32>(cards.size()) > surface / per_card);
     for (const Surfel& card : cards.span()) {
         // On the side, facing away from the axis.
-        const f32 radial = std::sqrt((card.position.x * card.position.x) +
-                                     (card.position.z * card.position.z));
+        const f32 radial =
+            std::sqrt((card.position.x * card.position.x) + (card.position.z * card.position.z));
         CY_CHECK(radial > 0.35F);
         CY_CHECK(radial < 0.43F);
         CY_CHECK((card.normal.x * card.position.x) + (card.normal.z * card.position.z) > 0.0F);
@@ -190,8 +198,8 @@ CY_TEST_CASE("a column of slivers has the cards its surface needs, not its trian
 }
 
 CY_TEST_CASE("a region keeps only the cards inside it, and two sides doubles them") {
-    const Vec3 positions[4] = {{-5.0F, 0.0F, -5.0F}, {5.0F, 0.0F, -5.0F}, {5.0F, 0.0F, 5.0F},
-                               {-5.0F, 0.0F, 5.0F}};
+    const Vec3 positions[4] = {
+        {-5.0F, 0.0F, -5.0F}, {5.0F, 0.0F, -5.0F}, {5.0F, 0.0F, 5.0F}, {-5.0F, 0.0F, 5.0F}};
     const u32 indices[6] = {0, 2, 1, 0, 3, 2};
     MeshCardSettings settings;
     settings.spacing_metres = 1.0F;
@@ -228,10 +236,10 @@ CY_TEST_CASE("a mesh that is not whole triangles is refused") {
     const u32 broken[2] = {0, 1};
     const u32 past[3] = {0, 1, 3};
     Array<Surfel> cards(allocator());
-    CY_CHECK(!append_mesh_cards({positions, 3}, {broken, 2}, Mat4::identity(), {}, cards)
-                  .has_value());
-    CY_CHECK(!append_mesh_cards({positions, 3}, {past, 3}, Mat4::identity(), {}, cards)
-                  .has_value());
+    CY_CHECK(
+        !append_mesh_cards({positions, 3}, {broken, 2}, Mat4::identity(), {}, cards).has_value());
+    CY_CHECK(
+        !append_mesh_cards({positions, 3}, {past, 3}, Mat4::identity(), {}, cards).has_value());
     MeshDistanceField field;
     CY_CHECK(!field.build({positions, 3}, {past, 3}, {}).has_value());
     MeshFieldSettings tiny;

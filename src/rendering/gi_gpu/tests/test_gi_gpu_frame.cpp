@@ -110,9 +110,9 @@ public:
     [[nodiscard]] rhi::Device& device() const noexcept { return *device_.value(); }
     [[nodiscard]] u32 validation_errors() const noexcept { return errors_; }
     void report_skip() const noexcept {
-        std::fprintf(stderr,
-                     "no requested graphics device on this machine; the backend selected was '%s'\n",
-                     selection_.selected != nullptr ? selection_.selected : "(none)");
+        std::fprintf(
+            stderr, "no requested graphics device on this machine; the backend selected was '%s'\n",
+            selection_.selected != nullptr ? selection_.selected : "(none)");
     }
 
 private:
@@ -153,8 +153,9 @@ struct GiOfScene {
         for (const Aabb& box : boxes) {
             const Vec3 centre = box.center();
             const Vec3 half = box.half_extents();
-            const u32 grid = std::max(9U, static_cast<u32>(std::ceil(
-                                              (std::max({half.x, half.y, half.z}) + 0.5F) * 6.0F)));
+            const u32 grid = std::max(
+                9U,
+                static_cast<u32>(std::ceil((std::max({half.x, half.y, half.z}) + 0.5F) * 6.0F)));
             fields.push_back(std::make_unique<gi_support::BoxField>(half, 0.5F, grid | 1U));
             if (!system.field()
                      .place(id++, fields.back()->asset(), Mat4::from_translation(centre))
@@ -172,8 +173,8 @@ struct GiOfScene {
             quads.push_back({2, hi.z, {lo.x, lo.y}, {hi.x, hi.y}, grey, 1.0F});
         }
         surfels = gi_support::surfels_from_quads(quads, 0.5F);
-        const Aabb bounds = Aabb::from_center_extents(Vec3{0.0F, 0.0F, -8.0F},
-                                                      Vec3{12.0F, 6.0F, 12.0F});
+        const Aabb bounds =
+            Aabb::from_center_extents(Vec3{0.0F, 0.0F, -8.0F}, Vec3{12.0F, 6.0F, 12.0F});
         if (!system.ingest_cell(1, bounds, {surfels.data(), surfels.size()}, 0).has_value()) {
             return false;
         }
@@ -189,8 +190,7 @@ struct GiOfScene {
         for (u32 which = 1; which < 3U; ++which) {
             gi::GiLight point;
             point.position = Vec3{which == 1U ? -3.2F : 3.2F, 1.4F, -5.4F};
-            point.colour =
-                which == 1U ? Vec3{0.4F, 0.7F, 1.0F} : Vec3{1.0F, 0.5F, 0.3F};
+            point.colour = which == 1U ? Vec3{0.4F, 0.7F, 1.0F} : Vec3{1.0F, 0.5F, 0.3F};
             point.intensity = 9000.0F;
             point.range = 16.0F;
             point.id = 1 + which;
@@ -210,6 +210,8 @@ struct GiFrameCase {
     /// The composite's words written.
     bool bound = false;
     gi::GiMode mode = gi::GiMode::Dynamic;
+    /// The specular target's slot left at none: the diffuse alone is composited.
+    bool diffuse_only = false;
     u64 frame = 0;
 };
 
@@ -260,7 +262,8 @@ Status before_upload(rendering::pipeline::FrameUpload& upload, void* user) noexc
     if (!frame->attached) {
         return ok();
     }
-    frame->resolve->set_jitter(Vec2{upload.view.temporal_jitter[0], upload.view.temporal_jitter[1]});
+    frame->resolve->set_jitter(
+        Vec2{upload.view.temporal_jitter[0], upload.view.temporal_jitter[1]});
     if (!frame->bound) {
         return ok();
     }
@@ -273,15 +276,17 @@ Status before_upload(rendering::pipeline::FrameUpload& upload, void* user) noexc
         !set) {
         return set;
     }
-    rendering::gi_gpu::write_gi_control(kDiffuseSlot, kSpecularSlot, frame->mode,
-                                        upload.view.gi_control);
+    rendering::gi_gpu::write_gi_control(
+        kDiffuseSlot, frame->diffuse_only ? rendering::pipeline::kNoMaterialTexture : kSpecularSlot,
+        frame->mode, upload.view.gi_control);
     return ok();
 }
 
 /// A scene rendered `frames` times with a case's hooks; the last frame's pixels kept.
 class GiFrameRun {
 public:
-    GiFrameRun(DeviceFixture& fixture, bool attached, bool bound, gi::GiMode mode)
+    GiFrameRun(DeviceFixture& fixture, bool attached, bool bound, gi::GiMode mode,
+               bool diffuse_only = false)
         : scene_(allocator()) {
         case_.scene = &scene_;
         case_.gi = &gi_;
@@ -289,6 +294,7 @@ public:
         case_.attached = attached;
         case_.bound = bound;
         case_.mode = mode;
+        case_.diffuse_only = diffuse_only;
         FrameSceneHooks hooks;
         hooks.user = &case_;
         hooks.configure = &configure_case;
@@ -315,11 +321,11 @@ public:
         resolve.width = kWidth;
         resolve.height = kHeight;
         resolve.readback = true;
-        ready_ = gi_.build(scene_.boxes()) &&
-                 gscene_.create(allocator(), fixture.device(), description).has_value() &&
-                 cache_.create(allocator(), fixture.device(), gscene_,
-                               GpuRadianceCacheDescription{})
-                     .has_value();
+        ready_ =
+            gi_.build(scene_.boxes()) &&
+            gscene_.create(allocator(), fixture.device(), description).has_value() &&
+            cache_.create(allocator(), fixture.device(), gscene_, GpuRadianceCacheDescription{})
+                .has_value();
         if (ready_) {
             cache_.bind_field(gi_.system.field());
             cache_.bind_host_surfaces(&gi_.system.surfaces());
@@ -418,10 +424,19 @@ CY_TEST_CASE("(b) bound, the GI changes the picture; under a mode that admits no
     CY_REQUIRE(on.render(8));
     GiFrameRun excluded(fixture, true, true, gi::GiMode::Baked);
     CY_REQUIRE(excluded.render(8));
+    // THE DIFFUSE ALONE, the specular's slot at none: the composite's replacement of the ambient is
+    // a change of its own, not one the specular term's addition stands in for.
+    GiFrameRun diffuse(fixture, true, true, gi::GiMode::Dynamic, true);
+    CY_REQUIRE(diffuse.render(8));
     const usize changed = differing(off.pixels(), on.pixels());
-    std::fprintf(stderr, "GI on changes %zu of %u pixels; under Baked it changes %zu\n", changed,
-                 kWidth * kHeight, differing(off.pixels(), excluded.pixels()));
+    const usize diffuse_changed = differing(off.pixels(), diffuse.pixels());
+    std::fprintf(stderr,
+                 "GI on changes %zu of %u pixels, its diffuse alone %zu; under Baked it changes "
+                 "%zu\n",
+                 changed, kWidth * kHeight, diffuse_changed,
+                 differing(off.pixels(), excluded.pixels()));
     CY_CHECK_GT(changed, static_cast<usize>(kWidth * kHeight / 10U));
+    CY_CHECK_GT(diffuse_changed, static_cast<usize>(kWidth * kHeight / 10U));
     CY_CHECK_EQ(differing(off.pixels(), excluded.pixels()), 0U);
     write_picture(off.pixels(), "gi_frame_off.png");
     write_picture(on.pixels(), "gi_frame_on.png");

@@ -22,6 +22,8 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, the scheduler that guarantees progress (`RadianceCache::select`), and `ProbeGatherBackend` — the seam a device gathers the selected probes behind |
 | `tracing.h` | `ScreenTracer`, `SoftwareTracer`, `HardwareTracer`, `WorldTracer` and `TieredTracer` — one interface, cheapest sufficient tier, blended escalation |
 | `reflections.h` | the roughness strategy table, the lobe distribution, and `ReflectionProbeSet` with box projection and amortised realtime capture |
+| `screen_resolve.h` | the per-pixel resolve a frame shades with (issue #35, stage 4), the oracle `cy::rendering-gi-gpu` transcribes: `resolve_screen_pixel`, `ScreenResolve`, the history (`screen_history`), the half-resolution grid and its upsample (`ScreenGrid`, `screen_upsample`) |
+| `mesh_cards.h` | a triangle mesh as the GI scene holds it: cards pooled per cell and facing (`append_mesh_cards`) and a signed distance grid from its triangles (`MeshDistanceField`) |
 | `resolve.h` | `combine()` by confidence, `exclusion_for()` (the double-counting rule), the far-field ramp, and `ConvergenceTracker` |
 | `budget.h` | the GI allocation, seven priced lever ladders, the declared reduction order, and importance |
 | `bake.h` | the offline path tracer, ground truth, the reference comparison, and the seeds it leaves in the caches |
@@ -44,9 +46,14 @@ what it costs. Over eighty points in a closed room, converged identically, the t
 
 | | |
 |---|---|
-| mean relative difference, software against hardware | **0.0751** (tolerance 0.10) |
+| mean relative difference, software against hardware | **0.0209** (tolerance 0.10) |
 | an ordinary next frame moves the image by | 0.1903 |
-| the frame that switches the profile off moves it by | 0.1514 |
+| the frame that switches the profile off moves it by | 0.1842 |
+
+(The first was 0.0751 and the third 0.1514 until stage 4 gave every brick of the field its far
+corner — see "In the frame" below: the software tier now sees the same surfaces the hardware tier
+does, so the two agree three times better and the switch is a smaller share of the frame's own
+motion than before.)
 
 The second and third lines are the criterion as a player meets it: turning ray tracing off moves the
 image LESS than standing still does, because a hybrid renderer keeps converging after the world
@@ -188,6 +195,47 @@ off-reference.txt`). `tests/test_probe_gather.cpp` holds the seam to the schedul
 The device's hardware tier issues Vulkan ray queries over structures `cy::rendering-raytracing-gpu`
 builds from the service's decisions, and `render.gi_gpu_tracing` holds it to this module's
 `HardwareTracer` ray for ray. Its README has the numbers.
+
+## In the frame: the per-pixel resolve (issue #35, stage 4)
+
+`screen_resolve.h` is what a frame's pixels are lit by, and the oracle the device transcribes
+(`cy::rendering-gi-gpu`'s `GpuScreenResolve`, held to it to about 1e-7 by `render.gi_gpu_resolve`).
+A pixel takes the radiance cache traced to its own probes (`RadianceCache::sample_traced`: the
+probes within one spacing, each kept only if the field lets a trace from the pixel reach it), one
+cosine final-gather ray through the world tier, and the far-field sky, combined under
+`exclusion_for()`'s mask; the rough specular takes the cache in the reflection direction and one
+lobe ray. The shared `denoise::Denoiser` accumulates and filters both over the history
+`screen_history` reprojects through `temporal-rendering`.
+
+`integration.render_gi_screen` holds the frame to the path tracer and to the quality bars the issue
+names, in the GI test room:
+
+| | measured | asserted |
+|---|---|---|
+| per-pixel resolve against the path tracer, 240 points | 0.112 relative (the probes alone 0.436) | < 0.16, and < half the probes' |
+| on the half-resolution grid, between grid samples | 0.148 | < 0.19 |
+| a sealed room behind a 10 cm wall from a lit one | mean 2.6e-5 of the lit room's, worst pixel 7.6e-3 | < 1e-3, < 2e-2 |
+| a light moved 4.9 m | within 10 % of the new converged frame in 11 frames | at most 14 |
+| a converged still view | moves 0.0034 a frame (the one-ray signal under it 0.451) | < 0.01 |
+
+**Three defects building it found, each with its regression.**
+
+- *A brick's last voxel was flat.* A brick stored four samples an axis, so trilinear sampling past
+  its fourth clamped and the last voxel of every brick was constant: a 10 cm wall at a brick face
+  existed from one side only. Bricks store five (`kBrickSampleEdge`, `kBrickSamples`); `render_gi_
+  pipeline`'s "a 10 cm wall at a brick face is in the field from both sides".
+- *A traced probe saw through walls.* The cache's per-axis visibility distances do not stop a probe
+  across a thin wall; `sample_traced` traces each probe from the pixel, and the device's surface
+  bounce gathers cards through the field (`SurfaceBounce::Cards`) rather than through the probes.
+- *A final-gather ray was weighted by what it met.* Combined by its own confidence, a ray that
+  escaped to the sky outweighed one that met a stale card, so the accumulated estimate leaned toward
+  the sky — the beauty shot's shadowed faces resolved two thirds of their bounce. The ray now counts
+  in full and its confidence only decides how much of its value the cache's answer stands in for;
+  `render_gi_screen`'s "a final-gather ray counts in full whatever it met".
+
+`mesh_cards.h` builds a GI scene from meshes: `samples/12-beauty --gi on` is the first scene the
+engine lights this way, and `just capture-beauty-gi` measures it against the path tracer over the
+exact triangles (0.126 relative, where the flat sky term it replaces is 0.385).
 
 ## What is here at Working, and what is not
 

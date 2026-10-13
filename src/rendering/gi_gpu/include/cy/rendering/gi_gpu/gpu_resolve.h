@@ -126,7 +126,8 @@ public:
                                 const GpuScreenResolveDescription& desc) noexcept;
     void destroy() noexcept;
 
-    // --- What the resolve does ---------------------------------------------------------------------
+    // --- What the resolve does
+    // ---------------------------------------------------------------------
 
     void set_settings(const gi::ScreenResolveSettings& settings) noexcept;
     [[nodiscard]] const gi::ScreenResolveSettings& settings() const noexcept { return settings_; }
@@ -147,7 +148,8 @@ public:
     /// Forget the history: a cut, a teleport, a resize. The next frame accumulates from nothing.
     void reset_history() noexcept { history_valid_ = false; }
 
-    // --- One frame ---------------------------------------------------------------------------------
+    // --- One frame
+    // ---------------------------------------------------------------------------------
 
     /// Start frame `frame` at `view`: the surface and history slots turn over, and last frame's
     /// view becomes the one the reprojection reads.
@@ -195,13 +197,14 @@ public:
     [[nodiscard]] Status read_back_denoised(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept;
     [[nodiscard]] Status read_back_history(Span<i32> source, Span<f32> confidence) const noexcept;
     /// This frame's surfaces: world position, view depth, normal, roughness.
-    [[nodiscard]] Status read_back_surfaces(Span<Vec3> position, Span<f32> depth,
-                                            Span<Vec3> normal, Span<f32> roughness) const noexcept;
+    [[nodiscard]] Status read_back_surfaces(Span<Vec3> position, Span<f32> depth, Span<Vec3> normal,
+                                            Span<f32> roughness) const noexcept;
     /// The published signals, one entry a FRAME pixel: what the forward pass samples.
     [[nodiscard]] Status read_back_published(Span<Vec3> diffuse,
                                              Span<Vec3> specular) const noexcept;
 
-    // --- Timing ------------------------------------------------------------------------------------
+    // --- Timing
+    // ------------------------------------------------------------------------------------
 
     void set_timing(bool enabled) noexcept { timing_ = enabled; }
     [[nodiscard]] GpuResolveTimes last_times() const noexcept;
