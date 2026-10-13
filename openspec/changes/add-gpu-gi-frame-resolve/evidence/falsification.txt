@@ -1,0 +1,98 @@
+Mutations of the stage 4 and 5 code, Development build, Vulkan on the RTX 5060 (driver 580.95.05).
+Each was applied to the source named, the gi_gpu SPIR-V/MSL (or the frame's, for cy/frame.slang)
+regenerated through the module's regenerate.py where the mutation is in a shader, the named targets
+rebuilt and the named cases run, then the source and both headers restored and md5-verified. RED
+means the case failed with the mutation in place.
+
+Four survived the first pass and the suites were strengthened rather than the mutations dropped:
+
+  m3 (the accumulation's floor on its blend weight) survived an 8-frame comparison, because the floor
+  is reached only past the signal's history length; the software-tier comparison runs 40 frames now.
+  m4 (the upsample's normal power) survived on a room whose neighbouring normals agree exactly; the
+  half-grid comparison ripples every normal by a few degrees now.
+  m6 and m7 (the composite's plain-surface branch, and the plain-surface admission bit) survived
+  because the specular term alone changed the picture; (b) now also requires the diffuse alone to.
+  m8's first form (returning a constant) did not compile (an unused parameter under -Werror) and
+  was rewritten as a threshold no scale reaches.
+
+The records below are the reruns. Two greens are listed because they are expected rather than gaps:
+m9's arbiter-report case reports a cost and a rung and asserts no relaxation, which m9 does not touch;
+m10's device comparison holds the camera still, so no pixel's history is depth-rejected on either
+side — the host case that moves the camera is the one that sees the tolerance.
+
+m1_gather_weight_device
+  src/rendering/gi_gpu/shaders/gi_resolve_common.slang: 'sample.confidence = 1.0f;\n    return sample;' -> 'sample.confidence = gpClamp(ray.confidence, 0.0f, 1.0f);\n    return sample;'
+  cy_test_render_gi_gpu_resolve [*software tier] RED; cy_test_render_gi_gpu_resolve [*hardware tier*] RED
+  restored md5 f6f8dbd2c867f36995a1f23ae98d512f ok
+
+m2_software_lift
+  src/rendering/gi_gpu/shaders/gi_resolve_common.slang: 'T.source() == kGpSourceHardware ? lift : max(lift, giFinestVoxel())' -> 'lift'
+  cy_test_render_gi_gpu_resolve [*software tier] RED
+  restored md5 f6f8dbd2c867f36995a1f23ae98d512f ok
+
+m3_accumulate_floor
+  src/rendering/gi_gpu/shaders/gi_denoise.slang: 'const float alphaFloor = historyLength > 0.0f ? 1.0f / historyLength : 1.0f;' -> 'const float alphaFloor = historyLength > 0.0f ? 0.5f / historyLength : 1.0f;'
+  cy_test_render_gi_gpu_resolve [*software tier] RED
+  restored md5 699fe544ff21ae951f1928829ed46580 ok
+
+m4_upsample_normal
+  src/rendering/gi_gpu/shaders/gi_publish.slang: 'static const uint kGpuNormalSquarings = 3u;' -> 'static const uint kGpuNormalSquarings = 2u;'
+  cy_test_render_gi_gpu_resolve [on a half-resolution*] RED
+  restored md5 e1d4f157aeb14e4e910524626103abc6 ok
+
+m5_unpack_depth
+  src/rendering/gi_gpu/shaders/gi_surfaces.slang: 'const float viewDepth = projection.w / (depth + projection.z);' -> 'const float viewDepth = projection.w / (depth + projection.z) * 1.01f;'
+  cy_test_render_gi_gpu_frame [(c)*] RED
+  restored md5 1cdbe03af6a0354cb419ff3ddacf2d47 ok
+
+m6_composite_ignores_gi
+  src/rendering/shaders/cy/frame.slang: 'return (admit & kCyGiAdmitPlain) != 0u ? gi : ambient;' -> 'return ambient;'
+  cy_test_render_gi_gpu_frame [(b)*] RED
+  restored md5 f86faa5e53002befc8ca9bae9a83148a ok
+
+m7_admission_plain
+  src/rendering/gi_gpu/src/gpu_resolve.cpp: 'admitted |= kGiAdmitPlain;' -> 'admitted |= 0U;'
+  cy_test_render_gi_gpu_frame [(b)*] RED
+  restored md5 ffc4c44bbcbb8cd4aa1777cd0975ddad ok
+
+m8_divisor_lever
+  src/rendering/gi_gpu/src/gpu_budget.cpp: 'return scale < 0.99F ? 2U : 1U;' -> 'return scale < 0.0F ? 2U : 1U;'
+  cy_test_render_gi_gpu_resolve [over budget*] RED
+  restored md5 0d09a77803b223a88400050c94d99df4 ok
+
+m9_relax_ungranted
+  src/rendering/gi_gpu/src/gpu_budget.cpp: 'if (report.relax_granted[index]) {' -> 'if (report.registered[index]) {'
+  cy_test_render_gi_gpu_resolve [over budget*] RED; cy_test_render_gi_gpu_resolve [the device GI reports*] green
+  restored md5 0d09a77803b223a88400050c94d99df4 ok
+
+m10_history_tolerance
+  src/rendering/gi/src/screen_resolve.cpp: 'reprojection.depth_tolerance = inputs.depth_tolerance;' -> 'reprojection.depth_tolerance = inputs.depth_tolerance * 100.0F;'
+  cy_test_integration_render_gi_screen [the history is*] RED; cy_test_render_gi_gpu_resolve [*software tier] green
+  restored md5 9ce273ab63a2bd8cf6e3f1b57db0864d ok
+
+m11_mesh_parity
+  src/rendering/gi/src/mesh_cards.cpp: '(crossings & 1U) != 0U ? -nearest : nearest' -> 'nearest'
+  cy_test_integration_render_gi_pipeline [a box's grid*] RED; cy_test_integration_render_gi_pipeline [an open plane*] RED
+  restored md5 e14861cc4b8b5148399f4a5d51a2d293 ok
+
+m12_mesh_no_pooling
+  src/rendering/gi/src/mesh_cards.cpp: 'pieces[end].key == pieces[begin].key' -> 'end == begin'
+  cy_test_integration_render_gi_pipeline [a box's cards*] RED; cy_test_integration_render_gi_pipeline [a column of slivers*] RED
+  restored md5 e14861cc4b8b5148399f4a5d51a2d293 ok
+
+m13_gather_weight_host
+  src/rendering/gi/src/screen_resolve.cpp: 'sample.confidence = 1.0F;\n    return sample;' -> 'sample.confidence = math::clamp(ray.confidence, 0.0F, 1.0F);\n    return sample;'
+  cy_test_integration_render_gi_screen [a final-gather ray*] RED
+  restored md5 9ce273ab63a2bd8cf6e3f1b57db0864d ok
+
+Earlier, while building the change (the same procedure):
+
+field-flat-last-voxel: src/rendering/gi/src/distance_field.cpp, trilinear's far corner clamped to the
+  brick's fourth sample (the old flat last voxel)
+  integration.render_gi_pipeline [a 10 cm wall at a brick face is in the field from both sides] RED
+  integration.render_gi_screen [no light from a lit room reaches the sealed room behind a 10 cm wall] RED
+
+mirror-revision-only: src/rendering/gi_gpu/src/gpu_radiance_cache.cpp, the upload keyed on the probe
+  revision alone (the old mirror)
+  render.gi_gpu_tracing [a probe the host gathers again reaches the device at the next upload] RED
+  render.gi_gpu_resolve [the device resolve and denoiser are the host's, software tier] RED

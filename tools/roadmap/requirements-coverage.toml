@@ -1769,6 +1769,16 @@ note = "the six operators the requirement enumerates, each driven to the ends of
 # it to test:render.gi_gpu_tracing, case "the device gather matches the host radiance cache, every
 # encoding, software tier" (siblings: the query, the tiers, the fallback cases in the same suite).
 #
+# `openspec/changes/add-gpu-gi-frame-resolve` (#35 stages 4 and 5) adds two. On archive, map "The
+# frame's indirect light is resolved per pixel on a device" to test:render.gi_gpu_resolve, case
+# "the device resolve and denoiser are the host's, software tier" (siblings: the half-grid and
+# hardware-tier cases; render.gi_gpu_frame's (a)-(c) for the composite and "off is the frame it was";
+# integration.render_gi_screen's path-tracer, 10 cm wall, moved-light, still-view and stale-wall
+# cases for the quality scenarios). Map "The device GI's cost drives the GI budget and the arbiter" to
+# test:render.gi_gpu_resolve, case "over budget, the GI drops its levers in the declared order, its
+# device cost falls with them, and it relaxes only with the arbiter's permission" (sibling: "the
+# device GI reports its measured cost to the arbiter on the rung its levers add up to").
+#
 # TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
 # and `src/rendering/sky_illumination/`. Most are answered by a named case, one by a criterion the
 # falsifiability record proves can fail, and THE REST ARE DEFERRED WITH A REASON — they
