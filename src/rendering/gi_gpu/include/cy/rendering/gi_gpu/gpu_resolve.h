@@ -158,7 +158,14 @@ public:
     /// The regions this frame invalidated — `gi::ScreenHistoryInputs::invalidated` — after
     /// `begin_frame`, which clears them. At most `gi::kScreenHistoryRegions` are kept.
     void set_invalidated(Span<const Aabb> regions) noexcept;
-    /// A test's surfaces in place of the prepass: written into this frame's slot.
+    /// The resolve grid's divisor (`gi::ScreenGrid`): one resolves every pixel, two a quarter of
+    /// them, upsampled back by the publish. A new divisor starts the history over.
+    [[nodiscard]] Status set_divisor(u32 divisor) noexcept;
+    [[nodiscard]] u32 divisor() const noexcept { return divisor_; }
+    [[nodiscard]] u32 grid_width() const noexcept { return grid_width_; }
+    [[nodiscard]] u32 grid_height() const noexcept { return grid_height_; }
+    /// A test's FRAME surfaces in place of the prepass: their grid written into this frame's slot,
+    /// and every pixel's normal and depth into the guidance the publish upsamples against.
     [[nodiscard]] Status set_surfaces(const gi::ScreenSurfaces& surfaces) noexcept;
 
     /// Import the two targets into this frame's graph. The diffuse one is the frame's
@@ -182,12 +189,17 @@ public:
 
     // --- After the frame's fence (`readback`) ---------------------------------------------------
 
+    /// The grid's buffers, one entry a grid cell: the resolve's noisy signals, the denoised ones,
+    /// the history and the surfaces.
     [[nodiscard]] Status read_back_noisy(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept;
     [[nodiscard]] Status read_back_denoised(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept;
     [[nodiscard]] Status read_back_history(Span<i32> source, Span<f32> confidence) const noexcept;
     /// This frame's surfaces: world position, view depth, normal, roughness.
     [[nodiscard]] Status read_back_surfaces(Span<Vec3> position, Span<f32> depth,
                                             Span<Vec3> normal, Span<f32> roughness) const noexcept;
+    /// The published signals, one entry a FRAME pixel: what the forward pass samples.
+    [[nodiscard]] Status read_back_published(Span<Vec3> diffuse,
+                                             Span<Vec3> specular) const noexcept;
 
     // --- Timing ------------------------------------------------------------------------------------
 
@@ -232,6 +244,12 @@ private:
         /// One slot of surfaces as `set_surfaces` writes them, copied into this frame's slot by a
         /// declared transfer. Created by the first `set_surfaces`: a frame never needs it.
         kSurfacesUpload,
+        /// [normal, view depth] a FRAME pixel: what the publish upsamples the grid against.
+        kGuidance,
+        kGuidanceUpload,
+        /// The upsampled signals a frame pixel, kept when `readback` asks.
+        kPublished,
+        kPublishedHost,
         kBufferCount,
     };
     /// Timestamps: one before the first stage and one after each of the seven.
@@ -322,8 +340,13 @@ private:
     ResourceId imported_specular_ = kInvalidResource;
     Step steps_[16]{};
     u32 step_count_ = 0;
-    Copy copies_[4]{};
+    Copy copies_[5]{};
     Copy upload_{};
+    Copy guidance_upload_{};
+    gi::ScreenGrid grid_;
+    u32 divisor_ = 1;
+    u32 grid_width_ = 0;
+    u32 grid_height_ = 0;
     bool surfaces_uploaded_ = false;
     bool final_in_b_ = false;
 };

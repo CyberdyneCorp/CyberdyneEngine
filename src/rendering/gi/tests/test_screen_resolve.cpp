@@ -260,6 +260,43 @@ CY_TEST_CASE("converged, the frame is nearer the path tracer than the probes alo
     CY_CHECK_LT(resolved.relative_error, cached.relative_error * 0.5F);
 }
 
+CY_TEST_CASE("on a half-resolution grid the frame stays near the path tracer") {
+    // What `TracingResolution`'s coarse positions cost in accuracy: a quarter of the pixels
+    // resolved and denoised, the rest upsampled by depth and normal.
+    ScreenScene scene;
+    make_room(scene);
+    scene.divisor = 2;
+    scene.resize_grid();
+    scene.run(0, 40);
+    gi_support::QuadTracer exact(scene.quads);
+    const PathTracer reference(exact, scene.system.scene(), {scene.lights.data(), scene.lights.size()},
+                               scene.system.sky_term(), &exact);
+    BakeSettings bake;
+    bake.bounces = 3;
+    bake.samples = 192;
+    std::vector<Vec3> truth;
+    std::vector<Vec3> frame;
+    for (u32 y = 1; y < kHeight; y += 2) {
+        for (u32 x = 1; x < kWidth; x += 2) {
+            const usize index = (static_cast<usize>(y) * kWidth) + x;
+            if (scene.view.depth[index] <= 0.0F) {
+                continue;
+            }
+            truth.push_back(reference.irradiance(scene.view.position[index],
+                                                 scene.view.normal[index], bake));
+            frame.push_back(scene.diffuse[index]);
+        }
+    }
+    const ReferenceComparison upsampled = compare_against_reference(
+        {frame.data(), frame.size()}, {truth.data(), truth.size()});
+    std::fprintf(stderr,
+                 "GI test room at a half-resolution grid, %u points (each between grid samples): "
+                 "%.3f relative to the path tracer\n",
+                 upsampled.samples, static_cast<double>(upsampled.relative_error));
+    // MEASURED 0.150 against the full grid's 0.113 and the probes' 0.436.
+    CY_CHECK_LT(upsampled.relative_error, 0.19F);
+}
+
 CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wall") {
     // Two sealed halves of the room and one light in the near one. The path tracer's answer for
     // the far half is exactly zero: there is no opening, so every photon in it came through the

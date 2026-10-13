@@ -32,6 +32,7 @@ constexpr u32 kWordFrame = 18 * 4;
 constexpr u32 kWordJitter = 19 * 4;
 constexpr u32 kWordSignals = 20 * 4;
 constexpr u32 kWordInvalid = 26 * 4;
+constexpr u32 kWordFull = 36 * 4;
 
 constexpr u64 kVec4 = 16;
 constexpr u32 kSignals = 2;
@@ -40,10 +41,10 @@ constexpr u32 kLinearGroup = 64;
 constexpr u32 kTileGroup = 8;
 
 /// The descriptor bindings of each set, in its `ParameterBlock`'s order.
-constexpr u32 kSurfaceBindings = 4;
+constexpr u32 kSurfaceBindings = 5;
 constexpr u32 kResolveBindings = 3;
 constexpr u32 kDenoiseBindings = 8;
-constexpr u32 kPublishBindings = 4;
+constexpr u32 kPublishBindings = 7;
 
 /// The push block of the denoiser's entry points: `GiDenoisePush`.
 struct DenoisePush {
@@ -183,9 +184,8 @@ Status GpuScreenResolve::create(Allocator& allocator, rhi::Device& device, GpuRa
         return made;
     }
     std::memset(words_, 0, sizeof(words_));
-    words_[kWordCounts + 0] = desc.width;
-    words_[kWordCounts + 1] = desc.height;
-    words_[kWordCounts + 2] = desc.width * desc.height;
+    divisor_ = 0;
+    (void)set_divisor(1);
     set_settings(gi::ScreenResolveSettings{});
     set_denoiser(denoise::Denoiser{});
     return ok();
@@ -203,7 +203,7 @@ Status GpuScreenResolve::create_layouts() noexcept {
         {"gi surface set", kSurfaceBindings, 0b0110U, 0U},
         {"gi resolve set", kResolveBindings, 0U, 0U},
         {"gi denoise set", kDenoiseBindings, 0U, 0U},
-        {"gi publish set", kPublishBindings, 0b1100U, 0b1100U},
+        {"gi publish set", kPublishBindings, 0b1100000U, 0b1100000U},
     };
     for (u32 which = 0; which < kLayoutCount; ++which) {
         const LayoutShape& shape = shapes[which];
@@ -404,10 +404,20 @@ Status GpuScreenResolve::create_resources() noexcept {
         {"gi resolve surfaces host", pixels * 2U * kVec4, host, rhi::MemoryUse::Readback, true},
         {"gi resolve surfaces upload", pixels * 2U * kVec4, rhi::BufferUsage::TransferSource,
          rhi::MemoryUse::Upload, false},
+        {"gi resolve guidance", pixels * kVec4, device_only | rhi::BufferUsage::TransferDestination,
+         rhi::MemoryUse::DeviceLocal, false},
+        {"gi resolve guidance upload", pixels * kVec4, rhi::BufferUsage::TransferSource,
+         rhi::MemoryUse::Upload, false},
+        // Readback-only: a frame never keeps a copy of what it sampled.
+        {"gi resolve published", pixels * kSignals * kVec4, device_only, rhi::MemoryUse::DeviceLocal,
+         true},
+        {"gi resolve published host", pixels * kSignals * kVec4, host, rhi::MemoryUse::Readback,
+         true},
     };
     for (u32 index = 0; index < kBufferCount; ++index) {
-        // The upload buffer waits for the first `set_surfaces`, and the readbacks for `readback`.
-        if ((requests[index].host_copy && !desc_.readback) || index == kSurfacesUpload) {
+        // The upload buffers wait for the first `set_surfaces`, and the readbacks for `readback`.
+        if ((requests[index].host_copy && !desc_.readback) || index == kSurfacesUpload ||
+            index == kGuidanceUpload) {
             sizes_[index] = requests[index].size;
             continue;
         }
@@ -595,6 +605,32 @@ void GpuScreenResolve::set_cache_frame(u64 frame) noexcept {
     }
 }
 
+Status GpuScreenResolve::set_divisor(u32 divisor) noexcept {
+    if (divisor == 0 || divisor > 4) {
+        return fail(ErrorCode::InvalidArgument,
+                    "GpuScreenResolve::set_divisor: one resolves every pixel, up to four every "
+                    "fourth each way");
+    }
+    if (divisor == divisor_) {
+        return ok();
+    }
+    // The history and the surface slots are laid out by the grid's cell count: a new grid is a
+    // new history, as a resize is.
+    divisor_ = divisor;
+    grid_width_ = gi::screen_grid_extent(desc_.width, divisor);
+    grid_height_ = gi::screen_grid_extent(desc_.height, divisor);
+    words_[kWordCounts + 0] = grid_width_;
+    words_[kWordCounts + 1] = grid_height_;
+    words_[kWordCounts + 2] = grid_width_ * grid_height_;
+    words_[kWordFull + 0] = desc_.width;
+    words_[kWordFull + 1] = desc_.height;
+    words_[kWordFull + 2] = divisor;
+    words_[kWordFull + 3] = desc_.readback ? 1U : 0U;
+    history_valid_ = false;
+    view_valid_ = false;
+    return ok();
+}
+
 Status GpuScreenResolve::sync(const gi::RadianceCache& cache) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the device resolve is not created");
@@ -713,34 +749,50 @@ Status GpuScreenResolve::set_surfaces(const gi::ScreenSurfaces& surfaces) noexce
         return fail(ErrorCode::InvalidArgument,
                     "the surfaces do not cover the view the resolve was created for");
     }
-    if (!buffers_[kSurfacesUpload]) {
+    if (Status built = grid_.build(surfaces, divisor_); !built) {
+        return built;
+    }
+    for (const Buffer upload : {kSurfacesUpload, kGuidanceUpload}) {
+        if (buffers_[upload]) {
+            continue;
+        }
         rhi::BufferDescription description;
-        description.name = "gi resolve surfaces upload";
-        description.size = sizes_[kSurfacesUpload];
+        description.name = upload == kSurfacesUpload ? "gi resolve surfaces upload"
+                                                     : "gi resolve guidance upload";
+        description.size = sizes_[upload];
         description.usage = rhi::BufferUsage::TransferSource;
         description.memory = rhi::MemoryUse::Upload;
         Expected<rhi::BufferHandle, Error> buffer = device_->create_buffer(description);
         if (!buffer) {
             return make_unexpected(buffer.error());
         }
-        buffers_[kSurfacesUpload] = *buffer;
+        buffers_[upload] = *buffer;
     }
-    auto* slot = static_cast<f32*>(device_->buffer_mapped_pointer(buffers_[kSurfacesUpload]));
-    if (slot == nullptr) {
-        return fail(ErrorCode::Internal, "the resolve's surface upload buffer is not mapped");
+    auto* cells = static_cast<f32*>(device_->buffer_mapped_pointer(buffers_[kSurfacesUpload]));
+    auto* guidance = static_cast<f32*>(device_->buffer_mapped_pointer(buffers_[kGuidanceUpload]));
+    if (cells == nullptr || guidance == nullptr) {
+        return fail(ErrorCode::Internal, "the resolve's upload buffers are not mapped");
+    }
+    const gi::ScreenSurfaces grid = grid_.surfaces();
+    const usize count = static_cast<usize>(grid.width) * grid.height;
+    for (usize index = 0; index < count; ++index) {
+        f32* record = cells + (index * 8U);
+        record[0] = grid.position[index].x;
+        record[1] = grid.position[index].y;
+        record[2] = grid.position[index].z;
+        record[3] = grid.depth[index];
+        record[4] = grid.normal[index].x;
+        record[5] = grid.normal[index].y;
+        record[6] = grid.normal[index].z;
+        record[7] = grid.roughness[index];
     }
     for (usize index = 0; index < pixels; ++index) {
-        f32* record = slot + (index * 8U);
-        const Vec3 position = surfaces.position[index];
-        const Vec3 normal = surfaces.normal[index];
-        record[0] = position.x;
-        record[1] = position.y;
-        record[2] = position.z;
-        record[3] = surfaces.depth[index];
-        record[4] = normal.x;
-        record[5] = normal.y;
-        record[6] = normal.z;
-        record[7] = surfaces.roughness.empty() ? 0.5F : surfaces.roughness[index];
+        f32* entry = guidance + (index * 4U);
+        const bool surface = surfaces.depth[index] > 0.0F;
+        entry[0] = surface ? surfaces.normal[index].x : 0.0F;
+        entry[1] = surface ? surfaces.normal[index].y : 1.0F;
+        entry[2] = surface ? surfaces.normal[index].z : 0.0F;
+        entry[3] = surface ? surfaces.depth[index] : 0.0F;
     }
     surfaces_uploaded_ = true;
     return ok();
@@ -775,6 +827,8 @@ ResourceId GpuScreenResolve::import(RenderGraph& graph, Buffer buffer) noexcept 
         "gi resolve history",       "gi resolve variance",     "gi resolve filter a",
         "gi resolve filter b",      "gi resolve noisy host",   "gi resolve sources host",
         "gi resolve final host",    "gi resolve surfaces host", "gi resolve surfaces upload",
+        "gi resolve guidance",      "gi resolve guidance upload", "gi resolve published",
+        "gi resolve published host",
     };
     BufferRequest request;
     request.name = kNames[buffer];
@@ -806,7 +860,7 @@ PassId GpuScreenResolve::declare_resolve(RenderGraph& graph, bool first) noexcep
     const bool hardware =
         hardware_pipeline_ && cache_->world_tier() == gi::RadianceSource::HardwareTrace;
     last_tier_ = hardware ? gi::RadianceSource::HardwareTrace : gi::RadianceSource::SoftwareTrace;
-    const u32 pixels = desc_.width * desc_.height;
+    const u32 pixels = grid_width_ * grid_height_;
 
     Step& reproject = steps_[step_count_++];
     reproject = Step{this, kReproject, 2, first, pixels};
@@ -834,7 +888,7 @@ PassId GpuScreenResolve::declare_resolve(RenderGraph& graph, bool first) noexcep
 
 void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
                                         ResourceId specular) noexcept {
-    const u32 items = desc_.width * desc_.height * kSignals;
+    const u32 items = grid_width_ * grid_height_ * kSignals;
     const ResourceId constants = import_constants(graph);
     const ResourceId surfaces = import(graph, kSurfaces);
     const ResourceId history = import(graph, kHistory);
@@ -880,12 +934,17 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
     publish = Step{this, kPublish, 7, false, desc_.width * desc_.height};
     publish.diffuse = diffuse;
     publish.specular = specular;
-    graph.add_pass("gi publish", QueueKind::Graphics)
-        .read(constants, Access::ComputeStorageRead)
+    PassBuilder pass = graph.add_pass("gi publish", QueueKind::Graphics);
+    pass.read(constants, Access::ComputeStorageRead)
         .read(final_in_b_ ? filter_b : filter_a, Access::ComputeStorageRead)
+        .read(surfaces, Access::ComputeStorageRead)
+        .read(import(graph, kGuidance), Access::ComputeStorageRead)
         .write(diffuse, Access::ComputeStorageWrite)
-        .write(specular, Access::ComputeStorageWrite)
-        .record(&record_step, &publish);
+        .write(specular, Access::ComputeStorageWrite);
+    if (desc_.readback) {
+        pass.write(import(graph, kPublished), Access::ComputeStorageWrite);
+    }
+    pass.record(&record_step, &publish);
 }
 
 void GpuScreenResolve::declare_copy(RenderGraph& graph, Copy& copy, const char* name) noexcept {
@@ -902,7 +961,8 @@ void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
     if (!desc_.readback) {
         return;
     }
-    const u64 pixels = static_cast<u64>(desc_.width) * desc_.height;
+    const u64 pixels = static_cast<u64>(grid_width_) * grid_height_;
+    const u64 frame_pixels = static_cast<u64>(desc_.width) * desc_.height;
     copies_[0] = Copy{this, kNoisy, kNoisyHost, 0, pixels * kSignals * kVec4};
     copies_[1] = Copy{this, kSources, kSourcesHost, 0, pixels * 8U};
     copies_[2] =
@@ -910,10 +970,12 @@ void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
     copies_[3] =
         Copy{this, kSurfaces, kSurfacesHost, static_cast<u64>(slot_) * pixels * 2U * kVec4,
              pixels * 2U * kVec4};
+    copies_[4] = Copy{this, kPublished, kPublishedHost, 0, frame_pixels * kSignals * kVec4};
     declare_copy(graph, copies_[0], "gi resolve noisy readback");
     declare_copy(graph, copies_[1], "gi resolve sources readback");
     declare_copy(graph, copies_[2], "gi resolve final readback");
     declare_copy(graph, copies_[3], "gi resolve surfaces readback");
+    declare_copy(graph, copies_[4], "gi resolve published readback");
 }
 
 PassId GpuScreenResolve::declare(RenderGraph& graph, const ScreenSpaceStageInputs& inputs) noexcept {
@@ -935,6 +997,7 @@ PassId GpuScreenResolve::declare(RenderGraph& graph, const ScreenSpaceStageInput
                              .read(inputs.depth, Access::ComputeSampledRead)
                              .read(inputs.normal_roughness, Access::ComputeSampledRead)
                              .write(import(graph, kSurfaces), Access::ComputeStorageReadWrite)
+                             .write(import(graph, kGuidance), Access::ComputeStorageWrite)
                              .record(&record_step, &unpack)
                              .id();
     (void)declare_resolve(graph, false);
@@ -956,13 +1019,19 @@ Status GpuScreenResolve::declare_from_surfaces(RenderGraph& graph) noexcept {
     timed_ = false;
     const ResourceId diffuse = import_diffuse(graph);
     const ResourceId specular = import_specular(graph);
-    const u64 bytes = static_cast<u64>(desc_.width) * desc_.height * 2U * kVec4;
+    const u64 bytes = static_cast<u64>(grid_width_) * grid_height_ * 2U * kVec4;
     upload_ = Copy{this, kSurfacesUpload, kSurfaces, 0, bytes};
     upload_.target_offset = static_cast<u64>(slot_) * bytes;
     graph.add_pass("gi resolve surfaces upload", QueueKind::Graphics)
         .read(import(graph, kSurfacesUpload), Access::TransferRead)
         .write(import(graph, kSurfaces), Access::TransferWrite)
         .record(&record_copy, &upload_);
+    guidance_upload_ = Copy{this, kGuidanceUpload, kGuidance, 0,
+                            static_cast<u64>(desc_.width) * desc_.height * kVec4};
+    graph.add_pass("gi resolve guidance upload", QueueKind::Graphics)
+        .read(import(graph, kGuidanceUpload), Access::TransferRead)
+        .write(import(graph, kGuidance), Access::TransferWrite)
+        .record(&record_copy, &guidance_upload_);
     surfaces_uploaded_ = false;
     (void)declare_resolve(graph, true);
     declare_denoiser(graph, diffuse, specular);
@@ -985,6 +1054,7 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
             writes[1] = sampled_write(1, context.executor->view(step.depth));
             writes[2] = sampled_write(2, context.executor->view(step.normals));
             writes[3] = buffer_write(3, buffers_[kSurfaces]);
+            writes[4] = buffer_write(4, buffers_[kGuidance]);
             count = kSurfaceBindings;
             break;
         case kResolve:
@@ -999,8 +1069,14 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
             layout = kPublishLayout;
             writes[0] = buffer_write(0, constants());
             writes[1] = buffer_write(1, buffers_[final_in_b_ ? kFilterB : kFilterA]);
-            writes[2] = storage_write(2, context.executor->view(step.diffuse));
-            writes[3] = storage_write(3, context.executor->view(step.specular));
+            writes[2] = buffer_write(2, buffers_[kSurfaces]);
+            writes[3] = buffer_write(3, buffers_[kGuidance]);
+            // Bound whether or not the flag asks for a copy — a set's every binding is written —
+            // and with no copy kept, to a buffer the shader then never writes.
+            writes[4] = buffer_write(4, buffers_[kPublished] ? buffers_[kPublished]
+                                                             : buffers_[kGuidance]);
+            writes[5] = storage_write(5, context.executor->view(step.diffuse));
+            writes[6] = storage_write(6, context.executor->view(step.specular));
             count = kPublishBindings;
             break;
         case kReproject:
@@ -1133,7 +1209,7 @@ GpuResolveTimes GpuScreenResolve::last_times() const noexcept {
 // --- Readback ------------------------------------------------------------------------------------
 
 Status GpuScreenResolve::read_back_noisy(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept {
-    const usize pixels = static_cast<usize>(desc_.width) * desc_.height;
+    const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
         desc_.readback ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kNoisyHost]))
                        : nullptr;
@@ -1151,7 +1227,7 @@ Status GpuScreenResolve::read_back_noisy(Span<Vec3> diffuse, Span<Vec3> specular
 
 Status GpuScreenResolve::read_back_denoised(Span<Vec3> diffuse,
                                             Span<Vec3> specular) const noexcept {
-    const usize pixels = static_cast<usize>(desc_.width) * desc_.height;
+    const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
         desc_.readback ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kFinalHost]))
                        : nullptr;
@@ -1169,7 +1245,7 @@ Status GpuScreenResolve::read_back_denoised(Span<Vec3> diffuse,
 }
 
 Status GpuScreenResolve::read_back_history(Span<i32> source, Span<f32> confidence) const noexcept {
-    const usize pixels = static_cast<usize>(desc_.width) * desc_.height;
+    const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
         desc_.readback
             ? static_cast<const u32*>(device_->buffer_mapped_pointer(buffers_[kSourcesHost]))
@@ -1192,7 +1268,7 @@ Status GpuScreenResolve::read_back_history(Span<i32> source, Span<f32> confidenc
 Status GpuScreenResolve::read_back_surfaces(Span<Vec3> position, Span<f32> depth,
                                             Span<Vec3> normal,
                                             Span<f32> roughness) const noexcept {
-    const usize pixels = static_cast<usize>(desc_.width) * desc_.height;
+    const usize pixels = static_cast<usize>(grid_width_) * grid_height_;
     const auto* data =
         desc_.readback
             ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kSurfacesHost]))
@@ -1208,6 +1284,26 @@ Status GpuScreenResolve::read_back_surfaces(Span<Vec3> position, Span<f32> depth
         depth[index] = record[3];
         normal[index] = Vec3{record[4], record[5], record[6]};
         roughness[index] = record[7];
+    }
+    return ok();
+}
+
+Status GpuScreenResolve::read_back_published(Span<Vec3> diffuse,
+                                             Span<Vec3> specular) const noexcept {
+    const usize pixels = static_cast<usize>(desc_.width) * desc_.height;
+    const auto* data =
+        desc_.readback
+            ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kPublishedHost]))
+            : nullptr;
+    if (data == nullptr || diffuse.size() != pixels || specular.size() != pixels) {
+        return fail(ErrorCode::InvalidArgument,
+                    "read_back_published needs `readback` and one entry a frame pixel");
+    }
+    for (usize index = 0; index < pixels; ++index) {
+        const f32* d = data + (index * 4U);
+        const f32* s = data + ((pixels + index) * 4U);
+        diffuse[index] = Vec3{d[0], d[1], d[2]};
+        specular[index] = Vec3{s[0], s[1], s[2]};
     }
     return ok();
 }

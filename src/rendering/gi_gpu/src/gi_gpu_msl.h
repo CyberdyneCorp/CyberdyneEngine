@@ -14554,7 +14554,7 @@ void gpWriteTierResult_0(uint ray_1, const GiTierSample_0 thread* sample_3, uint
 
 )cy_msl";
 
-/// cyGiUnpackSurfaces.metal, 3211 bytes.
+/// cyGiUnpackSurfaces.metal, 4089 bytes.
 inline constexpr char kGiUnpackSurfacesMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -14584,95 +14584,149 @@ float3 decodeOctahedral_0(float2 encoded_0)
 }
 
 
-#line 22 "src/rendering/gi_gpu/shaders/gi_surfaces.slang"
+#line 25 "src/rendering/gi_gpu/shaders/gi_surfaces.slang"
 struct GiSurfaceSet_default_0
 {
     uint4 device* constants_0;
     depth2d<float, access::sample> depth_0;
     texture2d<float, access::sample> normals_0;
     float4 device* surfaces_0;
+    float4 device* guidance_0;
 };
 
 
-#line 22
+#line 25
 struct KernelContext_0
 {
     GiSurfaceSet_default_0 constant* giSurfaces_0;
 };
 
 
-#line 34
+#line 39
 [[kernel]] void cyGiUnpackSurfaces(uint3 thread_0 [[thread_position_in_grid]], GiSurfaceSet_default_0 constant* giSurfaces_1 [[buffer(0)]])
 {
 
-#line 34
+#line 39
     thread KernelContext_0 kernelContext_0;
 
-#line 34
+#line 39
     (&kernelContext_0)->giSurfaces_0 = giSurfaces_1;
-    uint4 counts_0 = giSurfaces_1->constants_0[0U];
+    uint4 full_0 = giSurfaces_1->constants_0[36U];
     uint _S7 = thread_0.x;
 
-#line 36
-    uint _S8 = counts_0.x;
+#line 41
+    uint _S8 = full_0.x;
 
-#line 36
-    bool _S9;
+#line 41
+    bool onGrid_0;
 
-#line 36
+#line 41
     if(_S7 >= _S8)
     {
 
-#line 36
-        _S9 = true;
+#line 41
+        onGrid_0 = true;
 
-#line 36
+#line 41
     }
     else
     {
 
-#line 36
-        _S9 = (thread_0.y) >= (counts_0.y);
+#line 41
+        onGrid_0 = (thread_0.y) >= (full_0.y);
 
-#line 36
+#line 41
     }
 
-#line 36
-    if(_S9)
+#line 41
+    if(onGrid_0)
     {
 
-#line 37
+#line 42
         return;
     }
+    uint4 counts_0 = giSurfaces_1->constants_0[0U];
+    uint _S9 = max(full_0.z, 1U);
+    uint _S10 = thread_0.y;
 
-    uint record_0 = (counts_0.w * counts_0.z + (thread_0.y * _S8 + _S7)) * 2U;
-    uint2 _S10 = thread_0.xy;
+#line 46
+    uint pixel_0 = _S10 * _S8 + _S7;
+    uint _S11 = _S7 % _S9;
 
-#line 41
-    int3 _S11 = int3(int2(_S10), int(0));
+#line 47
+    if(_S11 == 0U)
+    {
 
-#line 41
-    float depth_1 = (((&kernelContext_0)->giSurfaces_0->depth_0).read(vec<uint,2>(((_S11)).xy), uint(((_S11)).z)));
+#line 47
+        uint _S12 = _S10 % _S9;
+
+#line 47
+        onGrid_0 = _S12 == 0U;
+
+#line 47
+    }
+    else
+    {
+
+#line 47
+        onGrid_0 = false;
+
+#line 47
+    }
+    uint _S13 = _S10 / _S9;
+
+#line 48
+    uint _S14 = _S13 * counts_0.x;
+
+#line 48
+    uint _S15 = _S7 / _S9;
+    uint record_0 = (counts_0.w * counts_0.z + (_S14 + _S15)) * 2U;
+    uint2 _S16 = thread_0.xy;
+
+#line 50
+    int3 _S17 = int3(int2(_S16), int(0));
+
+#line 50
+    float depth_1 = (((&kernelContext_0)->giSurfaces_0->depth_0).read(vec<uint,2>(((_S17)).xy), uint(((_S17)).z)));
     if(depth_1 <= 0.0)
     {
 
-#line 43
-        *((&kernelContext_0)->giSurfaces_0->surfaces_0+record_0) = float4(0.0, 0.0, 0.0, 0.0);
-        *((&kernelContext_0)->giSurfaces_0->surfaces_0+(record_0 + 1U)) = float4(0.0, 1.0, 0.0, 1.0);
+#line 52
+        *((&kernelContext_0)->giSurfaces_0->guidance_0+pixel_0) = float4(0.0, 1.0, 0.0, 0.0);
+        if(onGrid_0)
+        {
+
+#line 54
+            *((&kernelContext_0)->giSurfaces_0->surfaces_0+record_0) = float4(0.0, 0.0, 0.0, 0.0);
+            *((&kernelContext_0)->giSurfaces_0->surfaces_0+(record_0 + 1U)) = float4(0.0, 1.0, 0.0, 1.0);
+
+#line 53
+        }
+
+
+
         return;
     }
     float4 projection_0 = (as_type<float4>((giSurfaces_1->constants_0[14U])));
     float viewDepth_0 = projection_0.w / (depth_1 + projection_0.z);
+    float4 packed_0 = (((&kernelContext_0)->giSurfaces_0->normals_0).read(vec<uint,2>(((_S17)).xy), uint(((_S17)).z)));
+    float3 normal_1 = decodeOctahedral_0(packed_0.xy);
+    *((&kernelContext_0)->giSurfaces_0->guidance_0+pixel_0) = float4(normal_1, viewDepth_0);
+    if(!onGrid_0)
+    {
 
-    float2 uv_0 = (float2(_S10) + float2(0.5)  + (as_type<float2>((giSurfaces_1->constants_0[19U].xy)))) / float2(float(_S8), float(counts_0.y));
+#line 65
+        return;
+    }
+
+    float2 uv_0 = (float2(_S16) + float2(0.5)  + (as_type<float2>((giSurfaces_1->constants_0[19U].xy)))) / float2(float(_S8), float(full_0.y));
 
 
     float3 view_0 = float3((uv_0.x * 2.0 - 1.0) * viewDepth_0 / projection_0.x, (1.0 - uv_0.y * 2.0) * viewDepth_0 / projection_0.y, - viewDepth_0);
 
-#line 59
-    float4 packed_0 = (((&kernelContext_0)->giSurfaces_0->normals_0).read(vec<uint,2>(((_S11)).xy), uint(((_S11)).z)));
+#line 77
     *((&kernelContext_0)->giSurfaces_0->surfaces_0+record_0) = float4(float3(dot((as_type<float3>((giSurfaces_1->constants_0[15U].xyz))), view_0), dot((as_type<float3>((giSurfaces_1->constants_0[16U].xyz))), view_0), dot((as_type<float3>((giSurfaces_1->constants_0[17U].xyz))), view_0)) + (as_type<float3>((giSurfaces_1->constants_0[1U].xyz))), viewDepth_0);
-    *((&kernelContext_0)->giSurfaces_0->surfaces_0+(record_0 + 1U)) = float4(decodeOctahedral_0(packed_0.xy), packed_0.z);
+    *((&kernelContext_0)->giSurfaces_0->surfaces_0+(record_0 + 1U)) = float4(normal_1, packed_0.z);
     return;
 }
 
@@ -23486,7 +23540,7 @@ float gdSpline_0(int offset_0)
 
 )cy_msl";
 
-/// cyGiPublish.metal, 1459 bytes.
+/// cyGiPublish.metal, 7564 bytes.
 inline constexpr char kGiPublishMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -23498,6 +23552,9 @@ struct GiPublishSet_default_0
 {
     uint4 device* constants_0;
     float4 device* filtered_0;
+    float4 device* surfaces_0;
+    float4 device* guidance_0;
+    float4 device* published_0;
     texture2d<float, access::read_write> diffuse_0;
     texture2d<float, access::read_write> specular_0;
 };
@@ -23510,55 +23567,426 @@ struct KernelContext_0
 };
 
 
-#line 25 "src/rendering/gi_gpu/shaders/gi_publish.slang"
-[[kernel]] void cyGiPublish(uint3 thread_0 [[thread_position_in_grid]], GiPublishSet_default_0 constant* giPublish_1 [[buffer(0)]])
+#line 35 "src/rendering/gi_gpu/shaders/gi_publish.slang"
+float3 gpuUpsample_0(uint2 pixel_0, float4 here_0, uint base_0, KernelContext_0 thread* kernelContext_0)
 {
 
-#line 25
-    thread KernelContext_0 kernelContext_0;
+#line 36
+    uint4 counts_0 = kernelContext_0->giPublish_0->constants_0[0U];
 
-#line 25
-    (&kernelContext_0)->giPublish_0 = giPublish_1;
-    uint4 counts_0 = giPublish_1->constants_0[0U];
-    uint _S1 = thread_0.x;
+    float _S1 = float(max(kernelContext_0->giPublish_0->constants_0[36U].z, 1U));
 
-#line 27
+#line 38
+    float gx_0 = float(pixel_0.x) / _S1;
+    float gy_0 = float(pixel_0.y) / _S1;
     uint _S2 = counts_0.x;
 
-#line 27
-    bool _S3;
+#line 40
+    uint _S3 = _S2 - 1U;
 
-#line 27
-    if(_S1 >= _S2)
+#line 40
+    uint _S4 = min(uint(gx_0), _S3);
+    uint _S5 = counts_0.y - 1U;
+
+#line 41
+    uint _S6 = min(uint(gy_0), _S5);
+    float _S7 = clamp(gx_0 - float(_S4), 0.0, 1.0);
+    float _S8 = clamp(gy_0 - float(_S6), 0.0, 1.0);
+    float3 _S9 = float3(0.0, 0.0, 0.0);
+
+#line 44
+    float nearestGap_0 = 1.00000001504746622e+30;
+
+#line 44
+    float3 total_0 = _S9;
+
+#line 44
+    float3 nearest_0 = _S9;
+
+#line 44
+    uint j_0 = 0U;
+
+#line 44
+    float weightTotal_0 = 0.0;
+
+
+
+    for(;;)
     {
 
-#line 27
-        _S3 = true;
+#line 48
+        if(j_0 < 2U)
+        {
+        }
+        else
+        {
 
-#line 27
+#line 48
+            break;
+        }
+
+#line 48
+        float nearestGap_1 = nearestGap_0;
+
+#line 48
+        float3 total_1 = total_0;
+
+#line 48
+        float3 nearest_1 = nearest_0;
+
+#line 48
+        uint i_0 = 0U;
+
+#line 48
+        float weightTotal_1 = weightTotal_0;
+        for(;;)
+        {
+
+#line 49
+            if(i_0 < 2U)
+            {
+            }
+            else
+            {
+
+#line 49
+                break;
+            }
+
+            uint tap_0 = min(_S6 + j_0, _S5) * _S2 + min(_S4 + i_0, _S3);
+            uint record_0 = (counts_0.w * counts_0.z + tap_0) * 2U;
+            float tapDepth_0 = kernelContext_0->giPublish_0->surfaces_0[record_0].w;
+            if(tapDepth_0 <= 0.0)
+            {
+
+#line 56
+                i_0 = i_0 + 1U;
+
+#line 49
+                continue;
+            }
+
+#line 58
+            float3 value_0 = kernelContext_0->giPublish_0->filtered_0[base_0 + tap_0].xyz;
+            float _S10 = here_0.w;
+
+#line 59
+            float gap_0 = abs(tapDepth_0 - _S10);
+
+#line 59
+            float nearestGap_2;
+
+#line 59
+            float3 nearest_2;
+            if(gap_0 < nearestGap_1)
+            {
+
+#line 60
+                nearestGap_2 = gap_0;
+
+#line 60
+                nearest_2 = value_0;
+
+#line 60
+            }
+            else
+            {
+
+#line 60
+                nearestGap_2 = nearestGap_1;
+
+#line 60
+                nearest_2 = nearest_1;
+
+#line 60
+            }
+
+#line 60
+            float _S11;
+
+
+
+            if(i_0 == 0U)
+            {
+
+#line 64
+                _S11 = 1.0 - _S7;
+
+#line 64
+            }
+            else
+            {
+
+#line 64
+                _S11 = _S7;
+
+#line 64
+            }
+
+#line 64
+            float _S12;
+
+#line 64
+            if(j_0 == 0U)
+            {
+
+#line 64
+                _S12 = 1.0 - _S8;
+
+#line 64
+            }
+            else
+            {
+
+#line 64
+                _S12 = _S8;
+
+#line 64
+            }
+
+#line 64
+            float bilinear_0 = _S11 * _S12;
+            float _S13 = max(0.0, dot(kernelContext_0->giPublish_0->surfaces_0[record_0 + 1U].xyz, here_0.xyz));
+
+#line 65
+            uint squaring_0 = 0U;
+
+#line 65
+            float facing_0 = _S13;
+            for(;;)
+            {
+
+#line 66
+                if(squaring_0 < 3U)
+                {
+                }
+                else
+                {
+
+#line 66
+                    break;
+                }
+
+#line 67
+                float facing_1 = facing_0 * facing_0;
+
+#line 66
+                squaring_0 = squaring_0 + 1U;
+
+#line 66
+                facing_0 = facing_1;
+
+#line 66
+            }
+
+
+
+            float weight_0 = bilinear_0 * exp(- gap_0 / (0.10000000149011612 * _S10 + 9.99999997475242708e-07)) * facing_0;
+            if(weight_0 <= 0.0)
+            {
+
+#line 71
+                nearestGap_1 = nearestGap_2;
+
+#line 71
+                nearest_1 = nearest_2;
+                i_0 = i_0 + 1U;
+
+#line 49
+                continue;
+            }
+
+#line 74
+            float3 _S14 = total_1 + value_0 * float3(weight_0) ;
+            float weightTotal_2 = weightTotal_1 + weight_0;
+
+#line 75
+            nearestGap_1 = nearestGap_2;
+
+#line 75
+            total_1 = _S14;
+
+#line 75
+            nearest_1 = nearest_2;
+
+#line 75
+            weightTotal_1 = weightTotal_2;
+
+#line 49
+            i_0 = i_0 + 1U;
+
+#line 49
+        }
+
+#line 48
+        uint j_1 = j_0 + 1U;
+
+#line 48
+        nearestGap_0 = nearestGap_1;
+
+#line 48
+        total_0 = total_1;
+
+#line 48
+        nearest_0 = nearest_1;
+
+#line 48
+        j_0 = j_1;
+
+#line 48
+        weightTotal_0 = weightTotal_1;
+
+#line 48
+    }
+
+#line 78
+    if(weightTotal_0 > 9.99999997475242708e-07)
+    {
+
+)cy_msl"
+    R"cy_msl(#line 78
+        total_0 = total_0 / float3(weightTotal_0) ;
+
+#line 78
     }
     else
     {
 
-#line 27
-        _S3 = (thread_0.y) >= (counts_0.y);
+#line 78
+        total_0 = nearest_0;
 
-#line 27
+#line 78
     }
 
-#line 27
-    if(_S3)
+#line 78
+    return total_0;
+}
+
+
+
+[[kernel]] void cyGiPublish(uint3 thread_0 [[thread_position_in_grid]], GiPublishSet_default_0 constant* giPublish_1 [[buffer(0)]])
+{
+
+#line 83
+    thread KernelContext_0 kernelContext_1;
+
+#line 83
+    (&kernelContext_1)->giPublish_0 = giPublish_1;
+    uint4 full_0 = giPublish_1->constants_0[36U];
+    uint _S15 = thread_0.x;
+
+#line 85
+    uint _S16 = full_0.x;
+
+#line 85
+    bool _S17;
+
+#line 85
+    if(_S15 >= _S16)
     {
 
-#line 28
+#line 85
+        _S17 = true;
+
+#line 85
+    }
+    else
+    {
+
+#line 85
+        _S17 = (thread_0.y) >= (full_0.y);
+
+#line 85
+    }
+
+#line 85
+    if(_S17)
+    {
+
+#line 86
         return;
     }
-    uint pixel_0 = thread_0.y * _S2 + _S1;
-    uint2 _S4 = thread_0.xy;
+    uint4 counts_1 = giPublish_1->constants_0[0U];
+    uint pixel_1 = thread_0.y * _S16 + _S15;
+    float4 here_1 = (&kernelContext_1)->giPublish_0->guidance_0[pixel_1];
+    float3 _S18 = float3(0.0, 0.0, 0.0);
 
-#line 31
-    (&kernelContext_0)->giPublish_0->diffuse_0.write(float4((&kernelContext_0)->giPublish_0->filtered_0[pixel_0].xyz, 1.0),_S4);
-    (&kernelContext_0)->giPublish_0->specular_0.write(float4((&kernelContext_0)->giPublish_0->filtered_0[counts_0.z + pixel_0].xyz, 1.0),_S4);
+#line 91
+    float3 diffuse_1;
+
+#line 91
+    float3 specular_1;
+
+    if((here_1.w) > 0.0)
+    {
+
+#line 94
+        if((max(full_0.z, 1U)) == 1U)
+        {
+
+            float3 _S19 = (&kernelContext_1)->giPublish_0->filtered_0[counts_1.z + pixel_1].xyz;
+
+#line 97
+            diffuse_1 = (&kernelContext_1)->giPublish_0->filtered_0[pixel_1].xyz;
+
+#line 97
+            specular_1 = _S19;
+
+#line 94
+        }
+        else
+        {
+
+
+            uint2 _S20 = thread_0.xy;
+
+#line 99
+            float3 _S21 = gpuUpsample_0(_S20, here_1, 0U, &kernelContext_1);
+
+#line 99
+            float3 _S22 = gpuUpsample_0(_S20, here_1, counts_1.z, &kernelContext_1);
+
+#line 99
+            diffuse_1 = _S21;
+
+#line 99
+            specular_1 = _S22;
+
+#line 94
+        }
+
+#line 93
+    }
+    else
+    {
+
+#line 93
+        diffuse_1 = _S18;
+
+#line 93
+        specular_1 = _S18;
+
+#line 93
+    }
+
+#line 103
+    uint2 _S23 = thread_0.xy;
+
+#line 103
+    (&kernelContext_1)->giPublish_0->diffuse_0.write(float4(diffuse_1, 1.0),_S23);
+    (&kernelContext_1)->giPublish_0->specular_0.write(float4(specular_1, 1.0),_S23);
+    if(((full_0.w) & 1U) != 0U)
+    {
+
+#line 106
+        *((&kernelContext_1)->giPublish_0->published_0+pixel_1) = float4(diffuse_1, 0.0);
+        *((&kernelContext_1)->giPublish_0->published_0+(_S16 * full_0.y + pixel_1)) = float4(specular_1, 0.0);
+
+#line 105
+    }
+
+
+
     return;
 }
 

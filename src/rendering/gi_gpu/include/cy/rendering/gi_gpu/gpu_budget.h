@@ -14,8 +14,8 @@
 //                         it in its declared reduction order. THE GI'S OWN COST, NEVER A FRAME TIME:
 //                         budget.h's rule, kept.
 //   GiBudget -> device    `apply_levers`: the two levers the device resolve reads.
-//                         `TracingResolution` is a linear scale, so the fraction of pixels that
-//                         trace their final-gather ray is its square; `DenoiserQuality` is the
+//                         `TracingResolution` is a linear scale, so the pixels it pays for are its
+//                         square — the resolve's grid and its ray density; `DenoiserQuality` is the
 //                         shared denoiser's quality position, which `IlluminationSystem::update`
 //                         sets from it and the device's cascade reads off the denoiser. The probe
 //                         and card budgets reach the device through the system's own update,
@@ -56,8 +56,17 @@ struct GpuGiCost {
 /// cost is nearest the budget's predicted cost over its allocation.
 [[nodiscard]] u8 arbiter_position(const gi::GiBudget& budget, const QualityLadder& ladder) noexcept;
 
-/// The levers onto the device resolve: `settings` with the ray density `TracingResolution` asks
-/// for, handed to `resolve` with the system's denoiser (whose quality `DenoiserQuality` set).
+/// `TracingResolution`'s value as the resolve's grid and ray density. The ladder's three positions
+/// are the frame (1.0); a grid of every other pixel each way, a quarter of them resolved, traced
+/// and denoised and the rest upsampled (0.71); and that grid with half its cells tracing a ray a
+/// frame (0.5). MEASURED (`render.gi_gpu_resolve`): at 1080p the first costs four times the
+/// second, and the rays are the smaller part of either — the cache query and the cascade run per
+/// cell — which is why the grid, not the ray density, is the step the lever's first move takes.
+[[nodiscard]] u32 tracing_divisor(f32 scale) noexcept;
+[[nodiscard]] f32 tracing_density(f32 scale) noexcept;
+
+/// The levers onto the device resolve: the grid and ray density `TracingResolution` asks for,
+/// `settings` otherwise unchanged, and the system's denoiser, whose quality `DenoiserQuality` set.
 void apply_levers(const gi::IlluminationSystem& system, gi::ScreenResolveSettings settings,
                   GpuScreenResolve& resolve) noexcept;
 

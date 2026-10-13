@@ -278,6 +278,136 @@ denoise::NoisySignal ScreenResolve::noisy(denoise::SignalKind kind) const noexce
     return signal;
 }
 
+Status ScreenGrid::build(const ScreenSurfaces& frame, u32 divisor) noexcept {
+    const usize pixels = static_cast<usize>(frame.width) * frame.height;
+    if (divisor == 0 || frame.width == 0 || frame.height == 0 || frame.depth.size() != pixels ||
+        frame.position.size() != pixels || frame.normal.size() != pixels) {
+        return fail(ErrorCode::InvalidArgument,
+                    "ScreenGrid::build: a frame's surfaces, one entry a pixel, and a divisor");
+    }
+    divisor_ = divisor;
+    width_ = screen_grid_extent(frame.width, divisor);
+    height_ = screen_grid_extent(frame.height, divisor);
+    camera_ = frame.camera;
+    const usize cells = static_cast<usize>(width_) * height_;
+    if (Status sized = depth_.resize(cells); !sized) {
+        return sized;
+    }
+    if (Status sized = position_.resize(cells); !sized) {
+        return sized;
+    }
+    if (Status sized = normal_.resize(cells); !sized) {
+        return sized;
+    }
+    if (Status sized = roughness_.resize(cells); !sized) {
+        return sized;
+    }
+    for (u32 y = 0; y < height_; ++y) {
+        for (u32 x = 0; x < width_; ++x) {
+            const usize cell = (static_cast<usize>(y) * width_) + x;
+            const usize pixel = (static_cast<usize>(y * divisor) * frame.width) + (x * divisor);
+            depth_[cell] = frame.depth[pixel];
+            position_[cell] = frame.position[pixel];
+            normal_[cell] = frame.normal[pixel];
+            roughness_[cell] = frame.roughness.empty() ? 0.5F : frame.roughness[pixel];
+        }
+    }
+    return ok();
+}
+
+ScreenSurfaces ScreenGrid::surfaces() const noexcept {
+    ScreenSurfaces out;
+    out.width = width_;
+    out.height = height_;
+    out.depth = depth_.span();
+    out.position = position_.span();
+    out.normal = normal_.span();
+    out.roughness = roughness_.span();
+    out.camera = camera_;
+    return out;
+}
+
+namespace {
+
+/// One pixel of `screen_upsample`.
+[[nodiscard]] Vec3 upsample_pixel(const ScreenSurfaces& frame, const ScreenSurfaces& grid,
+                                  u32 divisor, Span<const Vec3> values, u32 x, u32 y) noexcept {
+    const usize pixel = (static_cast<usize>(y) * frame.width) + x;
+    const f32 depth = frame.depth[pixel];
+    if (depth <= 0.0F) {
+        return Vec3{0.0F, 0.0F, 0.0F};
+    }
+    const Vec3 normal = frame.normal[pixel];
+    const f32 gx = static_cast<f32>(x) / static_cast<f32>(divisor);
+    const f32 gy = static_cast<f32>(y) / static_cast<f32>(divisor);
+    const u32 bx = std::min(static_cast<u32>(gx), grid.width - 1U);
+    const u32 by = std::min(static_cast<u32>(gy), grid.height - 1U);
+    const f32 fx = math::clamp(gx - static_cast<f32>(bx), 0.0F, 1.0F);
+    const f32 fy = math::clamp(gy - static_cast<f32>(by), 0.0F, 1.0F);
+    Vec3 total{0.0F, 0.0F, 0.0F};
+    f32 weight_total = 0.0F;
+    Vec3 nearest{0.0F, 0.0F, 0.0F};
+    f32 nearest_gap = 1.0e30F;
+    for (u32 j = 0; j < 2; ++j) {
+        for (u32 i = 0; i < 2; ++i) {
+            const u32 tx = std::min(bx + i, grid.width - 1U);
+            const u32 ty = std::min(by + j, grid.height - 1U);
+            const usize tap = (static_cast<usize>(ty) * grid.width) + tx;
+            const f32 tap_depth = grid.depth[tap];
+            if (tap_depth <= 0.0F) {
+                continue;
+            }
+            const f32 gap = std::abs(tap_depth - depth);
+            if (gap < nearest_gap) {
+                nearest_gap = gap;
+                nearest = values[tap];
+            }
+            const f32 bilinear = (i == 0 ? 1.0F - fx : fx) * (j == 0 ? 1.0F - fy : fy);
+            f32 facing = std::max(0.0F, dot(grid.normal[tap], normal));
+            for (u32 squaring = 0; squaring < kUpsampleNormalSquarings; ++squaring) {
+                facing *= facing;
+            }
+            const f32 weight =
+                bilinear * std::exp(-gap / ((kUpsampleDepthTolerance * depth) + 1.0e-6F)) * facing;
+            if (weight <= 0.0F) {
+                continue;
+            }
+            total = total + (values[tap] * weight);
+            weight_total += weight;
+        }
+    }
+    return weight_total > 1.0e-6F ? total / weight_total : nearest;
+}
+
+}  // namespace
+
+Status screen_upsample(const ScreenSurfaces& frame, const ScreenSurfaces& grid, u32 divisor,
+                       Span<const Vec3> grid_values, Span<Vec3> out) noexcept {
+    const usize pixels = static_cast<usize>(frame.width) * frame.height;
+    const usize cells = static_cast<usize>(grid.width) * grid.height;
+    if (divisor == 0 || out.size() != pixels || grid_values.size() != cells ||
+        frame.depth.size() != pixels || grid.depth.size() != cells ||
+        grid.width != screen_grid_extent(frame.width, divisor) ||
+        grid.height != screen_grid_extent(frame.height, divisor)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "screen_upsample: the frame, its grid at this divisor and the grid's values");
+    }
+    if (divisor == 1) {
+        // Every pixel is its own sample: the grid's values, exactly.
+        for (usize pixel = 0; pixel < pixels; ++pixel) {
+            out[pixel] = frame.depth[pixel] > 0.0F ? grid_values[pixel] : Vec3{0.0F, 0.0F, 0.0F};
+        }
+        return ok();
+    }
+    for (u32 y = 0; y < frame.height; ++y) {
+        for (u32 x = 0; x < frame.width; ++x) {
+            out[(static_cast<usize>(y) * frame.width) + x] =
+                upsample_pixel(frame, grid, divisor, grid_values, x, y);
+        }
+    }
+    return ok();
+}
+
 denoise::GuidanceBuffers screen_guidance(const ScreenSurfaces& surfaces) noexcept {
     denoise::GuidanceBuffers guidance;
     guidance.width = surfaces.width;

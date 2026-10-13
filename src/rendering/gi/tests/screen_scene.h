@@ -52,12 +52,20 @@ struct ScreenScene {
     std::vector<f32> previous_depth;
     cy::Mat4 previous_clip = cy::Mat4::identity();
     std::vector<cy::Aabb> invalidated;
+    /// The resolve grid's divisor: one resolves every pixel, two a quarter of them and upsamples.
+    u32 divisor = 1;
+    cy::rendering::gi::ScreenGrid grid;
+    /// The denoised signals on the grid, and upsampled to the frame's pixels.
+    cy::Span<const Vec3> grid_diffuse;
+    cy::Span<const Vec3> grid_specular;
+    std::vector<Vec3> diffuse_frame;
+    std::vector<Vec3> specular_frame;
     cy::Span<const Vec3> diffuse;
     cy::Span<const Vec3> specular;
 
     /// Solid slabs in the field beside the hollow room: a divider, or a 10 cm wall.
-    void add_solid(Vec3 centre, Vec3 half_extents, u32 grid) {
-        solids.push_back(std::make_unique<BoxField>(half_extents, 0.5F, grid));
+    void add_solid(Vec3 centre, Vec3 half_extents, u32 samples) {
+        solids.push_back(std::make_unique<BoxField>(half_extents, 0.5F, samples));
         solid_centres.push_back(centre);
     }
 
@@ -88,12 +96,22 @@ struct ScreenScene {
         system.surfaces().set_lookup_radius(0.6F);
         view = render_view(quads, eye, target, width, height);
         if (host_resolve) {
-            CY_REQUIRE(resolve.resize(width, height).has_value());
-            CY_REQUIRE(denoiser.resize(width, height).has_value());
+            resize_grid();
         }
-        source.assign(static_cast<usize>(width) * height, -1);
-        confidence.assign(source.size(), 0.0F);
         settings.max_ray_distance_metres = configured.max_ray_distance_metres;
+    }
+
+    /// Size the host resolve and denoiser for the grid at `divisor`. A new divisor is a new
+    /// history: the denoiser starts over, as a frame whose grid changed must.
+    void resize_grid() {
+        CY_REQUIRE(grid.build(view.surfaces(), divisor).has_value());
+        CY_REQUIRE(resolve.resize(grid.width(), grid.height()).has_value());
+        CY_REQUIRE(denoiser.resize(grid.width(), grid.height()).has_value());
+        source.assign(static_cast<usize>(grid.width()) * grid.height(), -1);
+        confidence.assign(source.size(), 0.0F);
+        previous_depth.clear();
+        diffuse_frame.assign(view.depth.size(), Vec3{0.0F, 0.0F, 0.0F});
+        specular_frame.assign(view.depth.size(), Vec3{0.0F, 0.0F, 0.0F});
     }
 
     [[nodiscard]] cy::rendering::gi::ScreenResolveSources sources(u64 frame) const noexcept {
@@ -116,7 +134,8 @@ struct ScreenScene {
         context.frame = frame;
         context.measured_gi_ms = 1.0F;
         (void)system.update(context);
-        const cy::rendering::gi::ScreenSurfaces surfaces = view.surfaces();
+        CY_REQUIRE(grid.build(view.surfaces(), divisor).has_value());
+        const cy::rendering::gi::ScreenSurfaces surfaces = grid.surfaces();
         CY_REQUIRE(resolve.produce(surfaces, settings, sources(frame)).has_value());
         cy::rendering::gi::ScreenHistoryInputs history;
         history.current_world_to_clip = view.world_to_clip;
@@ -133,13 +152,23 @@ struct ScreenScene {
                                          resolve.noisy(cy::rendering::denoise::SignalKind::IndirectDiffuse),
                                          cy::rendering::gi::screen_guidance(surfaces), guidance);
         CY_REQUIRE(filtered.has_value());
-        diffuse = filtered.value();
+        grid_diffuse = filtered.value();
         auto reflected = denoiser.denoise(cy::rendering::denoise::SignalKind::IndirectSpecular,
                                           resolve.noisy(cy::rendering::denoise::SignalKind::IndirectSpecular),
                                           cy::rendering::gi::screen_guidance(surfaces), guidance);
         CY_REQUIRE(reflected.has_value());
-        specular = reflected.value();
-        previous_depth = view.depth;
+        grid_specular = reflected.value();
+        CY_REQUIRE(cy::rendering::gi::screen_upsample(view.surfaces(), surfaces, divisor,
+                                                      grid_diffuse,
+                                                      {diffuse_frame.data(), diffuse_frame.size()})
+                       .has_value());
+        CY_REQUIRE(cy::rendering::gi::screen_upsample(view.surfaces(), surfaces, divisor,
+                                                      grid_specular,
+                                                      {specular_frame.data(), specular_frame.size()})
+                       .has_value());
+        diffuse = {diffuse_frame.data(), diffuse_frame.size()};
+        specular = {specular_frame.data(), specular_frame.size()};
+        previous_depth.assign(surfaces.depth.begin(), surfaces.depth.end());
         previous_clip = view.world_to_clip;
         invalidated.clear();
     }

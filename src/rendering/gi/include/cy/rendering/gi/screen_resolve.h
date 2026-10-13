@@ -179,6 +179,50 @@ private:
     Array<f32> samples_;
 };
 
+/// A view's surfaces on the resolve's GRID: every `divisor`-th pixel of the frame in each direction,
+/// the block's top-left one. What the `TracingResolution` lever buys at its coarse end — a quarter
+/// of the pixels resolved and denoised at a divisor of two, and `screen_upsample` back to the
+/// frame's.
+class ScreenGrid {
+public:
+    ScreenGrid() noexcept = default;
+
+    /// The grid of `frame` at `divisor` (one is the frame itself). Idempotent in its buffers.
+    [[nodiscard]] Status build(const ScreenSurfaces& frame, u32 divisor) noexcept;
+    [[nodiscard]] ScreenSurfaces surfaces() const noexcept;
+    [[nodiscard]] u32 divisor() const noexcept { return divisor_; }
+    [[nodiscard]] u32 width() const noexcept { return width_; }
+    [[nodiscard]] u32 height() const noexcept { return height_; }
+
+private:
+    u32 divisor_ = 1;
+    u32 width_ = 0;
+    u32 height_ = 0;
+    Vec3 camera_{0.0F, 0.0F, 0.0F};
+    Array<f32> depth_;
+    Array<Vec3> position_;
+    Array<Vec3> normal_;
+    Array<f32> roughness_;
+};
+
+/// The grid's size for a frame of `extent` pixels at `divisor`: ceil(extent / divisor).
+[[nodiscard]] constexpr u32 screen_grid_extent(u32 extent, u32 divisor) noexcept {
+    return divisor == 0 ? extent : (extent + divisor - 1U) / divisor;
+}
+
+/// The joint-bilateral upsample's two tolerances: a grid sample's view depth within this fraction
+/// of the pixel's own, and its normal's cosine to the pixel's raised to this power (by squaring).
+inline constexpr f32 kUpsampleDepthTolerance = 0.1F;
+inline constexpr u32 kUpsampleNormalSquarings = 3;
+
+/// The resolve's answer on its grid back on the frame's pixels: for each pixel, the four grid
+/// samples about it weighted bilinearly, by depth and by normal, so an edge between two surfaces
+/// is not smeared across; a pixel no sample agrees with takes the one whose depth is nearest its
+/// own. At a divisor of one, every pixel is its own sample, exactly. A sky pixel is zero.
+[[nodiscard]] Status screen_upsample(const ScreenSurfaces& frame, const ScreenSurfaces& grid,
+                                     u32 divisor, Span<const Vec3> grid_values,
+                                     Span<Vec3> out) noexcept;
+
 /// The view's surfaces as `denoise::GuidanceBuffers`.
 [[nodiscard]] denoise::GuidanceBuffers screen_guidance(const ScreenSurfaces& surfaces) noexcept;
 

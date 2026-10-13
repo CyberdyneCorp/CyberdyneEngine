@@ -25,10 +25,19 @@ u8 arbiter_position(const gi::GiBudget& budget, const QualityLadder& ladder) noe
     return nearest;
 }
 
+u32 tracing_divisor(f32 scale) noexcept {
+    return scale < 0.99F ? 2U : 1U;
+}
+
+f32 tracing_density(f32 scale) noexcept {
+    return scale < 0.6F ? 0.5F : 1.0F;
+}
+
 void apply_levers(const gi::IlluminationSystem& system, gi::ScreenResolveSettings settings,
                   GpuScreenResolve& resolve) noexcept {
     const f32 scale = system.budget().value(gi::GiLever::TracingResolution);
-    settings.ray_density = scale * scale;
+    (void)resolve.set_divisor(tracing_divisor(scale));
+    settings.ray_density = tracing_density(scale);
     resolve.set_settings(settings);
     resolve.set_denoiser(system.denoiser());
 }

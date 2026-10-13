@@ -285,14 +285,22 @@ struct Comparison {
     Agreement noisy_specular;
     Agreement denoised_diffuse;
     Agreement denoised_specular;
+    /// The published signals on the frame's pixels: the upsample, at a divisor above one.
+    Agreement published_diffuse;
+    Agreement published_specular;
     u32 history_pixels = 0;
     u32 history_mismatches = 0;
     gi::RadianceSource tier = gi::RadianceSource::None;
 };
 
-[[nodiscard]] bool compare_room(Gpu& gpu, bool hardware, u32 frames, Comparison& out) {
+[[nodiscard]] bool compare_room(Gpu& gpu, bool hardware, u32 frames, Comparison& out,
+                                u32 divisor = 1) {
     gi_support::ScreenScene host;
     gi_support::make_room(host, gi_support::kScreenWidth, gi_support::kScreenHeight, hardware);
+    if (divisor != 1) {
+        host.divisor = divisor;
+        host.resize_grid();
+    }
     std::unique_ptr<QuadTriangles> triangles;
     if (hardware) {
         triangles = std::make_unique<QuadTriangles>(host.quads);
@@ -305,11 +313,14 @@ struct Comparison {
         CY_REQUIRE(host.system.acceleration().add_instance(instance).has_value());
     }
     DeviceResolve device;
-    if (!device.create(gpu.device(), host, hardware)) {
+    if (!device.create(gpu.device(), host, hardware) ||
+        !device.resolve.set_divisor(divisor).has_value()) {
         std::fprintf(stderr, "the device resolve could not be created\n");
         return false;
     }
-    const usize pixels = host.view.depth.size();
+    const usize pixels = static_cast<usize>(host.grid.width()) * host.grid.height();
+    const usize frame_pixels = host.view.depth.size();
+    const cy::rendering::gi::ScreenSurfaces grid = host.grid.surfaces();
     std::vector<Vec3> diffuse(pixels);
     std::vector<Vec3> specular(pixels);
     std::vector<i32> source(pixels);
@@ -324,7 +335,7 @@ struct Comparison {
         CY_REQUIRE(device.resolve.read_back_noisy({diffuse.data(), pixels}, {specular.data(), pixels})
                        .has_value());
         for (usize index = 0; index < pixels; ++index) {
-            if (host.view.depth[index] <= 0.0F) {
+            if (grid.depth[index] <= 0.0F) {
                 continue;
             }
             out.noisy_diffuse.add(diffuse[index], host.resolve.diffuse()[index], 1.0e-3);
@@ -345,11 +356,25 @@ struct Comparison {
                        .has_value());
         if (last) {
             for (usize index = 0; index < pixels; ++index) {
+                if (grid.depth[index] <= 0.0F) {
+                    continue;
+                }
+                out.denoised_diffuse.add(diffuse[index], host.grid_diffuse[index], 1.0e-2);
+                out.denoised_specular.add(specular[index], host.grid_specular[index], 1.0e-2);
+            }
+            std::vector<Vec3> published_diffuse(frame_pixels);
+            std::vector<Vec3> published_specular(frame_pixels);
+            CY_REQUIRE(device.resolve
+                           .read_back_published({published_diffuse.data(), frame_pixels},
+                                                {published_specular.data(), frame_pixels})
+                           .has_value());
+            for (usize index = 0; index < frame_pixels; ++index) {
                 if (host.view.depth[index] <= 0.0F) {
                     continue;
                 }
-                out.denoised_diffuse.add(diffuse[index], host.diffuse[index], 1.0e-2);
-                out.denoised_specular.add(specular[index], host.specular[index], 1.0e-2);
+                out.published_diffuse.add(published_diffuse[index], host.diffuse[index], 1.0e-2);
+                out.published_specular.add(published_specular[index], host.specular[index],
+                                           1.0e-2);
             }
         }
     }
@@ -360,6 +385,8 @@ struct Comparison {
     out.noisy_specular.finish();
     out.denoised_diffuse.finish();
     out.denoised_specular.finish();
+    out.published_diffuse.finish();
+    out.published_specular.finish();
     return true;
 }
 
@@ -369,6 +396,8 @@ void check(const Comparison& result, const char* tier) {
     result.noisy_specular.print("  noisy specular, every frame");
     result.denoised_diffuse.print("  denoised diffuse, last frame");
     result.denoised_specular.print("  denoised specular, last frame");
+    result.published_diffuse.print("  published diffuse, last frame");
+    result.published_specular.print("  published specular, last frame");
     std::fprintf(stderr, "  history: %u of %u pixels differ\n", result.history_mismatches,
                  result.history_pixels);
     // The one-ray signal: a ray whose direction differs in its last bit can graze a different
@@ -384,6 +413,11 @@ void check(const Comparison& result, const char* tier) {
     CY_CHECK_LT(result.denoised_diffuse.fraction_beyond(), 0.01);
     CY_CHECK_LT(result.denoised_specular.mean, 2.0e-3);
     CY_CHECK_LT(result.denoised_specular.fraction_beyond(), 0.01);
+    // And upsampled onto the frame's pixels: the publish is `screen_upsample`.
+    CY_CHECK_LT(result.published_diffuse.mean, 2.0e-3);
+    CY_CHECK_LT(result.published_diffuse.fraction_beyond(), 0.01);
+    CY_CHECK_LT(result.published_specular.mean, 2.0e-3);
+    CY_CHECK_LT(result.published_specular.fraction_beyond(), 0.01);
 }
 
 }  // namespace
@@ -400,6 +434,17 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, software tier") {
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
+CY_TEST_CASE("on a half-resolution grid the device resolve, denoiser and upsample are the host's") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    Comparison result;
+    CY_REQUIRE(compare_room(gpu, false, 8, result, 2));
+    check(result, "software, divisor 2");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
 CY_TEST_CASE("the device resolve and denoiser are the host's, hardware tier with ray queries") {
     Gpu gpu(true);
     if (!gpu.available() || !gpu.ray_queries()) {
@@ -412,21 +457,28 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, hardware tier with
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage and per tier") {
+CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tier and per lever") {
     Gpu gpu(true);
     if (!gpu.available()) {
         return;
     }
     const bool hardware_available = gpu.ray_queries();
+    // The GI budget's two device levers at their positions: `TracingResolution`'s value and the
+    // denoiser's quality position (`DenoiserQuality`).
     struct Run {
         const char* name;
         bool hardware;
-        f32 density;
+        f32 tracing;
+        u32 denoiser;
     };
     const Run runs[] = {
-        {"software tier, a ray every pixel", false, 1.0F},
-        {"hardware tier, a ray every pixel", true, 1.0F},
-        {"hardware tier, TracingResolution 0.5 (a quarter of the pixels)", true, 0.25F},
+        {"software tier, authored quality", false, 1.0F, 0},
+        {"hardware tier, authored quality", true, 1.0F, 0},
+        {"hardware tier, TracingResolution 0.71 (a quarter of the pixels, upsampled)", true, 0.71F,
+         0},
+        {"hardware tier, TracingResolution 0.5 (and half their rays)", true, 0.5F, 0},
+        {"hardware tier, TracingResolution 0.5 and DenoiserQuality 2", true, 0.5F, 2},
+        {"software tier, TracingResolution 0.5 and DenoiserQuality 2", false, 0.5F, 2},
     };
     for (const Run& run : runs) {
         if (run.hardware && !hardware_available) {
@@ -453,9 +505,12 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage and per 
             context.frame = frame;
             (void)host.system.update(context);
         }
-        host.settings.ray_density = run.density;
+        host.settings.ray_density = cy::rendering::gi_gpu::tracing_density(run.tracing);
+        host.denoiser.set_quality_position(run.denoiser);
         DeviceResolve device;
         CY_REQUIRE(device.create(gpu.device(), host, run.hardware, false));
+        CY_REQUIRE(device.resolve.set_divisor(cy::rendering::gi_gpu::tracing_divisor(run.tracing))
+                       .has_value());
         device.resolve.set_timing(true);
         std::vector<GpuResolveTimes> times;
         for (u64 frame = 6; frame < 6 + 6; ++frame) {
@@ -473,17 +528,17 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage and per 
         std::sort(times.begin(), times.end(), [](const GpuResolveTimes& a, const GpuResolveTimes& b) {
             return a.total_ms < b.total_ms;
         });
-        const GpuResolveTimes& median = times.front();
+        const GpuResolveTimes& fastest = times.front();
         std::fprintf(stderr,
-                     "1920x1080, %s (fastest of %zu): reproject %.3f, resolve %.3f, accumulate "
-                     "%.3f, variance %.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
-                     run.name, times.size(), median.reproject_ms, median.resolve_ms,
-                     median.accumulate_ms, median.variance_ms, median.filter_ms, median.publish_ms,
-                     median.total_ms);
+                     "1920x1080, %s: reproject %.3f, resolve %.3f, accumulate %.3f, variance "
+                     "%.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
+                     run.name, fastest.reproject_ms, fastest.resolve_ms, fastest.accumulate_ms,
+                     fastest.variance_ms, fastest.filter_ms, fastest.publish_ms,
+                     fastest.total_ms);
         CY_CHECK_EQ(device.resolve.last_tier(), run.hardware ? gi::RadianceSource::HardwareTrace
                                                              : gi::RadianceSource::SoftwareTrace);
         // A ceiling, not the claim: the claim is the printed line. A frame at 60 Hz is 16.7 ms.
-        CY_CHECK_LT(median.total_ms, 16.0);
+        CY_CHECK_LT(fastest.total_ms, 16.0);
         if (run.hardware) {
             host.system.acceleration().set_mirror(nullptr);
         }
