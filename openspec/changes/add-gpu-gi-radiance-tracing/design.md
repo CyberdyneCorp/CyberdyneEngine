@@ -38,7 +38,7 @@ normal matrix's columns, multiplied in the order the host multiplies them.
 
 A probe's rays are independent and the host only SUMS them in order. One lane per ray traces; lane 0
 then encodes them in ray order, so the payload's float sums are the host's. One lane per probe was
-1.5 ms for 64 probes of 32 rays on the RTX 5060 and is 0.14 ms this way. The frame's ray table is
+1.5 ms for 64 probes of 32 rays on the RTX 5060 and is 0.08 ms this way. The frame's ray table is
 `gi::probe_ray_direction` evaluated once on the host, so both sides trace bit-identical directions.
 
 ## The query: each level's window, toroidally

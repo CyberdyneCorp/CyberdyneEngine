@@ -1171,6 +1171,31 @@ struct ScreenFixture {
         }
     }
 
+    /// The same frame at `factor` times the resolution, each pixel repeated: a 1080p depth and
+    /// colour buffer for a cost measurement, from a quarter of the processor's primary rays — the
+    /// case's own CPU budget is what tracing every 1080p pixel on the host would spend.
+    [[nodiscard]] ScreenFixture upscaled(u32 factor) const {
+        ScreenFixture out = *this;
+        out.width = width * factor;
+        out.height = height * factor;
+        const usize pixels = static_cast<usize>(out.width) * out.height;
+        out.depth.assign(pixels, 0.0F);
+        out.normal.assign(pixels, Vec3{0.0F, 0.0F, 1.0F});
+        out.colour.assign(pixels, Vec3{0.0F, 0.0F, 0.0F});
+        out.position.assign(pixels, camera);
+        for (u32 y = 0; y < out.height; ++y) {
+            for (u32 x = 0; x < out.width; ++x) {
+                const usize from = (static_cast<usize>(y / factor) * width) + (x / factor);
+                const usize to = (static_cast<usize>(y) * out.width) + x;
+                out.depth[to] = depth[from];
+                out.normal[to] = normal[from];
+                out.colour[to] = colour[from];
+                out.position[to] = position[from];
+            }
+        }
+        return out;
+    }
+
     [[nodiscard]] gi::ScreenView view() const noexcept {
         gi::ScreenView screen;
         screen.width = width;
@@ -1685,10 +1710,12 @@ CY_TEST_CASE("what stage 3 costs on this device: the gather at its budget and th
     };
     OpenFloor open;
     for (const bool outdoors : {false, true}) {
-        const ScreenFixture screen = outdoors
-                                         ? ScreenFixture(open.service, nullptr, kWidth, kHeight,
-                                                         Vec3{0.0F, 1.6F, 0.0F}, 0.12F)
-                                         : ScreenFixture(room, kWidth, kHeight);
+        constexpr u32 kFactor = 4;
+        const ScreenFixture screen =
+            outdoors ? ScreenFixture(open.service, nullptr, kWidth / kFactor, kHeight / kFactor,
+                                     Vec3{0.0F, 1.6F, 0.0F}, 0.12F)
+                           .upscaled(kFactor)
+                     : ScreenFixture(room, kWidth / kFactor, kHeight / kFactor).upscaled(kFactor);
         gi::ScreenView view = screen.view();
         view.max_steps = 64;
         const std::vector<GpuTierRay> rays = screen.rays(1, outdoors ? 30.0F : 8.0F);
@@ -1709,11 +1736,16 @@ CY_TEST_CASE("what stage 3 costs on this device: the gather at its budget and th
             tiers.set_budget(budget);
             CY_REQUIRE(tiers.set_view(&view).has_value());
             rig.cache.set_timing(true);
-            std::vector<gi::RadianceSample> out;
+            // The rays once and the counters only: what is timed is the device, and the host's
+            // share of a 1080p batch — two million rays written and read — is the case's budget.
+            CY_REQUIRE(tiers.set_rays({rays.data(), rays.size()}).has_value());
             GpuTierCounters counters;
             f64 best = 1.0e9;
             for (u32 repeat = 0; repeat < 3; ++repeat) {
-                CY_REQUIRE(run_tiers(gpu.device(), tiers, rays, timing.mode, out, counters));
+                CY_REQUIRE(run_frame(gpu.device(), [&](rendering::RenderGraph& graph) {
+                    return tiers.declare(graph, timing.mode);
+                }));
+                CY_REQUIRE(tiers.read_back({}, counters).has_value());
                 const GpuDispatchTime time = rig.cache.last_time();
                 CY_REQUIRE(time.valid);
                 best = std::min(best, time.milliseconds);

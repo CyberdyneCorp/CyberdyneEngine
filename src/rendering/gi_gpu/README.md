@@ -169,15 +169,16 @@ bound it asserts in parentheses.
 | software / hardware world tier, 9 216 rays | 0 disagreements with `SoftwareTracer` / `HardwareTracer`, confidence included |
 | escalation, either world tier | 0 disagreements with `TieredTracer`; screen rays, escalations and world rays equal the host's; a budget of a third refuses exactly as many as the host refuses |
 
-**What it costs**, timestamps around the dispatch alone, best of three:
+**What it costs**, timestamps around the dispatch alone, best of three, identical to the
+microsecond over three runs of the suite on a quiet machine:
 
 | | software tier | hardware tier |
 |---|---|---|
-| gather at the GI budget's default rate: 64 probes x 32 rays | 0.142 ms | 0.076 ms |
-| escalation at 1920x1080, one gather ray per pixel, closed room (2 073 600 rays, 89 % escalated) | 6.28 ms | 3.95 ms |
-| escalation at 1920x1080, one ray per pixel, open ground (1 530 240 rays) | 2.22 ms | 1.36 ms |
-| screen tier alone at 1920x1080, closed room: plain / pyramid | 1.60 / 1.88 ms | |
-| screen tier alone at 1920x1080, open ground: plain / pyramid | 1.73 / 0.90 ms | |
+| gather at the GI budget's default rate: 64 probes x 32 rays | 0.078 ms | 0.043 ms |
+| escalation at 1920x1080, one gather ray per pixel, closed room (2 073 600 rays, 89 % escalated) | 3.35 ms | 2.13 ms |
+| escalation at 1920x1080, one ray per pixel, open ground (1 528 320 rays) | 1.19 ms | 0.74 ms |
+| screen tier alone at 1920x1080, closed room: plain / pyramid | 0.90 / 1.00 ms | |
+| screen tier alone at 1920x1080, open ground: plain / pyramid | 0.99 / 0.49 ms | |
 
 A full-resolution ray per pixel is the upper bound, not the plan: the resolve of stage 4 gathers
 from the probes and traces at a fraction of the pixels. The pyramid pays where a ray crosses open
@@ -196,7 +197,7 @@ few steps; both answers are the same answer.
 - *The device scene lived in system memory.* Every host-written buffer was `MemoryUse::Upload`, so a
   march read its page table, bricks and depth across the bus per step: a 1080p screen-tier batch
   took 44 ms. They are `HostVisibleDeviceLocal` now (resizable BAR on this device; the RHI falls back
-  where there is none), and the same batch takes 1.6 ms.
+  where there is none), and the same batch takes about a millisecond.
 
 ## What is not here
 

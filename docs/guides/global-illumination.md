@@ -117,7 +117,7 @@ The claims and where each is measured:
 | Close to the path tracer | `integration.render_gi_fallback` against `gi/bake.h` | host only until stage 4 composites |
 | Fast convergence after a change | `ConvergenceTracker`, `integration.render_gi_pipeline` | host only until stage 4 |
 | Temporally stable | — | **not yet measured**: an ordinary converged frame moves the probes' answer by 14 % because the gather replaces rather than accumulates; stage 4's temporal filter is where shimmer is measured and bounded |
-| Explicit cost | `render.gi_gpu_tracing`'s cost case | gather at budget 0.14 ms (software) / 0.08 ms (hardware); a full 1080p gather ray per pixel 6.3 / 3.9 ms |
+| Explicit cost | `render.gi_gpu_tracing`'s cost case | gather at budget 0.078 ms (software) / 0.043 ms (hardware); a full 1080p gather ray per pixel, escalated, 3.4 / 2.1 ms |
 
 ## 5. Running and changing it
 
@@ -142,7 +142,7 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   the divisor was read at run time. Toroidal addressing (`giWrap`) is unsigned arithmetic for that
   reason; a power-of-two window hid the defect for a whole stage.
 - **Host-written device buffers belong in device-local memory.** A march reads its scene per step;
-  from system memory a 1080p screen batch took 44 ms instead of 1.6 ms. Use
+  from system memory a 1080p screen batch took 44 ms instead of about one. Use
   `MemoryUse::HostVisibleDeviceLocal`, which falls back where the device has no resizable BAR.
 - **Import a shared buffer once per graph.** Two `import_buffer` calls of one handle are two
   resources and the graph derives no barrier between them; `RenderGraph::import_buffer_once` is the
