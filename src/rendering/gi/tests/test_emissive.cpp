@@ -766,9 +766,11 @@ CY_TEST_CASE(
     CY_CHECK_EQ(system.frame_lights()[0].id, placed[0].id);
     CY_CHECK_EQ(system.frame_lights()[1].id, id);
 
-    // Evicted, it leaves the frame and invalidates what it lit once more.
+    // Evicted, it leaves the frame, invalidates what it lit once more, and takes its pages.
     system.evict_cell(7, 3);
     CY_CHECK(system.emitters().lights().empty());
+    CY_CHECK_EQ(system.surfaces().page_count(), 0U);
+    CY_CHECK_FALSE(system.scene().cell_resident(7));
     CY_CHECK_EQ(system.scene().invalidation_count(InvalidationCause::LightChanged), 2U);
     frame.frame = 4;
     (void)system.update(frame);

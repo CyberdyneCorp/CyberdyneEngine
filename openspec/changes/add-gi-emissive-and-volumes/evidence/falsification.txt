@@ -60,3 +60,5 @@ debug profile's one-second budget.
     -> RED  render.gi_gpu: a promoted emitter lights the device cards as it lights the host ones
 Both on the RTX 5060 (Vulkan); the headers were regenerated from the restored source and checked
 byte-identical to the committed ones.
+[24] system: evict_cell does not release the pages ingest_cell allocated (system.cpp; debug profile)
+    -> RED  integration_render_gi_emissive: the composed system promotes an ingested lamp, invalidates what it lights, and forgets it on eviction

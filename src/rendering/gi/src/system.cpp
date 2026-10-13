@@ -66,13 +66,33 @@ Status IlluminationSystem::ingest_cell(u64 cell, const Aabb& bounds, Span<const 
         return ingested;
     }
     invalidate_emitters(emissive_.last_changed(), frame);
-    return surfaces_.allocate_from(scene_, bounds);
+    // A page per card this ingest added, remembered by cell so `evict_cell` releases exactly them.
+    Status allocated = ok();
+    for (const Surfel& surfel : cache_surfels_) {
+        Expected<u32, Error> handle = surfaces_.allocate(surfel);
+        if (!handle) {
+            allocated = make_unexpected(handle.error());
+            break;
+        }
+        if (Status pushed = cell_pages_.push_back(CellPage{cell, handle.value()}); !pushed) {
+            surfaces_.release(handle.value());
+            allocated = pushed;
+            break;
+        }
+    }
+    return allocated;
 }
 
 void IlluminationSystem::evict_cell(u64 cell, u64 frame) noexcept {
     scene_.evict_cell(cell, frame);
     emissive_.evict(cell);
     invalidate_emitters(emissive_.last_changed(), frame);
+    for (usize index = cell_pages_.size(); index > 0; --index) {
+        if (cell_pages_[index - 1].cell == cell) {
+            surfaces_.release(cell_pages_[index - 1].page);
+            cell_pages_.remove_unordered(index - 1);
+        }
+    }
 }
 
 void IlluminationSystem::invalidate_emitters(Span<const GiLight> lights, u64 frame) noexcept {

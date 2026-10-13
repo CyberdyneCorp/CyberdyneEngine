@@ -163,18 +163,19 @@ public:
         radiance_.set_gather_backend(backend);
     }
 
-    /// Ingest one world cell THROUGH THE EMISSIVE CLASSIFICATION, and allocate its surface pages.
+    /// Ingest one world cell THROUGH THE EMISSIVE CLASSIFICATION, and allocate a surface page for
+    /// each of its cards.
     ///
     /// `scene().ingest_cell` followed by `surfaces().allocate_from` is what a caller did before
     /// emitters were classified, and it still works: every emissive card then lights the room
-    /// through the cache alone. This is the same two calls with `EmissiveLights` in front, so a
-    /// small, bright emitter arrives as a light in `frame_lights()` with its emission out of the
-    /// cache, and its arrival invalidates the region it lights (`InvalidationCause::LightChanged`,
-    /// attributed to the light's id).
+    /// through the cache alone. This is the same with `EmissiveLights` in front, so a small, bright
+    /// emitter arrives as a light in `frame_lights()` with its emission out of the cache, and its
+    /// arrival invalidates the region it lights (`InvalidationCause::LightChanged`, attributed to
+    /// the light's id). The pages are remembered by cell, and `evict_cell` releases them.
     [[nodiscard]] Status ingest_cell(u64 cell, const Aabb& bounds, Span<const Surfel> surfels,
                                      u64 frame) noexcept;
 
-    /// Evict a cell: from the GI scene, and its promoted lights with it.
+    /// Evict a cell `ingest_cell` took: from the GI scene, its promoted lights, and its pages.
     void evict_cell(u64 cell, u64 frame) noexcept;
 
     /// The emitter classification of every cell `ingest_cell` took.
@@ -259,8 +260,14 @@ private:
     HardwareTracer hardware_;
     WorldTracer world_;
     TieredTracer tracer_;
+    struct CellPage {
+        u64 cell = 0;
+        u32 page = 0;
+    };
+
     EmissiveLights emissive_;
     Array<Surfel> cache_surfels_;
+    Array<CellPage> cell_pages_;
     Array<GiLight> frame_lights_;
     Span<const GiLight> last_lights_;
     GiVolumeSet volumes_;
