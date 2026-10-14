@@ -169,11 +169,12 @@ void IlluminationSystem::evict_cell(u64 cell, u64 frame) noexcept {
     // Compacted in order: `reclassify_cell` pairs a cell's pages with its cards by their order
     // here, so releasing one cell must not move another's pages past each other.
     usize kept = 0;
-    for (usize index = 0; index < cell_pages_.size(); ++index) {
-        if (cell_pages_[index].cell == cell) {
-            surfaces_.release(cell_pages_[index].page);
+    for (const CellPage& entry : cell_pages_) {
+        const CellPage page = entry;
+        if (page.cell == cell) {
+            surfaces_.release(page.page);
         } else {
-            cell_pages_[kept++] = cell_pages_[index];
+            cell_pages_[kept++] = page;
         }
     }
     while (cell_pages_.size() > kept) {

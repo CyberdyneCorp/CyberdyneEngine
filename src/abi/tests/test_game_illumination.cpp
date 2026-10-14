@@ -179,7 +179,7 @@ CY_TEST_CASE("illumination: no GI bound is UNAVAILABLE, and a null engine is ref
 CY_TEST_CASE("illumination: the arguments a thunk refuses before the backend sees them") {
     Fixture fixture;
     const CyInterface& iface = table();
-    const CyEngine engine = fixture.engine();
+    CyEngine engine = fixture.engine();
 
     CyGiSettings settings = good_settings();
     settings.mode = CY_GI_MODE_HYBRID + 1U;
@@ -247,7 +247,7 @@ CY_TEST_CASE("illumination: the arguments a thunk refuses before the backend see
 CY_TEST_CASE("illumination: what crosses, both ways, and only the prefix a caller declared") {
     Fixture fixture;
     const CyInterface& iface = table();
-    const CyEngine engine = fixture.engine();
+    CyEngine engine = fixture.engine();
 
     const CyGiSettings settings = good_settings();
     CY_REQUIRE_EQ(iface.gi_set_settings(engine, &settings), CY_RESULT_OK);

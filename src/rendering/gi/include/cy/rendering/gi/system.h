@@ -443,7 +443,7 @@ private:
     [[nodiscard]] static bool participating(IlluminationClass klass) noexcept {
         return klass == IlluminationClass::Static || klass == IlluminationClass::SlowDynamic;
     }
-    [[nodiscard]] Status park_object(const GiObjectDesc& desc, GiObject& entry) noexcept;
+    [[nodiscard]] static Status park_object(const GiObjectDesc& desc, GiObject& entry) noexcept;
     [[nodiscard]] Status keep_emissive_cell(u64 cell, const Aabb& bounds,
                                             Span<const Surfel> surfels) noexcept;
     struct EmissiveCell;

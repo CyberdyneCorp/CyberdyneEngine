@@ -24,12 +24,8 @@
 
 using namespace cy;
 using cy::editor::IlluminationEmission;
-using cy::editor::IlluminationMaterial;
-using cy::editor::IlluminationMesh;
-using cy::editor::IlluminationObject;
 using cy::editor::IlluminationPreview;
 using cy::editor::IlluminationReport;
-using cy::editor::IlluminationScene;
 using cy::editor::IlluminationViewCamera;
 namespace gi = cy::rendering::gi;
 

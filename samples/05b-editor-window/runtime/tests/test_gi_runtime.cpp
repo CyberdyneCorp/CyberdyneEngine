@@ -342,7 +342,7 @@ CY_TEST_CASE("the GI volume's box is drawn where the document places it") {
     u32 left_of_centre = 0;
     for (u32 y = 0; y < kHeight; ++y) {
         for (u32 x = 0; x < kWidth; ++x) {
-            if (pixels[((usize{y} * kWidth) + x) * 4U + 3U] != 0U) {
+            if (pixels[(((usize{y} * kWidth) + x) * 4U) + 3U] != 0U) {
                 drawn += 1;
                 left_of_centre += x < kWidth / 2U ? 1U : 0U;
             }
