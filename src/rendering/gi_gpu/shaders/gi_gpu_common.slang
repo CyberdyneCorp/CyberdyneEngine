@@ -38,7 +38,9 @@ static const uint kGiLevels = 16u;        // two words per level: [voxel, brick,
 
 static const uint kGiEmptyBrick = 0xFFFFFFFFu;
 static const uint kGiBrickEdge = 4u;
-static const uint kGiBrickVoxels = 64u;
+/// `kBrickSampleEdge` and `kBrickSamples`: the corners of a brick's voxels, both faces included.
+static const uint kGiBrickSampleEdge = 5u;
+static const uint kGiBrickSamples = 125u;
 static const uint kGiGroupSize = 64u;
 
 /// `kCardLookupAlignment` and `kShadowMapAlignment`.
@@ -50,7 +52,7 @@ struct GiSceneSet {
     StructuredBuffer<uint4> constants;
     /// One word per brick of every level's window, toroidally addressed: a pool slot, or empty.
     StructuredBuffer<uint> pageTable;
-    /// `DistanceField::brick_pool()`, 64 floats per slot.
+    /// `DistanceField::brick_pool()`, 125 floats per slot.
     StructuredBuffer<float> bricks;
     /// Four float4 per card: [position, area], [normal, roughness], [albedo, live], [emission, 0].
     StructuredBuffer<float4> cards;
@@ -122,20 +124,20 @@ float giFinestVoxel() {
     return asfloat(giScene.constants[kGiShadowEnabled].y);
 }
 
-/// The anonymous `trilinear` in distance_field.cpp, over one pool slot.
+/// The anonymous `trilinear` in distance_field.cpp, over one pool slot's corner samples.
 float giTrilinear(uint slot, float fx, float fy, float fz) {
     const int edge = int(kGiBrickEdge) - 1;
     const int x0 = clamp(int(floor(fx)), 0, edge);
     const int y0 = clamp(int(floor(fy)), 0, edge);
     const int z0 = clamp(int(floor(fz)), 0, edge);
-    const int x1 = clamp(x0 + 1, 0, edge);
-    const int y1 = clamp(y0 + 1, 0, edge);
-    const int z1 = clamp(z0 + 1, 0, edge);
+    const int x1 = x0 + 1;
+    const int y1 = y0 + 1;
+    const int z1 = z0 + 1;
     const float tx = clamp(fx - float(x0), 0.0f, 1.0f);
     const float ty = clamp(fy - float(y0), 0.0f, 1.0f);
     const float tz = clamp(fz - float(z0), 0.0f, 1.0f);
-    const uint base = slot * kGiBrickVoxels;
-    const uint e = kGiBrickEdge;
+    const uint base = slot * kGiBrickSamples;
+    const uint e = kGiBrickSampleEdge;
     const float c000 = giScene.bricks[base + ((uint(z0) * e + uint(y0)) * e) + uint(x0)];
     const float c100 = giScene.bricks[base + ((uint(z0) * e + uint(y0)) * e) + uint(x1)];
     const float c010 = giScene.bricks[base + ((uint(z0) * e + uint(y1)) * e) + uint(x0)];

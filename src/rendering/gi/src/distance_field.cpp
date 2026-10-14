@@ -23,7 +23,9 @@ namespace {
     return static_cast<i32>(std::floor(value / divisor));
 }
 
-/// Trilinear read out of one brick's 4x4x4 samples, with the voxel coordinate already local.
+/// Trilinear read out of one brick's 5x5x5 corner samples, with the voxel coordinate already
+/// local: a point in voxel `i` interpolates between corners `i` and `i + 1`, the last voxel's far
+/// corner being the next brick's first.
 [[nodiscard]] f32 trilinear(const f32* voxels, f32 fx, f32 fy, f32 fz) noexcept {
     const auto clampi = [](i32 value) {
         return std::min(std::max(value, 0), static_cast<i32>(kBrickEdge) - 1);
@@ -31,16 +33,16 @@ namespace {
     const i32 x0 = clampi(static_cast<i32>(std::floor(fx)));
     const i32 y0 = clampi(static_cast<i32>(std::floor(fy)));
     const i32 z0 = clampi(static_cast<i32>(std::floor(fz)));
-    const i32 x1 = clampi(x0 + 1);
-    const i32 y1 = clampi(y0 + 1);
-    const i32 z1 = clampi(z0 + 1);
+    const i32 x1 = x0 + 1;
+    const i32 y1 = y0 + 1;
+    const i32 z1 = z0 + 1;
     const f32 tx = math::clamp(fx - static_cast<f32>(x0), 0.0F, 1.0F);
     const f32 ty = math::clamp(fy - static_cast<f32>(y0), 0.0F, 1.0F);
     const f32 tz = math::clamp(fz - static_cast<f32>(z0), 0.0F, 1.0F);
 
     const auto at = [voxels](i32 x, i32 y, i32 z) {
-        return voxels[(((static_cast<usize>(z) * kBrickEdge) + static_cast<usize>(y)) *
-                       kBrickEdge) +
+        return voxels[(((static_cast<usize>(z) * kBrickSampleEdge) + static_cast<usize>(y)) *
+                       kBrickSampleEdge) +
                       static_cast<usize>(x)];
     };
     const f32 c00 = math::lerp(at(x0, y0, z0), at(x1, y0, z0), tx);
@@ -325,19 +327,19 @@ void DistanceField::free_brick(Brick& brick) noexcept {
 }
 
 Status DistanceField::solve_brick(Level& level, i32 bx, i32 by, i32 bz, Brick& brick) noexcept {
-    f32 voxels[kBrickVoxels];
+    f32 voxels[kBrickSamples];
     const Vec3 origin{static_cast<f32>(bx) * level.brick_size,
                       static_cast<f32>(by) * level.brick_size,
                       static_cast<f32>(bz) * level.brick_size};
     f32 nearest = 1.0e6F;
-    for (u32 z = 0; z < kBrickEdge; ++z) {
-        for (u32 y = 0; y < kBrickEdge; ++y) {
-            for (u32 x = 0; x < kBrickEdge; ++x) {
+    for (u32 z = 0; z < kBrickSampleEdge; ++z) {
+        for (u32 y = 0; y < kBrickSampleEdge; ++y) {
+            for (u32 x = 0; x < kBrickSampleEdge; ++x) {
                 const Vec3 point = origin + Vec3{static_cast<f32>(x) * level.voxel_size,
                                                  static_cast<f32>(y) * level.voxel_size,
                                                  static_cast<f32>(z) * level.voxel_size};
                 const f32 value = sample_placements(point);
-                voxels[(((z * kBrickEdge) + y) * kBrickEdge) + x] = value;
+                voxels[(((z * kBrickSampleEdge) + y) * kBrickSampleEdge) + x] = value;
                 nearest = std::min(nearest, value);
             }
         }
@@ -358,15 +360,15 @@ Status DistanceField::solve_brick(Level& level, i32 bx, i32 by, i32 bz, Brick& b
             free_bricks_.pop_back();
         } else {
             const usize base = brick_pool_.size();
-            if (Status sized = brick_pool_.resize(base + kBrickVoxels); !sized) {
+            if (Status sized = brick_pool_.resize(base + kBrickSamples); !sized) {
                 return sized;
             }
-            brick.slot = static_cast<u32>(base / kBrickVoxels);
+            brick.slot = static_cast<u32>(base / kBrickSamples);
         }
         brick.empty = false;
     }
-    f32* destination = brick_pool_.data() + (static_cast<usize>(brick.slot) * kBrickVoxels);
-    for (u32 index = 0; index < kBrickVoxels; ++index) {
+    f32* destination = brick_pool_.data() + (static_cast<usize>(brick.slot) * kBrickSamples);
+    for (u32 index = 0; index < kBrickSamples; ++index) {
         destination[index] = voxels[index];
     }
     brick.stale = false;
@@ -502,7 +504,7 @@ void DistanceField::account() noexcept {
     }
     diagnostics_.allocated_bricks = allocated;
     diagnostics_.empty_bricks = empty;
-    diagnostics_.bytes = static_cast<u64>(allocated) * kBrickVoxels * sizeof(f32);
+    diagnostics_.bytes = static_cast<u64>(allocated) * kBrickSamples * sizeof(f32);
 }
 
 f32 DistanceField::sample_level(const Level& level, Vec3 point) const noexcept {
@@ -520,7 +522,7 @@ f32 DistanceField::sample_level(const Level& level, Vec3 point) const noexcept {
                       static_cast<f32>(by) * level.brick_size,
                       static_cast<f32>(bz) * level.brick_size};
     const Vec3 local = (point - origin) / level.voxel_size;
-    const f32* voxels = brick_pool_.data() + (static_cast<usize>(brick->slot) * kBrickVoxels);
+    const f32* voxels = brick_pool_.data() + (static_cast<usize>(brick->slot) * kBrickSamples);
     return trilinear(voxels, local.x, local.y, local.z);
 }
 
@@ -614,23 +616,31 @@ f32 DistanceField::sky_visibility(Vec3 position, Vec3 normal, u32 rays) const no
     if (rays == 0 || levels_.empty()) {
         return 1.0F;
     }
-    const f32 reach = settings_.base_extent_metres * static_cast<f32>(1U << (settings_.levels - 1));
     f32 open = 0.0F;
     for (u32 index = 0; index < rays; ++index) {
-        Ray ray;
-        ray.origin = position + (normal * (levels_[0].voxel_size * 2.0F));
-        ray.direction = hemisphere_direction(normal, index, rays);
-        const SphereTraceHit hit = sphere_trace(ray, reach);
-        if (!hit.hit) {
-            // A cone that grazed a surface is partly occluded, which is what makes this a soft
-            // answer rather than a stair-stepped one. The width the closest approach is measured
-            // against is four voxels of the finest level: closer than that and the ray was inside
-            // the cone a surface subtends at this resolution.
-            open += math::clamp(hit.closest_approach_metres / (levels_[0].voxel_size * 4.0F), 0.0F,
-                                1.0F);
-        }
+        open += sky_visibility_ray(position, normal, index, rays);
     }
     return open / static_cast<f32>(rays);
+}
+
+f32 DistanceField::sky_visibility_ray(Vec3 position, Vec3 normal, u32 index,
+                                      u32 count) const noexcept {
+    if (count == 0 || levels_.empty()) {
+        return 1.0F;
+    }
+    const f32 reach = settings_.base_extent_metres * static_cast<f32>(1U << (settings_.levels - 1));
+    Ray ray;
+    ray.origin = position + (normal * (levels_[0].voxel_size * 2.0F));
+    ray.direction = hemisphere_direction(normal, index, count);
+    const SphereTraceHit hit = sphere_trace(ray, reach);
+    if (hit.hit) {
+        return 0.0F;
+    }
+    // A cone that grazed a surface is partly occluded, which is what makes this a soft answer
+    // rather than a stair-stepped one. The width the closest approach is measured against is four
+    // voxels of the finest level: closer than that and the ray was inside the cone a surface
+    // subtends at this resolution.
+    return math::clamp(hit.closest_approach_metres / (levels_[0].voxel_size * 4.0F), 0.0F, 1.0F);
 }
 
 }  // namespace cy::rendering::gi

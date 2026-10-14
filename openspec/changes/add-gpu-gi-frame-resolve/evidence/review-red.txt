@@ -1,0 +1,34 @@
+Defects this change found, each with its regression proven red on the code before the fix.
+Development build, Vulkan on the RTX 5060.
+
+1. A brick's last voxel was flat (src/rendering/gi/src/distance_field.cpp). A brick stored four
+   samples an axis and trilinear sampling clamped at the fourth, so the last voxel of every brick
+   was constant and a 10 cm wall at a brick face existed from one side only. Regression:
+   integration.render_gi_pipeline "a 10 cm wall at a brick face is in the field from both sides",
+   and integration.render_gi_screen's 10 cm wall case; both RED with the old clamp
+   (falsification.txt, field-flat-last-voxel).
+
+2. The device probe mirror never uploaded a probe the host gathered again
+   (src/rendering/gi_gpu/src/gpu_radiance_cache.cpp). The upload keyed on the probe's revision,
+   which a host gather does not move, so the device answered from the first payload for ever.
+   Regression: render.gi_gpu_tracing "a probe the host gathers again reaches the device at the next
+   upload"; RED with the revision-only key (falsification.txt, mirror-revision-only).
+
+3. The final-gather ray was weighted by what it met (src/rendering/gi/src/screen_resolve.cpp and its
+   transcription). Combined by its own confidence, a ray that escaped to the sky outweighed one that
+   met a stale card, and the accumulated estimate leaned toward the sky: on the beauty shot the
+   shadowed faces resolved two thirds of the bounce the path tracer finds. Regression:
+   integration.render_gi_screen "a final-gather ray counts in full whatever it met: a stale wall
+   does not lose to the sky". On the old resolve:
+
+     stale wall: 169 of 512 rays met it; mean luminance resolved 5.8290, a ray counted in full
+     8.1169; worst frame 0.81
+     test_screen_resolve.cpp:205: ERROR: CHECK_LT( worst, 1.0e-5 ) is NOT correct!
+
+   and with the fix: resolved 8.1169, a ray counted in full 8.1169; worst frame 1e-07.
+
+4. The beauty shot's shader programs omitted `scenePrepassMotionFragment` (just/run.just's
+   `_beauty-programs` listed its entry points by hand), so `capture-beauty-motion-blur` asked the
+   device for an entry point no module contained. The recipe now reads every `[shader("...")]` entry
+   point out of beauty.slang; `strings` over a compiled module lists scenePrepassMotionFragment and
+   the three GI entry points, where main's lists neither.

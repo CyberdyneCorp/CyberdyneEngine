@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "embers.h"
+#include "gi.h"
 #include "golden.h"
 
 namespace cy::sample::beauty {
@@ -155,9 +156,12 @@ struct FrameConstants {
     u32 fog_control[4] = {};
     /// `BeautyFrame::previousViewProjection`, read only by `scenePrepassMotionFragment`.
     f32 previous_view_projection[4][4] = {};
+    /// `BeautyFrame::giControl`, read only by `sceneFragmentGi`: x 1 when the indirect diffuse is
+    /// bound, y the indirect specular, z the ambient occlusion term, w the soft and contact sun.
+    u32 gi_control[4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 320, "BeautyFrame is twenty 16-byte rows");
+static_assert(sizeof(FrameConstants) == 336, "BeautyFrame is twenty-one 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -199,6 +203,7 @@ struct Stage::Batch {
 struct Stage::Device {
     explicit Device(Allocator& allocator) noexcept
         : assembly(allocator),
+          gi(allocator),
           field(allocator),
           batches(allocator),
           textures(allocator),
@@ -210,6 +215,11 @@ struct Stage::Device {
     u32 validation_errors = 0;
 
     FrameAssembly assembly;
+    /// The GI, built only when the run asked for it. See `Stage::set_global_illumination`.
+    BeautyGi gi;
+    /// The shot's meshes, kept from `build_geometry` for the GI scene `stage_shot` builds once the
+    /// sky has answered the light it is lit by. Empty unless the run asked for the GI.
+    std::vector<std::pair<std::string, import::MeshData>> gi_meshes;
     FramePipelines pipelines;
     FrameBindings bindings;
     /// Bloom's recorder, initialised only when the capture asked for bloom.
@@ -297,6 +307,7 @@ Stage::~Stage() {
             // handles, which is the contract every device-owning object in this tree states.
             device_->air.shutdown();
             device_->trails.shutdown();
+            device_->gi.destroy();
             device_->occlusion.destroy();
             device_->contact.destroy();
             device_->dof.destroy();
@@ -873,7 +884,13 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
         return make_unexpected(buffer.error());
     }
     device_->indices = *buffer;
-    return upload(device_->indices, indices.data(), description.size);
+    if (Status uploaded = upload(device_->indices, indices.data(), description.size); !uploaded) {
+        return uploaded;
+    }
+    if (gi_.enabled) {
+        device_->gi_meshes = std::move(meshes);
+    }
+    return ok();
 }
 
 // ================================================================================================
@@ -902,6 +919,10 @@ struct SkyBuild {
     Vec3 sun_illuminance{0.0F, 0.0F, 0.0F};
     Vec3 sky_irradiance{0.0F, 0.0F, 0.0F};
     Vec3 sun_direction{0.0F, 1.0F, 0.0F};
+    /// The same sky straight up and averaged round the horizon: the gradient the GI's sky term is
+    /// fitted to, so a ray the GI's tracers send out of the scene sees this atmosphere.
+    Vec3 zenith{0.0F, 0.0F, 0.0F};
+    Vec3 horizon{0.0F, 0.0F, 0.0F};
 
     explicit SkyBuild(Allocator& allocator) noexcept : vertices(allocator), indices(allocator) {}
 };
@@ -1003,6 +1024,23 @@ struct SkyBuild {
         }
     }
 
+    // THE GI'S GRADIENT, from the same composition: the zenith, and the horizon a few degrees up
+    // averaged over sixteen azimuths, so a cloud in one direction does not colour all of it.
+    out.zenith = rendering::sky::compose_sky(inputs, Vec3{0.0F, 1.0F, 0.0F}).radiance;
+    constexpr u32 kHorizonSamples = 16;
+    for (u32 sample = 0; sample < kHorizonSamples; ++sample) {
+        const f32 azimuth_sample =
+            6.28318F * (static_cast<f32>(sample) + 0.5F) / static_cast<f32>(kHorizonSamples);
+        const f32 horizon_elevation = 0.06F;
+        const Vec3 direction{std::cos(horizon_elevation) * std::cos(azimuth_sample),
+                             std::sin(horizon_elevation),
+                             std::cos(horizon_elevation) * std::sin(azimuth_sample)};
+        const Vec3 radiance = rendering::sky::compose_sky(inputs, direction).radiance;
+        out.horizon = Vec3{out.horizon.x + (radiance.x / static_cast<f32>(kHorizonSamples)),
+                           out.horizon.y + (radiance.y / static_cast<f32>(kHorizonSamples)),
+                           out.horizon.z + (radiance.z / static_cast<f32>(kHorizonSamples))};
+    }
+
     const rendering::sky::SkyLighting lighting = rendering::sky::compose_sky_lighting(inputs, 16);
     out.sun_illuminance = lighting.sun_illuminance;
     // THE SKY'S MEAN RADIANCE AND NOT ITS IRRADIANCE, and the factor of pi between them is the
@@ -1088,16 +1126,21 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     // no bound pipeline uses needs no descriptor. Binding 4 is the fog volume, which EVERY scene
     // and sky entry point names, so it always holds a view — a material's when the fog is off, and
     // `fogControl.x` then says not to read it.
-    const rhi::DescriptorBinding shadow_bindings[5] = {
+    //
+    // Bindings 5 and 6 are the GI's indirect diffuse and specular targets, DECLARED ONLY WHEN THE
+    // RUN ASKED FOR THE GI: the frame without it keeps the layout it always had.
+    const rhi::DescriptorBinding shadow_bindings[7] = {
         {0, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {1, rhi::DescriptorKind::Sampler, 1, rhi::ShaderStage::Fragment, false},
         {2, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {3, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
         {4, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
+        {5, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
+        {6, rhi::DescriptorKind::SampledTexture, 1, rhi::ShaderStage::Fragment, false},
     };
     rhi::DescriptorSetLayoutDescription shadow;
     shadow.name = "beauty shadow";
-    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, 5);
+    shadow.bindings = Span<const rhi::DescriptorBinding>(shadow_bindings, gi_.enabled ? 7U : 5U);
     auto shadow_layout = device.create_descriptor_set_layout(shadow);
     if (!shadow_layout) {
         return make_unexpected(shadow_layout.error());
@@ -1249,6 +1292,30 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
             device_->shadow_set, Span<const rhi::DescriptorWrite>(shadow_writes, 3));
         !written) {
         return written;
+    }
+    if (gi_.enabled) {
+        // The GI's two targets: the resolve's own textures, the same views every frame. And —
+        // because `sceneFragmentGi` names the occlusion and contact terms whether or not
+        // `giControl` lets it read them — a material's view at bindings 2 and 3 until
+        // `create_occlusion` and `create_contact` write theirs, as binding 4 holds one for the fog.
+        rhi::DescriptorWrite gi_writes[4];
+        gi_writes[0].binding = 5;
+        gi_writes[0].kind = rhi::DescriptorKind::SampledTexture;
+        gi_writes[0].texture_view = device_->gi.diffuse_view();
+        gi_writes[0].use = rhi::ImageUse::SampledRead;
+        gi_writes[1] = gi_writes[0];
+        gi_writes[1].binding = 6;
+        gi_writes[1].texture_view = device_->gi.specular_view();
+        gi_writes[2] = gi_writes[0];
+        gi_writes[2].binding = 2;
+        gi_writes[2].texture_view = device_->views[0];
+        gi_writes[3] = gi_writes[2];
+        gi_writes[3].binding = 3;
+        if (Status written = device.update_descriptor_set(
+                device_->shadow_set, Span<const rhi::DescriptorWrite>(gi_writes, 4));
+            !written) {
+            return written;
+        }
     }
 
     rhi::BufferDescription constants;
@@ -1521,7 +1588,10 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // With motion blur alone the scene shades through `sceneFragment` — the published frame's own
     // entry point — against the prepass depth.
     const char* shading = "sceneFragment";
-    if (soft_shadows_) {
+    if (gi_.enabled) {
+        // THE GI's entry point reads the soft sun and the occlusion term itself, by `giControl`.
+        shading = "sceneFragmentGi";
+    } else if (soft_shadows_) {
         shading = "sceneFragmentSoft";
     } else if (ambient_occlusion_) {
         shading = "sceneFragmentOccluded";
@@ -1542,8 +1612,14 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
 
     // THE PREPASS: depth, and the geometric normal into the frame's `normal + roughness` target —
     // and, with motion blur, the motion vectors into the frame's velocity target.
-    auto prepass_fragment =
-        fragment(motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment");
+    // WITH THE GI, THE MATERIAL'S ROUGHNESS TOO: the resolve's rough specular reads it from the
+    // normal target's third channel, which the published prepass leaves at one.
+    const char* prepass_entry =
+        motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment";
+    if (gi_.enabled) {
+        prepass_entry = motion_blur_ ? "scenePrepassGiMotionFragment" : "scenePrepassGiFragment";
+    }
+    auto prepass_fragment = fragment(prepass_entry);
     if (!prepass_fragment) {
         return make_unexpected(prepass_fragment.error());
     }
@@ -1941,6 +2017,26 @@ Status Stage::stage_shot(Shot& shot, ShotReport& report) noexcept {
     sun_illuminance_ = sky.sun_illuminance;
     sky_irradiance_ = sky.sky_irradiance;
 
+    if (gi_.enabled) {
+        // THE GI SCENE, once the sky has answered the light it is lit by: the shot's meshes and
+        // instances, the same sun, and the atmosphere's gradient.
+        BeautyGiLight light;
+        light.to_sun = sky.sun_direction;
+        light.sun_illuminance = sky.sun_illuminance;
+        light.sun_angular_radius = shot.sun_angular_radius;
+        light.zenith = sky.zenith;
+        light.horizon = sky.horizon;
+        light.mean_sky = sky.sky_irradiance;
+        const f64 gi_mark = now_millis();
+        if (Status built =
+                device_->gi.build(shot, device_->gi_meshes, light, gi_, device, width_, height_);
+            !built) {
+            return built;
+        }
+        std::printf("gi            %u cards over %u placements, built in %.0f ms\n",
+                    device_->gi.card_count(), device_->gi.placements(), now_millis() - gi_mark);
+    }
+
     const auto upload = [&device](rhi::BufferHandle handle, const void* bytes,
                                   u64 size) noexcept -> Status {
         void* mapped = device.buffer_mapped_pointer(handle);
@@ -2183,6 +2279,8 @@ Status Stage::create_frame() noexcept {
     // FOG, ONLY WHEN ASKED FOR: step 3, declared at the frame's own `VolumetricFog` stage. Off,
     // neither the pass nor its volume exists.
     description.post.volumetric_fog = fog_enabled_;
+    // THE GI, ONLY WHEN ASKED FOR: the frame's `ScreenSpaceGi` stage, produced by the resolve.
+    description.global_illumination = gi_.enabled;
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2540,6 +2638,12 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         constants.decal_control[2] = rendering::decals::kDecalListsInTable;
     }
     constants.fog_control[0] = fog_enabled_ ? 1U : 0U;
+    if (gi_.enabled) {
+        constants.gi_control[0] = 1U;
+        constants.gi_control[1] = 1U;
+        constants.gi_control[2] = ambient_occlusion_ ? 1U : 0U;
+        constants.gi_control[3] = soft_shadows_ ? 1U : 0U;
+    }
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2709,6 +2813,19 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         }
         view.motion_blur = device_->motion_blur.import_target(graph);
         sinks.motion_blur = device_->motion_blur.stage();
+    }
+    if (gi_.enabled) {
+        BeautyGiView gi_view;
+        gi_view.eye = eye;
+        gi_view.camera = camera;
+        gi_view.projection = projection;
+        gi_view.world_to_clip = world_to_clip;
+        if (Status prepared = device_->gi.prepare(graph, view, sinks, gi_view, gi_frame_);
+            !prepared) {
+            (void)device.end_frame();
+            return prepared;
+        }
+        ++gi_frame_;
     }
     if (has_prepass()) {
         sinks.passes[static_cast<usize>(FramePassKind::DepthPrepass)] =
@@ -2926,7 +3043,34 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     report.trail_draws = device_->trails.report().draws;
     report.trail_dropped = device_->trails.report().dropped;
     report.validation_errors = device_->validation_errors;
+    if (gi_.enabled) {
+        // AFTER THE FENCE: the resolve's timestamps are this frame's.
+        const rendering::gi_gpu::GpuResolveTimes times = device_->gi.last_times();
+        report.gi_cards = device_->gi.card_count();
+        report.gi_placements = device_->gi.placements();
+        report.gi_tier = device_->gi.tier_name();
+        report.gi_update_ms = device_->gi.last_update_ms();
+        report.gi_converged_frames = device_->gi.converged_frames();
+        report.gi_converge_ms = device_->gi.converge_ms();
+        report.gi_unpack_ms = times.unpack_ms;
+        report.gi_reproject_ms = times.reproject_ms;
+        report.gi_resolve_ms = times.resolve_ms;
+        report.gi_accumulate_ms = times.accumulate_ms;
+        report.gi_variance_ms = times.variance_ms;
+        report.gi_filter_ms = times.filter_ms;
+        report.gi_publish_ms = times.publish_ms;
+        report.gi_total_ms = times.total_ms;
+        report.gi_timed = times.valid;
+    }
     return frame;
+}
+
+Expected<BeautyGiReference, Error> Stage::measure_gi_reference(u32 pixels, u32 samples,
+                                                               u32 bounces) noexcept {
+    if (!gi_.enabled || device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "the run did not ask for the GI");
+    }
+    return device_->gi.measure_reference(pixels, samples, bounces);
 }
 
 Status Stage::prepare_shadow() noexcept {

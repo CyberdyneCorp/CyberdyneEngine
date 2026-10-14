@@ -783,6 +783,60 @@ CY_TEST_CASE("the device query answers as RadianceCache::sample does") {
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
+CY_TEST_CASE("a probe the host gathers again reaches the device at the next upload") {
+    // REGRESSION, issue #35 stage 4. A gather is not a change the host makes to a probe, so it
+    // moves no revision — and a mirror that keyed its uploads on revision alone uploaded a
+    // host-gathered probe once and served that first payload to every device query after it.
+    // The per-pixel resolve queries a cache the host gathers, and read probes frames stale.
+    Gpu gpu;
+    if (!gpu.available()) {
+        return;
+    }
+    FrozenRoom room;
+    ProbePair pair(gpu.device(), room, gi::ProbeEncoding::SphericalHarmonicsL1, false);
+    // The HOST cache, gathered on the host: the device only mirrors it.
+    for (u64 frame = 1; frame <= 2; ++frame) {
+        (void)pair.host.update(pair.context(frame));
+    }
+    std::vector<GpuProbeQuery> queries;
+    for (i32 ix = -6; ix <= 6; ++ix) {
+        for (i32 iz = -6; iz <= 6; ++iz) {
+            queries.push_back({Vec3{static_cast<f32>(ix) * 0.61F, -gi_support::kRoomY + 0.1F,
+                                    static_cast<f32>(iz) * 0.61F},
+                               Vec3{0.0F, 1.0F, 0.0F}});
+        }
+    }
+    CY_REQUIRE(pair.gpu.set_queries({queries.data(), queries.size()}).has_value());
+    std::vector<gi::RadianceSample> device(queries.size());
+    const auto query = [&](u64 frame) {
+        CY_REQUIRE(pair.gpu.upload(pair.host).has_value());
+        CY_REQUIRE(run_frame(gpu.device(), [&](rendering::RenderGraph& graph) {
+            return pair.gpu.declare_sample(graph, frame);
+        }));
+        CY_REQUIRE(pair.gpu.read_back_samples({device.data(), device.size()}).has_value());
+        Agreement radiance;
+        for (usize index = 0; index < queries.size(); ++index) {
+            const gi::RadianceSample host =
+                pair.host.sample(queries[index].position, queries[index].normal, frame);
+            radiance.add(relative(host.radiance, device[index].radiance), 1.0e-4);
+        }
+        radiance.finish();
+        return radiance;
+    };
+    const Agreement first = query(3);
+    first.print("first upload");
+    // Gathered again on the host — the rays rotate, so every payload moves — and uploaded again.
+    for (u64 frame = 3; frame <= 5; ++frame) {
+        (void)pair.host.update(pair.context(frame));
+    }
+    const Agreement again = query(6);
+    again.print("after three more host gathers");
+    CY_CHECK_LT(first.mean, 1.0e-5);
+    CY_CHECK_LT(again.mean, 1.0e-5);
+    CY_CHECK_LT(again.worst, 1.0e-3);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
 CY_TEST_CASE("a reconfigured radiance cache is uploaded afresh, whatever its probes' revisions") {
     // REGRESSION. `RadianceCache::configure` starts the probe slots over, so the probe created in
     // slot 0 after it carries the same revision as the probe slot 0 held before — and a mirror that

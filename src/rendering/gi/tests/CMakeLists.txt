@@ -17,6 +17,8 @@
 #                       Also the host half of the device surface cache (issue #35): the field's
 #                       change journal, the card snapshot against the cache's own lookup, the shadow
 #                       map against the field, and the shading seam `system.h` chooses CPU or GPU by.
+#                       And a mesh's cards and distance grid as a cook builds them: brute force over
+#                       every triangle, which is over the unit budget by design.
 #   render_gi_signals   the five stochastic signals the denoiser declares, PRODUCED — indirect
 #                       diffuse, indirect specular, ray-traced shadows, ambient occlusion and
 #                       stochastic direct — and each routed through `denoise::Denoiser`. M11.c task
@@ -33,6 +35,9 @@
 #   render_gi_emissive  emissive surfaces as illumination: classification, promotion, the form
 #                       factor, and the path tracer as the reference for both paths.
 #   render_gi_volumes   GI volumes through the composed system.
+#   render_gi_screen    the per-pixel resolve and its denoiser (issue #35, stage 4): the host
+#                       oracle the device transcribes, and the frame's quality bars against the
+#                       path tracer, a 10 cm wall, a moving light and a still view.
 set_property(GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_render_gi_declare_tests)
@@ -68,6 +73,7 @@ function(cy_render_gi_declare_tests)
             "${tests_dir}/test_card_lighting.cpp"
             "${tests_dir}/test_probe_gather.cpp"
             "${tests_dir}/test_field.cpp"
+            "${tests_dir}/test_mesh_cards.cpp"
             "${tests_dir}/test_system.cpp"
             "${tests_dir}/test_tiers.cpp"
         DEPENDENCIES cy::rendering-gi)
@@ -104,6 +110,16 @@ function(cy_render_gi_declare_tests)
         NAME render_gi_emissive
         KIND integration
         SOURCES "${tests_dir}/test_emissive.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    # THE PER-PIXEL RESOLVE AND ITS DENOISER, the host oracle of issue #35's stage 4, and the quality
+    # bars the frame's GI is held to: ground truth over the exact geometry, a 10 cm wall, a light
+    # that moves and a still view. Here rather than on the device because the device suite holds
+    # the device to this oracle to a few parts in ten million, and this runs where there is none.
+    cy_add_test(
+        NAME render_gi_screen
+        KIND integration
+        SOURCES "${tests_dir}/test_screen_resolve.cpp"
         DEPENDENCIES cy::rendering-gi)
 
     # GI VOLUMES THROUGH THE COMPOSED SYSTEM: an important interior's probes and updates within one

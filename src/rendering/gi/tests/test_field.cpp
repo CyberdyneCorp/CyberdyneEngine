@@ -48,6 +48,38 @@ CY_TEST_CASE("a box composites into the world field and the field agrees with th
     CY_CHECK_EQ(field.placement_count(), 1U);
 }
 
+CY_TEST_CASE("a 10 cm wall at a brick face is in the field from both sides") {
+    // THE REGRESSION FOR A FIELD THAT LOST A WALL. A brick stored the near corner of each of its
+    // four voxels, so a point in its last voxel had no sample beyond it and read the brick's last
+    // sample flat across the voxel: a 10 cm wall centred on a brick face (z = 0 here, a brick
+    // boundary at every level) read 0.20 m away from every point of the quarter-metre voxel in
+    // front of it, and a sphere trace stepping in from that side stepped through it. The bricks
+    // store both faces' corners now, and the field is continuous across them.
+    const BoxField wall(Vec3{2.0F, 2.0F, 0.05F}, 0.5F, 43);
+    DistanceField field;
+    CY_REQUIRE(field.configure(small_settings()).has_value());
+    CY_REQUIRE(field.place(1, wall.asset(), cy::Mat4::identity()).has_value());
+    (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
+    const f32 voxel = field.voxel_size();
+
+    // Walking toward the wall from either side, the field never reads further than the true
+    // distance plus half a voxel — the trilinear error of a 25 cm lattice over a 10 cm slab.
+    for (const f32 side : {-1.0F, 1.0F}) {
+        for (u32 step = 0; step <= 10; ++step) {
+            const f32 z = side * (0.05F + (0.3F * static_cast<f32>(step) / 10.0F));
+            const f32 truth = std::abs(z) - 0.05F;
+            CY_CHECK_LE(field.distance(Vec3{0.3F, 0.4F, z}), truth + (voxel * 0.5F));
+        }
+        // And a trace aimed at it from a voxel away hits it rather than stepping through.
+        cy::Ray ray;
+        ray.origin = Vec3{0.3F, 0.4F, side * 0.3F};
+        ray.direction = Vec3{0.0F, 0.0F, -side};
+        const SphereTraceHit hit = field.sphere_trace(ray, 2.0F);
+        CY_CHECK(hit.hit);
+        CY_CHECK_LT(hit.t, 0.3F);
+    }
+}
+
 CY_TEST_CASE("empty space costs no storage") {
     // "The representation SHALL be sparse: regions containing no surface SHALL not consume
     // storage." The control is the same field with a box in it, which does.

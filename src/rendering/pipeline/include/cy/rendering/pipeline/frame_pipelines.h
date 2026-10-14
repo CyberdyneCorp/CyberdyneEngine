@@ -345,6 +345,14 @@ struct alignas(16) FrameViewData {
     /// density its lightmap gives it against y (texels per metre, as `f32` bits) instead of lit.
     /// Zero, the default, is the lit frame. zw: reserved.
     u32 lightmap_debug[4] = {0, 0, 0, 0};
+    /// Dynamic global illumination. x: the set 0 texture slot of `gi_gpu::GpuScreenResolve`'s
+    /// indirect diffuse target, or `kNoMaterialTexture` — the default, and the frame every caller
+    /// that predates the field draws, arithmetic for arithmetic. y: the slot of its indirect
+    /// specular target. z: the admission bits `gi_gpu::gi_admission` answers from
+    /// `gi::exclusion_for()`. w: reserved. `gi_gpu::write_gi_control` fills it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 gi_control[4] = {kNoMaterialTexture, kNoMaterialTexture, 0, 0};
 };
 
 /// `lightmap_shadow_lights`' "no light has this channel" — `cy/frame.slang`'s `kCyNoLightmapLight`.
@@ -363,7 +371,8 @@ inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 640, "CyFrameData's std140 block is 640 bytes");
+static_assert(sizeof(FrameViewData) == 656, "CyFrameData's std140 block is 656 bytes");
+static_assert(offsetof(FrameViewData, gi_control) == 640);
 static_assert(offsetof(FrameViewData, lightmap_shadow_lights) == 592);
 static_assert(offsetof(FrameViewData, lightmap_direct_lights) == 608);
 static_assert(offsetof(FrameViewData, lightmap_debug) == 624);

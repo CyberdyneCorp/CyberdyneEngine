@@ -106,6 +106,7 @@ struct GpuDispatchTime {
 };
 
 class GpuTierTracer;
+class GpuScreenResolve;
 
 class GpuRadianceCache : public gi::ProbeGatherBackend {
 public:
@@ -177,6 +178,7 @@ public:
 
 private:
     friend class GpuTierTracer;
+    friend class GpuScreenResolve;
 
     // `GiProbeSet` order, then the host copies no shader binds.
     enum Binding : u32 {
@@ -239,6 +241,10 @@ private:
     void write_constants() noexcept;
     void write_sky(const gi::SkyTerm& sky) noexcept;
     [[nodiscard]] Status mirror(const gi::RadianceCache& cache) noexcept;
+    /// One probe's gathered state — last update, validity, axis distances, payload — into the
+    /// mapped records, and the frame it was gathered at into `updated_`.
+    void upload_payload(const gi::RadianceCache& cache, u32 handle, f32* records, f32* payloads,
+                        u32 stride) noexcept;
     void write_layout(const gi::RadianceCache& cache) noexcept;
     [[nodiscard]] ResourceId import(RenderGraph& graph, Binding binding) noexcept;
     /// The reads every dispatch over set 0 and set 1 shares, and set 2's when `hardware`.
@@ -278,6 +284,10 @@ private:
     /// The revision of each probe slot as last uploaded, and whether the slot has been seen.
     Array<u32> revisions_;
     Array<u8> seen_;
+    /// The `last_update_frame` of each slot as last uploaded. A HOST gather moves no revision — a
+    /// gather is not a change the host makes to a probe — so without this a mirror of a cache the
+    /// host gathers uploaded each probe once and served its first payload forever after.
+    Array<u64> updated_;
     /// `RadianceCache::generation()` as last mirrored.
     u64 generation_ = ~0ULL;
     /// The clipmap centre the layout was last written for, per level.

@@ -6,7 +6,7 @@
 
 namespace cy::rendering::particles {
 
-/// issue15-particle-vertex.metal, 5126 bytes.
+/// issue15-particle-vertex.metal, 5149 bytes.
 inline constexpr char kParticleVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -84,6 +84,7 @@ struct CyFrameData_0
     uint4 lightmapShadowLights_0;
     uint4 lightmapDirectLights_0;
     uint4 lightmapDebug_0;
+    uint4 giControl_0;
 };
 
 
@@ -101,7 +102,7 @@ struct Light_0
 };
 
 
-#line 282 "src/rendering/shaders/cy/frame.slang"
+#line 295 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -136,7 +137,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 304
+#line 317
 struct KernelContext_0
 {
     CyParticlePassSet_default_0 constant* cyParticlePass_0;
@@ -144,7 +145,7 @@ struct KernelContext_0
 };
 
 
-#line 359
+#line 372
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -152,7 +153,7 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 362
+#line 375
 struct cyParticleVertex_Result_0
 {
     float4 position_0 [[position]];

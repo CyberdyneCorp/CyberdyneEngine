@@ -273,7 +273,7 @@ Status GpuGiScene::create_buffers() noexcept {
         {"gi constants", sizeof(constants_), storage, rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi page table", desc_.max_levels * window * window * window * 4U, storage,
          rhi::MemoryUse::HostVisibleDeviceLocal},
-        {"gi brick pool", static_cast<u64>(desc_.max_brick_slots) * gi::kBrickVoxels * 4U, storage,
+        {"gi brick pool", static_cast<u64>(desc_.max_brick_slots) * gi::kBrickSamples * 4U, storage,
          rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi cards", desc_.max_cards * kCardVec4s * kVec4, storage,
          rhi::MemoryUse::HostVisibleDeviceLocal},
@@ -404,11 +404,11 @@ void GpuGiScene::apply_brick(const gi::DistanceField& field, const gi::FieldBric
     }
     auto* pool = static_cast<f32*>(mapped(kBricks));
     const Span<const f32> source = field.brick_pool();
-    std::memcpy(pool + (static_cast<usize>(change.slot) * gi::kBrickVoxels),
-                source.data() + (static_cast<usize>(change.slot) * gi::kBrickVoxels),
-                gi::kBrickVoxels * sizeof(f32));
+    std::memcpy(pool + (static_cast<usize>(change.slot) * gi::kBrickSamples),
+                source.data() + (static_cast<usize>(change.slot) * gi::kBrickSamples),
+                gi::kBrickSamples * sizeof(f32));
     report.bricks_uploaded += 1;
-    report.bytes += gi::kBrickVoxels * sizeof(f32);
+    report.bytes += gi::kBrickSamples * sizeof(f32);
 }
 
 Expected<FieldUploadReport, Error> GpuGiScene::upload_field(

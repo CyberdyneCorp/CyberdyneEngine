@@ -880,18 +880,32 @@ _beauty-programs build_dir work graphs:
             --info "{{work}}/${name}.cymatinfo"
     done
 
+    # EVERY ENTRY POINT THE FILE DECLARES, read off its `[shader("<stage>")]` attributes and the
+    # declaration under each, rather than listed here: a hand-kept list is what left
+    # `scenePrepassMotionFragment` out of every module, so `capture-beauty-motion-blur` asked the
+    # device for an entry point the program did not contain. The program keeps the list now.
+    entries=()
+    while read -r stage entry_point; do
+        entries+=(-entry "${entry_point}" -stage "${stage}")
+    done < <(awk '/^\[shader\("/ {
+                      split($0, quoted, "\"");
+                      stage = quoted[2];
+                      getline;
+                      split($2, named, "(");
+                      print stage, named[1];
+                  }' samples/12-beauty/shaders/beauty.slang)
+    if [ "${#entries[@]}" -eq 0 ]; then
+        echo "_beauty-programs: no [shader] entry point found in beauty.slang" >&2
+        exit 1
+    fi
+
     echo "==> shader      the generated programs, through slangc"
     for info in "{{work}}"/*.cymatinfo; do
         name="$(basename "${info}" .cymatinfo)"
         entry="$(awk '/^entry /{print $2}' "${info}")"
         "${slangc}" samples/12-beauty/shaders/beauty.slang \
             -target spirv -profile spirv_1_5 \
-            -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
-            -entry sceneFragmentOccluded -stage fragment \
-            -entry sceneFragmentSoft -stage fragment \
-            -entry scenePrepassFragment -stage fragment \
-            -entry shadowVertex -stage vertex \
-            -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
+            "${entries[@]}" \
             -fvk-use-entrypoint-name \
             -I src/rendering/shaders -I "{{work}}" \
             -DCY_MATERIAL_MODULE="\"${name}.slang\"" -DCY_MATERIAL_ENTRY="${entry}" \
@@ -940,6 +954,61 @@ capture-beauty-bloom *args:
     echo "==> recompress  the stills"
     python3 tools/docs/collect_beauty_shot.py docs/design/images/bloom-beauty-off.png \
         docs/design/images/bloom-beauty-on.png
+
+# THE BEAUTY SHOT WITH ITS FLAT SKY TERM AND WITH THE ENGINE'S GLOBAL ILLUMINATION: the same scene,
+# the same compiled programs and the same settled embers, photographed without the GI and with it
+# (`--gi on`, samples/12-beauty/gi.h): the GI scene built from the shot's own meshes, the caches in
+# converged mode — as the GI's specification asks of a capture — and the frame's per-pixel resolve
+# and denoiser on the device, through ray queries where the device has them. The run with the GI
+# also path traces 400 pixels of its frame and prints how far its indirect diffuse and the flat
+# ambient it replaces are from them. tools/docs/compare_gi.py fails the recipe unless the frame
+# without the GI is M11.c's still byte for byte, and unless the GI moves the surfaces and leaves the
+# sky alone; it writes the two side by side and crops of three shadowed surfaces. Needs a graphics
+# device, and says so and writes nothing without one.
+# Photograph the beauty shot without and with global illumination. Usage: just capture-beauty-gi [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>]
+capture-beauty-gi *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-gi: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/beauty-gi"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     without the GI"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/gi-beauty-off.png ${rest}
+    echo "==> capture     with the GI, and its path-traced reference"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" --gi on \
+        --gi-reference 400 \
+        --still docs/design/images/gi-beauty-on.png \
+        --manifest docs/design/images/gi-beauty-on.manifest ${rest}
+
+    echo "==> compare     off against M11.c's still, and on against off"
+    python3 tools/docs/compare_gi.py \
+        --off docs/design/images/gi-beauty-off.png \
+        --on docs/design/images/gi-beauty-on.png \
+        --reference docs/design/images/m11c-beauty-shot.png \
+        --pair docs/design/images/gi-beauty-pair.png \
+        --detail docs/design/images/gi-beauty-detail.png
+
+    echo "==> recompress  the stills"
+    python3 tools/docs/collect_beauty_shot.py docs/design/images/gi-beauty-off.png \
+        docs/design/images/gi-beauty-on.png
 
 # THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
 # embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far

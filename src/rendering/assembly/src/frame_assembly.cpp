@@ -306,6 +306,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.ambient_occlusion = config.ambient_occlusion;
     features.volumetric_fog = config.volumetric_fog;
     features.contact_shadows = description_.contact_shadows;
+    features.screen_space_gi = description_.global_illumination;
     features.selection_outlines = description_.selection_outlines;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
@@ -745,6 +746,9 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.motion_blur_target = view.motion_blur;
     description.motion_blur_stage = sinks.motion_blur;
     description.ui_stage = sinks.ui;
+    description.screen_space_gi_target = view.screen_space_gi;
+    description.screen_space_gi_specular_target = view.screen_space_gi_specular;
+    description.screen_space_gi_stage = sinks.screen_space_gi;
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =

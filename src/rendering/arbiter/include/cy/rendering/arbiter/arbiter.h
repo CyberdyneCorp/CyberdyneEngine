@@ -226,6 +226,8 @@ public:
     /// Register a subsystem. Declaring the same subsystem twice replaces its declaration, which is
     /// what a profile change does.
     Status declare(const SubsystemDeclaration& declaration) noexcept;
+    /// What a registered subsystem declared — the ladder it reports positions on — or null.
+    [[nodiscard]] const SubsystemDeclaration* declaration(BudgetSubsystem subsystem) const noexcept;
 
     [[nodiscard]] bool registered(BudgetSubsystem subsystem) const noexcept;
 

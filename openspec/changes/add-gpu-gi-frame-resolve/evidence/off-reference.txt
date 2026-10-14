@@ -1,0 +1,33 @@
+The frame with the GI off. Development build, Vulkan on the RTX 5060 (driver 580.95.05).
+
+THE FORWARD FRAME. `cy/frame.slang` gained `FrameViewData::gi_control` (appended at offset 640) and
+the composite behind `giControl.x != kCyNoMaterialTexture`; `FrameDescription` gained the
+`screen_space_gi` producer, its targets and `AssemblyDescription::global_illumination`, all appended
+and defaulting to none. The frame's own shaders, and the selection mask's and the particles' and
+strips' — which import cy.frame — were regenerated (frame_spirv.h / frame_msl.h, selection_*,
+particle_*, strip_*). Every suite that draws through them passes against its committed reference,
+unchanged:
+
+  render.pipeline 6/6, render.ambient_occlusion 6/6, render.decals 9/9, render.depth_of_field 8/8,
+  render.frames 3/3, render.golden 5/5, render.lightmaps 14/14, render.light_probes 9/9,
+  render.material_binding 1/1, render.motion_blur 6/6, render.soft_shadows 5/5,
+  render.volumetric_fog 5/5, render.grading 8/8, render.bloom 9/9, render.forward_material_texture 2/2,
+  render.selection_outlines 5/5, render.skinned_frame 7/7, render.virtual_geometry_shaded 2/2,
+  render.assembly 4/4, render.vfx 5/5, render.vfx_gpu 7/7
+
+and render.gi_gpu_frame (a) holds the frame WITH the producer attached and its words at none to the
+frame without it: 0 of 129 600 pixels differ.
+
+THE BEAUTY SHOT. Without `--gi on` the sample creates nothing of the GI — no layout binding, no
+pipeline, no pass — and draws through the entry points it always drew with; the shader programs gain
+entry points beside them. The still at the default 1920x1080, 2x supersampled, decoded and compared
+pixel for pixel against the committed docs/design/images/m11c-beauty-shot.png: identical, after the
+particle headers were regenerated as well. `just capture-beauty-gi` checks the same on every run
+(tools/docs/compare_gi.py).
+
+THE HOST GI. This change moves the host GI's answers on purpose, and each move is a defect fixed or a
+behaviour added with its own case: the field's bricks store a fifth sample per axis (the 10 cm wall),
+which moves every field-traced number — test_fallback's tier agreement went from 0.0751 to 0.0209 and
+its switching frame from 0.1514 to 0.1842 — and `SurfaceBounce::Cards` is opt-in (the default bounce
+is the probes, as before). A caller that does not use the per-pixel resolve reaches none of
+screen_resolve.h.

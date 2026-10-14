@@ -151,6 +151,14 @@ void BudgetArbiter::report_frame_ms(f32 frame_ms) noexcept {
     filtered_frame_ms_ += config_.filter_alpha * (measured_frame_ms_ - filtered_frame_ms_);
 }
 
+const SubsystemDeclaration* BudgetArbiter::declaration(BudgetSubsystem subsystem) const noexcept {
+    const auto index = static_cast<u32>(subsystem);
+    if (index >= kBudgetSubsystemCount || !entries_[index].registered) {
+        return nullptr;
+    }
+    return &entries_[index].declaration;
+}
+
 void BudgetArbiter::report_subsystem(BudgetSubsystem subsystem, f32 measured_ms, u8 position,
                                      bool at_minimum, CostSource source) noexcept {
     const auto index = static_cast<u32>(subsystem);

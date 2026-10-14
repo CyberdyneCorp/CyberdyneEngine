@@ -238,7 +238,20 @@ public struct CyFrameData
     /// density its lightmap gives it against y — the target, texels per metre, as float bits —
     /// instead of lit. Zero, the default, is the lit frame. zw: reserved.
     public uint4 lightmapDebug;
+    /// Dynamic global illumination, appended for the reason `materialTextures` gives. x: the frame
+    /// texture slot of `gi_gpu::GpuScreenResolve`'s indirect diffuse target, or
+    /// `kCyNoMaterialTexture` — the default, which draws every surface as it was. y: the slot of its
+    /// indirect specular target. z: the admission bits, `kCyGiAdmit*` — for each kind of surface,
+    /// whether the frame's GI mode admits the dynamic sources there, which `gi::exclusion_for()`
+    /// answered on the host. w: reserved. `gi_gpu::write_gi_control` fills it.
+    public uint4 giControl;
 };
+
+/// `giControl.z`'s bits. `cy::rendering::gi_gpu::kGiAdmitPlain`, `kGiAdmitLightmapped` and
+/// `kGiAdmitWithVolume` are the same numbers.
+public static const uint kCyGiAdmitPlain = 1u;
+public static const uint kCyGiAdmitLightmapped = 2u;
+public static const uint kCyGiAdmitWithVolume = 4u;
 
 /// `motionControl.x` when the frame carries no previous instance rows.
 /// `cy::rendering::pipeline::kNoPreviousInstances` is the same number.
@@ -806,6 +819,70 @@ float occlusionVisibility(float2 fragmentCentre)
     return cyMaterialSampleTextureLevel(cyFrame.occlusionControl.x, uv, 0.0).a;
 }
 
+// --- Dynamic global illumination -----------------------------------------------------------------
+//
+// The per-pixel resolve's two targets, `gi_gpu::GpuScreenResolve`'s: the denoised indirect diffuse
+// (a mean radiance, the quantity the ambient term already is) and the indirect specular in the
+// reflection direction. Both cover the frame's own extent, so the fragment's centre is a texel's
+// centre and the table's filtering returns that texel, as the ambient occlusion term is read.
+
+float3 frameGiSample(uint slot, float2 fragmentCentre)
+{
+    return cyMaterialSampleTextureLevel(slot, fragmentCentre * cyFrame.extentAndInverse.zw, 0.0).rgb;
+}
+
+/// THE DOUBLE-COUNTING RULE AT THE COMPOSITE, which is `gi::exclusion_for()`'s answer for the three
+/// kinds of surface the frame draws: a lightmapped one, one inside the irradiance volume's reach,
+/// and one with neither. Where the mode admits the dynamic sources the GI replaces the ambient —
+/// it already holds the sky and every bounce, so adding it would count both twice; where it does
+/// not, the ambient is what it was. A HYBRID volume keeps its probes where it covers and blends to
+/// the GI over its last cell, exactly as it blends to the flat ambient today.
+float3 frameGiAmbient(bool lightmapped, float2 fragmentCentre, float3 relativePosition,
+                      float3 normal, float3 ambient)
+{
+    let admit = cyFrame.giControl.z;
+    let gi = frameGiSample(cyFrame.giControl.x, fragmentCentre);
+    if (lightmapped)
+    {
+        return (admit & kCyGiAdmitLightmapped) != 0u ? gi : ambient;
+    }
+    if (cyFrame.probeVolumeControl.x != kCyNoMaterialTexture)
+    {
+        if ((admit & kCyGiAdmitWithVolume) != 0u)
+        {
+            return gi;
+        }
+        return (admit & kCyGiAdmitPlain) != 0u ? probeVolumeAmbient(relativePosition, normal, gi)
+                                                : ambient;
+    }
+    return (admit & kCyGiAdmitPlain) != 0u ? gi : ambient;
+}
+
+/// Whether the frame's GI mode admits the dynamic sources on this surface: the specular is
+/// composited exactly where the diffuse is.
+bool frameGiAdmits(bool lightmapped)
+{
+    let admit = cyFrame.giControl.z;
+    if (lightmapped)
+    {
+        return (admit & kCyGiAdmitLightmapped) != 0u;
+    }
+    return (admit & (kCyGiAdmitPlain | kCyGiAdmitWithVolume)) != 0u;
+}
+
+/// The split-sum environment BRDF's analytic fit (Karis, "Physically Based Shading on Mobile",
+/// 2014): what fraction of the light arriving from the reflection lobe a GGX surface returns, with
+/// Fresnel, for reflectance `f0` at `roughness` and `normalDotView`.
+float3 frameEnvironmentBrdf(float3 f0, float roughness, float normalDotView)
+{
+    let c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    let r = roughness * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * normalDotView)) * r.x + r.y;
+    let ab = float2(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
+
 // --- The irradiance volume ----------------------------------------------------------------------
 //
 // A TRANSCRIPTION of `gi::IrradianceVolume::sample` and `ambient`, over the texels its
@@ -1182,11 +1259,31 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
     {
         ambientRadiance = probeVolumeAmbient(input.relativePosition, normal, ambientRadiance);
     }
+    // DYNAMIC GI, where the irradiance volume's ambient sits and under the same rule
+    // (`frameGiAmbient`). With no GI slot, the default, nothing below changes a bit of the
+    // arithmetic above: the frame is the frame it was.
+    var indirectSpecular = float3(0.0);
+    let giBound = cyFrame.giControl.x != kCyNoMaterialTexture;
+    if (giBound)
+    {
+        ambientRadiance = frameGiAmbient(lightmapped, input.position.xy, input.relativePosition,
+                                         normal, ambientRadiance);
+        if (cyFrame.giControl.y != kCyNoMaterialTexture && frameGiAdmits(lightmapped))
+        {
+            let reflectance = frameEnvironmentBrdf(computeF0(surface.albedo, surface.metallic),
+                                                   surface.roughness,
+                                                   saturate(dot(normal, viewDir)));
+            indirectSpecular = frameGiSample(cyFrame.giControl.y, input.position.xy) *
+                               reflectance * surface.occlusion;
+        }
+    }
     var ambient = surface.albedo * ambientRadiance * surface.occlusion;
     if (cyFrame.occlusionControl.x != kCyNoMaterialTexture)
     {
         let visibility = occlusionVisibility(input.position.xy);
         ambient *= visibility;
+        // Ambient occlusion modulates indirect light, the specular as well as the diffuse.
+        indirectSpecular *= visibility;
         if (cyFrame.occlusionControl.y != 0u)
         {
             color *= lerp(1.0, visibility, asfloat(cyFrame.occlusionControl.z));
@@ -1194,6 +1291,10 @@ public float4 cyShadeForward(Surface resolved, CyForwardVertex input)
     }
     color += surface.emission;
     color += ambient;
+    if (giBound)
+    {
+        color += indirectSpecular;
+    }
     // THE FOG BETWEEN THE EYE AND THE SURFACE, last: what the medium transmits of the surface's
     // radiance and what it scatters toward the eye on the way. With no volume slot the colour is
     // the frame's as it was.

@@ -7,8 +7,8 @@ one a Development build stages at <build>/Development/bin/slangc.
 
     python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 
-One module per ENTRY POINT rather than per file: gi_cards.slang holds two, gi_radiance.slang six
-and gi_hardware.slang three, and each is its own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
+One module per ENTRY POINT rather than per file: gi_cards.slang holds two, gi_radiance.slang six,
+gi_hardware.slang three and gi_denoise.slang four, and each is its own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
 the repository root: the committed text is then the same on every machine that regenerates it.
 """
 
@@ -37,7 +37,22 @@ MODULES = (
     ("gi_hardware", "cyGiTraceHardware", "kGiTraceHardwareSpirv", "kGiTraceHardwareMsl"),
     ("gi_hardware", "cyGiTraceTieredHardware", "kGiTraceTieredHardwareSpirv",
      "kGiTraceTieredHardwareMsl"),
+    # Stage 4: the per-pixel resolve, the denoiser's four stages, and the frame's two ends — the
+    # prepass unpacked into surfaces and the denoised signals published as the frame's textures.
+    # gi_resolve_hardware.slang's one is the ray query tier, created only where the device has them.
+    ("gi_surfaces", "cyGiUnpackSurfaces", "kGiUnpackSurfacesSpirv", "kGiUnpackSurfacesMsl"),
+    ("gi_resolve", "cyGiResolve", "kGiResolveSpirv", "kGiResolveMsl"),
+    ("gi_resolve_hardware", "cyGiResolveHardware", "kGiResolveHardwareSpirv",
+     "kGiResolveHardwareMsl"),
+    ("gi_denoise", "cyGiReproject", "kGiReprojectSpirv", "kGiReprojectMsl"),
+    ("gi_denoise", "cyGiDenoiseAccumulate", "kGiDenoiseAccumulateSpirv",
+     "kGiDenoiseAccumulateMsl"),
+    ("gi_denoise", "cyGiDenoiseVariance", "kGiDenoiseVarianceSpirv", "kGiDenoiseVarianceMsl"),
+    ("gi_denoise", "cyGiDenoiseFilter", "kGiDenoiseFilterSpirv", "kGiDenoiseFilterMsl"),
+    ("gi_publish", "cyGiPublish", "kGiPublishSpirv", "kGiPublishMsl"),
 )
+# The engine's shader library: gi_surfaces.slang imports `cy.packing` for the prepass's normal.
+SHADERS = ROOT / "src" / "rendering" / "shaders"
 
 
 def main() -> int:
@@ -51,8 +66,8 @@ def main() -> int:
         spirv, msl = [], []
         for stem, entry, spirv_name, msl_name in MODULES:
             source = str(source_dir / f"{stem}.slang")
-            common = [args.slangc, source, "-I", str(source_dir), "-entry", entry, "-stage",
-                      "compute"]
+            common = [args.slangc, source, "-I", str(source_dir), "-I",
+                      str(SHADERS.relative_to(ROOT)), "-entry", entry, "-stage", "compute"]
             subprocess.run(common + ["-target", "spirv", "-profile", "spirv_1_5", "-o",
                                      str(out / f"{entry}.spv")], cwd=ROOT, check=True)
             subprocess.run(common + ["-target", "metal", "-o", str(out / f"{entry}.metal")],

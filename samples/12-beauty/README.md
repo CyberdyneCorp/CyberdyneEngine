@@ -13,6 +13,7 @@
 > just capture-beauty-grading                       # the shot ungraded, warm and cool
 > just capture-beauty-depth-of-field                # the shot focused on the sphere and on a column
 > just capture-decals                               # the shot with its decals off and on (and the world's ground marker)
+> just capture-beauty-gi                            # the shot with its flat sky term and with the engine's GI
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -58,7 +59,8 @@ four.
 | `shot.h` | the committed scene's shape, and the artefact's honesty contract in its header |
 | `shot.cpp` | the `.cyshot` parser and the `.cyprim` loader. Every refusal is about something the picture would have been wrong about |
 | `stage.cpp` | the device: the cook, the uploads, the descriptor sets, the shadow map, the frame, and the two readbacks |
-| `shaders/beauty.slang` | five entry points and the one thing it decides that the material cannot — which attributes the material sees, and what the engine's light loop does with the surface it returns |
+| `shaders/beauty.slang` | its entry points and the one thing it decides that the material cannot — which attributes the material sees, and what the engine's light loop does with the surface it returns. `just _beauty-programs` compiles every `[shader("...")]` entry point it declares, read off the file |
+| `gi.h`, `gi.cpp` | `--gi on`: the shot's GI scene from its own meshes and instances, the caches, the device resolve, and the path-traced reference |
 | `main.cpp` | the command line, the sidecar check, and the turntable. `--albedo-levels 1` is a CONTROL: level 0 of every albedo map's cooked chain and nothing beneath it |
 | `make_cool_look.py` | writes `content/beauty/looks/cool.cube` from the formula in its docstring |
 | `measure_mip_chain.py` | `just measure-beauty-mip-chain`'s judge: the full chain rendered twice must agree, and against albedo level 0 alone must DIFFER and be the less aliased |
@@ -100,7 +102,7 @@ list names `Bloom` at step 9, before exposure.
 
 The full list is in the provenance, and the short version is: no anti-aliasing stage (the frame is
 supersampled and the manifest says three post stages, none of them temporal), no global illumination
-pass, no ambient occlusion pass in the published frame (it is `--ambient-occlusion on`, at the end
+pass in the published frame (it is `--gi on`, at the end of this file), no ambient occlusion pass in the published frame (it is `--ambient-occlusion on`, at the end
 of this file), procedural geometry, and a normal map and an occlusion channel sampled by the FRAME
 because the compiled-material closure vocabulary has no term for either.
 
@@ -236,3 +238,43 @@ the turntable always drew.
 `just capture-beauty-motion-blur` writes `docs/design/images/motion-blur-beauty-{off,on}.png`:
 frame 20 of the 240-frame orbit, drawn after frame 19, with 0 validation errors. On, the columns'
 masonry and the embers streak along the orbit's direction, most at the frame's edges.
+
+## Global illumination, off and on
+
+`--gi on` lights the shot with the engine's GI (`gi.h`, issue #35 stages 4 and 5). The GI scene is
+the shot's own: `gi::append_mesh_cards` puts a card every half metre over every object and every
+metre over the gravel, `gi::MeshDistanceField` builds each primitive's signed distance grid from its
+triangles, and the field places them by their instances' transforms. The caches are lit by the shot's
+sun and by a sky term fitted to the engine's atmosphere, run in converged mode before the first
+frame — the GI specification asks it of a capture — and the frame's `ScreenSpaceGi` stage is
+produced by `gi_gpu::GpuScreenResolve` through the hardware tier where the device has ray queries:
+the prepass (with each material's roughness, `scenePrepassGiFragment`) unpacked, a final-gather ray a
+pixel combined with the probes by confidence, denoised, and published. `sceneFragmentGi` replaces
+the flat sky term with the indirect diffuse on the diffuse albedo and adds the indirect specular
+through the split-sum environment BRDF; the sun, its shadows, the sky dome and the post chain are the
+published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-frames <n>` and
+`--gi-converged off` are the controls.
+
+![The Colonnade with its flat sky term (left) and with the engine's GI (right)](../../docs/design/images/gi-beauty-pair.png)
+
+![A column, the sphere and a block: off, on, and the difference amplified six times](../../docs/design/images/gi-beauty-detail.png)
+
+Captured with `just capture-beauty-gi` on the RTX 5060, Vulkan, 0 validation errors. Off is
+`m11c-beauty-shot.png` pixel for pixel, and `tools/docs/compare_gi.py` fails the recipe unless it is;
+on, 65.9 % of the pixels change and the open sky between the columns does not.
+
+**Measured against the path tracer.** The run with the GI path traces 400 pixels of its own frame —
+288 see a surface — with `gi::PathTracer` over `lightmap_bake::MeshSceneTracer`'s exact triangles,
+256 paths of three bounces each, and compares the published indirect diffuse:
+
+| | relative error against the path tracer |
+|---|---|
+| the engine's GI | **0.126** |
+| the flat sky term it replaces | 0.385 |
+
+**What it costs** at 1920x1080 (`--supersample 1`), the device resolve's stages from timestamps:
+14.75 ms through ray queries, 5.59 ms on the half-resolution grid (`--gi-divisor 2`), 29.65 ms through
+the software field. The caches are updated on the host here, about 19 ms of processor time a frame
+over 12 782 cards, and converged mode spends 32 frames — 11 s — before the first; the device card
+shading and probe gather of stages 2 and 3 are the installation that moves them off the processor.
+

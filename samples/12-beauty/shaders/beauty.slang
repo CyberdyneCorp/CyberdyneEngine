@@ -128,6 +128,12 @@ struct BeautyFrame
     float4 previousViewProjection1;
     float4 previousViewProjection2;
     float4 previousViewProjection3;
+    /// GLOBAL ILLUMINATION, read only by `sceneFragmentGi`: x 1 when the resolve's indirect
+    /// diffuse is bound at (set 1, binding 5), y its indirect specular at binding 6, z 1 when the
+    /// ambient occlusion term is bound and read, w 1 when the sun is the soft filter's darkened by
+    /// the contact term. APPENDED, so every entry point that predates it reads the block it always
+    /// read.
+    uint4 giControl;
 };
 
 [[vk::binding(0, 2)]]
@@ -362,9 +368,16 @@ float4 shadeScene(SceneVarying input, float ambientVisibility)
     return shadeSceneWithSun(input, ambientVisibility, -1.0);
 }
 
-/// `shadeScene`, with the sun's visibility supplied; a negative `sunOverride` computes the hard
-/// filter's as `sceneFragment` always has.
-float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunOverride)
+/// What the material and the frame made of a fragment before any light reaches it: the material
+/// program's surface, after the decals, and the geometric and shading normals.
+struct PreparedSurface
+{
+    Surface surface;
+    float3 geometricNormal;
+    float3 shadingNormal;
+};
+
+PreparedSurface prepareSurface(SceneVarying input)
 {
     // THE MATERIAL PROGRAM, CALLED. Everything above this line is the frame's; everything the
     // surface says is the authored graph's, lowered by `compile_material` and emitted by the
@@ -409,35 +422,63 @@ float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunO
         applyDecals(surface, shadingNormal, geometricNormal, input.relativePosition,
                     input.position.xy);
     }
+    PreparedSurface prepared;
+    prepared.surface = surface;
+    prepared.geometricNormal = geometricNormal;
+    prepared.shadingNormal = shadingNormal;
+    return prepared;
+}
 
+/// The sun on a prepared surface; a negative `sunOverride` computes the hard filter's visibility as
+/// `sceneFragment` always has.
+float3 sunLight(PreparedSurface prepared, SceneVarying input, float sunOverride)
+{
+    let surface = prepared.surface;
     float3 view = normalize(frame.eye.xyz - input.relativePosition);
     float3 light = normalize(frame.sunDirection.xyz);
-    float normalDotLight = saturate(dot(shadingNormal, light));
-    float visibility = sunOverride < 0.0 ? sunVisibility(input.relativePosition, geometricNormal)
-                                         : sunOverride;
+    float normalDotLight = saturate(dot(prepared.shadingNormal, light));
+    float visibility = sunOverride < 0.0
+                           ? sunVisibility(input.relativePosition, prepared.geometricNormal)
+                           : sunOverride;
 
     float3 f0 = computeF0(surface.albedo, surface.metallic);
     float3 diffuse = diffuseLambert(surface.albedo * (1.0 - surface.metallic));
-    float3 specular = specularGgx(shadingNormal, view, light, surface.roughness, f0);
+    float3 specular = specularGgx(prepared.shadingNormal, view, light, surface.roughness, f0);
 
-    float3 lit = (diffuse + specular) * frame.sunColor.xyz * normalDotLight * visibility;
+    return (diffuse + specular) * frame.sunColor.xyz * normalDotLight * visibility;
+}
 
-    // The ambient term is the assembly's own sky table, hemispherically weighted by the shading
-    // normal so that an upward face is lit by the sky and a downward one is not. It is a
-    // one-bounce approximation and the provenance says so: no global illumination pass ran.
-    float sky = (dot(shadingNormal, float3(0.0, 1.0, 0.0)) * 0.5) + 0.5;
+/// The surface's own occlusion: the material's, times its packed data map's green channel.
+float surfaceOcclusion(PreparedSurface prepared, SceneVarying input)
+{
     // THE OCCLUSION IS SAMPLED BY THE FRAME TOO, and for the same reason the normal is:
     // `CySurface` has no occlusion term, so `cyResolveSurface` leaves `Surface::occlusion` at 1
     // whatever the material did. The green channel of the material's own packed data map is what the
     // generator wrote an ambient occlusion into, and reading it here is the difference between a
     // mortar joint that is a dark line and one that is a colour change. Declared as a gap beside the
     // normal: both belong in the closure vocabulary.
-    float occlusion = surface.occlusion;
+    float occlusion = prepared.surface.occlusion;
     uint dataSlot = asuint(push.surface.w);
     if (dataSlot != 0xFFFFFFFFu)
     {
         occlusion *= cyMaterialSampleTexture(dataSlot, input.uv).y;
     }
+    return occlusion;
+}
+
+/// `shadeScene`, with the sun's visibility supplied; a negative `sunOverride` computes the hard
+/// filter's as `sceneFragment` always has.
+float4 shadeSceneWithSun(SceneVarying input, float ambientVisibility, float sunOverride)
+{
+    let prepared = prepareSurface(input);
+    let surface = prepared.surface;
+    float3 lit = sunLight(prepared, input, sunOverride);
+
+    // The ambient term is the assembly's own sky table, hemispherically weighted by the shading
+    // normal so that an upward face is lit by the sky and a downward one is not. It is a
+    // one-bounce approximation and the provenance says so: no global illumination pass ran.
+    float sky = (dot(prepared.shadingNormal, float3(0.0, 1.0, 0.0)) * 0.5) + 0.5;
+    float occlusion = surfaceOcclusion(prepared, input);
     // AMBIENT OCCLUSION DARKENS THE SKY TERM AND NOTHING ELSE: `lit` above is the sun, which
     // `rendering-post-processing` requires AO to leave alone by default.
     lit += surface.albedo * frame.ambient.xyz * sky * (occlusion * ambientVisibility);
@@ -483,6 +524,84 @@ float4 sceneFragmentSoft(SceneVarying input) : SV_Target
     return throughFog(shadeSceneWithSun(input, ambient, sun), input.relativePosition);
 }
 
+// --- Global illumination -------------------------------------------------------------------------
+//
+// `gi_gpu::GpuScreenResolve`'s two targets, the frame's extent: the indirect diffuse and the
+// indirect specular radiance a pixel, resolved from the probes, a final-gather ray and the sky,
+// and denoised. Read only by `sceneFragmentGi`, so a frame without the GI binds nothing here.
+
+[[vk::binding(5, 1)]] Texture2D<float4> giDiffuse;
+[[vk::binding(6, 1)]] Texture2D<float4> giSpecular;
+
+/// The split-sum environment BRDF's analytic fit (Karis, "Physically Based Shading on Mobile",
+/// 2014) — `cy/frame.slang`'s `frameEnvironmentBrdf`, the same five lines: what fraction of the
+/// light arriving from the reflection lobe a GGX surface returns, with Fresnel.
+float3 beautyEnvironmentBrdf(float3 f0, float roughness, float normalDotView)
+{
+    let c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    let r = roughness * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * normalDotView)) * r.x + r.y;
+    let ab = float2(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
+
+/// THE GI WHERE THE FLAT SKY TERM SAT. The sun is the published frame's — the hard filter, or the
+/// soft one darkened by the contact term when `giControl.w` says soft shadows are on — and the
+/// indirect light is the resolve's: the diffuse onto the surface's diffuse albedo, the specular
+/// through the split-sum environment BRDF, both darkened by the surface's own occlusion and, when
+/// it is bound, by the ambient occlusion term. AO modulates indirect light only, as
+/// `rendering-post-processing` requires. Drawn against the prepass depth, like the other two.
+[shader("fragment")]
+float4 sceneFragmentGi(SceneVarying input) : SV_Target
+{
+    let pixel = int3(int2(input.position.xy), 0);
+    float sun = -1.0;
+    if (frame.giControl.w != 0u)
+    {
+        sun = softSunVisibility(input.relativePosition, normalize(input.normal), input.position.xy);
+        sun = min(sun, contactShadows.Load(pixel).r);
+    }
+    float ambientVisibility = 1.0;
+    if (frame.giControl.z != 0u)
+    {
+        ambientVisibility = ambientOcclusion.Load(pixel).a;
+    }
+    let prepared = prepareSurface(input);
+    let surface = prepared.surface;
+    float3 lit = sunLight(prepared, input, sun);
+    float occlusion = surfaceOcclusion(prepared, input) * ambientVisibility;
+    if (frame.giControl.x != 0u)
+    {
+        // The resolve's radiance onto the DIFFUSE albedo: a metal's colour is its reflectance,
+        // which the specular below carries.
+        lit += surface.albedo * (1.0 - surface.metallic) * giDiffuse.Load(pixel).rgb * occlusion;
+    }
+    if (frame.giControl.y != 0u)
+    {
+        float3 view = normalize(frame.eye.xyz - input.relativePosition);
+        float3 reflectance =
+            beautyEnvironmentBrdf(computeF0(surface.albedo, surface.metallic), surface.roughness,
+                                  saturate(dot(prepared.shadingNormal, view)));
+        lit += giSpecular.Load(pixel).rgb * reflectance * occlusion;
+    }
+    lit += surface.emission;
+    return throughFog(float4(lit, 1.0), input.relativePosition);
+}
+
+/// The material's roughness, for the GI's prepass: the resolve's rough specular reads it from the
+/// normal target's third channel.
+float materialRoughness(SceneVarying input)
+{
+    CyMaterialContext ctx;
+    ctx.params = cyMaterialParameters;
+    ctx.attributes = cyZeroAttributes();
+    ctx.attributes.uv0 = input.uv;
+    CySurface compiled = cyDefaultSurface();
+    CY_MATERIAL_ENTRY(ctx, compiled);
+    return cyResolveSurface(compiled).roughness;
+}
+
 /// THE DEPTH AND NORMAL PREPASS the ambient occlusion stage reads, drawn with `sceneVertex` so its
 /// depth is the depth the scene pass then tests against. The GEOMETRIC normal, camera-relative and
 /// octahedral in `.xy` — `rendering-forward-clustered`'s `DepthNormal` layout, which is what the
@@ -517,6 +636,33 @@ BeautyPrepassMotion scenePrepassMotionFragment(SceneVarying input)
     let previousNdc = previous.xy / previous.w;
     BeautyPrepassMotion output;
     output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
+    output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
+                             (currentNdc.y - previousNdc.y) * 0.5);
+    return output;
+}
+
+/// The prepass with the GI: `scenePrepassFragment`'s normal, and the material's roughness in the
+/// third channel where the published prepass writes one.
+[shader("fragment")]
+float4 scenePrepassGiFragment(SceneVarying input) : SV_Target
+{
+    return float4(encodeOctahedral(normalize(input.normal)), materialRoughness(input), 1.0);
+}
+
+/// `scenePrepassMotionFragment` with the GI's roughness, for a run with both.
+[shader("fragment")]
+BeautyPrepassMotion scenePrepassGiMotionFragment(SceneVarying input)
+{
+    let point = float4(input.relativePosition, 1.0);
+    let current = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
+                            frame.viewProjection3, point);
+    let previous = transform(frame.previousViewProjection0, frame.previousViewProjection1,
+                             frame.previousViewProjection2, frame.previousViewProjection3, point);
+    let currentNdc = current.xy / current.w;
+    let previousNdc = previous.xy / previous.w;
+    BeautyPrepassMotion output;
+    output.normalRoughness =
+        float4(encodeOctahedral(normalize(input.normal)), materialRoughness(input), 1.0);
     output.velocity = float2((previousNdc.x - currentNdc.x) * 0.5,
                              (currentNdc.y - previousNdc.y) * 0.5);
     return output;

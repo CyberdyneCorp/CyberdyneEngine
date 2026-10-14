@@ -200,6 +200,12 @@ struct ProbeGatherResult {
     u64 frame = 0;
 };
 
+/// `RadianceCache::sample_traced`'s two answers.
+struct TracedCacheSamples {
+    RadianceSample diffuse{};
+    RadianceSample specular{};
+};
+
 /// WHO GATHERS THE PROBES THE SCHEDULER PICKED. The seam a device radiance cache replaces the host
 /// gather behind (`cy::rendering-gi-gpu`), exactly as `SurfaceShadingBackend` is for the surface
 /// cache: the cache keeps every DECISION — placement, the clipmap scroll, invalidation, the
@@ -269,6 +275,23 @@ public:
     /// The same, with the confidence the resolve needs: it falls with probe staleness, with how
     /// much probe weight the query actually found, and to zero where no probe covers the point.
     [[nodiscard]] RadianceSample sample(Vec3 position, Vec3 normal, u64 frame) const noexcept;
+
+    /// The cache at a surface for the two signals a per-pixel resolve takes — diffuse about the
+    /// surface's `normal`, specular about its `reflection` — with every probe that would contribute
+    /// TESTED FOR VISIBILITY THROUGH `field`: a sphere trace from the surface, lifted along its
+    /// normal by the visibility bias, to the probe; a probe the trace stops short of contributes
+    /// to neither. One trace a probe answers both signals.
+    ///
+    /// The six axis distances are a probe's view of the world averaged over a hemisphere each, and
+    /// a thin wall a metre from a probe is averaged with the far wall behind it: `sample` then lets
+    /// a probe in a lit room light a point diagonally beyond a 10 cm wall in the dark one. A
+    /// lobe-averaged depth map per probe has the same failure at a grazing wall (measured while
+    /// building issue #35's stage 4). The trace does not. Probes within ONE spacing contribute
+    /// rather than `sample`'s one and a half, because each now costs a trace: about four a level
+    /// rather than about fourteen. `sample` itself is unchanged for every other consumer.
+    [[nodiscard]] TracedCacheSamples sample_traced(Vec3 position, Vec3 normal, Vec3 reflection,
+                                                   u64 frame,
+                                                   const DistanceField& field) const noexcept;
 
     /// Write a probe's payload directly. What a bake's seeding uses, and the only way a probe
     /// becomes valid without a gather.
