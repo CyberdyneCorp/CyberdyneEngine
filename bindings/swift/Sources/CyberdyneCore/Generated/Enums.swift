@@ -235,6 +235,61 @@ public enum LockstepOrderKind: UInt32, Sendable, CaseIterable {
     case stop = 1
 }
 
+/// `CyGiMode`: which sources light the world.
+public enum GIMode: UInt32, Sendable, CaseIterable {
+    case none = 0
+    case baked = 1
+    case probe = 2
+    case dynamic = 3
+    case hybrid = 4
+}
+
+/// `CyGiQuality`: the probe ray multiplier, global or a GI volume's.
+public enum GIQuality: UInt32, Sendable, CaseIterable {
+    case low = 0
+    case medium = 1
+    case high = 2
+    case epic = 3
+}
+
+/// `CyGiTier`: which world tier GI rays prefer.
+public enum GITier: UInt32, Sendable, CaseIterable {
+    case automatic = 0
+    case softwareOnly = 1
+    case worldOnly = 2
+}
+
+/// `CyGiClass`: how a moving object takes part in GI.
+public enum GIClass: UInt32, Sendable, CaseIterable {
+    case `static` = 0
+    case slowDynamic = 1
+    case fastDynamic = 2
+    case transient = 3
+    case automatic = 4
+}
+
+/// `CyGiEmission`: what GI makes of an emitter.
+public enum GIEmission: UInt32, Sendable, CaseIterable {
+    case automatic = 0
+    case cacheOnly = 1
+    case promote = 2
+    case off = 3
+}
+
+/// `CyGiSource`: where a GI sample's light came from.
+public enum GISource: UInt32, Sendable, CaseIterable {
+    case none = 0
+    case lightmap = 1
+    case irradianceVolume = 2
+    case radianceCache = 3
+    case surfaceCache = 4
+    case screenTrace = 5
+    case softwareTrace = 6
+    case hardwareTrace = 7
+    case reflectionProbe = 8
+    case sky = 9
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

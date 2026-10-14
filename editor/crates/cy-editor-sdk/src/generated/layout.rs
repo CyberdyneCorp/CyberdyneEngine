@@ -1673,6 +1673,190 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyGiSettings>() == 24,
+    "CyGiSettings is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyGiSettings>() == 4,
+    "CyGiSettings is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, struct_size) == 0,
+    "CyGiSettings::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, mode) == 4,
+    "CyGiSettings::mode is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, quality) == 8,
+    "CyGiSettings::quality is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, tier) == 12,
+    "CyGiSettings::tier is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, flags) == 16,
+    "CyGiSettings::flags is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiSettings, budget_ms) == 20,
+    "CyGiSettings::budget_ms is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyGiVolumeDesc>() == 72,
+    "CyGiVolumeDesc is not 72 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyGiVolumeDesc>() == 4,
+    "CyGiVolumeDesc is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, struct_size) == 0,
+    "CyGiVolumeDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, sets) == 4,
+    "CyGiVolumeDesc::sets is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, bounds_min) == 8,
+    "CyGiVolumeDesc::bounds_min is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, bounds_max) == 20,
+    "CyGiVolumeDesc::bounds_max is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, priority) == 32,
+    "CyGiVolumeDesc::priority is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, blend_distance) == 36,
+    "CyGiVolumeDesc::blend_distance is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, weight) == 40,
+    "CyGiVolumeDesc::weight is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, quality) == 44,
+    "CyGiVolumeDesc::quality is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, probe_density) == 48,
+    "CyGiVolumeDesc::probe_density is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, update_rate) == 52,
+    "CyGiVolumeDesc::update_rate is not at byte 52"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, diffuse_intensity) == 56,
+    "CyGiVolumeDesc::diffuse_intensity is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, specular_intensity) == 60,
+    "CyGiVolumeDesc::specular_intensity is not at byte 60"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, tier) == 64,
+    "CyGiVolumeDesc::tier is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiVolumeDesc, far_field_metres) == 68,
+    "CyGiVolumeDesc::far_field_metres is not at byte 68"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyGiIrradiance>() == 32,
+    "CyGiIrradiance is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyGiIrradiance>() == 4,
+    "CyGiIrradiance is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, struct_size) == 0,
+    "CyGiIrradiance::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, flags) == 4,
+    "CyGiIrradiance::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, radiance) == 8,
+    "CyGiIrradiance::radiance is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, luminance) == 20,
+    "CyGiIrradiance::luminance is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, confidence) == 24,
+    "CyGiIrradiance::confidence is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiIrradiance, source) == 28,
+    "CyGiIrradiance::source is not at byte 28"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyGiStatus>() == 48,
+    "CyGiStatus is not 48 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyGiStatus>() == 8,
+    "CyGiStatus is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, struct_size) == 0,
+    "CyGiStatus::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, world_tier) == 4,
+    "CyGiStatus::world_tier is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, convergence) == 8,
+    "CyGiStatus::convergence is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, measured_ms) == 12,
+    "CyGiStatus::measured_ms is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, allocation_ms) == 16,
+    "CyGiStatus::allocation_ms is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, volumes) == 20,
+    "CyGiStatus::volumes is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, objects) == 24,
+    "CyGiStatus::objects is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, promoted_lights) == 28,
+    "CyGiStatus::promoted_lights is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, emitters) == 32,
+    "CyGiStatus::emitters is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, disabled_emitters) == 36,
+    "CyGiStatus::disabled_emitters is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyGiStatus, frame) == 40,
+    "CyGiStatus::frame is not at byte 40"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -1698,8 +1882,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1160,
-    "CyInterface is not 1160 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1240,
+    "CyInterface is not 1240 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -2281,6 +2465,46 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, lockstep_status) == 1152,
     "CyInterface::lockstep_status is not at byte 1152"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_get_settings) == 1160,
+    "CyInterface::gi_get_settings is not at byte 1160"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_set_settings) == 1168,
+    "CyInterface::gi_set_settings is not at byte 1168"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_volume_create) == 1176,
+    "CyInterface::gi_volume_create is not at byte 1176"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_volume_update) == 1184,
+    "CyInterface::gi_volume_update is not at byte 1184"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_volume_destroy) == 1192,
+    "CyInterface::gi_volume_destroy is not at byte 1192"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_object_set_class) == 1200,
+    "CyInterface::gi_object_set_class is not at byte 1200"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_object_class) == 1208,
+    "CyInterface::gi_object_class is not at byte 1208"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_emission_set) == 1216,
+    "CyInterface::gi_emission_set is not at byte 1216"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_sample_irradiance) == 1224,
+    "CyInterface::gi_sample_irradiance is not at byte 1224"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, gi_status) == 1232,
+    "CyInterface::gi_status is not at byte 1232"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2327,7 +2551,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        143,
+        153,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

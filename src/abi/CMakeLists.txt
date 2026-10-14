@@ -60,6 +60,8 @@ cy_add_module(
         # cy::game-backend-lockstep binds.
         src/game/detmath_thunks.cpp
         src/game/lockstep_thunks.cpp
+        # ABI 1.9: global illumination, over a backend cy::game-backend-illumination binds.
+        src/game/illumination_thunks.cpp
         src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation

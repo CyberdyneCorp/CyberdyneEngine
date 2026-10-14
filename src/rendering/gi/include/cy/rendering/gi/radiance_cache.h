@@ -182,6 +182,9 @@ struct ProbePlacementContext {
     /// The placed GI volumes, or null. Their probe density decides acceptance where they reach, and
     /// what they resolve to is recorded on each probe placed.
     const GiVolumeSet* volumes = nullptr;
+    /// The global settings the volumes resolve from: `IlluminationSystem`'s runtime quality and
+    /// tier (`GiRuntimeSettings`). Neutral by default, which is a probe's own default.
+    GiRegionSettings global{};
 };
 
 /// One probe's share of a query, term by term: what `RadianceCache::sample` weighted it by. The

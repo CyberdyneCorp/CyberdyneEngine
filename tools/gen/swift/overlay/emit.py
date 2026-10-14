@@ -85,6 +85,13 @@ ENUM_SPECS = {
     # ADDED AT ABI 1.8 with deterministic math and the lockstep path.
     "CyDetmathFunction": ("DetmathFunction", "CY_DETMATH_", "UInt32"),
     "CyLockstepOrderKind": ("LockstepOrderKind", "CY_LOCKSTEP_ORDER_", "UInt32"),
+    # ADDED AT ABI 1.9 with global illumination (issue #35). `GI`, as `UI` is spelled.
+    "CyGiMode": ("GIMode", "CY_GI_MODE_", "UInt32"),
+    "CyGiQuality": ("GIQuality", "CY_GI_QUALITY_", "UInt32"),
+    "CyGiTier": ("GITier", "CY_GI_TIER_", "UInt32"),
+    "CyGiClass": ("GIClass", "CY_GI_CLASS_", "UInt32"),
+    "CyGiEmission": ("GIEmission", "CY_GI_EMISSION_", "UInt32"),
+    "CyGiSource": ("GISource", "CY_GI_SOURCE_", "UInt32"),
 }
 
 
@@ -196,6 +203,13 @@ def enums(description: dict) -> str:
         ("CyAnimationTier", "/// `CyAnimationTier`: an animator's level of detail."),
         ("CyDetmathFunction", "/// `CyDetmathFunction`: a deterministic math function over a span."),
         ("CyLockstepOrderKind", "/// `CyLockstepOrderKind`: what an order tells a lockstep group."),
+        # ABI 1.9.
+        ("CyGiMode", "/// `CyGiMode`: which sources light the world."),
+        ("CyGiQuality", "/// `CyGiQuality`: the probe ray multiplier, global or a GI volume's."),
+        ("CyGiTier", "/// `CyGiTier`: which world tier GI rays prefer."),
+        ("CyGiClass", "/// `CyGiClass`: how a moving object takes part in GI."),
+        ("CyGiEmission", "/// `CyGiEmission`: what GI makes of an emitter."),
+        ("CyGiSource", "/// `CyGiSource`: where a GI sample's light came from."),
     ))
     return f"""{BANNER}
 {status}

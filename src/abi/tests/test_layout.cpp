@@ -382,3 +382,46 @@ CY_TEST_CASE("the 1.8 structs have the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyLockstepStatus, kernel_version), 40U);
     CY_CHECK_EQ(offsetof(CyLockstepStatus, disagreements), 44U);
 }
+
+CY_TEST_CASE("the 1.9 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyGiSettings), 24U);
+    CY_CHECK_EQ(offsetof(CyGiSettings, mode), 4U);
+    CY_CHECK_EQ(offsetof(CyGiSettings, quality), 8U);
+    CY_CHECK_EQ(offsetof(CyGiSettings, tier), 12U);
+    CY_CHECK_EQ(offsetof(CyGiSettings, flags), 16U);
+    CY_CHECK_EQ(offsetof(CyGiSettings, budget_ms), 20U);
+
+    CY_CHECK_EQ(sizeof(CyGiVolumeDesc), 72U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, sets), 4U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, bounds_min), 8U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, bounds_max), 20U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, priority), 32U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, blend_distance), 36U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, weight), 40U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, quality), 44U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, probe_density), 48U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, update_rate), 52U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, diffuse_intensity), 56U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, specular_intensity), 60U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, tier), 64U);
+    CY_CHECK_EQ(offsetof(CyGiVolumeDesc, far_field_metres), 68U);
+
+    CY_CHECK_EQ(sizeof(CyGiIrradiance), 32U);
+    CY_CHECK_EQ(offsetof(CyGiIrradiance, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyGiIrradiance, radiance), 8U);
+    CY_CHECK_EQ(offsetof(CyGiIrradiance, luminance), 20U);
+    CY_CHECK_EQ(offsetof(CyGiIrradiance, confidence), 24U);
+    CY_CHECK_EQ(offsetof(CyGiIrradiance, source), 28U);
+
+    CY_CHECK_EQ(sizeof(CyGiStatus), 48U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, world_tier), 4U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, convergence), 8U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, measured_ms), 12U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, allocation_ms), 16U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, volumes), 20U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, objects), 24U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, promoted_lights), 28U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, emitters), 32U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, disabled_emitters), 36U);
+    CY_CHECK_EQ(offsetof(CyGiStatus, frame), 40U);
+}

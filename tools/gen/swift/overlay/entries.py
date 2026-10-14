@@ -223,6 +223,17 @@ ENTRIES: dict[str, Entry] = {
     "lockstep_order": Entry(("engine", "order"), result="throwing"),
     "lockstep_unit": Entry(("engine", "unit", "into"), result="throwing"),
     "lockstep_status": Entry(("engine", "into"), result="throwing"),
+    # 1.9: global illumination
+    "gi_get_settings": Entry(("engine", "into"), result="throwing"),
+    "gi_set_settings": Entry(("engine", "settings"), result="throwing"),
+    "gi_volume_create": Entry(("engine", "desc", "into"), result="throwing"),
+    "gi_volume_update": Entry(("engine", "volume", "desc"), result="throwing"),
+    "gi_volume_destroy": Entry(("engine", "volume"), result="throwing"),
+    "gi_object_set_class": Entry(("engine", "entity", "klass"), result="throwing"),
+    "gi_object_class": Entry(("engine", "entity", "into"), result="throwing"),
+    "gi_emission_set": Entry(("engine", "entity", "material", "mode"), result="throwing"),
+    "gi_sample_irradiance": Entry(("engine", "position", "normal", "into"), result="throwing"),
+    "gi_status": Entry(("engine", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

@@ -824,3 +824,205 @@ CY_TEST_CASE("with nothing emissive the frame's lights are the frame's own span,
         CY_CHECK_EQ(a.z, b.z);
     }
 }
+
+// --- Rules: an author's or a game's word over the measurement ------------------------------------
+
+namespace {
+
+using cy::rendering::gi::EmitterOverride;
+using cy::rendering::gi::EmitterRule;
+using cy::rendering::gi::kAnyEmitter;
+
+/// The classification test's four emitters: a large dim sign (cached), a whole bright wall
+/// (cached), a small bright lamp (promoted) and an indicator (cached).
+std::vector<Surfel> four_emitters() {
+    std::vector<Surfel> cards = with_panel(Vec3{0.05F, 0.05F, 0.05F});
+    for (Surfel& surfel : cards) {
+        if (surfel.instance_id == 3) {
+            surfel.emission = Vec3{2.0F, 2.0F, 2.0F};
+        }
+    }
+    Surfel lamp = card(kLampCentre, Vec3{0.0F, -1.0F, 0.0F}, kLampInstance);
+    lamp.area = 0.09F;
+    lamp.emission = Vec3{400.0F, 380.0F, 350.0F};
+    cards.push_back(lamp);
+    Surfel pilot = card(Vec3{1.0F, 0.99F, 1.0F}, Vec3{0.0F, -1.0F, 0.0F}, 11);
+    pilot.area = 0.0004F;
+    pilot.emission = Vec3{2.0F, 0.0F, 0.0F};
+    cards.push_back(pilot);
+    return cards;
+}
+
+struct Ruled {
+    Array<Surfel> cache;
+    Array<GiLight> lights;
+    Array<EmitterRecord> records;
+    EmissiveReport report{};
+
+    Ruled(const std::vector<Surfel>& cards, Span<const EmitterRule> rules) {
+        CY_REQUIRE(cy::rendering::gi::classify_emitters({cards.data(), cards.size()},
+                                                        EmissiveSettings{}, rules, 1, 100, cache,
+                                                        lights, records, report)
+                       .has_value());
+    }
+
+    [[nodiscard]] const EmitterRecord& record(u32 instance) const {
+        for (const EmitterRecord& entry : records) {
+            if (entry.instance_id == instance) {
+                return entry;
+            }
+        }
+        CY_REQUIRE_MESSAGE(false, "no record for instance " << instance);
+        return records[0];
+    }
+};
+
+}  // namespace
+
+CY_TEST_CASE("the most specific emitter rule decides, and the last of equally specific ones") {
+    using cy::rendering::gi::emitter_override_for;
+    const EmitterRule rules[] = {
+        {kAnyEmitter, kAnyEmitter, EmitterOverride::CacheOnly},  // every emitter
+        {kAnyEmitter, 7, EmitterOverride::Promote},              // material 7
+        {3, kAnyEmitter, EmitterOverride::Off},                  // instance 3
+        {3, 7, EmitterOverride::Promote},                        // instance 3 in material 7
+        {kAnyEmitter, 7, EmitterOverride::Off},                  // material 7 again, later
+    };
+    const Span<const EmitterRule> all{rules, 5};
+    CY_CHECK_EQ(emitter_override_for(all, 3, 7), EmitterOverride::Promote);
+    CY_CHECK_EQ(emitter_override_for(all, 3, 8), EmitterOverride::Off);
+    CY_CHECK_EQ(emitter_override_for(all, 4, 7), EmitterOverride::Off);
+    CY_CHECK_EQ(emitter_override_for(all, 4, 8), EmitterOverride::CacheOnly);
+    CY_CHECK_EQ(emitter_override_for({}, 4, 8), EmitterOverride::Automatic);
+    CY_CHECK_EQ(emitter_override_for({rules + 1, 1}, 4, 8), EmitterOverride::Automatic);
+}
+
+CY_TEST_CASE("with no rule, classification under rules is the measurement's, bit for bit") {
+    const std::vector<Surfel> cards = four_emitters();
+    const Classified measured(cards, EmissiveSettings{});
+    const Ruled ruled(cards, {});
+    CY_REQUIRE_EQ(ruled.cache.size(), measured.cache.size());
+    for (usize index = 0; index < ruled.cache.size(); ++index) {
+        CY_CHECK_EQ(ruled.cache[index].emission.x, measured.cache[index].emission.x);
+        CY_CHECK_EQ(ruled.cache[index].emission.y, measured.cache[index].emission.y);
+        CY_CHECK_EQ(ruled.cache[index].emission.z, measured.cache[index].emission.z);
+    }
+    CY_REQUIRE_EQ(ruled.lights.size(), measured.lights.size());
+    CY_REQUIRE_EQ(ruled.records.size(), measured.records.size());
+    for (usize index = 0; index < ruled.records.size(); ++index) {
+        CY_CHECK_EQ(ruled.records[index].classification, measured.records[index].classification);
+        CY_CHECK_EQ(ruled.records[index].override_mode, EmitterOverride::Automatic);
+    }
+    CY_CHECK_EQ(ruled.report.total_power, measured.report.total_power);
+    CY_CHECK_EQ(ruled.report.disabled_emitters, 0U);
+}
+
+CY_TEST_CASE(
+    "an emitter rule promotes a large emitter, keeps a bright one in the cache or switches one off, "
+    "and every watt is still accounted for") {
+    const std::vector<Surfel> cards = four_emitters();
+    const EmitterRule rules[] = {
+        {kAnyEmitter, kPanelInstance, EmitterOverride::Promote},  // the sign is the key light
+        {kLampInstance, kAnyEmitter, EmitterOverride::Off},       // the lamp is switched off
+        {3, 3, EmitterOverride::CacheOnly},                       // the wall: no change
+    };
+    const Ruled ruled(cards, {rules, 3});
+
+    CY_CHECK_EQ(ruled.record(kPanelInstance).classification, EmitterClass::PromotedLight);
+    CY_CHECK_EQ(ruled.record(kPanelInstance).override_mode, EmitterOverride::Promote);
+    CY_CHECK_EQ(ruled.record(kLampInstance).classification, EmitterClass::Disabled);
+    CY_CHECK_EQ(ruled.record(kLampInstance).override_mode, EmitterOverride::Off);
+    CY_CHECK_EQ(ruled.record(3).classification, EmitterClass::CacheOnly);
+    CY_CHECK_EQ(ruled.record(11).classification, EmitterClass::CacheOnly);
+    CY_CHECK_EQ(ruled.record(11).override_mode, EmitterOverride::Automatic);
+
+    // The sign's nine cards are nine lights; the lamp is none, and its card emits nothing.
+    CY_CHECK_EQ(ruled.lights.size(), 9U);
+    for (const GiLight& light : ruled.lights) {
+        CY_CHECK_EQ(light.colour.x, 0.05F);
+    }
+    for (const Surfel& stored : ruled.cache) {
+        if (stored.instance_id == kLampInstance || stored.instance_id == kPanelInstance) {
+            CY_CHECK_EQ(stored.emission.x, 0.0F);
+        }
+        if (stored.instance_id == 3) {
+            CY_CHECK_EQ(stored.emission.x, 2.0F);
+        }
+    }
+    const EmissiveReport& report = ruled.report;
+    CY_CHECK_EQ(report.disabled_emitters, 1U);
+    CY_CHECK_EQ(report.promoted_emitters, 1U);
+    CY_CHECK_EQ(report.cached_emitters, 2U);
+    CY_CHECK_NEAR_REL(report.disabled_power, ruled.record(kLampInstance).power, 1.0e-6F);
+    CY_CHECK_NEAR_REL(report.cached_power + report.promoted_power + report.demoted_power +
+                          report.disabled_power,
+                      report.total_power, 1.0e-6F);
+    CY_CHECK_EQ(report.clamped_power, 0.0F);
+}
+
+CY_TEST_CASE(
+    "switching a lamp off through the composed system takes its light out of the frame and darkens "
+    "the floor under it, and switching it back restores it bit for bit") {
+    using cy::rendering::gi::FrameContext;
+    using cy::rendering::gi::IlluminationSystem;
+    using cy::rendering::gi::InvalidationCause;
+    using cy::rendering::gi::SurfacePage;
+
+    IlluminationSystem system;
+    CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
+    const std::vector<Surfel> cards = with_lamp(Vec3{400.0F, 400.0F, 400.0F});
+    const Aabb bounds = Aabb::from_min_max(Vec3{-3.0F, -2.0F, -3.0F}, Vec3{3.0F, 2.0F, 3.0F});
+    CY_REQUIRE(system.ingest_cell(7, bounds, {cards.data(), cards.size()}, 1).has_value());
+    // A second cell with no emitter: no rule may touch it.
+    Surfel lone = card(Vec3{10.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F}, 40);
+    const Aabb far = Aabb::from_center_extents(Vec3{10.0F, 0.0F, 0.0F}, Vec3{1.0F, 1.0F, 1.0F});
+    CY_REQUIRE(system.ingest_cell(8, far, {&lone, 1}, 1).has_value());
+    const u32 pages = system.surfaces().page_count();
+
+    const std::vector<GiLight> placed = gi_support::room_lights();
+    FrameContext frame;
+    frame.lights = {placed.data(), placed.size()};
+    const Vec3 under{kLampCentre.x - 0.25F, -kHalf.y, kLampCentre.z - 0.25F};
+    const auto floor_direct = [&system, under]() {
+        for (const SurfacePage& page : system.surfaces().pages()) {
+            if (page.live && cy::distance(page.position, under) < 1.0e-4F &&
+                page.normal.y > 0.99F) {
+                return page.direct;
+            }
+        }
+        CY_REQUIRE_MESSAGE(false, "no floor card under the lamp");
+        return Vec3{};
+    };
+    const auto run = [&system, &frame](u64 first) {
+        for (u64 index = first; index < first + 4; ++index) {
+            frame.frame = index;
+            (void)system.update(frame);
+        }
+    };
+    run(2);
+    CY_REQUIRE_EQ(system.frame_lights().size(), 2U);
+    const Vec3 lit = floor_direct();
+    const u64 changed_before = system.scene().invalidation_count(InvalidationCause::LightChanged);
+
+    const EmitterRule off{kLampInstance, kAnyEmitter, EmitterOverride::Off};
+    CY_REQUIRE(system.set_emitter_rules({&off, 1}, 10).has_value());
+    CY_CHECK(system.emitters().lights().empty());
+    CY_CHECK_EQ(system.emitters().report().disabled_emitters, 1U);
+    CY_CHECK_GT(system.scene().invalidation_count(InvalidationCause::LightChanged), changed_before);
+    CY_CHECK_EQ(system.surfaces().page_count(), pages);
+    run(11);
+    CY_CHECK_EQ(system.frame_lights().size(), 1U);
+    const Vec3 dark = floor_direct();
+    // The room's own light still reaches the floor; the lamp's does not.
+    CY_CHECK_GT(luminance(dark), 0.0F);
+    CY_CHECK_LT(luminance(dark), 0.5F * luminance(lit));
+
+    CY_REQUIRE(system.set_emitter_rules({}, 20).has_value());
+    CY_CHECK_EQ(system.emitters().lights().size(), 1U);
+    run(21);
+    const Vec3 restored = floor_direct();
+    CY_CHECK_EQ(restored.x, lit.x);
+    CY_CHECK_EQ(restored.y, lit.y);
+    CY_CHECK_EQ(restored.z, lit.z);
+    CY_CHECK(system.scene().cell_resident(8));
+}

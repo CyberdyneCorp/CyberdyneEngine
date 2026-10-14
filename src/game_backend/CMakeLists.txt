@@ -54,6 +54,10 @@ endif()
 # see lockstep/CMakeLists.txt.
 add_subdirectory(lockstep)
 
+# ABI 1.9's global illumination adapter, a module of its own because it links CyberGI; see
+# illumination/CMakeLists.txt.
+add_subdirectory(illumination)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

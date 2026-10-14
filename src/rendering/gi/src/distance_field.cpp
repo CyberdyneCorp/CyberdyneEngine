@@ -251,6 +251,21 @@ void DistanceField::remove(u64 id) noexcept {
     placements_[slot].distances.clear();
 }
 
+Status DistanceField::copy_placement(u64 id, u32& dimension, Aabb& bounds,
+                                     Array<f32>& distances) const noexcept {
+    const u32 slot = find_placement(id);
+    if (slot == ~0U || !placements_[slot].live) {
+        return fail(ErrorCode::NotFound, "DistanceField::copy_placement: the id is not placed");
+    }
+    const Placement& placement = placements_[slot];
+    if (Status appended = distances.append(placement.distances.span()); !appended) {
+        return appended;
+    }
+    dimension = placement.dimension;
+    bounds = placement.local_bounds;
+    return ok();
+}
+
 u32 DistanceField::placement_count() const noexcept {
     u32 count = 0;
     for (const Placement& placement : placements_) {

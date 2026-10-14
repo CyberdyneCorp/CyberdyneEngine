@@ -14,12 +14,12 @@
 /// aborting engine startup.
 public enum ABI {
     public static let major: UInt32 = 1
-    public static let minor: UInt32 = 8
+    public static let minor: UInt32 = 9
     public static let patch: UInt32 = 0
 
     /// `sizeof(CyInterface)` as this overlay was generated. The engine may export a larger table —
     /// that is what append-only growth looks like from here — and may never export a smaller one.
-    public static let interfaceTableSize: UInt32 = 1160
+    public static let interfaceTableSize: UInt32 = 1240
 
     /// The entries this overlay knows, in the table's order. Written down so that a diagnostic can
     /// say *which* entry a mismatched table stops at rather than only that the sizes differ.
@@ -167,5 +167,15 @@ public enum ABI {
         "lockstep_order",
         "lockstep_unit",
         "lockstep_status",
+        "gi_get_settings",
+        "gi_set_settings",
+        "gi_volume_create",
+        "gi_volume_update",
+        "gi_volume_destroy",
+        "gi_object_set_class",
+        "gi_object_class",
+        "gi_emission_set",
+        "gi_sample_irradiance",
+        "gi_status",
     ]
 }

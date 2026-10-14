@@ -411,8 +411,8 @@ bool RadianceCache::accept_candidate(Vec3 position, u32 level, f32 spacing,
     }
     const bool by_geometry = accept_by_geometry(position, level, spacing, distance, context, false);
     const f32 density = context.volumes != nullptr && !context.volumes->empty()
-                            ? context.volumes->resolve(position, GiRegionSettings{}).probe_density
-                            : 1.0F;
+                            ? context.volumes->resolve(position, context.global).probe_density
+                            : context.global.probe_density;
     if (density > 1.0F) {
         // A GI volume asked for more: full density here, as inside an importance region, but
         // never inside geometry.
@@ -521,13 +521,13 @@ void RadianceCache::populate_level(u32 level, Vec3 camera, i32 half,
                 }
                 Probe& placed = probes_[created.value()];
                 placed.camera_distance = cy::distance(position, camera);
-                if (context.volumes != nullptr && !context.volumes->empty()) {
-                    const GiRegionSettings region =
-                        context.volumes->resolve(position, GiRegionSettings{});
-                    placed.update_rate = region.update_rate;
-                    placed.ray_scale = region.ray_scale;
-                    placed.tier = region.tier;
-                }
+                const GiRegionSettings region =
+                    context.volumes != nullptr && !context.volumes->empty()
+                        ? context.volumes->resolve(position, context.global)
+                        : context.global;
+                placed.update_rate = region.update_rate;
+                placed.ray_scale = region.ray_scale;
+                placed.tier = region.tier;
                 if (Expected<u32*, Error> stored = occupancy_.insert(key, created.value());
                     !stored) {
                     retire_probe(created.value());

@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 8u
+#define CY_ABI_MINOR 9u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1264,6 +1264,155 @@ typedef struct CyLockstepStatus {
     uint32_t disagreements;  /* ticks a follower peer's state hash differed on; zero without one */
 } CyLockstepStatus;
 
+/* --- 1.9: global illumination -------------------------------------------------------------------
+ *
+ * Issue #35's API for a game: tune CyberGI while the world runs, place GI volumes, say how a moving
+ * object takes part, switch emitters, and ask how much indirect light reaches a point — a stealth
+ * game's visibility, an AI's sense of the dark. The entries reach
+ * `cy::rendering::gi::IlluminationSystem` through `cy::abi::game::IlluminationBackend`
+ * (cy/abi/game/illumination.h), implemented by `cy::game_backend::IlluminationAdapter`
+ * (src/game_backend/illumination/). A host that runs no GI binds none, and every entry answers
+ * UNAVAILABLE.
+ *
+ * ILLUMINATION IS PRESENTATION. Every 1.9 entry is [N U]: a fixed step is refused, so nothing in
+ * the simulation depends on the light and a resimulated tick cannot change it twice. A game whose
+ * AI reads the light samples it in its frame update and acts on it in the next fixed step, as it
+ * acts on a click.
+ *
+ * The enumerations are the engine's, value for value; the adapter, which can name both, asserts
+ * each (src/game_backend/illumination/src/illumination_backend.cpp). */
+
+/* `gi::GiMode`: which sources light the world. */
+typedef enum CyGiMode {
+    CY_GI_MODE_NONE = 0,    /* no indirect light at all */
+    CY_GI_MODE_BAKED = 1,   /* lightmaps and baked volumes only */
+    CY_GI_MODE_PROBE = 2,   /* the seeded caches, updated by nothing */
+    CY_GI_MODE_DYNAMIC = 3, /* the caches, updated every frame */
+    CY_GI_MODE_HYBRID = 4   /* baked where there is a bake, dynamic elsewhere */
+} CyGiMode;
+
+/* `gi::GiQuality`: the probe ray multiplier, 0.5, 1, 2 and 4. */
+typedef enum CyGiQuality {
+    CY_GI_QUALITY_LOW = 0,
+    CY_GI_QUALITY_MEDIUM = 1,
+    CY_GI_QUALITY_HIGH = 2,
+    CY_GI_QUALITY_EPIC = 3
+} CyGiQuality;
+
+/* `gi::GiTierPreference`: which world tier rays prefer. */
+typedef enum CyGiTier {
+    CY_GI_TIER_AUTOMATIC = 0,     /* screen, then hardware where available, else software */
+    CY_GI_TIER_SOFTWARE_ONLY = 1, /* never the hardware tier */
+    CY_GI_TIER_WORLD_ONLY = 2     /* skip the screen tier */
+} CyGiTier;
+
+/* `gi::IlluminationClass`, and AUTOMATIC: no override, the class derived from mobility and size. */
+typedef enum CyGiClass {
+    CY_GI_CLASS_STATIC = 0,       /* in the caches; a move invalidates now */
+    CY_GI_CLASS_SLOW_DYNAMIC = 1, /* in the caches; moves coalesced */
+    CY_GI_CLASS_FAST_DYNAMIC = 2, /* a proxy that occludes and reflects, in no cache */
+    CY_GI_CLASS_TRANSIENT = 3,    /* ignored by GI */
+    CY_GI_CLASS_AUTOMATIC = 4
+} CyGiClass;
+
+/* `gi::EmitterOverride`: what a rule makes of the emitters it matches. */
+typedef enum CyGiEmission {
+    CY_GI_EMISSION_AUTOMATIC = 0,  /* classified by radiant power and area */
+    CY_GI_EMISSION_CACHE_ONLY = 1, /* never promoted to lights */
+    CY_GI_EMISSION_PROMOTE = 2,    /* promoted to lights whatever its size */
+    CY_GI_EMISSION_OFF = 3         /* switched off: it lights nothing */
+} CyGiEmission;
+
+/* `gi::RadianceSource`: where a sample's light came from. */
+typedef enum CyGiSource {
+    CY_GI_SOURCE_NONE = 0,
+    CY_GI_SOURCE_LIGHTMAP = 1,
+    CY_GI_SOURCE_IRRADIANCE_VOLUME = 2,
+    CY_GI_SOURCE_RADIANCE_CACHE = 3,
+    CY_GI_SOURCE_SURFACE_CACHE = 4,
+    CY_GI_SOURCE_SCREEN_TRACE = 5,
+    CY_GI_SOURCE_SOFTWARE_TRACE = 6,
+    CY_GI_SOURCE_HARDWARE_TRACE = 7,
+    CY_GI_SOURCE_REFLECTION_PROBE = 8,
+    CY_GI_SOURCE_SKY = 9
+} CyGiSource;
+
+/* Hardware ray tracing is allowed where the device has ray queries. Clear behaves exactly as a
+ * device without them. */
+#define CY_GI_HARDWARE_RAY_TRACING 0x1u
+
+/* The GI settings of the running world. */
+typedef struct CyGiSettings {
+    uint32_t struct_size;
+    uint32_t mode;    /* CyGiMode */
+    uint32_t quality; /* CyGiQuality: the global probe quality; a volume's where one reaches */
+    uint32_t tier;    /* CyGiTier: the global tier preference; a volume's where one reaches */
+    uint32_t flags;   /* CY_GI_HARDWARE_RAY_TRACING */
+    float budget_ms;  /* the GI allocation in milliseconds, positive */
+} CyGiSettings;
+
+/* The parameters a GI volume overrides, one bit each: `gi::gi_volume_bit`. */
+#define CY_GI_VOLUME_SETS_QUALITY 0x01u
+#define CY_GI_VOLUME_SETS_PROBE_DENSITY 0x02u
+#define CY_GI_VOLUME_SETS_UPDATE_RATE 0x04u
+#define CY_GI_VOLUME_SETS_DIFFUSE_INTENSITY 0x08u
+#define CY_GI_VOLUME_SETS_SPECULAR_INTENSITY 0x10u
+#define CY_GI_VOLUME_SETS_TIER 0x20u
+#define CY_GI_VOLUME_SETS_FAR_FIELD 0x40u
+
+/* A GI volume: a box that overrides, inside it and fading over `blend_distance` outside it, the
+ * parameters `sets` names — and nothing else, so a field whose bit is clear is ignored. Where
+ * volumes overlap, the higher priority dominates (gi/gi_volume.h). */
+typedef struct CyGiVolumeDesc {
+    uint32_t struct_size;
+    uint32_t sets; /* CY_GI_VOLUME_SETS_* */
+    float bounds_min[3];
+    float bounds_max[3];
+    int32_t priority;
+    float blend_distance;     /* metres, >= 0 */
+    float weight;             /* [0, 1]: dials the whole volume down without moving it */
+    uint32_t quality;         /* CyGiQuality */
+    float probe_density;      /* > 0; above 1 full density, below 1 the sparse lattice */
+    float update_rate;        /* > 0; how fast its probes age in the scheduler */
+    float diffuse_intensity;  /* >= 0 */
+    float specular_intensity; /* >= 0 */
+    uint32_t tier;            /* CyGiTier */
+    float far_field_metres;   /* > 0; where the far field begins */
+} CyGiVolumeDesc;
+
+/* A placed GI volume. Never reused within a run, so a destroyed volume's handle is NOT_FOUND. */
+typedef uint64_t CyGiVolume;
+#define CY_GI_VOLUME_NULL ((CyGiVolume)0)
+
+/* `gi_sample_irradiance` was given no normal and averaged six axis-aligned ones. */
+#define CY_GI_SAMPLE_OMNIDIRECTIONAL 0x1u
+
+/* The indirect light arriving at a point. */
+typedef struct CyGiIrradiance {
+    uint32_t struct_size;
+    uint32_t flags;      /* CY_GI_SAMPLE_* */
+    float radiance[3];   /* the mean cosine-weighted incoming indirect radiance, linear: the
+                          * engine's `indirect_diffuse`, which a surface multiplies by its albedo */
+    float luminance;     /* Rec. 709 luminance of `radiance` */
+    float confidence;    /* [0, 1]: how much of the answer the caches stood behind */
+    uint32_t source;     /* CyGiSource: the source that carried most of it */
+} CyGiIrradiance;
+
+/* What the GI did on the last frame. */
+typedef struct CyGiStatus {
+    uint32_t struct_size;
+    uint32_t world_tier;        /* CyGiSource: the tier that answered world rays */
+    float convergence;          /* the least converged region, [0, 1] */
+    float measured_ms;          /* the GI's own cost on the last frame */
+    float allocation_ms;        /* what it was allowed */
+    uint32_t volumes;           /* GI volumes placed */
+    uint32_t objects;           /* objects registered with the GI */
+    uint32_t promoted_lights;   /* emitter cards lighting as lights */
+    uint32_t emitters;          /* emitters classified */
+    uint32_t disabled_emitters; /* of which switched off */
+    uint64_t frame;             /* the frame the last update ran */
+} CyGiStatus;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -1832,6 +1981,41 @@ typedef struct CyInterface {
     CyResult (*lockstep_unit)(CyEngine engine, uint32_t unit, CyLockstepUnit* out_unit);
     /* [N F U] The session: its tick, its log, its hash and its digest. */
     CyResult (*lockstep_status)(CyEngine engine, CyLockstepStatus* out_status);
+    /* --- 1.9: global illumination ---
+     *
+     * Every entry is [N U]: illumination is presentation (see CyGiMode's section). */
+
+    /* [N U] The running world's GI settings. */
+    CyResult (*gi_get_settings)(CyEngine engine, CyGiSettings* out_settings);
+    /* [N U] Apply settings from the next frame on. A change of quality or tier places every probe
+     * again; hardware ray tracing switches without a rebuild. INVALID_ARGUMENT for an enumerator
+     * out of range or a budget that is not positive, having changed nothing. */
+    CyResult (*gi_set_settings)(CyEngine engine, const CyGiSettings* settings);
+    /* [N U] Place a GI volume. INVALID_ARGUMENT for an empty box, a weight outside [0, 1] or a set
+     * parameter out of its range. */
+    CyResult (*gi_volume_create)(CyEngine engine, const CyGiVolumeDesc* desc,
+                                 CyGiVolume* out_volume);
+    /* [N U] Replace a volume's description: move it, resize it, change what it sets. */
+    CyResult (*gi_volume_update)(CyEngine engine, CyGiVolume volume, const CyGiVolumeDesc* desc);
+    /* [N U] Remove a volume; its region is placed again at the global settings. */
+    CyResult (*gi_volume_destroy)(CyEngine engine, CyGiVolume volume);
+    /* [N U] An object's illumination class, CyGiClass; AUTOMATIC clears an override. NOT_FOUND for
+     * an entity the host did not register with the GI. */
+    CyResult (*gi_object_set_class)(CyEngine engine, CyEntity entity, uint32_t klass);
+    /* [N U] The class an object has now, after any override: never AUTOMATIC. */
+    CyResult (*gi_object_class)(CyEngine engine, CyEntity entity, uint32_t* out_class);
+    /* [N U] What the GI makes of an object's or a material's emission, CyGiEmission. `entity`
+     * CY_ENTITY_NULL is every object; `material` is CY_NAME_HASH of a material's name, or 0 for
+     * every material. The most specific rule decides; AUTOMATIC removes the rule for exactly that
+     * pair. NOT_FOUND for an entity or material the host did not register. */
+    CyResult (*gi_emission_set)(CyEngine engine, CyEntity entity, uint64_t material,
+                                uint32_t mode);
+    /* [N U] The indirect light arriving at `position_xyz` about `normal_xyz`, or, with a null
+     * normal, the mean over the six axis directions: what a body standing there receives. */
+    CyResult (*gi_sample_irradiance)(CyEngine engine, const float* position_xyz,
+                                     const float* normal_xyz, CyGiIrradiance* out_irradiance);
+    /* [N U] What the GI did on the last frame. */
+    CyResult (*gi_status)(CyEngine engine, CyGiStatus* out_status);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -1958,6 +2142,11 @@ CY_ABI_STATIC_ASSERT(sizeof(CyLockstepUnitDesc) == 48, "CyLockstepUnitDesc is 48
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepOrder) == 32, "CyLockstepOrder is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepUnit) == 64, "CyLockstepUnit is 64 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyLockstepStatus) == 48, "CyLockstepStatus is 48 bytes");
+/* 1.9 */
+CY_ABI_STATIC_ASSERT(sizeof(CyGiSettings) == 24, "CyGiSettings is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyGiVolumeDesc) == 72, "CyGiVolumeDesc is 72 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyGiIrradiance) == 32, "CyGiIrradiance is 32 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyGiStatus) == 48, "CyGiStatus is 48 bytes");
 
 #ifdef __cplusplus
 }

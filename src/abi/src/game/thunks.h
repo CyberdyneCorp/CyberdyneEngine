@@ -162,4 +162,17 @@ CyResult lockstep_order(CyEngine engine, const CyLockstepOrder* order);
 CyResult lockstep_unit(CyEngine engine, uint32_t unit, CyLockstepUnit* out_unit);
 CyResult lockstep_status(CyEngine engine, CyLockstepStatus* out_status);
 
+// --- 1.9: global illumination --------------------------------------------------------------------
+CyResult gi_get_settings(CyEngine engine, CyGiSettings* out_settings);
+CyResult gi_set_settings(CyEngine engine, const CyGiSettings* settings);
+CyResult gi_volume_create(CyEngine engine, const CyGiVolumeDesc* desc, CyGiVolume* out_volume);
+CyResult gi_volume_update(CyEngine engine, CyGiVolume volume, const CyGiVolumeDesc* desc);
+CyResult gi_volume_destroy(CyEngine engine, CyGiVolume volume);
+CyResult gi_object_set_class(CyEngine engine, CyEntity entity, uint32_t klass);
+CyResult gi_object_class(CyEngine engine, CyEntity entity, uint32_t* out_class);
+CyResult gi_emission_set(CyEngine engine, CyEntity entity, uint64_t material, uint32_t mode);
+CyResult gi_sample_irradiance(CyEngine engine, const float* position_xyz, const float* normal_xyz,
+                              CyGiIrradiance* out_irradiance);
+CyResult gi_status(CyEngine engine, CyGiStatus* out_status);
+
 }  // namespace cy::abi::game

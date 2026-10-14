@@ -518,6 +518,56 @@ public struct Engine: @unchecked Sendable {
     public func lockstepStatus(into: UnsafeMutablePointer<CyLockstepStatus>?) throws {
         try interface.lockstepStatus(engine: raw, into: into)
     }
+
+    @inlinable
+    public func giGetSettings(into: UnsafeMutablePointer<CyGiSettings>?) throws {
+        try interface.giGetSettings(engine: raw, into: into)
+    }
+
+    @inlinable
+    public func giSetSettings(settings: UnsafePointer<CyGiSettings>?) throws {
+        try interface.giSetSettings(engine: raw, settings: settings)
+    }
+
+    @inlinable
+    public func giVolumeCreate(desc: UnsafePointer<CyGiVolumeDesc>?, into: UnsafeMutablePointer<CyGiVolume>?) throws {
+        try interface.giVolumeCreate(engine: raw, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func giVolumeUpdate(volume: CyGiVolume, desc: UnsafePointer<CyGiVolumeDesc>?) throws {
+        try interface.giVolumeUpdate(engine: raw, volume: volume, desc: desc)
+    }
+
+    @inlinable
+    public func giVolumeDestroy(volume: CyGiVolume) throws {
+        try interface.giVolumeDestroy(engine: raw, volume: volume)
+    }
+
+    @inlinable
+    public func giObjectSetClass(entity: CyEntity, klass: UInt32) throws {
+        try interface.giObjectSetClass(engine: raw, entity: entity, klass: klass)
+    }
+
+    @inlinable
+    public func giObjectClass(entity: CyEntity, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.giObjectClass(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func giEmissionSet(entity: CyEntity, material: UInt64, mode: UInt32) throws {
+        try interface.giEmissionSet(engine: raw, entity: entity, material: material, mode: mode)
+    }
+
+    @inlinable
+    public func giSampleIrradiance(position: UnsafePointer<Float>?, normal: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyGiIrradiance>?) throws {
+        try interface.giSampleIrradiance(engine: raw, position: position, normal: normal, into: into)
+    }
+
+    @inlinable
+    public func giStatus(into: UnsafeMutablePointer<CyGiStatus>?) throws {
+        try interface.giStatus(engine: raw, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

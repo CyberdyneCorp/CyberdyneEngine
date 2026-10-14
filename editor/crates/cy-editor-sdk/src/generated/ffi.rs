@@ -1032,6 +1032,107 @@ pub struct CyLockstepStatus {
     pub disagreements: u32,
 }
 
+/// `CyGiSettings` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyGiSettings {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub mode: u32,
+    /// `uint32_t` at byte 8.
+    pub quality: u32,
+    /// `uint32_t` at byte 12.
+    pub tier: u32,
+    /// `uint32_t` at byte 16.
+    pub flags: u32,
+    /// `float` at byte 20.
+    pub budget_ms: f32,
+}
+
+/// `CyGiVolumeDesc` — 72 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyGiVolumeDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub sets: u32,
+    /// `float[3]` at byte 8.
+    pub bounds_min: [f32; 3],
+    /// `float[3]` at byte 20.
+    pub bounds_max: [f32; 3],
+    /// `int32_t` at byte 32.
+    pub priority: i32,
+    /// `float` at byte 36.
+    pub blend_distance: f32,
+    /// `float` at byte 40.
+    pub weight: f32,
+    /// `uint32_t` at byte 44.
+    pub quality: u32,
+    /// `float` at byte 48.
+    pub probe_density: f32,
+    /// `float` at byte 52.
+    pub update_rate: f32,
+    /// `float` at byte 56.
+    pub diffuse_intensity: f32,
+    /// `float` at byte 60.
+    pub specular_intensity: f32,
+    /// `uint32_t` at byte 64.
+    pub tier: u32,
+    /// `float` at byte 68.
+    pub far_field_metres: f32,
+}
+
+/// `CyGiVolume`, the ABI's alias for `uint64_t`.
+pub type CyGiVolume = u64;
+
+/// `CyGiIrradiance` — 32 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyGiIrradiance {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float[3]` at byte 8.
+    pub radiance: [f32; 3],
+    /// `float` at byte 20.
+    pub luminance: f32,
+    /// `float` at byte 24.
+    pub confidence: f32,
+    /// `uint32_t` at byte 28.
+    pub source: u32,
+}
+
+/// `CyGiStatus` — 48 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyGiStatus {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub world_tier: u32,
+    /// `float` at byte 8.
+    pub convergence: f32,
+    /// `float` at byte 12.
+    pub measured_ms: f32,
+    /// `float` at byte 16.
+    pub allocation_ms: f32,
+    /// `uint32_t` at byte 20.
+    pub volumes: u32,
+    /// `uint32_t` at byte 24.
+    pub objects: u32,
+    /// `uint32_t` at byte 28.
+    pub promoted_lights: u32,
+    /// `uint32_t` at byte 32.
+    pub emitters: u32,
+    /// `uint32_t` at byte 36.
+    pub disabled_emitters: u32,
+    /// `uint64_t` at byte 40.
+    pub frame: u64,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1046,7 +1147,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1160 bytes, 8-byte aligned.
+/// `CyInterface` — 1240 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1507,6 +1608,29 @@ pub struct CyInterface {
     pub lockstep_unit: Option<unsafe extern "C" fn(CyEngine, u32, *mut CyLockstepUnit) -> i32>,
     /// `CyResult(*)(CyEngine, CyLockstepStatus*)` at byte 1152.
     pub lockstep_status: Option<unsafe extern "C" fn(CyEngine, *mut CyLockstepStatus) -> i32>,
+    /// `CyResult(*)(CyEngine, CyGiSettings*)` at byte 1160.
+    pub gi_get_settings: Option<unsafe extern "C" fn(CyEngine, *mut CyGiSettings) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyGiSettings*)` at byte 1168.
+    pub gi_set_settings: Option<unsafe extern "C" fn(CyEngine, *const CyGiSettings) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyGiVolumeDesc*, CyGiVolume*)` at byte 1176.
+    pub gi_volume_create:
+        Option<unsafe extern "C" fn(CyEngine, *const CyGiVolumeDesc, *mut CyGiVolume) -> i32>,
+    /// `CyResult(*)(CyEngine, CyGiVolume, const CyGiVolumeDesc*)` at byte 1184.
+    pub gi_volume_update:
+        Option<unsafe extern "C" fn(CyEngine, CyGiVolume, *const CyGiVolumeDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyGiVolume)` at byte 1192.
+    pub gi_volume_destroy: Option<unsafe extern "C" fn(CyEngine, CyGiVolume) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, uint32_t)` at byte 1200.
+    pub gi_object_set_class: Option<unsafe extern "C" fn(CyEngine, CyEntity, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, uint32_t*)` at byte 1208.
+    pub gi_object_class: Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, uint64_t, uint32_t)` at byte 1216.
+    pub gi_emission_set: Option<unsafe extern "C" fn(CyEngine, CyEntity, u64, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, const float*, const float*, CyGiIrradiance*)` at byte 1224.
+    pub gi_sample_irradiance:
+        Option<unsafe extern "C" fn(CyEngine, *const f32, *const f32, *mut CyGiIrradiance) -> i32>,
+    /// `CyResult(*)(CyEngine, CyGiStatus*)` at byte 1232.
+    pub gi_status: Option<unsafe extern "C" fn(CyEngine, *mut CyGiStatus) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1692,5 +1816,15 @@ impl CyInterface {
         lockstep_order: None,
         lockstep_unit: None,
         lockstep_status: None,
+        gi_get_settings: None,
+        gi_set_settings: None,
+        gi_volume_create: None,
+        gi_volume_update: None,
+        gi_volume_destroy: None,
+        gi_object_set_class: None,
+        gi_object_class: None,
+        gi_emission_set: None,
+        gi_sample_irradiance: None,
+        gi_status: None,
     };
 }

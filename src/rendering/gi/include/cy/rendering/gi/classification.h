@@ -120,7 +120,8 @@ struct GiObjectDesc {
     /// The object's own distance field, for the participating classes. Optional: an object with
     /// none still contributes its cards.
     const AssetDistanceField* field = nullptr;
-    /// Object-space cards, for the participating classes.
+    /// Object-space cards, for the participating classes. Placed by `transform`: position and
+    /// normal, and — under a scale — area, so an emitter's power is the world's.
     Span<const Surfel> surfels;
 };
 
@@ -134,7 +135,7 @@ inline constexpr u64 kObjectCellTag = 1ULL << 63U;
 /// One registered object.
 struct GiObject {
     explicit GiObject(Allocator& allocator = current_allocator()) noexcept
-        : surfels(allocator), posed(allocator) {}
+        : surfels(allocator), posed(allocator), parked_distances(allocator) {}
 
     u64 id = 0;
     IlluminationClass klass = IlluminationClass::Static;
@@ -159,6 +160,15 @@ struct GiObject {
     u64 last_flush_frame = 0;
     /// What the last `update()` chose for a skinned object.
     ProxyFidelity fidelity = ProxyFidelity::Coarse;
+    /// The class an author or a game set, or none: the derivation decides
+    /// (`IlluminationSystem::set_object_class`).
+    bool has_class_override = false;
+    IlluminationClass class_override = IlluminationClass::Static;
+    /// The object's own field while it is in no field: a FastDynamic or TransientIgnored object
+    /// keeps it here so a class that participates can place it again. Empty with no field.
+    u32 parked_dimension = 0;
+    Aabb parked_bounds{};
+    Array<f32> parked_distances;
 };
 
 struct ObjectsFrameReport {
