@@ -441,8 +441,8 @@ budget, and only the half-resolution grid with the levers reaches 2.24 ms; that 
 beside either engine on one scene; or anything about consoles, Windows or Apple devices, where the
 hardware tier refuses (section 10); or that the editor's GI views are interactive — the
 editor-hosted runtime draws them on the host, about 35 ms for the probe view at 320x180 and 240 ms
-for indirect diffuse (`integration.editor_backend_illumination`'s cost case, GCC 13), where Lumen's visualization
-modes are drawn by the GPU frame.
+for indirect diffuse (`smoke.editor_gi_cost`, GCC 13), where Lumen's visualization modes are drawn
+by the GPU frame.
 
 ## 8. Running and changing it
 

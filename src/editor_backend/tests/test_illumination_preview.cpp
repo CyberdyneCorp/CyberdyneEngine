@@ -10,7 +10,6 @@
 #include <cy/rendering/gi/debug_views.h>
 #include <cy/test/test.h>
 
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -21,6 +20,7 @@
 #include <vector>
 
 #include "../src/service_wire.h"
+#include "illumination_world.h"
 
 using namespace cy;
 using cy::editor::IlluminationEmission;
@@ -35,105 +35,12 @@ namespace gi = cy::rendering::gi;
 
 namespace {
 
-Allocator& allocator() noexcept {
-    return system_allocator(MemoryDomain::World);
-}
-
-/// A unit cube centred on the origin, outward winding.
-struct Cube {
-    std::vector<Vec3> positions;
-    std::vector<u32> indices;
-
-    Cube() {
-        const Vec3 corners[8] = {{-0.5F, -0.5F, -0.5F}, {0.5F, -0.5F, -0.5F}, {0.5F, 0.5F, -0.5F},
-                                 {-0.5F, 0.5F, -0.5F},  {-0.5F, -0.5F, 0.5F}, {0.5F, -0.5F, 0.5F},
-                                 {0.5F, 0.5F, 0.5F},    {-0.5F, 0.5F, 0.5F}};
-        positions.assign(std::begin(corners), std::end(corners));
-        indices = {0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
-                   3, 6, 2, 3, 7, 6, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5};
-    }
-};
-
-constexpr u64 kFloor = 0x10;
-constexpr u64 kCrate = 0x11;
-constexpr u64 kLamp = 0x12;
-constexpr u64 kCart = 0x13;
-
-/// A floor, a crate, a small glowing lamp hung over the floor and a cart, under a sun.
-struct World {
-    Cube cube;
-    std::vector<IlluminationMesh> meshes;
-    std::vector<IlluminationMaterial> materials;
-    std::vector<IlluminationObject> objects;
-    std::vector<gi::GiLight> lights;
-    std::vector<gi::GiVolume> volumes;
-    std::vector<IlluminationEmission> emission;
-    gi::GiRuntimeSettings settings{};
-
-    World() {
-        meshes.push_back(IlluminationMesh{"cube",
-                                          {cube.positions.data(), cube.positions.size()},
-                                          {cube.indices.data(), cube.indices.size()}});
-        materials.push_back(IlluminationMaterial{"materials/stone", Vec3{0.6F, 0.6F, 0.6F}});
-        materials.push_back(IlluminationMaterial{"materials/red", Vec3{0.8F, 0.1F, 0.1F}});
-        IlluminationMaterial glass{"materials/lamp-glass", Vec3{0.8F, 0.8F, 0.8F}};
-        glass.emission = Vec3{60.0F, 55.0F, 50.0F};
-        materials.push_back(glass);
-        IlluminationObject floor;
-        floor.node = kFloor;
-        floor.transform = Mat4::from_translation(Vec3{0.0F, -0.25F, 0.0F}) *
-                          Mat4::from_scale(Vec3{8.0F, 0.5F, 8.0F});
-        objects.push_back(floor);
-        IlluminationObject crate;
-        crate.node = kCrate;
-        crate.material = 1;
-        crate.transform = Mat4::from_translation(Vec3{1.5F, 0.5F, 0.0F});
-        objects.push_back(crate);
-        IlluminationObject lamp;
-        lamp.node = kLamp;
-        lamp.material = 2;
-        lamp.transform = Mat4::from_translation(Vec3{-1.5F, 2.0F, -1.0F}) *
-                         Mat4::from_scale(Vec3{0.3F, 0.1F, 0.3F});
-        objects.push_back(lamp);
-        IlluminationObject cart;
-        cart.node = kCart;
-        cart.movable = true;
-        cart.transform = Mat4::from_translation(Vec3{-1.0F, 0.4F, 2.0F}) *
-                         Mat4::from_scale(Vec3{0.8F, 0.8F, 0.8F});
-        objects.push_back(cart);
-        gi::GiLight sun;
-        sun.directional = true;
-        sun.direction = normalize(Vec3{0.4F, -1.0F, 0.3F});
-        sun.intensity = 2.0F;
-        sun.id = 1;
-        lights.push_back(sun);
-    }
-
-    [[nodiscard]] IlluminationScene scene() const noexcept {
-        IlluminationScene out;
-        out.meshes = {meshes.data(), meshes.size()};
-        out.materials = {materials.data(), materials.size()};
-        out.objects = {objects.data(), objects.size()};
-        out.lights = {lights.data(), lights.size()};
-        out.volumes = {volumes.data(), volumes.size()};
-        out.emission = {emission.data(), emission.size()};
-        out.settings = settings;
-        return out;
-    }
-};
-
-[[nodiscard]] IlluminationViewCamera camera(u32 width, u32 height) noexcept {
-    IlluminationViewCamera out;
-    out.width = width;
-    out.height = height;
-    out.eye = Vec3{0.0F, 4.0F, 8.0F};
-    const Mat4 view = look_at(out.eye, Vec3{0.0F, 0.0F, 0.0F});
-    const Mat4 projection = perspective_reversed_z(
-        1.0F, static_cast<f32>(width) / static_cast<f32>(height), 0.1F, 100.0F);
-    out.world_to_clip = projection * view;
-    out.clip_to_world = inverse(out.world_to_clip).value();
-    return out;
-}
+using illumination_test::allocator;
+using illumination_test::camera;
+using illumination_test::kCart;
+using illumination_test::kCrate;
+using illumination_test::kLamp;
+using illumination_test::World;
 
 /// A report's entry points into the report, so a temporary one is refused at compile time.
 const editor::IlluminationEmitterEntry* emitter(const IlluminationReport&& report,
@@ -489,45 +396,4 @@ CY_TEST_CASE("the report's wire is the committed fixture the editor decodes") {
     const std::string expected = committed.str();
     CY_REQUIRE_EQ(expected.size(), bytes.size());
     CY_CHECK(std::memcmp(expected.data(), bytes.data(), bytes.size()) == 0);
-}
-
-CY_TEST_CASE("what the editor's GI costs on the host: a rebuild, an edit in place and a view") {
-    // Measured, not bounded: the numbers the guide and the README quote. A view is drawn at the
-    // quarter resolution the editor-window runtime asks for under a 1280x720 frame.
-    using Clock = std::chrono::steady_clock;
-    const auto ms = [](Clock::time_point since) {
-        return std::chrono::duration<double, std::milli>(Clock::now() - since).count();
-    };
-    World world;
-    IlluminationPreview preview(allocator());
-    Clock::time_point start = Clock::now();
-    CY_REQUIRE(preview.sync(world.scene()).has_value());
-    const double rebuild = ms(start);
-
-    world.settings.quality = gi::GiQuality::High;
-    start = Clock::now();
-    CY_REQUIRE(preview.sync(world.scene()).has_value());
-    const double settings = ms(start);
-
-    world.emission.push_back(IlluminationEmission{2, gi::EmitterOverride::Off});
-    start = Clock::now();
-    CY_REQUIRE(preview.sync(world.scene()).has_value());
-    const double rule = ms(start);
-    CY_CHECK_EQ(preview.rebuilds(), 1U);
-
-    // Two views, to stay inside the suite's budget: the probe view, which draws the probes it
-    // places, and indirect diffuse, which resolves the GI at every pixel and is the slowest.
-    const IlluminationViewCamera view = camera(320, 180);
-    const auto draw = [&preview, &view, &ms](gi::GiDebugView which) {
-        Array<u32> texels(allocator());
-        const Clock::time_point began = Clock::now();
-        CY_REQUIRE(preview.render_view(which, view, texels).has_value());
-        return ms(began);
-    };
-    const double probes = draw(gi::GiDebugView::Probes);
-    const double indirect = draw(gi::GiDebugView::IndirectDiffuse);
-    std::printf(
-        "MEASURED: rebuild and converge %.1f ms, quality in place %.3f ms, emitter rule in "
-        "place %.3f ms; a 320x180 view: probes %.1f ms, indirect diffuse %.1f ms\n",
-        rebuild, settings, rule, probes, indirect);
 }

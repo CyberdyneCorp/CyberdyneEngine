@@ -226,19 +226,20 @@ CY_TEST_CASE("a document change is applied in place, and a moved mesh rebuilds t
     CY_CHECK_EQ(lamp->override_mode, gi::EmitterOverride::Automatic);
     CY_CHECK_EQ(lamp->classification, gi::EmitterClass::PromotedLight);
 
+    // The crate moved: a new geometry. (Before the tier changes: a rebuild converges on the
+    // world's tier, and on the software one it costs this case twice as much.)
+    const std::string crate = "    field 2 1.5 0.5 0\n    field 3 1 1 1\n";
+    text.replace(text.find(crate), crate.size(), "    field 2 2.5 0.5 0\n    field 3 1 1 1\n");
+    runtime.reload(text);
+    CY_REQUIRE(runtime.source.preview() != nullptr);
+    CY_CHECK_EQ(preview.rebuilds(), 2U);
+
     // Hardware ray tracing switched off in the world's settings: the software tier answers.
     const std::string hardware = "    field 23 true\n";
     text.replace(text.find(hardware), hardware.size(), "    field 23 false\n");
     runtime.reload(text);
     CY_REQUIRE(runtime.source.preview() != nullptr);
     CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::SoftwareTrace);
-    CY_CHECK_EQ(preview.rebuilds(), 1U);
-
-    // The crate moved: a new geometry.
-    const std::string crate = "    field 2 1.5 0.5 0\n    field 3 1 1 1\n";
-    text.replace(text.find(crate), crate.size(), "    field 2 2.5 0.5 0\n    field 3 1 1 1\n");
-    runtime.reload(text);
-    CY_REQUIRE(runtime.source.preview() != nullptr);
     CY_CHECK_EQ(preview.rebuilds(), 2U);
 }
 

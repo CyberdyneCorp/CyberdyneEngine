@@ -148,6 +148,20 @@ if(CY_BUILD_TESTS)
             SOURCES "${tests_dir}/test_illumination_preview.cpp"
             DEPENDENCIES cy::editor-backend
             DEFINITIONS "CY_ILLUMINATION_WIRE_DIR=\"${tests_dir}/data\"")
+        # What the editor's GI costs on the host, measured over the same world: a rebuild and two
+        # views at 320x180 take more than an integration case's second on a slow runner.
+        # The smoke taxonomy is tests/CMakeLists.txt's, which this deferred call does not see.
+        get_directory_property(smoke_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_smoke)
+        get_directory_property(smoke_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_smoke)
+        set(CY_TEST_BUDGET_smoke "${smoke_budget}")
+        set(CY_TEST_TIMEOUT_smoke "${smoke_timeout}")
+        cy_add_test(
+            NAME editor_gi_cost
+            KIND smoke
+            SOURCES "${tests_dir}/test_illumination_cost.cpp"
+            DEPENDENCIES cy::editor-backend)
     endfunction()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_editor_backend_declare_tests)
 endif()

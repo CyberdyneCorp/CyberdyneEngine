@@ -173,8 +173,8 @@ place; a class override in place; every view drawing over the world and nothing 
 report's explained point bit for bit the resolve's; the service's reply the preview's report byte
 for byte.
 
-What it costs on the host, from the suite's `what the editor's GI costs on the host` (GCC 13
-Development build, one core): that world rebuilt and converged in about 180 ms; a quality change or
+What it costs on the host, from `smoke.editor_gi_cost` (`tests/test_illumination_cost.cpp`, over
+the same world; GCC 13 Development build, one core): that world rebuilt and converged in about 180 ms; a quality change or
 an emitter rule applied in place in under 0.01 ms; a GI view at 320x180 (the quarter resolution the
 editor-window runtime draws under a 1280x720 frame) about 35 ms for the probe view and about 240 ms
 for indirect diffuse, the slowest, because each pixel is traced and resolved on the CPU (clang 18 and
