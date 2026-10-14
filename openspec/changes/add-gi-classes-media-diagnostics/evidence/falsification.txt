@@ -68,3 +68,7 @@ divider's face took 0.135 of its probe weight from probes behind it.
     -> RED  cy_test_render_lightmaps: (o) the chart view colours each lightmapped surface by the rectangle it samples
 [27] fog shader: the device march ignores the grid (src/rendering/fog/shaders/fog_march.slang)
     -> RED  cy_test_render_volumetric_fog: (g) the device's fog takes the radiance cache's indirect grid, as the host march does
+
+After rebasing onto #120 (the per-pixel GI in the frame), [15], [21], [25], [26] and [27] were run
+again over the merged tree and are RED as above; the goldens were redrawn, because #120 changed
+what the host caches converge to.

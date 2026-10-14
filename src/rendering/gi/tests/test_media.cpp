@@ -185,7 +185,7 @@ CY_TEST_CASE("a participating medium takes the radiance cache's low-frequency in
         comparison.samples, static_cast<double>(comparison.relative_error),
         static_cast<double>(comparison.mean_reference_magnitude), static_cast<double>(lit_half),
         static_cast<double>(dark_half));
-    // Measured 0.151 on this room (Linux, GCC and clang alike): the cache's own spatial
+    // Measured 0.125 on this room (Linux, GCC and clang alike): the cache's own spatial
     // resolution, a metre between probes, against a light two metres from the nearest points.
     CY_CHECK_LT(comparison.relative_error, 0.18F);
     // Indirectly lit is not uniformly lit: the half the light is in scatters more.

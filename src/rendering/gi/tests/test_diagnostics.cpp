@@ -189,7 +189,7 @@ CY_TEST_CASE("a probe behind a wall that contributes anyway is named a leak susp
     // THE TERM AS CONFIGURED LEAKED, and this case is how it was found: four probes a metre
     // behind the divider lit its face with 0.135 of the probe weight, because the visibility term
     // averaged the wall's distance with the open air beside it. The per-axis test in
-    // `RadianceCache::visibility_weight` takes it to 0.080. What is left are the probes on the
+    // `RadianceCache::visibility_weight` takes it to 0.075. What is left are the probes on the
     // doorway's edge, whose axis distances look through the doorway: six distances a probe cannot
     // tell that edge from a wall, and a directional depth per probe is what would.
     CY_CHECK_LT(sealed.leak_weight, 0.10F);

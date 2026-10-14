@@ -13,5 +13,5 @@
 - [x] READMEs, `docs/guides/global-illumination.md`, `requirements-coverage.toml`.
 - [ ] A directional depth per probe, so a doorway's edge probes stop leaking.
 - [ ] The profile in the one trace, and an editor panel over `explain` and the profile.
-- [ ] A runtime owner of the GI system that feeds `pose_object` from the GPU pose world and hands the fog its grid (issue #35 stage 4).
+- [ ] A frame assembly that registers its objects with the GI system, feeds `pose_object` from the GPU pose world and hands the fog its grid.
 - [ ] Swift: classify an object, set a transmission, place a GI volume.

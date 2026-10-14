@@ -137,7 +137,7 @@ device to the host march (8800 froxels, worst 2.3e-5) over a grid sampled from a
 ## What is not here
 
 Temporal reprojection and a filter pass (above). The frame's assembly does not yet hand the march a
-radiance-cache grid — nothing in the runtime owns the GI system before issue #35's stage 4 — so a
+radiance-cache grid — the per-pixel GI of issue #35 stage 4 reaches the forward frame, not the fog — so a
 frame's fog is lit by its ambient term unless the caller sets `FogLight::indirect`. Punctual and spot lights in the medium: only the directional sun is marched, so the
 requirement's spot-light shaft scenario is met by the sun's. Arbitrary density functions: the height
 fog is the one density function. Particles and trails, which are drawn by their own shaders and

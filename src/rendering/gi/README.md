@@ -160,9 +160,9 @@ world see it. A TransientIgnored object is recorded and nothing else.
 Measured (`integration.render_gi_classes`): a projectile crossing the room for thirty frames files
 no invalidation and leaves the field exactly as a twin room without it; a 4.4 m vehicle moved every
 frame for 32 frames is flushed 4 times — 8 records, every one naming it — instead of 32; a
-character standing on the floor keeps between 0.74 and 0.82 of the indirect light under and beside
+character standing on the floor keeps between 0.74 and 0.81 of the indirect light under and beside
 it where the path tracer, tracing a sphere of triangles in the same place, keeps between 0.65 and
-0.85: mean difference 0.045 of the open light. Forty skinned walkers 60 m out are one sphere each;
+0.85: mean difference 0.044 of the open light. Forty skinned walkers 60 m out are one sphere each;
 the hero beside the camera is its four posed bones.
 
 ## Transparency and participating media
@@ -171,11 +171,11 @@ the hero beside the camera is its four posed bones.
 `SurfaceProperties::transmission` makes `indirect_diffuse` add `ResolveResult::transmitted` — the
 radiance cache sampled about the reversed normal `kThinTransmissionBackOffsetMetres` behind the
 surface, tinted — which a shader adds; with no transmission the resolve is bit for bit what it was.
-Twelve backlit leaf points in the room: mean relative error 0.131 against the path tracer's
+Twelve backlit leaf points in the room: mean relative error 0.123 against the path tracer's
 irradiance about the reversed normal. Volumetric media: `media_indirect` builds a
 `MediaIndirectGrid` of the cache's mean radiance over the sphere (the six-direction average, exact
 for SH L1) that `fog::FogIndirect` hands to the volumetric fog's march, on the host and the device;
-over 32 points of the room with probes a metre apart the grid is within 0.151 (mean relative) of the
+over 32 points of the room with probes a metre apart the grid is within 0.125 (mean relative) of the
 path tracer's six-hemisphere mean — the cache's spatial resolution is the error. True refraction and
 caustics are DEFERRED: `RefractionSolver` and `CausticsSource` are declared, and
 `set_refraction_solver` / `set_caustics_source` refuse with `ErrorCode::NotImplemented` naming it.
@@ -198,9 +198,10 @@ invalidations attributed to the light, object or cell that filed them, costliest
 **The leak query found a leak.** Four probes a metre behind the divider lit its face with 0.135 of
 the probe weight: the visibility term averaged the wall's distance with the open air beside it.
 `RadianceCache::visibility_weight` now also requires every axis the query lies within sixty degrees
-of to reach the query on its own (the device transcribes it); that takes the face to 0.080. The
+of to reach the query on its own (the device transcribes it); that takes the face to 0.075. The
 remaining suspects sit on the doorway's edge, where six axis distances cannot tell an edge from a
-wall — a directional depth per probe would.
+wall. The per-pixel resolve does not use `sample` for that reason: `sample_traced` traces each
+probe through the field, and `integration.render_gi_screen` holds its 10 cm wall to the path tracer.
 
 ## Debug views
 
