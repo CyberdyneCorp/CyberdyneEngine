@@ -583,7 +583,8 @@ rendering-forward-clustered = "complete"
 #                                      shadow rasterisation, paged filtering, contact and traced
 #                                      refinement (RayTraced and Hybrid are selected and implemented by
 #                                      nothing, M11.c task 4.4), caster policy, diagnostics
-#   rendering-global-illumination    9 exempt — and no shipping program lights its frame through the
+#   rendering-global-illumination    9 exempt at M11.c, 0 since add-gi-classes-media-diagnostics —
+#                                      and no shipping program lights its frame through the
 #                                      GI/atmosphere seam (M11.c task 2.8)
 #   rendering-post-processing        9 exempt — AO, SSS, volumetric fog, DoF, motion blur, bloom,
 #                                      anti-aliasing, temporal upscaling, VRS

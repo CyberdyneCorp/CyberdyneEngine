@@ -71,10 +71,11 @@ function(cy_fog_declare_tests)
             "${pipeline_tests}/frame_scene.cpp"
             "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
         DEPENDENCIES cy::rendering-fog cy::rendering-pipeline cy::rendering-particles cy::rhi-null
-                     cy::rhi-vulkan)
+                     cy::rhi-vulkan cy::rendering-gi)
     target_include_directories(cy_test_render_volumetric_fog
                                PRIVATE "${tests_dir}" "${pipeline_tests}"
-                                       "${CMAKE_SOURCE_DIR}/tests/render")
+                                       "${CMAKE_SOURCE_DIR}/tests/render"
+                                       "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests")
     target_compile_definitions(cy_test_render_volumetric_fog
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
                                        CY_FOG_TEST_DIR="${tests_dir}")

@@ -2,6 +2,7 @@
 // Which ambient source a surface takes in the frame, and the view-block words.
 // `unit.lightmap_frame`.
 
+#include <cy/rendering/lightmaps/gi_debug_overlay.h>
 #include <cy/rendering/lightmaps/lightmap_textures.h>
 #include <cy/test/test.h>
 
@@ -151,4 +152,32 @@ CY_TEST_CASE("the density view is one word and a target, and off by default") {
     CY_CHECK_EQ(other.lightmap_debug[0], 0U);
     CY_CHECK(write_lightmap_debug_view(cy::render::DebugViewMode::LightmapDensity, 2.5F, other));
     CY_CHECK_EQ(other.lightmap_debug[0], cy::rendering::pipeline::kLightmapDensityView);
+}
+
+CY_TEST_CASE("the chart view is one word, and every GI debug view is the overlay at its slot") {
+    namespace pipeline = cy::rendering::pipeline;
+    pipeline::FrameViewData charts;
+    CY_CHECK(write_lightmap_debug_view(cy::render::DebugViewMode::LightmapCharts, 2.5F, charts));
+    CY_CHECK_EQ(charts.lightmap_debug[0], pipeline::kLightmapChartView);
+
+    // Every Gi* mode but the frame's own GiContribution is a GI debug view drawn as an overlay;
+    // nothing else is.
+    u32 overlays = 0;
+    for (u32 index = 0; index < cy::render::kDebugViewModeCount; ++index) {
+        const auto mode = static_cast<cy::render::DebugViewMode>(index);
+        pipeline::FrameViewData view;
+        const bool written = write_gi_debug_view(mode, 37U, view);
+        const char* name = cy::render::debug_view_mode_name(mode);
+        const bool gi_view =
+            std::strncmp(name, "Gi", 2) == 0 && std::strcmp(name, "GiContribution") != 0;
+        CY_CHECK_EQ(written, gi_view);
+        if (written) {
+            overlays += 1;
+            CY_CHECK_EQ(view.lightmap_debug[0], pipeline::kGiDebugOverlayView);
+            CY_CHECK_EQ(view.lightmap_debug[2], 37U);
+        } else {
+            CY_CHECK_EQ(view.lightmap_debug[0], 0U);
+        }
+    }
+    CY_CHECK_EQ(overlays, 19U);
 }

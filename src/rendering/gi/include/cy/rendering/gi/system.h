@@ -41,10 +41,13 @@
 #include <cy/rendering/denoise/denoiser.h>
 #include <cy/rendering/gi/budget.h>
 #include <cy/rendering/gi/card_lighting.h>
+#include <cy/rendering/gi/classification.h>
+#include <cy/rendering/gi/diagnostics.h>
 #include <cy/rendering/gi/distance_field.h>
 #include <cy/rendering/gi/emissive.h>
 #include <cy/rendering/gi/gi_volume.h>
 #include <cy/rendering/gi/lighting.h>
+#include <cy/rendering/gi/media.h>
 #include <cy/rendering/gi/radiance_cache.h>
 #include <cy/rendering/gi/reflections.h>
 #include <cy/rendering/gi/resolve.h>
@@ -86,6 +89,8 @@ struct IlluminationSettings {
     /// the system's). Appended, so a brace-initialised settings block keeps its meaning.
     SurfaceBounce surface_bounce = SurfaceBounce::Probes;
     CardGatherSettings card_gather{};
+    /// How `add_object` classes an object and what each class's moves cost (classification.h).
+    ClassificationSettings classification{};
 };
 
 struct FrameContext {
@@ -121,6 +126,8 @@ struct IlluminationFrameReport {
     u32 invalidated_field_bricks = 0;
     /// The least converged region, in [0, 1].
     f32 convergence = 0.0F;
+    /// The registered objects by class, and what their moves cost this frame.
+    ObjectsFrameReport objects{};
 };
 
 /// What the surface being resolved carries. The double-counting decision needs it.
@@ -131,6 +138,9 @@ struct SurfaceProperties {
     Vec3 irradiance_volume_radiance{0.0F, 0.0F, 0.0F};
     /// Distance from the camera, for the far-field transition.
     f32 camera_distance_metres = 0.0F;
+    /// THIN TRANSMISSION (media.h): the tinted fraction of the light arriving at the back face
+    /// that comes through. Zero — the default — is an opaque surface, resolved as it always was.
+    Vec3 transmission{0.0F, 0.0F, 0.0F};
 };
 
 /// The subsystems, wired.
@@ -210,6 +220,81 @@ public:
     /// bit for bit, where no volume reaches.
     [[nodiscard]] GiRegionSettings region_settings(Vec3 point) const noexcept;
 
+    // --- Objects and their illumination classes (classification.h) ----------------------------
+
+    /// Register an object. Its class is the override or the derivation from its mobility and the
+    /// size of its world bounds, decided here and kept. `Static` and `SlowDynamic` objects enter
+    /// the GI scene (their cards, as a cell `object_cell_id(id)`) and the field (their own, when
+    /// they bring one); a `FastDynamic` one becomes a proxy; a `TransientIgnored` one is recorded
+    /// and nothing else. Refused for an id already registered.
+    [[nodiscard]] Status add_object(const GiObjectDesc& desc, u64 frame) noexcept;
+
+    /// Move an object. `Static`: its cards and field move now and their region is invalidated now.
+    /// `SlowDynamic`: the move is coalesced, and the next `update()` at least
+    /// `slow_dynamic_interval_frames` after the last flush moves them and invalidates the union of
+    /// everywhere it went, once. `FastDynamic`: the proxy follows; nothing is invalidated.
+    /// `TransientIgnored`: nothing.
+    [[nodiscard]] Status move_object(u64 id, const Mat4& transform, u64 frame) noexcept;
+
+    /// A skinned object's deformed proxy, posed: world-space spheres from the device pose. Used
+    /// while `select_proxy_fidelity` says `Deformed`; the bounding sphere otherwise.
+    [[nodiscard]] Status pose_object(u64 id, Span<const Sphere> deformed) noexcept;
+
+    /// Unregister an object, taking its cards and field placement with it.
+    void remove_object(u64 id, u64 frame) noexcept;
+
+    [[nodiscard]] const GiObject* object(u64 id) const noexcept;
+    [[nodiscard]] Span<const GiObject> objects() const noexcept { return objects_.span(); }
+
+    /// The proxy spheres the last `update()` chose for the FastDynamic objects.
+    [[nodiscard]] Span<const Sphere> proxy_spheres() const noexcept { return proxies_.span(); }
+
+    /// The fraction of the indirect light at a point the proxies take away, in [0, 1].
+    [[nodiscard]] f32 proxy_occlusion(Vec3 position, Vec3 normal) const noexcept;
+
+    // --- Transparency and participating media (media.h) ----------------------------------------
+
+    /// RESERVED AND DEFERRED. Refused with `ErrorCode::NotImplemented`, naming the deferral.
+    [[nodiscard]] static Status set_refraction_solver(RefractionSolver* solver) noexcept;
+    /// RESERVED AND DEFERRED. Refused with `ErrorCode::NotImplemented`, naming the deferral.
+    [[nodiscard]] static Status set_caustics_source(CausticsSource* source) noexcept;
+
+    /// The low-frequency indirect a participating medium takes, on a grid over `bounds`.
+    [[nodiscard]] Status media_indirect(const Aabb& bounds, f32 spacing, Vec3 fallback,
+                                        MediaIndirectGrid& out) const noexcept {
+        return build_media_indirect(radiance_, bounds, spacing, fallback, out);
+    }
+
+    // --- Diagnostics (diagnostics.h) ---------------------------------------------------------
+
+    /// What lit this point, and why it is the colour it is. `diffuse` is exactly what
+    /// `indirect_diffuse` returns for the same arguments.
+    [[nodiscard]] IlluminationQuery explain(Vec3 position, Vec3 normal,
+                                            const SurfaceProperties& surface,
+                                            const ExplainSettings& settings) const noexcept;
+
+    /// The probe half of `explain` alone — the contributing probes, their terms, ages and leak
+    /// suspicion, and the probes in reach — for a caller asking it of every pixel.
+    [[nodiscard]] IlluminationQuery explain_probes(Vec3 position, Vec3 normal,
+                                                   const ExplainSettings& settings) const noexcept;
+
+    /// The same question asked of a box: its probes, their ages and errors, its convergence and
+    /// the invalidations touching it.
+    [[nodiscard]] IlluminationRegionReport explain_region(
+        const Aabb& region, const ExplainSettings& settings) const noexcept;
+
+    /// The frame the last `update()` began, including the queries made since.
+    [[nodiscard]] GiProfile profile() const noexcept;
+
+    /// Account work a producer outside `update()` did for this frame — the stochastic signals'
+    /// denoising is one — to a stage of the profile.
+    void add_stage_time(GiStage stage, u64 nanoseconds) noexcept;
+
+    /// The invalidation records serviced most recently, oldest first, at most 64.
+    [[nodiscard]] Span<const InvalidationRecord> recent_invalidations() const noexcept {
+        return recent_.span();
+    }
+
     // The named subsystems. Public because they are separate subsystems and not private state:
     // a renderer ingests cells into the scene, a residency system places distance fields, and an
     // editor inspects the caches, and none of that should go through a forwarding method here.
@@ -260,6 +345,42 @@ public:
     u32 advance_to_convergence(const FrameContext& context, f32 threshold, u32 max_frames) noexcept;
 
 private:
+    /// The samples `indirect_diffuse` combines, the exclusion mask and the region's settings. One
+    /// function, so `explain` reports the samples that were combined rather than a second set.
+    struct DiffuseSamples {
+        RadianceSample samples[kMaxReportedSources];
+        usize count = 0;
+        u32 excluded = 0;
+        GiRegionSettings region{};
+        f32 openness = 0.0F;
+    };
+    static void explain_sources(const DiffuseSamples& gathered, IlluminationQuery& query) noexcept;
+    [[nodiscard]] DiffuseSamples diffuse_samples(Vec3 position, Vec3 normal,
+                                                 const SurfaceProperties& surface) const noexcept;
+    [[nodiscard]] ResolveResult resolve_diffuse(const DiffuseSamples& gathered, Vec3 position,
+                                                Vec3 normal,
+                                                const SurfaceProperties& surface) const noexcept;
+    void fill_probes(Vec3 position, Vec3 normal, const ExplainSettings& settings,
+                     IlluminationQuery& query) const noexcept;
+    /// The distance field blocks the line from a probe to a point.
+    [[nodiscard]] bool probe_blocked(Vec3 probe, Vec3 position) const noexcept;
+    void region_probes(const Aabb& region, const ExplainSettings& settings,
+                       IlluminationRegionReport& report) const noexcept;
+    [[nodiscard]] f32 region_convergence(const Aabb& region) const noexcept;
+    [[nodiscard]] Status place_object(const GiObjectDesc& desc, GiObject& entry) noexcept;
+    void push_proxy(const Sphere& sphere, Vec3 albedo) noexcept;
+    void add_proxies(GiObject& entry, Vec3 camera, ObjectsFrameReport& objects) noexcept;
+    void see_proxies(Vec3 origin, Vec3 direction, RadianceSample& answer) const noexcept;
+    [[nodiscard]] u32 find_object(u64 id) const noexcept;
+    [[nodiscard]] Status commit_object(GiObject& entry, u64 frame) noexcept;
+    void update_objects(IlluminationFrameReport& report, const FrameContext& context) noexcept;
+    [[nodiscard]] bool proxy_hit(Vec3 origin, Vec3 direction, f32& distance,
+                                 Vec3& radiance) const noexcept;
+    /// What a proxy sphere sends toward `position`: its albedo times the radiance cache's light on
+    /// the side facing the point.
+    [[nodiscard]] Vec3 proxy_radiance(usize proxy, Vec3 toward) const noexcept;
+    void begin_profile(u64 frame) noexcept;
+    void record_attribution(const InvalidationRecord& record) noexcept;
     void service_invalidations(IlluminationFrameReport& report, u64 frame) noexcept;
     [[nodiscard]] bool dynamic_enabled() const noexcept;
     [[nodiscard]] Span<const GiLight> lights_for(Span<const GiLight> frame) noexcept;
@@ -294,6 +415,26 @@ private:
     Array<GiLight> frame_lights_;
     Span<const GiLight> last_lights_;
     GiVolumeSet volumes_;
+
+    Array<GiObject> objects_;
+    Array<Sphere> proxies_;
+    /// Each proxy sphere's object's albedo, index for index.
+    Array<Vec3> proxy_albedo_;
+    u32 moves_coalesced_ = 0;
+
+    /// The profile of the frame the last `update()` began, and the counters it is a delta of.
+    struct ProfileBaseline {
+        TracingDiagnostics tracer{};
+        u32 surface_lookups = 0;
+        u32 surface_misses = 0;
+        u32 probe_gathers = 0;
+        u32 probe_misses = 0;
+    };
+    GiProfile profile_{};
+    ProfileBaseline baseline_{};
+    RadianceSource gather_tier_ = RadianceSource::None;
+    u32 gather_rays_ = 0;
+    Array<InvalidationRecord> recent_;
 };
 
 }  // namespace cy::rendering::gi

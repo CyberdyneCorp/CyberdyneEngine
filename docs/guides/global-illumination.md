@@ -230,6 +230,70 @@ gi.set_volumes({&interior, 1});
 With no volume reaching a sample, everything resolves exactly as it did before volumes existed —
 `integration.render_gi_volumes` checks that bit for bit.
 
+## 6b. Moving objects, transparent ones, and fog
+
+**Class an object once and let the class price its moves.** Register what moves with
+`IlluminationSystem::add_object` and move it with `move_object`:
+
+```cpp
+gi::GiObjectDesc car;
+car.id = 9;
+car.mobility = gi::ObjectMobility::Movable;   // with its size, this makes it SlowDynamic
+car.local_bounds = cy::Aabb::from_center_extents({}, {2.2F, 0.8F, 1.0F});
+car.transform = placed;
+car.field = &car_field;                         // optional: its own distance field
+car.surfels = {car_cards.data(), car_cards.size()};
+(void)system.add_object(car, frame);
+// every frame it drives:
+(void)system.move_object(9, transform, frame);  // coalesced; flushed once per interval
+```
+
+| Class | Derived when | What a move costs |
+|---|---|---|
+| `Static` | static mobility | its cards and field move now; the region is invalidated now |
+| `SlowDynamic` | movable, at least `slow_dynamic_min_size_metres` (2.5) | one invalidation of the union of where it went, at most every `slow_dynamic_interval_frames` (8) |
+| `FastDynamic` | movable, in between | nothing: it is proxy spheres that darken the indirect light under them and show in reflections |
+| `TransientIgnored` | movable, under `transient_max_size_metres` (0.25) | nothing at all |
+
+`has_class_override` wins over the derivation. A skinned `FastDynamic` object hands its posed spheres
+to `pose_object` each frame; near the camera (`deformed_proxy_distance_metres * importance`) they are
+its proxy, beyond it one sphere of its bounds' volume is.
+
+**Thin transmission is one field on the surface.** Set `SurfaceProperties::transmission` to the
+tinted fraction a leaf lets through and add `ResolveResult::transmitted` to the shaded colour; it is
+the back face's indirect light. Zero is the opaque resolve, bit for bit.
+
+**Fog reads the radiance cache.** `system.media_indirect(bounds, spacing, fallback, grid)` samples the
+cache's mean radiance on a grid; wrap it in a `fog::FogIndirect` and set `FogLight::indirect`, and the
+march (host and device) scatters it in place of the ambient term. No grid is the fog as it was.
+
+True refraction and caustics are deferred: `set_refraction_solver` and `set_caustics_source` refuse.
+
+## 6c. Asking why, and looking at it
+
+```cpp
+gi::ExplainSettings ask;
+ask.frame = frame;
+const gi::IlluminationQuery why = system.explain(point, normal, surface, ask);
+// why.cause: Lit, Occluded, Unconverged, MissingProbes, LowConfidence or Invalidated
+// why.probes[i]: weight = falloff * facing * visibility, age, error, leak_suspect
+const gi::GiProfile cost = system.profile();   // after the frame's queries, before the next update
+```
+
+`explain` answers with the resolve's own function, so the answer is bit for bit what the frame was
+lit with. A **leak suspect** is a probe that contributes although the distance field blocks the line
+from it to the point: the probe-visibility view paints those surfaces red and the probes as red
+discs. `profile()` gives the six stage costs, rays per tier, hit rates and the frame's
+invalidations attributed to the change that filed them.
+
+The nineteen debug views (`gi/debug_views.h`) are `render::DebugViewMode`s of the same names
+(`GiTier`, `GiProbeVisibility`, `GiSurfaceCache`, ...). Draw one with `gi::render_gi_debug_view` for
+the frame's camera and surface buffer, upload it with `lightmaps::GiDebugOverlayTexture`, and
+`lightmaps::write_gi_debug_view(mode, slot, view)` makes the forward pass draw it where it is
+opaque. `LightmapDensity` and `LightmapCharts` are drawn by the frame itself.
+
+![The nineteen GI debug views](../design/images/gi-debug-views.png)
+
 ## 7. Measuring it: against the oracle, and against the engines it competes with
 
 "Better than Lumen or Unity's adaptive probe volumes" is only worth saying as numbers a suite fails on.
@@ -245,6 +309,9 @@ The claims and where each is measured:
 | Fast convergence after a change | `integration.render_gi_screen` | a light moved 4.9 m: within 10 % of the new light's converged frame in 11 frames (bound 14) |
 | Temporally stable | `integration.render_gi_screen` | a converged still view moves 0.0034 a frame, where the one-ray signal under it moves 0.451 |
 | Off is the frame it was | `render.gi_gpu_frame`, `just capture-beauty-gi` | byte for byte, the stage attached with its words at none; the beauty shot without `--gi on` |
+| A leak is named, not guessed at | `integration.render_gi_pipeline` (the visibility term), `integration.render_gi_volume`, `integration.render_gi_diagnostics` (leak suspects) | the divider's face takes 0.075 of its probe weight from probes the field says cannot see it (0.135 before the per-axis visibility test); the rest is doorway-edge probes |
+| A moving body darkens what it stands on, invalidating nothing | `integration.render_gi_classes` | a FastDynamic character's proxy within 0.044 of the open light of the path tracer tracing a triangle sphere; a projectile files 0 invalidations, a vehicle 8 in 32 frames |
+| Leaves transmit, fog is lit by the cache | `integration.render_gi_media`, `render.volumetric_fog` (g) | thin transmission 0.123 and the medium's grid 0.125 (mean relative) from the path tracer; the device fog within 2.3e-5 of the host march |
 | Emitters lit without fireflies, within a stated error | `integration.render_gi_emissive` | a promoted 30 cm lamp 0.5 % from the path tracer with a per-receiver ratio variance of 0.027 (the reference's noise); left to the cache, 4.6; a promoted panel 2.0 % |
 | A region gets the quality it is marked for, within one budget | `integration.render_gi_volumes` | 3.9x the probe updates and 2x the rays in the marked interior, the frame's probe budget unchanged; no volume reaching a point is bit for bit no volume at all |
 | Explicit cost | `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s cost cases; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The per-pixel GI at 1920x1080, every stage: the test room 11.6 ms (hardware) / 15.2 ms (software) at authored quality, 3.15 ms on the half-resolution grid, 2.24 ms with the denoiser lever too; the beauty shot 14.8 ms (hardware) / 29.7 ms (software), 5.6 / 11.1 ms on the half grid. Stage 5 holds a 960x540 frame to its allocation by dropping from 3.97 ms to 0.75 ms in the declared lever order |
@@ -265,6 +332,7 @@ and prints them.
 ```sh
 just build-engine
 just test-integration -R render_gi            # the host system and the oracle, no device
+CY_RENDER_UPDATE_GOLDEN=1 build/dev/cy_test_integration_render_gi_debug_views   # rewrite the view goldens
 just test-unit -R render_raytracing           # the service and its mirror, no device
 just test-render -R gi_gpu                    # the device suites; skipped where there is no device
 python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
@@ -342,8 +410,14 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   host decisions and hold on both paths; the device gather traces the update's ray count through
   the frame's tier for every probe, so `Quality` and `TierPreference` reach probes on the host
   gather only.
-- **The editor and Swift**: no editor view or Swift API exposes the dynamic GI, its volumes, its
-  per-pixel resolve or its emitter settings yet (the editor's lighting tools author lightmaps and
-  baked volumes; see [Lighting authoring](lighting.md)). The GI rows the requirements map still exempts — dynamic classification,
-  transparency and media, diagnostics and debug views — are listed with reasons in
-  `tools/roadmap/requirements-coverage.toml`.
+- **The editor and Swift**: the editor lists the GI debug views as view modes (the engine's
+  names, mirrored), and its lighting tools author lightmaps and baked volumes (see
+  [Lighting authoring](lighting.md)); no editor panel shows `explain` or the profile, and no Swift
+  API classes an object, sets a transmission, places a GI volume or tunes the per-pixel resolve
+  yet. Every requirement of the row maps to a test case in
+  `tools/roadmap/requirements-coverage.toml`; the notes there say what each does not cover yet.
+- **A directional depth per probe for `sample`**: six axis distances cannot tell a doorway's edge
+  from a wall, and those probes still leak into `sample`'s answer (the diagnostics name them);
+  `sample_traced` — the per-pixel resolve's — traces each probe instead.
+- **The profile in the one trace**: `GiProfile` is a structured report; it is not emitted into
+  `diagnostics-profiling-and-crash`'s trace.

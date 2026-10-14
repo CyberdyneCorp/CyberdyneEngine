@@ -102,7 +102,7 @@ struct Light_0
 };
 
 
-#line 295 "src/rendering/shaders/cy/frame.slang"
+#line 303 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -137,7 +137,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 317
+#line 325
 struct KernelContext_0
 {
     CyParticlePassSet_default_0 constant* cyParticlePass_0;
@@ -145,7 +145,7 @@ struct KernelContext_0
 };
 
 
-#line 372
+#line 380
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -153,7 +153,7 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 375
+#line 383
 struct cyParticleVertex_Result_0
 {
     float4 position_0 [[position]];

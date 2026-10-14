@@ -1,0 +1,74 @@
+Mutations proving the cases of add-gi-classes-media-diagnostics red.
+
+Each was applied to the tree, the named suite rebuilt (dev profile, GCC 13) and run, and the file
+restored and md5-verified. Each replaces one exact string; RED lists the test cases that failed.
+The device mutations [25]-[27] also regenerated the module's SPIR-V and MSL headers from the mutated
+source, ran on the RTX 5060 (Vulkan), and restored the headers. Two first survived and each gained
+the check that now kills it: [5] reflection presence (the case compared against the same room a
+frame later; it now compares against a twin room at the same frame, whose caches are the room's
+bit for bit) and [19] the world tier's update-time cost (the case read it only after a query had
+traced world rays; it now reads the profile before any query). [13] first survived because the
+fog grid varied along one axis; the grid is now linear in all three and checked against the exact
+value between its points. [15] is the leak this change found: on the old visibility term the
+divider's face took 0.135 of its probe weight from probes behind it.
+
+[0] classification: a SlowDynamic move flushes every frame (no interval) (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a vehicle participates, with its invalidation amortised rather than every frame
+[1] classification: the transient size threshold ignored (src/rendering/gi/src/classification.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a projectile crossing the room invalidates nothing | cy_test_integration_render_gi_classes: classes derive from mobility and size, and an override wins
+[2] classification: the override ignored (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: classes derive from mobility and size, and an override wins
+[3] system: FastDynamic proxies occlude nothing (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a character occludes the light under it as the path tracer does, invalidating nothing
+[4] system: a proxy reflects nothing back (occlusion only) (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a character occludes the light under it as the path tracer does, invalidating nothing
+[5] system: reflection rays do not see proxies (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a character occludes the light under it as the path tracer does, invalidating nothing
+[6] system: skinned objects always coarse (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_classes: a distant crowd uses coarse proxies, and a near character its deformed one
+[7] classification: sphere occlusion without the horizon clip (src/rendering/gi/src/classification.cpp)
+    -> RED  cy_test_integration_render_gi_classes: one sphere's occlusion is its cosine-weighted solid angle, above and across the horizon
+[8] media: transmission samples the front face (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_media: a backlit thin-transmission surface transmits the light its back face receives
+[9] media: the deferred refraction is accepted (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_media: the staging table is code, and the deferred features are refused by name
+[10] media: the coverage fallback ignored (src/rendering/gi/src/media.cpp)
+    -> RED  cy_test_integration_render_gi_media: a medium where no probe reaches takes the fallback, and a bad grid is refused
+[11] media: the grid is the cache at the axes' first answer only (src/rendering/gi/src/media.cpp)
+    -> RED  cy_test_integration_render_gi_media: a participating medium takes the radiance cache's low-frequency indirect
+[12] fog: the host march ignores the indirect grid (src/rendering/fog/src/volume.cpp)
+    -> RED  cy_test_integration_rendering_fog_march: the radiance cache's indirect grid replaces the ambient term, and a flat one is it
+[13] fog: the grid's trilinear blend drops the y axis (src/rendering/fog/src/volume.cpp)
+    -> RED  cy_test_integration_rendering_fog_march: the radiance cache's indirect grid replaces the ambient term, and a flat one is it
+[14] diagnostics: no leak suspect is ever named (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: a probe behind a wall that contributes anyway is named a leak suspect
+[15] visibility: the per-axis test removed (the leak this change found) (src/rendering/gi/src/radiance_cache.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: a probe behind a wall that contributes anyway is named a leak suspect
+[16] diagnostics: invalidated probes reported as missing (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: why is this area dark: missing probes, invalidated, unconverged, occluded, or lit
+[17] diagnostics: explain resolves without the exclusion mask (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: a point query explains exactly the answer the resolve gives
+[18] profile: invalidations not attributed (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: the profile measures each stage and attributes a change's cost to its source
+[19] profile: the tracer's world time not counted (src/rendering/gi/src/system.cpp)
+    -> RED  cy_test_integration_render_gi_diagnostics: the profile measures each stage and attributes a change's cost to its source
+[20] debug views: software and hardware tier colours swapped (src/rendering/gi/src/debug_views.cpp)
+    -> RED  cy_test_integration_render_gi_debug_views: the tier view colours each pixel by the tier that answered it | cy_test_integration_render_gi_debug_views: the trace and confidence views match their golden images
+[21] debug views: the visibility view paints no leak (src/rendering/gi/src/debug_views.cpp)
+    -> RED  cy_test_integration_render_gi_debug_views: the probe views match their golden images | cy_test_integration_render_gi_debug_views: the probe visibility view paints the leak a wall-blind probe makes
+[22] debug views: the surface cache view without its misses (src/rendering/gi/src/debug_views.cpp)
+    -> RED  cy_test_integration_render_gi_debug_views: the cache, field, card and reflection views match their golden images
+[23] debug views: the emissive view without the promoted lights (src/rendering/gi/src/debug_views.cpp)
+    -> RED  cy_test_integration_render_gi_debug_views: the denoiser and contribution views match their golden images
+[24] lightmaps: a GI mode writes no overlay (src/rendering/lightmaps/src/gi_debug_overlay.cpp)
+    -> RED  cy_test_unit_lightmap_frame: the chart view is one word, and every GI debug view is the overlay at its slot
+[25] frame: the overlay branch removed (src/rendering/shaders/cy/frame.slang)
+    -> RED  cy_test_render_lightmaps: (p) a GI debug view is drawn over the frame where it is opaque, and nowhere else
+[26] frame: the chart view draws one hue (src/rendering/shaders/cy/frame.slang)
+    -> RED  cy_test_render_lightmaps: (o) the chart view colours each lightmapped surface by the rectangle it samples
+[27] fog shader: the device march ignores the grid (src/rendering/fog/shaders/fog_march.slang)
+    -> RED  cy_test_render_volumetric_fog: (g) the device's fog takes the radiance cache's indirect grid, as the host march does
+
+After rebasing onto #120 (the per-pixel GI in the frame), [15], [21], [25], [26] and [27] were run
+again over the merged tree and are RED as above; the goldens were redrawn, because #120 changed
+what the host caches converge to.

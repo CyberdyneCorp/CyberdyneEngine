@@ -90,12 +90,50 @@ pub enum ViewMode {
     BoundingVolumes = 18,
     /// Each lightmapped surface's lightmap texel density against the level's target.
     LightmapDensity = 19,
-    /// Each irradiance-volume probe, in the light the bake captured.
+    /// Each radiance-cache probe, gathered or waiting.
     GiProbes = 20,
+    /// The atlas rectangle each lightmapped surface samples, one colour per rectangle, checkered at its texels.
+    LightmapCharts = 21,
+    /// Each radiance-cache probe at its position, in the mean irradiance it holds.
+    GiProbeIrradiance = 22,
+    /// Each radiance-cache probe, from just gathered (green) to the age cap (red).
+    GiProbeAge = 23,
+    /// Each radiance-cache probe, from settled (green) to still changing (red).
+    GiProbeError = 24,
+    /// Each surface by how much of its probe light comes from probes that cannot see it, with those probes drawn red.
+    GiProbeVisibility = 25,
+    /// Which radiance-cache clipmap level covers each surface, dimmed where no probe is resident.
+    GiRadianceClipmap = 26,
+    /// The surface cache's radiance at each surface, magenta where no card covers it.
+    GiSurfaceCache = 27,
+    /// A horizontal slice through the distance field the software tier traces, banded every quarter metre.
+    GiDistanceField = 28,
+    /// The GI card each surface resolves to, one colour per card.
+    GiCards = 29,
+    /// The reflection probe influence volume each surface is in, mixed with what that probe captured.
+    GiReflectionProbes = 30,
+    /// Whether each pixel's reflection ray was answered by the screen (green, brighter for more confidence) or missed it (red).
+    GiScreenTrace = 31,
+    /// The confidence of each pixel's resolved indirect diffuse, green high to red low.
+    GiConfidence = 32,
+    /// The tier that answered each pixel's illumination query: screen blue, software green, hardware orange, sky white.
+    GiTier = 33,
+    /// The rays each pixel's reflection spent: hardware red, software green, screen blue.
+    GiRayCount = 34,
+    /// The history confidence the denoiser was handed, green trusted to red rejected.
+    GiDenoiserConfidence = 35,
+    /// Where the reprojection found no history, in magenta.
+    GiDisocclusion = 36,
+    /// The indirect diffuse light alone.
+    GiIndirectDiffuse = 37,
+    /// The indirect specular light alone.
+    GiIndirectSpecular = 38,
+    /// The light emissive surfaces deliver, alone.
+    GiEmissive = 39,
 }
 
 /// Every mode, in the engine's order.
-pub const ALL_VIEW_MODES: [ViewMode; 21] = [
+pub const ALL_VIEW_MODES: [ViewMode; 40] = [
     ViewMode::Off,
     ViewMode::Albedo,
     ViewMode::Normals,
@@ -117,6 +155,25 @@ pub const ALL_VIEW_MODES: [ViewMode; 21] = [
     ViewMode::BoundingVolumes,
     ViewMode::LightmapDensity,
     ViewMode::GiProbes,
+    ViewMode::LightmapCharts,
+    ViewMode::GiProbeIrradiance,
+    ViewMode::GiProbeAge,
+    ViewMode::GiProbeError,
+    ViewMode::GiProbeVisibility,
+    ViewMode::GiRadianceClipmap,
+    ViewMode::GiSurfaceCache,
+    ViewMode::GiDistanceField,
+    ViewMode::GiCards,
+    ViewMode::GiReflectionProbes,
+    ViewMode::GiScreenTrace,
+    ViewMode::GiConfidence,
+    ViewMode::GiTier,
+    ViewMode::GiRayCount,
+    ViewMode::GiDenoiserConfidence,
+    ViewMode::GiDisocclusion,
+    ViewMode::GiIndirectDiffuse,
+    ViewMode::GiIndirectSpecular,
+    ViewMode::GiEmissive,
 ];
 
 impl ViewMode {
@@ -152,6 +209,25 @@ impl ViewMode {
             ViewMode::BoundingVolumes => "BoundingVolumes",
             ViewMode::LightmapDensity => "LightmapDensity",
             ViewMode::GiProbes => "GiProbes",
+            ViewMode::LightmapCharts => "LightmapCharts",
+            ViewMode::GiProbeIrradiance => "GiProbeIrradiance",
+            ViewMode::GiProbeAge => "GiProbeAge",
+            ViewMode::GiProbeError => "GiProbeError",
+            ViewMode::GiProbeVisibility => "GiProbeVisibility",
+            ViewMode::GiRadianceClipmap => "GiRadianceClipmap",
+            ViewMode::GiSurfaceCache => "GiSurfaceCache",
+            ViewMode::GiDistanceField => "GiDistanceField",
+            ViewMode::GiCards => "GiCards",
+            ViewMode::GiReflectionProbes => "GiReflectionProbes",
+            ViewMode::GiScreenTrace => "GiScreenTrace",
+            ViewMode::GiConfidence => "GiConfidence",
+            ViewMode::GiTier => "GiTier",
+            ViewMode::GiRayCount => "GiRayCount",
+            ViewMode::GiDenoiserConfidence => "GiDenoiserConfidence",
+            ViewMode::GiDisocclusion => "GiDisocclusion",
+            ViewMode::GiIndirectDiffuse => "GiIndirectDiffuse",
+            ViewMode::GiIndirectSpecular => "GiIndirectSpecular",
+            ViewMode::GiEmissive => "GiEmissive",
         }
     }
 
@@ -193,6 +269,25 @@ impl ViewMode {
             ViewMode::BoundingVolumes => "Bounding Volumes",
             ViewMode::LightmapDensity => "Lightmap Density",
             ViewMode::GiProbes => "GI Probes",
+            ViewMode::LightmapCharts => "Lightmap Charts",
+            ViewMode::GiProbeIrradiance => "GI Probe Irradiance",
+            ViewMode::GiProbeAge => "GI Probe Age",
+            ViewMode::GiProbeError => "GI Probe Error",
+            ViewMode::GiProbeVisibility => "GI Probe Visibility",
+            ViewMode::GiRadianceClipmap => "GI Radiance Clipmap",
+            ViewMode::GiSurfaceCache => "GI Surface Cache",
+            ViewMode::GiDistanceField => "GI Distance Field",
+            ViewMode::GiCards => "GI Cards",
+            ViewMode::GiReflectionProbes => "GI Reflection Probes",
+            ViewMode::GiScreenTrace => "GI Screen Trace",
+            ViewMode::GiConfidence => "GI Confidence",
+            ViewMode::GiTier => "GI Tier",
+            ViewMode::GiRayCount => "GI Ray Count",
+            ViewMode::GiDenoiserConfidence => "GI Denoiser Confidence",
+            ViewMode::GiDisocclusion => "GI Disocclusion",
+            ViewMode::GiIndirectDiffuse => "GI Indirect Diffuse",
+            ViewMode::GiIndirectSpecular => "GI Indirect Specular",
+            ViewMode::GiEmissive => "GI Emissive",
         }
     }
 
@@ -223,7 +318,65 @@ impl ViewMode {
                 "each lightmapped surface as a checker of its own lightmap texels, coloured by \
                  the density the atlas gives it against the level's target"
             }
-            ViewMode::GiProbes => "each irradiance-volume probe, in the light the bake captured",
+            ViewMode::GiProbes => {
+                "each radiance-cache probe at its position: green gathered, red waiting to be"
+            }
+            // Every GI view, and the lightmap chart view.
+            _ => self.gi_shows(),
+        }
+    }
+
+    /// What the GI and lightmap-chart views show; `shows`'s second half.
+    const fn gi_shows(self) -> &'static str {
+        match self {
+            ViewMode::LightmapCharts => {
+                "the atlas rectangle each lightmapped surface samples, one colour per rectangle, checkered at its texels"
+            }
+            ViewMode::GiProbeIrradiance => {
+                "each radiance-cache probe at its position, in the mean irradiance it holds"
+            }
+            ViewMode::GiProbeAge => {
+                "each radiance-cache probe, from just gathered (green) to the age cap (red)"
+            }
+            ViewMode::GiProbeError => {
+                "each radiance-cache probe, from settled (green) to still changing (red)"
+            }
+            ViewMode::GiProbeVisibility => {
+                "each surface by how much of its probe light comes from probes that cannot see it, with those probes drawn red"
+            }
+            ViewMode::GiRadianceClipmap => {
+                "which radiance-cache clipmap level covers each surface, dimmed where no probe is resident"
+            }
+            ViewMode::GiSurfaceCache => {
+                "the surface cache's radiance at each surface, magenta where no card covers it"
+            }
+            ViewMode::GiDistanceField => {
+                "a horizontal slice through the distance field the software tier traces, banded every quarter metre"
+            }
+            ViewMode::GiCards => "the GI card each surface resolves to, one colour per card",
+            ViewMode::GiReflectionProbes => {
+                "the reflection probe influence volume each surface is in, mixed with what that probe captured"
+            }
+            ViewMode::GiScreenTrace => {
+                "whether each pixel's reflection ray was answered by the screen (green, brighter for more confidence) or missed it (red)"
+            }
+            ViewMode::GiConfidence => {
+                "the confidence of each pixel's resolved indirect diffuse, green high to red low"
+            }
+            ViewMode::GiTier => {
+                "the tier that answered each pixel's illumination query: screen blue, software green, hardware orange, sky white"
+            }
+            ViewMode::GiRayCount => {
+                "the rays each pixel's reflection spent: hardware red, software green, screen blue"
+            }
+            ViewMode::GiDenoiserConfidence => {
+                "the history confidence the denoiser was handed, green trusted to red rejected"
+            }
+            ViewMode::GiDisocclusion => "where the reprojection found no history, in magenta",
+            ViewMode::GiIndirectDiffuse => "the indirect diffuse light alone",
+            ViewMode::GiIndirectSpecular => "the indirect specular light alone",
+            ViewMode::GiEmissive => "the light emissive surfaces deliver, alone",
+            _ => "",
         }
     }
 
@@ -321,9 +474,82 @@ impl ViewMode {
                  lower it where red spends texels nobody sees."
             }
             ViewMode::GiProbes => {
-                "A probe drawn dark in a lit room is inside geometry or sees only a movable \
-                 light; move the volume or change the light's mobility and bake again."
+                "Red probes near the camera mean the probe budget has not reached them yet; a \
+                 region with no probes at all falls back to the far field."
             }
+            // Every GI view, and the lightmap chart view.
+            _ => self.gi_how_to_read(),
+        }
+    }
+
+    /// How to read the GI and lightmap-chart views; `how_to_read`'s second half.
+    const fn gi_how_to_read(self) -> &'static str {
+        match self {
+            ViewMode::LightmapCharts => {
+                "Two objects in one colour share a rectangle, which is a packing fault. Grey has no lightmap. The checker is the texel size: a cell much larger than its neighbours' is a rectangle short of resolution."
+            }
+            ViewMode::GiProbeIrradiance => {
+                "Neighbouring probes should differ smoothly. A dark probe in a lit area sees mostly geometry; a magenta probe has not been gathered."
+            }
+            ViewMode::GiProbeAge => {
+                "Red probes near the camera mean the probe update budget is too small for the scene; red probes far away are expected."
+            }
+            ViewMode::GiProbeError => {
+                "Red after the lighting stopped changing means the probe is not converging; check its rays and the surface cache it reads."
+            }
+            ViewMode::GiProbeVisibility => {
+                "Red is a leak: a probe behind a wall contributing to this surface. Thicken the wall, raise the probe density there, or lower the visibility bias."
+            }
+            ViewMode::GiRadianceClipmap => {
+                "Each level has a colour; dim means the level reaches the surface but no gathered probe does, which is where indirect light falls back to the far field."
+            }
+            ViewMode::GiSurfaceCache => {
+                "Magenta is a miss: a traced ray landing there returns black. Add cards to that geometry or raise the lookup radius."
+            }
+            ViewMode::GiDistanceField => {
+                "Blue is empty space, orange is inside geometry. A thin wall with no orange is thinner than the field's voxel and will leak."
+            }
+            ViewMode::GiCards => {
+                "A surface split between distant cards' colours is resolved to the wrong card; dark has no card in reach."
+            }
+            ViewMode::GiReflectionProbes => {
+                "Dark is outside every volume. A hard colour change across a wall is two volumes without blend distance."
+            }
+            _ => self.gi_how_to_read_traces(),
+        }
+    }
+
+    /// How to read the trace, denoiser and contribution views.
+    const fn gi_how_to_read_traces(self) -> &'static str {
+        match self {
+            ViewMode::GiScreenTrace => {
+                "Red regions trace the world instead, which costs more; at screen edges that is expected."
+            }
+            ViewMode::GiConfidence => {
+                "Red is light the resolve barely trusts; query the point to learn whether it is unconverged, missing probes, or occluded."
+            }
+            ViewMode::GiTier => {
+                "Hardware orange on a device without ray tracing, or green on one with it, means the tier selection is not what the platform profile asked for."
+            }
+            ViewMode::GiRayCount => {
+                "Bright regions are expensive; smooth surfaces spend more rays than rough ones by design."
+            }
+            ViewMode::GiDenoiserConfidence => {
+                "Red away from moving objects means history is being rejected by the reprojection, and the image there is noisier."
+            }
+            ViewMode::GiDisocclusion => {
+                "Magenta should outline what moved. A whole magenta frame is a camera cut or a reset history."
+            }
+            ViewMode::GiIndirectDiffuse => {
+                "Compare with the lit view: a surface dark here and lit there is lit only directly."
+            }
+            ViewMode::GiIndirectSpecular => {
+                "Rough surfaces should be soft and smooth ones sharp; a smooth surface that is soft is reading the cache instead of a traced ray."
+            }
+            ViewMode::GiEmissive => {
+                "Bright around a small emitter means it was promoted to a light; a large dim panel lights through the indirect views instead."
+            }
+            _ => "",
         }
     }
 }

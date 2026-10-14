@@ -469,7 +469,18 @@ float gpVisibilityWeight(uint probe, float3 position, float3 query) {
     if (span > expected + slack) {
         return 0.0f;
     }
-    return gpClamp((expected + slack - span) / max(slack, 1.0e-4f), 0.0f, 1.0f);
+    float visible = gpClamp((expected + slack - span) / max(slack, 1.0e-4f), 0.0f, 1.0f);
+    // Every axis the query lies well along must reach it on its own (the host's comment says why).
+    for (uint axis = 0u; axis < 6u; ++axis) {
+        const float cosine = dot(kGpAxes[axis], direction);
+        if (cosine < 0.5f) {
+            continue;
+        }
+        const float along = span * cosine;
+        visible = min(visible, gpClamp((distances[axis] + slack - along) / max(slack, 1.0e-4f),
+                                       0.0f, 1.0f));
+    }
+    return visible;
 }
 
 /// The window cell of a level that holds `cell`, toroidally addressed, or none outside the window.

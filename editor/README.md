@@ -309,8 +309,10 @@ probe views.
 `CY_BUILD` names the tool, or it is found as `build/<profile>/tools/build/cy_build` walking up from
 the project. `viewport.view-mode.lightmap-density` requests the engine's `LightmapDensity` debug view,
 which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); `viewport.view-mode.gi-probes`
-requests `GiProbes`, which no frame draws yet. Like every debug view, the editor-hosted runtime does
-not draw them yet, and it loads no cooked lightmap.
+and the eighteen other `viewport.view-mode.gi-*` commands request the engine's GI debug views
+(`src/rendering/gi/README.md`), and `viewport.view-mode.lightmap-charts` the chart view; the engine's
+frame draws them all. Like every debug view, the editor-hosted runtime does not draw them yet, and
+it loads no cooked lightmap.
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.

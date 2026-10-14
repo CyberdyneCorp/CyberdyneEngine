@@ -162,6 +162,9 @@ private:
     FogMedium medium_{};
     FogFrame frame_{};
     FogConstants constants_{};
+    /// The indirect grid's words (`pack_fog_indirect`), uploaded after the constant block when the
+    /// frame's light names a grid. Empty otherwise, and then nothing after the block is written.
+    Array<Vec4> indirect_words_;
     bool framed_ = false;
 
     rhi::ShaderModuleHandle shader_;

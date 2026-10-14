@@ -161,6 +161,12 @@ struct TracingDiagnostics {
     u32 budget_refusals = 0;
     u32 sky_answers = 0;
     u32 cache_misses = 0;
+    /// Screen rays the screen tier answered with any confidence. Over `screen_rays`, the hit rate.
+    u32 screen_hits = 0;
+    /// Wall time inside the screen tier and inside the world tiers, in nanoseconds. What the
+    /// illumination profile's trace stages are made of (diagnostics.h).
+    u64 screen_ns = 0;
+    u64 world_ns = 0;
 };
 
 /// The one interface.
@@ -182,6 +188,7 @@ public:
     /// The screen tier. Both may be null on a view that has no colour history — a probe gather, for
     /// instance, which has no screen at all.
     void set_screen(const ScreenView* view) noexcept { screen_ = view; }
+    [[nodiscard]] const ScreenView* screen() const noexcept { return screen_; }
     void set_software(const SoftwareTracer* tracer) noexcept { software_ = tracer; }
     void set_hardware(const HardwareTracer* tracer) noexcept { hardware_ = tracer; }
 

@@ -13,7 +13,7 @@ cy_add_module(
     LAYER rendering
     ALIAS cy::rendering-lightmaps
     TYPE STATIC
-    SOURCES src/lightmap_textures.cpp
+    SOURCES src/gi_debug_overlay.cpp src/lightmap_textures.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::servers-render for `render::DebugViewMode`, which the public header's
     # `write_lightmap_debug_view` takes: named here rather than reached through the pipeline.

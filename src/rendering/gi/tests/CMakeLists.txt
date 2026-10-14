@@ -38,6 +38,17 @@
 #   render_gi_screen    the per-pixel resolve and its denoiser (issue #35, stage 4): the host
 #                       oracle the device transcribes, and the frame's quality bars against the
 #                       path tracer, a 10 cm wall, a moving light and a still view.
+#   render_gi_classes   illumination classes of moving objects: the derivation and override, a
+#                       projectile that invalidates nothing, a vehicle whose invalidation is
+#                       amortised, a character's proxy against the path tracer, and a crowd's
+#                       coarse proxies.
+#   render_gi_media     transparency and participating media: the staging table, thin
+#                       transmission and the medium's indirect grid against the path tracer, and the
+#                       deferred features refused by name.
+#   render_gi_diagnostics  the point and region queries, the darkness causes, the leak suspects,
+#                       and the per-frame profile with its attribution.
+#   render_gi_debug_views  the nineteen GI debug views, each against a committed golden image
+#                       (`references/`), compiled with tests/render/golden.cpp for the PNG codec.
 set_property(GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 function(cy_render_gi_declare_tests)
@@ -130,6 +141,36 @@ function(cy_render_gi_declare_tests)
         KIND integration
         SOURCES "${tests_dir}/test_gi_volume_system.cpp"
         DEPENDENCIES cy::rendering-gi)
+
+    cy_add_test(
+        NAME render_gi_classes
+        KIND integration
+        SOURCES "${tests_dir}/test_classes.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    cy_add_test(
+        NAME render_gi_media
+        KIND integration
+        SOURCES "${tests_dir}/test_media.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    cy_add_test(
+        NAME render_gi_diagnostics
+        KIND integration
+        SOURCES "${tests_dir}/test_diagnostics.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    cy_add_test(
+        NAME render_gi_debug_views
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_debug_views.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-gi cy::servers-render)
+    target_include_directories(cy_test_integration_render_gi_debug_views
+                               PRIVATE "${CMAKE_SOURCE_DIR}/tests/render")
+    target_compile_definitions(cy_test_integration_render_gi_debug_views
+                               PRIVATE CY_GI_TEST_DIR="${tests_dir}")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_render_gi_declare_tests)

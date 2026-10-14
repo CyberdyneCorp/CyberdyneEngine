@@ -122,11 +122,23 @@ one. `render.volumetric_fog` requires both frames byte-identical.
 | `render.volumetric_fog` | (a) off byte-identical to `tests/references/volumetric_fog_off.png`, drawn by main's frame shader before it was regenerated; (b) an empty medium byte-identical to off, every froxel exactly one and zero; (c) of the open-air froxels the map covers, the 3674 wholly in an occluder's shadow all scatter under a tenth of the sun and the 59339 wholly in the open all over nine tenths; (d) the device's volume against the single-scattering integral (worst 8.2e-4) and the host march (3.8e-5); (e) a floor through an absorbing fog keeps 0.64 near and 0.32 far, no channel brighter; (f) the table variant against the host march over a table the processor built (7.1e-5). Each case was proved red by a mutation: `openspec/changes/add-volumetric-fog/evidence/falsification.txt` |
 | `unit.render_forward` | the stage between the shadow pass and the opaque pass, its declared read, and its refusals |
 
+## Indirect light from the radiance cache
+
+`FogLight::indirect` names a `FogIndirect`: a regular world-space grid of the radiance cache's mean
+radiance (`gi::IlluminationSystem::media_indirect` builds one), which the march reads trilinearly,
+clamped at its edges, in place of `ambient_radiance` — so `sigma_s` times the cache's light is
+scattered where the cache says it is. Its words follow the constant block in the same buffer
+(`pack_fog_indirect`, at most `kMaxFogIndirectPoints`), and `words[9].w` says they are there; with no
+grid nothing after the block is written and the march is the arithmetic it was.
+`integration.rendering_fog_march` holds a flat grid byte for byte to the ambient march and the march
+to the single-scattering integral read through a varying one; `render.volumetric_fog` (g) holds the
+device to the host march (8800 froxels, worst 2.3e-5) over a grid sampled from a converged cache.
+
 ## What is not here
 
-Temporal reprojection and a filter pass (above). Indirect light from the radiance cache: the ambient
-term is the frame's own ambient radiance, and `rendering-global-illumination`'s radiance cache is not
-read. Punctual and spot lights in the medium: only the directional sun is marched, so the
+Temporal reprojection and a filter pass (above). The frame's assembly does not yet hand the march a
+radiance-cache grid — the per-pixel GI of issue #35 stage 4 reaches the forward frame, not the fog — so a
+frame's fog is lit by its ambient term unless the caller sets `FogLight::indirect`. Punctual and spot lights in the medium: only the directional sun is marched, so the
 requirement's spot-light shaft scenario is met by the sun's. Arbitrary density functions: the height
 fog is the one density function. Particles and trails, which are drawn by their own shaders and
 read no volume; the frame's transparent surfaces are drawn by the same forward fragment as its

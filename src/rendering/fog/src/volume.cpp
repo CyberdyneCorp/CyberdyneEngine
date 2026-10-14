@@ -129,10 +129,16 @@ struct AirStretch {
     return stretch;
 }
 
-[[nodiscard]] Vec3 source_term(const MediumSample& medium, const FogLight& light,
-                               f32 visibility) noexcept {
+[[nodiscard]] Vec3 source_term(const MediumSample& medium, const FogLight& light, f32 visibility,
+                               Vec3 world) noexcept {
+    const Vec3 ambient = light.indirect != nullptr ? fog_indirect_at(*light.indirect, world)
+                                                   : light.ambient_radiance;
     return (cwise_mul(medium.sun_scattering, light.sun_illuminance) * visibility) +
-           cwise_mul(medium.scattering, light.ambient_radiance) + medium.emission;
+           cwise_mul(medium.scattering, ambient) + medium.emission;
+}
+
+[[nodiscard]] u32 grid_points(const FogIndirect& grid) noexcept {
+    return grid.dimensions[0] * grid.dimensions[1] * grid.dimensions[2];
 }
 
 }  // namespace
@@ -201,7 +207,7 @@ Expected<FogConstants, Error> pack_fog_constants(const FogSettings& settings, co
     w[6] = word(view.world_offset, static_cast<f32>(count));
     w[7] = word(normalize(light.to_sun), shadow.enabled ? 1.0F : 0.0F);
     w[8] = word(light.sun_illuminance, 0.0F);
-    w[9] = word(light.ambient_radiance, 0.0F);
+    w[9] = word(light.ambient_radiance, light.indirect != nullptr ? 1.0F : 0.0F);
     for (u32 row = 0; row < 4; ++row) {
         w[10 + row] = shadow.relative_to_uv.row(row);
     }
@@ -219,6 +225,56 @@ Expected<FogConstants, Error> pack_fog_constants(const FogSettings& settings, co
         v[3] = word(fog.emission, fog.anisotropy);
     }
     return constants;
+}
+
+Vec3 fog_indirect_at(const FogIndirect& grid, Vec3 world) noexcept {
+    if (grid_points(grid) == 0U || grid.radiance.size() != grid_points(grid)) {
+        return Vec3{0.0F, 0.0F, 0.0F};
+    }
+    u32 low[3];
+    u32 high[3];
+    f32 t[3];
+    const Vec3 local = (world - grid.origin) / math::max(grid.spacing, 1e-6F);
+    for (u32 axis = 0; axis < 3; ++axis) {
+        const f32 last = static_cast<f32>(grid.dimensions[axis] - 1U);
+        const f32 coordinate = math::clamp(local[axis], 0.0F, last);
+        const f32 floor = std::floor(coordinate);
+        low[axis] = static_cast<u32>(floor);
+        high[axis] = math::min(low[axis] + 1U, grid.dimensions[axis] - 1U);
+        t[axis] = coordinate - floor;
+    }
+    const auto at = [&](u32 x, u32 y, u32 z) {
+        return grid
+            .radiance[(((static_cast<usize>(z) * grid.dimensions[1]) + y) * grid.dimensions[0]) +
+                      x];
+    };
+    const auto mix = [](Vec3 a, Vec3 b, f32 f) { return a + ((b - a) * f); };
+    const Vec3 x00 = mix(at(low[0], low[1], low[2]), at(high[0], low[1], low[2]), t[0]);
+    const Vec3 x10 = mix(at(low[0], high[1], low[2]), at(high[0], high[1], low[2]), t[0]);
+    const Vec3 x01 = mix(at(low[0], low[1], high[2]), at(high[0], low[1], high[2]), t[0]);
+    const Vec3 x11 = mix(at(low[0], high[1], high[2]), at(high[0], high[1], high[2]), t[0]);
+    return mix(mix(x00, x10, t[1]), mix(x01, x11, t[1]), t[2]);
+}
+
+Status pack_fog_indirect(const FogIndirect& grid, Span<Vec4> words) noexcept {
+    const u32 points = grid_points(grid);
+    if (points == 0U || points > kMaxFogIndirectPoints || grid.radiance.size() != points ||
+        !(grid.spacing > 0.0F)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "volumetric fog: the indirect grid is empty, larger than the constant block "
+                    "holds, of a different length from its dimensions, or has no spacing");
+    }
+    if (words.size() < kFogIndirectHeaderWords + points) {
+        return fail(ErrorCode::InvalidArgument,
+                    "volumetric fog: the words span is too short for the indirect grid");
+    }
+    words[0] = word(grid.origin, grid.spacing);
+    words[1] = Vec4{static_cast<f32>(grid.dimensions[0]), static_cast<f32>(grid.dimensions[1]),
+                    static_cast<f32>(grid.dimensions[2]), 0.0F};
+    for (u32 index = 0; index < points; ++index) {
+        words[kFogIndirectHeaderWords + index] = word(grid.radiance[index], 0.0F);
+    }
+    return ok();
 }
 
 FogTextureExtent fog_texture_extent(const FroxelVolume& volume) noexcept {
@@ -349,7 +405,8 @@ Status integrate_fog_column(const FogSettings& settings, const FogView& view, co
             const MediumSample sample =
                 sample_medium(medium, point + view.world_offset, cos_to_sun);
             const f32 visibility = fog_shadow_visibility(shadow, map, point);
-            const Vec3 source = source_term(sample, light, visibility) + stretch.source;
+            const Vec3 source =
+                source_term(sample, light, visibility, point + view.world_offset) + stretch.source;
             // `integrate_froxel` per channel: the fog's grey extinction plus the air's.
             for (u32 channel = 0; channel < 3; ++channel) {
                 const ScatteringStep next = integrate_froxel(
@@ -384,7 +441,8 @@ FogAtPoint single_scattering_reference(const FogView& view, const FogLight& ligh
         const f64 along = (static_cast<f64>(index) + 0.5) * ds;
         const Vec3 point = view.eye + (unit * static_cast<f32>(along));
         const MediumSample sample = sample_medium(medium, point + view.world_offset, cos_to_sun);
-        const Vec3 source = source_term(sample, light, fog_shadow_visibility(shadow, map, point));
+        const Vec3 source = source_term(sample, light, fog_shadow_visibility(shadow, map, point),
+                                        point + view.world_offset);
         const f64 half = static_cast<f64>(sample.extinction) * ds * 0.5;
         const f64 carried = std::exp(-(optical_depth + half));
         radiance[0] += carried * static_cast<f64>(source.x) * ds;

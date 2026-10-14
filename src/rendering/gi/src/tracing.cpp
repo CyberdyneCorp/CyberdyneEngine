@@ -1,5 +1,6 @@
 #include <cy/rendering/gi/tracing.h>
 
+#include <cy/core/jobs/types.h>
 #include <cy/core/math/scalar.h>
 
 #include <algorithm>
@@ -278,7 +279,12 @@ RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance
     RadianceSample screen;
     if (screen_view != nullptr) {
         diagnostics_.screen_rays += 1;
+        const i64 started = jobs::monotonic_now_ns();
         screen = ScreenTracer::trace(*screen_view, origin, unit, reach);
+        diagnostics_.screen_ns += static_cast<u64>(jobs::monotonic_now_ns() - started);
+        if (screen.confidence > 0.0F) {
+            diagnostics_.screen_hits += 1;
+        }
         if (screen.confidence >= config_.escalation_threshold) {
             // "WHEN a screen trace hits with high confidence THEN no world trace SHALL be issued."
             return screen;
@@ -301,6 +307,7 @@ RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance
 
     SceneHit hit;
     RadianceSample world;
+    const i64 started = jobs::monotonic_now_ns();
     if (tier == RadianceSource::HardwareTrace) {
         diagnostics_.hardware_rays += 1;
         (void)hardware_->trace(origin, unit, reach, hit);
@@ -310,6 +317,7 @@ RadianceSample TieredTracer::trace(Vec3 origin, Vec3 direction, f32 max_distance
         (void)software_->trace(origin, unit, reach, hit);
         world = software_->radiance(hit, config_.sky, unit);
     }
+    diagnostics_.world_ns += static_cast<u64>(jobs::monotonic_now_ns() - started);
     if (world.source == RadianceSource::Sky) {
         diagnostics_.sky_answers += 1;
     } else if (world.confidence < 0.3F * kSoftwareBaseConfidence) {

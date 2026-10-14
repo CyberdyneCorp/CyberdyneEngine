@@ -77,6 +77,28 @@ struct FogView {
 [[nodiscard]] FogView fog_view_from(const Mat4& relative_to_view, f32 fov_y_radians, f32 aspect,
                                     Vec3 eye, Vec3 world_offset) noexcept;
 
+/// LOW-FREQUENCY INDIRECT LIGHT FROM THE RADIANCE CACHE, on a regular grid in WORLD space:
+/// point (x, y, z) at `origin + spacing * (x, y, z)`, x fastest. `rendering-global-illumination`'s
+/// "Volumetric fog SHALL receive indirect radiance from the radiance cache rather than computing
+/// its own indirect term": `gi::IlluminationSystem::media_indirect` fills one, and the march then
+/// scatters `sigma_s` times the grid's radiance, interpolated trilinearly and clamped at its edges,
+/// in place of `ambient_radiance`. The grid is the isotropic mean radiance, so the phase function
+/// integrates it to itself.
+struct FogIndirect {
+    Vec3 origin{0.0F, 0.0F, 0.0F};
+    f32 spacing = 1.0F;
+    u32 dimensions[3] = {0, 0, 0};
+    /// `dimensions[0] * dimensions[1] * dimensions[2]` mean radiances.
+    Span<const Vec3> radiance;
+};
+
+/// The most grid points the device's constant block holds.
+inline constexpr u32 kMaxFogIndirectPoints = 4096;
+
+/// The grid's radiance at a world point: trilinear between the eight points around it, the
+/// coordinate clamped to the grid, each lerp written `a + (b - a) t` as the shader writes it.
+[[nodiscard]] Vec3 fog_indirect_at(const FogIndirect& grid, Vec3 world) noexcept;
+
 /// The light the medium is lit by, in the frame's own radiance units: whatever the surfaces around
 /// the fog are shaded with, so the fog is lit consistently with them.
 struct FogLight {
@@ -87,6 +109,9 @@ struct FogLight {
     /// The ambient radiance the frame's surfaces are lit by, taken as isotropic: the medium
     /// scatters `sigma_s * ambient` of it toward the eye.
     Vec3 ambient_radiance{0.0F, 0.0F, 0.0F};
+    /// The radiance cache's indirect light, which replaces `ambient_radiance` where given. Null —
+    /// the default — is the medium lit as it always was.
+    const FogIndirect* indirect = nullptr;
 };
 
 /// The directional shadow map as the march reads it. Absent (`enabled` false), every point is lit.
@@ -127,6 +152,16 @@ inline constexpr u32 kFogHeaderTexels = 6;
 struct FogConstants {
     Vec4 words[kFogConstantWords] = {};
 };
+
+/// The indirect grid's words, which follow the constant block in the same buffer: (origin,
+/// spacing), (dimensions, 0), then one (radiance, 0) per point. `words[9].w` of the block is one
+/// when they are present.
+inline constexpr u32 kFogIndirectHeaderWords = 2;
+inline constexpr u32 kFogIndirectWords = kFogIndirectHeaderWords + kMaxFogIndirectPoints;
+
+/// Write `grid` as the march reads it. Refuses an empty grid, one with more than
+/// `kMaxFogIndirectPoints` points, a radiance span of another length, or a non-positive spacing.
+[[nodiscard]] Status pack_fog_indirect(const FogIndirect& grid, Span<Vec4> words) noexcept;
 
 /// The block for one frame. Refuses a volume too small to hold its header (fewer than three
 /// columns), no slices, no sub-steps, or a non-positive depth range.

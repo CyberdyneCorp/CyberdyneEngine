@@ -249,10 +249,51 @@ enum class DebugViewMode : u8 {
     /// the atlas gives it against the level's target. Drawn by the forward frame
     /// (`lightmaps::write_lightmap_density_view`).
     LightmapDensity,
-    /// The irradiance volumes' probes, at their positions, in the light the lightmap bake captured
-    /// (`lightmap_bake/probes.h`). Requestable, so the editor can ask for it; no frame draws it
-    /// yet, and the editor's lighting panel shows the captured probes meanwhile.
+    /// The radiance cache's probes at their positions, green valid and red invalid. Drawn by
+    /// `gi::render_gi_debug_view` (`gi/debug_views.h`) and composited by the forward frame as an
+    /// overlay (`pipeline::kGiDebugOverlayView`); every `Gi*` mode below is drawn the same way and
+    /// its name is the `gi::GiDebugView`'s.
     GiProbes,
+    /// Every lightmapped surface coloured by the atlas rectangle (chart) it samples, with its
+    /// texel grid. Drawn by the forward frame (`lightmaps::write_lightmap_debug_view`).
+    LightmapCharts,
+    /// The probes in their mean irradiance.
+    GiProbeIrradiance,
+    /// The probes from just gathered (green) to the age cap (red).
+    GiProbeAge,
+    /// The probes from settled (green) to still moving (red).
+    GiProbeError,
+    /// Each surface by how much of its probe weight comes from probes the field says cannot see
+    /// it — leak suspects, drawn as red discs.
+    GiProbeVisibility,
+    /// The radiance clipmap level covering each surface, dimmed where no probe is resident.
+    GiRadianceClipmap,
+    /// The surface cache's radiance at each surface; magenta where the lookup misses.
+    GiSurfaceCache,
+    /// A horizontal slice of the distance field, banded by distance.
+    GiDistanceField,
+    /// The GI card each surface resolves to.
+    GiCards,
+    /// The reflection probe influence volume each surface is in, mixed with its capture.
+    GiReflectionProbes,
+    /// The screen tier's hit (green, by confidence) or miss (red).
+    GiScreenTrace,
+    /// The resolved indirect diffuse's confidence.
+    GiConfidence,
+    /// The tier that answered each pixel's illumination query.
+    GiTier,
+    /// Hardware, software and screen rays each pixel's reflection spent, as red, green and blue.
+    GiRayCount,
+    /// The history confidence the denoiser was handed.
+    GiDenoiserConfidence,
+    /// Where the reprojection failed.
+    GiDisocclusion,
+    /// The indirect diffuse alone.
+    GiIndirectDiffuse,
+    /// The indirect specular alone.
+    GiIndirectSpecular,
+    /// The emissive contribution alone.
+    GiEmissive,
     Count,
 };
 
