@@ -918,7 +918,8 @@ CY_TEST_CASE("with no rule, classification under rules is the measurement's, bit
 }
 
 CY_TEST_CASE(
-    "an emitter rule promotes a large emitter, keeps a bright one in the cache or switches one off, "
+    "an emitter rule promotes a large emitter, keeps a bright one in the cache or switches one "
+    "off, "
     "and every watt is still accounted for") {
     const std::vector<Surfel> cards = four_emitters();
     const EmitterRule rules[] = {
@@ -954,9 +955,9 @@ CY_TEST_CASE(
     CY_CHECK_EQ(report.promoted_emitters, 1U);
     CY_CHECK_EQ(report.cached_emitters, 2U);
     CY_CHECK_NEAR_REL(report.disabled_power, ruled.record(kLampInstance).power, 1.0e-6F);
-    CY_CHECK_NEAR_REL(report.cached_power + report.promoted_power + report.demoted_power +
-                          report.disabled_power,
-                      report.total_power, 1.0e-6F);
+    CY_CHECK_NEAR_REL(
+        report.cached_power + report.promoted_power + report.demoted_power + report.disabled_power,
+        report.total_power, 1.0e-6F);
     CY_CHECK_EQ(report.clamped_power, 0.0F);
 }
 
@@ -1004,9 +1005,24 @@ CY_TEST_CASE(
     const Vec3 lit = floor_direct();
     const u64 changed_before = system.scene().invalidation_count(InvalidationCause::LightChanged);
 
+    // Every page's gathered light, to hold the rule to changing nothing it does not name.
+    std::vector<Vec3> gathered;
+    for (const SurfacePage& page : system.surfaces().pages()) {
+        gathered.push_back(page.accumulated);
+    }
+    const u64 ingested = system.scene().invalidation_count(InvalidationCause::CellIngested);
+
     const EmitterRule off{kLampInstance, kAnyEmitter, EmitterOverride::Off};
     CY_REQUIRE(system.set_emitter_rules({&off, 1}, 10).has_value());
     CY_CHECK(system.emitters().lights().empty());
+    // In place: no cell was ingested again and no page lost what it gathered — the room does not
+    // flicker while the lamp goes out. (Evicting and ingesting the cell, the first version, filed
+    // a CellIngested record over the whole room and started every page from nothing.)
+    CY_CHECK_EQ(system.scene().invalidation_count(InvalidationCause::CellIngested), ingested);
+    CY_REQUIRE_EQ(system.surfaces().pages().size(), gathered.size());
+    for (usize index = 0; index < gathered.size(); ++index) {
+        CY_CHECK_EQ(system.surfaces().pages()[index].accumulated.x, gathered[index].x);
+    }
     CY_CHECK_EQ(system.emitters().report().disabled_emitters, 1U);
     CY_CHECK_GT(system.scene().invalidation_count(InvalidationCause::LightChanged), changed_before);
     CY_CHECK_EQ(system.surfaces().page_count(), pages);
@@ -1025,4 +1041,70 @@ CY_TEST_CASE(
     CY_CHECK_EQ(restored.y, lit.y);
     CY_CHECK_EQ(restored.z, lit.z);
     CY_CHECK(system.scene().cell_resident(8));
+}
+
+CY_TEST_CASE(
+    "switching off an emitter the cache carries takes its emission out of its own cards and "
+    "invalidates what they light as a material change, not a cell ingest") {
+    using cy::rendering::gi::FrameContext;
+    using cy::rendering::gi::IlluminationSystem;
+    using cy::rendering::gi::InvalidationCause;
+    using cy::rendering::gi::InvalidationRecord;
+    using cy::rendering::gi::SurfacePage;
+
+    IlluminationSystem system;
+    CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
+    const std::vector<Surfel> cards = with_panel(Vec3{3.0F, 3.0F, 3.0F});
+    const Aabb bounds = Aabb::from_min_max(Vec3{-3.0F, -2.0F, -3.0F}, Vec3{3.0F, 2.0F, 3.0F});
+    CY_REQUIRE(system.ingest_cell(7, bounds, {cards.data(), cards.size()}, 1).has_value());
+    // The sign stays in the cache whatever its measurement says.
+    const EmitterRule cached{kAnyEmitter, kPanelInstance, EmitterOverride::CacheOnly};
+    CY_REQUIRE(system.set_emitter_rules({&cached, 1}, 2).has_value());
+    CY_REQUIRE(system.emitters().lights().empty());
+
+    const std::vector<GiLight> placed = gi_support::room_lights();
+    FrameContext frame;
+    frame.lights = {placed.data(), placed.size()};
+    for (u64 index = 3; index < 7; ++index) {
+        frame.frame = index;
+        (void)system.update(frame);
+    }
+    const auto panel_emission = [&system]() {
+        f32 total = 0.0F;
+        u32 panel_pages = 0;
+        for (const SurfacePage& page : system.surfaces().pages()) {
+            if (page.live && page.instance_id == kPanelInstance) {
+                total += page.emission.x;
+                ++panel_pages;
+            }
+        }
+        CY_REQUIRE_EQ(panel_pages, 9U);
+        return total;
+    };
+    CY_REQUIRE_EQ(panel_emission(), 27.0F);
+    system.scene().clear_invalidations();
+    const u64 ingested = system.scene().invalidation_count(InvalidationCause::CellIngested);
+    const u64 materials = system.scene().invalidation_count(InvalidationCause::MaterialChanged);
+
+    const EmitterRule off{kAnyEmitter, kPanelInstance, EmitterOverride::Off};
+    CY_REQUIRE(system.set_emitter_rules({&off, 1}, 10).has_value());
+    CY_CHECK_EQ(panel_emission(), 0.0F);
+    CY_CHECK_EQ(system.emitters().report().disabled_emitters, 1U);
+    // One material change over the sign and what it reaches, filed against the sign's cell; the
+    // cell is not ingested again.
+    CY_CHECK_EQ(system.scene().invalidation_count(InvalidationCause::CellIngested), ingested);
+    CY_CHECK_EQ(system.scene().invalidation_count(InvalidationCause::MaterialChanged),
+                materials + 1);
+    bool filed = false;
+    for (const InvalidationRecord& record : system.scene().invalidations()) {
+        if (record.cause == InvalidationCause::MaterialChanged) {
+            filed = record.source_id == 7 && record.frame == 10 &&
+                    record.region.contains(Vec3{0.0F, kHalf.y, 0.0F});
+        }
+    }
+    CY_CHECK(filed);
+
+    // Back in the cache: the sign's cards emit exactly what they did.
+    CY_REQUIRE(system.set_emitter_rules({&cached, 1}, 11).has_value());
+    CY_CHECK_EQ(panel_emission(), 27.0F);
 }

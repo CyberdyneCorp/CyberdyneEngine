@@ -200,4 +200,34 @@ if(CY_BUILD_TESTS)
             "CY_SWIFT_MODULE_G1=\"${CY_SWIFT_MODULE_G1}\""
             "CY_SWIFT_MODULE_G2=\"${CY_SWIFT_MODULE_G2}\"")
     add_dependencies(cy_test_integration_swift_reload cy_swift_reload_fixture)
+
+    # ISSUE #35: A SWIFT GAME DRIVES THE ENGINE'S GLOBAL ILLUMINATION, through CyberdyneKit alone, over
+    # a real `IlluminationSystem` behind the ABI 1.9 adapter. One generation, built at build time
+    # for the reason the reload fixture is.
+    set(CY_SWIFT_ILLUMINATION_DIR "${CMAKE_CURRENT_BINARY_DIR}/illumination")
+    set(CY_SWIFT_ILLUMINATION_MODULE "${CY_SWIFT_ILLUMINATION_DIR}/libCyGame_g0.so")
+    file(GLOB CY_SWIFT_ILLUMINATION_SOURCES CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/illumination/*.swift")
+    add_custom_command(
+        OUTPUT "${CY_SWIFT_ILLUMINATION_MODULE}"
+        COMMAND "${Python3_EXECUTABLE}" "${CY_SWIFT_DRIVER}"
+                --work "${CMAKE_CURRENT_BINARY_DIR}/illumination-build"
+                --out "${CY_SWIFT_ILLUMINATION_DIR}"
+                --configuration "${CY_SWIFT_CONFIGURATION}"
+                --generation "0=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/illumination"
+        DEPENDS "${CY_SWIFT_DRIVER}" "${CMAKE_CURRENT_SOURCE_DIR}/Package.swift"
+                ${CY_SWIFT_ILLUMINATION_SOURCES} ${CY_SWIFT_PACKAGE_SOURCES}
+        COMMENT "Building the Swift illumination fixture"
+        VERBATIM)
+    add_custom_target(cy_swift_illumination_fixture ALL
+                      DEPENDS "${CY_SWIFT_ILLUMINATION_MODULE}")
+    cy_add_test(
+        NAME swift_illumination
+        KIND integration
+        SOURCES tests/test_swift_illumination.cpp
+        DEPENDENCIES cy::abi cy::game-backend-illumination cy::ecs
+        DEFINITIONS "CY_SWIFT_ILLUMINATION_MODULE=\"${CY_SWIFT_ILLUMINATION_MODULE}\"")
+    target_include_directories(cy_test_integration_swift_illumination
+                               PRIVATE "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests")
+    add_dependencies(cy_test_integration_swift_illumination cy_swift_illumination_fixture)
 endif()

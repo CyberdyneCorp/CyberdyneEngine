@@ -224,6 +224,34 @@ phases, the argument checks and `struct_size` against a fake backend; the 1.8 ta
 layouts) and `integration.game_backend_lockstep` (two peers driven through the table agree on every
 tick; a peer that misses an order diverges).
 
+## What ABI 1.9 adds, and why
+
+Issue #35's API for a game. CyberGI could be tuned, given volumes, told what moves and asked what
+lit a point only from C++; a Swift game could do none of it. 1.9 appends ten `gi_*` entries, all
+reaching `cy::rendering::gi::IlluminationSystem` through `cy::abi::game::IlluminationBackend`
+(`include/cy/abi/game/illumination.h`), implemented by `cy::game_backend::IlluminationAdapter` in
+`src/game_backend/illumination/` — a module of its own, because it links CyberGI.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `gi_get_settings`, `gi_set_settings` | N U | `CyGiSettings`: mode, global quality and tier, `CY_GI_HARDWARE_RAY_TRACING`, the budget. A quality or tier change is recorded on every live probe in place; the hardware switch keeps its structures. A short struct reads its budget as zero and is refused |
+| `gi_volume_create`, `gi_volume_update`, `gi_volume_destroy` | N U | `CyGiVolumeDesc`: a box, priority, blend, weight, and the parameters `sets` names (`CY_GI_VOLUME_SETS_*`); a field whose bit is clear is ignored, never refused. A handle is a counter, never reused |
+| `gi_object_set_class`, `gi_object_class` | N U | `CyGiClass`; `AUTOMATIC` gives the class back to mobility and size. An entity the host did not bind with `bind_object` is NOT_FOUND |
+| `gi_emission_set` | N U | `CyGiEmission` for an entity, a material (`CY_NAME_HASH` of its name, registered with `add_material`) or both; the most specific rule wins and `AUTOMATIC` removes the pair's rule. Applied in place: a lamp put out darkens what it lit and nothing else of its cell |
+| `gi_sample_irradiance` | N U | `CyGiIrradiance`: `indirect_diffuse` at the point, or with a null normal the six-direction mean a body receives (`CY_GI_SAMPLE_OMNIDIRECTIONAL`) |
+| `gi_status` | N U | `CyGiStatus`: the tier, convergence, cost and allocation, volumes, objects, promoted lights and emitters of the last frame |
+
+ILLUMINATION IS PRESENTATION: every entry refuses a fixed step, so the simulation never depends on
+the light and a resimulated tick never changes it twice. A game that reacts to the light samples it
+in its frame update and acts in the next fixed step, as it acts on a click. The enumerations are the
+engine's value for value, asserted where both are named — the adapter.
+
+Tests: `unit.abi` (`test_game_illumination.cpp`: the phase rule, UNAVAILABLE with no GI, every
+enumerator and pointer check, `struct_size` both ways; `test_layout.cpp`: the 1.9 layouts; the 1.9
+table shape), `integration.game_backend_illumination` (the adapter over the GI suites' room: settings,
+volumes, classes, a lamp put out by entity and by material, the sample bit for bit the resolve's),
+and `integration.swift_illumination` (a real Swift module doing all of it through CyberdyneKit).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

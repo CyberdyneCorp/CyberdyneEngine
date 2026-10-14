@@ -174,8 +174,10 @@ final class IlluminationTests: XCTestCase {
         XCTAssertEqual(Seen.volume.weight, 0.75)
 
         var moved = description
-        moved.overrides = [.diffuseIntensity(0.5), .specularIntensity(2), .tier(.worldOnly),
-                           .probeDensity(3)]
+        moved.overrides = [
+            .diffuseIntensity(0.5), .specularIntensity(2), .tier(.worldOnly),
+            .probeDensity(3),
+        ]
         try volume.update(moved)
         XCTAssertEqual(Seen.updated, 7)
         XCTAssertEqual(

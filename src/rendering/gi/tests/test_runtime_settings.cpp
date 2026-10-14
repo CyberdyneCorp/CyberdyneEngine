@@ -28,6 +28,7 @@ using cy::u32;
 using cy::u64;
 using cy::Vec3;
 using cy::rendering::gi::FrameContext;
+using cy::rendering::gi::gi_volume_bit;
 using cy::rendering::gi::GiLight;
 using cy::rendering::gi::GiMode;
 using cy::rendering::gi::GiQuality;
@@ -35,7 +36,6 @@ using cy::rendering::gi::GiRuntimeSettings;
 using cy::rendering::gi::GiTierPreference;
 using cy::rendering::gi::GiVolume;
 using cy::rendering::gi::GiVolumeParameter;
-using cy::rendering::gi::gi_volume_bit;
 using cy::rendering::gi::IlluminationSettings;
 using cy::rendering::gi::IlluminationSystem;
 using cy::rendering::gi::Probe;
@@ -114,25 +114,39 @@ CY_TEST_CASE("the run-time settings start as the configured ones, and applying t
 
     configured.converge();
     applied.converge();
-    CY_CHECK_EQ(configured.system.radiance().probe_count(), applied.system.radiance().probe_count());
+    CY_CHECK_EQ(configured.system.radiance().probe_count(),
+                applied.system.radiance().probe_count());
     for (const auto& [point, normal] :
          {std::pair{kQuery, kUp}, std::pair{Vec3{2.0F, 0.0F, -3.9F}, Vec3{0.0F, 0.0F, 1.0F}}}) {
-        const Vec3 a = configured.system.indirect_diffuse(point, normal, SurfaceProperties{}).radiance;
+        const Vec3 a =
+            configured.system.indirect_diffuse(point, normal, SurfaceProperties{}).radiance;
         const Vec3 b = applied.system.indirect_diffuse(point, normal, SurfaceProperties{}).radiance;
         CY_CHECK_GT(a.y, 0.0F);
         check_same(a, b);
     }
 }
 
-CY_TEST_CASE("a global quality places every probe again at its ray scale, under any volume") {
+CY_TEST_CASE(
+    "a global quality is recorded on every probe in place, so the light does not drop, and a "
+    "volume still overrides it") {
     Room room;
     room.converge();
+    const u32 probes = room.system.radiance().probe_count();
+    const Vec3 before = room.system.indirect_diffuse(kQuery, kUp, SurfaceProperties{}).radiance;
     GiRuntimeSettings settings = room.system.runtime_settings();
     settings.quality = GiQuality::High;
     CY_REQUIRE(room.system.set_runtime_settings(settings).has_value());
     CY_CHECK_EQ(room.system.runtime_settings().quality, GiQuality::High);
-    // Every probe was retired: the next frame places them all again, at twice the rays.
-    CY_CHECK_EQ(room.system.radiance().probe_count(), 0U);
+    // No probe was placed again and none lost what it gathered: the same probes, and the same
+    // light, bit for bit, until they gather anew. (Retiring them, the first version, took the
+    // indirect light at a guard's spot from 2.149 to 0.001 for the frames they took to come back.)
+    CY_CHECK_EQ(room.system.radiance().probe_count(), probes);
+    check_same(room.system.indirect_diffuse(kQuery, kUp, SurfaceProperties{}).radiance, before);
+    for (const Probe& probe : room.system.radiance().probes()) {
+        if (probe.live) {
+            CY_CHECK_EQ(probe.ray_scale, 2.0F);
+        }
+    }
     FrameContext all = room.context(20);
     all.converged_mode = true;
     const auto report = room.system.update(all);
@@ -169,6 +183,25 @@ CY_TEST_CASE("a global quality places every probe again at its ray scale, under 
     }
     CY_CHECK_GT(inside, 0U);
     CY_CHECK_EQ(room.system.region_settings(Vec3{3.0F, 0.0F, 3.0F}).ray_scale, 2.0F);
+
+    // And a probe placed again under a volume that does not set the quality takes the global one:
+    // the volume's update rate, the world's rays.
+    GiVolume faster;
+    faster.bounds = Aabb::from_center_extents(Vec3{2.0F, 0.0F, 2.0F}, Vec3{1.5F, 1.5F, 1.5F});
+    faster.blend_distance_metres = 0.0F;
+    faster.sets = gi_volume_bit(GiVolumeParameter::UpdateRate);
+    faster.update_rate = 3.0F;
+    CY_REQUIRE(room.system.set_volumes({&faster, 1}).has_value());
+    (void)room.system.update(room.context(22));
+    u32 replaced = 0;
+    for (const Probe& probe : room.system.radiance().probes()) {
+        if (probe.live && faster.bounds.contains(probe.position)) {
+            replaced += 1;
+            CY_CHECK_EQ(probe.update_rate, 3.0F);
+            CY_CHECK_EQ(probe.ray_scale, 2.0F);
+        }
+    }
+    CY_CHECK_GT(replaced, 0U);
 }
 
 CY_TEST_CASE("a global software-only tier keeps every ray off the hardware tier") {

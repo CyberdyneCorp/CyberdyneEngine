@@ -250,15 +250,16 @@ public:
     /// Apply a level's or a player's settings without reconfiguring. The mode takes effect at the
     /// next `update()`; hardware ray tracing switches the acceleration service's profile (its
     /// structures are kept); the budget is the allocation the next `update()` holds to. A change of
-    /// quality or tier retires every probe, because both are decided when a probe is placed, and the
-    /// next `update()` places them again at the new setting. A refused value changes nothing.
+    /// quality or tier retires every probe, because both are decided when a probe is placed, and
+    /// the next `update()` places them again at the new setting. A refused value changes nothing.
     [[nodiscard]] Status set_runtime_settings(const GiRuntimeSettings& settings) noexcept;
 
     /// Classify emitters under `rules` from now on (emissive.h's `EmitterRule`), and classify every
-    /// resident cell that has an emitter again: its promoted lights leave or arrive and the regions
-    /// they light are invalidated, as an emitter that streams in or out. Each such cell is evicted
-    /// and ingested from the cards `ingest_cell` was first given, so its pages converge again. A
-    /// refused rule changes nothing.
+    /// resident cell that has an emitter again, from the cards `ingest_cell` was first given, IN
+    /// PLACE: its cards and pages keep what they gathered and only their emission changes; its
+    /// promoted lights leave or arrive and the regions they light are invalidated, as an emitter
+    /// that streams in or out; a card whose cache emission changed invalidates what it lights as a
+    /// material change. A refused rule changes nothing.
     [[nodiscard]] Status set_emitter_rules(Span<const EmitterRule> rules, u64 frame) noexcept;
     [[nodiscard]] Span<const EmitterRule> emitter_rules() const noexcept {
         return emissive_.rules();
@@ -445,6 +446,8 @@ private:
     [[nodiscard]] Status park_object(const GiObjectDesc& desc, GiObject& entry) noexcept;
     [[nodiscard]] Status keep_emissive_cell(u64 cell, const Aabb& bounds,
                                             Span<const Surfel> surfels) noexcept;
+    struct EmissiveCell;
+    [[nodiscard]] Status reclassify_cell(const EmissiveCell& entry, u64 frame) noexcept;
     [[nodiscard]] Status leave_scene(GiObject& entry, u64 frame) noexcept;
     [[nodiscard]] Status enter_scene(GiObject& entry, u64 frame) noexcept;
 

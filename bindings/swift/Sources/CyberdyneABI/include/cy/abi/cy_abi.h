@@ -1399,12 +1399,12 @@ typedef uint64_t CyGiVolume;
 /* The indirect light arriving at a point. */
 typedef struct CyGiIrradiance {
     uint32_t struct_size;
-    uint32_t flags;      /* CY_GI_SAMPLE_* */
-    float radiance[3];   /* the mean cosine-weighted incoming indirect radiance, linear: the
-                          * engine's `indirect_diffuse`, which a surface multiplies by its albedo */
-    float luminance;     /* Rec. 709 luminance of `radiance` */
-    float confidence;    /* [0, 1]: how much of the answer the caches stood behind */
-    uint32_t source;     /* CyGiSource: the source that carried most of it */
+    uint32_t flags;    /* CY_GI_SAMPLE_* */
+    float radiance[3]; /* the mean cosine-weighted incoming indirect radiance, linear: the
+                        * engine's `indirect_diffuse`, which a surface multiplies by its albedo */
+    float luminance;   /* Rec. 709 luminance of `radiance` */
+    float confidence;  /* [0, 1]: how much of the answer the caches stood behind */
+    uint32_t source;   /* CyGiSource: the source that carried most of it */
 } CyGiIrradiance;
 
 /* What the GI did on the last frame. */
@@ -2017,8 +2017,7 @@ typedef struct CyInterface {
      * CY_ENTITY_NULL is every object; `material` is CY_NAME_HASH of a material's name, or 0 for
      * every material. The most specific rule decides; AUTOMATIC removes the rule for exactly that
      * pair. NOT_FOUND for an entity or material the host did not register. */
-    CyResult (*gi_emission_set)(CyEngine engine, CyEntity entity, uint64_t material,
-                                uint32_t mode);
+    CyResult (*gi_emission_set)(CyEngine engine, CyEntity entity, uint64_t material, uint32_t mode);
     /* [N U] The indirect light arriving at `position_xyz` about `normal_xyz`, or, with a null
      * normal, the mean over the six axis directions: what a body standing there receives. */
     CyResult (*gi_sample_irradiance)(CyEngine engine, const float* position_xyz,

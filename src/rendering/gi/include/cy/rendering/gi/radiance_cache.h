@@ -279,6 +279,13 @@ public:
     /// recorded on each probe are decided at placement. Returns how many.
     u32 retire_region(const Aabb& region) noexcept;
 
+    /// Record on every live probe what `volumes` (or nothing, when null) resolve to at it from
+    /// `global`: its update rate, ray scale and tier — the settings a probe records at placement —
+    /// keeping its position and everything it gathered. What a change of the GLOBAL quality or
+    /// tier does: no probe moves, so none is placed again and the light does not drop while they
+    /// gather anew. Returns how many probes changed.
+    u32 record_region_settings(const GiVolumeSet* volumes, const GiRegionSettings& global) noexcept;
+
     ProbeUpdateReport update(const ProbeUpdateContext& context) noexcept;
 
     // --- Queries ---------------------------------------------------------------------------------

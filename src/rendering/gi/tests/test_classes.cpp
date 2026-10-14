@@ -546,7 +546,8 @@ CY_TEST_CASE(
     CY_CHECK_EQ(room.system.proxy_spheres().size(), 1U);
 
     // A game marks it Static: its cards and its own field enter now, exactly the field it brought.
-    CY_REQUIRE(room.system.set_object_class(21, true, IlluminationClass::Static, frame).has_value());
+    CY_REQUIRE(
+        room.system.set_object_class(21, true, IlluminationClass::Static, frame).has_value());
     CY_CHECK_EQ(room.system.object(21)->klass, IlluminationClass::Static);
     CY_CHECK(room.system.scene().cell_resident(cell));
     CY_CHECK_EQ(room.system.field().placement_count(), placements + 1U);
@@ -563,7 +564,8 @@ CY_TEST_CASE(
     // Back to the derivation: out of the cell and the field now, invalidating where it stood, and a
     // proxy again.
     const u32 before = total_invalidations(room.system);
-    CY_REQUIRE(room.system.set_object_class(21, false, IlluminationClass::Static, frame).has_value());
+    CY_REQUIRE(
+        room.system.set_object_class(21, false, IlluminationClass::Static, frame).has_value());
     CY_CHECK_EQ(room.system.object(21)->klass, IlluminationClass::FastDynamic);
     CY_CHECK_FALSE(room.system.object(21)->has_class_override);
     CY_CHECK_FALSE(room.system.scene().cell_resident(cell));
@@ -582,8 +584,7 @@ CY_TEST_CASE(
     CY_CHECK(room.system.scene().cell_resident(cell));
 
     // Transient: recorded and nothing else.
-    CY_REQUIRE(room.system
-                   .set_object_class(21, true, IlluminationClass::TransientIgnored, frame)
+    CY_REQUIRE(room.system.set_object_class(21, true, IlluminationClass::TransientIgnored, frame)
                    .has_value());
     (void)room.system.update(room.context(frame++));
     CY_CHECK(room.system.proxy_spheres().empty());
@@ -648,8 +649,8 @@ CY_TEST_CASE("a scaled object's cards carry its scaled area, and a rigid one's a
     GiObjectDesc lamp;
     lamp.id = 5;
     lamp.local_bounds = Aabb::from_center_extents(Vec3{}, Vec3{0.5F, 0.05F, 0.5F});
-    lamp.transform = Mat4::from_translation(Vec3{0.0F, 1.5F, 0.0F}) *
-                     Mat4::from_scale(Vec3{0.3F, 1.0F, 0.3F});
+    lamp.transform =
+        Mat4::from_translation(Vec3{0.0F, 1.5F, 0.0F}) * Mat4::from_scale(Vec3{0.3F, 1.0F, 0.3F});
     lamp.surfels = {&glass, 1};
     CY_REQUIRE(system.add_object(lamp, 0).has_value());
     const u32 slot =

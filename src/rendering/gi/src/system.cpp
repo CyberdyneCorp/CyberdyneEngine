@@ -282,10 +282,11 @@ Status IlluminationSystem::set_runtime_settings(const GiRuntimeSettings& setting
     if (settings.quality != global_quality_ || settings.tier != global_tier_) {
         global_quality_ = settings.quality;
         global_tier_ = settings.tier;
-        // Both are recorded on a probe when it is placed, so every probe is placed again.
-        constexpr f32 kEverywhere = 1.0e9F;
-        (void)radiance_.retire_region(Aabb::from_min_max(
-            Vec3{-kEverywhere, -kEverywhere, -kEverywhere}, Vec3{kEverywhere, kEverywhere, kEverywhere}));
+        // Both are recorded on a probe at placement, and neither moves one: every live probe is
+        // told its new rays and tier in place, keeping what it gathered, so the light does not
+        // drop while the probes gather at the new setting.
+        (void)radiance_.record_region_settings(volumes_.empty() ? nullptr : &volumes_,
+                                               global_region());
     }
     return ok();
 }
@@ -296,19 +297,65 @@ Status IlluminationSystem::set_emitter_rules(Span<const EmitterRule> rules, u64 
     if (Status set = emissive_.set_rules(rules); !set) {
         return set;
     }
-    // Each cell with an emitter is classified again from the cards it came in with. The list is
-    // taken first: evicting and ingesting rewrites it.
-    Array<EmissiveCell> cells = std::move(emissive_cells_);
-    emissive_cells_ = Array<EmissiveCell>{};
     Status result = ok();
-    for (EmissiveCell& entry : cells) {
-        evict_cell(entry.cell, frame);
-        if (Status ingested = ingest_cell(entry.cell, entry.bounds, entry.surfels.span(), frame);
-            !ingested && result) {
-            result = ingested;
+    for (const EmissiveCell& entry : emissive_cells_) {
+        if (Status classified = reclassify_cell(entry, frame); !classified && result) {
+            result = classified;
         }
     }
     return result;
+}
+
+Status IlluminationSystem::reclassify_cell(const EmissiveCell& entry, u64 frame) noexcept {
+    // IN PLACE: the cell's cards and pages keep everything they gathered and only their emission
+    // changes, so a lamp put out darkens what it lit and nothing else of the cell flickers. Its
+    // promoted lights leave and arrive as a streamed emitter's do, invalidating what they light.
+    emissive_.evict(entry.cell);
+    invalidate_emitters(emissive_.last_changed(), frame);
+    if (Status classified = emissive_.ingest(entry.cell, entry.surfels.span(), cache_surfels_);
+        !classified) {
+        return classified;
+    }
+    invalidate_emitters(emissive_.last_changed(), frame);
+    if (Status emitted = scene_.set_cell_emission(entry.cell, cache_surfels_.span()); !emitted) {
+        return emitted;
+    }
+    // A card that now emits through the cache, or no longer does, changes the light it sends to
+    // what gathers it: that region is invalidated as a material change, attributed to the cell.
+    Aabb changed{};
+    bool any = false;
+    f32 strongest = 0.0F;
+    usize index = 0;
+    for (const CellPage& page : cell_pages_) {
+        if (page.cell != entry.cell || index >= cache_surfels_.size()) {
+            continue;
+        }
+        const Surfel& card = cache_surfels_[index++];
+        const Vec3 before = surfaces_.page(page.page).emission;
+        if (!surfaces_.set_emission(page.page, card.emission)) {
+            continue;
+        }
+        changed = any ? Aabb::from_min_max(cwise_min(changed.min, card.position),
+                                           cwise_max(changed.max, card.position))
+                      : Aabb::from_min_max(card.position, card.position);
+        any = true;
+        const Surfel& brightest = emission_luminance(before) > emission_luminance(card.emission)
+                                      ? entry.surfels[index - 1]
+                                      : card;
+        strongest = std::max(strongest, emitted_power(brightest));
+    }
+    if (any) {
+        GiLight reach;
+        reach.colour = Vec3{1.0F, 1.0F, 1.0F};
+        reach.intensity = strongest / math::kPi;
+        reach.emitter_area = 1.0F;
+        const f32 radius =
+            emitter_influence_radius(reach, settings_.emissive.invalidation_irradiance);
+        scene_.invalidate(Aabb::from_min_max(changed.min - Vec3{radius, radius, radius},
+                                             changed.max + Vec3{radius, radius, radius}),
+                          InvalidationCause::MaterialChanged, entry.cell, frame);
+    }
+    return ok();
 }
 
 bool IlluminationSystem::dynamic_enabled() const noexcept {
@@ -542,8 +589,8 @@ Status IlluminationSystem::leave_scene(GiObject& entry, u64 frame) noexcept {
     const u64 cell = object_cell_id(entry.id);
     if (entry.has_field) {
         entry.parked_distances.clear();
-        if (Status copied = field_.copy_placement(cell, entry.parked_dimension,
-                                                  entry.parked_bounds, entry.parked_distances);
+        if (Status copied = field_.copy_placement(cell, entry.parked_dimension, entry.parked_bounds,
+                                                  entry.parked_distances);
             !copied) {
             return copied;
         }
@@ -604,7 +651,8 @@ Status IlluminationSystem::commit_object(GiObject& entry, u64 frame) noexcept {
             normalized_or(transform_direction(entry.transform, local.normal), local.normal);
         // A scaled object's cards cover its scaled surface: their area, and with it an emitter's
         // power (emissive.h), is the world's, not the object space's.
-        const f32 area_scale = card_area_scale(entry.transform, normalized_or(local.normal, Vec3{}));
+        const f32 area_scale =
+            card_area_scale(entry.transform, normalized_or(local.normal, Vec3{}));
         if (std::fabs(area_scale - 1.0F) > kRigidAreaTolerance) {
             placed.area = local.area * area_scale;
         }

@@ -198,8 +198,8 @@ CY_TEST_CASE("a GI volume a script places overrides where it reaches, moves, and
     desc.diffuse_intensity = 0.5F;
     CY_REQUIRE_EQ(table().gi_volume_update(scene.engine(), volume, &desc), CY_RESULT_OK);
     CY_CHECK_EQ(scene.room.system.region_settings(kUnderLamp).diffuse_intensity, 1.0F);
-    CY_CHECK_EQ(
-        scene.room.system.region_settings(Vec3{-2.0F, -1.5F, -2.0F}).diffuse_intensity, 0.5F);
+    CY_CHECK_EQ(scene.room.system.region_settings(Vec3{-2.0F, -1.5F, -2.0F}).diffuse_intensity,
+                0.5F);
 
     // A box with no volume is the GI's to refuse, naming why, and changes nothing.
     CyGiVolumeDesc empty = volume_around(kUnderLamp, 0.0F);
@@ -254,8 +254,8 @@ CY_TEST_CASE(
     CY_REQUIRE(lit.luminance > 0.0F);
 
     // Off by entity: the lamp is no light, its emitter disabled, and the spot under it darker.
-    CY_REQUIRE_EQ(
-        table().gi_emission_set(scene.engine(), kLampEntity, 0, CY_GI_EMISSION_OFF), CY_RESULT_OK);
+    CY_REQUIRE_EQ(table().gi_emission_set(scene.engine(), kLampEntity, 0, CY_GI_EMISSION_OFF),
+                  CY_RESULT_OK);
     CyGiStatus status = scene.status();
     CY_CHECK_EQ(status.promoted_lights, 0U);
     CY_CHECK_EQ(status.disabled_emitters, 1U);
@@ -269,8 +269,7 @@ CY_TEST_CASE(
     // AUTOMATIC removes the rule: the lamp is back, and the spot as lit as it was — within the
     // converged GI's own movement from one update to the next, which over the same spot measured
     // 2.150, 2.158 and 2.228 on three successive convergences with nothing changed (3.6%).
-    CY_REQUIRE_EQ(table().gi_emission_set(scene.engine(), kLampEntity, 0,
-                                          CY_GI_EMISSION_AUTOMATIC),
+    CY_REQUIRE_EQ(table().gi_emission_set(scene.engine(), kLampEntity, 0, CY_GI_EMISSION_AUTOMATIC),
                   CY_RESULT_OK);
     CY_CHECK_EQ(scene.status().promoted_lights, 1U);
     scene.converge();
@@ -280,14 +279,13 @@ CY_TEST_CASE(
 
     // Off by material name, every lamp of that glass at once.
     const u64 glass = abi::game::name_hash("lamp-glass");
-    CY_REQUIRE_EQ(table().gi_emission_set(scene.engine(), CY_ENTITY_NULL, glass,
-                                          CY_GI_EMISSION_OFF),
-                  CY_RESULT_OK);
+    CY_REQUIRE_EQ(
+        table().gi_emission_set(scene.engine(), CY_ENTITY_NULL, glass, CY_GI_EMISSION_OFF),
+        CY_RESULT_OK);
     CY_CHECK_EQ(scene.status().promoted_lights, 0U);
     // The entity's own rule is more specific than the material's: promoting it wins back the lamp.
-    CY_REQUIRE_EQ(
-        table().gi_emission_set(scene.engine(), kLampEntity, 0, CY_GI_EMISSION_PROMOTE),
-        CY_RESULT_OK);
+    CY_REQUIRE_EQ(table().gi_emission_set(scene.engine(), kLampEntity, 0, CY_GI_EMISSION_PROMOTE),
+                  CY_RESULT_OK);
     CY_CHECK_EQ(scene.status().promoted_lights, 1U);
 
     CY_CHECK_EQ(table().gi_emission_set(scene.engine(), 0x5'0000'0001ULL, 0, CY_GI_EMISSION_OFF),
@@ -312,11 +310,11 @@ CY_TEST_CASE("the irradiance a script samples is the resolve's own answer") {
 
         // With no normal, the mean of the six axis answers.
         Vec3 sum{};
-        const Vec3 axes[6] = {Vec3{1, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0},
-                              Vec3{0, -1, 0}, Vec3{0, 0, 1}, Vec3{0, 0, -1}};
+        const Vec3 axes[6] = {Vec3{1, 0, 0},  Vec3{-1, 0, 0}, Vec3{0, 1, 0},
+                              Vec3{0, -1, 0}, Vec3{0, 0, 1},  Vec3{0, 0, -1}};
         for (const Vec3 axis : axes) {
-            sum = sum + scene.room.system.indirect_diffuse(at, axis, gi::SurfaceProperties{})
-                            .radiance;
+            sum = sum +
+                  scene.room.system.indirect_diffuse(at, axis, gi::SurfaceProperties{}).radiance;
         }
         const CyGiIrradiance omni = scene.sample(at, nullptr);
         CY_CHECK_EQ(omni.radiance[1], (sum * (1.0F / 6.0F)).y);

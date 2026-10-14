@@ -108,15 +108,19 @@ public enum Illumination {
         public var worldTier: GISource
         /// The least converged region, 0 to 1.
         public var convergence: Float
-        /// The GI's own cost on the last frame, and what it was allowed, in milliseconds.
+        /// The GI's own cost on the last frame, in milliseconds.
         public var measuredMilliseconds: Float
+        /// What the GI was allowed on the last frame, in milliseconds: the settings' budget.
         public var allocationMilliseconds: Float
-        /// GI volumes placed, objects registered, emitter cards lighting as lights.
+        /// GI volumes placed.
         public var volumes: UInt32
+        /// Objects the host registered with the GI.
         public var objects: UInt32
+        /// Emitter cards lighting the frame as lights rather than through the cache.
         public var promotedLights: UInt32
-        /// Emitters classified, and how many of them are switched off.
+        /// Emitters classified.
         public var emitters: UInt32
+        /// Emitters an emitter rule switched off.
         public var disabledEmitters: UInt32
         /// The frame the GI last ran.
         public var frame: UInt64
@@ -170,7 +174,8 @@ public enum Illumination {
     /// What the GI makes of `entity`'s emission: `.off` puts a lamp out, `.automatic` gives the
     /// decision back to its power and size. The rule for an entity beats a material's.
     public static func setEmission(_ mode: GIEmission, of entity: Entity) throws {
-        try GameServices.engine().giEmissionSet(entity: entity.bits, material: 0, mode: mode.rawValue)
+        try GameServices.engine().giEmissionSet(
+            entity: entity.bits, material: 0, mode: mode.rawValue)
     }
 
     /// What the GI makes of every emitter drawn with the material called `material`, or — with
@@ -191,7 +196,8 @@ public enum Illumination {
         let point = [position.x, position.y, position.z]
         try point.withUnsafeBufferPointer { point in
             try withOptionalBuffer(normal.map { [$0.x, $0.y, $0.z] }) { normal in
-                try engine.giSampleIrradiance(position: point.baseAddress, normal: normal, into: &raw)
+                try engine.giSampleIrradiance(
+                    position: point.baseAddress, normal: normal, into: &raw)
             }
         }
         return Irradiance(raw)
@@ -257,6 +263,7 @@ public struct GIVolume: Hashable, Sendable {
             self.weight = weight
         }
 
+        /// Two descriptions are equal when they place the same box with the same overrides.
         public static func == (lhs: Description, rhs: Description) -> Bool {
             lhs.bounds.min == rhs.bounds.min && lhs.bounds.max == rhs.bounds.max
                 && lhs.overrides == rhs.overrides && lhs.priority == rhs.priority

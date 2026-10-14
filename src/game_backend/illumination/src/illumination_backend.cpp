@@ -81,16 +81,17 @@ static_assert(gi::gi_volume_bit(gi::GiVolumeParameter::FarFieldDistance) ==
 }
 
 /// The six axis directions a body standing at a point is lit from.
-constexpr Vec3 kAxes[6] = {Vec3{1.0F, 0.0F, 0.0F},  Vec3{-1.0F, 0.0F, 0.0F},
-                           Vec3{0.0F, 1.0F, 0.0F},  Vec3{0.0F, -1.0F, 0.0F},
-                           Vec3{0.0F, 0.0F, 1.0F},  Vec3{0.0F, 0.0F, -1.0F}};
+constexpr Vec3 kAxes[6] = {Vec3{1.0F, 0.0F, 0.0F}, Vec3{-1.0F, 0.0F, 0.0F},
+                           Vec3{0.0F, 1.0F, 0.0F}, Vec3{0.0F, -1.0F, 0.0F},
+                           Vec3{0.0F, 0.0F, 1.0F}, Vec3{0.0F, 0.0F, -1.0F}};
 
 }  // namespace
 
 gi::GiVolume gi_volume_from_abi(const CyGiVolumeDesc& desc, u64 id) noexcept {
     gi::GiVolume volume;
-    volume.bounds = Aabb::from_min_max(Vec3{desc.bounds_min[0], desc.bounds_min[1], desc.bounds_min[2]},
-                                       Vec3{desc.bounds_max[0], desc.bounds_max[1], desc.bounds_max[2]});
+    volume.bounds =
+        Aabb::from_min_max(Vec3{desc.bounds_min[0], desc.bounds_min[1], desc.bounds_min[2]},
+                           Vec3{desc.bounds_max[0], desc.bounds_max[1], desc.bounds_max[2]});
     volume.priority = desc.priority;
     volume.blend_distance_metres = desc.blend_distance;
     volume.weight = desc.weight;
@@ -164,8 +165,7 @@ Status IlluminationAdapter::add_material(const char* name, u32 material_id) noex
     return materials_.push_back(Material{hash, material_id});
 }
 
-const IlluminationAdapter::BoundObject* IlluminationAdapter::bound(
-    CyEntity entity) const noexcept {
+const IlluminationAdapter::BoundObject* IlluminationAdapter::bound(CyEntity entity) const noexcept {
     for (const BoundObject& object : objects_) {
         if (object.entity == entity) {
             return &object;
@@ -286,8 +286,8 @@ CyResult IlluminationAdapter::set_object_class(CyEntity entity, u32 klass) noexc
                            "gi_object_set_class: the entity is not an object of the GI");
     }
     const bool automatic = klass == CY_GI_CLASS_AUTOMATIC;
-    const auto chosen = automatic ? gi::IlluminationClass::Static
-                                  : static_cast<gi::IlluminationClass>(klass);
+    const auto chosen =
+        automatic ? gi::IlluminationClass::Static : static_cast<gi::IlluminationClass>(klass);
     if (Status set = system_->set_object_class(object->object, !automatic, chosen, frame_); !set) {
         return refused(set.error());
     }

@@ -212,8 +212,7 @@ CyResult gi_sample_irradiance(CyEngine engine, const float* position_xyz, const 
                       "gi_sample_irradiance needs a finite position, and a finite normal or none");
     }
     const f32 position[3] = {position_xyz[0], position_xyz[1], position_xyz[2]};
-    return answer(out_irradiance,
-                  "gi_sample_irradiance needs an output with a valid struct_size",
+    return answer(out_irradiance, "gi_sample_irradiance needs an output with a valid struct_size",
                   [gi, &position, normal_xyz](CyGiIrradiance& whole) {
                       return gi->sample_irradiance(position, normal_xyz, whole);
                   });

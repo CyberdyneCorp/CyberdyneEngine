@@ -578,6 +578,30 @@ u32 RadianceCache::retire_region(const Aabb& region) noexcept {
     return count;
 }
 
+u32 RadianceCache::record_region_settings(const GiVolumeSet* volumes,
+                                          const GiRegionSettings& global) noexcept {
+    u32 count = 0;
+    for (Probe& entry : probes_) {
+        if (!entry.live) {
+            continue;
+        }
+        const GiRegionSettings region = volumes != nullptr && !volumes->empty()
+                                            ? volumes->resolve(entry.position, global)
+                                            : global;
+        if (entry.update_rate == region.update_rate && entry.ray_scale == region.ray_scale &&
+            entry.tier == region.tier) {
+            continue;
+        }
+        entry.update_rate = region.update_rate;
+        entry.ray_scale = region.ray_scale;
+        entry.tier = region.tier;
+        // A host change to the probe, as every other is: a gather in flight for it is dropped.
+        entry.revision += 1U;
+        count += 1;
+    }
+    return count;
+}
+
 u32 RadianceCache::invalidate(const Aabb& region) noexcept {
     u32 count = 0;
     index_.query_aabb(region, [&](u32 /*proxy*/, u64 user_data) {
