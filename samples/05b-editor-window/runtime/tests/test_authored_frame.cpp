@@ -29,6 +29,7 @@
 #include <cy_reflect_generated_scene.h>
 
 #include "authored_frame.h"
+#include "gi_runtime.h"
 #include "material_runtime.h"
 #if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
 #    include "golden.h"
@@ -1773,3 +1774,170 @@ CY_TEST_CASE("authored Metal viewport composites the engine VFX preview") {
     rhi::destroy_device(allocator(), *device);
 }
 #endif
+
+// Issue #35: every GI debug view is a view mode of the editor's own viewport. The runtime draws the
+// view the viewport asked for from the engine's GI of the authored world (`AuthoredIllumination`,
+// `IlluminationPreview`) and the forward frame composites it where it is opaque; back on Lit, the
+// frame is the frame it was, byte for byte.
+namespace {
+
+constexpr u32 kGiShotWidth = 384;
+constexpr u32 kGiShotHeight = 256;
+
+/// The GI suite's room (`tests/data/gi_test_room.cyworld`), its primitives named from the
+/// repository root this suite's project is, and drawn in the frame's default grey.
+std::string gi_room_text() {
+    std::ifstream input(std::string(CY_TEST_PROJECT) +
+                            "/samples/05b-editor-window/runtime/tests/data/gi_test_room.cyworld",
+                        std::ios::binary);
+    CY_REQUIRE(input.good());
+    std::ostringstream read;
+    read << input.rdbuf();
+    std::string text = read.str();
+    const auto replace_all = [&text](std::string_view from, std::string_view to) {
+        for (usize at = text.find(from); at != std::string::npos; at = text.find(from, at)) {
+            text.replace(at, from.size(), to);
+            at += to.size();
+        }
+    };
+    replace_all("\"gi_box.cyprim\"",
+                "\"samples/05b-editor-window/runtime/tests/data/gi_box.cyprim\"");
+    replace_all("\"gi_floor.cyprim\"",
+                "\"samples/05b-editor-window/runtime/tests/data/gi_floor.cyprim\"");
+    replace_all("\"lampglass\"", "\"\"");
+    return text;
+}
+
+/// The view `main.cpp`'s `view_of` builds for a frame: camera-relative, infinite reversed Z.
+render::View gi_view_of(const first_light::Camera& camera) {
+    render::View view;
+    view.desc.purpose = render::ViewPurpose::EditorViewport;
+    view.desc.viewport = render::ViewportRect{0, 0, kGiShotWidth, kGiShotHeight};
+    view.desc.projection.kind = render::ProjectionKind::Perspective;
+    view.desc.projection.fov_y_radians = camera.fov_y_radians;
+    view.desc.projection.near_plane = camera.near_plane;
+    view.desc.projection.far_plane = 0.0F;
+    const Vec3 forward = normalize(camera.forward);
+    const Vec3 right = normalize(cross(forward, camera.up));
+    const Vec3 up = cross(right, forward);
+    view.desc.camera.rotation = Quat::from_basis(right, up, -forward);
+    view.refresh();
+    return view;
+}
+
+}  // namespace
+
+CY_TEST_CASE("authored native frame draws the GI view the viewport asked for, and Lit as before") {
+    register_backend();
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
+    {
+        // Without temporal resolve, so two frames of the same world are the same bytes: the
+        // jitter of a temporal frame moves every edge from one frame to the next.
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(kGiShotWidth, kGiShotHeight, CY_TEST_PROJECT, false));
+        reflect::TypeRegistry registry;
+        CY_REQUIRE(reflect::register_scene_types(registry));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(registry, schema));
+        ser::World world(allocator());
+        CY_REQUIRE(ser::read_world(gi_room_text(), "worlds/gi.cyworld", world).has_value());
+        CY_REQUIRE(ser::resolve_against(world, schema).has_value());
+        CY_REQUIRE(frame.prepare_world(world));
+        first_light::Camera view;
+        view.position[0] = 0.0;
+        view.position[1] = 4.0;
+        view.position[2] = 7.0;
+        view.forward = normalize(Vec3{0.0F, -0.45F, -1.0F});
+        view.up = Vec3{0.0F, 1.0F, 0.0F};
+        view.fov_y_radians = 0.9F;
+        view.near_plane = 0.1F;
+
+        CY_REQUIRE(frame.render(world, view));
+        Array<u32> lit(allocator());
+        CY_REQUIRE(lit.append(frame.pixels()));
+
+        AuthoredIllumination gi(allocator(), CY_TEST_PROJECT);
+        gi.bind(&world);
+        const Vec3 eye{0.0F, 4.0F, 7.0F};
+        Array<u32> texels(allocator());
+        CY_REQUIRE(gi.render_view(render::DebugViewMode::GiTier, gi_view_of(view), eye,
+                                  kGiShotWidth, kGiShotHeight, 4, texels)
+                       .has_value());
+        CY_REQUIRE(frame
+                       .set_gi_overlay(render::DebugViewMode::GiTier, texels.span(), kGiShotWidth,
+                                       kGiShotHeight)
+                       .has_value());
+        CY_CHECK(frame.gi_overlay_mode() == render::DebugViewMode::GiTier);
+        CY_REQUIRE(frame.render(world, view));
+        Array<u32> viewed(allocator());
+        CY_REQUIRE(viewed.append(frame.pixels()));
+
+        // Where the view is opaque the frame shows it; where it draws nothing the lit frame shows.
+        u32 opaque = 0;
+        u32 opaque_changed = 0;
+        u32 clear = 0;
+        u32 clear_kept = 0;
+        for (usize index = 0; index < texels.size(); ++index) {
+            if ((texels[index] >> 24U) != 0U) {
+                opaque += 1;
+                opaque_changed += viewed[index] != lit[index] ? 1U : 0U;
+            } else {
+                clear += 1;
+                clear_kept += viewed[index] == lit[index] ? 1U : 0U;
+            }
+        }
+        std::fprintf(stderr,
+                     "gi view: %u opaque texels (%u changed the frame), %u clear (%u kept it)\n",
+                     opaque, opaque_changed, clear, clear_kept);
+        CY_CHECK_GT(opaque, 1000U);
+        CY_CHECK_GT(opaque_changed * 10U, opaque * 9U);
+        CY_CHECK_GT(clear, 0U);
+        CY_CHECK_EQ(clear_kept, clear);
+
+        // Lit again: the frame it was, byte for byte.
+        CY_REQUIRE(frame.set_gi_overlay(render::DebugViewMode::Off, {}, 0, 0).has_value());
+        CY_REQUIRE(frame.render(world, view));
+        CY_CHECK_EQ(differing_pixels(lit.span(), frame.pixels()), 0U);
+
+        // A mode that is not a GI view draws none.
+        CY_REQUIRE(frame
+                       .set_gi_overlay(render::DebugViewMode::Albedo, texels.span(), kGiShotWidth,
+                                       kGiShotHeight)
+                       .has_value());
+        CY_CHECK(frame.gi_overlay_mode() == render::DebugViewMode::Off);
+#if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
+        // With CY_GI_VIEWPORT_SHOT naming a directory, photograph the viewport lit and in four GI
+        // views: how `docs/design/images/editor-gi-viewport.png` is made.
+        if (const char* directory = std::getenv("CY_GI_VIEWPORT_SHOT");
+            directory != nullptr && directory[0] != '\0') {
+            const auto write = [directory](const char* name, Span<const u32> pixels) {
+                render_test::Image shot(allocator());
+                CY_REQUIRE(
+                    render_test::adopt(shot, pixels, kGiShotWidth, kGiShotHeight).has_value());
+                const std::string path = std::string(directory) + "/" + name;
+                CY_REQUIRE(render_test::write_png(path.c_str(), shot).has_value());
+                std::fprintf(stderr, "wrote %s\n", path.c_str());
+            };
+            write("editor-gi-viewport-Lit.png", lit.span());
+            for (const render::DebugViewMode mode :
+                 {render::DebugViewMode::GiTier, render::DebugViewMode::GiIndirectDiffuse,
+                  render::DebugViewMode::GiProbes, render::DebugViewMode::GiCards,
+                  render::DebugViewMode::GiProbeVisibility}) {
+                CY_REQUIRE(gi.render_view(mode, gi_view_of(view), eye, kGiShotWidth, kGiShotHeight,
+                                          4, texels)
+                               .has_value());
+                CY_REQUIRE(frame.set_gi_overlay(mode, texels.span(), kGiShotWidth, kGiShotHeight)
+                               .has_value());
+                CY_REQUIRE(frame.render(world, view));
+                const std::string name = std::string("editor-gi-viewport-") +
+                                         render::debug_view_mode_name(mode) + ".png";
+                write(name.c_str(), frame.pixels());
+            }
+        }
+#endif
+    }
+    rhi::destroy_device(allocator(), native);
+}

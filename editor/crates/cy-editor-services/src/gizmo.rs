@@ -106,6 +106,10 @@ pub struct Request {
     /// them from its own physics world. Zero, which a runtime older than this field never reads,
     /// asks for none.
     pub physics_overlays: u32,
+    /// The debug view the viewport is in, as `cy::render::DebugViewMode`'s value — the GI views
+    /// (#35) among them, which the runtime draws over its frame. Off, which a message from an
+    /// editor older than this field reads as, is the lit frame.
+    pub debug_view: u8,
 }
 
 impl Request {
@@ -137,6 +141,7 @@ impl Request {
             near: viewport.state.near,
             game_camera: viewport.attachment.game_camera(),
             physics_overlays: viewport.physics.bits(),
+            debug_view: u8::try_from(viewport.state.view_mode as u32).unwrap_or(0),
         })
     }
 
@@ -167,6 +172,7 @@ impl Request {
         writer.f32(self.near);
         writer.u64(self.game_camera.unwrap_or(u64::MAX));
         writer.u32(self.physics_overlays);
+        writer.u8(self.debug_view);
         writer.finish()
     }
 
@@ -208,6 +214,7 @@ impl Request {
         };
         // Optional, like everything after the identities.
         let physics_overlays = reader.u32().unwrap_or(0);
+        let debug_view = reader.u8().unwrap_or(0);
         Ok(Self {
             frame,
             mode,
@@ -222,6 +229,7 @@ impl Request {
             near,
             game_camera,
             physics_overlays,
+            debug_view,
         })
     }
 }
@@ -456,15 +464,35 @@ mod tests {
         assert_eq!(request.physics_overlays, 0b11);
         let encoded = request.encode();
         assert_eq!(Request::decode(&encoded).unwrap().physics_overlays, 0b11);
-        // The field is last, so the engine's decoder reads it after the camera choice; a message
-        // that stops before it asks for no layers.
+        // The field follows the camera choice, so the engine's decoder reads it there; a message
+        // that stops before it asks for no layers. Only the debug view's byte follows it.
         assert_eq!(
-            &encoded[encoded.len() - 4..],
+            &encoded[encoded.len() - 5..encoded.len() - 1],
             &0b11_u32.to_le_bytes(),
-            "the layers are the message's last four bytes"
+            "the layers are the four bytes before the debug view"
         );
-        let older = &encoded[..encoded.len() - 4];
+        let older = &encoded[..encoded.len() - 5];
         assert_eq!(Request::decode(older).unwrap().physics_overlays, 0);
+    }
+
+    #[test]
+    fn the_viewports_debug_view_survives_the_intent_wire_as_the_engines_value() {
+        use cy_editor_viewport::viewmode::ViewMode;
+        let mut viewport = showing(1016);
+        viewport.state.view_mode = ViewMode::GiTier;
+        let request = Request::of_viewport(&viewport, Vec::new()).unwrap();
+        // `cy::render::DebugViewMode::GiTier`, which `ViewMode`'s discriminants are.
+        assert_eq!(request.debug_view, 33);
+        let encoded = request.encode();
+        assert_eq!(
+            encoded.last(),
+            Some(&33),
+            "the debug view is the message's last byte"
+        );
+        assert_eq!(Request::decode(&encoded).unwrap().debug_view, 33);
+        // A message from an editor older than the field draws the lit frame.
+        let older = &encoded[..encoded.len() - 1];
+        assert_eq!(Request::decode(older).unwrap().debug_view, 0);
     }
 
     #[test]

@@ -408,6 +408,26 @@ frames never carry it.
 The same steps run over MCP with the `navigation.*` tools; see
 [`docs/guides/navigation.md`](../../docs/guides/navigation.md).
 
+## Global illumination views and volumes
+
+Issue #35. The runtime serves `illumination.report` and draws the GI's views through
+`runtime/gi_runtime.{h,cpp}`. The engine's `IlluminationPreview` (`src/editor_backend`) lights the
+open world with CyberGI; the runtime only reads the document into it:
+
+- **Components.** `GiSettings` (one per world), `GiVolume` (the node's transform is the box: its
+  translation the centre, its scale the size, so the transform gizmo places and sizes it),
+  `GiObject` (a class override) and `GiEmission` (a per-material emitter rule). `gi_runtime.h`
+  lists every field. A `MeshRenderer` is an object; with a `RigidBody` or `KinematicBody` it moves.
+- **Views.** The viewport's view mode travels on the gizmo intent (`GizmoIntent::debug_view`). Any
+  of the nineteen `gi/debug_views.h` views is drawn at a quarter of the frame's resolution with
+  automatic exposure and composited by the forward frame; `Lit` leaves the frame byte-identical.
+- **Staleness.** A document edit marks the GI stale; the next view or report rebuilds it when the
+  geometry changed and applies it in place otherwise (settings, volumes, classes, emitter rules).
+
+`editor_window_illumination` reads `tests/data/gi_test_room.cyworld` and checks each part;
+`CY_GI_VIEWPORT_SHOT=<dir>` on the authored-frame smoke writes the six views of
+`docs/design/images/editor-gi-viewport.png`.
+
 ## Swift cube during Play
 
 Open `project/worlds/spinning-cube.cyworld` for a self-contained Plane, tinted cube, light, and
@@ -684,7 +704,7 @@ Neither is in this artefact's files.
 |---|---|
 | `window.py` | the artefact |
 | `animation_window.py` | the animation panel's preview (#29) against the real runtime, over MCP |
-| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world. Since issue #28 also the navigation seam (`nav_runtime.*`) and the navmesh overlay (`nav_overlay.*`) |
+| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world. Since issue #28 also the navigation seam (`nav_runtime.*`) and the navmesh overlay (`nav_overlay.*`); since issue #35 the GI views and volumes (`gi_runtime.*`) and the authored-component readers they share with navigation (`authored_components.*`) |
 | `one_world.py` | the M8.a probe: it speaks the editor's protocol to the runtime, creates an object, asks where the gizmo is and picks it there |
 | `project/` | a project with a world in it — three entities in `worlds/city.cyworld`, written by the engine's own authoring schema. Copied into the work directory on every run, so a run never edits it |
 | `CMakeLists.txt` | the CTest entry, and why the runtime is declared before the `CY_BUILD_TESTS` guard |

@@ -146,3 +146,39 @@ capabilities once it is idle. An operation no route matches fails with `operatio
 is unchanged by it.
 
 The navigation and composite suites are `integration.editor_backend_navigation`.
+
+## Global illumination (issue #35)
+
+`IlluminationPreview` (`include/cy/editor/illumination_preview.h`) is the authored world lit by
+CyberGI, for the editor's lighting panel, its viewport's GI views and its report. The host reads its
+document into an `IlluminationScene` — meshes, materials (albedo and emission), objects with their
+class overrides, lights, GI volumes, the world's `GiRuntimeSettings` and each material's emitter
+rule — and `sync` brings the GI to it: REBUILT when the geometry, materials or lights changed (cards
+over each object at a world spacing, each mesh's distance grid built once and placed by the
+object's transform, a few frames of convergence), APPLIED IN PLACE otherwise, through the calls a
+game makes through ABI 1.9 (`set_runtime_settings`, `set_volumes`, `set_object_class`,
+`set_emitter_rules`). `render_view` draws one of the nineteen GI debug views over a surface buffer it
+traces itself through `lightmap_bake::MeshSceneTracer`, with an automatic exposure when the caller
+gives none; `report` is the system's own diagnostics, explaining the surface a pick ray meets.
+
+`IlluminationService` (`include/cy/editor/illumination_service.h`) answers `illumination.report`:
+one pending request per session, the report encoded as the header specifies, a pick resolved
+through the host's `IlluminationRuntime::pick_ray`. `tests/data/illumination_report_v1.wire` is the
+encoding of a fixed report, which the editor's decoder reads too, so the two sides cannot drift.
+The runtime host is `samples/05b-editor-window/runtime/gi_runtime.h`.
+
+The suite is `integration.editor_backend_illumination`: a world of a floor, a crate, a glowing lamp
+and a cart lit and rebuilt only when its geometry moves; a rule putting the lamp out applied in
+place; a class override in place; every view drawing over the world and nothing over the sky; the
+report's explained point bit for bit the resolve's; the service's reply the preview's report byte
+for byte.
+
+What it costs on the host, from the suite's `what the editor's GI costs on the host` (GCC 13
+Development build, one core): that world rebuilt and converged in about 180 ms; a quality change or
+an emitter rule applied in place in under 0.01 ms; a GI view at 320x180 (the quarter resolution the
+editor-window runtime draws under a 1280x720 frame) about 35 ms for the probe view and about 240 ms
+for indirect diffuse, the slowest, because each pixel is traced and resolved on the CPU (clang 18 and
+22: 30 ms and 195 ms). The
+runtime draws the view every frame it is selected, so a GI view mode runs the viewport at a few
+frames a second; drawing the views on the device, as the engine's own frame does
+(`render.lightmaps` (p)), is the next step.

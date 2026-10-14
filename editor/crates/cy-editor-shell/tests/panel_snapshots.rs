@@ -68,6 +68,8 @@ struct Desk {
     titles: PanelTitles,
     link: ViewportLink,
     inputs: Inputs,
+    /// The window's size in pixels: [`SIZE`] unless a snapshot needs a taller one.
+    size: [u32; 2],
 }
 
 impl Desk {
@@ -97,6 +99,7 @@ impl Desk {
             titles,
             link: ViewportLink::idle(),
             inputs: Inputs::default(),
+            size: SIZE,
         }
     }
 
@@ -108,7 +111,7 @@ impl Desk {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
-                egui::vec2(points(SIZE[0]), points(SIZE[1])),
+                egui::vec2(points(self.size[0]), points(self.size[1])),
             )),
             ..Default::default()
         };
@@ -130,6 +133,7 @@ impl Desk {
             titles,
             link,
             inputs,
+            size: _,
         } = self;
         let mut intents: Vec<Intent> = Vec::new();
         ctx.run_ui(raw, |ui| {
@@ -179,12 +183,13 @@ struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: egui_wgpu::Renderer,
+    size: [u32; 2],
 }
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 impl Gpu {
-    fn new() -> Self {
+    fn new(size: [u32; 2]) -> Self {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
@@ -197,6 +202,7 @@ impl Gpu {
             device,
             queue,
             renderer,
+            size,
         }
     }
 
@@ -212,8 +218,8 @@ impl Gpu {
     /// Render `shapes` offscreen and answer tightly packed RGBA8 rows.
     fn render(&mut self, ctx: &egui::Context, shapes: Vec<egui::epaint::ClippedShape>) -> Vec<u8> {
         let extent = wgpu::Extent3d {
-            width: SIZE[0],
-            height: SIZE[1],
+            width: self.size[0],
+            height: self.size[1],
             depth_or_array_layers: 1,
         };
         let target = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -228,7 +234,7 @@ impl Gpu {
         });
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
         let screen = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: SIZE,
+            size_in_pixels: self.size,
             pixels_per_point: 1.0,
         };
         let jobs = ctx.tessellate(shapes, 1.0);
@@ -256,10 +262,10 @@ impl Gpu {
                 .forget_lifetime();
             self.renderer.render(&mut pass, &jobs, &screen);
         }
-        let row = (SIZE[0] * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let row = (self.size[0] * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("panel snapshot readback"),
-            size: u64::from(row * SIZE[1]),
+            size: u64::from(row * self.size[1]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -270,7 +276,7 @@ impl Gpu {
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(row),
-                    rows_per_image: Some(SIZE[1]),
+                    rows_per_image: Some(self.size[1]),
                 },
             },
             extent,
@@ -287,7 +293,7 @@ impl Gpu {
             .slice(..)
             .get_mapped_range()
             .expect("the readback is mapped");
-        let width = usize::try_from(SIZE[0] * 4).expect("fits");
+        let width = usize::try_from(self.size[0] * 4).expect("fits");
         mapped
             .chunks(usize::try_from(row).expect("fits"))
             .flat_map(|line| line[..width].iter().copied())
@@ -305,7 +311,7 @@ fn snapshot(desk: &mut Desk, panel: &str, name: &str) -> Option<Vec<u8>> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let ctx = egui::Context::default();
-    let mut gpu = Gpu::new();
+    let mut gpu = Gpu::new(desk.size);
     // Two frames: the first lays out and measures, the second draws what a settled window shows.
     let mut first = desk.frame(&ctx, panel);
     gpu.textures(&first.textures_delta);
@@ -315,8 +321,14 @@ fn snapshot(desk: &mut Desk, panel: &str, name: &str) -> Option<Vec<u8>> {
     output.textures_delta.clear();
     let pixels = gpu.render(&ctx, std::mem::take(&mut output.shapes));
     let path = directory.join(name);
-    image::save_buffer(&path, &pixels, SIZE[0], SIZE[1], image::ColorType::Rgba8)
-        .expect("the snapshot is written");
+    image::save_buffer(
+        &path,
+        &pixels,
+        desk.size[0],
+        desk.size[1],
+        image::ColorType::Rgba8,
+    )
+    .expect("the snapshot is written");
     eprintln!("wrote {}", path.display());
     Some(pixels)
 }
@@ -1523,5 +1535,78 @@ fn cut_snapshot(
         desk,
         "editor-animation-graphs-and-clips",
         "editor-animation-diagnostic.png",
+    );
+}
+
+/// The lighting tool's global illumination half (#35): the world's settings, a selected GI volume
+/// with its overrides, the GI debug views, and the engine's report — its emitters and an explained
+/// point — from `illumination_report_v1.wire`, which `src/editor_backend` encodes.
+#[test]
+#[ignore = "needs a GPU adapter; writes PNGs when CY_PANEL_SNAPSHOTS names a directory"]
+fn lighting_gi_snapshots() {
+    use cy_editor_core::value::Value;
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+
+    let mut desk = Desk::new();
+    desk.size = [960, 1700];
+    desk.editor.open_document("worlds/gi.cyworld").unwrap();
+    for (id, arguments) in [
+        (
+            "gi.settings.set",
+            Arguments::new()
+                .with("quality", Value::Text("high".into()))
+                .with("budget_ms", Value::Float(2.5)),
+        ),
+        (
+            "gi.volume.create",
+            Arguments::new()
+                .with("at", Value::Vec3([1.5, 0.5, 0.0]))
+                .with("size", Value::Vec3([2.0, 2.0, 2.0])),
+        ),
+    ] {
+        desk.registry
+            .invoke(id, &desk.scope, &mut desk.editor, &arguments)
+            .unwrap_or_else(|problem| panic!("{id}: {problem}"));
+    }
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (_runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    desk.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = desk
+        .editor
+        .backend
+        .illumination
+        .request(
+            &desk.editor.runtime,
+            cy_editor_services::illumination_requests::report_payload(None),
+        )
+        .unwrap()
+        .unwrap();
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: std::fs::read(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../src/editor_backend/tests/data/illumination_report_v1.wire"),
+            )
+            .unwrap(),
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    while desk.editor.backend.illumination.pending() {
+        for message in desk.editor.runtime.pump(&mut notifications) {
+            let _ = desk.editor.backend.accept(&message);
+        }
+        std::thread::yield_now();
+    }
+    snapshot(
+        &mut desk,
+        "editor-lighting-and-lightmap-baking",
+        "editor-lighting-gi.png",
     );
 }

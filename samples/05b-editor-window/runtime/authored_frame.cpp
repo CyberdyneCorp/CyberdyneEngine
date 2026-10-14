@@ -14,6 +14,7 @@
 #include <cy/import/model.h>
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
+#include <cy/rendering/gi/debug_views.h>
 #include <cy/rendering/material/standard.h>
 #include <cy/rendering/skinning/frame_skinning.h>
 #include <cy/rendering/skinning/skinned_scene.h>
@@ -593,6 +594,9 @@ AuthoredFrame::~AuthoredFrame() {
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     vfx_renderer_.shutdown();
 #endif
+    if (gi_overlay_ != nullptr) {
+        gi_overlay_->shutdown();
+    }
     if (!shadow_view_.is_null()) {
         device_->destroy_texture_view(shadow_view_);
     }
@@ -775,6 +779,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, boo
     }
     shadow_view_ = *created_view;
     shadow_slot_ = kMaterialTextureSlots - 1U;
+    gi_overlay_slot_ = kMaterialTextureSlots - 2U;
 
     initialized_ = true;
     return ok();
@@ -1639,6 +1644,33 @@ Status AuthoredFrame::append_skinned_preview(Vec3 eye) noexcept {
     return transforms_.push_back(relative_transform(matrix, eye));
 }
 
+Status AuthoredFrame::set_gi_overlay(render::DebugViewMode mode, Span<const u32> texels, u32 width,
+                                     u32 height) noexcept {
+    const bool gi_view =
+        rendering::gi::gi_debug_view_from_name(render::debug_view_mode_name(mode)) !=
+        rendering::gi::GiDebugView::Count;
+    if (!gi_view) {
+        if (gi_mode_ != render::DebugViewMode::Off) {
+            history_cut_ = true;
+        }
+        gi_mode_ = render::DebugViewMode::Off;
+        return ok();
+    }
+    if (width != width_ || height != height_ || texels.size() != usize{width} * height) {
+        return fail(ErrorCode::InvalidArgument, "authored frame: a GI view is the frame's size");
+    }
+    if (gi_overlay_ == nullptr) {
+        gi_overlay_ = std::make_unique<rendering::lightmaps::GiDebugOverlayTexture>();
+        gi_overlay_->initialize(*device_, *allocator_);
+    }
+    if (Status uploaded = gi_overlay_->upload(texels, width, height); !uploaded) {
+        gi_mode_ = render::DebugViewMode::Off;
+        return uploaded;
+    }
+    gi_mode_ = mode;
+    return ok();
+}
+
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
     if (Status status = resolve_meshes(world); !status) {
         return status;
@@ -2126,19 +2158,27 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (count > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: too many resident material textures");
     }
-    if (count == kMaterialTextureSlots) {
+    const bool gi_overlay = gi_mode_ != render::DebugViewMode::Off;
+    if (count + 1U + (gi_overlay ? 1U : 0U) > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: no room for the shadow texture");
     }
     for (usize index = 0; index < count; ++index) {
-        if (resident[index].slot == shadow_slot_) {
+        if (resident[index].slot == shadow_slot_ ||
+            (gi_overlay && resident[index].slot == gi_overlay_slot_)) {
             return fail(ErrorCode::OutOfRange,
-                        "authored frame: shadow slot conflicts with a material");
+                        "authored frame: shadow or GI overlay slot conflicts with a material");
         }
     }
-    resident[count].slot = shadow_slot_;
-    resident[count].view = shadow_view_;
+    usize bound = count;
+    resident[bound].slot = shadow_slot_;
+    resident[bound++].view = shadow_view_;
+    if (gi_overlay) {
+        resident[bound++] = gi_overlay_->slot(gi_overlay_slot_);
+        // The view is drawn afresh each frame: no history of the lit frame bleeds into it.
+        history_cut_ = true;
+    }
     if (Status status =
-            bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, count + 1));
+            bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, bound));
         !status) {
         return status;
     }
@@ -2491,6 +2531,9 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
         data.view.shadow_control[1] = shadow_light;
         data.view.shadow_control[2] = kShadowExtent;
         data.view.shadow_control[3] = 1;
+    }
+    if (gi_mode_ != render::DebugViewMode::Off) {
+        (void)rendering::lightmaps::write_gi_debug_view(gi_mode_, gi_overlay_slot_, data.view);
     }
     if (Status status = bindings_.upload(slot, data); !status) {
         return status;

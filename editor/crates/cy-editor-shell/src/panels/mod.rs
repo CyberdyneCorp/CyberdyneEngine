@@ -31,6 +31,7 @@ mod hierarchy;
 mod history;
 mod inspector;
 mod lighting;
+mod lighting_gi;
 mod material_graph;
 pub mod navigation_baking;
 use cy_editor_services::material_parameters;

@@ -308,9 +308,10 @@ mod tests {
         for command in <LightingTool as SpecialisedTool>::COMMANDS {
             let tool = cy_editor_agent::tool::project_one(&registry, command).unwrap();
             assert!(tool.exclusion.is_none(), "{command}");
-            // The volume, mobility and resolution edits author the document; the cancel, the view
-            // modes and the selection are reads.
-            let authors = command.starts_with("lighting.") && !command.contains("cancel");
+            // The volume, mobility and resolution edits and the GI edits author the document; the
+            // cancel, the GI report, the view modes and the selection are reads.
+            let authors = (command.starts_with("lighting.") && !command.contains("cancel"))
+                || (command.starts_with("gi.") && *command != "gi.report");
             let expected = if authors {
                 EffectClass::ReversibleMutation
             } else {

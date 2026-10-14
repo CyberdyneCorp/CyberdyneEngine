@@ -66,6 +66,7 @@ fn main() {
         near: 0.1,
         game_camera: None,
         physics_overlays: 0,
+        debug_view: 0,
     };
     session
         .send(&Message::GizmoIntent {

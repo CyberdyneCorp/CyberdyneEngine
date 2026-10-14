@@ -1,0 +1,118 @@
+cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+  field 5 text "material" ""
+type 3 runtime "LightSource"
+  field 10 int "kind" ""
+  field 11 bool "enabled" ""
+  field 12 float "color.r" ""
+  field 13 float "color.g" ""
+  field 14 float "color.b" ""
+  field 15 float "intensity" ""
+  field 16 float "range" ""
+type 4 runtime "GiSettings"
+  field 20 text "mode" ""
+  field 21 text "quality" ""
+  field 22 text "tier" ""
+  field 23 bool "hardware_ray_tracing" ""
+  field 24 float "budget_ms" ""
+type 5 runtime "GiVolume"
+  field 30 int "priority" ""
+  field 31 float "blend_distance" ""
+  field 32 float "weight" ""
+  field 33 int "sets" ""
+  field 34 text "quality" ""
+  field 35 text "tier" ""
+  field 36 float "probe_density" ""
+  field 37 float "update_rate" ""
+  field 38 float "diffuse_intensity" ""
+  field 39 float "specular_intensity" ""
+  field 40 float "far_field" ""
+type 6 runtime "GiObject"
+  field 50 text "class" ""
+type 7 runtime "GiEmission"
+  field 60 text "material" ""
+  field 61 text "mode" ""
+type 8 runtime "RigidBody"
+  field 70 float "mass" ""
+node 0 - "gi" "Floor"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 8 1 8
+  component 2
+    field 4 "gi_floor.cyprim"
+    field 5 ""
+node 1 - "gi" "Crate"
+  component 1
+    field 1 0 0 0 1
+    field 2 1.5 0.5 0
+    field 3 1 1 1
+  component 2
+    field 4 "gi_box.cyprim"
+    field 5 ""
+  component 6
+    field 50 "slow-dynamic"
+node 2 - "gi" "Lamp"
+  component 1
+    field 1 0 0 0 1
+    field 2 -1.5 2 -1
+    field 3 0.3 0.1 0.3
+  component 2
+    field 4 "gi_box.cyprim"
+    field 5 "lampglass"
+node 3 - "gi" "Cart"
+  component 1
+    field 1 0 0 0 1
+    field 2 -1 0.4 2
+    field 3 0.8 0.8 0.8
+  component 2
+    field 4 "gi_box.cyprim"
+    field 5 ""
+  component 8
+    field 70 40
+node 4 - "gi" "Sun"
+  component 1
+    field 1 -0.3826834 0 0 0.9238795
+    field 2 0 6 0
+    field 3 1 1 1
+  component 3
+    field 10 0
+    field 11 true
+    field 12 1
+    field 13 0.95
+    field 14 0.9
+    field 15 6
+    field 16 0
+node 5 - "gi" "Global Illumination"
+  component 4
+    field 20 "dynamic"
+    field 21 "high"
+    field 22 "automatic"
+    field 23 true
+    field 24 2.5
+node 6 - "gi" "Crate Volume"
+  component 1
+    field 1 0 0 0 1
+    field 2 1.5 0.5 0
+    field 3 2 2 2
+  component 5
+    field 30 1
+    field 31 0
+    field 32 1
+    field 33 8
+    field 34 "medium"
+    field 35 "automatic"
+    field 36 1
+    field 37 1
+    field 38 0.5
+    field 39 1
+    field 40 60
+node 7 - "gi" "Lamp Glass Emission"
+  component 7
+    field 60 "lampglass"
+    field 61 "cache-only"

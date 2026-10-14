@@ -456,6 +456,11 @@ Status decode_gizmo_intent(Span<const u8> bytes, GizmoIntent& out) noexcept {
         u32 overlays = 0;
         if (reader.u32_value(overlays)) {
             intent.physics_overlays = overlays;
+            // And the viewport's debug view after the overlays, optional for the same reason.
+            u8 view = 0;
+            if (reader.u8_value(view) && view < kDebugViewModeCount) {
+                intent.debug_view = static_cast<DebugViewMode>(view);
+            }
         }
     }
     out = std::move(intent);

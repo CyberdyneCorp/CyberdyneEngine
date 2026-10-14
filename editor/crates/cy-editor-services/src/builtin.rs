@@ -58,6 +58,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // Irradiance volumes, per-object lightmap resolution and light mobility, as undoable document
     // edits the lightmap bake's description is written from. See `crate::lighting`.
     crate::lighting::register(registry)?;
+    crate::illumination::register(registry)?;
     // Adding a physics body and its collider to an entity, as one undoable transaction. See
     // `crate::bodies`.
     crate::bodies::register(registry)?;
@@ -822,9 +823,20 @@ mod tests {
         let animation = 8 + 3;
         // The GI debug views and the lightmap chart view: one `viewport.view-mode.*` each.
         let gi_view_modes = 19;
+        // Global illumination (#35) adds five undoable commands and two reads in
+        // `crate::illumination`: settings, volume create and set, an object's class, a material's
+        // emitter rule; the report and its status.
+        let illumination = 5 + 2;
         assert_eq!(
             registry.len(),
-            earlier + audio + navigation + lighting + gameplay_graphs + animation + gi_view_modes
+            earlier
+                + audio
+                + navigation
+                + lighting
+                + gameplay_graphs
+                + animation
+                + gi_view_modes
+                + illumination
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

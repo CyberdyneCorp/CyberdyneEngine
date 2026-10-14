@@ -2233,6 +2233,15 @@ impl cy_editor_commands::ProjectHost for Editor {
         crate::audio_status::outcome(&self.backend.audio)
     }
 
+    fn illumination_request(&mut self, payload: Vec<u8>) -> Result<u64> {
+        let sent = self.backend.illumination.request(&self.runtime, payload)?;
+        Ok(sent.map_or(0, RequestId::as_u64))
+    }
+
+    fn illumination_status(&self) -> cy_editor_commands::Outcome {
+        crate::illumination_requests::outcome(&self.backend.illumination)
+    }
+
     fn audio_listener(&self) -> ([f32; 3], [f32; 3]) {
         let camera = self.viewports.focused().state.camera;
         let forward = camera.forward();

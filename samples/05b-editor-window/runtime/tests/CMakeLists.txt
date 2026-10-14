@@ -82,14 +82,17 @@ function(cy_editor_window_runtime_declare_tests)
             KIND smoke
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
+                "${tests_dir}/../authored_components.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../gi_runtime.cpp"
+                "${tests_dir}/../overlay.cpp"
                 "${tests_dir}/../material_runtime.cpp"
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
-                cy::rendering-material-slang cy::shader
+                cy::rendering-material-slang cy::shader cy::rendering-lightmaps
                 cy::weather
                 cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
@@ -129,14 +132,17 @@ function(cy_editor_window_runtime_declare_tests)
             KIND smoke
             SOURCES
                 "${tests_dir}/test_authored_frame.cpp"
+                "${tests_dir}/../authored_components.cpp"
                 "${tests_dir}/../authored_frame.cpp"
+                "${tests_dir}/../gi_runtime.cpp"
+                "${tests_dir}/../overlay.cpp"
                 "${tests_dir}/../material_runtime.cpp"
                 "${tests_dir}/../wind_field_preview.cpp"
                 "${tests_dir}/../world_view.cpp"
             DEPENDENCIES
                 cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
-                cy::rendering-material-slang cy::shader cy::shader-slang
+                cy::rendering-material-slang cy::shader cy::shader-slang cy::rendering-lightmaps
                 cy::weather
                 cy::rhi-metal cy::rhi-null
             DEFINITIONS
@@ -211,12 +217,32 @@ function(cy_editor_window_runtime_declare_tests)
         SOURCES
             "${tests_dir}/test_nav_overlay.cpp"
             "${tests_dir}/test_nav_runtime.cpp"
+            "${tests_dir}/../authored_components.cpp"
             "${tests_dir}/../nav_overlay.cpp"
             "${tests_dir}/../nav_runtime.cpp"
         DEPENDENCIES cy::editor-backend cy::navigation cy::import cy::core-assets
                      cy::scene-serialization cy::scene cy::servers-render
         DEFINITIONS
             "CY_NAV_TEST_DATA=\"${tests_dir}/data\"")
+    # #35: THE GI SEAM OVER A `.cyworld` — the authored GI settings, volumes, classes and emitter
+    # rules read into the engine's `IlluminationPreview`, `illumination.report` over the composite
+    # binding, the viewport's GI views and the volumes' boxes. No device: the frame's view is
+    # recorded directly.
+    cy_add_test(
+        NAME editor_window_illumination
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_gi_runtime.cpp"
+            "${tests_dir}/../authored_components.cpp"
+            "${tests_dir}/../gi_runtime.cpp"
+            "${tests_dir}/../overlay.cpp"
+        DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
+                     cy::scene cy::servers-render
+        DEFINITIONS
+            "CY_GI_TEST_DATA=\"${tests_dir}/data\"")
+    target_include_directories(cy_test_integration_editor_window_illumination PRIVATE
+                               "${tests_dir}/..")
+
     target_include_directories(cy_test_integration_editor_window_navigation PRIVATE
                                "${tests_dir}/.."
                                "${CMAKE_SOURCE_DIR}/src/editor_backend/tests"

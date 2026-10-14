@@ -1520,6 +1520,171 @@ fn a_finished_bake_shows_what_it_made_and_the_probes_it_captured() {
     std::fs::remove_dir_all(&root).ok();
 }
 
+// --- The lighting tool's global illumination half (#35) ------------------------------------------
+
+/// The engine's GI report, `illumination_report_v1.wire` as `src/editor_backend` encodes it,
+/// answered over a real session the way the window takes it.
+fn engine_answers_illumination(harness: &mut Harness) {
+    use cy_editor_protocol::{Message, ServiceEventKind, Session, write_frame};
+    let reply = std::fs::read(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../src/editor_backend/tests/data/illumination_report_v1.wire"),
+    )
+    .unwrap();
+    let (editor_reader, mut runtime_writer) = std::io::pipe().unwrap();
+    let (runtime_reader, editor_writer) = std::io::pipe().unwrap();
+    harness.editor.runtime =
+        cy_editor_services::RuntimeSession::over(Session::over(editor_reader, editor_writer));
+    let request = harness
+        .editor
+        .backend
+        .illumination
+        .request(
+            &harness.editor.runtime,
+            cy_editor_services::illumination_requests::report_payload(None),
+        )
+        .unwrap()
+        .expect("nothing else is in flight");
+    write_frame(
+        &mut runtime_writer,
+        &Message::ServiceEvent {
+            request,
+            kind: ServiceEventKind::Completed,
+            schema_version: 1,
+            payload: reply,
+        }
+        .encode(),
+    )
+    .unwrap();
+    let mut notifications = cy_editor_services::NotificationService::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.editor.backend.illumination.pending() && std::time::Instant::now() < deadline {
+        for message in harness.editor.runtime.pump(&mut notifications) {
+            assert!(harness.editor.backend.accept(&message).is_none());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        harness.editor.backend.illumination.report().is_some(),
+        "the report was not taken"
+    );
+    harness.runtime_ends.push(Box::new(runtime_writer));
+    harness.runtime_ends.push(Box::new(runtime_reader));
+}
+
+#[test]
+fn the_gi_half_offers_settings_volumes_views_and_the_engines_report_and_every_button_is_a_command()
+{
+    let size = egui::vec2(960.0, 2400.0);
+    let mut harness = lighting_harness();
+    engine_answers_illumination(&mut harness);
+    let panel = harness.frame(LIGHTING, size, Vec::new());
+    for label in [
+        "Global illumination",
+        "Apply GI settings",
+        "GI volumes",
+        "Add GI volume",
+        "GI debug views",
+        "Lit",
+        "GI Tier",
+        "GI Emissive",
+        "GI report",
+        "Refresh report",
+        "Explain a point",
+        "Emitters",
+        "materials/lamp-glass",
+        "Explained point",
+    ] {
+        assert!(
+            has(&panel, label),
+            "the GI half lacks {label:?}: {:?}",
+            panel.labels
+        );
+    }
+    assert!(
+        panel
+            .labels
+            .iter()
+            .any(|label| label.contains("rays through HardwareTrace")),
+        "the report's tier is the engine's: {:?}",
+        panel.labels
+    );
+    assert!(
+        panel
+            .labels
+            .iter()
+            .any(|label| label.contains("PromotedLight")),
+        "each emitter shows the class the engine gave it: {:?}",
+        panel.labels
+    );
+    let pushed = |label: &str, harness: &mut Harness| {
+        let evidence = harness.frame(LIGHTING, size, vec![click_named(&panel, label)]);
+        match evidence.intents.as_slice() {
+            [Intent::Invoke(command, arguments)] => (command.clone(), arguments.clone()),
+            other => panic!("{label} pushed {other:?}"),
+        }
+    };
+    assert_eq!(pushed("Add GI volume", &mut harness).0, "gi.volume.create");
+    assert_eq!(
+        pushed("GI Tier", &mut harness).0,
+        "viewport.view-mode.gi-tier"
+    );
+    assert_eq!(pushed("Lit", &mut harness).0, "viewport.view-mode.off");
+    assert_eq!(pushed("Refresh report", &mut harness).0, "gi.report");
+}
+
+#[test]
+fn a_selected_gi_volume_is_edited_as_one_command_and_an_object_offers_its_class() {
+    use cy_editor_commands::Arguments;
+    use cy_editor_core::value::Value;
+    use cy_editor_documents::selection::Selection;
+
+    let size = egui::vec2(960.0, 2400.0);
+    let mut harness = lighting_harness();
+    invoke(
+        &mut harness,
+        "gi.volume.create",
+        &Arguments::new().with("size", Value::Vec3([2.0, 2.0, 2.0])),
+    );
+    let first = harness.frame(LIGHTING, size, Vec::new());
+    assert!(
+        has(&first, "Apply volume"),
+        "the selected volume shows its overrides: {:?}",
+        first.labels
+    );
+    let (volume, _, _) = harness.inputs.lighting.gi.volume.clone().expect("staged");
+    if let Some((_, _, edit)) = harness.inputs.lighting.gi.volume.as_mut() {
+        edit.sets = 8;
+        edit.diffuse_intensity = 0.5;
+    }
+    let staged = harness.frame(LIGHTING, size, Vec::new());
+    let applied = harness.frame(LIGHTING, size, vec![click_named(&staged, "Apply volume")]);
+    let [Intent::Invoke(command, arguments)] = applied.intents.as_slice() else {
+        panic!("one command per apply: {:?}", applied.intents);
+    };
+    assert_eq!(command, "gi.volume.set");
+    assert_eq!(arguments.text("volume"), Some(volume.to_string().as_str()));
+    assert_eq!(arguments.get("sets"), Some(&Value::Int(8)));
+    assert_eq!(arguments.get("diffuse_intensity"), Some(&Value::Float(0.5)));
+
+    // A placed object that is no light and no volume offers its illumination class, in the tool
+    // and in the Inspector.
+    invoke(&mut harness, "scene.create-camera", &Arguments::new());
+    let object = harness.editor.selection.get().nodes().next().unwrap();
+    let mut selection = Selection::new();
+    selection.add_node(object);
+    harness.editor.selection.set(selection);
+    let inspector = harness.frame("inspector", size, Vec::new());
+    assert!(
+        has(&inspector, "Illumination class"),
+        "{:?}",
+        inspector.labels
+    );
+    assert!(has(&inspector, "automatic"), "{:?}", inspector.labels);
+    let tool = harness.frame(LIGHTING, size, Vec::new());
+    assert!(has(&tool, "Selected object"), "{:?}", tool.labels);
+}
+
 // --- The gameplay graph editor (#29, visual scripting) ---------------------------------------------
 
 const GRAPH: &str = "editor-gameplay-and-utility-graphs";

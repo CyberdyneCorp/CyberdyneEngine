@@ -24,6 +24,7 @@ use cy_editor_interface::specialised::Session;
 use cy_editor_interface::specialised::lighting::{
     BAKE_COMMAND, BakeStatus, Baked, CANCEL_COMMAND, LightingForm,
 };
+use cy_editor_services::illumination::IlluminationScene;
 use cy_editor_services::lighting::{LightingScene, Mobility, Volume};
 use cy_editor_services::lightmap_description::MODES;
 use cy_editor_services::mirror::engine_identity;
@@ -48,6 +49,8 @@ pub struct LightingInputs {
     pub baked: Option<Baked>,
     /// The last bake that failed, and why.
     pub problem: Option<String>,
+    /// The global illumination half's staged edits (issue #35).
+    pub gi: super::lighting_gi::GiInputs,
 }
 
 /// A probe to draw: where it is, and — once captured — its light and whether it is valid.
@@ -81,6 +84,8 @@ pub(crate) struct LightingTarget {
     /// The bake the editor most recently started, if any.
     status: Option<BakeStatus>,
     selected: Option<NodeId>,
+    /// The global illumination half (issue #35).
+    gi: super::lighting_gi::GiTarget,
 }
 
 /// The lighting and lightmap baking editor.
@@ -100,6 +105,33 @@ impl SpecialisedTool for LightingTool {
         CANCEL_COMMAND,
         "viewport.view-mode.lightmap-density",
         "viewport.view-mode.gi-probes",
+        // The global illumination half (issue #35): `lighting_gi::COMMANDS` and the view modes of
+        // `lighting_gi::GI_VIEWS` and Lit; a test holds the three lists together.
+        "gi.settings.set",
+        "gi.volume.create",
+        "gi.volume.set",
+        "gi.object.set-class",
+        "gi.emission.set",
+        "gi.report",
+        "viewport.view-mode.off",
+        "viewport.view-mode.gi-probe-irradiance",
+        "viewport.view-mode.gi-probe-age",
+        "viewport.view-mode.gi-probe-error",
+        "viewport.view-mode.gi-probe-visibility",
+        "viewport.view-mode.gi-radiance-clipmap",
+        "viewport.view-mode.gi-surface-cache",
+        "viewport.view-mode.gi-distance-field",
+        "viewport.view-mode.gi-cards",
+        "viewport.view-mode.gi-reflection-probes",
+        "viewport.view-mode.gi-screen-trace",
+        "viewport.view-mode.gi-confidence",
+        "viewport.view-mode.gi-tier",
+        "viewport.view-mode.gi-ray-count",
+        "viewport.view-mode.gi-denoiser-confidence",
+        "viewport.view-mode.gi-disocclusion",
+        "viewport.view-mode.gi-indirect-diffuse",
+        "viewport.view-mode.gi-indirect-specular",
+        "viewport.view-mode.gi-emissive",
     ];
     const OPERATIONS: &'static [&'static str] = &[BAKE_COMMAND, WRITE_COMMAND];
 
@@ -107,16 +139,36 @@ impl SpecialisedTool for LightingTool {
 
     fn target(panels: &mut Panels<'_>, _ui: &mut egui::Ui) -> Option<Self::Target> {
         collect_finished_bakes(panels);
-        let scene = panels
+        let document = panels
             .editor
             .workspace
             .active()
-            .and_then(|active| panels.editor.documents.get(active))
-            .map(LightingScene::read);
+            .and_then(|active| panels.editor.documents.get(active));
+        let scene = document.map(LightingScene::read);
+        let selected = panels.editor.selection.get().nodes().next();
+        let illumination = &panels.editor.backend.illumination;
+        let gi = super::lighting_gi::GiTarget {
+            scene: document.map(IlluminationScene::read),
+            report: illumination.report().cloned(),
+            pending: illumination.pending(),
+            problem: illumination.problem().map(str::to_owned),
+            view_mode: panels.editor.viewports.focused().state.view_mode,
+            selected,
+            placed: document.zip(selected).is_some_and(|(document, node)| {
+                cy_editor_viewport::gizmo::TransformBinding::of_schema(document.schema())
+                    .is_some_and(|binding| {
+                        document.content().has_component(node, binding.component)
+                    })
+            }),
+            nodes: document
+                .map(super::lighting_gi::node_names)
+                .unwrap_or_default(),
+        };
         Some(LightingTarget {
             scene,
             status: LightingForm::status(panels.editor),
-            selected: panels.editor.selection.get().nodes().next(),
+            selected,
+            gi,
         })
     }
 
@@ -172,6 +224,8 @@ fn controls(
         Some(scene) => {
             volumes(frame, scene, target.selected, ui);
             lights(frame, scene, ui);
+            super::lighting_gi::controls(frame, &target.gi, ui);
+            super::lighting_gi::views(frame, &target.gi, ui);
         }
         None => nothing_here(
             ui,
@@ -652,6 +706,7 @@ pub(super) fn inspector_rows(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
         return;
     };
     let scene = LightingScene::read(document);
+    let illumination = IlluminationScene::read(document);
     let placed = cy_editor_viewport::gizmo::TransformBinding::of_schema(document.schema())
         .is_some_and(|binding| document.content().has_component(node, binding.component));
     let light = scene.mobility_of(node);
@@ -672,6 +727,19 @@ pub(super) fn inspector_rows(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
     }
     if placed && light.is_none() && !scene.volumes.iter().any(|volume| volume.id == node) {
         resolution_row(panels, ui, node, scene.resolution_of(node));
+    }
+    // The GI's class of a placed object (issue #35): how it takes part when it moves.
+    let is_gi_volume = illumination.volumes.iter().any(|volume| volume.id == node);
+    if placed && light.is_none() && !is_gi_volume {
+        let current = illumination.class_of(node).to_owned();
+        if let Some(chosen) =
+            super::lighting_gi::class_combo(ui, ("inspector-gi-class", node), &current)
+        {
+            panels.intents.push(Intent::Invoke(
+                "gi.object.set-class".into(),
+                super::lighting_gi::class_arguments(node, &chosen),
+            ));
+        }
     }
 }
 
@@ -715,6 +783,22 @@ fn resolution_row(panels: &mut Panels<'_>, ui: &mut egui::Ui, node: NodeId, auth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tool_lists_every_command_its_gi_half_invokes() {
+        for command in super::super::lighting_gi::COMMANDS {
+            assert!(LightingTool::COMMANDS.contains(&command), "{command}");
+        }
+        for mode in std::iter::once(cy_editor_viewport::viewmode::ViewMode::Off)
+            .chain(super::super::lighting_gi::GI_VIEWS)
+        {
+            assert!(
+                LightingTool::COMMANDS.contains(&mode.command_id().as_str()),
+                "{}",
+                mode.command_id()
+            );
+        }
+    }
 
     #[test]
     fn the_tool_lists_every_command_its_form_invokes() {

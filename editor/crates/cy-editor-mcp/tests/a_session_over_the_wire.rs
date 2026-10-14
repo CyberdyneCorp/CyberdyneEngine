@@ -6291,3 +6291,102 @@ fn settle_animation_catalogue(editor: &mut Editor) {
     editor.backend.animation.want();
     settle_animation(editor);
 }
+
+/// Issue #35: every global illumination edit the lighting panel makes is an MCP tool that does the
+/// same thing, undone by `edit.undo` over the wire; the report and the GI debug views are reads.
+#[test]
+fn the_global_illumination_tools_author_and_undo_over_the_wire() {
+    use cy_editor_services::illumination::IlluminationScene;
+
+    let mut editor = Editor::new(Actor::human("designer"));
+    editor.open_document("worlds/gi.cyworld").unwrap();
+    let scene = |editor: &Editor| {
+        IlluminationScene::read(
+            editor
+                .documents
+                .get(editor.workspace.active().unwrap())
+                .unwrap(),
+        )
+    };
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"gi.settings.set","arguments":{"quality":"epic","tier":"software-only","hardware_ray_tracing":false,"budget_ms":2.0}}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"gi.volume.create","arguments":{"at":[1.5,0.5,0.0],"size":[2.0,2.0,2.0]}}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"gi.emission.set","arguments":{"material":"materials/lamp-glass","mode":"off"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"viewport.view-mode.gi-tier","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"gi.status","arguments":{}}}"#,
+        ],
+        &mut editor,
+    );
+    let tools = match result(&replies, 1).get("tools") {
+        Json::Array(items) => items.clone(),
+        other => panic!("tools is not an array: {other:?}"),
+    };
+    let described = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.get("name").as_text() == Some(name))
+            .and_then(|tool| tool.get("description").as_text())
+            .unwrap_or_else(|| panic!("{name} is not a tool"))
+            .to_string()
+    };
+    for authoring in [
+        "gi.settings.set",
+        "gi.volume.create",
+        "gi.volume.set",
+        "gi.object.set-class",
+        "gi.emission.set",
+    ] {
+        assert!(described(authoring).contains("reversible"), "{authoring}");
+    }
+    for read in ["gi.report", "gi.status", "viewport.view-mode.gi-emissive"] {
+        assert!(described(read).contains("Effect: read"), "{read}");
+    }
+    for index in 2..=6 {
+        let (text, is_error) = tool_reply(&replies, index);
+        assert!(!is_error, "reply {index}: {text}");
+    }
+    let (view, _) = tool_reply(&replies, 5);
+    assert!(view.contains("GiTier"), "{view}");
+    let authored = scene(&editor);
+    assert_eq!(authored.settings.quality, "epic");
+    assert!(!authored.settings.hardware_ray_tracing);
+    assert_eq!(authored.volumes.len(), 1);
+    assert_eq!(authored.emission_of("materials/lamp-glass"), "off");
+
+    // The volume's overrides, over the wire, then everything undone the same way.
+    let volume = authored.volumes[0].id.to_string();
+    let (failed, text) = call_tool(
+        &mut editor,
+        8,
+        "gi.volume.set",
+        &[("volume", &volume), ("tier", "world-only")],
+    );
+    assert!(!failed, "{text}");
+    let replies = converse(
+        &[
+            INITIALIZE,
+            r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"gi.volume.set","arguments":{"volume":"VOLUME","sets":96,"far_field":25.0}}}"#
+                .replace("VOLUME", &volume)
+                .as_str(),
+        ],
+        &mut editor,
+    );
+    let (text, is_error) = tool_reply(&replies, 1);
+    assert!(!is_error, "{text}");
+    assert_eq!(scene(&editor).volumes[0].sets, 96);
+    assert_eq!(
+        scene(&editor).volumes[0].far_field.to_bits(),
+        25.0_f32.to_bits()
+    );
+    for id in 10..15 {
+        let (failed, text) = call_tool(&mut editor, id, "edit.undo", &[]);
+        assert!(!failed, "{text}");
+    }
+    let undone = scene(&editor);
+    assert!(undone.volumes.is_empty());
+    assert!(undone.emission.is_empty());
+    assert!(undone.settings_node.is_none());
+}

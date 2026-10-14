@@ -977,6 +977,33 @@ with `world.fixed(…)` and `world.setFixed(…)`. `samples/13-rts-api`'s comman
 company this way (`game/Company.swift`), and the digest its session ends in is the one every CI leg
 computes from the same orders in C++ (`host/company.h`, `determinism.cross_leg`).
 
+### Global illumination (ABI 1.9)
+
+`Illumination.swift` drives the world's `IlluminationSystem` (see
+[the GI guide](global-illumination.md), section 6f). Every entry is presentation: it is accepted
+from a frame callback and refused from a fixed step, so a simulation never reads light.
+
+| | What |
+|---|---|
+| `Illumination.settings` / `apply(_:)` | mode, quality, tier preference, hardware ray tracing on or off, frame budget in ms; a quality change is recorded on the live probes, no light is dropped |
+| `GIVolume.place(_:)`, `update(_:)`, `remove()` | a box with priority, blend distance, weight and its own quality, probe density, update rate, diffuse and specular intensity, tier and far-field overrides |
+| `setClass(_:of:)`, `illuminationClass(of:)` | an entity's illumination class (`.automatic` returns it to the derived class) |
+| `setEmission(_:of:)`, `setEmission(_:ofMaterial:)` | an emitter rule: automatic, cache only, promoted, or off — a lamp switched off in place |
+| `irradiance(at:normal:)` | the indirect diffuse at a point; without a normal, the six-axis mean a body receives |
+| `status` | world tier, convergence, measured and allocated ms, volumes, objects, emitters, disabled emitters, promoted lights |
+
+```swift
+var settings = try Illumination.settings
+settings.quality = .high
+try Illumination.apply(settings)
+try Illumination.setEmission(.off, ofMaterial: "lamp-glass")
+let under = try Illumination.irradiance(at: guardPosition)   // what the guard stands in
+```
+
+`integration.swift_illumination` loads `bindings/swift/fixtures/illumination/LightProbe.swift`
+against a real `IlluminationSystem`: the luminance under the lamp falls from 2.149 to 1.032 when the
+script puts the glass out, and every call from a fixed step is refused.
+
 ### Diagnostics
 
 ```swift

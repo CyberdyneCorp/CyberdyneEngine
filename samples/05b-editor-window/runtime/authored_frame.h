@@ -7,6 +7,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/core/values/asset_id.h>
 #include <cy/rendering/assembly/frame_assembly.h>
+#include <cy/rendering/lightmaps/gi_debug_overlay.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
 #include <cy/servers/render/server.h>
@@ -138,6 +139,13 @@ public:
         return {camera_markers_.data(), camera_markers_.size()};
     }
     [[nodiscard]] first_light::Camera framing(const first_light::Camera& fallback) const noexcept;
+    /// Draw a GI debug view over the next frames: `texels` (`width * height`, `Rgba8Unorm`, alpha
+    /// zero where the view draws nothing, the frame's own size) through the forward frame's GI
+    /// overlay (`lightmaps::write_gi_debug_view`). `DebugViewMode::Off`, or any mode that is not a
+    /// GI view, draws none and leaves the frame what it was. Call it outside a frame.
+    [[nodiscard]] Status set_gi_overlay(render::DebugViewMode mode, Span<const u32> texels,
+                                        u32 width, u32 height) noexcept;
+    [[nodiscard]] render::DebugViewMode gi_overlay_mode() const noexcept { return gi_mode_; }
     [[nodiscard]] bool scene_camera(const scene::serialization::World& world, u64 identity,
                                     first_light::Camera& camera) const noexcept;
 
@@ -268,6 +276,11 @@ private:
     rhi::TextureHandle shadow_depth_;
     rhi::TextureViewHandle shadow_view_;
     rhi::BindlessIndex shadow_slot_ = rhi::kInvalidBindlessIndex;
+    /// The GI debug view drawn over the frame, and where its texture is bound: the slot below the
+    /// shadow's.
+    std::unique_ptr<rendering::lightmaps::GiDebugOverlayTexture> gi_overlay_;
+    render::DebugViewMode gi_mode_ = render::DebugViewMode::Off;
+    rhi::BindlessIndex gi_overlay_slot_ = rhi::kInvalidBindlessIndex;
     u32 material_offsets_[4]{};
     u32 base_color_texture_offset_ = rendering::pipeline::kNoMaterialTexture;
 };

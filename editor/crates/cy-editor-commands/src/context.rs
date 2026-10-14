@@ -626,6 +626,21 @@ pub trait ProjectHost {
         Outcome::new("Engine audio unavailable")
     }
 
+    /// Send `illumination.report` to the engine (issue #35). The request's identity, or `0` when
+    /// it was queued behind one still in flight.
+    fn illumination_request(&mut self, payload: Vec<u8>) -> Result<u64> {
+        let _ = payload;
+        Err(cy_editor_core::problem::Problem::new(
+            "ask the engine for its GI report",
+            "this host has no engine GI service",
+        ))
+    }
+
+    /// The engine's last GI report, what is pending, and the last refusal.
+    fn illumination_status(&self) -> Outcome {
+        Outcome::new("Engine GI unavailable")
+    }
+
     /// Where a spatial preview is heard from: the focused viewport's camera position and forward.
     fn audio_listener(&self) -> ([f32; 3], [f32; 3]) {
         ([0.0; 3], [0.0, 0.0, -1.0])
