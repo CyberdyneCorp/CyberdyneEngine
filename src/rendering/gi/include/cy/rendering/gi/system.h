@@ -488,6 +488,7 @@ private:
     CardSnapshot card_snapshot_;
     CardGather card_gather_;
     Array<Surfel> cache_surfels_;
+    /// Each cell's pages in the order of its cards: `reclassify_cell` pairs them by that order.
     Array<CellPage> cell_pages_;
     Array<GiLight> frame_lights_;
     Span<const GiLight> last_lights_;

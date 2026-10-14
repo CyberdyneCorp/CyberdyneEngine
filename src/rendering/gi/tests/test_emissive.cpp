@@ -1054,9 +1054,17 @@ CY_TEST_CASE(
 
     IlluminationSystem system;
     CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
+    // A cell streamed in before the room and out after it: its pages were ahead of the room's, so
+    // their release moves the room's pages within the system's list. (The first in-place version
+    // paired a cell's pages with its cards by their order in that list, and put the sign's light
+    // back on the wrong cards.)
+    Surfel lone = card(Vec3{10.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F}, 40);
+    const Aabb far = Aabb::from_center_extents(Vec3{10.0F, 0.0F, 0.0F}, Vec3{1.0F, 1.0F, 1.0F});
+    CY_REQUIRE(system.ingest_cell(8, far, {&lone, 1}, 1).has_value());
     const std::vector<Surfel> cards = with_panel(Vec3{3.0F, 3.0F, 3.0F});
     const Aabb bounds = Aabb::from_min_max(Vec3{-3.0F, -2.0F, -3.0F}, Vec3{3.0F, 2.0F, 3.0F});
     CY_REQUIRE(system.ingest_cell(7, bounds, {cards.data(), cards.size()}, 1).has_value());
+    system.evict_cell(8, 1);
     // The sign stays in the cache whatever its measurement says.
     const EmitterRule cached{kAnyEmitter, kPanelInstance, EmitterOverride::CacheOnly};
     CY_REQUIRE(system.set_emitter_rules({&cached, 1}, 2).has_value());
@@ -1107,4 +1115,9 @@ CY_TEST_CASE(
     // Back in the cache: the sign's cards emit exactly what they did.
     CY_REQUIRE(system.set_emitter_rules({&cached, 1}, 11).has_value());
     CY_CHECK_EQ(panel_emission(), 27.0F);
+    for (const SurfacePage& page : system.surfaces().pages()) {
+        if (page.live && page.instance_id != kPanelInstance) {
+            CY_CHECK_EQ(page.emission.x, 0.0F);
+        }
+    }
 }

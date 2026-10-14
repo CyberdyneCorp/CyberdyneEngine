@@ -135,6 +135,10 @@ struct World {
     return out;
 }
 
+/// A report's entry points into the report, so a temporary one is refused at compile time.
+const editor::IlluminationEmitterEntry* emitter(const IlluminationReport&& report,
+                                                u64 node) = delete;
+
 [[nodiscard]] const editor::IlluminationEmitterEntry* emitter(const IlluminationReport& report,
                                                               u64 node) noexcept {
     for (const editor::IlluminationEmitterEntry& entry : report.emitters) {
@@ -191,11 +195,17 @@ CY_TEST_CASE("the authored world is lit by the GI, and only its geometry decides
     CY_CHECK_EQ(preview.system().runtime_settings().quality, gi::GiQuality::High);
     CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::SoftwareTrace);
 
-    // A moved crate is a new geometry.
+    // A moved crate is a new geometry, and the world's settings survive the rebuild. (Back at
+    // medium quality on the hardware tier first: a rebuild converges at the world's settings, and
+    // at high quality on the software tier it costs this case three times as much.)
+    world.settings.quality = gi::GiQuality::Medium;
+    world.settings.hardware_ray_tracing = true;
+    world.settings.budget_ms = 1.5F;
     world.objects[1].transform = Mat4::from_translation(Vec3{2.0F, 0.5F, 0.0F});
     CY_REQUIRE(preview.sync(world.scene()).has_value());
     CY_CHECK_EQ(preview.rebuilds(), 2U);
-    CY_CHECK_EQ(preview.system().runtime_settings().quality, gi::GiQuality::High);
+    CY_CHECK_EQ(preview.system().runtime_settings().budget_ms, 1.5F);
+    CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::HardwareTrace);
 }
 
 CY_TEST_CASE("an author's emitter rule switches a lamp off in place, and the report says so") {

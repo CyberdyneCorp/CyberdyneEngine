@@ -166,11 +166,18 @@ void IlluminationSystem::evict_cell(u64 cell, u64 frame) noexcept {
         }
     }
     invalidate_emitters(emissive_.last_changed(), frame);
-    for (usize index = cell_pages_.size(); index > 0; --index) {
-        if (cell_pages_[index - 1].cell == cell) {
-            surfaces_.release(cell_pages_[index - 1].page);
-            cell_pages_.remove_unordered(index - 1);
+    // Compacted in order: `reclassify_cell` pairs a cell's pages with its cards by their order
+    // here, so releasing one cell must not move another's pages past each other.
+    usize kept = 0;
+    for (usize index = 0; index < cell_pages_.size(); ++index) {
+        if (cell_pages_[index].cell == cell) {
+            surfaces_.release(cell_pages_[index].page);
+        } else {
+            cell_pages_[kept++] = cell_pages_[index];
         }
+    }
+    while (cell_pages_.size() > kept) {
+        cell_pages_.pop_back();
     }
 }
 

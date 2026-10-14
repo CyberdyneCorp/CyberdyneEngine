@@ -250,4 +250,14 @@ M202  bindings/swift/Sources/CyberdyneKit/Illumination.swift
     kit: a material rule is sent without the material
     FAILED  integration.swift_package: IlluminationTests.testClassesAndEmissionReachTheirEntries (material hash 0)
 
+M26 src/rendering/gi/src/system.cpp  (the code before the fix, restored as a mutation)
+    evict_cell compacts cell_pages_ in order
+    -> evict_cell removes each page with remove_unordered (the swap-with-last removal)
+    system: releasing one cell's pages moves another cell's pages past each other, so an in-place
+    reclassification paired the sign's cards with the wrong pages
+    FAILED  integration.render_gi_emissive: switching off an emitter the cache carries takes its emission out of its own cards and invalidates what they light as a material change, not a cell ingest
+            (a cell streamed out ahead of the room reordered the room's pages, and the sign's
+            emission landed on wall and ceiling pages: its own nine summed below 27 and other
+            pages emitted)
+
 Restored: every suite above passes.

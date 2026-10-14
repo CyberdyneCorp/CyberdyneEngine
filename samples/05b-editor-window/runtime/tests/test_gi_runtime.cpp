@@ -142,6 +142,10 @@ struct Runtime {
 
 const Vec3 kEye{0.0F, 4.0F, 7.0F};
 
+/// A report's entry points into the report, so a temporary one is refused at compile time.
+const editor::IlluminationEmitterEntry* emitter(const editor::IlluminationReport&& report,
+                                                u64 node) = delete;
+
 [[nodiscard]] const editor::IlluminationEmitterEntry* emitter(const editor::IlluminationReport& r,
                                                               u64 node) noexcept {
     for (const editor::IlluminationEmitterEntry& entry : r.emitters) {
@@ -214,9 +218,12 @@ CY_TEST_CASE("a document change is applied in place, and a moved mesh rebuilds t
     runtime.reload(text);
     CY_REQUIRE(runtime.source.preview() != nullptr);
     CY_CHECK_EQ(preview.rebuilds(), 1U);
-    const editor::IlluminationEmitterEntry* lamp =
-        emitter(preview.report(nullptr), runtime.identity("Lamp"));
+    // The report held, not a temporary: the entry points into it. (Reading it through a
+    // temporary's pointer read freed memory, which AppleClang's build saw as a cache-only lamp.)
+    const editor::IlluminationReport report = preview.report(nullptr);
+    const editor::IlluminationEmitterEntry* lamp = emitter(report, runtime.identity("Lamp"));
     CY_REQUIRE(lamp != nullptr);
+    CY_CHECK_EQ(lamp->override_mode, gi::EmitterOverride::Automatic);
     CY_CHECK_EQ(lamp->classification, gi::EmitterClass::PromotedLight);
 
     // Hardware ray tracing switched off in the world's settings: the software tier answers.
