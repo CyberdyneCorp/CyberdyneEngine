@@ -516,7 +516,8 @@ CY_TEST_CASE("what the editor's GI costs on the host: a rebuild, an edit in plac
     };
     const double probes = draw(gi::GiDebugView::Probes);
     const double indirect = draw(gi::GiDebugView::IndirectDiffuse);
-    std::printf("MEASURED: rebuild and converge %.1f ms, quality in place %.3f ms, emitter rule in "
-                "place %.3f ms; a 320x180 view: probes %.1f ms, indirect diffuse %.1f ms\n",
-                rebuild, settings, rule, probes, indirect);
+    std::printf(
+        "MEASURED: rebuild and converge %.1f ms, quality in place %.3f ms, emitter rule in "
+        "place %.3f ms; a 320x180 view: probes %.1f ms, indirect diffuse %.1f ms\n",
+        rebuild, settings, rule, probes, indirect);
 }
