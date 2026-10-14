@@ -219,12 +219,14 @@ CY_TEST_CASE("the profile measures each stage and attributes a change's cost to 
     const IlluminationFrameReport report = room.system.update(room.context(++frame));
     // The world tier's structures are kept in the update itself, before any query traces a ray.
     CY_CHECK_GT(room.system.profile().stage_ms[static_cast<u32>(GiStage::WorldTrace)], 0.0);
-    CY_CHECK_EQ(room.system.profile().stage_ms[static_cast<u32>(GiStage::ReflectionResolve)] > 0.0,
-                true);
-    // Queries after the update belong to the same frame's profile.
-    TraceBudget budget;
-    (void)room.system.indirect_specular(floor_point(0.0F, 0.0F), kUp, Vec3{0.3F, -1.0F, 0.2F}, 0.1F,
-                                        static_cast<u32>(frame), budget);
+    // Queries after the update belong to the same frame's profile: sixty-four reflections, so the
+    // resolve's own time is many clock ticks on every host (Windows' clock counts in 100 ns).
+    for (u32 query = 0; query < 64U; ++query) {
+        TraceBudget budget;
+        (void)room.system.indirect_specular(
+            floor_point(-3.0F + (0.1F * static_cast<f32>(query)), 0.5F), kUp,
+            Vec3{0.3F, -1.0F, 0.2F}, 0.1F, static_cast<u32>(frame), budget);
+    }
     const GiProfile profile = room.system.profile();
 
     CY_CHECK_EQ(profile.frame, frame);
