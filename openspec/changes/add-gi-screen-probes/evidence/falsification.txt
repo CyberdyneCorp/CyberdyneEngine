@@ -1,0 +1,115 @@
+Mutations of the screen-probe gather, Development build, Vulkan on the RTX 5060 (driver 580.95.05),
+run against commit 5fec1810. Each was applied to the source named — for a shader, the gi_gpu SPIR-V
+and MSL regenerated through the module's regenerate.py — `just build-engine` rebuilt the tree, the
+named cases ran, and the source and both headers were restored and md5-verified. RED means the case
+failed with the mutation in place.
+
+Five survived an earlier pass and the suites were strengthened rather than the mutations dropped:
+
+  h4 and d2 (the blend's count weight, 1/(count+2)) survived because the floor, 1/history_frames,
+  masked the count's weight at the history lengths the cases used; the blend case keeps eight
+  frames and the device comparison four now, so the count's own weight decides.
+  h9 (the integration skipping adaptive probes) survived a case that measured every face, where
+  uniform probes stood on the block's sides too; the case now measures the pixels no uniform
+  probe within a tile stands for.
+  d1 (the device's normal weight to the fourth power, not the eighth) survived on the axis-aligned
+  room, where every normal weight is one or zero; a placement case on normals rippled by up to
+  about five degrees catches it. (The probes' estimates are not compared on rippled normals: a
+  normal turned by its last bit turns a grazing ray to the other side of an edge.)
+  d7 (the device lever ignored) survived (e)'s "the two frames differ", which two runs of one
+  gather also satisfy; (e) now reads back the probes' frame's records.
+
+A sixth, the renormalisation of a probe's estimate by its answered rays (a back face with no cache
+to stand in), survived the host quality suite: with ray origins moved clear of other surfaces it
+moved the room's error by 0.001. It was taken out of both sides rather than kept untested.
+
+h1 and h1_never_adaptive_b are one mutation run against two cases.
+
+h1_never_adaptive
+  src/rendering/gi/src/screen_probes.cpp: 'if (covered >= settings.adaptive_threshold) {' -> 'if (covered >= 0.0F) {'
+  cy_test_integration_render_gi_screen_probes [adaptive probes appear*] RED
+  cy_test_integration_render_gi_screen_probes [an adaptive probe repairs*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h2_always_adaptive
+  src/rendering/gi/src/screen_probes.cpp: 'if (covered >= settings.adaptive_threshold) {' -> 'if (covered >= 2.0F) {'
+  cy_test_integration_render_gi_screen_probes [adaptive probes appear*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h3_history_ignores_invalidation
+  src/rendering/gi/src/screen_probes.cpp: 'if (screen_invalidated_at(inputs.invalidated, probe.position)) {\n        return false;\n   ' -> '(void)inputs.invalidated;'
+  cy_test_integration_render_gi_screen_probes [a probe's history*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h4_blend_weight
+  src/rendering/gi/src/screen_probes.cpp: 'const f32 alpha = math::max(1.0F / (history + 1.0F), 1.0F / frames);' -> 'const f32 alpha = math::max(1.0F / (history + 2.0F), 1.0F / frames);'
+  cy_test_integration_render_gi_screen_probes [a probe's blend*] RED
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h5_guide_density
+  src/rendering/gi/src/screen_probes.cpp: 'static_cast<f32>(kScreenProbeGuideCells) / math::kTwoPi;' -> 'static_cast<f32>(kScreenProbeGuideCells) / (2.0F * math::kTwoPi);'
+  cy_test_integration_render_gi_screen_probes [*unbiased*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h7_no_relocation
+  src/rendering/gi/src/screen_probes.cpp: 'if (distance >= clearance) {\n            break;' -> 'if (distance >= -1.0e30F) {\n            break;'
+  cy_test_integration_render_gi_screen_probes [a probe at a thin wall*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h8_one_relocation_step
+  src/rendering/gi/src/screen_probes.cpp: 'constexpr u32 kOriginSteps = 4;' -> 'constexpr u32 kOriginSteps = 1;'
+  cy_test_integration_render_gi_screen_probes [a probe at a thin wall*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h9_integrate_ignores_adaptive
+  src/rendering/gi/src/screen_probes.cpp: 'add(probes[layout.uniform_count() + slot], cells.weight[tap]);' -> '(void)cells.weight[tap];'
+  cy_test_integration_render_gi_screen_probes [a pixel no uniform probe*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
+
+h10_lever_ignored
+  src/rendering/gi/src/screen_resolve.cpp: 'if (settings.gather == GiGather::ScreenProbes) {\n        return produce_probes(' -> 'if (settings.gather != GiGather::ScreenProbes || true) {\n        return produce_probes('
+  cy_test_integration_render_gi_screen_probes [the gather lever*] RED
+  restored md5 7899e58972bda614283d392495e93fa3 ok
+
+h11_filter_cap_ignored
+  src/rendering/gi/src/screen_resolve.cpp: 'config.max_passes = std::min(config.max_passes, settings.probes.filter_passes);' -> 'config.max_passes = std::max(config.max_passes, settings.probes.filter_passes);'
+  cy_test_integration_render_gi_screen_probes [the gather lever*] RED
+  restored md5 7899e58972bda614283d392495e93fa3 ok
+
+d1_device_normal_weight
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: 'float facing = max(0.0f, dot(probeNormal, normal));\n    facing *= facing;' -> 'float facing = max(0.0f, dot(probeNormal, normal));'
+  cy_test_render_gi_gpu_resolve [*screen probes*] green
+  cy_test_render_gi_gpu_resolve [*rippled*] RED
+  restored md5 b11bda4be0871d8a113b47ab2e32d7f1 ok
+
+d2_device_blend_weight
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: 'const float alpha = max(1.0f / (spHistoryCount + 1.0f), 1.0f / frames);' -> 'const float alpha = max(1.0f / (spHistoryCount + 2.0f), 1.0f / frames);'
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 b11bda4be0871d8a113b47ab2e32d7f1 ok
+
+d3_device_no_relocation
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: 'if (distance >= clearance) {\n            break;' -> 'if (distance >= -1.0e30f) {\n            break;'
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 b11bda4be0871d8a113b47ab2e32d7f1 ok
+
+d4_device_integrate_ignores_adaptive
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: 'float nearestPlane = 1.0e30f;\n    for (uint pass = 0u; pass < 2u; ++pass) {' -> 'float nearestPlane = 1.0e30f;\n    for (uint pass = 0u; pass < 1u; ++pass) {'
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 b11bda4be0871d8a113b47ab2e32d7f1 ok
+
+d5_device_place_threshold
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: 'if (covered >= weights.x) {' -> 'if (covered >= 0.0f) {'
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 b11bda4be0871d8a113b47ab2e32d7f1 ok
+
+d7_device_lever_ignored
+  src/rendering/gi_gpu/src/gpu_resolve.cpp: 'if (settings_.gather == gi::GiGather::ScreenProbes) {\n        declare_probes(graph, hardwa' -> 'if (settings_.gather != gi::GiGather::ScreenProbes && false) {\n        declare_probes(grap'
+  cy_test_render_gi_gpu_frame [(e)*] RED
+  cy_test_render_gi_gpu_resolve [*screen probes*] RED
+  restored md5 27328c2f6ca2a23950ff576c5f4cd5c6 ok
+
+h1_never_adaptive_b
+  src/rendering/gi/src/screen_probes.cpp: 'if (covered >= settings.adaptive_threshold) {' -> 'if (covered >= 0.0F) {'
+  cy_test_integration_render_gi_screen_probes [a pixel no uniform probe*] RED
+  restored md5 cefac6be799f7f2ae89e531e00086cbb ok
