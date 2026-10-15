@@ -61,6 +61,7 @@ import incremental as incremental_module  # noqa: E402
 import matrix as matrix_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import quiet_host as quiet_host_module  # noqa: E402
+import reclaim as reclaim_module  # noqa: E402
 import record as record_module  # noqa: E402
 import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
@@ -2687,6 +2688,80 @@ def test_scheduler_over_the_real_ledgers(root: Path) -> None:
           peak > 1, f"peak concurrency was {peak}")
 
 
+def _plan_entry(ledger: str, identifier: str, needs=(), run: str = "") -> criteria_module.PlanEntry:
+    criterion = criteria_module.Criterion(
+        id=identifier, describe="d", source="s", kind="command", ci_job="j", run=run,
+        requires="", reason="", needs=list(needs))
+    return criteria_module.PlanEntry(criterion=criterion, declared_by=(ledger,), permanent=True)
+
+
+def test_reclaim_builds(root: Path) -> None:
+    """`--reclaim-builds`: a tree goes when its LAST user finishes, and never before.
+
+    The nightly ledger filled a hosted runner's disk twice with every tree it had ever built still
+    on it. Deleting a tree a later criterion reads would cost that criterion a rebuild; deleting the
+    default tree would cost every criterion after it one. Both are what these cases hold.
+    """
+    build, rows = root / "build", root / "build" / "ledger-matrix"
+    for name in ("dev", "bench", "sanitize-thread", "sanitize-address-undefined"):
+        (build / name).mkdir(parents=True)
+    for row in ("dev-default", "debug-default", "profile-default", "release-default", "off-ml"):
+        (rows / row).mkdir(parents=True)
+    outside = root / "elsewhere"
+    outside.mkdir()
+    (build / "linked").symlink_to(outside, target_is_directory=True)
+    entries = [
+        _plan_entry("m1", "bench", run='d="${CY_BUILD_DIR:-build}/bench"; CY_BUILD_DIR="$d" '
+                    "just test-bench-jobs --profile profile"),
+        _plan_entry("m1", "four-profiles", needs=["exclusive"]),
+        _plan_entry("m1", "tsan", needs=["build:sanitize"]),
+        _plan_entry("m1", "uses-dev", needs=["build:dev", "build:@", "build:linked"]),
+        _plan_entry("m8c", "ml-option-off", needs=["build:ledger-matrix/off-ml"]),
+        _plan_entry("m5", "asan", needs=["build:sanitize"]),
+        _plan_entry("m9", "multiplayer-profiles-agree",
+                    needs=["build:ledger-matrix/debug-default", "build:ledger-matrix/dev-default"]),
+    ]
+    reclaimer = reclaim_module.Reclaimer(entries, build, rows, log=io.StringIO())
+
+    def alive(*paths: Path) -> bool:
+        return all(path.is_dir() for path in paths)
+
+    reclaimer.finished(0)
+    check("a tree whose only user finished is reclaimed", not (build / "bench").exists())
+    reclaimer.finished(2)
+    check("a tree with a user still to come is kept",
+          alive(build / "sanitize-thread", build / "sanitize-address-undefined"))
+    # Out of order, as `--jobs n` finishes them: the later user of two rows finishes first.
+    reclaimer.finished(6)
+    check("a row is kept while ANY of its users is unfinished, whatever order they finish in",
+          alive(rows / "dev-default", rows / "debug-default"))
+    reclaimer.finished(1)
+    check("`four-profiles` declares its rows only through `exclusive`, and they are still its rows",
+          not (rows / "profile-default").exists() and not (rows / "release-default").exists())
+    check("a row goes once every user has finished", not (rows / "dev-default").exists()
+          and not (rows / "debug-default").exists())
+    reclaimer.finished(3)
+    check("a profile's default tree is never reclaimed, whatever a token calls it",
+          alive(build / "dev"))
+    check("a symlink is not followed out of the build root", alive(outside))
+    reclaimer.finished(5)
+    check("every `just test-sanitize` tree goes once the last sanitizer criterion finishes",
+          not list(build.glob("sanitize-*")))
+    check("a row is untouched until its own user finishes", alive(rows / "off-ml"))
+    reclaimer.finished(4)
+    check("and the last user of a matrix row reclaims it", not (rows / "off-ml").exists())
+
+    gate_set = gates_module.load()
+    newest = max((gate.milestone for gate in gate_set.gates
+                  if gate.klass == "milestone" and gate.state == "green"),
+                 key=criteria_module.rung)
+    plan = criteria_module.build_plan(newest, gates_module.permanent_milestones(gate_set))
+    real = reclaim_module.Reclaimer(plan.entries, build, rows, log=io.StringIO())
+    unused = sorted(row.id for row in matrix_module.CONFIGURATIONS if rows / row.id not in real.users)
+    check(f"every matrix row has a user in {newest.upper()}'s ledger, so a reclaiming run frees it",
+          not unused, f"rows no criterion was found to use: {unused}")
+
+
 def test_ledger_report_order_is_the_ledger_order(root: Path) -> None:
     """The report is part of the contract: same order, same text, whatever order results arrive in.
 
@@ -3392,6 +3467,7 @@ def main() -> int:
         test_scheduler_tables_match_the_justfile(_area(root, "scheduler-tables"))
         test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
+        test_reclaim_builds(_area(root, "reclaim"))
         test_incremental_selection(_area(root, "incremental"))
         test_incremental_generated_headers(_area(root, "incremental-generated"))
         test_incremental_swiftpm_edges(_area(root, "incremental-swiftpm"))
