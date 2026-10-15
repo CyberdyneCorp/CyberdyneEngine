@@ -27,6 +27,7 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "gi_runtime.h"
@@ -97,7 +98,15 @@ struct Runtime {
     std::string text = read_text((project.root / kWorldPath).string());
     AuthoredIllumination source{allocator(), project.root.string()};
 
-    Runtime() {
+    Runtime() : Runtime({}, {}) {}
+
+    /// The room with `from` replaced by `to` before it is first read.
+    Runtime(std::string_view from, std::string_view to) {
+        if (!from.empty()) {
+            const std::string::size_type at = text.find(from);
+            CY_REQUIRE(at != std::string::npos);
+            text.replace(at, from.size(), to);
+        }
         CY_REQUIRE(reflect::register_scene_types(registry).has_value());
         CY_REQUIRE(ser::build_authoring_schema(registry, schema).has_value());
         reload(text);
@@ -205,7 +214,7 @@ CY_TEST_CASE("every authored GI word in the world reaches the engine's GI") {
     CY_CHECK_GT(lamp->power, 1.0F);
 }
 
-CY_TEST_CASE("a document change is applied in place, and a moved mesh rebuilds the GI") {
+CY_TEST_CASE("a document change to the GI's words is applied in place") {
     Runtime runtime;
     CY_REQUIRE(runtime.source.preview() != nullptr);
     editor::IlluminationPreview& preview = *runtime.source.preview();
@@ -226,21 +235,32 @@ CY_TEST_CASE("a document change is applied in place, and a moved mesh rebuilds t
     CY_CHECK_EQ(lamp->override_mode, gi::EmitterOverride::Automatic);
     CY_CHECK_EQ(lamp->classification, gi::EmitterClass::PromotedLight);
 
-    // The crate moved: a new geometry. (Before the tier changes: a rebuild converges on the
-    // world's tier, and on the software one it costs this case twice as much.)
-    const std::string crate = "    field 2 1.5 0.5 0\n    field 3 1 1 1\n";
-    text.replace(text.find(crate), crate.size(), "    field 2 2.5 0.5 0\n    field 3 1 1 1\n");
-    runtime.reload(text);
-    CY_REQUIRE(runtime.source.preview() != nullptr);
-    CY_CHECK_EQ(preview.rebuilds(), 2U);
-
     // Hardware ray tracing switched off in the world's settings: the software tier answers.
     const std::string hardware = "    field 23 true\n";
     text.replace(text.find(hardware), hardware.size(), "    field 23 false\n");
     runtime.reload(text);
     CY_REQUIRE(runtime.source.preview() != nullptr);
     CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::SoftwareTrace);
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
+}
+
+CY_TEST_CASE("a mesh moved in the document rebuilds the GI") {
+    // A one-metre floor rather than the room's eight: this case converges the GI twice, and the
+    // floor's cards are a third of what a convergence costs under Debug.
+    Runtime runtime("    field 3 8 1 8\n", "    field 3 1 1 1\n");
+    CY_REQUIRE(runtime.source.preview() != nullptr);
+    editor::IlluminationPreview& preview = *runtime.source.preview();
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
+
+    std::string text = runtime.text;
+    const std::string crate = "    field 2 1.5 0.5 0\n    field 3 1 1 1\n";
+    text.replace(text.find(crate), crate.size(), "    field 2 2.5 0.5 0\n    field 3 1 1 1\n");
+    runtime.reload(text);
+    CY_REQUIRE(runtime.source.preview() != nullptr);
     CY_CHECK_EQ(preview.rebuilds(), 2U);
+    // The rebuilt GI is the world's: its settings and its volume carried over.
+    CY_CHECK_EQ(preview.system().runtime_settings().budget_ms, 2.5F);
+    CY_CHECK_EQ(preview.system().volumes().size(), 1U);
 }
 
 CY_TEST_CASE("illumination.report answers over the runtime's composite binding") {

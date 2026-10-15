@@ -61,9 +61,17 @@ const editor::IlluminationEmitterEntry* emitter(const IlluminationReport&& repor
     return gi::IlluminationClass::Count;
 }
 
+/// Leaves the test world with only its crate, under the same sun. (In place: a world's meshes
+/// point into its own cube.)
+void keep_crate_alone(World& world) {
+    const cy::editor::IlluminationObject crate = world.objects[1];
+    CY_REQUIRE_EQ(crate.node, kCrate);
+    world.objects.assign(1, crate);
+}
+
 }  // namespace
 
-CY_TEST_CASE("the authored world is lit by the GI, and only its geometry decides a rebuild") {
+CY_TEST_CASE("the authored world is lit by the GI, and its volumes and settings apply in place") {
     World world;
     IlluminationPreview preview(allocator());
     CY_REQUIRE(preview.sync(world.scene()).has_value());
@@ -97,18 +105,28 @@ CY_TEST_CASE("the authored world is lit by the GI, and only its geometry decides
     CY_CHECK_EQ(preview.rebuilds(), 1U);
     CY_CHECK_EQ(preview.system().runtime_settings().quality, gi::GiQuality::High);
     CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::SoftwareTrace);
+}
 
-    // A moved crate is a new geometry, and the world's settings survive the rebuild. (Back at
-    // medium quality on the hardware tier first: a rebuild converges at the world's settings, and
-    // at high quality on the software tier it costs this case three times as much.)
-    world.settings.quality = gi::GiQuality::Medium;
-    world.settings.hardware_ray_tracing = true;
+CY_TEST_CASE("only a world's geometry decides a rebuild, and its settings survive one") {
+    // The crate alone: this case converges the GI twice, and the eight-metre floor's cards are
+    // most of what a convergence costs (about four times the crate's under Debug).
+    World world;
+    keep_crate_alone(world);
+    IlluminationPreview preview(allocator());
+    CY_REQUIRE(preview.sync(world.scene()).has_value());
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
     world.settings.budget_ms = 1.5F;
-    world.objects[1].transform = Mat4::from_translation(Vec3{2.0F, 0.5F, 0.0F});
+    CY_REQUIRE(preview.sync(world.scene()).has_value());
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
+    CY_CHECK_EQ(preview.applications(), 1U);
+
+    // A moved crate is a new geometry, rebuilt at the world's settings.
+    world.objects[0].transform = Mat4::from_translation(Vec3{2.0F, 0.5F, 0.0F});
     CY_REQUIRE(preview.sync(world.scene()).has_value());
     CY_CHECK_EQ(preview.rebuilds(), 2U);
     CY_CHECK_EQ(preview.system().runtime_settings().budget_ms, 1.5F);
     CY_CHECK_EQ(preview.report(nullptr).world_tier, gi::RadianceSource::HardwareTrace);
+    CY_CHECK_EQ(preview.report(nullptr).objects.size(), 1U);
 }
 
 CY_TEST_CASE("an author's emitter rule switches a lamp off in place, and the report says so") {

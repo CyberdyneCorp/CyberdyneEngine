@@ -168,8 +168,9 @@ encoding of a fixed report, which the editor's decoder reads too, so the two sid
 The runtime host is `samples/05b-editor-window/runtime/gi_runtime.h`.
 
 The suite is `integration.editor_backend_illumination`: a world of a floor, a crate, a glowing lamp
-and a cart lit and rebuilt only when its geometry moves; a rule putting the lamp out applied in
-place; a class override in place; every view drawing over the world and nothing over the sky; the
+and a cart lit, with its volumes and settings applied in place; a moved crate rebuilding the GI at
+the world's settings (over the crate alone: the floor's cards are most of a convergence's cost, and
+that case converges twice); a rule putting the lamp out applied in place; a class override in place; every view drawing over the world and nothing over the sky; the
 report's explained point bit for bit the resolve's; the service's reply the preview's report byte
 for byte.
 

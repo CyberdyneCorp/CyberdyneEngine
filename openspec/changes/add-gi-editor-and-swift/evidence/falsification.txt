@@ -139,8 +139,10 @@ M18  src/editor_backend/src/illumination_preview.cpp
     digest.add(object.transform).add(static_cast<u64>(object.movable ? 1U : 0U));
     -> digest.add(static_cast<u64>(object.movable ? 1U : 0U));
     preview: a moved object does not rebuild
-    FAILED  integration.editor_backend_illumination: the authored world is lit by the GI, and only its geometry decides a rebuild
-    FAILED  integration.editor_window_illumination: a document change is applied in place, and a moved mesh rebuilds the GI
+    FAILED  integration.editor_backend_illumination: only a world's geometry decides a rebuild, and its settings survive one
+    FAILED  integration.editor_window_illumination: a mesh moved in the document rebuilds the GI
+    (Re-run in a Debug build after both cases were split out of their suites' in-place cases to fit the
+    integration budget under Debug.)
 
 M19  src/editor_backend/src/illumination_preview.cpp
     pixel.depth = 0.0F;  // sky: the view draws nothing here
