@@ -65,66 +65,11 @@
 #include <cy/rendering/gi/reflections.h>
 #include <cy/rendering/gi/resolve.h>
 #include <cy/rendering/gi/scene.h>
+#include <cy/rendering/gi/screen_inputs.h>
+#include <cy/rendering/gi/screen_probes.h>
 #include <cy/rendering/gi/tracing.h>
 
 namespace cy::rendering::gi {
-
-/// One view's surfaces as the resolve reads them. Every span is `width * height`, row-major from
-/// the top-left — `denoise::GuidanceBuffers`' convention, because these become it.
-struct ScreenSurfaces {
-    u32 width = 0;
-    u32 height = 0;
-    /// Linear view-space depth in metres, positive in front of the eye. Zero or negative is sky,
-    /// and a sky pixel gathers nothing.
-    Span<const f32> depth;
-    /// World position and unit normal of the surface at each pixel.
-    Span<const Vec3> position;
-    Span<const Vec3> normal;
-    /// Perceptual roughness. Empty is 0.5 everywhere.
-    Span<const f32> roughness;
-    Vec3 camera{0.0F, 0.0F, 0.0F};
-};
-
-struct ScreenResolveSettings {
-    GiMode mode = GiMode::Dynamic;
-    /// The fraction of pixels that trace a final-gather ray this frame: the `TracingResolution`
-    /// lever's value squared (it is a linear scale). One traces every pixel; zero none.
-    f32 ray_density = 1.0F;
-    /// A final-gather ray's reach, in metres.
-    f32 max_ray_distance_metres = 40.0F;
-    /// How far off the surface a pixel's rays start, in metres, along its normal: the hardware
-    /// tier's lift. The software tier lifts at least one finest voxel (`world_ray`).
-    f32 origin_lift_metres = 0.02F;
-    ErrorTargets error_targets{};
-    ReflectionThresholds reflection_thresholds{};
-    /// `GiRegionSettings::diffuse_intensity` and `specular_intensity` for the view.
-    f32 diffuse_intensity = 1.0F;
-    f32 specular_intensity = 1.0F;
-    /// The length of the sky visibility sequence one ray a frame walks through.
-    u32 sky_visibility_rays = 8;
-};
-
-/// What the resolve reads. The world tier is the one `TieredTracer` would select: hardware when
-/// `hardware` is available, the software tier otherwise.
-struct ScreenResolveSources {
-    const RadianceCache* cache = nullptr;
-    const DistanceField* field = nullptr;
-    const SoftwareTracer* software = nullptr;
-    const HardwareTracer* hardware = nullptr;
-    SkyTerm sky{};
-    /// The frame the hashes and the reflection lobe's rotation are keyed by.
-    u64 frame = 0;
-    /// The radiance cache's clock: a probe's staleness is this frame minus its last update.
-    u64 cache_frame = 0;
-};
-
-/// One pixel's two signals before the denoiser.
-struct ScreenPixel {
-    ResolveResult diffuse{};
-    ResolveResult specular{};
-    bool traced_diffuse = false;
-    bool traced_specular = false;
-};
 
 /// A hash of a pixel, a frame and a stream: the whole of the resolve's randomness. The same
 /// construction `signals.h` draws with, public so a device draws the same numbers.
@@ -141,6 +86,43 @@ inline constexpr u32 kScreenStreamSpecular = 7;
 
 /// Whether a pixel traces its final-gather ray this frame, at `density`.
 [[nodiscard]] bool screen_traces(u32 pixel, u64 frame, f32 density) noexcept;
+
+/// The orthonormal basis a cosine lobe is sampled in about `normal` (Duff et al.'s branchless
+/// form).
+void screen_basis(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept;
+
+/// The world tier `TieredTracer` would select, traced alone: what a final-gather ray is — from
+/// `position` lifted along `normal` by `lift` (by at least one finest voxel on the software tier),
+/// `reach` metres. A hit on a surface facing away from the ray answers nothing (source `None`).
+[[nodiscard]] RadianceSample screen_world_ray(const ScreenResolveSources& sources, Vec3 position,
+                                              Vec3 normal, Vec3 direction, f32 lift,
+                                              f32 reach) noexcept;
+
+/// A final-gather ray as one sample of its hemisphere: it counts in full whatever it met, and its
+/// confidence says only how much of its VALUE is its own — `stand_in` supplies the rest where the
+/// mask admits it. A ray that answered nothing takes the stand-in's value, or stays no sample.
+[[nodiscard]] RadianceSample screen_gather_sample(const RadianceSample& ray,
+                                                  const RadianceSample& stand_in,
+                                                  u32 excluded_sources) noexcept;
+
+/// The mirror direction of `view_direction` (eye to surface) about `normal`.
+[[nodiscard]] Vec3 screen_reflect_view(Vec3 view_direction, Vec3 normal) noexcept;
+
+/// Whether `point` lies in one of the first `kScreenHistoryRegions` invalidated boxes.
+[[nodiscard]] bool screen_invalidated_at(Span<const Aabb> regions, Vec3 point) noexcept;
+
+/// The landing cell of `position` in last frame's view of `width` x `height` cells: the camera's
+/// motion alone, through `temporal-rendering`'s `derive_surface_motion`, as `screen_history` lands
+/// a pixel. False when it lands off the screen or is not representable.
+[[nodiscard]] bool screen_landing(Vec3 position, const ScreenHistoryInputs& inputs, u32 width,
+                                  u32 height, u32& x, u32& y) noexcept;
+
+/// The denoiser configuration a gather's signal is filtered with: `authored` itself for the
+/// per-pixel gather, and for the screen probes with its a-trous cascade capped at
+/// `probes.filter_passes`. The frame owner configures its denoiser with this; the device resolve
+/// applies it to what it reads off the host denoiser.
+[[nodiscard]] denoise::SignalConfig screen_signal_config(
+    const denoise::SignalConfig& authored, const ScreenResolveSettings& settings) noexcept;
 
 /// One pixel of the resolve. `view_direction` is from the eye to the surface.
 [[nodiscard]] ScreenPixel resolve_screen_pixel(u32 pixel, Vec3 position, Vec3 normal, f32 roughness,
@@ -170,10 +152,20 @@ public:
     /// The noisy signal as `Denoiser::denoise` takes it.
     [[nodiscard]] denoise::NoisySignal noisy(denoise::SignalKind kind) const noexcept;
 
+    /// The screen probes the last `produce` placed and traced, with `GiGather::ScreenProbes`.
+    [[nodiscard]] const ScreenProbeGather& probes() const noexcept { return probes_; }
+    /// Forget the screen probes' history: a cut, a teleport.
+    void reset_probe_history() noexcept { probes_.reset_history(); }
+
 private:
+    [[nodiscard]] Status produce_probes(const ScreenSurfaces& surfaces,
+                                        const ScreenResolveSettings& settings,
+                                        const ScreenResolveSources& sources) noexcept;
+
     u32 width_ = 0;
     u32 height_ = 0;
     u32 traced_ = 0;
+    ScreenProbeGather probes_;
     Array<Vec3> diffuse_;
     Array<Vec3> specular_;
     Array<f32> samples_;
@@ -225,27 +217,6 @@ inline constexpr u32 kUpsampleNormalSquarings = 3;
 
 /// The view's surfaces as `denoise::GuidanceBuffers`.
 [[nodiscard]] denoise::GuidanceBuffers screen_guidance(const ScreenSurfaces& surfaces) noexcept;
-
-/// What `screen_history` needs of the two frames.
-struct ScreenHistoryInputs {
-    /// This frame's and last frame's world-to-clip, both unjittered.
-    Mat4 current_world_to_clip = Mat4::identity();
-    Mat4 previous_world_to_clip = Mat4::identity();
-    /// Last frame's linear depth, the same size as this frame's. Empty is no history: a first
-    /// frame, a cut, a resize.
-    Span<const f32> previous_depth;
-    /// `classify_history`'s relative depth tolerance.
-    f32 depth_tolerance = 0.05F;
-    /// Regions whose illumination was invalidated this frame — a light that moved, an object that
-    /// appeared — the same boxes the caller filed with `GiScene::invalidate`. A pixel inside one
-    /// rejects its history, so the accumulation restarts from what the caches answer now rather
-    /// than averaging the old lighting away one frame in thirty-two. At most
-    /// `kScreenHistoryRegions` are read.
-    Span<const Aabb> invalidated;
-};
-
-/// The most invalidated regions one frame's history reads.
-inline constexpr u32 kScreenHistoryRegions = 4;
 
 /// The reprojection's answer for each pixel, through `temporal-rendering`: the pixel of last frame
 /// it lands on, or -1, and a confidence of 1 or 0. The surface is taken to be where it was — the

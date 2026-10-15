@@ -48,6 +48,12 @@ struct ScreenScene {
     cy::rendering::gi::ScreenResolveSettings settings;
     cy::rendering::gi::ScreenResolve resolve;
     cy::rendering::denoise::Denoiser denoiser;
+    /// The denoiser's configurations as authored; each frame filters with them as the gather asks
+    /// (`screen_signal_config`).
+    cy::rendering::denoise::SignalConfig authored_diffuse =
+        cy::rendering::denoise::default_config(cy::rendering::denoise::SignalKind::IndirectDiffuse);
+    cy::rendering::denoise::SignalConfig authored_specular = cy::rendering::denoise::default_config(
+        cy::rendering::denoise::SignalKind::IndirectSpecular);
     std::vector<i32> source;
     std::vector<f32> confidence;
     std::vector<f32> previous_depth;
@@ -141,16 +147,22 @@ struct ScreenScene {
         (void)system.update(context);
         CY_REQUIRE(grid.build(view.surfaces(), divisor).has_value());
         const cy::rendering::gi::ScreenSurfaces surfaces = grid.surfaces();
-        CY_REQUIRE(resolve.produce(surfaces, settings, sources(frame)).has_value());
         cy::rendering::gi::ScreenHistoryInputs history;
         history.current_world_to_clip = view.world_to_clip;
         history.previous_world_to_clip = previous_clip;
         history.previous_depth = {previous_depth.data(), previous_depth.size()};
         history.invalidated = {invalidated.data(), invalidated.size()};
+        cy::rendering::gi::ScreenResolveSources resolve_sources = sources(frame);
+        resolve_sources.history = &history;
+        CY_REQUIRE(resolve.produce(surfaces, settings, resolve_sources).has_value());
         CY_REQUIRE(cy::rendering::gi::screen_history(surfaces, history,
                                                      {source.data(), source.size()},
                                                      {confidence.data(), confidence.size()})
                        .has_value());
+        denoiser.configure(cy::rendering::denoise::SignalKind::IndirectDiffuse,
+                           cy::rendering::gi::screen_signal_config(authored_diffuse, settings));
+        denoiser.configure(cy::rendering::denoise::SignalKind::IndirectSpecular,
+                           cy::rendering::gi::screen_signal_config(authored_specular, settings));
         cy::rendering::denoise::HistoryGuidance guidance;
         guidance.source = {source.data(), source.size()};
         guidance.confidence = {confidence.data(), confidence.size()};

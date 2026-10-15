@@ -27,6 +27,11 @@ function(cy_gi_gpu_declare_tests)
     endif()
     set(CY_TEST_BUDGET_render "${budget}")
     set(CY_TEST_TIMEOUT_render "${timeout}")
+    # The quality suite with a device is a smoke suite: its budget is the taxonomy's too.
+    get_directory_property(CY_TEST_BUDGET_smoke DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_smoke)
+    get_directory_property(CY_TEST_TIMEOUT_smoke DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_smoke)
 
     if(NOT CY_RENDERER_VULKAN)
         return()
@@ -83,6 +88,23 @@ function(cy_gi_gpu_declare_tests)
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
                                        "${CMAKE_SOURCE_DIR}/tests/render")
     set_tests_properties(render.gi_gpu_resolve PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # The screen-probe gather and the per-pixel gather at 1920x1080 and 4K: the guide's quality
+    # axes — the path tracer, a 10 cm wall, a still view, a moving light — read back from the
+    # published frame, and every stage's cost, through both tiers. A smoke suite with a device:
+    # each case converges a full-resolution scene per gather.
+    cy_add_test(
+        NAME gi_gpu_probe_quality
+        KIND smoke
+        SOURCES "${tests_dir}/test_gi_gpu_probe_quality.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-graph
+                     cy::rendering-raytracing cy::rendering-raytracing-gpu cy::rhi cy::rhi-null
+                     cy::rhi-vulkan)
+    target_include_directories(cy_test_smoke_gi_gpu_probe_quality
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
+                                       "${CMAKE_SOURCE_DIR}/tests/render")
+    set_tests_properties(smoke.gi_gpu_probe_quality PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 
     # Stage 4 in the frame: the pipeline suites' scene with the `ScreenSpaceGi` stage produced by

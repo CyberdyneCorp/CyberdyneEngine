@@ -41,6 +41,7 @@ cy_add_module(
         src/reflections.cpp
         src/resolve.cpp
         src/scene.cpp
+        src/screen_probes.cpp
         src/screen_resolve.cpp
         src/signals.cpp
         src/surface_cache.cpp

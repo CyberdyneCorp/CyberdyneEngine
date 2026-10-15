@@ -286,7 +286,7 @@ Status before_upload(rendering::pipeline::FrameUpload& upload, void* user) noexc
 class GiFrameRun {
 public:
     GiFrameRun(DeviceFixture& fixture, bool attached, bool bound, gi::GiMode mode,
-               bool diffuse_only = false)
+               bool diffuse_only = false, gi::GiGather gather = gi::GiGather::ScreenProbes)
         : scene_(allocator()) {
         case_.scene = &scene_;
         case_.gi = &gi_;
@@ -334,6 +334,7 @@ public:
         if (ready_) {
             gi::ScreenResolveSettings settings;
             settings.mode = mode;
+            settings.gather = gather;
             settings.max_ray_distance_metres = 24.0F;
             resolve_.set_settings(settings);
             resolve_.set_denoiser(gi_.system.denoiser());
@@ -513,5 +514,64 @@ CY_TEST_CASE("(c) the prepass unpacks into the surfaces the resolve reads") {
     // centre on an edge belongs to.
     CY_CHECK_LT(misplaced, surfaces / 50U);
     CY_CHECK_LT(misturned, surfaces / 50U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(d) with either gather attached at none, the frame is the frame without it") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    GiFrameRun absent(fixture, false, false, gi::GiMode::Dynamic);
+    CY_REQUIRE(absent.render(3));
+    GiFrameRun per_pixel(fixture, true, false, gi::GiMode::Dynamic, false, gi::GiGather::PerPixel);
+    CY_REQUIRE(per_pixel.render(3));
+    GiFrameRun probes(fixture, true, false, gi::GiMode::Dynamic, false, gi::GiGather::ScreenProbes);
+    CY_REQUIRE(probes.render(3));
+    CY_CHECK_EQ(differing(absent.pixels(), per_pixel.pixels()), 0U);
+    CY_CHECK_EQ(differing(absent.pixels(), probes.pixels()), 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(e) the gather lever: bound, each gather lights the frame, and differently") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    GiFrameRun absent(fixture, false, false, gi::GiMode::Dynamic);
+    CY_REQUIRE(absent.render(8));
+    GiFrameRun per_pixel(fixture, true, true, gi::GiMode::Dynamic, false, gi::GiGather::PerPixel);
+    CY_REQUIRE(per_pixel.render(8));
+    GiFrameRun probes(fixture, true, true, gi::GiMode::Dynamic, false, gi::GiGather::ScreenProbes);
+    CY_REQUIRE(probes.render(8));
+    const usize per_pixel_changed = differing(absent.pixels(), per_pixel.pixels());
+    const usize probes_changed = differing(absent.pixels(), probes.pixels());
+    const usize between = differing(per_pixel.pixels(), probes.pixels());
+    // The probes' frame traced probes: its last frame's records hold live ones (the tiles whose
+    // centre is the scene's backdrop hold none).
+    const gi::ScreenProbeLayout& layout = probes.resolve().probe_layout();
+    std::vector<gi::ScreenProbe> records(layout.records());
+    std::vector<u32> slots(layout.cell_count());
+    CY_REQUIRE(probes.resolve()
+                   .read_back_probes({records.data(), records.size()}, {slots.data(), slots.size()})
+                   .has_value());
+    u32 traced = 0;
+    for (u32 tile = 0; tile < layout.uniform_count(); ++tile) {
+        traced += records[tile].depth > 0.0F && records[tile].history > 0.0F ? 1U : 0U;
+    }
+    std::fprintf(stderr, "the probes' frame traced %u of %u uniform probes\n", traced,
+                 layout.uniform_count());
+    CY_CHECK_GT(traced, layout.uniform_count() / 4U);
+    std::fprintf(stderr,
+                 "bound, the per-pixel gather changes %zu of %u pixels, the screen probes %zu; "
+                 "the two frames differ in %zu\n",
+                 per_pixel_changed, kWidth * kHeight, probes_changed, between);
+    CY_CHECK_GT(per_pixel_changed, static_cast<usize>(kWidth * kHeight / 10U));
+    CY_CHECK_GT(probes_changed, static_cast<usize>(kWidth * kHeight / 10U));
+    CY_CHECK_GT(between, 0U);
+    write_picture(probes.pixels(), "gi_frame_probes.png");
+    write_picture(per_pixel.pixels(), "gi_frame_per_pixel.png");
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

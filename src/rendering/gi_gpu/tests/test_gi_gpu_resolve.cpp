@@ -42,6 +42,7 @@
 #include <cy/test/test.h>
 
 #include "device.h"
+#include "resolve_support.h"
 #include "screen_scene.h"
 
 #include <algorithm>
@@ -52,7 +53,6 @@
 using namespace cy;
 namespace gi = cy::rendering::gi;
 namespace rt = cy::rendering::rt;
-namespace rt_gpu = cy::rendering::rt_gpu;
 using cy::rendering::apply_profile;
 using cy::rendering::ArbiterReport;
 using cy::rendering::BudgetArbiter;
@@ -62,226 +62,23 @@ using cy::rendering::CostSource;
 using cy::rendering::named_profile;
 using cy::rendering::ProfileName;
 using cy::rendering::QualityLadder;
-using cy::rendering::gi_gpu::GpuGiScene;
-using cy::rendering::gi_gpu::GpuGiSceneDescription;
-using cy::rendering::gi_gpu::GpuRadianceCache;
-using cy::rendering::gi_gpu::GpuRadianceCacheDescription;
 using cy::rendering::gi_gpu::GpuResolveTimes;
-using cy::rendering::gi_gpu::GpuResolveView;
 using cy::rendering::gi_gpu::GpuScreenResolve;
-using cy::rendering::gi_gpu::GpuScreenResolveDescription;
 
 namespace {
 
-Allocator& allocator() noexcept {
-    return system_allocator(MemoryDomain::Renderer);
-}
-
-/// A device, or a loud skip. The message is the one the suite's SKIP_REGULAR_EXPRESSION matches.
-struct Gpu {
-    render_test::DeviceFixture fixture;
-
-    explicit Gpu(bool ray_tracing = true)
-        : fixture("vulkan", "render.gi_gpu_resolve", true, ray_tracing) {}
-
-    [[nodiscard]] bool available() const noexcept {
-        if (fixture.is(rhi::BackendKind::Vulkan) && GpuScreenResolve::supported(fixture.device())) {
-            return true;
-        }
-        std::fprintf(stderr, "no requested graphics device on this machine; ");
-        fixture.report_skip();
-        return false;
-    }
-
-    [[nodiscard]] bool ray_queries() const noexcept {
-        if (rt_gpu::DeviceStructures::supported(fixture.device())) {
-            return true;
-        }
-        std::fprintf(stderr,
-                     "this device reports no ray queries (%s); the hardware-tier case is "
-                     "skipped and the software cases still run\n",
-                     rt::ray_tracing_refusal(fixture.device().capabilities()));
-        return false;
-    }
-
-    [[nodiscard]] rhi::Device& device() const noexcept { return fixture.device(); }
-};
-
-template <class Declare>
-[[nodiscard]] bool run_frame(rhi::Device& device, Declare&& declare) {
-    auto begun = device.begin_frame();
-    if (!begun.has_value()) {
-        std::fprintf(stderr, "begin_frame failed: %s\n", begun.error().message);
-        return false;
-    }
-    rendering::RenderGraph graph(allocator());
-    if (Status declared = declare(graph); !declared) {
-        std::fprintf(stderr, "declare failed: %s\n", declared.error().message);
-        (void)device.end_frame();
-        return false;
-    }
-    rendering::GraphExecutor executor(allocator(), device);
-    auto executed =
-        executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
-    if (!executed.has_value()) {
-        std::fprintf(stderr, "execute failed: %s\n", executed.error().message);
-        (void)device.end_frame();
-        return false;
-    }
-    if (Status idle = device.wait_idle(); !idle) {
-        std::fprintf(stderr, "wait_idle failed: %s\n", idle.error().message);
-        (void)device.end_frame();
-        return false;
-    }
-    return device.end_frame().has_value();
-}
-
-/// How closely two sets of answers agree: the mean and worst relative difference, and how many
-/// exceed a stated tolerance.
-struct Agreement {
-    u32 compared = 0;
-    u32 beyond = 0;
-    f64 mean = 0.0;
-    f64 worst = 0.0;
-
-    void add(Vec3 a, Vec3 b, f64 tolerance) noexcept {
-        const f64 scale =
-            std::max({static_cast<f64>(length(a)), static_cast<f64>(length(b)), 1.0e-3});
-        const f64 difference = static_cast<f64>(length(a - b)) / scale;
-        mean += difference;
-        worst = std::max(worst, difference);
-        beyond += difference > tolerance ? 1U : 0U;
-        compared += 1;
-    }
-    void finish() noexcept { mean = compared == 0 ? 0.0 : mean / compared; }
-    void print(const char* what) const {
-        std::fprintf(stderr, "%s: %u pixels, mean relative %.3g, worst %.3g, %u beyond\n", what,
-                     compared, mean, worst, beyond);
-    }
-    [[nodiscard]] f64 fraction_beyond() const noexcept {
-        return compared == 0 ? 0.0 : static_cast<f64>(beyond) / compared;
-    }
-};
-
-/// Triangles for the scene's quads, both windings — the service culls nothing, but the quads are
-/// two-sided and so are these.
-struct QuadTriangles {
-    std::vector<Vec3> positions;
-    std::vector<u32> indices;
-
-    explicit QuadTriangles(const std::vector<gi_support::AxisQuad>& quads) {
-        for (const gi_support::AxisQuad& quad : quads) {
-            const u32 a = quad.axis == 0 ? 1U : 0U;
-            const u32 b = quad.axis == 2 ? 1U : 2U;
-            const auto corner = [&](f32 u, f32 v) {
-                f32 p[3] = {0.0F, 0.0F, 0.0F};
-                p[quad.axis] = quad.coordinate;
-                p[a] = u;
-                p[b] = v;
-                return Vec3{p[0], p[1], p[2]};
-            };
-            const auto base = static_cast<u32>(positions.size());
-            positions.push_back(corner(quad.lo[0], quad.lo[1]));
-            positions.push_back(corner(quad.hi[0], quad.lo[1]));
-            positions.push_back(corner(quad.hi[0], quad.hi[1]));
-            positions.push_back(corner(quad.lo[0], quad.hi[1]));
-            indices.insert(indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
-        }
-    }
-
-    [[nodiscard]] rt::TriangleGeometry geometry() const noexcept {
-        rt::TriangleGeometry triangles;
-        triangles.positions = {positions.data(), positions.size()};
-        triangles.indices = {indices.data(), indices.size()};
-        return triangles;
-    }
-};
-
-[[nodiscard]] GpuGiSceneDescription scene_description() noexcept {
-    GpuGiSceneDescription description;
-    description.max_levels = 2;
-    description.max_window_bricks = 16;
-    description.max_brick_slots = 16384;
-    description.max_cards = 2048;
-    description.max_selection = 2048;
-    return description;
-}
-
-/// The device half beside a host `ScreenScene`: the scene, the probe set, the resolve and — for
-/// the hardware tier — the structures, every input mirrored from the host's own state each frame.
-struct DeviceResolve {
-    GpuGiScene scene;
-    GpuRadianceCache cache;
-    GpuScreenResolve resolve;
-    rt_gpu::DeviceStructures structures;
-    QuadTriangles* triangles = nullptr;
-    bool hardware = false;
-
-    [[nodiscard]] bool create(rhi::Device& device, gi_support::ScreenScene& host,
-                              bool with_hardware, bool readback = true) {
-        hardware = with_hardware;
-        if (!scene.create(allocator(), device, scene_description()).has_value() ||
-            !cache.create(allocator(), device, scene, GpuRadianceCacheDescription{}).has_value()) {
-            return false;
-        }
-        cache.bind_field(host.system.field());
-        cache.bind_host_surfaces(&host.system.surfaces());
-        if (hardware) {
-            if (!structures.create(allocator(), device, {}).has_value()) {
-                return false;
-            }
-            host.system.acceleration().set_mirror(&structures);
-            (void)host.system.acceleration().update();
-            if (!run_frame(device, [&](rendering::RenderGraph& graph) {
-                    return structures.declare(graph);
-                })) {
-                return false;
-            }
-            if (!cache.bind_hardware(&host.system.acceleration(), &structures).has_value()) {
-                return false;
-            }
-        }
-        GpuScreenResolveDescription description;
-        description.width = host.view.width;
-        description.height = host.view.height;
-        description.readback = readback;
-        if (!resolve.create(allocator(), device, cache, description).has_value()) {
-            return false;
-        }
-        resolve.set_settings(host.settings);
-        resolve.set_denoiser(host.denoiser);
-        resolve.set_field(host.system.field());
-        resolve.set_sky(host.system.sky_term());
-        return true;
-    }
-
-    /// The device's frame `frame`, after the host's `step(frame)` updated the caches it reads.
-    [[nodiscard]] bool frame(rhi::Device& device, gi_support::ScreenScene& host, u64 frame) {
-        if (!resolve.sync(host.system.radiance()).has_value()) {
-            return false;
-        }
-        resolve.set_cache_frame(frame);
-        GpuResolveView view;
-        view.camera = host.view.camera;
-        view.world_to_clip = host.view.world_to_clip;
-        if (!resolve.begin_frame(view, frame).has_value() ||
-            !resolve.set_surfaces(host.view.surfaces()).has_value()) {
-            return false;
-        }
-        return run_frame(device, [&](rendering::RenderGraph& graph) -> Status {
-            if (hardware) {
-                if (Status built = structures.declare(graph); !built) {
-                    return built;
-                }
-            }
-            return resolve.declare_from_surfaces(graph);
-        });
-    }
-};
+using namespace gi_gpu_support;  // NOLINT(google-build-using-namespace)
 
 /// The room, the host, and the device beside it, run together for `frames` frames; every frame's
 /// noisy, history and denoised buffers compared.
 struct Comparison {
+    /// The screen probes' records, every live probe of every frame, by its cell: coefficients.
+    Agreement probe_coefficients;
+    u32 probe_records = 0;
+    /// Probes the two sides placed differently: present on one side only, or elsewhere.
+    u32 probe_mismatches = 0;
+    /// Adaptive candidates the host refused because a frame's capacity was spent.
+    u32 refused = 0;
     Agreement noisy_diffuse;
     Agreement noisy_specular;
     Agreement denoised_diffuse;
@@ -294,11 +91,65 @@ struct Comparison {
     gi::RadianceSource tier = gi::RadianceSource::None;
 };
 
+/// The device's probes against the host's, record by record: the uniform ones by tile, the
+/// adaptive ones by their CELL, whichever slot each side gave them.
+void compare_probes(const gi::ScreenProbeGather& host, const GpuScreenResolve& device,
+                    Comparison& out) {
+    const gi::ScreenProbeLayout& layout = host.layout();
+    CY_REQUIRE(device.probe_layout().records() == layout.records());
+    std::vector<gi::ScreenProbe> records(layout.records());
+    std::vector<u32> slots(layout.cell_count());
+    const Expected<u32, Error> adaptive =
+        device.read_back_probes({records.data(), records.size()}, {slots.data(), slots.size()});
+    CY_REQUIRE(adaptive.has_value());
+    out.probe_mismatches += *adaptive == host.stats().adaptive ? 0U : 1U;
+    out.refused += host.stats().refused;
+    const auto compare = [&](const gi::ScreenProbe& mine, const gi::ScreenProbe& theirs) {
+        if (mine.depth != theirs.depth || mine.id != theirs.id) {
+            out.probe_mismatches += 1;
+            return;
+        }
+        if (mine.depth <= 0.0F) {
+            return;
+        }
+        out.probe_records += 1;
+        // The count is the matched previous probe's, to its last bit.
+        out.probe_mismatches +=
+            std::abs(mine.history - theirs.history) <= 1.0e-5F * theirs.history ? 0U : 1U;
+        // The estimate as a whole: the band-0 term is the probe's mean radiance, the scale.
+        for (u32 k = 0; k < gi::kScreenProbeCoefficients; ++k) {
+            out.probe_coefficients.add(mine.coefficients[k] + mine.coefficients[0],
+                                       theirs.coefficients[k] + theirs.coefficients[0], 1.0e-3);
+        }
+    };
+    for (u32 tile = 0; tile < layout.uniform_count(); ++tile) {
+        compare(records[tile], host.probes()[tile]);
+    }
+    for (u32 cell = 0; cell < layout.cell_count(); ++cell) {
+        const gi::ScreenProbe* theirs = host.adaptive(cell);
+        const bool mine = slots[cell] != gi::kScreenProbeNone;
+        if (mine != (theirs != nullptr)) {
+            out.probe_mismatches += 1;
+            continue;
+        }
+        if (theirs != nullptr) {
+            compare(records[layout.uniform_count() + slots[cell]], *theirs);
+        }
+    }
+}
+
 [[nodiscard]] bool compare_room(Gpu& gpu, bool hardware, u32 frames, Comparison& out,
-                                u32 divisor = 1) {
+                                u32 divisor = 1, gi::GiGather gather = gi::GiGather::PerPixel,
+                                u32 width = gi_support::kScreenWidth,
+                                u32 height = gi_support::kScreenHeight, f32 rippled = 0.0F) {
     gi_support::ScreenScene host;
-    gi_support::make_room(host, gi_support::kScreenWidth, gi_support::kScreenHeight, hardware);
-    if (divisor != 1) {
+    host.settings.gather = gather;
+    host.settings.probes.spacing_pixels = 8;
+    // FOUR FRAMES OF PROBE HISTORY, not the default two: the blend's weight is the count's
+    // (1/2, 1/3, 1/4) before it is the floor's, which a transcription could get wrong unseen.
+    host.settings.probes.history_frames = 4;
+    gi_support::make_room(host, width, height, hardware);
+    if ((divisor != 1 && gather == gi::GiGather::PerPixel) || rippled > 0.0F) {
         // A RIPPLE OF A FEW DEGREES ON EVERY NORMAL, for the half grid. The room is flat, so
         // neighbouring normals agree exactly and the upsample's facing term — raised to its power
         // — would weigh nothing a transcription could get wrong; rippled, it weighs every tap.
@@ -307,8 +158,11 @@ struct Comparison {
             const Vec3 ripple{gi::screen_unit(hash) - 0.5F,
                               gi::screen_unit(hash * 0x27220A95U) - 0.5F,
                               gi::screen_unit(hash * 0x9E3779B9U) - 0.5F};
-            host.view.normal[index] = normalize(host.view.normal[index] + (ripple * 0.3F));
+            host.view.normal[index] =
+                normalize(host.view.normal[index] + (ripple * (rippled > 0.0F ? rippled : 0.3F)));
         }
+    }
+    if (divisor != 1) {
         host.divisor = divisor;
         host.resize_grid();
     }
@@ -343,6 +197,9 @@ struct Comparison {
         }
         out.tier = device.resolve.last_tier();
         const bool last = frame + 1 == frames;
+        if (gather == gi::GiGather::ScreenProbes) {
+            compare_probes(host.resolve.probes(), device.resolve, out);
+        }
         CY_REQUIRE(
             device.resolve.read_back_noisy({diffuse.data(), pixels}, {specular.data(), pixels})
                 .has_value());
@@ -392,6 +249,7 @@ struct Comparison {
     if (hardware) {
         host.system.acceleration().set_mirror(nullptr);
     }
+    out.probe_coefficients.finish();
     out.noisy_diffuse.finish();
     out.noisy_specular.finish();
     out.denoised_diffuse.finish();
@@ -429,6 +287,20 @@ void check(const Comparison& result, const char* tier) {
     CY_CHECK_LT(result.published_diffuse.fraction_beyond(), 0.01);
     CY_CHECK_LT(result.published_specular.mean, 2.0e-3);
     CY_CHECK_LT(result.published_specular.fraction_beyond(), 0.01);
+}
+
+/// The screen probes' records beside `check`'s signals. A probe's placement compares a weight
+/// against a threshold, so a weight within a last bit of it may place differently on the two
+/// sides; the bound is on how many do.
+void check_probes(const Comparison& result, const char* tier) {
+    std::fprintf(stderr, "%s, the probes: %u live records compared, %u placed differently\n", tier,
+                 result.probe_records, result.probe_mismatches);
+    result.probe_coefficients.print("  probe coefficients, every frame");
+    CY_CHECK_GT(result.probe_records, 0U);
+    CY_CHECK_LE(result.probe_mismatches * 100U, std::max(result.probe_records, 100U));
+    CY_CHECK_LT(result.probe_coefficients.mean, 1.0e-3);
+    CY_CHECK_LT(result.probe_coefficients.fraction_beyond(), 0.02);
+    check(result, tier);
 }
 
 }  // namespace
@@ -471,7 +343,76 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, hardware tier with
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
-CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tier and per lever") {
+CY_TEST_CASE(
+    "the device screen probes, their integration and the denoiser are the host's, software") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // Twelve frames: past the probes' history cap, and through the guide drawn from the history.
+    Comparison result;
+    CY_REQUIRE(compare_room(gpu, false, 12, result, 1, gi::GiGather::ScreenProbes, 64, 40));
+    CY_CHECK_EQ(result.tier, gi::RadianceSource::SoftwareTrace);
+    check_probes(result, "software screen probes");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("on a half-resolution grid the device screen probes are the host's") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // NO RIPPLE ON THE NORMALS, as the per-pixel half grid has. A rippled normal turns a probe's
+    // rays by its last bit on one side and not the other, a ray that grazes an edge then meets the
+    // other side of it, and the probe's history carries that one ray's answer for frames and into
+    // its neighbours' reprojection: two valid estimates, not one transcription. The upsample the
+    // ripple exercises is the per-pixel half grid's case; this one holds the probes' placement,
+    // reprojection and integration on the half grid.
+    Comparison result;
+    CY_REQUIRE(compare_room(gpu, false, 8, result, 2, gi::GiGather::ScreenProbes, 64, 40));
+    check_probes(result, "software screen probes, divisor 2");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+/// The rippled-placement case's ripple: up to about five degrees on every normal.
+constexpr f32 kRipple = 0.18F;
+
+CY_TEST_CASE("on rippled normals the device places the probes the host places") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // THE PLACEMENT ALONE, on normals rippled by a few degrees, so every normal weight is
+    // fractional and a placement that weighed normals differently places differently. The probes'
+    // estimates are not compared here: a rippled normal turns a ray by its last bit, and a ray
+    // that grazes an edge then meets its other side (see the half-grid case). A larger ripple
+    // asks for more adaptive probes than a frame keeps, and which of them the device's atomic
+    // keeps is the order its threads arrive in.
+    Comparison result;
+    CY_REQUIRE(compare_room(gpu, false, 2, result, 1, gi::GiGather::ScreenProbes, 64, 40, kRipple));
+    std::fprintf(stderr,
+                 "rippled normals: %u live records compared, %u placed differently, %u adaptive "
+                 "refused\n",
+                 result.probe_records, result.probe_mismatches, result.refused);
+    CY_CHECK_EQ(result.refused, 0U);
+    CY_CHECK_GT(result.probe_records, 0U);
+    CY_CHECK_EQ(result.probe_mismatches, 0U);
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("the device screen probes are the host's, hardware tier with ray queries") {
+    Gpu gpu(true);
+    if (!gpu.available() || !gpu.ray_queries()) {
+        return;
+    }
+    Comparison result;
+    CY_REQUIRE(compare_room(gpu, true, 8, result, 1, gi::GiGather::ScreenProbes, 64, 40));
+    CY_CHECK_EQ(result.tier, gi::RadianceSource::HardwareTrace);
+    check_probes(result, "hardware screen probes");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("what the per-pixel gather costs at 1920x1080, per stage, per tier and per lever") {
     Gpu gpu(true);
     if (!gpu.available()) {
         return;
@@ -499,6 +440,8 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tie
             continue;
         }
         gi_support::ScreenScene host;
+        // The per-pixel gather's costs: the screen probes' are smoke.gi_gpu_probe_quality's.
+        host.settings.gather = gi::GiGather::PerPixel;
         gi_support::make_room(host, 1920, 1080, run.hardware, false);
         std::unique_ptr<QuadTriangles> triangles;
         if (run.hardware) {
@@ -544,8 +487,8 @@ CY_TEST_CASE("what stage 4 costs on this device at 1920x1080, per stage, per tie
         });
         const GpuResolveTimes& fastest = times.front();
         std::fprintf(stderr,
-                     "1920x1080, %s: reproject %.3f, resolve %.3f, accumulate %.3f, variance "
-                     "%.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
+                     "1920x1080, per-pixel gather, %s: reproject %.3f, resolve %.3f, accumulate "
+                     "%.3f, variance %.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
                      run.name, fastest.reproject_ms, fastest.resolve_ms, fastest.accumulate_ms,
                      fastest.variance_ms, fastest.filter_ms, fastest.publish_ms, fastest.total_ms);
         CY_CHECK_EQ(device.resolve.last_tier(), run.hardware ? gi::RadianceSource::HardwareTrace

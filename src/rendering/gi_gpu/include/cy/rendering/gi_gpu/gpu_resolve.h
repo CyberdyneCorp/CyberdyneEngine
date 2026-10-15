@@ -13,10 +13,14 @@
 //   unpack      the `DepthNormal` prepass as surfaces: world position, view depth, normal and
 //               roughness a pixel (the frame's path; a test uploads `gi::ScreenSurfaces` instead);
 //   reproject   `gi::screen_history`: each pixel's history pixel, through `temporal-rendering`;
-//   resolve     `gi::resolve_screen_pixel` for every pixel: the radiance cache, one final-gather
-//               ray through the world tier `GpuRadianceCache::world_tier()` selects (ray queries
-//               where the device has them), and the far-field sky, combined by confidence under
-//               `exclusion_for()`'s mask; and the rough specular;
+//   resolve     the final gather the settings' `gi::GiGather` names, through the world tier
+//               `GpuRadianceCache::world_tier()` selects (ray queries where the device has them):
+//                 screen probes (the default) — `gi::ScreenProbeGather`'s three passes: PLACE the
+//                 uniform and adaptive probes, TRACE each probe's rays and blend its reprojected
+//                 history, INTEGRATE every cell from the probes about it;
+//                 per pixel — `gi::resolve_screen_pixel` for every cell: the radiance cache, one
+//                 final-gather ray and the far-field sky, combined by confidence under
+//                 `exclusion_for()`'s mask; and the rough specular;
 //   accumulate  `Denoiser::accumulate` over that history, per signal;
 //   variance    `Denoiser::estimate_variance`;
 //   filter      `Denoiser::filter`'s a-trous cascade, one dispatch a pass;
@@ -67,6 +71,9 @@ struct GpuScreenResolveDescription {
     /// Host copies of the noisy, reprojected, denoised and surface buffers after each frame, for a
     /// test. A shipped frame reads none of them.
     bool readback = false;
+    /// The finest screen-probe spacing the resolve sizes its probe buffers for, in frame pixels. A
+    /// setting below it gathers at it.
+    u32 min_probe_spacing_pixels = 8;
 };
 
 /// One frame's view, as the resolve needs it.
@@ -88,7 +95,13 @@ struct GpuResolveView {
 struct GpuResolveTimes {
     f64 unpack_ms = 0.0;
     f64 reproject_ms = 0.0;
+    /// The final gather, whichever runs: the probes' three passes, or the per-pixel resolve.
     f64 resolve_ms = 0.0;
+    /// The screen probes' passes inside `resolve_ms`; zero for the per-pixel gather, whose one pass
+    /// is `integrate_ms`.
+    f64 probe_place_ms = 0.0;
+    f64 probe_trace_ms = 0.0;
+    f64 integrate_ms = 0.0;
     f64 accumulate_ms = 0.0;
     f64 variance_ms = 0.0;
     f64 filter_ms = 0.0;
@@ -146,7 +159,10 @@ public:
     /// against this frame's scene.
     [[nodiscard]] Status sync(const gi::RadianceCache& cache) noexcept;
     /// Forget the history: a cut, a teleport, a resize. The next frame accumulates from nothing.
-    void reset_history() noexcept { history_valid_ = false; }
+    void reset_history() noexcept {
+        history_valid_ = false;
+        probe_history_valid_ = false;
+    }
 
     // --- One frame
     // ---------------------------------------------------------------------------------
@@ -169,6 +185,9 @@ public:
     /// A test's FRAME surfaces in place of the prepass: their grid written into this frame's slot,
     /// and every pixel's normal and depth into the guidance the publish upsamples against.
     [[nodiscard]] Status set_surfaces(const gi::ScreenSurfaces& surfaces) noexcept;
+    /// This frame's surfaces are last frame's: the upload `set_surfaces` wrote is copied into this
+    /// frame's slot again without being written again. For a test whose view does not move.
+    [[nodiscard]] Status keep_surfaces() noexcept;
 
     /// Import the two targets into this frame's graph. The diffuse one is the frame's
     /// `FrameDescription::screen_space_gi_target`, the specular its `..._specular_target`.
@@ -202,6 +221,15 @@ public:
     /// The published signals, one entry a FRAME pixel: what the forward pass samples.
     [[nodiscard]] Status read_back_published(Span<Vec3> diffuse,
                                              Span<Vec3> specular) const noexcept;
+    /// This frame's screen probes: `probe_layout().records()` records (the uniform probes, then the
+    /// adaptive slots in the order the device took them) and the slot of each half-tile cell.
+    /// Returns how many adaptive slots were taken.
+    [[nodiscard]] Expected<u32, Error> read_back_probes(Span<gi::ScreenProbe> records,
+                                                        Span<u32> slots) const noexcept;
+    /// The probe layout of the resolve grid at the settings' spacing.
+    [[nodiscard]] const gi::ScreenProbeLayout& probe_layout() const noexcept {
+        return probe_layout_;
+    }
 
     // --- Timing
     // ------------------------------------------------------------------------------------
@@ -214,6 +242,7 @@ public:
     [[nodiscard]] const GpuScreenResolveDescription& description() const noexcept { return desc_; }
 
 private:
+    /// The ray query pipelines last: a device without ray queries creates the ones before them.
     enum Pipeline : u32 {
         kUnpack = 0,
         kReproject,
@@ -222,7 +251,12 @@ private:
         kFilter,
         kPublish,
         kResolve,
+        kProbePlace,
+        kProbeTrace,
+        kProbeIntegrate,
         kResolveHardware,
+        kProbeTraceHardware,
+        kProbeIntegrateHardware,
         kPipelineCount,
     };
     enum Layout : u32 {
@@ -253,10 +287,19 @@ private:
         /// The upsampled signals a frame pixel, kept when `readback` asks.
         kPublished,
         kPublishedHost,
+        /// The screen probes: two frame slots of records, and the adaptive counters and tables.
+        kProbes,
+        kProbeSlots,
+        /// Zeros for the counters, copied in by the first frame.
+        kProbeSlotsUpload,
+        kProbesHost,
+        kProbeSlotsHost,
         kBufferCount,
     };
-    /// Timestamps: one before the first stage and one after each of the seven.
-    static constexpr u32 kStamps = 8;
+    /// Timestamps: one before the first stage and one after each of the nine — unpack, reproject,
+    /// place, trace, integrate, accumulate, variance, filter, publish. The per-pixel gather's
+    /// place and trace are empty.
+    static constexpr u32 kStamps = 10;
 
     struct Step {
         GpuScreenResolve* self = nullptr;
@@ -272,6 +315,8 @@ private:
         ResourceId normals = kInvalidResource;
         ResourceId diffuse = kInvalidResource;
         ResourceId specular = kInvalidResource;
+        /// Stamps written before the dispatch: the probe stages the per-pixel gather skips.
+        u32 empty_before = 0;
     };
     struct Copy {
         GpuScreenResolve* self = nullptr;
@@ -294,6 +339,9 @@ private:
     void declare_readbacks(RenderGraph& graph) noexcept;
     void declare_copy(RenderGraph& graph, Copy& copy, const char* name) noexcept;
     [[nodiscard]] PassId declare_resolve(RenderGraph& graph, bool first) noexcept;
+    void declare_probes(RenderGraph& graph, bool hardware) noexcept;
+    void update_probe_words() noexcept;
+    void update_filter_passes() noexcept;
 
     static PassId declare_stage(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
                                 void* user) noexcept;
@@ -341,10 +389,11 @@ private:
 
     ResourceId imported_diffuse_ = kInvalidResource;
     ResourceId imported_specular_ = kInvalidResource;
-    Step steps_[16]{};
+    Step steps_[20]{};
     u32 step_count_ = 0;
-    Copy copies_[5]{};
+    Copy copies_[7]{};
     Copy upload_{};
+    Copy counters_upload_{};
     Copy guidance_upload_{};
     gi::ScreenGrid grid_;
     u32 divisor_ = 1;
@@ -352,6 +401,12 @@ private:
     u32 grid_height_ = 0;
     bool surfaces_uploaded_ = false;
     bool final_in_b_ = false;
+    gi::ScreenProbeLayout probe_layout_{};
+    /// Whether last frame traced the probes this frame's reprojection reads, at this layout.
+    bool probe_history_valid_ = false;
+    bool counters_cleared_ = false;
+    /// Each signal's cascade length as the host denoiser configures it, before the gather's cap.
+    u32 authored_passes_[2] = {0, 0};
 };
 
 /// The frame's words for the two targets bound at `diffuse_slot` and `specular_slot` of the set 0

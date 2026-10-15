@@ -11,15 +11,6 @@
 namespace cy::rendering::gi {
 namespace {
 
-/// The orthonormal basis `signals.h` samples a cosine lobe in (Duff et al.'s branchless form).
-void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
-    const f32 sign = normal.z >= 0.0F ? 1.0F : -1.0F;
-    const f32 a = -1.0F / (sign + normal.z);
-    const f32 b = normal.x * normal.y * a;
-    tangent = Vec3{1.0F + (sign * normal.x * normal.x * a), sign * b, -sign * normal.x};
-    bitangent = Vec3{b, sign + (normal.y * normal.y * a), -normal.y};
-}
-
 /// The world tier `TieredTracer` would select, traced alone: what a final-gather ray is.
 ///
 /// A hit whose surface faces AWAY from the ray answers nothing. A pixel beside a thin wall is
@@ -33,8 +24,9 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
 /// tier, whose triangles are exact, and by at least one finest voxel for the software tier, whose
 /// hit threshold is half of one — closer than that, a ray leaving its own surface at any but a
 /// steep angle is answered by that surface, the pixel lit by itself.
-[[nodiscard]] RadianceSample world_ray(const ScreenResolveSources& sources, Vec3 position,
-                                       Vec3 normal, Vec3 direction, f32 lift, f32 reach) noexcept {
+[[nodiscard]] RadianceSample world_ray_impl(const ScreenResolveSources& sources, Vec3 position,
+                                            Vec3 normal, Vec3 direction, f32 lift,
+                                            f32 reach) noexcept {
     const Vec3 unit = normalized_or(direction, Vec3{0.0F, 0.0F, -1.0F});
     SceneHit hit;
     if (sources.hardware != nullptr && sources.hardware->available()) {
@@ -73,9 +65,9 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
 /// cache's answer for the same pixel (`stand_in`) stands in for, as "stale cache is distrusted"
 /// asks. With no stand-in the ray's own answer is all there is; a back face with none is no
 /// sample.
-[[nodiscard]] RadianceSample gather_sample(const RadianceSample& ray,
-                                           const RadianceSample& stand_in,
-                                           u32 excluded_sources) noexcept {
+[[nodiscard]] RadianceSample gather_sample_impl(const RadianceSample& ray,
+                                                const RadianceSample& stand_in,
+                                                u32 excluded_sources) noexcept {
     const bool has_stand_in = stand_in.source != RadianceSource::None &&
                               stand_in.confidence > 0.0F &&
                               (excluded_sources & source_bit(stand_in.source)) == 0U;
@@ -92,11 +84,6 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
     }
     sample.confidence = 1.0F;
     return sample;
-}
-
-[[nodiscard]] Vec3 reflect_view(Vec3 view_direction, Vec3 normal) noexcept {
-    const Vec3 incident = normalized_or(view_direction, Vec3{0.0F, 0.0F, -1.0F});
-    return normalized_or(incident - (normal * (2.0F * dot(incident, normal))), normal);
 }
 
 /// The radiance cache at a pixel for both signals, every contributing probe traced to through the
@@ -153,11 +140,11 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamDirection);
         const Vec3 direction =
             screen_cosine_direction(normal, screen_unit(hash), screen_unit(hash * 0x27220A95U));
-        samples[count] =
-            gather_sample(world_ray(sources, position, normal, direction,
-                                    settings.origin_lift_metres, settings.max_ray_distance_metres),
-                          sources.cache != nullptr ? cached : RadianceSample{},
-                          exclusion_for(settings.mode, false, false));
+        samples[count] = gather_sample_impl(
+            world_ray_impl(sources, position, normal, direction, settings.origin_lift_metres,
+                           settings.max_ray_distance_metres),
+            sources.cache != nullptr ? cached : RadianceSample{},
+            exclusion_for(settings.mode, false, false));
         count += 1;
     }
     samples[count] = far_sky(pixel, position, normal, camera_distance, settings, sources);
@@ -188,10 +175,10 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
         const u32 hash = screen_hash(pixel, sources.frame, kScreenStreamSpecular);
         const Vec3 direction = reflection_lobe_direction(reflection, normal, roughness, hash % rays,
                                                          rays, static_cast<u32>(sources.frame));
-        samples[count] =
-            gather_sample(world_ray(sources, position, normal, direction,
-                                    settings.origin_lift_metres, settings.max_ray_distance_metres),
-                          cached, 0U);
+        samples[count] = gather_sample_impl(
+            world_ray_impl(sources, position, normal, direction, settings.origin_lift_metres,
+                           settings.max_ray_distance_metres),
+            cached, 0U);
         count += 1;
     }
     if (cached.confidence > 0.0F) {
@@ -201,19 +188,6 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
     ResolveResult result = combine(Span<const RadianceSample>{samples, count}, 0);
     result.radiance = result.radiance * settings.specular_intensity;
     return result;
-}
-
-/// Whether `point` lies in one of the first `kScreenHistoryRegions` invalidated boxes.
-[[nodiscard]] bool invalidated_at(Span<const Aabb> regions, Vec3 point) noexcept {
-    const usize count = std::min<usize>(regions.size(), kScreenHistoryRegions);
-    for (usize index = 0; index < count; ++index) {
-        const Aabb& box = regions[index];
-        if (point.x >= box.min.x && point.y >= box.min.y && point.z >= box.min.z &&
-            point.x <= box.max.x && point.y <= box.max.y && point.z <= box.max.z) {
-            return true;
-        }
-    }
-    return false;
 }
 
 }  // namespace
@@ -232,10 +206,18 @@ f32 screen_unit(u32 hash) noexcept {
     return static_cast<f32>(hash & 0x00FFFFFFU) / static_cast<f32>(0x01000000U);
 }
 
+void screen_basis(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
+    const f32 sign = normal.z >= 0.0F ? 1.0F : -1.0F;
+    const f32 a = -1.0F / (sign + normal.z);
+    const f32 b = normal.x * normal.y * a;
+    tangent = Vec3{1.0F + (sign * normal.x * normal.x * a), sign * b, -sign * normal.x};
+    bitangent = Vec3{b, sign + (normal.y * normal.y * a), -normal.y};
+}
+
 Vec3 screen_cosine_direction(Vec3 normal, f32 u1, f32 u2) noexcept {
     Vec3 tangent;
     Vec3 bitangent;
-    basis_around(normal, tangent, bitangent);
+    screen_basis(normal, tangent, bitangent);
     const f32 radius = std::sqrt(u1);
     const f32 angle = math::kTwoPi * u2;
     const f32 z = std::sqrt(math::max(0.0F, 1.0F - u1));
@@ -251,12 +233,80 @@ bool screen_traces(u32 pixel, u64 frame, f32 density) noexcept {
     return screen_unit(screen_hash(pixel, frame, kScreenStreamTrace)) < density;
 }
 
+RadianceSample screen_world_ray(const ScreenResolveSources& sources, Vec3 position, Vec3 normal,
+                                Vec3 direction, f32 lift, f32 reach) noexcept {
+    return world_ray_impl(sources, position, normal, direction, lift, reach);
+}
+
+RadianceSample screen_gather_sample(const RadianceSample& ray, const RadianceSample& stand_in,
+                                    u32 excluded_sources) noexcept {
+    return gather_sample_impl(ray, stand_in, excluded_sources);
+}
+
+Vec3 screen_reflect_view(Vec3 view_direction, Vec3 normal) noexcept {
+    const Vec3 incident = normalized_or(view_direction, Vec3{0.0F, 0.0F, -1.0F});
+    return normalized_or(incident - (normal * (2.0F * dot(incident, normal))), normal);
+}
+
+bool screen_invalidated_at(Span<const Aabb> regions, Vec3 point) noexcept {
+    const usize count = std::min<usize>(regions.size(), kScreenHistoryRegions);
+    for (usize index = 0; index < count; ++index) {
+        const Aabb& box = regions[index];
+        if (point.x >= box.min.x && point.y >= box.min.y && point.z >= box.min.z &&
+            point.x <= box.max.x && point.y <= box.max.y && point.z <= box.max.z) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool screen_landing(Vec3 position, const ScreenHistoryInputs& inputs, u32 width, u32 height, u32& x,
+                    u32& y) noexcept {
+    SurfaceMotionInputs motion_inputs;
+    motion_inputs.current_world = position;
+    motion_inputs.previous_world = position;
+    motion_inputs.current_view_projection = inputs.current_world_to_clip;
+    motion_inputs.previous_view_projection = inputs.previous_world_to_clip;
+    const SurfaceMotion motion = derive_surface_motion(motion_inputs);
+    if (!motion.representable) {
+        return false;
+    }
+    const Vec2 uv{motion.current_uv.x + motion.motion.x, motion.current_uv.y + motion.motion.y};
+    const f32 fx = std::floor(uv.x * static_cast<f32>(width));
+    const f32 fy = std::floor((1.0F - uv.y) * static_cast<f32>(height));
+    if (fx < 0.0F || fy < 0.0F || fx >= static_cast<f32>(width) || fy >= static_cast<f32>(height)) {
+        return false;
+    }
+    x = static_cast<u32>(fx);
+    y = static_cast<u32>(fy);
+    return true;
+}
+
+denoise::SignalConfig screen_signal_config(const denoise::SignalConfig& authored,
+                                           const ScreenResolveSettings& settings) noexcept {
+    denoise::SignalConfig config = authored;
+    if (settings.gather == GiGather::ScreenProbes) {
+        config.max_passes = std::min(config.max_passes, settings.probes.filter_passes);
+    }
+    return config;
+}
+
+const char* gi_gather_name(GiGather gather) noexcept {
+    switch (gather) {
+        case GiGather::ScreenProbes:
+            return "screen probes";
+        case GiGather::PerPixel:
+            return "per pixel";
+    }
+    return "unknown";
+}
+
 ScreenPixel resolve_screen_pixel(u32 pixel, Vec3 position, Vec3 normal, f32 roughness,
                                  f32 camera_distance, Vec3 view_direction,
                                  const ScreenResolveSettings& settings,
                                  const ScreenResolveSources& sources) noexcept {
     ScreenPixel answer;
-    const Vec3 reflection = reflect_view(view_direction, normal);
+    const Vec3 reflection = screen_reflect_view(view_direction, normal);
     const TracedCacheSamples cached = cache_samples(sources, position, normal, reflection);
     answer.diffuse = resolve_diffuse(pixel, position, normal, camera_distance, cached.diffuse,
                                      settings, sources, answer.traced_diffuse);
@@ -292,6 +342,9 @@ Status ScreenResolve::produce(const ScreenSurfaces& surfaces, const ScreenResolv
         return fail(ErrorCode::InvalidArgument,
                     "ScreenResolve::produce: the surfaces do not cover the view it was sized for");
     }
+    if (settings.gather == GiGather::ScreenProbes) {
+        return produce_probes(surfaces, settings, sources);
+    }
     traced_ = 0;
     for (usize index = 0; index < pixels; ++index) {
         diffuse_[index] = Vec3{0.0F, 0.0F, 0.0F};
@@ -312,6 +365,42 @@ Status ScreenResolve::produce(const ScreenSurfaces& surfaces, const ScreenResolv
         samples_[index] = 1.0F;
         traced_ += pixel.traced_diffuse ? 1U : 0U;
     }
+    return ok();
+}
+
+Status ScreenResolve::produce_probes(const ScreenSurfaces& surfaces,
+                                     const ScreenResolveSettings& settings,
+                                     const ScreenResolveSources& sources) noexcept {
+    const u32 spacing =
+        screen_probe_grid_spacing(settings.probes.spacing_pixels, std::max(surfaces.divisor, 1U));
+    if (Status sized = probes_.resize(width_, height_, spacing); !sized) {
+        return sized;
+    }
+    if (Status placed = probes_.place(surfaces, settings.probes); !placed) {
+        return placed;
+    }
+    probes_.trace(surfaces, settings, sources);
+    traced_ = 0;
+    const usize pixels = static_cast<usize>(width_) * height_;
+    for (usize index = 0; index < pixels; ++index) {
+        diffuse_[index] = Vec3{0.0F, 0.0F, 0.0F};
+        specular_[index] = Vec3{0.0F, 0.0F, 0.0F};
+        samples_[index] = 0.0F;
+        if (surfaces.depth[index] <= 0.0F) {
+            continue;
+        }
+        const Vec3 position = surfaces.position[index];
+        const Vec3 normal = normalized_or(surfaces.normal[index], Vec3{0.0F, 1.0F, 0.0F});
+        const f32 roughness = surfaces.roughness.empty() ? 0.5F : surfaces.roughness[index];
+        const Vec3 offset = position - surfaces.camera;
+        const ScreenPixel pixel =
+            probes_.integrate(static_cast<u32>(index), position, normal, roughness,
+                              surfaces.depth[index], length(offset), offset, settings, sources);
+        diffuse_[index] = pixel.diffuse.radiance;
+        specular_[index] = pixel.specular.radiance;
+        samples_[index] = settings.probes.pixel_samples;
+    }
+    traced_ = probes_.stats().rays;
     return ok();
 }
 
@@ -370,6 +459,7 @@ ScreenSurfaces ScreenGrid::surfaces() const noexcept {
     out.normal = normal_.span();
     out.roughness = roughness_.span();
     out.camera = camera_;
+    out.divisor = divisor_;
     return out;
 }
 
@@ -504,7 +594,7 @@ Status screen_history(const ScreenSurfaces& surfaces, const ScreenHistoryInputs&
         reprojection.history_depth = on_screen ? inputs.previous_depth[landing] : 0.0F;
         const ReprojectionResult result = classify_history(reprojection);
         if (!history_usable(result.state) || !on_screen || inputs.previous_depth[landing] <= 0.0F ||
-            invalidated_at(inputs.invalidated, surfaces.position[index])) {
+            screen_invalidated_at(inputs.invalidated, surfaces.position[index])) {
             continue;
         }
         source[index] = static_cast<i32>(landing);

@@ -8,7 +8,8 @@ one a Development build stages at <build>/Development/bin/slangc.
     python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 
 One module per ENTRY POINT rather than per file: gi_cards.slang holds two, gi_radiance.slang six,
-gi_hardware.slang three and gi_denoise.slang four, and each is its own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
+gi_hardware.slang three, gi_denoise.slang four and gi_screen_probes.slang three, and each is its
+own pipeline. The #line directives in the MSL name repository-relative paths, because slangc is run from
 the repository root: the committed text is then the same on every machine that regenerates it.
 """
 
@@ -50,6 +51,15 @@ MODULES = (
     ("gi_denoise", "cyGiDenoiseVariance", "kGiDenoiseVarianceSpirv", "kGiDenoiseVarianceMsl"),
     ("gi_denoise", "cyGiDenoiseFilter", "kGiDenoiseFilterSpirv", "kGiDenoiseFilterMsl"),
     ("gi_publish", "cyGiPublish", "kGiPublishSpirv", "kGiPublishMsl"),
+    # The screen-probe gather: placement, the probes' rays and the per-pixel integration.
+    # gi_screen_probes_hardware.slang's two are the ray query tier.
+    ("gi_screen_probes", "cyGiProbePlace", "kGiProbePlaceSpirv", "kGiProbePlaceMsl"),
+    ("gi_screen_probes", "cyGiProbeTrace", "kGiProbeTraceSpirv", "kGiProbeTraceMsl"),
+    ("gi_screen_probes", "cyGiProbeIntegrate", "kGiProbeIntegrateSpirv", "kGiProbeIntegrateMsl"),
+    ("gi_screen_probes_hardware", "cyGiProbeTraceHardware", "kGiProbeTraceHardwareSpirv",
+     "kGiProbeTraceHardwareMsl"),
+    ("gi_screen_probes_hardware", "cyGiProbeIntegrateHardware", "kGiProbeIntegrateHardwareSpirv",
+     "kGiProbeIntegrateHardwareMsl"),
 )
 # The engine's shader library: gi_surfaces.slang imports `cy.packing` for the prepass's normal.
 SHADERS = ROOT / "src" / "rendering" / "shaders"
