@@ -583,11 +583,25 @@ CY_TEST_CASE(
 
     // MORE THAN ONE PARTICIPANT TOOK A SLICE, and which one did is invisible in the result: the
     // job-scheduled poses equal the single-threaded ones bit for bit.
-    u32 participants = 0;
-    for (u32 bit = 0; bit < 64; ++bit) {
-        participants += ((parallel.system->stats().workers >> bit) & 1U) != 0 ? 1U : 0U;
+    //
+    // WHO TAKES A SLICE IS THE SCHEDULER'S CHOICE, NOT THE SYSTEM'S. `wait()` runs ready tasks on
+    // the calling thread, so a frame whose sixty-three slices are drained before a sleeping worker
+    // wakes is a correct frame with one participant — and on a loaded `test windows-x86_64` runner
+    // (PR #122) all forty frames went that way. So the frames continue, both hosts alike, until a
+    // second participant has been seen or a bound is reached: the claim is unchanged — the slices
+    // CAN be spread — and only the number of chances to observe it grew.
+    const auto participants = [&parallel]() noexcept {
+        u32 count = 0;
+        for (u32 bit = 0; bit < 64; ++bit) {
+            count += ((parallel.system->stats().workers >> bit) & 1U) != 0 ? 1U : 0U;
+        }
+        return count;
+    };
+    for (u32 extra = 0; extra < 400 && participants() <= 1U; ++extra) {
+        CY_REQUIRE(parallel.frame(&workers).has_value());
+        CY_REQUIRE(serial.frame().has_value());
     }
-    CY_CHECK_GT(participants, 1U);
+    CY_CHECK_GT(participants(), 1U);
     for (u32 index = 0; index < 500; ++index) {
         CY_REQUIRE(
             same_bits(parallel.system->poses().current(parallel.system->pose_of(spawned[0][index])),
