@@ -119,6 +119,15 @@ function(cy_apply_sanitizers)
         add_compile_definitions(CY_SANITIZE_UNDEFINED=1)
     endif()
 
+    # CY_SANITIZED IS THE SANITIZED COUNTERPART OF CY_UNOPTIMISED (cmake/profiles.cmake), for the
+    # same narrow purpose: a case that asserts an ABSOLUTE performance figure — microseconds per
+    # agent, per tick, per frame — is making a claim about a shipped game, and an instrumented
+    # binary is five to twenty times slower because the tool is working. `tests/harness/` already
+    # scales every per-case budget by twenty under a sanitizer; a figure asserted outside that guard
+    # reads this instead, so the answer comes from the build that made the decision. It relaxes a
+    # number and never skips a check: the counts beside such a figure hold here as everywhere.
+    add_compile_definitions(CY_SANITIZED=1)
+
     add_compile_options(${flags})
     add_link_options(${flags})
 

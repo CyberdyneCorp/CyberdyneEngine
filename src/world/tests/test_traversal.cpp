@@ -211,7 +211,9 @@ CY_TEST_CASE("continuous traversal of a fixed route holds the tick budget with n
                               << totals.deactivated << ", evicted " << totals.evicted << ", peak "
                               << totals.published_peak << " entities, " << (totals.io_bytes / 1024)
                               << " KiB read");
-    CY_CHECK_LT(worst, kHitchThresholdMs * 1000.0);
+    // An instrumented build is held to the same threshold scaled by the harness's sanitizer
+    // allowance: ThreadSanitizer measured a 4.1 ms worst tick on the nightly runner.
+    CY_CHECK_LT(worst, kHitchThresholdMs * 1000.0 * cy::test::kSanitizedAllowance);
 
     // A hitch is a tick that costs orders of magnitude more than the rest, which is what a
     // planner doing work proportional to the world would look like. The multiple is loose because
