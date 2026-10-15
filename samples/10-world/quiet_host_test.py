@@ -15,7 +15,9 @@ that check is removed or stops looking.
     take has started, the spinners start. The check across the take has to fail the run with
     "was not quiet while the take was measured". Removing that check makes the run exit 0, and this
     leg goes red. This leg needs the pre-take check to PASS first, which needs a quiet host; on a
-    busy one it is reported NOT EVALUATED with the reason, and the exit code says so (3).
+    busy one it is reported NOT EVALUATED with the reason, and the exit code says so (3). So is a
+    run whose take passed while the spinners got no more cores than the check allows everyone
+    else: the host was never made busy, so the pass does not say the check looked.
 
 Both legs run a small world (`--regions 4`): what is under test is the check, not the frame, and the
 check's verdict does not depend on how many regions were generated before it looked. Leg 2's take is
@@ -46,6 +48,9 @@ SPIN = "while True:\n    pass\n"
 NOT_EVALUATED = 3
 #: What the sample prints once its world is built (`main.cpp`, after `world.build`).
 WORLD_BUILT = "to generate, cook, claim and place"
+#: The cores everyone else may use before the check calls the host busy: `max_other_cores` in
+#: tools/quiet-host/host_load.h, which the sample's check uses unchanged.
+OTHERS_LIMIT_CORES = 2.0
 
 
 def sample_argv(sample: str, seconds: int, wait_s: int) -> list[str]:
@@ -57,6 +62,21 @@ def sample_argv(sample: str, seconds: int, wait_s: int) -> list[str]:
 def start_spinners() -> list[subprocess.Popen]:
     return [subprocess.Popen([sys.executable, "-c", SPIN], preexec_fn=lambda: os.nice(19))
             for _ in range(SPINNERS)]
+
+
+def spinner_cpu_seconds(spinners: list[subprocess.Popen]) -> float:
+    """The CPU the spinners were given, read from /proc before they are killed."""
+    ticks = 0
+    for spinner in spinners:
+        try:
+            with open(f"/proc/{spinner.pid}/stat", encoding="ascii") as stat:
+                # Fields 14 and 15, user and system time; the name in field 2 may hold spaces, so
+                # count from the closing parenthesis.
+                fields = stat.read().rsplit(")", 1)[1].split()
+            ticks += int(fields[11]) + int(fields[12])
+        except (OSError, IndexError, ValueError):
+            continue
+    return ticks / os.sysconf("SC_CLK_TCK")
 
 
 def stop_spinners(spinners: list[subprocess.Popen]) -> None:
@@ -101,14 +121,20 @@ def leg_across_the_take(sample: str) -> tuple[list[str], str]:
                                stderr=subprocess.PIPE, text=True)
     spinners: list[subprocess.Popen] = []
     seen: list[str] = []
+    loaded_s = 0.0
+    spinner_s = 0.0
     try:
         assert process.stdout is not None
         for line in process.stdout:
             seen.append(line)
             if line.startswith("=== the take:"):
                 spinners = start_spinners()
+                started = time.monotonic()
                 break
         rest, errors = process.communicate(timeout=240)
+        if spinners:
+            loaded_s = time.monotonic() - started
+            spinner_s = spinner_cpu_seconds(spinners)
     finally:
         stop_spinners(spinners)
         if process.poll() is None:
@@ -119,6 +145,16 @@ def leg_across_the_take(sample: str) -> tuple[list[str], str]:
         if "host too busy:" in errors:
             return [], "the host was not quiet before the take, so the take never started"
         return [f"the take never started (exit {process.returncode})"], ""
+    # THE PREMISE, MEASURED: the spinners must have made the host busy. They are niced to 19, so
+    # they only get the cores the sample leaves idle, and a sample that saturates every core itself
+    # — an instrumented build under ThreadSanitizer is five to fifteen times heavier — starves them
+    # below the limit they are there to exceed. The check then rightly calls the host quiet, and
+    # its passing says nothing about whether it looks. A check that FAILED the run is judged
+    # whatever the spinners got.
+    spinner_cores = spinner_s / loaded_s if loaded_s > 0.0 else 0.0
+    if process.returncode == 0 and spinner_cores <= OTHERS_LIMIT_CORES:
+        return [], (f"the take itself left the niced spinners {spinner_cores:.2f} cores, not the "
+                    f"more than {OTHERS_LIMIT_CORES:.2f} that make the host busy")
     problems = []
     if process.returncode != 1:
         problems.append(f"exit {process.returncode}, expected 1")
