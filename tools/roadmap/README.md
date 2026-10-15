@@ -25,6 +25,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `requirements.py` | Every requirement of a capability row against the test, gate or recorded exemption that answers it. `just quality-requirements <row>…`. |
 | `requirements-coverage.toml` | Hand-written. The map `requirements.py` reads; every entry is resolved against the tree, so a renamed suite turns the row red. |
 | `schedule.py` | What each criterion HOLDS while it runs — a build tree, Cargo, the device, a port — and the scheduler that therefore runs independent ones at the same time. A criterion whose needs it cannot read runs alone. |
+| `reclaim.py` | `--reclaim-builds`: which trees each criterion of a run uses, and the deletion of each one once its last user has finished, for a host whose disk cannot hold a whole run. |
 | `matrix.py` | The build **matrix**: one tree per distinct build CONFIGURATION, under `build/ledger-matrix/`, shared by every criterion that needs it. Thirteen configurations between eight criteria, `m1:four-profiles` among them. Nothing is cached — it runs `just build-engine` for every row it is asked for, every time, and Ninja decides what is out of date. |
 | `quiet_host.py` | Whether a criterion that runs through `just test-quiet-host` keeps its whole line inside it: nothing after the wrapped command but `\|\| exit <n>`, and `exclusive` declared. M11.c's eighth close found `m6:culling`'s second suite running after the wrapper had exited. Since the ninth close (option B) it no longer names suites that must never run bare: the harness itself enforces its stall ceiling only inside a verified `cy_quiet_host` and reports a stall anywhere else. `tools/quiet-host/README.md` has why. |
 | `ledger_equivalence.py` | One ledger run sequentially and in parallel, compared verdict by verdict. Hours, not a pull-request gate. |
@@ -577,6 +578,25 @@ ledger's copy in `needed_by` because `tools/ci/test_recipes.py` checks that ledg
 **The matrix is kept by `just build-reap`**, by name and by the `.cy-keep` marker `matrix.py` writes
 at its root; `just roadmap-milestone` marks its own `CY_BUILD_DIR` the same way. It was a reap of
 `build/m11c-final` between two closes that made the fifth one cold.
+
+### A host whose disk is smaller than one run: `--reclaim-builds`
+
+Keeping every tree warm is right on a workstation and impossible on a hosted runner. One full run on
+this workstation leaves `build/ledger-matrix/` at 155 GB (thirteen rows, 1.6 to 20 GB each) and the
+run's own `CY_BUILD_DIR` at 244 GB, its sanitizer, benchmark and option-off trees inside it. The
+nightly `milestone` job's ubuntu-24.04 image has 87 GB free on `/`, and on 2026-10-13 and 2026-10-14
+the runner crashed with `No space left on device` after five hours, losing the log.
+
+`just roadmap-milestone <id> --reclaim-builds` deletes each tree as soon as **every** criterion of
+this run that uses it has finished (`reclaim.py`): the matrix rows by their `needed_by` and by the
+rows a body names to `matrix.py`, a `build:<name>` tree by its token, and the `just test-sanitize`
+trees by `build:sanitize`. A row a later criterion reads is kept — `dev-default` and `debug-default`
+live from `m1:four-profiles` to `m9:multiplayer-profiles-agree` — so nothing is rebuilt. The default
+tree and a profile's `build/<profile>` are never deleted. A tree reclaimed early can only cost time,
+never a verdict, because every criterion builds what it reads. Each finished criterion prints the
+free space on stderr, so a disk that fills again is a number in the log. The CI job also runs `just
+ci-free-disk` first, which removes the image's Android, .NET, Haskell and CodeQL SDKs and its Docker
+images and prints `df` before and after. Off by default: a developer's trees stay warm.
 
 ### What sharing may not mean here
 

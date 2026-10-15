@@ -53,6 +53,42 @@ ci-check *args:
 ci-jobs:
     @cd "{{root}}" && python3 tools/ci/check_workflows.py --list
 
+# THE NIGHTLY LEDGER RAN THE HOSTED RUNNER OUT OF DISK. Twice, on 2026-10-13 and 2026-10-14, the
+# `milestone` job's runner crashed with `No space left on device` after five hours and took the log
+# with it. The ubuntu-24.04 image (20261004) has 145 GB on `/` with 87 GB free; a full ledger run
+# builds trees totalling several times that, which `just roadmap-milestone --reclaim-builds` now
+# deletes as their last user finishes (tools/roadmap/reclaim.py). The run still holds the default
+# tree, two sanitizer trees and four profile trees at once, so this recipe also removes the SDKs the
+# image preinstalls and nothing here uses — Android, .NET, Haskell, CodeQL, the image's own Docker
+# images — and prints `df` before and after, so the next full disk is a number in the log.
+#
+# CI only: it deletes system directories with sudo, and refuses to run anywhere GITHUB_ACTIONS is
+# not `true`.
+#
+# Free the hosted runner's disk of the SDKs the image preinstalls. Usage: just ci-free-disk
+ci-free-disk:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+        echo "ci-free-disk: refusing outside a GitHub-hosted runner (GITHUB_ACTIONS is not 'true'): it deletes system directories" >&2
+        exit 2
+    fi
+    echo "==> before"
+    df -h /
+    for sdk in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+               /opt/hostedtoolcache/CodeQL; do
+        if [ -e "${sdk}" ]; then
+            echo "==> remove      ${sdk}"
+            sudo rm -rf "${sdk}"
+        fi
+    done
+    if command -v docker > /dev/null; then
+        echo "==> remove      the image's Docker images"
+        sudo docker image prune --all --force > /dev/null || true
+    fi
+    echo "==> after"
+    df -h /
+
 # THE JOBS THAT TEST A BUILD USE THAT BUILD. Until October 2026 the `test` legs restored the build
 # job's tree from the actions cache and then rebuilt all of it: a fresh checkout stamps every source
 # file with the checkout's time, which is later than every object in a tree built earlier, so Ninja

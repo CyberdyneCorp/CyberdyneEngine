@@ -1655,6 +1655,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # THE RUNNER RAN OUT OF DISK on 2026-10-13 and 2026-10-14, five hours in, and the crash took the
+      # log with it. A full ledger builds far more trees than the image's 87 GB free: this frees the
+      # SDKs nothing here uses and prints `df`, and `--reclaim-builds` below deletes each tree once
+      # no later criterion needs it. just/ci.just and tools/roadmap/reclaim.py have the numbers.
+      - name: Free the runner's disk of the SDKs the image preinstalls
+        run: just ci-free-disk
       # The two M11.a `where = "ci"` criteria run the same comparator as cross-leg-compare.
       # Supply this job with the current run's actual publisher artifacts; --ci alone cannot
       # manufacture the cross-architecture evidence it is being asked to evaluate.
@@ -1684,7 +1690,7 @@ jobs:
       # hardware runs at 70df47f1 (issue #44), recorded in implement-m11d5-backends task 7.1; a
       # macOS and a Windows leg for this job are M11.e's.
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m11d5 --ci
+        run: just roadmap-milestone m11d5 --ci --reclaim-builds
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:
