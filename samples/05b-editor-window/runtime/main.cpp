@@ -72,9 +72,11 @@
 #    include <cy/backends/physics/jolt/server.h>
 #endif
 #include <cy/editor/composite_service.h>
+#include <cy/editor/illumination_service.h>
 #include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
 #include <cy/editor/terrain_service.h>
+#include <cy/rendering/gi/debug_views.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
 #include <cy/servers/render/picking.h>
@@ -92,6 +94,7 @@
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
 #    include "scene_vfx_runtime.h"
 #endif
+#include "gi_runtime.h"
 #include "graph_runtime.h"
 #include "service_queue.h"
 #if defined(CY_EDITOR_HAS_ANIMATION)
@@ -338,6 +341,13 @@ struct Host {
     AuthoredNavigationSource* nav_source = nullptr;
     NavigationDriver* nav_driver = nullptr;
     std::vector<NavOverlayWorld> nav_overlays;
+    /// The GI seam over the open world (#35): the GI view the editor's viewport asked for, its
+    /// volumes' boxes, and `illumination.report`'s source. Null with no world.
+    AuthoredIllumination* gi_source = nullptr;
+    /// The debug view the editor's viewport asked for (`GizmoIntent::debug_view`), and the texels
+    /// of the GI view drawn for it.
+    render::DebugViewMode debug_view = render::DebugViewMode::Off;
+    Array<u32> gi_texels;
     /// THE WORLD, and the whole of what M7's `EditorSession` used to stand in for. See
     /// `world_view.h`: there is no association here, because the runtime opened the same file the
     /// editor did and a node's identity is derived on both sides from the same two numbers.
@@ -517,6 +527,7 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     adopt_camera(host, intent);
     host.game_camera = intent.game_camera;
     host.physics_overlays = intent.physics_overlays;
+    host.debug_view = intent.debug_view;
     // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
     // holds is the world the editor has open, so an identity either names a node in it or names
     // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
@@ -677,6 +688,10 @@ void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
 /// A document change reached the world: bring the navigation meshes up to date with it (task 3.4).
 /// The update runs in process and the overlay shows it on the next frame the service answers in.
 void note_navigation_change(Host& host) noexcept {
+    // The GI reads the same document: the next view or report brings it up to date.
+    if (host.gi_source != nullptr) {
+        host.gi_source->world_changed();
+    }
     if (host.nav_driver == nullptr || host.nav_source == nullptr) {
         return;
     }
@@ -1362,6 +1377,13 @@ void draw_audio_sources(Host& host, const Canvas& canvas) noexcept {
 void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     draw_navigation(host, canvas);
     draw_physics(host, canvas);
+    if (host.game_camera == ~u64{0} && host.gi_source != nullptr) {
+        std::vector<GiVolumeBox> volumes;
+        if (host.gi_source->volumes(volumes) && !volumes.empty()) {
+            draw_gi_volumes(canvas, host.view, eye_of(host.camera),
+                            {volumes.data(), volumes.size()});
+        }
+    }
     if (host.game_camera == ~u64{0} && host.authored_frame != nullptr) {
         for (const LightMarker& light : host.authored_frame->light_markers()) {
             Vec2 marker;
@@ -1502,11 +1524,44 @@ void draw_frame_overlays(Host& host, const Canvas& canvas) noexcept {
     return true;
 }
 
-/// What `navigation.point.pick` resolves a pixel of frame `frame` against.
+/// What `navigation.point.pick` and `illumination.report` resolve a pixel of frame `frame`
+/// against.
 void remember_navigation_frame(Host& host, u64 frame) {
     if (host.nav_source != nullptr) {
         host.nav_source->record_frame(frame, host.view, eye_of(host.camera));
     }
+    if (host.gi_source != nullptr) {
+        host.gi_source->record_frame(frame, host.view, eye_of(host.camera));
+    }
+}
+
+/// The GI view the editor's viewport asked for, drawn for this frame's camera and handed to the
+/// forward frame; any other mode hands it none, so the frame is what it was. A quarter of the
+/// frame's resolution: the views are diagnostics drawn on the processor, not the frame's GI.
+void prepare_gi_view(Host& host) noexcept {
+    if (host.authored_frame == nullptr) {
+        return;
+    }
+    constexpr u32 kGiViewDivisor = 4;
+    const bool gi_view =
+        host.gi_source != nullptr && host.game_camera == ~u64{0} &&
+        rendering::gi::gi_debug_view_from_name(render::debug_view_mode_name(host.debug_view)) !=
+            rendering::gi::GiDebugView::Count;
+    if (gi_view) {
+        if (Status drawn = host.gi_source->render_view(
+                host.debug_view, host.view, eye_of(host.camera), host.options.width,
+                host.options.height, kGiViewDivisor, host.gi_texels);
+            !drawn) {
+            report("gi view", drawn.error());
+        } else if (Status set =
+                       host.authored_frame->set_gi_overlay(host.debug_view, host.gi_texels.span(),
+                                                           host.options.width, host.options.height);
+                   !set) {
+            report("gi view", set.error());
+        }
+        return;
+    }
+    (void)host.authored_frame->set_gi_overlay(render::DebugViewMode::Off, {}, 0, 0);
 }
 
 /// Render one frame, composite the gizmo into it, and publish it.
@@ -1546,6 +1601,7 @@ void remember_navigation_frame(Host& host, u64 frame) {
     host.audio_time = time_seconds;
     host.audio->frame(std::clamp(audio_seconds, 0.0F, 0.25F), host.camera);
 
+    prepare_gi_view(host);
     Span<const u32> texels;
     if (!render_frame_texels(host, time_seconds, texels)) {
         return false;
@@ -1757,20 +1813,25 @@ int run_host_loop(Host& host, const Options& options, u64 started) {
 /// joins.
 [[nodiscard]] Status route_services(editor::CompositeEditorService& composite,
                                     editor::MaterialService& material,
-                                    editor::NavigationService& navigation) noexcept {
+                                    editor::NavigationService& navigation,
+                                    editor::IlluminationService& illumination) noexcept {
     for (const std::string_view prefix : editor::kMaterialServicePrefixes) {
         if (Status routed = composite.route(prefix, material); !routed) {
             return routed;
         }
     }
-    return composite.route("navigation.", navigation);
+    if (Status routed = composite.route("navigation.", navigation); !routed) {
+        return routed;
+    }
+    return composite.route("illumination.", illumination);
 }
 
 /// The one session every editor request is served in, or null after saying why there is none.
 [[nodiscard]] CyServiceSession open_services(editor::CompositeEditorService& composite,
                                              editor::MaterialService& material,
-                                             editor::NavigationService& navigation) noexcept {
-    if (Status routed = route_services(composite, material, navigation); !routed) {
+                                             editor::NavigationService& navigation,
+                                             editor::IlluminationService& illumination) noexcept {
+    if (Status routed = route_services(composite, material, navigation, illumination); !routed) {
         report("editor service", routed.error());
         return nullptr;
     }
@@ -1986,6 +2047,10 @@ int main(int argc, char** argv) {
         AuthoredNavigationSource nav_source(allocator, options.project);
         nav_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
         editor::NavigationService navigation_service(allocator, &nav_source);
+        // Issue #35: the world's GI, for the viewport's GI views and the lighting panel's report.
+        AuthoredIllumination gi_source(allocator, options.project);
+        gi_source.bind(view_world.loaded() ? &view_world.world() : nullptr);
+        editor::IlluminationService illumination_service(allocator, &gi_source);
         editor_service.set_audio(audio.authoring());
         editor_service.set_scripts(&graphs);
 #if defined(CY_EDITOR_HAS_ANIMATION)
@@ -2009,8 +2074,8 @@ int main(int argc, char** argv) {
         host.play_animation = &play_animation;
 #endif
         editor::CompositeEditorService composite_service(allocator);
-        CyServiceSession service_session =
-            open_services(composite_service, editor_service, navigation_service);
+        CyServiceSession service_session = open_services(composite_service, editor_service,
+                                                         navigation_service, illumination_service);
         NavigationDriver nav_driver(composite_service, service_session);
         host.options = options;
         host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
@@ -2043,6 +2108,7 @@ int main(int argc, char** argv) {
         nav_source.bind_terrain(host.material_session);
         host.navigation_session =
             composite_service.child_session(service_session, navigation_service);
+        host.gi_source = view_world.loaded() ? &gi_source : nullptr;
         attach_navigation(host, nav_source, nav_driver);
         const u64 started = monotonic_nanos();
         exit_code = run_host_loop(host, options, started);

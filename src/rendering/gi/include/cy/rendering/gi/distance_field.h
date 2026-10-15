@@ -171,6 +171,10 @@ public:
     [[nodiscard]] Status move(u64 id, const Mat4& transform) noexcept;
     void remove(u64 id) noexcept;
     [[nodiscard]] u32 placement_count() const noexcept;
+    /// A placed instance's field as `place` copied it: its dimension, its local bounds and its
+    /// samples, appended to `distances`. Refused for an id that is not placed.
+    [[nodiscard]] Status copy_placement(u64 id, u32& dimension, Aabb& bounds,
+                                        Array<f32>& distances) const noexcept;
 
     // --- The clipmaps ---------------------------------------------------------------------------
 

@@ -334,6 +334,27 @@ ENTRIES: dict[str, Entry] = {
                            doc="A lockstep unit's authoritative state."),
     "lockstep_status": Entry(("engine", "into"), result="fallible",
                              doc="The lockstep session's tick, log, hash and digest."),
+    # 1.9: global illumination
+    "gi_get_settings": Entry(("engine", "into"), result="fallible",
+                             doc="The running world's global illumination settings."),
+    "gi_set_settings": Entry(("engine", "settings"), result="fallible",
+                             doc="Apply global illumination settings from the next frame."),
+    "gi_volume_create": Entry(("engine", "desc", "into"), result="fallible",
+                              doc="Place a GI volume."),
+    "gi_volume_update": Entry(("engine", "volume", "desc"), result="fallible",
+                              doc="Replace a GI volume's description."),
+    "gi_volume_destroy": Entry(("engine", "volume"), result="fallible",
+                               doc="Remove a GI volume."),
+    "gi_object_set_class": Entry(("engine", "entity", "klass"), result="fallible",
+                                 doc="Set an object's illumination class, or clear it."),
+    "gi_object_class": Entry(("engine", "entity", "into"), result="fallible",
+                             doc="The illumination class an object has now."),
+    "gi_emission_set": Entry(("engine", "entity", "material", "mode"), result="fallible",
+                             doc="What GI makes of an object's or a material's emission."),
+    "gi_sample_irradiance": Entry(("engine", "position", "normal", "into"), result="fallible",
+                                  doc="The indirect light arriving at a point."),
+    "gi_status": Entry(("engine", "into"), result="fallible",
+                       doc="What the global illumination did on the last frame."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

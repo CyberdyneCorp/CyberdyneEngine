@@ -193,6 +193,11 @@ struct GizmoIntent {
     /// physics world, and zero, which is what an editor older than this field sends, draws none.
     /// Carried as a plain bit set because this layer does not name the physics server.
     u32 physics_overlays = 0;
+    /// The debug view the editor's viewport is in (`DebugViewMode`'s value), so the runtime draws
+    /// the view the editor selected — the GI views (#35) are drawn over the frame. Off, which is
+    /// what an editor older than this field sends, draws the lit frame; a value this build does
+    /// not know is Off too.
+    DebugViewMode debug_view = DebugViewMode::Off;
 };
 
 /// Read what the editor sent.

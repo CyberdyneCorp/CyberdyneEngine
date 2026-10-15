@@ -1500,6 +1500,379 @@ impl LockstepOrderKind {
         }
     }
 }
+/// `CyGiMode`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiMode {
+    /// `CY_GI_MODE_NONE` = 0.
+    None = 0,
+    /// `CY_GI_MODE_BAKED` = 1.
+    Baked = 1,
+    /// `CY_GI_MODE_PROBE` = 2.
+    Probe = 2,
+    /// `CY_GI_MODE_DYNAMIC` = 3.
+    Dynamic = 3,
+    /// `CY_GI_MODE_HYBRID` = 4.
+    Hybrid = 4,
+}
+
+impl GiMode {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiMode; 5] = [
+        GiMode::None,
+        GiMode::Baked,
+        GiMode::Probe,
+        GiMode::Dynamic,
+        GiMode::Hybrid,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiMode::None),
+            1 => Some(GiMode::Baked),
+            2 => Some(GiMode::Probe),
+            3 => Some(GiMode::Dynamic),
+            4 => Some(GiMode::Hybrid),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiMode::None => "CY_GI_MODE_NONE",
+            GiMode::Baked => "CY_GI_MODE_BAKED",
+            GiMode::Probe => "CY_GI_MODE_PROBE",
+            GiMode::Dynamic => "CY_GI_MODE_DYNAMIC",
+            GiMode::Hybrid => "CY_GI_MODE_HYBRID",
+        }
+    }
+}
+/// `CyGiQuality`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiQuality {
+    /// `CY_GI_QUALITY_LOW` = 0.
+    Low = 0,
+    /// `CY_GI_QUALITY_MEDIUM` = 1.
+    Medium = 1,
+    /// `CY_GI_QUALITY_HIGH` = 2.
+    High = 2,
+    /// `CY_GI_QUALITY_EPIC` = 3.
+    Epic = 3,
+}
+
+impl GiQuality {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiQuality; 4] = [
+        GiQuality::Low,
+        GiQuality::Medium,
+        GiQuality::High,
+        GiQuality::Epic,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiQuality::Low),
+            1 => Some(GiQuality::Medium),
+            2 => Some(GiQuality::High),
+            3 => Some(GiQuality::Epic),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiQuality::Low => "CY_GI_QUALITY_LOW",
+            GiQuality::Medium => "CY_GI_QUALITY_MEDIUM",
+            GiQuality::High => "CY_GI_QUALITY_HIGH",
+            GiQuality::Epic => "CY_GI_QUALITY_EPIC",
+        }
+    }
+}
+/// `CyGiTier`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiTier {
+    /// `CY_GI_TIER_AUTOMATIC` = 0.
+    Automatic = 0,
+    /// `CY_GI_TIER_SOFTWARE_ONLY` = 1.
+    SoftwareOnly = 1,
+    /// `CY_GI_TIER_WORLD_ONLY` = 2.
+    WorldOnly = 2,
+}
+
+impl GiTier {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiTier; 3] = [GiTier::Automatic, GiTier::SoftwareOnly, GiTier::WorldOnly];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiTier::Automatic),
+            1 => Some(GiTier::SoftwareOnly),
+            2 => Some(GiTier::WorldOnly),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiTier::Automatic => "CY_GI_TIER_AUTOMATIC",
+            GiTier::SoftwareOnly => "CY_GI_TIER_SOFTWARE_ONLY",
+            GiTier::WorldOnly => "CY_GI_TIER_WORLD_ONLY",
+        }
+    }
+}
+/// `CyGiClass`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiClass {
+    /// `CY_GI_CLASS_STATIC` = 0.
+    Static = 0,
+    /// `CY_GI_CLASS_SLOW_DYNAMIC` = 1.
+    SlowDynamic = 1,
+    /// `CY_GI_CLASS_FAST_DYNAMIC` = 2.
+    FastDynamic = 2,
+    /// `CY_GI_CLASS_TRANSIENT` = 3.
+    Transient = 3,
+    /// `CY_GI_CLASS_AUTOMATIC` = 4.
+    Automatic = 4,
+}
+
+impl GiClass {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiClass; 5] = [
+        GiClass::Static,
+        GiClass::SlowDynamic,
+        GiClass::FastDynamic,
+        GiClass::Transient,
+        GiClass::Automatic,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiClass::Static),
+            1 => Some(GiClass::SlowDynamic),
+            2 => Some(GiClass::FastDynamic),
+            3 => Some(GiClass::Transient),
+            4 => Some(GiClass::Automatic),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiClass::Static => "CY_GI_CLASS_STATIC",
+            GiClass::SlowDynamic => "CY_GI_CLASS_SLOW_DYNAMIC",
+            GiClass::FastDynamic => "CY_GI_CLASS_FAST_DYNAMIC",
+            GiClass::Transient => "CY_GI_CLASS_TRANSIENT",
+            GiClass::Automatic => "CY_GI_CLASS_AUTOMATIC",
+        }
+    }
+}
+/// `CyGiEmission`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiEmission {
+    /// `CY_GI_EMISSION_AUTOMATIC` = 0.
+    Automatic = 0,
+    /// `CY_GI_EMISSION_CACHE_ONLY` = 1.
+    CacheOnly = 1,
+    /// `CY_GI_EMISSION_PROMOTE` = 2.
+    Promote = 2,
+    /// `CY_GI_EMISSION_OFF` = 3.
+    Off = 3,
+}
+
+impl GiEmission {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiEmission; 4] = [
+        GiEmission::Automatic,
+        GiEmission::CacheOnly,
+        GiEmission::Promote,
+        GiEmission::Off,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiEmission::Automatic),
+            1 => Some(GiEmission::CacheOnly),
+            2 => Some(GiEmission::Promote),
+            3 => Some(GiEmission::Off),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiEmission::Automatic => "CY_GI_EMISSION_AUTOMATIC",
+            GiEmission::CacheOnly => "CY_GI_EMISSION_CACHE_ONLY",
+            GiEmission::Promote => "CY_GI_EMISSION_PROMOTE",
+            GiEmission::Off => "CY_GI_EMISSION_OFF",
+        }
+    }
+}
+/// `CyGiSource`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum GiSource {
+    /// `CY_GI_SOURCE_NONE` = 0.
+    None = 0,
+    /// `CY_GI_SOURCE_LIGHTMAP` = 1.
+    Lightmap = 1,
+    /// `CY_GI_SOURCE_IRRADIANCE_VOLUME` = 2.
+    IrradianceVolume = 2,
+    /// `CY_GI_SOURCE_RADIANCE_CACHE` = 3.
+    RadianceCache = 3,
+    /// `CY_GI_SOURCE_SURFACE_CACHE` = 4.
+    SurfaceCache = 4,
+    /// `CY_GI_SOURCE_SCREEN_TRACE` = 5.
+    ScreenTrace = 5,
+    /// `CY_GI_SOURCE_SOFTWARE_TRACE` = 6.
+    SoftwareTrace = 6,
+    /// `CY_GI_SOURCE_HARDWARE_TRACE` = 7.
+    HardwareTrace = 7,
+    /// `CY_GI_SOURCE_REFLECTION_PROBE` = 8.
+    ReflectionProbe = 8,
+    /// `CY_GI_SOURCE_SKY` = 9.
+    Sky = 9,
+}
+
+impl GiSource {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [GiSource; 10] = [
+        GiSource::None,
+        GiSource::Lightmap,
+        GiSource::IrradianceVolume,
+        GiSource::RadianceCache,
+        GiSource::SurfaceCache,
+        GiSource::ScreenTrace,
+        GiSource::SoftwareTrace,
+        GiSource::HardwareTrace,
+        GiSource::ReflectionProbe,
+        GiSource::Sky,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(GiSource::None),
+            1 => Some(GiSource::Lightmap),
+            2 => Some(GiSource::IrradianceVolume),
+            3 => Some(GiSource::RadianceCache),
+            4 => Some(GiSource::SurfaceCache),
+            5 => Some(GiSource::ScreenTrace),
+            6 => Some(GiSource::SoftwareTrace),
+            7 => Some(GiSource::HardwareTrace),
+            8 => Some(GiSource::ReflectionProbe),
+            9 => Some(GiSource::Sky),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            GiSource::None => "CY_GI_SOURCE_NONE",
+            GiSource::Lightmap => "CY_GI_SOURCE_LIGHTMAP",
+            GiSource::IrradianceVolume => "CY_GI_SOURCE_IRRADIANCE_VOLUME",
+            GiSource::RadianceCache => "CY_GI_SOURCE_RADIANCE_CACHE",
+            GiSource::SurfaceCache => "CY_GI_SOURCE_SURFACE_CACHE",
+            GiSource::ScreenTrace => "CY_GI_SOURCE_SCREEN_TRACE",
+            GiSource::SoftwareTrace => "CY_GI_SOURCE_SOFTWARE_TRACE",
+            GiSource::HardwareTrace => "CY_GI_SOURCE_HARDWARE_TRACE",
+            GiSource::ReflectionProbe => "CY_GI_SOURCE_REFLECTION_PROBE",
+            GiSource::Sky => "CY_GI_SOURCE_SKY",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

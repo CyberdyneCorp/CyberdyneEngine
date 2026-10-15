@@ -213,6 +213,19 @@ Status GiScene::ingest_cell(u64 cell, const Aabb& bounds, Span<const Surfel> sur
     return ok();
 }
 
+Status GiScene::set_cell_emission(u64 cell, Span<const Surfel> surfels) noexcept {
+    const u32 found = find_cell(cell);
+    if (found == ~0U || cells_[found].slots.size() != surfels.size()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "GiScene::set_cell_emission: no such resident cell, or a payload of another "
+                    "length");
+    }
+    for (usize index = 0; index < surfels.size(); ++index) {
+        surfels_[cells_[found].slots[index]].emission = surfels[index].emission;
+    }
+    return ok();
+}
+
 void GiScene::evict_cell(u64 cell, u64 frame) noexcept {
     const u32 slot = find_cell(cell);
     if (slot == ~0U) {

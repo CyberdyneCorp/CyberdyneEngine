@@ -152,6 +152,14 @@ function(cy_render_gi_declare_tests)
         SOURCES "${tests_dir}/test_gi_volume_system.cpp"
         DEPENDENCIES cy::rendering-gi)
 
+    # THE SETTINGS A GAME OR AN EDITOR CHANGES WHILE THE WORLD RUNS: mode, global quality and tier,
+    # hardware ray tracing and the budget (`IlluminationSystem::set_runtime_settings`).
+    cy_add_test(
+        NAME render_gi_runtime
+        KIND integration
+        SOURCES "${tests_dir}/test_runtime_settings.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
     cy_add_test(
         NAME render_gi_classes
         KIND integration

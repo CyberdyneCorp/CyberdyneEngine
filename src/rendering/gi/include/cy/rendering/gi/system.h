@@ -130,6 +130,28 @@ struct IlluminationFrameReport {
     ObjectsFrameReport objects{};
 };
 
+/// What a game or an editor tunes while the world runs, as one value. `IlluminationSettings` is the
+/// configuration a renderer builds the system with; this is the part of it a player's options menu
+/// or a level's settings may change without `configure()`'s full rebuild.
+///
+/// The defaults are the system's own: a system nobody called `set_runtime_settings` on computes
+/// exactly what it computed before this existed.
+struct GiRuntimeSettings {
+    GiMode mode = GiMode::Dynamic;
+    /// The global probe quality, as a GI volume's (gi_volume.h): its ray multiplier.
+    GiQuality quality = GiQuality::Medium;
+    /// The global tier preference, as a GI volume's.
+    GiTierPreference tier = GiTierPreference::Automatic;
+    /// Whether the hardware tier may be used where the device has it. Off behaves exactly like a
+    /// device without ray queries (`rt::AccelerationService::set_enabled_by_profile`).
+    bool hardware_ray_tracing = true;
+    /// The GI allocation, in milliseconds (`GiBudget::set_allocation_ms`).
+    f32 budget_ms = 3.0F;
+};
+
+/// Refuses a mode, quality or tier out of range, and a budget that is not a positive finite number.
+[[nodiscard]] Status validate_gi_runtime_settings(const GiRuntimeSettings& settings) noexcept;
+
 /// What the surface being resolved carries. The double-counting decision needs it.
 struct SurfaceProperties {
     bool has_lightmap = false;
@@ -219,6 +241,36 @@ public:
     /// What the volumes resolve to at `point`, from the global settings. The global settings,
     /// bit for bit, where no volume reaches.
     [[nodiscard]] GiRegionSettings region_settings(Vec3 point) const noexcept;
+
+    // --- Run-time settings, emitter rules and object classes ----------------------------------
+
+    /// The settings `set_runtime_settings` last applied, or the configured ones.
+    [[nodiscard]] GiRuntimeSettings runtime_settings() const noexcept;
+
+    /// Apply a level's or a player's settings without reconfiguring. The mode takes effect at the
+    /// next `update()`; hardware ray tracing switches the acceleration service's profile (its
+    /// structures are kept); the budget is the allocation the next `update()` holds to. A change of
+    /// quality or tier retires every probe, because both are decided when a probe is placed, and
+    /// the next `update()` places them again at the new setting. A refused value changes nothing.
+    [[nodiscard]] Status set_runtime_settings(const GiRuntimeSettings& settings) noexcept;
+
+    /// Classify emitters under `rules` from now on (emissive.h's `EmitterRule`), and classify every
+    /// resident cell that has an emitter again, from the cards `ingest_cell` was first given, IN
+    /// PLACE: its cards and pages keep what they gathered and only their emission changes; its
+    /// promoted lights leave or arrive and the regions they light are invalidated, as an emitter
+    /// that streams in or out; a card whose cache emission changed invalidates what it lights as a
+    /// material change. A refused rule changes nothing.
+    [[nodiscard]] Status set_emitter_rules(Span<const EmitterRule> rules, u64 frame) noexcept;
+    [[nodiscard]] Span<const EmitterRule> emitter_rules() const noexcept {
+        return emissive_.rules();
+    }
+
+    /// Change a registered object's class: `has_override` false returns it to the derivation from
+    /// its mobility and size. An object entering `Static` or `SlowDynamic` takes its cards and its
+    /// field into the GI scene now; one leaving them takes them out now, invalidating where it was.
+    /// The same class is a no-op. Refused for an unknown id.
+    [[nodiscard]] Status set_object_class(u64 id, bool has_override, IlluminationClass klass,
+                                          u64 frame) noexcept;
 
     // --- Objects and their illumination classes (classification.h) ----------------------------
 
@@ -386,8 +438,33 @@ private:
     [[nodiscard]] Span<const GiLight> lights_for(Span<const GiLight> frame) noexcept;
     void invalidate_emitters(Span<const GiLight> lights, u64 frame) noexcept;
     void retire_volume_regions() noexcept;
+    [[nodiscard]] GiRegionSettings global_region() const noexcept;
+    [[nodiscard]] IlluminationClass derived_class(const GiObject& entry) const noexcept;
+    [[nodiscard]] static bool participating(IlluminationClass klass) noexcept {
+        return klass == IlluminationClass::Static || klass == IlluminationClass::SlowDynamic;
+    }
+    [[nodiscard]] static Status park_object(const GiObjectDesc& desc, GiObject& entry) noexcept;
+    [[nodiscard]] Status keep_emissive_cell(u64 cell, const Aabb& bounds,
+                                            Span<const Surfel> surfels) noexcept;
+    struct EmissiveCell;
+    [[nodiscard]] Status reclassify_cell(const EmissiveCell& entry, u64 frame) noexcept;
+    [[nodiscard]] Status leave_scene(GiObject& entry, u64 frame) noexcept;
+    [[nodiscard]] Status enter_scene(GiObject& entry, u64 frame) noexcept;
 
     IlluminationSettings settings_{};
+    /// The global quality and tier `set_runtime_settings` chose; neutral until it is called.
+    GiQuality global_quality_ = GiQuality::Medium;
+    GiTierPreference global_tier_ = GiTierPreference::Automatic;
+    /// The cards each cell with an emitter was ingested from, so a change of emitter rules can
+    /// classify it again. Only cells that have an emitter are kept.
+    struct EmissiveCell {
+        explicit EmissiveCell(Allocator& allocator = current_allocator()) noexcept
+            : surfels(allocator) {}
+        u64 cell = 0;
+        Aabb bounds{};
+        Array<Surfel> surfels;
+    };
+    Array<EmissiveCell> emissive_cells_;
     GiScene scene_;
     DistanceField field_;
     SurfaceCache surfaces_;
@@ -411,6 +488,7 @@ private:
     CardSnapshot card_snapshot_;
     CardGather card_gather_;
     Array<Surfel> cache_surfels_;
+    /// Each cell's pages in the order of its cards: `reclassify_cell` pairs them by that order.
     Array<CellPage> cell_pages_;
     Array<GiLight> frame_lights_;
     Span<const GiLight> last_lights_;

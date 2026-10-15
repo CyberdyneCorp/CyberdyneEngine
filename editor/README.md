@@ -267,6 +267,7 @@ Two bounded discovery paths support release and roadmap checks without replacing
 | Semantic merge | `document.merge-start`, `document.merge-resolve` |
 | Content Browser | `asset.import`, `asset.move`, `asset.rename`, `asset.place`, `asset.assign`, `asset.import-setting.set` |
 | Lighting & lightmaps | `lighting.bake-lightmaps`, `lighting.cancel-lightmap-bake`, `lighting.write-lightmap-description`, `lighting.volume.create`, `lighting.volume.set`, `lighting.light.set-mobility`, `lighting.object.set-resolution`, `viewport.view-mode.lightmap-density`, `viewport.view-mode.gi-probes` |
+| Global illumination (#35) | `gi.settings.set`, `gi.volume.create`, `gi.volume.set`, `gi.object.set-class`, `gi.emission.set`, `gi.report`, `gi.status`, `viewport.view-mode.off` and the nineteen `viewport.view-mode.gi-*` |
 | Physics (#29) | `physics.joint.add`, `physics.joint.set`, `physics.joint.remove`, `viewport.physics.<layer>`, `viewport.physics.hide-all` |
 | Gameplay graphs (#29) | `script.graph.create`, `script.node.add`, `script.node.move`, `script.node.connect`, `script.node.disconnect`, `script.node.remove`, `script.node.property.set`, `script.graph.attach`, `script.graph.read`, `script.graph.compile`, `script.event.raise`, `script.refresh`, `script.status` |
 | Animation (#29) | `animation.graph.create`, `animation.node.add`, `.move`, `.connect`, `.disconnect`, `.remove`, `.property.set`, `animation.event.add`, `.move`, `.remove`, `animation.character.set`, `animation.graph.read`, `animation.graph.compile`, `animation.preview.scrub`, `.play`, `.pause`, `.parameter`, `.stop`, `animation.character.list`, `animation.status`, `animation.bake` |
@@ -311,8 +312,47 @@ the project. `viewport.view-mode.lightmap-density` requests the engine's `Lightm
 which `cy/frame.slang` draws (`src/rendering/lightmaps/README.md`); `viewport.view-mode.gi-probes`
 and the eighteen other `viewport.view-mode.gi-*` commands request the engine's GI debug views
 (`src/rendering/gi/README.md`), and `viewport.view-mode.lightmap-charts` the chart view; the engine's
-frame draws them all. Like every debug view, the editor-hosted runtime does not draw them yet, and
-it loads no cooked lightmap.
+frame draws them all. The editor-hosted runtime draws the nineteen GI views in its own viewport
+(below); it does not draw the lightmap views, because it loads no cooked lightmap.
+
+**Global illumination (#35).** The same panel's global illumination half, every edit a registered,
+undoable command with an MCP tool of the same name (`cy_editor_services::illumination`):
+
+- **The world's GI settings** — mode, global quality, tier preference, hardware ray tracing, budget
+  — are `gi.settings.set`, writing `GiSettings` on the world's one "Global Illumination" node.
+- **GI volumes** are `gi.volume.create` and `gi.volume.set`. A volume's node TRANSFORM is its box:
+  the translation its centre, the scale its size in metres, so the move gizmo places it and the
+  scale gizmo sizes it, and the runtime draws its twelve edges over the frame. `gi.volume.set`
+  replaces its priority, blend distance, weight, the parameters it overrides (`sets`, one bit each:
+  1 quality, 2 probe density, 4 update rate, 8 diffuse intensity, 16 specular intensity, 32 tier,
+  64 far field) and their values; the panel stages them behind a checkbox per parameter and applies
+  them as one command.
+- **Illumination classes**: `gi.object.set-class` (automatic, static, slow-dynamic, fast-dynamic,
+  transient) on a placed object, from the panel's Selected object row or the Inspector's
+  Illumination class row.
+- **Emitters**: `gi.report` asks the engine for its report (`illumination.report`); the panel lists
+  every emitter by object and material with the class the engine gave it, its area and radiant
+  power, and a rule picker per material — `gi.emission.set` (automatic, cache-only, promote, off).
+- **The viewport's GI views**: the panel's nineteen GI view buttons and Lit are the
+  `viewport.view-mode.*` commands; the view mode reaches the runtime in the gizmo intent
+  (`GizmoIntent::debug_view`, the byte after the physics overlays) and the runtime draws it.
+- **The diagnostics report**: Refresh report, and Explain a point — the viewport's next click asks
+  the engine what lit the surface under it (`gi.report` with the frame and pixel). The panel shows
+  the settings the GI runs at, the tier its rays took, convergence, cost per stage, rays per tier,
+  the caches' hit rates and, for the explained point, its cause, indirect light, confidence,
+  probes, leak suspects and each source's share. `gi.status` is the same report for an agent.
+
+The engine half is `cy::editor::IlluminationPreview` and `IlluminationService`
+(`src/editor_backend/README.md`), hosted by `samples/05b-editor-window/runtime/gi_runtime.h`: it
+applies settings, volumes, classes and rules in place through the calls a game makes through ABI
+1.9, rebuilding only when geometry moves. Tests: `cy-editor-services` (`illumination::tests`,
+`illumination_requests::tests` over the engine's committed wire), `cy-editor-shell`
+(`lighting_gi::tests`, and `new_panels_are_accessible`'s two GI cases), the MCP case
+`the_global_illumination_tools_author_and_undo_over_the_wire`, and the runtime's
+`integration.editor_window_illumination` and `smoke.editor_authored_frame_vulkan`.
+`CY_PANEL_SNAPSHOTS=<dir> cargo test -p cy-editor-shell --test panel_snapshots lighting_gi -- --ignored`
+draws the [panel](../docs/design/images/editor-lighting-gi.png); `CY_GI_VIEWPORT_SHOT=<dir>` on
+`cy_test_smoke_editor_authored_frame_vulkan` photographs the [viewport](../docs/design/images/editor-gi-viewport.png).
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.

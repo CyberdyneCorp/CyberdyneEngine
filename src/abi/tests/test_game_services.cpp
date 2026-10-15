@@ -180,7 +180,26 @@ CY_TEST_CASE(
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, lockstep_status) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, lockstep_status) + sizeof(void*),
+                offsetof(CyInterface, gi_get_settings));
+}
+
+CY_TEST_CASE("the 1.9 table appends global illumination after every 1.8 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 9U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.gi_get_settings != nullptr,      iface.gi_set_settings != nullptr,
+        iface.gi_volume_create != nullptr,     iface.gi_volume_update != nullptr,
+        iface.gi_volume_destroy != nullptr,    iface.gi_object_set_class != nullptr,
+        iface.gi_object_class != nullptr,      iface.gi_emission_set != nullptr,
+        iface.gi_sample_irradiance != nullptr, iface.gi_status != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 10U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, gi_status) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
@@ -207,6 +226,7 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.bodies == nullptr);
     CY_CHECK(host.game.characters == nullptr);
     CY_CHECK(host.game.ui == nullptr);
+    CY_CHECK(host.game.illumination == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }

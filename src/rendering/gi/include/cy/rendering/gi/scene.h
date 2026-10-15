@@ -192,6 +192,12 @@ public:
     /// Evict it again. The affected region is invalidated and nothing else is.
     void evict_cell(u64 cell, u64 frame) noexcept;
 
+    /// Give a resident cell's surfels the emission of `surfels`, which is the cell's payload in the
+    /// order it was ingested — what an emitter rule changed. Nothing else of a surfel changes and
+    /// nothing is invalidated: the caller knows what the change lights. Refused for a cell that is
+    /// not resident or a payload of another length.
+    [[nodiscard]] Status set_cell_emission(u64 cell, Span<const Surfel> surfels) noexcept;
+
     [[nodiscard]] bool cell_resident(u64 cell) const noexcept;
     [[nodiscard]] u32 resident_cell_count() const noexcept;
     [[nodiscard]] usize surfel_count() const noexcept { return live_surfels_; }

@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 8,
+    "minor": 9,
     "patch": 0
   },
   "functions": [
@@ -742,10 +742,60 @@
         "index": 143,
         "name": "lockstep_status",
         "type": "CyResult(*)(CyEngine, CyLockstepStatus*)"
+      },
+      {
+        "index": 144,
+        "name": "gi_get_settings",
+        "type": "CyResult(*)(CyEngine, CyGiSettings*)"
+      },
+      {
+        "index": 145,
+        "name": "gi_set_settings",
+        "type": "CyResult(*)(CyEngine, const CyGiSettings*)"
+      },
+      {
+        "index": 146,
+        "name": "gi_volume_create",
+        "type": "CyResult(*)(CyEngine, const CyGiVolumeDesc*, CyGiVolume*)"
+      },
+      {
+        "index": 147,
+        "name": "gi_volume_update",
+        "type": "CyResult(*)(CyEngine, CyGiVolume, const CyGiVolumeDesc*)"
+      },
+      {
+        "index": 148,
+        "name": "gi_volume_destroy",
+        "type": "CyResult(*)(CyEngine, CyGiVolume)"
+      },
+      {
+        "index": 149,
+        "name": "gi_object_set_class",
+        "type": "CyResult(*)(CyEngine, CyEntity, uint32_t)"
+      },
+      {
+        "index": 150,
+        "name": "gi_object_class",
+        "type": "CyResult(*)(CyEngine, CyEntity, uint32_t*)"
+      },
+      {
+        "index": 151,
+        "name": "gi_emission_set",
+        "type": "CyResult(*)(CyEngine, CyEntity, uint64_t, uint32_t)"
+      },
+      {
+        "index": 152,
+        "name": "gi_sample_irradiance",
+        "type": "CyResult(*)(CyEngine, const float*, const float*, CyGiIrradiance*)"
+      },
+      {
+        "index": 153,
+        "name": "gi_status",
+        "type": "CyResult(*)(CyEngine, CyGiStatus*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1160
+    "size": 1240
   },
   "types": [
     {
@@ -4033,6 +4083,462 @@
       "size": 48
     },
     {
+      "kind": "enum",
+      "name": "CyGiMode",
+      "values": [
+        {
+          "name": "CY_GI_MODE_NONE",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_MODE_BAKED",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_MODE_PROBE",
+          "value": 2
+        },
+        {
+          "name": "CY_GI_MODE_DYNAMIC",
+          "value": 3
+        },
+        {
+          "name": "CY_GI_MODE_HYBRID",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyGiQuality",
+      "values": [
+        {
+          "name": "CY_GI_QUALITY_LOW",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_QUALITY_MEDIUM",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_QUALITY_HIGH",
+          "value": 2
+        },
+        {
+          "name": "CY_GI_QUALITY_EPIC",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyGiTier",
+      "values": [
+        {
+          "name": "CY_GI_TIER_AUTOMATIC",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_TIER_SOFTWARE_ONLY",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_TIER_WORLD_ONLY",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyGiClass",
+      "values": [
+        {
+          "name": "CY_GI_CLASS_STATIC",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_CLASS_SLOW_DYNAMIC",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_CLASS_FAST_DYNAMIC",
+          "value": 2
+        },
+        {
+          "name": "CY_GI_CLASS_TRANSIENT",
+          "value": 3
+        },
+        {
+          "name": "CY_GI_CLASS_AUTOMATIC",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyGiEmission",
+      "values": [
+        {
+          "name": "CY_GI_EMISSION_AUTOMATIC",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_EMISSION_CACHE_ONLY",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_EMISSION_PROMOTE",
+          "value": 2
+        },
+        {
+          "name": "CY_GI_EMISSION_OFF",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyGiSource",
+      "values": [
+        {
+          "name": "CY_GI_SOURCE_NONE",
+          "value": 0
+        },
+        {
+          "name": "CY_GI_SOURCE_LIGHTMAP",
+          "value": 1
+        },
+        {
+          "name": "CY_GI_SOURCE_IRRADIANCE_VOLUME",
+          "value": 2
+        },
+        {
+          "name": "CY_GI_SOURCE_RADIANCE_CACHE",
+          "value": 3
+        },
+        {
+          "name": "CY_GI_SOURCE_SURFACE_CACHE",
+          "value": 4
+        },
+        {
+          "name": "CY_GI_SOURCE_SCREEN_TRACE",
+          "value": 5
+        },
+        {
+          "name": "CY_GI_SOURCE_SOFTWARE_TRACE",
+          "value": 6
+        },
+        {
+          "name": "CY_GI_SOURCE_HARDWARE_TRACE",
+          "value": 7
+        },
+        {
+          "name": "CY_GI_SOURCE_REFLECTION_PROBE",
+          "value": 8
+        },
+        {
+          "name": "CY_GI_SOURCE_SKY",
+          "value": 9
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "mode",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "quality",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "tier",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "budget_ms",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        }
+      ],
+      "name": "CyGiSettings",
+      "size": 24
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "sets",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "bounds_min",
+          "offset": 8,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "bounds_max",
+          "offset": 20,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "priority",
+          "offset": 32,
+          "size": 4,
+          "type": "int32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "blend_distance",
+          "offset": 36,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "weight",
+          "offset": 40,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "quality",
+          "offset": 44,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "probe_density",
+          "offset": 48,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "update_rate",
+          "offset": 52,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "diffuse_intensity",
+          "offset": 56,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "specular_intensity",
+          "offset": 60,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "tier",
+          "offset": 64,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "far_field_metres",
+          "offset": 68,
+          "size": 4,
+          "type": "float"
+        }
+      ],
+      "name": "CyGiVolumeDesc",
+      "size": 72
+    },
+    {
+      "kind": "alias",
+      "name": "CyGiVolume",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "radiance",
+          "offset": 8,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "luminance",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "confidence",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "source",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyGiIrradiance",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "world_tier",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "convergence",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "measured_ms",
+          "offset": 12,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "allocation_ms",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "volumes",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "objects",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "promoted_lights",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "emitters",
+          "offset": 32,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "disabled_emitters",
+          "offset": 36,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "frame",
+          "offset": 40,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyGiStatus",
+      "size": 48
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -5079,10 +5585,80 @@
           "offset": 1152,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyLockstepStatus*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_get_settings",
+          "offset": 1160,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyGiSettings*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_set_settings",
+          "offset": 1168,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyGiSettings*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_volume_create",
+          "offset": 1176,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyGiVolumeDesc*, CyGiVolume*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_volume_update",
+          "offset": 1184,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyGiVolume, const CyGiVolumeDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_volume_destroy",
+          "offset": 1192,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyGiVolume)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_object_set_class",
+          "offset": 1200,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_object_class",
+          "offset": 1208,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_emission_set",
+          "offset": 1216,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, uint64_t, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_sample_irradiance",
+          "offset": 1224,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const float*, const float*, CyGiIrradiance*)"
+        },
+        {
+          "alignment": 8,
+          "name": "gi_status",
+          "offset": 1232,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyGiStatus*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1160
+      "size": 1240
     },
     {
       "kind": "enum",

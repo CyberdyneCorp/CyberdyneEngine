@@ -1,0 +1,265 @@
+Mutations of add-gi-editor-and-swift. Each was applied to the tree as an exact string replacement,
+the named targets rebuilt (Development build, GCC 13, RTX 5060 for the Vulkan smoke), the named suites
+run, and the file restored and checked against its md5 before the next; every touched target was
+rebuilt from the restored tree afterwards. A mutation that first failed to compile under -Werror was
+rewritten to compile ((void) the unused name) and run again: every entry below is a red TEST, not a
+red build. Survivors: none. One mutation (M4) survived its first run; the case 'switching off an
+emitter the cache carries ...' was added and kills it (and M25).
+
+M0  src/rendering/gi/src/emissive.cpp
+    group.override_mode = emitter_override_for(rules, group.instance_id, group.material_id);
+    -> group.override_mode = ((void)rules, EmitterOverride::Automatic);
+    emissive: every emitter rule ignored (the measurement always decides)
+    FAILED  integration.render_gi_emissive: an emitter rule promotes a large emitter, keeps a bright one in the cache or switches one off, and every watt is still accounted for
+    FAILED  integration.render_gi_emissive: switching a lamp off through the composed system takes its light out of the frame and darkens the floor under it, and switching it back restores it bit for bit
+    FAILED  integration.game_backend_illumination: a script switches a lamp off by its entity and by its material, and the light a guard would see there falls with it
+    FAILED  integration.editor_backend_illumination: an author's emitter rule switches a lamp off in place, and the report says so
+
+M1  src/rendering/gi/src/emissive.cpp
+                    // Switched off: the card is still a surface, and emits nothing.
+                       stored.emission = Vec3{0.0F, 0.0F, 0.0F};
+    ->                 // Switched off: the card is still a surface, and emits nothing.
+    emissive: an Off emitter keeps its cache emission
+    FAILED  integration.render_gi_emissive: an emitter rule promotes a large emitter, keeps a bright one in the cache or switches one off, and every watt is still accounted for
+
+M2  src/rendering/gi/src/emissive.cpp
+    return (any_instance ? 0 : 2) + (any_material ? 0 : 1);
+    -> return (any_instance ? 0 : 1) + (any_material ? 0 : 2);
+    emissive: a material rule outranks an instance rule
+    FAILED  integration.game_backend_illumination: a script switches a lamp off by its entity and by its material, and the light a guard would see there falls with it
+
+M3  src/rendering/gi/src/system.cpp
+    if (Status classified = reclassify_cell(entry, frame); !classified && result) {
+    -> if (Status classified = ((void)entry, (void)frame, ok()); !classified && result) {
+    system: a new rule set is kept but no resident cell is classified again
+    FAILED  integration.render_gi_emissive: switching a lamp off through the composed system takes its light out of the frame and darkens the floor under it, and switching it back restores it bit for bit
+    FAILED  integration.game_backend_illumination: a script switches a lamp off by its entity and by its material, and the light a guard would see there falls with it
+
+M4  src/rendering/gi/src/system.cpp
+    InvalidationCause::MaterialChanged, entry.cell, frame);
+    -> InvalidationCause::CellIngested, entry.cell, frame);
+    system: a rule change is attributed as a cell ingest (the first version invalidated the whole cell)
+    FAILED  integration.render_gi_emissive: switching off an emitter the cache carries takes its emission out of its own cards and invalidates what they light as a material change, not a cell ingest
+
+M5  src/rendering/gi/src/system.cpp
+    global.ray_scale = gi_quality_ray_scale(global_quality_);
+    -> global.ray_scale = 1.0F;
+    system: the global quality never reaches a region
+    FAILED  integration.render_gi_runtime: a global quality is recorded on every probe in place, so the light does not drop, and a volume still overrides it
+    FAILED  integration.game_backend_illumination: the GI settings round-trip through the table, and a refused one changes nothing
+
+M6  src/rendering/gi/src/system.cpp
+            (void)radiance_.record_region_settings(volumes_.empty() ? nullptr : &volumes_,
+                                                      global_region());
+    ->         (void)radiance_.retire_region(Aabb::from_min_max(Vec3{-1e9F, -1e9F, -1e9F}, Vec3{1e9F, 1e9F, 1e9F}));
+    system: a quality change retires every probe (the first version)
+    FAILED  integration.render_gi_runtime: a global quality is recorded on every probe in place, so the light does not drop, and a volume still overrides it
+    FAILED  integration.swift_illumination: a Swift game drives the engine's GI through CyberdyneKit, and only in a frame
+
+M7  src/rendering/gi/src/system.cpp
+    acceleration_.set_enabled_by_profile(settings.hardware_ray_tracing);
+    -> (void)0;
+    system: the hardware switch is recorded but the service is not told
+    FAILED  integration.render_gi_runtime: hardware ray tracing off is the software tier, and on again is the hardware tier
+
+M8  src/rendering/gi/src/system.cpp
+    budget_.set_allocation_ms(settings.budget_ms);
+    -> (void)0;
+    system: the budget is recorded in the settings but not the loop
+    FAILED  integration.render_gi_runtime: the budget is the allocation the next frame holds to, and the mode is the frame's
+
+M9  src/rendering/gi/src/system.cpp
+            if (Status copied = field_.copy_placement(cell, entry.parked_dimension, entry.parked_bounds,
+                                                         entry.parked_distances);
+                   !copied) {
+                   return copied;
+               }
+    -> 
+    system: leaving the scene drops the object's field instead of parking it
+    FAILED  integration.render_gi_classes: an object's class changes at run time, taking its cards and field into the scene and out
+
+M10  src/rendering/gi/src/system.cpp
+    placed.area = local.area * area_scale;
+    -> placed.area = local.area;
+    system: a scaled object's cards keep their object-space area (the first version)
+    FAILED  integration.render_gi_classes: a scaled object's cards carry its scaled area, and a rigid one's are untouched
+    FAILED  integration.editor_backend_illumination: an author's emitter rule switches a lamp off in place, and the report says so
+
+M11  src/rendering/gi/src/radiance_cache.cpp
+                            ? context.volumes->resolve(position, context.global)
+                               : context.global;
+    ->                         ? context.volumes->resolve(position, GiRegionSettings{})
+                               : GiRegionSettings{};
+    radiance cache: a probe placed outside every volume ignores the global settings
+    FAILED  integration.render_gi_runtime: a global quality is recorded on every probe in place, so the light does not drop, and a volume still overrides it
+
+M12  src/abi/src/game/illumination_thunks.cpp
+    constexpr u32 kGiPhases = kPhaseNone | kPhaseFrame;
+    -> constexpr u32 kGiPhases = kPhaseAny;
+    thunks: a fixed step may tune and read the GI
+    FAILED  unit.abi: illumination: every entry answers in N and U and refuses a fixed step
+    FAILED  integration.swift_illumination: a Swift game drives the engine's GI through CyberdyneKit, and only in a frame
+
+M13  src/abi/src/game/illumination_thunks.cpp
+    std::isfinite(settings.budget_ms) && settings.budget_ms > 0.0F;
+    -> true;
+    thunks: a budget that is not positive reaches the backend
+    FAILED  unit.abi: illumination: the arguments a thunk refuses before the backend sees them
+
+M14  src/game_backend/illumination/src/illumination_backend.cpp
+    sum = sum + result.radiance;
+    -> sum = sum + (axis.y > 0.5F ? result.radiance * 6.0F : Vec3{});
+    adapter: a body's light is the upward answer, not the six-direction mean
+    FAILED  integration.game_backend_illumination: a script switches a lamp off by its entity and by its material, and the light a guard would see there falls with it
+    FAILED  integration.game_backend_illumination: the irradiance a script samples is the resolve's own answer
+    FAILED  integration.swift_illumination: a Swift game drives the engine's GI through CyberdyneKit, and only in a frame
+
+M15  src/game_backend/illumination/src/illumination_backend.cpp
+    if (override_mode != gi::EmitterOverride::Automatic &&
+    -> if (true &&
+    adapter: AUTOMATIC records a rule instead of removing the pair's
+    FAILED  integration.game_backend_illumination: a script switches a lamp off by its entity and by its material, and the light a guard would see there falls with it
+
+M16  src/game_backend/illumination/src/illumination_backend.cpp
+        if (sets(CY_GI_VOLUME_SETS_PROBE_DENSITY)) {
+               volume.probe_density = desc.probe_density;
+           }
+    ->     volume.probe_density = desc.probe_density;
+    adapter: a volume's unset parameter is taken from the description
+    FAILED  integration.game_backend_illumination: a GI volume a script places overrides where it reaches, moves, and leaves nothing
+
+M17  src/editor_backend/src/illumination_preview.cpp
+    if (!same_rules) {
+    -> if ((void)same_rules, false) {
+    preview: an emitter rule change is not applied in place
+    FAILED  integration.editor_backend_illumination: an author's emitter rule switches a lamp off in place, and the report says so
+    FAILED  integration.editor_window_illumination: every authored GI word in the world reaches the engine's GI
+
+M18  src/editor_backend/src/illumination_preview.cpp
+    digest.add(object.transform).add(static_cast<u64>(object.movable ? 1U : 0U));
+    -> digest.add(static_cast<u64>(object.movable ? 1U : 0U));
+    preview: a moved object does not rebuild
+    FAILED  integration.editor_backend_illumination: only a world's geometry decides a rebuild, and its settings survive one
+    FAILED  integration.editor_window_illumination: a mesh moved in the document rebuilds the GI
+    (Re-run in a Debug build after both cases were split out of their suites' in-place cases to fit the
+    integration budget under Debug.)
+
+M19  src/editor_backend/src/illumination_preview.cpp
+    pixel.depth = 0.0F;  // sky: the view draws nothing here
+    -> pixel.depth = 1.0F;
+    preview: a view draws over the sky
+    FAILED  integration.editor_backend_illumination: every GI debug view draws over the authored world, and nothing over the sky
+
+M20  src/editor_backend/src/illumination_service.cpp
+            has_ray = true;
+       
+    -> 
+    service: the pick is read and never explained
+    FAILED  integration.editor_backend_illumination: illumination.report answers the GI's report, explaining a picked pixel
+    FAILED  integration.editor_window_illumination: illumination.report answers over the runtime's composite binding
+
+M21  samples/05b-editor-window/runtime/gi_runtime.cpp
+    volume.bounds = transformed(Aabb::from_center_extents(Vec3{}, Vec3{0.5F, 0.5F, 0.5F}), matrix);
+    -> volume.bounds = Aabb::from_center_extents(transform_point(matrix, Vec3{}), Vec3{0.5F, 0.5F, 0.5F});
+    runtime: a volume's box ignores its node's scale
+    FAILED  integration.editor_window_illumination: every authored GI word in the world reaches the engine's GI
+    FAILED  integration.editor_window_illumination: the GI volume's box is drawn where the document places it
+
+M22  samples/05b-editor-window/runtime/gi_runtime.cpp
+    object.klass = class_keyword(klass.text("class"), object.has_class);
+    -> (void)klass; (void)&class_keyword;
+    runtime: an authored class is never read
+    FAILED  integration.editor_window_illumination: every authored GI word in the world reaches the engine's GI
+
+M23  src/servers/render/src/gizmo.cpp
+    intent.debug_view = static_cast<DebugViewMode>(view);
+    -> (void)view;
+    gizmo intent: the debug view is not decoded
+    FAILED  unit.render_server: a gizmo intent carries the physics overlays the editor asked for
+
+M24  samples/05b-editor-window/runtime/authored_frame.cpp
+    (void)rendering::lightmaps::write_gi_debug_view(gi_mode_, gi_overlay_slot_, data.view);
+    -> (void)0;
+    authored frame: the GI overlay's words are never written
+    FAILED  smoke.editor_authored_frame_vulkan: authored native frame draws the GI view the viewport asked for, and Lit as before
+
+M25  src/rendering/gi/src/system.cpp
+    if (!surfaces_.set_emission(page.page, card.emission)) {
+    -> if ((void)card, true) {
+    system: a rule change leaves the cache's emission on the cell's pages
+    FAILED  integration.render_gi_emissive: switching off an emitter the cache carries takes its emission out of its own cards and invalidates what they light as a material change, not a cell ingest
+
+M100  editor/crates/cy-editor-services/src/illumination.rs
+    document.set_field(node, binding.component, binding.scale, Value::Vec3(size))?;
+    -> let _ = size;
+    editor: a created volume keeps the unit size
+    FAILED  rust: illumination::tests::a_volume_is_placed_and_sized_by_its_transform_and_its_overrides_set_and_undone
+
+M101  editor/crates/cy-editor-services/src/illumination.rs
+    || !(0.0..=1.0).contains(&weight)
+    -> || !(0.0..=2.0).contains(&weight)
+    editor: a volume weight above 1 is accepted
+    FAILED  rust: illumination::tests::a_volume_is_placed_and_sized_by_its_transform_and_its_overrides_set_and_undone
+
+M102  editor/crates/cy-editor-services/src/illumination.rs
+    .emission
+                   .into_iter()
+                   .find(|rule| rule.material == material)
+    -> .emission
+                   .into_iter()
+                   .find(|rule| rule.material == material && material.is_empty())
+    editor: a second rule for a material adds a node instead of setting the first
+    FAILED  rust: illumination::tests::an_objects_class_and_a_materials_emitter_rule_are_set_and_undone
+
+M103  editor/crates/cy-editor-services/src/illumination.rs
+    if sets & !ALL_OVERRIDES != 0 || sets < 0 {
+    -> if sets < 0 {
+    editor: a sets mask naming an unknown parameter is accepted
+    FAILED  rust: illumination::tests::a_volume_is_placed_and_sized_by_its_transform_and_its_overrides_set_and_undone
+
+M104  editor/crates/cy-editor-services/src/illumination_requests.rs
+    allocation_ms: reader.f32()?,
+                   measured_ms: reader.f32()?,
+    -> measured_ms: reader.f32()?,
+                   allocation_ms: reader.f32()?,
+    editor: the report decodes the measured time as the allocation
+    FAILED  rust: illumination_requests::tests::the_engines_report_decodes_field_for_field
+
+M105  editor/crates/cy-editor-shell/src/panels/lighting_gi.rs
+        inputs.explain_armed = false;
+           let arguments
+    ->     let _ = &inputs;
+           let arguments
+    shell: an armed explain stays armed after the click
+    FAILED  rust: panels::lighting_gi::tests::an_armed_explain_turns_a_click_on_the_frame_on_screen_into_one_report
+
+M200  bindings/swift/Sources/CyberdyneKit/Illumination.swift
+    withOptionalBuffer(normal.map { [$0.x, $0.y, $0.z] })
+    -> withOptionalBuffer(Optional(normal.map { [$0.x, $0.y, $0.z] } ?? [0, 1, 0]))
+    kit: a body's sample sends an upward normal
+    FAILED  integration.swift_package: IlluminationTests.testIrradianceAtABodyAndAtASurface (XCTAssertNil: the normal sent was [0, 1, 0])
+    FAILED  integration.swift_illumination: a Swift game drives the engine's GI through CyberdyneKit, and only in a frame
+
+M201  bindings/swift/Sources/CyberdyneKit/Illumination.swift
+    out.sets |= CY_GI_VOLUME_SETS_TIER
+    -> out.sets |= CY_GI_VOLUME_SETS_QUALITY
+    kit: a tier override sets the quality bit
+    FAILED  integration.swift_package: IlluminationTests.testAVolumeCarriesExactlyTheOverridesItNames (sets 27, expected 58)
+
+M202  bindings/swift/Sources/CyberdyneKit/Illumination.swift
+    entity: entity.bits, material: AnimationName.hash(material), mode: mode.rawValue)
+    -> entity: entity.bits, material: 0 & AnimationName.hash(material), mode: mode.rawValue)
+    kit: a material rule is sent without the material
+    FAILED  integration.swift_package: IlluminationTests.testClassesAndEmissionReachTheirEntries (material hash 0)
+
+M26 src/rendering/gi/src/system.cpp  (the code before the fix, restored as a mutation)
+    evict_cell compacts cell_pages_ in order
+    -> evict_cell removes each page with remove_unordered (the swap-with-last removal)
+    system: releasing one cell's pages moves another cell's pages past each other, so an in-place
+    reclassification paired the sign's cards with the wrong pages
+    FAILED  integration.render_gi_emissive: switching off an emitter the cache carries takes its emission out of its own cards and invalidates what they light as a material change, not a cell ingest
+            (a cell streamed out ahead of the room reordered the room's pages, and the sign's
+            emission landed on wall and ceiling pages: its own nine summed below 27 and other
+            pages emitted)
+
+Restored: every suite above passes.

@@ -73,6 +73,13 @@ ENUM_SPECS = {
     # ABI 1.8, deterministic math and the lockstep path (add-deterministic-math stage 8).
     "CyDetmathFunction": ("DetmathFunction", "CY_DETMATH_", "u32"),
     "CyLockstepOrderKind": ("LockstepOrderKind", "CY_LOCKSTEP_ORDER_", "u32"),
+    # ABI 1.9, global illumination (issue #35).
+    "CyGiMode": ("GiMode", "CY_GI_MODE_", "u32"),
+    "CyGiQuality": ("GiQuality", "CY_GI_QUALITY_", "u32"),
+    "CyGiTier": ("GiTier", "CY_GI_TIER_", "u32"),
+    "CyGiClass": ("GiClass", "CY_GI_CLASS_", "u32"),
+    "CyGiEmission": ("GiEmission", "CY_GI_EMISSION_", "u32"),
+    "CyGiSource": ("GiSource", "CY_GI_SOURCE_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

@@ -1,0 +1,6 @@
+cyprim 1
+shape plane
+name GiFloor
+origin centre
+extent 1 1
+subdivisions 4 4

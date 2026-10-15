@@ -517,3 +517,171 @@ CY_TEST_CASE(
     CY_CHECK_EQ(sphere_occlusion(Sphere{Vec3{0.0F, -3.0F, 0.0F}, 0.5F}, Vec3{}, up), 0.0F);
     CY_CHECK_EQ(sphere_occlusion(Sphere{Vec3{0.0F, 0.1F, 0.0F}, 0.5F}, Vec3{}, up), 1.0F);
 }
+
+CY_TEST_CASE(
+    "an object's class changes at run time, taking its cards and field into the scene and out") {
+    gi_rooms::LitRoom room;
+    u64 frame = room.converge();
+    const Vec3 half{0.3F, 0.3F, 0.3F};
+    const std::vector<Surfel> cards = box_cards(half, Vec3{0.5F, 0.5F, 0.5F});
+    const gi_support::BoxField shape{half, 0.3F};
+    const u32 placements = room.system.field().placement_count();
+    const Vec3 at{2.0F, -1.7F, 2.0F};
+    GiObjectDesc crate;
+    crate.id = 21;
+    crate.mobility = ObjectMobility::Movable;
+    crate.local_bounds = Aabb::from_center_extents(Vec3{}, half);
+    crate.transform = Mat4::from_translation(at);
+    crate.surfels = {cards.data(), cards.size()};
+    const auto asset = shape.asset();
+    crate.field = &asset;
+    CY_REQUIRE(room.system.add_object(crate, frame).has_value());
+    const u64 cell = object_cell_id(21);
+
+    // Derived: a 0.6 m movable box is FastDynamic — a proxy, in no field and no cell.
+    CY_REQUIRE_EQ(room.system.object(21)->klass, IlluminationClass::FastDynamic);
+    CY_CHECK_FALSE(room.system.scene().cell_resident(cell));
+    CY_CHECK_EQ(room.system.field().placement_count(), placements);
+    (void)room.system.update(room.context(frame++));
+    CY_CHECK_EQ(room.system.proxy_spheres().size(), 1U);
+
+    // A game marks it Static: its cards and its own field enter now, exactly the field it brought.
+    CY_REQUIRE(
+        room.system.set_object_class(21, true, IlluminationClass::Static, frame).has_value());
+    CY_CHECK_EQ(room.system.object(21)->klass, IlluminationClass::Static);
+    CY_CHECK(room.system.scene().cell_resident(cell));
+    CY_CHECK_EQ(room.system.field().placement_count(), placements + 1U);
+    u32 dimension = 0;
+    Aabb bounds{};
+    cy::Array<f32> copied;
+    CY_REQUIRE(room.system.field().copy_placement(cell, dimension, bounds, copied).has_value());
+    CY_CHECK_EQ(dimension, asset.dimension);
+    CY_REQUIRE_EQ(copied.size(), asset.distances.size());
+    CY_CHECK(std::memcmp(copied.data(), asset.distances.data(), copied.size() * sizeof(f32)) == 0);
+    (void)room.system.update(room.context(frame++));
+    CY_CHECK(room.system.proxy_spheres().empty());
+
+    // Back to the derivation: out of the cell and the field now, invalidating where it stood, and a
+    // proxy again.
+    const u32 before = total_invalidations(room.system);
+    CY_REQUIRE(
+        room.system.set_object_class(21, false, IlluminationClass::Static, frame).has_value());
+    CY_CHECK_EQ(room.system.object(21)->klass, IlluminationClass::FastDynamic);
+    CY_CHECK_FALSE(room.system.object(21)->has_class_override);
+    CY_CHECK_FALSE(room.system.scene().cell_resident(cell));
+    CY_CHECK_EQ(room.system.field().placement_count(), placements);
+    CY_CHECK_GT(total_invalidations(room.system), before);
+    (void)room.system.update(room.context(frame++));
+    CY_CHECK_EQ(room.system.proxy_spheres().size(), 1U);
+
+    // And in again: the field it parked is the field it had.
+    CY_REQUIRE(
+        room.system.set_object_class(21, true, IlluminationClass::SlowDynamic, frame).has_value());
+    copied.clear();
+    CY_REQUIRE(room.system.field().copy_placement(cell, dimension, bounds, copied).has_value());
+    CY_REQUIRE_EQ(copied.size(), asset.distances.size());
+    CY_CHECK(std::memcmp(copied.data(), asset.distances.data(), copied.size() * sizeof(f32)) == 0);
+    CY_CHECK(room.system.scene().cell_resident(cell));
+
+    // Transient: recorded and nothing else.
+    CY_REQUIRE(room.system.set_object_class(21, true, IlluminationClass::TransientIgnored, frame)
+                   .has_value());
+    (void)room.system.update(room.context(frame++));
+    CY_CHECK(room.system.proxy_spheres().empty());
+    CY_CHECK_FALSE(room.system.scene().cell_resident(cell));
+
+    // Refusals change nothing.
+    CY_CHECK_FALSE(
+        room.system.set_object_class(99, true, IlluminationClass::Static, frame).has_value());
+    CY_CHECK_FALSE(
+        room.system.set_object_class(21, true, IlluminationClass::Count, frame).has_value());
+    CY_CHECK_EQ(room.system.object(21)->klass, IlluminationClass::TransientIgnored);
+}
+
+CY_TEST_CASE("an object made Static at run time lights and occludes as one added Static") {
+    // Two rooms, one crate each: added Static in the first, added FastDynamic and marked Static in
+    // the second. After the same frames the two resolve every point to the same bits.
+    const Vec3 half{0.3F, 0.3F, 0.3F};
+    const std::vector<Surfel> cards = box_cards(half, Vec3{0.8F, 0.2F, 0.2F});
+    const gi_support::BoxField shape{half, 0.3F};
+    const auto asset = shape.asset();
+    gi_rooms::LitRoom added;
+    gi_rooms::LitRoom marked;
+    for (gi_rooms::LitRoom* room : {&added, &marked}) {
+        GiObjectDesc crate;
+        crate.id = 22;
+        crate.mobility = ObjectMobility::Movable;
+        crate.local_bounds = Aabb::from_center_extents(Vec3{}, half);
+        crate.transform = Mat4::from_translation(Vec3{1.0F, -1.7F, 1.0F});
+        crate.surfels = {cards.data(), cards.size()};
+        crate.field = &asset;
+        crate.has_class_override = room == &added;
+        crate.class_override = IlluminationClass::Static;
+        CY_REQUIRE(room->system.add_object(crate, 1).has_value());
+    }
+    CY_REQUIRE(marked.system.set_object_class(22, true, IlluminationClass::Static, 1).has_value());
+    (void)added.converge(2);
+    (void)marked.converge(2);
+    const Vec3 points[] = {Vec3{1.0F, -1.99F, 1.6F}, Vec3{0.2F, -1.99F, 1.0F},
+                           Vec3{-2.0F, 0.0F, 0.0F}};
+    for (const Vec3 point : points) {
+        const Vec3 normal = point.y < -1.9F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{0.0F, 0.0F, 1.0F};
+        const Vec3 a = added.system.indirect_diffuse(point, normal, SurfaceProperties{}).radiance;
+        const Vec3 b = marked.system.indirect_diffuse(point, normal, SurfaceProperties{}).radiance;
+        CY_CHECK_EQ(a.x, b.x);
+        CY_CHECK_EQ(a.y, b.y);
+        CY_CHECK_EQ(a.z, b.z);
+    }
+}
+
+CY_TEST_CASE("a scaled object's cards carry its scaled area, and a rigid one's are untouched") {
+    // A lamp carded over a unit square and placed at a third of its size in x and z: its one card
+    // stands for 0.09 m^2 of glowing surface, and its power is that area's. Before the cards were
+    // given the world's area, the lamp emitted over a whole square metre: eleven times its power.
+    IlluminationSystem system;
+    CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
+    Surfel glass;
+    glass.normal = Vec3{0.0F, -1.0F, 0.0F};
+    glass.area = 1.0F;
+    glass.emission = Vec3{100.0F, 100.0F, 100.0F};
+    glass.instance_id = 5;
+    glass.material_id = 5;
+    GiObjectDesc lamp;
+    lamp.id = 5;
+    lamp.local_bounds = Aabb::from_center_extents(Vec3{}, Vec3{0.5F, 0.05F, 0.5F});
+    lamp.transform =
+        Mat4::from_translation(Vec3{0.0F, 1.5F, 0.0F}) * Mat4::from_scale(Vec3{0.3F, 1.0F, 0.3F});
+    lamp.surfels = {&glass, 1};
+    CY_REQUIRE(system.add_object(lamp, 0).has_value());
+    const u32 slot =
+        system.scene().nearest_surfel(Vec3{0.0F, 1.5F, 0.0F}, Vec3{0.0F, -1.0F, 0.0F}, 0.01F);
+    CY_REQUIRE_NE(slot, GiScene::kInvalidSurfel);
+    // The light took the card's emission; its area is the scaled square's.
+    CY_REQUIRE_EQ(system.emitters().records().size(), 1U);
+    const EmitterRecord& record = system.emitters().records()[0];
+    CY_CHECK_NEAR(record.area_m2, 0.09F, 1.0e-6F);
+    CY_CHECK_NEAR_REL(record.power, cy::math::kPi * 100.0F * 0.09F, 1.0e-5F);
+    CY_REQUIRE_EQ(system.emitters().lights().size(), 1U);
+    CY_CHECK_NEAR(system.emitters().lights()[0].emitter_area, 0.09F, 1.0e-6F);
+
+    // Turned a quarter turn about y and moved, unscaled: the area it was given, bit for bit.
+    Surfel side;
+    side.normal = Vec3{1.0F, 0.0F, 0.0F};
+    side.area = 0.37F;
+    side.instance_id = 6;
+    GiObjectDesc crate;
+    crate.id = 6;
+    crate.local_bounds = Aabb::from_center_extents(Vec3{}, Vec3{0.5F, 0.5F, 0.5F});
+    crate.transform = Mat4::from_translation(Vec3{2.0F, -1.5F, 1.0F}) *
+                      Mat4::from_quat(cy::Quat::from_axis_angle(Vec3{0.0F, 1.0F, 0.0F}, 0.7F));
+    crate.surfels = {&side, 1};
+    CY_REQUIRE(system.add_object(crate, 0).has_value());
+    bool found = false;
+    for (u32 index = 0; index < system.scene().surfel_count(); ++index) {
+        if (system.scene().surfel(index).instance_id == 6) {
+            CY_CHECK_EQ(system.scene().surfel(index).area, 0.37F);
+            found = true;
+        }
+    }
+    CY_CHECK(found);
+}

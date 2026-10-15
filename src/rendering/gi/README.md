@@ -15,7 +15,7 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `distance_field.h` | camera-centred sparse clipmaps of bricks, per-asset fields composited by transform, sphere tracing and sky visibility |
 | `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update (`SurfaceCache::select`), the one line the multi-bounce approximation is, and `SurfaceShadingBackend` — the seam a device shades the selected pages behind |
 | `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot` and `CardGather` (issue #35) |
-| `emissive.h` | emitters classified by radiant power and area: `classify_emitters`, the per-cell `EmissiveLights`, and `EmissiveReport`, which accounts for every watt |
+| `emissive.h` | emitters classified by radiant power and area — or by an `EmitterRule` — `classify_emitters`, the per-cell `EmissiveLights`, and `EmissiveReport`, which accounts for every watt |
 | `gi_volume.h` | `GiVolume` and `GiVolumeSet`: per-region overrides of quality, probe density, update rate, intensity, tier preference and far-field distance, with priority and blend distance |
 | `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
 | `proxy_scene.h` | `BoxProxyScene`: axis-aligned proxy boxes as a `SceneTracer`, `Occluder` and `RadianceLookup`, so a volume can be captured from blockout geometry |
@@ -32,7 +32,7 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `media.h` | the transparency staging table, the reserved `RefractionSolver` and `CausticsSource`, thin transmission's back-face offset, and `MediaIndirectGrid` — the radiance cache's mean radiance a participating medium reads |
 | `diagnostics.h` | `IlluminationQuery` (what lit a point, its probes and their leak suspicion, and a `DarknessCause`), `IlluminationRegionReport`, and `GiProfile` — the per-frame stage costs, rays per tier, hit rates and cost attribution |
 | `debug_views.h` | the nineteen GI debug views, named as `render::DebugViewMode`'s, drawn into an `Rgba8Unorm` image the forward frame composites |
-| `system.h` | the composition: the named subsystems, wired, and one frame |
+| `system.h` | the composition: the named subsystems, wired, and one frame; `GiRuntimeSettings` and the run-time calls (settings, emitter rules, object classes) |
 
 ## Five things worth knowing before changing anything here
 
@@ -226,6 +226,40 @@ volume that sets one of them; intensity and the far-field distance are resolved 
 `indirect_diffuse` and `indirect_specular`. The scheduler ages a probe at its rate and scales its
 error by it, which on `integration.render_gi_volumes`'s two mirror-image interiors gives the marked
 one 3.9 times the updates per probe within one budget.
+
+## Tuning a running world: settings, emitter rules, classes
+
+Three calls change a configured system without `configure()`'s rebuild — what a game's options
+menu (ABI 1.9's `gi_*`, `cy::game-backend-illumination`) and the editor's `gi.*` commands
+(`cy::editor::IlluminationPreview`) both reach:
+
+- **`set_runtime_settings(GiRuntimeSettings)`**: the mode, the GLOBAL quality and tier (the values
+  a GI volume overrides, now not fixed at Medium and Automatic), the acceleration service's profile
+  switch and the budget's allocation. A quality or tier change is recorded on every live probe in
+  place (`RadianceCache::record_region_settings`): no probe moves, so none is placed again and none
+  loses what it gathered. The first version retired every probe, and the light at a guard's spot in
+  the Swift suite's room went from 2.149 to 0.001 for the frames the probes took to come back.
+- **`set_emitter_rules(Span<const EmitterRule>, frame)`**: per material, per instance or both —
+  `Automatic`, `CacheOnly`, `Promote`, `Off` — the most specific rule winning
+  (`emitter_override_for`). `classify_emitters` gained an overload under rules (empty rules is the
+  measurement bit for bit); `EmitterClass::Disabled` and `EmissiveReport::disabled_power` keep the
+  account summing. Every resident cell with an emitter is classified again from the cards
+  `ingest_cell` was first given (`EmissiveCell`), IN PLACE: `GiScene::set_cell_emission` and
+  `SurfaceCache::set_emission` change only emission, its promoted lights leave or arrive as a
+  streamed emitter's do, and a card whose cache emission changed files `MaterialChanged` over what
+  it lights. The first version evicted and ingested the cell, which filed `CellIngested` over the
+  whole room and started every page from nothing.
+- **`set_object_class(id, has_override, class, frame)`**: an object entering Static or SlowDynamic
+  places its cards and its own field now; leaving takes them out now and keeps the field
+  (`GiObject::parked_*`, `DistanceField::copy_placement`) for the way back. `add_object` keeps a
+  non-participating object's cards and field for the same reason.
+
+Untouched, each is the configured system bit for bit (`integration.render_gi_runtime`,
+`render_gi_emissive`, `render_gi_classes`). **A scaled object's cards carry their scaled area**:
+`commit_object` multiplies a card's area by the transform's cofactor applied to its normal (one for
+any rotation, left exactly as given within 1e-5), so a scaled emitter's power is the world's —
+before, a lamp carded over a unit square and placed at a third of its size emitted over a whole
+square metre (`render_gi_classes`' "a scaled object's cards carry its scaled area").
 
 ## Irradiance volumes: the first slice that reaches a frame
 

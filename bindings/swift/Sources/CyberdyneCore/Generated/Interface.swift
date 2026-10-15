@@ -773,4 +773,54 @@ public struct Interface: @unchecked Sendable {
     public func lockstepStatus(engine: CyEngine, into: UnsafeMutablePointer<CyLockstepStatus>?) throws {
         try check(table.pointee.lockstep_status(engine, into))
     }
+
+    @inlinable
+    public func giGetSettings(engine: CyEngine, into: UnsafeMutablePointer<CyGiSettings>?) throws {
+        try check(table.pointee.gi_get_settings(engine, into))
+    }
+
+    @inlinable
+    public func giSetSettings(engine: CyEngine, settings: UnsafePointer<CyGiSettings>?) throws {
+        try check(table.pointee.gi_set_settings(engine, settings))
+    }
+
+    @inlinable
+    public func giVolumeCreate(engine: CyEngine, desc: UnsafePointer<CyGiVolumeDesc>?, into: UnsafeMutablePointer<CyGiVolume>?) throws {
+        try check(table.pointee.gi_volume_create(engine, desc, into))
+    }
+
+    @inlinable
+    public func giVolumeUpdate(engine: CyEngine, volume: CyGiVolume, desc: UnsafePointer<CyGiVolumeDesc>?) throws {
+        try check(table.pointee.gi_volume_update(engine, volume, desc))
+    }
+
+    @inlinable
+    public func giVolumeDestroy(engine: CyEngine, volume: CyGiVolume) throws {
+        try check(table.pointee.gi_volume_destroy(engine, volume))
+    }
+
+    @inlinable
+    public func giObjectSetClass(engine: CyEngine, entity: CyEntity, klass: UInt32) throws {
+        try check(table.pointee.gi_object_set_class(engine, entity, klass))
+    }
+
+    @inlinable
+    public func giObjectClass(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.gi_object_class(engine, entity, into))
+    }
+
+    @inlinable
+    public func giEmissionSet(engine: CyEngine, entity: CyEntity, material: UInt64, mode: UInt32) throws {
+        try check(table.pointee.gi_emission_set(engine, entity, material, mode))
+    }
+
+    @inlinable
+    public func giSampleIrradiance(engine: CyEngine, position: UnsafePointer<Float>?, normal: UnsafePointer<Float>?, into: UnsafeMutablePointer<CyGiIrradiance>?) throws {
+        try check(table.pointee.gi_sample_irradiance(engine, position, normal, into))
+    }
+
+    @inlinable
+    public func giStatus(engine: CyEngine, into: UnsafeMutablePointer<CyGiStatus>?) throws {
+        try check(table.pointee.gi_status(engine, into))
+    }
 }

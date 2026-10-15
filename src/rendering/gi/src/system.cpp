@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace cy::rendering::gi {
 namespace {
@@ -45,6 +46,21 @@ template <class T>
 [[nodiscard]] T since(T now, T then) noexcept {
     return now >= then ? now - then : now;
 }
+
+/// How much a card facing `normal` grows under `transform`'s linear part: the length of the
+/// cofactor matrix applied to the normal, `|n.x (c1 x c2) + n.y (c2 x c0) + n.z (c0 x c1)|`, which
+/// is one for a rotation and the area ratio for any scale or shear.
+[[nodiscard]] f32 card_area_scale(const Mat4& transform, Vec3 normal) noexcept {
+    const Vec3 c0{transform.columns[0].x, transform.columns[0].y, transform.columns[0].z};
+    const Vec3 c1{transform.columns[1].x, transform.columns[1].y, transform.columns[1].z};
+    const Vec3 c2{transform.columns[2].x, transform.columns[2].y, transform.columns[2].z};
+    return length((cross(c1, c2) * normal.x) + (cross(c2, c0) * normal.y) +
+                  (cross(c0, c1) * normal.z));
+}
+
+/// A rigid transform's card areas, to the rounding of its rotation, are left as they are: an
+/// object placed without a scale holds exactly the cards it was given.
+constexpr f32 kRigidAreaTolerance = 1.0e-5F;
 
 [[nodiscard]] f32 hit_rate(u32 hits, u32 total, f32 none) noexcept {
     return total == 0 ? none : static_cast<f32>(hits) / static_cast<f32>(total);
@@ -104,6 +120,9 @@ Status IlluminationSystem::ingest_cell(u64 cell, const Aabb& bounds, Span<const 
         return ingested;
     }
     invalidate_emitters(emissive_.last_changed(), frame);
+    if (Status kept = keep_emissive_cell(cell, bounds, surfels); !kept) {
+        return kept;
+    }
     // A page per card this ingest added, remembered by cell so `evict_cell` releases exactly them.
     Status allocated = ok();
     for (const Surfel& surfel : cache_surfels_) {
@@ -121,15 +140,45 @@ Status IlluminationSystem::ingest_cell(u64 cell, const Aabb& bounds, Span<const 
     return allocated;
 }
 
+Status IlluminationSystem::keep_emissive_cell(u64 cell, const Aabb& bounds,
+                                              Span<const Surfel> surfels) noexcept {
+    const bool emits = std::ranges::any_of(surfels, [](const Surfel& surfel) {
+        return surfel.emission.x > 0.0F || surfel.emission.y > 0.0F || surfel.emission.z > 0.0F;
+    });
+    if (!emits) {
+        return ok();
+    }
+    EmissiveCell entry;
+    entry.cell = cell;
+    entry.bounds = bounds;
+    if (Status copied = entry.surfels.append(surfels); !copied) {
+        return copied;
+    }
+    return emissive_cells_.push_back(std::move(entry));
+}
+
 void IlluminationSystem::evict_cell(u64 cell, u64 frame) noexcept {
     scene_.evict_cell(cell, frame);
     emissive_.evict(cell);
-    invalidate_emitters(emissive_.last_changed(), frame);
-    for (usize index = cell_pages_.size(); index > 0; --index) {
-        if (cell_pages_[index - 1].cell == cell) {
-            surfaces_.release(cell_pages_[index - 1].page);
-            cell_pages_.remove_unordered(index - 1);
+    for (usize index = emissive_cells_.size(); index > 0; --index) {
+        if (emissive_cells_[index - 1].cell == cell) {
+            emissive_cells_.erase(index - 1);
         }
+    }
+    invalidate_emitters(emissive_.last_changed(), frame);
+    // Compacted in order: `reclassify_cell` pairs a cell's pages with its cards by their order
+    // here, so releasing one cell must not move another's pages past each other.
+    usize kept = 0;
+    for (const CellPage& entry : cell_pages_) {
+        const CellPage page = entry;
+        if (page.cell == cell) {
+            surfaces_.release(page.page);
+        } else {
+            cell_pages_[kept++] = page;
+        }
+    }
+    while (cell_pages_.size() > kept) {
+        cell_pages_.pop_back();
     }
 }
 
@@ -189,10 +238,132 @@ void IlluminationSystem::retire_volume_regions() noexcept {
     }
 }
 
-GiRegionSettings IlluminationSystem::region_settings(Vec3 point) const noexcept {
+GiRegionSettings IlluminationSystem::global_region() const noexcept {
     GiRegionSettings global;
     global.far_field_begins_metres = settings_.error_targets.far_field_begins_metres;
+    global.ray_scale = gi_quality_ray_scale(global_quality_);
+    global.tier = global_tier_;
+    return global;
+}
+
+GiRegionSettings IlluminationSystem::region_settings(Vec3 point) const noexcept {
+    const GiRegionSettings global = global_region();
     return volumes_.empty() ? global : volumes_.resolve(point, global);
+}
+
+// --- Run-time settings ---------------------------------------------------------------------------
+
+Status validate_gi_runtime_settings(const GiRuntimeSettings& settings) noexcept {
+    if (settings.mode >= GiMode::Count || settings.quality >= GiQuality::Count ||
+        settings.tier >= GiTierPreference::Count) {
+        return fail(ErrorCode::InvalidArgument,
+                    "GiRuntimeSettings: a mode, quality or tier out of range");
+    }
+    if (!std::isfinite(settings.budget_ms) || settings.budget_ms <= 0.0F) {
+        return fail(ErrorCode::InvalidArgument,
+                    "GiRuntimeSettings: the budget must be a positive number of milliseconds");
+    }
+    return ok();
+}
+
+GiRuntimeSettings IlluminationSystem::runtime_settings() const noexcept {
+    GiRuntimeSettings out;
+    out.mode = settings_.mode;
+    out.quality = global_quality_;
+    out.tier = global_tier_;
+    out.hardware_ray_tracing = settings_.ray_tracing.enabled_by_profile;
+    out.budget_ms = budget_.settings().allocation_ms;
+    return out;
+}
+
+Status IlluminationSystem::set_runtime_settings(const GiRuntimeSettings& settings) noexcept {
+    if (Status valid = validate_gi_runtime_settings(settings); !valid) {
+        return valid;
+    }
+    settings_.mode = settings.mode;
+    if (settings.hardware_ray_tracing != settings_.ray_tracing.enabled_by_profile) {
+        settings_.ray_tracing.enabled_by_profile = settings.hardware_ray_tracing;
+        acceleration_.set_enabled_by_profile(settings.hardware_ray_tracing);
+    }
+    settings_.budget.allocation_ms = settings.budget_ms;
+    budget_.set_allocation_ms(settings.budget_ms);
+    if (settings.quality != global_quality_ || settings.tier != global_tier_) {
+        global_quality_ = settings.quality;
+        global_tier_ = settings.tier;
+        // Both are recorded on a probe at placement, and neither moves one: every live probe is
+        // told its new rays and tier in place, keeping what it gathered, so the light does not
+        // drop while the probes gather at the new setting.
+        (void)radiance_.record_region_settings(volumes_.empty() ? nullptr : &volumes_,
+                                               global_region());
+    }
+    return ok();
+}
+
+// --- Emitter rules -------------------------------------------------------------------------------
+
+Status IlluminationSystem::set_emitter_rules(Span<const EmitterRule> rules, u64 frame) noexcept {
+    if (Status set = emissive_.set_rules(rules); !set) {
+        return set;
+    }
+    Status result = ok();
+    for (const EmissiveCell& entry : emissive_cells_) {
+        if (Status classified = reclassify_cell(entry, frame); !classified && result) {
+            result = classified;
+        }
+    }
+    return result;
+}
+
+Status IlluminationSystem::reclassify_cell(const EmissiveCell& entry, u64 frame) noexcept {
+    // IN PLACE: the cell's cards and pages keep everything they gathered and only their emission
+    // changes, so a lamp put out darkens what it lit and nothing else of the cell flickers. Its
+    // promoted lights leave and arrive as a streamed emitter's do, invalidating what they light.
+    emissive_.evict(entry.cell);
+    invalidate_emitters(emissive_.last_changed(), frame);
+    if (Status classified = emissive_.ingest(entry.cell, entry.surfels.span(), cache_surfels_);
+        !classified) {
+        return classified;
+    }
+    invalidate_emitters(emissive_.last_changed(), frame);
+    if (Status emitted = scene_.set_cell_emission(entry.cell, cache_surfels_.span()); !emitted) {
+        return emitted;
+    }
+    // A card that now emits through the cache, or no longer does, changes the light it sends to
+    // what gathers it: that region is invalidated as a material change, attributed to the cell.
+    Aabb changed{};
+    bool any = false;
+    f32 strongest = 0.0F;
+    usize index = 0;
+    for (const CellPage& page : cell_pages_) {
+        if (page.cell != entry.cell || index >= cache_surfels_.size()) {
+            continue;
+        }
+        const Surfel& card = cache_surfels_[index++];
+        const Vec3 before = surfaces_.page(page.page).emission;
+        if (!surfaces_.set_emission(page.page, card.emission)) {
+            continue;
+        }
+        changed = any ? Aabb::from_min_max(cwise_min(changed.min, card.position),
+                                           cwise_max(changed.max, card.position))
+                      : Aabb::from_min_max(card.position, card.position);
+        any = true;
+        const Surfel& brightest = emission_luminance(before) > emission_luminance(card.emission)
+                                      ? entry.surfels[index - 1]
+                                      : card;
+        strongest = std::max(strongest, emitted_power(brightest));
+    }
+    if (any) {
+        GiLight reach;
+        reach.colour = Vec3{1.0F, 1.0F, 1.0F};
+        reach.intensity = strongest / math::kPi;
+        reach.emitter_area = 1.0F;
+        const f32 radius =
+            emitter_influence_radius(reach, settings_.emissive.invalidation_irradiance);
+        scene_.invalidate(Aabb::from_min_max(changed.min - Vec3{radius, radius, radius},
+                                             changed.max + Vec3{radius, radius, radius}),
+                          InvalidationCause::MaterialChanged, entry.cell, frame);
+    }
+    return ok();
 }
 
 bool IlluminationSystem::dynamic_enabled() const noexcept {
@@ -356,18 +527,19 @@ Status IlluminationSystem::add_object(const GiObjectDesc& desc, u64 frame) noexc
     entry.skinned = desc.skinned;
     entry.importance = desc.importance;
     entry.proxy_albedo = desc.proxy_albedo;
-    entry.klass = desc.has_class_override
-                      ? desc.class_override
-                      : classify_illumination(desc.mobility,
-                                              object_size_metres(desc.local_bounds, desc.transform),
-                                              settings_.classification);
+    entry.has_class_override = desc.has_class_override;
+    entry.class_override = desc.class_override;
+    entry.klass = desc.has_class_override ? desc.class_override : derived_class(entry);
     entry.last_flush_frame = frame;
-    const bool participates =
-        entry.klass == IlluminationClass::Static || entry.klass == IlluminationClass::SlowDynamic;
+    const bool participates = participating(entry.klass);
     if (participates) {
         if (Status prepared = place_object(desc, entry); !prepared) {
             return prepared;
         }
+    } else if (Status parked = park_object(desc, entry); !parked) {
+        // A class that takes no part keeps its cards and its field, so `set_object_class` can
+        // give it one that does.
+        return parked;
     }
     if (Status pushed = objects_.push_back(std::move(entry)); !pushed) {
         if (participates && desc.field != nullptr) {
@@ -376,6 +548,85 @@ Status IlluminationSystem::add_object(const GiObjectDesc& desc, u64 frame) noexc
         return pushed;
     }
     return participates ? commit_object(objects_.back(), frame) : ok();
+}
+
+IlluminationClass IlluminationSystem::derived_class(const GiObject& entry) const noexcept {
+    return classify_illumination(entry.mobility,
+                                 object_size_metres(entry.local_bounds, entry.transform),
+                                 settings_.classification);
+}
+
+Status IlluminationSystem::park_object(const GiObjectDesc& desc, GiObject& entry) noexcept {
+    if (Status copied = entry.surfels.append(desc.surfels); !copied) {
+        return copied;
+    }
+    if (desc.field == nullptr) {
+        return ok();
+    }
+    entry.parked_dimension = desc.field->dimension;
+    entry.parked_bounds = desc.field->bounds;
+    return entry.parked_distances.append(desc.field->distances);
+}
+
+Status IlluminationSystem::set_object_class(u64 id, bool has_override, IlluminationClass klass,
+                                            u64 frame) noexcept {
+    if (has_override && klass >= IlluminationClass::Count) {
+        return fail(ErrorCode::InvalidArgument,
+                    "IlluminationSystem::set_object_class: a class out of range");
+    }
+    const u32 index = find_object(id);
+    if (index == ~0U) {
+        return fail(ErrorCode::NotFound, "IlluminationSystem::set_object_class: no such object");
+    }
+    GiObject& entry = objects_[index];
+    entry.has_class_override = has_override;
+    entry.class_override = klass;
+    const IlluminationClass next = has_override ? klass : derived_class(entry);
+    const bool was = participating(entry.klass);
+    const bool will = participating(next);
+    entry.klass = next;
+    if (was == will) {
+        // Static and SlowDynamic hold the same state, and so do the other two; a pending
+        // SlowDynamic move becoming Static is flushed now, as a Static move would be.
+        return was && entry.pending ? commit_object(entry, frame) : ok();
+    }
+    return will ? enter_scene(entry, frame) : leave_scene(entry, frame);
+}
+
+Status IlluminationSystem::leave_scene(GiObject& entry, u64 frame) noexcept {
+    const u64 cell = object_cell_id(entry.id);
+    if (entry.has_field) {
+        entry.parked_distances.clear();
+        if (Status copied = field_.copy_placement(cell, entry.parked_dimension, entry.parked_bounds,
+                                                  entry.parked_distances);
+            !copied) {
+            return copied;
+        }
+        field_.remove(cell);
+        entry.has_field = false;
+    }
+    if (scene_.cell_resident(cell)) {
+        evict_cell(cell, frame);
+    }
+    entry.pending = false;
+    entry.pending_region = Aabb{};
+    return ok();
+}
+
+Status IlluminationSystem::enter_scene(GiObject& entry, u64 frame) noexcept {
+    if (!entry.parked_distances.empty()) {
+        AssetDistanceField parked;
+        parked.dimension = entry.parked_dimension;
+        parked.bounds = entry.parked_bounds;
+        parked.distances = entry.parked_distances.span();
+        if (Status placed = field_.place(object_cell_id(entry.id), parked, entry.transform);
+            !placed) {
+            return placed;
+        }
+        entry.has_field = true;
+        entry.parked_distances.clear();
+    }
+    return commit_object(entry, frame);
 }
 
 Status IlluminationSystem::place_object(const GiObjectDesc& desc, GiObject& entry) noexcept {
@@ -406,6 +657,13 @@ Status IlluminationSystem::commit_object(GiObject& entry, u64 frame) noexcept {
         placed.position = transform_point(entry.transform, local.position);
         placed.normal =
             normalized_or(transform_direction(entry.transform, local.normal), local.normal);
+        // A scaled object's cards cover its scaled surface: their area, and with it an emitter's
+        // power (emissive.h), is the world's, not the object space's.
+        const f32 area_scale =
+            card_area_scale(entry.transform, normalized_or(local.normal, Vec3{}));
+        if (std::fabs(area_scale - 1.0F) > kRigidAreaTolerance) {
+            placed.area = local.area * area_scale;
+        }
         (void)world.push_back(placed);
     }
     if (scene_.cell_resident(cell)) {
@@ -875,6 +1133,7 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
     placement.importance_region = context.importance_region;
     placement.has_importance_region = context.has_importance_region;
     placement.volumes = volumes_.empty() ? nullptr : &volumes_;
+    placement.global = global_region();
     report.placement = radiance_.scroll_to(context.camera, placement);
     profile_.stage_ms[static_cast<u32>(GiStage::ProbeUpdate)] += elapsed_ms(started);
 

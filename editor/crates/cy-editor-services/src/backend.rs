@@ -278,6 +278,8 @@ pub struct BackendServices {
     pub script: crate::script_requests::ScriptRequests,
     /// The `animation.*` operations, the animation panel's: see `crate::animation_requests`.
     pub animation: crate::animation_requests::AnimationRequests,
+    /// `illumination.report`, the lighting panel's GI report: see `crate::illumination_requests`.
+    pub illumination: crate::illumination_requests::IlluminationRequests,
 }
 
 impl Default for BackendServices {
@@ -311,6 +313,7 @@ impl Default for BackendServices {
             audio: crate::audio_requests::AudioRequests::default(),
             script: crate::script_requests::ScriptRequests::default(),
             animation: crate::animation_requests::AnimationRequests::default(),
+            illumination: crate::illumination_requests::IlluminationRequests::default(),
         }
     }
 }
@@ -329,6 +332,7 @@ impl BackendServices {
             let _ = self.audio.maintain(runtime);
             let _ = self.script.maintain(runtime);
             let _ = self.animation.maintain(runtime);
+            let _ = self.illumination.maintain(runtime);
             return None;
         }
         // Only once discovery is done, so a runtime's first answers stay in the order they always
@@ -357,6 +361,13 @@ impl BackendServices {
             && self.vfx_catalogue_request.is_none()
             && self.vfx_capabilities_request.is_none()
             && let Some(problem) = self.animation.maintain(runtime)
+        {
+            return Some(problem);
+        }
+        // And for the GI report, which is only ever asked for.
+        if self.connected
+            && self.catalogue_request.is_none()
+            && let Some(problem) = self.illumination.maintain(runtime)
         {
             return Some(problem);
         }
@@ -480,6 +491,9 @@ impl BackendServices {
             return outcome;
         }
         if let Some(outcome) = self.animation.accept(message) {
+            return outcome;
+        }
+        if let Some(outcome) = self.illumination.accept(message) {
             return outcome;
         }
         if Some(*request) == self.catalogue_request {

@@ -8,6 +8,8 @@ cy_add_module(
         src/audio_authoring.cpp
         src/audio_service.cpp
         src/composite_service.cpp
+        src/illumination_preview.cpp
+        src/illumination_service.cpp
         src/material_service.cpp
         src/navigation_service.cpp
         src/script_service.cpp
@@ -22,7 +24,11 @@ cy_add_module(
         cy::servers-audio
         cy::game-backend
         cy::scene-serialization
-        cy::terrain)
+        cy::terrain
+        # The editor's global illumination (#35): the authored world lit by CyberGI, and the
+        # triangle tracer its debug views and its picked point are traced through.
+        cy::rendering-gi
+        cy::rendering-lightmap-bake)
 
 if(CY_VFX)
     target_link_libraries(cy_editor_backend PRIVATE cy::vfx)
@@ -133,6 +139,29 @@ if(CY_BUILD_TESTS)
             DEPENDENCIES cy::editor-backend cy::navigation)
         target_include_directories(cy_test_integration_editor_backend_navigation PRIVATE
             "${CMAKE_SOURCE_DIR}/src/navigation/tests")
+        # Issue #35: the editor's global illumination — the authored world lit by CyberGI, its
+        # debug views and its report — and `illumination.report`. INTEGRATION because a world is
+        # carded, its distance grids built and its GI converged.
+        cy_add_test(
+            NAME editor_backend_illumination
+            KIND integration
+            SOURCES "${tests_dir}/test_illumination_preview.cpp"
+            DEPENDENCIES cy::editor-backend
+            DEFINITIONS "CY_ILLUMINATION_WIRE_DIR=\"${tests_dir}/data\"")
+        # What the editor's GI costs on the host, measured over the same world: a rebuild and two
+        # views at 320x180 take more than an integration case's second on a slow runner.
+        # The smoke taxonomy is tests/CMakeLists.txt's, which this deferred call does not see.
+        get_directory_property(smoke_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_smoke)
+        get_directory_property(smoke_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_smoke)
+        set(CY_TEST_BUDGET_smoke "${smoke_budget}")
+        set(CY_TEST_TIMEOUT_smoke "${smoke_timeout}")
+        cy_add_test(
+            NAME editor_gi_cost
+            KIND smoke
+            SOURCES "${tests_dir}/test_illumination_cost.cpp"
+            DEPENDENCIES cy::editor-backend)
     endfunction()
     cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_editor_backend_declare_tests)
 endif()

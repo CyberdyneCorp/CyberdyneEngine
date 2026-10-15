@@ -188,6 +188,10 @@ public:
     [[nodiscard]] Status allocate_from(const GiScene& scene, const Aabb& region) noexcept;
 
     void release(u32 handle) noexcept;
+    /// Change a live page's emission in place, keeping what it gathered; its revision moves, so a
+    /// device mirror uploads it again. False when it already emitted exactly that, or the page is
+    /// not live.
+    bool set_emission(u32 handle, Vec3 emission) noexcept;
 
     /// Invalidate every page inside `region`. Returns how many, which is what an invalidation
     /// record's `surface_pages` is filled in with.

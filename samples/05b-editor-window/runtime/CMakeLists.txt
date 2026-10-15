@@ -54,7 +54,9 @@ cy_add_module(
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
+        authored_components.cpp
         authored_frame.cpp
+        gi_runtime.cpp
         graph_runtime.cpp
         layout_file.cpp
         main.cpp
@@ -82,6 +84,7 @@ cy_add_module(
         cy::servers-render
         cy::runtime-editor-bridge
         cy::editor-backend
+        cy::rendering-lightmaps
         cy::navigation
         cy::terrain
         cy::game-backend

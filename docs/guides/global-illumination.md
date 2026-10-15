@@ -294,6 +294,90 @@ opaque. `LightmapDensity` and `LightmapCharts` are drawn by the frame itself.
 
 ![The nineteen GI debug views](../design/images/gi-debug-views.png)
 
+## 6d. Tuning it while the world runs
+
+Four calls change the GI of a running world without `configure()`'s full rebuild. They are what a
+game's options menu, a level script and the editor all reach — the editor through its document, a
+Swift game through ABI 1.9 — so an author sees exactly what a player gets.
+
+```cpp
+gi::GiRuntimeSettings settings = system.runtime_settings();
+settings.quality = gi::GiQuality::High;        // the global probe quality, a volume's where one reaches
+settings.tier = gi::GiTierPreference::Automatic;
+settings.hardware_ray_tracing = false;           // exactly a device without ray queries
+settings.budget_ms = 2.5F;                       // the allocation the next update holds to
+(void)system.set_runtime_settings(settings);
+
+const gi::EmitterRule out{gi::kAnyEmitter, lamp_glass_material, gi::EmitterOverride::Off};
+(void)system.set_emitter_rules({&out, 1}, frame); // the lamp is put out
+
+(void)system.set_object_class(cart_id, true, gi::IlluminationClass::Static, frame);
+```
+
+| Call | What changes | What it costs |
+|---|---|---|
+| `set_runtime_settings` | mode, global quality and tier, the hardware tier's profile switch, the budget | a quality or tier change retires every probe (both are decided at placement); the switch keeps its structures; nothing else is touched |
+| `set_emitter_rules` | per material, per instance or both: `Automatic`, `CacheOnly`, `Promote`, `Off` — the most specific rule wins | only cells with an emitter are classified again, from the cards they came in with; a promoted light that leaves or arrives invalidates what it lights |
+| `set_object_class` | an object's class, or back to the derivation | entering Static or SlowDynamic places its cards and its own field now; leaving takes them out now, keeping the field for the way back |
+
+Untouched, each is the configured system bit for bit (`integration.render_gi_runtime`'s "the
+run-time settings start as the configured ones, and applying them is a no-op",
+`render_gi_emissive`'s "with no rule, classification under rules is the measurement's"). A lamp put
+out and lit again shades the floor under it to the same bits it had (`render_gi_emissive`); an
+object made Static at run time resolves every point to the same bits as one added Static
+(`render_gi_classes`). A scaled object's cards now carry the area of its scaled surface, so a
+scaled lamp's power is the world's — before, a lamp carded over a unit square and placed at a
+third of its size emitted over a whole square metre, eleven times its power.
+
+## 6e. From the editor
+
+The Lighting & Lightmaps panel has a global illumination half; every edit is a registered,
+undoable `gi.*` command with an MCP tool of the same name ([editor/README.md](../../editor/README.md),
+"Global illumination").
+
+| Command | The document | The engine |
+|---|---|---|
+| `gi.settings.set` | `GiSettings` on the world's one "Global Illumination" node | `set_runtime_settings` |
+| `gi.volume.create`, `gi.volume.set` | a node whose transform is the box (translation the centre, scale the size: the move and scale gizmos place and size it) and a `GiVolume` with its `sets` mask | `set_volumes` |
+| `gi.object.set-class` | `GiObject` on a placed object (also the Inspector's row) | `set_object_class` |
+| `gi.emission.set` | `GiEmission` on the world's one rule node for a material | `set_emitter_rules` |
+| `gi.report`, `gi.status` | — | `illumination.report`: settings, tier, convergence, cost per stage, rays, hit rates, every emitter's class and every object's, and `explain()` at a clicked pixel |
+| `viewport.view-mode.gi-*` | — | the nineteen GI debug views, drawn by the runtime over its own frame |
+
+The runtime (`samples/05b-editor-window/runtime/gi_runtime.h`) reads the document into the engine's
+`cy::editor::IlluminationPreview` (`src/editor_backend`), which rebuilds the GI only when geometry,
+materials or lights changed and applies everything else in place through the calls of section 6d.
+The view the viewport asked for (`GizmoIntent::debug_view`) is drawn on the processor at a quarter
+of the frame's resolution and composited by the forward frame where it is opaque; back on Lit the
+frame is byte for byte the frame before (`smoke.editor_authored_frame_vulkan`'s GI case).
+
+![The editor viewport lit and in the GI Tier view](../design/images/editor-gi-viewport.png)
+
+## 6f. From a Swift game
+
+```swift
+var settings = try Illumination.settings                 // a graphics options menu
+settings.quality = .high
+try Illumination.apply(settings)
+
+let crypt = try GIVolume.place(.init(                    // a level's important interior
+    bounds: (min: Vec3(x: -8, y: 0, z: -8), max: Vec3(x: 8, y: 4, z: 8)),
+    overrides: [.quality(.epic), .updateRate(2)]))
+try Illumination.setClass(.fastDynamic, of: cart)        // it moves every frame
+try Illumination.setEmission(.off, of: torch)            // the guard put the torch out
+
+let light = try Illumination.irradiance(at: thief.position)   // onUpdate
+if light.luminance < 0.05 { hidden = true }                    // act on it in the next step
+```
+
+`irradiance(at:normal:)` is `indirect_diffuse` at the point; with no normal, the mean over the six
+axis directions — what a body standing there receives. Every call is refused in `onFixedUpdate`
+(illumination is presentation, so the simulation never depends on it), which is why an AI reads the
+light in its frame update and acts on it in the next fixed step. `integration.swift_illumination`
+runs a real Swift module against the GI suites' room: the light at a guard's spot is the system's
+own six-direction mean to the micro-unit, and putting the lamp out by its material's name halves it.
+The C reference is [src/abi/README.md](../../src/abi/README.md), "What ABI 1.9 adds".
+
 ## 7. Measuring it: against the oracle, and against the engines it competes with
 
 "Better than Lumen or Unity's adaptive probe volumes" is only worth saying as numbers a suite fails on.
@@ -314,6 +398,9 @@ The claims and where each is measured:
 | Leaves transmit, fog is lit by the cache | `integration.render_gi_media`, `render.volumetric_fog` (g) | thin transmission 0.123 and the medium's grid 0.125 (mean relative) from the path tracer; the device fog within 2.3e-5 of the host march |
 | Emitters lit without fireflies, within a stated error | `integration.render_gi_emissive` | a promoted 30 cm lamp 0.5 % from the path tracer with a per-receiver ratio variance of 0.027 (the reference's noise); left to the cache, 4.6; a promoted panel 2.0 % |
 | A region gets the quality it is marked for, within one budget | `integration.render_gi_volumes` | 3.9x the probe updates and 2x the rays in the marked interior, the frame's probe budget unchanged; no volume reaching a point is bit for bit no volume at all |
+| Tuning it live changes only what it says | `integration.render_gi_runtime`, `integration.render_gi_emissive`, `integration.render_gi_classes` | untouched settings, no rule and a class set at run time are each the configured system bit for bit; a lamp put out and relit shades its floor to the same bits; Epic quality is 4x the rays of every probe placed after it |
+| A game reads the light where a body stands | `integration.game_backend_illumination`, `integration.swift_illumination` | the sample is `indirect_diffuse`'s own answer bit for bit (the six-direction mean for a body); a lamp put out from a script takes the luminance under it from 2.150 to 1.038 in the adapter and from 2.149 to 1.032 through Swift |
+| Every GI view in the editor's viewport, and Lit as before | `smoke.editor_authored_frame_vulkan`, `integration.editor_window_illumination` | 11 136 of 11 200 opaque view texels change the frame, every one of 13 376 clear texels keeps it, and back on Lit the frame is byte for byte the frame before |
 | Explicit cost | `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s cost cases; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The per-pixel GI at 1920x1080, every stage: the test room 11.6 ms (hardware) / 15.2 ms (software) at authored quality, 3.15 ms on the half-resolution grid, 2.24 ms with the denoiser lever too; the beauty shot 14.8 ms (hardware) / 29.7 ms (software), 5.6 / 11.1 ms on the half grid. Stage 5 holds a 960x540 frame to its allocation by dropping from 3.97 ms to 0.75 ms in the declared lever order |
 
 **The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
@@ -326,6 +413,36 @@ incoming radiance, which is a card's `direct + accumulated / albedo`.
 Report the energy over a set of receivers and the per-receiver error separately: the first averages
 the reference's noise out, the second includes it. `render_gi_emissive`'s `Agreement` does both,
 and prints them.
+
+### How this compares with Unreal's Lumen and Unity's GI
+
+No head-to-head run exists: neither engine runs in this repository, and no one scene has been
+measured in all three. What can be stated is CyberGI's MEASURED number on each axis of the program
+goal beside what the other two DOCUMENT about the same axis; where a vendor publishes no number, the
+cell says so rather than inventing one. Every CyberGI number below is a test that fails when it
+regresses.
+
+| Axis | CyberGI (measured, RTX 5060 where a device is involved) | Unreal Engine 5, Lumen (documented) | Unity 6, Adaptive Probe Volumes and Enlighten (documented) |
+|---|---|---|---|
+| Error against a path-traced reference | 0.112 mean relative per pixel in the GI test room (240 points), 0.126 on the beauty shot against the exact triangles; held below 0.16 | no error figure against a reference is published | APV stores what the baker path-traced, so a probe's value is a bake's; the error of sampling probes between them is not published |
+| Convergence after a light moves | within 10 % of the new light's converged frame in 11 frames for a 4.9 m move (held at 14) | accumulated over frames; update speed is a set of tuning variables, no frame count is published | a probe volume is re-baked or blended between pre-baked lighting scenarios; Enlighten updates a moved light's bounce over several frames over static geometry only |
+| Light through a thin wall | a sealed room behind a 10 cm wall: mean 2.6e-5 of the lit room's light, worst pixel 7.6e-3 (held below 1e-3 and 2e-2) | the documentation advises walls of at least 10 cm for the software tracer to avoid leaking | leaking between probes is a documented APV artefact, reduced by its Virtual Offset and leak-reduction settings; no figure |
+| Temporal stability | a converged still view moves 0.0034 a frame where the one-ray signal under it moves 0.451 (held below 0.01) | no figure | baked probes do not move at all, and do not respond to a light that does |
+| Emissive lighting | a promoted 30 cm lamp within 0.5 % of the path tracer with a per-receiver ratio variance of 0.027; left to the cache the same lamp is 4.6 — promotion is the measurement, or an author's rule | emissive surfaces light through the GI's gather; the documentation recommends real lights for small bright emitters, which are noisy | emissive surfaces contribute to the bake; realtime emission through Enlighten |
+| Hardware ray tracing with a bounded software fallback | the tiers agree to 0.0209 (held at 0.10); switching moves the image 0.074 where an ordinary frame moves 0.142 | hardware and software tracing are both offered; the difference between them is not bounded in the documentation | runtime probe GI does not trace rays; ray-traced GI is a separate HDRP feature |
+| Cost at 1080p | the whole per-pixel GI 11.6 ms (hardware) / 15.2 ms (software) at authored quality, 3.15 ms on the half-resolution grid, 2.24 ms with the denoiser lever; a 960x540 frame held to its allocation from 3.97 ms to 0.75 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
+| Control from tools and code | every setting, volume, class and emitter rule from the editor (undoable, MCP) and from a Swift game (ABI 1.9); all nineteen debug views in the viewport; `explain()` at a clicked point | post-process volume settings, console variables, visualization modes | the Lighting window, probe volume baking sets and lighting scenarios, a scripting API |
+
+What the table supports, and only that: on every axis where a number exists, CyberGI's is stated,
+held by a test and reproducible from this repository; on error against a reference, leaking at
+10 cm, convergence and stability neither vendor publishes a number to compare it with. What it does
+not support: that CyberGI is cheaper — at full resolution it is 11.6 ms, well over a 60 fps
+budget, and only the half-resolution grid with the levers reaches 2.24 ms; that it was ever measured
+beside either engine on one scene; or anything about consoles, Windows or Apple devices, where the
+hardware tier refuses (section 10); or that the editor's GI views are interactive — the
+editor-hosted runtime draws them on the host, about 35 ms for the probe view at 320x180 and 240 ms
+for indirect diffuse (`smoke.editor_gi_cost`, GCC 13), where Lumen's visualization modes are drawn
+by the GPU frame.
 
 ## 8. Running and changing it
 
@@ -410,12 +527,16 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   host decisions and hold on both paths; the device gather traces the update's ray count through
   the frame's tier for every probe, so `Quality` and `TierPreference` reach probes on the host
   gather only.
-- **The editor and Swift**: the editor lists the GI debug views as view modes (the engine's
-  names, mirrored), and its lighting tools author lightmaps and baked volumes (see
-  [Lighting authoring](lighting.md)); no editor panel shows `explain` or the profile, and no Swift
-  API classes an object, sets a transmission, places a GI volume or tunes the per-pixel resolve
-  yet. Every requirement of the row maps to a test case in
-  `tools/roadmap/requirements-coverage.toml`; the notes there say what each does not cover yet.
+- **The editor's GI is the host's**: the editor-hosted runtime lights the authored world with the
+  host `IlluminationSystem` and draws its views on the processor at a quarter of the frame's
+  resolution, every frame the view is selected (at 320x180, about 35 ms for the probe view and
+  240 ms for indirect diffuse), so a GI view mode runs the viewport at a few frames a second — a diagnostic,
+  not the frame's per-pixel GI; the editor's lit frame is not yet lit by
+  the device GI. Materials are a cooked material's base colour and emission, or the frame's default
+  grey (material graphs light as grey). The Swift API sets no transmission and does not tune the
+  per-pixel resolve's own settings (grid divisor, denoiser) yet. Every requirement of the row maps to
+  a test case in `tools/roadmap/requirements-coverage.toml`; the notes there say what each does not
+  cover yet.
 - **A directional depth per probe for `sample`**: six axis distances cannot tell a doorway's edge
   from a wall, and those probes still leak into `sample`'s answer (the diagnostics name them);
   `sample_traced` — the per-pixel resolve's — traces each probe instead.

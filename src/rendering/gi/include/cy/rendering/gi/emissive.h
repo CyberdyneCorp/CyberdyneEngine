@@ -72,9 +72,57 @@ enum class EmitterClass : u8 {
     PromotedLight,
     /// Promoted by power and area, but over the cell's light budget: back in the cache, reported.
     Demoted,
+    /// Switched off by an `EmitterRule`: its cards hold no emission and it lights nothing. Its
+    /// power is reported as `disabled_power`, so the account still sums.
+    Disabled,
 };
 
 [[nodiscard]] const char* emitter_class_name(EmitterClass classification) noexcept;
+
+// ================================================================================================
+// AN AUTHOR'S OR A GAME'S WORD OVER THE MEASUREMENT
+// ================================================================================================
+//
+// The measurement is right for the common case and wrong for two: a large emitter an author knows
+// is the room's key light (a window card, a skylight panel — promote it whatever its area), and a
+// small, bright one whose shadows nobody will see (a dashboard's LEDs — leave it to the cache and
+// save the lights). And a game switches lamps off. An `EmitterRule` says so per material, per
+// instance, or per (instance, material); the most specific rule that matches an emitter decides,
+// and among equally specific ones the last given. With no rule the classification is the
+// measurement's, bit for bit.
+
+/// What a rule makes of the emitters it matches.
+enum class EmitterOverride : u8 {
+    /// The measurement decides: the classification without the rule.
+    Automatic = 0,
+    /// Never promoted, whatever its power and area.
+    CacheOnly,
+    /// Promoted whatever its power and area — still within the cell's light budget, so an emitter
+    /// past it is `Demoted` and reported like any other.
+    Promote,
+    /// Its emission is removed: no light, no cache radiance.
+    Off,
+    Count,
+};
+
+[[nodiscard]] const char* emitter_override_name(EmitterOverride mode) noexcept;
+
+/// Matches every instance, or every material.
+inline constexpr u32 kAnyEmitter = 0xFFFFFFFFU;
+
+struct EmitterRule {
+    /// The `Surfel::instance_id` it applies to, or `kAnyEmitter`.
+    u32 instance_id = kAnyEmitter;
+    /// The `Surfel::material_id` it applies to, or `kAnyEmitter`.
+    u32 material_id = kAnyEmitter;
+    EmitterOverride mode = EmitterOverride::Automatic;
+};
+
+/// The rule `rules` applies to (instance, material): the most specific match — both ids, then the
+/// instance alone, then the material alone, then a rule matching every emitter — the last of
+/// equals. `Automatic` with none.
+[[nodiscard]] EmitterOverride emitter_override_for(Span<const EmitterRule> rules, u32 instance_id,
+                                                   u32 material_id) noexcept;
 
 /// One emitter: the cards of one (instance, material) with non-zero emission.
 struct EmitterRecord {
@@ -85,6 +133,8 @@ struct EmitterRecord {
     f32 area_m2 = 0.0F;
     f32 power = 0.0F;
     EmitterClass classification = EmitterClass::CacheOnly;
+    /// The rule that decided it, `Automatic` when the measurement did.
+    EmitterOverride override_mode = EmitterOverride::Automatic;
 };
 
 /// Where every watt went.
@@ -100,6 +150,10 @@ struct EmissiveReport {
     f32 demoted_power = 0.0F;
     /// Energy removed by clamping. Zero by construction; see the header comment.
     f32 clamped_power = 0.0F;
+    /// Emitters an `EmitterRule` switched off, and the power they would emit. `total_power` is
+    /// `cached_power + promoted_power + demoted_power + disabled_power`.
+    u32 disabled_emitters = 0;
+    f32 disabled_power = 0.0F;
 };
 
 /// Rec. 709 luminance of an emission.
@@ -121,6 +175,15 @@ struct EmissiveReport {
                                        Array<GiLight>& lights, Array<EmitterRecord>& records,
                                        EmissiveReport& report) noexcept;
 
+/// The same under `rules`: each emitter's class is its rule's (`emitter_override_for`) where one
+/// matches, and the measurement's elsewhere. An `Off` emitter's cards reach `cache_surfels` with
+/// no emission. Empty `rules` is the overload above, bit for bit.
+[[nodiscard]] Status classify_emitters(Span<const Surfel> surfels, const EmissiveSettings& settings,
+                                       Span<const EmitterRule> rules, u64 cell, u64 light_id_base,
+                                       Array<Surfel>& cache_surfels, Array<GiLight>& lights,
+                                       Array<EmitterRecord>& records,
+                                       EmissiveReport& report) noexcept;
+
 /// The classification for every resident cell: the subsystem `IlluminationSystem` owns, and the
 /// list of promoted lights it adds to a frame's.
 class EmissiveLights {
@@ -129,6 +192,11 @@ public:
 
     void configure(const EmissiveSettings& settings) noexcept { settings_ = settings; }
     [[nodiscard]] const EmissiveSettings& settings() const noexcept { return settings_; }
+
+    /// The rules the next `ingest` classifies under, copied. A cell already classified keeps its
+    /// classes until it is ingested again: `IlluminationSystem::set_emitter_rules` does that.
+    [[nodiscard]] Status set_rules(Span<const EmitterRule> rules) noexcept;
+    [[nodiscard]] Span<const EmitterRule> rules() const noexcept { return rules_.span(); }
 
     /// Classify `surfels` as cell `cell`. `cache_surfels` is cleared and filled with what the GI
     /// scene should ingest. A cell already classified is refused.
@@ -148,6 +216,7 @@ public:
 
 private:
     EmissiveSettings settings_{};
+    Array<EmitterRule> rules_;
     Array<GiLight> lights_;
     Array<u64> light_cells_;
     Array<EmitterRecord> records_;

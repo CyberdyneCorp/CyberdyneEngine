@@ -275,12 +275,7 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
         outcomes.push(panels.inputs.interaction.handle(&mut context, event));
     }
     for outcome in outcomes {
-        report(
-            outcome,
-            panels.editor,
-            &mut panels.inputs.navigation,
-            panels.intents,
-        );
+        report(outcome, panels.editor, panels.inputs, panels.intents);
     }
 }
 
@@ -305,11 +300,12 @@ fn published_gizmo(editor: &cy_editor_services::Editor) -> Option<cy_editor_view
 /// notifications not interrupt, and a toast per drag would be a wall of them. Only a refusal and an
 /// unanswerable pick are worth saying out loud.
 ///
-/// An armed navigation pick takes the click instead of selection: see `navigation_baking`.
+/// An armed GI explain or navigation pick takes the click instead of selection: see `lighting_gi`
+/// and `navigation_baking`.
 fn report(
     outcome: Outcome,
     editor: &mut cy_editor_services::Editor,
-    navigation: &mut super::navigation_baking::NavigationInputs,
+    inputs: &mut super::Inputs,
     intents: &mut Vec<super::Intent>,
 ) {
     match outcome {
@@ -319,7 +315,15 @@ fn report(
                 .post(Notification::error(problem.what.clone(), *problem));
         }
         Outcome::Pick(request, mode) => {
-            match super::navigation_baking::armed_pick(navigation, editor, &request) {
+            match super::lighting_gi::armed_explain(&mut inputs.lighting.gi, editor, &request) {
+                super::lighting_gi::ArmedExplain::Explain(intent) => {
+                    intents.push(intent);
+                    return;
+                }
+                super::lighting_gi::ArmedExplain::Held => return,
+                super::lighting_gi::ArmedExplain::NotArmed => {}
+            }
+            match super::navigation_baking::armed_pick(&mut inputs.navigation, editor, &request) {
                 super::navigation_baking::ArmedClick::Pick(intent) => intents.push(intent),
                 super::navigation_baking::ArmedClick::Held => {}
                 super::navigation_baking::ArmedClick::NotArmed => {

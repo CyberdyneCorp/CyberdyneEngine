@@ -561,6 +561,63 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyLockstepStatus>.offset(of: \CyLockstepStatus.disagreements), 44, "CyLockstepStatus.disagreements offset")
     }
 
+    func testGiSettingsLayout() {
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.size, 24, "CyGiSettings size")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.alignment, 4, "CyGiSettings alignment")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.struct_size), 0, "CyGiSettings.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.mode), 4, "CyGiSettings.mode offset")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.quality), 8, "CyGiSettings.quality offset")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.tier), 12, "CyGiSettings.tier offset")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.flags), 16, "CyGiSettings.flags offset")
+        XCTAssertEqual(MemoryLayout<CyGiSettings>.offset(of: \CyGiSettings.budget_ms), 20, "CyGiSettings.budget_ms offset")
+    }
+
+    func testGiVolumeDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.size, 72, "CyGiVolumeDesc size")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.alignment, 4, "CyGiVolumeDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.struct_size), 0, "CyGiVolumeDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.sets), 4, "CyGiVolumeDesc.sets offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.bounds_min), 8, "CyGiVolumeDesc.bounds_min offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.bounds_max), 20, "CyGiVolumeDesc.bounds_max offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.priority), 32, "CyGiVolumeDesc.priority offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.blend_distance), 36, "CyGiVolumeDesc.blend_distance offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.weight), 40, "CyGiVolumeDesc.weight offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.quality), 44, "CyGiVolumeDesc.quality offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.probe_density), 48, "CyGiVolumeDesc.probe_density offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.update_rate), 52, "CyGiVolumeDesc.update_rate offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.diffuse_intensity), 56, "CyGiVolumeDesc.diffuse_intensity offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.specular_intensity), 60, "CyGiVolumeDesc.specular_intensity offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.tier), 64, "CyGiVolumeDesc.tier offset")
+        XCTAssertEqual(MemoryLayout<CyGiVolumeDesc>.offset(of: \CyGiVolumeDesc.far_field_metres), 68, "CyGiVolumeDesc.far_field_metres offset")
+    }
+
+    func testGiIrradianceLayout() {
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.size, 32, "CyGiIrradiance size")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.alignment, 4, "CyGiIrradiance alignment")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.struct_size), 0, "CyGiIrradiance.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.flags), 4, "CyGiIrradiance.flags offset")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.radiance), 8, "CyGiIrradiance.radiance offset")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.luminance), 20, "CyGiIrradiance.luminance offset")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.confidence), 24, "CyGiIrradiance.confidence offset")
+        XCTAssertEqual(MemoryLayout<CyGiIrradiance>.offset(of: \CyGiIrradiance.source), 28, "CyGiIrradiance.source offset")
+    }
+
+    func testGiStatusLayout() {
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.size, 48, "CyGiStatus size")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.alignment, 8, "CyGiStatus alignment")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.struct_size), 0, "CyGiStatus.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.world_tier), 4, "CyGiStatus.world_tier offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.convergence), 8, "CyGiStatus.convergence offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.measured_ms), 12, "CyGiStatus.measured_ms offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.allocation_ms), 16, "CyGiStatus.allocation_ms offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.volumes), 20, "CyGiStatus.volumes offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.objects), 24, "CyGiStatus.objects offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.promoted_lights), 28, "CyGiStatus.promoted_lights offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.emitters), 32, "CyGiStatus.emitters offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.disabled_emitters), 36, "CyGiStatus.disabled_emitters offset")
+        XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.frame), 40, "CyGiStatus.frame offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -571,7 +628,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1160, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1240, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -717,6 +774,16 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_order), 1136, "CyInterface.lockstep_order offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_unit), 1144, "CyInterface.lockstep_unit offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.lockstep_status), 1152, "CyInterface.lockstep_status offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_get_settings), 1160, "CyInterface.gi_get_settings offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_set_settings), 1168, "CyInterface.gi_set_settings offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_volume_create), 1176, "CyInterface.gi_volume_create offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_volume_update), 1184, "CyInterface.gi_volume_update offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_volume_destroy), 1192, "CyInterface.gi_volume_destroy offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_object_set_class), 1200, "CyInterface.gi_object_set_class offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_object_class), 1208, "CyInterface.gi_object_class offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_emission_set), 1216, "CyInterface.gi_emission_set offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_sample_irradiance), 1224, "CyInterface.gi_sample_irradiance offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_status), 1232, "CyInterface.gi_status offset")
     }
 
     func testModuleInitLayout() {
@@ -734,7 +801,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1160,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1240,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -780,8 +847,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 143)
+        XCTAssertEqual(ABI.entryNames.count, 153)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "lockstep_status")
+        XCTAssertEqual(ABI.entryNames.last, "gi_status")
     }
 }

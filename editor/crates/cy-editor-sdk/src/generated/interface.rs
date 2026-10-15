@@ -3555,4 +3555,262 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// The running world's global illumination settings.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_get_settings(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyGiSettings,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_get_settings
+            .ok_or(CallError::Missing("gi_get_settings"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Apply global illumination settings from the next frame.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_set_settings(
+        &self,
+        engine: ffi::CyEngine,
+        settings: *const ffi::CyGiSettings,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_set_settings
+            .ok_or(CallError::Missing("gi_set_settings"))?;
+        let raw = unsafe { entry(engine, settings) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Place a GI volume.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_volume_create(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CyGiVolumeDesc,
+        into: *mut ffi::CyGiVolume,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_volume_create
+            .ok_or(CallError::Missing("gi_volume_create"))?;
+        let raw = unsafe { entry(engine, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Replace a GI volume's description.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_volume_update(
+        &self,
+        engine: ffi::CyEngine,
+        volume: ffi::CyGiVolume,
+        desc: *const ffi::CyGiVolumeDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_volume_update
+            .ok_or(CallError::Missing("gi_volume_update"))?;
+        let raw = unsafe { entry(engine, volume, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Remove a GI volume.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_volume_destroy(
+        &self,
+        engine: ffi::CyEngine,
+        volume: ffi::CyGiVolume,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_volume_destroy
+            .ok_or(CallError::Missing("gi_volume_destroy"))?;
+        let raw = unsafe { entry(engine, volume) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Set an object's illumination class, or clear it.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_object_set_class(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        klass: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_object_set_class
+            .ok_or(CallError::Missing("gi_object_set_class"))?;
+        let raw = unsafe { entry(engine, entity, klass) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The illumination class an object has now.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_object_class(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_object_class
+            .ok_or(CallError::Missing("gi_object_class"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// What GI makes of an object's or a material's emission.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_emission_set(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        material: u64,
+        mode: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_emission_set
+            .ok_or(CallError::Missing("gi_emission_set"))?;
+        let raw = unsafe { entry(engine, entity, material, mode) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The indirect light arriving at a point.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_sample_irradiance(
+        &self,
+        engine: ffi::CyEngine,
+        position: *const f32,
+        normal: *const f32,
+        into: *mut ffi::CyGiIrradiance,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_sample_irradiance
+            .ok_or(CallError::Missing("gi_sample_irradiance"))?;
+        let raw = unsafe { entry(engine, position, normal, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// What the global illumination did on the last frame.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn gi_status(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyGiStatus,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .gi_status
+            .ok_or(CallError::Missing("gi_status"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

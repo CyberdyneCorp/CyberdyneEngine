@@ -157,7 +157,12 @@ fn link_add(world: u32, from: [f32; 3], to: [f32; 3]) -> Intent {
 /// The pixel of the rendered frame under a click made in the panel's own pixels. The runtime
 /// renders at its own size, so a shared texture's extent rescales the click; a scale is not a
 /// projection, and the ray is still the engine's.
-fn frame_pixel(request: &PickRequest, image: Option<&FrameImage>, x: f32, y: f32) -> [f32; 2] {
+pub(super) fn frame_pixel(
+    request: &PickRequest,
+    image: Option<&FrameImage>,
+    x: f32,
+    y: f32,
+) -> [f32; 2] {
     let Some(FrameImage::SharedTexture { image, .. }) = image else {
         return [x, y];
     };
@@ -188,7 +193,7 @@ pub(super) enum ArmedClick {
 
 /// The image of the frame the click was made on: the stream keeps only its newest frame, so a
 /// click on an older one cannot be rescaled honestly and is refused instead.
-fn clicked_image<'a>(
+pub(super) fn clicked_image<'a>(
     request: &PickRequest,
     latest: Option<&'a PresentedFrame>,
 ) -> Option<&'a FrameImage> {

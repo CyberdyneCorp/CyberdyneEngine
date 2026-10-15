@@ -259,6 +259,18 @@ CY_TEST_CASE("a gizmo intent carries the physics overlays the editor asked for")
     CY_REQUIRE(decode_gizmo_intent(cy::Span<const u8>{bytes.data(), bytes.size()}, intent));
     CY_CHECK_EQ(intent.physics_overlays, 0x21U);
     CY_CHECK_EQ(intent.game_camera, ~u64{0});
+    CY_CHECK(intent.debug_view == cy::render::DebugViewMode::Off);
+
+    // The viewport's debug view follows the overlays: an editor that sends it is drawn in it, and
+    // a value this build does not know is the lit frame.
+    CY_REQUIRE(bytes.push_back(static_cast<u8>(cy::render::DebugViewMode::GiTier)));
+    GizmoIntent viewed;
+    CY_REQUIRE(decode_gizmo_intent(cy::Span<const u8>{bytes.data(), bytes.size()}, viewed));
+    CY_CHECK(viewed.debug_view == cy::render::DebugViewMode::GiTier);
+    bytes[bytes.size() - 1U] = 0xFFU;
+    GizmoIntent unknown;
+    CY_REQUIRE(decode_gizmo_intent(cy::Span<const u8>{bytes.data(), bytes.size()}, unknown));
+    CY_CHECK(unknown.debug_view == cy::render::DebugViewMode::Off);
 }
 
 CY_TEST_CASE("an empty selection is a request and not an absence") {

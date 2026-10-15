@@ -42,6 +42,8 @@ pub mod builtin;
 pub mod documents;
 pub mod editor;
 pub mod gizmo;
+pub mod illumination;
+pub mod illumination_requests;
 pub mod joints;
 pub mod lighting;
 pub mod lightmap_description;

@@ -196,6 +196,20 @@ Status SurfaceCache::allocate_from(const GiScene& scene, const Aabb& region) noe
     return result;
 }
 
+bool SurfaceCache::set_emission(u32 handle, Vec3 emission) noexcept {
+    if (handle >= pages_.size() || !pages_[handle].live) {
+        return false;
+    }
+    SurfacePage& page = pages_[handle];
+    if (page.emission.x == emission.x && page.emission.y == emission.y &&
+        page.emission.z == emission.z) {
+        return false;
+    }
+    page.emission = emission;
+    page.revision += 1U;
+    return true;
+}
+
 void SurfaceCache::release(u32 handle) noexcept {
     if (handle >= pages_.size() || !pages_[handle].live) {
         return;
