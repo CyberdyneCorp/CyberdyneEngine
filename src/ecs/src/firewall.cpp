@@ -256,7 +256,10 @@ void WriteFirewall::record(WriteOrigin origin, WritePath path, ComponentTypeId c
     violation.authority = authority;
     violation.entity = entity;
     violation.ordinal = ordinal;
-    violations_[(ordinal - 1) % kMaxRecordedViolations] = violation;
+    {
+        const jobs::ScopedLock<jobs::Mutex> guard(violations_mutex_);
+        violations_[(ordinal - 1) % kMaxRecordedViolations] = violation;
+    }
 
 #if defined(CY_DEVELOPMENT)
     // The report the requirement asks for, at the moment of the refusal. Error rather than Warning:
@@ -303,7 +306,14 @@ FirewallViolation WriteFirewall::last_violation() const noexcept {
     if (total == 0) {
         return FirewallViolation{};
     }
+    const jobs::ScopedLock<jobs::Mutex> guard(violations_mutex_);
     return violations_[(total - 1) % kMaxRecordedViolations];
+}
+
+FirewallViolation WriteFirewall::violation(u32 index) const noexcept {
+    CY_ASSERT_MSG(index < kMaxRecordedViolations, "violation index out of range");
+    const jobs::ScopedLock<jobs::Mutex> guard(violations_mutex_);
+    return violations_[index];
 }
 
 void WriteFirewall::clear_violations() noexcept {
@@ -311,6 +321,7 @@ void WriteFirewall::clear_violations() noexcept {
     for (std::atomic<u64>& counter : by_origin_) {
         counter.store(0, std::memory_order_relaxed);
     }
+    const jobs::ScopedLock<jobs::Mutex> guard(violations_mutex_);
     for (FirewallViolation& violation : violations_) {
         violation = FirewallViolation{};
     }
