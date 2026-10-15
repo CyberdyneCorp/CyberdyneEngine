@@ -7,6 +7,7 @@ command only on a quiet host and fails, saying why, on a busy one.
 |---|---|
 | `host_load.h`, `host_load.cpp` | `cy::host-load`: what "quiet" means, read from `/proc`, with the measured program's own load subtracted. `samples/10-world --quiet-host` and the wrapper share it. |
 | `main.cpp` | `cy_quiet_host [--wait-s <n>] -- <command...>`: the wrapper. `just test-quiet-host` builds the tree and runs it. |
+| `tests/unit/quiet_host/test_census.cpp` | `unit.quiet_host_census`: the session census against a scripted process table, including a child reaped in the middle of a look. |
 | `quiet_host_test.py` | `smoke.quiet_host_before`, `smoke.quiet_host_across`, `smoke.quiet_host_own`, `smoke.quiet_host_nested`, `smoke.quiet_host_io`: the wrapper under four niced spinners it starts on purpose, around a command that spins on its own, around one whose spinners start sessions of their own, and under a bounded fsync writer that loads the disk. |
 
 ## Why a premise checked from outside, and not an allowance inside the harness
@@ -57,6 +58,14 @@ against the outer run's host (they did, once: `m0:test`'s first proof failed on 
 It errs one way. An orphan that also calls `setsid` (a daemon) or a member reaped by init is no
 longer counted as ours, so the host looks busier, never quieter. Where `/proc` cannot be read the
 verdict is "cannot tell", and that fails too.
+
+A look at `/proc` is not atomic, and a member can reap a child while the census reads: the parent
+read before the reap and the child after it put the child's CPU time in neither, and the window that
+look closes counts all of it against the host. `smoke.quiet_host_nested` failed that way on an idle
+hosted runner (CI run 38508339082, "3.96 of 4 cores" with nothing else running): its four
+two-second spinners were reaped during one look. So the census reads every member a second time,
+and a look in which any member vanished or reaped anything is taken again, up to eight times
+(`census::session_ticks` in `host_load.h`). `unit.quiet_host_census` scripts that reap.
 
 ## The marker the harness verifies (M11.c's ninth close, option B)
 

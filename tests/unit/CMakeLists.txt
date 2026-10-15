@@ -5,3 +5,8 @@
 # in the harness says so when one arrives here by accident.
 
 add_subdirectory(harness)
+
+# The quiet-host wrapper's census lives in tools/, which CY_BUILD_TOOLS can leave out.
+if(TARGET cy::host-load)
+    add_subdirectory(quiet_host)
+endif()
