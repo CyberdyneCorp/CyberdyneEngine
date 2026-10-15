@@ -169,6 +169,19 @@ private:
 /// the harness can state what it is running under rather than guess.
 double budget_scale();
 
+/// The factor by which an ABSOLUTE performance figure a case asserts outside its
+/// `CY_TEST_BUDGET_ns` guard — microseconds per agent, per tick — is relaxed in a sanitized build,
+/// and one everywhere else. Twenty is the scale `budget.cpp` gives every per-case budget under a
+/// sanitizer, for the same reason: an instrumented binary is five to twenty times slower because
+/// the tool is working, and such a figure is a claim about a shipped game. `CY_SANITIZED` comes
+/// from cmake/sanitizers.cmake; this is its counterpart of `CY_UNOPTIMISED`, and like it, it
+/// relaxes a number and skips nothing.
+#if defined(CY_SANITIZED)
+inline constexpr double kSanitizedAllowance = 20.0;
+#else
+inline constexpr double kSanitizedAllowance = 1.0;
+#endif
+
 /// True where the budget is measured as CPU time. False on a platform with no usable per-thread CPU
 /// clock — Windows, whose thread times are updated on the scheduler's quantum — where the guard
 /// falls back to wall clock and the stall ceiling is not applied. Exposed so that a test of the

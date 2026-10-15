@@ -355,8 +355,12 @@ CY_TEST_CASE("eight thousand agents hold their declared budget") {
     // unconditional — and the structural assertions below, which are counts rather than times, hold
     // in every configuration. `tests/harness/`'s calibrated budget does not cover this, and
     // cmake/profiles.cmake says why beside the macro.
+    //
+    // UNDER A SANITIZER THE FIGURE IS RELAXED rather than dropped: ThreadSanitizer measured 19.7
+    // us/agent/tick on the nightly runner, and `cy::test::kSanitizedAllowance` is the harness's
+    // own scale for an instrumented build.
 #if !defined(CY_UNOPTIMISED)
-    CY_CHECK_LT(per_agent_us, 8.0);
+    CY_CHECK_LT(per_agent_us, 8.0 * cy::test::kSanitizedAllowance);
 #endif
     // AND THE WORK ITSELF IS STABLE TICK TO TICK. This is the structural form of "the grid did not
     // degrade": the number of neighbour tests is what the spatial partition actually cost, it is a
