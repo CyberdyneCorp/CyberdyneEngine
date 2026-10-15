@@ -48,8 +48,19 @@ constexpr auto kHeld = std::chrono::milliseconds(300);
 /// Sleeps in the parent of a `vfork` for `kHeld`: an UNINTERRUPTIBLE wait the case causes itself.
 /// The child only calls async-signal-safe functions before `_exit`. vfork IS the subject, so
 /// posix_spawn, which the check suggests, would hide what is measured.
+///
+/// UNDER ThreadSanitizer THERE IS NO vfork: the runtime intercepts it and forks, which charges the
+/// case's own thread about a millisecond of CPU (over the 1 ms budget at scale 1) and replaces the
+/// uninterruptible hold with an interruptible `waitpid`. So the hold is a plain sleep there. Every
+/// verdict a driver reads from this probe is unchanged by that: the case still waits 300 ms with no
+/// runqueue wait, so it is still `stalled:` and never `contended:`. The cases that measure the
+/// uninterruptible wait itself are in test_budget_contention.cpp and are skipped under TSan.
 void hold_in_vfork() {
     timespec held{0, static_cast<long>(std::chrono::nanoseconds(kHeld).count())};
+#    if defined(__SANITIZE_THREAD__)
+    while (::nanosleep(&held, &held) != 0) {
+    }
+#    else
     // NOLINTNEXTLINE(bugprone-unsafe-functions,clang-analyzer-security.insecureAPI.vfork)
     const pid_t child = ::vfork();
     if (child == 0) {
@@ -61,6 +72,7 @@ void hold_in_vfork() {
     CY_REQUIRE(child > 0);
     int status = 0;
     CY_CHECK(::waitpid(child, &status, 0) == child);
+#    endif
 }
 
 constexpr std::size_t kBlock = 4096;
