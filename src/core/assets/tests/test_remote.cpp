@@ -94,7 +94,14 @@ public:
         return std::string("127.0.0.1:") + std::to_string(port_);
     }
 
-    [[nodiscard]] const RemoteHostStats& stats() const noexcept { return host_.stats(); }
+    /// The host's counters, readable once the serving thread has stopped. `FileServingHost` is
+    /// single-threaded and the thread that serves writes them, so reading them while it runs is a
+    /// data race; stopping first also finishes the round that answered the last request, so that
+    /// request has been counted.
+    [[nodiscard]] const RemoteHostStats& stats() const noexcept {
+        CY_REQUIRE(!thread_.joinable());
+        return host_.stats();
+    }
 
 private:
     FileServingHost host_;
@@ -222,6 +229,7 @@ CY_TEST_CASE("a device fetches from the host on demand, and only what it reads")
     CY_CHECK_FALSE(past.has_value());
     CY_CHECK_EQ(device.provider.stats().transport_failures, 0U);
 
+    host.stop();
     CY_CHECK(host.stats().requests_served > 0);
     CY_CHECK_EQ(host.stats().connections_accepted, 1U);
 }
@@ -328,6 +336,7 @@ CY_TEST_CASE("the host refuses a path that does not normalise, rather than servi
     CY_CHECK(static_cast<cy::ErrorCode>(status) == cy::ErrorCode::InvalidArgument);
     (void)::close(handle);
 
+    host.stop();
     CY_CHECK_EQ(host.stats().paths_rejected, 1U);
     CY_CHECK_EQ(host.stats().bytes_served, 0U);
 #endif

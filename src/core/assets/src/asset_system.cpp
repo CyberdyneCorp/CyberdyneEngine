@@ -242,6 +242,12 @@ struct AssetSystemImpl {
                                             Array<u8>& out,
                                             Array<cy::AssetId>& dependencies) noexcept;
 
+    /// Counts a failed reload from the part of `reload` that runs without the mutex.
+    void note_reload_failure() noexcept {
+        std::lock_guard<std::mutex> guard(mutex);
+        ++stats.reloads_failed;
+    }
+
     // --- the stages ------------------------------------------------------------------------
 
     static void read_operation(void* user) noexcept;
@@ -361,14 +367,22 @@ Status AssetSystemImpl::read_package_entry(PackageMount& package, const VirtualP
     if (Status read = package.reader().read_entry(*entry, out, &from_disk); !read) {
         return read;
     }
-    stats.bytes_read += from_disk;
-    stats.bytes_decompressed += out.size();
+    // The counters are the loader's too, and its workers update them under the mutex; this runs
+    // without it, so each update takes it for the length of the increment.
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        stats.bytes_read += from_disk;
+        stats.bytes_decompressed += out.size();
+    }
 
     // The same check the load path makes, at the same point in the sequence: over the decompressed
     // bytes, before anything is published. A reload that swapped in a payload whose hash does not
     // match would be a tampered package that only hot reload could smuggle in.
     if (config.verify_content_hashes && !(content_hash(out.data(), out.size()) == entry->content)) {
-        ++stats.integrity_failures;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            ++stats.integrity_failures;
+        }
         return fail(ErrorCode::Io, "the entry's payload does not match its recorded content hash");
     }
 
@@ -1260,7 +1274,7 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
     }
     Expected<VirtualFileSystem::Resolution, Error> resolved = self.files->resolve(path.value());
     if (!resolved) {
-        ++self.stats.reloads_failed;
+        self.note_reload_failure();
         return make_unexpected(resolved.error());
     }
     Array<u8> replacement(default_allocator());
@@ -1273,14 +1287,14 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
         if (Status refreshed =
                 self.read_package_entry(*package, path.value(), replacement, dependencies);
             !refreshed) {
-            ++self.stats.reloads_failed;
+            self.note_reload_failure();
             return refreshed;
         }
     } else if (Status read = self.files->read(path.value(), replacement); !read) {
         // The specification's "malformed file mid-write" scenario. The old asset is untouched, and
         // it is untouched because nothing has been written yet rather than because something was
         // rolled back.
-        ++self.stats.reloads_failed;
+        self.note_reload_failure();
         return read;
     }
 
