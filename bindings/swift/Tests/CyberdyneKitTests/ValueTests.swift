@@ -108,3 +108,25 @@ final class RetainedCStringTests: XCTestCase {
                 + "moment at which freeing one becomes safe")
     }
 }
+
+/// REGRESSION. A registration record handed to the engine as `user_data` used to be kept alive by an
+/// unbalanced `passRetained`, reachable only through the engine's copy of the pointer. When the host
+/// freed that copy at shutdown, every Swift suite under AddressSanitizer reported the record as a
+/// direct leak. `RetainedObjects` holds it from a static root instead, which keeps it just as alive.
+final class RetainedObjectsTests: XCTestCase {
+    private final class Record {}
+
+    func testAnObjectHandedOverOutlivesItsLastStrongReference() {
+        let before = RetainedObjects.count
+        weak var watched: Record?
+        var pointer: UnsafeMutableRawPointer?
+        do {
+            let record = Record()
+            watched = record
+            pointer = RetainedObjects.opaque(record)
+        }
+        XCTAssertEqual(RetainedObjects.count, before + 1)
+        XCTAssertNotNil(watched, "only the retained array refers to the record now")
+        XCTAssertTrue(Unmanaged<Record>.fromOpaque(pointer!).takeUnretainedValue() === watched)
+    }
+}
