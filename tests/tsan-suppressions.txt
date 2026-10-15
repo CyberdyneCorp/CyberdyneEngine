@@ -1,0 +1,19 @@
+# ThreadSanitizer suppressions. One entry, held to the rule tests/lsan-suppressions.txt states: a
+# race `just test-sanitize --sanitizer thread` reports is a defect in this repository until a stack
+# shows it is not, and every entry says which stack and why. `print_suppressions=1` makes each entry
+# report its match count on every run, so one that stops matching or starts swallowing more shows up
+# in the run's own output.
+#
+# JPH::Mutex::try_lock
+#   Found by the nightly "every suite under every sanitizer" in `integration.physics_jolt`. Jolt's
+#   Mutex, in a build with JPH_ENABLE_ASSERTS, records the owning thread in a plain `thread::id`
+#   (Jolt/Core/Mutex.h). `try_lock` reads that field in `JPH_ASSERT(mLockedThreadID !=
+#   this_thread::get_id())` BEFORE it takes the lock, while the holder's `unlock` writes it, so the
+#   read is unsynchronised by construction: the assertion only asks "do I already hold this?", which
+#   no other thread's write can make true. The field exists only for that assertion; the mutex
+#   itself is std::mutex and is what orders the protected state, and TSan sees that ordering.
+#
+#   Scope: the one function. TSan matches a `race:` entry against the frames of both accesses, and
+#   `try_lock` calls nothing but `get_id` and the base class's `try_lock`, so this cannot hide a race
+#   in the state Jolt's locks protect, and nothing in this engine is named JPH::.
+race:JPH::Mutex::try_lock
