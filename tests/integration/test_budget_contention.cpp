@@ -86,6 +86,34 @@ void spin_until_stopped(const std::atomic<bool>& stop, std::atomic<unsigned>& re
 }
 #endif
 
+/// Whether `vfork` is the system call here, which every vfork case below takes as its premise.
+///
+/// UNDER ThreadSanitizer IT IS NOT. The runtime intercepts `vfork` and calls `fork` instead — a
+/// vfork child shares the parent's address space and so its shadow memory, which TSan cannot model
+/// — so the parent waits in `waitpid`, interruptibly, and the uninterruptible hold these cases
+/// measure is never made. The fourth clock then truthfully reads zero, and the copied process
+/// charges the case's thread more CPU than the probe's 1 ms budget at scale 1. Neither is a
+/// property of the harness, so the cases report that they have no subject here instead of
+/// asserting on one; the nightly AddressSanitizer and UndefinedBehaviorSanitizer runs, whose
+/// `vfork` is the real one, still run them.
+bool vfork_is_the_system_call() {
+#if defined(__SANITIZE_THREAD__)
+    return false;
+#elif defined(__has_feature)
+#    if __has_feature(thread_sanitizer)
+    return false;
+#    else
+    return true;
+#    endif
+#else
+    return true;
+#endif
+}
+
+void report_no_vfork() {
+    CY_TEST_MESSAGE("ThreadSanitizer turns vfork into fork, so this case has no subject here");
+}
+
 }  // namespace
 
 CY_TEST_CASE("harness: a case preempted by a busy machine accumulates contention, and is excused") {
@@ -456,6 +484,10 @@ CY_TEST_CASE("harness: a case blocked by its OWN vfork child is blocked, and a s
             "this platform does not report host blocking; the stall ceiling is unchanged");
         return;
     }
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
+        return;
+    }
 #if defined(__linux__)
     // THE FIFTH CLOSE'S PROBE, IN THE GUARD'S ARITHMETIC. The parent of a vfork waits
     // uninterruptibly, so the fourth clock sees almost the whole window — which is exactly why
@@ -535,6 +567,10 @@ CY_TEST_CASE(
     if (!cy::test::budget_measures_host_blocking()) {
         CY_TEST_MESSAGE(
             "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
         return;
     }
 #if defined(__linux__)
@@ -818,6 +854,10 @@ void expect_probe_stalled(const char* test_case, ProbeSetting setting = {}) {
 }  // namespace
 
 CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child is a stall") {
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
+        return;
+    }
 #if defined(__linux__)
     // M11.c's fifth close: `757b3d9` reported this case as "contended: ... 300.040 ms blocked on
     // the host's disk or a page fault" and passed it. It is a stall: failed inside the wrapper,
@@ -831,6 +871,10 @@ CY_TEST_CASE("harness: the gate's probe — a case held by its own vfork child i
 CY_TEST_CASE(
     "harness: the gate's probe — a case held by its own vfork child while its own threads read "
     "the disk is a stall") {
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
+        return;
+    }
 #if defined(__linux__)
     // M11.c's sixth close: `4a1ad21` reported this case as "contended: ... 212.557 ms ... was the
     // host's I/O pressure" and passed it. It is a stall, whatever the rest of the host does.
@@ -849,6 +893,10 @@ CY_TEST_CASE(
 CY_TEST_CASE(
     "harness: the gate's probe — a case held by its own vfork child while its own ORPHANED "
     "readers press the disk is a stall") {
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
+        return;
+    }
 #if defined(__linux__)
     // M11.c's seventh close, and the case that ended the allowance. The same readers as above,
     // but PROCESSES double-forked and re-parented to init, so that no census of the case's own
@@ -912,10 +960,14 @@ CY_TEST_CASE("harness: a forged quiet-host marker is not trusted, and the stall 
     const std::string reused = std::to_string(self) + ":" + std::to_string(ticks + 1);
     const std::string unrelated =
         std::to_string(static_cast<long>(sleeper)) + ":" + std::to_string(sleeper_ticks);
+    // The subject is the marker, so the probe only has to stall. Under ThreadSanitizer the vfork
+    // case makes no hold (see `vfork_is_the_system_call`), and the held mutex is the stall instead.
+    const char* const probe = vfork_is_the_system_call()
+                                  ? "probe: a case whose own vfork child holds it"
+                                  : "probe: a case waiting on a mutex another thread holds";
     for (const std::string* forged : {&malformed, &dead, &not_the_wrapper, &reused, &unrelated}) {
         CY_TEST_MESSAGE("forged marker: " << *forged);
-        expect_stall_reported("probe: a case whose own vfork child holds it",
-                              {.marker = Marker::Forged, .forged = forged->c_str()});
+        expect_stall_reported(probe, {.marker = Marker::Forged, .forged = forged->c_str()});
     }
     ::kill(sleeper, SIGKILL);
     int status = 0;
