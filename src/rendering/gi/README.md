@@ -286,7 +286,8 @@ lobe ray. The shared `denoise::Denoiser` accumulates and filters both over the h
 `screen_history` reprojects through `temporal-rendering`.
 
 `integration.render_gi_screen` holds the frame to the path tracer and to the quality bars the issue
-names, in the GI test room:
+names, in the GI test room, and `smoke.render_gi_screen_convergence` holds the moved light — a smoke
+suite because it converges two scenes before it counts frames, a second of CPU on a hosted runner:
 
 | | measured | asserted |
 |---|---|---|

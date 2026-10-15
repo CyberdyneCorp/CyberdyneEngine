@@ -37,7 +37,10 @@
 #   render_gi_volumes   GI volumes through the composed system.
 #   render_gi_screen    the per-pixel resolve and its denoiser (issue #35, stage 4): the host
 #                       oracle the device transcribes, and the frame's quality bars against the
-#                       path tracer, a 10 cm wall, a moving light and a still view.
+#                       path tracer, a 10 cm wall and a still view.
+#   render_gi_screen_convergence  a light that moves, and the frames until the image is within a
+#                       stated distance of the new light's converged image. SMOKE: it converges two
+#                       scenes before it counts, ninety-one whole frames, over the integration budget.
 #   render_gi_classes   illumination classes of moving objects: the derivation and override, a
 #                       projectile that invalidates nothing, a vehicle whose invalidation is
 #                       amortised, a character's proxy against the path tracer, and a crowd's
@@ -54,7 +57,7 @@ set_property(GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}
 function(cy_render_gi_declare_tests)
     get_property(tests_dir GLOBAL PROPERTY CY_RENDER_GI_TESTS_DIR)
 
-    foreach(kind unit integration)
+    foreach(kind unit integration smoke)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -127,10 +130,17 @@ function(cy_render_gi_declare_tests)
     # bars the frame's GI is held to: ground truth over the exact geometry, a 10 cm wall, a light
     # that moves and a still view. Here rather than on the device because the device suite holds
     # the device to this oracle to a few parts in ten million, and this runs where there is none.
+    # The light that moves is its own SMOKE suite: two converged scenes and the frames between them
+    # cost a second of CPU on a hosted runner, which is the integration budget's whole.
     cy_add_test(
         NAME render_gi_screen
         KIND integration
         SOURCES "${tests_dir}/test_screen_resolve.cpp"
+        DEPENDENCIES cy::rendering-gi)
+    cy_add_test(
+        NAME render_gi_screen_convergence
+        KIND smoke
+        SOURCES "${tests_dir}/test_screen_convergence.cpp"
         DEPENDENCIES cy::rendering-gi)
 
     # GI VOLUMES THROUGH THE COMPOSED SYSTEM: an important interior's probes and updates within one

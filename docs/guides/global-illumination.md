@@ -306,7 +306,7 @@ The claims and where each is measured:
 | Losing ray queries is not a visible event | `render.gi_gpu_tracing` | the switch alone moves the image 0.074; an ordinary frame 0.142 |
 | No light through a wall | `integration.render_gi_screen` | a lit room and a sealed one behind a 10 cm wall, per pixel: the sealed room's mean 2.6e-5 of the lit room's, its worst pixel 7.6e-3 (the path tracer says zero) |
 | Close to the path tracer | `integration.render_gi_screen`; `just capture-beauty-gi` | the GI test room 0.112 relative per pixel (the probes alone 0.436), 0.148 on a half-resolution grid; the beauty shot 0.126 over 288 pixels against the exact triangles, where the flat sky term it replaces is 0.385 |
-| Fast convergence after a change | `integration.render_gi_screen` | a light moved 4.9 m: within 10 % of the new light's converged frame in 11 frames (bound 14) |
+| Fast convergence after a change | `smoke.render_gi_screen_convergence` | a light moved 4.9 m: within 10 % of the new light's converged frame in 11 frames (bound 14) |
 | Temporally stable | `integration.render_gi_screen` | a converged still view moves 0.0034 a frame, where the one-ray signal under it moves 0.451 |
 | Off is the frame it was | `render.gi_gpu_frame`, `just capture-beauty-gi` | byte for byte, the stage attached with its words at none; the beauty shot without `--gi on` |
 | A leak is named, not guessed at | `integration.render_gi_pipeline` (the visibility term), `integration.render_gi_volume`, `integration.render_gi_diagnostics` (leak suspects) | the divider's face takes 0.075 of its probe weight from probes the field says cannot see it (0.135 before the per-axis visibility test); the rest is doorway-edge probes |

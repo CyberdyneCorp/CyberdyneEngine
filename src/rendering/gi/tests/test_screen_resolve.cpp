@@ -19,9 +19,10 @@
 //                      geometry (`QuadTracer`) — not the field the tiers trace — beside what the
 //                      probes alone (`IlluminationSystem::indirect_diffuse`) answer;
 //   a 10 cm wall       no light from a lit room reaches the sealed one beside it;
-//   a light that moves the frames until the image is within a stated distance of the new light's
-//                      converged image;
 //   a still view       how much a converged frame moves from one frame to the next.
+//
+// The light that moves is `smoke.render_gi_screen_convergence`'s, in test_screen_convergence.cpp:
+// it converges two scenes and then counts frames, and that is a smoke test's cost.
 
 #include <cy/test/test.h>
 
@@ -447,50 +448,6 @@ CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wa
     CY_CHECK_GT(sealed_count, 400U);
     CY_CHECK_LT(sealed_mean / lit_mean, 1.0e-3);
     CY_CHECK_LT(sealed_worst / lit_mean, 2.0e-2);
-}
-
-CY_TEST_CASE(
-    "after a light moves, the frame converges on the new light within a stated frame count") {
-    // The scene converged under one light, the light moved across the room, and the region filed
-    // as invalidated with the scene and with the resolve's history, as a renderer does. Measured
-    // against the same scene converged under the moved light from the start.
-    const Vec3 moved{2.4F, 1.2F, -2.6F};
-    ScreenScene settled;
-    make_room(settled);
-    settled.lights[0].position = moved;
-    settled.run(0, 48);
-    const std::vector<Vec3> target = settled.copy_diffuse();
-
-    ScreenScene scene;
-    make_room(scene);
-    scene.run(0, 32);
-    const f32 before = image_difference(scene.copy_diffuse(), target, scene.view.depth);
-    const cy::Aabb room = cy::Aabb::from_center_extents(
-        Vec3{0.0F, 0.0F, 0.0F},
-        Vec3{gi_support::kRoomX + 0.5F, gi_support::kRoomY + 0.5F, gi_support::kRoomZ + 0.5F});
-    scene.lights[0].position = moved;
-    scene.system.scene().invalidate(room, InvalidationCause::LightChanged, scene.lights[0].id, 32);
-    scene.invalidated.push_back(room);
-    constexpr f32 kWithin = 0.10F;
-    u32 frames = 0;
-    f32 difference = before;
-    for (u64 frame = 32; frame < 32 + 40; ++frame) {
-        scene.step(frame);
-        frames += 1;
-        difference = image_difference(scene.copy_diffuse(), target, scene.view.depth);
-        if (difference <= kWithin) {
-            break;
-        }
-    }
-    std::fprintf(stderr,
-                 "a light moved 4.9 m: %.3f from the new light's converged frame before, within "
-                 "%.2f after %u frames (%.3f)\n",
-                 static_cast<double>(before), static_cast<double>(kWithin), frames,
-                 static_cast<double>(difference));
-    // MEASURED: 11 frames.
-    CY_CHECK_GT(before, 0.3F);
-    CY_CHECK_LE(difference, kWithin);
-    CY_CHECK_LE(frames, 14U);
 }
 
 CY_TEST_CASE("a still view of a converged room is still") {
