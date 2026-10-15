@@ -595,5 +595,5 @@ CY_TEST_CASE("a package reload and loads completing on the workers count into th
     const AssetSystemStats stats = harness.assets.stats();
     CY_CHECK_EQ(stats.reloads_completed, reloads);
     CY_CHECK_EQ(stats.bytes_decompressed - decompressed_before,
-                reloads * cooked.size() + kChildren * kChildBytes);
+                (reloads * cooked.size()) + (kChildren * kChildBytes));
 }
