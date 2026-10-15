@@ -89,6 +89,7 @@
 #include <cy/core/base/assert.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/jobs/sync.h>
 #include <cy/ecs/component.h>
 #include <cy/ecs/entity.h>
 
@@ -297,10 +298,8 @@ public:
                    : 0;
     }
     [[nodiscard]] u32 violation_count() const noexcept;
-    [[nodiscard]] const FirewallViolation& violation(u32 index) const noexcept {
-        CY_ASSERT_MSG(index < kMaxRecordedViolations, "violation index out of range");
-        return violations_[index];
-    }
+    /// A copy, because the ring is written by every thread a refusal happens on.
+    [[nodiscard]] FirewallViolation violation(u32 index) const noexcept;
     /// The most recent refusal, or a default-constructed one when there has been none.
     [[nodiscard]] FirewallViolation last_violation() const noexcept;
     void clear_violations() noexcept;
@@ -317,6 +316,10 @@ private:
 
     std::atomic<u64> refusals_{0};
     std::atomic<u64> by_origin_[static_cast<u32>(WriteOrigin::Count)] = {};
+    /// Guards `violations_`. The counters above are atomics, but a ring slot is a struct, and
+    /// refusals on several threads at once wrap onto the same slot — the teardown-under-load case
+    /// does exactly that. Refusals are the rare path, so a lock costs nothing that matters.
+    mutable jobs::Mutex violations_mutex_;
     FirewallViolation violations_[kMaxRecordedViolations] = {};
 };
 
