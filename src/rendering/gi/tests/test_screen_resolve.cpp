@@ -67,6 +67,7 @@ constexpr u32 kHeight = kScreenHeight;
 
 CY_TEST_CASE("a pixel takes the cache, one ray and the far sky, combined by confidence") {
     ScreenScene scene;
+    scene.settings.gather = GiGather::PerPixel;
     make_room(scene);
     scene.run(0, 6);
     const u32 pixel = (kHeight / 2U * kWidth) + (kWidth / 2U);
@@ -307,6 +308,7 @@ CY_TEST_CASE(
 
 CY_TEST_CASE("converged, the frame is nearer the path tracer than the probes alone") {
     ScreenScene scene;
+    scene.settings.gather = GiGather::PerPixel;
     make_room(scene);
     scene.run(0, 40);
 
@@ -353,6 +355,7 @@ CY_TEST_CASE("on a half-resolution grid the frame stays near the path tracer") {
     // What `TracingResolution`'s coarse positions cost in accuracy: a quarter of the pixels
     // resolved and denoised, the rest upsampled by depth and normal.
     ScreenScene scene;
+    scene.settings.gather = GiGather::PerPixel;
     make_room(scene);
     scene.divisor = 2;
     scene.resize_grid();
@@ -392,6 +395,7 @@ CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wa
     // the far half is exactly zero: there is no opening, so every photon in it came through the
     // wall, and every one the frame shows there is a leak.
     const auto build = [](ScreenScene& scene, Vec3 eye, Vec3 target) {
+        scene.settings.gather = GiGather::PerPixel;
         scene.quads = gi_support::room_quads(gi_support::kRoomX, gi_support::kRoomY,
                                              gi_support::kRoomZ, false);
         scene.quads.push_back({2,
@@ -452,6 +456,7 @@ CY_TEST_CASE("no light from a lit room reaches the sealed room behind a 10 cm wa
 
 CY_TEST_CASE("a still view of a converged room is still") {
     ScreenScene scene;
+    scene.settings.gather = GiGather::PerPixel;
     make_room(scene);
     scene.run(0, 40);
     const std::vector<Vec3> previous = scene.copy_diffuse();

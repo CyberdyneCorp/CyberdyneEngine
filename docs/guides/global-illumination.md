@@ -109,7 +109,9 @@ march needs the dual, so the screen tier builds it.
 ## 4. A frame's pixels: the resolve, the denoiser and the composite
 
 The host oracle is `gi/screen_resolve.h`; the device is `gi_gpu::GpuScreenResolve`, the producer of
-the forward frame's `ScreenSpaceGi` stage. A frame of it is seven stages:
+the forward frame's `ScreenSpaceGi` stage. A frame of it is seven stages; the resolve is the final
+gather the lever names — the screen probes by default (below), the per-pixel gather this table
+describes otherwise:
 
 | Stage | Host function | What it does |
 |---|---|---|
@@ -156,6 +158,29 @@ what `FrameContext::measured_gi_ms` receives, and `GiBudget` tightens on it in i
 `apply_levers` turns `TracingResolution` into the grid and the ray density and hands the denoiser's
 quality to the resolve. `submit` reports the cost and the rung of the arbiter's GI ladder the levers
 add up to; `apply` hands back the allocation and, only when granted, one relax step.
+
+**The screen probes: the default gather.** `gi/screen_probes.h` (`ScreenProbeGather`) is the
+resolve stage the frame runs unless `ScreenResolveSettings::gather` says `GiGather::PerPixel`:
+probes on a screen grid in the class of Lumen's Screen Probe Gather. A frame of it is three device
+passes in place of the per-pixel resolve, each the transcription of its host function:
+
+| Pass | Host function | What it does |
+|---|---|---|
+| place | `ScreenProbeGather::place` | a uniform probe at the centre of every 8- or 16-pixel tile (`ScreenProbeSettings::spacing_pixels`); an adaptive probe on each half-tile cell whose centre the four uniform probes cannot interpolate — their bilinear, plane-distance and normal weights sum below one half: a depth step, a crease, the sky's edge |
+| trace | `trace_probe` | 32 rays a probe through the world tier, one workgroup a probe; directions from a defensive mixture — a 4x4 guide over the hemisphere's equal-area square weighted by the probe's previous radiance (or the radiance cache's), beside uniform and cosine shares — each weighted by one over the mixture's density; the estimate in nine RGB second-order harmonics, blended with the history of the one previous probe that stands for it best where it lands |
+| integrate | `integrate` | every cell of the resolve grid from the uniform and adaptive probes about it, by bilinear, plane-distance and normal weights, each probe's harmonics evaluated about the cell's own normal; the far sky beside it; the rough specular from the same harmonics in the reflection direction |
+
+Harmonics rather than an octahedral map: what a pixel reads is irradiance about its own normal, and
+the clamped cosine attenuates every band past the second to at most 1/24, so nine coefficients a
+channel (27 floats) hold it where an 8x8 map is 192, evaluated in closed form per pixel. The
+estimate is unbiased whatever the guide draws (an open sky to 0.3 %); the guide draws at most 0.9 of
+the rays, because a cell it weighs zero is never drawn. A probe's rays leave its surface one
+clearance away from any OTHER surface too, along the field's gradient (DDGI's relocation, for one
+origin): a probe on a floor two centimetres from a 10 cm wall, lifted straight up, stepped inside
+the wall and read the lit room's card, and one on a room's edge sent its rays out through the
+ceiling to the sky. The denoiser downstream is the same, its cascade capped at one pass for the
+probes' signal, which moves a tenth as much from frame to frame as the one-ray signal
+(`screen_signal_config`).
 
 **A scene from meshes.** `gi/mesh_cards.h` builds what the GI scene needs of any mesh: cards pooled
 per world cell of a spacing and per facing (so a cylinder's slivers are not thousands of cards), and
@@ -388,11 +413,11 @@ The claims and where each is measured:
 | The device computes what the host computes | `render.gi_gpu`, `render.gi_gpu_tracing`, `render.gi_gpu_resolve` | card radiance 3.7e-8, probe payloads 5.7e-8, the query 1.2e-7; the per-pixel resolve, denoiser and upsample about 1e-7 mean relative, both tiers, the history exact |
 | Hardware and software tiers agree within a stated bound | `render.gi_gpu_tracing`, `integration.render_gi_fallback` | 0.0209 against a 0.10 tolerance |
 | Losing ray queries is not a visible event | `render.gi_gpu_tracing` | the switch alone moves the image 0.074; an ordinary frame 0.142 |
-| No light through a wall | `integration.render_gi_screen` | a lit room and a sealed one behind a 10 cm wall, per pixel: the sealed room's mean 2.6e-5 of the lit room's, its worst pixel 7.6e-3 (the path tracer says zero) |
-| Close to the path tracer | `integration.render_gi_screen`; `just capture-beauty-gi` | the GI test room 0.112 relative per pixel (the probes alone 0.436), 0.148 on a half-resolution grid; the beauty shot 0.126 over 288 pixels against the exact triangles, where the flat sky term it replaces is 0.385 |
-| Fast convergence after a change | `smoke.render_gi_screen_convergence` | a light moved 4.9 m: within 10 % of the new light's converged frame in 11 frames (bound 14) |
-| Temporally stable | `integration.render_gi_screen` | a converged still view moves 0.0034 a frame, where the one-ray signal under it moves 0.451 |
-| Off is the frame it was | `render.gi_gpu_frame`, `just capture-beauty-gi` | byte for byte, the stage attached with its words at none; the beauty shot without `--gi on` |
+| No light through a wall | `integration.render_gi_screen`; `smoke.gi_gpu_probe_quality`; `integration.render_gi_screen_probes` | a lit room and a sealed one behind a 10 cm wall: at 40x24, the per-pixel gather's sealed room mean 2.6e-5 of the lit room's, its worst pixel 7.6e-3; at 1920x1080 the screen probes' (the default) 0 and 0 through both tiers, the per-pixel gather's 2.5e-5 and 4.1e-2 (software) — the path tracer says zero |
+| Close to the path tracer | `smoke.gi_gpu_probe_quality`; `integration.render_gi_screen`; `just capture-beauty-gi` | at 1920x1080 over 220 points, the screen probes 0.076 (software) / 0.066 (hardware) relative, the per-pixel gather 0.078 / 0.065; at 40x24 the per-pixel gather 0.112 (the probes alone 0.436), 0.148 on a half-resolution grid; the beauty shot (per pixel) 0.126 over 288 pixels against the exact triangles, where the flat sky term it replaces is 0.385 |
+| Fast convergence after a change | `smoke.gi_gpu_probe_quality`; `smoke.render_gi_screen_convergence` | a light moved 4.9 m, within 10 % of the new light's converged frame: at 1920x1080 the screen probes in 14 (software) / 13 (hardware) frames, the per-pixel gather in 9 / 11; at 40x24 the per-pixel gather in 11 (bound 14) |
+| Temporally stable | `smoke.gi_gpu_probe_quality`; `integration.render_gi_screen` | a converged still view at 1920x1080 moves 0.0019 / 0.0017 a frame through the screen probes, 0.0023 / 0.0017 per pixel; at 40x24 per pixel 0.0034, where the one-ray signal under it moves 0.451 |
+| Off is the frame it was | `render.gi_gpu_frame`, `just capture-beauty-gi` | byte for byte, the stage attached with its words at none, through either gather; the beauty shot without `--gi on` |
 | A leak is named, not guessed at | `integration.render_gi_pipeline` (the visibility term), `integration.render_gi_volume`, `integration.render_gi_diagnostics` (leak suspects) | the divider's face takes 0.075 of its probe weight from probes the field says cannot see it (0.135 before the per-axis visibility test); the rest is doorway-edge probes |
 | A moving body darkens what it stands on, invalidating nothing | `integration.render_gi_classes` | a FastDynamic character's proxy within 0.044 of the open light of the path tracer tracing a triangle sphere; a projectile files 0 invalidations, a vehicle 8 in 32 frames |
 | Leaves transmit, fog is lit by the cache | `integration.render_gi_media`, `render.volumetric_fog` (g) | thin transmission 0.123 and the medium's grid 0.125 (mean relative) from the path tracer; the device fog within 2.3e-5 of the host march |
@@ -401,7 +426,7 @@ The claims and where each is measured:
 | Tuning it live changes only what it says | `integration.render_gi_runtime`, `integration.render_gi_emissive`, `integration.render_gi_classes` | untouched settings, no rule and a class set at run time are each the configured system bit for bit; a lamp put out and relit shades its floor to the same bits; Epic quality is 4x the rays of every probe placed after it |
 | A game reads the light where a body stands | `integration.game_backend_illumination`, `integration.swift_illumination` | the sample is `indirect_diffuse`'s own answer bit for bit (the six-direction mean for a body); a lamp put out from a script takes the luminance under it from 2.150 to 1.038 in the adapter and from 2.149 to 1.032 through Swift |
 | Every GI view in the editor's viewport, and Lit as before | `smoke.editor_authored_frame_vulkan`, `integration.editor_window_illumination` | 11 136 of 11 200 opaque view texels change the frame, every one of 13 376 clear texels keeps it, and back on Lit the frame is byte for byte the frame before |
-| Explicit cost | `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s cost cases; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The per-pixel GI at 1920x1080, every stage: the test room 11.6 ms (hardware) / 15.2 ms (software) at authored quality, 3.15 ms on the half-resolution grid, 2.24 ms with the denoiser lever too; the beauty shot 14.8 ms (hardware) / 29.7 ms (software), 5.6 / 11.1 ms on the half grid. Stage 5 holds a 960x540 frame to its allocation by dropping from 3.97 ms to 0.75 ms in the declared lever order |
+| Explicit cost | `smoke.gi_gpu_probe_quality`'s cost cases; `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The GI at 1920x1080, every stage: the screen probes (16 px) 5.5 ms (hardware) / 6.4 ms (software), 2.4 / 3.3 ms on the half-resolution grid; every 8 px 8.6 / 12.1 ms; the per-pixel gather 11.6 / 15.2 ms, 3.15 ms on the half grid, 2.24 ms with the denoiser lever too. For a 3840x2160 output the probes are 21.9 / 25.2 ms native (per pixel 46.7) and 9.7 / 11.3 ms at the upscaler's 1440p (per pixel 20.8). The beauty shot (per pixel) 14.8 ms (hardware) / 29.7 ms (software), 5.6 / 11.1 ms on the half grid. Stage 5 holds a 960x540 frame to its allocation by dropping from 3.97 ms to 0.75 ms in the declared lever order |
 
 **The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
 reference over cards turn on `set_emission_footprints(true)`: a hit then takes the emission of the
@@ -424,20 +449,22 @@ regresses.
 
 | Axis | CyberGI (measured, RTX 5060 where a device is involved) | Unreal Engine 5, Lumen (documented) | Unity 6, Adaptive Probe Volumes and Enlighten (documented) |
 |---|---|---|---|
-| Error against a path-traced reference | 0.112 mean relative per pixel in the GI test room (240 points), 0.126 on the beauty shot against the exact triangles; held below 0.16 | no error figure against a reference is published | APV stores what the baker path-traced, so a probe's value is a bake's; the error of sampling probes between them is not published |
-| Convergence after a light moves | within 10 % of the new light's converged frame in 11 frames for a 4.9 m move (held at 14) | accumulated over frames; update speed is a set of tuning variables, no frame count is published | a probe volume is re-baked or blended between pre-baked lighting scenarios; Enlighten updates a moved light's bounce over several frames over static geometry only |
-| Light through a thin wall | a sealed room behind a 10 cm wall: mean 2.6e-5 of the lit room's light, worst pixel 7.6e-3 (held below 1e-3 and 2e-2) | the documentation advises walls of at least 10 cm for the software tracer to avoid leaking | leaking between probes is a documented APV artefact, reduced by its Virtual Offset and leak-reduction settings; no figure |
-| Temporal stability | a converged still view moves 0.0034 a frame where the one-ray signal under it moves 0.451 (held below 0.01) | no figure | baked probes do not move at all, and do not respond to a light that does |
+| Error against a path-traced reference | at 1920x1080 in the GI test room (220 points), the screen probes 0.076 (software) / 0.066 (hardware) mean relative, the per-pixel gather 0.078 / 0.065; 0.112 per pixel at 40x24, 0.126 on the beauty shot against the exact triangles; held below 0.16, the probes within 0.02 of the per-pixel gather | no error figure against a reference is published | APV stores what the baker path-traced, so a probe's value is a bake's; the error of sampling probes between them is not published |
+| Convergence after a light moves | within 10 % of the new light's converged frame after a 4.9 m move: the screen probes in 14 (software) / 13 (hardware) frames at 1080p, the per-pixel gather in 9 / 11 (11 at 40x24); held at 14 | accumulated over frames; update speed is a set of tuning variables, no frame count is published | a probe volume is re-baked or blended between pre-baked lighting scenarios; Enlighten updates a moved light's bounce over several frames over static geometry only |
+| Light through a thin wall | a sealed room behind a 10 cm wall at 1080p: through the screen probes none at all, both tiers; through the per-pixel gather a mean 2.5e-5 of the lit room's light and a worst pixel 4.1e-2 (software); at 40x24 per pixel 2.6e-5 and 7.6e-3 (held below 1e-3 and 2e-2) | the documentation advises walls of at least 10 cm for the software tracer to avoid leaking | leaking between probes is a documented APV artefact, reduced by its Virtual Offset and leak-reduction settings; no figure |
+| Temporal stability | a converged still view at 1080p moves 0.0019 (software) / 0.0017 (hardware) a frame through the screen probes, 0.0023 / 0.0017 per pixel; 0.0034 per pixel at 40x24, where the one-ray signal under it moves 0.451 (held below 0.01) | no figure | baked probes do not move at all, and do not respond to a light that does |
 | Emissive lighting | a promoted 30 cm lamp within 0.5 % of the path tracer with a per-receiver ratio variance of 0.027; left to the cache the same lamp is 4.6 — promotion is the measurement, or an author's rule | emissive surfaces light through the GI's gather; the documentation recommends real lights for small bright emitters, which are noisy | emissive surfaces contribute to the bake; realtime emission through Enlighten |
 | Hardware ray tracing with a bounded software fallback | the tiers agree to 0.0209 (held at 0.10); switching moves the image 0.074 where an ordinary frame moves 0.142 | hardware and software tracing are both offered; the difference between them is not bounded in the documentation | runtime probe GI does not trace rays; ray-traced GI is a separate HDRP feature |
-| Cost at 1080p | the whole per-pixel GI 11.6 ms (hardware) / 15.2 ms (software) at authored quality, 3.15 ms on the half-resolution grid, 2.24 ms with the denoiser lever; a 960x540 frame held to its allocation from 3.97 ms to 0.75 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
+| Cost at 1080p | the whole GI through the screen probes 5.5 ms (hardware) / 6.4 ms (software) at authored quality, 2.4 / 3.3 ms on the half-resolution grid; per pixel 11.6 / 15.2 ms, 3.15 ms on the half grid; a 960x540 frame held to its allocation from 3.97 ms to 0.75 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
 | Control from tools and code | every setting, volume, class and emitter rule from the editor (undoable, MCP) and from a Swift game (ABI 1.9); all nineteen debug views in the viewport; `explain()` at a clicked point | post-process volume settings, console variables, visualization modes | the Lighting window, probe volume baking sets and lighting scenarios, a scripting API |
 
 What the table supports, and only that: on every axis where a number exists, CyberGI's is stated,
 held by a test and reproducible from this repository; on error against a reference, leaking at
-10 cm, convergence and stability neither vendor publishes a number to compare it with. What it does
-not support: that CyberGI is cheaper — at full resolution it is 11.6 ms, well over a 60 fps
-budget, and only the half-resolution grid with the levers reaches 2.24 ms; that it was ever measured
+10 cm, convergence and stability neither vendor publishes a number to compare it with. The screen
+probes, Lumen's own technique, cost CyberGI half of what its per-pixel gather did at 1080p for the
+same error, no leak, and two or three frames more to settle after a light moves. What it does not
+support: that CyberGI is cheaper — at full resolution its default is 5.5 ms through the hardware
+tier, a third of a 60 fps frame, and only the half-resolution grid reaches 2.4 ms; that it was ever measured
 beside either engine on one scene; or anything about consoles, Windows or Apple devices, where the
 hardware tier refuses (section 10); or that the editor's GI views are interactive — the
 editor-hosted runtime draws them on the host, about 35 ms for the probe view at 320x180 and 240 ms
@@ -452,6 +479,9 @@ just test-integration -R render_gi            # the host system and the oracle, 
 CY_RENDER_UPDATE_GOLDEN=1 build/dev/cy_test_integration_render_gi_debug_views   # rewrite the view goldens
 just test-unit -R render_raytracing           # the service and its mirror, no device
 just test-render -R gi_gpu                    # the device suites; skipped where there is no device
+just test-integration -R render_gi_screen_probes   # the screen probes' properties, on the host
+just test-smoke -R gi_screen_probes           # their quality at 128x72 on the host
+just test-smoke -R gi_gpu_probe_quality       # both gathers' quality and cost at 1080p and 4K, on the device
 python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 just build-shaders --strict src samples       # every entry point for SPIR-V, MSL and DXIL
 just quality-shader-headers                   # the committed headers are what the sources compile to
@@ -510,6 +540,20 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   face receives the frame's mean sky radiance (`samples/12-beauty/gi.cpp`'s `fit_sky`).
 
 ## 10. What is not built yet
+
+- **The screen tier in the screen probes' rays.** The probes trace the world tiers, as the per-pixel
+  gather does: the resolve has no previous frame's lit colour to march against, which the device
+  screen tier (`GpuTierTracer`) reads.
+- **The default gather at ~4 ms at 1080p, full resolution.** The probes' own passes are 1.8 ms
+  (hardware) / 2.7 ms (software); the shared denoiser's full-resolution accumulation, variance and
+  one filter pass are 3.1 ms more, so the frame is 5.5 / 6.4 ms. The half-resolution grid
+  (`TracingResolution`) is 2.4 / 3.3 ms.
+- **A light that moves settles two or three frames later through the probes** (14 / 13 frames at
+  1080p against the per-pixel gather's 9 / 11): a probe's history is a second accumulation before
+  the denoiser's. Each frame of history more costs about two frames (four: 18).
+- **The beauty shot's numbers are the per-pixel gather's.** `just capture-beauty-gi` now photographs
+  the screen probes (the default); the 0.126 and 14.8 ms above were measured per pixel and the
+  committed stills are from before the change.
 
 - **Card shading and the probe gather in the beauty shot run on the host.** The shot uses the device
   resolve and denoiser; its caches are updated by the host system, which costs about 19 ms of

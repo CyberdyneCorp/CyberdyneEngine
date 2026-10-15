@@ -46,6 +46,7 @@ CY_TEST_CASE(
     // against the same scene converged under the moved light from the start.
     const Vec3 moved{2.4F, 1.2F, -2.6F};
     ScreenScene settled;
+    settled.settings.gather = GiGather::PerPixel;
     settled.specular_enabled = false;
     make_room(settled);
     settled.lights[0].position = moved;
@@ -53,6 +54,7 @@ CY_TEST_CASE(
     const std::vector<Vec3> target = settled.copy_diffuse();
 
     ScreenScene scene;
+    scene.settings.gather = GiGather::PerPixel;
     scene.specular_enabled = false;
     make_room(scene);
     scene.run(0, 32);

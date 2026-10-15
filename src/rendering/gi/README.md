@@ -22,7 +22,9 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `radiance_cache.h` | adaptive geometry-aware probe placement, clipmap scrolling, three probe encodings, the visibility term, the scheduler that guarantees progress (`RadianceCache::select`), and `ProbeGatherBackend` — the seam a device gathers the selected probes behind |
 | `tracing.h` | `ScreenTracer`, `SoftwareTracer`, `HardwareTracer`, `WorldTracer` and `TieredTracer` — one interface, cheapest sufficient tier, blended escalation |
 | `reflections.h` | the roughness strategy table, the lobe distribution, and `ReflectionProbeSet` with box projection and amortised realtime capture |
-| `screen_resolve.h` | the per-pixel resolve a frame shades with (issue #35, stage 4), the oracle `cy::rendering-gi-gpu` transcribes: `resolve_screen_pixel`, `ScreenResolve`, the history (`screen_history`), the half-resolution grid and its upsample (`ScreenGrid`, `screen_upsample`) |
+| `screen_inputs.h` | what both final gathers read: `ScreenSurfaces`, `ScreenResolveSettings` with the gather lever (`GiGather`) and `ScreenProbeSettings`, `ScreenResolveSources`, `ScreenHistoryInputs` |
+| `screen_probes.h` | the screen-probe final gather, the default (issue #35, after stage 4): uniform and adaptive probes on a screen grid, guided rays, second-order harmonics, the best-matching history, per-pixel integration — `ScreenProbeGather`, the oracle of the device's probe passes |
+| `screen_resolve.h` | the resolve a frame shades with (issue #35, stage 4), the oracle `cy::rendering-gi-gpu` transcribes: `ScreenResolve` runs the gather the lever names; `resolve_screen_pixel` (the per-pixel gather), the history (`screen_history`), the half-resolution grid and its upsample (`ScreenGrid`, `screen_upsample`), `screen_signal_config` |
 | `mesh_cards.h` | a triangle mesh as the GI scene holds it: cards pooled per cell and facing (`append_mesh_cards`) and a signed distance grid from its triangles (`MeshDistanceField`) |
 | `resolve.h` | `combine()` by confidence, `exclusion_for()` (the double-counting rule), the far-field ramp, and `ConvergenceTracker` |
 | `budget.h` | the GI allocation, seven priced lever ladders, the declared reduction order, and importance |
@@ -349,6 +351,38 @@ suite because it converges two scenes before it counts frames, a second of CPU o
 `mesh_cards.h` builds a GI scene from meshes: `samples/12-beauty --gi on` is the first scene the
 engine lights this way, and `just capture-beauty-gi` measures it against the path tracer over the
 exact triangles (0.126 relative, where the flat sky term it replaces is 0.385).
+
+## In the frame: the screen-probe gather, the default
+
+`screen_probes.h` replaces the per-pixel gather's every-pixel cache query and ray with probes on a
+screen grid — Lumen's Screen Probe Gather, held to the same oracle discipline: a uniform probe a
+tile (8 or 16 pixels), an adaptive probe on each half-tile cell the uniform probes cannot
+interpolate (a depth step, a crease, the sky's edge), 32 rays a probe drawn from a defensive mixture
+guided by the probe's reprojected radiance (or, without a history, the radiance cache), nine RGB
+second-order harmonics a probe, the history of the one previous probe that stands for it best, and
+every pixel integrated from the probes about it, about its own normal. On both tiers a probe's rays
+leave one clearance from any other surface along the field's gradient, so a probe at a thin wall's
+foot or on a room's edge sees nothing past the surface. `GiGather::PerPixel` keeps the per-pixel
+gather selectable and unchanged; the frame's composite and the denoiser downstream are the same,
+the denoiser's cascade capped at one pass for the probes' smoother signal (`screen_signal_config`).
+
+`integration.render_gi_screen_probes` holds its properties, `smoke.render_gi_screen_probes_quality`
+its quality at 128x72 beside the per-pixel gather, and `cy::rendering-gi-gpu`'s
+`smoke.gi_gpu_probe_quality` the same axes on the device at 1920x1080, where a 16-pixel tile is the
+scale it is built for:
+
+| | measured | asserted |
+|---|---|---|
+| adaptive probes over a flat floor / a block on it (128x72, 16 px) | none / 8 of 144 cells, every one within a tile of a step | none; all beside a step, none elsewhere |
+| pixels with no uniform probe on their own surface that an adaptive probe reaches | 287 of 287 | > 90 % |
+| a still view's history; an invalidated region; a cut; a 20 cm slide | each probe its own; none there; none; 67 of 70 found | as stated; > 80 % |
+| the blend, against history + (estimate - history) * 1/4 | exact (0) | < 1e-5 |
+| an open sky, none / half / 0.9 of the rays guided | 0.28 % / 0.26 % / 0.37 % from the sky's irradiance | < 1 % |
+| a probe at a thin wall's foot or on a room's edge, both tiers | sees zero | zero (0.37–0.67 before the origin moved out) |
+| against the path tracer, 128x72, per pixel / probes 16 px / 8 px | 0.081 / 0.109 / 0.092 | the per-pixel gather's + 0.03 / + 0.02 |
+| the sealed room behind a 10 cm wall, probes 16 / 8 px | mean 0, worst 0 | < 1e-3, < 2e-2 |
+| a light moved 4.9 m, probes 16 / 8 px | 14 / 14 frames (per pixel, 9) | at most 14 |
+| a converged still view, probes 16 / 8 px | 0.0018 / 0.0020 a frame (per pixel, 0.0025) | < 0.01 |
 
 ## What is here at Working, and what is not
 

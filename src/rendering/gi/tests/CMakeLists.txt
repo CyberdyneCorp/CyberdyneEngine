@@ -143,6 +143,22 @@ function(cy_render_gi_declare_tests)
         SOURCES "${tests_dir}/test_screen_convergence.cpp"
         DEPENDENCIES cy::rendering-gi)
 
+    # THE SCREEN-PROBE GATHER, the default final gather and the host oracle of its device passes:
+    # adaptive placement at depth and normal steps and nowhere else, the probes' temporal
+    # reprojection and blend, and the lever that keeps the per-pixel gather selectable. Its
+    # quality on the guide's four axes beside the per-pixel gather converges a scene per gather and
+    # per spacing, and is a smoke suite for that reason.
+    cy_add_test(
+        NAME render_gi_screen_probes
+        KIND integration
+        SOURCES "${tests_dir}/test_screen_probes.cpp"
+        DEPENDENCIES cy::rendering-gi)
+    cy_add_test(
+        NAME render_gi_screen_probes_quality
+        KIND smoke
+        SOURCES "${tests_dir}/test_screen_probes_quality.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
     # GI VOLUMES THROUGH THE COMPOSED SYSTEM: an important interior's probes and updates within one
     # allocation, the region placed again when the volume goes, a scene with none bit for bit, the
     # intensity and far-field overrides, and the tier preference. Resolution alone is render_gi.

@@ -33,6 +33,17 @@ constexpr u32 kWordJitter = 19 * 4;
 constexpr u32 kWordSignals = 20 * 4;
 constexpr u32 kWordInvalid = 26 * 4;
 constexpr u32 kWordFull = 36 * 4;
+constexpr u32 kWordProbeLayout = 40 * 4;
+constexpr u32 kWordProbeCounts = 41 * 4;
+constexpr u32 kWordProbeShape = 42 * 4;
+constexpr u32 kWordProbeWeights = 43 * 4;
+constexpr u32 kWordProbeSamples = 44 * 4;
+
+/// `kSpRecordVec4s` in gi_screen_probes_common.slang: a screen probe's record.
+constexpr u64 kProbeRecordVec4s = 11;
+constexpr u64 kProbeRecordBytes = kProbeRecordVec4s * 16U;
+/// The probe slot table's head: two counters and two words of padding.
+constexpr u64 kProbeSlotHead = 4;
 
 constexpr u64 kVec4 = 16;
 constexpr u32 kSignals = 2;
@@ -42,7 +53,7 @@ constexpr u32 kTileGroup = 8;
 
 /// The descriptor bindings of each set, in its `ParameterBlock`'s order.
 constexpr u32 kSurfaceBindings = 5;
-constexpr u32 kResolveBindings = 3;
+constexpr u32 kResolveBindings = 5;
 constexpr u32 kDenoiseBindings = 8;
 constexpr u32 kPublishBindings = 7;
 
@@ -311,14 +322,26 @@ Status GpuScreenResolve::create_pipelines() noexcept {
                              kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi publish", GiPublish, "cyGiPublish", kTileGroup, kTileGroup),
         CY_GI_RESOLVE_SOURCE("gi resolve", GiResolve, "cyGiResolve", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe place", GiProbePlace, "cyGiProbePlace", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe trace", GiProbeTrace, "cyGiProbeTrace", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe integrate", GiProbeIntegrate, "cyGiProbeIntegrate",
+                             kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi resolve hardware", GiResolveHardware, "cyGiResolveHardware",
                              kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe trace hardware", GiProbeTraceHardware,
+                             "cyGiProbeTraceHardware", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe integrate hardware", GiProbeIntegrateHardware,
+                             "cyGiProbeIntegrateHardware", kLinearGroup, 1),
     };
 #undef CY_GI_RESOLVE_SOURCE
     const rhi::PipelineLayoutHandle layouts[kPipelineCount] = {
-        surface_pipeline_layout_, denoise_pipeline_layout_,          denoise_pipeline_layout_,
-        denoise_pipeline_layout_, denoise_pipeline_layout_,          publish_pipeline_layout_,
-        resolve_pipeline_layout_, resolve_hardware_pipeline_layout_,
+        surface_pipeline_layout_,          denoise_pipeline_layout_,
+        denoise_pipeline_layout_,          denoise_pipeline_layout_,
+        denoise_pipeline_layout_,          publish_pipeline_layout_,
+        resolve_pipeline_layout_,          resolve_pipeline_layout_,
+        resolve_pipeline_layout_,          resolve_pipeline_layout_,
+        resolve_hardware_pipeline_layout_, resolve_hardware_pipeline_layout_,
+        resolve_hardware_pipeline_layout_,
     };
     // The ray query pipeline exists only where the device has ray queries, as stage 3's do.
     const u32 count =
@@ -360,6 +383,19 @@ Status GpuScreenResolve::create_pipelines() noexcept {
 
 Status GpuScreenResolve::create_resources() noexcept {
     const u64 pixels = static_cast<u64>(desc_.width) * desc_.height;
+    // The probe buffers hold the largest layout any divisor gives at the finest spacing allowed.
+    u64 probe_records = 0;
+    u64 probe_cells = 0;
+    for (u32 divisor = 1; divisor <= 4; ++divisor) {
+        const gi::ScreenProbeLayout layout = gi::screen_probe_layout(
+            gi::screen_grid_extent(desc_.width, divisor),
+            gi::screen_grid_extent(desc_.height, divisor),
+            gi::screen_probe_grid_spacing(std::max(desc_.min_probe_spacing_pixels, 2U), divisor));
+        probe_records = std::max<u64>(probe_records, layout.records());
+        probe_cells = std::max<u64>(probe_cells, layout.cell_count());
+    }
+    const u64 probe_bytes = 2U * probe_records * kProbeRecordBytes;
+    const u64 slot_bytes = (kProbeSlotHead + (2U * probe_cells)) * 4U;
     for (rhi::BufferHandle& ring : ring_) {
         rhi::BufferDescription description;
         description.name = "gi resolve constants";
@@ -415,6 +451,13 @@ Status GpuScreenResolve::create_resources() noexcept {
          rhi::MemoryUse::DeviceLocal, true},
         {"gi resolve published host", pixels * kSignals * kVec4, host, rhi::MemoryUse::Readback,
          true},
+        {"gi screen probes", probe_bytes, device_only, rhi::MemoryUse::DeviceLocal, false},
+        {"gi screen probe slots", slot_bytes, device_only | rhi::BufferUsage::TransferDestination,
+         rhi::MemoryUse::DeviceLocal, false},
+        {"gi screen probe slots upload", kProbeSlotHead * 4U, rhi::BufferUsage::TransferSource,
+         rhi::MemoryUse::Upload, false},
+        {"gi screen probes host", probe_bytes / 2U, host, rhi::MemoryUse::Readback, true},
+        {"gi screen probe slots host", slot_bytes, host, rhi::MemoryUse::Readback, true},
     };
     for (u32 index = 0; index < kBufferCount; ++index) {
         // The upload buffers wait for the first `set_surfaces`, and the readbacks for `readback`.
@@ -553,6 +596,37 @@ void GpuScreenResolve::set_settings(const gi::ScreenResolveSettings& settings) n
     words_[kWordIntensity + 1] = bits(settings.specular_intensity);
     // `classify_history`'s tolerance: `ScreenHistoryInputs`' default, which the frame uses.
     words_[kWordIntensity + 2] = bits(gi::ScreenHistoryInputs{}.depth_tolerance);
+    update_probe_words();
+    update_filter_passes();
+}
+
+void GpuScreenResolve::update_probe_words() noexcept {
+    const u32 spacing = gi::screen_probe_grid_spacing(
+        std::max(settings_.probes.spacing_pixels, desc_.min_probe_spacing_pixels), divisor_);
+    const gi::ScreenProbeLayout layout =
+        gi::screen_probe_layout(grid_width_, grid_height_, spacing);
+    if (layout.width != probe_layout_.width || layout.height != probe_layout_.height ||
+        layout.spacing != probe_layout_.spacing) {
+        probe_history_valid_ = false;
+    }
+    probe_layout_ = layout;
+    words_[kWordProbeLayout + 0] = layout.width;
+    words_[kWordProbeLayout + 1] = layout.height;
+    words_[kWordProbeLayout + 2] = layout.spacing;
+    words_[kWordProbeLayout + 3] = layout.cell;
+    words_[kWordProbeCounts + 0] = layout.tiles_x;
+    words_[kWordProbeCounts + 1] = layout.tiles_y;
+    words_[kWordProbeCounts + 2] = layout.cells_x;
+    words_[kWordProbeCounts + 3] = layout.cells_y;
+    words_[kWordProbeShape + 0] = gi::screen_probe_rays(settings_);
+    words_[kWordProbeShape + 1] = std::max(settings_.probes.history_frames, 1U);
+    words_[kWordProbeShape + 2] = layout.capacity;
+    words_[kWordProbeShape + 3] = settings_.probes.cache_blend ? 1U : 0U;
+    words_[kWordProbeWeights + 0] = bits(settings_.probes.adaptive_threshold);
+    words_[kWordProbeWeights + 1] = bits(settings_.probes.plane_tolerance);
+    words_[kWordProbeWeights + 2] = bits(settings_.probes.importance_fraction);
+    words_[kWordProbeWeights + 3] = layout.uniform_count();
+    words_[kWordProbeSamples + 0] = bits(settings_.probes.pixel_samples);
 }
 
 void GpuScreenResolve::set_denoiser(const denoise::Denoiser& denoiser) noexcept {
@@ -560,7 +634,6 @@ void GpuScreenResolve::set_denoiser(const denoise::Denoiser& denoiser) noexcept 
         denoiser.quality_position(), denoise::kQualityPositionCount - 1)];
     const denoise::SignalKind kinds[kSignals] = {denoise::SignalKind::IndirectDiffuse,
                                                  denoise::SignalKind::IndirectSpecular};
-    u32 passes = 0;
     for (u32 signal = 0; signal < kSignals; ++signal) {
         const denoise::SignalConfig& config = denoiser.config(kinds[signal]);
         const u32 at = kWordSignals + (signal * 12U);
@@ -571,7 +644,7 @@ void GpuScreenResolve::set_denoiser(const denoise::Denoiser& denoiser) noexcept 
         words_[at + 4] = bits(config.roughness_widening);
         words_[at + 5] =
             bits(static_cast<f32>(std::min(config.history_length, quality.history_length)));
-        words_[at + 6] = std::min(config.max_passes, quality.max_passes);
+        authored_passes_[signal] = std::min(config.max_passes, quality.max_passes);
         words_[at + 7] = quality.kernel_extent;
         // No visibility buffer in a forward frame: identity is never available, as
         // `Denoiser::filter` decides from an empty `instance_id`.
@@ -579,6 +652,18 @@ void GpuScreenResolve::set_denoiser(const denoise::Denoiser& denoiser) noexcept 
         words_[at + 9] = config.domain == denoise::SignalDomain::Visibility ? 1U : 0U;
         words_[at + 10] = 0;
         words_[at + 11] = 0;
+    }
+    update_filter_passes();
+}
+
+void GpuScreenResolve::update_filter_passes() noexcept {
+    // `gi::screen_signal_config`'s cap, applied to what the host denoiser configures.
+    denoise::SignalConfig capped;
+    u32 passes = 0;
+    for (u32 signal = 0; signal < kSignals; ++signal) {
+        capped.max_passes = authored_passes_[signal];
+        const u32 at = kWordSignals + (signal * 12U);
+        words_[at + 6] = gi::screen_signal_config(capped, settings_).max_passes;
         passes = std::max(passes, words_[at + 6]);
     }
     words_[kWordFrame + 1] = passes;
@@ -630,6 +715,8 @@ Status GpuScreenResolve::set_divisor(u32 divisor) noexcept {
     words_[kWordFull + 3] = desc_.readback ? 1U : 0U;
     history_valid_ = false;
     view_valid_ = false;
+    probe_history_valid_ = false;
+    update_probe_words();
     return ok();
 }
 
@@ -700,6 +787,9 @@ Status GpuScreenResolve::begin_frame(const GpuResolveView& view, u64 frame) noex
         words_[kWordViewToRelative + (row * 4U) + 3] = 0;
     }
     words_[kWordIntensity + 3] = history_valid_ ? 1U : 0U;
+    // The probes' history is last frame's probes at this layout, and the pixels' history besides.
+    words_[kWordProbeShape + 3] =
+        (settings_.probes.cache_blend ? 1U : 0U) | (probe_history_valid_ ? 2U : 0U);
     words_[kWordInvalid] = 0;
     words_[kWordFrame + 0] = static_cast<u32>(frame & 0xFFFFFFFFULL);
     const u32 passes = words_[kWordFrame + 1];
@@ -799,6 +889,15 @@ Status GpuScreenResolve::set_surfaces(const gi::ScreenSurfaces& surfaces) noexce
     return ok();
 }
 
+Status GpuScreenResolve::keep_surfaces() noexcept {
+    if (device_ == nullptr || !began_ || !buffers_[kSurfacesUpload]) {
+        return fail(ErrorCode::InvalidArgument,
+                    "keep_surfaces needs a frame and surfaces an earlier set_surfaces wrote");
+    }
+    surfaces_uploaded_ = true;
+    return ok();
+}
+
 ResourceId GpuScreenResolve::import_diffuse(RenderGraph& graph) noexcept {
     TextureRequest request;
     request.name = "gi indirect diffuse";
@@ -824,12 +923,13 @@ ResourceId GpuScreenResolve::import_specular(RenderGraph& graph) noexcept {
 
 ResourceId GpuScreenResolve::import(RenderGraph& graph, Buffer buffer) noexcept {
     static constexpr const char* kNames[kBufferCount] = {
-        "gi resolve surfaces",       "gi resolve noisy",           "gi resolve sources",
-        "gi resolve history",        "gi resolve variance",        "gi resolve filter a",
-        "gi resolve filter b",       "gi resolve noisy host",      "gi resolve sources host",
-        "gi resolve final host",     "gi resolve surfaces host",   "gi resolve surfaces upload",
-        "gi resolve guidance",       "gi resolve guidance upload", "gi resolve published",
-        "gi resolve published host",
+        "gi resolve surfaces",          "gi resolve noisy",           "gi resolve sources",
+        "gi resolve history",           "gi resolve variance",        "gi resolve filter a",
+        "gi resolve filter b",          "gi resolve noisy host",      "gi resolve sources host",
+        "gi resolve final host",        "gi resolve surfaces host",   "gi resolve surfaces upload",
+        "gi resolve guidance",          "gi resolve guidance upload", "gi resolve published",
+        "gi resolve published host",    "gi screen probes",           "gi screen probe slots",
+        "gi screen probe slots upload", "gi screen probes host",      "gi screen probe slots host",
     };
     BufferRequest request;
     request.name = kNames[buffer];
@@ -872,8 +972,14 @@ PassId GpuScreenResolve::declare_resolve(RenderGraph& graph, bool first) noexcep
                           .record(&record_step, &reproject)
                           .id();
 
+    if (settings_.gather == gi::GiGather::ScreenProbes) {
+        declare_probes(graph, hardware);
+        return id;
+    }
     Step& resolve = steps_[step_count_++];
-    resolve = Step{this, hardware ? kResolveHardware : kResolve, 3, false, pixels};
+    // The probe stages' stamps are written before the dispatch: the per-pixel gather has none.
+    resolve = Step{this, hardware ? kResolveHardware : kResolve, 5, false, pixels};
+    resolve.empty_before = 2;
     PassBuilder trace = graph.add_pass("gi resolve", QueueKind::Graphics);
     cache_->read_scene(graph, trace, hardware);
     using C = GpuRadianceCache;
@@ -887,6 +993,61 @@ PassId GpuScreenResolve::declare_resolve(RenderGraph& graph, bool first) noexcep
     return id;
 }
 
+void GpuScreenResolve::declare_probes(RenderGraph& graph, bool hardware) noexcept {
+    const ResourceId constants = import_constants(graph);
+    const ResourceId surfaces = import(graph, kSurfaces);
+    const ResourceId probes = import(graph, kProbes);
+    const ResourceId slots = import(graph, kProbeSlots);
+    if (!counters_cleared_) {
+        // The counters start at zero once; after that each frame's trace clears the next one's.
+        counters_upload_ = Copy{this, kProbeSlotsUpload, kProbeSlots, 0, kProbeSlotHead * 4U};
+        graph.add_pass("gi screen probe counters", QueueKind::Graphics)
+            .read(import(graph, kProbeSlotsUpload), Access::TransferRead)
+            .write(slots, Access::TransferWrite)
+            .record(&record_copy, &counters_upload_);
+        counters_cleared_ = true;
+    }
+    const gi::ScreenProbeLayout& layout = probe_layout_;
+
+    Step& place = steps_[step_count_++];
+    place =
+        Step{this, kProbePlace, 3, false, std::max(layout.uniform_count(), layout.cell_count())};
+    graph.add_pass("gi probe place", QueueKind::Graphics)
+        .read(constants, Access::ComputeStorageRead)
+        .read(surfaces, Access::ComputeStorageRead)
+        .write(probes, Access::ComputeStorageReadWrite)
+        .write(slots, Access::ComputeStorageReadWrite)
+        .record(&record_step, &place);
+
+    using C = GpuRadianceCache;
+    Step& trace = steps_[step_count_++];
+    trace = Step{this, hardware ? kProbeTraceHardware : kProbeTrace, 4, false, layout.records()};
+    PassBuilder traced = graph.add_pass("gi probe trace", QueueKind::Graphics);
+    cache_->read_scene(graph, traced, hardware);
+    for (const C::Binding binding : {C::kProbes, C::kPayloads, C::kLayout}) {
+        traced.read(cache_->import(graph, binding), Access::ComputeStorageRead);
+    }
+    traced.read(constants, Access::ComputeStorageRead)
+        .write(probes, Access::ComputeStorageReadWrite)
+        .write(slots, Access::ComputeStorageReadWrite)
+        .record(&record_step, &trace);
+
+    Step& integrate = steps_[step_count_++];
+    integrate = Step{this, hardware ? kProbeIntegrateHardware : kProbeIntegrate, 5, false,
+                     grid_width_ * grid_height_};
+    PassBuilder integrated = graph.add_pass("gi probe integrate", QueueKind::Graphics);
+    cache_->read_scene(graph, integrated, hardware);
+    for (const C::Binding binding : {C::kProbes, C::kPayloads, C::kLayout}) {
+        integrated.read(cache_->import(graph, binding), Access::ComputeStorageRead);
+    }
+    integrated.read(constants, Access::ComputeStorageRead)
+        .read(surfaces, Access::ComputeStorageRead)
+        .read(probes, Access::ComputeStorageRead)
+        .read(slots, Access::ComputeStorageRead)
+        .write(import(graph, kNoisy), Access::ComputeStorageWrite)
+        .record(&record_step, &integrate);
+}
+
 void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
                                         ResourceId specular) noexcept {
     const u32 items = grid_width_ * grid_height_ * kSignals;
@@ -897,7 +1058,7 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
     const ResourceId filter_b = import(graph, kFilterB);
 
     Step& accumulate = steps_[step_count_++];
-    accumulate = Step{this, kAccumulate, 4, false, items};
+    accumulate = Step{this, kAccumulate, 6, false, items};
     graph.add_pass("gi denoise accumulate", QueueKind::Graphics)
         .read(constants, Access::ComputeStorageRead)
         .read(import(graph, kNoisy), Access::ComputeStorageRead)
@@ -906,7 +1067,7 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
         .record(&record_step, &accumulate);
 
     Step& variance = steps_[step_count_++];
-    variance = Step{this, kVariance, 5, false, items};
+    variance = Step{this, kVariance, 7, false, items};
     graph.add_pass("gi denoise variance", QueueKind::Graphics)
         .read(constants, Access::ComputeStorageRead)
         .read(history, Access::ComputeStorageRead)
@@ -918,7 +1079,7 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
     for (u32 index = 0; index < passes; ++index) {
         const bool a_to_b = (index & 1U) == 0U;
         Step& filter = steps_[step_count_++];
-        filter = Step{this, kFilter, index + 1U == passes ? 6U : ~0U, false, items};
+        filter = Step{this, kFilter, index + 1U == passes ? 8U : ~0U, false, items};
         filter.pass = index;
         filter.direction = a_to_b ? 0U : 1U;
         graph.add_pass("gi denoise filter", QueueKind::Graphics)
@@ -932,7 +1093,7 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
     }
 
     Step& publish = steps_[step_count_++];
-    publish = Step{this, kPublish, 7, false, desc_.width * desc_.height};
+    publish = Step{this, kPublish, 9, false, desc_.width * desc_.height};
     publish.diffuse = diffuse;
     publish.specular = specular;
     PassBuilder pass = graph.add_pass("gi publish", QueueKind::Graphics);
@@ -971,6 +1132,16 @@ void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
     copies_[3] = Copy{this, kSurfaces, kSurfacesHost, static_cast<u64>(slot_) * pixels * 2U * kVec4,
                       pixels * 2U * kVec4};
     copies_[4] = Copy{this, kPublished, kPublishedHost, 0, frame_pixels * kSignals * kVec4};
+    const u64 records = probe_layout_.records();
+    copies_[5] =
+        Copy{this, kProbes, kProbesHost, static_cast<u64>(slot_) * records * kProbeRecordBytes,
+             records * kProbeRecordBytes};
+    copies_[6] = Copy{this, kProbeSlots, kProbeSlotsHost, 0,
+                      (kProbeSlotHead + (2U * static_cast<u64>(probe_layout_.cell_count()))) * 4U};
+    if (settings_.gather == gi::GiGather::ScreenProbes) {
+        declare_copy(graph, copies_[5], "gi screen probes readback");
+        declare_copy(graph, copies_[6], "gi screen probe slots readback");
+    }
     declare_copy(graph, copies_[0], "gi resolve noisy readback");
     declare_copy(graph, copies_[1], "gi resolve sources readback");
     declare_copy(graph, copies_[2], "gi resolve final readback");
@@ -1005,6 +1176,7 @@ PassId GpuScreenResolve::declare(RenderGraph& graph,
     declare_denoiser(graph, imported_diffuse_, imported_specular_);
     declare_readbacks(graph);
     history_valid_ = true;
+    probe_history_valid_ = settings_.gather == gi::GiGather::ScreenProbes;
     return graph.status() ? first : kInvalidPass;
 }
 
@@ -1038,6 +1210,7 @@ Status GpuScreenResolve::declare_from_surfaces(RenderGraph& graph) noexcept {
     declare_denoiser(graph, diffuse, specular);
     declare_readbacks(graph);
     history_valid_ = true;
+    probe_history_valid_ = settings_.gather == gi::GiGather::ScreenProbes;
     return graph.status();
 }
 
@@ -1060,10 +1233,17 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
             break;
         case kResolve:
         case kResolveHardware:
+        case kProbePlace:
+        case kProbeTrace:
+        case kProbeTraceHardware:
+        case kProbeIntegrate:
+        case kProbeIntegrateHardware:
             layout = kResolveLayout;
             writes[0] = buffer_write(0, constants());
             writes[1] = buffer_write(1, buffers_[kSurfaces]);
             writes[2] = buffer_write(2, buffers_[kNoisy]);
+            writes[3] = buffer_write(3, buffers_[kProbes]);
+            writes[4] = buffer_write(4, buffers_[kProbeSlots]);
             count = kResolveBindings;
             break;
         case kPublish:
@@ -1121,6 +1301,9 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
             commands.write_timestamp(self.timer_, 1);
         }
     }
+    for (u32 empty = 0; timed && empty < step->empty_before; ++empty) {
+        commands.write_timestamp(self.timer_, step->stamp - step->empty_before + empty);
+    }
     Expected<rhi::DescriptorSetHandle, Error> set = self.transient_set(context, *step);
     if (!set) {
         return;
@@ -1138,8 +1321,15 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
             commands.dispatch(tile_groups(self.desc_.width), tile_groups(self.desc_.height), 1);
             break;
         case kResolve:
-        case kResolveHardware: {
-            const bool hardware = step->pipeline == kResolveHardware;
+        case kResolveHardware:
+        case kProbePlace:
+        case kProbeTrace:
+        case kProbeTraceHardware:
+        case kProbeIntegrate:
+        case kProbeIntegrateHardware: {
+            const bool hardware = step->pipeline == kResolveHardware ||
+                                  step->pipeline == kProbeTraceHardware ||
+                                  step->pipeline == kProbeIntegrateHardware;
             const rhi::PipelineLayoutHandle layout =
                 hardware ? self.resolve_hardware_pipeline_layout_ : self.resolve_pipeline_layout_;
             const rhi::DescriptorSetHandle sets[4] = {self.cache_->scene_->set_,
@@ -1151,7 +1341,11 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
             commands.push_constants(
                 layout, rhi::ShaderStage::Compute, 0,
                 Span<const u8>(reinterpret_cast<const u8*>(&dispatch), sizeof(dispatch)));
-            commands.dispatch(linear_groups(step->count), 1, 1);
+            // A probe's trace is one workgroup, a lane a ray; everything else a thread an item.
+            const bool per_group =
+                step->pipeline == kProbeTrace || step->pipeline == kProbeTraceHardware;
+            commands.dispatch(per_group ? std::max(step->count, 1U) : linear_groups(step->count), 1,
+                              1);
             break;
         }
         case kReproject:
@@ -1196,12 +1390,15 @@ GpuResolveTimes GpuScreenResolve::last_times() const noexcept {
     }
     times.unpack_ms = stamp_ms(stamps, 0, 1);
     times.reproject_ms = stamp_ms(stamps, 1, 2);
-    times.resolve_ms = stamp_ms(stamps, 2, 3);
-    times.accumulate_ms = stamp_ms(stamps, 3, 4);
-    times.variance_ms = stamp_ms(stamps, 4, 5);
-    times.filter_ms = stamp_ms(stamps, 5, 6);
-    times.publish_ms = stamp_ms(stamps, 6, 7);
-    times.total_ms = stamp_ms(stamps, 0, 7);
+    times.probe_place_ms = stamp_ms(stamps, 2, 3);
+    times.probe_trace_ms = stamp_ms(stamps, 3, 4);
+    times.integrate_ms = stamp_ms(stamps, 4, 5);
+    times.resolve_ms = stamp_ms(stamps, 2, 5);
+    times.accumulate_ms = stamp_ms(stamps, 5, 6);
+    times.variance_ms = stamp_ms(stamps, 6, 7);
+    times.filter_ms = stamp_ms(stamps, 7, 8);
+    times.publish_ms = stamp_ms(stamps, 8, 9);
+    times.total_ms = stamp_ms(stamps, 0, 9);
     times.valid = true;
     return times;
 }
@@ -1307,6 +1504,47 @@ Status GpuScreenResolve::read_back_published(Span<Vec3> diffuse,
         specular[index] = Vec3{s[0], s[1], s[2]};
     }
     return ok();
+}
+
+Expected<u32, Error> GpuScreenResolve::read_back_probes(Span<gi::ScreenProbe> records,
+                                                        Span<u32> slots) const noexcept {
+    const u32 count = probe_layout_.records();
+    const u32 cells = probe_layout_.cell_count();
+    const auto* data =
+        desc_.readback
+            ? static_cast<const f32*>(device_->buffer_mapped_pointer(buffers_[kProbesHost]))
+            : nullptr;
+    const auto* table =
+        desc_.readback
+            ? static_cast<const u32*>(device_->buffer_mapped_pointer(buffers_[kProbeSlotsHost]))
+            : nullptr;
+    if (data == nullptr || table == nullptr || records.size() != count || slots.size() != cells) {
+        return fail(ErrorCode::InvalidArgument,
+                    "read_back_probes needs `readback`, a record a probe slot and an entry a "
+                    "half-tile cell");
+    }
+    for (u32 index = 0; index < count; ++index) {
+        const f32* record = data + (static_cast<usize>(index) * kProbeRecordVec4s * 4U);
+        gi::ScreenProbe& probe = records[index];
+        probe.position = Vec3{record[0], record[1], record[2]};
+        probe.depth = record[3];
+        probe.normal = Vec3{record[4], record[5], record[6]};
+        std::memcpy(&probe.id, &record[7], sizeof(probe.id));
+        const f32* values = record + 8;
+        for (usize k = 0; k < gi::kScreenProbeCoefficients; ++k) {
+            probe.coefficients[k] =
+                Vec3{values[k * 3U], values[(k * 3U) + 1U], values[(k * 3U) + 2U]};
+        }
+        probe.history = values[27];
+        probe.cache = Vec3{record[36], record[37], record[38]};
+        probe.cache_confidence = record[39];
+        probe.openness = record[40];
+    }
+    const usize first = kProbeSlotHead + (static_cast<usize>(slot_) * cells);
+    for (u32 cell = 0; cell < cells; ++cell) {
+        slots[cell] = table[first + cell];
+    }
+    return std::min(table[slot_], probe_layout_.capacity);
 }
 
 }  // namespace cy::rendering::gi_gpu

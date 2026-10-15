@@ -34,6 +34,12 @@ static const uint kGrFrame = 18u;         // resolve frame, filter passes, final
 static const uint kGrJitter = 19u;        // the prepass's jitter undone, in pixels: gi_surfaces.slang
 static const uint kGrSignals = 20u;       // three uint4 per signal: diffuse 20..22, specular 23..25
 static const uint kGrInvalid = 26u;       // x region count; then two uint4 a region: min, max
+// The screen probes' words (gi_screen_probes.slang); the per-pixel resolve reads none of them.
+static const uint kGrProbeLayout = 40u;   // grid width, grid height, spacing, half-tile cell
+static const uint kGrProbeCounts = 41u;   // tiles x, tiles y, cells x, cells y
+static const uint kGrProbeShape = 42u;    // rays, history frames, adaptive capacity, flags
+static const uint kGrProbeWeights = 43u;  // adaptive threshold, plane tolerance, guided share, uniform count
+static const uint kGrProbeSamples = 44u;  // x the samples an integrated pixel carries, 0, 0, 0
 
 static const uint kGrSourceNone = 0u;
 static const uint kGrSourceCache = 3u;
@@ -52,6 +58,12 @@ struct GiResolveSet {
     StructuredBuffer<float4> surfaces;
     /// Two float4 a pixel: [diffuse radiance, samples], [specular radiance, samples].
     RWStructuredBuffer<float4> noisy;
+    /// The screen probes, two frame slots of `kSpRecordVec4s` float4 a record: the uniform probes,
+    /// then the adaptive slots. Bound and unread by the per-pixel resolve.
+    RWStructuredBuffer<float4> probes;
+    /// Two adaptive slot counters, then each frame slot's table of an adaptive slot (or none) a
+    /// half-tile cell.
+    RWStructuredBuffer<uint> slots;
 };
 
 [[vk::binding(0, 2)]] ParameterBlock<GiResolveSet> giResolve;

@@ -1779,6 +1779,15 @@ note = "the six operators the requirement enumerates, each driven to the ends of
 # device cost falls with them, and it relaxes only with the arbiter's permission" (sibling: "the
 # device GI reports its measured cost to the arbiter on the rung its levers add up to").
 #
+# `openspec/changes/add-gi-screen-probes` (#35, the screen-probe gather) adds one: "Screen-probe
+# final gather". On archive, map it to test:integration.render_gi_screen_probes, case "adaptive
+# probes appear where the uniform grid cannot interpolate, and nowhere else" (siblings in the same
+# suite: the repair, the history, the blend, the unbiased estimate, the lever, each face reading its
+# own sky, and a probe at a thin wall's foot or on a room's edge; render.gi_gpu_resolve's three
+# screen-probe cases for the device; render.gi_gpu_frame's (d) and (e) for "off" and the lever;
+# smoke.render_gi_screen_probes_quality and smoke.gi_gpu_probe_quality for the quality and cost
+# scenarios).
+#
 # TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
 # and `src/rendering/sky_illumination/`. Most are answered by a named case, one by a criterion the
 # falsifiability record proves can fail, and THE REST ARE DEFERRED WITH A REASON — they
