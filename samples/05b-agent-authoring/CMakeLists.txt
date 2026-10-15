@@ -41,8 +41,8 @@ endif()
 # do. A registered test that skipped would report green on exactly the machines least able to judge
 # the claim.
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
-find_program(CY_AGENT_CARGO cargo)
-find_program(CY_AGENT_JUST just)
+cy_find_editor_tool(CY_AGENT_CARGO cargo)
+cy_find_editor_tool(CY_AGENT_JUST just)
 if(NOT Python3_Interpreter_FOUND OR NOT CY_AGENT_CARGO OR NOT CY_AGENT_JUST)
     message(STATUS
         "samples/05b-agent-authoring: the M5.5 agent artefact needs python3, cargo and just; it is "

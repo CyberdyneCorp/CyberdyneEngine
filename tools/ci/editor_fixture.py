@@ -13,6 +13,8 @@ the editor requires that fixture and builds nothing itself.
 This reads the configured tree's own record (`ctest --show-only=json-v1`) and fails when:
 
   * there is no single `cy_editor` setup, or it does not run `just build-editor`;
+  * the setup's program does not exist — a tool path a cache carried over from an earlier configure,
+    which CTest cannot run (`just` moved from 1.58.0 to 1.59.0 under a restored tree, PR #122);
   * an entry that runs one of the editor drivers does not require `cy_editor`;
   * such an entry passes `--build`, which puts the build back inside the timed session.
 
@@ -26,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 
@@ -62,7 +66,14 @@ def as_list(value) -> list[str]:
     return list(value) if isinstance(value, list) else [value]
 
 
-def violations(record: dict) -> list[str]:
+def runnable(program: str) -> bool:
+    """Whether CTest could start `program`: an existing file, or a bare name PATH resolves."""
+    if os.path.isabs(program) or os.sep in program or "/" in program:
+        return os.path.isfile(program)
+    return shutil.which(program) is not None
+
+
+def violations(record: dict, exists=runnable) -> list[str]:
     tests = record.get("tests", [])
     found = []
 
@@ -73,6 +84,12 @@ def violations(record: dict) -> list[str]:
         command = " ".join(setup.get("command", []))
         if setup["name"] != SETUP:
             found.append(f"the {FIXTURE!r} setup is {setup['name']!r}, expected {SETUP!r}")
+        program = str(setup.get("command", [""])[0]) if setup.get("command") else ""
+        if not program or not exists(program):
+            found.append(
+                f"{setup['name']}'s program {program!r} does not exist: a tool path cached by an "
+                f"earlier configure; the lookup must not be cached"
+            )
         if "build-editor" not in command:
             found.append(f"{setup['name']} does not run `just build-editor`: {command}")
 
@@ -122,14 +139,24 @@ def selftest() -> int:
             {"tests": [entry(SETUP, ["just", "build-engine"], FIXTURES_SETUP=[FIXTURE]), good]},
             True),
         "no driver registered at all": ({"tests": [setup]}, True),
+        "a setup whose program a stale cache names": (
+            {"tests": [entry(SETUP, ["/opt/hostedtoolcache/just/1.58.0/x64/just", "build-editor"],
+                             FIXTURES_SETUP=[FIXTURE]), good]}, True),
+        "a setup CTest could not resolve at all": (
+            {"tests": [entry(SETUP, [], FIXTURES_SETUP=[FIXTURE]), good]}, True),
         "an exempt entry that starts no editor": (
             {"tests": [setup, good, entry("integration.editor_window_selftest",
                                           ["python3", "/src/samples/05b-editor-window/window.py",
                                            "--selftest"])]}, False),
     }
     failed = 0
+    # The hand-made records name `just` and `/opt/hostedtoolcache/...`; existence is decided by the
+    # record rather than by this machine, so the cases answer the same everywhere.
+    def exists(program: str) -> bool:
+        return "hostedtoolcache" not in program
+
     for name, (record, must_fail) in cases.items():
-        did_fail = bool(violations(record))
+        did_fail = bool(violations(record, exists))
         if did_fail != must_fail:
             failed += 1
             print(f"fail {name}: expected {'a violation' if must_fail else 'none'}", file=sys.stderr)

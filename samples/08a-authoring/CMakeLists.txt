@@ -64,8 +64,8 @@ endif()
 # the entry is NOT DECLARED, the configure says so in one line, and the test list is visibly shorter.
 # A registered test that skipped would report green on exactly the machines least able to judge it.
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
-find_program(CY_AUTHORING_CARGO cargo)
-find_program(CY_AUTHORING_JUST just)
+cy_find_editor_tool(CY_AUTHORING_CARGO cargo)
+cy_find_editor_tool(CY_AUTHORING_JUST just)
 if(NOT Python3_Interpreter_FOUND OR NOT CY_AUTHORING_CARGO OR NOT CY_AUTHORING_JUST)
     message(STATUS
         "samples/08a-authoring: the M8.a artefact needs python3, cargo and just; it is not "

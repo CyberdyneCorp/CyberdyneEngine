@@ -48,8 +48,8 @@ if(NOT TARGET cy_import_cli)
 endif()
 
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
-find_program(CY_SESSION_CARGO cargo)
-find_program(CY_SESSION_JUST just)
+cy_find_editor_tool(CY_SESSION_CARGO cargo)
+cy_find_editor_tool(CY_SESSION_JUST just)
 if(NOT Python3_Interpreter_FOUND OR NOT CY_SESSION_CARGO OR NOT CY_SESSION_JUST)
     message(STATUS
         "samples/05-editor-session: the M5 artefact needs python3, cargo and just; it is not "
