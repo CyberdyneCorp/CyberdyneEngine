@@ -47,3 +47,26 @@ final class RetainedCString {
     /// number rather than a claim.
     static var count: Int { retained.count }
 }
+
+/// Objects the engine keeps a pointer to as `user_data`: a behaviour's registration record and a
+/// system's. The same rule as the strings above, for the same reason. Nothing makes releasing one
+/// safe, so the array that holds them is never emptied.
+///
+/// HELD HERE, NOT BY AN UNBALANCED `passRetained`. The two say the same thing to ARC, but only this
+/// one says it to LeakSanitizer. A +1 that nothing balances is reachable only through the engine's
+/// copy of the pointer, and the host frees that copy when it tears down the registry. So every
+/// Swift suite under AddressSanitizer reported each record as a direct leak at exit. A static array
+/// is a root the leak checker scans, so the records are reachable for as long as they are alive,
+/// which is the rest of the process.
+enum RetainedObjects {
+    private nonisolated(unsafe) static var retained: [AnyObject] = []
+
+    /// An unretained pointer to `object`, which this image now keeps alive for the process.
+    static func opaque(_ object: AnyObject) -> UnsafeMutableRawPointer {
+        retained.append(object)
+        return Unmanaged.passUnretained(object).toOpaque()
+    }
+
+    /// How many objects this image has handed over. Read by tests, like `RetainedCString.count`.
+    static var count: Int { retained.count }
+}

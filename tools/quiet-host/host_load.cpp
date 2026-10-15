@@ -164,79 +164,54 @@ struct TaskTimes {
 }
 
 #if defined(__linux__)
-/// One process of the host, as the census reads it.
-struct Task {
-    u64 pid = 0;
-    u64 ppid = 0;
-    u64 session = 0;
-    u64 ticks = 0;
-    bool ours = false;
+/// The host's own process table, read from `/proc`.
+class ProcTable final : public census::ProcessTable {
+public:
+    bool self(census::Task& out) override { return read("/proc/self/stat", out); }
+
+    bool pids(std::vector<u64>& out) override {
+        DIR* proc = ::opendir("/proc");
+        if (proc == nullptr) {
+            return false;
+        }
+        const auto own_pid = static_cast<long>(::getpid());
+        while (const dirent* entry = ::readdir(proc)) {
+            char* end = nullptr;
+            const long pid = std::strtol(entry->d_name, &end, 10);
+            if (end != entry->d_name && *end == '\0' && pid > 0 && pid != own_pid) {
+                out.push_back(static_cast<u64>(pid));
+            }
+        }
+        ::closedir(proc);
+        return true;
+    }
+
+    bool read(u64 pid, census::Task& out) override {
+        char path[64];
+        std::snprintf(path, sizeof(path), "/proc/%llu/stat", static_cast<unsigned long long>(pid));
+        out.pid = pid;
+        return read(path, out);
+    }
+
+private:
+    static bool read(const char* path, census::Task& out) noexcept {
+        TaskTimes times;
+        if (!read_task(path, times)) {
+            return false;
+        }
+        out.ppid = times.ppid;
+        out.session = times.session;
+        out.own = times.own;
+        out.reaped = times.reaped;
+        return true;
+    }
 };
 
-/// Every process of `session` AND EVERY DESCENDANT OF ONE, plus this process and the children it
-/// has reaped. A process's own time is counted while it lives and moves into its parent's
-/// `cutime`/`cstime` once reaped, so summing both over the living members counts each tick once —
-/// provided the reaper is a member, which the wrapper that started the session is.
-///
-/// WHY DESCENDANTS, AND NOT THE SESSION ALONE. `just test-all` runs `smoke.quiet_host_own`, which
-/// is this wrapper again, around a command that burns four cores; the inner wrapper puts that
-/// command in a session of its own, exactly as the outer one did, and a census by session id alone
-/// then counted those four cores as OTHER processes and failed `m0:test` on a host nobody else was
-/// using. Membership is therefore the session's, or an ancestor's: a process whose parent chain
-/// reaches a member is ours whatever session it started. An orphan re-parented to init keeps its
-/// session id and so stays ours; one that ALSO started its own session is lost from the sum, as is
-/// a member that init has already reaped, and the host then looks busier than it was: the direction
-/// that fails, never the one that passes.
 [[nodiscard]] bool read_own_session(HostReading& out, i32 session) noexcept {
-    TaskTimes self;
-    if (!read_task("/proc/self/stat", self)) {
+    ProcTable table;
+    u64 ticks = 0;
+    if (!census::session_ticks(table, static_cast<u64>(session), ticks)) {
         return false;
-    }
-    DIR* proc = ::opendir("/proc");
-    if (proc == nullptr) {
-        return false;
-    }
-    const auto own_pid = static_cast<long>(::getpid());
-    const auto wanted = static_cast<u64>(session);
-    std::vector<Task> tasks;
-    while (const dirent* entry = ::readdir(proc)) {
-        char* end = nullptr;
-        const long pid = std::strtol(entry->d_name, &end, 10);
-        if (end == entry->d_name || *end != '\0' || pid <= 0 || pid == own_pid) {
-            continue;
-        }
-        char path[64];
-        std::snprintf(path, sizeof(path), "/proc/%ld/stat", pid);
-        TaskTimes task;
-        // A process that exited between the listing and this read is nothing to count.
-        if (read_task(path, task)) {
-            tasks.push_back(Task{static_cast<u64>(pid), task.ppid, task.session,
-                                 task.own + task.reaped, task.session == wanted});
-        }
-    }
-    ::closedir(proc);
-    // Membership flows down the parent chain until nothing changes: a pass marks every child of a
-    // member, and the tree is no deeper than the number of passes it takes.
-    for (bool changed = true; changed;) {
-        changed = false;
-        for (Task& task : tasks) {
-            if (task.ours) {
-                continue;
-            }
-            for (const Task& candidate : tasks) {
-                if (candidate.ours && candidate.pid == task.ppid) {
-                    task.ours = true;
-                    changed = true;
-                    break;
-                }
-            }
-        }
-    }
-    u64 ticks = self.own + self.reaped;
-    for (const Task& task : tasks) {
-        if (task.ours) {
-            ticks += task.ticks;
-        }
     }
     out.own_ticks = ticks;
     return true;
@@ -326,6 +301,105 @@ void read_load(HostReading& out) noexcept {
 }
 
 }  // namespace
+
+namespace census {
+
+namespace {
+
+struct Member {
+    Task task;
+    bool ours = false;
+};
+
+/// One look: every process, and which are ours. Membership is the session's, or an ancestor's: a
+/// process whose parent chain reaches a member is ours whatever session it started.
+///
+/// WHY DESCENDANTS, AND NOT THE SESSION ALONE. `just test-all` runs `smoke.quiet_host_own`, which
+/// is this wrapper again, around a command that burns four cores; the inner wrapper puts that
+/// command in a session of its own, exactly as the outer one did, and a census by session id alone
+/// then counted those four cores as OTHER processes and failed `m0:test` on a host nobody else was
+/// using. An orphan re-parented to init keeps its session id and so stays ours; one that ALSO
+/// started its own session is lost from the sum, as is a member that init has already reaped, and
+/// the host then looks busier than it was: the direction that fails, never the one that passes.
+[[nodiscard]] bool look(ProcessTable& table, u64 session, Task& self,
+                        std::vector<Member>& members) {
+    members.clear();
+    std::vector<u64> pids;
+    if (!table.self(self) || !table.pids(pids)) {
+        return false;
+    }
+    for (const u64 pid : pids) {
+        Member member;
+        // A process that exited between the listing and this read is nothing to count.
+        if (table.read(pid, member.task)) {
+            member.ours = member.task.session == session;
+            members.push_back(member);
+        }
+    }
+    // Membership flows down the parent chain until nothing changes: a pass marks every child of a
+    // member, and the tree is no deeper than the number of passes it takes.
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (Member& member : members) {
+            if (member.ours) {
+                continue;
+            }
+            for (const Member& candidate : members) {
+                if (candidate.ours && candidate.task.pid == member.task.ppid) {
+                    member.ours = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/// Whether a second read finds every member still there and what each has reaped unchanged. A
+/// reap during the look moves a child's time into its parent's `reaped`, so a look that raced one
+/// fails this whichever of the two it read first.
+[[nodiscard]] bool settled(ProcessTable& table, const Task& self,
+                           const std::vector<Member>& members) {
+    Task again;
+    if (!table.self(again) || again.reaped != self.reaped) {
+        return false;
+    }
+    for (const Member& member : members) {
+        if (member.ours &&
+            (!table.read(member.task.pid, again) || again.reaped != member.task.reaped)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+bool session_ticks(ProcessTable& table, u64 session, u64& ticks) noexcept {
+    Task self;
+    std::vector<Member> members;
+    for (u32 attempt = 0; attempt < kAttempts; ++attempt) {
+        if (!look(table, session, self, members)) {
+            return false;
+        }
+        if (settled(table, self, members)) {
+            break;
+        }
+    }
+    // A process's own time is counted while it lives and moves into its parent's `reaped` once
+    // reaped, so summing both over the living members counts each tick once — provided the reaper
+    // is a member, which the wrapper that started the session is.
+    ticks = self.own + self.reaped;
+    for (const Member& member : members) {
+        if (member.ours) {
+            ticks += member.task.own + member.task.reaped;
+        }
+    }
+    return true;
+}
+
+}  // namespace census
 
 u32 host_cores() noexcept {
     const unsigned int cores = std::thread::hardware_concurrency();

@@ -86,6 +86,35 @@ void spin_until_stopped(const std::atomic<bool>& stop, std::atomic<unsigned>& re
 }
 #endif
 
+/// Whether `vfork` is the system call here, which every vfork case below takes as its premise.
+///
+/// UNDER ThreadSanitizer IT IS NOT. The runtime intercepts `vfork` and calls `fork` instead — a
+/// vfork child shares the parent's address space and so its shadow memory, which TSan cannot model
+/// — so the parent waits in `waitpid`, interruptibly, and the uninterruptible hold these cases
+/// measure is never made. The fourth clock then truthfully reads zero, and the copied process
+/// charges the case's thread more CPU than the probe's 1 ms budget at scale 1. Neither is a
+/// property of the harness, so the two cases that measure the hold in this process report that
+/// they have no subject here instead of asserting on one; the nightly AddressSanitizer and
+/// UndefinedBehaviorSanitizer runs, whose `vfork` is the real one, still run them. The probe-driven
+/// cases need no guard: stall_probe.cpp sleeps instead under TSan, and their verdicts are the same.
+bool vfork_is_the_system_call() {
+#if defined(__SANITIZE_THREAD__)
+    return false;
+#elif defined(__has_feature)
+#    if __has_feature(thread_sanitizer)
+    return false;
+#    else
+    return true;
+#    endif
+#else
+    return true;
+#endif
+}
+
+void report_no_vfork() {
+    CY_TEST_MESSAGE("ThreadSanitizer turns vfork into fork, so this case has no subject here");
+}
+
 }  // namespace
 
 CY_TEST_CASE("harness: a case preempted by a busy machine accumulates contention, and is excused") {
@@ -456,6 +485,10 @@ CY_TEST_CASE("harness: a case blocked by its OWN vfork child is blocked, and a s
             "this platform does not report host blocking; the stall ceiling is unchanged");
         return;
     }
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
+        return;
+    }
 #if defined(__linux__)
     // THE FIFTH CLOSE'S PROBE, IN THE GUARD'S ARITHMETIC. The parent of a vfork waits
     // uninterruptibly, so the fourth clock sees almost the whole window — which is exactly why
@@ -535,6 +568,10 @@ CY_TEST_CASE(
     if (!cy::test::budget_measures_host_blocking()) {
         CY_TEST_MESSAGE(
             "this platform does not report host blocking; the stall ceiling is unchanged");
+        return;
+    }
+    if (!vfork_is_the_system_call()) {
+        report_no_vfork();
         return;
     }
 #if defined(__linux__)

@@ -26,6 +26,21 @@
 # finds the editor through that same recipe in the same environment — so the fixture and the test
 # cannot disagree about where the binary is, whatever CY_BUILD_DIR says.
 
+# cy_find_editor_tool(<variable> <program>)
+#
+# `just` and `cargo` LOOKED UP ON EVERY CONFIGURE, NEVER CACHED. A cached find_program() result is
+# never searched again, and on a hosted runner `just` lives at a versioned path —
+# `hostedtoolcache/just/1.58.0/...` — that the build trees restored by actions/cache carried forward.
+# When setup-just installed 1.59.0 on 2026-10-15 every test leg configured `smoke.editor_build` with
+# a program that no longer existed: CTest could not run it, `integration.editor_fixture` read an
+# empty command, and the editor suites were not run (PR #122). So the stale cache entry is dropped
+# and the lookup stores a normal variable: the tool is whichever `just` this configure's PATH has.
+# A macro, so the variable lands in the caller's scope as find_program's would.
+macro(cy_find_editor_tool variable program)
+    unset(${variable} CACHE)
+    find_program(${variable} ${program} NO_CACHE)
+endmacro()
+
 set(CY_EDITOR_BUILD_TIMEOUT 1800 CACHE STRING
     "Seconds a cold `just build-editor` may take as the cy_editor CTest fixture")
 
@@ -35,8 +50,8 @@ set(CY_EDITOR_BUILD_TIMEOUT 1800 CACHE STRING
 # Every caller has already declined to register its tests where cargo or just is absent — the tree's
 # rule for an artefact that cannot run here — so their absence here is a caller's mistake.
 function(cy_sample_requires_editor profile)
-    find_program(CY_EDITOR_FIXTURE_CARGO cargo)
-    find_program(CY_EDITOR_FIXTURE_JUST just)
+    cy_find_editor_tool(CY_EDITOR_FIXTURE_CARGO cargo)
+    cy_find_editor_tool(CY_EDITOR_FIXTURE_JUST just)
     if(NOT CY_EDITOR_FIXTURE_CARGO OR NOT CY_EDITOR_FIXTURE_JUST)
         message(FATAL_ERROR
             "cy_sample_requires_editor: cargo and just are required to build the editor. A caller "

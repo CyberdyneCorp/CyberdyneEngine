@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import criteria as criteria_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import incremental as incremental_module  # noqa: E402
+import reclaim as reclaim_module  # noqa: E402
 import record as record_module  # noqa: E402
 import schedule as schedule_module  # noqa: E402
 
@@ -171,7 +172,7 @@ def command_milestone(arguments: argparse.Namespace) -> int:
     jobs = max(1, arguments.jobs if arguments.jobs else schedule_module.default_jobs())
     before = _tree_state()
     _print_plan(plan, jobs)
-    results = _evaluate_plan(plan, entries, arguments.ci, jobs)
+    results = _evaluate_plan(plan, entries, arguments.ci, jobs, arguments.reclaim_builds)
     print()
     verdict = _summarise(plan, results, arguments.json)
     if verdict == OK_EXIT and before is not None:
@@ -205,7 +206,7 @@ def _incremental(plan: criteria_module.Plan, arguments: argparse.Namespace) -> i
     if not arguments.json:
         _print_selection(plan, selection, build_dir)
     _print_plan(narrowed, jobs)
-    results = _evaluate_plan(narrowed, entries, arguments.ci, jobs)
+    results = _evaluate_plan(narrowed, entries, arguments.ci, jobs, arguments.reclaim_builds)
     print()
     if arguments.json:
         document = _milestone_document(narrowed, results)
@@ -258,22 +259,32 @@ def _verdict(plan: criteria_module.Plan, results) -> int:
         return _summarise(plan, results, False)
 
 
-def _evaluate_plan(plan: criteria_module.Plan, entries, force_ci: bool, jobs: int) -> list:
+def _evaluate_plan(plan: criteria_module.Plan, entries, force_ci: bool, jobs: int,
+                   reclaim_builds: bool = False) -> list:
     """Every criterion evaluated, and every result PRINTED IN LEDGER ORDER whatever order it arrived.
 
     A reader compares a ledger run against the previous one by eye, line by line, so the report is
     part of the contract and not decoration: criterion n's block is printed after criterion n-1's
     block and before criterion n+1's, with the same text, however the scheduler interleaved them.
     `report` therefore holds a finished result until every earlier one has been printed.
+
+    With `reclaim_builds`, each tree no later criterion needs is deleted as soon as its last user
+    finishes — tools/roadmap/reclaim.py says why a hosted runner needs that and a workstation does
+    not. Its notes go to stderr, so the ledger's own text stays byte-comparable.
     """
     blocks: dict[int, str] = {}
     next_to_print = 0
+    reclaimer = reclaim_module.Reclaimer(plan.entries) if reclaim_builds else None
 
     def evaluate(entry):
         return criteria_module.evaluate(entry.criterion, entries, force_ci)
 
     def report(index, entry, result):
         nonlocal next_to_print
+        if reclaimer is not None:
+            reclaimer.finished(index)
+            print(f"[ledger] done {entry.label}: {reclaim_module.free_space(reclaimer.root)}",
+                  file=sys.stderr, flush=True)
         blocks[index] = _render(entry, result)
         while next_to_print in blocks:
             print(blocks.pop(next_to_print), end="", flush=True)
@@ -580,6 +591,10 @@ def _parser() -> argparse.ArgumentParser:
                            help="how many criteria to evaluate at once; 1 is the sequential ledger "
                                 "(default: 1 — concurrency is opt-in; see schedule.default_jobs)")
     milestone.add_argument("--record", type=Path, default=record_module.DEFAULT_RECORD)
+    milestone.add_argument("--reclaim-builds", action="store_true",
+                           help="delete each build tree once no later criterion of this run needs "
+                                "it, for a host whose disk cannot hold every tree of a full run "
+                                "(the hosted CI runner); see tools/roadmap/reclaim.py")
     milestone.add_argument("--incremental", action="store_true",
                            help="evaluate only the rung's own criteria, the earlier ones whose "
                                 "inputs changed since --changed-since, and the smoke set (build, "

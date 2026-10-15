@@ -58,8 +58,8 @@ if(NOT DEFINED ENV{DISPLAY} AND NOT DEFINED ENV{WAYLAND_DISPLAY})
 endif()
 
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
-find_program(CY_WINDOW_CARGO cargo)
-find_program(CY_WINDOW_JUST just)
+cy_find_editor_tool(CY_WINDOW_CARGO cargo)
+cy_find_editor_tool(CY_WINDOW_JUST just)
 if(NOT Python3_Interpreter_FOUND OR NOT CY_WINDOW_CARGO OR NOT CY_WINDOW_JUST)
     message(STATUS
         "samples/05b-editor-window: the M5.5 window artefact needs python3, cargo and just; it is "

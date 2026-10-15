@@ -18,9 +18,9 @@
 //
 // `user_data` is a pointer the engine keeps for as long as the registration exists, and under the
 // reload model a module image is NEVER unloaded — `cy/abi/module.h` explains why, at length, and it
-// is a measurement rather than a preference. So the record is `passRetained` once and never
-// released: releasing it would be releasing something the engine may still call through, and there
-// is no later moment at which that becomes safe. The cost is one small allocation per behaviour type
+// is a measurement rather than a preference. So the record is kept alive by `RetainedObjects`
+// (CStrings.swift) and never released: releasing it would be releasing something the engine may
+// still call through, and there is no later moment at which that becomes safe. The cost is one small allocation per behaviour type
 // per generation, which is the same order as the 58-85 kB of address space each generation already
 // costs.
 //
@@ -138,7 +138,7 @@ private func makeVTable(_ record: BehaviourRegistration) -> CyBehaviourVTable {
     // element is never sent an event, so the entry costs nothing until it is used.
     vtable.ui_event = behaviourUIEvent
     // Retained for the life of the image. See the header comment; there is no later safe release.
-    vtable.user_data = Unmanaged.passRetained(record).toOpaque()
+    vtable.user_data = RetainedObjects.opaque(record)
     return vtable
 }
 

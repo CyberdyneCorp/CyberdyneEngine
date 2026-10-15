@@ -407,7 +407,7 @@ enum EngineSystems {
             desc.access = terms.baseAddress
             desc.access_count = UInt32(terms.count)
             desc.run = systemRun
-            desc.user_data = Unmanaged.passRetained(record).toOpaque()
+            desc.user_data = RetainedObjects.opaque(record)
             try engine.registerSystem(desc: &desc)
         }
     }

@@ -546,3 +546,54 @@ CY_TEST_CASE("a package reload whose payload is not there leaves the old asset i
     CY_CHECK_EQ(asset.value()->size(), cooked.size());
     CY_CHECK(std::memcmp(asset.value()->bytes().data(), cooked.data(), cooked.size()) == 0);
 }
+
+CY_TEST_CASE("a package reload and loads completing on the workers count into the same totals") {
+    // Regression: `reload` reads the package entry without the loader's mutex, and it used to add
+    // to `bytes_read` and `bytes_decompressed` there too, while workers finishing other loads add
+    // to the same counters under that mutex. ThreadSanitizer reported it from the dependency pass
+    // above — the child load completing on a worker while the second reload read its entry — and
+    // a lost increment would leave the totals below short. So many loads complete while reloads
+    // run, and every byte decompressed must be counted exactly once.
+    const test::TempDir directory("assets_reload_package_counters");
+    const cy::AssetId id = mint_asset_id();
+    const cy::Array<u8> cooked = compressible(24000, 7);
+    write_one(directory.file("base.cypak"), id, cooked.span(), nullptr);
+
+    constexpr usize kChildren = 24;
+    constexpr usize kChildBytes = 3000;
+    std::vector<cy::AssetId> children;
+    for (usize index = 0; index < kChildren; ++index) {
+        children.push_back(mint_asset_id());
+        const cy::Array<u8> payload = compressible(kChildBytes, static_cast<u8>(index));
+        write_one(directory.file(("child" + std::to_string(index) + ".cypak").c_str()),
+                  children.back(), payload.span(), nullptr);
+    }
+
+    PackageHarness harness;
+    harness.mount(directory.file("base.cypak"), mount_priority::kBasePackage);
+    for (usize index = 0; index < kChildren; ++index) {
+        harness.mount(directory.file(("child" + std::to_string(index) + ".cypak").c_str()),
+                      mount_priority::kBasePackage);
+    }
+    const auto asset = harness.assets.load(id);
+    CY_REQUIRE(asset.has_value());
+    const cy::u64 decompressed_before = harness.assets.stats().bytes_decompressed;
+
+    std::vector<LoadRequestId> requests;
+    for (const cy::AssetId child : children) {
+        const auto request = harness.assets.load_async(child);
+        CY_REQUIRE(request.has_value());
+        requests.push_back(request.value());
+    }
+    usize reloads = 0;
+    for (const LoadRequestId request : requests) {
+        CY_REQUIRE(harness.assets.reload(id).has_value());
+        ++reloads;
+        CY_REQUIRE(harness.assets.wait(request).has_value());
+    }
+
+    const AssetSystemStats stats = harness.assets.stats();
+    CY_CHECK_EQ(stats.reloads_completed, reloads);
+    CY_CHECK_EQ(stats.bytes_decompressed - decompressed_before,
+                (reloads * cooked.size()) + (kChildren * kChildBytes));
+}

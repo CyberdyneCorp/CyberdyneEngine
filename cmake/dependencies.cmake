@@ -364,6 +364,35 @@ function(cy__slang_allow_exceptions directory)
     endforeach()
 endfunction()
 
+# SLANG IS COMPILED OPTIMISED IN THE Debug PROFILE TOO. It is a tool-time compiler: no engine frame
+# runs inside it, nobody steps through it while debugging the engine, and `shader-system` keeps it
+# out of every shipped build. What `-O0` bought was a shader compiler five times slower, and every
+# Debug suite that compiles a shader paid it: `smoke.shader_slang` took 24 s in the `profiles` job
+# against 4 s in Development, and `smoke.shader_targets` — every entry point under src/rendering for
+# every target — grew from 180 s to its 300 s timeout as the GI rungs added shaders (CI run
+# 38506194364). Debug's meaning for the ENGINE is unchanged: the flag is appended to Slang's own
+# targets only, after the profile's `-O0`, and the last optimisation flag on the line wins — the same
+# mechanism `cy__slang_allow_exceptions` above relies on. GCC and Clang only: no Windows job builds
+# Debug, and an MSVC `/Od` contradicted by `/O2` is a combination this tree has never compiled.
+function(cy__slang_optimise_in_debug directory)
+    if(MSVC)
+        return()
+    endif()
+    set(optimise $<$<CONFIG:Debug>:-O2>)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(type ${target} TYPE)
+        if(type STREQUAL "INTERFACE_LIBRARY" OR type STREQUAL "UTILITY")
+            continue()
+        endif()
+        target_compile_options(${target} PRIVATE ${optimise})
+    endforeach()
+    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        cy__slang_optimise_in_debug("${child}")
+    endforeach()
+endfunction()
+
 # DXC's shared libraries, put where the thing that dlopen()s them will look.
 #
 # Slang loads `dxcompiler` by name at compile time rather than linking it, and its own binaries
@@ -412,6 +441,7 @@ function(cy__finalise_slang target)
     # the six-hour lock hang in front of it hid the fact that it never got further.
     if(slang_SOURCE_DIR)
         cy__slang_allow_exceptions("${slang_SOURCE_DIR}")
+        cy__slang_optimise_in_debug("${slang_SOURCE_DIR}")
     endif()
     cy__slang_place_dxc()
 endfunction()

@@ -53,6 +53,7 @@
 #include <cy/core/base/types.h>
 
 #include <chrono>
+#include <vector>
 
 namespace cy::host_load {
 
@@ -87,6 +88,51 @@ struct OwnScope {
     /// towards failing, never towards a silent pass.
     i32 session = 0;
 };
+
+/// THE SESSION CENSUS, behind a seam so that its one race can be tested. The wrapper's census reads
+/// every process's `/proc/<pid>/stat` one at a time, and a member can REAP a child while it reads:
+/// read the parent before the reap (its `cutime` without the child) and the child after it (gone),
+/// and the child's CPU time is in neither — the census comes up short by everything the child ever
+/// spent, and the window it closes counts that much against the host. `smoke.quiet_host_nested`
+/// went red that way on an idle hosted runner (CI run 38508339082): four two-second spinners reaped
+/// during one look made 3.96 of 4 cores "other processes".
+namespace census {
+
+/// One process as the census reads it.
+struct Task {
+    u64 pid = 0;
+    u64 ppid = 0;
+    u64 session = 0;
+    /// Its own user and system time, every thread included.
+    u64 own = 0;
+    /// The user and system time of the children it has already waited for.
+    u64 reaped = 0;
+};
+
+/// Where the census reads processes from: `/proc` in the wrapper, a scripted host in a test.
+class ProcessTable {
+public:
+    virtual ~ProcessTable() = default;
+    /// This process.
+    [[nodiscard]] virtual bool self(Task& out) = 0;
+    /// Every other process's pid, in the order the table lists them.
+    [[nodiscard]] virtual bool pids(std::vector<u64>& out) = 0;
+    /// One process, or false when it has gone.
+    [[nodiscard]] virtual bool read(u64 pid, Task& out) = 0;
+};
+
+/// How many looks the census takes at most before it settles for the last one.
+inline constexpr u32 kAttempts = 8;
+
+/// The CPU ticks of `session`, of every descendant of one of its processes, of this process, and of
+/// everything each of them has reaped. A look counts only when a second read of every member finds
+/// what each has reaped unchanged and every member still there — otherwise a reap happened during
+/// the look and it is taken again, up to `kAttempts` times. A look that never settles is used
+/// anyway, and errs the way the census always has: short, so the host looks busier. False when
+/// this process or the process list could not be read.
+[[nodiscard]] bool session_ticks(ProcessTable& table, u64 session, u64& ticks) noexcept;
+
+}  // namespace census
 
 /// What counts as quiet. The defaults are the criterion's; a test may not loosen them, because the
 /// verdict carries them and the criterion reads the verdict.

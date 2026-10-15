@@ -680,10 +680,16 @@ Expected<BuildReport, Error> BuildService::build() {
         // check and its wait, which is a lost wakeup and a destructor that hangs once in however
         // many runs. Both halves of that are the shape of defect M5.5's gate found in Jolt's job
         // bridge: a pool torn down underneath a worker that had not finished leaving.
+        //
+        // The notify is under the mutex too, for the same reason one step later: notified after
+        // the unlock, the destructor can see the zero, return and destroy `progress_` while this
+        // thread is still inside `notify_all` on it — ThreadSanitizer's report from the
+        // teardown-under-load case. Held, the destructor cannot re-check its predicate until this
+        // scope has released the last member this function touches.
         std::lock_guard<std::mutex> lock(mutex_);
         builds_in_flight_.fetch_sub(1, std::memory_order_relaxed);
+        progress_.notify_all();
     }
-    progress_.notify_all();
     return report;
 }
 

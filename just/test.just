@@ -638,6 +638,9 @@ test-sanitize *args:
         export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=0"
     fi
     export UBSAN_OPTIONS="${UBSAN_OPTIONS:-}${UBSAN_OPTIONS:+:}print_stacktrace=1"
+    # tests/tsan-suppressions.txt is the same discipline for ThreadSanitizer: each entry is a race
+    # in third-party code with the stack and the reason written beside it.
+    export TSAN_OPTIONS="${TSAN_OPTIONS:-}${TSAN_OPTIONS:+:}suppressions={{root}}/tests/tsan-suppressions.txt:print_suppressions=1"
 
     # ThreadSanitizer maps its shadow memory at fixed addresses and refuses to start when the
     # kernel's ASLR entropy puts the executable where it wants to be — "unexpected memory mapping"

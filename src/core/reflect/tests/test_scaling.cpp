@@ -50,6 +50,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -197,11 +198,26 @@ cy::Status scanning_read_record(const TypeInfo& type, const u8* data, usize size
 // --- Measurement
 // ------------------------------------------------------------------------------------
 
-using Clock = std::chrono::steady_clock;
+/// THIS THREAD'S CPU TIME, NOT WALL CLOCK. Every assertion below is a ratio of two timings taken
+/// back to back, and a wall clock charges whichever of the two was descheduled for the time it
+/// spent waiting: `test macos-arm64` in CI run 38508339082 measured the scene load at 1.2x where
+/// the recorded figure is 2.2x, the indexed pass slowed by a neighbour rather than by the code. The
+/// harness's budget guard made the same choice for the same reason (tests/harness/src/budget.cpp's
+/// `cpu_now_ns`, which this mirrors). A host without a thread CPU clock falls back to wall clock.
+f64 now_ns() noexcept {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    timespec now{};
+    if (::clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) == 0) {
+        return (static_cast<f64>(now.tv_sec) * 1e9) + static_cast<f64>(now.tv_nsec);
+    }
+#endif
+    return static_cast<f64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count());
+}
 
-f64 elapsed_ns(Clock::time_point started) {
-    return static_cast<f64>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - started).count());
+f64 elapsed_ns(f64 started) noexcept {
+    return now_ns() - started;
 }
 
 /// One line of the recorded measurement, in the shape README.md carries.
@@ -255,13 +271,13 @@ CY_TEST_CASE("reflection scaling: type lookup does not degrade as the registry g
         }
 
         usize found = 0;
-        Clock::time_point started = Clock::now();
+        f64 started = now_ns();
         for (const TypeId id : wanted) {
             found += (scanning_find(registry, id) != nullptr) ? 1u : 0u;
         }
         scan_ns[step] = elapsed_ns(started);
 
-        started = Clock::now();
+        started = now_ns();
         for (const TypeId id : wanted) {
             found += (registry.find(id) != nullptr) ? 1u : 0u;
         }
@@ -355,14 +371,14 @@ CY_TEST_CASE("reflection scaling: a record decode is linear in the record") {
     // hide the difference under it — which it did, at a cost of one confusing afternoon.
     bool decoded = true;
 
-    Clock::time_point started = Clock::now();
+    f64 started = now_ns();
     for (u32 index = 0; index < records; ++index) {
         decoded = decoded && static_cast<bool>(scanning_read_record(type, record.data(),
                                                                     record.size(), scanned.data()));
     }
     const f64 scan_ns = elapsed_ns(started);
 
-    started = Clock::now();
+    started = now_ns();
     for (u32 index = 0; index < records; ++index) {
         decoded = decoded && static_cast<bool>(cy::reflect::read_record(
                                  fields, record.data(), record.size(), indexed.data()));
@@ -413,19 +429,22 @@ CY_TEST_CASE("reflection scaling: the reflected path a scene load takes") {
     // would be checking, and asserting per record measures doctest rather than the decode.
     bool loaded = true;
 
-    // THE BEST OF THREE, NOT ONE RUN OF EACH. A ratio between two timings taken once is a
+    // THE BEST OF SEVERAL, NOT ONE RUN OF EACH. A ratio between two timings taken once is a
     // measurement of whichever run was descheduled, and this assertion failed `just test-all
     // --profile dev` about one round in five at M3's gate — inside `four-profiles`, which every
     // milestone ledger runs, so a flake here is a flake in the whole ladder. The minimum of a few
     // repetitions is the standard answer: contention can only ever make a run slower, so the
     // smallest is the closest to the cost being compared, and it costs three passes over a corpus
-    // that already fits the integration budget several times over.
-    constexpr u32 kRepeats = 3;
+    // that already fits the integration budget several times over. FIVE since the clock became the
+    // thread's CPU time: that clock cannot see a hypervisor taking the vCPU away (a hosted macOS
+    // runner is a virtual machine), so the minimum is what still filters it, and two more passes
+    // cost tens of milliseconds.
+    constexpr u32 kRepeats = 5;
     f64 scan_ns = 0.0;
     f64 index_ns = 0.0;
     for (u32 repeat = 0; repeat < kRepeats; ++repeat) {
         // The M1 path: a scan for the type, then find_field() per field of every record.
-        Clock::time_point started = Clock::now();
+        f64 started = now_ns();
         for (const u32 which : stream) {
             const TypeInfo* type = scanning_find(registry, TypeId{which + 1});
             loaded = loaded && type != nullptr &&
@@ -436,7 +455,7 @@ CY_TEST_CASE("reflection scaling: the reflected path a scene load takes") {
 
         // The M2 path: an indexed lookup that hands back the FieldIndex the registry built at
         // registration, and a decode that probes it once per field in the record.
-        started = Clock::now();
+        started = now_ns();
         for (const u32 which : stream) {
             const FieldIndex* fields = registry.fields(TypeId{which + 1});
             loaded = loaded && fields != nullptr &&

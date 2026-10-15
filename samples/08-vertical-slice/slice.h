@@ -357,15 +357,28 @@ inline constexpr f64 kUnoptimisedAllowance = 4.0;
 inline constexpr f64 kUnoptimisedAllowance = 1.0;
 #endif
 
+/// The factor by which every absolute microsecond budget below is relaxed in a **sanitized** build,
+/// and it is `tests/harness/`'s sanitizer scale, twenty, for the reason cmake/sanitizers.cmake
+/// gives beside `CY_SANITIZED`: an instrumented binary is five to twenty times slower because the
+/// tool is working. The nightly ThreadSanitizer run measured the particles at 43.6 ms a tick and
+/// 2,000 agents at 40.3 ms, against 4 and 25. One in every uninstrumented build, so the numbers
+/// mean exactly what they say wherever a game could ship; the linearity factor, a ratio, is not
+/// scaled.
+#if defined(CY_SANITIZED)
+inline constexpr f64 kSanitizedAllowance = 20.0;
+#else
+inline constexpr f64 kSanitizedAllowance = 1.0;
+#endif
+
 struct Budgets {
     /// One simulation tick at the scale figure — think, sense, navigate, animate, act. Measured
     /// 10.2 ms at 8,000 agents in a development build on the reference machine.
-    static constexpr f64 kSimulationUs = 25000.0;
+    static constexpr f64 kSimulationUs = 25000.0 * kSanitizedAllowance;
     /// `EffectSystem::advance` over the hundred concurrent effects the criterion names, which is
     /// not the activation pipeline's cost and must not be folded into it. Measured 0.4 µs.
-    static constexpr f64 kEffectsUs = 25.0;
+    static constexpr f64 kEffectsUs = 25.0 * kSanitizedAllowance;
     /// One frame of interface: measure, arrange, flatten, budget, audit. Measured 1.9 µs.
-    static constexpr f64 kInterfaceUs = 2000.0;
+    static constexpr f64 kInterfaceUs = 2000.0 * kSanitizedAllowance;
     /// THE ONE THAT CATCHES A QUADRATIC. Four times the agents may cost at most this much more
     /// per agent. A quadratic gives four; a linear one gives one. Measured 1.15.
     static constexpr f64 kLinearityFactor = 2.0;
@@ -396,7 +409,7 @@ struct Budgets {
     /// failing in a configuration the claim was never about." The check stays live in every
     /// configuration — a Debug run doing four times its intended work still fails — and the real
     /// number is enforced in the three configurations compiled the way a shipped game is.
-    static constexpr f64 kSpectacleUs = 4000.0 * kUnoptimisedAllowance;
+    static constexpr f64 kSpectacleUs = 4000.0 * kUnoptimisedAllowance * kSanitizedAllowance;
 };
 
 /// A shape the artefact's picture draws: one visible instance, projected by the engine's own
