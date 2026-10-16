@@ -59,7 +59,9 @@ cy-editor-viewmodels = { path = "../cy-editor-viewmodels" }
 
 # The runtime stub is a separate PROCESS in the integration tests, not a linked dependency: the
 # claim under test is that the editor survives the runtime's death, and a linked fixture could not
-# die. Declared here so that `cargo test -p cy-editor-app` builds it.
+# die. A dev-dependency gives the tests its library and NOT its binary — Cargo builds no binary of a
+# dependency — so `tests/survives_a_runtime_crash.rs` builds `cy-runtime-stub` itself when no earlier
+# build left one in the target directory.
 [dev-dependencies]
 cy-editor-testhost = { path = "../cy-editor-testhost" }
 

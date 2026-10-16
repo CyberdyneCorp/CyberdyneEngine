@@ -566,9 +566,9 @@ def _print_merged(plan: criteria_module.Plan, merged, count: int, commit: str) -
     print(f"{plan.milestone.id.upper()} — {plan.milestone.name}: {len(plan.entries)} exit "
           f"criteria, merged from {count} shard record(s) of {commit[:12]}")
     print()
-    print("  shard  criteria   seconds  (the criteria's own clocks, not the job's)")
-    for index, criteria_count, seconds in merged.durations:
-        print(f"  {index:>2}/{count:<2} {criteria_count:>8} {seconds:>9.0f}  "
+    print("       shard criteria   seconds  (the criteria's own clocks, not the job's)")
+    for key, criteria_count, seconds in merged.durations:
+        print(f"  {key + '/' + str(count):>10} {criteria_count:>8} {seconds:>9.0f}  "
               f"({seconds / 3600:.2f} h)")
     print()
 
@@ -576,9 +576,9 @@ def _print_merged(plan: criteria_module.Plan, merged, count: int, commit: str) -
 def _print_estimate(plan: criteria_module.Plan, count: int) -> int:
     print(f"{plan.milestone.id.upper()}: {len(plan.entries)} criteria in {count} shard(s), "
           f"estimated from {shard_module.COSTS_FILE.name} where measured")
-    for index, (criteria_count, seconds) in enumerate(
-            shard_module.estimated_seconds(plan, count), start=1):
-        print(f"  {index:>2}/{count:<2} {criteria_count:>4} criteria  {seconds / 3600:5.2f} h")
+    for key, criteria_count, seconds in shard_module.estimated_seconds(plan, count):
+        print(f"  {key + '/' + str(count):>10} {criteria_count:>4} criteria  "
+              f"{seconds / 3600:5.2f} h")
     return OK_EXIT
 
 

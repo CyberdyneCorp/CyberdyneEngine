@@ -71,8 +71,12 @@ LIGHT_S = 60.0
 #: the six GitHub allows a hosted job, leaving the set-up, the unpack and a margin.
 GROUP_CEILING_S = 4 * 3600.0
 
-RECORD_SCHEMA = 1
-_SHARD = re.compile(r"^\s*(\d+)\s*/\s*(\d+)\s*$")
+#: Which hosted runner answers a `where = "ci"` criterion only one other operating system can.
+PLATFORMS_FILE = Path(__file__).resolve().parent / "shard-platforms.toml"
+PLATFORMS = ("macos", "windows")
+
+RECORD_SCHEMA = 2
+_SHARD = re.compile(r"^\s*(\d+|[a-z]+)\s*/\s*(\d+)\s*$")
 
 
 class ShardError(Exception):
@@ -81,23 +85,62 @@ class ShardError(Exception):
 
 @dataclass(frozen=True)
 class Shard:
+    """Linux shard `index` of `count`, or — with `platform` set — the shard of the criteria pinned to
+    that operating system in `shard-platforms.toml`, in a run of `count` Linux shards."""
+
     index: int
     count: int
+    platform: str = ""
+
+    @property
+    def key(self) -> str:
+        return self.platform or str(self.index)
 
     def __str__(self) -> str:
-        return f"{self.index}/{self.count}"
+        return f"{self.key}/{self.count}"
 
 
 def parse(text: str) -> Shard:
-    """`i/n`, 1-based: `--shard 3/12` is the third of twelve."""
+    """`i/n`, 1-based: `--shard 3/12` is the third of twelve. `macos/12` and `windows/12` are the
+    shards of the criteria pinned to those systems, in the same run."""
     match = _SHARD.match(text or "")
     if not match:
-        raise ShardError(f"--shard takes i/n, such as 3/12, not {text!r}")
-    index, count = int(match.group(1)), int(match.group(2))
-    if count < 1 or not 1 <= index <= count:
-        raise ShardError(f"--shard {text}: the index must be between 1 and the count, and the "
-                         "count at least 1")
+        raise ShardError(f"--shard takes i/n, such as 3/12, or <platform>/n, not {text!r}")
+    which, count = match.group(1), int(match.group(2))
+    if count < 1:
+        raise ShardError(f"--shard {text}: the count must be at least 1")
+    if not which.isdigit():
+        if which not in PLATFORMS:
+            raise ShardError(f"--shard {text}: {which!r} is none of {', '.join(PLATFORMS)}")
+        return Shard(0, count, which)
+    index = int(which)
+    if not 1 <= index <= count:
+        raise ShardError(f"--shard {text}: the index must be between 1 and the count")
     return Shard(index, count)
+
+
+def load_platforms(path: Path = PLATFORMS_FILE) -> dict[str, str]:
+    """label -> platform, for the criteria a Linux shard must leave to another system's runner."""
+    if not path.exists():
+        return {}
+    try:
+        table = tomllib.loads(path.read_text(encoding="utf-8")).get("runner", {})
+    except tomllib.TOMLDecodeError as error:
+        raise ShardError(f"{path.name}: {error}") from error
+    for label, platform in table.items():
+        if platform not in PLATFORMS:
+            raise ShardError(f"{path.name}: {label} = {platform!r} is none of "
+                             f"{', '.join(PLATFORMS)}")
+    return dict(table)
+
+
+def check_platforms(plan: criteria_module.Plan, platforms: dict[str, str]) -> None:
+    """A pin may only move a `where = "ci"` criterion: one that runs everywhere and was pinned would
+    simply stop running on Linux, which is a criterion removed rather than relocated."""
+    for entry in plan.entries:
+        if entry.label in platforms and entry.criterion.where != "ci":
+            raise ShardError(f"{PLATFORMS_FILE.name}: {entry.label} is pinned to "
+                             f"{platforms[entry.label]} and is not a `where = \"ci\"` criterion")
 
 
 # --- Costs ----------------------------------------------------------------------------------------
@@ -170,38 +213,60 @@ def groups(entries, costs: dict[str, float]) -> list[list[int]]:
     return sorted(result, key=lambda members: members[0])
 
 
-def assign(entries, count: int, costs: dict[str, float] | None = None) -> list[list[int]]:
-    """Each shard's criteria, as indices into `entries` in ledger order. Shard i is element i-1."""
+def assign(entries, count: int, costs: dict[str, float] | None = None,
+           platforms: dict[str, str] | None = None) -> list[list[int]]:
+    """Each Linux shard's criteria, as indices into `entries` in ledger order. Shard i is element
+    i-1. A criterion pinned to another platform is in none of them."""
     if count < 1:
         raise ShardError("a ledger is split into at least one shard")
     costs = load_costs() if costs is None else costs
+    platforms = load_platforms() if platforms is None else platforms
     weighed = [(sum(estimate(entries[i], costs) for i in members), members)
                for members in groups(entries, costs)]
     weighed.sort(key=lambda pair: (-pair[0], pair[1][0]))
     loads = [0.0] * count
     shards: list[list[int]] = [[] for _ in range(count)]
     for cost, members in weighed:
+        members = [i for i in members if entries[i].label not in platforms]
+        if not members:
+            continue
         target = min(range(count), key=lambda shard: (loads[shard], shard))
         loads[target] += cost
         shards[target].extend(members)
     return [sorted(members) for members in shards]
 
 
-def narrow(plan: criteria_module.Plan, shard: Shard,
-           costs: dict[str, float] | None = None) -> criteria_module.Plan:
+def expected(entries, count: int, costs: dict[str, float] | None = None,
+             platforms: dict[str, str] | None = None) -> dict[str, list[int]]:
+    """Every shard a run of `count` Linux shards has, by key, and its criteria: `1`..`n`, and each
+    platform at least one of these criteria is pinned to."""
+    platforms = load_platforms() if platforms is None else platforms
+    shards = {str(index): members
+              for index, members in enumerate(assign(entries, count, costs, platforms), start=1)}
+    for platform in PLATFORMS:
+        pinned = [i for i, entry in enumerate(entries) if platforms.get(entry.label) == platform]
+        if pinned:
+            shards[platform] = pinned
+    return shards
+
+
+def narrow(plan: criteria_module.Plan, shard: Shard, costs: dict[str, float] | None = None,
+           platforms: dict[str, str] | None = None) -> criteria_module.Plan:
     """The plan with only this shard's criteria in it, in ledger order."""
-    chosen = assign(plan.entries, shard.count, costs)[shard.index - 1]
+    platforms = load_platforms() if platforms is None else platforms
+    check_platforms(plan, platforms)
+    chosen = expected(plan.entries, shard.count, costs, platforms).get(shard.key, [])
     return criteria_module.Plan(milestone=plan.milestone, ledgers=plan.ledgers,
                                 entries=tuple(plan.entries[i] for i in chosen),
                                 declarations=plan.declarations)
 
 
 def estimated_seconds(plan: criteria_module.Plan, count: int,
-                      costs: dict[str, float] | None = None) -> list[tuple[int, float]]:
-    """(criteria, estimated seconds) per shard, for choosing a count."""
+                      costs: dict[str, float] | None = None) -> list[tuple[str, int, float]]:
+    """(shard, criteria, estimated seconds) per shard, for choosing a count."""
     costs = load_costs() if costs is None else costs
-    return [(len(members), sum(estimate(plan.entries[i], costs) for i in members))
-            for members in assign(plan.entries, count, costs)]
+    return [(key, len(members), sum(estimate(plan.entries[i], costs) for i in members))
+            for key, members in expected(plan.entries, count, costs).items()]
 
 
 # --- Records --------------------------------------------------------------------------------------
@@ -213,7 +278,7 @@ def record_document(plan: criteria_module.Plan, shard: Shard, commit: str, force
     return {
         "schema": RECORD_SCHEMA,
         "milestone": plan.milestone.id,
-        "shard": shard.index,
+        "shard": shard.key,
         "count": shard.count,
         "commit": commit,
         "ci": force_ci,
@@ -274,47 +339,37 @@ def record_paths(arguments) -> list[Path]:
 class Merged:
     results: tuple
     #: (shard, criteria, seconds) per shard, in shard order.
-    durations: tuple[tuple[int, int, float], ...]
+    durations: tuple[tuple[str, int, float], ...]
 
 
 def merge(plan: criteria_module.Plan, count: int, paths, commit: str, force_ci: bool,
-          costs: dict[str, float] | None = None) -> Merged:
+          costs: dict[str, float] | None = None,
+          platforms: dict[str, str] | None = None) -> Merged:
     """Every shard's record checked against the assignment, and the results in ledger order."""
-    expected = assign(plan.entries, count, costs)
-    records: dict[int, tuple[Path, dict]] = {}
-    for path in paths:
-        document = _read_record(Path(path))
-        _check_identity(Path(path), document, plan.milestone.id, count, commit, force_ci)
-        index = document["shard"]
-        if index in records:
-            raise ShardError(f"shard {index}/{count} has two records: {records[index][0]} and "
-                             f"{path}")
-        records[index] = (Path(path), document)
+    platforms = load_platforms() if platforms is None else platforms
+    check_platforms(plan, platforms)
+    shards = expected(plan.entries, count, costs, platforms)
+    records = _records_by_shard(paths, plan.milestone.id, count, commit, force_ci)
 
-    missing = [index for index in range(1, count + 1) if index not in records]
+    missing = [key for key in shards if key not in records]
     if missing:
-        names = ", ".join(f"{index}/{count}" for index in missing)
-        raise ShardError(f"{len(missing)} of {count} shard record(s) missing — {names}. A shard "
-                         "that never reported is not a shard that passed: its criteria were not "
-                         "evaluated, so the ledger has no verdict")
+        names = ", ".join(f"{key}/{count}" for key in missing)
+        raise ShardError(f"{len(missing)} of {len(shards)} shard record(s) missing — {names}. A "
+                         "shard that never reported is not a shard that passed: its criteria were "
+                         "not evaluated, so the ledger has no verdict")
+    unknown = sorted(key for key in records if key not in shards)
+    if unknown:
+        raise ShardError(f"record(s) of shard(s) this run does not have: {', '.join(unknown)}")
 
     by_label: dict[str, dict] = {}
     durations = []
-    for index in range(1, count + 1):
-        path, document = records[index]
-        wanted = [plan.entries[i].label for i in expected[index - 1]]
-        got = [item["label"] for item in document["criteria"]]
-        if got != wanted:
-            absent = sorted(set(wanted) - set(got))
-            extra = sorted(set(got) - set(wanted))
-            raise ShardError(
-                f"{path}: shard {index}/{count} evaluated a different set from the one this "
-                f"checkout assigns it — {len(absent)} assigned and absent "
-                f"({', '.join(absent[:5]) or 'none'}), {len(extra)} present and not assigned "
-                f"({', '.join(extra[:5]) or 'none'}), or the same set in another order")
+    for key, members in shards.items():
+        path, document = records[key]
+        _check_assignment(path, f"{key}/{count}", [plan.entries[i].label for i in members],
+                          [item["label"] for item in document["criteria"]])
         for item in document["criteria"]:
             by_label[item["label"]] = item
-        durations.append((index, len(got), float(document.get("seconds", 0.0))))
+        durations.append((key, len(members), float(document.get("seconds", 0.0))))
 
     results = tuple(
         criteria_module.Result(entry.criterion, by_label[entry.label]["status"],
@@ -322,6 +377,31 @@ def merge(plan: criteria_module.Plan, count: int, paths, commit: str, force_ci: 
                                float(by_label[entry.label].get("seconds", 0.0)))
         for entry in plan.entries)
     return Merged(results=results, durations=tuple(durations))
+
+
+def _records_by_shard(paths, milestone: str, count: int, commit: str,
+                      force_ci: bool) -> dict[str, tuple[Path, dict]]:
+    records: dict[str, tuple[Path, dict]] = {}
+    for path in paths:
+        document = _read_record(Path(path))
+        _check_identity(Path(path), document, milestone, count, commit, force_ci)
+        key = str(document["shard"])
+        if key in records:
+            raise ShardError(f"shard {key}/{count} has two records: {records[key][0]} and {path}")
+        records[key] = (Path(path), document)
+    return records
+
+
+def _check_assignment(path: Path, shard: str, wanted: list[str], got: list[str]) -> None:
+    if got == wanted:
+        return
+    absent = sorted(set(wanted) - set(got))
+    extra = sorted(set(got) - set(wanted))
+    raise ShardError(
+        f"{path}: shard {shard} evaluated a different set from the one this checkout assigns it "
+        f"— {len(absent)} assigned and absent ({', '.join(absent[:5]) or 'none'}), {len(extra)} "
+        f"present and not assigned ({', '.join(extra[:5]) or 'none'}), or the same set in another "
+        "order")
 
 
 def _check_identity(path: Path, document: dict, milestone: str, count: int, commit: str,

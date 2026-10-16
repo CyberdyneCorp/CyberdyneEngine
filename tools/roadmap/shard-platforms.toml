@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# The `where = "ci"` criteria only one other operating system can answer, and the hosted runner that
+# answers each. tools/roadmap/shard.py leaves them out of every Linux shard of the nightly ledger and
+# gives each its own shard on that system (`--shard macos/<n>`, `--shard windows/<n>`); `merge`
+# requires that shard's record like any other. A pin may only name a `where = "ci"` criterion: one
+# that runs everywhere would simply stop running on Linux.
+#
+# Each criterion's own `reason` says this is where it is answered: "the macOS leg of the matrix is
+# where it is answered", "D3D12 exists only on Windows".
+
+[runner]
+"m11d5:metal-backend-is-native" = "macos"
+"m11d5:d3d12-backend-exists" = "windows"

@@ -37,6 +37,7 @@ Run directly, or through `just roadmap-test`.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import itertools
 import json
@@ -3408,19 +3409,74 @@ def _shard_plan(entries) -> criteria_module.Plan:
 
 
 def _shard_records(root: Path, plan: criteria_module.Plan, count: int, costs, commit: str,
-                   status=criteria_module.OK) -> list[Path]:
-    """What `count` shards that each evaluated their assignment would have written."""
+                   status=criteria_module.OK, platforms=None) -> list[Path]:
+    """What every shard of a run of `count` that evaluated its assignment would have written."""
+    platforms = {} if platforms is None else platforms
     paths = []
-    for index in range(1, count + 1):
-        shard = shard_module.Shard(index, count)
-        narrowed = shard_module.narrow(plan, shard, costs)
+    keys = shard_module.expected(plan.entries, count, costs, platforms)
+    for key in keys:
+        shard = (shard_module.Shard(int(key), count) if key.isdigit()
+                 else shard_module.Shard(0, count, key))
+        narrowed = shard_module.narrow(plan, shard, costs, platforms)
         results = [criteria_module.Result(entry.criterion, status, "", 2.0)
                    for entry in narrowed.entries]
-        path = root / f"shard-{index}.json"
+        path = root / f"shard-{key}.json"
         shard_module.write_record(path, shard_module.record_document(
             narrowed, shard, commit, True, results))
         paths.append(path)
     return paths
+
+
+def _check_platform_shards(root: Path, entries, costs, commit: str) -> None:
+    """A `where = "ci"` criterion pinned to another system's runner leaves every Linux shard and
+    becomes that system's shard, which the merge then requires like any other."""
+    pinned = criteria_module.Criterion(id="metal", describe="d", source="s", kind="command",
+                                       ci_job="j", run="just test-unit -R metal", where="ci",
+                                       reason="macOS only")
+    with_pin = [*entries, criteria_module.PlanEntry(criterion=pinned, declared_by=("m11d5",),
+                                                    permanent=False)]
+    platforms = {"m11d5:metal": "macos"}
+    plan = _shard_plan(with_pin)
+    linux = [index for members in shard_module.assign(with_pin, 3, costs, platforms)
+             for index in members]
+    check("a criterion pinned to macOS is in no Linux shard", len(with_pin) - 1 not in linux)
+    shards = shard_module.expected(with_pin, 3, costs, platforms)
+    check("and is the whole of the macOS shard", shards.get("macos") == [len(with_pin) - 1],
+          f"{shards}")
+    check("--shard reads <platform>/n", shard_module.parse("macos/3")
+          == shard_module.Shard(0, 3, "macos"))
+    expect_error("--shard refuses a platform with no runner", shard_module.ShardError,
+                 lambda: shard_module.parse("solaris/3"))
+    paths = _shard_records(root / "platform", plan, 3, costs, commit, platforms=platforms)
+    merged = shard_module.merge(plan, 3, paths, commit, True, costs, platforms)
+    check("the merge reads the macOS shard's verdict for the pinned criterion",
+          merged.results[-1].status == criteria_module.OK
+          and "macos" in [key for key, _, _ in merged.durations])
+    linux_only = [path for path in paths if "macos" not in path.name]
+    try:
+        shard_module.merge(plan, 3, linux_only, commit, True, costs, platforms)
+        refused = ""
+    except shard_module.ShardError as error:
+        refused = str(error)
+    check("A MISSING PLATFORM SHARD IS A FAILURE like a missing Linux one", "macos/3" in refused,
+          refused or "accepted")
+    local = dataclasses.replace(pinned, where="local")
+    try:
+        shard_module.check_platforms(_shard_plan([*entries, criteria_module.PlanEntry(
+            criterion=local, declared_by=("m11d5",), permanent=False)]), platforms)
+        refused = ""
+    except shard_module.ShardError as error:
+        refused = str(error)
+    check("a pin on a criterion that runs everywhere is refused: it would just stop running",
+          "where" in refused, refused or "accepted")
+    real = shard_module.load_platforms()
+    plan = _plan(max((gate.milestone for gate in gates_module.load().gates
+                      if gate.klass == "milestone" and gate.state == "green"),
+                     key=criteria_module.rung))
+    labels = {entry.label: entry.criterion.where for entry in plan.entries}
+    stale = sorted(label for label in real if labels.get(label) != "ci")
+    check("every committed pin names a `where = \"ci\"` criterion of the newest ledger",
+          not stale, f"{stale}")
 
 
 def test_ledger_shards(root: Path) -> None:
@@ -3453,15 +3509,15 @@ def test_ledger_shards(root: Path) -> None:
     labels = [entry.label for entry in entries]
     costs = {"m1:four-profiles": 9000.0, "m8c:ml-off": 3000.0}
     for count in (1, 2, 3, 5, 20):
-        shards = shard_module.assign(entries, count, costs)
+        shards = shard_module.assign(entries, count, costs, {})
         flat = [index for members in shards for index in members]
         check(f"{count} shard(s): every criterion is in exactly one shard",
               sorted(flat) == list(range(len(entries))), f"{shards}")
         check(f"{count} shard(s): each shard keeps the ledger's order",
               all(members == sorted(members) for members in shards), f"{shards}")
-    shards = shard_module.assign(entries, 3, costs)
+    shards = shard_module.assign(entries, 3, costs, {})
     check("the assignment is a function of the plan: the same plan, the same shards",
-          shards == shard_module.assign(list(entries), 3, dict(costs)))
+          shards == shard_module.assign(list(entries), 3, dict(costs), {}))
     home = {index: number for number, members in enumerate(shards) for index in members}
     check("criteria sharing a matrix row share a shard, so the row is built once",
           home[0] == home[len(entries) - 2], f"{shards}")
@@ -3475,15 +3531,16 @@ def test_ledger_shards(root: Path) -> None:
           "a rebuild", [0] in split and [len(entries) - 2] in split, f"{split}")
 
     plan = _shard_plan(entries)
+    platforms = {}
     commit = "c" * 40
     records = root / "records"
     paths = _shard_records(records, plan, 3, costs, commit)
-    merged = shard_module.merge(plan, 3, paths, commit, True, costs)
+    merged = shard_module.merge(plan, 3, paths, commit, True, costs, {})
     check("the merge puts every shard's results back in ledger order",
           [result.criterion.id for result in merged.results]
           == [entry.criterion.id for entry in entries])
     check("the merge reports each shard's duration",
-          [index for index, _, _ in merged.durations] == [1, 2, 3])
+          [key for key, _, _ in merged.durations] == ["1", "2", "3"])
     check("a directory stands for every record in it",
           sorted(shard_module.record_paths([records])) == sorted(paths))
     check("a directory nothing was downloaded into stands for no records",
@@ -3498,30 +3555,31 @@ def test_ledger_shards(root: Path) -> None:
             check(name, False, "accepted")
 
     refused("A MISSING SHARD IS A FAILURE, NEVER A SMALLER GREEN", "2/3",
-            lambda: shard_module.merge(plan, 3, [paths[0], paths[2]], commit, True, costs))
+            lambda: shard_module.merge(plan, 3, [paths[0], paths[2]], commit, True, costs, {}))
     refused("no shard at all is every shard missing", "3 of 3",
-            lambda: shard_module.merge(plan, 3, [], commit, True, costs))
+            lambda: shard_module.merge(plan, 3, [], commit, True, costs, {}))
     refused("a shard reported twice is refused", "two records",
-            lambda: shard_module.merge(plan, 3, [*paths, paths[1]], commit, True, costs))
+            lambda: shard_module.merge(plan, 3, [*paths, paths[1]], commit, True, costs, {}))
     refused("records of another commit are refused", "checkout is",
-            lambda: shard_module.merge(plan, 3, paths, "d" * 40, True, costs))
+            lambda: shard_module.merge(plan, 3, paths, "d" * 40, True, costs, {}))
     refused("records of another shard count are refused", "disagree about the count",
-            lambda: shard_module.merge(plan, 4, paths, commit, True, costs))
+            lambda: shard_module.merge(plan, 4, paths, commit, True, costs, {}))
     refused("records made without --ci are refused by a --ci merge", "--ci",
-            lambda: shard_module.merge(plan, 3, paths, commit, False, costs))
+            lambda: shard_module.merge(plan, 3, paths, commit, False, costs, {}))
     document = json.loads(paths[1].read_text(encoding="utf-8"))
     document["criteria"] = document["criteria"][:-1]
     short = root / "short" / "shard-2.json"
     shard_module.write_record(short, document)
     refused("a shard that skipped one of its criteria is refused, naming it", labels[
-        shard_module.assign(entries, 3, costs)[1][-1]],
-            lambda: shard_module.merge(plan, 3, [paths[0], short, paths[2]], commit, True, costs))
+        shard_module.assign(entries, 3, costs, {})[1][-1]],
+            lambda: shard_module.merge(plan, 3, [paths[0], short, paths[2]], commit, True, costs, {}))
     moved = dict(costs, **{"m2:light-0": 50000.0})
     refused("records of a different assignment are refused rather than re-read", "different set",
-            lambda: shard_module.merge(plan, 3, paths, commit, True, moved))
+            lambda: shard_module.merge(plan, 3, paths, commit, True, moved, {}))
 
     red = _shard_records(root / "red", plan, 3, costs, commit, criteria_module.FAILED)
-    merged = shard_module.merge(plan, 3, red, commit, True, costs)
+    _check_platform_shards(root, entries, costs, commit)
+    merged = shard_module.merge(plan, 3, red, commit, True, costs, {})
     with contextlib.redirect_stdout(io.StringIO()):
         verdict = roadmap_module._summarise(plan, merged.results, False)
     check("a failure inside any shard fails the merged verdict", verdict == GATE_EXIT)

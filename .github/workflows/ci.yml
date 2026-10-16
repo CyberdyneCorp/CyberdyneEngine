@@ -1684,7 +1684,12 @@ jobs:
     # by this job rather than cancelled by the platform. A shard over its share is a sign to raise
     # the count, which `--estimate` sizes.
     timeout-minutes: 330
+    # CY_BUILD_DIR names the unpacked tree the way every ledger close names its own: criteria that
+    # read the editor at `${CY_BUILD_DIR:-build/dev}/editor` (m11c:the-shot-does-not-overclaim-the-
+    # editor) only find it where `just build-editor` puts it when the variable is set — unset, the
+    # editor lands in build/editor and the criterion reports "the editor was not built".
     env:
+      CY_BUILD_DIR: build/dev
       CY_TIDY_CACHE: ${{ github.workspace }}/tidy-cache
     strategy:
       # Every shard runs to its verdict whatever another shard says: a red shard is one finding, and
@@ -1715,11 +1720,16 @@ jobs:
       # libclang 18 is the reflection generator's frontend: without it `m0:generated-code`,
       # `m1:identity-manifest` and `m4:generated-code` fail naming it, and `m1:identity-rename` finds
       # no `integration.reflect_generator` registered — the `generated` and `identity` jobs install
-      # the same two packages for the same reason.
+      # the same two packages for the same reason. mesa-vulkan-drivers is lavapipe, a Vulkan device
+      # on the processor: `m11d:msaa-through-the-graph`, `m11d:multiview-by-capability` and
+      # `m8a:authoring-recipe` need A device and refuse a skipped suite as evidence, and the runner
+      # has a Vulkan loader with no driver behind it. It is not a GPU and is not counted as one —
+      # `requires = "gpu"` looks for a DRM render node, which lavapipe does not create, so every
+      # criterion that asks for a graphics card is still NOT EVALUATED here.
       - name: Install the generator, the window-system headers SDL3 builds against, and libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18 mesa-vulkan-drivers
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
@@ -1730,11 +1740,13 @@ jobs:
           python-version: '3.12'
       # Every tool a criterion of the ledger runs: the pinned LLVM tooling for format and lint, the
       # specification CLI, the reflection generator's bindings, the deterministic math generators'
-      # arithmetic (`generate-check`), the spelling dictionary, and Pillow for the recipe selftest's
-      # `_ship-stills` case inside `m1:workflows` and the M11.c renders.
+      # arithmetic (`generate-check`), the spelling dictionary, Pillow for the recipe selftest's
+      # `_ship-stills` case inside `m1:workflows` and the M11.c renders, and matplotlib for
+      # `m9:figures-regenerated`, which redraws the committed figures — pinned to the release they
+      # were drawn with, because another one lays the same curve out differently.
       - name: Install the pinned LLVM tooling, the specification CLI and the generators' modules
         run: |
-          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow matplotlib==3.10.0 numpy==2.1.3
           npm install -g @fission-ai/openspec@1.14.0
       # The files the `quality` job's clang-tidy passed at this commit. A `pattern`, so a run whose
       # `quality` job uploaded nothing downloads nothing rather than failing: without it `m0:lint`
@@ -1773,6 +1785,61 @@ jobs:
           path: ledger-shards
           if-no-files-found: ignore
 
+  # THE CRITERIA ONLY ANOTHER SYSTEM CAN ANSWER. Two `where = "ci"` criteria of M11.d.5 name suites
+  # only one operating system registers: `metal-backend-is-native` (macOS) and `d3d12-backend-exists`
+  # (Windows). In a Linux shard they find none of their suites and fail, which is a verdict about the
+  # runner rather than the tree; each criterion's own `reason` says "the macOS leg of the matrix is
+  # where it is answered". tools/roadmap/shard-platforms.toml pins them, shard.py leaves them out of
+  # every Linux shard, and this job evaluates each system's pinned criteria on that system, against
+  # the tree its own `build` leg packed — the same suites `test macos-arm64` and `test
+  # windows-x86_64` run. `milestone-verdict` requires these records like any shard's.
+  milestone-platform:
+    name: milestone ${{ matrix.platform }}/12 — the criteria only that system can answer (nightly)
+    needs: build
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    # The ledger prints UTF-8, and Windows' Python writes a pipe in the ANSI code page otherwise.
+    env:
+      PYTHONUTF8: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos, label: macos-arm64, os: macos-14 }
+          - { platform: windows, label: windows-x86_64, os: windows-2022, msvc: x64 }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      # The Xcode the macOS `build` leg configured its tree with; the `build` job says why.
+      - if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
+      - name: The exit criteria pinned to this system, evaluated once each
+        run: just roadmap-milestone m11d5 --ci --shard ${{ matrix.platform }}/12 --shard-record ledger-shards/shard-${{ matrix.platform }}.json
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ledger-shard-${{ matrix.platform }}
+          path: ledger-shards
+          if-no-files-found: ignore
+
   # ONE VERDICT FROM EVERY SHARD. `just roadmap-merge` recomputes which criteria each shard was
   # assigned, from this checkout, and refuses a record that is missing, reported twice, of another
   # commit or count, or that evaluated a different set — then summarises the whole plan exactly as an
@@ -1781,7 +1848,9 @@ jobs:
   # SUCCESS, and a missing shard read as a smaller green is the defect this job exists to prevent.
   milestone-verdict:
     name: milestone — one verdict from every shard (nightly)
-    needs: milestone
+    needs:
+      - milestone
+      - milestone-platform
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15

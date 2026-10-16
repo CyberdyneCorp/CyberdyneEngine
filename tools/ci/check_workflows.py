@@ -717,6 +717,9 @@ def build_tree_handoff(root: pathlib.Path, workflows: list[pathlib.Path]) -> lis
 # and the merge is records the merge refuses or shards it never waits for. This rule holds the shape.
 LEDGER = re.compile(r"\bjust roadmap-milestone (?P<id>[a-z0-9]+)(?P<rest>[^\n]*)")
 SHARD_ARGUMENT = re.compile(r"--shard \$\{\{\s*matrix\.shard\s*\}\}/(?P<count>\d+)(?:\s|$)")
+PLATFORM_ARGUMENT = re.compile(
+    r"--shard \$\{\{\s*matrix\.platform\s*\}\}/(?P<count>\d+)(?:\s|$)")
+PLATFORM_ENTRY = re.compile(r"^\s+-\s*\{[^}]*\bplatform:\s*(?P<platform>[a-z]+)")
 MERGE = re.compile(r"\bjust roadmap-merge (?P<id>[a-z0-9]+)(?P<rest>[^\n]*)")
 MERGE_COUNT = re.compile(r"--shards (?P<count>\d+)(?:\s|$)")
 SHARD_MATRIX = re.compile(r"^\s+shard:\s*\[(?P<values>[^\]]*)\]\s*$")
@@ -735,6 +738,46 @@ def _ledger_runs(body: list[str]) -> list[re.Match]:
 
 def _job_key(body: list[str], pattern: re.Pattern) -> re.Match | None:
     return next((match for match in map(pattern.match, body) if match), None)
+
+
+def _common_shard_problems(where: str, body: list[str], run: re.Match) -> list[str]:
+    """What every shard job owes the merge, Linux or another system's."""
+    problems: list[str] = []
+    if "--shard-record" not in run.group("rest"):
+        problems.append(f"{where} writes no `--shard-record`, so the merge has nothing to read")
+    if not any(re.search(r"^\s+fail-fast:\s*false\s*$", entry) for entry in body):
+        problems.append(f"{where} does not set `fail-fast: false`: one red shard would cancel the "
+                        "rest, and their findings with them")
+    timeout = _job_key(body, TIMEOUT_KEY)
+    if timeout is None or int(timeout.group("minutes")) >= HOSTED_JOB_LIMIT_MINUTES:
+        problems.append(f"{where} sets no `timeout-minutes` under the hosted job limit of "
+                        f"{HOSTED_JOB_LIMIT_MINUTES}: a shard that overruns must be reported by "
+                        "the job, not cancelled by the platform")
+    uploads = [step for step in _steps(body) if "actions/upload-artifact" in step]
+    if not any(re.search(r"if:\s*always\(\)", step) for step in uploads):
+        problems.append(f"{where} does not upload its record under `if: always()`: a red shard's "
+                        "record is the evidence the merge reads")
+    return problems
+
+
+def pinned_platforms(root: pathlib.Path) -> set[str]:
+    """The systems tools/roadmap/shard-platforms.toml pins a criterion to."""
+    table = root / "tools" / "roadmap" / "shard-platforms.toml"
+    if not table.exists():
+        return set()
+    return set(tomllib.loads(table.read_text(encoding="utf-8")).get("runner", {}).values())
+
+
+def _platform_job_problems(root: pathlib.Path, where: str, body: list[str],
+                           run: re.Match) -> list[str]:
+    problems = _common_shard_problems(where, body, run)
+    declared = {match.group("platform") for match in map(PLATFORM_ENTRY.match, body) if match}
+    wanted = pinned_platforms(root)
+    if declared != wanted:
+        problems.append(f"{where} runs the platform shards {sorted(declared)} and "
+                        f"tools/roadmap/shard-platforms.toml pins criteria to {sorted(wanted)}: a "
+                        "pinned system with no job is a set of criteria no job evaluates")
+    return problems
 
 
 def _shard_job_problems(path: pathlib.Path, job: str, line: int, body: list[str],
@@ -756,20 +799,7 @@ def _shard_job_problems(path: pathlib.Path, job: str, line: int, body: list[str]
         problems.append(f"{where} runs shard i of {count} and its matrix lists "
                         f"`shard: [{', '.join(values)}]`, not 1..{count}: a shard absent from the "
                         "matrix is a set of criteria no job evaluates")
-    if "--shard-record" not in run.group("rest"):
-        problems.append(f"{where} writes no `--shard-record`, so the merge has nothing to read")
-    if not any(re.search(r"^\s+fail-fast:\s*false\s*$", entry) for entry in body):
-        problems.append(f"{where} does not set `fail-fast: false`: one red shard would cancel the "
-                        "rest, and their findings with them")
-    timeout = _job_key(body, TIMEOUT_KEY)
-    if timeout is None or int(timeout.group("minutes")) >= HOSTED_JOB_LIMIT_MINUTES:
-        problems.append(f"{where} sets no `timeout-minutes` under the hosted job limit of "
-                        f"{HOSTED_JOB_LIMIT_MINUTES}: a shard that overruns must be reported by "
-                        "the job, not cancelled by the platform")
-    uploads = [step for step in _steps(body) if "actions/upload-artifact" in step]
-    if not any(re.search(r"if:\s*always\(\)", step) for step in uploads):
-        problems.append(f"{where} does not upload its record under `if: always()`: a red shard's "
-                        "record is the evidence the merge reads")
+    problems.extend(_common_shard_problems(where, body, run))
     return problems, count
 
 
@@ -778,12 +808,45 @@ def ledger_shards(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str
     problems: list[str] = []
     for path in workflows:
         jobs = _job_blocks(path)
+        platform_jobs: list[tuple[str, int]] = []
+        linux_jobs: list[tuple[str, re.Match, int]] = []
         for job, (line, body) in jobs.items():
             for run in _ledger_runs(body):
+                platform = PLATFORM_ARGUMENT.search(run.group("rest"))
+                if platform is not None:
+                    where = f"{path.name}:{line} job '{job}'"
+                    problems.extend(_platform_job_problems(root, where, body, run))
+                    platform_jobs.append((job, int(platform.group("count"))))
+                    continue
                 found, count = _shard_job_problems(path, job, line, body, run)
                 problems.extend(found)
                 if count is not None:
-                    problems.extend(_merge_problems(path, job, jobs, run, count))
+                    linux_jobs.append((job, run, count))
+        for job, run, count in linux_jobs:
+            problems.extend(_merge_problems(path, job, jobs, run, count))
+            problems.extend(_platform_coverage(root, path, job, jobs, run, count, platform_jobs))
+    return problems
+
+
+def _platform_coverage(root: pathlib.Path, path: pathlib.Path, job: str, jobs, run: re.Match,
+                       count: int, platform_jobs: list[tuple[str, int]]) -> list[str]:
+    """The pinned systems' shards exist, count the same run, and the merge waits for them."""
+    if not pinned_platforms(root):
+        return []
+    if not platform_jobs:
+        return [f"{path.name}: tools/roadmap/shard-platforms.toml pins criteria to another system "
+                f"and no job runs `just roadmap-milestone {run.group('id')} --shard "
+                "${{ matrix.platform }}/<n>`, so those criteria are evaluated by nobody"]
+    problems = []
+    for name, platform_count in platform_jobs:
+        if platform_count != count:
+            problems.append(f"{path.name}: job '{name}' runs platform shards of {platform_count} "
+                            f"and job '{job}' runs {count}: the merge refuses one or the other")
+        for merger, (line, body) in jobs.items():
+            text = "\n".join(entry for entry in body if not entry.lstrip().startswith("#"))
+            if MERGE.search(text) and name not in _needs(body):
+                problems.append(f"{path.name}:{line} job '{merger}' does not `needs: {name}`, so "
+                                "it can merge before the platform shards have reported")
     return problems
 
 
@@ -1290,8 +1353,17 @@ def selftest(root: pathlib.Path) -> int:
              "a merge counting fewer shards than run"),
             ("    if: always()\n", "    if: success()\n", "always()",
              "a merge skipped when a shard failed"),
-            ("    needs: ledger\n", "    needs: build\n", "needs: ledger",
+            ("      - ledger\n      - elsewhere\n", "      - elsewhere\n", "needs: ledger",
              "a merge that does not wait for the shards"),
+            ("      - ledger\n      - elsewhere\n", "      - ledger\n", "needs: elsewhere",
+             "a merge that does not wait for the platform shards"),
+            ("          - { platform: windows, os: windows-2022 }\n", "",
+             "pins criteria to ['macos', 'windows']",
+             "a pinned system with no platform shard"),
+            ("${{ matrix.platform }}/3", "${{ matrix.platform }}/2", "runs platform shards of 2",
+             "platform shards counting another run"),
+            ("--shard ${{ matrix.platform }}/3", "--shard 1/3", "evaluated by nobody",
+             "the platform shards' job turned into one more Linux shard"),
             ("      - run: just roadmap-merge m11d5 --ci --shards 3 ledger\n",
              "      - run: just env-doctor\n", "no job runs `just roadmap-merge",
              "shards that no job merges"),
@@ -1319,7 +1391,16 @@ def selftest(root: pathlib.Path) -> int:
             "      - run: just roadmap-milestone m11d5 --ci --shard ${{ matrix.shard }}/3"
             " --shard-record r/s.json\n"
             "      - if: always()\n        uses: actions/upload-artifact@v5\n"
-            "  verdict:\n    needs: ledger\n    if: always()\n    runs-on: ubuntu-24.04\n"
+            "  elsewhere:\n    runs-on: ${{ matrix.os }}\n    timeout-minutes: 120\n"
+            "    strategy:\n      fail-fast: false\n      matrix:\n        include:\n"
+            "          - { platform: macos, os: macos-14 }\n"
+            "          - { platform: windows, os: windows-2022 }\n"
+            "    steps:\n"
+            "      - run: just roadmap-milestone m11d5 --ci --shard ${{ matrix.platform }}/3"
+            " --shard-record r/p.json\n"
+            "      - if: always()\n        uses: actions/upload-artifact@v5\n"
+            "  verdict:\n    needs:\n      - ledger\n      - elsewhere\n    if: always()\n"
+            "    runs-on: ubuntu-24.04\n"
             "    steps:\n      - uses: actions/download-artifact@v5\n"
             "      - run: just roadmap-merge m11d5 --ci --shards 3 ledger\n"
         )
