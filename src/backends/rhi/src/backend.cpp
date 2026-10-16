@@ -118,6 +118,61 @@ const BackendRegistration* find_backend(const char* name) noexcept {
     return nullptr;
 }
 
+namespace {
+
+/// The backends `create_device` will try, in order, resolved under the registry's lock so that a
+/// backend registered concurrently either is or is not in the table for the whole decision.
+struct Candidates {
+    BackendRegistration entries[kMaxBackends] = {};
+    u32 count = 0;
+    /// Whether entries[0] is the backend the caller named, which is never silently replaced.
+    bool first_is_requested = false;
+    const char* reason = "";
+
+    void add(const BackendRegistration& entry) noexcept {
+        if (count < kMaxBackends) {
+            entries[count++] = entry;
+        }
+    }
+};
+
+/// The chain: what was asked for, then every available non-null backend in registration order, then
+/// the null backend. A request that is registered and available is the whole chain.
+Candidates resolve_candidates(Registry& table, const char* requested) noexcept {
+    Candidates out;
+    const std::lock_guard<std::mutex> lock(table.mutex);
+    if (requested[0] != '\0') {
+        const BackendRegistration* named = nullptr;
+        for (u32 index = 0; index < table.count && named == nullptr; ++index) {
+            if (same_name(table.entries[index].name, requested)) {
+                named = &table.entries[index];
+            }
+        }
+        if (named != nullptr && available(*named)) {
+            out.add(*named);
+            out.first_is_requested = true;
+            return out;
+        }
+        out.reason = named != nullptr
+                         ? "the requested backend is registered but reports itself unavailable"
+                         : not_registered_reason(requested);
+    }
+    for (u32 index = 0; index < table.count; ++index) {
+        if (!same_name(table.entries[index].name, kNullBackendName) &&
+            available(table.entries[index])) {
+            out.add(table.entries[index]);
+        }
+    }
+    for (u32 index = 0; index < table.count; ++index) {
+        if (same_name(table.entries[index].name, kNullBackendName)) {
+            out.add(table.entries[index]);
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
 Expected<Device*, Error> create_device(Allocator& allocator, const char* requested,
                                        const DeviceDescription& desc,
                                        BackendSelection& selection) noexcept {
@@ -126,56 +181,34 @@ Expected<Device*, Error> create_device(Allocator& allocator, const char* request
     selection = BackendSelection{};
     selection.requested = requested != nullptr ? requested : "";
 
-    // The chain, in order: what was asked for, then the first available non-null backend, then the
-    // null backend. Resolved under the lock so that a backend registered concurrently either is or
-    // is not in the table for the whole decision, rather than for part of it.
-    const BackendRegistration* chosen = nullptr;
-    const char* reason = "";
-    {
-        const std::lock_guard<std::mutex> lock(table.mutex);
-
-        if (selection.requested[0] != '\0') {
-            for (u32 index = 0; index < table.count; ++index) {
-                if (!same_name(table.entries[index].name, selection.requested)) {
-                    continue;
-                }
-                if (available(table.entries[index])) {
-                    chosen = &table.entries[index];
-                } else {
-                    reason = "the requested backend is registered but reports itself unavailable";
-                }
-                break;
-            }
-            if (chosen == nullptr && reason[0] == '\0') {
-                reason = not_registered_reason(selection.requested);
-            }
-        }
-
-        if (chosen == nullptr) {
-            for (u32 index = 0; index < table.count; ++index) {
-                if (!same_name(table.entries[index].name, kNullBackendName) &&
-                    available(table.entries[index])) {
-                    chosen = &table.entries[index];
-                    break;
-                }
-            }
-        }
-        if (chosen == nullptr) {
-            for (u32 index = 0; index < table.count; ++index) {
-                if (same_name(table.entries[index].name, kNullBackendName)) {
-                    chosen = &table.entries[index];
-                    break;
-                }
-            }
-        }
-    }
-
-    if (chosen == nullptr) {
+    Candidates candidates = resolve_candidates(table, selection.requested);
+    if (candidates.count == 0) {
         return fail(ErrorCode::Unavailable,
                     "no RHI backend is registered, not even the null one — link cy::rhi-null");
     }
 
-    Expected<Device*, Error> device = chosen->create(allocator, desc);
+    // A backend that is AVAILABLE can still fail to create a device: `is_available` answers without
+    // creating one, and a Vulkan loader with no driver behind it — every hosted CI runner — loads
+    // fine and then refuses `vkCreateInstance`. Chosen by default, such a backend is skipped for
+    // the next one, ending at the null backend that cannot fail this way. Chosen BY NAME it is not:
+    // the caller asked for that backend, and quietly running another one would answer a question
+    // about Vulkan with the null device's answer.
+    const BackendRegistration* chosen = nullptr;
+    Expected<Device*, Error> device =
+        fail(ErrorCode::Unavailable, "no RHI backend could create a device");
+    const char* reason = candidates.reason;
+    for (u32 index = 0; index < candidates.count; ++index) {
+        chosen = &candidates.entries[index];
+        device = chosen->create(allocator, desc);
+        if (device || (index == 0 && candidates.first_is_requested)) {
+            break;
+        }
+        if (reason[0] == '\0') {
+            reason =
+                "an available backend failed to create a device, so the next one in the "
+                "chain was used";
+        }
+    }
     if (!device) {
         return device;
     }

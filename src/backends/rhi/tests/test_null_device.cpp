@@ -390,6 +390,61 @@ CY_TEST_CASE("the backend registry falls back to null, and says that it did") {
     cy::rhi::destroy_device(allocator, *device);
 }
 
+namespace {
+
+bool always_available() noexcept {
+    return true;
+}
+
+bool never_available() noexcept {
+    return false;
+}
+
+cy::Expected<cy::rhi::Device*, cy::Error> refuse_to_create(
+    cy::Allocator&, const cy::rhi::DeviceDescription&) noexcept {
+    return cy::fail(cy::ErrorCode::Unavailable, "test-unloadable: no driver behind the loader");
+}
+
+void destroy_nothing(cy::Allocator&, cy::rhi::Device*) noexcept {}
+
+}  // namespace
+
+// A Vulkan loader with no driver behind it — every hosted CI runner — answers `is_available` yes
+// and then refuses to create an instance. `just run-sample first-light` exited 1 there with
+// "vkCreateInstance (Unavailable)" instead of rendering on the null backend, which is what the
+// default exists to do (m3:sample-recipe, nightly run 38687291984).
+CY_TEST_CASE("a default backend that is available but cannot create a device falls back") {
+    CY_REQUIRE(cy::rhi::null::register_null_backend().has_value());
+    cy::rhi::BackendRegistration broken;
+    broken.name = "test-unloadable";
+    broken.kind = cy::rhi::BackendKind::Vulkan;
+    broken.create = &refuse_to_create;
+    broken.destroy = &destroy_nothing;
+    broken.is_available = &always_available;
+    CY_REQUIRE(cy::rhi::register_backend(broken).has_value());
+
+    cy::Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Gpu);
+    cy::rhi::DeviceDescription description;
+    cy::rhi::BackendSelection selection;
+    cy::Expected<cy::rhi::Device*, cy::Error> device =
+        cy::rhi::create_device(allocator, nullptr, description, selection);
+    CY_REQUIRE(device.has_value());
+    CY_CHECK(std::strcmp(selection.selected, "test-unloadable") != 0);
+    CY_CHECK(selection.reason[0] != '\0');
+    cy::rhi::destroy_device(allocator, *device);
+
+    // Asked for BY NAME, the same backend is an error: running the null device in its place would
+    // answer a question about that backend with another one's answer.
+    cy::rhi::BackendSelection named;
+    cy::Expected<cy::rhi::Device*, cy::Error> refused =
+        cy::rhi::create_device(allocator, "test-unloadable", description, named);
+    CY_CHECK_FALSE(refused.has_value());
+
+    // Registration is by name and process-wide; leave the table as the other cases expect it.
+    broken.is_available = &never_available;
+    CY_REQUIRE(cy::rhi::register_backend(broken).has_value());
+}
+
 CY_TEST_CASE("a backend this build left out is refused naming the option that builds it") {
     CY_REQUIRE(cy::rhi::null::register_null_backend().has_value());
     cy::Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Gpu);

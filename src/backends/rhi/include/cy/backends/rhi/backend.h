@@ -71,6 +71,9 @@ struct BackendSelection {
 /// `requested` may be null or empty, which means "the default": the first available registered
 /// backend that is not the null one, and the null one when there is no such backend. That rule is
 /// what makes a build with CY_RENDERER_VULKAN off run the same code with no configuration change.
+/// A default backend that reports itself available and then fails to create a device — a Vulkan
+/// loader with no driver behind it — is skipped for the next one in the chain. A backend requested
+/// BY NAME that fails to create a device is an error, never a silent substitution.
 Expected<Device*, Error> create_device(Allocator& allocator, const char* requested,
                                        const DeviceDescription& desc,
                                        BackendSelection& selection) noexcept;

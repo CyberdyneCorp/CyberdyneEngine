@@ -80,3 +80,9 @@ perf.data.old
 
 # The build tree a CI build job packs for the jobs that test it (`just ci-build-tree-pack`)
 /build-tree.tar.zst
+# What the nightly ledger's shards download and write beside the checkout. Ignored because
+# `just quality-lint`'s cache (tools/quality/tidy_cache.py) is read only at a CLEAN commit, and an
+# untracked directory would make every shard's tree dirty.
+/cross-leg-digests/
+/ledger-shards/
+/tidy-cache/

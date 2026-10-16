@@ -65,11 +65,9 @@ def main() -> int:
             "          path: cross-leg-digests\n", ""), True),
         ("download routed elsewhere", change_milestone(text,
             "          pattern: cross-leg-digest-*\n"
-            "          path: cross-leg-digests\n"
-            "      - name: Install the generator",
+            "          path: cross-leg-digests\n",
             "          pattern: unrelated-*\n"
-            "          path: cross-leg-digests\n"
-            "      - name: Install the generator"), True),
+            "          path: cross-leg-digests\n"), True),
         ("failed publisher hides its digest", text.replace(
             "      - uses: actions/upload-artifact@v5\n"
             "        if: always()\n"

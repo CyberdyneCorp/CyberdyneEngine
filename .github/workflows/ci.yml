@@ -1149,8 +1149,21 @@ jobs:
       # clang-tidy needs the flags every file is compiled with, so the build comes first.
       - name: Configure and build for the compile database
         run: just build-engine
+      # CY_TIDY_CACHE records each file clang-tidy passes at this clean commit, and the directory is
+      # handed to the nightly ledger's shards below: their `m0:lint` runs the same recipe over the
+      # same commit, and on four cores it cannot re-lint all of it inside the criterion's 1800 s.
+      # A file with findings is never recorded. tools/quality/tidy_cache.py.
       - name: Static analysis
+        env:
+          CY_TIDY_CACHE: ${{ github.workspace }}/tidy-cache
         run: just quality-lint
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: tidy-cache
+          path: tidy-cache
+          retention-days: 1
+          if-no-files-found: ignore
       # The build above staged the dev tree's slangc, which is the compiler the committed
       # embedded-shader headers are checked against. A stale header fails naming its group, and
       # the regenerated text is kept as an artefact for a machine whose slangc orders SPIR-V ids
@@ -1656,9 +1669,11 @@ jobs:
   # --shards <n> --estimate` prints the expected size of each shard for another count.
   milestone:
     name: milestone ${{ matrix.shard }}/12 — the closed milestones' exit criteria (nightly)
+    # `quality` for the lint results it records at this commit (the `tidy-cache` artifact below).
     needs:
       - build
       - cross-leg-publish
+      - quality
     # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
     # multi-hour ledger and `main` is pushed to many times a day.
     # A failed publisher leg must not silently skip the two architecture criteria: the other
@@ -1669,6 +1684,8 @@ jobs:
     # by this job rather than cancelled by the platform. A shard over its share is a sign to raise
     # the count, which `--estimate` sizes.
     timeout-minutes: 330
+    env:
+      CY_TIDY_CACHE: ${{ github.workspace }}/tidy-cache
     strategy:
       # Every shard runs to its verdict whatever another shard says: a red shard is one finding, and
       # cancelling the others would turn it into eleven missing records.
@@ -1719,6 +1736,14 @@ jobs:
         run: |
           pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow
           npm install -g @fission-ai/openspec@1.14.0
+      # The files the `quality` job's clang-tidy passed at this commit. A `pattern`, so a run whose
+      # `quality` job uploaded nothing downloads nothing rather than failing: without it `m0:lint`
+      # lints everything, which is slower and never wrong.
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: tidy-cache
+          path: tidy-cache
+          merge-multiple: true
       # THE BUILD JOB'S TREE, NOT A REBUILD OF IT: twelve shards each building the default tree from
       # nothing cost twelve times the 26 minutes `m0:build` took here. Unpacked at the commit it was
       # built from, after everything above, as every job that tests the build does.
