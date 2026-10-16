@@ -367,8 +367,16 @@ struct GpuCell {
 }
 
 /// The budget curve M10 tasks.md 7.3 asks for: every frame of the cycle, per producer, in
-/// milliseconds. A CSV rather than a summary, because "measured as a curve across the cycle rather
-/// than asserted at one time of day" is a request for every point and not for a maximum.
+/// milliseconds.
+///
+/// A COLUMN ENDING `_ms` IS A PROCESSOR BAND MEASURED ON EVERY FRAME, and `m10:world-frame-budget`
+/// reads every such column as a number. The device's own times are not processor bands and are
+/// blank on a frame nothing timed — headless, or with no timestamp queries — so they are named
+/// `*_milliseconds` instead: under `gpu_ms` the blank cell made the criterion's check fail on its
+/// `float('')` on every machine that runs it headless (nightly run 38833426854).
+///
+/// A CSV rather than a summary, because "measured as a curve across the cycle rather than asserted
+/// at one time of day" is a request for every point and not for a maximum.
 [[nodiscard]] bool write_budget(const std::string& path, const Array<FrameCosts>& costs,
                                 const Array<f32>& day, const Array<f32>& sun_elevation,
                                 const Array<f32>& rain, const Array<StageReport>& stage) {
@@ -381,7 +389,7 @@ struct GpuCell {
                  "frame,day_fraction,sun_elevation_degrees,precipitation_mm_per_hour,weather_ms,"
                  "water_ms,ocean_ms,sky_ms,terrain_shade_ms,foliage_ms,producers_ms,"
                  "stage_build_ms,stage_submit_ms,frame_ms,field_points,field_throttled,"
-                 "plants_drawn,stars_drawn,triangles,gpu_ms,water_gpu_ms\n");
+                 "plants_drawn,stars_drawn,triangles,gpu_milliseconds,water_gpu_milliseconds\n");
     for (usize frame = 0; frame < costs.size(); ++frame) {
         const FrameCosts& cost = costs[frame];
         const StageReport& drawn = stage[frame];

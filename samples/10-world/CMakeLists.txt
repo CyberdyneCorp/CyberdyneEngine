@@ -112,7 +112,7 @@ endif()
 # this artefact composes.
 
 # ================================================================================================
-# TWO ENTRIES THAT NEED NO DEVICE: THE QUIET-HOST CHECK, UNDER A HOST MADE BUSY ON PURPOSE
+# ENTRIES THAT NEED NO DEVICE: THE QUIET-HOST CHECK UNDER A HOST MADE BUSY ON PURPOSE, AND THE CSV
 # ================================================================================================
 #
 # `m11a:world-budget-on-a-device` measures on a quiet host and fails, saying "host too busy:", when
@@ -153,3 +153,13 @@ foreach(leg IN ITEMS before across)
                          LABELS "smoke" TIMEOUT "${CY_WORLD_QUIET_TIMEOUT}" RUN_SERIAL TRUE)
 endforeach()
 set_tests_properties(smoke.world_quiet_host_across PROPERTIES SKIP_RETURN_CODE 3)
+
+# The budget CSV's shape, headless: every column ending `_ms` is a number on every frame, because
+# `m10:world-frame-budget` sums each one. The device's own times are blank when nothing timed them
+# and are therefore named `*_milliseconds`. budget_csv_test.py has the failure that made this a test.
+add_test(NAME smoke.world_budget_csv
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/budget_csv_test.py"
+                 --sample "$<TARGET_FILE:cy_sample_world>"
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(smoke.world_budget_csv PROPERTIES
+                     LABELS "smoke" TIMEOUT "${CY_WORLD_QUIET_TIMEOUT}")

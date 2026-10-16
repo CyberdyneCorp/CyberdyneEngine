@@ -16,7 +16,7 @@
 - [x] 2.1 `MemoryObservation`, `device_offers_host_visible_device_local()`,
   `set_memory_observation()`; the Vulkan backend counts its memory types.
 - [x] 2.2 `geometry_memory()`; the stage creates its six streams with it.
-- [x] 2.3 Device timestamps: `gpu_ms` and `water_gpu_ms` in the CSV, and the `device time` line.
+- [x] 2.3 Device timestamps: `gpu_milliseconds` and `water_gpu_milliseconds` in the CSV (renamed from `gpu_ms` and `water_gpu_ms`, because a column ending `_ms` is a processor band read as a number), and the `device time` line.
 
 ## 3. Tests that fail without the fix
 
