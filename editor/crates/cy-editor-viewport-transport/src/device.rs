@@ -61,6 +61,10 @@ pub struct Gpu {
     /// An `Option` rather than a boolean beside a handle, so that "we did not enable it" and "call
     /// it anyway" cannot both be expressed.
     semaphore_fd: Option<ash::khr::external_semaphore_fd::Device>,
+    /// Whether the device advertises `VK_KHR_external_semaphore_fd` at all. A device that does not
+    /// (lavapipe, the processor's Vulkan device) cannot import a timeline with or without the
+    /// patch, so it cannot tell the two apart either.
+    semaphore_fd_offered: bool,
     /// What was enabled, what was missing, and what we added. Written to the log at start-up: when
     /// the viewport shows nothing, this is the first thing worth reading.
     pub notes: Vec<String>,
@@ -92,7 +96,8 @@ impl Gpu {
             max_texture_dimension_2d: 8192,
             ..wgpu::Limits::default()
         };
-        let (device, queue, enabled) = open_device(&adapter, features, &limits, patch, &mut notes)?;
+        let (device, queue, enabled, semaphore_fd_offered) =
+            open_device(&adapter, features, &limits, patch, &mut notes)?;
 
         // SAFETY: the instance and device were created by this call with the Vulkan backend, so
         // `as_hal` yields the backend they were made with; the ash handles are cloned out and kept
@@ -124,6 +129,7 @@ impl Gpu {
             queue,
             ash_device,
             semaphore_fd,
+            semaphore_fd_offered,
             notes,
         })
     }
@@ -240,11 +246,11 @@ fn open_device(
     limits: &wgpu::Limits,
     patch: bool,
     notes: &mut Vec<String>,
-) -> Result<(wgpu::Device, wgpu::Queue, bool)> {
+) -> Result<(wgpu::Device, wgpu::Queue, bool, bool)> {
     // SAFETY: `as_hal` is called on an adapter this process created with the Vulkan backend, and
     // the hal adapter is dropped before `create_device_from_hal` consumes what it produced.
     // `open_with_callback`'s callback only appends to the extension list, which is what it is for.
-    let (open, enabled) = unsafe {
+    let (open, enabled, offered) = unsafe {
         let hal_adapter = adapter
             .as_hal::<wgpu_hal::api::Vulkan>()
             .ok_or_else(|| not_vulkan("adapter"))?;
@@ -252,12 +258,25 @@ fn open_device(
         let baseline = hal_adapter.required_device_extensions(features);
         notes.push(format!("wgpu enables by itself: {}", names(&baseline)));
         let already_there = baseline.contains(&ash::khr::external_semaphore_fd::NAME);
-        let missing: Vec<&'static std::ffi::CStr> = WANTED_EXTENSIONS
-            .iter()
-            .copied()
-            .filter(|wanted| !baseline.contains(wanted))
-            .collect();
+        // ONLY WHAT THE DEVICE OFFERS. Naming an extension the device does not advertise is a
+        // usage error wgpu-hal answers with a panic ("Extension specified does not exist") rather
+        // than a refused device; lavapipe, the processor's Vulkan device on a hosted runner,
+        // offers no DRM format modifiers, and the editor died opening it. An extension the device
+        // lacks is noted and left out, so the transport reports what it cannot do.
+        let capabilities = hal_adapter.physical_device_capabilities();
+        let (missing, unsupported): (Vec<&'static std::ffi::CStr>, Vec<&'static std::ffi::CStr>) =
+            WANTED_EXTENSIONS
+                .iter()
+                .copied()
+                .filter(|wanted| !baseline.contains(wanted))
+                .partition(|wanted| capabilities.supports_extension(wanted));
         notes.push(format!("missing without patching: {}", names(&missing)));
+        notes.push(format!(
+            "not offered by this device: {}",
+            names(&unsupported)
+        ));
+        let semaphore_fd_offered =
+            capabilities.supports_extension(ash::khr::external_semaphore_fd::NAME);
 
         let callback: Option<Box<wgpu_hal::vulkan::CreateDeviceCallback<'_>>> = if patch {
             let missing = missing.clone();
@@ -283,7 +302,11 @@ fn open_device(
                     format!("wgpu-hal refused it: {error:?}"),
                 )
             })?;
-        (open, patch || already_there)
+        (
+            open,
+            already_there || (patch && semaphore_fd_offered),
+            semaphore_fd_offered,
+        )
     };
 
     // SAFETY: `open` was produced by `open_with_callback` on this same adapter, immediately above,
@@ -301,7 +324,7 @@ fn open_device(
     }
     .map_err(|error| Problem::new("create the editor's graphics device", format!("{error:?}")))?;
 
-    Ok((device, queue, enabled))
+    Ok((device, queue, enabled, offered))
 }
 
 fn names(extensions: &[&std::ffi::CStr]) -> String {
@@ -337,6 +360,17 @@ mod tests {
             eprintln!("skipped: this machine reports no Vulkan device");
             return;
         };
+        // Opening it is already the first half of the claim: a device that does not offer the
+        // extension used to panic inside wgpu-hal when the patch named it anyway. It cannot answer
+        // the second half, which is whether the PATCH is what enables it.
+        if !patched.semaphore_fd_offered {
+            eprintln!(
+                "skipped: this device does not offer VK_KHR_external_semaphore_fd: {:?}",
+                patched.notes
+            );
+            assert!(!patched.external_semaphores());
+            return;
+        }
         assert!(
             patched.external_semaphores(),
             "with the extension pushed into the list, the device can import a timeline: {:?}",
