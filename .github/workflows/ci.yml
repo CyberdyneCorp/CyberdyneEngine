@@ -1646,15 +1646,16 @@ jobs:
   # declared; a criterion's recipe stops existing; or a `known_gap` in any ledger from m0 to m11d5
   # starts passing and its declaration has not been deleted.
   #
-  # AND WHAT IT WILL SAY ON ITS FIRST NIGHT IS NOT KNOWN HERE, WHICH IS SAID RATHER THAN GUESSED. No
-  # runner has ever executed this ledger — 65 of this repository's first 66 runs were cancelled
-  # before reaching a verdict. On the workstation the run cited above was red for `m4:sanitizers` and
-  # `m5:sanitizers` (408 and 1632 bytes leaked inside `libcuda.so.1`, no engine frame in either
-  # stack), and those two are in the permanent set this command evaluates — but a GitHub runner has
-  # no NVIDIA device, so the render cases that reach that driver may not be evaluated there at all,
-  # and criteria that pass on a workstation with a GPU may fail on a runner without one for the
-  # opposite reason. The first scheduled run is the measurement. docs/roadmap/open-debts.md is the
-  # list of what is known to be open when it happens.
+  # WHAT IT SAID WHEN IT FIRST FINISHED. Nightly run 38880558630 (dispatched on the sharding branch)
+  # was the first to evaluate every criterion on hosted runners: 449 evaluated, 35 not evaluated
+  # (a display or a GPU this fleet has no machine for), and two failures. One was fixed before the
+  # merge (`m9:figures-regenerated`: the figures' text layout and FreeType). The other,
+  # `m8a:authoring-recipe`, is not a finding about the tree: `just run-authoring --no-window` drives
+  # `cy_editor_window_runtime`, which needs a Vulkan device that can export a dma-buf, and reports
+  # "n/a" with exit 3 where there is none — no hosted runner and not lavapipe. Its ledger entry
+  # declares no `requires = "gpu"`, so the ledger reads that "n/a" as a failure. Until that is
+  # decided it is the one red this job carries; docs/roadmap/open-debts.md is the list of the rest
+  # of what is open.
   #
   # THE LEDGER IN SHARDS, AND WHY. Until October 2026 this was ONE job running the whole ledger, and
   # it never finished: GitHub cancels a hosted job at six hours, and run 38687291984 had reached 134
@@ -1750,6 +1751,12 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow==11.1.0 numpy==2.1.3
           pip install --no-binary matplotlib matplotlib==3.10.0 --config-settings=setup-args=-Dsystem-freetype=true
           npm install -g @fission-ai/openspec@1.14.0
+      # The Rust toolchain editor/rust-toolchain.toml declares, with its components. Several criteria
+      # call `cargo` directly; when one ran before anything in its shard had installed the
+      # toolchain, rustup auto-installed it without `cargo` and the criterion failed with "'cargo' is
+      # not installed for the toolchain" (run 38919971784, `m11b:project-settings-in-version-control`).
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
       # The files the `quality` job's clang-tidy passed at this commit. A `pattern`, so a run whose
       # `quality` job uploaded nothing downloads nothing rather than failing: without it `m0:lint`
       # lints everything, which is slower and never wrong.
