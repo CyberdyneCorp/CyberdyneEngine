@@ -102,6 +102,53 @@ CY_TEST_CASE("accumulation and filtering reconstruct a stable image from a noisy
                 raw_error * 0.3F);
 }
 
+namespace {
+
+/// Ten frames of a constant `before` through a temporal-only denoiser rejecting at `rejection`,
+/// then one frame of `after`: the value the last frame resolves to.
+[[nodiscard]] cy::f32 after_a_step(cy::f32 rejection, cy::f32 before, cy::f32 after) {
+    const Scene scene;
+    const cy::u32 pixels = scene.width * scene.height;
+    Denoiser denoiser;
+    CY_REQUIRE(denoiser.resize(scene.width, scene.height).has_value());
+    SignalConfig config = cy::rendering::denoise::default_config(SignalKind::IndirectDiffuse);
+    config.max_passes = 0;
+    config.history_rejection = rejection;
+    denoiser.configure(SignalKind::IndirectDiffuse, config);
+    const StillHistory history(pixels);
+    cy::f32 resolved = 0.0F;
+    for (cy::u32 frame = 0; frame <= 10; ++frame) {
+        const cy::f32 level = frame < 10 ? before : after;
+        const std::vector<cy::Vec3> values(pixels, cy::Vec3{level, level, level});
+        NoisySignal noisy;
+        noisy.values = {values.data(), values.size()};
+        const auto result = denoiser.denoise(SignalKind::IndirectDiffuse, noisy, scene.guidance(),
+                                             history.guidance());
+        CY_REQUIRE(result.has_value());
+        resolved = result.value()[pixels / 2].x;
+    }
+    return resolved;
+}
+
+}  // namespace
+
+CY_TEST_CASE("a history the signal has left behind is cut, and only when the signal asks") {
+    // TEN FRAMES OF 1.0, THEN 2.0 — a light that doubled. Kept, the history's ten frames outweigh
+    // the new one ten to one: 1 + 1/11. Rejected at 0.2, the deviation (1.0) is two and a half
+    // times what the larger value allows (0.2 x 2.0), so the history keeps (0.4 / 1.0)^2 of its
+    // count — 1.6 frames — and the new frame is weighed 1 / 2.6.
+    CY_CHECK(std::abs(after_a_step(0.0F, 1.0F, 2.0F) - (1.0F + (1.0F / 11.0F))) < 1.0e-5F);
+    CY_CHECK(std::abs(after_a_step(0.2F, 1.0F, 2.0F) - (1.0F + (1.0F / 2.6F))) < 1.0e-5F);
+    // Within the tolerance nothing is cut: 1.1 is 0.1 from 1.0, under 0.2 x 1.1.
+    CY_CHECK(std::abs(after_a_step(0.2F, 1.0F, 1.1F) - after_a_step(0.0F, 1.0F, 1.1F)) < 1.0e-7F);
+    // Every signal's default keeps its history, so the shared denoiser is as it was.
+    for (cy::u32 kind = 0; kind < cy::rendering::denoise::kSignalCount; ++kind) {
+        CY_CHECK_EQ(
+            cy::rendering::denoise::default_config(static_cast<SignalKind>(kind)).history_rejection,
+            0.0F);
+    }
+}
+
 CY_TEST_CASE("a converged signal is not blurred") {
     // `denoising`: "WHEN a region has accumulated many samples with low variance THEN spatial
     // filtering SHALL be reduced or skipped there."

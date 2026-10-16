@@ -285,10 +285,28 @@ bool screen_landing(Vec3 position, const ScreenHistoryInputs& inputs, u32 width,
 denoise::SignalConfig screen_signal_config(const denoise::SignalConfig& authored,
                                            const ScreenResolveSettings& settings) noexcept {
     denoise::SignalConfig config = authored;
-    if (settings.gather == GiGather::ScreenProbes) {
-        config.max_passes = std::min(config.max_passes, settings.probes.filter_passes);
+    if (settings.gather != GiGather::ScreenProbes) {
+        return config;
     }
+    if (settings.probes.denoiser == ScreenProbeDenoiser::ProbeSpace) {
+        // Filtered in probe space already: the pixels are accumulated over time and nothing more,
+        // and a history the filtered signal has left behind is cut rather than averaged away.
+        config.max_passes = 0;
+        config.history_rejection = settings.probes.history_rejection;
+        return config;
+    }
+    config.max_passes = std::min(config.max_passes, settings.probes.filter_passes);
     return config;
+}
+
+const char* screen_probe_denoiser_name(ScreenProbeDenoiser denoiser) noexcept {
+    switch (denoiser) {
+        case ScreenProbeDenoiser::ProbeSpace:
+            return "probe space";
+        case ScreenProbeDenoiser::Shared:
+            return "shared";
+    }
+    return "unknown";
 }
 
 const char* gi_gather_name(GiGather gather) noexcept {
@@ -380,6 +398,7 @@ Status ScreenResolve::produce_probes(const ScreenSurfaces& surfaces,
         return placed;
     }
     probes_.trace(surfaces, settings, sources);
+    probes_.filter(settings.probes);
     traced_ = 0;
     const usize pixels = static_cast<usize>(width_) * height_;
     for (usize index = 0; index < pixels; ++index) {

@@ -30,9 +30,13 @@ static const uint kSpGuideCells = 16u;
 static const uint kSpMaxRays = 64u;
 static const uint kSpNone = 0xFFFFFFFFu;
 static const uint kSpStream = 8u;
+/// `kScreenStreamProbeUpdate`.
+static const uint kSpUpdateStream = 9u;
 /// A record: [position, depth], [normal, id bits], seven float4 of the 27 coefficients (channel
-/// fastest) and the history count, [cache, cache confidence], [openness, 0, 0, 0].
-static const uint kSpRecordVec4s = 11u;
+/// fastest) and the history count, [cache, cache confidence], [openness, 0, 0, 0], and seven float4
+/// of the 27 coefficients the pixels integrate (`ScreenProbe::filtered`) and a zero.
+static const uint kSpRecordVec4s = 18u;
+static const uint kSpFilteredVec4 = 11u;
 static const float kSpWeightFloor = 1.0e-4f;
 /// `kHistoryMatch` in screen_probes.cpp.
 static const float kSpHistoryMatch = 0.25f;
@@ -223,8 +227,8 @@ SpProbe spLoadProbe(uint slot, uint record) {
     return probe;
 }
 
-void spLoadCoefficients(uint slot, uint record, out float3 coefficients[9], out float history) {
-    const uint base = spRecordBase(slot, record) + 2u;
+/// Nine RGB coefficients and a trailing word from the seven float4 at `base`.
+void spLoadPacked(uint base, out float3 coefficients[9], out float last) {
     float values[28];
     for (uint v = 0u; v < 7u; ++v) {
         const float4 word = giResolve.probes[base + v];
@@ -236,22 +240,39 @@ void spLoadCoefficients(uint slot, uint record, out float3 coefficients[9], out 
     for (uint k = 0u; k < kSpCoefficients; ++k) {
         coefficients[k] = float3(values[k * 3u], values[(k * 3u) + 1u], values[(k * 3u) + 2u]);
     }
-    history = values[27];
+    last = values[27];
 }
 
-void spStoreCoefficients(uint slot, uint record, float3 coefficients[9], float history) {
-    const uint base = spRecordBase(slot, record) + 2u;
+void spStorePacked(uint base, float3 coefficients[9], float last) {
     float values[28];
     for (uint k = 0u; k < kSpCoefficients; ++k) {
         values[k * 3u] = coefficients[k].x;
         values[(k * 3u) + 1u] = coefficients[k].y;
         values[(k * 3u) + 2u] = coefficients[k].z;
     }
-    values[27] = history;
+    values[27] = last;
     for (uint v = 0u; v < 7u; ++v) {
         giResolve.probes[base + v] = float4(values[(v * 4u) + 0u], values[(v * 4u) + 1u],
                                             values[(v * 4u) + 2u], values[(v * 4u) + 3u]);
     }
+}
+
+void spLoadCoefficients(uint slot, uint record, out float3 coefficients[9], out float history) {
+    spLoadPacked(spRecordBase(slot, record) + 2u, coefficients, history);
+}
+
+void spStoreCoefficients(uint slot, uint record, float3 coefficients[9], float history) {
+    spStorePacked(spRecordBase(slot, record) + 2u, coefficients, history);
+}
+
+/// `ScreenProbe::filtered`: what the pixels integrate.
+void spLoadFiltered(uint slot, uint record, out float3 coefficients[9]) {
+    float unused;
+    spLoadPacked(spRecordBase(slot, record) + kSpFilteredVec4, coefficients, unused);
+}
+
+void spStoreFiltered(uint slot, uint record, float3 coefficients[9]) {
+    spStorePacked(spRecordBase(slot, record) + kSpFilteredVec4, coefficients, 0.0f);
 }
 
 /// A probe as `place` writes it: everything the trace fills is its default.
@@ -264,6 +285,9 @@ void spWriteProbe(uint slot, uint record, float3 position, float depth, float3 n
     }
     giResolve.probes[base + 9u] = float4(0.0f, 0.0f, 0.0f, 0.0f);
     giResolve.probes[base + 10u] = float4(1.0f, 0.0f, 0.0f, 0.0f);
+    for (uint v = 0u; v < 7u; ++v) {
+        giResolve.probes[base + kSpFilteredVec4 + v] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
 }
 
 // --- `ScreenProbeGather::place` ---------------------------------------------------------------------
@@ -386,11 +410,13 @@ bool spInvalidated(float3 point) {
 }
 
 /// `ScreenProbeGather::reproject`: last frame's coefficients about where the probe lands.
-bool spReproject(SpProbe probe, float tolerance, out float3 coefficients[9], out float history) {
+bool spReproject(SpProbe probe, float tolerance, out float3 coefficients[9], out float history,
+                 out uint matched) {
     for (uint k = 0u; k < kSpCoefficients; ++k) {
         coefficients[k] = float3(0.0f, 0.0f, 0.0f);
     }
     history = 0.0f;
+    matched = kSpNone;
     if (spInvalidated(probe.position)) {
         return false;
     }
@@ -434,7 +460,16 @@ bool spReproject(SpProbe probe, float tolerance, out float3 coefficients[9], out
         return false;
     }
     spLoadCoefficients(previous, best, coefficients, history);
+    matched = best;
     return true;
+}
+
+/// `screen_probe_traces`.
+bool spProbeTraces(uint id, uint frame, float density) {
+    if (density >= 1.0f) {
+        return true;
+    }
+    return grUnit(grHash(id, frame, kSpUpdateStream)) < density;
 }
 
 /// `probe_origin` in screen_probes.cpp: the surface lifted along its normal as a final-gather ray
@@ -479,6 +514,8 @@ groupshared float3 spOrigin;
 groupshared float3 spHistory[9];
 groupshared float spHistoryCount;
 groupshared uint spReprojected;
+/// The previous record a probe keeps instead of tracing, below a ray density of one, or none.
+groupshared uint spCarried;
 groupshared float4 spStandIn;
 groupshared float spWeights[16];
 groupshared float3 spRayValue[64];
@@ -509,22 +546,45 @@ void spTrace<T : IGiWorldTier>(uint record, uint lane) {
     const uint cacheFrame = giResolve.constants[kGrReflect].w;
 
     if (lane == 0u) {
-        float4 diffuse;
-        float4 specular;
-        grSampleTraced(probe.position, probe.normal, probe.normal, cacheFrame, diffuse, specular);
-        spStandIn = diffuse;
-        spOrigin = spProbeOrigin<T>(probe, asfloat(giResolve.constants[kGrRays].y));
         float3 previous[9];
         float history = 0.0f;
+        uint matched = kSpNone;
         const bool allowed = (shape.w & 2u) != 0u && giResolve.constants[kGrIntensity].w != 0u;
-        const bool found = allowed && spReproject(probe, weights.y, previous, history);
+        const bool found = allowed && spReproject(probe, weights.y, previous, history, matched);
         for (uint k = 0u; k < kSpCoefficients; ++k) {
             spHistory[k] = previous[k];
         }
         spHistoryCount = history;
         spReprojected = found ? 1u : 0u;
+        const float density = asfloat(giResolve.constants[kGrCamera].w);
+        spCarried = found && !spProbeTraces(probe.id, frame, density) ? matched : kSpNone;
+        if (spCarried == kSpNone) {
+            float4 diffuse;
+            float4 specular;
+            grSampleTraced(probe.position, probe.normal, probe.normal, cacheFrame, diffuse,
+                           specular);
+            spStandIn = diffuse;
+            spOrigin = spProbeOrigin<T>(probe, asfloat(giResolve.constants[kGrRays].y));
+        }
     }
     GroupMemoryBarrierWithGroupSync();
+    if (spCarried != kSpNone) {
+        // `trace_probe`'s probe that does not trace this frame: the one it stands for, kept —
+        // its radiance and count, its cache answer and its openness. Uniform over the group.
+        if (lane == 0u) {
+            float3 kept[9];
+            for (uint k = 0u; k < kSpCoefficients; ++k) {
+                kept[k] = spHistory[k];
+            }
+            spStoreCoefficients(slot, record, kept, spHistoryCount);
+            spStoreFiltered(slot, record, kept);
+            const uint from = spRecordBase(1u - slot, spCarried);
+            const uint base = spRecordBase(slot, record);
+            giResolve.probes[base + 9u] = giResolve.probes[from + 9u];
+            giResolve.probes[base + 10u] = giResolve.probes[from + 10u];
+        }
+        return;
+    }
 
     if (lane < kSpGuideCells) {
         const float z = (float(lane / kSpGuideEdge) + 0.5f) / float(kSpGuideEdge);
@@ -638,6 +698,7 @@ void spTrace<T : IGiWorldTier>(uint record, uint lane) {
         }
     }
     spStoreCoefficients(slot, record, blended, history);
+    spStoreFiltered(slot, record, blended);  // `unfiltered`: the filter, if it runs, replaces it
 
     float openness = 1.0f;
     const float3 camera = asfloat(giResolve.constants[kGrCamera].xyz);
@@ -650,6 +711,80 @@ void spTrace<T : IGiWorldTier>(uint record, uint lane) {
     const uint base = spRecordBase(slot, record);
     giResolve.probes[base + 9u] = spStandIn;
     giResolve.probes[base + 10u] = float4(openness, 0.0f, 0.0f, 0.0f);
+}
+
+// --- `ScreenProbeGather::filter` ---------------------------------------------------------------------
+
+/// `filter_tent`.
+float spFilterTent(int offset, uint reach) {
+    const float distance = float(offset < 0 ? -offset : offset);
+    return 1.0f - (distance / float(reach + 1u));
+}
+
+/// `filter_probe` for one record: its own coefficients and the uniform neighbours' within the
+/// reach, by the tent and the geometry weight, into its filtered coefficients. Every probe reads
+/// only coefficients and writes only its own filtered ones, so the probes run at once.
+void spFilter(uint record) {
+    const uint slot = spSlot();
+    const uint uniform = spUniformCount();
+    const uint reach = giResolve.constants[kGrProbeSamples].y;
+    if (reach == 0u || record >= spRecords()) {
+        return;
+    }
+    if (record >= uniform && record - uniform >= min(giResolve.slots[spCounter(slot)], spCapacity())) {
+        return;
+    }
+    const SpProbe probe = spLoadProbe(slot, record);
+    if (probe.depth <= 0.0f) {
+        return;
+    }
+    float3 sum[9];
+    float history;
+    spLoadCoefficients(slot, record, sum, history);
+    float total = 1.0f;
+    // `probe_tile`.
+    const uint pixel =
+        probe.id < uniform ? spUniformPixel(probe.id) : spAdaptivePixel(probe.id - uniform);
+    const int tileX = int(min((pixel % spWidth()) / spSpacing(), spTilesX() - 1u));
+    const int tileY = int(min((pixel / spWidth()) / spSpacing(), spTilesY() - 1u));
+    const float tolerance = asfloat(giResolve.constants[kGrProbeWeights].y);
+    const float worldReach = asfloat(giResolve.constants[kGrProbeSamples].z);
+    const int span = int(reach);
+    for (int dy = -span; dy <= span; ++dy) {
+        const int y = tileY + dy;
+        for (int dx = -span; dx <= span; ++dx) {
+            const int x = tileX + dx;
+            if (x < 0 || y < 0 || x >= int(spTilesX()) || y >= int(spTilesY())) {
+                continue;
+            }
+            const uint tile = (uint(y) * spTilesX()) + uint(x);
+            const SpProbe neighbour = spLoadProbe(slot, tile);
+            if (tile == probe.id || neighbour.depth <= 0.0f) {
+                continue;
+            }
+            const float near =
+                1.0f - (length(neighbour.position - probe.position) / (worldReach * probe.depth));
+            const float weight = spFilterTent(dx, reach) * spFilterTent(dy, reach) *
+                                 max(near, 0.0f) *
+                                 spGeometryWeight(neighbour.position, neighbour.normal,
+                                                  probe.position, probe.normal, probe.depth,
+                                                  tolerance);
+            if (weight <= 0.0f) {
+                continue;
+            }
+            float3 coefficients[9];
+            float count;
+            spLoadCoefficients(slot, tile, coefficients, count);
+            for (uint k = 0u; k < kSpCoefficients; ++k) {
+                sum[k] = sum[k] + (coefficients[k] * weight);
+            }
+            total += weight;
+        }
+    }
+    for (uint k = 0u; k < kSpCoefficients; ++k) {
+        sum[k] = sum[k] / total;
+    }
+    spStoreFiltered(slot, record, sum);
 }
 
 // --- `ScreenProbeGather::integrate` ------------------------------------------------------------------
@@ -722,8 +857,7 @@ void spIntegrate<T : IGiWorldTier>(uint pixel) {
                 continue;
             }
             float3 coefficients[9];
-            float history;
-            spLoadCoefficients(slot, index, coefficients, history);
+            spLoadFiltered(slot, index, coefficients);
             const uint base = spRecordBase(slot, index);
             const float4 cached = giResolve.probes[base + 9u];
             irradiance = irradiance + (spEvaluate(coefficients, normal, irradianceBand) * weight);
@@ -742,8 +876,7 @@ void spIntegrate<T : IGiWorldTier>(uint pixel) {
             return;
         }
         float3 coefficients[9];
-        float history;
-        spLoadCoefficients(slot, nearest, coefficients, history);
+        spLoadFiltered(slot, nearest, coefficients);
         const uint base = spRecordBase(slot, nearest);
         irradiance = spEvaluate(coefficients, normal, irradianceBand);
         glossy = spEvaluate(coefficients, reflection, specularBand);

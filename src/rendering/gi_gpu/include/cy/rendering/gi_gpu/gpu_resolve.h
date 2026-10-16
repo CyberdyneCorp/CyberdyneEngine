@@ -15,9 +15,11 @@
 //   reproject   `gi::screen_history`: each pixel's history pixel, through `temporal-rendering`;
 //   resolve     the final gather the settings' `gi::GiGather` names, through the world tier
 //               `GpuRadianceCache::world_tier()` selects (ray queries where the device has them):
-//                 screen probes (the default) — `gi::ScreenProbeGather`'s three passes: PLACE the
+//                 screen probes (the default) — `gi::ScreenProbeGather`'s passes: PLACE the
 //                 uniform and adaptive probes, TRACE each probe's rays and blend its reprojected
-//                 history, INTEGRATE every cell from the probes about it;
+//                 history, FILTER each probe with its neighbours on its own surface (the
+//                 probe-space denoiser, `gi::ScreenProbeDenoiser::ProbeSpace`), INTEGRATE every
+//                 cell from the probes about it;
 //                 per pixel — `gi::resolve_screen_pixel` for every cell: the radiance cache, one
 //                 final-gather ray and the far-field sky, combined by confidence under
 //                 `exclusion_for()`'s mask; and the rough specular;
@@ -25,6 +27,11 @@
 //   variance    `Denoiser::estimate_variance`;
 //   filter      `Denoiser::filter`'s a-trous cascade, one dispatch a pass;
 //   publish     the two signals into the indirect diffuse and indirect specular textures.
+//
+// With no cascade to run — the probe-space denoiser's configuration (`gi::screen_signal_config`) —
+// the accumulation is the denoised signal and nothing reads a variance: one pass,
+// `cyGiDenoiseTemporal`, accumulates both signals of a pixel and, on the full grid, publishes
+// them, over a history layout of its own.
 //
 // `render.gi_gpu_resolve` runs each against its host function over one view and compares.
 //
@@ -101,6 +108,8 @@ struct GpuResolveTimes {
     /// is `integrate_ms`.
     f64 probe_place_ms = 0.0;
     f64 probe_trace_ms = 0.0;
+    /// The probe-space filter (`ScreenProbeDenoiser::ProbeSpace`); zero where it does not run.
+    f64 probe_filter_ms = 0.0;
     f64 integrate_ms = 0.0;
     f64 accumulate_ms = 0.0;
     f64 variance_ms = 0.0;
@@ -254,6 +263,8 @@ private:
         kProbePlace,
         kProbeTrace,
         kProbeIntegrate,
+        kProbeFilter,
+        kTemporal,
         kResolveHardware,
         kProbeTraceHardware,
         kProbeIntegrateHardware,
@@ -264,6 +275,7 @@ private:
         kResolveLayout,
         kDenoiseLayout,
         kPublishLayout,
+        kTemporalLayout,
         kLayoutCount,
     };
     enum Buffer : u32 {
@@ -296,10 +308,11 @@ private:
         kProbeSlotsHost,
         kBufferCount,
     };
-    /// Timestamps: one before the first stage and one after each of the nine — unpack, reproject,
-    /// place, trace, integrate, accumulate, variance, filter, publish. The per-pixel gather's
-    /// place and trace are empty.
-    static constexpr u32 kStamps = 10;
+    /// Timestamps: one before the first stage and one after each of the ten — unpack, reproject,
+    /// place, trace, probe filter, integrate, accumulate, variance, filter, publish. A stage the
+    /// frame does not run is an empty interval: the per-pixel gather's three probe stages, the
+    /// probe filter under the shared denoiser, the variance and cascade where there is none.
+    static constexpr u32 kStamps = 11;
 
     struct Step {
         GpuScreenResolve* self = nullptr;
@@ -317,6 +330,8 @@ private:
         ResourceId specular = kInvalidResource;
         /// Stamps written before the dispatch: the probe stages the per-pixel gather skips.
         u32 empty_before = 0;
+        /// Stamps written after its own: the stages a frame whose last pass this is skipped.
+        u32 empty_after = 0;
     };
     struct Copy {
         GpuScreenResolve* self = nullptr;
@@ -336,11 +351,16 @@ private:
     [[nodiscard]] ResourceId import_constants(RenderGraph& graph) noexcept;
     [[nodiscard]] u32 filter_passes() const noexcept;
     void declare_denoiser(RenderGraph& graph, ResourceId diffuse, ResourceId specular) noexcept;
+    void declare_publish(RenderGraph& graph, ResourceId diffuse, ResourceId specular) noexcept;
     void declare_readbacks(RenderGraph& graph) noexcept;
     void declare_copy(RenderGraph& graph, Copy& copy, const char* name) noexcept;
     [[nodiscard]] PassId declare_resolve(RenderGraph& graph, bool first) noexcept;
     void declare_probes(RenderGraph& graph, bool hardware) noexcept;
     void update_probe_words() noexcept;
+    /// The probe-space filter's reach in tiles this frame, or zero where it does not run.
+    [[nodiscard]] u32 probe_filter_tiles() const noexcept;
+    /// The next step in `steps_`, its stamp's empty predecessors counted.
+    [[nodiscard]] Step& add_step(Pipeline pipeline, u32 stamp, u32 count) noexcept;
     void update_filter_passes() noexcept;
 
     static PassId declare_stage(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
@@ -364,6 +384,7 @@ private:
     rhi::PipelineLayoutHandle resolve_hardware_pipeline_layout_;
     rhi::PipelineLayoutHandle denoise_pipeline_layout_;
     rhi::PipelineLayoutHandle publish_pipeline_layout_;
+    rhi::PipelineLayoutHandle temporal_pipeline_layout_;
     bool hardware_pipeline_ = false;
 
     rhi::BufferHandle ring_[rhi::kMaxFramesInFlight];
@@ -405,8 +426,13 @@ private:
     /// Whether last frame traced the probes this frame's reprojection reads, at this layout.
     bool probe_history_valid_ = false;
     bool counters_cleared_ = false;
-    /// Each signal's cascade length as the host denoiser configures it, before the gather's cap.
+    /// Each signal's cascade length and history length as the host denoiser configures them,
+    /// before `gi::screen_signal_config` applies the gather's.
     u32 authored_passes_[2] = {0, 0};
+    u32 authored_history_[2] = {32, 32};
+    f32 authored_rejection_[2] = {0.0F, 0.0F};
+    /// The stamp the next declared step's interval starts at.
+    u32 next_stamp_ = 0;
 };
 
 /// The frame's words for the two targets bound at `diffuse_slot` and `specular_slot` of the set 0

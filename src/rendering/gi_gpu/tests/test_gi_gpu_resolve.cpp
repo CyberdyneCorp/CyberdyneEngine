@@ -74,6 +74,12 @@ using namespace gi_gpu_support;  // NOLINT(google-build-using-namespace)
 struct Comparison {
     /// The screen probes' records, every live probe of every frame, by its cell: coefficients.
     Agreement probe_coefficients;
+    /// What the pixels integrate: the probe-space filter's answer, or the coefficients again.
+    Agreement probe_filtered;
+    /// The cache's answer at each probe and its openness: traced, or kept from the probe a probe
+    /// that does not trace stands for.
+    Agreement probe_cache;
+    u32 openness_mismatches = 0;
     u32 probe_records = 0;
     /// Probes the two sides placed differently: present on one side only, or elsewhere.
     u32 probe_mismatches = 0;
@@ -120,7 +126,11 @@ void compare_probes(const gi::ScreenProbeGather& host, const GpuScreenResolve& d
         for (u32 k = 0; k < gi::kScreenProbeCoefficients; ++k) {
             out.probe_coefficients.add(mine.coefficients[k] + mine.coefficients[0],
                                        theirs.coefficients[k] + theirs.coefficients[0], 1.0e-3);
+            out.probe_filtered.add(mine.filtered[k] + mine.filtered[0],
+                                   theirs.filtered[k] + theirs.filtered[0], 1.0e-3);
         }
+        out.probe_cache.add(mine.cache, theirs.cache, 1.0e-3);
+        out.openness_mismatches += std::abs(mine.openness - theirs.openness) <= 1.0e-5F ? 0U : 1U;
     };
     for (u32 tile = 0; tile < layout.uniform_count(); ++tile) {
         compare(records[tile], host.probes()[tile]);
@@ -138,12 +148,58 @@ void compare_probes(const gi::ScreenProbeGather& host, const GpuScreenResolve& d
     }
 }
 
-[[nodiscard]] bool compare_room(Gpu& gpu, bool hardware, u32 frames, Comparison& out,
-                                u32 divisor = 1, gi::GiGather gather = gi::GiGather::PerPixel,
-                                u32 width = gi_support::kScreenWidth,
-                                u32 height = gi_support::kScreenHeight, f32 rippled = 0.0F) {
+/// What one comparison runs: the room's view, the gather and the levers the case turns.
+struct RoomCase {
+    bool hardware = false;
+    u32 frames = 8;
+    u32 divisor = 1;
+    gi::GiGather gather = gi::GiGather::PerPixel;
+    u32 width = gi_support::kScreenWidth;
+    u32 height = gi_support::kScreenHeight;
+    /// Rippled normals, for the upsample and the placement; zero is the room's own.
+    f32 rippled = 0.0F;
+    gi::ScreenProbeDenoiser denoiser = gi::ScreenProbeDenoiser::ProbeSpace;
+    /// The shared denoiser's history rejection, for both signals; zero keeps every history.
+    f32 history_rejection = 0.0F;
+    f32 ray_density = 1.0F;
+};
+
+/// The screen probes over a 64x40 view of the room, `frames` frames.
+[[nodiscard]] RoomCase probe_case(u32 frames) {
+    RoomCase room;
+    room.frames = frames;
+    room.gather = gi::GiGather::ScreenProbes;
+    room.width = 64;
+    room.height = 40;
+    return room;
+}
+
+[[nodiscard]] bool compare_room(Gpu& gpu, const RoomCase& room, Comparison& out) {
+    const bool hardware = room.hardware;
+    const u32 frames = room.frames;
+    const u32 divisor = room.divisor;
+    const gi::GiGather gather = room.gather;
+    const u32 width = room.width;
+    const u32 height = room.height;
+    const f32 rippled = room.rippled;
+    const f32 history_rejection = room.history_rejection;
     gi_support::ScreenScene host;
     host.settings.gather = gather;
+    host.settings.probes.denoiser = room.denoiser;
+    host.settings.ray_density = room.ray_density;
+    // A WHOLE DEPTH'S REACH for the probe-space filter: at 64x40 an 8-pixel tile is half a metre
+    // of the room, past the default tenth of the depth, and the filter would average nothing.
+    host.settings.probes.filter_reach = 1.0F;
+    if (history_rejection > 0.0F) {
+        // The shared denoiser's own signals keep their history whatever it is; a configuration
+        // that cuts it is what the device's shared accumulation is held to here.
+        host.authored_diffuse.history_rejection = history_rejection;
+        host.authored_specular.history_rejection = history_rejection;
+        host.denoiser.configure(cy::rendering::denoise::SignalKind::IndirectDiffuse,
+                                host.authored_diffuse);
+        host.denoiser.configure(cy::rendering::denoise::SignalKind::IndirectSpecular,
+                                host.authored_specular);
+    }
     host.settings.probes.spacing_pixels = 8;
     // FOUR FRAMES OF PROBE HISTORY, not the default two: the blend's weight is the count's
     // (1/2, 1/3, 1/4) before it is the floor's, which a transcription could get wrong unseen.
@@ -250,6 +306,8 @@ void compare_probes(const gi::ScreenProbeGather& host, const GpuScreenResolve& d
         host.system.acceleration().set_mirror(nullptr);
     }
     out.probe_coefficients.finish();
+    out.probe_filtered.finish();
+    out.probe_cache.finish();
     out.noisy_diffuse.finish();
     out.noisy_specular.finish();
     out.denoised_diffuse.finish();
@@ -296,10 +354,17 @@ void check_probes(const Comparison& result, const char* tier) {
     std::fprintf(stderr, "%s, the probes: %u live records compared, %u placed differently\n", tier,
                  result.probe_records, result.probe_mismatches);
     result.probe_coefficients.print("  probe coefficients, every frame");
+    result.probe_filtered.print("  probe coefficients the pixels integrate, every frame");
     CY_CHECK_GT(result.probe_records, 0U);
     CY_CHECK_LE(result.probe_mismatches * 100U, std::max(result.probe_records, 100U));
     CY_CHECK_LT(result.probe_coefficients.mean, 1.0e-3);
     CY_CHECK_LT(result.probe_coefficients.fraction_beyond(), 0.02);
+    CY_CHECK_LT(result.probe_filtered.mean, 1.0e-3);
+    CY_CHECK_LT(result.probe_filtered.fraction_beyond(), 0.02);
+    result.probe_cache.print("  the cache's answer at each probe, every frame");
+    CY_CHECK_LT(result.probe_cache.mean, 1.0e-3);
+    CY_CHECK_LT(result.probe_cache.fraction_beyond(), 0.02);
+    CY_CHECK_LE(result.openness_mismatches * 100U, std::max(result.probe_records, 100U));
     check(result, tier);
 }
 
@@ -314,9 +379,28 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, software tier") {
     // accumulation's floor on its blend weight is reached only there, and a transcription that
     // floored it wrongly agrees with the host for every frame before it.
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 40, result));
+    RoomCase room;
+    room.frames = 40;
+    CY_REQUIRE(compare_room(gpu, room, result));
     CY_CHECK_EQ(result.tier, gi::RadianceSource::SoftwareTrace);
     check(result, "software");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("a shared denoiser that cuts its history cuts it on the device as on the host") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // The per-pixel gather's one-ray signal strays from its history every frame, so a history
+    // rejection of a fifth cuts somewhere on almost every frame: the device's shared accumulation
+    // (gi_denoise.slang) is held to `Denoiser::accumulate`'s cut, past the history's floor.
+    Comparison result;
+    RoomCase room;
+    room.frames = 40;
+    room.history_rejection = 0.2F;
+    CY_REQUIRE(compare_room(gpu, room, result));
+    check(result, "software, history rejection 0.2");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
@@ -326,7 +410,9 @@ CY_TEST_CASE("on a half-resolution grid the device resolve, denoiser and upsampl
         return;
     }
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 8, result, 2));
+    RoomCase room;
+    room.divisor = 2;
+    CY_REQUIRE(compare_room(gpu, room, result));
     check(result, "software, divisor 2");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
@@ -337,7 +423,9 @@ CY_TEST_CASE("the device resolve and denoiser are the host's, hardware tier with
         return;
     }
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, true, 8, result));
+    RoomCase room;
+    room.hardware = true;
+    CY_REQUIRE(compare_room(gpu, room, result));
     CY_CHECK_EQ(result.tier, gi::RadianceSource::HardwareTrace);
     check(result, "hardware");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
@@ -349,11 +437,43 @@ CY_TEST_CASE(
     if (!gpu.available()) {
         return;
     }
-    // Twelve frames: past the probes' history cap, and through the guide drawn from the history.
+    // THIRTY-SIX FRAMES: past the probes' history cap, through the guide drawn from the history,
+    // and past the pixels' history (32), where the temporal pass's blend weight reaches its floor
+    // — a transcription that floored it wrongly agrees with the host before that.
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 12, result, 1, gi::GiGather::ScreenProbes, 64, 40));
+    CY_REQUIRE(compare_room(gpu, probe_case(36), result));
     CY_CHECK_EQ(result.tier, gi::RadianceSource::SoftwareTrace);
     check_probes(result, "software screen probes");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("at half the ray density the device's probes trace and keep as the host's do") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // `TracingResolution`'s last step: half the probes trace a frame and the rest keep the probe
+    // they stand for, chosen by the same hash on both sides.
+    Comparison result;
+    RoomCase room = probe_case(12);
+    room.ray_density = 0.5F;
+    CY_REQUIRE(compare_room(gpu, room, result));
+    check_probes(result, "software screen probes, half the ray density");
+    CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("under the shared denoiser the device screen probes are the host's, software") {
+    Gpu gpu(false);
+    if (!gpu.available()) {
+        return;
+    }
+    // The lever's other position: no probe filter, and the integrated pixels through the shared
+    // denoiser's accumulation, variance and one pass of its cascade.
+    Comparison result;
+    RoomCase room = probe_case(12);
+    room.denoiser = gi::ScreenProbeDenoiser::Shared;
+    CY_REQUIRE(compare_room(gpu, room, result));
+    check_probes(result, "software screen probes, shared denoiser");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
@@ -369,7 +489,9 @@ CY_TEST_CASE("on a half-resolution grid the device screen probes are the host's"
     // ripple exercises is the per-pixel half grid's case; this one holds the probes' placement,
     // reprojection and integration on the half grid.
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 8, result, 2, gi::GiGather::ScreenProbes, 64, 40));
+    RoomCase room = probe_case(8);
+    room.divisor = 2;
+    CY_REQUIRE(compare_room(gpu, room, result));
     check_probes(result, "software screen probes, divisor 2");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
@@ -389,7 +511,9 @@ CY_TEST_CASE("on rippled normals the device places the probes the host places") 
     // asks for more adaptive probes than a frame keeps, and which of them the device's atomic
     // keeps is the order its threads arrive in.
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, false, 2, result, 1, gi::GiGather::ScreenProbes, 64, 40, kRipple));
+    RoomCase room = probe_case(2);
+    room.rippled = kRipple;
+    CY_REQUIRE(compare_room(gpu, room, result));
     std::fprintf(stderr,
                  "rippled normals: %u live records compared, %u placed differently, %u adaptive "
                  "refused\n",
@@ -406,7 +530,9 @@ CY_TEST_CASE("the device screen probes are the host's, hardware tier with ray qu
         return;
     }
     Comparison result;
-    CY_REQUIRE(compare_room(gpu, true, 8, result, 1, gi::GiGather::ScreenProbes, 64, 40));
+    RoomCase room = probe_case(8);
+    room.hardware = true;
+    CY_REQUIRE(compare_room(gpu, room, result));
     CY_CHECK_EQ(result.tier, gi::RadianceSource::HardwareTrace);
     check_probes(result, "hardware screen probes");
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);

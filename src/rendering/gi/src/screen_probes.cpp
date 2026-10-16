@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace cy::rendering::gi {
 namespace {
@@ -298,6 +299,75 @@ void blend(ScreenProbe& probe, const Vec3 estimate[kScreenProbeCoefficients], bo
     probe.history = math::min(history + 1.0F, frames);
 }
 
+/// What the pixels read before the probe-space filter has run: the coefficients themselves.
+void unfiltered(ScreenProbe& probe) noexcept {
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        probe.filtered[k] = probe.coefficients[k];
+    }
+}
+
+/// The probe-space filter's tent: a neighbour `offset` tiles away along one axis, within `reach`.
+[[nodiscard]] f32 filter_tent(i32 offset, u32 reach) noexcept {
+    const auto distance = static_cast<f32>(offset < 0 ? -offset : offset);
+    return 1.0F - (distance / static_cast<f32>(reach + 1U));
+}
+
+/// The uniform tile a probe stands in: its own, or the one holding its half-tile cell's centre.
+void probe_tile(const ScreenProbeLayout& layout, const ScreenProbe& probe, u32& x,
+                u32& y) noexcept {
+    const u32 uniform = layout.uniform_count();
+    const u32 pixel = probe.id < uniform ? layout.uniform_pixel(probe.id)
+                                         : layout.adaptive_pixel(probe.id - uniform);
+    x = std::min((pixel % layout.width) / layout.spacing, layout.tiles_x - 1U);
+    y = std::min((pixel / layout.width) / layout.spacing, layout.tiles_y - 1U);
+}
+
+/// One probe's `filtered` coefficients from its own and its uniform neighbours' coefficients.
+void filter_probe(const ScreenProbeLayout& layout, Span<const ScreenProbe> probes,
+                  ScreenProbe& probe, const ScreenProbeSettings& settings) noexcept {
+    Vec3 sum[kScreenProbeCoefficients];
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        sum[k] = probe.coefficients[k];
+    }
+    f32 total = 1.0F;
+    u32 tile_x = 0;
+    u32 tile_y = 0;
+    probe_tile(layout, probe, tile_x, tile_y);
+    const auto reach = static_cast<i32>(settings.filter_tiles);
+    for (i32 dy = -reach; dy <= reach; ++dy) {
+        const i32 y = static_cast<i32>(tile_y) + dy;
+        for (i32 dx = -reach; dx <= reach; ++dx) {
+            const i32 x = static_cast<i32>(tile_x) + dx;
+            if (x < 0 || y < 0 || std::cmp_greater_equal(x, layout.tiles_x) ||
+                std::cmp_greater_equal(y, layout.tiles_y)) {
+                continue;
+            }
+            const u32 tile = (static_cast<u32>(y) * layout.tiles_x) + static_cast<u32>(x);
+            const ScreenProbe& neighbour = probes[tile];
+            if (tile == probe.id || neighbour.depth <= 0.0F) {
+                continue;
+            }
+            const f32 near = 1.0F - (length(neighbour.position - probe.position) /
+                                     (settings.filter_reach * probe.depth));
+            const f32 weight =
+                filter_tent(dx, settings.filter_tiles) * filter_tent(dy, settings.filter_tiles) *
+                math::max(near, 0.0F) *
+                screen_probe_geometry_weight(neighbour.position, neighbour.normal, probe.position,
+                                             probe.normal, probe.depth, settings.plane_tolerance);
+            if (weight <= 0.0F) {
+                continue;
+            }
+            for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+                sum[k] = sum[k] + (neighbour.coefficients[k] * weight);
+            }
+            total += weight;
+        }
+    }
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        probe.filtered[k] = sum[k] / total;
+    }
+}
+
 /// One of the field's sky-visibility rays from the probe in the far field; one elsewhere.
 [[nodiscard]] f32 probe_openness(const ScreenProbe& probe, Vec3 camera,
                                  const ScreenResolveSettings& settings,
@@ -398,10 +468,10 @@ struct Gathered {
         }
         gathered.irradiance =
             gathered.irradiance +
-            (screen_probe_evaluate(probe.coefficients, normal, kIrradianceBands) * weight);
+            (screen_probe_evaluate(probe.filtered, normal, kIrradianceBands) * weight);
         gathered.glossy =
             gathered.glossy +
-            (screen_probe_evaluate(probe.coefficients, reflection, specular_bands) * weight);
+            (screen_probe_evaluate(probe.filtered, reflection, specular_bands) * weight);
         gathered.cache = gathered.cache + (probe.cache * weight);
         gathered.cache_confidence += probe.cache_confidence * weight;
         gathered.openness += probe.openness * weight;
@@ -427,8 +497,8 @@ struct Gathered {
     } else if (gathered.nearest != nullptr) {
         // No probe agrees with the pixel: the one nearest its plane answers alone.
         const ScreenProbe& nearest = *gathered.nearest;
-        gathered.irradiance = screen_probe_evaluate(nearest.coefficients, normal, kIrradianceBands);
-        gathered.glossy = screen_probe_evaluate(nearest.coefficients, reflection, specular_bands);
+        gathered.irradiance = screen_probe_evaluate(nearest.filtered, normal, kIrradianceBands);
+        gathered.glossy = screen_probe_evaluate(nearest.filtered, reflection, specular_bands);
         gathered.cache = nearest.cache;
         gathered.cache_confidence = nearest.cache_confidence;
         gathered.openness = nearest.openness;
@@ -491,13 +561,14 @@ ScreenProbeLayout screen_probe_layout(u32 width, u32 height, u32 spacing) noexce
 }
 
 u32 screen_probe_rays(const ScreenResolveSettings& settings) noexcept {
-    const u32 authored = std::clamp(settings.probes.rays, 1U, kScreenProbeMaxRays);
-    if (settings.ray_density >= 1.0F) {
-        return authored;
+    return std::clamp(settings.probes.rays, 1U, kScreenProbeMaxRays);
+}
+
+bool screen_probe_traces(u32 id, u64 frame, f32 density) noexcept {
+    if (density >= 1.0F) {
+        return true;
     }
-    const auto scaled =
-        static_cast<u32>(static_cast<f32>(authored) * math::max(settings.ray_density, 0.0F));
-    return std::clamp(scaled, std::min(4U, authored), authored);
+    return screen_unit(screen_hash(id, frame, kScreenStreamProbeUpdate)) < density;
 }
 
 u32 screen_probe_grid_spacing(u32 spacing_pixels, u32 divisor) noexcept {
@@ -620,8 +691,8 @@ Status ScreenProbeGather::place(const ScreenSurfaces& surfaces,
 
 bool ScreenProbeGather::reproject(const ScreenProbe& probe, const ScreenResolveSources& sources,
                                   const ScreenProbeSettings& settings,
-                                  Vec3 coefficients[kScreenProbeCoefficients],
-                                  f32& history) const noexcept {
+                                  Vec3 coefficients[kScreenProbeCoefficients], f32& history,
+                                  const ScreenProbe*& matched) const noexcept {
     const ScreenHistoryInputs& inputs = *sources.history;
     if (screen_invalidated_at(inputs.invalidated, probe.position)) {
         return false;
@@ -670,22 +741,41 @@ bool ScreenProbeGather::reproject(const ScreenProbe& probe, const ScreenResolveS
         coefficients[k] = best->coefficients[k];
     }
     history = best->history;
+    matched = best;
     return true;
 }
 
 void ScreenProbeGather::trace_probe(ScreenProbe& probe, const ScreenResolveSettings& settings,
                                     const ScreenResolveSources& sources) noexcept {
     const ScreenProbeSettings& shape = settings.probes;
+    Vec3 previous[kScreenProbeCoefficients] = {};
+    f32 history = 0.0F;
+    const ScreenProbe* matched = nullptr;
+    const bool reprojected = previous_valid_ && sources.history != nullptr &&
+                             !sources.history->previous_depth.empty() &&
+                             reproject(probe, sources, shape, previous, history, matched);
+    stats_.reprojected += reprojected ? 1U : 0U;
+
+    // BELOW A RAY DENSITY OF ONE, THAT FRACTION OF THE PROBES TRACE A FRAME, and the rest keep the
+    // probe they stand for — its radiance and count, its cache answer and its openness — at none
+    // of a traced probe's cost. Fewer rays a probe would not do: a probe's trace is mostly what it
+    // does once (its history, its stand-in, its guide), and a probe with half its rays cost 0.92
+    // of one with all of them. A probe with no history always traces.
+    if (reprojected && !screen_probe_traces(probe.id, sources.frame, settings.ray_density)) {
+        for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+            probe.coefficients[k] = previous[k];
+        }
+        probe.history = history;
+        probe.cache = matched->cache;
+        probe.cache_confidence = matched->cache_confidence;
+        probe.openness = matched->openness;
+        unfiltered(probe);
+        stats_.carried += 1;
+        return;
+    }
     const RadianceSample stand_in = cache_at(sources, probe.position, probe.normal);
     probe.cache = stand_in.radiance;
     probe.cache_confidence = stand_in.confidence;
-
-    Vec3 previous[kScreenProbeCoefficients] = {};
-    f32 history = 0.0F;
-    const bool reprojected = previous_valid_ && sources.history != nullptr &&
-                             !sources.history->previous_depth.empty() &&
-                             reproject(probe, sources, shape, previous, history);
-    stats_.reprojected += reprojected ? 1U : 0U;
 
     // The defensive mixture: uniform and cosine halves of what the guide does not take.
     f32 weights[kScreenProbeGuideCells];
@@ -724,6 +814,7 @@ void ScreenProbeGather::trace_probe(ScreenProbe& probe, const ScreenResolveSetti
     stats_.rays += rays;
     blend(probe, sum, reprojected, previous, history,
           static_cast<f32>(std::max(shape.history_frames, 1U)));
+    unfiltered(probe);
     probe.openness = probe_openness(probe, camera_, settings, sources);
 }
 
@@ -738,6 +829,24 @@ void ScreenProbeGather::trace(const ScreenSurfaces& surfaces, const ScreenResolv
             continue;
         }
         trace_probe(probe, settings, sources);
+    }
+}
+
+void ScreenProbeGather::filter(const ScreenProbeSettings& settings) noexcept {
+    if (settings.denoiser != ScreenProbeDenoiser::ProbeSpace || settings.filter_tiles == 0 ||
+        settings.filter_reach <= 0.0F) {
+        return;
+    }
+    // Every probe reads its neighbours' COEFFICIENTS and writes only its own `filtered`, so the
+    // order the probes are filtered in changes nothing — the device filters them all at once.
+    Array<ScreenProbe>& probes = probes_[slot_];
+    const u32 records = layout_.uniform_count() + adaptive_count_[slot_];
+    for (u32 index = 0; index < records; ++index) {
+        ScreenProbe& probe = probes[index];
+        if (probe.depth <= 0.0F) {
+            continue;
+        }
+        filter_probe(layout_, probes.span(), probe, settings);
     }
 }
 

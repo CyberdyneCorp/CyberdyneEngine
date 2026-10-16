@@ -117,6 +117,12 @@ struct SignalConfig {
     /// is not consulted, which is right for a hemispherical one. "A rough surface tolerates a wide
     /// filter, a smooth one does not" is this number and nothing else.
     f32 roughness_widening = 0.0F;
+    /// HOW FAR A NEW SAMPLE MAY STRAY FROM THE HISTORY before the history is cut, relative to the
+    /// larger of the two: past it, the count the history carries is scaled by the square of the
+    /// tolerance over the deviation, so a lighting change is followed in a frame or two rather than
+    /// averaged in over `history_length`. Zero — every signal's default — never cuts. It is for a
+    /// signal whose frame-to-frame noise is well below it, which a one-ray signal's is not.
+    f32 history_rejection = 0.0F;
     /// Whether the visibility buffer's instance and material identifiers are a hard boundary.
     /// `denoising` requires that they be used where available, "since they give exact boundaries
     /// rather than inferred ones".

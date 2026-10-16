@@ -39,7 +39,7 @@ static const uint kGrProbeLayout = 40u;   // grid width, grid height, spacing, h
 static const uint kGrProbeCounts = 41u;   // tiles x, tiles y, cells x, cells y
 static const uint kGrProbeShape = 42u;    // rays, history frames, adaptive capacity, flags
 static const uint kGrProbeWeights = 43u;  // adaptive threshold, plane tolerance, guided share, uniform count
-static const uint kGrProbeSamples = 44u;  // x the samples an integrated pixel carries, 0, 0, 0
+static const uint kGrProbeSamples = 44u;  // samples an integrated pixel carries, filter tiles, filter reach, 0
 
 static const uint kGrSourceNone = 0u;
 static const uint kGrSourceCache = 3u;

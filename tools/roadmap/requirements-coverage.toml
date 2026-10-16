@@ -1788,6 +1788,20 @@ note = "the six operators the requirement enumerates, each driven to the ends of
 # smoke.render_gi_screen_probes_quality and smoke.gi_gpu_probe_quality for the quality and cost
 # scenarios).
 #
+# `openspec/changes/add-gi-probe-space-denoiser` (#35, the probes' denoiser and the comparison
+# picture) adds two and modifies one. "Probe-space denoising of the screen probes": on archive, map it
+# to test:integration.render_gi_screen_probes, case "the probe-space filter averages a probe with its
+# neighbours on its own surface" (siblings: "under the shared denoiser the probes are integrated
+# unfiltered, as they were" and the lever case's `screen_signal_config` checks; render.gi_gpu_resolve's
+# screen-probe cases and "under the shared denoiser the device screen probes are the host's, software"
+# for the device; smoke.gi_gpu_probe_quality for "cheaper, and no worse"; the budget's floor is
+# "below a ray density of one, that fraction of the probes trace and the rest keep", the device's
+# "at half the ray density ..." and render.gi_gpu_resolve's stage 5 case). "A comparison picture
+# against the path tracer": a capture, `just capture-gi-interior` (samples/12-beauty), with
+# tools/docs/check_sun_patch.py and its device-free tests — no CTest entry, as every beauty capture.
+# denoising's "Signal-specific configuration" gains the history rejection; its row below names the
+# case that holds it.
+#
 # TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
 # and `src/rendering/sky_illumination/`. Most are answered by a named case, one by a criterion the
 # falsifiability record proves can fail, and THE REST ARE DEFERRED WITH A REASON — they
@@ -2033,7 +2047,7 @@ row = "denoising"
 requirement = "Signal-specific configuration"
 evidence = "test:unit.render_denoise"
 case = "every signal declares what kind of signal it is"
-note = "the table this requirement asks each signal to supply — domain (radiance or visibility), lobe shape, roughness modulation, history length — read back per signal and required to differ where the signals differ. The two behavioural halves are the cases beside it: `a smooth reflection stays sharp and a rough one tolerates a wide filter` in integration.render_denoise_filter measures the filter radius for a lobe-shaped signal at two roughnesses and requires a hemispherical one to be unaffected by roughness, and `a visibility term is denoised as occlusion rather than as radiance` in integration.render_gi_signals runs the shadow-contact claim through the real producer rather than through a buffer written in the denoiser's own test."
+note = "the table this requirement asks each signal to supply — domain (radiance or visibility), lobe shape, roughness modulation, history length — read back per signal and required to differ where the signals differ. The two behavioural halves are the cases beside it: `a smooth reflection stays sharp and a rough one tolerates a wide filter` in integration.render_denoise_filter measures the filter radius for a lobe-shaped signal at two roughnesses and requires a hemispherical one to be unaffected by roughness, and `a visibility term is denoised as occlusion rather than as radiance` in integration.render_gi_signals runs the shadow-contact claim through the real producer rather than through a buffer written in the denoiser's own test. How far a sample may stray from its history before the history is cut (`history_rejection`, zero for every signal by default; 0.2 for the GI's probe-space denoiser) is `a history the signal has left behind is cut, and only when the signal asks` in integration.render_denoise_filter: the exact count kept past the tolerance, nothing cut within it, and every signal's default zero."
 
 [[coverage]]
 row = "denoising"
