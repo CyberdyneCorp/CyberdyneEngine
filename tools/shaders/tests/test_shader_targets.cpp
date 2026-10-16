@@ -38,12 +38,15 @@ using namespace cy;
 
 namespace {
 
-/// THREE SHARDS, ONE CASE EACH. The whole set is about 190 compilations, and as one case it spent
-/// 30.09 s of CPU on a hosted linux-x86_64 runner against the smoke budget of 30 s. Each shard
-/// loads every module — imports resolve as in a whole run — and compiles the entry points of every
-/// third one, so the three cases together are exactly the whole set, with every check below
-/// applied to each third.
-constexpr u32 kShards = 3;
+/// FOUR SHARDS, ONE CASE EACH. The whole set was about 190 compilations, and as one case it spent
+/// 30.09 s of CPU on a hosted linux-x86_64 runner against the smoke budget of 30 s, so it was split
+/// into thirds of the MODULES. The set has grown since — 89 entry points at #123, against 63 at the
+/// split — and modules carry unequal numbers of them, so the last third held 33 and spent 31.26 s
+/// on a hosted linux-x86_64 runner (PR #125's `test linux-x86_64`). The shards are now every fourth
+/// ENTRY POINT, which differ by at most one. Each shard loads every module — imports resolve as in
+/// a whole run — so the four cases together are exactly the whole set, with every check below
+/// applied to each quarter.
+constexpr u32 kShards = 4;
 
 void compile_shard(u32 shard) {
     std::error_code moved;
@@ -76,14 +79,18 @@ void compile_shard(u32 shard) {
 
 }  // namespace
 
-CY_TEST_CASE("every entry point under src/rendering compiles for every target: first third") {
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: first quarter") {
     compile_shard(0);
 }
 
-CY_TEST_CASE("every entry point under src/rendering compiles for every target: second third") {
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: second quarter") {
     compile_shard(1);
 }
 
-CY_TEST_CASE("every entry point under src/rendering compiles for every target: last third") {
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: third quarter") {
     compile_shard(2);
+}
+
+CY_TEST_CASE("every entry point under src/rendering compiles for every target: last quarter") {
+    compile_shard(3);
 }

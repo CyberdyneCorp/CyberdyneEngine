@@ -81,9 +81,10 @@ struct Options {
     /// Fail the run when any target refused any entry point, not only when no target could compile
     /// one. The completeness question, asked separately from the capability question.
     bool strict = false;
-    /// Compile only the modules whose index in the walk is `shard` modulo `shards`. Every module is
-    /// still LOADED, so imports resolve exactly as in a whole run; the shards of one run partition
-    /// its entry points, which is how `smoke.shader_targets` keeps each case inside its budget.
+    /// Compile only the entry points whose index in the walk is `shard` modulo `shards`. Every
+    /// module is still LOADED, so imports resolve exactly as in a whole run; the shards of one run
+    /// partition its entry points evenly, which is how `smoke.shader_targets` keeps each case
+    /// inside its budget.
     u32 shard = 0;
     u32 shards = 1;
 };
