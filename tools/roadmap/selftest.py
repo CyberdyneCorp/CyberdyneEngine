@@ -2327,6 +2327,42 @@ def test_falsifiability_of_the_ladder(root: Path) -> None:
           not findings, "\n".join(findings[:20]))
 
 
+def test_falsifiability_proves_one_check_once(root: Path) -> None:
+    """A check several ledgers declare byte for byte is proven once per run, and reported for each.
+
+    `workflows` and `format` are declared by most of the ladder, and each copy was proven again —
+    36 s apiece — until `just roadmap-test` ran past `plan-consistency`'s 1800 s inside the nightly
+    ledger. What may NOT collapse is two declarations a proof can tell apart: a declared gap is
+    judged the other way round, so it is kept apart from the same body undeclared.
+    """
+    del root
+    shared = criteria_module.Criterion(id="workflows", describe="one", source="a", kind="recipe",
+                                       ci_job="j", run="just ci-check")
+    again = dataclasses.replace(shared, describe="the same check, said differently", source="b")
+    gap = dataclasses.replace(shared, id="gap", known_gap="declared", known_gap_closes="m2")
+    ledgers = {"m0": (shared,), "m1": (again, gap)}
+    calls: list[tuple[str, str]] = []
+
+    def prove(sandbox, ledger, criterion, build_dir="", tree=None):
+        calls.append((ledger, criterion.id))
+        return falsify_module.Proof(ledger, criterion.id, falsify_module.digest(criterion),
+                                    falsify_module.PROVEN, "m", "detail")
+
+    sandbox = SimpleNamespace(restore=lambda: None)
+    with patch.object(criteria_module, "available", lambda: tuple(ledgers)), \
+            patch.object(criteria_module, "load",
+                         lambda identifier: SimpleNamespace(criteria=ledgers[identifier])), \
+            patch.object(falsify_module, "prove", prove):
+        proofs = falsify_module._prove_all(sandbox, (), "")
+    check("a check declared twice with one body is proven once",
+          calls == [("m0", "workflows"), ("m1", "gap")], f"{calls}")
+    check("and its proof is reported under each declaration's own ledger",
+          [(proof.ledger, proof.criterion) for proof in proofs]
+          == [("m0", "workflows"), ("m1", "workflows"), ("m1", "gap")], f"{proofs}")
+    check("the same body declared as a gap is proven on its own: a gap is judged the other way round",
+          ("m1", "gap") in calls)
+
+
 #: `falsify.prove` sets this while it is running a criterion, and `plan-consistency` — a criterion of
 #: every ledger on the ladder — runs THIS file. So this file runs inside the prover, inside a sandbox
 #: that is a copy of the tracked tree and is not a git repository.
@@ -3685,6 +3721,7 @@ def main() -> int:
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
+        test_falsifiability_proves_one_check_once(_area(root, "falsify-once"))
         test_scheduler_concurrency_is_opt_in(_area(root, "scheduler-concurrency"))
         test_scheduler_rules(_area(root, "scheduler"))
         test_scheduler_derivation(_area(root, "scheduler-derivation"))
