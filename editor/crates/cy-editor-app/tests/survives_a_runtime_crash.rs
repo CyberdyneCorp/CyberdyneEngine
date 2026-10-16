@@ -27,7 +27,15 @@ use cy_editor_core::ids::DocumentId;
 use cy_editor_core::value::Value;
 use cy_editor_viewport::play::PlayState;
 
-/// Where Cargo put `cy-runtime-stub`.
+/// Where `cy-runtime-stub` is, building it first when nothing has.
+///
+/// CARGO BUILDS NO BINARY OF A DEPENDENCY: `cy-editor-testhost` is a dev-dependency of this crate,
+/// so `cargo test -p cy-editor-app` compiles its library and never its `cy-runtime-stub`. The stub
+/// was found only because an earlier workspace-wide build in the same target directory had left it
+/// there — and `m5b:editor-without-the-agent-interface`, run first in a fresh target directory by
+/// the nightly ledger's shard, failed both cases here with "cy-runtime-stub was not built". So a
+/// missing stub is built, by the Cargo running these tests, into a target directory of its own: the
+/// running `cargo test` holds the lock on this one.
 fn stub_binary() -> PathBuf {
     let executable = std::env::current_exe().expect("a test binary knows its own path");
     let deps = executable
@@ -39,13 +47,43 @@ fn stub_binary() -> PathBuf {
         deps
     };
     let path = profile.join("cy-runtime-stub");
+    if path.is_file() {
+        return path;
+    }
+    let directory = profile
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a profile directory has a name");
+    // Cargo names the directory of its built-in `dev` and `test` profiles `debug`.
+    let profile_name = match directory {
+        "debug" => "dev",
+        other => other,
+    };
+    let target = profile.join("runtime-stub");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let status = Command::new(cargo)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .args([
+            "-p",
+            "cy-editor-testhost",
+            "--bin",
+            "cy-runtime-stub",
+            "--profile",
+        ])
+        .arg(profile_name)
+        .env("CARGO_TARGET_DIR", &target)
+        .status()
+        .expect("Cargo can be started to build the runtime stub");
+    let built = target.join(directory).join("cy-runtime-stub");
     assert!(
-        path.is_file(),
-        "cy-runtime-stub was not built at {}. It is a dev-dependency of this crate so that \
-         `cargo test -p cy-editor-app` builds it.",
-        path.display()
+        status.success() && built.is_file(),
+        "cy-runtime-stub was not built at {} ({status})",
+        built.display()
     );
-    path
+    built
 }
 
 /// Start a runtime, waiting for it to say it is listening.

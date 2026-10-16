@@ -15,6 +15,10 @@ Tasks 4.3.1 to 4.3.4 and 4.4.1. Three subcommands, one behind each recipe in jus
                       `--incremental` it evaluates only the rung's own criteria, the earlier ones a
                       change since `--changed-since` can have moved, and the smoke set; see
                       incremental.py. The full ledger stays the default, runs nightly and at M11.e.
+                      With `--shard i/n` it evaluates only shard i of n and `--record` writes what
+                      it found, for `merge`; see shard.py.
+  merge <id>          the shards' records of one run, checked against the assignment and summarised
+                      as one verdict. A missing shard fails it.
   gates               the permanent merge-gate set and any recorded override.
 
 Nothing here decides anything: the record, the criteria and the gates are data, and the milestones
@@ -40,6 +44,7 @@ import incremental as incremental_module  # noqa: E402
 import reclaim as reclaim_module  # noqa: E402
 import record as record_module  # noqa: E402
 import schedule as schedule_module  # noqa: E402
+import shard as shard_module  # noqa: E402
 
 OK_EXIT, FAILED_EXIT, DATA_EXIT = 0, 1, 2
 FAILURE_OUTPUT_LINES = 30
@@ -164,16 +169,40 @@ def command_milestone(arguments: argparse.Namespace) -> int:
             "--changed-since selects the base of an --incremental run; pass --incremental too. "
             "Without it the full ledger runs, which is the default on purpose")
     if arguments.incremental:
+        if arguments.shard:
+            raise shard_module.ShardError("--shard splits the full ledger; an --incremental run "
+                                          "is already a selection and is not sharded")
         return _incremental(plan, arguments)
+    if arguments.record_to and not arguments.shard:
+        raise shard_module.ShardError("--shard-record writes a shard's record for `merge`; "
+                                      "pass --shard")
+    shard = shard_module.parse(arguments.shard) if arguments.shard else None
+    whole = plan
+    if shard is not None:
+        plan = shard_module.narrow(plan, shard)
     if arguments.list:
+        if shard is not None and not arguments.json:
+            print(f"shard {shard}: {len(plan.entries)} of {len(whole.entries)} criteria")
         return _list_criteria(plan, arguments.json)
 
     entries = record_module.load(arguments.record)
     jobs = max(1, arguments.jobs if arguments.jobs else schedule_module.default_jobs())
     before = _tree_state()
+    if shard is not None:
+        print(f"SHARD {shard} — {len(plan.entries)} of the {len(whole.entries)} criteria below; "
+              f"`roadmap.py merge` reads every shard's record and gives the ledger's verdict")
     _print_plan(plan, jobs)
     results = _evaluate_plan(plan, entries, arguments.ci, jobs, arguments.reclaim_builds)
     print()
+    if shard is not None:
+        if arguments.record_to:
+            commit = before[0] if before is not None else ""
+            shard_module.write_record(arguments.record_to, shard_module.record_document(
+                plan, shard, commit, arguments.ci, results))
+            print(f"[ledger] shard {shard} recorded in {arguments.record_to}", file=sys.stderr)
+        # A SHARD'S GREEN IS NOT THE LEDGER'S, so it records no incremental baseline: only `merge`
+        # has seen every criterion.
+        return _summarise(plan, results, arguments.json)
     verdict = _summarise(plan, results, arguments.json)
     if verdict == OK_EXIT and before is not None:
         # A GREEN FULL LEDGER IS THE ONLY THING THAT MOVES THE INCREMENTAL BASELINE: an incremental
@@ -507,6 +536,52 @@ def _summarise(plan: criteria_module.Plan, results, as_json: bool) -> int:
     return FAILED_EXIT if blocking else OK_EXIT
 
 
+# --- merge ----------------------------------------------------------------------------------------
+
+
+def command_merge(arguments: argparse.Namespace) -> int:
+    """Every shard's record of one run, checked against the assignment, as one ledger verdict."""
+    gate_set = gates_module.load()
+    plan = criteria_module.build_plan(arguments.id, gates_module.permanent_milestones(gate_set))
+    _check_criteria_are_gated(plan, gate_set)
+    if arguments.estimate:
+        return _print_estimate(plan, arguments.shards)
+    state = _tree_state()
+    commit = state[0] if state is not None else ""
+    costs = shard_module.load_costs()
+    merged = shard_module.merge(plan, arguments.shards,
+                                shard_module.record_paths(arguments.records), commit, arguments.ci,
+                                costs)
+    if not arguments.json:
+        _print_merged(plan, merged, arguments.shards, commit)
+    if arguments.write_costs:
+        source = f"the shard records of {commit[:12]}"
+        shard_module.COSTS_FILE.write_text(
+            shard_module.costs_document(merged, plan, source, costs), encoding="utf-8")
+        print(f"costs: {shard_module.COSTS_FILE.name} rewritten from this run", file=sys.stderr)
+    return _summarise(plan, merged.results, arguments.json)
+
+
+def _print_merged(plan: criteria_module.Plan, merged, count: int, commit: str) -> None:
+    print(f"{plan.milestone.id.upper()} — {plan.milestone.name}: {len(plan.entries)} exit "
+          f"criteria, merged from {count} shard record(s) of {commit[:12]}")
+    print()
+    print("       shard criteria   seconds  (the criteria's own clocks, not the job's)")
+    for key, criteria_count, seconds in merged.durations:
+        print(f"  {key + '/' + str(count):>10} {criteria_count:>8} {seconds:>9.0f}  "
+              f"({seconds / 3600:.2f} h)")
+    print()
+
+
+def _print_estimate(plan: criteria_module.Plan, count: int) -> int:
+    print(f"{plan.milestone.id.upper()}: {len(plan.entries)} criteria in {count} shard(s), "
+          f"estimated from {shard_module.COSTS_FILE.name} where measured")
+    for key, criteria_count, seconds in shard_module.estimated_seconds(plan, count):
+        print(f"  {key + '/' + str(count):>10} {criteria_count:>4} criteria  "
+              f"{seconds / 3600:5.2f} h")
+    return OK_EXIT
+
+
 # --- gates ----------------------------------------------------------------------------------------
 
 
@@ -606,7 +681,31 @@ def _parser() -> argparse.ArgumentParser:
     milestone.add_argument("--build-dir", type=Path, default=None,
                            help="the build tree whose graph says what a test reads (default: "
                                 "$CY_BUILD_DIR, else build/dev)")
+    milestone.add_argument("--shard", default="", metavar="I/N",
+                           help="evaluate only shard I of N of the full ledger (tools/roadmap/"
+                                "shard.py); `merge` puts the shards back together")
+    milestone.add_argument("--shard-record", dest="record_to", type=Path,
+                           default=None, metavar="FILE",
+                           help="with --shard, write the shard's record for `merge` to FILE")
     milestone.set_defaults(handler=command_milestone)
+
+    merge = subcommands.add_parser("merge", help="one verdict from every shard's record")
+    merge.add_argument("id", help="the milestone the shards evaluated")
+    merge.add_argument("--shards", type=int, required=True,
+                       help="how many shards the run was split into; every one must report")
+    merge.add_argument("--ci", action="store_true",
+                       help="the shards ran with --ci; a record that did not is refused")
+    merge.add_argument("--json", action="store_true", help="machine-readable output")
+    merge.add_argument("--estimate", action="store_true",
+                       help="print each shard's estimated size for --shards and exit")
+    merge.add_argument("--write-costs", action="store_true",
+                       help="rewrite tools/roadmap/shard-costs.toml from what these records measured")
+    # AN OPTION AND NOT A POSITIONAL: Python 3.12's argparse binds an empty `nargs="*"` positional
+    # to the id the moment an option follows it, so `merge m11d5 --ci --shards 12 records/` was
+    # refused with "unrecognized arguments" on the runner while 3.13 accepted it.
+    merge.add_argument("--records", nargs="+", type=Path, default=[], metavar="PATH",
+                       help="the shards' record files, or directories holding them")
+    merge.set_defaults(handler=command_merge)
 
     gate_command = subcommands.add_parser("gates", help="the permanent merge-gate set")
     gate_command.add_argument("--commands", action="store_true",
@@ -621,7 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return arguments.handler(arguments)
     except (record_module.RecordError, criteria_module.CriteriaError, gates_module.GateError,
-            incremental_module.IncrementalError) as error:
+            incremental_module.IncrementalError, shard_module.ShardError) as error:
         print(f"roadmap {arguments.command}: {error}", file=sys.stderr)
         return DATA_EXIT
 

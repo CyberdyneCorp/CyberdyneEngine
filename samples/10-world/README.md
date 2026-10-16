@@ -374,8 +374,8 @@ move (`openspec/changes/add-water-shading/evidence/`).
 redraws the world, so each reads the world's streams again: about sixteen megabytes of terrain
 positions and colours, plant proxies, sky, stars and sea. Until #77 those streams were in `Upload`
 memory, which on a discrete GPU is system memory, so all three draws of a frame pulled them across
-the bus. The device timed it (the frame's own timestamps, `gpu_ms` and `water_gpu_ms` in the budget
-CSV): 4 to 5 ms of device time a frame on the RTX 5060, 2.0 to 2.7 ms of it the two water pictures,
+the bus. The device timed it (the frame's own timestamps, `gpu_milliseconds` and `water_gpu_milliseconds`
+in the budget CSV): 4 to 5 ms of device time a frame on the RTX 5060, 2.0 to 2.7 ms of it the two water pictures,
 and the M11.a take's worst frame landed within a millisecond of 16.7 ms either way. The streams now
 live where `geometry_memory()` (`geometry_memory.h`) says: device-local memory the processor maps,
 when the device offers it, and `Upload` otherwise. The Vulkan backend now reports

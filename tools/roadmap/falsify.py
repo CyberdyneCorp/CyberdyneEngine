@@ -108,6 +108,7 @@ testing-and-quality (Quality gates for merge).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import hashlib
 import json
@@ -2211,15 +2212,44 @@ def command_prove(arguments: argparse.Namespace) -> int:
 
 def _prove_all(sandbox: Sandbox, ledgers: tuple[str, ...], only: str,
                build_dir: str = "", tree: WorkingTree | None = None) -> list[Proof]:
+    """Every declaration's proof — and each distinct CHECK proven once.
+
+    ONE CHECK, ONE PROOF, the rule `_carry_to_identical_declarations` already applies when a proof is
+    recorded, applied to the run as well. `workflows` and `format` are declared by most of the
+    ladder's ledgers with one body each, and every copy was proven again: about 36 s and 37 s a
+    copy, so `just roadmap-test` spent more than half of its 26 minutes on a hosted runner relearning
+    two facts — and inside the nightly ledger, where `plan-consistency` IS `just roadmap-test`, it
+    ran past the criterion's 1800 s. A proof depends on nothing but `_proof_key`, so a later
+    declaration with the same key reuses it under its own ledger and id.
+    """
     proofs = []
+    proven: dict[str, Proof] = {}
     for identifier in (ledgers or criteria_module.available()):
         for criterion in criteria_module.load(identifier).criteria:
             if only and only not in criterion.id:
                 continue
+            key = _proof_key(criterion)
+            if key in proven:
+                proofs.append(dataclasses.replace(proven[key], ledger=identifier,
+                                                  criterion=criterion.id))
+                continue
             proof = prove(sandbox, identifier, criterion, build_dir, tree)
             sandbox.restore()
+            proven[key] = proof
             proofs.append(proof)
     return proofs
+
+
+def _proof_key(criterion: criteria_module.Criterion) -> str:
+    """Everything a proof can depend on: the criterion without the words it says about itself.
+
+    `prove` reads the command, the artefact, the tiers, the declared mutation and CI environment
+    (`digest`), and also where it may run, what it requires, its budget and whether it is a declared
+    gap — so all of those are in the key. Its id, description, citation and stated needs are not
+    read by any proof, and two declarations differing only there are one check."""
+    anonymous = dataclasses.replace(criterion, id="", describe="", source="", reason="",
+                                    evaluates=[], needs=[], known_gap_declared_by="")
+    return repr(anonymous)
 
 
 def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = False) -> list[str]:

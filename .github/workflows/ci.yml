@@ -1149,8 +1149,21 @@ jobs:
       # clang-tidy needs the flags every file is compiled with, so the build comes first.
       - name: Configure and build for the compile database
         run: just build-engine
+      # CY_TIDY_CACHE records each file clang-tidy passes at this clean commit, and the directory is
+      # handed to the nightly ledger's shards below: their `m0:lint` runs the same recipe over the
+      # same commit, and on four cores it cannot re-lint all of it inside the criterion's 1800 s.
+      # A file with findings is never recorded. tools/quality/tidy_cache.py.
       - name: Static analysis
+        env:
+          CY_TIDY_CACHE: ${{ github.workspace }}/tidy-cache
         run: just quality-lint
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: tidy-cache
+          path: tidy-cache
+          retention-days: 1
+          if-no-files-found: ignore
       # The build above staged the dev tree's slangc, which is the compiler the committed
       # embedded-shader headers are checked against. A stale header fails naming its group, and
       # the regenerated text is kept as an artefact for a machine whose slangc orders SPIR-V ids
@@ -1584,7 +1597,7 @@ jobs:
   # declared is run by a job in .github/workflows/, and no job reimplements a recipe" — and a gate
   # nobody runs is not a gate, because it cannot regress visibly.
   #
-  # WHY ONE JOB, AND ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
+  # WHY ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
   # since M5: `criteria.build_plan` merges the criteria of every green milestone gate below the
   # target with the target's own and runs each distinct check ONCE. So the single command below
   # evaluates M0 through M11.d.5 — `just roadmap-milestone m11d5 --list` says 484 criteria, most of them
@@ -1615,7 +1628,9 @@ jobs:
   #
   # HOW THIS JOB GOES RED, because a job that exists, is green, and compares nothing is worse than no
   # job at all — this repository has shipped that defect before, and `tools/ci/cross_leg_audit.py`
-  # exists because of it. The step below runs ONE command and nothing forgives it:
+  # exists because of it. Each shard's step runs ONE command and nothing forgives it, and
+  # `milestone-verdict` fails when any shard's record is missing as well as when any criterion in
+  # any record failed:
   #
   #   * `tools/roadmap/roadmap.py` returns a non-zero exit when any criterion FAILED and is not a
   #     declared gap, and ALSO when a declared gap has started PASSING — a marker that outlived its
@@ -1631,34 +1646,69 @@ jobs:
   # declared; a criterion's recipe stops existing; or a `known_gap` in any ledger from m0 to m11d5
   # starts passing and its declaration has not been deleted.
   #
-  # AND WHAT IT WILL SAY ON ITS FIRST NIGHT IS NOT KNOWN HERE, WHICH IS SAID RATHER THAN GUESSED. No
-  # runner has ever executed this ledger — 65 of this repository's first 66 runs were cancelled
-  # before reaching a verdict. On the workstation the run cited above was red for `m4:sanitizers` and
-  # `m5:sanitizers` (408 and 1632 bytes leaked inside `libcuda.so.1`, no engine frame in either
-  # stack), and those two are in the permanent set this command evaluates — but a GitHub runner has
-  # no NVIDIA device, so the render cases that reach that driver may not be evaluated there at all,
-  # and criteria that pass on a workstation with a GPU may fail on a runner without one for the
-  # opposite reason. The first scheduled run is the measurement. docs/roadmap/open-debts.md is the
-  # list of what is known to be open when it happens.
+  # WHAT IT SAID WHEN IT FIRST FINISHED. Nightly run 38880558630 (dispatched on the sharding branch)
+  # was the first to evaluate every criterion on hosted runners: 449 evaluated, 35 not evaluated
+  # (a display or a GPU this fleet has no machine for), and two failures. One was fixed before the
+  # merge (`m9:figures-regenerated`: the figures' text layout and FreeType). The other,
+  # `m8a:authoring-recipe`, is not a finding about the tree: `just run-authoring --no-window` drives
+  # `cy_editor_window_runtime`, which needs a Vulkan device that can export a dma-buf, and reports
+  # "n/a" with exit 3 where there is none — no hosted runner and not lavapipe. Its ledger entry
+  # declares no `requires = "gpu"`, so the ledger reads that "n/a" as a failure. Until that is
+  # decided it is the one red this job carries; docs/roadmap/open-debts.md is the list of the rest
+  # of what is open.
+  #
+  # THE LEDGER IN SHARDS, AND WHY. Until October 2026 this was ONE job running the whole ledger, and
+  # it never finished: GitHub cancels a hosted job at six hours, and run 38687291984 had reached 134
+  # of 484 criteria when it did (`m1:four-profiles` alone took 7680 s there). So the same command now
+  # runs in SHARDS — `--shard i/n` evaluates the criteria tools/roadmap/shard.py assigns shard i, from
+  # the ledger's own data: criteria sharing a build tree stay together so the tree is built once, and
+  # the shards are balanced on the seconds tools/roadmap/shard-costs.toml measured here. Each shard
+  # is a job with its own disk and its own six hours, and `milestone-verdict` below merges them.
+  #
+  # THE COUNT IS WRITTEN THREE TIMES and `just ci-check` holds them equal: the matrix below lists
+  # 1..12, the run step says `/12`, and the merge says `--shards 12`. `just roadmap-merge m11d5
+  # --shards <n> --estimate` prints the expected size of each shard for another count.
   milestone:
-    name: milestone — the closed milestones' exit criteria (nightly)
+    name: milestone ${{ matrix.shard }}/12 — the closed milestones' exit criteria (nightly)
+    # `quality` for the lint results it records at this commit (the `tidy-cache` artifact below).
     needs:
       - build
       - cross-leg-publish
+      - quality
     # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
     # multi-hour ledger and `main` is pushed to many times a day.
     # A failed publisher leg must not silently skip the two architecture criteria: the other
     # published legs may still be enough to compare. The download/comparator will fail if not.
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
     runs-on: ubuntu-24.04
-    timeout-minutes: 480
+    # Under GitHub's 360-minute ceiling for a hosted job, so that a shard that overruns is reported
+    # by this job rather than cancelled by the platform. A shard over its share is a sign to raise
+    # the count, which `--estimate` sizes.
+    timeout-minutes: 330
+    # CY_BUILD_DIR names the unpacked tree the way every ledger close names its own: criteria that
+    # read the editor at `${CY_BUILD_DIR:-build/dev}/editor` (m11c:the-shot-does-not-overclaim-the-
+    # editor) only find it where `just build-editor` puts it when the variable is set — unset, the
+    # editor lands in build/editor and the criterion reports "the editor was not built".
+    env:
+      CY_BUILD_DIR: build/dev
+      CY_TIDY_CACHE: ${{ github.workspace }}/tidy-cache
+    strategy:
+      # Every shard runs to its verdict whatever another shard says: a red shard is one finding, and
+      # cancelling the others would turn it into eleven missing records.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
+      # The whole history: `m1:identity-manifest` diffs the identity manifest against a revision and
+      # `m11d:port-touches-no-engine-layer` reads every commit since its rung opened.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: extractions/setup-just@v4
       # THE RUNNER RAN OUT OF DISK on 2026-10-13 and 2026-10-14, five hours in, and the crash took the
-      # log with it. A full ledger builds far more trees than the image's 87 GB free: this frees the
-      # SDKs nothing here uses and prints `df`, and `--reclaim-builds` below deletes each tree once
-      # no later criterion needs it. just/ci.just and tools/roadmap/reclaim.py have the numbers.
+      # log with it. This frees the SDKs nothing here uses and prints `df`, and `--reclaim-builds`
+      # below deletes each tree once no later criterion of THIS SHARD needs it. just/ci.just and
+      # tools/roadmap/reclaim.py have the numbers.
       - name: Free the runner's disk of the SDKs the image preinstalls
         run: just ci-free-disk
       # The two M11.a `where = "ci"` criteria run the same comparator as cross-leg-compare.
@@ -1668,17 +1718,61 @@ jobs:
         with:
           pattern: cross-leg-digest-*
           path: cross-leg-digests
-      - name: Install the generator and the window-system headers SDL3 builds against
+      # libclang 18 is the reflection generator's frontend: without it `m0:generated-code`,
+      # `m1:identity-manifest` and `m4:generated-code` fail naming it, and `m1:identity-rename` finds
+      # no `integration.reflect_generator` registered — the `generated` and `identity` jobs install
+      # the same two packages for the same reason. NOT lavapipe: with a Vulkan device present every
+      # device suite in `just test-all` runs instead of reporting no device, and sixteen render
+      # suites fail on it (run 38858592833) — the criteria that need a device run in the `vulkan`
+      # shard of `milestone-platform` instead.
+      - name: Install the generator, the window-system headers SDL3 builds against, and libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18 libfreetype-dev pkg-config fonts-dejavu-core
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
-      - name: Install the pinned LLVM tooling and the specification CLI
+      # The interpreter the build job configured its tree with, so that CMake finds the same one
+      # and the unpacked tree stays current — and the one every pip install below lands in.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Every tool a criterion of the ledger runs: the pinned LLVM tooling for format and lint, the
+      # specification CLI, the reflection generator's bindings, the deterministic math generators'
+      # arithmetic (`generate-check`), the spelling dictionary, Pillow for the recipe selftest's
+      # `_ship-stills` case inside `m1:workflows` and the M11.c renders, and matplotlib for
+      # `m9:figures-regenerated`, which redraws the committed figures and compares them pixel by
+      # pixel. Pinned to the releases they were drawn with, and matplotlib BUILT AGAINST THE
+      # SYSTEM'S FREETYPE: its wheels carry FreeType 2.6.1, whose glyphs moved 2.75% of the
+      # bandwidth curve's pixels against the committed figure (run 38880558630); the same release
+      # built against FreeType 2.13 redraws it byte for byte.
+      - name: Install the pinned LLVM tooling, the specification CLI and the generators' modules
         run: |
-          pip install clang-format==22.1.8 clang-tidy==22.1.8
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow==11.1.0 numpy==2.1.3
+          pip install --no-binary matplotlib matplotlib==3.10.0 --config-settings=setup-args=-Dsystem-freetype=true
           npm install -g @fission-ai/openspec@1.14.0
+      # The Rust toolchain editor/rust-toolchain.toml declares, with its components. Several criteria
+      # call `cargo` directly; when one ran before anything in its shard had installed the
+      # toolchain, rustup auto-installed it without `cargo` and the criterion failed with "'cargo' is
+      # not installed for the toolchain" (run 38919971784, `m11b:project-settings-in-version-control`).
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
+      # The files the `quality` job's clang-tidy passed at this commit. A `pattern`, so a run whose
+      # `quality` job uploaded nothing downloads nothing rather than failing: without it `m0:lint`
+      # lints everything, which is slower and never wrong.
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: tidy-cache
+          path: tidy-cache
+          merge-multiple: true
+      # THE BUILD JOB'S TREE, NOT A REBUILD OF IT: twelve shards each building the default tree from
+      # nothing cost twelve times the 26 minutes `m0:build` took here. Unpacked at the commit it was
+      # built from, after everything above, as every job that tests the build does.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # m11d5: `milestone-m11d5` reached `state = "green"` in gates.toml in the same commit that moved
       # this step, as implement-m11d5-backends task 6.5 requires. One command covers it and everything
       # below it, because the ledger is flat. `--ci` additionally runs the criteria marked
@@ -1689,8 +1783,113 @@ jobs:
       # here they find none of their suites registered and fail. Their evidence at the close was
       # hardware runs at 70df47f1 (issue #44), recorded in implement-m11d5-backends task 7.1; a
       # macOS and a Windows leg for this job are M11.e's.
-      - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m11d5 --ci --reclaim-builds
+      - name: The exit criteria of every closed milestone, this shard's share, evaluated once each
+        run: just roadmap-milestone m11d5 --ci --reclaim-builds --shard ${{ matrix.shard }}/12 --shard-record ledger-shards/shard-${{ matrix.shard }}.json
+      # Uploaded whatever the shard said: a red shard's record is the evidence `milestone-verdict`
+      # reads, and a record missing is what tells it the shard never finished.
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ledger-shard-${{ matrix.shard }}
+          path: ledger-shards
+          if-no-files-found: ignore
+
+  # THE CRITERIA ONLY ANOTHER SYSTEM CAN ANSWER. Two `where = "ci"` criteria of M11.d.5 name suites
+  # only one operating system registers: `metal-backend-is-native` (macOS) and `d3d12-backend-exists`
+  # (Windows). In a Linux shard they find none of their suites and fail, which is a verdict about the
+  # runner rather than the tree; each criterion's own `reason` says "the macOS leg of the matrix is
+  # where it is answered". tools/roadmap/shard-platforms.toml pins them, shard.py leaves them out of
+  # every Linux shard, and this job evaluates each system's pinned criteria on that system, against
+  # the tree its own `build` leg packed — the same suites `test macos-arm64` and `test
+  # windows-x86_64` run. `milestone-verdict` requires these records like any shard's.
+  milestone-platform:
+    name: milestone ${{ matrix.platform }}/12 — the criteria only that system can answer (nightly)
+    needs: build
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    # The ledger prints UTF-8, and Windows' Python writes a pipe in the ANSI code page otherwise.
+    env:
+      PYTHONUTF8: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos, label: macos-arm64, os: macos-14 }
+          - { platform: windows, label: windows-x86_64, os: windows-2022, msvc: x64 }
+          - { platform: vulkan, label: linux-x86_64, os: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      # THE VULKAN LEG IS LINUX WITH A DEVICE ON THE PROCESSOR. Two criteria need A Vulkan device and
+      # refuse a skipped suite as evidence (`m11d:msaa-through-the-graph` and
+      # `m11d:multiview-by-capability`); a hosted runner has a Vulkan loader and no driver. lavapipe (mesa-vulkan-drivers) is a real Vulkan implementation, not a GPU:
+      # `requires = "gpu"` looks for a DRM render node, which it does not create, so nothing that
+      # asks for a graphics card is counted as answered here. It is a leg of its own because with a
+      # device present every device suite in `just test-all` runs, and sixteen render suites fail on
+      # lavapipe (run 38858592833) — the Linux shards keep the runner's no-device answer for those.
+      - name: Install the generator, the window-system headers SDL3 builds against, and lavapipe
+        if: matrix.platform == 'vulkan'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers
+      - if: matrix.platform == 'vulkan'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      # The Xcode the macOS `build` leg configured its tree with; the `build` job says why.
+      - if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
+      - name: The exit criteria pinned to this system, evaluated once each
+        run: just roadmap-milestone m11d5 --ci --shard ${{ matrix.platform }}/12 --shard-record ledger-shards/shard-${{ matrix.platform }}.json
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ledger-shard-${{ matrix.platform }}
+          path: ledger-shards
+          if-no-files-found: ignore
+
+  # ONE VERDICT FROM EVERY SHARD. `just roadmap-merge` recomputes which criteria each shard was
+  # assigned, from this checkout, and refuses a record that is missing, reported twice, of another
+  # commit or count, or that evaluated a different set — then summarises the whole plan exactly as an
+  # unsharded run would, with each shard's duration. `always()` because a shard that failed, timed
+  # out or crashed is exactly when this job must run and say so: a skipped verdict would be scored
+  # SUCCESS, and a missing shard read as a smaller green is the defect this job exists to prevent.
+  milestone-verdict:
+    name: milestone — one verdict from every shard (nightly)
+    needs:
+      - milestone
+      - milestone-platform
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ledger-shard-*
+          path: ledger-shards
+          merge-multiple: true
+      - name: Every shard reported, and what the ledger says
+        run: just roadmap-merge m11d5 --ci --shards 12 --records ledger-shards
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

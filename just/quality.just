@@ -95,9 +95,20 @@ quality-lint *args:
         slot[${#slot[@]}]="${argument}"
     done < <(just _job-slots)
 
+    # CY_TIDY_CACHE: a directory remembering which files clang-tidy passed at this exact clean
+    # tree, so a second job linting the same commit skips what the first confirmed. Off unless set;
+    # a dirty tree reads and writes nothing; a file with findings is never remembered. CI's `quality`
+    # job hands its directory to the nightly ledger's shards, whose `m0:lint` otherwise cannot finish
+    # 44 minutes of linting inside the criterion's 1800 s on four cores. tools/quality/tidy_cache.py.
+    cache=()
+    if [ -n "${CY_TIDY_CACHE:-}" ]; then
+        key="$(python3 tools/quality/tidy_cache.py prepare "${CY_TIDY_CACHE}" "${database}" "${linter}")"
+        cache=(python3 tools/quality/tidy_cache.py lint "${CY_TIDY_CACHE}" "${key}" --)
+    fi
+
     echo "==> clang-tidy ${#files[@]} file(s) against ${database}"
     printf '%s\n' "${files[@]}" \
-        | xargs -P "${jobs}" -n 1 ${slot[@]+"${slot[@]}"} "${linter}" -p "${build_dir}" --quiet
+        | xargs -P "${jobs}" -n 1 ${cache[@]+"${cache[@]}"} ${slot[@]+"${slot[@]}"} "${linter}" -p "${build_dir}" --quiet
     echo "clang-tidy: no findings"
 
 # The two halves of the layer rule are checked in different places, so this recipe runs both.
@@ -370,6 +381,7 @@ quality-shader-headers *args:
 # Prove all four of M11.d's gates still refuse what they exist to refuse. --strict requires every case.
 quality-gates-selftest *args:
     cd "{{root}}" && python3 tools/quality/selftest.py {{args}}
+    cd "{{root}}" && python3 tools/quality/test_tidy_cache.py
 
 # --- Shared implementation --------------------------------------------------------------------------
 

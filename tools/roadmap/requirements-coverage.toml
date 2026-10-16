@@ -5266,6 +5266,12 @@ note = "`check_workflows.py`'s hand-off rule requires the `build` job to run `ju
 
 [[coverage]]
 row = "developer-workflow-and-just"
+requirement = "A ledger longer than one CI job runs in shards and merges into one verdict"
+evidence = "gate:workflows"
+note = "`check_workflows.py`'s shard rule fails a workflow that runs the full ledger unsharded, a shard matrix that is not exactly 1..n for the `/n` the run step names, a shard job without `fail-fast: false`, without a `timeout-minutes` under the 360-minute hosted limit, without `--shard-record` or without an `if: always()` upload, and a merge that is absent, counts a different n, disagrees about `--ci`, does not `needs:` the shards, does not run under `always()` or downloads nothing, and a pinned runner (`tools/roadmap/shard-platforms.toml`) with no platform shard, a platform shard of another count, or a merge that does not wait for it; sixteen negative fixtures in `--selftest`. `tools/roadmap/selftest.py`'s `test_ledger_shards` holds the assignment (every criterion in exactly one shard, tree-sharing criteria together, deterministic) and every refusal of `merge`: a missing shard, no shard, a duplicate, another commit, another count, another `--ci`, a shard that skipped a criterion, a different assignment, a missing platform shard, a pin to another system on a criterion that runs everywhere, and a failure inside any shard failing the merged verdict."
+
+[[coverage]]
+row = "developer-workflow-and-just"
 requirement = "Cross-platform and cross-compilation"
 evidence = "exempt:m11e"
 note = "`just env-targets` reports what this host can build and why not (`tools/workflow/targets.py`, with a selftest), and recipes resolve `--platform` through `just/targets.toml`. Missing: `deploy-device` refuses because there is no device transport (`just/deploy.just`), so deployment does not produce a runtime the editor can host remotely, and the targets selftest is run by no gate or criterion. Re-enter with a device deploy recipe that hosts a remote play session, and the targets selftest under a declared gate."

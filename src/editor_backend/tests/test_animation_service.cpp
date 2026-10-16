@@ -74,23 +74,6 @@ std::string text_of(const Array<u8>& bytes) {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-/// The committed reply; with `CY_UPDATE_ANIMATION_WIRE=1`, written from `reply` first.
-std::string committed(std::string_view name, const Array<u8>& reply) {
-    const char* update = std::getenv("CY_UPDATE_ANIMATION_WIRE");
-    if (update != nullptr && std::string_view(update) == "1") {
-        std::ofstream(wire(name), std::ios::binary)
-            .write(reinterpret_cast<const char*>(reply.data()),
-                   static_cast<std::streamsize>(reply.size()));
-    }
-    return read_file(name);
-}
-
-std::string replaced(std::string text, std::string_view from, std::string_view to) {
-    const usize at = text.find(from);
-    CY_REQUIRE(at != std::string::npos);
-    return text.replace(at, from.size(), to);
-}
-
 /// A front-to-back reader over a reply, failing the case on a short read.
 class Reply {
 public:
@@ -274,76 +257,9 @@ struct Shown {
     std::vector<Fired> events;
 };
 
-Shown decode_state(const std::string& bytes) {
-    Reply reply(bytes);
-    Shown out;
-    CY_REQUIRE_EQ(reply.u32v(), 1U);
-    out.active = reply.u8v() != 0;
-    out.playing = reply.u8v() != 0;
-    out.focus = reply.u64v();
-    out.clip = reply.text();
-    out.time = reply.f32v();
-    out.length = reply.f32v();
-    out.state = reply.u32v();
-    out.state_name = reply.text();
-    out.target = reply.u32v();
-    out.target_name = reply.text();
-    out.blend = reply.f32v();
-    (void)reply.u64v();
-    out.pose_digest = reply.u64v();
-    (void)reply.u64v();
-    for (u32 count = reply.u32v(); count > 0; --count) {
-        Transform joint;
-        joint.translation = Vec3{reply.f32v(), reply.f32v(), reply.f32v()};
-        joint.rotation.x = reply.f32v();
-        joint.rotation.y = reply.f32v();
-        joint.rotation.z = reply.f32v();
-        joint.rotation.w = reply.f32v();
-        joint.scale = Vec3{reply.f32v(), reply.f32v(), reply.f32v()};
-        out.joints.push_back(joint);
-    }
-    for (u32 count = reply.u32v(); count > 0; --count) {
-        Fired fired;
-        (void)reply.u64v();
-        fired.name = reply.text();
-        (void)reply.f32v();
-        fired.at = reply.f32v();
-        out.events.push_back(std::move(fired));
-    }
-    CY_CHECK(reply.done());
-    return out;
-}
-
 editor::AnimationRefusal ask(editor::AnimationPreviewRuntime* preview, std::string_view operation,
                              const Array<u8>& request, Array<u8>& reply) {
     return editor::answer_animation(preview, operation, request.span(), reply);
-}
-
-bool has_diagnostic(const Compiled& compiled, std::string_view code, u64 node) {
-    return std::ranges::any_of(compiled.diagnostics, [&](const Diagnosed& diagnostic) {
-        return diagnostic.code == code && diagnostic.node == node;
-    });
-}
-
-/// Bit for bit, component by component: -0 and +0 are different answers here.
-bool same_bits(f32 a, f32 b) {
-    return std::bit_cast<u32>(a) == std::bit_cast<u32>(b);
-}
-
-bool same_bits(const Quat& a, const Quat& b) {
-    return same_bits(a.x, b.x) && same_bits(a.y, b.y) && same_bits(a.z, b.z) && same_bits(a.w, b.w);
-}
-
-bool same_bits(const Mat4& a, const Mat4& b) {
-    for (usize column = 0; column < 4; ++column) {
-        const Vec4& x = a.columns[column];
-        const Vec4& y = b.columns[column];
-        if (!same_bits(x.x, y.x) || !same_bits(x.y, y.y) || !same_bits(x.z, y.z) ||
-            !same_bits(x.w, y.w)) {
-            return false;
-        }
-    }
-    return true;
 }
 
 }  // namespace
@@ -463,6 +379,94 @@ CY_TEST_CASE("editor animation: an empty item between separators is skipped, as 
 #if defined(CY_EDITOR_HAS_ANIMATION)
 
 namespace {
+
+// Used only by the cases that need the animation module: defined here, inside its guard, so a
+// build with CY_ANIMATION=OFF does not carry unused functions into -Werror
+// (m8b:feature-options-off).
+
+/// The committed reply; with `CY_UPDATE_ANIMATION_WIRE=1`, written from `reply` first.
+std::string committed(std::string_view name, const Array<u8>& reply) {
+    const char* update = std::getenv("CY_UPDATE_ANIMATION_WIRE");
+    if (update != nullptr && std::string_view(update) == "1") {
+        std::ofstream(wire(name), std::ios::binary)
+            .write(reinterpret_cast<const char*>(reply.data()),
+                   static_cast<std::streamsize>(reply.size()));
+    }
+    return read_file(name);
+}
+
+std::string replaced(std::string text, std::string_view from, std::string_view to) {
+    const usize at = text.find(from);
+    CY_REQUIRE(at != std::string::npos);
+    return text.replace(at, from.size(), to);
+}
+
+Shown decode_state(const std::string& bytes) {
+    Reply reply(bytes);
+    Shown out;
+    CY_REQUIRE_EQ(reply.u32v(), 1U);
+    out.active = reply.u8v() != 0;
+    out.playing = reply.u8v() != 0;
+    out.focus = reply.u64v();
+    out.clip = reply.text();
+    out.time = reply.f32v();
+    out.length = reply.f32v();
+    out.state = reply.u32v();
+    out.state_name = reply.text();
+    out.target = reply.u32v();
+    out.target_name = reply.text();
+    out.blend = reply.f32v();
+    (void)reply.u64v();
+    out.pose_digest = reply.u64v();
+    (void)reply.u64v();
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        Transform joint;
+        joint.translation = Vec3{reply.f32v(), reply.f32v(), reply.f32v()};
+        joint.rotation.x = reply.f32v();
+        joint.rotation.y = reply.f32v();
+        joint.rotation.z = reply.f32v();
+        joint.rotation.w = reply.f32v();
+        joint.scale = Vec3{reply.f32v(), reply.f32v(), reply.f32v()};
+        out.joints.push_back(joint);
+    }
+    for (u32 count = reply.u32v(); count > 0; --count) {
+        Fired fired;
+        (void)reply.u64v();
+        fired.name = reply.text();
+        (void)reply.f32v();
+        fired.at = reply.f32v();
+        out.events.push_back(std::move(fired));
+    }
+    CY_CHECK(reply.done());
+    return out;
+}
+
+bool has_diagnostic(const Compiled& compiled, std::string_view code, u64 node) {
+    return std::ranges::any_of(compiled.diagnostics, [&](const Diagnosed& diagnostic) {
+        return diagnostic.code == code && diagnostic.node == node;
+    });
+}
+
+/// Bit for bit, component by component: -0 and +0 are different answers here.
+bool same_bits(f32 a, f32 b) {
+    return std::bit_cast<u32>(a) == std::bit_cast<u32>(b);
+}
+
+bool same_bits(const Quat& a, const Quat& b) {
+    return same_bits(a.x, b.x) && same_bits(a.y, b.y) && same_bits(a.z, b.z) && same_bits(a.w, b.w);
+}
+
+bool same_bits(const Mat4& a, const Mat4& b) {
+    for (usize column = 0; column < 4; ++column) {
+        const Vec4& x = a.columns[column];
+        const Vec4& y = b.columns[column];
+        if (!same_bits(x.x, y.x) || !same_bits(x.y, y.y) || !same_bits(x.z, y.z) ||
+            !same_bits(x.w, y.w)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 /// The preview character, built.
 struct Character {

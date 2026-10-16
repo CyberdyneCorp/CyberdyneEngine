@@ -484,25 +484,34 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
     }
     std::fprintf(out, "\n");
 
+    // SHARDED BY ENTRY POINT, NOT BY MODULE. A module declares anything from none to eight entry
+    // points, so every n-th MODULE gave smoke.shader_targets' thirds 26, 30 and 33 entry points,
+    // and quarters 16, 20, 36 and 15 — the heaviest shard is what meets the smoke budget. Every
+    // n-th entry point in walk order differs between shards by at most one. The module-level counts
+    // are still taken once, by the shard that owns the module, so the shards of a run add up to it.
     const u32 shards = options.shards == 0 ? 1U : options.shards;
+    usize walked_entries = 0;
     for (usize index = 0; index < modules.size(); ++index) {
-        if (index % shards != options.shard) {
-            continue;
-        }
+        const bool owns_module = index % shards == options.shard;
         const Module& module = modules.at(index);
         const std::vector<EntryPoint> entries = entry_points_of(module.text, index);
         if (entries.empty()) {
-            ++report.modules_without_entry_points;
+            report.modules_without_entry_points += owns_module ? 1U : 0U;
             continue;
         }
         if (const std::string macro = included_macro(module.text); !macro.empty()) {
-            ++report.modules_needing_a_generator;
-            std::fprintf(out,
-                         "%s  includes %s: generated, and no generator has run — not compiled\n",
-                         module.path.c_str(), macro.c_str());
+            if (owns_module) {
+                ++report.modules_needing_a_generator;
+                std::fprintf(
+                    out, "%s  includes %s: generated, and no generator has run — not compiled\n",
+                    module.path.c_str(), macro.c_str());
+            }
             continue;
         }
         for (const EntryPoint& entry : entries) {
+            if (walked_entries++ % shards != options.shard) {
+                continue;
+            }
             ++report.entry_points;
             std::fprintf(out, "%s  %s (%s)\n", module.path.c_str(), entry.name.c_str(),
                          entry.stage.c_str());

@@ -116,3 +116,15 @@ red; this one nearly shipped unable to go *green*, and **a check that reports "n
 wrong as one that reports a false pass, if it looked in the wrong place.** The UNRUN machinery is
 kept for a machine that genuinely has no toolchain — exit 2 means "did not run", which the selftest
 tells apart from exit 1, and `--strict` refuses to pass with any case unrun.
+
+## `tidy_cache.py` — the lint passes one job hands another at the same commit
+
+Not a gate: a memo for `just quality-lint`, on only when `CY_TIDY_CACHE` names a directory. On a
+four-core hosted runner the lint takes 44 minutes, and the nightly ledger's `m0:lint` has 1800 s; the
+`quality` job of the same run has just linted the same commit. So with the variable set, each file
+clang-tidy **passes** is recorded under a key of the tree (`HEAD^{tree}`, and only when the working
+tree is clean — no edit and no untracked file), the file's compile-database entry, and the linter's,
+the compiler's and the runner image's versions; a file already recorded is not linted again. A dirty
+tree reads and writes nothing, so a mutation of the tree is always linted; a file with findings is
+never recorded, so a red lint is red in every job. `test_tidy_cache.py`, run by `just
+quality-gates-selftest`, holds those four refusals against a real repository and a stand-in linter.
