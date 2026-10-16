@@ -1720,16 +1720,14 @@ jobs:
       # libclang 18 is the reflection generator's frontend: without it `m0:generated-code`,
       # `m1:identity-manifest` and `m4:generated-code` fail naming it, and `m1:identity-rename` finds
       # no `integration.reflect_generator` registered — the `generated` and `identity` jobs install
-      # the same two packages for the same reason. mesa-vulkan-drivers is lavapipe, a Vulkan device
-      # on the processor: `m11d:msaa-through-the-graph`, `m11d:multiview-by-capability` and
-      # `m8a:authoring-recipe` need A device and refuse a skipped suite as evidence, and the runner
-      # has a Vulkan loader with no driver behind it. It is not a GPU and is not counted as one —
-      # `requires = "gpu"` looks for a DRM render node, which lavapipe does not create, so every
-      # criterion that asks for a graphics card is still NOT EVALUATED here.
+      # the same two packages for the same reason. NOT lavapipe: with a Vulkan device present every
+      # device suite in `just test-all` runs instead of reporting no device, and sixteen render
+      # suites fail on it (run 38858592833) — the criteria that need a device run in the `vulkan`
+      # shard of `milestone-platform` instead.
       - name: Install the generator, the window-system headers SDL3 builds against, and libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18 mesa-vulkan-drivers
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
@@ -1808,9 +1806,26 @@ jobs:
         include:
           - { platform: macos, label: macos-arm64, os: macos-14 }
           - { platform: windows, label: windows-x86_64, os: windows-2022, msvc: x64 }
+          - { platform: vulkan, label: linux-x86_64, os: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@v5
       - uses: extractions/setup-just@v4
+      # THE VULKAN LEG IS LINUX WITH A DEVICE ON THE PROCESSOR. Two criteria need A Vulkan device and
+      # refuse a skipped suite as evidence (`m11d:msaa-through-the-graph` and
+      # `m11d:multiview-by-capability`); a hosted runner has a Vulkan loader and no driver. lavapipe (mesa-vulkan-drivers) is a real Vulkan implementation, not a GPU:
+      # `requires = "gpu"` looks for a DRM render node, which it does not create, so nothing that
+      # asks for a graphics card is counted as answered here. It is a leg of its own because with a
+      # device present every device suite in `just test-all` runs, and sixteen render suites fail on
+      # lavapipe (run 38858592833) — the Linux shards keep the runner's no-device answer for those.
+      - name: Install the generator, the window-system headers SDL3 builds against, and lavapipe
+        if: matrix.platform == 'vulkan'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers
+      - if: matrix.platform == 'vulkan'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0.3'
       - if: matrix.msvc != ''
         uses: ilammy/msvc-dev-cmd@v1
         with:

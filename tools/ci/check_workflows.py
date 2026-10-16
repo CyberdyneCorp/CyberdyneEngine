@@ -1357,8 +1357,8 @@ def selftest(root: pathlib.Path) -> int:
              "a merge that does not wait for the shards"),
             ("      - ledger\n      - elsewhere\n", "      - ledger\n", "needs: elsewhere",
              "a merge that does not wait for the platform shards"),
-            ("          - { platform: windows, os: windows-2022 }\n", "",
-             "pins criteria to ['macos', 'windows']",
+            ("          - { platform: windows, os: any }\n", "",
+             "a pinned system with no job",
              "a pinned system with no platform shard"),
             ("${{ matrix.platform }}/3", "${{ matrix.platform }}/2", "runs platform shards of 2",
              "platform shards counting another run"),
@@ -1393,8 +1393,8 @@ def selftest(root: pathlib.Path) -> int:
             "      - if: always()\n        uses: actions/upload-artifact@v5\n"
             "  elsewhere:\n    runs-on: ${{ matrix.os }}\n    timeout-minutes: 120\n"
             "    strategy:\n      fail-fast: false\n      matrix:\n        include:\n"
-            "          - { platform: macos, os: macos-14 }\n"
-            "          - { platform: windows, os: windows-2022 }\n"
+            + "".join(f"          - {{ platform: {platform}, os: any }}\n"
+                      for platform in sorted(pinned_platforms(root))) +
             "    steps:\n"
             "      - run: just roadmap-milestone m11d5 --ci --shard ${{ matrix.platform }}/3"
             " --shard-record r/p.json\n"

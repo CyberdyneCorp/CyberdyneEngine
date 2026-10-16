@@ -1,13 +1,21 @@
 # SPDX-License-Identifier: MIT
-# The `where = "ci"` criteria only one other operating system can answer, and the hosted runner that
-# answers each. tools/roadmap/shard.py leaves them out of every Linux shard of the nightly ledger and
-# gives each its own shard on that system (`--shard macos/<n>`, `--shard windows/<n>`); `merge`
-# requires that shard's record like any other. A pin may only name a `where = "ci"` criterion: one
-# that runs everywhere would simply stop running on Linux.
+# The criteria a plain Linux shard of the nightly ledger cannot answer, and the runner that answers
+# each. tools/roadmap/shard.py leaves them out of every Linux shard and gives each runner a shard of
+# its own (`--shard macos/<n>`, `--shard windows/<n>`, `--shard vulkan/<n>`), whose record `merge`
+# requires like any other.
 #
-# Each criterion's own `reason` says this is where it is answered: "the macOS leg of the matrix is
-# where it is answered", "D3D12 exists only on Windows".
+#   macos, windows   a `where = "ci"` criterion only that operating system can answer. Each one's
+#                    own `reason` says so ("the macOS leg of the matrix is where it is answered").
+#                    Only a `where = "ci"` criterion may move to another system: one that runs
+#                    everywhere would simply stop running on Linux.
+#   vulkan           Linux with lavapipe, a Vulkan device on the processor, for a criterion that
+#                    needs A device and refuses a skipped suite as evidence. Not a GPU: `requires =
+#                    "gpu"` looks for a DRM render node, which lavapipe does not create. Not every
+#                    shard's environment either, because with a device present sixteen render suites
+#                    of `just test-all` run on lavapipe and fail (nightly run 38858592833).
 
 [runner]
 "m11d5:metal-backend-is-native" = "macos"
 "m11d5:d3d12-backend-exists" = "windows"
+"m11d:msaa-through-the-graph" = "vulkan"
+"m11d:multiview-by-capability" = "vulkan"

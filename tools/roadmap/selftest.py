@@ -3503,16 +3503,27 @@ def _check_platform_shards(root: Path, entries, costs, commit: str) -> None:
         refused = ""
     except shard_module.ShardError as error:
         refused = str(error)
-    check("a pin on a criterion that runs everywhere is refused: it would just stop running",
-          "where" in refused, refused or "accepted")
+    check("a pin to another system on a criterion that runs everywhere is refused: it would just "
+          "stop running", "where" in refused, refused or "accepted")
+    try:
+        shard_module.check_platforms(_shard_plan([*entries, criteria_module.PlanEntry(
+            criterion=local, declared_by=("m11d5",), permanent=False)]),
+            {"m11d5:metal": "vulkan"})
+        refused = ""
+    except shard_module.ShardError as error:
+        refused = str(error)
+    check("but the same criterion may move to the vulkan runner, which is Linux too", not refused,
+          refused)
     real = shard_module.load_platforms()
     plan = _plan(max((gate.milestone for gate in gates_module.load().gates
                       if gate.klass == "milestone" and gate.state == "green"),
                      key=criteria_module.rung))
     labels = {entry.label: entry.criterion.where for entry in plan.entries}
-    stale = sorted(label for label in real if labels.get(label) != "ci")
-    check("every committed pin names a `where = \"ci\"` criterion of the newest ledger",
-          not stale, f"{stale}")
+    stale = sorted(label for label, runner in real.items()
+                   if label not in labels
+                   or (runner in shard_module.OTHER_SYSTEMS and labels[label] != "ci"))
+    check("every committed pin names a criterion of the newest ledger, and a pin to another system "
+          "a `where = \"ci\"` one", not stale, f"{stale}")
 
 
 def test_ledger_shards(root: Path) -> None:

@@ -71,9 +71,14 @@ LIGHT_S = 60.0
 #: the six GitHub allows a hosted job, leaving the set-up, the unpack and a margin.
 GROUP_CEILING_S = 4 * 3600.0
 
-#: Which hosted runner answers a `where = "ci"` criterion only one other operating system can.
+#: Which runner answers a criterion a plain Linux shard cannot: a `where = "ci"` criterion only one
+#: other operating system can (`macos`, `windows`), or one that needs A Vulkan device and refuses a
+#: skipped suite as evidence (`vulkan`: a Linux runner with lavapipe, the processor's Vulkan device).
 PLATFORMS_FILE = Path(__file__).resolve().parent / "shard-platforms.toml"
-PLATFORMS = ("macos", "windows")
+PLATFORMS = ("macos", "windows", "vulkan")
+#: The runners on another operating system. A criterion moved to one stops running on Linux, so only a
+#: `where = "ci"` criterion — one Linux never answered — may be moved there.
+OTHER_SYSTEMS = ("macos", "windows")
 
 RECORD_SCHEMA = 2
 _SHARD = re.compile(r"^\s*(\d+|[a-z]+)\s*/\s*(\d+)\s*$")
@@ -135,10 +140,12 @@ def load_platforms(path: Path = PLATFORMS_FILE) -> dict[str, str]:
 
 
 def check_platforms(plan: criteria_module.Plan, platforms: dict[str, str]) -> None:
-    """A pin may only move a `where = "ci"` criterion: one that runs everywhere and was pinned would
-    simply stop running on Linux, which is a criterion removed rather than relocated."""
+    """A pin to another operating system may only move a `where = "ci"` criterion: one that runs
+    everywhere and was pinned there would simply stop running on Linux, which is a criterion removed
+    rather than relocated. The `vulkan` runner IS Linux, so any criterion may move there."""
     for entry in plan.entries:
-        if entry.label in platforms and entry.criterion.where != "ci":
+        if (platforms.get(entry.label) in OTHER_SYSTEMS
+                and entry.criterion.where != "ci"):
             raise ShardError(f"{PLATFORMS_FILE.name}: {entry.label} is pinned to "
                              f"{platforms[entry.label]} and is not a `where = \"ci\"` criterion")
 

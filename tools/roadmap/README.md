@@ -617,6 +617,14 @@ holds — 1800 s for a tree of its own, 300 s for Cargo or the whole host, 60 s 
 a file check. Groups go largest first into the least-loaded shard, ties to the lower index, so the
 assignment is a function of the tree and the merge can recompute it.
 
+`shard-platforms.toml` moves a few criteria out of every Linux shard to a runner that can answer
+them: `m11d5:metal-backend-is-native` to macOS and `m11d5:d3d12-backend-exists` to Windows (only a
+`where = "ci"` criterion may move to another system, since anything else would stop running on
+Linux), and `m11d:msaa-through-the-graph` and `m11d:multiview-by-capability`, which refuse a skipped
+device suite as evidence, to `vulkan`: Linux with lavapipe, a Vulkan device on the processor. Not
+every shard gets lavapipe, because with a device present sixteen render suites of `just test-all`
+run on it and fail (run 38858592833). Each runner's criteria are one more shard `merge` requires.
+
 A shard is the flat plan narrowed and nothing else: the same criteria, `where = "ci"` and
 `known_gap` rules. Its record names the milestone, the shard and the count, the commit, `--ci`, and
 each label's status, detail and seconds. `merge` refuses a record that is missing, reported twice,
