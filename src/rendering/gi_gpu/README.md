@@ -48,15 +48,16 @@ steps. `docs/design/images/gi-gpu-radiance-cache.png`.
 | `shaders/gi_probe_common.slang` | the probe set, the three encodings, the gather, the query, the screen march with its nearest-depth pyramid, the world tiers' radiance and the escalation — each a transcription that names its host function |
 | `shaders/gi_radiance.slang` | `cyGiGatherProbes`, `cyGiSampleProbes`, `cyGiBuildScreenHzb`, `cyGiTraceScreen`, `cyGiTraceSoftware`, `cyGiTraceTiered` — every entry point a device without ray queries has |
 | `shaders/gi_hardware.slang` | the hardware tier: `cyGiGatherProbesHardware`, `cyGiTraceHardware`, `cyGiTraceTieredHardware`, over a ray query of the structures `cy::rendering-raytracing-gpu` built |
-| `gpu_resolve.h` | `GpuScreenResolve`: the final gather the settings' `gi::GiGather` names — the screen probes' place, trace and integrate passes, or the per-pixel resolve — and the denoiser, the `ScreenSpaceGi` stage's producer, its two published targets, timestamps per stage; `write_gi_control` and `gi_admission`, the frame's words |
+| `gpu_resolve.h` | `GpuScreenResolve`: the final gather the settings' `gi::GiGather` names — the screen probes' place, trace, probe-space filter and integrate passes, or the per-pixel resolve — and the denoiser the probes' `ScreenProbeDenoiser` names (one temporal pass, or the shared denoiser's four), the `ScreenSpaceGi` stage's producer, its two published targets, timestamps per stage; `write_gi_control` and `gi_admission`, the frame's words |
 | `gpu_budget.h` | `GpuGiBudget` (the device cost into `GiBudget`, the budget into the arbiter), `apply_levers`, `tracing_divisor` / `tracing_density`, `arbiter_position` |
 | `shaders/gi_surfaces.slang` | `cyGiUnpackSurfaces`: the `DepthNormal` prepass as the resolve's surfaces and the upsample's guidance |
 | `shaders/gi_resolve_common.slang` | `resolve_screen_pixel` transcribed: `sample_traced`, the final-gather ray and its stand-in, the far sky, the rough specular |
 | `shaders/gi_resolve.slang`, `shaders/gi_resolve_hardware.slang` | `cyGiResolve` through the software tier, and through ray queries |
-| `shaders/gi_screen_probes_common.slang` | `gi::ScreenProbeGather` transcribed: placement, the probe's ray origin, the guided mixture, the harmonics, the best-matching history and blend, the per-pixel integration |
-| `shaders/gi_screen_probes.slang`, `shaders/gi_screen_probes_hardware.slang` | `cyGiProbePlace`, `cyGiProbeTrace`, `cyGiProbeIntegrate` through the software tier; `cyGiProbeTraceHardware`, `cyGiProbeIntegrateHardware` through ray queries |
+| `shaders/gi_screen_probes_common.slang` | `gi::ScreenProbeGather` transcribed: placement, the probe's ray origin, the guided mixture, the harmonics, the best-matching history and blend, the probe-space filter, the per-pixel integration |
+| `shaders/gi_screen_probes.slang`, `shaders/gi_screen_probes_hardware.slang` | `cyGiProbePlace`, `cyGiProbeTrace`, `cyGiProbeFilter`, `cyGiProbeIntegrate` through the software tier; `cyGiProbeTraceHardware`, `cyGiProbeIntegrateHardware` through ray queries |
 | `shaders/gi_hardware_tier.slang` | the hardware world tier both the gather and the resolve trace through |
 | `shaders/gi_denoise.slang` | `cyGiReproject` (`screen_history`), `cyGiDenoiseAccumulate`, `cyGiDenoiseVariance`, `cyGiDenoiseFilter` (`Denoiser`) |
+| `shaders/gi_temporal.slang` | `cyGiDenoiseTemporal`: `Denoiser::accumulate` with no cascade, both signals a pixel, and on the full grid the publish |
 | `shaders/gi_publish.slang` | `cyGiPublish`: `screen_upsample` into the two targets the frame samples |
 | `shaders/regenerate.py` | recompiles every entry point and rewrites `src/gi_gpu_spirv.h` and `src/gi_gpu_msl.h` |
 
@@ -248,8 +249,13 @@ the forward frame of the pipeline suites with the stage attached. RTX 5060, Vulk
 The resolve's cost is the cache's probes traced through the field (`sample_traced`), not the rays,
 which is why the half grid is the first step `TracingResolution` takes and why the beauty shot —
 three probe levels over a 33 m colonnade — costs twice the room. Stage 5 holds a 960x540 frame of the
-room to its allocation by dropping from 3.97 ms at authored quality to 0.75 ms with every lever at
-its floor, in the declared order, and relaxes one step only when the arbiter grants it.
+room through the screen probes to its allocation by dropping from 0.98 ms at authored quality to
+0.52 ms with every lever at its floor, in the declared order, and relaxes one step only when the
+arbiter grants it. Under the probes `TracingResolution`'s second step traces half the probes a
+frame rather than half of each probe's rays: a probe's trace is mostly what it does once — its
+history, its stand-in, its guide — and at 960x540 half its rays cost 0.92 of all of them, where half
+the probes cost half (`gi::screen_probe_traces`; a probe that does not trace keeps the one it
+stands for, and one with no history always traces).
 
 **Three defects running it found, each fixed with a regression.**
 
@@ -264,53 +270,73 @@ its floor, in the declared order, and relaxes one step only when the arbiter gra
 
 ## The screen-probe gather, measured
 
-`GpuScreenResolve` runs `gi::ScreenProbeGather` as three passes in place of the per-pixel
-resolve: PLACE (a thread a tile and a half-tile cell; the adaptive slots taken with an atomic and
-every probe addressed by its cell), TRACE (one workgroup a probe, a lane a ray, summed by lane 0
-in ray order, the host's order), INTEGRATE (a thread a grid cell). `render.gi_gpu_resolve` holds
-them to the host over 64x40 views of the GI test room for twelve frames: every probe placed alike,
-the coefficients 1.9e-7 mean relative, the integrated, denoised and published signals about 1e-7,
-both tiers and the half grid. `render.gi_gpu_frame`'s (d) and (e): attached at none, either
-gather is the frame without it byte for byte; bound, each lights 60 672 of 129 600 pixels and the
-two frames differ.
+`GpuScreenResolve` runs `gi::ScreenProbeGather` as passes in place of the per-pixel resolve:
+PLACE (a thread a tile and a half-tile cell; the adaptive slots taken with an atomic and every probe
+addressed by its cell), TRACE (one workgroup a probe, a lane a ray, summed by lane 0 in ray order,
+the host's order), FILTER (a thread a probe: `ScreenProbeGather::filter`, the probe-space denoiser —
+each probe's harmonics with its uniform neighbours' on its own surface, into the coefficients the
+pixels read), INTEGRATE (a thread a grid cell). Under `gi::ScreenProbeDenoiser::ProbeSpace`, the
+default, the pixels then take one pass, `cyGiDenoiseTemporal` (gi_temporal.slang): the shared
+denoiser's accumulation for both signals of a pixel — `Denoiser::accumulate` with no cascade after
+it, its history cut where the signal leaves it (`SignalConfig::history_rejection`) — and, on the
+full grid, the publish into the frame's two targets; its history has a layout of its own, one
+float4 a pixel a signal, without the moments only a cascade reads. `ScreenProbeDenoiser::Shared`
+keeps the previous path: no filter, and the shared denoiser's accumulation, variance, one a-trous
+pass and publish. `render.gi_gpu_resolve` holds both to the host over 64x40 views of the GI test
+room — thirty-six frames under the probe-space denoiser, past the pixels' history of 32: every
+probe placed alike, the coefficients and the filtered coefficients about 1.6e-7 mean relative, the
+integrated, denoised and published signals about 1e-7, both tiers and the half grid.
+`render.gi_gpu_frame`'s (d) and (e): attached at none, either gather is the frame without it byte
+for byte; bound, each lights 60 672 of 129 600 pixels and the two frames differ.
 
 `smoke.gi_gpu_probe_quality` measures the guide's axes on the frame each gather publishes at
 1920x1080, read back, through both tiers (RTX 5060, Vulkan, the GI test room and its 10 cm wall):
 
-| | per-pixel gather | screen probes, 16 px | screen probes, 8 px |
-|---|---|---|---|
-| against the path tracer, 220 points: software / hardware | 0.078 / 0.065 | 0.076 / 0.066 | 0.076 / 0.066 |
-| the sealed room behind 10 cm, mean / worst pixel: software | 2.5e-5 / 4.1e-2 | 0 / 0 | 0 / 0 |
-| the same, hardware | 1.2e-7 / 2.9e-3 | 0 / 0 | 0 / 0 |
-| frames to within 10 % after a light moves 4.9 m: software / hardware | 9 / 11 | 14 / 13 | 14 / 13 |
-| a converged still view, per frame: software / hardware | 0.0023 / 0.0017 | 0.0019 / 0.0017 | 0.0019 / 0.0017 |
+| | per-pixel gather | probes 16 px | probes 16 px, shared denoiser | probes 8 px |
+|---|---|---|---|---|
+| against the path tracer, 220 points: software / hardware | 0.078 / 0.065 | 0.071 / 0.064 | 0.076 / 0.066 | 0.072 / 0.064 |
+| the sealed room behind 10 cm, mean / worst pixel: software | 2.5e-5 / 4.1e-2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| the same, hardware | 1.2e-7 / 2.9e-3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| frames to within 10 % after a light moves 4.9 m: software / hardware | 9 / 11 | 9 / 10 | 14 / 13 | 9 / 10 |
+| a converged still view, per frame: software / hardware | 0.0023 / 0.0017 | 0.0016 / 0.0011 | 0.0019 / 0.0017 | 0.0016 / 0.0011 |
 
-**What it costs**, the fastest of five frames, timestamps around each stage (ms):
+**What it costs**, the fastest of five frames, timestamps around each stage (ms); "temporal" is the
+probe-space denoiser's one pass, where the shared denoiser has its accumulation, variance, filter
+and publish:
 
-| | reproject | place | trace | integrate | accumulate | variance | filter | publish | total |
-|---|---|---|---|---|---|---|---|---|---|
-| 1080p, per-pixel gather, hardware | 0.35 | | | 4.01 | 1.06 | 0.54 | 5.46 | 0.29 | 11.71 |
-| 1080p, per-pixel gather, software | 0.35 | | | 7.55 | 1.06 | 0.54 | 5.46 | 0.26 | 15.21 |
-| 1080p, probes 16 px, hardware | 0.36 | 0.02 | 1.11 | 0.66 | 1.06 | 0.54 | 1.51 | 0.27 | 5.52 |
-| 1080p, probes 16 px, software | 0.35 | 0.02 | 2.06 | 0.63 | 1.06 | 0.54 | 1.51 | 0.23 | 6.39 |
-| 1080p, probes 8 px, hardware | 0.36 | 0.05 | 4.20 | 0.65 | 1.06 | 0.54 | 1.51 | 0.23 | 8.59 |
-| 1080p, probes 8 px, software | 0.36 | 0.05 | 7.66 | 0.65 | 1.06 | 0.54 | 1.51 | 0.23 | 12.05 |
-| 1080p, probes 16 px, hardware, `DenoiserQuality` 2 | 0.36 | 0.02 | 1.11 | 0.66 | 1.06 | 0.54 | 1.00 | 0.25 | 4.99 |
-| 1080p, probes 16 px, hardware, `TracingResolution` 0.71 (half grid) | 0.10 | 0.01 | 1.11 | 0.17 | 0.25 | 0.13 | 0.40 | 0.22 | 2.39 |
-| 1080p, probes 16 px, software, half grid | 0.09 | 0.01 | 2.06 | 0.17 | 0.25 | 0.13 | 0.40 | 0.22 | 3.34 |
-| 2560x1440 (a 4K output, the upscaler's quality mode), per-pixel, hardware | 0.64 | | | 7.00 | 1.89 | 0.96 | 9.80 | 0.51 | 20.80 |
-| 2560x1440, probes 16 px, hardware / software | 0.63 | 0.03 | 1.90 / 3.50 | 1.18 / 1.09 | 1.89 | 0.96 | 2.67 | 0.49 | 9.74 / 11.25 |
-| 3840x2160, per-pixel, hardware | 1.44 | | | 15.51 | 4.27 | 2.16 | 22.23 | 1.11 | 46.73 |
-| 3840x2160, probes 16 px, hardware / software | 1.45 | 0.05 | 4.19 / 7.71 | 2.65 / 2.45 | 4.27 | 2.17 | 6.02 | 1.11 | 21.91 / 25.19 |
-| 3840x2160, probes 8 px, hardware | 1.44 | 0.17 | 16.32 | 2.58 | 4.27 | 2.17 | 6.03 | 1.13 | 34.10 |
+| | reproject | place | trace | filter (probes) | integrate | accumulate / temporal | variance | filter | publish | total |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1080p, per-pixel gather, hardware | 0.35 | | | | 4.03 | 1.06 | 0.54 | 5.51 | 0.29 | 11.79 |
+| 1080p, per-pixel gather, software | 0.35 | | | | 7.60 | 1.06 | 0.53 | 5.50 | 0.26 | 15.29 |
+| 1080p, probes 16 px, hardware | 0.36 | 0.02 | 1.12 | 0.01 | 0.66 | 0.58 | | | | 2.75 |
+| 1080p, probes 16 px, software | 0.36 | 0.02 | 2.05 | 0.01 | 0.61 | 0.58 | | | | 3.63 |
+| 1080p, probes 16 px, shared denoiser, hardware | 0.36 | 0.02 | 1.12 | | 0.66 | 1.06 | 0.54 | 1.52 | 0.23 | 5.50 |
+| 1080p, probes 16 px, shared denoiser, software | 0.35 | 0.02 | 2.05 | | 0.61 | 1.06 | 0.54 | 1.52 | 0.23 | 6.38 |
+| 1080p, probes 8 px, hardware | 0.36 | 0.06 | 4.21 | 0.07 | 0.64 | 0.58 | | | | 5.93 |
+| 1080p, probes 8 px, software | 0.36 | 0.06 | 7.68 | 0.07 | 0.63 | 0.58 | | | | 9.38 |
+| 1080p, probes 16 px, hardware, `TracingResolution` 0.71 (half grid) | 0.10 | 0.02 | 1.12 | 0.01 | 0.17 | 0.17 | | | 0.23 | 1.82 |
+| 1080p, probes 16 px, software, half grid | 0.09 | 0.02 | 2.07 | 0.01 | 0.17 | 0.17 | | | 0.23 | 2.77 |
+| 2560x1440 (a 4K output, the upscaler's quality mode), per-pixel, hardware | 0.63 | | | | 7.02 | 1.89 | 0.96 | 9.84 | 0.51 | 20.86 |
+| 2560x1440, probes 16 px, hardware / software | 0.64 / 0.63 | 0.03 | 1.91 / 3.49 | 0.03 | 1.16 / 1.06 | 1.03 | | | | 4.80 / 6.26 |
+| 3840x2160, per-pixel, hardware | 1.46 | | | | 15.58 | 4.27 | 2.17 | 22.30 | 1.12 | 46.90 |
+| 3840x2160, probes 16 px, hardware / software | 1.42 / 1.43 | 0.06 | 4.21 / 7.69 | 0.07 | 2.63 / 2.38 | 2.32 | | | | 10.72 / 13.95 |
+| 3840x2160, probes 8 px, hardware | 1.44 | 0.23 | 16.39 | 0.39 | 2.56 | 2.34 | | | | 23.36 |
 
 The probes' own passes are 1.8 ms at 1080p through the hardware tier and 2.7 ms through the
-software tier, against the per-pixel resolve's 4.0 and 7.6; most of what remains at full resolution
-is the shared denoiser's accumulation, variance and one filter pass, 3.1 ms. The ~4 ms the issue
-aims at is reached with the half-grid lever (2.4 / 3.3 ms), not at full resolution (5.5 / 6.4 ms).
-Every 8 pixels is four times the probes and their trace: it buys no measurable error here.
-A 4K output through the temporal upscaler renders its GI at the internal resolution: 1080p in its
-performance mode, 1440p in its quality mode.
+software tier, against the per-pixel resolve's 4.0 and 7.6. The shared denoiser at full resolution
+was 3.1 ms more — four passes over two million pixels and two signals, bound by memory — and the
+probe-space denoiser in its place is 0.6 ms, which brings the default to 2.75 / 3.63 ms at full
+resolution, within the ~4 ms the issue aims at on both tiers. `DenoiserQuality` has nothing left to
+remove from the probes' path: it shortens a cascade the probe-space denoiser does not run. Every 8
+pixels is four times the probes and their trace, and buys no measurable error here. A 4K output
+through the temporal upscaler renders its GI at the internal resolution: 1080p in its performance
+mode, 1440p in its quality mode.
+
+**One defect running it found.** The temporal pass binds the two targets whatever the grid, and
+on the half grid first declared them only on the publish after it: a descriptor naming an image in
+a layout no barrier had put it in, which the validation layer reported as a write-after-write
+hazard. It declares them on every grid now; `render.gi_gpu_resolve`'s half-grid screen-probe case
+holds it to no validation error.
 
 ## Promoted emitters
 

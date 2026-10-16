@@ -49,6 +49,19 @@ enum class GiGather : u8 {
 
 [[nodiscard]] const char* gi_gather_name(GiGather gather) noexcept;
 
+/// HOW THE SCREEN PROBES' SIGNAL IS DENOISED: the lever that keeps the shared denoiser selectable.
+enum class ScreenProbeDenoiser : u8 {
+    /// Filtered where it is cheap — in probe space, each probe's harmonics averaged with its
+    /// neighbours' on its own surface before any pixel reads them — and then accumulated per pixel
+    /// over time alone: no variance, no spatial cascade (`screen_signal_config`). The default.
+    ProbeSpace = 0,
+    /// The shared denoiser over the integrated pixels: accumulation, variance and an a-trous
+    /// cascade capped at `ScreenProbeSettings::filter_passes`, as the per-pixel gather is denoised.
+    Shared,
+};
+
+[[nodiscard]] const char* screen_probe_denoiser_name(ScreenProbeDenoiser denoiser) noexcept;
+
 /// The screen-probe gather's settings. See screen_probes.h for what each one buys.
 struct ScreenProbeSettings {
     /// Frame pixels between uniform probes: 8 or 16. Adaptive probes are placed on the half-tile
@@ -82,8 +95,26 @@ struct ScreenProbeSettings {
     /// The most a-trous passes the shared denoiser's spatial filter runs over the integrated
     /// signal: it is an average of many rays, and its frame-to-frame noise is a fifth to a
     /// twentieth of the one-ray signal's, so the cascade's later passes — 1.4 ms each at 1080p —
-    /// buy little. See `screen_signal_config`.
+    /// buy little. See `screen_signal_config`. Read only by `ScreenProbeDenoiser::Shared`.
     u32 filter_passes = 1;
+    /// Which denoiser the gather's signal goes through.
+    ScreenProbeDenoiser denoiser = ScreenProbeDenoiser::ProbeSpace;
+    /// The probe-space filter's reach, in tiles each way: one averages a probe with the uniform
+    /// probes of the 3x3 tiles about it. Zero filters nothing. Read only by `ProbeSpace`.
+    u32 filter_tiles = 1;
+    /// ...and in the world: a neighbour's weight falls linearly to zero at this fraction of the
+    /// probe's view depth from it. At 1080p a 16-pixel tile is a few centimetres of a wall four
+    /// metres away and the tiles decide; on a coarse grid a tile is a metre of it, and averaging
+    /// three metres of wall blurred the light the probes were placed to resolve (0.13 of the path
+    /// tracer at 128x72, against 0.10 unfiltered).
+    f32 filter_reach = 0.1F;
+    /// `denoise::SignalConfig::history_rejection` under `ProbeSpace`: how far the integrated signal
+    /// may move from a pixel's history, relative to the larger of the two, before the history is
+    /// cut. The filtered probes move a few per cent a frame in a still view, and a moved light
+    /// moves them by more: at 0.2 the GI test room settles on a moved light in 9 (software) / 10
+    /// (hardware) frames at 1080p where it took 15 / 14 with none, and is stiller besides; at 0.1
+    /// it settles in 7 and its still view moves 0.0026 a frame — the noise itself is cut.
+    f32 history_rejection = 0.2F;
 };
 
 struct ScreenResolveSettings {
@@ -93,7 +124,8 @@ struct ScreenResolveSettings {
     ScreenProbeSettings probes{};
     /// The fraction of pixels that trace a final-gather ray this frame: the `TracingResolution`
     /// lever's value squared (it is a linear scale). One traces every pixel; zero none. The probe
-    /// gather traces this fraction of each probe's rays, at least four.
+    /// gather traces this fraction of its probes a frame (`screen_probe_traces`); the rest keep the
+    /// history they stand for, and a probe with none always traces.
     f32 ray_density = 1.0F;
     /// A final-gather ray's reach, in metres.
     f32 max_ray_distance_metres = 40.0F;

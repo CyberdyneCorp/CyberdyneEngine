@@ -205,6 +205,17 @@ SceneVarying sceneVertex(float3 position : POSITION, float3 normal : NORMAL,
 [[vk::binding(0, 1)]] Texture2D<float> shadowMap;
 [[vk::binding(1, 1)]] SamplerComparisonState shadowSampler;
 
+/// Where a light-space position lands in the sun's map. THE MAP'S ROWS RUN DOWN THE LIGHT'S +Y:
+/// clip +Y is the top of every framebuffer the RHI rasterises — Vulkan's through its flipped
+/// viewport (vulkan_command_buffer.cpp), Metal's and D3D12's natively — so +Y lands in row 0, and
+/// `cy/frame.slang`'s own lookup reads it as `0.5 - ndc.y / 2` for that reason. Read as `ndc.y / 2 + 0.5`, as this file first did,
+/// every lookup took the texel mirrored across the map's centre line: the Colonnade's pillars cast
+/// no shadow on the gravel, and a room's side wall under its ceiling was lit by the sun.
+float2 sunMapUv(float2 ndc)
+{
+    return float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+}
+
 /// Percentage-closer filtering over a 3x3 kernel. Nine taps rather than one, because a single tap
 /// is a hard, aliased edge and the whole point of this artefact is what the picture looks like.
 float sunVisibility(float3 relativePosition, float3 geometricNormal)
@@ -221,7 +232,7 @@ float sunVisibility(float3 relativePosition, float3 geometricNormal)
         return 1.0;
     }
     float3 projected = lightClip.xyz / lightClip.w;
-    float2 uv = (projected.xy * float2(0.5, 0.5)) + float2(0.5, 0.5);
+    float2 uv = sunMapUv(projected.xy);
     if (any(uv < 0.0) || any(uv > 1.0))
     {
         return 1.0;
@@ -267,7 +278,7 @@ float softSunVisibility(float3 relativePosition, float3 geometricNormal, float2 
         return 1.0;
     }
     float3 projected = lightClip.xyz / lightClip.w;
-    float2 uv = (projected.xy * float2(0.5, 0.5)) + float2(0.5, 0.5);
+    float2 uv = sunMapUv(projected.xy);
     if (any(uv < 0.0) || any(uv > 1.0))
     {
         return 1.0;

@@ -1,0 +1,104 @@
+# content/beauty/interior.cyshot — a sunlit room where the indirect light is most of the picture.
+# Issue #35: the GI's interior showcase, `just capture-gi-interior`.
+#
+# A CLOSED ROOM WITH ONE WINDOW, in the manner of the Cornell box: a red wall on the left, a green
+# one on the right, white plaster everywhere else, and the low sun coming in through a window in
+# the far wall. Everything the sun does not reach directly — most of the room — is lit by what
+# the sunlit patch of floor and the sky in the window throw back, so the picture is mostly the
+# GI's. Without it the frame's flat sky term lights every surface as if the room had no ceiling.
+#
+# THE SAME FILE FORMAT, THE SAME MATERIALS AND MAPS AS THE COLONNADE: the walls are the
+# weathered-stone graph with its maps, and `base-color` gives each wall its colour — one authored
+# graph, three plasters. Coordinates are world metres, y up; the room spans x -3..3, y 0..3 and
+# z -1..6 inside, and the camera stands at its near end.
+
+cyshot 1
+name The Sunlit Room
+
+# A wide lens, as interiors are shot: 70 degrees across, from eye height at the near wall.
+camera position 0.0 1.55 -0.55
+camera target 0.05 1.25 6.0
+camera fov 70
+camera near 0.05
+
+# The sun 35 degrees up, behind the far wall and a little to its right, so its light falls
+# through the window onto the floor in the middle of the room and reaches toward the red wall.
+sun elevation 35
+sun azimuth 72
+sun shadow-extent 12
+sun shadow-bias 0.0008
+sun shadow-normal-offset 0.02
+
+sky cloud-cover 0.20
+sky cloud-density 0.20
+sky cloud-steps 32
+sky seed 0x5EEDB107
+
+# Exposed for the room, not the window: the sunlit patch is past the top of the curve, and the
+# walls the bounce lights sit in the middle of it.
+exposure-stops -8.0
+
+# No embers: they are the Colonnade's air, authored at its camera.
+air none
+
+# --- The materials ----------------------------------------------------------------------------
+material plaster graph content/beauty/materials/weathered_stone.cygraph
+material plaster albedo content/beauty/textures/stone_albedo.png
+material plaster normal content/beauty/textures/stone_normal.png
+material plaster data content/beauty/textures/stone_data.png
+material plaster base-color 1.0 0.97 0.92
+
+material red graph content/beauty/materials/weathered_stone.cygraph
+material red albedo content/beauty/textures/stone_albedo.png
+material red normal content/beauty/textures/stone_normal.png
+material red data content/beauty/textures/stone_data.png
+material red base-color 1.0 0.16 0.12
+
+material green graph content/beauty/materials/weathered_stone.cygraph
+material green albedo content/beauty/textures/stone_albedo.png
+material green normal content/beauty/textures/stone_normal.png
+material green data content/beauty/textures/stone_data.png
+material green base-color 0.22 0.85 0.26
+
+material gravel graph content/beauty/materials/courtyard_gravel.cygraph
+material gravel albedo content/beauty/textures/gravel_albedo.png
+material gravel normal content/beauty/textures/gravel_normal.png
+material gravel data content/beauty/textures/gravel_data.png
+
+# --- The meshes -------------------------------------------------------------------------------
+mesh ground content/beauty/meshes/ground.cyprim
+mesh slab content/beauty/meshes/room_slab.cyprim
+mesh side content/beauty/meshes/room_side.cyprim
+mesh end content/beauty/meshes/room_end.cyprim
+mesh pier content/beauty/meshes/room_pier.cyprim
+mesh sill content/beauty/meshes/room_sill.cyprim
+mesh lintel content/beauty/meshes/room_lintel.cyprim
+mesh block content/beauty/meshes/block.cyprim
+mesh orb content/beauty/meshes/sphere.cyprim
+
+# --- The room ---------------------------------------------------------------------------------
+#
+# Floor and ceiling slabs, the two coloured side walls, the near wall behind the camera, and the
+# far wall built round its window: two piers, a sill below and a lintel above, leaving an opening
+# 1.8 m wide from 1.0 m to 2.4 m above the floor. HALF A METRE THICK, every one: the GI's distance
+# field is a quarter metre a voxel at its finest here (gi.cpp), and a wall thinner than two voxels
+# is one the field's rays can pass, so the cards inside would gather the sunlit outside through it.
+# Looking down +z, +x is on the left: the red wall is the left one.
+instance slab plaster at 0 -0.5 2.5 yaw 0 uv 0.5 normal 0.6
+instance slab plaster at 0 3.0 2.5 yaw 0 uv 0.5 normal 0.6
+instance side red at 3.25 0 2.5 yaw 0 uv 0.5 normal 0.6
+instance side green at -3.25 0 2.5 yaw 0 uv 0.5 normal 0.6
+instance end plaster at 0 0 -1.25 yaw 0 uv 0.5 normal 0.6
+instance pier plaster at 2.2 0 6.25 yaw 0 uv 0.5 normal 0.6
+instance pier plaster at -2.2 0 6.25 yaw 0 uv 0.5 normal 0.6
+instance sill plaster at 0 0 6.25 yaw 0 uv 0.5 normal 0.6
+instance lintel plaster at 0 2.4 6.25 yaw 0 uv 0.5 normal 0.6
+
+# Outside, the courtyard's gravel, a little below the room's floor: what the window shows under the
+# horizon, and what the sun lights beyond it.
+instance ground gravel at 0 -0.05 2.5 yaw 0 uv 1.1 normal 1.7
+
+# What stands in it: a plaster block and a sphere, each with one side to the sun's patch and one
+# to the coloured walls.
+instance block plaster at 1.35 0 3.3 yaw 24 uv 0.8 normal 0.8
+instance orb plaster at -1.45 0 2.2 yaw 0 uv 1.0 normal 0.8

@@ -157,8 +157,13 @@ void read_fog(Shot& shot, std::string_view field, std::string_view& rest) {
 void read_material(Shot& shot, std::string_view& rest) {
     const std::string_view key = take(rest);
     const std::string_view field = take(rest);
-    const std::string path(take(rest));
     ShotMaterial& material = material_for(shot, key);
+    if (field == "base-color") {
+        material.has_base_color = true;
+        material.base_color = to_vec3(rest);
+        return;
+    }
+    const std::string path(take(rest));
     if (field == "graph") {
         material.graph_path = path;
     } else if (field == "albedo") {
@@ -368,6 +373,13 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             read_fog(shot, take(line), line);
         } else if (keyword == "material") {
             read_material(shot, line);
+        } else if (keyword == "air") {
+            const std::string_view air = take(line);
+            if (air != "courtyard-embers" && air != "none") {
+                problem = "`air` is `courtyard-embers` or `none`";
+                return make_unexpected(Error{ErrorCode::InvalidArgument, "air", line_number});
+            }
+            shot.air = air == "courtyard-embers";
         } else if (keyword == "mesh") {
             const std::string key(take(line));
             shot.meshes.emplace_back(key, std::string(take(line)));
@@ -443,7 +455,8 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
     // number that CAN drift are a defect waiting for somebody to move the camera. So this is the
     // check that makes them one number: move the camera in the scene file and the capture refuses,
     // naming the header to move it in as well.
-    if (!camera_matches_the_air(shot, problem)) {
+    // A shot without the air has no copy to disagree with.
+    if (shot.air && !camera_matches_the_air(shot, problem)) {
         return make_unexpected(
             Error{ErrorCode::InvalidArgument, "camera disagrees with embers.h", 0});
     }

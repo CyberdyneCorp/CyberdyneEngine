@@ -16,8 +16,9 @@ lighting.
 
 **`SignalKind` carries no behaviour.** It selects a `SignalConfig` and a history slot, and nothing
 else in `denoiser.cpp` reads it. Everything that differs between the five signals is a field of that
-config: the domain (radiance or visibility), the lobe shape, the history length, the cascade length,
-the four edge-stopping tolerances, and how much roughness widens the filter.
+config: the domain (radiance or visibility), the lobe shape, the history length and how far a
+sample may stray from it, the cascade length, the four edge-stopping tolerances, and how much
+roughness widens the filter.
 
 `tests/test_one_filter.cpp` is what makes that structural rather than aspirational. It denoises the
 same buffer under two different signal kinds carrying the same configuration and asserts the two
@@ -26,7 +27,7 @@ filter hides. Any per-signal special case anywhere in the implementation fails t
 it is written. The file's second case is the control: two kinds with *different* configurations must
 produce different images, or the first would pass on a filter that ignored its configuration too.
 
-## Four things worth knowing before changing anything here
+## Five things worth knowing before changing anything here
 
 **This module computes no history.** `denoising` requires that temporal accumulation use the
 framework in `temporal-rendering` and that denoising "SHALL NOT implement its own history handling".
@@ -46,6 +47,18 @@ this one is honest: feeding the spatial filter's output back would make the accu
 estimate of the filter's residual rather than of the signal's noise — and the variance is what
 drives the filter, so a converged region would report the variance it has *after* filtering and
 widen no filter it needed.
+
+**A history can be cut, when a signal asks.** `SignalConfig::history_rejection`, zero for every
+signal by default, is how far a new sample may stray from its history — relative to the larger of
+the two, in the signal's scalar (luminance, or the visibility channel) — before the history keeps
+only (tolerance x larger / deviation)^2 of its count. Without it a pixel's accumulation weighs each
+frame by one over the frames since its history was last rejected, and after a light moves it
+averages every frame the caches spent converging. It is for a signal whose frame-to-frame noise is
+well below the tolerance: the GI's screen probes, filtered in probe space, set it to 0.2
+(`gi::screen_signal_config`); a one-ray signal would cut its own noise. `integration.render_denoise_
+filter`'s "a history the signal has left behind is cut, and only when the signal asks" holds the
+arithmetic, and that zero is the accumulation as it was. `cy::rendering-gi-gpu` transcribes it in
+both of its accumulations.
 
 **The quality ladder is priced.** `quality_ladder()` gives four positions with a `relative_cost`
 against position 0, which is the field `design.md` §2.10 found the renderer budget arbiter needs in

@@ -111,6 +111,10 @@ struct ShotMaterial {
     /// block: a zeroed block draws a black material however the graph was authored.
     std::vector<Vec4> parameter_defaults;
     std::vector<std::string> textures;
+    /// `material <key> base-color r g b`: the graph's `base_color` default replaced for this
+    /// material, so one authored graph and its maps make a red wall and a green one. Linear.
+    bool has_base_color = false;
+    Vec3 base_color{1.0F, 1.0F, 1.0F};
     u64 cook_key = 0;
 
     /// The compiled fragment program, as SPIR-V words.
@@ -240,6 +244,9 @@ struct Shot {
     std::vector<Instance> instances;
     std::vector<ShotDecalMaterial> decal_materials;
     std::vector<ShotDecal> decals;
+    /// `air courtyard-embers` (the default) or `air none`. The embers are the Colonnade's, authored
+    /// at its camera (`embers.h`), so only a shot that keeps them is held to that camera.
+    bool air = true;
 
     /// Parse the committed file. Every refusal names the line.
     [[nodiscard]] static Expected<Shot, Error> read(const char* path, std::string& problem);
@@ -262,6 +269,10 @@ struct BeautyGiSettings {
     /// Bring the caches to convergence before the first frame — converged mode, which the GI's
     /// specification asks of a capture. False runs every frame at the budget's rates.
     bool converged = true;
+    /// The final gather and its denoiser: the screen probes denoised in probe space, the engine's
+    /// default, unless these ask for the per-pixel gather or the shared denoiser.
+    bool per_pixel = false;
+    bool shared_denoiser = false;
 };
 
 /// The path tracer's verdict on one frame of the GI. See gi.h.
@@ -273,6 +284,32 @@ struct BeautyGiReference {
     /// The flat ambient the GI replaces, against the same reference.
     f32 ambient_relative_error = 0.0F;
     f32 mean_reference = 0.0F;
+};
+
+/// The path tracer's PICTURE of one frame's indirect diffuse, beside the GI's own: every frame
+/// pixel, the reference path traced at every `step`-th pixel each way and upsampled against the
+/// frame's depths and normals as the resolve's own grid is (`gi::screen_upsample`). See gi.h.
+struct BeautyGiReferenceImage {
+    u32 width = 0;
+    u32 height = 0;
+    /// Pixels between path-traced ones, each way.
+    u32 step = 1;
+    /// Pixels path traced, and what each one was.
+    u32 traced = 0;
+    u32 samples = 0;
+    u32 bounces = 0;
+    /// Per frame pixel, row-major; zero on the sky.
+    std::vector<Vec3> reference;
+    std::vector<Vec3> published;
+    std::vector<f32> depth;
+    /// The published indirect diffuse against the reference over the traced pixels: mean
+    /// |difference| over the mean reference magnitude, `gi::compare_against_reference`'s figure.
+    f32 relative_error = 0.0F;
+    /// The reference's own noise in the same units: how far, by the same measure, it is expected
+    /// to lie from what infinitely many paths would give — read from the difference of each pixel's
+    /// two independent halves. The part of `relative_error` the GI is not answerable for.
+    f32 reference_noise = 0.0F;
+    f64 trace_ms = 0.0;
 };
 
 /// What one run measured and produced.
@@ -319,6 +356,12 @@ struct ShotReport {
     f64 gi_unpack_ms = 0.0;
     f64 gi_reproject_ms = 0.0;
     f64 gi_resolve_ms = 0.0;
+    /// Inside the resolve, through the screen probes: placement, tracing, the probe-space filter
+    /// and the integration.
+    f64 gi_probe_place_ms = 0.0;
+    f64 gi_probe_trace_ms = 0.0;
+    f64 gi_probe_filter_ms = 0.0;
+    f64 gi_integrate_ms = 0.0;
     f64 gi_accumulate_ms = 0.0;
     f64 gi_variance_ms = 0.0;
     f64 gi_filter_ms = 0.0;
@@ -396,6 +439,24 @@ public:
     /// After a render with `BeautyGiSettings::readback`: the path tracer's verdict on its GI.
     [[nodiscard]] Expected<BeautyGiReference, Error> measure_gi_reference(u32 pixels, u32 samples,
                                                                           u32 bounces) noexcept;
+    /// After a render with `BeautyGiSettings::readback` on the full-resolution grid: the path
+    /// tracer's picture of the frame's indirect diffuse beside the GI's
+    /// (`BeautyGi::reference_image`).
+    [[nodiscard]] Status gi_reference_image(u32 step, u32 samples, u32 bounces, u32 threads,
+                                            BeautyGiReferenceImage& out) noexcept;
+    /// THE REFERENCE FRAME: the next render shades through the path tracer's indirect diffuse in
+    /// place of the GI's own — everything else the frame draws, the GI's specular included, is the
+    /// same — and writes `png_path`. The GI's own target is bound again after it.
+    [[nodiscard]] Status render_with_gi_reference(const Shot& shot,
+                                                  const BeautyGiReferenceImage& image,
+                                                  const char* png_path,
+                                                  ShotReport& report) noexcept;
+    /// The reference picture's verdict a pixel: the GI's indirect diffuse against the path
+    /// tracer's, |difference| over the reference (floored at a tenth of its mean, so a near-black
+    /// corner is not all error), from black at none through red to pale yellow at 50 % and above;
+    /// the sky mid-grey. At the GI's extent.
+    [[nodiscard]] Status write_gi_error_map(const BeautyGiReferenceImage& image,
+                                            const char* png_path) noexcept;
 
     /// VOLUMETRIC FOG, before `stage_shot`. Off — the default, and the published M11.c frame —
     /// draws exactly the frame this program always drew. On switches the post chain's
@@ -495,6 +556,10 @@ private:
     [[nodiscard]] Status cook_textures(Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status build_geometry(const Shot& shot, ShotReport& report) noexcept;
     [[nodiscard]] Status prepare_shadow() noexcept;
+    /// The reference picture into a texture of the frame's extent, and binding 5 of the frame's
+    /// set — `giDiffuse` — pointed at it or back at the GI's own target.
+    [[nodiscard]] Status upload_gi_reference(const BeautyGiReferenceImage& image) noexcept;
+    [[nodiscard]] Status bind_gi_diffuse(rhi::TextureViewHandle view) noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
     [[nodiscard]] Status write_linear_png(const char* path) noexcept;
 

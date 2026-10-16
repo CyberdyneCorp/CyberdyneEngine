@@ -29,7 +29,7 @@ trails 7692 vertices in 984 strip(s), 6708 segment(s), 1 draw(s), 0 dropped  (th
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 3887.9  sky-ms 129.0  submit-ms 133.42
+build-ms 5049.9  sky-ms 116.0  submit-ms 109.20
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph

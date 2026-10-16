@@ -270,6 +270,10 @@ struct Stage::Device {
     rhi::TextureViewHandle shadow_view;
     rhi::ImageUse shadow_layout = rhi::ImageUse::Undefined;
     rhi::TextureHandle output;
+    /// The path tracer's indirect diffuse, bound in place of the GI's for the reference frame.
+    rhi::TextureHandle gi_reference;
+    rhi::TextureViewHandle gi_reference_view;
+    rhi::BufferHandle gi_reference_staging;
 
     rhi::SamplerHandle material_sampler;
     rhi::SamplerHandle shadow_sampler;
@@ -2664,13 +2668,18 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     // THE RING, WRITTEN INSIDE THE DEVICE FRAME and before the assembly executes, which is the
     // contract `ParticleRenderer::upload` states for the same reason `FrameBindings::upload` does:
     // the descriptor set is allocated out of this frame's pool.
+    // A shot without the air draws none: the embers are the Colonnade's, in its camera's space.
     device_->air.reset_report();
-    if (Status uploaded = device_->air.upload(slot, device_->field.records()); !uploaded) {
+    const Span<const rendering::particles::ParticleInstance> motes =
+        shot.air ? device_->field.records() : Span<const rendering::particles::ParticleInstance>{};
+    if (Status uploaded = device_->air.upload(slot, motes); !uploaded) {
         (void)device.end_frame();
         return uploaded;
     }
     device_->trails.reset_report();
-    if (Status uploaded = device_->trails.upload(slot, device_->field.trails()); !uploaded) {
+    const Span<const rendering::particles::StripVertex> trails =
+        shot.air ? device_->field.trails() : Span<const rendering::particles::StripVertex>{};
+    if (Status uploaded = device_->trails.upload(slot, trails); !uploaded) {
         (void)device.end_frame();
         return uploaded;
     }
@@ -2790,7 +2799,9 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
             }
         }
         fog.shadow.enabled = true;
-        fog.shadow.relative_to_uv = rendering::fog::shadow_uv_rows(sun_to_clip, false);
+        // FLIPPED, as `sunMapUv` in beauty.slang is: the map is rasterised through the RHI's
+        // y-up viewport, so the light's +Y is row 0.
+        fog.shadow.relative_to_uv = rendering::fog::shadow_uv_rows(sun_to_clip, true);
         fog.shadow.bias = shot.shadow_bias;
         fog.shadow.extent = kShadowExtent;
         if (Status set = device_->fog.set_frame(fog); !set) {
@@ -3055,6 +3066,10 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         report.gi_unpack_ms = times.unpack_ms;
         report.gi_reproject_ms = times.reproject_ms;
         report.gi_resolve_ms = times.resolve_ms;
+        report.gi_probe_place_ms = times.probe_place_ms;
+        report.gi_probe_trace_ms = times.probe_trace_ms;
+        report.gi_probe_filter_ms = times.probe_filter_ms;
+        report.gi_integrate_ms = times.integrate_ms;
         report.gi_accumulate_ms = times.accumulate_ms;
         report.gi_variance_ms = times.variance_ms;
         report.gi_filter_ms = times.filter_ms;
@@ -3071,6 +3086,208 @@ Expected<BeautyGiReference, Error> Stage::measure_gi_reference(u32 pixels, u32 s
         return fail(ErrorCode::InvalidArgument, "the run did not ask for the GI");
     }
     return device_->gi.measure_reference(pixels, samples, bounces);
+}
+
+Status Stage::gi_reference_image(u32 step, u32 samples, u32 bounces, u32 threads,
+                                 BeautyGiReferenceImage& out) noexcept {
+    if (!gi_.enabled || device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "the run did not ask for the GI");
+    }
+    return device_->gi.reference_image(step, samples, bounces, threads, out);
+}
+
+Status Stage::upload_gi_reference(const BeautyGiReferenceImage& image) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    const usize pixels = static_cast<usize>(width_) * height_;
+    if (image.width != width_ || image.height != height_ || image.reference.size() != pixels) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the reference picture is not the frame's extent: render it at --supersample 1 "
+                    "on the full-resolution grid");
+    }
+    if (!device_->gi_reference) {
+        rhi::TextureDescription texture;
+        texture.name = "beauty gi reference";
+        texture.format = rhi::Format::Rgba32Sfloat;
+        texture.extent = rhi::Extent3D{width_, height_, 1};
+        texture.usage = rhi::TextureUsage::Sampled | rhi::TextureUsage::TransferDestination;
+        auto made = device.create_texture(texture);
+        if (!made) {
+            return make_unexpected(made.error());
+        }
+        device_->gi_reference = *made;
+        rhi::TextureViewDescription view;
+        view.name = "beauty gi reference";
+        view.texture = device_->gi_reference;
+        auto made_view = device.create_texture_view(view);
+        if (!made_view) {
+            return make_unexpected(made_view.error());
+        }
+        device_->gi_reference_view = *made_view;
+        rhi::BufferDescription staging;
+        staging.name = "beauty gi reference staging";
+        staging.size = pixels * 16U;
+        staging.usage = rhi::BufferUsage::TransferSource;
+        staging.memory = rhi::MemoryUse::Upload;
+        auto buffer = device.create_buffer(staging);
+        if (!buffer) {
+            return make_unexpected(buffer.error());
+        }
+        device_->gi_reference_staging = *buffer;
+    }
+    auto* mapped = static_cast<f32*>(device.buffer_mapped_pointer(device_->gi_reference_staging));
+    if (mapped == nullptr) {
+        return fail(ErrorCode::Internal, "the reference staging buffer is not mapped");
+    }
+    for (usize pixel = 0; pixel < pixels; ++pixel) {
+        mapped[(pixel * 4U) + 0U] = image.reference[pixel].x;
+        mapped[(pixel * 4U) + 1U] = image.reference[pixel].y;
+        mapped[(pixel * 4U) + 2U] = image.reference[pixel].z;
+        mapped[(pixel * 4U) + 3U] = 1.0F;
+    }
+
+    // An upload and a residency read, as `cook_textures` does for the material maps: the read is
+    // what leaves the texture in the layout the frame samples it in.
+    rendering::RenderGraph graph(*allocator_);
+    rendering::TextureRequest request;
+    request.name = "beauty gi reference";
+    request.format = rhi::Format::Rgba32Sfloat;
+    request.width = width_;
+    request.height = height_;
+    const ResourceId id =
+        graph.import_texture(request, device_->gi_reference, rhi::ImageUse::Undefined);
+    Array<rhi::TextureHandle> textures(*allocator_);
+    if (Status pushed = textures.push_back(device_->gi_reference); !pushed) {
+        return pushed;
+    }
+    const std::vector<Copy> copies = {Copy{0, 0, 0, width_, height_}};
+    UploadState state;
+    state.textures = &textures;
+    state.copies = &copies;
+    state.staging = device_->gi_reference_staging;
+    graph.add_pass("beauty gi reference upload", rhi::QueueKind::Graphics)
+        .write(id, rhi::Access::TransferWrite)
+        .record(&record_uploads, &state);
+    graph.add_pass("beauty gi reference residency", rhi::QueueKind::Graphics)
+        .read(id, rhi::Access::FragmentSampledRead)
+        .side_effect();
+    if (Status declared = graph.status(); !declared) {
+        return declared;
+    }
+    if (const Expected<u32, Error> began = device.begin_frame(); !began) {
+        return make_unexpected(began.error());
+    }
+    Status executed = ok();
+    {
+        rendering::GraphExecutor executor(*allocator_, device);
+        state.executor = &executor;
+        auto result =
+            executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
+        executed = result ? device.wait_idle() : make_unexpected(result.error());
+        executor.release();
+    }
+    if (Status ended = device.end_frame(); !ended && executed) {
+        executed = ended;
+    }
+    return executed;
+}
+
+Status Stage::bind_gi_diffuse(rhi::TextureViewHandle view) noexcept {
+    rhi::Device& device = *device_->handle.value();
+    if (Status idle = device.wait_idle(); !idle) {
+        return idle;
+    }
+    rhi::DescriptorWrite write;
+    write.binding = 5;
+    write.kind = rhi::DescriptorKind::SampledTexture;
+    write.texture_view = view;
+    write.use = rhi::ImageUse::SampledRead;
+    return device.update_descriptor_set(device_->shadow_set,
+                                        Span<const rhi::DescriptorWrite>(&write, 1));
+}
+
+Status Stage::render_with_gi_reference(const Shot& shot, const BeautyGiReferenceImage& image,
+                                       const char* png_path, ShotReport& report) noexcept {
+    if (!gi_.enabled || device_ == nullptr || !available_) {
+        return fail(ErrorCode::InvalidArgument, "the run did not ask for the GI");
+    }
+    if (Status uploaded = upload_gi_reference(image); !uploaded) {
+        return uploaded;
+    }
+    if (Status bound = bind_gi_diffuse(device_->gi_reference_view); !bound) {
+        return bound;
+    }
+    Status drawn = render(shot, png_path, nullptr, report);
+    if (Status restored = bind_gi_diffuse(device_->gi.diffuse_view()); !restored && drawn) {
+        return restored;
+    }
+    return drawn;
+}
+
+namespace {
+
+/// The error map's ramp, sRGB bytes at 0, 1/4, 1/2, 3/4 and 1 of its range: black, violet, rose,
+/// orange and pale yellow — ordered in lightness, so a print in grey still reads.
+constexpr u8 kErrorRamp[5][3] = {
+    {0, 0, 4}, {80, 18, 123}, {183, 55, 121}, {251, 135, 97}, {252, 253, 191}};
+/// The relative error the ramp's top stands for.
+constexpr f32 kErrorRampTop = 0.5F;
+
+[[nodiscard]] u32 error_colour(f32 error) noexcept {
+    const f32 t = std::fmin(std::fmax(error / kErrorRampTop, 0.0F), 1.0F) * 4.0F;
+    const auto stop = std::min(static_cast<u32>(t), 3U);
+    const f32 fraction = t - static_cast<f32>(stop);
+    u32 packed = 0xFF000000U;
+    for (u32 channel = 0; channel < 3; ++channel) {
+        const f32 a = kErrorRamp[stop][channel];
+        const f32 b = kErrorRamp[stop + 1U][channel];
+        packed |= static_cast<u32>(std::lround(a + ((b - a) * fraction))) << (channel * 8U);
+    }
+    return packed;
+}
+
+[[nodiscard]] f32 luminance_of(Vec3 c) noexcept {
+    return (0.2126F * c.x) + (0.7152F * c.y) + (0.0722F * c.z);
+}
+
+}  // namespace
+
+Status Stage::write_gi_error_map(const BeautyGiReferenceImage& image,
+                                 const char* png_path) noexcept {
+    const usize pixels = static_cast<usize>(image.width) * image.height;
+    if (pixels == 0 || image.reference.size() != pixels || image.published.size() != pixels ||
+        image.depth.size() != pixels) {
+        return fail(ErrorCode::InvalidArgument, "the error map needs a reference picture");
+    }
+    f64 total = 0.0;
+    u32 surfaces = 0;
+    for (usize pixel = 0; pixel < pixels; ++pixel) {
+        if (image.depth[pixel] > 0.0F) {
+            total += static_cast<f64>(luminance_of(image.reference[pixel]));
+            surfaces += 1;
+        }
+    }
+    const f32 floor =
+        surfaces == 0 ? 1.0F : static_cast<f32>(0.1 * total / static_cast<f64>(surfaces));
+    Array<u32> colours(*allocator_);
+    if (Status sized = colours.resize(pixels); !sized) {
+        return sized;
+    }
+    for (usize pixel = 0; pixel < pixels; ++pixel) {
+        if (image.depth[pixel] <= 0.0F) {
+            colours[pixel] = 0xFF505050U;
+            continue;
+        }
+        const f32 reference = luminance_of(image.reference[pixel]);
+        const f32 published = luminance_of(image.published[pixel]);
+        colours[pixel] =
+            error_colour(std::abs(published - reference) / std::fmax(reference, floor));
+    }
+    render_test::Image out(*allocator_);
+    if (Status adopted = render_test::adopt(out, colours.span(), image.width, image.height);
+        !adopted) {
+        return adopted;
+    }
+    return render_test::write_png(png_path, out);
 }
 
 Status Stage::prepare_shadow() noexcept {

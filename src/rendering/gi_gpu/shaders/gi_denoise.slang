@@ -202,6 +202,24 @@ void cyGiReproject(uint3 thread : SV_DispatchThreadID) {
 
 // --- Accumulation: `Denoiser::accumulate` ----------------------------------------------------------
 
+/// `history_kept` in denoiser.cpp: the share of its count a history keeps against a new sample.
+float gdHistoryKept(float3 history, float3 value, uint signal) {
+    const uint4 words = giDenoise.constants[kGdSignals + (signal * 3u) + 2u];
+    const float rejection = asfloat(words.z);
+    if (rejection <= 0.0f) {
+        return 1.0f;
+    }
+    const float before = gdScalar(history, words.y);
+    const float now = gdScalar(value, words.y);
+    const float deviation = abs(now - before);
+    const float allowed = rejection * max(abs(now), abs(before));
+    if (deviation <= allowed) {
+        return 1.0f;
+    }
+    const float ratio = allowed / deviation;
+    return ratio * ratio;
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cyGiDenoiseAccumulate(uint3 thread : SV_DispatchThreadID) {
@@ -242,7 +260,7 @@ void cyGiDenoiseAccumulate(uint3 thread : SV_DispatchThreadID) {
     const uint from = gdHistoryRecord(1u - current, signal, uint(source));
     const float4 colour = giDenoise.history[from];
     const float4 moments = giDenoise.history[from + 1u];
-    const float carried = colour.w * confidence;
+    const float carried = (colour.w * confidence) * gdHistoryKept(colour.xyz, value, signal);
     const float count = carried + fresh;
     const float alpha = max(count > 0.0f ? fresh / count : 1.0f, alphaFloor);
     const float3 blended = colour.xyz + ((value - colour.xyz) * alpha);

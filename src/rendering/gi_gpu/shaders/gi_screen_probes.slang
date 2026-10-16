@@ -7,6 +7,8 @@
 //   cyGiProbeTrace       `trace_probe` for every placed probe, one workgroup a probe: the stand-in,
 //                        the reprojected history, the guide, a lane a ray through the uploaded
 //                        field, and the temporal blend.
+//   cyGiProbeFilter      `filter`: each probe's coefficients averaged with its uniform neighbours'
+//                        on its own surface, into the coefficients the pixels integrate. No tier.
 //   cyGiProbeIntegrate   `integrate` for every cell of the resolve grid: the probes about it,
 //                        weighted by plane distance and normal, into the noisy signals the denoiser
 //                        reads.
@@ -25,6 +27,12 @@ void cyGiProbePlace(uint3 thread : SV_DispatchThreadID) {
 [numthreads(64, 1, 1)]
 void cyGiProbeTrace(uint3 group : SV_GroupID, uint3 lane : SV_GroupThreadID) {
     spTrace<GiSoftwareTier>(group.x, lane.x);
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void cyGiProbeFilter(uint3 thread : SV_DispatchThreadID) {
+    spFilter(thread.x);
 }
 
 [shader("compute")]

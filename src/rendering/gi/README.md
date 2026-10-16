@@ -350,7 +350,9 @@ suite because it converges two scenes before it counts frames, a second of CPU o
 
 `mesh_cards.h` builds a GI scene from meshes: `samples/12-beauty --gi on` is the first scene the
 engine lights this way, and `just capture-beauty-gi` measures it against the path tracer over the
-exact triangles (0.126 relative, where the flat sky term it replaces is 0.385).
+exact triangles (0.048 relative through the screen probes and 0.127 through the per-pixel gather,
+where the flat sky term it replaces is 0.384), and `just capture-gi-interior` photographs it and a
+sunlit room beside the path tracer's picture of the same frames.
 
 ## In the frame: the screen-probe gather, the default
 
@@ -363,8 +365,20 @@ second-order harmonics a probe, the history of the one previous probe that stand
 every pixel integrated from the probes about it, about its own normal. On both tiers a probe's rays
 leave one clearance from any other surface along the field's gradient, so a probe at a thin wall's
 foot or on a room's edge sees nothing past the surface. `GiGather::PerPixel` keeps the per-pixel
-gather selectable and unchanged; the frame's composite and the denoiser downstream are the same,
-the denoiser's cascade capped at one pass for the probes' smoother signal (`screen_signal_config`).
+gather selectable and unchanged; the frame's composite downstream is the same.
+
+**The probes' denoiser works in probe space** (`ScreenProbeDenoiser::ProbeSpace`, the default).
+`ScreenProbeGather::filter` averages each probe's harmonics with the uniform probes of the 3x3 tiles
+about it — a tent over the tiles, a world reach of a tenth of the probe's depth, and the plane and
+normal weight the integration uses — into `ScreenProbe::filtered`, which the pixels integrate; the
+probe's own `coefficients` stay unfiltered, so the next frame's history is not filtered twice. The
+integrated pixels then go through `denoise::Denoiser` with no cascade and their history cut where
+the filtered signal leaves it (`screen_signal_config`: `max_passes` 0,
+`history_rejection` = `ScreenProbeSettings::history_rejection`, 0.2). `ScreenProbeDenoiser::Shared`
+keeps the previous path: no filter, and the shared denoiser's cascade capped at
+`filter_passes`. Measured at 1080p on the device (`gi_gpu/README.md`), the probe-space denoiser is
+0.6 ms where the shared one was 3.1, with less error, a stiller view and a moved light settled in
+9 / 10 frames rather than 14 / 13.
 
 `integration.render_gi_screen_probes` holds its properties, `smoke.render_gi_screen_probes_quality`
 its quality at 128x72 beside the per-pixel gather, and `cy::rendering-gi-gpu`'s
@@ -379,10 +393,19 @@ scale it is built for:
 | the blend, against history + (estimate - history) * 1/4 | exact (0) | < 1e-5 |
 | an open sky, none / half / 0.9 of the rays guided | 0.28 % / 0.26 % / 0.37 % from the sky's irradiance | < 1 % |
 | a probe at a thin wall's foot or on a room's edge, both tiers | sees zero | zero (0.37–0.67 before the origin moved out) |
-| against the path tracer, 128x72, per pixel / probes 16 px / 8 px | 0.081 / 0.109 / 0.092 | the per-pixel gather's + 0.03 / + 0.02 |
+| the probe-space filter, against the tent-and-surface average from its definition (64x40, a whole depth's reach) | 60 of 67 probes averaged, exact (0) | < 1e-5 |
+| the same at the default reach, a tenth of the depth, where a 8-pixel tile is half a metre | 67 of 67 probes alone, exact | at least one alone, as defined |
+| under the shared denoiser, the coefficients the pixels integrate | the probes' own, bit for bit | bit for bit |
+| against the path tracer, 128x72, per pixel / probes 16 px / 8 px | 0.081 / 0.108 / 0.089 (shared denoiser: 0.109 / 0.092) | the per-pixel gather's + 0.03 / + 0.02 |
 | the sealed room behind a 10 cm wall, probes 16 / 8 px | mean 0, worst 0 | < 1e-3, < 2e-2 |
-| a light moved 4.9 m, probes 16 / 8 px | 14 / 14 frames (per pixel, 9) | at most 14 |
-| a converged still view, probes 16 / 8 px | 0.0018 / 0.0020 a frame (per pixel, 0.0025) | < 0.01 |
+| a light moved 4.9 m, probes 16 / 8 px | 9 / 9 frames (shared denoiser: 14 / 14; per pixel, 9) | at most 14 |
+| a converged still view, probes 16 / 8 px | 0.0022 / 0.0018 a frame (shared denoiser: 0.0018 / 0.0020; per pixel, 0.0025) | < 0.01 |
+
+At 128x72 a 16-pixel tile is a metre of the room, the filter's world reach leaves almost every
+probe alone, and the a-trous pass the shared denoiser ran is gone: the still view through the
+16-pixel probes moves 0.0022 a frame where it moved 0.0018. At 1080p, the resolution the probes are
+built for, the probe-space denoiser is the stiller of the two (0.0016 / 0.0011 against 0.0019 /
+0.0017, software / hardware).
 
 ## What is here at Working, and what is not
 

@@ -22,6 +22,25 @@ namespace {
     return (0.2126F * value.x) + (0.7152F * value.y) + (0.0722F * value.z);
 }
 
+/// The share of its count a history keeps against a new sample: one within the config's
+/// `history_rejection` of the larger of the two, falling as the square of the tolerance over the
+/// deviation beyond it. A history the new sample has left behind — a light moved, a surface
+/// uncovered — is cut to the sample's own, not averaged against it for `history_length` frames.
+[[nodiscard]] f32 history_kept(Vec3 history, Vec3 value, const SignalConfig& config) noexcept {
+    if (config.history_rejection <= 0.0F) {
+        return 1.0F;
+    }
+    const f32 before = signal_scalar(history, config.domain);
+    const f32 now = signal_scalar(value, config.domain);
+    const f32 deviation = std::abs(now - before);
+    const f32 allowed = config.history_rejection * std::max(std::abs(now), std::abs(before));
+    if (deviation <= allowed) {
+        return 1.0F;
+    }
+    const f32 ratio = allowed / deviation;
+    return ratio * ratio;
+}
+
 /// The B3-spline row {1, 4, 6, 4, 1} / 16, indexed by |offset|.
 [[nodiscard]] f32 spline_weight(i32 offset) noexcept {
     constexpr f32 kRow[3] = {6.0F / 16.0F, 4.0F / 16.0F, 1.0F / 16.0F};
@@ -254,7 +273,8 @@ void Denoiser::accumulate(SignalState& state, const NoisySignal& noisy,
         }
 
         const auto from = static_cast<usize>(source);
-        const f32 carried = state.history_samples[from] * confidence;
+        const f32 carried = state.history_samples[from] * confidence *
+                            history_kept(state.history_colour[from], value, state.config);
         const f32 count = carried + fresh;
         // The blend weight falls as the accumulated count rises, and never below the floor the
         // declared history length sets — a converged pixel still takes 1/history_length of each new

@@ -21,6 +21,7 @@
 
 #include <iterator>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -29,14 +30,27 @@ using namespace gi_gpu_support;  // NOLINT(google-build-using-namespace)
 constexpr const char* kSuite = "smoke.gi_gpu_probe_quality";
 
 struct Variant {
-    const char* name;
-    gi::GiGather gather;
-    u32 spacing;
+    const char* name = "";
+    gi::GiGather gather = gi::GiGather::ScreenProbes;
+    u32 spacing = 16;
+    gi::ScreenProbeDenoiser denoiser = gi::ScreenProbeDenoiser::ProbeSpace;
 };
+
+/// The 16-pixel probes under each denoiser: the default against the lever's other position.
+[[nodiscard]] bool probe_space_16(const Variant& variant) {
+    return variant.gather == gi::GiGather::ScreenProbes && variant.spacing == 16 &&
+           variant.denoiser == gi::ScreenProbeDenoiser::ProbeSpace;
+}
+[[nodiscard]] bool shared_16(const Variant& variant) {
+    return variant.gather == gi::GiGather::ScreenProbes && variant.spacing == 16 &&
+           variant.denoiser == gi::ScreenProbeDenoiser::Shared;
+}
 
 constexpr Variant kVariants[] = {
     {"per-pixel gather", gi::GiGather::PerPixel, 16},
     {"screen probes every 16 px", gi::GiGather::ScreenProbes, 16},
+    {"screen probes every 16 px, shared denoiser", gi::GiGather::ScreenProbes, 16,
+     gi::ScreenProbeDenoiser::Shared},
     {"screen probes every 8 px", gi::GiGather::ScreenProbes, 8},
 };
 
@@ -77,7 +91,7 @@ struct DeviceScene {
         hardware = with_hardware;
         host.settings.gather = variant.gather;
         host.settings.probes.spacing_pixels = variant.spacing;
-        host.specular_enabled = false;
+        host.settings.probes.denoiser = variant.denoiser;
     }
 
     /// After `host` is built: the device half.
@@ -160,6 +174,9 @@ constexpr u32 kHeight = 1080;
 /// The error, convergence and stability measurements of one gather through one tier.
 void measure_reference_and_stability(Gpu& gpu, bool hardware) {
     f32 per_pixel_error = 0.0F;
+    // The probe-space denoiser against the shared one it replaces, on the same view and tier.
+    f32 error[2] = {0.0F, 0.0F};
+    f32 stillness[2] = {0.0F, 0.0F};
     for (const Variant& variant : kVariants) {
         DeviceScene scene;
         scene.configure(variant, hardware);
@@ -209,7 +226,16 @@ void measure_reference_and_stability(Gpu& gpu, bool hardware) {
         } else {
             CY_CHECK_LT(measured.relative_error, per_pixel_error + 0.02F);
         }
+        if (probe_space_16(variant) || shared_16(variant)) {
+            const usize which = probe_space_16(variant) ? 0 : 1;
+            error[which] = measured.relative_error;
+            stillness[which] = still;
+        }
     }
+    // NO WORSE THAN WHAT IT REPLACED: the error within a rounding of the shared denoiser's (0.071 /
+    // 0.064 against 0.076 / 0.066, software / hardware), and a still view no less still.
+    CY_CHECK_LE(error[0], error[1] + 0.002F);
+    CY_CHECK_LE(stillness[0], stillness[1]);
 }
 
 void measure_wall(Gpu& gpu, bool hardware) {
@@ -270,6 +296,7 @@ void measure_wall(Gpu& gpu, bool hardware) {
 
 void measure_convergence(Gpu& gpu, bool hardware) {
     const Vec3 moved{2.4F, 1.2F, -2.6F};
+    u32 settle_frames[2] = {0, 0};
     for (const Variant& variant : kVariants) {
         std::vector<Vec3> target;
         {
@@ -317,7 +344,13 @@ void measure_convergence(Gpu& gpu, bool hardware) {
         CY_CHECK_GT(before, 0.3F);
         CY_CHECK_LE(difference, kWithin);
         CY_CHECK_LE(frames, 14U);
+        if (probe_space_16(variant) || shared_16(variant)) {
+            settle_frames[probe_space_16(variant) ? 0 : 1] = frames;
+        }
     }
+    // The probe-space denoiser settles no later than the shared one (9 / 10 frames against 14 /
+    // 13): its history is cut where the signal leaves it.
+    CY_CHECK_LE(settle_frames[0], settle_frames[1]);
 }
 
 }  // namespace
@@ -391,12 +424,13 @@ struct CostRun {
     u32 denoiser = 0;
     /// `TracingResolution`'s value: below 0.99 the half grid, below 0.6 half the rays besides.
     f32 tracing = 1.0F;
+    gi::ScreenProbeDenoiser probe_denoiser = gi::ScreenProbeDenoiser::ProbeSpace;
 };
 
 /// The fastest of five frames of one configuration, every stage.
 [[nodiscard]] GpuResolveTimes cost_of(Gpu& gpu, const CostRun& run) {
     DeviceScene scene;
-    scene.configure(Variant{run.name, run.gather, run.spacing}, run.hardware);
+    scene.configure(Variant{run.name, run.gather, run.spacing, run.probe_denoiser}, run.hardware);
     make_device_room(scene, run.width, run.height);
     scene.host.denoiser.set_quality_position(run.denoiser);
     scene.host.settings.ray_density = cy::rendering::gi_gpu::tracing_density(run.tracing);
@@ -419,12 +453,16 @@ struct CostRun {
     });
     const GpuResolveTimes& fastest = times.front();
     std::fprintf(stderr,
-                 "%ux%u, %s tier, %s, denoiser %u, tracing %.2f: reproject %.3f, place %.3f, "
-                 "trace %.3f, integrate %.3f, accumulate %.3f, variance %.3f, filter %.3f, publish "
-                 "%.3f ms; total %.3f ms\n",
-                 run.width, run.height, tier_name(run.hardware), run.name, run.denoiser,
-                 static_cast<double>(run.tracing), fastest.reproject_ms, fastest.probe_place_ms,
-                 fastest.probe_trace_ms, fastest.integrate_ms, fastest.accumulate_ms,
+                 "%ux%u, %s tier, %s, %s, denoiser %u, tracing %.2f: unpack %.3f, reproject %.3f, "
+                 "place %.3f, trace %.3f, probe filter %.3f, integrate %.3f, accumulate %.3f, "
+                 "variance %.3f, filter %.3f, publish %.3f ms; total %.3f ms\n",
+                 run.width, run.height, tier_name(run.hardware), run.name,
+                 run.gather == gi::GiGather::ScreenProbes
+                     ? gi::screen_probe_denoiser_name(run.probe_denoiser)
+                     : "shared",
+                 run.denoiser, static_cast<double>(run.tracing), fastest.unpack_ms,
+                 fastest.reproject_ms, fastest.probe_place_ms, fastest.probe_trace_ms,
+                 fastest.probe_filter_ms, fastest.integrate_ms, fastest.accumulate_ms,
                  fastest.variance_ms, fastest.filter_ms, fastest.publish_ms, fastest.total_ms);
     CY_CHECK_EQ(scene.device.resolve.last_tier(), run.hardware ? gi::RadianceSource::HardwareTrace
                                                                : gi::RadianceSource::SoftwareTrace);
@@ -437,13 +475,17 @@ struct CostRun {
     return fastest;
 }
 
-void cost_runs(Gpu& gpu, Span<const CostRun> runs, bool hardware_available) {
+/// Every run's fastest total, in the order given; zero for a run the device cannot make.
+std::vector<f64> cost_runs(Gpu& gpu, Span<const CostRun> runs, bool hardware_available) {
+    std::vector<f64> totals;
     for (const CostRun& run : runs) {
         if (run.hardware && !hardware_available) {
+            totals.push_back(0.0);
             continue;
         }
-        (void)cost_of(gpu, run);
+        totals.push_back(cost_of(gpu, run).total_ms);
     }
+    return totals;
 }
 
 }  // namespace
@@ -459,6 +501,11 @@ CY_TEST_CASE("what each gather costs at 1920x1080, per stage and per tier") {
         {"per-pixel gather", kWidth, kHeight, false, gi::GiGather::PerPixel, 16, 0},
         {"screen probes every 16 px", kWidth, kHeight, true, gi::GiGather::ScreenProbes, 16, 0},
         {"screen probes every 16 px", kWidth, kHeight, false, gi::GiGather::ScreenProbes, 16, 0},
+        // The lever's other position: the shared denoiser over the integrated pixels.
+        {"screen probes every 16 px", kWidth, kHeight, true, gi::GiGather::ScreenProbes, 16, 0,
+         1.0F, gi::ScreenProbeDenoiser::Shared},
+        {"screen probes every 16 px", kWidth, kHeight, false, gi::GiGather::ScreenProbes, 16, 0,
+         1.0F, gi::ScreenProbeDenoiser::Shared},
         {"screen probes every 8 px", kWidth, kHeight, true, gi::GiGather::ScreenProbes, 8, 0},
         {"screen probes every 8 px", kWidth, kHeight, false, gi::GiGather::ScreenProbes, 8, 0},
         {"screen probes every 16 px", kWidth, kHeight, true, gi::GiGather::ScreenProbes, 16, 2},
@@ -471,7 +518,14 @@ CY_TEST_CASE("what each gather costs at 1920x1080, per stage and per tier") {
         {"screen probes every 8 px", kWidth, kHeight, true, gi::GiGather::ScreenProbes, 8, 0,
          0.71F},
     };
-    cost_runs(gpu, {runs, std::size(runs)}, hardware);
+    const std::vector<f64> totals = cost_runs(gpu, {runs, std::size(runs)}, hardware);
+    // The probe-space denoiser costs less than the shared one it replaces, through each tier:
+    // runs 2 and 3 against 4 and 5.
+    for (usize tier = 0; tier < 2; ++tier) {
+        if (totals[2 + tier] > 0.0) {
+            CY_CHECK_LT(totals[2 + tier], totals[4 + tier]);
+        }
+    }
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }
 
@@ -494,6 +548,6 @@ CY_TEST_CASE("what each gather costs for a 3840x2160 output, native and through 
         {"screen probes every 16 px", 2560, 1440, false, gi::GiGather::ScreenProbes, 16, 0},
         {"screen probes every 8 px", 2560, 1440, true, gi::GiGather::ScreenProbes, 8, 0},
     };
-    cost_runs(gpu, {runs, std::size(runs)}, hardware);
+    (void)cost_runs(gpu, {runs, std::size(runs)}, hardware);
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }

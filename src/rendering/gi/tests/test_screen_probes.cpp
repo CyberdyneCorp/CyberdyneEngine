@@ -346,6 +346,9 @@ CY_TEST_CASE("a probe's blend moves last frame's coefficients toward this frame'
     probe_room(scene, 0.0F);
     // Eight frames of history, so frame 3's blend is its count's (1/4) and not the floor's.
     scene.settings.probes.history_frames = 8;
+    // The probe-space filter reaching its neighbours, as it does at 1080p: the history blended is
+    // still the probe's own coefficients, never the filtered ones it hands the pixels.
+    scene.settings.probes.filter_reach = 1.0F;
     scene.run(0, 3);
     const ScreenProbeGather& gather = scene.resolve.probes();
     std::vector<ScreenProbe> before(gather.probes().begin(), gather.probes().end());
@@ -382,6 +385,224 @@ CY_TEST_CASE("a probe's blend moves last frame's coefficients toward this frame'
                  checked, worst);
     CY_CHECK_GT(checked, 20U);
     CY_CHECK_LT(worst, 1.0e-5);
+}
+
+namespace {
+
+/// The probe-space filter's tent at reach one, by offset -1, 0, 1: stated here rather than read off
+/// the implementation, so a filter that weighed its neighbours otherwise disagrees with it.
+constexpr f32 kTent[3] = {0.5F, 1.0F, 0.5F};
+
+/// What `filter` should make of `probe`, computed from the definition: its own coefficients at
+/// weight one, and each uniform neighbour of the 3x3 tiles about it by the tent, by its distance
+/// against the reach, and by how well the neighbour stands for the probe's surface.
+void expected_filtered(const ScreenProbeGather& gather, const ScreenProbe& probe,
+                       const ScreenProbeSettings& settings, Vec3 out[kScreenProbeCoefficients]) {
+    const ScreenProbeLayout& layout = gather.layout();
+    const u32 uniform = layout.uniform_count();
+    const u32 pixel = probe.id < uniform ? layout.uniform_pixel(probe.id)
+                                         : layout.adaptive_pixel(probe.id - uniform);
+    const u32 tile_x = std::min((pixel % layout.width) / layout.spacing, layout.tiles_x - 1U);
+    const u32 tile_y = std::min((pixel / layout.width) / layout.spacing, layout.tiles_y - 1U);
+    Vec3 sum[kScreenProbeCoefficients];
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        sum[k] = probe.coefficients[k];
+    }
+    f32 total = 1.0F;
+    for (u32 j = 0; j < 3; ++j) {
+        for (u32 i = 0; i < 3; ++i) {
+            const u32 x = tile_x + i - 1U;  // wraps past the grid at the left and top edges
+            const u32 y = tile_y + j - 1U;
+            if (x >= layout.tiles_x || y >= layout.tiles_y) {
+                continue;
+            }
+            const u32 tile = (y * layout.tiles_x) + x;
+            const ScreenProbe& neighbour = gather.probes()[tile];
+            if (tile == probe.id || neighbour.depth <= 0.0F) {
+                continue;
+            }
+            const f32 near = 1.0F - (cy::length(neighbour.position - probe.position) /
+                                     (settings.filter_reach * probe.depth));
+            const f32 weight =
+                kTent[i] * kTent[j] * std::max(near, 0.0F) *
+                screen_probe_geometry_weight(neighbour.position, neighbour.normal, probe.position,
+                                             probe.normal, probe.depth, settings.plane_tolerance);
+            for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+                sum[k] = sum[k] + (neighbour.coefficients[k] * weight);
+            }
+            total += weight;
+        }
+    }
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        out[k] = sum[k] / total;
+    }
+}
+
+[[nodiscard]] bool filtered_is_coefficients(const ScreenProbe& probe) {
+    for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+        if (probe.filtered[k].x != probe.coefficients[k].x ||
+            probe.filtered[k].y != probe.coefficients[k].y ||
+            probe.filtered[k].z != probe.coefficients[k].z) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+CY_TEST_CASE("the probe-space filter averages a probe with its neighbours on its own surface") {
+    ScreenScene scene;
+    probe_room(scene);
+    CY_CHECK(scene.settings.probes.denoiser == ScreenProbeDenoiser::ProbeSpace);
+    CY_CHECK_EQ(scene.settings.probes.filter_tiles, 1U);
+    // At 64x40 a tile is half a metre of the room's far wall, past the default reach (a tenth of
+    // the depth) of every neighbour; a reach of a whole depth lets the tiles and the surfaces
+    // decide.
+    scene.settings.probes.filter_reach = 1.0F;
+    scene.run(0, 3);
+    const ScreenProbeGather& gather = scene.resolve.probes();
+    u32 checked = 0;
+    u32 averaged = 0;
+    f64 worst = 0.0;
+    for (const ScreenProbe* probe : live(gather)) {
+        Vec3 expected[kScreenProbeCoefficients];
+        expected_filtered(gather, *probe, scene.settings.probes, expected);
+        const f64 scale = std::max(static_cast<f64>(cy::length(expected[0])), 1.0e-6);
+        for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+            worst = std::max(
+                worst, static_cast<f64>(cy::length(probe->filtered[k] - expected[k])) / scale);
+        }
+        averaged += filtered_is_coefficients(*probe) ? 0U : 1U;
+        checked += 1;
+    }
+    std::fprintf(stderr,
+                 "%u probes, %u of them averaged with a neighbour: the filter within %.2g of the "
+                 "tent-and-surface average\n",
+                 checked, averaged, worst);
+    CY_CHECK_GT(checked, 20U);
+    CY_CHECK_GT(averaged * 2U, checked);
+    CY_CHECK_LT(worst, 1.0e-5);
+
+    // The default reach at this resolution: a probe is averaged only with neighbours within a
+    // tenth of its depth, and the definition above agrees with what it did.
+    ScreenResolveSettings within_reach = scene.settings;
+    within_reach.probes.filter_reach = ScreenProbeSettings{}.filter_reach;
+    scene.resolve.reset_probe_history();
+    CY_REQUIRE(
+        scene.resolve.produce(scene.grid.surfaces(), within_reach, scene.sources(3)).has_value());
+    u32 kept_apart = 0;
+    for (const ScreenProbe* probe : live(scene.resolve.probes())) {
+        Vec3 expected[kScreenProbeCoefficients];
+        expected_filtered(scene.resolve.probes(), *probe, within_reach.probes, expected);
+        for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+            CY_CHECK_LT(static_cast<f64>(cy::length(probe->filtered[k] - expected[k])),
+                        1.0e-5 * std::max(1.0, static_cast<f64>(cy::length(expected[0]))));
+        }
+        kept_apart += filtered_is_coefficients(*probe) ? 1U : 0U;
+    }
+    std::fprintf(stderr, "at a tenth of the depth, %u probes had no neighbour within reach\n",
+                 kept_apart);
+    CY_CHECK_GT(kept_apart, 0U);
+
+    // The pixels read the filtered coefficients: a probe's own are the history, never filtered,
+    // so the filter does not compound frame over frame (the blend case above holds that). The same
+    // frame twice from no history, unfiltered and filtered, so only the filter differs.
+    const ScreenSurfaces surfaces = scene.grid.surfaces();
+    ScreenResolveSettings unfiltered = scene.settings;
+    unfiltered.probes.filter_tiles = 0;
+    scene.resolve.reset_probe_history();
+    CY_REQUIRE(scene.resolve.produce(surfaces, unfiltered, scene.sources(3)).has_value());
+    const std::vector<Vec3> plain(scene.resolve.diffuse().begin(), scene.resolve.diffuse().end());
+    for (const ScreenProbe* probe : live(scene.resolve.probes())) {
+        CY_CHECK(filtered_is_coefficients(*probe));
+    }
+    scene.resolve.reset_probe_history();
+    CY_REQUIRE(scene.resolve.produce(surfaces, scene.settings, scene.sources(3)).has_value());
+    u32 surfaced = 0;
+    u32 moved = 0;
+    for (usize index = 0; index < plain.size(); ++index) {
+        if (surfaces.depth[index] <= 0.0F) {
+            continue;
+        }
+        surfaced += 1;
+        const Vec3 value = scene.resolve.diffuse()[index];
+        moved += value.x != plain[index].x || value.y != plain[index].y || value.z != plain[index].z
+                     ? 1U
+                     : 0U;
+    }
+    // Most probes were averaged with a neighbour, so most pixels read something else.
+    std::fprintf(stderr, "filtered, %u of %u pixels integrate something else\n", moved, surfaced);
+    CY_CHECK_GT(moved * 2U, surfaced);
+}
+
+CY_TEST_CASE("under the shared denoiser the probes are integrated unfiltered, as they were") {
+    ScreenScene scene;
+    probe_room(scene);
+    scene.settings.probes.denoiser = ScreenProbeDenoiser::Shared;
+    scene.run(0, 3);
+    u32 checked = 0;
+    for (const ScreenProbe* probe : live(scene.resolve.probes())) {
+        CY_CHECK(filtered_is_coefficients(*probe));
+        checked += 1;
+    }
+    CY_CHECK_GT(checked, 20U);
+    CY_CHECK_EQ(std::string(screen_probe_denoiser_name(ScreenProbeDenoiser::Shared)),
+                std::string("shared"));
+    CY_CHECK_EQ(std::string(screen_probe_denoiser_name(ScreenProbeDenoiser::ProbeSpace)),
+                std::string("probe space"));
+}
+
+CY_TEST_CASE("below a ray density of one, that fraction of the probes trace and the rest keep") {
+    // A still view, so the previous probe that stands for each probe best is itself (the blend
+    // case's argument), and a probe that does not trace keeps exactly what it had.
+    ScreenScene scene;
+    probe_room(scene, 0.0F);
+    scene.settings.probes.history_frames = 8;
+    // Everything in the far field, so a probe's openness is one of the field's sky rays rather
+    // than the near field's one: what a kept probe keeps is then something a traced one is not.
+    scene.settings.error_targets.far_field_begins_metres = 0.0F;
+    scene.run(0, 3);
+    const ScreenProbeGather& gather = scene.resolve.probes();
+    const std::vector<ScreenProbe> before(gather.probes().begin(), gather.probes().end());
+    scene.settings.ray_density = 0.5F;
+    scene.step(3);
+    const ScreenProbeLayout& layout = gather.layout();
+    u32 traced = 0;
+    u32 kept = 0;
+    for (u32 tile = 0; tile < layout.uniform_count(); ++tile) {
+        const ScreenProbe& now = gather.probes()[tile];
+        if (now.depth <= 0.0F) {
+            continue;
+        }
+        if (screen_probe_traces(now.id, 3, 0.5F)) {
+            CY_CHECK_EQ(now.history, std::min(before[tile].history + 1.0F, 8.0F));
+            traced += 1;
+            continue;
+        }
+        CY_CHECK_EQ(now.history, before[tile].history);
+        CY_CHECK_EQ(now.openness, before[tile].openness);
+        CY_CHECK_EQ(now.cache_confidence, before[tile].cache_confidence);
+        bool same = true;
+        for (u32 k = 0; k < kScreenProbeCoefficients; ++k) {
+            same = same && now.coefficients[k].x == before[tile].coefficients[k].x &&
+                   now.coefficients[k].y == before[tile].coefficients[k].y &&
+                   now.coefficients[k].z == before[tile].coefficients[k].z;
+        }
+        CY_CHECK(same);
+        kept += 1;
+    }
+    std::fprintf(stderr, "at half the ray density: %u uniform probes traced, %u kept\n", traced,
+                 kept);
+    CY_CHECK_GT(traced, 5U);
+    CY_CHECK_GT(kept, 5U);
+    CY_CHECK_GE(gather.stats().carried, kept);
+    CY_CHECK_EQ(gather.stats().rays,
+                (live_probes(gather) - gather.stats().carried) * screen_probe_rays(scene.settings));
+    // At a density of one every probe traces, whatever the frame.
+    for (u32 id = 0; id < 64; ++id) {
+        CY_CHECK(screen_probe_traces(id, 3, 1.0F));
+    }
 }
 
 CY_TEST_CASE("the gather lever selects the per-pixel gather as it was, or the screen probes") {
@@ -446,12 +667,24 @@ CY_TEST_CASE("the gather lever selects the per-pixel gather as it was, or the sc
     }
     CY_CHECK_EQ(integrated, surfaced);
     CY_CHECK_GT(apart, 0.0);
-    // The denoiser filters the probes' smoother signal with one a-trous pass, the per-pixel
-    // gather's with the cascade as authored.
+    // The denoiser: under the probe-space denoiser the probes' filtered signal is accumulated over
+    // time, its history cut where the signal leaves it, and filtered no further; under the shared
+    // one, one a-trous pass and no cut; the per-pixel gather's with the cascade as authored.
     const cy::rendering::denoise::SignalConfig authored =
         cy::rendering::denoise::default_config(cy::rendering::denoise::SignalKind::IndirectDiffuse);
-    CY_CHECK_EQ(screen_signal_config(authored, probes).max_passes, 1U);
+    CY_CHECK_EQ(authored.history_rejection, 0.0F);
+    CY_CHECK(probes.probes.denoiser == ScreenProbeDenoiser::ProbeSpace);
+    CY_CHECK_EQ(screen_signal_config(authored, probes).max_passes, 0U);
+    CY_CHECK_EQ(screen_signal_config(authored, probes).history_length, authored.history_length);
+    CY_CHECK_EQ(screen_signal_config(authored, probes).history_rejection,
+                probes.probes.history_rejection);
+    CY_CHECK_GT(probes.probes.history_rejection, 0.0F);
+    ScreenResolveSettings shared = probes;
+    shared.probes.denoiser = ScreenProbeDenoiser::Shared;
+    CY_CHECK_EQ(screen_signal_config(authored, shared).max_passes, 1U);
+    CY_CHECK_EQ(screen_signal_config(authored, shared).history_rejection, 0.0F);
     CY_CHECK_EQ(screen_signal_config(authored, per_pixel).max_passes, authored.max_passes);
+    CY_CHECK_EQ(screen_signal_config(authored, per_pixel).history_rejection, 0.0F);
     CY_CHECK_GT(authored.max_passes, 1U);
     CY_CHECK_EQ(std::string(gi_gather_name(GiGather::ScreenProbes)), std::string("screen probes"));
     CY_CHECK_EQ(std::string(gi_gather_name(GiGather::PerPixel)), std::string("per pixel"));

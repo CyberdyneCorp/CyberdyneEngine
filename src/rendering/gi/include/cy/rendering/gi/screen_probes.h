@@ -39,13 +39,20 @@
 //   store       the estimate projected onto second-order spherical harmonics, nine RGB
 //               coefficients, and blended with the reprojected history by
 //               max(1 / (count + 1), 1 / history_frames).
-//   integrate   every pixel: its irradiance from each probe's coefficients about ITS OWN normal,
+//   filter      under `ScreenProbeDenoiser::ProbeSpace` (the default), each probe's coefficients
+//               averaged with the uniform probes' of the tiles about it — a tent over the tiles, a
+//               world reach of `filter_reach` of its depth, and the plane and normal weight below
+//               — into `filtered`, what the pixels read. The probe's own coefficients stay its
+//               history, so the filter never compounds over frames. The pixels are then only
+//               accumulated over time (`screen_signal_config`): the probes' denoiser is here.
+//   integrate   every pixel: its irradiance from each probe's filtered coefficients about ITS OWN
+//   normal,
 //               weighted bilinearly over the uniform and adaptive grids and by plane distance and
 //               normal agreement, combined with the far sky (and, with `cache_blend`, the cache's
 //               answer interpolated from the probes) as `combine()` takes every source.
 //
-// The noisy signal it writes is the per-pixel resolve's, so the denoiser, the history and the
-// publish downstream of it are unchanged.
+// The noisy signal it writes is the per-pixel resolve's, so the history and the publish downstream
+// of it are unchanged; under `ScreenProbeDenoiser::Shared` so is the denoiser.
 //
 // ================================================================================================
 // WHY SECOND-ORDER HARMONICS, AND NOT THE OCTAHEDRAL MAP LUMEN KEEPS
@@ -89,6 +96,8 @@ inline constexpr u32 kScreenProbeMaxRays = 64;
 inline constexpr u32 kScreenProbeNone = 0xFFFFFFFFU;
 /// The probe rays' hash stream, beside `kScreenStreamTrace` and its neighbours.
 inline constexpr u32 kScreenStreamProbe = 8;
+/// The stream that decides which probes trace a frame below a ray density of one.
+inline constexpr u32 kScreenStreamProbeUpdate = 9;
 
 /// The real spherical-harmonic basis to second order at a unit direction, in the usual order
 /// (l, m) = (0,0), (1,-1), (1,0), (1,1), (2,-2), (2,-1), (2,0), (2,1), (2,2).
@@ -127,9 +136,14 @@ struct ScreenProbeLayout {
 /// The layout for a grid of `width` x `height` at `spacing` cells. Zero spacing is no layout.
 [[nodiscard]] ScreenProbeLayout screen_probe_layout(u32 width, u32 height, u32 spacing) noexcept;
 
-/// The rays each probe traces this frame: `rays` at a ray density of one, scaled by it below, never
-/// below four (or `rays`, when that is fewer) and never above `kScreenProbeMaxRays`.
+/// The rays a probe traces when it traces: `rays`, at least one and never above
+/// `kScreenProbeMaxRays`.
 [[nodiscard]] u32 screen_probe_rays(const ScreenResolveSettings& settings) noexcept;
+
+/// Whether probe `id` traces its rays in `frame` at the resolve's `ray_density`: every probe at a
+/// density of one, that fraction of them below — a hash of the probe and the frame, as
+/// `screen_traces` draws a pixel. A probe that does not trace keeps the probe it stands for.
+[[nodiscard]] bool screen_probe_traces(u32 id, u64 frame, f32 density) noexcept;
 
 /// The spacing in grid cells for `spacing_pixels` frame pixels at the resolve grid's `divisor`:
 /// never below two, so a half-tile cell is at least one cell.
@@ -150,10 +164,14 @@ struct ScreenProbe {
     Vec3 normal{0.0F, 1.0F, 0.0F};
     /// The hash key: a uniform probe's tile, or the uniform count plus an adaptive probe's cell.
     u32 id = 0;
-    /// The radiance, after the temporal blend.
+    /// The radiance, after the temporal blend: what the next frame reprojects.
     Vec3 coefficients[kScreenProbeCoefficients] = {};
     /// Frames of history the coefficients carry, at most `history_frames`.
     f32 history = 0.0F;
+    /// What the pixels integrate: the coefficients, or under `ScreenProbeDenoiser::ProbeSpace` the
+    /// coefficients averaged with the neighbours' on the probe's own surface (`filter`). Never
+    /// reprojected, so the filter does not compound frame over frame.
+    Vec3 filtered[kScreenProbeCoefficients] = {};
     /// The radiance cache's diffuse answer at the probe, and its confidence: each ray's stand-in,
     /// and the cache's source in the combine when `cache_blend` is on.
     Vec3 cache{0.0F, 0.0F, 0.0F};
@@ -171,6 +189,8 @@ struct ScreenProbeStats {
     u32 rays = 0;
     /// Probes that found a history.
     u32 reprojected = 0;
+    /// Probes that kept the history they found rather than tracing, below a ray density of one.
+    u32 carried = 0;
 };
 
 /// The probes of one view, and of the frame before it. `ScreenResolve::produce` runs it when the
@@ -192,6 +212,12 @@ public:
     /// Reproject, trace and blend every placed probe.
     void trace(const ScreenSurfaces& surfaces, const ScreenResolveSettings& settings,
                const ScreenResolveSources& sources) noexcept;
+    /// The probe-space filter, after `trace`: each placed probe's `filtered` coefficients, its own
+    /// and the uniform probes' of the tiles about it within `filter_tiles`, weighted by a tent over
+    /// the tiles and by how well each neighbour stands for the probe's surface
+    /// (`screen_probe_geometry_weight`). Under `ScreenProbeDenoiser::Shared`, or with no reach,
+    /// `filtered` stays the coefficients.
+    void filter(const ScreenProbeSettings& settings) noexcept;
     /// One pixel's two signals from the probes. `view_direction` is from the eye to the surface.
     [[nodiscard]] ScreenPixel integrate(u32 pixel, Vec3 position, Vec3 normal, f32 roughness,
                                         f32 depth, f32 camera_distance, Vec3 view_direction,
@@ -210,10 +236,11 @@ public:
 private:
     /// The coefficients and history count the previous frame holds for a probe, by the same
     /// weights the integration uses about the pixel the probe's position lands on.
+    /// `matched` is that previous probe.
     [[nodiscard]] bool reproject(const ScreenProbe& probe, const ScreenResolveSources& sources,
                                  const ScreenProbeSettings& settings,
-                                 Vec3 coefficients[kScreenProbeCoefficients],
-                                 f32& history) const noexcept;
+                                 Vec3 coefficients[kScreenProbeCoefficients], f32& history,
+                                 const ScreenProbe*& matched) const noexcept;
     void trace_probe(ScreenProbe& probe, const ScreenResolveSettings& settings,
                      const ScreenResolveSources& sources) noexcept;
 
