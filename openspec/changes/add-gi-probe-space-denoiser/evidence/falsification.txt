@@ -1,0 +1,106 @@
+Mutations of the probe-space denoiser, the history rejection and the beauty sample's shadow lookup,
+Development build (GCC 13), Vulkan on the RTX 5060 (driver 580.95.05). Each was applied to the
+source named — for a shader, the gi_gpu SPIR-V and MSL regenerated through the module's
+regenerate.py — the named target rebuilt, the named case run, and the source and both headers
+restored and md5-verified. RED means the case failed with the mutation in place.
+
+Two survived a first pass and the cases were strengthened rather than the mutations dropped:
+
+  h4 (the filter writing its average into the probe's own coefficients, so the next frame
+  reprojects a filtered history) survived the blend case, which ran at the default reach: at 64x40
+  a tile is half a metre of the room and no neighbour is within a tenth of the depth, so the filter
+  averaged nothing. The blend case now reaches a whole depth.
+  h5 (the integration reading the unfiltered coefficients) survived "the filtered frame differs
+  from the unfiltered one", which the nearest-probe fallback — still reading the filtered ones —
+  satisfied on its own; the case now requires most pixels to move (2471 of 2560 do).
+
+h1_no_geometry
+  src/rendering/gi/src/screen_probes.cpp: the filter's weight without `screen_probe_geometry_weight`
+  cy_test_integration_render_gi_screen_probes [*probe-space filter averages*] RED
+
+h2_flat_tent
+  src/rendering/gi/src/screen_probes.cpp: 'return 1.0F - (distance / ...)' -> 'return 1.0F + (0.0F * distance / ...)'
+  cy_test_integration_render_gi_screen_probes [*probe-space filter averages*] RED
+
+h3_no_reach
+  src/rendering/gi/src/screen_probes.cpp: 'math::max(near, 0.0F) *' -> 'math::max(near, 1.0F) *'
+  cy_test_integration_render_gi_screen_probes [*probe-space filter averages*] RED
+
+h4_filter_compounds
+  src/rendering/gi/src/screen_probes.cpp: after 'probe.filtered[k] = sum[k] / total;', 'probe.coefficients[k] = probe.filtered[k];'
+  cy_test_integration_render_gi_screen_probes [*probe's blend moves*] RED
+
+h5_integrate_unfiltered
+  src/rendering/gi/src/screen_probes.cpp: the integration's irradiance from 'probe.coefficients' in place of 'probe.filtered'
+  cy_test_integration_render_gi_screen_probes [*probe-space filter averages*] RED
+
+h6_probe_space_keeps_cascade
+  src/rendering/gi/src/screen_resolve.cpp: 'config.max_passes = 0;' removed under ProbeSpace
+  cy_test_integration_render_gi_screen_probes [*gather lever selects*] RED
+
+h7_never_cut
+  src/rendering/denoise/src/denoiser.cpp: history_kept's 'history_rejection <= 0.0F' -> '<= 1.0e9F'
+  cy_test_integration_render_denoise_filter [*history the signal has left behind*] RED
+
+h8_linear_cut
+  src/rendering/denoise/src/denoiser.cpp: history_kept's 'return ratio * ratio;' -> 'return ratio;'
+  cy_test_integration_render_denoise_filter [*history the signal has left behind*] RED
+
+h9_cut_within
+  src/rendering/denoise/src/denoiser.cpp: history_kept cutting within the tolerance too ('deviation <= allowed' -> 'deviation < 0', ratio against max(deviation, 1.25 x allowed))
+  cy_test_integration_render_denoise_filter [*history the signal has left behind*] RED
+
+Device, the GI test room at 64x40 through the software tier unless named. The probe cases reach a
+whole depth with the filter for the reason h4 records: at the default reach no probe has a
+neighbour to average at this resolution.
+
+d1_filter_no_geometry
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: spFilter's weight without spGeometryWeight
+  cy_test_render_gi_gpu_resolve [*their integration*] RED (the filtered coefficients)
+
+d2_temporal_never_cuts
+  src/rendering/gi_gpu/shaders/gi_temporal.slang: gtHistoryKept's 'rejection <= 0.0f' -> '<= 1.0e9f'
+  cy_test_render_gi_gpu_resolve [*their integration*] RED (the denoised and published signals)
+
+d3_temporal_no_floor
+  src/rendering/gi_gpu/shaders/gi_temporal.slang: the blend weight's floor, 'alphaFloor' -> 'alphaFloor * 0.0f'
+  cy_test_render_gi_gpu_resolve [*their integration*] RED (thirty-six frames, past the history of 32)
+
+d4_targets_undeclared
+  src/rendering/gi_gpu/src/gpu_resolve.cpp: the temporal pass without its '.write(diffuse)' and '.write(specular)'
+  cy_test_render_gi_gpu_resolve [*half-resolution grid the device screen probes*] RED (18 validation errors: the write-after-write hazard and the image in an undefined layout)
+
+d5_filter_word_unwritten
+  src/rendering/gi_gpu/src/gpu_resolve.cpp: 'words_[kWordProbeSamples + 1] = probe_filter_tiles();' -> '= 0U;' (the filter never runs on the device)
+  cy_test_render_gi_gpu_resolve [*their integration*] RED
+
+d6_shared_never_cuts
+  src/rendering/gi_gpu/shaders/gi_denoise.slang: gdHistoryKept's 'rejection <= 0.0f' -> '<= 1.0e9f'
+  cy_test_render_gi_gpu_resolve [*cuts it on the device as on the host*] RED
+
+The budget's floor: below a ray density of one, the screen probes trace that fraction of
+themselves a frame and the rest keep the probe they stand for. One survived and the case was
+strengthened: h11 (a kept probe not keeping its openness) passed in the near field, where every
+probe's openness is one; the case now puts the room in the far field.
+
+h10_every_probe_traces
+  src/rendering/gi/src/screen_probes.cpp: screen_probe_traces's 'density >= 1.0F' -> 'density >= 0.0F'
+  cy_test_integration_render_gi_screen_probes [*below a ray density*] RED
+
+h11_kept_openness_lost
+  src/rendering/gi/src/screen_probes.cpp: 'probe.openness = matched->openness;' removed
+  cy_test_integration_render_gi_screen_probes [*below a ray density*] RED
+
+d7_device_every_probe_traces
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: spProbeTraces's 'density >= 1.0f' -> 'density >= 0.0f'
+  cy_test_render_gi_gpu_resolve [*at half the ray density*] RED
+
+d8_device_kept_cache_lost
+  src/rendering/gi_gpu/shaders/gi_screen_probes_common.slang: the kept probe's cache record not copied
+  cy_test_render_gi_gpu_resolve [*at half the ray density*] RED (the cache's answer at each probe)
+
+The beauty sample, Vulkan, `content/beauty/interior.cyshot` at 1920x1080 with the GI on.
+
+s1_mirrored_sun_map
+  samples/12-beauty/shaders/beauty.slang: sunMapUv's '0.5 - (ndc.y * 0.5)' -> '(ndc.y * 0.5) + 0.5' (the lookup before the fix), the programs recompiled
+  python3 tools/docs/check_sun_patch.py over the frame: RED (the patch 125.7 against the floor around it 74.6, 1.7 times where 4 is required; with the fix 232.2 against 19.4)
