@@ -144,6 +144,12 @@ impl Gpu {
         self.semaphore_fd.is_some()
     }
 
+    /// Whether the device advertises `VK_KHR_external_semaphore_fd` at all, enabled or not.
+    #[must_use]
+    pub fn external_semaphores_offered(&self) -> bool {
+        self.semaphore_fd_offered
+    }
+
     /// The external-semaphore entry points, or a refusal naming the extension.
     pub fn semaphore_fd(&self) -> Result<&ash::khr::external_semaphore_fd::Device> {
         self.semaphore_fd.as_ref().ok_or_else(|| {
@@ -363,7 +369,7 @@ mod tests {
         // Opening it is already the first half of the claim: a device that does not offer the
         // extension used to panic inside wgpu-hal when the patch named it anyway. It cannot answer
         // the second half, which is whether the PATCH is what enables it.
-        if !patched.semaphore_fd_offered {
+        if !patched.external_semaphores_offered() {
             eprintln!(
                 "skipped: this device does not offer VK_KHR_external_semaphore_fd: {:?}",
                 patched.notes
