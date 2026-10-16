@@ -1584,7 +1584,7 @@ jobs:
   # declared is run by a job in .github/workflows/, and no job reimplements a recipe" — and a gate
   # nobody runs is not a gate, because it cannot regress visibly.
   #
-  # WHY ONE JOB, AND ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
+  # WHY ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
   # since M5: `criteria.build_plan` merges the criteria of every green milestone gate below the
   # target with the target's own and runs each distinct check ONCE. So the single command below
   # evaluates M0 through M11.d.5 — `just roadmap-milestone m11d5 --list` says 484 criteria, most of them
@@ -1615,7 +1615,9 @@ jobs:
   #
   # HOW THIS JOB GOES RED, because a job that exists, is green, and compares nothing is worse than no
   # job at all — this repository has shipped that defect before, and `tools/ci/cross_leg_audit.py`
-  # exists because of it. The step below runs ONE command and nothing forgives it:
+  # exists because of it. Each shard's step runs ONE command and nothing forgives it, and
+  # `milestone-verdict` fails when any shard's record is missing as well as when any criterion in
+  # any record failed:
   #
   #   * `tools/roadmap/roadmap.py` returns a non-zero exit when any criterion FAILED and is not a
   #     declared gap, and ALSO when a declared gap has started PASSING — a marker that outlived its
@@ -1640,8 +1642,20 @@ jobs:
   # and criteria that pass on a workstation with a GPU may fail on a runner without one for the
   # opposite reason. The first scheduled run is the measurement. docs/roadmap/open-debts.md is the
   # list of what is known to be open when it happens.
+  #
+  # THE LEDGER IN SHARDS, AND WHY. Until October 2026 this was ONE job running the whole ledger, and
+  # it never finished: GitHub cancels a hosted job at six hours, and run 38687291984 had reached 134
+  # of 484 criteria when it did (`m1:four-profiles` alone took 7680 s there). So the same command now
+  # runs in SHARDS — `--shard i/n` evaluates the criteria tools/roadmap/shard.py assigns shard i, from
+  # the ledger's own data: criteria sharing a build tree stay together so the tree is built once, and
+  # the shards are balanced on the seconds tools/roadmap/shard-costs.toml measured here. Each shard
+  # is a job with its own disk and its own six hours, and `milestone-verdict` below merges them.
+  #
+  # THE COUNT IS WRITTEN THREE TIMES and `just ci-check` holds them equal: the matrix below lists
+  # 1..12, the run step says `/12`, and the merge says `--shards 12`. `just roadmap-merge m11d5
+  # --shards <n> --estimate` prints the expected size of each shard for another count.
   milestone:
-    name: milestone — the closed milestones' exit criteria (nightly)
+    name: milestone ${{ matrix.shard }}/12 — the closed milestones' exit criteria (nightly)
     needs:
       - build
       - cross-leg-publish
@@ -1651,14 +1665,27 @@ jobs:
     # published legs may still be enough to compare. The download/comparator will fail if not.
     if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !cancelled()
     runs-on: ubuntu-24.04
-    timeout-minutes: 480
+    # Under GitHub's 360-minute ceiling for a hosted job, so that a shard that overruns is reported
+    # by this job rather than cancelled by the platform. A shard over its share is a sign to raise
+    # the count, which `--estimate` sizes.
+    timeout-minutes: 330
+    strategy:
+      # Every shard runs to its verdict whatever another shard says: a red shard is one finding, and
+      # cancelling the others would turn it into eleven missing records.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
+      # The whole history: `m1:identity-manifest` diffs the identity manifest against a revision and
+      # `m11d:port-touches-no-engine-layer` reads every commit since its rung opened.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: extractions/setup-just@v4
       # THE RUNNER RAN OUT OF DISK on 2026-10-13 and 2026-10-14, five hours in, and the crash took the
-      # log with it. A full ledger builds far more trees than the image's 87 GB free: this frees the
-      # SDKs nothing here uses and prints `df`, and `--reclaim-builds` below deletes each tree once
-      # no later criterion needs it. just/ci.just and tools/roadmap/reclaim.py have the numbers.
+      # log with it. This frees the SDKs nothing here uses and prints `df`, and `--reclaim-builds`
+      # below deletes each tree once no later criterion of THIS SHARD needs it. just/ci.just and
+      # tools/roadmap/reclaim.py have the numbers.
       - name: Free the runner's disk of the SDKs the image preinstalls
         run: just ci-free-disk
       # The two M11.a `where = "ci"` criteria run the same comparator as cross-leg-compare.
@@ -1668,17 +1695,38 @@ jobs:
         with:
           pattern: cross-leg-digest-*
           path: cross-leg-digests
-      - name: Install the generator and the window-system headers SDL3 builds against
+      # libclang 18 is the reflection generator's frontend: without it `m0:generated-code`,
+      # `m1:identity-manifest` and `m4:generated-code` fail naming it, and `m1:identity-rename` finds
+      # no `integration.reflect_generator` registered — the `generated` and `identity` jobs install
+      # the same two packages for the same reason.
+      - name: Install the generator, the window-system headers SDL3 builds against, and libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
-      - name: Install the pinned LLVM tooling and the specification CLI
+      # The interpreter the build job configured its tree with, so that CMake finds the same one
+      # and the unpacked tree stays current — and the one every pip install below lands in.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Every tool a criterion of the ledger runs: the pinned LLVM tooling for format and lint, the
+      # specification CLI, the reflection generator's bindings, the deterministic math generators'
+      # arithmetic (`generate-check`), the spelling dictionary, and Pillow for the recipe selftest's
+      # `_ship-stills` case inside `m1:workflows` and the M11.c renders.
+      - name: Install the pinned LLVM tooling, the specification CLI and the generators' modules
         run: |
-          pip install clang-format==22.1.8 clang-tidy==22.1.8
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow
           npm install -g @fission-ai/openspec@1.14.0
+      # THE BUILD JOB'S TREE, NOT A REBUILD OF IT: twelve shards each building the default tree from
+      # nothing cost twelve times the 26 minutes `m0:build` took here. Unpacked at the commit it was
+      # built from, after everything above, as every job that tests the build does.
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      - name: The tree the build job built, at this commit
+        run: just ci-build-tree-unpack
       # m11d5: `milestone-m11d5` reached `state = "green"` in gates.toml in the same commit that moved
       # this step, as implement-m11d5-backends task 6.5 requires. One command covers it and everything
       # below it, because the ledger is flat. `--ci` additionally runs the criteria marked
@@ -1689,8 +1737,39 @@ jobs:
       # here they find none of their suites registered and fail. Their evidence at the close was
       # hardware runs at 70df47f1 (issue #44), recorded in implement-m11d5-backends task 7.1; a
       # macOS and a Windows leg for this job are M11.e's.
-      - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m11d5 --ci --reclaim-builds
+      - name: The exit criteria of every closed milestone, this shard's share, evaluated once each
+        run: just roadmap-milestone m11d5 --ci --reclaim-builds --shard ${{ matrix.shard }}/12 --shard-record ledger-shards/shard-${{ matrix.shard }}.json
+      # Uploaded whatever the shard said: a red shard's record is the evidence `milestone-verdict`
+      # reads, and a record missing is what tells it the shard never finished.
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ledger-shard-${{ matrix.shard }}
+          path: ledger-shards
+          if-no-files-found: ignore
+
+  # ONE VERDICT FROM EVERY SHARD. `just roadmap-merge` recomputes which criteria each shard was
+  # assigned, from this checkout, and refuses a record that is missing, reported twice, of another
+  # commit or count, or that evaluated a different set — then summarises the whole plan exactly as an
+  # unsharded run would, with each shard's duration. `always()` because a shard that failed, timed
+  # out or crashed is exactly when this job must run and say so: a skipped verdict would be scored
+  # SUCCESS, and a missing shard read as a smaller green is the defect this job exists to prevent.
+  milestone-verdict:
+    name: milestone — one verdict from every shard (nightly)
+    needs: milestone
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: extractions/setup-just@v4
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ledger-shard-*
+          path: ledger-shards
+          merge-multiple: true
+      - name: Every shard reported, and what the ledger says
+        run: just roadmap-merge m11d5 --ci --shards 12 ledger-shards
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

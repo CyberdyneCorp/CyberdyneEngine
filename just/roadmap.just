@@ -28,6 +28,9 @@ roadmap-debts *args:
 #               whose inputs cannot be read is always run. With --list it prints the selection and
 #               why. NOT the default: the full ledger runs nightly and at M11.e, and only a green
 #               full run on a clean tree records the baseline. tools/roadmap/incremental.py.
+#   [--shard i/n [--shard-record <file>]]  only shard i of n of the full ledger, and its record for
+#               `just roadmap-merge`. Criteria sharing a build tree share a shard, and shards are
+#               balanced on tools/roadmap/shard-costs.toml. Never with --incremental. shard.py.
 #
 # Run a milestone's full exit criteria, or with --incremental only what a change can have moved.
 roadmap-milestone *args:
@@ -36,6 +39,7 @@ roadmap-milestone *args:
     cd "{{root}}"
     if [ -z "{{args}}" ]; then
         echo "usage: just roadmap-milestone <id> [--list] [--ci] [--json] [--jobs n]" >&2
+        echo "       [--shard i/n [--shard-record <file>]] [--reclaim-builds]" >&2
         echo "       [--incremental [--changed-since <commit>] [--build-dir <tree>]]" >&2
         echo "  milestones with criteria: $(ls tools/roadmap/milestones/*.toml \
             | xargs -n1 basename | sed 's/\.toml$//' | tr '\n' ' ')" >&2
@@ -51,6 +55,18 @@ roadmap-milestone *args:
             > "${CY_BUILD_DIR}/.cy-keep"
     fi
     python3 tools/roadmap/roadmap.py milestone {{args}}
+
+# THE NIGHTLY LEDGER, SPLIT. One hosted job cannot hold the full ledger — GitHub cancels it at six
+# hours, and run 38687291984 reached 134 of 484 criteria — so ci.yml runs `just roadmap-milestone
+# <id> --shard i/n --shard-record <file>` in n jobs and this recipe in one more. It recomputes which
+# criteria each shard was given, refuses a missing, duplicated, foreign or incomplete record, and
+# summarises the whole plan as an unsharded run would. A missing shard is a failure, never a smaller
+# green. `--estimate` prints each shard's expected size for a count; `--write-costs` rewrites
+# tools/roadmap/shard-costs.toml from what the records measured. tools/roadmap/shard.py.
+#
+# Merge the shards of one ledger run into its verdict. Usage: just roadmap-merge <id> --shards n <records...>
+roadmap-merge *args:
+    @cd "{{root}}" && python3 tools/roadmap/roadmap.py merge {{args}}
 
 # List the permanent merge gates and any recorded override. --commands prints what CI must run.
 roadmap-gates *args:

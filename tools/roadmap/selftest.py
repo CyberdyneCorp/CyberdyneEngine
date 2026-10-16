@@ -67,10 +67,11 @@ import row_evidence as row_evidence_module  # noqa: E402
 import requirements as requirements_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
 import schedule as schedule_module  # noqa: E402
+import shard as shard_module  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROADMAP = HERE / "roadmap.py"
-GATE_EXIT, DATA_EXIT = 1, 2
+OK_EXIT_CODE, GATE_EXIT, DATA_EXIT = 0, 1, 2
 
 _cases: list[str] = []
 _failures: list[str] = []
@@ -3399,6 +3400,172 @@ def _check_exemption_pinning(root: Path) -> None:
           "src/elsewhere.cpp" in state())
 
 
+def _shard_plan(entries) -> criteria_module.Plan:
+    milestone = criteria_module.Milestone(id="m1", name="fixture", artefact="", notes=(),
+                                          criteria=())
+    return criteria_module.Plan(milestone=milestone, ledgers=("m1",), entries=tuple(entries),
+                                declarations=len(entries))
+
+
+def _shard_records(root: Path, plan: criteria_module.Plan, count: int, costs, commit: str,
+                   status=criteria_module.OK) -> list[Path]:
+    """What `count` shards that each evaluated their assignment would have written."""
+    paths = []
+    for index in range(1, count + 1):
+        shard = shard_module.Shard(index, count)
+        narrowed = shard_module.narrow(plan, shard, costs)
+        results = [criteria_module.Result(entry.criterion, status, "", 2.0)
+                   for entry in narrowed.entries]
+        path = root / f"shard-{index}.json"
+        shard_module.write_record(path, shard_module.record_document(
+            narrowed, shard, commit, True, results))
+        paths.append(path)
+    return paths
+
+
+def test_ledger_shards(root: Path) -> None:
+    """`--shard i/n` and `merge`: every criterion in exactly one shard, and one verdict from all.
+
+    THE NIGHTLY LEDGER NEVER FINISHED ON A HOSTED RUNNER: run 38687291984 reached 134 of 484
+    criteria before GitHub's six-hour limit cancelled it. Sharding is the fix, and it has two ways
+    to read green over nothing — a criterion that no shard evaluates, and a shard that never
+    reports. Both are held here, and the merge's other refusals with them.
+    """
+    expect_error("--shard refuses an index past its count", shard_module.ShardError,
+                 lambda: shard_module.parse("4/3"))
+    expect_error("--shard refuses index zero", shard_module.ShardError,
+                 lambda: shard_module.parse("0/3"))
+    expect_error("--shard refuses a malformed request", shard_module.ShardError,
+                 lambda: shard_module.parse("three"))
+    check("--shard reads i/n", shard_module.parse(" 3/12 ") == shard_module.Shard(3, 12))
+
+    sanitize = 'just test-sanitize --sanitizer thread --tests jobs'
+    entries = [
+        _plan_entry("m1", "four-profiles", needs=["build:ledger-matrix/dev-default",
+                                                  "build:ledger-matrix/debug-default",
+                                                  "exclusive"]),
+        _plan_entry("m1", "tsan", run=sanitize),
+        *[_plan_entry("m2", f"light-{index}", run="just test-unit -R x") for index in range(9)],
+        _plan_entry("m5", "asan", run=sanitize.replace("thread", "address")),
+        _plan_entry("m9", "profiles-agree", needs=["build:ledger-matrix/dev-default"]),
+        _plan_entry("m8c", "ml-off", needs=["build:ledger-matrix/off-ml"]),
+    ]
+    labels = [entry.label for entry in entries]
+    costs = {"m1:four-profiles": 9000.0, "m8c:ml-off": 3000.0}
+    for count in (1, 2, 3, 5, 20):
+        shards = shard_module.assign(entries, count, costs)
+        flat = [index for members in shards for index in members]
+        check(f"{count} shard(s): every criterion is in exactly one shard",
+              sorted(flat) == list(range(len(entries))), f"{shards}")
+        check(f"{count} shard(s): each shard keeps the ledger's order",
+              all(members == sorted(members) for members in shards), f"{shards}")
+    shards = shard_module.assign(entries, 3, costs)
+    check("the assignment is a function of the plan: the same plan, the same shards",
+          shards == shard_module.assign(list(entries), 3, dict(costs)))
+    home = {index: number for number, members in enumerate(shards) for index in members}
+    check("criteria sharing a matrix row share a shard, so the row is built once",
+          home[0] == home[len(entries) - 2], f"{shards}")
+    check("criteria sharing the sanitizer trees share a shard",
+          home[1] == home[len(entries) - 3], f"{shards}")
+    loads = [sum(shard_module.estimate(entries[i], costs) for i in members) for members in shards]
+    check("the measured heaviest group is not stacked onto the next heaviest",
+          home[0] != home[len(entries) - 1], f"{shards} {loads}")
+    split = shard_module.groups(entries, {**costs, "m9:profiles-agree": shard_module.GROUP_CEILING_S})
+    check("a tree-sharing group over the ceiling is split back into its members, which only costs "
+          "a rebuild", [0] in split and [len(entries) - 2] in split, f"{split}")
+
+    plan = _shard_plan(entries)
+    commit = "c" * 40
+    records = root / "records"
+    paths = _shard_records(records, plan, 3, costs, commit)
+    merged = shard_module.merge(plan, 3, paths, commit, True, costs)
+    check("the merge puts every shard's results back in ledger order",
+          [result.criterion.id for result in merged.results]
+          == [entry.criterion.id for entry in entries])
+    check("the merge reports each shard's duration",
+          [index for index, _, _ in merged.durations] == [1, 2, 3])
+    check("a directory stands for every record in it",
+          sorted(shard_module.record_paths([records])) == sorted(paths))
+    check("a directory nothing was downloaded into stands for no records",
+          shard_module.record_paths([root / "never-downloaded"]) == [])
+
+    def refused(name: str, expected: str, action) -> None:
+        try:
+            action()
+        except shard_module.ShardError as error:
+            check(name, expected in str(error), str(error))
+        else:
+            check(name, False, "accepted")
+
+    refused("A MISSING SHARD IS A FAILURE, NEVER A SMALLER GREEN", "2/3",
+            lambda: shard_module.merge(plan, 3, [paths[0], paths[2]], commit, True, costs))
+    refused("no shard at all is every shard missing", "3 of 3",
+            lambda: shard_module.merge(plan, 3, [], commit, True, costs))
+    refused("a shard reported twice is refused", "two records",
+            lambda: shard_module.merge(plan, 3, [*paths, paths[1]], commit, True, costs))
+    refused("records of another commit are refused", "checkout is",
+            lambda: shard_module.merge(plan, 3, paths, "d" * 40, True, costs))
+    refused("records of another shard count are refused", "disagree about the count",
+            lambda: shard_module.merge(plan, 4, paths, commit, True, costs))
+    refused("records made without --ci are refused by a --ci merge", "--ci",
+            lambda: shard_module.merge(plan, 3, paths, commit, False, costs))
+    document = json.loads(paths[1].read_text(encoding="utf-8"))
+    document["criteria"] = document["criteria"][:-1]
+    short = root / "short" / "shard-2.json"
+    shard_module.write_record(short, document)
+    refused("a shard that skipped one of its criteria is refused, naming it", labels[
+        shard_module.assign(entries, 3, costs)[1][-1]],
+            lambda: shard_module.merge(plan, 3, [paths[0], short, paths[2]], commit, True, costs))
+    moved = dict(costs, **{"m2:light-0": 50000.0})
+    refused("records of a different assignment are refused rather than re-read", "different set",
+            lambda: shard_module.merge(plan, 3, paths, commit, True, moved))
+
+    red = _shard_records(root / "red", plan, 3, costs, commit, criteria_module.FAILED)
+    merged = shard_module.merge(plan, 3, red, commit, True, costs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        verdict = roadmap_module._summarise(plan, merged.results, False)
+    check("a failure inside any shard fails the merged verdict", verdict == GATE_EXIT)
+
+    previous = {"m2:light-0": 11.0, "gone:criterion": 5.0}
+    mixed = shard_module.Merged(results=tuple(
+        criteria_module.Result(entry.criterion,
+                               criteria_module.FAILED if entry.label == "m2:light-0"
+                               else criteria_module.OK, "", 7.0) for entry in entries),
+        durations=())
+    written = tomllib.loads(shard_module.costs_document(mixed, plan, "fixture", previous))["seconds"]
+    check("a failed criterion's time is not a measurement: it keeps its previous cost",
+          written["m2:light-0"] == 11.0 and written["m1:tsan"] == 7.0, f"{written}")
+    check("a criterion the plan no longer has is dropped from the costs",
+          "gone:criterion" not in written)
+
+    real = _plan("m1")
+    halves = [subprocess.run([sys.executable, str(ROADMAP), "milestone", "m1", "--shard",
+                              f"{index}/2", "--list", "--json"],
+                             capture_output=True, text=True, check=False) for index in (1, 2)]
+    listed = [item["label"] for run in halves if run.returncode == 0
+              for item in json.loads(run.stdout)["criteria"]]
+    check("the real ledger's two shards list every criterion once between them",
+          sorted(listed) == sorted(entry.label for entry in real.entries),
+          "\n".join(run.stderr for run in halves))
+    completed = subprocess.run(
+        [sys.executable, str(ROADMAP), "milestone", "m1", "--incremental", "--shard", "1/2"],
+        capture_output=True, text=True, check=False)
+    check("--shard is refused with --incremental, which is a selection already",
+          completed.returncode == DATA_EXIT and "--incremental" in completed.stderr,
+          completed.stderr)
+    completed = subprocess.run(
+        [sys.executable, str(ROADMAP), "milestone", "m1", "--shard-record", str(root / "x.json")],
+        capture_output=True, text=True, check=False)
+    check("--shard-record without --shard is refused rather than running the whole ledger",
+          completed.returncode == DATA_EXIT and "--shard" in completed.stderr, completed.stderr)
+    completed = subprocess.run(
+        [sys.executable, str(ROADMAP), "merge", "m1", "--shards", "2", str(root / "nothing")],
+        capture_output=True, text=True, check=False)
+    check("`merge` with no record exits non-zero and names the missing shards",
+          completed.returncode != OK_EXIT_CODE and "1/2, 2/2" in completed.stderr,
+          completed.stderr)
+
+
 def _check_incremental_baseline(root: Path) -> None:
     """Only a green FULL run on one clean, unmoved commit becomes the baseline."""
     baseline = root / "baseline" / "last-green.json"
@@ -3468,6 +3635,7 @@ def main() -> int:
         test_scheduler_over_the_real_ledgers(_area(root, "scheduler-corpus"))
         test_ledger_report_order_is_the_ledger_order(_area(root, "scheduler-report"))
         test_reclaim_builds(_area(root, "reclaim"))
+        test_ledger_shards(_area(root, "shards"))
         test_incremental_selection(_area(root, "incremental"))
         test_incremental_generated_headers(_area(root, "incremental-generated"))
         test_incremental_swiftpm_edges(_area(root, "incremental-swiftpm"))

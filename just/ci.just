@@ -75,8 +75,17 @@ ci-free-disk:
     fi
     echo "==> before"
     df -h /
+    if mountpoint -q /mnt 2>/dev/null; then
+        df -h /mnt
+    fi
+    # The second group is what a sharded ledger's heaviest shards still lacked (four profile rows
+    # beside the default tree, or four sanitizer trees): browsers, the JVMs, PowerShell, Boost and
+    # the cloud CLIs, none of which any recipe here invokes.
     for sdk in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-               /opt/hostedtoolcache/CodeQL; do
+               /opt/hostedtoolcache/CodeQL \
+               /usr/local/share/boost /usr/local/share/powershell /usr/local/share/chromium \
+               /usr/lib/jvm /opt/microsoft /opt/google /opt/az /usr/local/lib/heroku \
+               /usr/local/julia*; do
         if [ -e "${sdk}" ]; then
             echo "==> remove      ${sdk}"
             sudo rm -rf "${sdk}"
@@ -88,6 +97,10 @@ ci-free-disk:
     fi
     echo "==> after"
     df -h /
+    # A second disk, where the image has one, is the place a run can put what does not fit on `/`.
+    if mountpoint -q /mnt 2>/dev/null; then
+        df -h /mnt
+    fi
 
 # THE JOBS THAT TEST A BUILD USE THAT BUILD. Until October 2026 the `test` legs restored the build
 # job's tree from the actions cache and then rebuilt all of it: a fresh checkout stamps every source
