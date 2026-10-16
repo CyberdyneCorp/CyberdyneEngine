@@ -700,7 +700,10 @@ def _parser() -> argparse.ArgumentParser:
                        help="print each shard's estimated size for --shards and exit")
     merge.add_argument("--write-costs", action="store_true",
                        help="rewrite tools/roadmap/shard-costs.toml from what these records measured")
-    merge.add_argument("records", nargs="*", type=Path,
+    # AN OPTION AND NOT A POSITIONAL: Python 3.12's argparse binds an empty `nargs="*"` positional
+    # to the id the moment an option follows it, so `merge m11d5 --ci --shards 12 records/` was
+    # refused with "unrecognized arguments" on the runner while 3.13 accepted it.
+    merge.add_argument("--records", nargs="+", type=Path, default=[], metavar="PATH",
                        help="the shards' record files, or directories holding them")
     merge.set_defaults(handler=command_merge)
 

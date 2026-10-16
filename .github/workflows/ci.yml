@@ -1863,7 +1863,7 @@ jobs:
           path: ledger-shards
           merge-multiple: true
       - name: Every shard reported, and what the ledger says
-        run: just roadmap-merge m11d5 --ci --shards 12 ledger-shards
+        run: just roadmap-merge m11d5 --ci --shards 12 --records ledger-shards
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

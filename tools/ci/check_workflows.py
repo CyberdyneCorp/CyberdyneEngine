@@ -1349,7 +1349,7 @@ def selftest(root: pathlib.Path) -> int:
         shard_cases = (
             ("shard: [1, 2, 3]", "shard: [1, 2]", "not 1..3",
              "a shard dropped from the matrix"),
-            ("--shards 3 ledger", "--shards 2 ledger", "merges `--shards 2`",
+            ("--shards 3 --records", "--shards 2 --records", "merges `--shards 2`",
              "a merge counting fewer shards than run"),
             ("    if: always()\n", "    if: success()\n", "always()",
              "a merge skipped when a shard failed"),
@@ -1364,7 +1364,7 @@ def selftest(root: pathlib.Path) -> int:
              "platform shards counting another run"),
             ("--shard ${{ matrix.platform }}/3", "--shard 1/3", "evaluated by nobody",
              "the platform shards' job turned into one more Linux shard"),
-            ("      - run: just roadmap-merge m11d5 --ci --shards 3 ledger\n",
+            ("      - run: just roadmap-merge m11d5 --ci --shards 3 --records ledger\n",
              "      - run: just env-doctor\n", "no job runs `just roadmap-merge",
              "shards that no job merges"),
             ("    timeout-minutes: 330\n", "", "timeout-minutes",
@@ -1402,7 +1402,7 @@ def selftest(root: pathlib.Path) -> int:
             "  verdict:\n    needs:\n      - ledger\n      - elsewhere\n    if: always()\n"
             "    runs-on: ubuntu-24.04\n"
             "    steps:\n      - uses: actions/download-artifact@v5\n"
-            "      - run: just roadmap-merge m11d5 --ci --shards 3 ledger\n"
+            "      - run: just roadmap-merge m11d5 --ci --shards 3 --records ledger\n"
         )
 
         def shards_of(text: str) -> list[str]:

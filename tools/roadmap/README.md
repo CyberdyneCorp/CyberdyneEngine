@@ -606,7 +606,7 @@ GitHub cancels a job on a hosted runner at six hours. The nightly `milestone` jo
 in one and never finished: run 38687291984 had reached 134 of 484 criteria when it was cancelled,
 `m1:four-profiles` alone having taken 7680 s. So ci.yml runs `just roadmap-milestone m11d5 --ci
 --reclaim-builds --shard i/12 --shard-record ledger-shards/shard-i.json` in twelve jobs, and `just
-roadmap-merge m11d5 --ci --shards 12 ledger-shards` in a thirteenth that runs under `always()`.
+roadmap-merge m11d5 --ci --shards 12 --records ledger-shards` in a thirteenth that runs under `always()`.
 
 `shard.py` assigns the criteria from data the ledger already has. Criteria that share a tree other
 than the default one (`reclaim.trees_of`) form one group, so `four-profiles` and

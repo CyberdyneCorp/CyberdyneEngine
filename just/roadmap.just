@@ -64,7 +64,7 @@ roadmap-milestone *args:
 # green. `--estimate` prints each shard's expected size for a count; `--write-costs` rewrites
 # tools/roadmap/shard-costs.toml from what the records measured. tools/roadmap/shard.py.
 #
-# Merge the shards of one ledger run into its verdict. Usage: just roadmap-merge <id> --shards n <records...>
+# Merge the shards of one ledger run into its verdict. Usage: just roadmap-merge <id> --shards n --records <dir>
 roadmap-merge *args:
     @cd "{{root}}" && python3 tools/roadmap/roadmap.py merge {{args}}
 

@@ -3653,7 +3653,8 @@ def test_ledger_shards(root: Path) -> None:
     check("--shard-record without --shard is refused rather than running the whole ledger",
           completed.returncode == DATA_EXIT and "--shard" in completed.stderr, completed.stderr)
     completed = subprocess.run(
-        [sys.executable, str(ROADMAP), "merge", "m1", "--shards", "2", str(root / "nothing")],
+        [sys.executable, str(ROADMAP), "merge", "m1", "--ci", "--shards", "2", "--records",
+         str(root / "nothing")],
         capture_output=True, text=True, check=False)
     check("`merge` with no record exits non-zero and names the missing shards",
           completed.returncode != OK_EXIT_CODE and "1/2, 2/2" in completed.stderr,
