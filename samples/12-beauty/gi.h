@@ -127,6 +127,13 @@ public:
     [[nodiscard]] Expected<BeautyGiReference, Error> measure_reference(u32 pixels, u32 samples,
                                                                        u32 bounces) noexcept;
 
+    /// After a frame rendered with `readback` on the full-resolution grid: the path tracer's
+    /// indirect diffuse at every `step`-th pixel each way, `samples` paths of `bounces` each, over
+    /// the exact triangles, upsampled to every pixel; and the frame's published GI beside it.
+    /// `threads` tracers run at once, each over its own copy of the triangles.
+    [[nodiscard]] Status reference_image(u32 step, u32 samples, u32 bounces, u32 threads,
+                                         BeautyGiReferenceImage& out) noexcept;
+
 private:
     struct State;
     Allocator* allocator_;

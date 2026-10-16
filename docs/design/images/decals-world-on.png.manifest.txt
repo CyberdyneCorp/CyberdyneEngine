@@ -1,0 +1,18 @@
+capture samples/10-world
+purpose publication
+resolution 1280x720
+exposure-ev100 -0.350
+tonemap AgX
+arbiter pinned
+prepass depth-only
+velocity absent
+temporal-frame 6
+temporal-invalidated no
+jitter pinned
+jitter-index 0
+passes 8
+draws 0
+post-stages 3
+  1 step 10 ExposureApply SceneReferred High
+  2 step 11 Tonemap SceneReferred High
+  3 step 15 OutputEncoding DisplayReferred High

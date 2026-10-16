@@ -21,6 +21,11 @@
 //                    [--motion-blur <degrees>]      motion blur at that shutter angle
 //                    [--orbit-still <path> --orbit-frame <n>]  turntable frame n, drawn after
 //                                                   frame n - 1 so it has the orbit's motion
+//                    [--gi on|off] [--gi-tier hardware|software] [--gi-divisor <n>]
+//                    [--gi-gather probes|per-pixel] [--gi-denoiser probe-space|shared]
+//                    [--gi-reference <pixels>]      the path tracer at that many pixels
+//                    [--gi-reference-step <n> --gi-reference-still <path> --gi-error-map <path>]
+//                                                   the path tracer's picture of the frame
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -226,6 +231,11 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 report.gi_unpack_ms, report.gi_reproject_ms, report.gi_resolve_ms,
                 report.gi_accumulate_ms, report.gi_variance_ms, report.gi_filter_ms,
                 report.gi_publish_ms, report.gi_total_ms);
+            std::printf(
+                "gi resolve    probe placement %.3f, probe tracing %.3f, probe filter %.3f, "
+                "integration %.3f ms\n",
+                report.gi_probe_place_ms, report.gi_probe_trace_ms, report.gi_probe_filter_ms,
+                report.gi_integrate_ms);
         }
     }
     std::printf("validation    %u error(s)\n", report.validation_errors);
@@ -310,6 +320,14 @@ int main(int argc, char** argv) {
     const u32 gi_frames = option_number(argc, argv, "--gi-frames", 48);
     const u32 gi_reference = option_number(argc, argv, "--gi-reference", 0);
     const u32 gi_reference_samples = option_number(argc, argv, "--gi-reference-samples", 256);
+    // THE PATH TRACER'S PICTURE, beside the GI's: `--gi-reference-step <n>` path traces every
+    // n-th pixel of the last frame each way and upsamples it; `--gi-reference-still` draws the
+    // frame once more through it in place of the GI's indirect diffuse, and `--gi-error-map`
+    // writes where the two differ. Needs `--supersample 1`: the picture is the GI's own grid.
+    const u32 gi_reference_step = option_number(argc, argv, "--gi-reference-step", 0);
+    const u32 gi_reference_threads = option_number(argc, argv, "--gi-reference-threads", 8);
+    const std::string gi_reference_still = option(argc, argv, "--gi-reference-still", "");
+    const std::string gi_error_map = option(argc, argv, "--gi-error-map", "");
     const u32 orbit_frame = option_number(argc, argv, "--orbit-frame", 1);
 
     std::string problem;
@@ -339,6 +357,13 @@ int main(int argc, char** argv) {
         info += ".cymatinfo";
         if (!read_material_info(info, material)) {
             return 1;
+        }
+        if (material.has_base_color) {
+            // The shot's own colour for this material in place of the graph's default: the block
+            // the frame uploads and the GI's card albedo both read it from here.
+            material.parameter_defaults[0] =
+                Vec4{material.base_color.x, material.base_color.y, material.base_color.z,
+                     material.parameter_defaults[0].w};
         }
         std::string spirv = base;
         spirv += ".spv";
@@ -409,15 +434,29 @@ int main(int argc, char** argv) {
     gi_settings.enabled = gi == "on";
     gi_settings.hardware = gi_tier == "hardware";
     gi_settings.divisor = std::max(1U, option_number(argc, argv, "--gi-divisor", 1));
-    gi_settings.readback = gi_reference != 0U;
+    gi_settings.readback = gi_reference != 0U || gi_reference_step != 0U;
     gi_settings.converged = option(argc, argv, "--gi-converged", "on") == "on";
+    const std::string gather = option(argc, argv, "--gi-gather", "probes");
+    const std::string denoiser = option(argc, argv, "--gi-denoiser", "probe-space");
+    if ((gather != "probes" && gather != "per-pixel") ||
+        (denoiser != "probe-space" && denoiser != "shared")) {
+        std::fprintf(stderr,
+                     "cy_sample_beauty: --gi-gather is `probes` or `per-pixel`, --gi-denoiser "
+                     "`probe-space` or `shared`\n");
+        return 1;
+    }
+    gi_settings.per_pixel = gather == "per-pixel";
+    gi_settings.shared_denoiser = denoiser == "shared";
     stage.set_global_illumination(gi_settings);
-    std::printf("gi            %s, %s tier asked for, resolve grid divisor %u\n", gi.c_str(),
-                gi_tier.c_str(), gi_settings.divisor);
+    std::printf(
+        "gi            %s, %s tier asked for, resolve grid divisor %u, %s gather, %s "
+        "denoiser\n",
+        gi.c_str(), gi_tier.c_str(), gi_settings.divisor, gather.c_str(), denoiser.c_str());
     if (Status staged = stage.stage_shot(shot, report); !staged) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;
     }
+    ShotReport gi_fastest;
     if (gi_settings.enabled) {
         // THE GI CONVERGES OVER FRAMES, as a game's does: the same view drawn and written nowhere,
         // so the still is the frame a player standing here would see after `gi_frames` frames.
@@ -426,6 +465,13 @@ int main(int argc, char** argv) {
             if (Status drawn = stage.render(shot, nullptr, nullptr, warm); !drawn) {
                 std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
                 return 1;
+            }
+            // THE FASTEST FRAME, as the GI's suites time it: a device another process shares
+            // time-slices its work into this one's, and the fastest frame is the one nothing
+            // interrupted. The first frames carry the pipelines' first use.
+            if (warm.gi_timed && index >= 4 &&
+                (gi_fastest.gi_total_ms <= 0.0 || warm.gi_total_ms < gi_fastest.gi_total_ms)) {
+                gi_fastest = warm;
             }
         }
     }
@@ -436,6 +482,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     print_report(shot, report);
+    if (gi_fastest.gi_timed) {
+        std::printf(
+            "gi fastest    %.3f ms over the %u frames before the still: probe placement %.3f, "
+            "probe tracing %.3f, probe filter %.3f, integration %.3f, denoiser %.3f ms\n",
+            gi_fastest.gi_total_ms, gi_frames - 1U, gi_fastest.gi_probe_place_ms,
+            gi_fastest.gi_probe_trace_ms, gi_fastest.gi_probe_filter_ms, gi_fastest.gi_integrate_ms,
+            gi_fastest.gi_accumulate_ms + gi_fastest.gi_variance_ms + gi_fastest.gi_filter_ms +
+                gi_fastest.gi_publish_ms);
+    }
     if (gi_reference != 0U) {
         auto measured = stage.measure_gi_reference(gi_reference, gi_reference_samples, 3);
         if (!measured) {
@@ -448,6 +503,39 @@ int main(int argc, char** argv) {
             measured.value().pixels, gi_reference_samples,
             static_cast<double>(measured.value().gi_relative_error),
             static_cast<double>(measured.value().ambient_relative_error));
+    }
+    if (gi_reference_step != 0U) {
+        BeautyGiReferenceImage picture;
+        if (Status traced = stage.gi_reference_image(gi_reference_step, gi_reference_samples, 3,
+                                                     gi_reference_threads, picture);
+            !traced) {
+            std::fprintf(stderr, "cy_sample_beauty: %s\n", traced.error().message);
+            return 1;
+        }
+        std::printf(
+            "gi picture    %u pixels path traced every %u px (%u paths, %u bounces) in %.1f s: "
+            "the GI's indirect diffuse %.3f relative error, the reference's own noise %.3f\n",
+            picture.traced, picture.step, picture.samples, picture.bounces,
+            picture.trace_ms / 1000.0, static_cast<double>(picture.relative_error),
+            static_cast<double>(picture.reference_noise));
+        if (!gi_error_map.empty()) {
+            if (Status written = stage.write_gi_error_map(picture, gi_error_map.c_str());
+                !written) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", written.error().message);
+                return 1;
+            }
+            std::printf("error map     %s\n", gi_error_map.c_str());
+        }
+        if (!gi_reference_still.empty()) {
+            ShotReport reference_report;
+            if (Status drawn = stage.render_with_gi_reference(
+                    shot, picture, gi_reference_still.c_str(), reference_report);
+                !drawn) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
+                return 1;
+            }
+            std::printf("reference     %s\n", gi_reference_still.c_str());
+        }
     }
     if (!still.empty()) {
         std::printf("still         %s\n", still.c_str());

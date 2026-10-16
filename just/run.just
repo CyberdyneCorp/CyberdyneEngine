@@ -1010,6 +1010,71 @@ capture-beauty-gi *args:
     python3 tools/docs/collect_beauty_shot.py docs/design/images/gi-beauty-off.png \
         docs/design/images/gi-beauty-on.png
 
+# A SUNLIT ROOM, AND THE COLONNADE, EACH THREE WAYS: without the GI (the frame's flat sky term),
+# with CyberGI's default — the screen probes and their probe-space denoiser, through ray queries
+# where the device has them — and with the offline path tracer's indirect diffuse (gi/bake.h) in
+# place of the GI's, every fourth pixel each way over the exact triangles and upsampled against
+# the frame's depths and normals; and the map of where the GI and the path tracer differ. The room
+# (`content/beauty/interior.cyshot`) is where indirect light is most of the picture: a red and a
+# green wall, white plaster, and the sun through one window. tools/docs/compose_gi_comparison.py
+# lays each out side by side. The figures — the relative error over every traced pixel, and the
+# GI's GPU milliseconds — are printed and are the ones the guide quotes. Needs a graphics device,
+# and says so and writes nothing without one; the path tracer is a few minutes of processor time.
+# Photograph a sunlit room and the Colonnade without GI, with CyberGI and path traced. Usage: just capture-gi-interior [--profile <p>] [--width <n>] [--height <n>]
+capture-gi-interior *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-gi-interior: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    work="${build_dir}/gi-interior"
+    rm -rf "${work}"
+    mkdir -p "${work}" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    for scene in interior colonnade; do
+        # 2048 paths a pixel: the reference's own noise is then a fraction of the GI's error. The
+        # room's indirect light comes mostly off one small sunlit patch of floor, which few cosine
+        # paths find, so its paths cost minutes where the sky-lit Colonnade's cost seconds.
+        paths=2048
+        if [ "${scene}" = interior ]; then
+            shot=content/beauty/interior.cyshot
+        else
+            shot=content/beauty/shot.cyshot
+        fi
+        out="docs/design/images/gi-${scene}"
+        echo "==> capture     ${scene}: without the GI"
+        "${sample}" --shot "${shot}" --materials "${work}" --supersample 1 \
+            --still "${work}/${scene}-off.png" ${rest}
+        echo "==> capture     ${scene}: CyberGI, then the path tracer's picture of the same frame"
+        "${sample}" --shot "${shot}" --materials "${work}" --supersample 1 --gi on \
+            --gi-reference-step 4 --gi-reference-samples "${paths}" \
+            --still "${work}/${scene}-on.png" \
+            --gi-reference-still "${work}/${scene}-reference.png" \
+            --gi-error-map "${work}/${scene}-error.png" ${rest} | tee "${work}/${scene}-on.log"
+        if [ "${scene}" = interior ]; then
+            echo "==> check       the sun through the window is where the window and the sun put it"
+            python3 tools/docs/check_sun_patch.py --shot "${shot}" --still "${work}/${scene}-on.png" \
+                --window -0.9 1.0 6.0 0.9 2.4 6.5 --floor -3 -1 3 6
+        fi
+        python3 tools/docs/compose_gi_comparison.py \
+            --off "${work}/${scene}-off.png" --on "${work}/${scene}-on.png" \
+            --reference "${work}/${scene}-reference.png" --error "${work}/${scene}-error.png" \
+            --log "${work}/${scene}-on.log" --out "${out}-comparison.png"
+    done
+
 # THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
 # embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far
 # column — the two focus targets `content/beauty/shot.cyshot` names. Depth of field runs at step 7,

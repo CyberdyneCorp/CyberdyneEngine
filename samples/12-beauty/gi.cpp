@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
+#include <thread>
 
 namespace cy::sample::beauty {
 
@@ -486,6 +487,9 @@ Status BeautyGi::build(const Shot& shot,
     gi::ScreenResolveSettings screen;
     screen.mode = gi::GiMode::Dynamic;
     screen.max_ray_distance_metres = kMaxRayDistance;
+    screen.gather = settings.per_pixel ? gi::GiGather::PerPixel : gi::GiGather::ScreenProbes;
+    screen.probes.denoiser = settings.shared_denoiser ? gi::ScreenProbeDenoiser::Shared
+                                                      : gi::ScreenProbeDenoiser::ProbeSpace;
     state.resolve.set_settings(screen);
     state.resolve.set_denoiser(state.system.denoiser());
     state.resolve.set_field(state.system.field());
@@ -658,6 +662,146 @@ Expected<BeautyGiReference, Error> BeautyGi::measure_reference(u32 pixels, u32 s
     out.ambient_relative_error = flat_error.relative_error;
     out.mean_reference = gi_error.mean_reference_magnitude;
     return out;
+}
+
+Status BeautyGi::reference_image(u32 step, u32 samples, u32 bounces, u32 threads,
+                                 BeautyGiReferenceImage& out) noexcept {
+    if (state_ == nullptr || !state_->settings.readback || state_->resolve.divisor() != 1) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the GI's reference picture needs a readback run on the full-resolution grid");
+    }
+    State& state = *state_;
+    const u32 width = state.width;
+    const u32 height = state.height;
+    const usize pixels = static_cast<usize>(width) * height;
+    std::vector<Vec3> position(pixels);
+    std::vector<f32> depth(pixels);
+    std::vector<Vec3> normal(pixels);
+    std::vector<f32> roughness(pixels);
+    if (Status read =
+            state.resolve.read_back_surfaces({position.data(), pixels}, {depth.data(), pixels},
+                                             {normal.data(), pixels}, {roughness.data(), pixels});
+        !read) {
+        return read;
+    }
+    std::vector<Vec3> published(pixels);
+    std::vector<Vec3> specular(pixels);
+    if (Status read = state.resolve.read_back_published({published.data(), pixels},
+                                                        {specular.data(), pixels});
+        !read) {
+        return read;
+    }
+    gi::ScreenSurfaces frame;
+    frame.width = width;
+    frame.height = height;
+    frame.depth = {depth.data(), pixels};
+    frame.position = {position.data(), pixels};
+    frame.normal = {normal.data(), pixels};
+    frame.roughness = {roughness.data(), pixels};
+    gi::ScreenGrid grid;
+    if (Status built = grid.build(frame, std::max(step, 1U)); !built) {
+        return built;
+    }
+    const gi::ScreenSurfaces cells = grid.surfaces();
+    const usize cell_count = static_cast<usize>(cells.width) * cells.height;
+    std::vector<Vec3> traced(cell_count, Vec3{0.0F, 0.0F, 0.0F});
+    // Each pixel is traced as two independent halves, so the reference's own noise is measured
+    // beside the GI's error: |a - b| / 2 is distributed as |(a + b) / 2 - truth|.
+    std::vector<Vec3> half_apart(cell_count, Vec3{0.0F, 0.0F, 0.0F});
+
+    // EACH THREAD ITS OWN TRACERS: `MeshSceneTracer` and `PathTracer` count their rays in a plain
+    // member, so one shared between threads is a data race however read-only the tracing is.
+    // A copy of the triangles a thread is a fraction of a second; the paths are minutes.
+    lightmap_bake::LightmapScene scene;
+    scene.meshes = {state.bake_meshes.data(), state.bake_meshes.size()};
+    scene.materials = {state.bake_materials.data(), state.bake_materials.size()};
+    scene.instances = {state.bake_instances.data(), state.bake_instances.size()};
+    const u32 workers = std::clamp(threads, 1U, 32U);
+    std::vector<Status> outcomes(workers, ok());
+    const f64 mark = now_millis();
+    const auto work = [&](u32 worker) noexcept {
+        lightmap_bake::MeshSceneTracer exact;
+        if (Status built = exact.build(scene); !built) {
+            outcomes[worker] = built;
+            return;
+        }
+        const gi::PathTracer tracer(exact, state.system.scene(),
+                                    {state.lights.data(), state.lights.size()},
+                                    state.system.sky_term(), &exact);
+        gi::BakeSettings bake;
+        bake.samples = std::max(samples / 2U, 1U);
+        bake.bounces = bounces;
+        bake.max_distance_metres = kMaxRayDistance;
+        for (usize cell = worker; cell < cell_count; cell += workers) {
+            if (cells.depth[cell] <= 0.0F) {
+                continue;
+            }
+            // A sequence of its own a pixel and a half, so no two estimates share a pattern.
+            const Vec3 n = cells.normal[cell];
+            const Vec3 at = cells.position[cell] + (n * 0.01F);
+            bake.seed = gi::screen_hash(static_cast<u32>(cell), 0, 17);
+            const Vec3 first = tracer.irradiance(at, n, bake);
+            bake.seed = gi::screen_hash(static_cast<u32>(cell), 0, 18);
+            const Vec3 second = tracer.irradiance(at, n, bake);
+            traced[cell] = (first + second) * 0.5F;
+            half_apart[cell] = (first - second) * 0.5F;
+        }
+    };
+    std::vector<std::thread> pool;
+    pool.reserve(workers);
+    for (u32 worker = 0; worker < workers; ++worker) {
+        pool.emplace_back(work, worker);
+    }
+    for (std::thread& thread : pool) {
+        thread.join();
+    }
+    for (const Status& outcome : outcomes) {
+        if (!outcome) {
+            return outcome;
+        }
+    }
+    out.trace_ms = now_millis() - mark;
+
+    out.width = width;
+    out.height = height;
+    out.step = std::max(step, 1U);
+    out.samples = samples;
+    out.bounces = bounces;
+    out.reference.assign(pixels, Vec3{0.0F, 0.0F, 0.0F});
+    if (Status upsampled = gi::screen_upsample(frame, cells, out.step, {traced.data(), cell_count},
+                                               {out.reference.data(), pixels});
+        !upsampled) {
+        return upsampled;
+    }
+    // The figure is over the pixels that were traced, where the reference is its own and not an
+    // interpolation: `measure_reference`'s, at every traced pixel rather than a lattice of them.
+    std::vector<Vec3> measured;
+    std::vector<Vec3> reference;
+    f64 noise = 0.0;
+    for (u32 y = 0; y < cells.height; ++y) {
+        for (u32 x = 0; x < cells.width; ++x) {
+            const usize cell = (static_cast<usize>(y) * cells.width) + x;
+            if (cells.depth[cell] <= 0.0F) {
+                continue;
+            }
+            const usize pixel = (static_cast<usize>(std::min(y * out.step, height - 1U)) * width) +
+                                std::min(x * out.step, width - 1U);
+            measured.push_back(published[pixel]);
+            reference.push_back(traced[cell]);
+            noise += static_cast<f64>(length(half_apart[cell]));
+        }
+    }
+    const gi::ReferenceComparison compared = gi::compare_against_reference(
+        {measured.data(), measured.size()}, {reference.data(), reference.size()});
+    out.traced = compared.samples;
+    out.relative_error = compared.relative_error;
+    out.reference_noise = compared.samples == 0 || compared.mean_reference_magnitude <= 0.0F
+                              ? 0.0F
+                              : static_cast<f32>(noise / static_cast<f64>(compared.samples)) /
+                                    compared.mean_reference_magnitude;
+    out.published = std::move(published);
+    out.depth = std::move(depth);
+    return ok();
 }
 
 }  // namespace cy::sample::beauty

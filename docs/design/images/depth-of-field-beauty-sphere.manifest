@@ -30,11 +30,11 @@ trails 7692 vertices in 984 strip(s), 6708 segment(s), 1 draw(s), 0 dropped  (th
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 507.1  sky-ms 146.1  submit-ms 17.58
+build-ms 814.6  sky-ms 121.6  submit-ms 12.90
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph
-  cook-key 0xd10b8e4404ad56c5  entry cy_material_weathered_stone_primary_high
+  cook-key 0x2e57fb3af1241eeb  entry cy_material_weathered_stone_primary_high
   albedo content/beauty/textures/stone_albedo.png  256x256  bc7  9 mips  slot 0  66526 -> 87428 bytes
   normal content/beauty/textures/stone_normal.png  256x256  bc5  9 mips  slot 1  140717 -> 87428 bytes
   data   content/beauty/textures/stone_data.png  256x256  bc7  9 mips  slot 2  101940 -> 87428 bytes
@@ -42,7 +42,7 @@ material stone
 
 material copper
   authored content/beauty/materials/oxidised_copper.cygraph
-  cook-key 0x08f3975a2338abc4  entry cy_material_oxidised_copper_primary_high
+  cook-key 0x6872702eebcf9ce8  entry cy_material_oxidised_copper_primary_high
   albedo content/beauty/textures/copper_albedo.png  256x256  bc7  9 mips  slot 3  76606 -> 87428 bytes
   normal content/beauty/textures/copper_normal.png  256x256  bc5  9 mips  slot 4  98469 -> 87428 bytes
   data   content/beauty/textures/copper_data.png  256x256  bc7  9 mips  slot 5  65796 -> 87428 bytes
@@ -50,7 +50,7 @@ material copper
 
 material gravel
   authored content/beauty/materials/courtyard_gravel.cygraph
-  cook-key 0x159982f6f14a706e  entry cy_material_courtyard_gravel_primary_high
+  cook-key 0x4a5cb5fcbf4bb671  entry cy_material_courtyard_gravel_primary_high
   albedo content/beauty/textures/gravel_albedo.png  256x256  bc7  9 mips  slot 6  72441 -> 87428 bytes
   normal content/beauty/textures/gravel_normal.png  256x256  bc5  9 mips  slot 7  166864 -> 87428 bytes
   data   content/beauty/textures/gravel_data.png  256x256  bc7  9 mips  slot 8  109987 -> 87428 bytes

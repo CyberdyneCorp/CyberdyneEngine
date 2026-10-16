@@ -14,6 +14,7 @@
 > just capture-beauty-depth-of-field                # the shot focused on the sphere and on a column
 > just capture-decals                               # the shot with its decals off and on (and the world's ground marker)
 > just capture-beauty-gi                            # the shot with its flat sky term and with the engine's GI
+> just capture-gi-interior                          # a sunlit room and the shot: no GI, the GI, the path tracer
 > ```
 >
 > No CTest entry: the picture needs a graphics device, and on a machine without one the program says
@@ -215,8 +216,8 @@ meteorological visibility, a base altitude and scale height, an albedo and a Hen
 ![off, on, and the difference amplified eight times](../../docs/design/images/volumetric-fog-beauty-detail.png)
 
 Captured with `just capture-volumetric-fog` on Vulkan: the off picture is `m11c-beauty-shot.png`
-pixel for pixel; on, 2073328 of 2073600 pixels change, 255428 darker by more than one step and
-1651930 brighter by more than one step, the largest by 120 of 255, with 0 validation errors.
+pixel for pixel; on, 2073296 of 2073600 pixels change, 261046 darker by more than one step and
+1659089 brighter by more than one step, the largest by 120 of 255, with 0 validation errors.
 
 `just capture-volumetric-fog` writes `docs/design/images/volumetric-fog-beauty-{off,on,detail}.png`
 and `volumetric-fog-beauty-on.manifest`, and `tools/docs/compare_volumetric_fog.py` fails it unless
@@ -248,12 +249,13 @@ triangles, and the field places them by their instances' transforms. The caches 
 sun and by a sky term fitted to the engine's atmosphere, run in converged mode before the first
 frame — the GI specification asks it of a capture — and the frame's `ScreenSpaceGi` stage is
 produced by `gi_gpu::GpuScreenResolve` through the hardware tier where the device has ray queries:
-the prepass (with each material's roughness, `scenePrepassGiFragment`) unpacked, a final-gather ray a
-pixel combined with the probes by confidence, denoised, and published. `sceneFragmentGi` replaces
+the prepass (with each material's roughness, `scenePrepassGiFragment`) unpacked, the screen probes
+placed, traced, filtered in probe space and integrated (the engine's default gather;
+`--gi-gather per-pixel` is the per-pixel one), accumulated over time, and published. `sceneFragmentGi` replaces
 the flat sky term with the indirect diffuse on the diffuse albedo and adds the indirect specular
 through the split-sum environment BRDF; the sun, its shadows, the sky dome and the post chain are the
-published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-frames <n>` and
-`--gi-converged off` are the controls.
+published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-gather per-pixel`,
+`--gi-denoiser shared`, `--gi-frames <n>` and `--gi-converged off` are the controls.
 
 ![The Colonnade with its flat sky term (left) and with the engine's GI (right)](../../docs/design/images/gi-beauty-pair.png)
 
@@ -261,7 +263,7 @@ published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-frames <n>` and
 
 Captured with `just capture-beauty-gi` on the RTX 5060, Vulkan, 0 validation errors. Off is
 `m11c-beauty-shot.png` pixel for pixel, and `tools/docs/compare_gi.py` fails the recipe unless it is;
-on, 65.9 % of the pixels change and the open sky between the columns does not.
+on, 66.3 % of the pixels change and the open sky between the columns does not.
 
 **Measured against the path tracer.** The run with the GI path traces 400 pixels of its own frame —
 288 see a surface — with `gi::PathTracer` over `lightmap_bake::MeshSceneTracer`'s exact triangles,
@@ -269,12 +271,57 @@ on, 65.9 % of the pixels change and the open sky between the columns does not.
 
 | | relative error against the path tracer |
 |---|---|
-| the engine's GI | **0.126** |
-| the flat sky term it replaces | 0.385 |
+| the engine's GI, the screen probes (the default) | **0.048** |
+| the engine's GI, the per-pixel gather | 0.127 |
+| the flat sky term it replaces | 0.384 |
 
-**What it costs** at 1920x1080 (`--supersample 1`), the device resolve's stages from timestamps:
-14.75 ms through ray queries, 5.59 ms on the half-resolution grid (`--gi-divisor 2`), 29.65 ms through
-the software field. The caches are updated on the host here, about 19 ms of processor time a frame
+Measured at `--supersample 1`, after the shadow fix below: the frame these pixels are traced from
+shades the sun with the shadows the GI's caches are lit by. (Before it, through the per-pixel
+gather and the mirrored shadows, the engine's GI was 0.126.)
+
+**What it costs** at 1920x1080 (`--supersample 1`), every stage of the GI from timestamps, the
+fastest of the 47 frames before the still: 4.49 ms through ray queries (of which the probes' rays
+are 1.85 and the probe-space denoiser 0.91), 3.37 ms on the half-resolution grid (`--gi-divisor
+2`), 8.54 ms through the software field; the per-pixel gather 16.06 ms through ray queries. The caches are updated on the host here, about 19 ms of processor time a frame
 over 12 782 cards, and converged mode spends 32 frames — 11 s — before the first; the device card
 shading and probe gather of stages 2 and 3 are the installation that moves them off the processor.
+
+## The GI beside the path tracer: a sunlit room, and the Colonnade
+
+`just capture-gi-interior` photographs two shots three ways each — without the GI, with it, and with
+the GI's indirect diffuse replaced by the path tracer's — and maps where the GI and the path tracer
+differ. `--gi-reference-step 4` path traces every fourth pixel each way of the last frame
+(`BeautyGi::reference_image`: `gi::PathTracer` over the exact triangles, two independent halves of
+each pixel's paths so the reference's own noise is measured too, a tracer a thread) and upsamples it
+against the frame's depths and normals; `--gi-reference-still` draws the frame once more with that
+bound where `sceneFragmentGi` reads the GI's diffuse target — the sun, the shadows, the GI's specular
+and the post chain unchanged — and `--gi-error-map` writes |GI - path tracer| over the path tracer.
+`--gi-gather per-pixel` and `--gi-denoiser shared` select the GI's other paths.
+`tools/docs/compose_gi_comparison.py` lays the four out with the run's figures in their labels.
+
+The second shot is `content/beauty/interior.cyshot`, **The Sunlit Room**: the Colonnade's own
+weathered-stone graph and maps on every wall, coloured per material by the shot's new
+`material <key> base-color r g b`, six half-metre slabs built round one window, the sun through it,
+and `air none` — the embers are the Colonnade's, authored at its camera.
+
+![The sunlit room: without the GI, with CyberGI, through the path tracer, and the error](../../docs/design/images/gi-interior-comparison.png)
+
+CyberGI 0.193 relative to the path tracer over 125 024 traced pixels (its own noise, 2048 paths:
+0.056), 6.63 ms on the GPU; the surfaces lit mostly from the sun's patch are the darker part of the
+difference — the guide's section 7b has them by surface, and the room through the GI's other
+paths.
+
+![The Colonnade: without the GI, with CyberGI, through the path tracer, and the error](../../docs/design/images/gi-colonnade-comparison.png)
+
+CyberGI 0.022 relative over 86 427 traced pixels (the reference's noise 0.014), 4.49 ms on the GPU.
+
+**The room found a defect in this sample's shadows.** `beauty.slang` read the sun's map with its
+rows the wrong way up — `v = ndc.y / 2 + 1/2`, where the RHI rasterises the light's +Y into row 0,
+which `cy/frame.slang` reads as `1/2 - ndc.y / 2` — so every lookup took the texel mirrored across the
+map's centre line. In the Colonnade it hid: the pillars cast no shadow on the gravel, and a sunny
+courtyard looks plausible without them. In the room the side wall under the ceiling was lit by the
+sun. `sunMapUv` reads it the right way up for both the hard and the soft filter, the fog's march
+takes the same rows, and `tools/docs/check_sun_patch.py` fails `just capture-gi-interior` unless the
+room's sunlit patch is where its window and its sun put it (proved red on the mirrored lookup, with
+device-free tests of its own). Every still in this file was captured again with the fix.
 
