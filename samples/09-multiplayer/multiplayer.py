@@ -339,6 +339,13 @@ PLAYER_INK = [(0x4C, 0x9A, 0xFF), (0x35, 0xC0, 0x7C), (0xF0, 0x91, 0x3A), (0xC7,
 
 
 def _monospace(size: int):
+    """The figures' face, laid out by Pillow's BASIC engine on every machine.
+
+    THE LAYOUT ENGINE IS A PROPERTY OF THE PILLOW BUILD, NOT OF THE CALL: a build with libraqm lays
+    text out with it unless told otherwise, and one without uses BASIC. The committed figures were
+    drawn by a Pillow without raqm; the pip wheels carry it, and `m9:figures-regenerated` then found
+    4% of both figures' pixels moved on a hosted runner, from the text alone. Monospaced ASCII needs
+    no shaping, so BASIC is asked for by name and the figure is the same picture everywhere."""
     from PIL import ImageFont
 
     for candidate in (
@@ -347,7 +354,7 @@ def _monospace(size: int):
         "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
     ):
         if Path(candidate).is_file():
-            return ImageFont.truetype(candidate, size)
+            return ImageFont.truetype(candidate, size, layout_engine=ImageFont.Layout.BASIC)
     return ImageFont.load_default()
 
 

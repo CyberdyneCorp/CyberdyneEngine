@@ -1727,7 +1727,7 @@ jobs:
       - name: Install the generator, the window-system headers SDL3 builds against, and libclang
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev libclang1-18 libfreetype-dev pkg-config fonts-dejavu-core
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0.3'
@@ -1740,11 +1740,15 @@ jobs:
       # specification CLI, the reflection generator's bindings, the deterministic math generators'
       # arithmetic (`generate-check`), the spelling dictionary, Pillow for the recipe selftest's
       # `_ship-stills` case inside `m1:workflows` and the M11.c renders, and matplotlib for
-      # `m9:figures-regenerated`, which redraws the committed figures — pinned to the release they
-      # were drawn with, because another one lays the same curve out differently.
+      # `m9:figures-regenerated`, which redraws the committed figures and compares them pixel by
+      # pixel. Pinned to the releases they were drawn with, and matplotlib BUILT AGAINST THE
+      # SYSTEM'S FREETYPE: its wheels carry FreeType 2.6.1, whose glyphs moved 2.75% of the
+      # bandwidth curve's pixels against the committed figure (run 38880558630); the same release
+      # built against FreeType 2.13 redraws it byte for byte.
       - name: Install the pinned LLVM tooling, the specification CLI and the generators' modules
         run: |
-          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow matplotlib==3.10.0 numpy==2.1.3
+          pip install clang-format==22.1.8 clang-tidy==22.1.8 clang==18.1.8 mpmath==1.3.0 codespell==2.4.3 Pillow==11.1.0 numpy==2.1.3
+          pip install --no-binary matplotlib matplotlib==3.10.0 --config-settings=setup-args=-Dsystem-freetype=true
           npm install -g @fission-ai/openspec@1.14.0
       # The files the `quality` job's clang-tidy passed at this commit. A `pattern`, so a run whose
       # `quality` job uploaded nothing downloads nothing rather than failing: without it `m0:lint`
