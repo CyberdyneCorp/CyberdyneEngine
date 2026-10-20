@@ -92,7 +92,8 @@ function(cy_editor_window_runtime_declare_tests)
             DEPENDENCIES
                 cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
-                cy::rendering-material-slang cy::shader cy::rendering-lightmaps
+                cy::rendering-material-slang cy::shader cy::rendering-lightmaps cy::rendering-gi-gpu
+                cy::game-backend-illumination cy::gameplay-play
                 cy::weather
                 cy::rhi-vulkan cy::rhi-null
             DEFINITIONS
@@ -142,7 +143,8 @@ function(cy_editor_window_runtime_declare_tests)
             DEPENDENCIES
                 cy::rendering-pipeline cy::rendering-skinning cy::import cy::core-assets cy::graph-material
                 cy::sample-first-light cy::scene-serialization cy::scene cy::editor-backend
-                cy::rendering-material-slang cy::shader cy::shader-slang cy::rendering-lightmaps
+                cy::rendering-material-slang cy::shader cy::shader-slang cy::rendering-lightmaps cy::rendering-gi-gpu
+                cy::game-backend-illumination cy::gameplay-play
                 cy::weather
                 cy::rhi-metal cy::rhi-null
             DEFINITIONS
@@ -237,11 +239,37 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../gi_runtime.cpp"
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
-                     cy::scene cy::servers-render
+                     cy::scene cy::servers-render cy::game-backend-illumination cy::gameplay-play
         DEFINITIONS
             "CY_GI_TEST_DATA=\"${tests_dir}/data\"")
     target_include_directories(cy_test_integration_editor_window_illumination PRIVATE
                                "${tests_dir}/..")
+
+    # #35, the live half: a project's Swift game in Play tunes the GI the viewport is lit by —
+    # ABI 1.9 bound over the preview's system — and Stop gives the document's GI back. It runs
+    # bindings/swift's illumination fixture, so it is declared only where that module is built.
+    get_property(play_gi_module GLOBAL PROPERTY CY_SWIFT_ILLUMINATION_MODULE)
+    if(play_gi_module AND TARGET cy_swift_illumination_fixture)
+        cy_add_test(
+            NAME editor_window_play_illumination
+            KIND integration
+            SOURCES
+                "${tests_dir}/test_play_illumination.cpp"
+                "${tests_dir}/../authored_components.cpp"
+                "${tests_dir}/../gi_runtime.cpp"
+                "${tests_dir}/../overlay.cpp"
+                "${tests_dir}/../script_runtime.cpp"
+            DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
+                         cy::scene cy::servers-render cy::game-backend-illumination
+                         cy::gameplay-play cy::physics-reference cy::abi cy::game-backend
+            DEFINITIONS
+                "CY_GI_TEST_DATA=\"${tests_dir}/data\""
+                "CY_SWIFT_ILLUMINATION_MODULE=\"${play_gi_module}\"")
+        target_include_directories(cy_test_integration_editor_window_play_illumination PRIVATE
+                                   "${tests_dir}/..")
+        add_dependencies(cy_test_integration_editor_window_play_illumination
+                         cy_swift_illumination_fixture)
+    endif()
 
     target_include_directories(cy_test_integration_editor_window_navigation PRIVATE
                                "${tests_dir}/.."

@@ -76,6 +76,7 @@
 #include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
 #include <cy/editor/terrain_service.h>
+#include <cy/game_backend/illumination_backend.h>
 #include <cy/rendering/gi/debug_views.h>
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
@@ -348,6 +349,11 @@ struct Host {
     /// of the GI view drawn for it.
     render::DebugViewMode debug_view = render::DebugViewMode::Off;
     Array<u32> gi_texels;
+    /// ABI 1.9 during Play: a project's Swift game tunes the GI the viewport is lit by, through
+    /// this adapter over the preview's system. Made when Play starts and again when the GI is
+    /// rebuilt under it; gone when Play stops.
+    std::unique_ptr<game_backend::IlluminationAdapter> gi_play;
+    u64 gi_play_generation = 0;
     /// THE WORLD, and the whole of what M7's `EditorSession` used to stand in for. See
     /// `world_view.h`: there is no association here, because the runtime opened the same file the
     /// editor did and a node's identity is derived on both sides from the same two numbers.
@@ -895,6 +901,38 @@ void answer_reload(Host& host, const runtime::EditorRequest& request) noexcept {
     (void)host.bridge->send_reloaded(request.request, module.c_str(), request.generation);
 }
 
+/// Bind ABI 1.9 for Play over the GI the viewport is lit by (`AuthoredIllumination::bind_play`).
+void bind_play_illumination(Host& host, const AuthoredGi& gi) noexcept {
+    host.gi_play = host.gi_source->bind_play(*host.play);
+    host.scripts->bind_illumination(host.gi_play.get());
+    host.gi_play_generation = gi.generation;
+}
+
+/// Play's GI binding, kept over the system the viewport is lit by: made at Play's start, made again
+/// when an edit rebuilt the GI under a running game, and stamped with the system's frame.
+void keep_play_illumination(Host& host, const AuthoredGi* gi) noexcept {
+    const bool playing = host.play != nullptr && host.play->state() != gameplay::PlayState::Editing;
+    if (!playing || host.gi_source == nullptr || gi == nullptr) {
+        return;
+    }
+    if (host.gi_play == nullptr || host.gi_play_generation != gi->generation) {
+        bind_play_illumination(host, *gi);
+    }
+    if (host.gi_play != nullptr) {
+        host.gi_play->begin_frame(gi->frame);
+    }
+}
+
+/// Play stopped: the game's GI changes end with it, and the document's settings, volumes, classes
+/// and emitter rules are applied again on the next frame.
+void end_play_illumination(Host& host) noexcept {
+    host.scripts->bind_illumination(nullptr);
+    host.gi_play.reset();
+    if (host.gi_source != nullptr) {
+        host.gi_source->world_changed();
+    }
+}
+
 void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
     const std::string_view asked(reinterpret_cast<const char*>(request.payload.data()),
                                  request.payload.size());
@@ -994,8 +1032,16 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                                                 animated.error().message);
                 return;
             }
+            // ABI 1.9 before the scripts, so a behaviour's `onCreate` can place a GI volume.
+            if (host.gi_source != nullptr) {
+                AuthoredGi gi;
+                if (host.gi_source->current(gi)) {
+                    bind_play_illumination(host, gi);
+                }
+            }
             if (Status started = host.scripts->start(*host.play, host.view_world->world());
                 !started) {
+                end_play_illumination(host);
                 stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
@@ -1008,6 +1054,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             // Play with the reason rather than playing a silent world.
             if (Status sounding = host.audio->start_play(host.view_world->world()); !sounding) {
                 host.scripts->stop();
+                end_play_illumination(host);
                 stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
@@ -1026,6 +1073,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
                 host.graphs->stop();
                 host.audio->stop_play();
                 host.scripts->stop();
+                end_play_illumination(host);
                 stop_play_animation(host);
                 (void)host.play->stop();
                 (void)host.bridge->send_playing(request.request, "editing",
@@ -1059,6 +1107,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             host.graphs->stop();
             host.audio->stop_play();
             host.scripts->stop();
+            end_play_illumination(host);
             stop_play_animation(host);
             if (Status stopped = host.play->stop(); !stopped) {
                 (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
@@ -1535,10 +1584,13 @@ void remember_navigation_frame(Host& host, u64 frame) {
     }
 }
 
-/// The GI view the editor's viewport asked for, drawn for this frame's camera and handed to the
-/// forward frame; any other mode hands it none, so the frame is what it was. A quarter of the
-/// frame's resolution: the views are diagnostics drawn on the processor, not the frame's GI.
-void prepare_gi_view(Host& host) noexcept {
+/// THE GI, ON THE DEVICE (#35, the live half). A world whose "Global Illumination" node admits the
+/// dynamic GI has its frame lit by the engine's `GpuGiFrame` over the preview's system, which
+/// advances one frame from this camera first; the view the viewport asked for is drawn by the
+/// device in the same frame. A device that cannot run the GI, or a view it cannot draw for this
+/// system, falls back to the processor's view at a quarter of the frame's resolution — the path
+/// that was the only one before.
+void prepare_gi(Host& host) noexcept {
     if (host.authored_frame == nullptr) {
         return;
     }
@@ -1547,21 +1599,46 @@ void prepare_gi_view(Host& host) noexcept {
         host.gi_source != nullptr && host.game_camera == ~u64{0} &&
         rendering::gi::gi_debug_view_from_name(render::debug_view_mode_name(host.debug_view)) !=
             rendering::gi::GiDebugView::Count;
-    if (gi_view) {
-        if (Status drawn = host.gi_source->render_view(
-                host.debug_view, host.view, eye_of(host.camera), host.options.width,
-                host.options.height, kGiViewDivisor, host.gi_texels);
-            !drawn) {
-            report("gi view", drawn.error());
-        } else if (Status set =
-                       host.authored_frame->set_gi_overlay(host.debug_view, host.gi_texels.span(),
-                                                           host.options.width, host.options.height);
-                   !set) {
-            report("gi view", set.error());
+    const bool lit = host.gi_source != nullptr && host.gi_source->lights_frame();
+    if (host.gi_source != nullptr) {
+        // The GI's sky is the frame's own ambient — the Editor view's studio fill included — so
+        // the GI that replaces it lights an open surface as it did.
+        host.gi_source->set_sky_radiance(
+            host.authored_frame->ambient_radiance(host.game_camera == ~u64{0}));
+    }
+    AuthoredGi gi;
+    bool device = (gi_view || lit) && host.authored_frame->global_illumination_supported() &&
+                  host.gi_source->advance(eye_of(host.camera), gi);
+    if (device) {
+        gi.composite = lit;
+        if (Status bound = host.authored_frame->set_global_illumination(&gi); !bound) {
+            report("gi", bound.error());
+            device = false;
         }
+    }
+    if (!device) {
+        (void)host.authored_frame->set_global_illumination(nullptr);
+    }
+    keep_play_illumination(host, device ? &gi : nullptr);
+    if (!gi_view) {
+        (void)host.authored_frame->set_device_gi_view(render::DebugViewMode::Off);
+        (void)host.authored_frame->set_gi_overlay(render::DebugViewMode::Off, {}, 0, 0);
         return;
     }
-    (void)host.authored_frame->set_gi_overlay(render::DebugViewMode::Off, {}, 0, 0);
+    if (device && host.authored_frame->set_device_gi_view(host.debug_view).has_value()) {
+        (void)host.authored_frame->set_gi_overlay(render::DebugViewMode::Off, {}, 0, 0);
+        return;
+    }
+    if (Status drawn = host.gi_source->render_view(host.debug_view, host.view, eye_of(host.camera),
+                                                   host.options.width, host.options.height,
+                                                   kGiViewDivisor, host.gi_texels);
+        !drawn) {
+        report("gi view", drawn.error());
+    } else if (Status set = host.authored_frame->set_gi_overlay(
+                   host.debug_view, host.gi_texels.span(), host.options.width, host.options.height);
+               !set) {
+        report("gi view", set.error());
+    }
 }
 
 /// Render one frame, composite the gizmo into it, and publish it.
@@ -1601,7 +1678,7 @@ void prepare_gi_view(Host& host) noexcept {
     host.audio_time = time_seconds;
     host.audio->frame(std::clamp(audio_seconds, 0.0F, 0.25F), host.camera);
 
-    prepare_gi_view(host);
+    prepare_gi(host);
     Span<const u32> texels;
     if (!render_frame_texels(host, time_seconds, texels)) {
         return false;
@@ -2115,6 +2192,9 @@ int main(int argc, char** argv) {
 
         print_report(host, view_world, bridge, started);
         composite_service.close(service_session);
+        // The device GI mirrors into the preview's system, which goes before the frame does.
+        host.gi_play.reset();
+        (void)authored_frame.set_global_illumination(nullptr);
 
         // THE SESSION BEFORE THE SERVER. A session destroyed after the server it holds a world in
         // would call `destroy_body` on freed memory, which is exactly the shape M5.5's gate found

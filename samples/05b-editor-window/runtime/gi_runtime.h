@@ -46,6 +46,8 @@
 #include <cy/core/memory/array.h>
 #include <cy/editor/illumination_preview.h>
 #include <cy/editor/illumination_service.h>
+#include <cy/game_backend/illumination_backend.h>
+#include <cy/gameplay/play/session.h>
 #include <cy/import/mesh.h>
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/servers/render/model.h>
@@ -60,6 +62,21 @@
 #include "overlay.h"
 
 namespace cy::sample::editor_window {
+
+/// The GI the frame is lit by on the device (`AuthoredFrame::set_global_illumination`): the
+/// system the editor's `IlluminationPreview` keeps, where its clock stands, and the height its
+/// distance-field view slices at.
+struct AuthoredGi {
+    rendering::gi::IlluminationSystem* system = nullptr;
+    /// Bumped when the system is rebuilt: the device half is made again over the new one.
+    u64 generation = 0;
+    /// The system's frame, which its caches' ages are counted in.
+    u64 frame = 0;
+    f32 field_slice_height = 0.0F;
+    /// Whether the Lit view takes the GI (`lights_frame`). False resolves it only for a GI view,
+    /// and the pixels the view leaves clear are the frame as it was.
+    bool composite = true;
+};
 
 /// One GI volume as the document places it, for the frame's overlay.
 struct GiVolumeBox {
@@ -96,6 +113,25 @@ public:
     /// Every GI volume's box, from the document.
     [[nodiscard]] Status volumes(std::vector<GiVolumeBox>& out) const noexcept;
 
+    /// Whether the world asks for its frame to be lit by the GI: it holds the "Global
+    /// Illumination" settings node, in a mode that admits the dynamic GI into a surface. A world
+    /// without the node is drawn as it always was.
+    [[nodiscard]] bool lights_frame() noexcept;
+    /// One frame of the GI from `eye` — brought up to the document first — and what the device
+    /// frame is lit by. False when the world has nothing for the GI to light.
+    [[nodiscard]] bool advance(Vec3 eye, AuthoredGi& out) noexcept;
+    /// What the device frame would be lit by now, without advancing the GI.
+    [[nodiscard]] bool current(AuthoredGi& out) noexcept;
+    /// ABI 1.9 for Play: an adapter over the GI the viewport is lit by, every object the GI holds
+    /// bound by its Play entity and every material by its authored name, so a project's Swift
+    /// game names what the author placed. Null when the world has nothing for the GI to light.
+    [[nodiscard]] std::unique_ptr<game_backend::IlluminationAdapter> bind_play(
+        const gameplay::PlaySession& play) noexcept;
+    /// The GI's sky: a uniform dome of `radiance`, the frame's own flat ambient
+    /// (`AuthoredFrame::ambient_radiance`), so the GI that replaces the ambient lights an open
+    /// surface as the ambient did. Applied to the running GI in place; nothing is rebuilt.
+    void set_sky_radiance(Vec3 radiance) noexcept;
+
     /// The scene `preview()` last read, for a test.
     [[nodiscard]] const editor::IlluminationScene& scene() const noexcept { return scene_; }
     [[nodiscard]] u32 mesh_failures() const noexcept { return mesh_failures_; }
@@ -131,6 +167,10 @@ private:
     std::deque<Frame> frames_;
     u32 mesh_failures_ = 0;
     bool stale_ = true;
+    /// Whether the last gather met the world's GI settings node.
+    bool has_settings_ = false;
+    /// The sky the GI is lit by: the preview's default until the frame names its ambient.
+    rendering::gi::SkyTerm sky_{};
 };
 
 /// Draw every volume's box as its twelve edges over `canvas`, as `view` at `eye` sees them.

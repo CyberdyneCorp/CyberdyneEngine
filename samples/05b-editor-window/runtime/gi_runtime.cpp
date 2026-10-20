@@ -8,6 +8,7 @@
 #include <cy/core/math/matrix.h>
 #include <cy/import/model.h>
 #include <cy/rendering/gi/debug_views.h>
+#include <cy/rendering/gi/resolve.h>
 #include <cy/servers/render/picking.h>
 
 #include <algorithm>
@@ -240,6 +241,8 @@ Status AuthoredIllumination::gather() noexcept {
     mesh_index_.clear();
     material_index_.clear();
     scene_ = editor::IlluminationScene{};
+    scene_.sky = sky_;
+    has_settings_ = false;
     Array<Mat4> matrices(*allocator_);
     if (Status built = world_matrices(*world_, matrices); !built) {
         return built;
@@ -253,6 +256,7 @@ Status AuthoredIllumination::gather() noexcept {
         }
         if (const ComponentReader settings(*world_, node, kSettingsType); settings.present()) {
             scene_.settings = read_settings(settings);
+            has_settings_ = true;
         }
         if (const ComponentReader volume(*world_, node, kVolumeType); volume.present()) {
             scene_volumes_.push_back(read_volume(volume, matrices[row], node.identity));
@@ -385,6 +389,83 @@ Status AuthoredIllumination::render_view(render::DebugViewMode mode, const rende
         }
     }
     return ok();
+}
+
+bool AuthoredIllumination::lights_frame() noexcept {
+    if (preview() == nullptr || !has_settings_) {
+        return false;
+    }
+    // `exclusion_for()`'s answer, as the frame's composite reads it (`gi_gpu::gi_admission`): a
+    // mode that keeps the dynamic sources out of every kind of surface lights nothing.
+    const gi::GiMode mode = preview_->system().runtime_settings().mode;
+    const u32 dynamic = gi::source_bit(gi::RadianceSource::RadianceCache);
+    return (gi::exclusion_for(mode, false, false) & dynamic) == 0 ||
+           (gi::exclusion_for(mode, true, false) & dynamic) == 0 ||
+           (gi::exclusion_for(mode, false, true) & dynamic) == 0;
+}
+
+void AuthoredIllumination::set_sky_radiance(Vec3 radiance) noexcept {
+    gi::SkyTerm sky;
+    sky.zenith = radiance;
+    sky.horizon = radiance;
+    sky.ground = radiance;
+    sky.intensity = 1.0F;
+    const auto same = [](Vec3 a, Vec3 b) noexcept {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    };
+    if (same(sky.zenith, sky_.zenith) && same(sky.horizon, sky_.horizon) &&
+        same(sky.ground, sky_.ground) && sky.intensity == sky_.intensity) {
+        return;
+    }
+    sky_ = sky;
+    scene_.sky = sky;
+    if (preview_->ready()) {
+        preview_->system().set_sky_term(sky);
+    }
+}
+
+bool AuthoredIllumination::advance(Vec3 eye, AuthoredGi& out) noexcept {
+    editor::IlluminationPreview* lit = preview();
+    if (lit == nullptr) {
+        return false;
+    }
+    lit->update(eye, 1);
+    return current(out);
+}
+
+std::unique_ptr<game_backend::IlluminationAdapter> AuthoredIllumination::bind_play(
+    const gameplay::PlaySession& play) noexcept {
+    editor::IlluminationPreview* lit = preview();
+    if (lit == nullptr) {
+        return nullptr;
+    }
+    auto adapter = std::make_unique<game_backend::IlluminationAdapter>(*allocator_, lit->system());
+    const Span<const u64> nodes = lit->object_nodes();
+    for (u32 index = 0; index < nodes.size(); ++index) {
+        const ecs::Entity entity = play.entity_for(nodes[index]);
+        if (entity.valid()) {
+            (void)adapter->bind_object(entity.bits(), editor::illumination_object_id(nodes[index]),
+                                       index + 1U);
+        }
+    }
+    const Span<const std::string> materials = lit->material_names();
+    for (u32 index = 0; index < materials.size(); ++index) {
+        (void)adapter->add_material(materials[index].c_str(), index + 1U);
+    }
+    adapter->begin_frame(lit->frame());
+    return adapter;
+}
+
+bool AuthoredIllumination::current(AuthoredGi& out) noexcept {
+    editor::IlluminationPreview* lit = preview();
+    if (lit == nullptr) {
+        return false;
+    }
+    out.system = &lit->system();
+    out.generation = lit->rebuilds();
+    out.frame = lit->frame();
+    out.field_slice_height = lit->field_slice_height();
+    return true;
 }
 
 Status AuthoredIllumination::volumes(std::vector<GiVolumeBox>& out) const noexcept {

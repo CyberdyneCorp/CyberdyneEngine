@@ -55,6 +55,7 @@ struct World {
     std::vector<gi::GiVolume> volumes;
     std::vector<IlluminationEmission> emission;
     gi::GiRuntimeSettings settings{};
+    gi::SkyTerm sky{};
 
     World() {
         meshes.push_back(IlluminationMesh{"cube",
@@ -104,6 +105,7 @@ struct World {
         out.volumes = {volumes.data(), volumes.size()};
         out.emission = {emission.data(), emission.size()};
         out.settings = settings;
+        out.sky = sky;
         return out;
     }
 };

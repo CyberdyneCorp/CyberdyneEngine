@@ -7,6 +7,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/core/values/asset_id.h>
 #include <cy/rendering/assembly/frame_assembly.h>
+#include <cy/rendering/gi/system.h>
 #include <cy/rendering/lightmaps/gi_debug_overlay.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/pipeline/material_textures.h>
@@ -17,6 +18,7 @@
 #    include <cy/vfx/runtime.h>
 #endif
 
+#include "gi_runtime.h"
 #include "scene.h"
 #include "world_view.h"
 
@@ -29,6 +31,10 @@
 
 namespace cy::vfx {
 class SimulationWorld;
+}
+
+namespace cy::rendering::gi_gpu {
+class GpuGiFrame;
 }
 
 namespace cy::terrain {
@@ -146,6 +152,30 @@ public:
     [[nodiscard]] Status set_gi_overlay(render::DebugViewMode mode, Span<const u32> texels,
                                         u32 width, u32 height) noexcept;
     [[nodiscard]] render::DebugViewMode gi_overlay_mode() const noexcept { return gi_mode_; }
+    /// Light the next frames with `gi`'s system on the device (`gi_gpu::GpuGiFrame`): the Lit view
+    /// takes its indirect light where the system's mode admits it, and the device draws the GI
+    /// views `set_device_gi_view` asks for. Null, the default, lights the frame as it always was,
+    /// byte for byte. A new generation makes the device half again over the rebuilt system without
+    /// touching the old one, which is gone. Call it outside a frame.
+    [[nodiscard]] Status set_global_illumination(const AuthoredGi* gi) noexcept;
+    [[nodiscard]] bool global_illumination() const noexcept { return gi_system_ != nullptr; }
+    /// Whether this device can draw the GI at all: Vulkan — the backend it has run on — with
+    /// compute and a shader format the GI ships.
+    [[nodiscard]] bool global_illumination_supported() const noexcept;
+    /// Draw GI view `mode` on the device over the next frames, or none for any mode that is not a
+    /// GI view. Refused (`Unsupported`) for a view the device does not draw for this system — the
+    /// caller draws it on the host through `set_gi_overlay` — and without
+    /// `set_global_illumination`.
+    [[nodiscard]] Status set_device_gi_view(render::DebugViewMode mode) noexcept;
+    [[nodiscard]] render::DebugViewMode device_gi_view() const noexcept { return gi_device_mode_; }
+    /// The last frame: its wall time from begin to readback, and the GI's device time in it — the
+    /// resolve, the card shading and the probe gather.
+    [[nodiscard]] f64 last_frame_ms() const noexcept { return last_frame_ms_; }
+    [[nodiscard]] f64 gi_device_ms() const noexcept;
+    /// The flat ambient radiance the frame shades with where nothing replaces it: the sky's, and
+    /// the Editor view's studio fill. What the GI's sky is set to, so the GI that replaces the
+    /// ambient holds the same light for an open surface and the bounce and occlusion besides.
+    [[nodiscard]] Vec3 ambient_radiance(bool editor_lighting) const noexcept;
     [[nodiscard]] bool scene_camera(const scene::serialization::World& world, u64 identity,
                                     first_light::Camera& camera) const noexcept;
 
@@ -281,6 +311,18 @@ private:
     std::unique_ptr<rendering::lightmaps::GiDebugOverlayTexture> gi_overlay_;
     render::DebugViewMode gi_mode_ = render::DebugViewMode::Off;
     rhi::BindlessIndex gi_overlay_slot_ = rhi::kInvalidBindlessIndex;
+    /// The device GI: its frame feature, the system it reads, and where its two targets are bound
+    /// (the two slots below the overlay's). A device view is drawn at the overlay's slot.
+    std::unique_ptr<rendering::gi_gpu::GpuGiFrame> gi_frame_;
+    rendering::gi::IlluminationSystem* gi_system_ = nullptr;
+    u64 gi_generation_ = 0;
+    u64 gi_frame_index_ = 0;
+    f32 gi_slice_height_ = 0.0F;
+    bool gi_composite_ = false;
+    render::DebugViewMode gi_device_mode_ = render::DebugViewMode::Off;
+    rhi::BindlessIndex gi_diffuse_slot_ = rhi::kInvalidBindlessIndex;
+    rhi::BindlessIndex gi_specular_slot_ = rhi::kInvalidBindlessIndex;
+    f64 last_frame_ms_ = 0.0;
     u32 material_offsets_[4]{};
     u32 base_color_texture_offset_ = rendering::pipeline::kNoMaterialTexture;
 };

@@ -15,6 +15,7 @@
 #include <cy/import/primitive.h>
 #include <cy/import/texture.h>
 #include <cy/rendering/gi/debug_views.h>
+#include <cy/rendering/gi_gpu/gpu_frame.h>
 #include <cy/rendering/material/standard.h>
 #include <cy/rendering/skinning/frame_skinning.h>
 #include <cy/rendering/skinning/skinned_scene.h>
@@ -55,6 +56,8 @@ constexpr u64 kSkinnedIdentity = ~u64{0} - 1;
 /// The reference its bind-pose mesh is kept under in the rigid streams, where its UVs are read.
 constexpr std::string_view kSkinnedMesh = "editor:skinned-preview";
 constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Srgb;
+/// The editor preview's studio fill: the flat ambient the Editor view adds to the sky's.
+constexpr f32 kStudioFill = 12000.0F;
 constexpr u32 kShadowExtent = 2048;
 
 /// Slang compacts entry-point MSL buffers even when their Vulkan sets are fixed. The Metal RHI
@@ -582,6 +585,9 @@ Status AuthoredFrame::preview(std::string_view reference,
 
 AuthoredFrame::~AuthoredFrame() {
     (void)device_->wait_idle();
+    // Detached here, while the system it mirrors into is the caller's to keep alive: a caller
+    // whose system goes first detaches with `set_global_illumination(nullptr)` before.
+    gi_frame_.reset();
     if (skinned_ != nullptr) {
         skinned_->scene.destroy();
     }
@@ -649,6 +655,9 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, boo
     description.max_instances = kCapacity;
     description.gpu_culling = false;
     description.post.temporal_antialiasing = temporal;
+    // THE PREPASS NORMALS IN EVERY FRAME, so the device GI can be switched on and off from one
+    // frame to the next over one set of depth pipelines; they change no colour.
+    description.normal_prepass = true;
     if (Status status = assembly_.initialize(description); !status) {
         return status;
     }
@@ -660,7 +669,7 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, boo
     setup.color_format = description.color_format;
     setup.depth_format = description.depth_format;
     setup.output_format = kOutputFormat;
-    setup.prepass_normal = temporal;
+    setup.prepass_normal = true;
     setup.prepass_velocity = temporal;
     // THE SKINNED VARIANTS, where they have run: issue #76 drew skinned meshes through the frame on
     // Vulkan only, and the Metal and D3D12 pipelines are compiled but have not run on a device. A
@@ -780,6 +789,8 @@ Status AuthoredFrame::initialize(u32 width, u32 height, const char* project, boo
     shadow_view_ = *created_view;
     shadow_slot_ = kMaterialTextureSlots - 1U;
     gi_overlay_slot_ = kMaterialTextureSlots - 2U;
+    gi_diffuse_slot_ = kMaterialTextureSlots - 3U;
+    gi_specular_slot_ = kMaterialTextureSlots - 4U;
 
     initialized_ = true;
     return ok();
@@ -1671,6 +1682,102 @@ Status AuthoredFrame::set_gi_overlay(render::DebugViewMode mode, Span<const u32>
     return ok();
 }
 
+bool AuthoredFrame::global_illumination_supported() const noexcept {
+    // THE DEVICE GI HAS RUN ON VULKAN ONLY. Its Metal shaders are compiled and committed, and no
+    // suite has run them on a device, so the viewport keeps the processor's views there — the
+    // skinned variants' rule.
+    return device_->capabilities().backend() == rhi::BackendKind::Vulkan &&
+           rendering::gi_gpu::GpuGiFrame::supported(*device_);
+}
+
+Status AuthoredFrame::set_global_illumination(const AuthoredGi* gi) noexcept {
+    if (gi == nullptr || gi->system == nullptr) {
+        if (gi_frame_ != nullptr) {
+            (void)device_->wait_idle();
+            gi_frame_.reset();
+            history_cut_ = true;
+        }
+        gi_system_ = nullptr;
+        gi_composite_ = false;
+        gi_device_mode_ = render::DebugViewMode::Off;
+        return ok();
+    }
+    if (!initialized_) {
+        return fail(ErrorCode::Unavailable, "authored frame: not initialized");
+    }
+    if (!global_illumination_supported()) {
+        return fail(ErrorCode::Unsupported,
+                    "authored frame: the device GI needs compute and a shader format it ships");
+    }
+    if (gi_frame_ != nullptr && (gi_system_ != gi->system || gi_generation_ != gi->generation)) {
+        // THE OLD SYSTEM IS GONE: the preview rebuilt it. Its device half is released without a
+        // word to it — it mirrored into nothing that outlives it.
+        (void)device_->wait_idle();
+        gi_frame_->forget_system();
+        gi_frame_.reset();
+    }
+    if (gi_frame_ == nullptr) {
+        auto made = std::make_unique<rendering::gi_gpu::GpuGiFrame>();
+        rendering::gi_gpu::GpuGiFrameDescription description;
+        description.width = width_;
+        description.height = height_;
+        if (Status created = made->create(*allocator_, *device_, *gi->system, description);
+            !created) {
+            gi_system_ = nullptr;
+            return created;
+        }
+        gi_frame_ = std::move(made);
+        history_cut_ = true;
+    }
+    gi_system_ = gi->system;
+    gi_generation_ = gi->generation;
+    gi_frame_index_ = gi->frame;
+    gi_slice_height_ = gi->field_slice_height;
+    if (gi_composite_ != gi->composite) {
+        history_cut_ = true;
+    }
+    gi_composite_ = gi->composite;
+    // The view the editor asked for, kept across a rebuild of the device half.
+    return set_device_gi_view(gi_device_mode_);
+}
+
+Status AuthoredFrame::set_device_gi_view(render::DebugViewMode mode) noexcept {
+    const rendering::gi::GiDebugView view =
+        rendering::gi::gi_debug_view_from_name(render::debug_view_mode_name(mode));
+    if (view == rendering::gi::GiDebugView::Count) {
+        if (gi_device_mode_ != render::DebugViewMode::Off) {
+            history_cut_ = true;
+        }
+        gi_device_mode_ = render::DebugViewMode::Off;
+        return gi_frame_ != nullptr ? gi_frame_->set_debug_view({}) : ok();
+    }
+    if (gi_frame_ == nullptr) {
+        return fail(ErrorCode::Unavailable, "authored frame: no device GI to draw the view with");
+    }
+    rendering::gi_gpu::GpuGiDebugViewSettings settings;
+    settings.view = view;
+    settings.field_slice_height = gi_slice_height_;
+    if (Status set = gi_frame_->set_debug_view(settings); !set) {
+        gi_device_mode_ = render::DebugViewMode::Off;
+        return set;
+    }
+    gi_device_mode_ = mode;
+    return ok();
+}
+
+Vec3 AuthoredFrame::ambient_radiance(bool editor_lighting) const noexcept {
+    const f32 fill = editor_lighting ? kStudioFill : 0.0F;
+    return assembly_.sky_irradiance() + Vec3{fill, fill, fill};
+}
+
+f64 AuthoredFrame::gi_device_ms() const noexcept {
+    if (gi_frame_ == nullptr) {
+        return 0.0;
+    }
+    const rendering::gi_gpu::GpuGiCost cost = gi_frame_->last_cost();
+    return cost.any() ? cost.total_ms() : 0.0;
+}
+
 Status AuthoredFrame::prepare_world(const ser::World& world) noexcept {
     if (Status status = resolve_meshes(world); !status) {
         return status;
@@ -2158,15 +2265,30 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     if (count > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: too many resident material textures");
     }
-    const bool gi_overlay = gi_mode_ != render::DebugViewMode::Off;
-    if (count + 1U + (gi_overlay ? 1U : 0U) > kMaterialTextureSlots) {
+    // THE DEVICE GI, this frame: attached when the system's mode composites it or a device view
+    // reads it, and with it two slots for its targets. The state is part of what the frame shades
+    // with, so turning it on or off cuts the temporal history as a change of lighting does.
+    const bool device_view = gi_device_mode_ != render::DebugViewMode::Off && gi_frame_ != nullptr;
+    const bool gi_composites =
+        gi_frame_ != nullptr && gi_system_ != nullptr && gi_composite_ && gi_frame_->composites();
+    const bool gi_attached =
+        gi_frame_ != nullptr && gi_system_ != nullptr && (gi_composites || device_view);
+    sign_shading(gi_composites);
+    const bool gi_overlay = gi_mode_ != render::DebugViewMode::Off && !device_view;
+    sign_shading(gi_attached);
+    if (shading_signature_ != previous_shading_signature_) {
+        history_cut_ = true;
+    }
+    const usize extra = 1U + (gi_overlay || device_view ? 1U : 0U) + (gi_attached ? 2U : 0U);
+    if (count + extra > kMaterialTextureSlots) {
         return fail(ErrorCode::OutOfRange, "authored frame: no room for the shadow texture");
     }
     for (usize index = 0; index < count; ++index) {
-        if (resident[index].slot == shadow_slot_ ||
-            (gi_overlay && resident[index].slot == gi_overlay_slot_)) {
+        const rhi::BindlessIndex slot = resident[index].slot;
+        if (slot == shadow_slot_ || ((gi_overlay || device_view) && slot == gi_overlay_slot_) ||
+            (gi_attached && (slot == gi_diffuse_slot_ || slot == gi_specular_slot_))) {
             return fail(ErrorCode::OutOfRange,
-                        "authored frame: shadow or GI overlay slot conflicts with a material");
+                        "authored frame: shadow or GI slot conflicts with a material");
         }
     }
     usize bound = count;
@@ -2177,6 +2299,15 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
         // The view is drawn afresh each frame: no history of the lit frame bleeds into it.
         history_cut_ = true;
     }
+    if (gi_attached) {
+        resident[bound++] = MaterialTextureSlot{gi_diffuse_slot_, gi_frame_->diffuse_view()};
+        resident[bound++] = MaterialTextureSlot{gi_specular_slot_, gi_frame_->specular_view()};
+    }
+    if (device_view) {
+        resident[bound++] = MaterialTextureSlot{gi_overlay_slot_, gi_frame_->debug_view()};
+        history_cut_ = true;
+    }
+    assembly_.set_global_illumination(gi_attached);
     if (Status status =
             bindings_.set_material_textures(Span<const MaterialTextureSlot>(resident, bound));
         !status) {
@@ -2200,8 +2331,11 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
     (void)preview;
     (void)scene_vfx;
 #endif
+    const auto started = std::chrono::steady_clock::now();
     Status result = capture(*begun, camera, editor_lighting, time_seconds);
     Status ended = device_->end_frame();
+    last_frame_ms_ =
+        std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started).count();
     if (!result) {
         return result;
     }
@@ -2468,10 +2602,36 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
                                      FramePassKind::Opaque, FramePassKind::Transparent}) {
         sinks.passes[static_cast<usize>(kind)].vertex_reads = skinned_reads;
     }
-    FrameResourceRead shadow_read{view.shadow_color, rhi::Access::FragmentSampledRead};
+    FrameResourceRead opaque_reads[2];
+    usize opaque_read_count = 0;
     if (shadow_light < lights_.size()) {
+        opaque_reads[opaque_read_count++] =
+            FrameResourceRead{view.shadow_color, rhi::Access::FragmentSampledRead};
+    }
+    const bool gi_attached = assembly_.description().global_illumination;
+    if (gi_attached) {
+        // THE DEVICE GI: the caches the system's update left, synced and resolved for this view.
+        rendering::gi_gpu::GpuGiFrameView gi_view;
+        gi_view.eye = eye;
+        gi_view.world_to_clip = projection * view_matrix;
+        gi_view.projection = projection;
+        gi_view.relative_to_view = relative_view;
+        rendering::gi_gpu::GpuGiFrameTargets targets;
+        if (Status prepared = gi_frame_->prepare(graph_, gi_view, gi_frame_index_, targets);
+            !prepared) {
+            return prepared;
+        }
+        view.screen_space_gi = targets.diffuse;
+        view.screen_space_gi_specular = targets.specular;
+        sinks.screen_space_gi = gi_frame_->stage();
+        if (targets.debug_view != kInvalidResource) {
+            opaque_reads[opaque_read_count++] =
+                FrameResourceRead{targets.debug_view, rhi::Access::FragmentSampledRead};
+        }
+    }
+    if (opaque_read_count != 0) {
         sinks.passes[static_cast<usize>(FramePassKind::Opaque)].reads =
-            Span<const FrameResourceRead>(&shadow_read, 1);
+            Span<const FrameResourceRead>(opaque_reads, opaque_read_count);
     }
     AssemblyReport report;
     if (Status status = assembly_.assemble(index_, view, sinks, graph_, report); !status) {
@@ -2494,7 +2654,7 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
     // silently adding a light the scene does not contain.
     if (editor_lighting) {
         for (u32 channel = 0; channel < 3; ++channel) {
-            data.view.ambient_and_occlusion[channel] += 12000.0F;
+            data.view.ambient_and_occlusion[channel] += kStudioFill;
         }
     }
     if (!texture_handles_.empty()) {
@@ -2532,7 +2692,16 @@ Status AuthoredFrame::capture(u32 slot, const first_light::Camera& camera, bool 
         data.view.shadow_control[2] = kShadowExtent;
         data.view.shadow_control[3] = 1;
     }
-    if (gi_mode_ != render::DebugViewMode::Off) {
+    if (gi_attached) {
+        gi_frame_->set_jitter(Vec2{data.view.temporal_jitter[0], data.view.temporal_jitter[1]});
+        if (gi_composite_ && gi_frame_->composites()) {
+            gi_frame_->write_control(gi_diffuse_slot_, gi_specular_slot_, data.view.gi_control);
+        }
+    }
+    if (gi_device_mode_ != render::DebugViewMode::Off && gi_attached) {
+        (void)rendering::lightmaps::write_gi_debug_view(gi_device_mode_, gi_overlay_slot_,
+                                                        data.view);
+    } else if (gi_mode_ != render::DebugViewMode::Off) {
         (void)rendering::lightmaps::write_gi_debug_view(gi_mode_, gi_overlay_slot_, data.view);
     }
     if (Status status = bindings_.upload(slot, data); !status) {

@@ -14,6 +14,11 @@
 #include <utility>
 
 namespace cy::editor {
+
+u64 illumination_object_id(u64 node) noexcept {
+    return node & ~rendering::gi::kObjectCellTag;
+}
+
 namespace {
 
 namespace gi = rendering::gi;
@@ -88,10 +93,9 @@ private:
         digest.add(light.position).add(light.direction).add(light.colour).add(light.intensity);
         digest.add(light.range).add(static_cast<u64>(light.directional ? 1U : 0U)).add(light.id);
     }
-    digest.add(scene.sky.zenith)
-        .add(scene.sky.horizon)
-        .add(scene.sky.ground)
-        .add(scene.sky.intensity);
+    // NOT THE SKY: it is applied in place (`apply`), as the settings are. A viewport that lights
+    // its frame with the GI sets the sky to its own ambient, which moves with the frame's sun, and
+    // a rebuild for each move would converge the whole GI again for a change the caches absorb.
     return digest.value();
 }
 
@@ -107,7 +111,7 @@ private:
 
 /// A GI object id from a node identity: the top bit is the GI's own cell tag.
 [[nodiscard]] u64 object_id(u64 node) noexcept {
-    return node & ~gi::kObjectCellTag;
+    return illumination_object_id(node);
 }
 
 [[nodiscard]] Aabb mesh_bounds(const IlluminationMesh& mesh) noexcept {
@@ -374,6 +378,14 @@ Status IlluminationPreview::rebuild(const IlluminationScene& scene) noexcept {
 Status IlluminationPreview::apply(const IlluminationScene& scene) noexcept {
     if (Status set = system_->set_runtime_settings(scene.settings); !set) {
         return set;
+    }
+    const gi::SkyTerm& sky = system_->sky_term();
+    const auto equal = [](Vec3 a, Vec3 b) noexcept {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    };
+    if (!equal(sky.zenith, scene.sky.zenith) || !equal(sky.horizon, scene.sky.horizon) ||
+        !equal(sky.ground, scene.sky.ground) || sky.intensity != scene.sky.intensity) {
+        system_->set_sky_term(scene.sky);
     }
     if (Status placed = system_->set_volumes(scene.volumes); !placed) {
         return placed;
