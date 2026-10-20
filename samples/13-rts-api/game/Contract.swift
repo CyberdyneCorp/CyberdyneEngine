@@ -94,6 +94,13 @@ struct RtsReport {
     var companyOrders: Float = 0
     var companyArrivals: Float = 0
     var companyLead: Fixed = .zero
+    /// ABI 1.9 (Lighting.swift). Volumes the GI held after the base's was placed; the luminance at
+    /// the beacon's foot lit, put out and lit again; and the calls a fixed step had refused.
+    var giVolumes: Float = 0
+    var giLit: Float = 0
+    var giDark: Float = 0
+    var giRelit: Float = 0
+    var giRefused: Float = 0
 }
 
 extension Component {

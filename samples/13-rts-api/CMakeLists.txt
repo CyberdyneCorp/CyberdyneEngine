@@ -82,6 +82,7 @@ cy_add_module(
         host/units.cpp
         host/script.cpp
         host/worker_rig.cpp
+        host/illumination.cpp
     PRIVATE_DEFINITIONS
         "CY_RTS_API_MODULE_LIBRARY=\"${CY_RTS_API_MODULE_LIBRARY}\""
         "CY_RTS_API_MODULE_MANIFEST=\"${CY_RTS_API_MODULE_MANIFEST}\""
@@ -96,6 +97,8 @@ cy_add_module(
         cy::game-backend-animation
         cy::game-backend-lockstep
         cy::game-backend-ui
+        cy::game-backend-illumination
+        cy::rendering-gi
         cy::graph
         cy::physics-reference
         cy::navigation
@@ -105,6 +108,24 @@ cy_add_module(
         cy::servers-camera
         cy::servers-physics)
 add_dependencies(cy_sample_rts-api cy_sample_rts-api_game)
+
+# `--render <dir>` (issue #35, the live half): the session drawn every frame on a device and lit by
+# the engine's device GI. The field is the pipeline suites' one scene, compiled here as
+# samples/13-rts-selection compiles it, and only with the Vulkan renderer: without it the host is
+# the headless one it always was and refuses `--render` by name.
+if(CY_RENDERER_VULKAN)
+    target_sources(cy_sample_rts-api PRIVATE
+                   host/render.cpp
+                   "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests/frame_scene.cpp"
+                   "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
+    target_link_libraries(cy_sample_rts-api PRIVATE
+                          cy::rendering-gi-gpu cy::rendering-pipeline cy::rendering-particles
+                          cy::rhi cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_sample_rts-api PRIVATE
+                               "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests"
+                               "${CMAKE_SOURCE_DIR}/tests/render")
+    target_compile_definitions(cy_sample_rts-api PRIVATE CY_RTS_API_RENDER=1)
+endif()
 
 # The test runs the host as a separate process, so each run loads the Swift module into a fresh
 # image. Declared here rather than in tests/ for 04-character's reason: tests/ is added before
@@ -160,6 +181,33 @@ if(CY_BUILD_TESTS)
                                        CY_RTS_API_MODULE_MANIFEST="${CY_RTS_API_MODULE_MANIFEST}")
         add_dependencies(cy_test_render_rts_api_hud cy_sample_rts-api_game)
         set_tests_properties(render.rts_api_hud PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+        # smoke.rts_api_gi (issue #35): the session drawn with the device GI and without it, the
+        # beacon the Swift game puts out and lights again seen in the frames, and what a frame
+        # costs. It runs the host as a separate process, as integration.rts_api_sample does; a
+        # smoke suite, because it draws 420 frames twice.
+        get_directory_property(rts_api_smoke_budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_smoke)
+        get_directory_property(rts_api_smoke_timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_smoke)
+        set(CY_TEST_BUDGET_smoke "${rts_api_smoke_budget}")
+        set(CY_TEST_TIMEOUT_smoke "${rts_api_smoke_timeout}")
+        cy_add_test(
+            NAME rts_api_gi
+            KIND smoke
+            SOURCES
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_gi.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+            DEPENDENCIES cy::core-base cy::core-memory
+            DEFINITIONS
+                CY_SAMPLE_RTS_API="$<TARGET_FILE:cy_sample_rts-api>"
+                CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+        target_include_directories(cy_test_smoke_rts_api_gi
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/tests/render")
+        add_dependencies(cy_test_smoke_rts_api_gi cy_sample_rts-api)
+        set_tests_properties(smoke.rts_api_gi PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
     endif()
 endif()

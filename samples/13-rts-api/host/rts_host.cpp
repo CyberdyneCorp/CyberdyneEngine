@@ -7,6 +7,7 @@
 #include <cy/ui/layout.h>
 #include <cy/ui/text/builtin_font.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -197,7 +198,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         {"camera", &RtsHost::start_camera},         {"physics", &RtsHost::start_physics},
         {"navigation", &RtsHost::start_navigation}, {"audio", &RtsHost::start_audio},
         {"props", &RtsHost::start_props},           {"animation", &RtsHost::start_animation},
-        {"lockstep", &RtsHost::start_lockstep},
+        {"lockstep", &RtsHost::start_lockstep},     {"illumination", &RtsHost::start_illumination},
     };
     for (const auto& step : steps) {
         if (cy::Status done = (this->*step.step)(); !done) {
@@ -224,6 +225,10 @@ cy::Status RtsHost::start(const char** detail) noexcept {
     }
     cy::game_backend::bind_animation(host_, animation_adapter_.get());
     cy::game_backend::bind_lockstep(host_, lockstep_adapter_.get());
+    *detail = "illumination";
+    if (cy::Status bound = gi_->bind(host_, cy::abi::to_abi(crate_.entity())); !bound) {
+        return bound;
+    }
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -238,6 +243,11 @@ cy::Status RtsHost::start(const char** detail) noexcept {
     }
     *detail = "";
     return cy::ok();
+}
+
+cy::Status RtsHost::start_illumination() noexcept {
+    gi_ = std::make_unique<RtsIllumination>(allocator_);
+    return gi_->build();
 }
 
 cy::Status RtsHost::start_lockstep() noexcept {
@@ -700,6 +710,15 @@ cy::Status RtsHost::load_module(const char** detail) noexcept {
 }
 
 cy::Status RtsHost::frame() noexcept {
+    const auto started = std::chrono::steady_clock::now();
+    const cy::Status ran = run_frame();
+    frame_ms_ =
+        std::chrono::duration<cy::f64, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
+    return ran;
+}
+
+cy::Status RtsHost::run_frame() noexcept {
     // The frame boundary: tree-shape callbacks queued since the last frame are delivered here, in
     // no phase — `onEnterTree` and `onReady` for the behaviours attached at start, on frame 0.
     if (cy::Status pumped = tree_.pump(); !pumped) {
@@ -724,9 +743,17 @@ cy::Status RtsHost::frame() noexcept {
             return routed;
         }
     }
+    // ABI 1.9's changes this frame are stamped with it; the GI runs after the game's frame, from
+    // where the frame's camera looks — presentation, which a fixed step never reads.
+    gi_->begin_frame(frame_ + 1U);
     runtime_.frame_update(kStep);
     if (cy::Status staged = run_stages(cy::ecs::Stage::Frame, cy::ecs::Stage::UI); !staged) {
         return staged;
+    }
+    // FROM THE FOCUS: an RTS camera hangs 25 m over the field, and the GI's clipmaps follow the
+    // ground it looks at rather than the air it hangs in.
+    if (cy::Status lit = gi_->update(camera_focus(), crate_position(), frame_ + 1U); !lit) {
+        return lit;
     }
     // What a renderer would flatten: this frame's writes, laid out.
     if (ui_adapter_) {
@@ -795,6 +822,9 @@ void RtsHost::shutdown() noexcept {
     // calls a game service gets UNAVAILABLE rather than an adapter that no longer exists.
     host_.game = cy::abi::game::GameServices{};
     host_.bind_world(nullptr);
+    if (gi_ != nullptr) {
+        gi_->unbind(host_);
+    }
     lockstep_adapter_.reset();
     company_follower_.reset();
     company_.reset();
@@ -907,6 +937,31 @@ Vec3 RtsHost::camera_position() const noexcept {
     return evaluated == nullptr ? Vec3{} : evaluated->pose.translation;
 }
 
+Vec3 RtsHost::camera_forward() const noexcept {
+    const cy::camera::EvaluatedCamera* evaluated = camera_.evaluated(rig_);
+    return evaluated == nullptr ? Vec3{0.0F, 0.0F, -1.0F} : evaluated->pose.forward();
+}
+
+Vec3 RtsHost::camera_focus() const noexcept {
+    const Vec3 eye = camera_position();
+    const Vec3 forward = camera_forward();
+    // A camera that does not look down has no ground point: its own position stands for one.
+    return forward.y < -1.0e-3F ? eye + (forward * (-eye.y / forward.y)) : eye;
+}
+
+cy::f32 RtsHost::camera_fov() const noexcept {
+    const cy::camera::EvaluatedCamera* evaluated = camera_.evaluated(rig_);
+    return evaluated == nullptr ? 0.9F : evaluated->lens.vertical_fov_radians();
+}
+
+Vec3 RtsHost::crate_position() const noexcept {
+    if (physics_ == nullptr || crate_body_.is_null()) {
+        return kCrateStart;
+    }
+    const auto state = physics_->body_state(crate_body_);
+    return state ? state->transform.translation : kCrateStart;
+}
+
 Observation RtsHost::observe() noexcept {
     Observation seen;
     seen.units = bodies_.get() == nullptr ? 0U : bodies_->count();
@@ -944,6 +999,7 @@ Observation RtsHost::observe() noexcept {
     const cy::abi::ComponentRecord* record = binding_.find("RtsReport");
     if (record == nullptr) {
         observe_lockstep(seen, nullptr, nullptr);
+        observe_illumination(seen, nullptr, nullptr);
         return seen;
     }
     const void* bytes = world_.get(commander_.entity(), record->id);
@@ -963,6 +1019,7 @@ Observation RtsHost::observe() noexcept {
     seen.animation.footsteps = read_field<f32>(bytes, field("footsteps"));
     seen.animation.cheer_events = read_field<f32>(bytes, field("cheerEvents"));
     observe_lockstep(seen, record, bytes);
+    observe_illumination(seen, record, bytes);
     return seen;
 }
 
@@ -990,6 +1047,31 @@ void RtsHost::observe_lockstep(Observation& seen, const cy::abi::ComponentRecord
     seen.lockstep.orders = read_field<f32>(bytes, field("companyOrders"));
     seen.lockstep.arrivals = read_field<f32>(bytes, field("companyArrivals"));
     seen.lockstep.reported_lead = read_field<cy::i64>(bytes, field("companyLead"));
+}
+
+void RtsHost::observe_illumination(Observation& seen, const cy::abi::ComponentRecord* report,
+                                   const void* bytes) noexcept {
+    // The system's own counts, through the adapter's status: what ABI 1.9 answers `status` with.
+    if (gi_ != nullptr && gi_->adapter() != nullptr) {
+        CyGiStatus status{};
+        status.struct_size = sizeof(status);
+        if (gi_->adapter()->status(status) == CY_RESULT_OK) {
+            seen.illumination.volumes = status.volumes;
+            seen.illumination.promoted = status.promoted_lights;
+            seen.illumination.emitters = status.emitters;
+            seen.illumination.disabled = status.disabled_emitters;
+            seen.illumination.frame = status.frame;
+        }
+    }
+    if (report == nullptr || bytes == nullptr) {
+        return;
+    }
+    const auto field = [&](const char* name) { return report_field(binding_, *report, name); };
+    seen.illumination.placed = read_field<f32>(bytes, field("giVolumes"));
+    seen.illumination.lit = read_field<f32>(bytes, field("giLit"));
+    seen.illumination.dark = read_field<f32>(bytes, field("giDark"));
+    seen.illumination.relit = read_field<f32>(bytes, field("giRelit"));
+    seen.illumination.refused = read_field<f32>(bytes, field("giRefused"));
 }
 
 void RtsHost::observe_hud(Observation& seen) noexcept {

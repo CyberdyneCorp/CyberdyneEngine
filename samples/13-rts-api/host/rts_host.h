@@ -117,6 +117,7 @@
 #include <cy/ui/store.h>
 #include <cy/ui/text/text_painter.h>
 
+#include "illumination.h"
 #include "units.h"
 #include "worker_rig.h"
 
@@ -238,6 +239,21 @@ struct Observation {
         cy::f32 arrivals = 0.0F;  ///< arrivals the commander heard
     };
     Lockstep lockstep;
+    /// ABI 1.9: the level's GI as the system holds it, and what the commander read of it and did
+    /// to it (game/Lighting.swift), from `RtsReport`.
+    struct Illumination {
+        cy::u32 volumes = 0;
+        cy::u32 promoted = 0;
+        cy::u32 emitters = 0;
+        cy::u32 disabled = 0;
+        cy::u64 frame = 0;
+        cy::f32 placed = 0.0F;   ///< volumes the game saw after placing its own
+        cy::f32 lit = 0.0F;      ///< luminance by the beacon, lit
+        cy::f32 dark = 0.0F;     ///< after the game put it out
+        cy::f32 relit = 0.0F;    ///< after the game lit it again
+        cy::f32 refused = 0.0F;  ///< calls a fixed step had refused
+    };
+    Illumination illumination;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -283,8 +299,19 @@ public:
     [[nodiscard]] CyNavPathStatus unit_status(CyEntity unit) const noexcept;
     /// The camera's position as last evaluated.
     [[nodiscard]] cy::Vec3 camera_position() const noexcept;
+    /// Where the camera looks, and its vertical field of view, as last evaluated.
+    [[nodiscard]] cy::Vec3 camera_forward() const noexcept;
+    /// The ground point the camera looks at: where its view meets the level's floor.
+    [[nodiscard]] cy::Vec3 camera_focus() const noexcept;
+    [[nodiscard]] cy::f32 camera_fov() const noexcept;
+    /// The crate's centre, from its body.
+    [[nodiscard]] cy::Vec3 crate_position() const noexcept;
+    /// The level's GI: what the game tunes through ABI 1.9 and a renderer lights its frame with.
+    [[nodiscard]] RtsIllumination& illumination() noexcept { return *gi_; }
     [[nodiscard]] Observation observe() noexcept;
     [[nodiscard]] cy::u64 frames() const noexcept { return frame_; }
+    /// The wall time of the last `frame`: the game's frame, its fixed tick and the GI's update.
+    [[nodiscard]] cy::f64 last_frame_ms() const noexcept { return frame_ms_; }
     [[nodiscard]] cy::u32 behaviours() const noexcept { return runtime_.live_instances(); }
 
 private:
@@ -301,6 +328,9 @@ private:
     void observe_hud(Observation& seen) noexcept;
     [[nodiscard]] cy::Status start_animation() noexcept;
     [[nodiscard]] cy::Status start_lockstep() noexcept;
+    [[nodiscard]] cy::Status start_illumination() noexcept;
+    void observe_illumination(Observation& seen, const cy::abi::ComponentRecord* report,
+                              const void* bytes) noexcept;
     void observe_lockstep(Observation& seen, const cy::abi::ComponentRecord* report,
                           const void* bytes) noexcept;
     /// After every frame: what each unit's animator was doing, for the report.
@@ -309,6 +339,7 @@ private:
     [[nodiscard]] cy::Status start_systems() noexcept;
     [[nodiscard]] cy::Status attach_behaviours(const char** detail) noexcept;
     [[nodiscard]] cy::Status run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept;
+    [[nodiscard]] cy::Status run_frame() noexcept;
     [[nodiscard]] cy::Status fixed_tick() noexcept;
     void observe_scout(Observation& seen) noexcept;
     void update_audio() noexcept;
@@ -391,6 +422,8 @@ private:
     std::unique_ptr<cy::game_backend::LockstepSession> company_;
     std::unique_ptr<cy::game_backend::LockstepSession> company_follower_;
     std::unique_ptr<cy::game_backend::LockstepAdapter> lockstep_adapter_;
+    // ABI 1.9: the level's global illumination and the adapter the game tunes it through.
+    std::unique_ptr<RtsIllumination> gi_;
 
     // Content.
     cy::Array<cy::f32> click_samples_;
@@ -409,6 +442,7 @@ private:
     cy::scene::Node crate_;
 
     cy::u64 frame_ = 0;
+    cy::f64 frame_ms_ = 0.0;
     cy::u32 events_this_frame_ = 0;
     bool started_ = false;
 };

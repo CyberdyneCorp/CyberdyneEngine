@@ -48,6 +48,14 @@
 //   a Fixed field from Swift     component_set_fixed: the company's lead, written by the game, is
 //                                the session's raw value
 //
+// and, at ABI 1.9:
+//
+//   the base has its own light   gi_volume_create over the base, at Epic quality and twice the rate
+//   the beacon went out and on   gi_emission_set by the glass's material name; gi_sample_irradiance
+//                                at the beacon's foot before, between and after, the host's GI
+//                                updated every frame from the camera
+//   presentation only            the same call from a fixed step is refused
+//
 // and the negative controls: the same host with no behaviours does none of the behaviour work and
 // animates nothing, the same host with the systems left out of the schedule never runs
 // `trainUnits`, and the same host with no interface has no HUD and its Build click lands on the
@@ -102,11 +110,13 @@ struct Run {
     std::string hud;
     std::string anim;
     std::string lockstep;
+    std::string gi;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
                !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
-               !hero.empty() && !body.empty() && !hud.empty() && !anim.empty() && !lockstep.empty();
+               !hero.empty() && !body.empty() && !hud.empty() && !anim.empty() &&
+               !lockstep.empty() && !gi.empty();
     }
 };
 
@@ -127,6 +137,7 @@ struct Run {
     run.hud = line_with(run.process.output, "rts hud ");
     run.anim = line_with(run.process.output, "rts anim ");
     run.lockstep = line_with(run.process.output, "rts lockstep ");
+    run.gi = line_with(run.process.output, "rts gi ");
     return run;
 }
 
@@ -284,6 +295,29 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.8 — the company's orders run through t
     CY_CHECK(number_after(run.lockstep, "reported_lead=") != 0.0);
 }
 
+CY_TEST_CASE("samples/13-rts-api: ABI 1.9 — a volume over the base, a beacon put out and lit") {
+    const Run run = run_sample("");
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+    // The base's volume, placed from `onCreate`: the one volume the GI holds, seen by the game.
+    CY_CHECK_EQ(number_after(run.gi, "volumes="), 1.0);
+    CY_CHECK_EQ(number_after(run.gi, "placed="), 1.0);
+    // The beacon's glass is an emitter, lit again at the end of the run.
+    CY_CHECK(number_after(run.gi, "emitters=") >= 1.0);
+    CY_CHECK_EQ(number_after(run.gi, "disabled="), 0.0);
+    // The light at the beacon's foot: put out, it falls; lit again, it comes back.
+    const double lit = number_after(run.gi, "lit=");
+    const double dark = number_after(run.gi, "dark=");
+    const double relit = number_after(run.gi, "relit=");
+    CY_CHECK(lit > 0.0);
+    CY_CHECK(dark < lit * 0.8);
+    CY_CHECK(relit > dark * 1.25);
+    // A fixed step that asked was refused, once.
+    CY_CHECK_EQ(number_after(run.gi, "refused="), 1.0);
+    // The host ran the GI every frame.
+    CY_CHECK_EQ(number_after(run.gi, "frame="), 420.0);
+}
+
 CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, none of them runs") {
     const Run control = run_sample(" --no-systems");
     report_if_broken(control);
@@ -340,6 +374,12 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.lockstep, "ticks="), 420.0);
     CY_CHECK_EQ(number_after(control.lockstep, "commands="), 0.0);
     CY_CHECK(hex_after(control.lockstep, "digest=") != hex_after(control.lockstep, "committed="));
+    // The GI ran and nothing tuned it: no volume, nothing read, nothing put out.
+    CY_CHECK_EQ(number_after(control.gi, "volumes="), 0.0);
+    CY_CHECK_EQ(number_after(control.gi, "placed="), 0.0);
+    CY_CHECK_EQ(number_after(control.gi, "lit="), 0.0);
+    CY_CHECK_EQ(number_after(control.gi, "refused="), 0.0);
+    CY_CHECK_EQ(number_after(control.gi, "frame="), 420.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
