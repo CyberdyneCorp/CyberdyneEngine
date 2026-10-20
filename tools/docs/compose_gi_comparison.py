@@ -14,9 +14,11 @@ Four pictures of ONE view, each from `cy_sample_beauty`:
    own noise, which the run measures from two independent halves of each pixel's paths and prints
    beside the error.
 
-The labels carry the figures the run printed — the relative error over every traced pixel and the
-GI's GPU milliseconds, the fastest of the frames before the still — read from its log, so a caption cannot quote a number the run did not
-measure. The script fails when the log does not hold them.
+The labels carry the figures the run printed, read from its log so a caption cannot quote a number
+the run did not measure: under the frame without the GI, its flat sky term's relative error over
+the traced pixels; under CyberGI, its GPU milliseconds (its `gi fastest` line, the fastest of the
+frames the run times after the still) and its relative error; under the path tracer, its paths,
+bounces and processor time, and its own noise. The script fails when the log does not hold them.
 """
 
 from __future__ import annotations
@@ -29,7 +31,9 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 ERROR = re.compile(r"gi picture\s+(\d+) pixels path traced every (\d+) px \((\d+) paths, (\d+) "
-                   r"bounces\).*?([0-9.]+) relative error, the reference's own noise ([0-9.]+)")
+                   r"bounces\) in ([0-9.]+) s.*?([0-9.]+) relative error, the reference's own noise "
+                   r"([0-9.]+)")
+FLAT = re.compile(r"gi flat\s+.*?its flat sky term ([0-9.]+) relative error")
 GPU = re.compile(r"gi fastest\s+([0-9.]+) ms")
 TIER = re.compile(r"traced through the (.+)$", re.MULTILINE)
 
@@ -62,16 +66,20 @@ def label(image: Image.Image, text: str) -> Image.Image:
 def figures(log: str) -> dict[str, str]:
     error = ERROR.search(log)
     gpu = GPU.search(log)
-    if error is None or gpu is None:
-        sys.exit("compose_gi_comparison: the log holds no `gi picture` or `gi fastest` line")
+    flat = FLAT.search(log)
+    if error is None or gpu is None or flat is None:
+        sys.exit("compose_gi_comparison: the log holds no `gi picture`, `gi flat` or `gi fastest` "
+                 "line")
     tier = TIER.search(log)
     return {
         "pixels": error.group(1),
         "step": error.group(2),
         "paths": error.group(3),
         "bounces": error.group(4),
-        "error": error.group(5),
-        "noise": error.group(6),
+        "seconds": error.group(5),
+        "error": error.group(6),
+        "noise": error.group(7),
+        "flat": flat.group(1),
         "ms": gpu.group(1),
         "tier": tier.group(1) if tier else "the world tier",
     }
@@ -87,13 +95,16 @@ def main() -> int:
                                                          args.error))
     size = (off.width // 2, off.height // 2)
     panels = [
-        label(off.resize(size, Image.LANCZOS), "GI off: the frame's flat sky term"),
+        label(off.resize(size, Image.LANCZOS),
+              f"GI off, flat sky term: 0 ms, error {float(numbers['flat']):.3f}"),
         label(on.resize(size, Image.LANCZOS),
-              f"CyberGI, screen probes: {numbers['ms']} ms on the GPU"),
+              f"CyberGI: {float(numbers['ms']):.2f} ms on the GPU, error "
+              f"{float(numbers['error']):.3f}"),
         label(reference.resize(size, Image.LANCZOS),
-              f"Path tracer: {numbers['paths']} paths, {numbers['bounces']} bounces"),
+              f"Path tracer: {numbers['paths']} paths, {numbers['bounces']} bounces, "
+              f"{float(numbers['seconds']):.0f} s of CPU, noise {float(numbers['noise']):.3f}"),
         label(error.resize(size, Image.LANCZOS),
-              f"Error: {float(numbers['error']):.3f} relative, the reference's noise "
+              f"Error map: {float(numbers['error']):.3f} relative, the reference's noise "
               f"{float(numbers['noise']):.3f} (black 0, yellow 50 %+)"),
     ]
     sheet = Image.new("RGB", (size[0] * 2, size[1] * 2))
@@ -101,9 +112,9 @@ def main() -> int:
         sheet.paste(panel, ((index % 2) * size[0], (index // 2) * size[1]))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(args.out, optimize=True)
-    print(f"{args.out}: error {numbers['error']} (the reference's own noise {numbers['noise']}) "
-          f"over {numbers['pixels']} pixels traced every {numbers['step']} px, GI {numbers['ms']} ms "
-          f"through the {numbers['tier']}")
+    print(f"{args.out}: error {numbers['error']} (the reference's own noise {numbers['noise']}, "
+          f"the flat sky term's {numbers['flat']}) over {numbers['pixels']} pixels traced every "
+          f"{numbers['step']} px, GI {numbers['ms']} ms through the {numbers['tier']}")
     return 0
 
 

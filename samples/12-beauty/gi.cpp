@@ -173,6 +173,44 @@ constexpr f32 kMeshFieldMargin = 0.5F;
     return sky;
 }
 
+/// THE SHOT'S GLOWING DECALS, ON THE CARDS: a card inside an emissive decal's box, facing the way
+/// the decal faces to within its fade angle, takes the decal's emission and albedo — what the frame
+/// draws there, so the GI is lit by the lamp the picture shows. Positions in the baked space.
+/// Returns how many cards it lit.
+u32 apply_emissive_decals(const Shot& shot, Array<gi::Surfel>& cards) noexcept {
+    u32 lit = 0;
+    for (const ShotDecal& placed : shot.decals) {
+        const ShotDecalMaterial* material = nullptr;
+        for (const ShotDecalMaterial& candidate : shot.decal_materials) {
+            if (candidate.key == placed.material) {
+                material = &candidate;
+            }
+        }
+        if (material == nullptr || !decal_emits(material->material)) {
+            continue;
+        }
+        const Vec3 facing = normalized_or(placed.facing, Vec3{0.0F, 1.0F, 0.0F});
+        const Vec3 across = normalized_or(cross(placed.up, facing), Vec3{1.0F, 0.0F, 0.0F});
+        const Vec3 up = cross(facing, across);
+        const Vec3 centre = placed.position - shot.camera_position;
+        const f32 facing_cosine =
+            std::cos(placed.fade_angle_degrees * std::numbers::pi_v<f32> / 180.0F);
+        for (gi::Surfel& card : cards) {
+            const Vec3 offset = card.position - centre;
+            if (std::abs(dot(offset, across)) > placed.width * 0.5F ||
+                std::abs(dot(offset, up)) > placed.height * 0.5F ||
+                std::abs(dot(offset, facing)) > placed.depth * 0.5F ||
+                dot(card.normal, facing) < facing_cosine) {
+                continue;
+            }
+            card.emission = material->material.emission;
+            card.albedo = material->material.albedo;
+            ++lit;
+        }
+    }
+    return lit;
+}
+
 [[nodiscard]] bool is_plane(const import::MeshData& mesh) noexcept {
     f32 lo = mesh.positions[0].y;
     f32 hi = lo;
@@ -213,6 +251,7 @@ struct BeautyGi::State {
     u32 width = 0;
     u32 height = 0;
     u32 placements = 0;
+    u32 emissive_cards = 0;
 
     // For the reference: the shot's instances as the bake's triangle tracer holds them.
     std::vector<lightmap_bake::BakeMesh> bake_meshes;
@@ -393,6 +432,17 @@ Status BeautyGi::build(const Shot& shot,
     if (state.cards.empty()) {
         return fail(ErrorCode::InvalidArgument, "the shot's meshes gave the GI scene no card");
     }
+    // EVERY EMITTER STAYS IN THE CACHE. A promoted emitter leaves the cards for `frame_lights()`,
+    // which the frame does not read (the guide's "what is not built yet"): the pixels the lamp
+    // lights directly would lose that light. In the cache, the screen probes' rays find it.
+    state.emissive_cards = settings.emissive_decals ? apply_emissive_decals(shot, state.cards) : 0U;
+    if (state.emissive_cards != 0U) {
+        const gi::EmitterRule in_cache{gi::kAnyEmitter, gi::kAnyEmitter,
+                                       gi::EmitterOverride::CacheOnly};
+        if (Status ruled = state.system.set_emitter_rules({&in_cache, 1}, 0); !ruled) {
+            return ruled;
+        }
+    }
     Aabb bounds = Aabb::from_min_max(state.cards[0].position, state.cards[0].position);
     for (const gi::Surfel& card : state.cards.span()) {
         bounds = Aabb::from_min_max(cwise_min(bounds.min, card.position),
@@ -490,6 +540,8 @@ Status BeautyGi::build(const Shot& shot,
     screen.gather = settings.per_pixel ? gi::GiGather::PerPixel : gi::GiGather::ScreenProbes;
     screen.probes.denoiser = settings.shared_denoiser ? gi::ScreenProbeDenoiser::Shared
                                                       : gi::ScreenProbeDenoiser::ProbeSpace;
+    screen.probes.rays = settings.probe_rays;
+    screen.ray_density = settings.ray_density;
     state.resolve.set_settings(screen);
     state.resolve.set_denoiser(state.system.denoiser());
     state.resolve.set_field(state.system.field());
@@ -524,7 +576,9 @@ Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::Ass
         context.frame = converged_frames_;
     }
     const f64 mark = now_millis();
-    (void)state.system.update(context);
+    if (!hold_cache_) {
+        (void)state.system.update(context);
+    }
     update_ms_ = now_millis() - mark;
     if (Status synced = state.resolve.sync(state.system.radiance()); !synced) {
         return synced;
@@ -552,6 +606,12 @@ Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::Ass
     return ok();
 }
 
+void BeautyGi::set_readback_frames(bool copy) noexcept {
+    if (state_ != nullptr) {
+        state_->resolve.set_readback_frames(copy);
+    }
+}
+
 rhi::TextureViewHandle BeautyGi::diffuse_view() const noexcept {
     return state_ != nullptr ? state_->resolve.diffuse_view() : rhi::TextureViewHandle{};
 }
@@ -570,6 +630,10 @@ const char* BeautyGi::tier_name() const noexcept {
     }
     return state_->resolve.last_tier() == gi::RadianceSource::HardwareTrace ? "hardware ray queries"
                                                                             : "software field";
+}
+
+u32 BeautyGi::emissive_card_count() const noexcept {
+    return state_ != nullptr ? state_->emissive_cards : 0U;
 }
 
 u32 BeautyGi::card_count() const noexcept {
@@ -619,9 +683,11 @@ Expected<BeautyGiReference, Error> BeautyGi::measure_reference(u32 pixels, u32 s
         return make_unexpected(read.error());
     }
 
-    const gi::PathTracer tracer(state.exact, state.system.scene(),
-                                {state.lights.data(), state.lights.size()}, state.system.sky_term(),
-                                &state.exact);
+    gi::PathTracer tracer(state.exact, state.system.scene(),
+                          {state.lights.data(), state.lights.size()}, state.system.sky_term(),
+                          &state.exact);
+    // A reference over cards: an emitter emits over its own square (bake.h).
+    tracer.set_emission_footprints(true);
     gi::BakeSettings bake;
     bake.samples = samples;
     bake.bounces = bounces;
@@ -725,9 +791,10 @@ Status BeautyGi::reference_image(u32 step, u32 samples, u32 bounces, u32 threads
             outcomes[worker] = built;
             return;
         }
-        const gi::PathTracer tracer(exact, state.system.scene(),
-                                    {state.lights.data(), state.lights.size()},
-                                    state.system.sky_term(), &exact);
+        gi::PathTracer tracer(exact, state.system.scene(),
+                              {state.lights.data(), state.lights.size()}, state.system.sky_term(),
+                              &exact);
+        tracer.set_emission_footprints(true);
         gi::BakeSettings bake;
         bake.samples = std::max(samples / 2U, 1U);
         bake.bounces = bounces;
@@ -776,6 +843,7 @@ Status BeautyGi::reference_image(u32 step, u32 samples, u32 bounces, u32 threads
     // The figure is over the pixels that were traced, where the reference is its own and not an
     // interpolation: `measure_reference`'s, at every traced pixel rather than a lattice of them.
     std::vector<Vec3> measured;
+    std::vector<Vec3> flat;
     std::vector<Vec3> reference;
     f64 noise = 0.0;
     for (u32 y = 0; y < cells.height; ++y) {
@@ -787,6 +855,7 @@ Status BeautyGi::reference_image(u32 step, u32 samples, u32 bounces, u32 threads
             const usize pixel = (static_cast<usize>(std::min(y * out.step, height - 1U)) * width) +
                                 std::min(x * out.step, width - 1U);
             measured.push_back(published[pixel]);
+            flat.push_back(state.light.mean_sky * ((cells.normal[cell].y * 0.5F) + 0.5F));
             reference.push_back(traced[cell]);
             noise += static_cast<f64>(length(half_apart[cell]));
         }
@@ -795,6 +864,9 @@ Status BeautyGi::reference_image(u32 step, u32 samples, u32 bounces, u32 threads
         {measured.data(), measured.size()}, {reference.data(), reference.size()});
     out.traced = compared.samples;
     out.relative_error = compared.relative_error;
+    out.flat_relative_error = gi::compare_against_reference({flat.data(), flat.size()},
+                                                            {reference.data(), reference.size()})
+                                  .relative_error;
     out.reference_noise = compared.samples == 0 || compared.mean_reference_magnitude <= 0.0F
                               ? 0.0F
                               : static_cast<f32>(noise / static_cast<f64>(compared.samples)) /

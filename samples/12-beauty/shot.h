@@ -158,6 +158,12 @@ struct ShotDecalMaterial {
     rendering::decals::DecalMaterial material;
 };
 
+/// Whether a decal material glows: any emission at all. Only such a decal writes the emission
+/// channel (`DecalBlendWeights::emission`), and only its cards emit in the GI scene.
+[[nodiscard]] inline bool decal_emits(const rendering::decals::DecalMaterial& material) noexcept {
+    return material.emission.x > 0.0F || material.emission.y > 0.0F || material.emission.z > 0.0F;
+}
+
 /// One decal: `decal <material> at x y z facing x y z up x y z size width height depth
 /// [order n] [fade-angle degrees]`. `facing` is the projection's normal — the direction the
 /// decalled surface faces — and `up` orients the mark within it; `size` is the full extent across
@@ -273,6 +279,14 @@ struct BeautyGiSettings {
     /// default, unless these ask for the per-pixel gather or the shared denoiser.
     bool per_pixel = false;
     bool shared_denoiser = false;
+    /// The shot's glowing decals light the GI scene's cards: set from the run's `--decals`, so the
+    /// GI is lit by exactly the lamps the frame draws.
+    bool emissive_decals = false;
+    /// The screen probes' rays a probe, and the fraction of probes that trace a frame (the rest
+    /// keep the history they stand for): `ScreenProbeSettings::rays` and
+    /// `ScreenResolveSettings::ray_density`.
+    u32 probe_rays = 32;
+    f32 ray_density = 1.0F;
 };
 
 /// The path tracer's verdict on one frame of the GI. See gi.h.
@@ -309,6 +323,9 @@ struct BeautyGiReferenceImage {
     /// to lie from what infinitely many paths would give — read from the difference of each pixel's
     /// two independent halves. The part of `relative_error` the GI is not answerable for.
     f32 reference_noise = 0.0F;
+    /// The frame without the GI, by the same measure over the same pixels: its flat sky term (the
+    /// sky's mean radiance weighted by how far the normal faces up) against the reference.
+    f32 flat_relative_error = 0.0F;
     f64 trace_ms = 0.0;
 };
 
@@ -436,6 +453,13 @@ public:
     /// `sceneFragmentGi`, whose indirect diffuse and specular replace the flat sky term. The sun
     /// is not touched; ambient occlusion and soft shadows compose with it.
     void set_global_illumination(const BeautyGiSettings& settings) noexcept { gi_ = settings; }
+    /// With `BeautyGiSettings::readback`: whether the frames rendered from now on copy the GI's
+    /// buffers back. A run that measures only its last frame turns it off for the frames before,
+    /// so their timestamps time the GI and not the copies.
+    void set_gi_readback_frames(bool copy) noexcept;
+    /// `BeautyGi::set_hold_cache`: the frames rendered from now on leave the GI's host caches as
+    /// they are.
+    void set_gi_hold_cache(bool hold) noexcept;
     /// After a render with `BeautyGiSettings::readback`: the path tracer's verdict on its GI.
     [[nodiscard]] Expected<BeautyGiReference, Error> measure_gi_reference(u32 pixels, u32 samples,
                                                                           u32 bounces) noexcept;

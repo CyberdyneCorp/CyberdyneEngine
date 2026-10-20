@@ -6,9 +6,10 @@
 |---|---|
 | `shot.cyshot` | the scene: the camera, the sun, the grade, and thirty-one placements |
 | `interior.cyshot` | the GI's interior: a closed room with a red and a green wall and one window, the sun through it — `just capture-gi-interior` |
+| `hall.cyshot` | the GI's game interior, *The Workshop Hall*: two windows, a blue and an ochre wall, columns, a bench under a glowing lamp (an emissive decal), crates — `just capture-gi-interior` and `just capture-gi-hall-video` |
 | `materials/*.cymatcanvas` | what the editor's node-graph canvas produced — an interchange, not a format anything reads twice |
 | `materials/*.cygraph` | the canonical authored graph, written by the ENGINE's `cy::graph::write_graph` |
-| `meshes/*.cyprim` | twelve primitive sources: a plane, a cylinder, three boxes and a sphere for the Colonnade, and the room's six slabs, half a metre thick |
+| `meshes/*.cyprim` | twenty-three primitive sources: a plane, a cylinder, three boxes and a sphere for the Colonnade, the room's six slabs, half a metre thick, and the hall's eleven — its slabs, walls and piers, a column, a bench, a crate and a lamp |
 | `textures/*.png` | nine 256x256 source images — [licence and provenance](textures/PROVENANCE.md) |
 
 `just capture-beauty-shot` turns all of it into

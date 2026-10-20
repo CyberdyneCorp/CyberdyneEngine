@@ -11,6 +11,7 @@
 //                    --no-post-still <path>         the same frame with the chain compiled out
 //                    --manifest <path>              the provenance a machine can check
 //                    --frames <dir> --frames-count <n>   a turntable, for the video
+//                    [--orbit-degrees <arc>]        a swing of that arc and back, not a whole turn
 //                    [--width 1920] [--height 1080] [--supersample 2]
 //                    [--bloom]                      the shot's bloom grade in the post chain
 //                    [--fog on|off]                 volumetric fog from the shot's `fog` lines
@@ -23,6 +24,9 @@
 //                                                   frame n - 1 so it has the orbit's motion
 //                    [--gi on|off] [--gi-tier hardware|software] [--gi-divisor <n>]
 //                    [--gi-gather probes|per-pixel] [--gi-denoiser probe-space|shared]
+//                    [--gi-probe-rays <n>] [--gi-ray-density <f>]  the screen probes' rays
+//                                                   a probe, and the share of probes traced a frame
+//                    [--gi-timing-frames <n>]       frames after the still the GI is timed over
 //                    [--gi-reference <pixels>]      the path tracer at that many pixels
 //                    [--gi-reference-step <n> --gi-reference-still <path> --gi-error-map <path>]
 //                                                   the path tracer's picture of the frame
@@ -171,17 +175,62 @@ void read_material_line(const char* line, ShotMaterial& material) {
     return read == out.size();
 }
 
-/// The stem of a material's authored graph, which is what the recipe named its outputs after.
+/// THE GI'S COST: the fastest of `frames` more frames of the same view, every stage of the GI on
+/// the device, printed as `gi fastest`. After the still and the reference, so neither moves.
+///
+/// WHY THE HOST'S CACHE IS HELD FOR THEM: the driver picks the device's power state from how busy
+/// it is, and this sample's frames are a few milliseconds of GPU work behind 20 to 30 ms of the
+/// host's surface-cache update — the sample's stand-in for work a game does elsewhere — so the RTX
+/// 5060 sat, run to run, at half its memory clock (P3, 7 GHz) or at its full one (P0, 14 GHz), and
+/// every bandwidth-bound stage of the GI took up to twice as long in the first: the sunlit room
+/// timed 4.81 or 3.49 ms, and 240 frames with the update did not settle it. With the cache held —
+/// the view is still and converged, so an update changes nothing — the frames are issued back to
+/// back as a game's are, and every run measured timed at full clocks. The fastest frame is then
+/// the one nothing else on the device interrupted.
+[[nodiscard]] Status print_gi_timing(Stage& stage, const Shot& shot, u32 frames) noexcept {
+    ShotReport fastest;
+    stage.set_gi_hold_cache(true);
+    for (u32 index = 0; index < frames; ++index) {
+        ShotReport frame;
+        if (Status drawn = stage.render(shot, nullptr, nullptr, frame); !drawn) {
+            return drawn;
+        }
+        if (frame.gi_timed &&
+            (fastest.gi_total_ms <= 0.0 || frame.gi_total_ms < fastest.gi_total_ms)) {
+            fastest = frame;
+        }
+    }
+    stage.set_gi_hold_cache(false);
+    if (fastest.gi_timed) {
+        std::printf(
+            "gi fastest    %.3f ms over %u frames of the same view: probe placement %.3f, "
+            "probe tracing %.3f, probe filter %.3f, integration %.3f, denoiser %.3f ms\n",
+            fastest.gi_total_ms, frames, fastest.gi_probe_place_ms, fastest.gi_probe_trace_ms,
+            fastest.gi_probe_filter_ms, fastest.gi_integrate_ms,
+            fastest.gi_accumulate_ms + fastest.gi_variance_ms + fastest.gi_filter_ms +
+                fastest.gi_publish_ms);
+    }
+    return ok();
+}
+
 /// Where the turntable's camera is at frame `index` of `count`: an orbit about the shot's target,
-/// at the shot's own height and radius, starting from the shot's own camera.
-[[nodiscard]] Vec3 turntable_eye(const Shot& shot, u32 index, u32 count) noexcept {
+/// at the shot's own height and radius, starting from the shot's own camera. Frame `index` of
+/// `count` round the shot's target: a whole turn, or — for an `arc_degrees` below 360, an interior
+/// a whole turn would leave through its walls — a swing of that arc either side and back, which
+/// ends where it began.
+[[nodiscard]] Vec3 turntable_eye(const Shot& shot, u32 index, u32 count,
+                                 f32 arc_degrees = 360.0F) noexcept {
     const Vec3 pivot = shot.camera_target;
     const Vec3 offset =
         Vec3{shot.camera_position.x - pivot.x, 0.0F, shot.camera_position.z - pivot.z};
     const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
     const f32 start = std::atan2(offset.z, offset.x);
-    const f32 turn = start + ((2.0F * std::numbers::pi_v<f32> * static_cast<f32>(index)) /
-                              static_cast<f32>(count));
+    const f32 phase =
+        (2.0F * std::numbers::pi_v<f32> * static_cast<f32>(index)) / static_cast<f32>(count);
+    const f32 turn =
+        arc_degrees >= 360.0F
+            ? start + phase
+            : start + (arc_degrees * std::numbers::pi_v<f32> / 180.0F * 0.5F * std::sin(phase));
     Vec3 eye = shot.camera_position;
     eye.x = pivot.x + (std::cos(turn) * radius);
     eye.z = pivot.z + (std::sin(turn) * radius);
@@ -318,6 +367,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     const u32 gi_frames = option_number(argc, argv, "--gi-frames", 48);
+    // The frames `print_gi_timing` times the GI over: see there for why this many.
+    const u32 gi_timing_frames = option_number(argc, argv, "--gi-timing-frames", 240);
     const u32 gi_reference = option_number(argc, argv, "--gi-reference", 0);
     const u32 gi_reference_samples = option_number(argc, argv, "--gi-reference-samples", 256);
     // THE PATH TRACER'S PICTURE, beside the GI's: `--gi-reference-step <n>` path traces every
@@ -326,6 +377,8 @@ int main(int argc, char** argv) {
     // writes where the two differ. Needs `--supersample 1`: the picture is the GI's own grid.
     const u32 gi_reference_step = option_number(argc, argv, "--gi-reference-step", 0);
     const u32 gi_reference_threads = option_number(argc, argv, "--gi-reference-threads", 8);
+    // Three bounces is the bake's path length; a closed room keeps more of its light past it.
+    const u32 gi_reference_bounces = option_number(argc, argv, "--gi-reference-bounces", 3);
     const std::string gi_reference_still = option(argc, argv, "--gi-reference-still", "");
     const std::string gi_error_map = option(argc, argv, "--gi-error-map", "");
     const u32 orbit_frame = option_number(argc, argv, "--orbit-frame", 1);
@@ -445,6 +498,9 @@ int main(int argc, char** argv) {
                      "`probe-space` or `shared`\n");
         return 1;
     }
+    gi_settings.probe_rays = std::max(1U, option_number(argc, argv, "--gi-probe-rays", 32));
+    gi_settings.ray_density =
+        std::strtof(option(argc, argv, "--gi-ray-density", "1").c_str(), nullptr);
     gi_settings.per_pixel = gather == "per-pixel";
     gi_settings.shared_denoiser = denoiser == "shared";
     stage.set_global_illumination(gi_settings);
@@ -456,8 +512,9 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cy_sample_beauty: %s\n", staged.error().message);
         return 1;
     }
-    ShotReport gi_fastest;
     if (gi_settings.enabled) {
+        // ONLY THE STILL IS READ BACK: the frames before it copy nothing.
+        stage.set_gi_readback_frames(false);
         // THE GI CONVERGES OVER FRAMES, as a game's does: the same view drawn and written nowhere,
         // so the still is the frame a player standing here would see after `gi_frames` frames.
         for (u32 index = 1; index < gi_frames; ++index) {
@@ -466,15 +523,9 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
                 return 1;
             }
-            // THE FASTEST FRAME, as the GI's suites time it: a device another process shares
-            // time-slices its work into this one's, and the fastest frame is the one nothing
-            // interrupted. The first frames carry the pipelines' first use.
-            if (warm.gi_timed && index >= 4 &&
-                (gi_fastest.gi_total_ms <= 0.0 || warm.gi_total_ms < gi_fastest.gi_total_ms)) {
-                gi_fastest = warm;
-            }
         }
     }
+    stage.set_gi_readback_frames(true);
     if (Status drawn = stage.render(shot, still.empty() ? nullptr : still.c_str(),
                                     no_post.empty() ? nullptr : no_post.c_str(), report);
         !drawn) {
@@ -482,15 +533,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     print_report(shot, report);
-    if (gi_fastest.gi_timed) {
-        std::printf(
-            "gi fastest    %.3f ms over the %u frames before the still: probe placement %.3f, "
-            "probe tracing %.3f, probe filter %.3f, integration %.3f, denoiser %.3f ms\n",
-            gi_fastest.gi_total_ms, gi_frames - 1U, gi_fastest.gi_probe_place_ms,
-            gi_fastest.gi_probe_trace_ms, gi_fastest.gi_probe_filter_ms, gi_fastest.gi_integrate_ms,
-            gi_fastest.gi_accumulate_ms + gi_fastest.gi_variance_ms + gi_fastest.gi_filter_ms +
-                gi_fastest.gi_publish_ms);
-    }
     if (gi_reference != 0U) {
         auto measured = stage.measure_gi_reference(gi_reference, gi_reference_samples, 3);
         if (!measured) {
@@ -506,8 +548,9 @@ int main(int argc, char** argv) {
     }
     if (gi_reference_step != 0U) {
         BeautyGiReferenceImage picture;
-        if (Status traced = stage.gi_reference_image(gi_reference_step, gi_reference_samples, 3,
-                                                     gi_reference_threads, picture);
+        if (Status traced =
+                stage.gi_reference_image(gi_reference_step, gi_reference_samples,
+                                         gi_reference_bounces, gi_reference_threads, picture);
             !traced) {
             std::fprintf(stderr, "cy_sample_beauty: %s\n", traced.error().message);
             return 1;
@@ -518,6 +561,10 @@ int main(int argc, char** argv) {
             picture.traced, picture.step, picture.samples, picture.bounces,
             picture.trace_ms / 1000.0, static_cast<double>(picture.relative_error),
             static_cast<double>(picture.reference_noise));
+        std::printf(
+            "gi flat       the frame without the GI over the same pixels: its flat sky term %.3f "
+            "relative error\n",
+            static_cast<double>(picture.flat_relative_error));
         if (!gi_error_map.empty()) {
             if (Status written = stage.write_gi_error_map(picture, gi_error_map.c_str());
                 !written) {
@@ -535,6 +582,15 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::printf("reference     %s\n", gi_reference_still.c_str());
+        }
+    }
+    if (gi_settings.enabled && gi_timing_frames != 0U) {
+        // AFTER the still and the reference, so neither moves: the timing burst's frames advance
+        // the GI's history past the still's.
+        stage.set_gi_readback_frames(false);
+        if (Status timed = print_gi_timing(stage, shot, gi_timing_frames); !timed) {
+            std::fprintf(stderr, "cy_sample_beauty: %s\n", timed.error().message);
+            return 1;
         }
     }
     if (!still.empty()) {
@@ -575,9 +631,10 @@ int main(int argc, char** argv) {
 
     if (!frames.empty()) {
         const u32 count = option_number(argc, argv, "--frames-count", 240);
+        const f32 arc = std::strtof(option(argc, argv, "--orbit-degrees", "360").c_str(), nullptr);
         const Vec3 pivot = shot.camera_target;
         for (u32 index = 0; index < count; ++index) {
-            const Vec3 eye = turntable_eye(shot, index, count);
+            const Vec3 eye = turntable_eye(shot, index, count, arc);
             char path[512] = {};
             (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", frames.c_str(), index);
             ShotReport frame_report;
