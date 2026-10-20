@@ -335,7 +335,11 @@ undoable command with an MCP tool of the same name (`cy_editor_services::illumin
   power, and a rule picker per material — `gi.emission.set` (automatic, cache-only, promote, off).
 - **The viewport's GI views**: the panel's nineteen GI view buttons and Lit are the
   `viewport.view-mode.*` commands; the view mode reaches the runtime in the gizmo intent
-  (`GizmoIntent::debug_view`, the byte after the physics overlays) and the runtime draws it.
+  (`GizmoIntent::debug_view`, the byte after the physics overlays) and the runtime draws it — on
+  the device, in the viewport's own frame, where the device runs the GI.
+- **The Lit view is lit by the GI**: a world whose GI settings admit the dynamic GI has its viewport
+  lit by the engine's device GI, and every edit above reaches it in the next frames, nothing
+  rebuilt but for geometry; in Play, a project's Swift game tunes the same GI through ABI 1.9.
 - **The diagnostics report**: Refresh report, and Explain a point — the viewport's next click asks
   the engine what lit the surface under it (`gi.report` with the frame and pixel). The panel shows
   the settings the GI runs at, the tier its rays took, convergence, cost per stage, rays per tier,
@@ -352,7 +356,8 @@ applies settings, volumes, classes and rules in place through the calls a game m
 `integration.editor_window_illumination` and `smoke.editor_authored_frame_vulkan`.
 `CY_PANEL_SNAPSHOTS=<dir> cargo test -p cy-editor-shell --test panel_snapshots lighting_gi -- --ignored`
 draws the [panel](../docs/design/images/editor-lighting-gi.png); `CY_GI_VIEWPORT_SHOT=<dir>` on
-`cy_test_smoke_editor_authored_frame_vulkan` photographs the [viewport](../docs/design/images/editor-gi-viewport.png).
+`cy_test_smoke_editor_authored_frame_vulkan` photographs the [viewport](../docs/design/images/editor-gi-viewport.png)
+and the viewport [lit by the device GI](../docs/design/images/editor-gi-live.png).
 
 Conflict-sensitive commands deliberately require observed state. `source.write` requires
 `expected_fingerprint` and the exact `base` text; a conflict returns base, buffer and disk text.

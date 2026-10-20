@@ -312,14 +312,16 @@ and calls `fixed_update` on every Play tick. Pause holds the simulation; Stop re
 world. A successful build during Play reloads the running session; Stop and Play again also loads
 the newest build. A scene that names a script with no built module refuses Play with that reason.
 
+It calls `onUpdate` once per Play tick, after the tick's animation, and it binds ABI 1.9's
+`Illumination` and `GIVolume` over the GI the viewport is lit by (the GI guide's "Turn on GI in
+your game"): a behaviour's volume, emitter switch or class change is in the viewport's next frames,
+and Stop applies the document's GI again.
+
 What this host does **not** do yet is as important:
 
-* it calls `fixed_update` only, never `frame_update`, so **`onUpdate` does not run during editor
-  Play**;
-* it binds none of the 1.3 game-service backends, so `Input`, `Camera`, `Physics`, `Navigation`,
-  `Audio` and `Spawn` throw `CyberdyneError.status(.unavailable, …)` there (`Camera.active()`
-  turns that into nil). `Time` has no backend and answers. The editor README says
-  as much for audio ("Audio is still unavailable in this host").
+* it binds none of the 1.3 game-service backends but audio and animation, so `Input`, `Camera`,
+  `Physics`, `Navigation` and `Spawn` throw `CyberdyneError.status(.unavailable, …)` there
+  (`Camera.active()` turns that into nil). `Time` has no backend and answers.
 
 A behaviour that only reads and writes components, as `SpinCube` does, works in the editor today. A
 game that uses the services runs under a host that binds them, which is what the RTS sample's C++
@@ -1003,6 +1005,38 @@ let under = try Illumination.irradiance(at: guardPosition)   // what the guard s
 `integration.swift_illumination` loads `bindings/swift/fixtures/illumination/LightProbe.swift`
 against a real `IlluminationSystem`: the luminance under the lamp falls from 2.149 to 1.032 when the
 script puts the glass out, and every call from a fixed step is refused.
+
+#### Turn on GI in your game
+
+The calls above tune a GI; the host decides whether the frame is lit by it. Two hosts do it today:
+
+* **The editor.** Give the world a "Global Illumination" node (the lighting panel's GI half, or
+  `gi.settings.set`): the viewport's Lit view is lit by the engine's device GI, and in Play your
+  behaviours' `Illumination` and `GIVolume` calls reach that same GI — what you tune from Swift is
+  what you see in the viewport the next frame. Nothing else to do.
+* **Your own host**, as `samples/13-rts-api`'s is: hand the level to an `IlluminationSystem`, bind
+  `cy::game_backend::IlluminationAdapter` on the ABI host with the material names and entities your
+  game addresses, run the system's update once a frame after `frame_update`, and attach
+  `gi_gpu::GpuGiFrame` to the frame. The GI guide's section 6g is the walkthrough, with the code.
+
+Then the game is Swift. `samples/13-rts-api/game/Lighting.swift` is the worked example: the
+commander places a volume over its base in `onCreate`, and from `onUpdate` puts the beacon out by
+its glass's material name and lights it again, reading the light on a guard's chest in between:
+
+```swift
+volume = try GIVolume.place(.init(bounds: Self.base, overrides: [.quality(.epic), .updateRate(2)],
+                                  priority: 1, blendDistance: 2))
+try Illumination.setEmission(.off, ofMaterial: "beacon")       // frame 151
+let dark = try Illumination.irradiance(at: guardSpot, normal: facingBeacon).luminance
+try Illumination.setEmission(.automatic, ofMaterial: "beacon") // frame 251
+```
+
+`integration.rts_api_sample` holds the numbers (the light on the guard's chest falls to about a
+quarter with the beacon out and comes back), and `smoke.rts_api_gi` the picture: drawn with
+`--render`, the frame round the beacon's foot darkens and brightens with the game's calls, and a
+frame costs 6.3 ms at 480x270 with the GI 1.0 ms on the device. Two rules carry over from the API:
+every call is refused from `onFixedUpdate`, and a lamp you want seen in the frame should light
+through the cache rather than be promoted — the GI guide's section 6g says why.
 
 ### Diagnostics
 

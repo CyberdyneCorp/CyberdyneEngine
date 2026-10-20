@@ -19,6 +19,8 @@ for the device half, in five stages.
 | [`src/backends/rhi/`](../../src/backends/rhi/README.md) (`acceleration.h`) | Acceleration structures in the RHI, and the refusal of a device without them |
 | [`src/rendering/light_probes/`](../../src/rendering/light_probes/README.md) | The irradiance volume, which the dynamic GI blends with under one rule |
 | [`samples/12-beauty/`](../../samples/12-beauty/README.md) (`gi.h`) | The beauty shot lit by all of it: `--gi on`, `just capture-beauty-gi`; a sunlit room, a workshop hall and the shot beside the path tracer, `just capture-gi-interior`; the hall in motion, `just capture-gi-hall-video` |
+| [`src/rendering/gi_gpu/`](../../src/rendering/gi_gpu/README.md) (`gpu_frame.h`, `gpu_debug_view.h`) | The device GI as one frame feature a host attaches, and the nineteen debug views drawn by the device — what the editor's viewport and a game's frame are lit and inspected with (section 6g) |
+| [`samples/13-rts-api/`](../../samples/13-rts-api/README.md) (`host/illumination.*`, `host/render.*`) | A Swift game's frame lit by the device GI, the game tuning it through ABI 1.9 (section 6g) |
 | [Lighting authoring](lighting.md) | Lightmaps and baked volumes, which this system combines with rather than replaces |
 
 ## 1. One system, two halves, one oracle
@@ -333,6 +335,29 @@ opaque. `LightmapDensity` and `LightmapCharts` are drawn by the frame itself.
 
 ![The nineteen GI debug views](../design/images/gi-debug-views.png)
 
+**On the device, in the frame.** `gi_gpu::GpuGiDebugView` draws the same nineteen views inside the
+frame's `ScreenSpaceGi` stage — `GpuGiFrame::set_debug_view` asks for one — from the device frame's
+own state: the resolve's surfaces (the prepass the frame drew), its published targets and its
+reprojection history, the probe set, the cards and their lookup, and the field. Each is a
+transcription of its function in `gi/debug_views.cpp` (`gi_debug_views_common.slang` names which),
+and `smoke.gi_gpu_live` (c) holds every one to the host's view over the frame's surfaces:
+
+| | The device draws | Held to the host's view |
+|---|---|---|
+| the four probe views, the clipmap, the surface cache, the field slice, reflection probes, screen trace, tier, ray count, the history views, emissive | the host function's datum, from the device copies | word for word (RTX 5060: 0 of 129 600 texels differ) |
+| `GiProbeVisibility` | every contributing probe's leak test (the host's report keeps 32) | 1 texel of 129 600 |
+| `GiIndirectDiffuse`, `GiIndirectSpecular` | the published targets the forward pass composites | within one 8-bit step: the targets are halves |
+| `GiConfidence` | `RadianceCache::sample`'s confidence at the surface | word for word against `sample` |
+| `GiCards` | the surface-cache page `CardSnapshot::find` resolves | word for word against the lookup's own rule |
+| `GiScreenTrace` | red: the device frame's rays have no screen tier | `screen_trace_texel` with no screen view |
+
+A view's exposure is automatic — the frame's own mean indirect diffuse drawn at a third of white —
+unless the caller names one. `GiReflectionProbes` over a system that holds reflection probes is the
+one view the device does not draw (`GpuGiDebugView::draws`): their captures are the host's, and the
+caller draws it on the processor. A frame with a view costs what the frame costs plus the view's
+dispatch: 8 to 15 ms for the whole 480x270 frame in `smoke.gi_gpu_live` (d), where the processor
+took 35 to 240 ms for the view alone at 320x180.
+
 ## 6d. Tuning it while the world runs
 
 Four calls change the GI of a running world without `configure()`'s full rebuild. They are what a
@@ -385,10 +410,30 @@ undoable `gi.*` command with an MCP tool of the same name ([editor/README.md](..
 
 The runtime (`samples/05b-editor-window/runtime/gi_runtime.h`) reads the document into the engine's
 `cy::editor::IlluminationPreview` (`src/editor_backend`), which rebuilds the GI only when geometry,
-materials or lights changed and applies everything else in place through the calls of section 6d.
-The view the viewport asked for (`GizmoIntent::debug_view`) is drawn on the processor at a quarter
-of the frame's resolution and composited by the forward frame where it is opaque; back on Lit the
-frame is byte for byte the frame before (`smoke.editor_authored_frame_vulkan`'s GI case).
+materials or lights changed and applies everything else in place through the calls of section 6d
+— the sky too: it is the frame's own flat ambient (the studio fill in the Editor view), so the GI
+that replaces the ambient lights an open surface as the ambient did.
+
+**The viewport is lit by the device GI.** A world whose "Global Illumination" node admits the
+dynamic GI has its Lit view lit by `gi_gpu::GpuGiFrame` over the preview's system: every frame the
+runtime advances the system one frame from the camera and the frame resolves it on the device, the
+caches' arithmetic on the device too (section 6g). Every GI view the viewport asks for
+(`GizmoIntent::debug_view`) is drawn by the device in the same frame. A world without the node is
+drawn as it always was, and a GI view over it resolves the GI for the view without compositing it
+into the Lit pixels. Where the device cannot run the GI — the device GI has run on Vulkan only — the
+views are the processor's, at a quarter of the frame's resolution, as before.
+`smoke.editor_authored_frame_vulkan`'s device GI case measures it: the Lit view changes 44 435 of
+98 304 pixels, the document's quality set to low reaches the next frames with nothing rebuilt, mode
+"none" is the plain frame byte for byte, every view is drawn, a frame takes 4 to 8 ms at 384x256
+with the GI 0.15 to 0.3 ms of it on the device — where the processor took 45 ms for the indirect
+diffuse view alone at a quarter of the size — and detached, the frame is the frame it was.
+
+![The editor's viewport: without the GI, lit by the device GI, and in four device views](../design/images/editor-gi-live.png)
+
+**A Swift game in the editor's Play tunes the same GI.** The runtime binds ABI 1.9 for Play over
+the preview's system — every object by its Play entity, every material by its authored name — so a
+project's behaviour places volumes, puts lamps out and reads the light the author sees lit in the
+viewport. Stop applies the document's GI again.
 
 ![The editor viewport lit and in the GI Tier view](../design/images/editor-gi-viewport.png)
 
@@ -417,6 +462,103 @@ runs a real Swift module against the GI suites' room: the light at a guard's spo
 own six-direction mean to the micro-unit, and putting the lamp out by its material's name halves it.
 The C reference is [src/abi/README.md](../../src/abi/README.md), "What ABI 1.9 adds".
 
+## 6g. Turn on GI in your game
+
+The GI an author tunes in the editor and a player sees in the game is one system: an
+`IlluminationSystem` the host runs, lit on the device by one frame feature,
+`gi_gpu::GpuGiFrame`, and tuned by the game through ABI 1.9. Three steps in the host, then the game
+is Swift. `samples/13-rts-api` does all of it (`host/illumination.*`, `host/render.*`,
+`game/Lighting.swift`).
+
+**1. Hand the level to the GI.** Configure a system and give it the level's surfaces — cards over
+each mesh and its distance grid placed by its transform (`gi::append_mesh_cards`,
+`gi::MeshDistanceField`), static geometry as a cell, what moves as an object (`add_object`, then
+`move_object` each frame) — and the sun **in the bake's units, lux over pi** (section 9's
+pitfall).
+
+**2. Let the game tune it, and run it once a frame.** Bind the adapter on the ABI host, naming the
+materials and the entities a script may address, and run the system's update after the game's
+frame, from where the camera looks — presentation, which a fixed step never reads. Size the
+budget's ladders to the level (below):
+
+```cpp
+cy::game_backend::IlluminationAdapter adapter(allocator, system);
+(void)adapter.add_material("beacon", beacon_material_id);       // what Swift names it by
+(void)adapter.bind_object(crate_entity, crate_object_id, crate_instance_id);
+cy::game_backend::bind_illumination(host, &adapter);
+// each frame:
+adapter.begin_frame(frame);                     // the game's changes are stamped with it
+runtime.frame_update(dt);                       // the Swift game's onUpdate
+gi::FrameContext context{};
+context.camera = focus;            // where the camera looks; an RTS's is the ground point
+context.lights = sun; context.frame = frame;
+(void)system.update(context);                   // the host decides; the device shades and gathers
+```
+
+**3. Light the frame with it.** Create the feature once over the system, and attach it to the
+assembled frame in the frame's two hooks:
+
+```cpp
+gi_gpu::GpuGiFrame gi;
+(void)gi.create(allocator, device, system, {width, height});    // outside a device frame
+description.global_illumination = true;     // or assembly.set_global_illumination(on), per frame
+// before assemble:
+gi_gpu::GpuGiFrameTargets targets;
+(void)gi.prepare(graph, {eye, world_to_clip, projection, relative_to_view}, frame, targets);
+view.screen_space_gi = targets.diffuse;
+view.screen_space_gi_specular = targets.specular;
+sinks.screen_space_gi = gi.stage();
+// once the upload exists:
+gi.set_jitter(jitter);
+gi.write_control(diffuse_slot, specular_slot, upload.view.gi_control);   // bind the two views there
+```
+
+`create` mirrors the system's acceleration structures on the device where it has ray queries and
+installs the device's card shading and probe gather through the system's own seams
+(`GpuGiFrameDescription::device_caches`, on by default): the host's update is the decisions alone,
+and the arithmetic runs in the frame, before the resolve that reads it. `set_debug_view` draws any
+of the nineteen views in the same frame (section 6c). A mode that admits no dynamic bounce
+(`composites()` false) composites nothing, and a frame that does not attach the feature is the
+frame it always was.
+
+**4. The game.** Everything else is the game's, from Swift (section 6f and the Swift guide's
+"Turn on GI in your game"):
+
+```swift
+// onCreate: the base converges first and best.
+let base = try GIVolume.place(.init(bounds: (min: Vec3(x: 3, y: 0, z: 22), max: Vec3(x: 16, y: 5, z: 31)),
+                                    overrides: [.quality(.epic), .updateRate(2)], priority: 1))
+// onUpdate: the beacon out, and on again.
+try Illumination.setEmission(.off, ofMaterial: "beacon")
+let light = try Illumination.irradiance(at: guardSpot, normal: facingBeacon)
+try Illumination.setEmission(.automatic, ofMaterial: "beacon")
+```
+
+**In the editor** a Swift project needs none of the host's steps: give the world a "Global
+Illumination" node (`gi.settings.set`) and the viewport is lit by the device GI, and in Play the
+project's behaviours reach that same GI through ABI 1.9 (section 6e).
+
+**What it costs** (`smoke.rts_api_gi`, RTX 5060, Vulkan, 480x270, `samples/13-rts-api`'s 32 m
+field from the game's camera): the game's frame 1.3 ms of which the GI's host update is 1.1 ms;
+the drawn frame 5.1 ms with the GI's device passes 1.0 ms of it (the resolve, the card shading
+and the probe gather; 0.76, 0.55 and 0.15 ms in `smoke.gi_gpu_live`'s scene); 6.3 ms a frame
+together, where the drawn frame without the GI is 3.9 ms. Two choices make it that: the caches'
+arithmetic on the device (with them on the host the update is 3.7 ms), and **ladders sized to the
+level** — `system.budget().declare(GiLever::ProbeUpdates, ...)` and `SurfaceCacheRate` at a quarter
+of the engine's defaults, which are for a world rather than a 32 m field (at the
+defaults the host update was 22 ms a frame). An RTS camera hangs 25 m over the field, so the host
+runs the GI from the ground point it looks at (`FrameContext::camera`): the clipmaps follow what
+the player sees rather than the air the camera hangs in.
+
+![samples/13-rts-api: without the GI, with it, the beacon put out from Swift and lit again](../design/images/rts-api-gi.png)
+
+**An emitter a frame should show lights through the cache.** A *promoted* emitter's light is
+direct light (section 5), and the forward frame's own lights do not carry promoted emitters yet
+(section 10): the frame shows a promoted lamp only in the bounce. The RTS beacon is larger than
+`promotion_max_area_m2`, so its light reaches its surroundings through the surface cache's gather —
+the light the frame's GI composites — and the frame shows the game putting it out (the frame round
+its foot falls from 169 to 148 and rises again to 170; without the GI it reads 197 throughout).
+
 ## 7. Measuring it: against the oracle, and against the engines it competes with
 
 "Better than Lumen or Unity's adaptive probe volumes" is only worth saying as numbers a suite fails on.
@@ -440,6 +582,8 @@ The claims and where each is measured:
 | Tuning it live changes only what it says | `integration.render_gi_runtime`, `integration.render_gi_emissive`, `integration.render_gi_classes` | untouched settings, no rule and a class set at run time are each the configured system bit for bit; a lamp put out and relit shades its floor to the same bits; Epic quality is 4x the rays of every probe placed after it |
 | A game reads the light where a body stands | `integration.game_backend_illumination`, `integration.swift_illumination` | the sample is `indirect_diffuse`'s own answer bit for bit (the six-direction mean for a body); a lamp put out from a script takes the luminance under it from 2.150 to 1.038 in the adapter and from 2.149 to 1.032 through Swift |
 | Every GI view in the editor's viewport, and Lit as before | `smoke.editor_authored_frame_vulkan`, `integration.editor_window_illumination` | 11 136 of 11 200 opaque view texels change the frame, every one of 13 376 clear texels keeps it, and back on Lit the frame is byte for byte the frame before |
+| The views drawn by the device are the host's | `smoke.gi_gpu_live` (c) | seventeen of nineteen word for word over 129 600 texels, `GiProbeVisibility` within one texel, the indirect diffuse and specular within one 8-bit step (the targets are halves) |
+| Live in the editor and in a game, at interactive rates | `smoke.editor_authored_frame_vulkan`'s device GI case, `smoke.gi_gpu_live` (a), (b), (d), `smoke.rts_api_gi` | the editor's Lit view lit by the device GI, a frame 4 to 8 ms at 384x256 with any view; a document edit or a game's ABI 1.9 call in the next frames, nothing rebuilt; the RTS frame 6.3 ms at 480x270 with the GI 1.0 ms on the device and 1.1 ms on the host; off, the frame it was byte for byte |
 | Explicit cost | `smoke.gi_gpu_probe_quality`'s cost cases; `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The GI at 1920x1080, every stage: the screen probes (16 px) 1.99 ms (hardware) / 2.51 ms (software) — 4.75 / 5.27 through the shared denoiser — and 1.19 / 1.65 ms on the half-resolution grid; every 8 px 3.51 / 5.15 ms; the per-pixel gather 10.6 / 13.9 ms, 2.86 ms on the half grid, 1.96 ms with the denoiser lever too. For a 3840x2160 output the probes are 7.7 / 9.7 ms native (per pixel 42.4) and 3.5 / 4.4 ms at the upscaler's 1440p (per pixel 18.9). The scenes of section 7b (the beauty sample, every stage, the fastest of 240 frames at full clocks): the sunlit room 3.49 ms (hardware) / 4.61 ms (software), 2.40 ms on the half grid; the workshop hall 3.78 / 5.40 ms, 2.63 on the half grid; the Colonnade 2.73 / 5.68 ms, 1.73 / 3.88 ms on the half grid (per pixel, 12.3 ms). Stage 5 holds a 960x540 frame of the screen probes to its allocation by dropping from 0.68 ms to 0.35 ms in the declared lever order |
 
 **The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
@@ -470,7 +614,7 @@ regresses.
 | Emissive lighting | a promoted 30 cm lamp within 0.5 % of the path tracer with a per-receiver ratio variance of 0.027; left to the cache the same lamp is 4.6 — promotion is the measurement, or an author's rule | emissive surfaces light through the GI's gather; the documentation recommends real lights for small bright emitters, which are noisy | emissive surfaces contribute to the bake; realtime emission through Enlighten |
 | Hardware ray tracing with a bounded software fallback | the tiers agree to 0.0209 (held at 0.10); switching moves the image 0.074 where an ordinary frame moves 0.142 | hardware and software tracing are both offered; the difference between them is not bounded in the documentation | runtime probe GI does not trace rays; ray-traced GI is a separate HDRP feature |
 | Cost at 1080p | the whole GI through the screen probes 1.99 ms (hardware) / 2.51 ms (software) at authored quality and full resolution in the GI test room, 3.49 / 3.78 ms (hardware) in the furnished sunlit room and workshop hall (section 7b); 1.19 / 1.65 ms on the half-resolution grid; per pixel 10.6 / 13.9 ms, 2.86 ms on the half grid; a 960x540 frame held to its allocation from 0.68 ms to 0.35 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
-| Control from tools and code | every setting, volume, class and emitter rule from the editor (undoable, MCP) and from a Swift game (ABI 1.9); all nineteen debug views in the viewport; `explain()` at a clicked point | post-process volume settings, console variables, visualization modes | the Lighting window, probe volume baking sets and lighting scenarios, a scripting API |
+| Control from tools and code | every setting, volume, class and emitter rule from the editor (undoable, MCP) and from a Swift game (ABI 1.9), seen in the next frames of the device GI that lights the viewport and the game; all nineteen debug views drawn by the device in the viewport; `explain()` at a clicked point | post-process volume settings, console variables, visualization modes | the Lighting window, probe volume baking sets and lighting scenarios, a scripting API |
 
 What the table supports, and only that: on every axis where a number exists, CyberGI's is stated,
 held by a test and reproducible from this repository; on error against a reference, leaking at
@@ -481,10 +625,10 @@ as fast. What it does not support: that CyberGI is cheaper than either engine �
 its default is 2.0 ms through the hardware tier in the test room and 3.5 to 3.8 ms in the furnished
 interiors of section 7b (4.6 to 5.4 ms through the software tier), a fifth of a 60 fps frame; that it was ever measured
 beside either engine on one scene; or anything about consoles, Windows or Apple devices, where the
-hardware tier refuses (section 10); or that the editor's GI views are interactive — the
-editor-hosted runtime draws them on the host, about 35 ms for the probe view at 320x180 and 240 ms
-for indirect diffuse (`smoke.editor_gi_cost`, GCC 13), where Lumen's visualization modes are drawn
-by the GPU frame.
+hardware tier refuses (section 10). The editor's GI views are drawn by the device in the viewport's
+own frame on Vulkan, as Lumen's visualization modes are drawn by its GPU frame (section 6c); on a
+device that cannot run the GI they are the processor's — about 35 ms for the probe view at 320x180
+and 240 ms for indirect diffuse (`smoke.editor_gi_cost`, GCC 13).
 
 ### 7b. Beside the path tracer, as a picture: a sunlit room, a workshop hall and the Colonnade
 
@@ -585,6 +729,10 @@ just test-render -R gi_gpu                    # the device suites; skipped where
 just test-integration -R render_gi_screen_probes   # the screen probes' properties, on the host
 just test-smoke -R gi_screen_probes           # their quality at 128x72 on the host
 just test-smoke -R gi_gpu_probe_quality       # both gathers' quality and cost at 1080p and 4K, on the device
+just test-smoke -R gi_gpu_live                # GpuGiFrame on, off and tuned; the device views against the host's
+just test-smoke -R editor_authored_frame      # the editor's viewport lit by the device GI, every view on it
+just test-smoke -R rts_api_gi                 # a Swift game's frame lit by it, and what it costs
+just run-sample rts-api --render <dir>        # the RTS drawn with the device GI (--gi off: without)
 just capture-gi-interior                      # a sunlit room, a hall and the Colonnade: off, CyberGI, path traced
 just capture-gi-hall-video                    # the hall lit by CyberGI as the camera swings round it
 python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
@@ -691,6 +839,21 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   beauty shot's sky lit an upward face with a third of the frame's sky term. Scale it so an upward
   face receives the frame's mean sky radiance (`samples/12-beauty/gi.cpp`'s `fit_sky`).
 
+- **The published targets are halves.** `read_back_published` gives the float the publish computed;
+  the `Rgba16Sfloat` texture the frame samples holds it narrowed by the store, which Vulkan lets
+  round to nearest or toward zero — the RTX 5060 truncates. A view drawn from the texture is held to
+  the float within one 8-bit step, not to the bit.
+- **The GI replaces the ambient, so its sky must be the ambient.** Composited, the GI's indirect
+  diffuse stands where the frame's flat ambient stood; a sky dome in other units than the ambient
+  lights every open surface differently from the frame before. The editor sets the GI's sky to the
+  frame's own ambient (the studio fill included); a game sets it once in its units.
+- **One texture, one import.** The debug view's texture is written by the stage and read by the
+  opaque pass; imported twice, the graph sees two resources and derives no barrier. The host imports
+  it once (`GpuGiFrame::prepare` does), and the stage writes that resource.
+- **A probe record carries its error.** The device views draw `GiProbeError` from the record's last
+  word, which the host upload and the device gather both write; it was zero before, and a device
+  view read every probe as settled.
+
 ## 10. What is not built yet
 
 - **The screen tier in the screen probes' rays.** The probes trace the world tiers, as the per-pixel
@@ -727,16 +890,20 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   host decisions and hold on both paths; the device gather traces the update's ray count through
   the frame's tier for every probe, so `Quality` and `TierPreference` reach probes on the host
   gather only.
-- **The editor's GI is the host's**: the editor-hosted runtime lights the authored world with the
-  host `IlluminationSystem` and draws its views on the processor at a quarter of the frame's
-  resolution, every frame the view is selected (at 320x180, about 35 ms for the probe view and
-  240 ms for indirect diffuse), so a GI view mode runs the viewport at a few frames a second — a diagnostic,
-  not the frame's per-pixel GI; the editor's lit frame is not yet lit by
-  the device GI. Materials are a cooked material's base colour and emission, or the frame's default
-  grey (material graphs light as grey). The Swift API sets no transmission and does not tune the
-  per-pixel resolve's own settings (grid divisor, denoiser) yet. Every requirement of the row maps to
-  a test case in `tools/roadmap/requirements-coverage.toml`; the notes there say what each does not
-  cover yet.
+- **The device GI off Vulkan**: its Metal and DXIL shaders are compiled and committed, and no suite
+  has run them on a device, so the editor's viewport keeps the processor's views on Metal (the
+  skinned variants' rule) and `samples/13-rts-api --render` is Vulkan only.
+- **The editor's GI in Play is the document's**: Play's moving bodies do not move the GI's objects
+  (the preview is rebuilt from the document on an edit, not from the simulation), and a document
+  edit during Play rebuilds the GI under the running game, which loses the volumes it placed.
+  Materials are a cooked material's base colour and emission, or the frame's default grey (material
+  graphs light as grey). The Swift API sets no transmission and does not tune the per-pixel
+  resolve's own settings (grid divisor, denoiser) yet. Every requirement of the row maps to a test
+  case in `tools/roadmap/requirements-coverage.toml`; the notes there say what each does not cover
+  yet.
+- **The RTS field is boxes**: `samples/13-rts-api --render` draws the level as the pipeline suites'
+  scene shaped into it, its units as boxes and its beacon's box unlit by its own emission (the frame
+  material has none); the GI holds the same boxes in the same metres and colours.
 - **A directional depth per probe for `sample`**: six axis distances cannot tell a doorway's edge
   from a wall, and those probes still leak into `sample`'s answer (the diagnostics name them);
   `sample_traced` — the per-pixel resolve's — traces each probe instead.
