@@ -15,7 +15,8 @@
 //
 // One page, in the order `SurfaceCache::shade` writes it:
 //
-//     direct      = shaded_direct(lights, position, normal)    the shadow map, else the field
+//     direct      = shaded_card_direct(lights, position, normal, area)   over the card's square:
+//                                                  the shadow map, else the field
 //     accumulated = albedo * CardGather::gather(position, normal)   the sky, and last frame's cards
 //     outgoing    = emission + albedo * direct + accumulated
 //     error       = relative_change(last frame's outgoing, outgoing)
@@ -41,7 +42,7 @@ void cyGiShadeCards(uint3 thread : SV_DispatchThreadID) {
     const float4 emission = giScene.cards[(handle * 4u) + 3u];
     const float3 before = giScene.cardState[handle * 2u].xyz;
 
-    const float3 direct = giShadedDirect(position.xyz, normal.xyz);
+    const float3 direct = giShadedCardDirect(position.xyz, normal.xyz, position.w);
     float3 accumulated = giScene.cardState[(handle * 2u) + 1u].xyz;
     if (giScene.constants[kGiCounts].w != 0u) {
         const float3 incoming = giGather(position.xyz, normal.xyz);

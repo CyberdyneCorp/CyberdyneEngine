@@ -255,7 +255,16 @@ placed, traced, filtered in probe space and integrated (the engine's default gat
 the flat sky term with the indirect diffuse on the diffuse albedo and adds the indirect specular
 through the split-sum environment BRDF; the sun, its shadows, the sky dome and the post chain are the
 published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-gather per-pixel`,
-`--gi-denoiser shared`, `--gi-frames <n>` and `--gi-converged off` are the controls.
+`--gi-denoiser shared`, `--gi-probe-rays <n>` (32), `--gi-ray-density <f>` (the share of the screen
+probes traced a frame, 1), `--gi-frames <n>`, `--gi-timing-frames <n>` (240, the frames the GI is
+timed over after the still) and `--gi-converged off` are the controls.
+
+A decal whose material glows (`decal-material ... emission r g b`, radiance in the frame's units)
+writes the emission channel where it lands — the shot's soot and moss write none, as before — and,
+with `--gi on`, the GI scene's cards inside its box and facing its way take its emission and albedo,
+so the GI is lit by exactly the lamp the frame draws. Every emitter stays in the surface cache
+(`EmitterOverride::CacheOnly`): a promoted one would leave the cards for `frame_lights()`, which the
+frame does not read, and the pixels it lights directly would lose that light.
 
 ![The Colonnade with its flat sky term (left) and with the engine's GI (right)](../../docs/design/images/gi-beauty-pair.png)
 
@@ -280,15 +289,17 @@ shades the sun with the shadows the GI's caches are lit by. (Before it, through 
 gather and the mirrored shadows, the engine's GI was 0.126.)
 
 **What it costs** at 1920x1080 (`--supersample 1`), every stage of the GI from timestamps, the
-fastest of the 47 frames before the still: 4.49 ms through ray queries (of which the probes' rays
-are 1.85 and the probe-space denoiser 0.91), 3.37 ms on the half-resolution grid (`--gi-divisor
-2`), 8.54 ms through the software field; the per-pixel gather 16.06 ms through ray queries. The caches are updated on the host here, about 19 ms of processor time a frame
+fastest of 240 frames after the still at full clocks (below): 2.73 ms through ray queries (of which
+the probes' rays are 0.90 and the probe-space denoiser 0.53), 1.73 ms on the half-resolution grid
+(`--gi-divisor 2`), 5.68 ms through the software field; the per-pixel gather 12.3 ms through ray
+queries. It was 4.49 ms as #124 measured it, 4.09 ms at full clocks. The caches are updated on
+the host here, about 19 ms of processor time a frame
 over 12 782 cards, and converged mode spends 32 frames — 11 s — before the first; the device card
 shading and probe gather of stages 2 and 3 are the installation that moves them off the processor.
 
-## The GI beside the path tracer: a sunlit room, and the Colonnade
+## The GI beside the path tracer: a sunlit room, a workshop hall and the Colonnade
 
-`just capture-gi-interior` photographs two shots three ways each — without the GI, with it, and with
+`just capture-gi-interior` photographs three shots three ways each — without the GI, with it, and with
 the GI's indirect diffuse replaced by the path tracer's — and maps where the GI and the path tracer
 differ. `--gi-reference-step 4` path traces every fourth pixel each way of the last frame
 (`BeautyGi::reference_image`: `gi::PathTracer` over the exact triangles, two independent halves of
@@ -306,14 +317,31 @@ and `air none` — the embers are the Colonnade's, authored at its camera.
 
 ![The sunlit room: without the GI, with CyberGI, through the path tracer, and the error](../../docs/design/images/gi-interior-comparison.png)
 
-CyberGI 0.193 relative to the path tracer over 125 024 traced pixels (its own noise, 2048 paths:
-0.056), 6.63 ms on the GPU; the surfaces lit mostly from the sun's patch are the darker part of the
-difference — the guide's section 7b has them by surface, and the room through the GI's other
-paths.
+CyberGI 0.091 relative to the path tracer over 125 024 traced pixels (its own noise, 2048 paths:
+0.056), 3.49 ms on the GPU — where it was 0.193 and 6.63 ms, the surfaces the sun's patch lights a
+third too dark because a card was shadow-tested at its centre (the guide's section 7b).
+
+The third shot is `content/beauty/hall.cyshot`, **The Workshop Hall**: a game's interior, two
+windows, a blue and an ochre wall, columns, crates, and a bench under a lamp whose underside glows
+(`--decals on`).
+
+![The workshop hall: without the GI, with CyberGI, through the path tracer, and the error](../../docs/design/images/gi-hall-comparison.png)
+
+CyberGI 0.148 relative over 129 600 traced pixels (the reference's noise 0.088), 3.78 ms on the
+GPU. `just capture-gi-hall-video` films it under a camera swinging 30 degrees and back
+(`--frames <dir> --frames-count 120 --orbit-degrees 30`):
+[docs/design/videos/gi-hall-orbit.mp4](../../docs/design/videos/gi-hall-orbit.mp4).
 
 ![The Colonnade: without the GI, with CyberGI, through the path tracer, and the error](../../docs/design/images/gi-colonnade-comparison.png)
 
-CyberGI 0.022 relative over 86 427 traced pixels (the reference's noise 0.014), 4.49 ms on the GPU.
+CyberGI 0.023 relative over 86 427 traced pixels (the reference's noise 0.014), 2.73 ms on the GPU.
+
+Only the still is read back (`Stage::set_gi_readback_frames`). The caption's GPU time is the
+fastest of `--gi-timing-frames` (240) frames drawn after the still and the reference with the GI's
+host cache held (`Stage::set_gi_hold_cache`): this sample's frames are light, and over the frames
+before the still the driver left the GPU at half its memory clock in some runs and not others — the
+sunlit room timed 4.81 or 3.49 ms with the same binary. Issued back to back, every run timed at
+full clocks, as a game's frames keep the device.
 
 **The room found a defect in this sample's shadows.** `beauty.slang` read the sun's map with its
 rows the wrong way up — `v = ndc.y / 2 + 1/2`, where the RHI rasterises the light's +Y into row 0,

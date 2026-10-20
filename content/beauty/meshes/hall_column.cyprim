@@ -1,0 +1,7 @@
+cyprim 1
+shape cylinder
+name HallColumn
+origin base
+radius 0.32
+height 4.5
+segments 32

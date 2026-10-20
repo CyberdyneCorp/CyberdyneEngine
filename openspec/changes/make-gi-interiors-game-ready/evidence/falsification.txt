@@ -1,0 +1,51 @@
+Mutations of the card footprint shadowing, the device card lookup and the 32-lane probe trace,
+Development build (GCC 13), Vulkan on the RTX 5060 (driver 580.95.05). Each was applied to the
+source named — for a shader, the gi_gpu SPIR-V and MSL regenerated through the module's
+regenerate.py — the named target rebuilt, the named case run, and the source and both headers
+restored and md5-verified. RED means the case failed with the mutation in place.
+
+h1_card_centre
+  src/rendering/gi/src/surface_cache.cpp: `SurfaceCache::shade` calls `shaded_direct` at the card's
+  centre, as before this change, in place of `shaded_card_direct`
+  cy_test_integration_render_gi_pipeline [*window*] RED, both cases:
+    the floor's cards carry 0.668 of the window's sunlight (held within 0.06 of 1);
+    the ceiling and the far wall receive 0.726 of the path tracer's one bounce, 0.274 relative
+    error (held within 0.05 and below 0.08)
+
+h2_no_refinement
+  src/rendering/gi/src/surface_cache.cpp: `card_light_visibility` returns the 2x2 share, never
+  refining to the 4x4
+  cy_test_integration_render_gi_pipeline [*window*] RED: the floor's cards carry 1.106 of the
+  sunlight
+
+h3_neighbour_own_cell
+  src/rendering/gi/src/card_lighting.cpp: `list_card_cells` (`CardNeighbourGrid::build`) lists a
+  card only in the cell that holds it ('reach' -> 0)
+  cy_test_integration_render_gi_pipeline [*neighbour*] RED: 2558 of 5624 lookups name another card
+  than `CardSnapshot::find`
+
+d1_device_card_centre
+  src/rendering/gi_gpu/shaders/gi_gpu_common.slang: `giCardLightVisibility` returns the centre's
+  shadow test
+  cy_test_render_gi_gpu [*shadow map shadows the device cards*] RED
+
+d2_device_wrong_cell
+  src/rendering/gi_gpu/shaders/gi_gpu_common.slang: `giFindCard` reads the cell one along x
+  cy_test_render_gi_gpu_tracing [*world tiers answer as SoftwareTracer*] RED
+
+d3_narrow_trace_16_lanes
+  src/rendering/gi_gpu/shaders/gi_screen_probes.slang: `cyGiProbeTraceNarrow` at numthreads(16), so
+  a 32-ray probe's last 16 rays are never traced
+  cy_test_render_gi_gpu_resolve [*device screen probes are the host's, software*] RED
+
+h4_reach_halved
+  src/rendering/gi/src/tracing.cpp: `SoftwareTracer::occluded` ends the march at half the distance
+  at which the ray leaves `DistanceField::reach_bounds`
+  cy_test_integration_render_gi_pipeline [*reach*] RED: 105 of 907 assertions, shadow rays that
+  answered otherwise than the march over the whole span
+
+h5_reach_one_level
+  src/rendering/gi/src/distance_field.cpp: `reach_bounds` is the finest level's window alone, with
+  no margin
+  cy_test_integration_render_gi_pipeline [*reach*] RED: 92 of 907 assertions — bricks outside the
+  box, and shadow rays that missed what the whole march hits

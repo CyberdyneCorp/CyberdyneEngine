@@ -11,10 +11,10 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | File | What it holds |
 |---|---|
 | `scene.h` | `GiMode`, `RadianceSource`, `RadianceSample`, `Surfel`, the error targets, `select_detail_level`, and `GiScene` — cell-scoped ingestion, eviction and attributable invalidation |
-| `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` (a point, a directional light, or a promoted emissive card), `emitter_form_factor` and the analytic `SkyTerm` |
+| `lighting.h` | the three seams the subsystems reach each other through — `Occluder`, `IndirectSource`, `RadianceLookup` — plus `SceneTracer`, `SceneHit`, `GiLight` (a point, a directional light, or a promoted emissive card), `emitter_form_factor`, a card's direct light over its square (`shaded_card_direct`) and the analytic `SkyTerm` |
 | `distance_field.h` | camera-centred sparse clipmaps of bricks, per-asset fields composited by transform, sphere tracing and sky visibility |
 | `surface_cache.h` | shaded radiance per surface card, the budgeted prioritised update (`SurfaceCache::select`), the one line the multi-bounce approximation is, and `SurfaceShadingBackend` — the seam a device shades the selected pages behind |
-| `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardSnapshot` and `CardGather` (issue #35) |
+| `card_lighting.h` | the host oracle of the device surface cache: `ShadowMap`, `ShadowMapOccluder`, `CardGrid`, `CardNeighbourGrid` (the device lookup's one-cell lists), `CardSnapshot` and `CardGather` (issue #35) |
 | `emissive.h` | emitters classified by radiant power and area — or by an `EmitterRule` — `classify_emitters`, the per-cell `EmissiveLights`, and `EmissiveReport`, which accounts for every watt |
 | `gi_volume.h` | `GiVolume` and `GiVolumeSet`: per-region overrides of quality, probe density, update rate, intensity, tier preference and far-field distance, with priority and blend distance |
 | `irradiance_volume.h` | a regular grid of SH L1 probes captured through the three seams, trilinear sampling weighted by validity, backface and a per-axis free-distance test, the update policy, and the texel layout `cy/frame.slang` reads |
@@ -291,6 +291,26 @@ before leaving at `t_min`, so a grazing ray cannot be answered by the surface it
 card lookup — `SurfaceCache::radiance_at`, `CardSnapshot::find` and the shader — ranks candidates
 with `card_lookup_prefers`: score, then alignment, then handle. Before it, a hit exactly on two
 coincident cards (an edge) scored zero against both and went to whichever the index visited first.
+
+**A card is shadowed over its square, not at its centre** (`shaded_card_direct`,
+`card_light_visibility`, `lighting.h`). A card answers every hit on its half metre of surface with
+one value, so its direct light must be the mean over that surface: each light's unshadowed
+contribution times the share of the card's square — `sqrt(area)` a side, oriented by
+`emitter_basis` — the light reaches, from shadow tests at the 2x2 sample centres and, where those
+disagree, the 4x4. Tested at the centre, a sunlit patch a few cards across kept or lost whole cards
+by where their centres fell: in the guide's sunlit room 1.5 m^2 of lit cards stood for 2.3 m^2 of
+sunlight, and every surface that patch lit read two thirds of its light (the room 0.193 from the
+path tracer, now under half of that). `integration.render_gi_pipeline`'s two window-light cases
+rebuild the room from boxes and hold the floor's cards to the window's sunlight and their one bounce
+onto the ceiling and the far wall to the path tracer — red on the centre test (0.668 and 0.726), and
+on the 2x2 test without its refinement. Most cards are wholly lit or wholly dark and take four
+shadow rays a light where they took one; a software shadow ray now ends its march where the field's
+bricks end (`DistanceField::reach_bounds`), the same answer as the whole march (the pipeline suite's
+reach case), which pays for most of that.
+
+`CardNeighbourGrid` (`card_lighting.h`) is the lookup structure the device card lookup reads — each
+cell one lookup radius across listing every card within the radius of it, so a hit reads one cell —
+held to `CardSnapshot::find` card for card; see `src/rendering/gi_gpu/README.md`.
 
 ## On the device: the radiance cache and the tiers (issue #35, stage 3)
 

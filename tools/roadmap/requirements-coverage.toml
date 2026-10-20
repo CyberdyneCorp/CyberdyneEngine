@@ -1802,6 +1802,18 @@ note = "the six operators the requirement enumerates, each driven to the ends of
 # denoising's "Signal-specific configuration" gains the history rejection; its row below names the
 # case that holds it.
 #
+# `openspec/changes/make-gi-interiors-game-ready` (#35, the game-ready interior) adds two. "A card's
+# direct light is its footprint's": on archive, map it to test:integration.render_gi_pipeline, case
+# "what a window's sunlit patch throws on the ceiling and the far wall is the path tracer's"
+# (siblings: "the cards in a window's sunlight carry the power the window lets in" in the same suite;
+# render.gi_gpu's "the shadow map shadows the device cards as it shadows the host ones" for the
+# device and a shadow edge crossing a card). "An interior within budget at 1080p": map it to
+# test:integration.render_gi_pipeline, case "one cell of the neighbour grid finds the card the
+# snapshot finds" (siblings: render.gi_gpu_resolve's screen-probe cases for the 32-lane trace against
+# the host, smoke.gi_gpu_probe_quality for the GI test room's error, leak, stillness, settle and
+# cost); the furnished interior and the hall are captures, `just capture-gi-interior` and
+# `just capture-gi-hall-video` (samples/12-beauty) — no CTest entry, as every beauty capture.
+#
 # TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
 # and `src/rendering/sky_illumination/`. Most are answered by a named case, one by a criterion the
 # falsifiability record proves can fail, and THE REST ARE DEFERRED WITH A REASON — they

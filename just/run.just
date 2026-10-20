@@ -1010,17 +1010,20 @@ capture-beauty-gi *args:
     python3 tools/docs/collect_beauty_shot.py docs/design/images/gi-beauty-off.png \
         docs/design/images/gi-beauty-on.png
 
-# A SUNLIT ROOM, AND THE COLONNADE, EACH THREE WAYS: without the GI (the frame's flat sky term),
-# with CyberGI's default — the screen probes and their probe-space denoiser, through ray queries
-# where the device has them — and with the offline path tracer's indirect diffuse (gi/bake.h) in
-# place of the GI's, every fourth pixel each way over the exact triangles and upsampled against
-# the frame's depths and normals; and the map of where the GI and the path tracer differ. The room
-# (`content/beauty/interior.cyshot`) is where indirect light is most of the picture: a red and a
-# green wall, white plaster, and the sun through one window. tools/docs/compose_gi_comparison.py
-# lays each out side by side. The figures — the relative error over every traced pixel, and the
-# GI's GPU milliseconds — are printed and are the ones the guide quotes. Needs a graphics device,
-# and says so and writes nothing without one; the path tracer is a few minutes of processor time.
-# Photograph a sunlit room and the Colonnade without GI, with CyberGI and path traced. Usage: just capture-gi-interior [--profile <p>] [--width <n>] [--height <n>]
+# A SUNLIT ROOM, A WORKSHOP HALL AND THE COLONNADE, EACH THREE WAYS: without the GI (the frame's
+# flat sky term), with CyberGI's default — the screen probes and their probe-space denoiser, through
+# ray queries where the device has them — and with the offline path tracer's indirect diffuse
+# (gi/bake.h) in place of the GI's, every fourth pixel each way over the exact triangles and
+# upsampled against the frame's depths and normals; and the map of where the GI and the path tracer
+# differ. The room (`content/beauty/interior.cyshot`) is where indirect light is most of the
+# picture: a red and a green wall, white plaster, and the sun through one window. The hall
+# (`content/beauty/hall.cyshot`) is a game's interior: two windows, coloured walls, a bench, crates,
+# columns and a glowing lamp, its glow an emissive decal (so the hall runs with `--decals on`).
+# tools/docs/compose_gi_comparison.py lays each out side by side. The figures — each panel's
+# relative error over every traced pixel, the GI's GPU milliseconds and the path tracer's own noise
+# — are printed and are the ones the guide quotes. Needs a graphics device, and says so and writes
+# nothing without one; the path tracer is minutes of processor time a scene.
+# Photograph a sunlit room, a workshop hall and the Colonnade without GI, with CyberGI and path traced. Usage: just capture-gi-interior [--profile <p>] [--width <n>] [--height <n>]
 capture-gi-interior *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1044,22 +1047,24 @@ capture-gi-interior *args:
     mkdir -p "${work}" docs/design/images
     just _beauty-programs "${build_dir}" "${work}" "${work}"
 
-    for scene in interior colonnade; do
+    for scene in interior hall colonnade; do
         # 2048 paths a pixel: the reference's own noise is then a fraction of the GI's error. The
         # room's indirect light comes mostly off one small sunlit patch of floor, which few cosine
         # paths find, so its paths cost minutes where the sky-lit Colonnade's cost seconds.
         paths=2048
-        if [ "${scene}" = interior ]; then
-            shot=content/beauty/interior.cyshot
-        else
-            shot=content/beauty/shot.cyshot
-        fi
+        extra=()
+        case "${scene}" in
+            interior) shot=content/beauty/interior.cyshot ;;
+            hall) shot=content/beauty/hall.cyshot; extra=(--decals on) ;;
+            *) shot=content/beauty/shot.cyshot ;;
+        esac
         out="docs/design/images/gi-${scene}"
         echo "==> capture     ${scene}: without the GI"
-        "${sample}" --shot "${shot}" --materials "${work}" --supersample 1 \
+        "${sample}" --shot "${shot}" --materials "${work}" --supersample 1 "${extra[@]+"${extra[@]}"}" \
             --still "${work}/${scene}-off.png" ${rest}
         echo "==> capture     ${scene}: CyberGI, then the path tracer's picture of the same frame"
         "${sample}" --shot "${shot}" --materials "${work}" --supersample 1 --gi on \
+            "${extra[@]+"${extra[@]}"}" \
             --gi-reference-step 4 --gi-reference-samples "${paths}" \
             --still "${work}/${scene}-on.png" \
             --gi-reference-still "${work}/${scene}-reference.png" \
@@ -1074,6 +1079,51 @@ capture-gi-interior *args:
             --reference "${work}/${scene}-reference.png" --error "${work}/${scene}-error.png" \
             --log "${work}/${scene}-on.log" --out "${out}-comparison.png"
     done
+
+# THE WORKSHOP HALL IN MOTION, LIT BY CYBERGI: the camera swings 30 degrees about the hall's
+# target and back over 120 frames, the GI running at its default every frame as a game's does —
+# reprojecting its probes and its history through the camera's motion — and the frames encoded
+# at 30 frames a second into docs/design/videos/gi-hall-orbit.mp4. Needs a graphics device and
+# ffmpeg.
+# Film the workshop hall lit by CyberGI as the camera swings round it. Usage: just capture-gi-hall-video [--profile <p>] [--width <n>] [--height <n>]
+capture-gi-hall-video *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    for tool in "${sample}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-gi-hall-video: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+    if ! command -v ffmpeg > /dev/null; then
+        echo "capture-gi-hall-video: ffmpeg is not installed." >&2
+        exit 1
+    fi
+
+    work="${build_dir}/gi-hall-video"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames" docs/design/videos
+    just _beauty-programs "${build_dir}" "${work}" "${work}"
+
+    echo "==> capture     the hall, 120 frames of a 30-degree swing"
+    "${sample}" --shot content/beauty/hall.cyshot --materials "${work}" --supersample 1 \
+        --decals on --gi on --frames "${work}/frames" --frames-count 120 --orbit-degrees 30 ${rest}
+    if [ -z "$(ls -A "${work}/frames" 2>/dev/null)" ]; then
+        echo "capture-gi-hall-video: no frame was written (no graphics device?)"
+        exit 0
+    fi
+    echo "==> encode      the swing"
+    ffmpeg -y -loglevel error -framerate 30 -i "${work}/frames/frame_%04d.png" \
+        -c:v libx264 -pix_fmt yuv420p -crf 22 docs/design/videos/gi-hall-orbit.mp4
+    echo "    docs/design/videos/gi-hall-orbit.mp4"
 
 # THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
 # embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far

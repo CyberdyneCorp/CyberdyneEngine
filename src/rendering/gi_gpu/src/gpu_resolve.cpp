@@ -51,6 +51,8 @@ constexpr u64 kVec4 = 16;
 constexpr u32 kSignals = 2;
 /// `[numthreads(64, 1, 1)]` on the one-dimensional entry points, 8 x 8 on the two image ones.
 constexpr u32 kLinearGroup = 64;
+/// One wave on the devices this targets: the probe trace's workgroup for 32 rays or fewer.
+constexpr u32 kNarrowGroup = 32;
 constexpr u32 kTileGroup = 8;
 
 /// The descriptor bindings of each set, in its `ParameterBlock`'s order.
@@ -304,7 +306,10 @@ Status GpuScreenResolve::create_layouts() noexcept {
                 resolve_hardware_pipeline_layout_);
 }
 
-Status GpuScreenResolve::create_pipelines() noexcept {
+Status GpuScreenResolve::create_pipeline(u32 which) noexcept {
+    if (pipelines_[which]) {
+        return ok();
+    }
     struct Source {
         const char* name;
         Span<const u32> spirv;
@@ -338,12 +343,16 @@ Status GpuScreenResolve::create_pipelines() noexcept {
         CY_GI_RESOLVE_SOURCE("gi probe filter", GiProbeFilter, "cyGiProbeFilter", kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi denoise temporal", GiDenoiseTemporal, "cyGiDenoiseTemporal",
                              kTileGroup, kTileGroup),
+        CY_GI_RESOLVE_SOURCE("gi probe trace narrow", GiProbeTraceNarrow, "cyGiProbeTraceNarrow",
+                             kNarrowGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi resolve hardware", GiResolveHardware, "cyGiResolveHardware",
                              kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi probe trace hardware", GiProbeTraceHardware,
                              "cyGiProbeTraceHardware", kLinearGroup, 1),
         CY_GI_RESOLVE_SOURCE("gi probe integrate hardware", GiProbeIntegrateHardware,
                              "cyGiProbeIntegrateHardware", kLinearGroup, 1),
+        CY_GI_RESOLVE_SOURCE("gi probe trace hardware narrow", GiProbeTraceHardwareNarrow,
+                             "cyGiProbeTraceHardwareNarrow", kNarrowGroup, 1),
     };
 #undef CY_GI_RESOLVE_SOURCE
     const rhi::PipelineLayoutHandle layouts[kPipelineCount] = {
@@ -353,13 +362,11 @@ Status GpuScreenResolve::create_pipelines() noexcept {
         resolve_pipeline_layout_,          resolve_pipeline_layout_,
         resolve_pipeline_layout_,          resolve_pipeline_layout_,
         resolve_pipeline_layout_,          temporal_pipeline_layout_,
+        resolve_pipeline_layout_,          resolve_hardware_pipeline_layout_,
         resolve_hardware_pipeline_layout_, resolve_hardware_pipeline_layout_,
         resolve_hardware_pipeline_layout_,
     };
-    // The ray query pipeline exists only where the device has ray queries, as stage 3's do.
-    const u32 count =
-        hardware_pipeline_ ? static_cast<u32>(kPipelineCount) : static_cast<u32>(kResolveHardware);
-    for (u32 which = 0; which < count; ++which) {
+    {
         const Source& source = sources[which];
         rhi::ShaderModuleBundle bundle;
         bundle.spirv = source.spirv;
@@ -392,6 +399,46 @@ Status GpuScreenResolve::create_pipelines() noexcept {
         pipelines_[which] = *created;
     }
     return ok();
+}
+
+Status GpuScreenResolve::create_pipelines() noexcept {
+    // The probe trace's four variants are `ensure_trace_pipelines`'s, created as the settings ask.
+    const auto trace_variant = [](u32 which) noexcept {
+        return which == kProbeTrace || which == kProbeTraceNarrow || which == kProbeTraceHardware ||
+               which == kProbeTraceHardwareNarrow;
+    };
+    // The ray query pipelines exist only where the device has ray queries, as stage 3's do.
+    const u32 count =
+        hardware_pipeline_ ? static_cast<u32>(kPipelineCount) : static_cast<u32>(kResolveHardware);
+    for (u32 which = 0; which < count; ++which) {
+        if (trace_variant(which)) {
+            continue;
+        }
+        if (Status made = create_pipeline(which); !made) {
+            return made;
+        }
+    }
+    return ensure_trace_pipelines();
+}
+
+GpuScreenResolve::Pipeline GpuScreenResolve::trace_pipeline(bool hardware) const noexcept {
+    // A probe of at most 32 rays is traced by a workgroup of 32 lanes: identical per lane, and no
+    // second wave waiting at the barriers for rays it does not have.
+    const bool narrow = gi::screen_probe_rays(settings_) <= kNarrowGroup;
+    if (hardware) {
+        return narrow ? kProbeTraceHardwareNarrow : kProbeTraceHardware;
+    }
+    return narrow ? kProbeTraceNarrow : kProbeTrace;
+}
+
+Status GpuScreenResolve::ensure_trace_pipelines() noexcept {
+    // ONLY THE VARIANT THE SETTINGS TRACE WITH IS COMPILED: a pipeline is a driver compile, and
+    // compiling all four — two of them ray query pipelines — for a frame that runs one cost the
+    // device suites most of a second of processor time a resolve.
+    if (Status made = create_pipeline(trace_pipeline(false)); !made) {
+        return made;
+    }
+    return hardware_pipeline_ ? create_pipeline(trace_pipeline(true)) : ok();
 }
 
 Status GpuScreenResolve::create_resources() noexcept {
@@ -611,6 +658,9 @@ void GpuScreenResolve::set_settings(const gi::ScreenResolveSettings& settings) n
     words_[kWordIntensity + 2] = bits(gi::ScreenHistoryInputs{}.depth_tolerance);
     update_probe_words();
     update_filter_passes();
+    if (device_ != nullptr) {
+        pipeline_status_ = ensure_trace_pipelines();
+    }
 }
 
 void GpuScreenResolve::update_probe_words() noexcept {
@@ -794,6 +844,9 @@ Status GpuScreenResolve::begin_frame(const GpuResolveView& view, u64 frame) noex
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the device resolve is not created");
     }
+    if (!pipeline_status_) {
+        return pipeline_status_;
+    }
     // The slots turn over: last frame's surfaces and history are the other slot now.
     if (began_) {
         slot_ = 1U - slot_;
@@ -825,6 +878,7 @@ Status GpuScreenResolve::begin_frame(const GpuResolveView& view, u64 frame) noex
     words_[kWordProbeShape + 3] =
         (settings_.probes.cache_blend ? 1U : 0U) | (probe_history_valid_ ? 2U : 0U);
     words_[kWordInvalid] = 0;
+    words_[kWordFull + 3] = copying() ? 1U : 0U;
     words_[kWordFrame + 0] = static_cast<u32>(frame & 0xFFFFFFFFULL);
     const u32 passes = words_[kWordFrame + 1];
     final_in_b_ = (passes & 1U) == 1U;
@@ -1064,7 +1118,7 @@ void GpuScreenResolve::declare_probes(RenderGraph& graph, bool hardware) noexcep
         .record(&record_step, &place);
 
     using C = GpuRadianceCache;
-    Step& trace = add_step(hardware ? kProbeTraceHardware : kProbeTrace, 4, layout.records());
+    Step& trace = add_step(trace_pipeline(hardware), 4, layout.records());
     PassBuilder traced = graph.add_pass("gi probe trace", QueueKind::Graphics);
     cache_->read_scene(graph, traced, hardware);
     for (const C::Binding binding : {C::kProbes, C::kPayloads, C::kLayout}) {
@@ -1126,7 +1180,7 @@ void GpuScreenResolve::declare_denoiser(RenderGraph& graph, ResourceId diffuse,
             .write(filter_a, Access::ComputeStorageWrite)
             .write(diffuse, Access::ComputeStorageWrite)
             .write(specular, Access::ComputeStorageWrite);
-        if (desc_.readback) {
+        if (copying()) {
             pass.write(import(graph, kPublished), Access::ComputeStorageWrite);
         }
         if (divisor_ != 1U) {
@@ -1189,7 +1243,7 @@ void GpuScreenResolve::declare_publish(RenderGraph& graph, ResourceId diffuse,
         .read(import(graph, kGuidance), Access::ComputeStorageRead)
         .write(diffuse, Access::ComputeStorageWrite)
         .write(specular, Access::ComputeStorageWrite);
-    if (desc_.readback) {
+    if (copying()) {
         pass.write(import(graph, kPublished), Access::ComputeStorageWrite);
     }
     pass.record(&record_step, &publish);
@@ -1206,7 +1260,7 @@ void GpuScreenResolve::declare_copy(RenderGraph& graph, Copy& copy, const char* 
 }
 
 void GpuScreenResolve::declare_readbacks(RenderGraph& graph) noexcept {
-    if (!desc_.readback) {
+    if (!copying()) {
         return;
     }
     const u64 pixels = static_cast<u64>(grid_width_) * grid_height_;
@@ -1322,7 +1376,9 @@ Expected<rhi::DescriptorSetHandle, Error> GpuScreenResolve::transient_set(
         case kProbePlace:
         case kProbeFilter:
         case kProbeTrace:
+        case kProbeTraceNarrow:
         case kProbeTraceHardware:
+        case kProbeTraceHardwareNarrow:
         case kProbeIntegrate:
         case kProbeIntegrateHardware:
             layout = kResolveLayout;
@@ -1431,11 +1487,14 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
         case kProbePlace:
         case kProbeFilter:
         case kProbeTrace:
+        case kProbeTraceNarrow:
         case kProbeTraceHardware:
+        case kProbeTraceHardwareNarrow:
         case kProbeIntegrate:
         case kProbeIntegrateHardware: {
             const bool hardware = step->pipeline == kResolveHardware ||
                                   step->pipeline == kProbeTraceHardware ||
+                                  step->pipeline == kProbeTraceHardwareNarrow ||
                                   step->pipeline == kProbeIntegrateHardware;
             const rhi::PipelineLayoutHandle layout =
                 hardware ? self.resolve_hardware_pipeline_layout_ : self.resolve_pipeline_layout_;
@@ -1449,8 +1508,10 @@ void GpuScreenResolve::record_step(const PassContext& context, void* user) noexc
                 layout, rhi::ShaderStage::Compute, 0,
                 Span<const u8>(reinterpret_cast<const u8*>(&dispatch), sizeof(dispatch)));
             // A probe's trace is one workgroup, a lane a ray; everything else a thread an item.
-            const bool per_group =
-                step->pipeline == kProbeTrace || step->pipeline == kProbeTraceHardware;
+            const bool per_group = step->pipeline == kProbeTrace ||
+                                   step->pipeline == kProbeTraceNarrow ||
+                                   step->pipeline == kProbeTraceHardware ||
+                                   step->pipeline == kProbeTraceHardwareNarrow;
             commands.dispatch(per_group ? std::max(step->count, 1U) : linear_groups(step->count), 1,
                               1);
             break;

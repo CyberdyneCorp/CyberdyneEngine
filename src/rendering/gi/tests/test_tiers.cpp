@@ -11,6 +11,7 @@
 #include "support.h"
 
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -316,4 +317,73 @@ CY_TEST_CASE("the reflection lobe spreads with roughness and stays above the sur
     // One ray is the reflection itself, whatever the roughness.
     CY_CHECK(
         cy::nearly_equal(reflection_lobe_direction(reflection, normal, 0.9F, 0, 1, 0), reflection));
+}
+
+// A shadow ray's march ends where the field's bricks do (`DistanceField::reach_bounds`): past them
+// every step reads a far value and can find nothing. Held here to the march over the whole span —
+// the same answer for every ray, those that start outside the field and those that leave it — and
+// the box to every brick the field holds.
+CY_TEST_CASE("a shadow ray's march ends at the field's reach and answers as the whole march") {
+    const BoxField wall(Vec3{3.0F, 2.0F, 0.25F});
+    const BoxField pillar(Vec3{0.4F, 2.0F, 0.4F});
+    DistanceField field;
+    ClipmapSettings clipmaps;
+    clipmaps.levels = 2;
+    clipmaps.resolution = 16;
+    clipmaps.base_extent_metres = 8.0F;
+    CY_REQUIRE(field.configure(clipmaps).has_value());
+    CY_REQUIRE(field.place(1, wall.asset(), cy::Mat4::from_translation(Vec3{0.0F, 0.0F, -3.0F}))
+                   .has_value());
+    CY_REQUIRE(field.place(2, pillar.asset(), cy::Mat4::from_translation(Vec3{2.0F, 0.0F, 1.5F}))
+                   .has_value());
+    (void)field.scroll_to(Vec3{0.3F, 0.2F, -0.4F});
+
+    const cy::Aabb reach = field.reach_bounds();
+    u32 bricks = 0;
+    field.visit_bricks([&](const FieldBrickChange& change) {
+        const FieldLevelView level = field.level_view(change.level);
+        const Vec3 lo{static_cast<f32>(change.brick[0]) * level.brick_size,
+                      static_cast<f32>(change.brick[1]) * level.brick_size,
+                      static_cast<f32>(change.brick[2]) * level.brick_size};
+        const Vec3 hi = lo + Vec3{level.brick_size, level.brick_size, level.brick_size};
+        CY_CHECK(reach.contains(lo));
+        CY_CHECK(reach.contains(hi));
+        ++bricks;
+    });
+    CY_REQUIRE(bricks > 0U);
+
+    const SoftwareTracer tracer(field, nullptr);
+    const f32 bias = field.voxel_size() * 2.0F;
+    u32 rays = 0;
+    u32 shadowed = 0;
+    u32 lit = 0;
+    for (u32 index = 0; index < 600; ++index) {
+        // Origins from beside the boxes to well outside the field, aimed past the wall or the
+        // pillar — or anywhere — at targets near and far.
+        const f32 a = static_cast<f32>(index) * 0.618034F;
+        const Vec3 from{std::fmod(a * 7.3F, 30.0F) - 15.0F, std::fmod(a * 3.1F, 6.0F) - 2.0F,
+                        std::fmod(a * 5.7F, 30.0F) - 15.0F};
+        Vec3 aim = from + Vec3{std::sin(a), 0.3F, std::cos(a * 1.3F)};
+        if (index % 4U == 0U) {
+            aim = Vec3{std::sin(a) * 2.5F, 0.5F, -3.0F};
+        } else if (index % 4U == 1U) {
+            aim = Vec3{2.0F, std::cos(a), 1.5F};
+        }
+        const Vec3 towards = cy::normalize(aim - from);
+        const f32 distance = index % 3U == 0U ? 1000.0F : 2.0F + std::fmod(a * 11.0F, 25.0F);
+        const Vec3 to = from + (towards * distance);
+        cy::Ray ray;
+        ray.origin = from;
+        ray.direction = towards;
+        const f32 span = cy::length(to - from);
+        const bool whole = field.sphere_trace(ray, span * 0.999F, bias).hit;
+        CY_CHECK_EQ(tracer.occluded(from, to), whole);
+        ++rays;
+        shadowed += whole ? 1U : 0U;
+        lit += whole ? 0U : 1U;
+    }
+    std::fprintf(stderr, "%u shadow rays: %u shadowed and %u lit, each as the whole march\n", rays,
+                 shadowed, lit);
+    CY_CHECK_GT(shadowed, 20U);
+    CY_CHECK_GT(lit, 20U);
 }

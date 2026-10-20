@@ -109,6 +109,14 @@ public:
                                  rendering::assembly::FrameSinks& sinks, const BeautyGiView& frame,
                                  u64 frame_index) noexcept;
 
+    /// With `BeautyGiSettings::readback`: whether the frames prepared from now on copy the GI's
+    /// buffers back for the reference (`GpuScreenResolve::set_readback_frames`).
+    void set_readback_frames(bool copy) noexcept;
+    /// Whether the frames prepared from now on leave the host's caches as they are: the GI's
+    /// device stages run as before over the cache the last update left. For timing a converged
+    /// still view, where an update changes nothing and costs tens of milliseconds of host time.
+    void set_hold_cache(bool hold) noexcept { hold_cache_ = hold; }
+
     [[nodiscard]] rhi::TextureViewHandle diffuse_view() const noexcept;
     [[nodiscard]] rhi::TextureViewHandle specular_view() const noexcept;
     /// The device time of the last frame's resolve, per stage, and the host time of its cache
@@ -120,6 +128,8 @@ public:
     [[nodiscard]] f64 converge_ms() const noexcept { return converge_ms_; }
     [[nodiscard]] const char* tier_name() const noexcept;
     [[nodiscard]] u32 card_count() const noexcept;
+    /// Cards an emissive decal lit (`BeautyGiSettings::emissive_decals`).
+    [[nodiscard]] u32 emissive_card_count() const noexcept;
     [[nodiscard]] u32 placements() const noexcept;
 
     /// After a frame rendered with `readback`: the path tracer at `pixels` pixels spread over the
@@ -139,6 +149,7 @@ private:
     Allocator* allocator_;
     std::unique_ptr<State> state_;
     f64 update_ms_ = 0.0;
+    bool hold_cache_ = false;
     u32 converged_frames_ = 0;
     f64 converge_ms_ = 0.0;
 };

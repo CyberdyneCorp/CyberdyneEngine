@@ -199,4 +199,27 @@ struct SkyTerm {
 [[nodiscard]] Vec3 shaded_direct(Span<const GiLight> lights, Vec3 position, Vec3 normal,
                                  const Occluder* occluder) noexcept;
 
+/// The footprint samples a card's shadow test starts with, each way, and the ones it refines to
+/// where those disagree: 2x2, then 4x4.
+inline constexpr u32 kCardShadowCoarse = 2;
+inline constexpr u32 kCardShadowFine = 4;
+
+/// The fraction of a card's square — `area` square metres about `position`, oriented by
+/// `emitter_basis` — that `light` reaches past `occluder`: the shadow test at the 2x2 sample
+/// centres of the square, and where they disagree, the share of the 4x4 sample centres that see
+/// the light. A non-positive area is the centre alone.
+///
+/// WHY A CARD IS NOT SHADOWED AT ITS CENTRE: a card answers every hit on its half metre of surface
+/// with one value, so the value must be the mean over that surface. Tested at its centre a card is
+/// all lit or all dark, and a sunlit patch a few cards across — the sun through a window — kept or
+/// lost whole cards by where their centres fell: the sunlit room's floor patch was 1.5 m^2 of lit
+/// cards for 2.3 m^2 of sunlight, and everything it lit read two thirds of its light.
+[[nodiscard]] f32 card_light_visibility(const GiLight& light, Vec3 position, Vec3 normal, f32 area,
+                                        const Occluder& occluder) noexcept;
+
+/// `shaded_direct` for a card: each light's unshadowed radiance at the centre times
+/// `card_light_visibility`. With no occluder it is `shaded_direct` exactly.
+[[nodiscard]] Vec3 shaded_card_direct(Span<const GiLight> lights, Vec3 position, Vec3 normal,
+                                      f32 area, const Occluder* occluder) noexcept;
+
 }  // namespace cy::rendering::gi

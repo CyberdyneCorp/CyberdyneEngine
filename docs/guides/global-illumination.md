@@ -18,7 +18,7 @@ for the device half, in five stages.
 | [`src/rendering/raytracing_gpu/`](../../src/rendering/raytracing_gpu/README.md) | The service's structures built on a device |
 | [`src/backends/rhi/`](../../src/backends/rhi/README.md) (`acceleration.h`) | Acceleration structures in the RHI, and the refusal of a device without them |
 | [`src/rendering/light_probes/`](../../src/rendering/light_probes/README.md) | The irradiance volume, which the dynamic GI blends with under one rule |
-| [`samples/12-beauty/`](../../samples/12-beauty/README.md) (`gi.h`) | The beauty shot lit by all of it: `--gi on`, `just capture-beauty-gi`; a sunlit room and the shot beside the path tracer, `just capture-gi-interior` |
+| [`samples/12-beauty/`](../../samples/12-beauty/README.md) (`gi.h`) | The beauty shot lit by all of it: `--gi on`, `just capture-beauty-gi`; a sunlit room, a workshop hall and the shot beside the path tracer, `just capture-gi-interior`; the hall in motion, `just capture-gi-hall-video` |
 | [Lighting authoring](lighting.md) | Lightmaps and baked volumes, which this system combines with rather than replaces |
 
 ## 1. One system, two halves, one oracle
@@ -190,7 +190,7 @@ pass (`screen_signal_config`), one device pass — with the history cut where th
 strays from it by more than a fifth (`denoise::SignalConfig::history_rejection`). The integrated
 signal is an average of 32 rays over four probes and moves a tenth as much from frame to frame as
 the one-ray signal, so the spatial cascade bought little and cost most of the frame: at 1080p the
-shared denoiser was 3.1 ms of the probes' 5.5 (hardware), the probe-space one is 0.6 ms of 2.75. The
+shared denoiser was 3.1 ms of the probes' 5.5 (hardware), the probe-space one is 0.6 ms of 2.0. The
 cut is what settles a moved light: an accumulation weighs each frame by one over the frames since
 its history was last rejected, so after an invalidation it averaged in every frame the caches spent
 converging (14 frames through the software tier); cut where the signal leaves its history, it
@@ -440,7 +440,7 @@ The claims and where each is measured:
 | Tuning it live changes only what it says | `integration.render_gi_runtime`, `integration.render_gi_emissive`, `integration.render_gi_classes` | untouched settings, no rule and a class set at run time are each the configured system bit for bit; a lamp put out and relit shades its floor to the same bits; Epic quality is 4x the rays of every probe placed after it |
 | A game reads the light where a body stands | `integration.game_backend_illumination`, `integration.swift_illumination` | the sample is `indirect_diffuse`'s own answer bit for bit (the six-direction mean for a body); a lamp put out from a script takes the luminance under it from 2.150 to 1.038 in the adapter and from 2.149 to 1.032 through Swift |
 | Every GI view in the editor's viewport, and Lit as before | `smoke.editor_authored_frame_vulkan`, `integration.editor_window_illumination` | 11 136 of 11 200 opaque view texels change the frame, every one of 13 376 clear texels keeps it, and back on Lit the frame is byte for byte the frame before |
-| Explicit cost | `smoke.gi_gpu_probe_quality`'s cost cases; `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The GI at 1920x1080, every stage: the screen probes (16 px) 2.75 ms (hardware) / 3.63 ms (software) — 5.50 / 6.38 through the shared denoiser — and 1.82 / 2.77 ms on the half-resolution grid; every 8 px 5.93 / 9.38 ms; the per-pixel gather 11.8 / 15.3 ms, 3.15 ms on the half grid, 2.24 ms with the denoiser lever too. For a 3840x2160 output the probes are 10.7 / 14.0 ms native (per pixel 46.9) and 4.8 / 6.3 ms at the upscaler's 1440p (per pixel 20.9). The beauty shot through the screen probes 4.49 ms (hardware) / 8.54 ms (software), 3.37 ms on the half grid (per pixel, 16.1 ms). Stage 5 holds a 960x540 frame of the screen probes to its allocation by dropping from 0.98 ms to 0.52 ms in the declared lever order |
+| Explicit cost | `smoke.gi_gpu_probe_quality`'s cost cases; `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The GI at 1920x1080, every stage: the screen probes (16 px) 1.99 ms (hardware) / 2.51 ms (software) — 4.75 / 5.27 through the shared denoiser — and 1.19 / 1.65 ms on the half-resolution grid; every 8 px 3.51 / 5.15 ms; the per-pixel gather 10.6 / 13.9 ms, 2.86 ms on the half grid, 1.96 ms with the denoiser lever too. For a 3840x2160 output the probes are 7.7 / 9.7 ms native (per pixel 42.4) and 3.5 / 4.4 ms at the upscaler's 1440p (per pixel 18.9). The scenes of section 7b (the beauty sample, every stage, the fastest of 240 frames at full clocks): the sunlit room 3.49 ms (hardware) / 4.61 ms (software), 2.40 ms on the half grid; the workshop hall 3.78 / 5.40 ms, 2.63 on the half grid; the Colonnade 2.73 / 5.68 ms, 1.73 / 3.88 ms on the half grid (per pixel, 12.3 ms). Stage 5 holds a 960x540 frame of the screen probes to its allocation by dropping from 0.68 ms to 0.35 ms in the declared lever order |
 
 **The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
 reference over cards turn on `set_emission_footprints(true)`: a hit then takes the emission of the
@@ -469,7 +469,7 @@ regresses.
 | Temporal stability | a converged still view at 1080p moves 0.0016 (software) / 0.0011 (hardware) a frame through the screen probes, 0.0023 / 0.0017 per pixel; 0.0034 per pixel at 40x24, where the one-ray signal under it moves 0.451 (held below 0.01) | no figure | baked probes do not move at all, and do not respond to a light that does |
 | Emissive lighting | a promoted 30 cm lamp within 0.5 % of the path tracer with a per-receiver ratio variance of 0.027; left to the cache the same lamp is 4.6 — promotion is the measurement, or an author's rule | emissive surfaces light through the GI's gather; the documentation recommends real lights for small bright emitters, which are noisy | emissive surfaces contribute to the bake; realtime emission through Enlighten |
 | Hardware ray tracing with a bounded software fallback | the tiers agree to 0.0209 (held at 0.10); switching moves the image 0.074 where an ordinary frame moves 0.142 | hardware and software tracing are both offered; the difference between them is not bounded in the documentation | runtime probe GI does not trace rays; ray-traced GI is a separate HDRP feature |
-| Cost at 1080p | the whole GI through the screen probes 2.75 ms (hardware) / 3.63 ms (software) at authored quality and full resolution, 1.82 / 2.77 ms on the half-resolution grid; per pixel 11.8 / 15.3 ms, 3.15 ms on the half grid; a 960x540 frame held to its allocation from 0.98 ms to 0.52 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
+| Cost at 1080p | the whole GI through the screen probes 1.99 ms (hardware) / 2.51 ms (software) at authored quality and full resolution in the GI test room, 3.49 / 3.78 ms (hardware) in the furnished sunlit room and workshop hall (section 7b); 1.19 / 1.65 ms on the half-resolution grid; per pixel 10.6 / 13.9 ms, 2.86 ms on the half grid; a 960x540 frame held to its allocation from 0.68 ms to 0.35 ms | budgets are documented per scalability level for consoles; no RTX 5060 figure | a probe lookup per pixel at runtime; the bake's cost is offline |
 | Control from tools and code | every setting, volume, class and emitter rule from the editor (undoable, MCP) and from a Swift game (ABI 1.9); all nineteen debug views in the viewport; `explain()` at a clicked point | post-process volume settings, console variables, visualization modes | the Lighting window, probe volume baking sets and lighting scenarios, a scripting API |
 
 What the table supports, and only that: on every axis where a number exists, CyberGI's is stated,
@@ -478,29 +478,32 @@ held by a test and reproducible from this repository; on error against a referen
 probes, Lumen's own technique, denoised in probe space, cost CyberGI a quarter of what its
 per-pixel gather did at 1080p, with less error, no leak, a stiller view and a moved light settled
 as fast. What it does not support: that CyberGI is cheaper than either engine — at full resolution
-its default is 2.75 ms through the hardware tier in the test room and more in a furnished one
-(section 7b), a sixth of a 60 fps frame or more; that it was ever measured
+its default is 2.0 ms through the hardware tier in the test room and 3.5 to 3.8 ms in the furnished
+interiors of section 7b (4.6 to 5.4 ms through the software tier), a fifth of a 60 fps frame; that it was ever measured
 beside either engine on one scene; or anything about consoles, Windows or Apple devices, where the
 hardware tier refuses (section 10); or that the editor's GI views are interactive — the
 editor-hosted runtime draws them on the host, about 35 ms for the probe view at 320x180 and 240 ms
 for indirect diffuse (`smoke.editor_gi_cost`, GCC 13), where Lumen's visualization modes are drawn
 by the GPU frame.
 
-### 7b. Beside the path tracer, as a picture: a sunlit room and the Colonnade
+### 7b. Beside the path tracer, as a picture: a sunlit room, a workshop hall and the Colonnade
 
 The numbers above are measured at chosen points; `just capture-gi-interior` photographs one view
 three ways and maps the difference at every fourth pixel each way. The view without the GI shades
 every surface with the frame's flat sky term; CyberGI is the engine's default — the screen probes
-every 16 pixels and their probe-space denoiser, through ray queries; the path tracer's frame is the
-same frame with the GI's indirect diffuse replaced by `gi::PathTracer`'s (the lightmap bake's, over
-the exact triangles, three bounces), traced at every fourth pixel and upsampled against the
-frame's depths and normals, so the sun, its shadow, the GI's specular and the sky are the frame's
-own in all three. The error map is |CyberGI - path tracer| over the path tracer's luminance, from
-black through red to pale yellow at 50 % and above. The figure in each caption is
-`compare_against_reference`'s over every traced pixel, beside the path tracer's own noise — read
-from the difference of two independent halves of each pixel's paths, and the part of the error the
-GI is not answerable for. The GPU time is the fastest of the 47 frames before the still, every
-stage of the GI, on the RTX 5060 at 1920x1080.
+every 16 pixels, 32 rays a probe, every probe traced every frame, their probe-space denoiser, the
+full-resolution grid, through ray queries; the path tracer's frame is the same frame with the GI's
+indirect diffuse replaced by `gi::PathTracer`'s (the lightmap bake's, over the exact triangles,
+three bounces, an emitter emitting over its cards' squares), traced at every fourth pixel and
+upsampled against the frame's depths and normals, so the sun, its shadow, the GI's specular and the
+sky are the frame's own in all three. The error map is |CyberGI - path tracer| over the path
+tracer's luminance, from black through red to pale yellow at 50 % and above. Each caption carries
+its own figure, `compare_against_reference`'s over every traced pixel: the flat sky term's under
+the frame without the GI, the GI's and its GPU time under CyberGI, and under the path tracer its
+own noise — read from the difference of two independent halves of each pixel's paths, the part of
+the error the GI is not answerable for. The GPU time is every stage of the GI on the RTX 5060 at
+1920x1080, the fastest of 240 frames of the same view drawn after the still with the host's cache
+held, so the device runs at the clocks a game's frames keep it at (section 9).
 
 **A room where indirect light is most of the picture** (`content/beauty/interior.cyshot`): a closed
 room, a red wall on the left and a green one on the right, white plaster elsewhere, and the sun 35
@@ -510,25 +513,66 @@ lit by what that patch and the sky in the window throw back.
 ![The sunlit room: without the GI, with CyberGI, through the path tracer, and the error](../design/images/gi-interior-comparison.png)
 
 Measured by `just capture-gi-interior` on the RTX 5060, Vulkan, 0 validation errors: **CyberGI
-0.193 relative to the path tracer over 125 024 traced pixels, where the path tracer's own noise
-(2048 paths, three bounces) is 0.056; 6.63 ms on the GPU** — the probes' rays 3.84, the probe-space
-filter 0.01, the integration 1.13 and the denoiser 0.96 — through ray queries at full resolution.
-By surface (every eighth pixel, 1024 paths): the floor 0.99 of the path tracer's light, the red
-wall 0.95, the block's top 1.00, and the surfaces lit mostly from the sun's patch too dark — the
-green wall beside it and the ceiling 0.77, the far wall 0.68 (the probe-space denoiser's figure
-there 0.200). Through the shared denoiser the same measure is 0.199 at 9.16 ms; through the
-per-pixel gather 0.251 at 28.1 ms. The room costs more than the GI test room in the probes' rays
-(3.84 ms against 1.12) and their integration (1.13 against 0.66). Its sunlit patch is where its
-window and sun put it (`tools/docs/check_sun_patch.py`: 232 of 255 in the patch, 19 around it).
+0.091 relative to the path tracer over 125 024 traced pixels, where the path tracer's own noise
+(2048 paths, three bounces) is 0.056; 3.49 ms on the GPU** — the probes' rays 1.48, the probe-space
+filter 0.01, the integration 0.74, the denoiser 0.58, and the surfaces' unpacking and
+reprojection 0.67 — through ray queries at full resolution; 4.61 ms through the software tier, 2.40
+on the half grid. It was 0.193 and 6.63 ms (rays 3.84, integration 1.13); the code before this
+change, timed at full clocks, 6.24 ms (software 9.28). The error is to its reference's noise as
+the Colonnade's is to its own — 1.6 times — and the noise is part of it: a reference of 2048 paths
+differs from the converged image by about its noise, so an exact GI would read about that much.
+The flat sky term the GI replaces is 7.85: indoors it lights every surface as if the room had no ceiling. Its sunlit patch is where its window
+and sun put it (`tools/docs/check_sun_patch.py`: 233 of 255 in the patch, 24 around it).
+
+*Why it was dark.* The surfaces lit mostly from the sun's patch — the far wall at 0.68 of the path
+tracer's light, the green wall and the ceiling at 0.77 — read the patch's cards, and the patch's
+cards were short of it: a card was shadow-tested at its centre, so each was all lit or all dark,
+and in this room the cards whose centres fell in the 2.3 m^2 of sunlight on the floor stood for
+1.5 m^2. A card's direct light is now the mean over its square (section 9).
+`integration.render_gi_pipeline` rebuilds the room from its boxes, cards it as the sample does and
+holds it to that: the floor's cards carry 1.049 of the window's sunlight (0.668 before), and their
+one bounce onto 32 points of the ceiling and the far wall is 1.008 of the path tracer's, 0.068
+relative error (0.726 and 0.274 before).
+
+*What is left* is mostly at contact: the error map's brightest marks are the floor's strip along
+the foot of the far wall, the ceiling's corners and the room's vertical edges, where CyberGI is
+brighter than the path tracer — the occlusion within a few centimetres of a corner, below the
+probes' spacing (section 10).
+
+**A game's interior** (`content/beauty/hall.cyshot`, *The Workshop Hall*): two tall windows in the
+left wall with the afternoon sun through both, a blue wall, an ochre far wall, a timber bench under
+a hanging lamp, two columns, a stone block in the first window's light, a plaster orb and painted
+crates — the weathered-stone and gravel graphs and their maps, coloured per material. The lamp's
+underside glows (an emissive decal, `--decals on`); the frame has no light for it, so without the
+GI it lights nothing, and with the GI its light reaches the bench and the wall through the screen
+probes' rays as the path tracer's does.
+
+![The workshop hall: without the GI, with CyberGI, through the path tracer, and the error](../design/images/gi-hall-comparison.png)
+
+**CyberGI 0.148 relative to the path tracer over 129 600 traced pixels, the path tracer's own noise
+0.088; 3.78 ms on the GPU** (the probes' rays 1.68, the integration 0.82, the denoiser 0.58),
+5.40 ms through the software tier and 2.63 on the half grid, 14 301 cards, 4 of them the lamp's. The flat sky
+term is 6.72. The lamp's light on the bench and on the blue wall under it is the path tracer's;
+the error map's brightest marks are again the contact edges — the floor along the walls' feet, the
+corners of the window bays — and, more than in the sunlit room, the floor about the bench and the
+block, where the reference's noise is highest too. The lamp lies on the GI's half-metre card
+lattice: across it, the reference's footprint mode lit only 78 % of it (section 9) and the same
+hall read 0.214.
+
+And in motion — the camera swinging 30 degrees about the hall's target and back over four seconds,
+the GI at its default every frame, reprojecting its probes and its history through the motion
+(`just capture-gi-hall-video`): [docs/design/videos/gi-hall-orbit.mp4](../design/videos/gi-hall-orbit.mp4).
 
 **The Colonnade** (`content/beauty/shot.cyshot`), outdoors under a low sun, where the sky does most
 of the indirect work:
 
 ![The Colonnade: without the GI, with CyberGI, through the path tracer, and the error](../design/images/gi-colonnade-comparison.png)
 
-**CyberGI 0.022 relative over 86 427 traced pixels, the path tracer's own noise 0.014; 4.49 ms on
-the GPU** (the probes' rays 1.85, the integration 1.07, the denoiser 0.93), 12 782 cards. The error
-map's brightest marks are thin lines where the blocks and the plinths meet the gravel.
+**CyberGI 0.023 relative over 86 427 traced pixels, the path tracer's own noise 0.014; 2.73 ms on
+the GPU** (the probes' rays 0.90, the integration 0.66, the denoiser 0.53), 12 782 cards; it was
+0.022 and 4.49 ms, its denoiser's 0.93 ms then including the reference's copies (section 9), and
+4.09 ms timed at full clocks. The flat sky term is 0.351. The error map's brightest marks are thin lines where
+the blocks and the plinths meet the gravel.
 
 ## 8. Running and changing it
 
@@ -541,7 +585,8 @@ just test-render -R gi_gpu                    # the device suites; skipped where
 just test-integration -R render_gi_screen_probes   # the screen probes' properties, on the host
 just test-smoke -R gi_screen_probes           # their quality at 128x72 on the host
 just test-smoke -R gi_gpu_probe_quality       # both gathers' quality and cost at 1080p and 4K, on the device
-just capture-gi-interior                      # a sunlit room and the Colonnade: off, CyberGI, path traced
+just capture-gi-interior                      # a sunlit room, a hall and the Colonnade: off, CyberGI, path traced
+just capture-gi-hall-video                    # the hall lit by CyberGI as the camera swings round it
 python3 src/rendering/gi_gpu/shaders/regenerate.py --slangc build/dev/Development/bin/slangc
 just build-shaders --strict src samples       # every entry point for SPIR-V, MSL and DXIL
 just quality-shader-headers                   # the committed headers are what the sources compile to
@@ -604,6 +649,43 @@ both suites. The [Slang guide](slang.md) has the shader rules.
 - **A pass declares every image it binds.** The probes' temporal pass binds the frame's two targets
   on every grid; on the half grid it first declared them only on the publish after it, and the
   descriptor named an image in a layout no barrier had put it in.
+- **A card is one value over its square, so shade it as one.** A card answers every hit on its half
+  metre of surface, and its direct light was a shadow test at its centre: all lit or all dark. A
+  window's sunlit patch a few cards across kept or lost whole cards by where their centres fell —
+  the sunlit room's floor carried 1.5 m^2 of lit cards for 2.3 m^2 of sunlight, and everything the
+  patch lit read two thirds of its light. `shaded_card_direct` takes each light's share of the
+  card's square (2x2 shadow tests, 4x4 where they disagree); `integration.render_gi_pipeline`'s
+  window-light cases hold the floor's cards to the window's sunlight and their bounce to the path
+  tracer.
+- **A probe's trace waits for its slowest lane.** Halving the screen probes' rays saved 13 % of the
+  sunlit room's trace, because the time went into the card lookup each hit resolves through — 27
+  bucket reads and as many scattered lists a hit — and a 32-ray probe in a 64-lane workgroup left a
+  second wave waiting at every barrier. The lookup reads one cell's list now
+  (`gi::CardNeighbourGrid`) and a probe of 32 rays a 32-lane workgroup; both change no answer.
+  Take a pass apart by removing one thing at a time before believing what costs.
+- **A shadow ray to the sun need not march past the field.** Beyond the box every brick lies in
+  (`DistanceField::reach_bounds`) each step reads a far value and finds nothing, yet a ray to a
+  target 1000 m away kept stepping until its step limit. `SoftwareTracer::occluded` ends the march
+  at that box — the same answer, held by `integration.render_gi_pipeline` over 600 rays — which
+  paid for most of the card's footprint shadowing on the host: `render.gi_gpu_frame`'s case (b)
+  had gone from 4.85 to 5.02 s of CPU against its 5 s budget, and is 4.88 s.
+- **Do not read back the frames you time.** With the path tracer's reference on, every frame copied
+  its signals back for the host — 0.4 ms inside the denoiser's timestamps at 1080p — and the
+  captions quoted that. `GpuScreenResolve::set_readback_frames` turns the copies off; the beauty
+  sample copies only its still.
+- **A light frame times the device's power state, not the GI.** The beauty sample's frames are a
+  few milliseconds of GPU work behind 20 to 30 ms of the host's cache update, and the driver left
+  the RTX 5060, run to run, at half its memory clock (P3, 7 GHz) or at its full one (P0, 14 GHz):
+  the sunlit room timed 4.81 or 3.49 ms with the same binary, every bandwidth-bound stage up to
+  twice as long in the first, and 240 more frames did not settle it. The sample now times the GI
+  over 240 frames after the still with the host's cache held — the view is still and converged, so
+  an update changes nothing — and the frames, issued back to back as a game's are, timed at full
+  clocks in every run. `smoke.gi_gpu_probe_quality` drives the resolve back to back and always did.
+- **A reference over cards emits over each card's square.** The path tracer's footprint mode — the
+  right one for emitters smaller than the card spacing — gives a card cut by an emitter's edge a
+  square smaller than the strip it stands for, and the hall's lamp first lay across the card lattice:
+  the reference lit only 78 % of it, and the GI read 7 % brighter than the path tracer over the
+  whole hall (0.214). On the lattice the lamp is whole cards and the hall reads 0.148.
 - **Fit the GI's sky to the frame's.** `SkyTerm` is a gradient with no sun aureole, and a low sun's
   aureole is most of a clear sky's light: fitted to the atmosphere's zenith and horizon alone, the
   beauty shot's sky lit an upward face with a third of the frame's sky term. Scale it so an upward
@@ -614,23 +696,25 @@ both suites. The [Slang guide](slang.md) has the shader rules.
 - **The screen tier in the screen probes' rays.** The probes trace the world tiers, as the per-pixel
   gather does: the resolve has no previous frame's lit colour to march against, which the device
   screen tier (`GpuTierTracer`) reads.
-- **The probes' trace in a furnished room.** In the test room the probes' rays are 1.1 ms of the
-  hardware tier's 2.75; in the sunlit room (section 7b), with five times the cards and the adaptive
-  probes its edges ask for, the trace is most of the frame. The denoiser is no longer what costs.
 - **The denoiser and the temporal anti-aliasing share nothing.** The frame's TAA runs on the
   composited colour, after the GI's targets are sampled, and its history clamp would reject the
   GI's frame-to-frame noise rather than average it; what it could replace is now 0.6 ms.
-- **Surfaces lit mostly by a small sunlit patch are too dark.** In the sunlit room (section 7b) the
-  far wall receives 0.68 of the path tracer's indirect light, the green wall beside the sun's patch
-  and the ceiling 0.77, where the floor and the red wall far from the patch are within 1 % and 5 %.
-  The per-pixel gather (0.251 over the room) and the shared denoiser (0.199) are no closer, so it
-  is not the probes' or their denoiser's doing; what in the caches loses that light is not yet
-  traced.
-
+- **Contact edges are too bright.** What is left of the furnished rooms' error (section 7b) is
+  mostly where two surfaces meet: the floor's strip along the foot of a wall, a ceiling's corners,
+  a room's vertical edges and the floor about an object standing on it, where CyberGI is brighter
+  than the path tracer — the occlusion within a few centimetres of the corner, below the probes'
+  16-pixel spacing and their origin's lift. The per-pixel gather (0.251 in the sunlit room before
+  this rung) is no closer. A short screen-space occlusion term applied to the near field, as Lumen's
+  short-range ambient occlusion is, would be the next step; nothing measures one yet.
+- **A small bright emitter in the cache.** The hall's lamp stays in the surface cache because the
+  frame does not read promoted lights (below), and a half-metre lamp is found by few of a probe's 32
+  rays: it lights the bench and the wall under it without fireflies only because it is long — two
+  metres of panel. A smaller lamp shows the blotches section 5 describes.
 - **Card shading and the probe gather in the beauty shot run on the host.** The shot uses the device
-  resolve and denoiser; its caches are updated by the host system, which costs about 19 ms of
-  processor time a frame at 12 782 cards. The device card shading and gather (stages 2 and 3) are
-  the installation that removes it.
+  resolve and denoiser; its caches are updated by the host system, which costs about 17 ms of
+  processor time a frame at the Colonnade's 12 782 cards and 30 to 37 ms in the sunlit room's and
+  the hall's closed interiors. The device card shading and gather (stages 2 and 3) are the
+  installation that removes it.
 - **`samples/10-world`**: the world shades per vertex in its own shader with no depth and normal
   prepass and no shadowed sun of its own; it needs the terrain in the GI scene (cards and a
   heightfield distance grid per chunk) and its ambient replaced before it can take the GI.

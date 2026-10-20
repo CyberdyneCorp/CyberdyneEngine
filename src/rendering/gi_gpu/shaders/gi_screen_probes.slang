@@ -29,6 +29,14 @@ void cyGiProbeTrace(uint3 group : SV_GroupID, uint3 lane : SV_GroupThreadID) {
     spTrace<GiSoftwareTier>(group.x, lane.x);
 }
 
+/// The same trace in a workgroup of one 32-lane wave, for a probe of at most 32 rays: the second
+/// wave of the 64-lane group would only wait at its barriers.
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void cyGiProbeTraceNarrow(uint3 group : SV_GroupID, uint3 lane : SV_GroupThreadID) {
+    spTrace<GiSoftwareTier>(group.x, lane.x);
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cyGiProbeFilter(uint3 thread : SV_DispatchThreadID) {

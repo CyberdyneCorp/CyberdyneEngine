@@ -222,6 +222,12 @@ public:
     /// The grid's buffers, one entry a grid cell: the resolve's noisy signals, the denoised ones,
     /// the history and the surfaces.
     [[nodiscard]] Status read_back_noisy(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept;
+    /// Created with `readback`: whether the frames begun from now on copy their buffers for the
+    /// host — every frame unless turned off. The copies, and the published signal the temporal
+    /// pass writes for them, cost what a frame nobody reads back should not pay, and their
+    /// writes land inside the stages the timestamps time: a capture that reads only its last
+    /// frame turns them off for the frames before it.
+    void set_readback_frames(bool copy) noexcept { readback_frames_ = copy; }
     [[nodiscard]] Status read_back_denoised(Span<Vec3> diffuse, Span<Vec3> specular) const noexcept;
     [[nodiscard]] Status read_back_history(Span<i32> source, Span<f32> confidence) const noexcept;
     /// This frame's surfaces: world position, view depth, normal, roughness.
@@ -265,9 +271,12 @@ private:
         kProbeIntegrate,
         kProbeFilter,
         kTemporal,
+        /// The probe trace in 32-lane workgroups, for probes of at most 32 rays.
+        kProbeTraceNarrow,
         kResolveHardware,
         kProbeTraceHardware,
         kProbeIntegrateHardware,
+        kProbeTraceHardwareNarrow,
         kPipelineCount,
     };
     enum Layout : u32 {
@@ -344,6 +353,12 @@ private:
 
     [[nodiscard]] Status create_layouts() noexcept;
     [[nodiscard]] Status create_pipelines() noexcept;
+    /// One pipeline, unless it exists.
+    [[nodiscard]] Status create_pipeline(u32 which) noexcept;
+    /// The probe trace's variant for the settings' rays, through either tier.
+    [[nodiscard]] Pipeline trace_pipeline(bool hardware) const noexcept;
+    /// Create the trace variants the settings ask for, if they do not exist yet.
+    [[nodiscard]] Status ensure_trace_pipelines() noexcept;
     [[nodiscard]] Status create_resources() noexcept;
     void write_constants() noexcept;
     [[nodiscard]] rhi::BufferHandle constants() const noexcept;
@@ -375,6 +390,12 @@ private:
     GpuRadianceCache* cache_ = nullptr;
     GpuScreenResolveDescription desc_{};
     gi::ScreenResolveSettings settings_{};
+    /// `set_readback_frames`: the frames begun copy for the host, when created with `readback`.
+    bool readback_frames_ = true;
+    /// What creating the trace pipelines a `set_settings` asked for answered; `begin_frame` returns
+    /// it.
+    Status pipeline_status_ = ok();
+    [[nodiscard]] bool copying() const noexcept { return desc_.readback && readback_frames_; }
 
     rhi::ShaderModuleHandle shaders_[kPipelineCount];
     rhi::ComputePipelineHandle pipelines_[kPipelineCount];

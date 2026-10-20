@@ -1,0 +1,156 @@
+# content/beauty/hall.cyshot — a stone workshop hall, lit the way a game's interior is lit.
+# Issue #35: CyberGI's game-ready interior, `just capture-gi-interior`.
+#
+# A HALL WITH TWO TALL WINDOWS IN ITS LEFT WALL and the afternoon sun through both: two bright
+# patches on the flagstones, and everything else in the room — the blue right wall, the ochre far
+# wall, the columns' shadowed sides, the ceiling — lit by what those patches, the sky in the windows
+# and one hanging lamp throw back. The lamp glows (an emissive decal on its underside); the frame
+# has no light for it, so with the GI off it lights nothing and with the GI on it lights the bench
+# and the wall behind it through the screen probes' rays, as the path tracer says it should.
+#
+# THE ENGINE'S REAL MATERIALS: the weathered-stone and gravel graphs with their maps, `base-color`
+# giving the walls, the bench and the crates their colours. Coordinates are
+# world metres, y up; the hall spans x -4..4, y 0..4.5 and z 0..12 inside. Looking down +z, +x is
+# on the left: the windows are in the left wall.
+
+cyshot 1
+name The Workshop Hall
+
+# From the near left corner, under the windows, at eye height, across the hall to the far right:
+# the sunlit patches on the floor, the bench and its lamp against the blue wall, the columns and
+# the far wall are all in frame. The target is 4.2 m along that line: the video's camera swings
+# round it and stays inside the hall.
+camera position 2.6 1.7 0.6
+camera target 0.59 1.48 4.28
+camera fov 70
+camera near 0.05
+
+# The sun 40 degrees up, off the left wall and a little behind the camera's line, so each window
+# throws its patch across the floor toward the middle of the hall.
+sun elevation 40
+sun azimuth 15
+sun shadow-extent 16
+sun shadow-bias 0.0008
+sun shadow-normal-offset 0.02
+
+sky cloud-cover 0.20
+sky cloud-density 0.20
+sky cloud-steps 32
+sky seed 0x5EEDB107
+
+# Exposed for the room, not the windows: the patches are past the top of the curve, and the walls
+# the bounce lights sit in the middle of it.
+exposure-stops -7.6
+
+air none
+
+# --- The materials ----------------------------------------------------------------------------
+material plaster graph content/beauty/materials/weathered_stone.cygraph
+material plaster albedo content/beauty/textures/stone_albedo.png
+material plaster normal content/beauty/textures/stone_normal.png
+material plaster data content/beauty/textures/stone_data.png
+material plaster base-color 1.0 0.97 0.92
+
+material flagstone graph content/beauty/materials/weathered_stone.cygraph
+material flagstone albedo content/beauty/textures/stone_albedo.png
+material flagstone normal content/beauty/textures/stone_normal.png
+material flagstone data content/beauty/textures/stone_data.png
+material flagstone base-color 0.62 0.58 0.52
+
+material blue graph content/beauty/materials/weathered_stone.cygraph
+material blue albedo content/beauty/textures/stone_albedo.png
+material blue normal content/beauty/textures/stone_normal.png
+material blue data content/beauty/textures/stone_data.png
+material blue base-color 0.20 0.36 0.85
+
+material ochre graph content/beauty/materials/weathered_stone.cygraph
+material ochre albedo content/beauty/textures/stone_albedo.png
+material ochre normal content/beauty/textures/stone_normal.png
+material ochre data content/beauty/textures/stone_data.png
+material ochre base-color 0.95 0.62 0.24
+
+material timber graph content/beauty/materials/weathered_stone.cygraph
+material timber albedo content/beauty/textures/stone_albedo.png
+material timber normal content/beauty/textures/stone_normal.png
+material timber data content/beauty/textures/stone_data.png
+material timber base-color 0.55 0.33 0.17
+
+material red graph content/beauty/materials/weathered_stone.cygraph
+material red albedo content/beauty/textures/stone_albedo.png
+material red normal content/beauty/textures/stone_normal.png
+material red data content/beauty/textures/stone_data.png
+material red base-color 0.90 0.16 0.12
+
+material green graph content/beauty/materials/weathered_stone.cygraph
+material green albedo content/beauty/textures/stone_albedo.png
+material green normal content/beauty/textures/stone_normal.png
+material green data content/beauty/textures/stone_data.png
+material green base-color 0.22 0.75 0.26
+
+material gravel graph content/beauty/materials/courtyard_gravel.cygraph
+material gravel albedo content/beauty/textures/gravel_albedo.png
+material gravel normal content/beauty/textures/gravel_normal.png
+material gravel data content/beauty/textures/gravel_data.png
+
+# --- The meshes -------------------------------------------------------------------------------
+mesh ground content/beauty/meshes/ground.cyprim
+mesh slab content/beauty/meshes/hall_slab.cyprim
+mesh wall content/beauty/meshes/hall_wall.cyprim
+mesh end content/beauty/meshes/hall_end.cyprim
+mesh band-low content/beauty/meshes/hall_band_low.cyprim
+mesh band-high content/beauty/meshes/hall_band_high.cyprim
+mesh pier-long content/beauty/meshes/hall_pier_long.cyprim
+mesh pier-mid content/beauty/meshes/hall_pier_mid.cyprim
+mesh column content/beauty/meshes/hall_column.cyprim
+mesh bench content/beauty/meshes/hall_bench.cyprim
+mesh lamp content/beauty/meshes/hall_lamp.cyprim
+mesh crate content/beauty/meshes/hall_crate.cyprim
+mesh block content/beauty/meshes/block.cyprim
+mesh orb content/beauty/meshes/sphere.cyprim
+
+# --- The hall ---------------------------------------------------------------------------------
+#
+# Floor and ceiling slabs, the blue right wall, the near wall behind the camera, the ochre far
+# wall, and the left wall built round its two windows: a band below them to 1.2 m, a band above
+# from 3.2 m, and three piers between, leaving two openings 1.6 m wide at z 3.2..4.8 and
+# 7.2..8.8. HALF A METRE THICK, every one, for the reason `interior.cyshot` gives.
+instance slab flagstone at 0 -0.5 6.0 yaw 0 uv 0.45 normal 0.8
+instance slab plaster at 0 4.5 6.0 yaw 0 uv 0.5 normal 0.6
+instance wall blue at -4.25 0 6.0 yaw 0 uv 0.5 normal 0.6
+instance end plaster at 0 0 -0.25 yaw 0 uv 0.5 normal 0.6
+instance end ochre at 0 0 12.25 yaw 0 uv 0.5 normal 0.6
+instance band-low plaster at 4.25 0 6.0 yaw 0 uv 0.5 normal 0.6
+instance band-high plaster at 4.25 3.2 6.0 yaw 0 uv 0.5 normal 0.6
+instance pier-long plaster at 4.25 1.2 1.6 yaw 0 uv 0.5 normal 0.6
+instance pier-mid plaster at 4.25 1.2 6.0 yaw 0 uv 0.5 normal 0.6
+instance pier-long plaster at 4.25 1.2 10.4 yaw 0 uv 0.5 normal 0.6
+
+# Outside, the courtyard's gravel a little below the floor: what the windows show and what the
+# sun lights beyond them.
+instance ground gravel at 0 -0.05 6.0 yaw 0 uv 1.1 normal 1.7
+
+# --- What stands in it ------------------------------------------------------------------------
+#
+# Two columns down the right half, a timber workbench against the blue wall under a hanging lamp,
+# a stone block in the first window's light, a plaster orb in the far half, and a stack of painted
+# crates in the far right corner.
+instance column plaster at -2.4 0 3.0 yaw 0 uv 0.6 normal 0.6
+instance column plaster at -2.4 0 9.0 yaw 0 uv 0.6 normal 0.6
+instance bench timber at -3.35 0 6.0 yaw 0 uv 0.9 normal 0.6
+instance lamp plaster at -3.15 2.3 6.1 yaw 0 uv 1.0 normal 0.4
+instance block plaster at 1.2 0 4.6 yaw 18 uv 0.8 normal 0.8
+instance orb plaster at -0.4 0 9.4 yaw 0 uv 1.0 normal 0.8
+instance crate red at -3.3 0 11.3 yaw 10 uv 1.0 normal 0.8
+instance crate green at -2.4 0 11.4 yaw -15 uv 1.0 normal 0.8
+instance crate plaster at -3.0 0.8 11.25 yaw 25 uv 1.0 normal 0.8
+
+# --- The lamp's glow --------------------------------------------------------------------------
+#
+# The lamp's underside, a warm panel: an emissive decal over its bottom face, facing down. Its
+# emission is radiance in the frame's units, as every decal's is. The lamp lies on the GI's
+# half-metre card lattice (the shot camera's space), so its face is four whole cards: the path
+# tracer's reference emits over each card's own square, and a card cut by the lamp's edge would
+# leave part of the lamp dark in the reference and nowhere else. Drawn with `--decals on`, which
+# is also what puts its glow on the GI scene's cards (samples/12-beauty/gi.cpp).
+decal-material lampglow albedo 0.9 0.85 0.75 roughness 0.6 metallic 0 emission 50000 35000 18000 shape box 0 0
+decal lampglow at -3.15 2.3 6.1 facing 0 -1 0 up 0 0 1 size 0.5 2.0 0.1 fade-angle 30

@@ -90,6 +90,7 @@ function(cy_render_gi_declare_tests)
             "${tests_dir}/test_mesh_cards.cpp"
             "${tests_dir}/test_system.cpp"
             "${tests_dir}/test_tiers.cpp"
+            "${tests_dir}/test_window_light.cpp"
         DEPENDENCIES cy::rendering-gi)
 
     cy_add_test(

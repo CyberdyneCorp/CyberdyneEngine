@@ -2032,13 +2032,16 @@ Status Stage::stage_shot(Shot& shot, ShotReport& report) noexcept {
         light.horizon = sky.horizon;
         light.mean_sky = sky.sky_irradiance;
         const f64 gi_mark = now_millis();
+        gi_.emissive_decals = decals_;
         if (Status built =
                 device_->gi.build(shot, device_->gi_meshes, light, gi_, device, width_, height_);
             !built) {
             return built;
         }
-        std::printf("gi            %u cards over %u placements, built in %.0f ms\n",
-                    device_->gi.card_count(), device_->gi.placements(), now_millis() - gi_mark);
+        std::printf(
+            "gi            %u cards over %u placements, %u of them glowing, built in %.0f ms\n",
+            device_->gi.card_count(), device_->gi.placements(), device_->gi.emissive_card_count(),
+            now_millis() - gi_mark);
     }
 
     const auto upload = [&device](rhi::BufferHandle handle, const void* bytes,
@@ -2200,8 +2203,8 @@ Status Stage::create_decals(const Shot& shot) noexcept {
         decal.sort_order = placed.order;
         decal.fade_angle_radians = placed.fade_angle_degrees * std::numbers::pi_v<f32> / 180.0F;
         // Everything the material states, over everything the receiver had — metallic included,
-        // because soot or moss over copper is not a metal. Emission is the one channel neither of
-        // the shot's decal materials writes.
+        // because soot or moss over copper is not a metal. Emission only from a material that
+        // glows (a lamp's face): the Colonnade's soot and moss write none, as before.
         decal.weights.albedo = 1.0F;
         decal.weights.normal = 1.0F;
         decal.weights.roughness = 1.0F;
@@ -2210,6 +2213,8 @@ Status Stage::create_decals(const Shot& shot) noexcept {
         for (usize index = 0; index < shot.decal_materials.size(); ++index) {
             if (shot.decal_materials[index].key == placed.material) {
                 decal.material_index = static_cast<u32>(index);
+                decal.weights.emission =
+                    decal_emits(shot.decal_materials[index].material) ? 1.0F : 0.0F;
             }
         }
         device_->decals.push_back(decal);
@@ -3078,6 +3083,18 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         report.gi_timed = times.valid;
     }
     return frame;
+}
+
+void Stage::set_gi_hold_cache(bool hold) noexcept {
+    if (device_ != nullptr) {
+        device_->gi.set_hold_cache(hold);
+    }
+}
+
+void Stage::set_gi_readback_frames(bool copy) noexcept {
+    if (device_ != nullptr) {
+        device_->gi.set_readback_frames(copy);
+    }
 }
 
 Expected<BeautyGiReference, Error> Stage::measure_gi_reference(u32 pixels, u32 samples,
