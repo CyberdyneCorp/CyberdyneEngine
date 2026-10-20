@@ -36,6 +36,10 @@ inline constexpr u32 kWidth = 480;
 inline constexpr u32 kHeight = 270;
 inline constexpr u32 kInstanceCount = 12;
 inline constexpr u32 kMaterialCount = 4;
+/// The four materials' base colours. Box `which` is drawn with material `which % kMaterialCount`,
+/// times its tint.
+inline constexpr f32 kMaterialColours[kMaterialCount][3] = {
+    {0.82F, 0.24F, 0.18F}, {0.20F, 0.62F, 0.85F}, {0.90F, 0.78F, 0.32F}, {0.35F, 0.80F, 0.45F}};
 inline constexpr u32 kParticleCount = 512;
 /// The cube's vertices: four a face, so each face has its own normal.
 inline constexpr u32 kCubeVertices = 24;
@@ -127,6 +131,16 @@ struct FrameSceneHooks {
     /// draws what the suite says — a skinned mesh — and false keeps the cube. The floor slab is
     /// box 0 and is offered like any other.
     bool (*geometry)(u32 which, DrawGeometry& out, void* user) noexcept = nullptr;
+    /// Box `which` as a box of any proportions: its centre and half extents, after `place_box`.
+    /// The floor slab, box 0, is offered too. What a sample that draws its own field as boxes —
+    /// a level's ground, a building, a crate — places them with.
+    void (*shape_box)(u32 which, Vec3& centre, Vec3& half, void* user) noexcept = nullptr;
+    /// Box `which`'s instance tint, which its material's base colour is multiplied by: one, the
+    /// scene's, unless the suite says otherwise.
+    void (*tint_box)(u32 which, Vec3& tint, void* user) noexcept = nullptr;
+    /// The frame's lights, after the scene's sun and two point lights are written: a sample lit by
+    /// its own sun replaces them.
+    void (*lights)(Array<render::LightDescription>& lights, void* user) noexcept = nullptr;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.
@@ -172,6 +186,12 @@ public:
     /// game's does. The origin, the default, is the frame this scene always rendered.
     void set_eye(Vec3 eye) noexcept;
     [[nodiscard]] Vec3 eye() const noexcept { return eye_; }
+    /// Move the camera to `eye` looking along `forward` (unit length, not straight up or down):
+    /// `set_eye` with a view of the scene's own choosing. The rows follow as they do there.
+    void set_camera(Vec3 eye, Vec3 forward) noexcept;
+    [[nodiscard]] Vec3 forward() const noexcept { return forward_; }
+    /// The view's rotation alone: camera-relative to view space.
+    [[nodiscard]] const Mat4& relative_view() const noexcept { return relative_view_; }
     /// Draw box `which` as a mesh DEFORMED ON THE DEVICE, the way a skinned mesh is: the vertex
     /// streams hold two copies of the cube — the two halves of a double-buffered output, which is
     /// what `skinning::SkinnedBuffers` is — and the box's draw names its current half and, through
@@ -283,6 +303,7 @@ private:
     Mat4 relative_view_ = Mat4::identity();
     Mat4 projection_ = Mat4::identity();
     Vec3 eye_{0.0F, 0.0F, 0.0F};
+    Vec3 forward_{0.0F, 0.0F, -1.0F};
     Vec3 centres_[kInstanceCount] = {};
     f32 heights_[kInstanceCount] = {};
     u32 index_slots_[kInstanceCount] = {};

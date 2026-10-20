@@ -4,6 +4,7 @@
 
 #include <cy/rendering/material/standard.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -185,8 +186,6 @@ Status FrameScene::create_materials() noexcept {
     }
 
     MaterialTable& table = assembly_.materials();
-    static constexpr f32 kColors[kMaterialCount][3] = {
-        {0.82F, 0.24F, 0.18F}, {0.20F, 0.62F, 0.85F}, {0.90F, 0.78F, 0.32F}, {0.35F, 0.80F, 0.45F}};
     for (u32 slot = 0; slot < kMaterialCount; ++slot) {
         Expected<u32, Error> allocated = table.allocate();
         if (!allocated.has_value()) {
@@ -197,7 +196,8 @@ Status FrameScene::create_materials() noexcept {
             !defaults) {
             return defaults;
         }
-        const Vec4 colour{kColors[slot][0], kColors[slot][1], kColors[slot][2], 1.0F};
+        const Vec4 colour{kMaterialColours[slot][0], kMaterialColours[slot][1],
+                          kMaterialColours[slot][2], 1.0F};
         if (Status set = table.set_color(program_, *allocated, ids.base_color_factor, colour);
             !set) {
             return set;
@@ -238,9 +238,14 @@ Status FrameScene::fill_index() noexcept {
         if (!floor && hooks_.place_box != nullptr) {
             hooks_.place_box(which, centre, half, hooks_.user);
         }
+        Vec3 extents{half, floor ? 0.125F : half, half};
+        if (hooks_.shape_box != nullptr) {
+            hooks_.shape_box(which, centre, extents, hooks_.user);
+            half = std::max({extents.x, extents.y, extents.z});
+        }
 
         SpatialEntry entry;
-        entry.bounds = Aabb::from_center_extents(centre, Vec3{half, floor ? 0.125F : half, half});
+        entry.bounds = Aabb::from_center_extents(centre, extents);
         boxes_[which] = entry.bounds;
         entry.stable_id =
             hooks_.stable_id != nullptr ? hooks_.stable_id(which, hooks_.user) : 900U + which;
@@ -254,22 +259,25 @@ Status FrameScene::fill_index() noexcept {
         }
         index_slots_[which] = *slot;
         centres_[which] = centre;
-        heights_[which] = floor ? 0.125F : half;
+        heights_[which] = extents.y;
 
         // The instance's placement, model to CAMERA-RELATIVE. The camera is at the origin looking
         // down -Z in this scene, so the camera-relative position IS the position — which is the
         // arrangement design.md §3 wants and the reason there is no world matrix anywhere here.
         InstanceTransform& transform = instances_[which];
-        const f32 scale = half * 2.0F;
-        transform.row0[0] = scale;
-        transform.row1[1] = floor ? 0.25F : scale;
-        transform.row2[2] = scale;
+        transform.row0[0] = extents.x * 2.0F;
+        transform.row1[1] = extents.y * 2.0F;
+        transform.row2[2] = extents.z * 2.0F;
         transform.row0[3] = centre.x - eye_.x;
         transform.row1[3] = centre.y - eye_.y;
         transform.row2[3] = centre.z - eye_.z;
-        transform.tint[0] = 1.0F;
-        transform.tint[1] = 1.0F;
-        transform.tint[2] = 1.0F;
+        Vec3 tint{1.0F, 1.0F, 1.0F};
+        if (hooks_.tint_box != nullptr) {
+            hooks_.tint_box(which, tint, hooks_.user);
+        }
+        transform.tint[0] = tint.x;
+        transform.tint[1] = tint.y;
+        transform.tint[2] = tint.z;
         transform.tint[3] = 1.0F;
     }
 
@@ -299,6 +307,9 @@ Status FrameScene::fill_index() noexcept {
         lights_[which].color[1] = which == 1U ? 0.7F : 0.5F;
         lights_[which].color[2] = which == 1U ? 1.0F : 0.3F;
         lights_[which].stable_id = 1 + which;
+    }
+    if (hooks_.lights != nullptr) {
+        hooks_.lights(lights_, hooks_.user);
     }
     return ok();
 }
@@ -496,7 +507,7 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     view.projection = projection_;
     view.cull.frustum = Frustum::from_view_projection(projection_ * view_);
     view.cull.camera_position = eye_;
-    view.cull.camera_forward = Vec3{0.0F, 0.0F, -1.0F};
+    view.cull.camera_forward = forward_;
     view.cull.fov_y_radians = view.fov_y_radians;
     view.lights = lights_.span();
     view.sun_direction = Vec3{0.35F, 0.86F, 0.37F};
@@ -644,9 +655,20 @@ Status FrameScene::move_box(u32 which, Vec3 centre) noexcept {
     }
     centres_[which] = centre;
     place_row(which);
-    const f32 half = instances_[which].row0[0] * 0.5F;
-    return index_.update(index_slots_[which],
-                         Aabb::from_center_extents(centre, Vec3{half, heights_[which], half}));
+    return index_.update(
+        index_slots_[which],
+        Aabb::from_center_extents(centre, Vec3{instances_[which].row0[0] * 0.5F, heights_[which],
+                                               instances_[which].row2[2] * 0.5F}));
+}
+
+void FrameScene::set_camera(Vec3 eye, Vec3 forward) noexcept {
+    eye_ = eye;
+    forward_ = forward;
+    view_ = look_at(eye, eye + forward, Vec3{0.0F, 1.0F, 0.0F});
+    relative_view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, forward, Vec3{0.0F, 1.0F, 0.0F});
+    for (u32 which = 0; which < instances_.size(); ++which) {
+        place_row(which);
+    }
 }
 
 void FrameScene::set_eye(Vec3 eye) noexcept {

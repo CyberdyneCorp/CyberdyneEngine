@@ -20,6 +20,7 @@
 // It writes the scene with the GI off and on beside each other (`gi_frame_off.png`,
 // `gi_frame_on.png`) into the test's binary directory.
 
+#include "frame_gi_support.h"
 #include "frame_scene.h"
 #include "golden.h"
 #include "screen_support.h"
@@ -122,83 +123,7 @@ private:
     Expected<rhi::Device*, Error> device_ = fail(ErrorCode::Unavailable, "not created");
 };
 
-/// The pipeline scene's boxes as the GI scene: a field of boxes, a card every half metre over every
-/// face, and the scene's own sun and two point lights.
-struct GiOfScene {
-    std::vector<std::unique_ptr<gi_support::BoxField>> fields;
-    std::vector<gi::Surfel> surfels;
-    std::vector<gi::GiLight> lights;
-    gi::IlluminationSystem system;
-
-    [[nodiscard]] bool build(Span<const Aabb> boxes) {
-        gi::IlluminationSettings settings;
-        settings.field.levels = 2;
-        settings.field.resolution = 64;
-        settings.field.base_extent_metres = 16.0F;
-        settings.probes.levels = 2;
-        settings.probes.base_spacing_metres = 1.0F;
-        settings.probes.half_extent_probes = 5;
-        settings.rays_per_probe = 16;
-        settings.max_ray_distance_metres = 24.0F;
-        settings.surface_bounce = gi::SurfaceBounce::Cards;
-        settings.card_gather.max_distance_metres = 24.0F;
-        // The sky the frame's ambient term comes from, in the same physical units: an overcast
-        // dome of a few thousand nits under a 22 000 lux sun.
-        settings.sky.intensity = 2500.0F;
-        if (!system.configure(settings).has_value()) {
-            return false;
-        }
-        std::vector<gi_support::AxisQuad> quads;
-        u64 id = 1;
-        for (const Aabb& box : boxes) {
-            const Vec3 centre = box.center();
-            const Vec3 half = box.half_extents();
-            const u32 grid = std::max(
-                9U,
-                static_cast<u32>(std::ceil((std::max({half.x, half.y, half.z}) + 0.5F) * 6.0F)));
-            fields.push_back(std::make_unique<gi_support::BoxField>(half, 0.5F, grid | 1U));
-            if (!system.field()
-                     .place(id++, fields.back()->asset(), Mat4::from_translation(centre))
-                     .has_value()) {
-                return false;
-            }
-            const Vec3 lo = box.min;
-            const Vec3 hi = box.max;
-            const Vec3 grey{0.62F, 0.6F, 0.58F};
-            quads.push_back({0, lo.x, {lo.y, lo.z}, {hi.y, hi.z}, grey, -1.0F});
-            quads.push_back({0, hi.x, {lo.y, lo.z}, {hi.y, hi.z}, grey, 1.0F});
-            quads.push_back({1, lo.y, {lo.x, lo.z}, {hi.x, hi.z}, grey, -1.0F});
-            quads.push_back({1, hi.y, {lo.x, lo.z}, {hi.x, hi.z}, grey, 1.0F});
-            quads.push_back({2, lo.z, {lo.x, lo.y}, {hi.x, hi.y}, grey, -1.0F});
-            quads.push_back({2, hi.z, {lo.x, lo.y}, {hi.x, hi.y}, grey, 1.0F});
-        }
-        surfels = gi_support::surfels_from_quads(quads, 0.5F);
-        const Aabb bounds =
-            Aabb::from_center_extents(Vec3{0.0F, 0.0F, -8.0F}, Vec3{12.0F, 6.0F, 12.0F});
-        if (!system.ingest_cell(1, bounds, {surfels.data(), surfels.size()}, 0).has_value()) {
-            return false;
-        }
-        system.surfaces().set_lookup_radius(0.4F);
-
-        gi::GiLight sun;
-        sun.directional = true;
-        sun.direction = normalize(Vec3{-0.28F, -0.82F, -0.50F});
-        sun.colour = Vec3{1.0F, 0.96F, 0.88F};
-        sun.intensity = 22000.0F;
-        sun.id = 1;
-        lights.push_back(sun);
-        for (u32 which = 1; which < 3U; ++which) {
-            gi::GiLight point;
-            point.position = Vec3{which == 1U ? -3.2F : 3.2F, 1.4F, -5.4F};
-            point.colour = which == 1U ? Vec3{0.4F, 0.7F, 1.0F} : Vec3{1.0F, 0.5F, 0.3F};
-            point.intensity = 9000.0F;
-            point.range = 16.0F;
-            point.id = 1 + which;
-            lights.push_back(point);
-        }
-        return true;
-    }
-};
+using gi_support::GiOfScene;
 
 /// One scene, its GI, and the hooks that attach the stage.
 struct GiFrameCase {

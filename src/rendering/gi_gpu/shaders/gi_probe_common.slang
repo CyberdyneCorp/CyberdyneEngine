@@ -67,7 +67,7 @@ static const uint kGpCountSkyAnswers = 7u;
 struct GiProbeSet {
     /// 64 uint4 words, the layout above.
     StructuredBuffer<uint4> constants;
-    /// Four float4 per probe: [position, level], [last update frame bits, valid, live, 0], and the
+    /// Four float4 per probe: [position, level], [last update frame bits, valid, live, error], and the
     /// six axis distances in [2].xyzw and [3].xy. The host writes a probe whose revision moved;
     /// a gather writes the last three of its own probe in place.
     RWStructuredBuffer<float4> probes;
@@ -429,7 +429,9 @@ void gpGatherProbe<T : IGiWorldTier>(uint index, uint lane) {
     for (uint f = 0u; f < floats; ++f) {
         giProbes.payloads[(probe * floats) + f] = data[f];
     }
-    giProbes.probes[(probe * 4u) + 1u] = float4(asfloat(giDispatch.frame), 1.0f, 1.0f, 0.0f);
+    // The error rides in the record's last word, as `GpuRadianceCache::upload_payload` writes it
+    // for a host gather: what `GiProbeError` draws.
+    giProbes.probes[(probe * 4u) + 1u] = float4(asfloat(giDispatch.frame), 1.0f, 1.0f, error);
     giProbes.probes[(probe * 4u) + 2u] =
         float4(distances[0], distances[1], distances[2], distances[3]);
     giProbes.probes[(probe * 4u) + 3u] = float4(distances[4], distances[5], 0.0f, 0.0f);

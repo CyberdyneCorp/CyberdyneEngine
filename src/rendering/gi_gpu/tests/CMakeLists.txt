@@ -128,6 +128,29 @@ function(cy_gi_gpu_declare_tests)
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     set_tests_properties(render.gi_gpu_frame PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # The live half: `GpuGiFrame` attached as a host attaches it — on, off, and changed by the host
+    # between frames — and the nineteen debug views drawn by the device, each against the host's
+    # view over the frame's own surfaces, and what a frame with each costs.
+    # A smoke suite with a device, as the probe quality suite is: each case renders the frame a few
+    # dozen times and draws every view on the host as well.
+    cy_add_test(
+        NAME gi_gpu_live
+        KIND smoke
+        SOURCES
+            "${tests_dir}/test_gi_gpu_live.cpp"
+            "${pipeline_tests}/frame_scene.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-pipeline
+                     cy::rendering-particles cy::rendering-lightmaps cy::servers-render
+                     cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_smoke_gi_gpu_live
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests"
+                                       "${pipeline_tests}" "${CMAKE_SOURCE_DIR}/tests/render")
+    target_compile_definitions(cy_test_smoke_gi_gpu_live
+                               PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(smoke.gi_gpu_live PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gi_gpu_declare_tests)

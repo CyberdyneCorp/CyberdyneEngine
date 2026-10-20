@@ -557,6 +557,14 @@ GiDebugView gi_debug_view_from_name(const char* name) noexcept {
     return GiDebugView::Count;
 }
 
+Vec3 debug_view_hue(u32 index) noexcept {
+    return hue_of(index);
+}
+
+Vec3 debug_view_ramp(f32 t) noexcept {
+    return ramp(t);
+}
+
 u32 pack_colour(Vec3 colour) noexcept {
     return to_byte(colour.x) | (to_byte(colour.y) << 8U) | (to_byte(colour.z) << 16U) |
            (255U << 24U);
