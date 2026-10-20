@@ -10,9 +10,9 @@
 // `cy::rendering-gi` is the oracle. The field read is `DistanceField::distance`, the march is
 // `DistanceField::sphere_trace`, the shadow test is `ShadowMap::shadowed` behind
 // `ShadowMapOccluder`, the lookup is `CardSnapshot::find`, the gather is `CardGather::gather`, and
-// the card update is `SurfaceCache::shade` over `shaded_direct`. Each is written in the order the
-// C++ writes it — a reordering that is equal in exact arithmetic is a test failure in float — and
-// `render.gi_gpu` runs both over one scene and compares.
+// the card update is `SurfaceCache::shade` over `shaded_card_direct`. Each is written in the order
+// the C++ writes it — a reordering that is equal in exact arithmetic is a test failure in float —
+// and `render.gi_gpu` runs both over one scene and compares.
 //
 // ================================================================================================
 // EVERY BUFFER IS A FLAT ARRAY OF WORDS OR VEC4S
@@ -59,9 +59,9 @@ struct GiSceneSet {
     /// Two float4 per card: [outgoing, valid], [accumulated, last update frame as bits]. Last
     /// frame's radiance while a shading dispatch reads it; this frame's once the commit has run.
     RWStructuredBuffer<float4> cardState;
-    /// `CardGrid::ranges()` and `::items()`.
+    /// `CardNeighbourGrid::ranges()`, and per entry the card's position and its handle's value.
     StructuredBuffer<uint> gridRanges;
-    StructuredBuffer<uint> gridItems;
+    StructuredBuffer<float4> gridItems;
     /// Four float4 per light: [position, intensity], [direction, range], [colour, directional],
     /// [emitter normal, emitter area] — the last zero for every light that is not a promoted
     /// emissive card (`GiLight::emitter_area`).
@@ -402,7 +402,7 @@ float giEmitterFormFactor(float3 centre, float3 emitterNormal, float area, float
     return abs(sum) * (0.5f * 0.318309886f);
 }
 
-// --- Direct light: `direct_radiance` and `shaded_direct` ----------------------------------------
+// --- Direct light: `direct_radiance` ------------------------------------------------------------
 
 float3 giDirectRadiance(uint light, float3 position, float3 normal) {
     const float4 a = giScene.lights[(light * 4u) + 0u];
@@ -427,7 +427,61 @@ float3 giDirectRadiance(uint light, float3 position, float3 normal) {
     return c.xyz * (a.w * cosine / distanceSquared);
 }
 
-float3 giShadedDirect(float3 position, float3 normal) {
+// --- A card's direct light: `card_light_visibility` and `shaded_card_direct` --------------------
+
+/// `kCardShadowCoarse`, `kCardShadowFine`.
+static const uint kGiCardShadowCoarse = 2u;
+static const uint kGiCardShadowFine = 4u;
+
+/// `shadow_target`.
+float3 giShadowTarget(uint light, float3 position) {
+    const float4 a = giScene.lights[(light * 4u) + 0u];
+    const float4 b = giScene.lights[(light * 4u) + 1u];
+    const float4 c = giScene.lights[(light * 4u) + 2u];
+    const float4 d = giScene.lights[(light * 4u) + 3u];
+    return c.w != 0.0f ? position - (giNormalisedOr(b.xyz, float3(0.0f, 1.0f, 0.0f)) * 1000.0f)
+           : d.w > 0.0f ? a.xyz + (d.xyz * kGiEmitterShadowLift)
+                        : a.xyz;
+}
+
+/// `lit_share` in `card_light_visibility`: how many of an `edge` x `edge` lattice of sample centres
+/// over the card's square see the light.
+uint giCardLitShare(uint light, float3 position, float3 lift, float3 tangent, float3 bitangent,
+                    float side, uint edge) {
+    uint lit = 0u;
+    for (uint row = 0u; row < edge; ++row) {
+        for (uint column = 0u; column < edge; ++column) {
+            const float u = ((float(column) + 0.5f) / float(edge)) - 0.5f;
+            const float v = ((float(row) + 0.5f) / float(edge)) - 0.5f;
+            const float3 at = position + (tangent * (u * side)) + (bitangent * (v * side));
+            lit += giOccluded(at + lift, giShadowTarget(light, at)) ? 0u : 1u;
+        }
+    }
+    return lit;
+}
+
+/// `card_light_visibility`.
+float giCardLightVisibility(uint light, float3 position, float3 normal, float area) {
+    const float3 lift = normal * 1.0e-2f;
+    if (!(area > 0.0f)) {
+        return giOccluded(position + lift, giShadowTarget(light, position)) ? 0.0f : 1.0f;
+    }
+    float3 tangent;
+    float3 bitangent;
+    giEmitterBasis(normal, tangent, bitangent);
+    const float side = sqrt(area);
+    const uint coarse =
+        giCardLitShare(light, position, lift, tangent, bitangent, side, kGiCardShadowCoarse);
+    if (coarse == 0u || coarse == kGiCardShadowCoarse * kGiCardShadowCoarse) {
+        return coarse == 0u ? 0.0f : 1.0f;
+    }
+    return float(giCardLitShare(light, position, lift, tangent, bitangent, side,
+                                kGiCardShadowFine)) /
+           float(kGiCardShadowFine * kGiCardShadowFine);
+}
+
+/// `shaded_card_direct`, with the occluder `giOccluded` is.
+float3 giShadedCardDirect(float3 position, float3 normal, float area) {
     float3 total = float3(0.0f, 0.0f, 0.0f);
     const uint count = giScene.constants[kGiCounts].z;
     for (uint light = 0u; light < count; ++light) {
@@ -435,19 +489,11 @@ float3 giShadedDirect(float3 position, float3 normal) {
         if (contribution.x <= 0.0f && contribution.y <= 0.0f && contribution.z <= 0.0f) {
             continue;
         }
-        const float4 a = giScene.lights[(light * 4u) + 0u];
-        const float4 b = giScene.lights[(light * 4u) + 1u];
-        const float4 c = giScene.lights[(light * 4u) + 2u];
-        const float4 d = giScene.lights[(light * 4u) + 3u];
-        // `shadow_target`.
-        const float3 target =
-            c.w != 0.0f ? position - (giNormalisedOr(b.xyz, float3(0.0f, 1.0f, 0.0f)) * 1000.0f)
-            : d.w > 0.0f ? a.xyz + (d.xyz * kGiEmitterShadowLift)
-                         : a.xyz;
-        if (giOccluded(position + (normal * 1.0e-2f), target)) {
+        const float visibility = giCardLightVisibility(light, position, normal, area);
+        if (visibility <= 0.0f) {
             continue;
         }
-        total = total + contribution;
+        total = total + (contribution * visibility);
     }
     return total;
 }
@@ -477,7 +523,10 @@ uint giBucket(int x, int y, int z, uint buckets) {
     return hash & (buckets - 1u);
 }
 
-/// The card a hit at `position` facing `normal` resolves through, or 0xFFFFFFFF.
+/// The card a hit at `position` facing `normal` resolves through, or 0xFFFFFFFF:
+/// `CardSnapshot::find` over `CardNeighbourGrid` — the one cell holding the hit lists every card
+/// within the radius of it, so the cards scored are the cards `find` scores, and the comparison
+/// (`card_lookup_prefers`) does not depend on their order.
 uint giFindCard(float3 position, float3 normal) {
     const uint4 grid = giScene.constants[kGiGrid];
     const uint buckets = grid.x;
@@ -487,46 +536,40 @@ uint giFindCard(float3 position, float3 normal) {
     const float cell = asfloat(grid.y);
     const float radius = asfloat(grid.z);
     const float radiusSquared = radius * radius;
-    const int3 lo = int3(giCell(position.x - radius, cell), giCell(position.y - radius, cell),
-                         giCell(position.z - radius, cell));
-    const int3 hi = int3(giCell(position.x + radius, cell), giCell(position.y + radius, cell),
-                         giCell(position.z + radius, cell));
+    const uint bucket = giBucket(giCell(position.x, cell), giCell(position.y, cell),
+                                 giCell(position.z, cell), buckets);
+    const uint first = giScene.gridRanges[bucket * 2u];
+    const uint count = giScene.gridRanges[(bucket * 2u) + 1u];
     uint best = 0xFFFFFFFFu;
     float bestScore = 1.0e9f;
     float bestAlignment = 0.0f;
-    for (int z = lo.z; z <= hi.z; ++z) {
-        for (int y = lo.y; y <= hi.y; ++y) {
-            for (int x = lo.x; x <= hi.x; ++x) {
-                const uint bucket = giBucket(x, y, z, buckets);
-                const uint first = giScene.gridRanges[bucket * 2u];
-                const uint count = giScene.gridRanges[(bucket * 2u) + 1u];
-                for (uint item = first; item < first + count; ++item) {
-                    const uint handle = giScene.gridItems[item];
-                    if (giScene.cardState[handle * 2u].w == 0.0f) {
-                        continue;
-                    }
-                    const float3 candidateNormal = giScene.cards[(handle * 4u) + 1u].xyz;
-                    const float alignment = dot(candidateNormal, normal);
-                    if (alignment <= kGiCardAlignment) {
-                        continue;
-                    }
-                    const float3 offset = giScene.cards[handle * 4u].xyz - position;
-                    const float squared = dot(offset, offset);
-                    if (squared > radiusSquared) {
-                        continue;
-                    }
-                    // `card_lookup_prefers`: the score, then the alignment, then the handle.
-                    const float score = squared / alignment;
-                    const bool better = score != bestScore ? score < bestScore
-                                        : alignment != bestAlignment ? alignment > bestAlignment
-                                                                     : handle < best;
-                    if (better) {
-                        bestScore = score;
-                        bestAlignment = alignment;
-                        best = handle;
-                    }
-                }
-            }
+    for (uint item = first; item < first + count; ++item) {
+        const float4 entry = giScene.gridItems[item];
+        // The three tests in the order that rejects most for least: they are one conjunction,
+        // so their order changes nothing but the loads.
+        const float3 offset = entry.xyz - position;
+        const float squared = dot(offset, offset);
+        if (squared > radiusSquared) {
+            continue;
+        }
+        const uint handle = uint(entry.w);
+        const float3 candidateNormal = giScene.cards[(handle * 4u) + 1u].xyz;
+        const float alignment = dot(candidateNormal, normal);
+        if (alignment <= kGiCardAlignment) {
+            continue;
+        }
+        if (giScene.cardState[handle * 2u].w == 0.0f) {
+            continue;
+        }
+        // `card_lookup_prefers`: the score, then the alignment, then the handle.
+        const float score = squared / alignment;
+        const bool better = score != bestScore ? score < bestScore
+                            : alignment != bestAlignment ? alignment > bestAlignment
+                                                         : handle < best;
+        if (better) {
+            bestScore = score;
+            bestAlignment = alignment;
+            best = handle;
         }
     }
     return best;

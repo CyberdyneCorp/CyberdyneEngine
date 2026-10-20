@@ -115,6 +115,27 @@ FieldLevelView DistanceField::level_view(u32 level) const noexcept {
     return view;
 }
 
+Aabb DistanceField::reach_bounds() const noexcept {
+    Aabb bounds = Aabb::from_min_max(Vec3{1.0F, 1.0F, 1.0F}, Vec3{-1.0F, -1.0F, -1.0F});
+    if (levels_.empty()) {
+        return bounds;
+    }
+    const f32 window = static_cast<f32>(window_bricks());
+    for (usize index = 0; index < levels_.size(); ++index) {
+        const Level& level = levels_[index];
+        const Vec3 lo{static_cast<f32>(level.origin_brick[0]) * level.brick_size,
+                      static_cast<f32>(level.origin_brick[1]) * level.brick_size,
+                      static_cast<f32>(level.origin_brick[2]) * level.brick_size};
+        const Vec3 hi = lo + Vec3{window, window, window} * level.brick_size;
+        bounds = index == 0
+                     ? Aabb::from_min_max(lo, hi)
+                     : Aabb::from_min_max(cwise_min(bounds.min, lo), cwise_max(bounds.max, hi));
+    }
+    const f32 margin = levels_[levels_.size() - 1].brick_size;
+    return Aabb::from_min_max(bounds.min - Vec3{margin, margin, margin},
+                              bounds.max + Vec3{margin, margin, margin});
+}
+
 Status DistanceField::configure(const ClipmapSettings& settings) noexcept {
     if (settings.levels == 0 || settings.resolution < kBrickEdge ||
         (settings.resolution % kBrickEdge) != 0 || settings.base_extent_metres <= 0.0F) {

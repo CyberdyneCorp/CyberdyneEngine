@@ -18,6 +18,13 @@ void cyGiProbeTraceHardware(uint3 group : SV_GroupID, uint3 lane : SV_GroupThrea
     spTrace<GiHardwareTier>(group.x, lane.x);
 }
 
+/// `cyGiProbeTraceNarrow` through ray queries.
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void cyGiProbeTraceHardwareNarrow(uint3 group : SV_GroupID, uint3 lane : SV_GroupThreadID) {
+    spTrace<GiHardwareTier>(group.x, lane.x);
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cyGiProbeIntegrateHardware(uint3 thread : SV_DispatchThreadID) {

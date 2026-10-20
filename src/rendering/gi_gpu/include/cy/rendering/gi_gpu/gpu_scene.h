@@ -50,6 +50,9 @@ namespace cy::rendering::gi_gpu {
 
 /// The most clipmap levels the constant block has room for.
 inline constexpr u32 kMaxFieldLevels = 8;
+/// The most cards the device copy can hold: the lookup grid carries each card's handle as a float
+/// value, exact below 2^24.
+inline constexpr u32 kMaxCards = 1U << 24U;
 
 /// How large a scene the device copy is sized for. One allocation per buffer, at creation: the
 /// buffers do not grow, and an upload that would overflow one is refused by name.
@@ -254,7 +257,7 @@ private:
     Array<u32> card_revisions_;
     Array<Vec3> card_positions_;
     Array<u8> card_live_;
-    gi::CardGrid grid_;
+    gi::CardNeighbourGrid grid_;
 
     u32 ray_count_ = 0;
     Recording trace_{};

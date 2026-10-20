@@ -63,15 +63,18 @@ void put(f32* floats, u64 at, Vec3 value, f32 w) noexcept {
     floats[at + 3] = w;
 }
 
-/// `gi::CardGrid`'s bucket count for the most cards the scene holds — the largest grid it can
-/// build.
+/// The most buckets the card lookup grid may use for the most cards the scene holds: room for
+/// twice the cells they occupy, which in a scene of surfaces is about one and a half a card.
 [[nodiscard]] u32 max_buckets(u32 cards) noexcept {
     u32 count = 64;
-    while (count < cards * 2U) {
+    while (count < cards * 4U) {
         count <<= 1U;
     }
     return count;
 }
+
+/// The most entries the lookup grid holds: a card is listed in at most the 27 cells about it.
+inline constexpr u64 kNeighbourCellsPerCard = 27;
 
 /// One card's state: [outgoing, valid], [accumulated, last update frame as bits]. The frame is what
 /// a traced hit's staleness is measured from (`SurfaceCache::radiance_at`'s age).
@@ -114,10 +117,12 @@ Status GpuGiScene::create(Allocator& allocator, rhi::Device& device,
     }
     if (desc.max_levels == 0 || desc.max_levels > kMaxFieldLevels || desc.max_window_bricks == 0 ||
         desc.max_brick_slots == 0 || desc.max_cards == 0 || desc.max_lights == 0 ||
-        desc.max_shadow_resolution == 0 || desc.max_selection == 0 || desc.max_rays == 0) {
+        desc.max_shadow_resolution == 0 || desc.max_selection == 0 || desc.max_rays == 0 ||
+        desc.max_cards > kMaxCards) {
         return fail(ErrorCode::InvalidArgument,
-                    "GpuGiSceneDescription: every capacity must be non-zero and max_levels at most "
-                    "kMaxFieldLevels; the buffers are sized once and cannot grow");
+                    "GpuGiSceneDescription: every capacity must be non-zero, max_levels at most "
+                    "kMaxFieldLevels and max_cards at most kMaxCards; the buffers are sized once "
+                    "and cannot grow");
     }
     allocator_ = &allocator;
     device_ = &device;
@@ -281,8 +286,8 @@ Status GpuGiScene::create_buffers() noexcept {
          rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi card grid ranges", static_cast<u64>(max_buckets(desc_.max_cards)) * 2U * 4U, storage,
          rhi::MemoryUse::HostVisibleDeviceLocal},
-        {"gi card grid items", static_cast<u64>(desc_.max_cards) * 4U, storage,
-         rhi::MemoryUse::HostVisibleDeviceLocal},
+        {"gi card grid items", static_cast<u64>(desc_.max_cards) * kNeighbourCellsPerCard * kVec4,
+         storage, rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi lights", desc_.max_lights * kLightVec4s * kVec4, storage,
          rhi::MemoryUse::HostVisibleDeviceLocal},
         {"gi shadow depths", shadow * shadow * 4U, storage, rhi::MemoryUse::HostVisibleDeviceLocal},
@@ -524,15 +529,21 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
     }
 
     if (layout_changed || grid_.cell_metres() != lookup_radius || grid_.ranges().empty()) {
-        if (Status built = grid_.build(pages, lookup_radius); !built) {
+        if (Status built = grid_.build(pages, lookup_radius, max_buckets(desc_.max_cards));
+            !built) {
             return make_unexpected(built.error());
         }
         std::memcpy(mapped(kGridRanges), grid_.ranges().data(), grid_.ranges().size() * 4U);
-        if (!grid_.items().empty()) {
-            std::memcpy(mapped(kGridItems), grid_.items().data(), grid_.items().size() * 4U);
+        // AN ENTRY CARRIES ITS CARD'S POSITION beside its handle: a lookup rejects most of the
+        // entries it reads by distance, in list order. The handle as a float value, exact below
+        // 2^24 (the scene holds `max_cards`), not as bits a device may flush as a denormal.
+        auto* items = static_cast<f32*>(mapped(kGridItems));
+        for (usize entry = 0; entry < grid_.handles().size(); ++entry) {
+            put(items, static_cast<u64>(entry) * 4U, grid_.positions()[entry],
+                static_cast<f32>(grid_.handles()[entry]));
         }
         report.grid_rebuilt = true;
-        report.bytes += (grid_.ranges().size() + grid_.items().size()) * 4U;
+        report.bytes += (grid_.ranges().size() * 4U) + (grid_.handles().size() * kVec4);
         constants_[kGrid + 0] = grid_.bucket_count();
         constants_[kGrid + 1] = bits(grid_.cell_metres());
         constants_[kGrid + 2] = bits(lookup_radius);

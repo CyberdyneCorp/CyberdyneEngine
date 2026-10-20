@@ -186,6 +186,55 @@ private:
     Array<u32> items_;
 };
 
+/// THE DEVICE'S CARD LOOKUP: a hashed grid of cells one lookup radius across in which each cell
+/// lists every live card within the radius of some point of the cell. A lookup then reads ONE
+/// cell's list rather than the 27 about it `CardGrid` visits, and in it every card that can answer
+/// — a superset the caller's exact distance test narrows — so it finds what `CardSnapshot::find`
+/// finds. Each entry carries the card's position beside its handle, so the distance test reads the
+/// list in order. A screen probe's rays spend most of their time in this lookup.
+///
+/// Two cells that hash to one bucket share a list; that lengthens the list and changes no answer.
+class CardNeighbourGrid {
+public:
+    CardNeighbourGrid() noexcept = default;
+
+    /// List the live pages of `pages` for lookups of `radius`, the cells `radius` across, in at
+    /// most `max_buckets` buckets (a power of two): twice the occupied cells, or all of them.
+    [[nodiscard]] Status build(Span<const SurfacePage> pages, f32 radius, u32 max_buckets) noexcept;
+
+    [[nodiscard]] f32 cell_metres() const noexcept { return cell_; }
+    [[nodiscard]] u32 bucket_count() const noexcept {
+        return static_cast<u32>(ranges_.size() / 2U);
+    }
+    /// Two words per bucket: the first entry and the count.
+    [[nodiscard]] Span<const u32> ranges() const noexcept { return ranges_.span(); }
+    /// Per entry, grouped by bucket: the card's handle, and its position.
+    [[nodiscard]] Span<const u32> handles() const noexcept { return handles_.span(); }
+    [[nodiscard]] Span<const Vec3> positions() const noexcept { return positions_.span(); }
+
+    /// Every entry of the cell holding `point`: `fn(u32 handle, Vec3 position)`.
+    template <class Fn>
+    void visit(Vec3 point, Fn&& fn) const {
+        if (ranges_.empty()) {
+            return;
+        }
+        const u32 bucket = CardGrid::bucket_of(CardGrid::cell_of(point.x, cell_),
+                                               CardGrid::cell_of(point.y, cell_),
+                                               CardGrid::cell_of(point.z, cell_), bucket_count());
+        const u32 first = ranges_[static_cast<usize>(bucket) * 2U];
+        const u32 count = ranges_[(static_cast<usize>(bucket) * 2U) + 1U];
+        for (u32 entry = first; entry < first + count; ++entry) {
+            fn(handles_[entry], positions_[entry]);
+        }
+    }
+
+private:
+    f32 cell_ = 1.0F;
+    Array<u32> ranges_;
+    Array<u32> handles_;
+    Array<Vec3> positions_;
+};
+
 /// One page as a lookup sees it.
 struct CardSample {
     Vec3 position{0.0F, 0.0F, 0.0F};

@@ -846,32 +846,43 @@ CY_TEST_CASE("the shadow map shadows the device cards as it shadows the host one
     CY_CHECK_LE(direct.beyond, direct.compared / 100U);
     CY_CHECK_LE(bounce.beyond, bounce.compared / 20U);
 
-    // The map is doing the shadowing: floor cards under the pillar's shadow receive the lamp but
-    // not the sun, and the host and the device agree about which ones they are.
+    // The map is doing the shadowing: floor cards wholly under the pillar's shadow receive the
+    // lamp but not the sun, a card the shadow's edge crosses receives the share of the sun its
+    // square has, and the host and the device agree about which cards are which. A card is shadowed
+    // over its square (`card_light_visibility`), so the share is the map's over the same samples.
+    const cy::rendering::gi::ShadowMapOccluder map_only(&courtyard.shadow, nullptr);
     u32 shadowed = 0;
     u32 sunlit = 0;
+    u32 crossed = 0;
     for (usize handle = 0; handle < courtyard.surfels.size(); ++handle) {
         const Surfel& surfel = courtyard.surfels[handle];
         if (surfel.normal.y < 0.5F) {
             continue;
         }
-        const bool in_shadow =
-            courtyard.shadow.shadowed(surfel.position + (surfel.normal * 1.0e-2F));
         const SurfacePage& page = pair.device.pages()[handle];
+        const f32 sun_share = cy::rendering::gi::card_light_visibility(
+            courtyard.sun, page.position, page.normal, page.area, map_only);
         const Vec3 sun_only =
             cy::rendering::gi::direct_radiance(courtyard.sun, page.position, page.normal);
         const Vec3 lamp_only =
             cy::rendering::gi::direct_radiance(courtyard.lamp, page.position, page.normal);
-        if (in_shadow) {
+        if (sun_share <= 0.0F) {
             shadowed += 1;
             CY_CHECK_LT(page.direct.y, (sun_only.y * 0.5F) + lamp_only.y + 1.0e-3F);
-        } else {
+        } else if (sun_share >= 1.0F) {
             sunlit += 1;
+        } else {
+            crossed += 1;
+            CY_CHECK_GE(page.direct.y, (sun_only.y * sun_share * 0.999F) - 1.0e-3F);
+            CY_CHECK_LE(page.direct.y, (sun_only.y * sun_share) + lamp_only.y + 1.0e-3F);
         }
     }
-    std::fprintf(stderr, "courtyard floor: %u cards in the pillar's shadow, %u in the sun\n",
-                 shadowed, sunlit);
+    std::fprintf(stderr,
+                 "courtyard floor: %u cards in the pillar's shadow, %u its edge crosses, %u in the "
+                 "sun\n",
+                 shadowed, crossed, sunlit);
     CY_CHECK_GT(shadowed, 4U);
+    CY_CHECK_GT(crossed, 0U);
     CY_CHECK_GT(sunlit, shadowed);
     CY_CHECK_EQ(gpu.fixture.validation_errors(), 0U);
 }

@@ -134,6 +134,56 @@ Vec3 shaded_direct(Span<const GiLight> lights, Vec3 position, Vec3 normal,
     return total;
 }
 
+f32 card_light_visibility(const GiLight& light, Vec3 position, Vec3 normal, f32 area,
+                          const Occluder& occluder) noexcept {
+    const Vec3 lift = normal * 1.0e-2F;
+    if (!(area > 0.0F)) {
+        return occluder.occluded(position + lift, shadow_target(light, position)) ? 0.0F : 1.0F;
+    }
+    Vec3 tangent;
+    Vec3 bitangent;
+    emitter_basis(normal, tangent, bitangent);
+    const f32 side = std::sqrt(area);
+    // The share of an n x n lattice of sample centres over the square that sees the light.
+    const auto lit_share = [&](u32 edge) noexcept {
+        u32 lit = 0;
+        for (u32 row = 0; row < edge; ++row) {
+            for (u32 column = 0; column < edge; ++column) {
+                const f32 u = ((static_cast<f32>(column) + 0.5F) / static_cast<f32>(edge)) - 0.5F;
+                const f32 v = ((static_cast<f32>(row) + 0.5F) / static_cast<f32>(edge)) - 0.5F;
+                const Vec3 at = position + (tangent * (u * side)) + (bitangent * (v * side));
+                lit += occluder.occluded(at + lift, shadow_target(light, at)) ? 0U : 1U;
+            }
+        }
+        return lit;
+    };
+    const u32 coarse = lit_share(kCardShadowCoarse);
+    if (coarse == 0U || coarse == kCardShadowCoarse * kCardShadowCoarse) {
+        return coarse == 0U ? 0.0F : 1.0F;
+    }
+    return static_cast<f32>(lit_share(kCardShadowFine)) /
+           static_cast<f32>(kCardShadowFine * kCardShadowFine);
+}
+
+Vec3 shaded_card_direct(Span<const GiLight> lights, Vec3 position, Vec3 normal, f32 area,
+                        const Occluder* occluder) noexcept {
+    Vec3 total{0.0F, 0.0F, 0.0F};
+    for (const GiLight& light : lights) {
+        const Vec3 contribution = direct_radiance(light, position, normal);
+        if (contribution.x <= 0.0F && contribution.y <= 0.0F && contribution.z <= 0.0F) {
+            continue;
+        }
+        const f32 visibility = occluder != nullptr
+                                   ? card_light_visibility(light, position, normal, area, *occluder)
+                                   : 1.0F;
+        if (visibility <= 0.0F) {
+            continue;
+        }
+        total = total + (contribution * visibility);
+    }
+    return total;
+}
+
 SurfaceCache::SurfaceCache() noexcept = default;
 SurfaceCache::~SurfaceCache() = default;
 
@@ -291,7 +341,8 @@ void SurfaceCache::shade(
     const SurfaceUpdateContext&
         context) noexcept {  // NOLINT(readability-convert-member-functions-to-static)
     const Vec3 before = outgoing(page);
-    page.direct = shaded_direct(context.lights, page.position, page.normal, context.occluder);
+    page.direct =
+        shaded_card_direct(context.lights, page.position, page.normal, page.area, context.occluder);
     if (context.indirect != nullptr) {
         // The one line multi-bounce lives in. `gather` reads the radiance cache, which was built
         // from these pages last frame, so each update adds a bounce.

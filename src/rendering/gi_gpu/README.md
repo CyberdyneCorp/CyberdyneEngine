@@ -338,6 +338,37 @@ a layout no barrier had put it in, which the validation layer reported as a writ
 hazard. It declares them on every grid now; `render.gi_gpu_resolve`'s half-grid screen-probe case
 holds it to no validation error.
 
+## The probes' trace in a furnished room
+
+In the GI test room the probes' trace was 1.1 ms; in the sunlit room of the guide's section 7b,
+with five times the cards, it was 3.9 ms of a 6.6 ms frame. Taken apart by removing one thing at a
+time and timing the trace pass at 1920x1080 through ray queries, the trace was the CARD LOOKUP each
+hit resolves through (2.4 ms of it), not the rays, nor the stand-in lane 0 gathers from the radiance
+cache, which the rays' latency hides. Halving the rays saved 13 %: a wave finishes with its slowest
+lane. Two changes, neither of which moves a number the host computes:
+
+- **The lookup reads one cell** (`gi::CardNeighbourGrid`). The device grid had been `CardGrid`'s:
+  a hash of cells one lookup radius across, each listing the cards whose CENTRE is in it, so a
+  lookup visited the 27 cells about the hit — 27 bucket reads and as many short scattered lists.
+  Now each cell lists every card within the radius of any point of it, a list entry carries the
+  card's position beside its handle, and a lookup reads the one cell holding the hit; the cards it
+  scores are a superset of those within the radius, the comparison (`card_lookup_prefers`) does not
+  depend on their order, so it names the card `CardSnapshot::find` names
+  (`integration.render_gi_pipeline`'s "one cell of the neighbour grid finds the card the snapshot
+  finds", red when a card is listed only in its own cell). A card is listed in about 21 cells; a
+  handle travels as a float's value, exact below `kMaxCards` (2^24).
+- **A probe of at most 32 rays is traced by a 32-lane workgroup** (`cyGiProbeTraceNarrow`,
+  `cyGiProbeTraceHardwareNarrow`): the same per-lane code, where the 64-lane group's second wave had
+  no ray to trace and only waited at the barriers. Probes of more rays keep the 64-lane group.
+
+Timed the same way at full clocks (the beauty sample's `gi fastest`), the sunlit room's trace went
+from 3.83 to 1.48 ms and its integration (whose smooth-surface rays look cards up too) from 1.15 to
+0.74 ms; every stage of the GI from 6.24 to 3.49 ms, and through the software tier from 9.28 to
+4.61 ms. The device cards are
+also shaded over their squares now (`giShadedCardDirect`, the transcription of
+`gi::shaded_card_direct`): `render.gi_gpu`'s courtyard case holds the cards a pillar's shadow edge
+crosses to the share of their square the shadow map lights, host and device alike.
+
 ## Promoted emitters
 
 A light record is four `float4`s and the fourth was always zero; it now carries a promoted emissive

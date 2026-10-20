@@ -20,6 +20,7 @@
 #include "support.h"
 
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -170,6 +171,71 @@ CY_TEST_CASE("the card snapshot answers a lookup with the card the surface cache
     u32 age = 0;
     CY_CHECK_FALSE(
         snapshot.radiance_at(Vec3{-4.0F, -2.0F, -4.0F}, Vec3{0.0F, 1.0F, 0.0F}, radiance, age));
+}
+
+CY_TEST_CASE("one cell of the neighbour grid finds the card the snapshot finds") {
+    // The device's lookup reads the one cell holding a hit (`CardNeighbourGrid`); the snapshot
+    // visits the 27 about it. Over a room of half-metre cards at a lookup radius off the lattice —
+    // every card, nudged every way, and the points between them — the two must name one card.
+    const std::vector<Surfel> surfels = gi_support::room_surfels(0.5F);
+    SurfaceCache cache;
+    for (const Surfel& surfel : surfels) {
+        CY_REQUIRE(cache.allocate(surfel).has_value());
+    }
+    cache.set_lookup_radius(0.37F);
+    const std::vector<GiLight> lights = gi_support::room_lights();
+    SurfaceUpdateContext context;
+    context.lights = {lights.data(), lights.size()};
+    context.frame = 3;
+    (void)cache.update_all(context);
+    CardSnapshot snapshot;
+    CY_REQUIRE(snapshot.capture(cache, 3).has_value());
+    cy::rendering::gi::CardNeighbourGrid neighbours;
+    CY_REQUIRE(neighbours.build(cache.pages(), cache.lookup_radius(), 1U << 16U).has_value());
+
+    const f32 radius_squared = cache.lookup_radius() * cache.lookup_radius();
+    const auto device_find = [&](Vec3 point, Vec3 normal) {
+        u32 best = ~0U;
+        f32 best_score = 1.0e9F;
+        f32 best_alignment = 0.0F;
+        neighbours.visit(point, [&](u32 handle, Vec3 position) {
+            const f32 squared = cy::distance_squared(position, point);
+            const f32 alignment = cy::dot(cache.pages()[handle].normal, normal);
+            if (squared > radius_squared || alignment <= cy::rendering::gi::kCardLookupAlignment ||
+                !snapshot.samples()[handle].valid) {
+                return;
+            }
+            const f32 score = squared / alignment;
+            if (cy::rendering::gi::card_lookup_prefers(score, alignment, handle, best_score,
+                                                       best_alignment, best)) {
+                best_score = score;
+                best_alignment = alignment;
+                best = handle;
+            }
+        });
+        return best;
+    };
+    u32 queries = 0;
+    u32 found = 0;
+    u32 disagreements = 0;
+    for (const Surfel& surfel : surfels) {
+        for (const f32 nudge : {0.0F, 0.13F, -0.21F, 0.33F}) {
+            const Vec3 point = surfel.position + Vec3{nudge, -nudge * 0.7F, nudge * 0.4F};
+            const Vec3 normal =
+                cy::normalized_or(surfel.normal + Vec3{0.3F, 0.1F, -0.2F}, surfel.normal);
+            const u32 expected = snapshot.find(point, normal);
+            queries += 1;
+            found += expected != ~0U ? 1U : 0U;
+            disagreements += device_find(point, normal) != expected ? 1U : 0U;
+        }
+    }
+    std::printf("[neighbour grid] %u lookups, %u found, %u buckets for %u entries\n", queries,
+                found, neighbours.bucket_count(), static_cast<u32>(neighbours.handles().size()));
+    CY_CHECK_GT(found, queries / 2U);
+    CY_CHECK_EQ(disagreements, 0U);
+    // Each card is listed in the cells its radius reaches, and in no more than the 27 about it.
+    CY_CHECK_GE(neighbours.handles().size(), surfels.size());
+    CY_CHECK_LE(neighbours.handles().size(), surfels.size() * 27U);
 }
 
 CY_TEST_CASE("the shadow map agrees with the field about what the sun cannot reach") {

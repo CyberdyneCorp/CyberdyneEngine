@@ -1,6 +1,7 @@
 #include <cy/rendering/gi/tracing.h>
 
 #include <cy/core/jobs/types.h>
+#include <cy/core/math/geometry.h>
 #include <cy/core/math/scalar.h>
 
 #include <algorithm>
@@ -146,7 +147,19 @@ bool SoftwareTracer::occluded(Vec3 from, Vec3 to) const noexcept {
     if (span <= bias) {
         return false;
     }
-    const SphereTraceHit traced = field_->sphere_trace(ray, span * 0.999F, bias);
+    // THE MARCH ENDS WHERE THE FIELD DOES. Past `reach_bounds` every step reads a far value and
+    // can find nothing, and a shadow ray to the sun (1000 m) or to a light beyond the field spent
+    // the rest of its 192 steps there. Ending at the box changes no answer: every step inside it
+    // is the step it was. A card's shadow test is four of these since its light became the mean
+    // over its square, which is why this matters.
+    f32 reach = span * 0.999F;
+    f32 enter = 0.0F;
+    f32 leave = 0.0F;
+    if (!geom::ray_aabb(ray, field_->reach_bounds(), reach, enter, leave)) {
+        return false;
+    }
+    reach = std::min(reach, leave);
+    const SphereTraceHit traced = field_->sphere_trace(ray, reach, bias);
     return traced.hit;
 }
 

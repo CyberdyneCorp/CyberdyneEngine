@@ -4,6 +4,7 @@
 #include <cy/core/math/scalar.h>
 
 #include <algorithm>
+#include <ranges>
 
 namespace cy::rendering::gi {
 namespace {
@@ -170,6 +171,135 @@ Status CardGrid::build(Span<const SurfacePage> pages, f32 cell_metres) noexcept 
             items_[cursor[bucket]] = handle;
             cursor[bucket] += 1U;
         }
+    }
+    return ok();
+}
+
+// --- CardNeighbourGrid ---------------------------------------------------------------------------
+
+namespace {
+
+/// One (cell, card) pair of a neighbour grid, before it is grouped by bucket.
+struct NeighbourEntry {
+    i32 cell[3] = {0, 0, 0};
+    u32 handle = 0;
+    u32 bucket = 0;
+};
+
+/// The distance from `value` to the cell `[index, index + 1) * cell` along one axis.
+[[nodiscard]] f32 cell_gap(f32 value, i32 index, f32 cell) noexcept {
+    return std::max({(static_cast<f32>(index) * cell) - value,
+                     value - (static_cast<f32>(index + 1) * cell), 0.0F});
+}
+
+/// An entry for every cell of `cell` metres the radius `cell` about `p` reaches into — with a
+/// slack, so a point the exact test admits is never in a cell whose list a rounding left the card
+/// out of.
+[[nodiscard]] Status list_card_cells(Vec3 p, u32 handle, f32 cell,
+                                     Array<NeighbourEntry>& entries) noexcept {
+    const f32 reach = (cell * cell * 1.001F) + 1.0e-6F;
+    const i32 lo[3] = {CardGrid::cell_of(p.x - cell, cell), CardGrid::cell_of(p.y - cell, cell),
+                       CardGrid::cell_of(p.z - cell, cell)};
+    const i32 hi[3] = {CardGrid::cell_of(p.x + cell, cell), CardGrid::cell_of(p.y + cell, cell),
+                       CardGrid::cell_of(p.z + cell, cell)};
+    for (i32 z = lo[2]; z <= hi[2]; ++z) {
+        for (i32 y = lo[1]; y <= hi[1]; ++y) {
+            for (i32 x = lo[0]; x <= hi[0]; ++x) {
+                const f32 dx = cell_gap(p.x, x, cell);
+                const f32 dy = cell_gap(p.y, y, cell);
+                const f32 dz = cell_gap(p.z, z, cell);
+                if ((dx * dx) + (dy * dy) + (dz * dz) > reach) {
+                    continue;
+                }
+                if (Status pushed = entries.push_back(NeighbourEntry{{x, y, z}, handle, 0});
+                    !pushed) {
+                    return pushed;
+                }
+            }
+        }
+    }
+    return ok();
+}
+
+/// How many distinct cells `entries`, sorted by cell, name.
+[[nodiscard]] u32 distinct_cells(Span<const NeighbourEntry> entries) noexcept {
+    u32 cells = 0;
+    for (usize index = 0; index < entries.size(); ++index) {
+        const bool fresh = index == 0 || entries[index].cell[0] != entries[index - 1].cell[0] ||
+                           entries[index].cell[1] != entries[index - 1].cell[1] ||
+                           entries[index].cell[2] != entries[index - 1].cell[2];
+        cells += fresh ? 1U : 0U;
+    }
+    return cells;
+}
+
+}  // namespace
+
+Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius,
+                                u32 max_buckets) noexcept {
+    cell_ = std::max(radius, 1.0e-3F);
+    Array<NeighbourEntry> entries;
+    for (u32 handle = 0; handle < pages.size(); ++handle) {
+        if (!pages[handle].live) {
+            continue;
+        }
+        if (Status listed = list_card_cells(pages[handle].position, handle, cell_, entries);
+            !listed) {
+            return listed;
+        }
+    }
+    std::ranges::sort(entries, [](const NeighbourEntry& a, const NeighbourEntry& b) noexcept {
+        if (a.cell[2] != b.cell[2]) {
+            return a.cell[2] < b.cell[2];
+        }
+        if (a.cell[1] != b.cell[1]) {
+            return a.cell[1] < b.cell[1];
+        }
+        if (a.cell[0] != b.cell[0]) {
+            return a.cell[0] < b.cell[0];
+        }
+        return a.handle < b.handle;
+    });
+    // Twice the occupied cells, as `CardGrid` sizes for its cards, within what the caller holds.
+    const u32 cells = distinct_cells(entries.span());
+    u32 buckets = 64;
+    while (buckets < cells * 2U && buckets < max_buckets) {
+        buckets <<= 1U;
+    }
+    if (Status sized = ranges_.resize(static_cast<usize>(buckets) * 2U); !sized) {
+        return sized;
+    }
+    for (u32& word : ranges_) {
+        word = 0;
+    }
+    // A counting sort by bucket, as `CardGrid::build`'s: sizes, offsets, then each entry placed.
+    for (NeighbourEntry& entry : entries) {
+        entry.bucket = CardGrid::bucket_of(entry.cell[0], entry.cell[1], entry.cell[2], buckets);
+        ranges_[(static_cast<usize>(entry.bucket) * 2U) + 1U] += 1U;
+    }
+    u32 running = 0;
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
+        ranges_[bucket * 2U] = running;
+        running += ranges_[(bucket * 2U) + 1U];
+    }
+    Array<u32> cursor;
+    if (Status sized = handles_.resize(running); !sized) {
+        return sized;
+    }
+    if (Status sized = positions_.resize(running); !sized) {
+        return sized;
+    }
+    if (Status sized = cursor.resize(buckets); !sized) {
+        return sized;
+    }
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
+        cursor[bucket] = ranges_[bucket * 2U];
+    }
+    for (const NeighbourEntry& entry : entries) {
+        const u32 slot = cursor[entry.bucket];
+        handles_[slot] = entry.handle;
+        positions_[slot] = pages[entry.handle].position;
+        cursor[entry.bucket] = slot + 1U;
     }
     return ok();
 }

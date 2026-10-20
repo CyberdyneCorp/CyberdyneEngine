@@ -234,6 +234,11 @@ public:
     [[nodiscard]] u32 window_bricks() const noexcept { return settings_.resolution / kBrickEdge; }
     [[nodiscard]] u32 level_count() const noexcept { return static_cast<u32>(levels_.size()); }
     [[nodiscard]] FieldLevelView level_view(u32 level) const noexcept;
+    /// The box every brick of every level lies in — the union of the levels' windows — grown by
+    /// one of the coarsest level's bricks each way. Outside it every level answers its far value,
+    /// which is never below the surface threshold, so a march finds nothing there. Empty (min above
+    /// max) when the field has no level.
+    [[nodiscard]] Aabb reach_bounds() const noexcept;
     /// Every brick's samples, `kBrickSamples` floats per slot, indexed `((z * 5) + y) * 5 + x`.
     [[nodiscard]] Span<const f32> brick_pool() const noexcept { return brick_pool_.span(); }
     [[nodiscard]] u32 brick_slot_count() const noexcept {
