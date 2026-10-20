@@ -11,7 +11,10 @@
 > ```
 >
 > CTest entry: `smoke.authoring`. Needs no display; the photograph is the one act that does, and it
-> reports itself NOT EVALUATED where there is none.
+> reports itself NOT EVALUATED where there is none. It DOES need a Vulkan device that can export a
+> dma-buf, for `cy_editor_window_runtime`: without one the run reports the runtime "n/a" and exits 3,
+> which CTest reads as a skip and the ledger's `m8a:authoring-recipe` and `m8a:authoring-control`
+> (both `requires = "gpu"`) report as NOT EVALUATED. No hosted runner has such a device.
 
 ![The editor's window, showing the world this session authored: the engine's own rendered frame in
 the viewport, two entities in the outliner, one placed three metres above the

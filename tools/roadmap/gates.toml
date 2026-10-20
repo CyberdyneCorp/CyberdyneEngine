@@ -859,12 +859,15 @@ state = "green"
 # red, in the `roadmap` job, on the next pull request.
 #
 # WHAT IT COSTS WHEN IT IS FLIPPED is M8.a's own criteria added to the permanent set and nothing
-# else — the flat ledger's arithmetic since M5. **NONE OF THEM CARRIES `requires`**, which is worth
-# saying beside `milestone-m7`: three of M7's criteria need a GPU and one a display, and are reported
-# NOT EVALUATED on a hosted runner. Everything M8.a claims can be judged on a machine with no
-# graphics device — the artefact's measuring half replays the editor's own transaction journal into a
-# play session and needs neither, and its photograph is a committed file rather than a criterion that
-# takes one. A milestone about authoring should be checkable by the machines that build it.
+# else — the flat ledger's arithmetic since M5. **NONE OF THEM CARRIED `requires`** when this was
+# written, beside `milestone-m7` whose three GPU criteria and one display criterion are reported NOT
+# EVALUATED on a hosted runner. The artefact's measuring half replays the editor's own transaction
+# journal into a play session and needs neither, and its photograph is a committed file rather than
+# a criterion that takes one. THE FIRST SHARDED NIGHTLY (#125) CORRECTED THE REST OF THAT CLAIM: the
+# artefact's driver starts `cy_editor_window_runtime` before any act, the runtime needs a Vulkan
+# device that can export a dma-buf, and no hosted runner has one, so `m8a:authoring-recipe` and its
+# negative control `m8a:authoring-control` now carry `requires = "gpu"` and are judged on a machine
+# with a device.
 #
 # AND IT IS ALSO THE FLIP THAT MOVES ci.yml's `milestone` JOB, which is task 7.5 and the same rule M6
 # landed: `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest
