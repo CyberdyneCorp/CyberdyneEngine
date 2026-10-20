@@ -193,6 +193,10 @@ struct AssemblyDescription {
     /// by default, and absent when off — no pass, no target, and the frame it always was. Requires
     /// the depth prepass. Appended, so a brace-initialised description keeps its meaning.
     bool global_illumination = false;
+    /// The prepass writes normals whatever the post chain asks for
+    /// (`FrameFeatures::normal_prepass`): what a frame that turns `global_illumination` on and off
+    /// between frames sets, so its depth pipelines are one set. Appended.
+    bool normal_prepass = false;
 };
 
 /// One view of one world, this frame.
@@ -514,6 +518,15 @@ public:
     /// The ambient irradiance the sky contributes, for the frame's own ambient term.
     [[nodiscard]] Vec3 sky_irradiance() const noexcept { return sky_irradiance_; }
     [[nodiscard]] const AssemblyDescription& description() const noexcept { return description_; }
+
+    /// Turn the frame's `ScreenSpaceGi` stage on or off from the next `assemble`: what
+    /// `AssemblyDescription::global_illumination` set at `initialize`, frame by frame. Off is the
+    /// frame it always was — no pass, no target. Nothing `initialize` or `attach_device` created
+    /// depends on it, so the switch costs nothing; a frame that turns it on needs the prepass
+    /// normals, which `normal_prepass` (or a temporal post chain) keeps on throughout.
+    void set_global_illumination(bool enabled) noexcept {
+        description_.global_illumination = enabled;
+    }
 
 private:
     [[nodiscard]] Status decide_features(const AssemblyView& view, FrameFeatures& features,

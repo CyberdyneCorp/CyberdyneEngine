@@ -115,6 +115,10 @@ struct FrameFeatures {
     /// `FramePassKind::VolumetricFog`. Off by default, and absent when off. Needs no prepass: the
     /// volume is a function of the view and the shadow map, not of the depth.
     bool volumetric_fog = false;
+    /// Write the prepass normals whatever else is on: a frame that switches a normal-reading stage
+    /// on and off from one frame to the next — the device GI an editor's viewport toggles — keeps
+    /// one prepass, and so one set of depth pipelines. Changes no colour. Appended.
+    bool normal_prepass = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
