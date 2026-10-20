@@ -1653,9 +1653,9 @@ jobs:
   # `m8a:authoring-recipe`, is not a finding about the tree: `just run-authoring --no-window` drives
   # `cy_editor_window_runtime`, which needs a Vulkan device that can export a dma-buf, and reports
   # "n/a" with exit 3 where there is none — no hosted runner and not lavapipe. Its ledger entry
-  # declares no `requires = "gpu"`, so the ledger reads that "n/a" as a failure. Until that is
-  # decided it is the one red this job carries; docs/roadmap/open-debts.md is the list of the rest
-  # of what is open.
+  # declared no `requires = "gpu"`, so the ledger read that "n/a" as a failure (and its negative
+  # control, `m8a:authoring-control`, read the same 3 as a pass). Both now declare it and are
+  # reported NOT EVALUATED here; docs/roadmap/open-debts.md is the list of the rest of what is open.
   #
   # THE LEDGER IN SHARDS, AND WHY. Until October 2026 this was ONE job running the whole ledger, and
   # it never finished: GitHub cancels a hosted job at six hours, and run 38687291984 had reached 134

@@ -74,6 +74,14 @@
 #                        is that, demonstrated on every ledger run rather than asserted once.
 #   screenshot-authoring the committed picture, which is what makes the milestone evaluable by
 #                        LOOKING.
+#
+# THE RECIPE AND THE CONTROL BOTH `requires = "gpu"`. Both reach `cy_editor_window_runtime`, which
+# needs a Vulkan device that can export a dma-buf; where there is none the driver reports the runtime
+# "n/a" and exits 3 (EXIT_ABSENT) before a single act runs. Undeclared, that 3 was the one red of the
+# first sharded nightly (#125) for the recipe and a silent green for the control, which inverts any
+# non-zero status. Declared, a machine without a device reports both NOT EVALUATED, and a machine
+# with one still runs both. The pair stays sound there too: a runtime that exits 3 on a machine with
+# a device lets the control pass, but takes the recipe red in the same ledger run.
 
 schema = 1
 id = "m8a"
@@ -375,6 +383,8 @@ source = "tasks 6.7, developer-workflow-and-just"
 kind = "recipe"
 run = "just run-authoring --no-window"
 timeout_s = 3600
+requires = "gpu"
+reason = "it drives `cy_editor_window_runtime`, which needs a Vulkan device that can export a dma-buf; on a machine without one the artefact reports its runtime 'n/a' and exits 3, which is NOT EVALUATED rather than a failure of the recipe — no hosted runner has such a device and lavapipe cannot export one"
 ci_job = "milestone-m8a"
 
 # TASK 6.7, "A RECORDED GAP EXITS NON-ZERO", DEMONSTRATED RATHER THAN ASSERTED — and demonstrated
@@ -393,6 +403,8 @@ source = "tasks 6.7, samples/harness/artefact.py"
 kind = "command"
 run = "if just run-authoring --no-window --runs 1 --physics reference; then echo 'the negative control PASSED, which means it is not a control'; exit 1; fi; echo 'the negative control failed, as it must'"
 timeout_s = 3600
+requires = "gpu"
+reason = "it runs the same recipe as `m8a:authoring-recipe`, which needs a Vulkan device that can export a dma-buf; without one the artefact exits 3 before any physics runs, and an inverted 3 would read as a control that failed as it must"
 ci_job = "milestone-m8a"
 
 # TASK 6.8. `just run-authoring --shot <path>` is what takes it and this is the file it takes. A

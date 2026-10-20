@@ -1536,6 +1536,76 @@ def test_absent_recipe_rule(root: Path) -> None:
           "absent-recipe" in _rules("just --justfile Justfile no-such-recipe-at-all"))
 
 
+#: The program at the far end of the editor's control socket. It needs a Vulkan device that can
+#: export a dma-buf, and a driver that cannot start it reports "n/a" and exits 3 (EXIT_ABSENT).
+_WINDOW_RUNTIME = "cy_editor_window_runtime"
+_RECIPE_HEADER = re.compile(r"^([a-z][a-z0-9-]*)\b[^\n=]*:\s*$")
+_SAMPLE_DRIVER = re.compile(r"python3\s+(samples/\S+\.py)")
+
+
+def _recipes_reaching_the_window_runtime(repository: Path) -> set[str]:
+    """The `just` recipes whose sample driver starts `cy_editor_window_runtime`, read off just/."""
+    found: set[str] = set()
+    for justfile in sorted((repository / "just").glob("*.just")):
+        recipe = ""
+        for line in justfile.read_text(encoding="utf-8").splitlines():
+            header = _RECIPE_HEADER.match(line)
+            if header:
+                recipe = header.group(1)
+                continue
+            driver = _SAMPLE_DRIVER.search(line) if recipe and line[:1].isspace() else None
+            if driver and _WINDOW_RUNTIME in (repository / driver.group(1)).read_text(
+                    encoding="utf-8"):
+                found.add(recipe)
+    return found
+
+
+def _undeclared_runtime_criteria(criteria, recipes: set[str]) -> list[str]:
+    """Criteria that run one of `recipes` and declare no `requires` for the device it needs."""
+    calls = re.compile(r"\bjust\s+(" + "|".join(sorted(map(re.escape, recipes))) + r")(?![\w-])")
+    return [criterion.id for criterion in criteria
+            if not criterion.requires and calls.search(criterion.run)]
+
+
+def test_window_runtime_criteria_declare_a_device(root: Path) -> None:
+    """A criterion that reaches `cy_editor_window_runtime` says what machine it needs.
+
+    THE ONE RED OF THE FIRST SHARDED NIGHTLY (#125). `m8a:authoring-recipe` runs
+    `just run-authoring --no-window`; on a hosted runner the runtime fails at `vkCreateInstance`, the
+    driver reports "n/a" and exits 3, and with no `requires` the ledger read that as a FAILURE.
+    `m8a:authoring-control` runs the same recipe and inverts it, so the same 3 read as a control that
+    had failed as it must — a GREEN over a run in which no physics ran. A declared `requires` makes
+    both NOT EVALUATED there, which is the only honest verdict, and leaves both evaluated where the
+    device exists.
+    """
+    del root
+    repository = HERE.parent.parent
+    recipes = _recipes_reaching_the_window_runtime(repository)
+    check("the recipes that start the window runtime are read off just/, and include the two the "
+          "ledgers run", {"run-authoring", "run-editor-window"} <= recipes, repr(sorted(recipes)))
+    undeclared = [f"{identifier}:{name}" for identifier in criteria_module.available()
+                  for name in _undeclared_runtime_criteria(
+                      criteria_module.load(identifier).criteria, recipes)]
+    check("every ledger criterion that starts the window runtime declares `requires`",
+          not undeclared, ", ".join(undeclared))
+    check("an undeclared one is caught, inverted or not",
+          _undeclared_runtime_criteria(
+              [_criterion("plain", "just run-authoring --no-window"),
+               _criterion("inverted", "if just run-authoring --physics reference; then exit 1; fi"),
+               _criterion("other", "just run-authoring-elsewhere")], recipes)
+          == ["plain", "inverted"])
+    declared = _criterion("plain", "just run-authoring --no-window", requires="gpu", reason="r")
+    check("and a declared one is not", not _undeclared_runtime_criteria([declared], recipes))
+    m8a = {criterion.id: criterion for criterion in criteria_module.load("m8a").criteria}
+    for name in ("authoring-recipe", "authoring-control"):
+        with patch.dict(os.environ, {"CY_HAS_GPU": "0"}):
+            absent = criteria_module.unmet_requirement(m8a[name])
+        with patch.dict(os.environ, {"CY_HAS_GPU": "1"}):
+            present = criteria_module.unmet_requirement(m8a[name])
+        check(f"m8a:{name} is NOT EVALUATED without a device and evaluated with one",
+              bool(absent) and not present, f"without: {absent!r}; with: {present!r}")
+
+
 def _a_suite_and_a_case_in_it() -> tuple[str, str]:
     """A real `<kind>.<name>` and a real test case declared beside it, read out of this tree.
 
@@ -3728,6 +3798,7 @@ def main() -> int:
         test_matrix_requirement_counts(_area(root, "reqs-column"))
         test_falsifiability_rules(_area(root, "falsify-rules"))
         test_absent_recipe_rule(_area(root, "absent-recipe"))
+        test_window_runtime_criteria_declare_a_device(_area(root, "window-runtime"))
         test_requirements_coverage(_area(root, "requirements-coverage"))
         test_a_wrapped_case_name_is_still_that_case(_area(root, "wrapped-case"))
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))

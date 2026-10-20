@@ -81,6 +81,14 @@ one that names a job no gate declares.
 passed, is counted separately in the summary, and names the CI job that does evaluate it. `--ci`
 runs those criteria too, for the platform-specific jobs.
 
+**A criterion that starts `cy_editor_window_runtime` declares one.** That runtime needs a Vulkan device
+that can export a dma-buf, and the sample drivers that start it (`just run-authoring`,
+`just run-editor-window`) report "n/a" and exit 3 where it cannot start. Undeclared, that 3 is a red
+for a plain criterion and a silent green for an inverted one — `m8a:authoring-recipe` and
+`m8a:authoring-control` respectively, on the first sharded nightly. `just roadmap-test` reads the
+recipes that reach the runtime off `just/` and fails on any ledger criterion that runs one with no
+`requires`.
+
 `gpu` joined `display` at M3, which is the first milestone with criteria that need hardware: the
 conventions sampled back off a device, the golden images, and a frame run with the validation layers
 on. The probe is the presence of a DRM render node, with `CY_HAS_GPU` as the override for the cases
