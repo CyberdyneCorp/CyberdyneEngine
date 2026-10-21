@@ -1873,6 +1873,102 @@ impl GiSource {
         }
     }
 }
+/// `CyFogCell`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum FogCell {
+    /// `CY_FOG_CELL_UNEXPLORED` = 0.
+    Unexplored = 0,
+    /// `CY_FOG_CELL_EXPLORED` = 1.
+    Explored = 1,
+    /// `CY_FOG_CELL_VISIBLE` = 2.
+    Visible = 2,
+}
+
+impl FogCell {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [FogCell; 3] = [FogCell::Unexplored, FogCell::Explored, FogCell::Visible];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(FogCell::Unexplored),
+            1 => Some(FogCell::Explored),
+            2 => Some(FogCell::Visible),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            FogCell::Unexplored => "CY_FOG_CELL_UNEXPLORED",
+            FogCell::Explored => "CY_FOG_CELL_EXPLORED",
+            FogCell::Visible => "CY_FOG_CELL_VISIBLE",
+        }
+    }
+}
+/// `CyFogSight`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum FogSight {
+    /// `CY_FOG_SIGHT_HIDDEN` = 0.
+    Hidden = 0,
+    /// `CY_FOG_SIGHT_GHOST` = 1.
+    Ghost = 1,
+    /// `CY_FOG_SIGHT_VISIBLE` = 2.
+    Visible = 2,
+}
+
+impl FogSight {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [FogSight; 3] = [FogSight::Hidden, FogSight::Ghost, FogSight::Visible];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(FogSight::Hidden),
+            1 => Some(FogSight::Ghost),
+            2 => Some(FogSight::Visible),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            FogSight::Hidden => "CY_FOG_SIGHT_HIDDEN",
+            FogSight::Ghost => "CY_FOG_SIGHT_GHOST",
+            FogSight::Visible => "CY_FOG_SIGHT_VISIBLE",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

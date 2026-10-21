@@ -425,3 +425,20 @@ CY_TEST_CASE("the 1.9 structs have the offsets the description generator compute
     CY_CHECK_EQ(offsetof(CyGiStatus, disabled_emitters), 36U);
     CY_CHECK_EQ(offsetof(CyGiStatus, frame), 40U);
 }
+
+CY_TEST_CASE("the 1.10 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyFogVision), 24U);
+    CY_CHECK_EQ(offsetof(CyFogVision, team), 4U);
+    CY_CHECK_EQ(offsetof(CyFogVision, reveal_radius), 8U);
+    CY_CHECK_EQ(offsetof(CyFogVision, flags), 16U);
+    CY_CHECK_EQ(offsetof(CyFogVision, reserved), 20U);
+
+    CY_CHECK_EQ(sizeof(CyFogStatus), 40U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, width), 4U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, height), 8U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, units), 12U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, tick), 16U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, visible_cells), 24U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, ghosts), 28U);
+    CY_CHECK_EQ(offsetof(CyFogStatus, digest), 32U);
+}

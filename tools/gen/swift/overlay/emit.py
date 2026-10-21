@@ -92,6 +92,9 @@ ENUM_SPECS = {
     "CyGiClass": ("GIClass", "CY_GI_CLASS_", "UInt32"),
     "CyGiEmission": ("GIEmission", "CY_GI_EMISSION_", "UInt32"),
     "CyGiSource": ("GISource", "CY_GI_SOURCE_", "UInt32"),
+    # ADDED AT ABI 1.10 with fog of war.
+    "CyFogCell": ("FogCell", "CY_FOG_CELL_", "UInt32"),
+    "CyFogSight": ("FogSight", "CY_FOG_SIGHT_", "UInt32"),
 }
 
 
@@ -210,6 +213,9 @@ def enums(description: dict) -> str:
         ("CyGiClass", "/// `CyGiClass`: how a moving object takes part in GI."),
         ("CyGiEmission", "/// `CyGiEmission`: what GI makes of an emitter."),
         ("CyGiSource", "/// `CyGiSource`: where a GI sample's light came from."),
+        # ABI 1.10.
+        ("CyFogCell", "/// `CyFogCell`: a fog of war cell as one team knows it."),
+        ("CyFogSight", "/// `CyFogSight`: how a team sees an entity through the fog."),
     ))
     return f"""{BANNER}
 {status}

@@ -58,6 +58,10 @@ add_subdirectory(lockstep)
 # illumination/CMakeLists.txt.
 add_subdirectory(illumination)
 
+# ABI 1.10's fog of war adapter, a module of its own because it links cy::gameplay-fog; see
+# fog/CMakeLists.txt.
+add_subdirectory(fog)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

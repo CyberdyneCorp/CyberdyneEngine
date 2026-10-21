@@ -823,4 +823,29 @@ public struct Interface: @unchecked Sendable {
     public func giStatus(engine: CyEngine, into: UnsafeMutablePointer<CyGiStatus>?) throws {
         try check(table.pointee.gi_status(engine, into))
     }
+
+    @inlinable
+    public func fogSetVision(engine: CyEngine, entity: CyEntity, vision: UnsafePointer<CyFogVision>?) throws {
+        try check(table.pointee.fog_set_vision(engine, entity, vision))
+    }
+
+    @inlinable
+    public func fogGetVision(engine: CyEngine, entity: CyEntity, into: UnsafeMutablePointer<CyFogVision>?) throws {
+        try check(table.pointee.fog_get_vision(engine, entity, into))
+    }
+
+    @inlinable
+    public func fogCell(engine: CyEngine, team: UInt32, position: UnsafePointer<CyFixedVec2>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.fog_cell(engine, team, position, into))
+    }
+
+    @inlinable
+    public func fogSight(engine: CyEngine, team: UInt32, entity: CyEntity, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.fog_sight(engine, team, entity, into))
+    }
+
+    @inlinable
+    public func fogStatus(engine: CyEngine, into: UnsafeMutablePointer<CyFogStatus>?) throws {
+        try check(table.pointee.fog_status(engine, into))
+    }
 }

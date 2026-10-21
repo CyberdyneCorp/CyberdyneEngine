@@ -381,6 +381,16 @@ angle_scale}.txt` through the Swift operators, and reproduces each of those func
 SplitMix64 draws and fold. End to end, `samples/13-rts-api`'s commander orders a lockstep company in
 fixed point, and the session ends in the digest `determinism.cross_leg` computes on all four legs.
 
+## Fog of war (ABI 1.10)
+
+`FogOfWar.swift` is the face of the five `fog_*` entries: `setVision(_:of:)` gives an entity its
+team, a `Fixed` reveal radius and whether it leaves a ghost — from `onCreate`, `onReady` or a fixed
+step, and refused from `onUpdate`, because the grid is lockstep state; `vision(of:)`,
+`revealRadius(of:)`, `cell(team:at:)` (a `FixedVec2`, `y` world Z), `isVisible(team:at:)`,
+`sight(team:of:)` (`.hidden`, `.ghost`, `.visible`) and `status` answer in any phase. Nothing
+crosses as a float. `FogOfWarTests.swift` checks the raw bits through `FakeEngine`;
+`samples/13-rts-api/game/Fog.swift` plays it end to end, and docs/guides/fog-of-war.md is the guide.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

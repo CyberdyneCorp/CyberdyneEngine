@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 9u
+#define CY_ABI_MINOR 10u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1422,6 +1422,57 @@ typedef struct CyGiStatus {
     uint64_t frame;             /* the frame the last update ran */
 } CyGiStatus;
 
+/* --- 1.10: fog of war ---------------------------------------------------------------------------
+ *
+ * What each team sees, has seen and remembers, kept by `cy::gameplay::fog::FogOfWar`
+ * (src/gameplay/fog/) and reached through `cy::abi::game::FogBackend` (cy/abi/game/fog.h),
+ * implemented by `cy::game_backend::FogAdapter` (src/game_backend/fog/). A host that runs no fog of
+ * war binds none, and every 1.10 entry answers UNAVAILABLE.
+ *
+ * THE GRID IS SIMULATION. A reveal radius is a CyFixed and a position a CyFixedVec2 (`y` is world
+ * Z), so what a team may see is decided in the fixed step from integers, the same on every peer of
+ * a lockstep session. `fog_set_vision` changes it and is [N F]: refused in a frame update, which
+ * would let presentation decide what a player knows. The questions are [N F U]: a frame update may
+ * read the grid to draw it, which is all the renderer ever does with it. */
+
+/* `gameplay::fog::CellState`: a cell as one team knows it. */
+typedef enum CyFogCell {
+    CY_FOG_CELL_UNEXPLORED = 0, /* nothing the team (or a team sharing its vision) has seen */
+    CY_FOG_CELL_EXPLORED = 1,   /* seen before, not seen now */
+    CY_FOG_CELL_VISIBLE = 2     /* in sight this tick */
+} CyFogCell;
+
+/* `gameplay::fog::UnitSight`: how a team sees an entity. */
+typedef enum CyFogSight {
+    CY_FOG_SIGHT_HIDDEN = 0, /* not seen, and not remembered: not drawn */
+    CY_FOG_SIGHT_GHOST = 1,  /* a structure seen once: drawn where it was last seen */
+    CY_FOG_SIGHT_VISIBLE = 2 /* seen now, or the team's own or an ally's */
+} CyFogSight;
+
+/* A structure: a team that saw it remembers it as a ghost. */
+#define CY_FOG_LEAVES_GHOST 0x1u
+
+/* An entity's part in the fog: whose sight it gives and how far, and whether it leaves a ghost. */
+typedef struct CyFogVision {
+    uint32_t struct_size;
+    uint32_t team;         /* 1 to 32; 0 gives no sight, and is seen by any team that sees it */
+    CyFixed reveal_radius; /* metres, Q32.32, >= 0 */
+    uint32_t flags;        /* CY_FOG_LEAVES_GHOST */
+    uint32_t reserved;     /* zero */
+} CyFogVision;
+
+/* What the last fixed step did to the grid. */
+typedef struct CyFogStatus {
+    uint32_t struct_size;
+    uint32_t width;         /* cells along x */
+    uint32_t height;        /* cells along z */
+    uint32_t units;         /* entities with a vision, updated */
+    uint64_t tick;          /* the last update's */
+    uint32_t visible_cells; /* cells some unit sees, counted once */
+    uint32_t ghosts;        /* remembered structures, every team's */
+    uint64_t digest;        /* equal on every peer after the same updates */
+} CyFogStatus;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2024,6 +2075,26 @@ typedef struct CyInterface {
                                      const float* normal_xyz, CyGiIrradiance* out_irradiance);
     /* [N U] What the GI did on the last frame. */
     CyResult (*gi_status)(CyEngine engine, CyGiStatus* out_status);
+    /* --- 1.10: fog of war ---
+     *
+     * `fog_set_vision` is [N F]; the questions are [N F U] (see CyFogCell's section). */
+
+    /* [N F] Give `entity` a vision: its team's sight to `reveal_radius`, from the next update.
+     * INVALID_ARGUMENT for a team past 32, a negative radius, an unknown flag or a nonzero
+     * `reserved`, having changed nothing. NOT_FOUND for an entity the host does not place. */
+    CyResult (*fog_set_vision)(CyEngine engine, CyEntity entity, const CyFogVision* vision);
+    /* [N F U] The vision `entity` was given: its team, its reveal radius and its flags. NOT_FOUND
+     * for an entity never given one. */
+    CyResult (*fog_get_vision)(CyEngine engine, CyEntity entity, CyFogVision* out_vision);
+    /* [N F U] How `team` knows the cell holding `position`, a CyFogCell. Off the grid, or team 0,
+     * is UNEXPLORED. */
+    CyResult (*fog_cell)(CyEngine engine, uint32_t team, const CyFixedVec2* position,
+                         uint32_t* out_cell);
+    /* [N F U] How `team` sees `entity`, a CyFogSight: what decides whether a renderer draws it, and
+     * where. HIDDEN for an entity the fog has never placed. */
+    CyResult (*fog_sight)(CyEngine engine, uint32_t team, CyEntity entity, uint32_t* out_sight);
+    /* [N F U] The grid and its last update. */
+    CyResult (*fog_status)(CyEngine engine, CyFogStatus* out_status);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2155,6 +2226,9 @@ CY_ABI_STATIC_ASSERT(sizeof(CyGiSettings) == 24, "CyGiSettings is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyGiVolumeDesc) == 72, "CyGiVolumeDesc is 72 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyGiIrradiance) == 32, "CyGiIrradiance is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyGiStatus) == 48, "CyGiStatus is 48 bytes");
+/* 1.10 */
+CY_ABI_STATIC_ASSERT(sizeof(CyFogVision) == 24, "CyFogVision is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyFogStatus) == 40, "CyFogStatus is 40 bytes");
 
 #ifdef __cplusplus
 }

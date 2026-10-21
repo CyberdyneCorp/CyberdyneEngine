@@ -568,6 +568,31 @@ public struct Engine: @unchecked Sendable {
     public func giStatus(into: UnsafeMutablePointer<CyGiStatus>?) throws {
         try interface.giStatus(engine: raw, into: into)
     }
+
+    @inlinable
+    public func fogSetVision(entity: CyEntity, vision: UnsafePointer<CyFogVision>?) throws {
+        try interface.fogSetVision(engine: raw, entity: entity, vision: vision)
+    }
+
+    @inlinable
+    public func fogGetVision(entity: CyEntity, into: UnsafeMutablePointer<CyFogVision>?) throws {
+        try interface.fogGetVision(engine: raw, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func fogCell(team: UInt32, position: UnsafePointer<CyFixedVec2>?, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.fogCell(engine: raw, team: team, position: position, into: into)
+    }
+
+    @inlinable
+    public func fogSight(team: UInt32, entity: CyEntity, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.fogSight(engine: raw, team: team, entity: entity, into: into)
+    }
+
+    @inlinable
+    public func fogStatus(into: UnsafeMutablePointer<CyFogStatus>?) throws {
+        try interface.fogStatus(engine: raw, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

@@ -3813,4 +3813,135 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Give an entity a vision: its team's sight to a reveal radius.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn fog_set_vision(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        vision: *const ffi::CyFogVision,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .fog_set_vision
+            .ok_or(CallError::Missing("fog_set_vision"))?;
+        let raw = unsafe { entry(engine, entity, vision) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The vision an entity was given.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn fog_get_vision(
+        &self,
+        engine: ffi::CyEngine,
+        entity: ffi::CyEntity,
+        into: *mut ffi::CyFogVision,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .fog_get_vision
+            .ok_or(CallError::Missing("fog_get_vision"))?;
+        let raw = unsafe { entry(engine, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// How a team knows the fog of war cell holding a position.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn fog_cell(
+        &self,
+        engine: ffi::CyEngine,
+        team: u32,
+        position: *const ffi::CyFixedVec2,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .fog_cell
+            .ok_or(CallError::Missing("fog_cell"))?;
+        let raw = unsafe { entry(engine, team, position, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// How a team sees an entity through the fog of war.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn fog_sight(
+        &self,
+        engine: ffi::CyEngine,
+        team: u32,
+        entity: ffi::CyEntity,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .fog_sight
+            .ok_or(CallError::Missing("fog_sight"))?;
+        let raw = unsafe { entry(engine, team, entity, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The fog of war grid and its last update.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn fog_status(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyFogStatus,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .fog_status
+            .ok_or(CallError::Missing("fog_status"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

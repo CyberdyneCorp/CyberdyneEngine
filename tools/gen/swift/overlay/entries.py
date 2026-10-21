@@ -234,6 +234,12 @@ ENTRIES: dict[str, Entry] = {
     "gi_emission_set": Entry(("engine", "entity", "material", "mode"), result="throwing"),
     "gi_sample_irradiance": Entry(("engine", "position", "normal", "into"), result="throwing"),
     "gi_status": Entry(("engine", "into"), result="throwing"),
+    # 1.10: fog of war
+    "fog_set_vision": Entry(("engine", "entity", "vision"), result="throwing"),
+    "fog_get_vision": Entry(("engine", "entity", "into"), result="throwing"),
+    "fog_cell": Entry(("engine", "team", "position", "into"), result="throwing"),
+    "fog_sight": Entry(("engine", "team", "entity", "into"), result="throwing"),
+    "fog_status": Entry(("engine", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

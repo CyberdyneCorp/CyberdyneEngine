@@ -1133,6 +1133,44 @@ pub struct CyGiStatus {
     pub frame: u64,
 }
 
+/// `CyFogVision` — 24 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFogVision {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub team: u32,
+    /// `CyFixed` at byte 8.
+    pub reveal_radius: CyFixed,
+    /// `uint32_t` at byte 16.
+    pub flags: u32,
+    /// `uint32_t` at byte 20.
+    pub reserved: u32,
+}
+
+/// `CyFogStatus` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFogStatus {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub width: u32,
+    /// `uint32_t` at byte 8.
+    pub height: u32,
+    /// `uint32_t` at byte 12.
+    pub units: u32,
+    /// `uint64_t` at byte 16.
+    pub tick: u64,
+    /// `uint32_t` at byte 24.
+    pub visible_cells: u32,
+    /// `uint32_t` at byte 28.
+    pub ghosts: u32,
+    /// `uint64_t` at byte 32.
+    pub digest: u64,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1147,7 +1185,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1240 bytes, 8-byte aligned.
+/// `CyInterface` — 1280 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1631,6 +1669,16 @@ pub struct CyInterface {
         Option<unsafe extern "C" fn(CyEngine, *const f32, *const f32, *mut CyGiIrradiance) -> i32>,
     /// `CyResult(*)(CyEngine, CyGiStatus*)` at byte 1232.
     pub gi_status: Option<unsafe extern "C" fn(CyEngine, *mut CyGiStatus) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, const CyFogVision*)` at byte 1240.
+    pub fog_set_vision: Option<unsafe extern "C" fn(CyEngine, CyEntity, *const CyFogVision) -> i32>,
+    /// `CyResult(*)(CyEngine, CyEntity, CyFogVision*)` at byte 1248.
+    pub fog_get_vision: Option<unsafe extern "C" fn(CyEngine, CyEntity, *mut CyFogVision) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, const CyFixedVec2*, uint32_t*)` at byte 1256.
+    pub fog_cell: Option<unsafe extern "C" fn(CyEngine, u32, *const CyFixedVec2, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, CyEntity, uint32_t*)` at byte 1264.
+    pub fog_sight: Option<unsafe extern "C" fn(CyEngine, u32, CyEntity, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyFogStatus*)` at byte 1272.
+    pub fog_status: Option<unsafe extern "C" fn(CyEngine, *mut CyFogStatus) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1826,5 +1874,10 @@ impl CyInterface {
         gi_emission_set: None,
         gi_sample_irradiance: None,
         gi_status: None,
+        fog_set_vision: None,
+        fog_get_vision: None,
+        fog_cell: None,
+        fog_sight: None,
+        fog_status: None,
     };
 }

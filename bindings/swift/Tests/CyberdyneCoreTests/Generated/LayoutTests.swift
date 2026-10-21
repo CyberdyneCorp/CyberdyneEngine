@@ -618,6 +618,29 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyGiStatus>.offset(of: \CyGiStatus.frame), 40, "CyGiStatus.frame offset")
     }
 
+    func testFogVisionLayout() {
+        XCTAssertEqual(MemoryLayout<CyFogVision>.size, 24, "CyFogVision size")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.alignment, 8, "CyFogVision alignment")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.offset(of: \CyFogVision.struct_size), 0, "CyFogVision.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.offset(of: \CyFogVision.team), 4, "CyFogVision.team offset")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.offset(of: \CyFogVision.reveal_radius), 8, "CyFogVision.reveal_radius offset")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.offset(of: \CyFogVision.flags), 16, "CyFogVision.flags offset")
+        XCTAssertEqual(MemoryLayout<CyFogVision>.offset(of: \CyFogVision.reserved), 20, "CyFogVision.reserved offset")
+    }
+
+    func testFogStatusLayout() {
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.size, 40, "CyFogStatus size")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.alignment, 8, "CyFogStatus alignment")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.struct_size), 0, "CyFogStatus.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.width), 4, "CyFogStatus.width offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.height), 8, "CyFogStatus.height offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.units), 12, "CyFogStatus.units offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.tick), 16, "CyFogStatus.tick offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.visible_cells), 24, "CyFogStatus.visible_cells offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.ghosts), 28, "CyFogStatus.ghosts offset")
+        XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.digest), 32, "CyFogStatus.digest offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -628,7 +651,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1240, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1280, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -784,6 +807,11 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_emission_set), 1216, "CyInterface.gi_emission_set offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_sample_irradiance), 1224, "CyInterface.gi_sample_irradiance offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.gi_status), 1232, "CyInterface.gi_status offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_set_vision), 1240, "CyInterface.fog_set_vision offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_get_vision), 1248, "CyInterface.fog_get_vision offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_cell), 1256, "CyInterface.fog_cell offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_sight), 1264, "CyInterface.fog_sight offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_status), 1272, "CyInterface.fog_status offset")
     }
 
     func testModuleInitLayout() {
@@ -801,7 +829,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1240,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1280,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -847,8 +875,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 153)
+        XCTAssertEqual(ABI.entryNames.count, 158)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "gi_status")
+        XCTAssertEqual(ABI.entryNames.last, "fog_status")
     }
 }

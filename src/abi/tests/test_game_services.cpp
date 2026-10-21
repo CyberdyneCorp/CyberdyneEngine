@@ -199,7 +199,23 @@ CY_TEST_CASE("the 1.9 table appends global illumination after every 1.8 entry") 
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, gi_status) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, gi_status) + sizeof(void*),
+                offsetof(CyInterface, fog_set_vision));
+}
+
+CY_TEST_CASE("the 1.10 table appends fog of war after every 1.9 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 10U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.fog_set_vision != nullptr, iface.fog_get_vision != nullptr, iface.fog_cell != nullptr,
+        iface.fog_sight != nullptr,      iface.fog_status != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 5U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, fog_status) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
@@ -227,6 +243,7 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.characters == nullptr);
     CY_CHECK(host.game.ui == nullptr);
     CY_CHECK(host.game.illumination == nullptr);
+    CY_CHECK(host.game.fog == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }
