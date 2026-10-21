@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <numbers>
 #include <string_view>
 #include <utility>
@@ -438,6 +437,18 @@ bool AuthoredIllumination::advance(Vec3 eye, AuthoredGi& out) noexcept {
 
 namespace {
 
+/// Whether two transforms are the same, element for element.
+[[nodiscard]] bool same_matrix(const Mat4& a, const Mat4& b) noexcept {
+    for (u32 column = 0; column < 4; ++column) {
+        const Vec4& left = a.columns[column];
+        const Vec4& right = b.columns[column];
+        if (left.x != right.x || left.y != right.y || left.z != right.z || left.w != right.w) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Every object the GI holds by its Play entity and every material by its authored name.
 void bind_names(game_backend::IlluminationAdapter& adapter, const editor::IlluminationPreview& lit,
                 const gameplay::PlaySession& play) noexcept {
@@ -508,7 +519,7 @@ u32 AuthoredIllumination::follow_play(gameplay::PlaySession& play) noexcept {
         }
         const Mat4 transform = placed->value.to_matrix();
         const Mat4& last = played_[index] ? play_transforms_[index] : object.transform;
-        if (std::memcmp(&transform, &last, sizeof(Mat4)) == 0) {
+        if (same_matrix(transform, last)) {
             continue;
         }
         if (lit->system()
