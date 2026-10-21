@@ -142,6 +142,21 @@ to the colour the chain has reached, and the producer's last pass writes the imp
 producer and a target. The feature derives the `DepthNormalVelocity` prepass, as it always did.
 `src/rendering/motion_blur/` is the producer.
 
+## Two extents: the temporal stage as a producer
+
+`FrameDescription::output_width`/`output_height` are the extent the frame ENDS at; `width`/`height`
+stay the extent the scene is RENDERED at, and zero output is the render extent — the frame every
+caller before temporal upscaling declared. A larger output needs `FrameDescription::temporal_stage`,
+a producer handed the scene's colour, depth and motion at the render extent (`render_width`/
+`render_height`), the pre-translucency copy with `features.reactive_mask`, and
+`FrameResources::upscaled` at the output extent as `target`. When a stage after it reads depth —
+depth of field, motion blur, the outlines — the frame also declares `output_depth` and
+`output_velocity` for the producer to write, and hands those to every later stage. The producer owns
+its history, so no `temporal_previous` or `temporal_history` is declared beside it, and it needs no
+prepass of its own: a frame without one reads the depth the opaque pass wrote. `build()` refuses an
+output extent without a producer, a producer without a temporal frame or over multisampled targets,
+and an output smaller than the scene. `src/rendering/upscale/` is the producer.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

@@ -79,11 +79,21 @@ CALLER says a trace is available this frame. A shadow-casting light that MOVED s
 dirties its own pages through `invalidate_light` before any page is requested — which is what stops
 a moving sun leaving its shadows where it was.
 
+## Rendering below the output — temporal upscaling
+
+`AssemblyDescription::render_width`/`render_height` are the extent the scene is drawn at when a
+temporal upscaler reconstructs `width`/`height`; `produced_temporal_stage` says the frame's temporal
+stage is `FrameSinks::temporal`'s (`upscale::stage_of(pass)`), which owns its history, and
+`reactive_mask` copies the colour before translucency for it. `set_render_extent()` moves the render
+extent between frames — dynamic resolution, the arbiter's allocation times the mode — and rebuilds
+the cluster grid; the temporal framework is not told, so the history survives it. `execute()` calls
+the producer's `executed` hook after a frame that ran, which is when it swaps its history.
+
 ## The suites
 
 | Suite | Kind | What it proves |
 |---|---|---|
-| `integration.render_assembly` | integration | one frame produces a number from each of the eight; every draw's material slot is checked against the material table and a draw past its end is counted; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend; and — M11.c — the frame passes through tone mapping and through anti-aliasing, each asserted against the SAME frame assembled without it, with the caption checked against the manifest in both directions |
+| `integration.render_assembly` | integration | one frame produces a number from each of the eight; every draw's material slot is checked against the material table and a draw past its end is counted; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend; and — M11.c — the frame passes through tone mapping and through anti-aliasing, each asserted against the SAME frame assembled without it, with the caption checked against the manifest in both directions; and a produced temporal stage renders the scene below the output, is told it ran, and follows `set_render_extent()` within the output |
 | `render.assembly` | render | the same frame on Vulkan with validation and synchronisation validation on; the cull dispatch and the virtual-texture resolve run inside the frame's own graph; sixteen loaded frames and then a teardown with the device still busy |
 
 The integration suite is `integration` and not `unit` deliberately: every case builds a world, a

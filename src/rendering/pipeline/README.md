@@ -188,6 +188,15 @@ post-process — left it at compute: the post-process's sets went there and the 
 temporal pass's set, so the blur never reached the frame. `render.motion_blur` (d)'s open-shutter
 control is the regression case.
 
+## The render extent — temporal upscaling
+
+With `AssemblyDescription::render_width`/`render_height` below the output, `FrameRecorder` records
+every scene pass — prepass, opaque, sky, translucency — at `FrameAssembly::render_width()`/
+`render_height()`, and `upload_for` writes the jitter, the shaders' extent and the cluster grid at
+it; the post-process, the outlines and the interface still record at the output extent after the
+temporal producer. The frame's own temporal resolve is not recorded when a producer declares the
+stage. At equal extents every byte uploaded is the one uploaded before; `render.upscale_off` pins it.
+
 ## The lightmap — `FrameViewData::lightmap_*` and the fourth vertex stream
 
 Two words appended after `motion_control` (the block is 592 bytes), defaulted to "none". A caller
