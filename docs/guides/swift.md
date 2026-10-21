@@ -1038,6 +1038,26 @@ frame costs 6.3 ms at 480x270 with the GI 1.0 ms on the device. Two rules carry 
 every call is refused from `onFixedUpdate`, and a lamp you want seen in the frame should light
 through the cache rather than be promoted — the GI guide's section 6g says why.
 
+### Fog of war (ABI 1.10)
+
+`FogOfWar.swift` gives entities sight and asks what a team sees (see [the fog of war
+guide](fog-of-war.md)). The grid is simulation: `setVision` is accepted from `onCreate`, `onReady`
+and `onFixedUpdate` and refused from `onUpdate`; the questions are accepted anywhere. A reveal
+radius is a `Fixed` and a position a `FixedVec2`, so nothing crosses as a float.
+
+| | What |
+|---|---|
+| `FogOfWar.setVision(_:of:)` | an entity's team (1 to 32), reveal radius in metres, and whether it leaves a ghost |
+| `vision(of:)`, `revealRadius(of:)` | the vision an entity was given |
+| `cell(team:at:)`, `isVisible(team:at:)` | how a team knows the cell holding a point: `.unexplored`, `.explored`, `.visible` |
+| `sight(team:of:)` | how a team sees an entity: `.hidden` (do not draw it), `.ghost` (where last seen), `.visible` |
+| `status` | the grid's size, units placed, tick, visible cells, ghosts, digest |
+
+`samples/13-rts-api/game/Fog.swift` gives the squad and the barracks blue's sight and an enemy camp
+red's, shows a raider's minimap dot only while blue sees it and the watchtower's as a ghost, and is
+refused once when it tries to give sight from a frame; `integration.rts_api_sample` checks every
+number, and `smoke.rts_api_fog` draws it.
+
 ### Diagnostics
 
 ```swift
