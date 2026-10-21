@@ -74,6 +74,10 @@ struct Project {
         const std::string path = std::string(CY_GI_TEST_DATA) + "/gi_test_room.cyworld";
         CY_REQUIRE(assets::fs::read_whole(path.c_str(), bytes).has_value());
         world.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        // The GI at low quality: what is asserted is where objects and volumes are, not the light,
+        // and a rebuild converges the GI before it returns — at the room's high quality that is
+        // more than an unoptimised build's integration budget.
+        replace("field 21 \"high\"", "field 21 \"low\"");
         // A box collider on the cart, so Play simulates its rigid body (it refuses one without).
         replace("node 0 - ",
                 "type 9 runtime \"Collider\"\n  field 80 text \"shape\" \"\"\n"
