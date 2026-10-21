@@ -45,6 +45,9 @@ enum class HistoryFormat : u8 {
     Rgba8,
     /// 32-bit float, one channel. Depth history.
     R32F,
+    /// 32-bit float, two channels. A depth and a second value kept beside it — a temporal
+    /// upscaler's per-texel state, its lock and the depth of the surface it holds. Appended.
+    Rg32F,
     Count,
 };
 

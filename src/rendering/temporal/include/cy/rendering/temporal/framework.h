@@ -82,6 +82,13 @@ struct TemporalView {
     /// apart. A field-of-view change mid-shot must invalidate history; walking must not.
     Mat4 projection = Mat4::identity();
     Vec3 camera_position{0.0F, 0.0F, 0.0F};
+    /// The extent the scene is RENDERED at, when a temporal upscaler reconstructs `width` and
+    /// `height` from a smaller one. The jitter is a fraction of a RENDERED pixel, so this is the
+    /// extent `jittered_view_projection()` converts it at. It is not an invalidation cause: the
+    /// histories are declared against `width` and `height`, and dynamic resolution moving this
+    /// between frames keeps them. Zero, the default, is `width` and `height`. Appended.
+    u32 render_width = 0;
+    u32 render_height = 0;
 
     [[nodiscard]] Mat4 view_projection() const noexcept { return projection * view; }
 };
@@ -202,5 +209,17 @@ private:
     bool invalidated_this_frame_ = false;
     bool has_previous_ = false;
 };
+
+/// The CAMERA-RELATIVE to clip transform of a view: its projection times its rotation alone. The
+/// frame draws positions relative to the camera (`transformToRelative`), so this is the matrix its
+/// prepass pushes a vertex through, unjittered.
+[[nodiscard]] Mat4 camera_relative_to_clip(const TemporalView& view) noexcept;
+
+/// LAST FRAME'S PROJECTION, EXPRESSED ABOUT THIS FRAME'S CAMERA: the transform the prepass derives
+/// camera motion with, and the one a temporal consumer reprojects a pixel with no motion vector
+/// through. The framework's previous view is a WORLD view, so it is rebased by the camera's
+/// DISPLACEMENT rather than by composing a world translation back in — at a large world coordinate
+/// that subtraction is where float precision goes.
+[[nodiscard]] Mat4 previous_camera_relative_to_clip(const TemporalFramework& temporal) noexcept;
 
 }  // namespace cy::rendering

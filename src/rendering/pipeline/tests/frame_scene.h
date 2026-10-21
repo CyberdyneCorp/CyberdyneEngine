@@ -108,7 +108,7 @@ struct CubeMesh {
 struct FrameSceneHooks {
     void* user = nullptr;
     /// Before the assembly is created, with every field this scene sets but temporal
-    /// anti-aliasing, which it always switches on.
+    /// anti-aliasing, which it switches on unless the hook chose temporal upscaling instead.
     void (*configure)(AssemblyDescription& description, void* user) noexcept = nullptr;
     /// After the view is filled and the recorder's sinks are taken, before `assemble`.
     Status (*before_assemble)(RenderGraph& graph, assembly::AssemblyView& view, FrameSinks& sinks,

@@ -119,6 +119,11 @@ struct FrameFeatures {
     /// on and off from one frame to the next — the device GI an editor's viewport toggles — keeps
     /// one prepass, and so one set of depth pipelines. Changes no colour. Appended.
     bool normal_prepass = false;
+    /// Copy the shaded colour before the transparent pass — the `OpaqueColorCopy` stage refraction
+    /// declares — so a temporal producer can tell what translucency added to a pixel: its REACTIVE
+    /// mask, the pixels whose history the motion vectors cannot carry (`ScreenSpaceStageInputs::
+    /// opaque_color`). Only with `transparency`. Appended.
+    bool reactive_mask = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
@@ -257,12 +262,34 @@ struct ScreenSpaceStageInputs {
     /// resolve's output, for motion blur — which a stage that filters the picture reads. Appended,
     /// as above.
     ResourceId color = kInvalidResource;
+    /// The extent the SCENE was rendered at. Every stage up to and including the temporal one is
+    /// handed the scene's own targets at this extent, and `width`/`height` equal it for every stage
+    /// before the temporal one. The temporal stage and every stage after it are handed the OUTPUT
+    /// extent as `width`/`height`, which is larger when a temporal producer upscales. Appended.
+    u32 render_width = 0;
+    u32 render_height = 0;
+    /// For the temporal stage: the colour before translucency, when the frame copies it
+    /// (`FrameFeatures::reactive_mask`), from which a reactive mask is derived. Invalid otherwise.
+    /// Appended.
+    ResourceId opaque_color = kInvalidResource;
+    /// For the temporal stage of a frame that renders below its output extent: the depth and motion
+    /// targets at the OUTPUT extent the producer must write, because a stage after it — depth of
+    /// field, motion blur, the selection outlines — reads them there. Invalid when nothing after
+    /// the temporal stage reads depth. Every later stage is then handed these as its `depth` and
+    /// `velocity`. Appended.
+    ResourceId output_depth = kInvalidResource;
+    ResourceId output_velocity = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
 /// refuse — which fails the frame's build rather than leaving the stage out.
 using DeclareStageFn = PassId (*)(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
                                   void* user) noexcept;
+
+/// Told that the frame which declared a stage was executed and its fence passed. Whoever executes
+/// the frame calls it — `assembly::FrameAssembly::execute` for the temporal stage — so a producer
+/// that keeps history across frames swaps it only for a frame that ran.
+using StageExecutedFn = void (*)(void* user) noexcept;
 
 /// A stage whose producer needs more than one pass: ambient occlusion is a horizon search followed
 /// by a filter cascade, and a barrier between two dispatches can only come from the graph, so the
@@ -271,6 +298,8 @@ using DeclareStageFn = PassId (*)(RenderGraph& graph, const ScreenSpaceStageInpu
 struct FrameStageDeclaration {
     DeclareStageFn declare = nullptr;
     void* user = nullptr;
+    /// Optional. See `StageExecutedFn`. Appended, so `{declare, user}` keeps its meaning.
+    StageExecutedFn executed = nullptr;
 };
 
 /// The resources one frame declares. `kInvalidResource` for anything the feature set left out —
@@ -322,6 +351,13 @@ struct FrameResources {
     /// opaque pass. Only with `FrameFeatures::screen_space_gi` and a
     /// `FrameDescription::screen_space_gi_specular_target`. Appended.
     ResourceId screen_space_gi_specular = kInvalidResource;
+    /// The temporal producer's colour at the output extent, which the post chain continues from.
+    /// Only with `FrameDescription::temporal_stage`. Appended.
+    ResourceId upscaled = kInvalidResource;
+    /// The depth and motion at the output extent the temporal producer wrote for the stages after
+    /// it — `ScreenSpaceStageInputs::output_depth` and `output_velocity`. Appended.
+    ResourceId output_depth = kInvalidResource;
+    ResourceId output_velocity = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -410,6 +446,28 @@ struct FrameDescription {
     ResourceId screen_space_gi_target = kInvalidResource;
     ResourceId screen_space_gi_specular_target = kInvalidResource;
     FrameStageDeclaration screen_space_gi_stage;
+    /// THE OUTPUT EXTENT, when it is not the scene's. `width` and `height` above are the extent the
+    /// scene is RENDERED at — every target from the prepass to the temporal stage — and these are
+    /// the extent the frame ENDS at: the temporal producer's colour, depth of field, motion blur,
+    /// bloom, the post-process, the outlines, the interface and a frame-owned output. Zero, the
+    /// default, is the render extent: the frame every caller before temporal upscaling declared.
+    /// Larger only with a `temporal_stage` producer, which is what reconstructs one from the other.
+    /// Appended.
+    u32 output_width = 0;
+    u32 output_height = 0;
+    /// The producer that declares the temporal stage — a temporal upscaler
+    /// (`upscale::TemporalUpscalePass`, or a vendor module behind `upscale::Upscaler`). Handed the
+    /// scene's colour, depth, motion and (with `features.reactive_mask`) pre-translucency colour at
+    /// the render extent, and `FrameResources::upscaled` at the output extent as its target. It
+    /// owns its history; the frame declares no `temporal_previous` or `temporal_history` beside it.
+    /// Null keeps the stage the single resolve pass recorded by `callbacks[Temporal]`. Only with
+    /// `features.temporal`. Appended.
+    FrameStageDeclaration temporal_stage;
+    /// The producer that declares the opaque colour copy — handed the shading target as `source`
+    /// and `FrameResources::opaque_color_copy` as `target`, which its last pass must write. A
+    /// temporal upscaler supplies one for its reactive mask, as a dispatch; null keeps the stage
+    /// the single transfer pass recorded by `callbacks[OpaqueColorCopy]`. Appended.
+    FrameStageDeclaration opaque_copy_stage;
 };
 
 /// Declares one view's frame into a graph.
@@ -453,6 +511,11 @@ private:
     void declare_prepare_and_depth(RenderGraph& graph, BuildState& state) noexcept;
     void declare_shading(RenderGraph& graph, BuildState& state) noexcept;
     void declare_post_chain(RenderGraph& graph, BuildState& state) noexcept;
+    /// The temporal stage handed to `FrameDescription::temporal_stage`, with its output-extent
+    /// targets.
+    void declare_temporal_producer(RenderGraph& graph, BuildState& state) noexcept;
+    /// The refusals the render and output extents and the temporal producer imply.
+    [[nodiscard]] static Status check_output_extent(const FrameDescription& description) noexcept;
 
     /// Record a declared pass. A no-op for `kInvalidPass` — a stage the feature set left out — and
     /// a no-op once a failure has been recorded, so a declaration sequence reads as a sequence

@@ -1000,3 +1000,161 @@ CY_TEST_CASE(
     CY_CHECK_FALSE(saw[1]);
     CY_CHECK(saw[2]);
 }
+
+namespace {
+
+/// A stand-in for an upscaler's `FrameStageDeclaration`: one pass that writes what the frame hands
+/// it, and a count of what it was told.
+struct ProducedTemporal {
+    ScreenSpaceStageInputs seen{};
+    u32 executed = 0;
+};
+
+PassId declare_produced(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
+                        void* user) noexcept {
+    auto* producer = static_cast<ProducedTemporal*>(user);
+    producer->seen = inputs;
+    PassBuilder builder = graph.add_pass("produced temporal", cy::rhi::QueueKind::Graphics);
+    builder.read(inputs.color, cy::rhi::Access::ComputeSampledRead)
+        .read(inputs.depth, cy::rhi::Access::ComputeSampledRead)
+        .write(inputs.target, cy::rhi::Access::ComputeStorageWrite);
+    if (inputs.output_depth != kInvalidResource) {
+        builder.write(inputs.output_depth, cy::rhi::Access::ComputeStorageWrite)
+            .write(inputs.output_velocity, cy::rhi::Access::ComputeStorageWrite);
+    }
+    return builder.id();
+}
+
+void produced_executed(void* user) noexcept {
+    ++static_cast<ProducedTemporal*>(user)->executed;
+}
+
+[[nodiscard]] AssemblyDescription make_upscaled_description() noexcept {
+    AssemblyDescription description = make_description();
+    description.post.temporal_antialiasing = false;
+    description.post.temporal_upscaling = true;
+    description.produced_temporal_stage = true;
+    description.render_width = kWidth / 2U;
+    description.render_height = kHeight / 2U;
+    return description;
+}
+
+/// Assemble and execute one frame on the null device with `producer` as the temporal stage. `owned`
+/// is declared before `assembly` by the caller, so the device outlives what the assembly made on
+/// it.
+[[nodiscard]] bool run_produced(OwnedDevice& owned, FrameAssembly& assembly,
+                                ProducedTemporal& producer, AssemblyReport& report) noexcept {
+    if (owned.device == nullptr) {
+        (void)cy::rhi::null::register_null_backend();
+        cy::rhi::DeviceDescription device_description;
+        device_description.application_name = "cy_test_integration_render_assembly";
+        cy::rhi::BackendSelection selection{};
+        auto opened = cy::rhi::create_device(allocator(), "null", device_description, selection);
+        if (!opened) {
+            return false;
+        }
+        owned.device = opened.value();
+    }
+    if (!assembly.attach_device(*owned.device)) {
+        return false;
+    }
+    FrameSinks sinks;
+    sinks.temporal = FrameStageDeclaration{&declare_produced, &producer, &produced_executed};
+    RenderGraph graph(allocator());
+    SpatialIndex index(allocator());
+    const cy::render::LightDescription lights[] = {sun(1)};
+    if (!assembly.assemble(index, make_view({lights, 1}), sinks, graph, report)) {
+        return false;
+    }
+    if (!owned.device->begin_frame()) {
+        return false;
+    }
+    GraphExecutor executor(allocator(), *owned.device);
+    const bool executed = assembly.execute(executor, graph, report).has_value();
+    const bool ended = owned.device->end_frame().has_value();
+    executor.release();
+    return executed && ended && owned.device->wait_idle().has_value();
+}
+
+}  // namespace
+
+CY_TEST_CASE("a produced temporal stage renders the scene below the output and is told it ran") {
+    OwnedDevice owned;
+    FrameAssembly assembly(allocator());
+    CY_REQUIRE(assembly.initialize(make_upscaled_description()).has_value());
+    CY_CHECK_EQ(assembly.render_width(), kWidth / 2U);
+    CY_CHECK_EQ(assembly.render_height(), kHeight / 2U);
+
+    ProducedTemporal producer;
+    AssemblyReport report;
+    CY_REQUIRE(run_produced(owned, assembly, producer, report));
+    // Handed the scene at the render extent and a target at the output extent.
+    CY_CHECK_EQ(producer.seen.render_width, kWidth / 2U);
+    CY_CHECK_EQ(producer.seen.render_height, kHeight / 2U);
+    CY_CHECK_EQ(producer.seen.width, kWidth);
+    CY_CHECK_EQ(producer.seen.height, kHeight);
+    CY_CHECK_EQ(producer.seen.target, assembly.resources().upscaled);
+    // The assembly kept no history of its own beside the producer's.
+    CY_CHECK_EQ(assembly.resources().temporal_history, kInvalidResource);
+    // `execute` told the producer the frame ran, once, so it can swap its history.
+    CY_CHECK_EQ(producer.executed, 1U);
+    // The jitter is on, because the chain has a temporal stage.
+    CY_CHECK(assembly.temporal().jitter().enabled());
+}
+
+CY_TEST_CASE("dynamic resolution moves the render extent between frames, within the output") {
+    OwnedDevice owned;
+    FrameAssembly assembly(allocator());
+    CY_REQUIRE(assembly.initialize(make_upscaled_description()).has_value());
+    CY_REQUIRE(assembly.set_render_extent(240, 135).has_value());
+    CY_CHECK_EQ(assembly.render_width(), 240U);
+    CY_CHECK_EQ(assembly.render_height(), 135U);
+    ProducedTemporal producer;
+    AssemblyReport report;
+    CY_REQUIRE(run_produced(owned, assembly, producer, report));
+    CY_CHECK_EQ(producer.seen.render_width, 240U);
+    CY_CHECK_EQ(producer.seen.width, kWidth);
+
+    // Refused: empty, larger than the output; the extent is unchanged by a refusal.
+    CY_CHECK_FALSE(assembly.set_render_extent(0, 90).has_value());
+    CY_CHECK_FALSE(assembly.set_render_extent(kWidth + 2U, kHeight).has_value());
+    CY_CHECK_EQ(assembly.render_width(), 240U);
+    // The output extent itself is allowed: native rendering through the same reconstruction.
+    CY_CHECK(assembly.set_render_extent(kWidth, kHeight).has_value());
+
+    // A frame whose temporal stage is not produced cannot render below its output.
+    FrameAssembly resolved(allocator());
+    CY_REQUIRE(resolved.initialize(make_description()).has_value());
+    CY_CHECK_FALSE(resolved.set_render_extent(kWidth / 2U, kHeight / 2U).has_value());
+    CY_CHECK(resolved.set_render_extent(kWidth, kHeight).has_value());
+}
+
+CY_TEST_CASE("a render extent or a produced temporal stage the frame cannot honour is refused") {
+    // Below the output with nothing to reconstruct it.
+    AssemblyDescription unproduced = make_upscaled_description();
+    unproduced.produced_temporal_stage = false;
+    FrameAssembly first(allocator());
+    CY_CHECK_FALSE(first.initialize(unproduced).has_value());
+
+    // Above the output.
+    AssemblyDescription larger = make_upscaled_description();
+    larger.render_width = kWidth * 2U;
+    FrameAssembly second(allocator());
+    CY_CHECK_FALSE(second.initialize(larger).has_value());
+
+    // A produced stage in a chain with no temporal stage.
+    AssemblyDescription untemporal = make_upscaled_description();
+    untemporal.post.temporal_upscaling = false;
+    FrameAssembly third(allocator());
+    CY_CHECK_FALSE(third.initialize(untemporal).has_value());
+
+    // Asked for, and the sinks carry no producer: refused at assembly, not declared empty.
+    FrameAssembly fourth(allocator());
+    CY_REQUIRE(fourth.initialize(make_upscaled_description()).has_value());
+    RenderGraph graph(allocator());
+    SpatialIndex index(allocator());
+    AssemblyReport report;
+    const cy::render::LightDescription lights[] = {sun(1)};
+    CY_CHECK_FALSE(
+        fourth.assemble(index, make_view({lights, 1}), FrameSinks{}, graph, report).has_value());
+}

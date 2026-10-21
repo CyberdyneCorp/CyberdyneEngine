@@ -14,6 +14,8 @@ const char* history_format_name(HistoryFormat format) noexcept {
             return "Rgba8";
         case HistoryFormat::R32F:
             return "R32F";
+        case HistoryFormat::Rg32F:
+            return "Rg32F";
         case HistoryFormat::Count:
             break;
     }
@@ -32,6 +34,8 @@ u32 history_bytes_per_texel(HistoryFormat format) noexcept {
             return 4;
         case HistoryFormat::R16F:
             return 2;
+        case HistoryFormat::Rg32F:
+            return 8;
         case HistoryFormat::Count:
             break;
     }

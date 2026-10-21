@@ -999,3 +999,189 @@ CY_TEST_CASE("the interface's producer draws over the outlined, tonemapped colou
     ForwardFrame refusing_frame(allocator());
     CY_CHECK_FALSE(refusing_frame.build(refusing, description).has_value());
 }
+
+namespace {
+
+/// A stand-in for `upscale::TemporalUpscalePass`: it records what the frame handed it and declares
+/// the shape the real producer does — a reconstruction over the scene's targets that writes the
+/// output-extent colour, and the output-extent depth and motion when the frame asked for them.
+struct UpscaleProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::u32 calls = 0;
+    bool refuse = false;
+};
+
+cy::rendering::PassId declare_upscale(RenderGraph& graph,
+                                      const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                      void* user) noexcept {
+    auto* producer = static_cast<UpscaleProducer*>(user);
+    producer->seen = inputs;
+    ++producer->calls;
+    if (producer->refuse) {
+        return kInvalidPass;
+    }
+    cy::rendering::PassBuilder builder =
+        graph.add_pass("upscale reconstruct", cy::rhi::QueueKind::Graphics);
+    builder.read(inputs.color, cy::rhi::Access::ComputeSampledRead)
+        .read(inputs.depth, cy::rhi::Access::ComputeSampledRead)
+        .write(inputs.target, cy::rhi::Access::ComputeStorageWrite);
+    if (inputs.velocity != kInvalidResource) {
+        builder.read(inputs.velocity, cy::rhi::Access::ComputeSampledRead);
+    }
+    if (inputs.opaque_color != kInvalidResource) {
+        builder.read(inputs.opaque_color, cy::rhi::Access::ComputeSampledRead);
+    }
+    if (inputs.output_depth != kInvalidResource) {
+        builder.write(inputs.output_depth, cy::rhi::Access::ComputeStorageWrite)
+            .write(inputs.output_velocity, cy::rhi::Access::ComputeStorageWrite);
+    }
+    return builder.id();
+}
+
+/// An upscaling frame: rendered at 320x180, ending at 640x360, with the temporal stage produced.
+FrameDescription make_upscaled(UpscaleProducer& producer) noexcept {
+    FrameDescription description = make_description();
+    description.output_width = 640;
+    description.output_height = 360;
+    description.features.temporal = true;
+    description.temporal_stage = cy::rendering::FrameStageDeclaration{&declare_upscale, &producer};
+    return description;
+}
+
+}  // namespace
+
+CY_TEST_CASE(
+    "a temporal producer upscales: the scene at the render extent, the rest at the output") {
+    UpscaleProducer producer;
+    FocusProducer focus;
+    FrameDescription description = make_upscaled(producer);
+    description.features.depth_of_field = true;
+    description.depth_of_field_stage = cy::rendering::FrameStageDeclaration{&declare_focus, &focus};
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_CHECK_EQ(producer.calls, 1U);
+
+    // The producer is the temporal stage: handed the scene's targets at the render extent and a
+    // target of its own at the output extent, and it owns its history.
+    const cy::rendering::FrameResources& resources = frame.resources();
+    CY_REQUIRE(declared(frame, FramePassKind::Temporal));
+    CY_CHECK_EQ(producer.seen.width, 640U);
+    CY_CHECK_EQ(producer.seen.height, 360U);
+    CY_CHECK_EQ(producer.seen.render_width, 320U);
+    CY_CHECK_EQ(producer.seen.render_height, 180U);
+    CY_CHECK_EQ(producer.seen.color, resources.color);
+    CY_CHECK_EQ(producer.seen.depth, resources.depth);
+    CY_CHECK_EQ(producer.seen.velocity, resources.velocity);
+    CY_REQUIRE_NE(resources.upscaled, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.target, resources.upscaled);
+    CY_CHECK_EQ(resources.temporal_previous, kInvalidResource);
+    CY_CHECK_EQ(resources.temporal_history, kInvalidResource);
+
+    // Depth of field reads depth after the temporal stage, so the frame asked the producer for it
+    // at the output extent, and depth of field runs there on the upscaled colour.
+    CY_REQUIRE_NE(resources.output_depth, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.output_depth, resources.output_depth);
+    CY_CHECK_EQ(producer.seen.output_velocity, resources.output_velocity);
+    CY_CHECK_EQ(focus.seen.source, resources.upscaled);
+    CY_CHECK_EQ(focus.seen.depth, resources.output_depth);
+    CY_CHECK_EQ(focus.seen.width, 640U);
+    CY_CHECK_EQ(focus.seen.height, 360U);
+    CY_CHECK_LT(position_of(frame, FramePassKind::Temporal),
+                position_of(frame, FramePassKind::DepthOfField));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // Nothing after it reads depth: no output-extent depth or motion is declared at all.
+    description.features.depth_of_field = false;
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_EQ(plain_frame.resources().output_depth, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.output_depth, kInvalidResource);
+    CY_CHECK_EQ(plain_frame.resources().post_source, plain_frame.resources().upscaled);
+    CY_CHECK(plain.compile(compile_options()).has_value());
+}
+
+CY_TEST_CASE("a produced temporal stage reads the pre-translucency copy as its reactive mask") {
+    UpscaleProducer producer;
+    FrameDescription description = make_upscaled(producer);
+    description.features.reactive_mask = true;
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::OpaqueColorCopy));
+    CY_REQUIRE_NE(frame.resources().opaque_color_copy, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.opaque_color, frame.resources().opaque_color_copy);
+    CY_CHECK_LT(position_of(frame, FramePassKind::OpaqueColorCopy),
+                position_of(frame, FramePassKind::Transparent));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // Without it, no copy is made for the producer.
+    description.features.reactive_mask = false;
+    RenderGraph unmasked(allocator());
+    ForwardFrame unmasked_frame(allocator());
+    CY_REQUIRE(unmasked_frame.build(unmasked, description).has_value());
+    CY_CHECK_FALSE(declared(unmasked_frame, FramePassKind::OpaqueColorCopy));
+    CY_CHECK_EQ(producer.seen.opaque_color, kInvalidResource);
+}
+
+CY_TEST_CASE("a produced temporal stage needs no prepass of its own; its producer reads depth") {
+    // A caller that draws its own geometry, as samples/10-world does, writes depth in the opaque
+    // pass and has no motion: the producer reprojects by the camera.
+    UpscaleProducer producer;
+    FrameDescription description = make_upscaled(producer);
+    description.features.depth_prepass = false;
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_CHECK_EQ(producer.seen.velocity, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.depth, frame.resources().depth);
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // The single-pass resolve still needs the prepass's velocity.
+    description.temporal_stage = cy::rendering::FrameStageDeclaration{};
+    description.output_width = 0;
+    description.output_height = 0;
+    RenderGraph resolved(allocator());
+    ForwardFrame resolved_frame(allocator());
+    CY_CHECK_FALSE(resolved_frame.build(resolved, description).has_value());
+}
+
+CY_TEST_CASE("an output extent and a temporal producer are refused where they cannot hold") {
+    const auto refuses = [](const FrameDescription& description, const char* reason) {
+        RenderGraph graph(allocator());
+        ForwardFrame frame(allocator());
+        const cy::Status status = frame.build(graph, description);
+        CY_CHECK_FALSE(status.has_value());
+        if (!status.has_value()) {
+            CY_CHECK(std::strstr(status.error().message, reason) != nullptr);
+        }
+    };
+    UpscaleProducer producer;
+
+    // A larger output with nothing to reconstruct it.
+    FrameDescription unproduced = make_description();
+    unproduced.output_width = 640;
+    unproduced.output_height = 360;
+    refuses(unproduced, "temporal stage producer");
+
+    // A producer for a frame with no temporal stage.
+    FrameDescription untemporal = make_upscaled(producer);
+    untemporal.features.temporal = false;
+    refuses(untemporal, "needs a temporal frame");
+
+    // A producer reading multisampled targets.
+    FrameDescription multisampled = make_upscaled(producer);
+    multisampled.features.msaa_samples = 4;
+    refuses(multisampled, "single-sample");
+
+    // An output smaller than the scene.
+    FrameDescription smaller = make_upscaled(producer);
+    smaller.output_width = 160;
+    smaller.output_height = 90;
+    refuses(smaller, "smaller than the render extent");
+
+    // A producer that refuses fails the frame rather than leaving the stage out.
+    producer.refuse = true;
+    refuses(make_upscaled(producer), "refused");
+}

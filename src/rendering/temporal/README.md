@@ -64,6 +64,14 @@ consumer needs the product.
 
 ## What is here and what is not
 
+**The jitter is a fraction of a RENDERED pixel.** `TemporalView::render_width`/`render_height` are
+the extent the scene is drawn at when a temporal upscaler reconstructs a larger output, and
+`jittered_view_projection()` divides the offset by them; zero is the view's own extent. The view,
+the histories and the invalidation causes stay at the output extent, so moving the render extent —
+dynamic resolution — is not a resolution change and invalidates nothing. `HistoryFormat::Rg32F` is
+the upscaler's state history.
+
+
 The framework itself owns no device. It decides what the jitter **is**, what a motion vector
 **means**, **when** history becomes invalid and what each pixel's history state **is**. The pipeline
 layer realizes that declaration as two persistent RGBA16F images and executes a fullscreen resolve
