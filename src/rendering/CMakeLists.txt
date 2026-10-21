@@ -169,6 +169,11 @@ add_subdirectory(fog)
 # resolve and before bloom. It names the forward frame's stage-declaration seam and the post chain's
 # shutter arithmetic, so it is read after forward/ and post/.
 add_subdirectory(motion_blur)
+# TEMPORAL UPSCALING. `rendering-post-processing`'s "Temporal upscaling": the scene rendered at a
+# reduced internal extent and reconstructed to the output from its jittered samples, its motion
+# vectors and a history kept at the output extent, declared at the frame's temporal stage. It names
+# the forward frame's stage-declaration seam and the temporal framework, so it is read after both.
+add_subdirectory(upscale)
 
 # THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
 # this directory were linked by nothing but their own test binaries and nothing in the tree built a
