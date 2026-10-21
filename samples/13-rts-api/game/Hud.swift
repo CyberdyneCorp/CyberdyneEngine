@@ -138,9 +138,14 @@ final class RtsHud {
             Panel("water")
                 .layout(.anchored(min: Vec2(x: 0.55, y: 0.12), max: Vec2(x: 0.9, y: 0.42)))
                 .style(UIStyle(background: mapWater, cornerRadius: 6))
-            // The fog of war, over the ground and under the dots, collapsed until shown.
+            // The fog of war, over the ground and under the dots, inside the one-unit border;
+            // collapsed until shown.
             Image(page: 0, name: "fog")
-                .layout(.anchored(min: Vec2(x: 0, y: 0), max: Vec2(x: 1, y: 1)))
+                .layout(
+                    .anchored(
+                        min: Vec2(x: 0, y: 0), max: Vec2(x: 1, y: 1), offsetMin: Vec2(x: 1, y: 1),
+                        offsetMax: Vec2(x: -1, y: -1))
+                )
                 .style(UIStyle(background: fogTint))
                 .visibility(.collapsed)
                 .id("fog")

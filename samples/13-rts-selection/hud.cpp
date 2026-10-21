@@ -163,15 +163,15 @@ Status Hud::create_minimap(ElementId root) noexcept {
           Vec2{0.0F, 0.0F});
     fill(*store_->paint(*lake), kMapWater, 0, 6.0F);
 
-    // The fog of war, over the ground and under the dots: an image the whole map's size, collapsed
-    // until a game with fog of war names its page.
+    // The fog of war, over the ground and under the dots: an image the map's size inside its
+    // one-unit border, collapsed until a game with fog of war names its page.
     Expected<ElementId, Error> fog = element(minimap_, "fog");
     if (!fog.has_value()) {
         return make_unexpected(fog.error());
     }
     fog_ = *fog;
-    place(*store_->layout_input(fog_), Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F}, Vec2{0.0F, 0.0F},
-          Vec2{0.0F, 0.0F});
+    place(*store_->layout_input(fog_), Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F}, Vec2{1.0F, 1.0F},
+          Vec2{-1.0F, -1.0F});
     PaintData& fog_paint = *store_->paint(fog_);
     fill(fog_paint, kFogTint);
     fog_paint.material = ui::material_index(ui::BuiltinMaterial::Image);
