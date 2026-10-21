@@ -418,15 +418,28 @@ open world with CyberGI; the runtime only reads the document into it:
   translation the centre, its scale the size, so the transform gizmo places and sizes it),
   `GiObject` (a class override) and `GiEmission` (a per-material emitter rule). `gi_runtime.h`
   lists every field. A `MeshRenderer` is an object; with a `RigidBody` or `KinematicBody` it moves.
+- **The Lit view, lit by the device GI.** A world whose `GiSettings` mode admits the dynamic GI is
+  lit by the engine's `gi_gpu::GpuGiFrame` over the preview's system (`AuthoredFrame::
+  set_global_illumination`; `main.cpp`'s `prepare_gi` advances the GI one frame from the camera
+  first), the GI's sky the frame's own ambient. A world without the node is the frame it was.
 - **Views.** The viewport's view mode travels on the gizmo intent (`GizmoIntent::debug_view`). Any
-  of the nineteen `gi/debug_views.h` views is drawn at a quarter of the frame's resolution with
-  automatic exposure and composited by the forward frame; `Lit` leaves the frame byte-identical.
+  of the nineteen `gi/debug_views.h` views is drawn by the device in the same frame
+  (`AuthoredFrame::set_device_gi_view`, `gi_gpu::GpuGiDebugView`) at the frame's resolution with
+  automatic exposure; on a device that cannot run the GI (anything but Vulkan, today) it is drawn on
+  the processor at a quarter of the resolution and composited the same way. `Lit` leaves the frame
+  byte-identical.
 - **Staleness.** A document edit marks the GI stale; the next view or report rebuilds it when the
-  geometry changed and applies it in place otherwise (settings, volumes, classes, emitter rules).
+  geometry changed and applies it in place otherwise (settings, volumes, classes, emitter rules,
+  the sky).
+- **Play.** ABI 1.9 is bound over the same GI (`ScriptRuntime::bind_illumination`): a project's
+  Swift behaviours tune the GI the viewport is lit by; Stop applies the document's again.
 
 `editor_window_illumination` reads `tests/data/gi_test_room.cyworld` and checks each part;
-`CY_GI_VIEWPORT_SHOT=<dir>` on the authored-frame smoke writes the six views of
-`docs/design/images/editor-gi-viewport.png`.
+`smoke.editor_authored_frame_vulkan`'s device GI case lights the room's Lit view on the device,
+applies the document's quality in place, draws every view and times the frames.
+`CY_GI_VIEWPORT_SHOT=<dir>` on the authored-frame smoke writes the six host views of
+`docs/design/images/editor-gi-viewport.png` and the device frames of
+`docs/design/images/editor-gi-live.png` (`tools/docs/compose_gi_live.py` lays them out).
 
 ## Swift cube during Play
 

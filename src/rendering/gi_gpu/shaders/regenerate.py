@@ -68,6 +68,13 @@ MODULES = (
      "kGiProbeIntegrateHardwareMsl"),
     ("gi_screen_probes_hardware", "cyGiProbeTraceHardwareNarrow",
      "kGiProbeTraceHardwareNarrowSpirv", "kGiProbeTraceHardwareNarrowMsl"),
+    # The debug views on the device: the exposure, the view, the leak suspects' discs, and the
+    # view through ray queries.
+    ("gi_debug_views", "cyGiDebugExposure", "kGiDebugExposureSpirv", "kGiDebugExposureMsl"),
+    ("gi_debug_views", "cyGiDebugView", "kGiDebugViewSpirv", "kGiDebugViewMsl"),
+    ("gi_debug_views", "cyGiDebugSuspects", "kGiDebugSuspectsSpirv", "kGiDebugSuspectsMsl"),
+    ("gi_debug_views_hardware", "cyGiDebugViewHardware", "kGiDebugViewHardwareSpirv",
+     "kGiDebugViewHardwareMsl"),
 )
 # The engine's shader library: gi_surfaces.slang imports `cy.packing` for the prepass's normal.
 SHADERS = ROOT / "src" / "rendering" / "shaders"

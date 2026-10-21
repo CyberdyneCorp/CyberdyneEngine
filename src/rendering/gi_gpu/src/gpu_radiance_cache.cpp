@@ -566,6 +566,8 @@ void GpuRadianceCache::upload_payload(const gi::RadianceCache& cache, u32 handle
     f32* record = records + (static_cast<usize>(handle) * kProbeVec4s * 4U);
     record[4] = float_of(static_cast<u32>(probe.last_update_frame & 0xFFFFFFFFULL));
     record[5] = probe.live && probe.valid ? 1.0F : 0.0F;
+    // `Probe::error`, which only the debug views read: the gather writes it there too.
+    record[7] = probe.error;
     for (u32 axis = 0; axis < 6; ++axis) {
         record[8 + axis] = probe.axis_distance[axis];
     }
@@ -627,7 +629,7 @@ Status GpuRadianceCache::mirror(const gi::RadianceCache& cache) noexcept {
         record[4] = float_of(static_cast<u32>(probe.last_update_frame & 0xFFFFFFFFULL));
         record[5] = probe.live && probe.valid ? 1.0F : 0.0F;
         record[6] = probe.live ? 1.0F : 0.0F;
-        record[7] = 0.0F;
+        record[7] = probe.error;
         for (u32 axis = 0; axis < 6; ++axis) {
             record[8 + axis] = probe.axis_distance[axis];
         }

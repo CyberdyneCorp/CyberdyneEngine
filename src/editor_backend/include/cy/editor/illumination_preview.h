@@ -148,6 +148,10 @@ struct IlluminationReport {
     rendering::gi::IlluminationQuery query{};
 };
 
+/// The GI object id a node's object is registered under: its identity without the GI's own cell
+/// tag bit. What a game binding (`game_backend::IlluminationAdapter::bind_object`) names it by.
+[[nodiscard]] u64 illumination_object_id(u64 node) noexcept;
+
 /// The authored world lit by CyberGI for the editor: synced from the document, rebuilt only when
 /// its geometry changed, drawn as any of the GI debug views and reported on with `explain()`.
 class IlluminationPreview {
@@ -181,6 +185,20 @@ public:
     /// Whether a scene has been synced at all.
     [[nodiscard]] bool ready() const noexcept { return ready_; }
     [[nodiscard]] u64 rebuilds() const noexcept { return rebuilds_; }
+    /// The system's clock: the frame its last update ran, which its caches' ages count from.
+    [[nodiscard]] u64 frame() const noexcept { return frame_; }
+    /// Where the distance-field view slices the world: half way up it at the last rebuild.
+    [[nodiscard]] f32 field_slice_height() const noexcept { return bounds_.center().y; }
+    /// The objects the GI holds, in `IlluminationScene::objects` order: object `index` carries
+    /// `Surfel::instance_id` `index + 1` and the GI object id `illumination_object_id(node)`.
+    [[nodiscard]] Span<const u64> object_nodes() const noexcept {
+        return {object_nodes_.data(), object_nodes_.size()};
+    }
+    /// The materials by name, in `IlluminationScene::materials` order: material `index` carries
+    /// `Surfel::material_id` `index + 1`.
+    [[nodiscard]] Span<const std::string> material_names() const noexcept {
+        return {material_names_.data(), material_names_.size()};
+    }
     [[nodiscard]] u64 applications() const noexcept { return applications_; }
     [[nodiscard]] rendering::gi::IlluminationSystem& system() noexcept { return *system_; }
     [[nodiscard]] const rendering::gi::IlluminationSystem& system() const noexcept {

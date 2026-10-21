@@ -51,6 +51,32 @@ same committed `company::kCompanyDigest`. So the orders a Swift game computes ar
 session they drive is the same on x86-64 and arm64, Linux, macOS and Windows. The commander also
 writes the lead unit's authoritative x into a `Fixed` field of `RtsReport` (`component_set_fixed`).
 
+ABI 1.9 (issue #35, the live half) gives the commander the BASE'S LIGHT: the host hands its level to
+the engine's global illumination (`host/illumination.*` — the 32 m ground, the barracks, a glowing
+beacon beside it and the crate, the crate moved every frame from its body) and binds the ABI 1.9
+adapter, and the game decides the rest (`game/Lighting.swift`): a GI volume over its base at Epic
+quality and twice the update rate, placed in `onCreate`; the beacon put out by its glass's material
+name at frame 151 and lit again at 251; and the light on a guard's chest facing it read before,
+between and after. With `--render <dir>` the host draws the session every frame on a device, lit by
+the engine's device GI over that same system (`gi_gpu::GpuGiFrame`, `host/render.*`): the frame is
+the pipeline suites' scene shaped into the level, seen from the game's camera.
+
+```
+just run-sample rts-api --render <dir>            the session drawn with the device GI: four stills
+just run-sample rts-api --render <dir> --gi off   the control: the same frames without the GI
+ctest -R rts_api_gi                               the picture and its cost (smoke)
+```
+
+![Without the GI, with it, the beacon put out from Swift and lit again](../../docs/design/images/rts-api-gi.png)
+
+Measured on the RTX 5060 (`smoke.rts_api_gi`, 480x270): a frame — the game's 1.3 ms, the GI's host
+update 1.1 ms of it, and the drawn frame's 5.1 ms with the GI 1.0 ms on the device — 6.3 ms
+together; the frame round the beacon's foot falls from 169 to 148 when the game puts it out and
+returns to 170 when it lights it again, and without the GI reads 197 throughout. The GI runs from
+the ground point the camera looks at, with probe and card ladders sized to the level
+(`host/illumination.cpp`); headless, with the caches on the processor, a run of 420 frames takes
+under two seconds.
+
 ## What is here
 
 | | |
@@ -63,6 +89,10 @@ writes the lead unit's authoritative x into a `Fixed` field of `RtsReport` (`com
 | `game/Company.swift` | ABI 1.8: the commander's company — enlisting, fixed-point waypoints, orders through `Lockstep.order`. |
 | `host/units.*` | Plumbing for navigation agents (an agent's position is its scene node, and it has a kinematic capsule on collision layer 1), the one entity-to-body map, and the native `Veterancy` reader. |
 | `host/script.*` | The scripted player: synthetic key and mouse events, aimed with the camera projection. |
+| `host/illumination.*` | ABI 1.9: the level as the GI sees it (`field_boxes`), the `IlluminationSystem` and the adapter the game tunes it through, updated once a frame from the camera. |
+| `host/render.*` | `--render`: the session drawn on a device, lit by `gi_gpu::GpuGiFrame` over the level's GI; the stills and the cost line `smoke.rts_api_gi` reads. |
+| `game/Lighting.swift` | ABI 1.9: the base's volume, the beacon out and on, the light read. |
+| `tests/test_rts_api_gi.cpp` | `smoke.rts_api_gi`: the session drawn with the GI and without, the game's calls seen in the frame, and what a frame costs. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
 | `tests/test_rts_api_hud_device.cpp` | `render.rts_api_hud`: the Swift HUD against `samples/13-rts-selection`'s C++ HUD, as a primitive stream and on a device, and with its button against `tests/references/rts_api_hud.png`. |
 

@@ -681,8 +681,8 @@ Status FrameRecorder::bind(FrameAssembly& assembly) noexcept {
     const PostChainConfig& post = description.post;
     const bool wants_velocity =
         post.temporal_antialiasing || post.temporal_upscaling || post.motion_blur;
-    const bool wants_normal =
-        wants_velocity || post.ambient_occlusion || post.screen_space_reflections;
+    const bool wants_normal = wants_velocity || post.ambient_occlusion ||
+                              post.screen_space_reflections || description.normal_prepass;
     if (pipelines_->setup().prepass_normal != wants_normal ||
         pipelines_->setup().prepass_velocity != wants_velocity) {
         return fail(ErrorCode::InvalidArgument,

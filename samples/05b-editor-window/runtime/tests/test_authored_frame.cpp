@@ -28,6 +28,8 @@
 #include <cy/test/test.h>
 #include <cy_reflect_generated_scene.h>
 
+#include <cy/rendering/gi_gpu/gpu_frame.h>
+
 #include "authored_frame.h"
 #include "gi_runtime.h"
 #include "material_runtime.h"
@@ -36,6 +38,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1938,6 +1941,222 @@ CY_TEST_CASE("authored native frame draws the GI view the viewport asked for, an
             }
         }
 #endif
+    }
+    rhi::destroy_device(allocator(), native);
+}
+
+// Issue #35, the live half: the editor viewport's Lit view lit by the engine's device GI
+// (`gi_gpu::GpuGiFrame`) over the system the editor's preview keeps, every GI view drawn by the
+// device in the same frame, the document's GI settings applied to the running GI in place and seen
+// in the next frames, and the frame as it was once the GI is detached.
+namespace {
+
+/// The room's document with one GI settings field rewritten, as `gi.settings.set` writes it.
+std::string gi_room_with(std::string_view from, std::string_view to) {
+    std::string text = gi_room_text();
+    const usize at = text.find(from);
+    CY_REQUIRE(at != std::string::npos);
+    text.replace(at, from.size(), to);
+    return text;
+}
+
+}  // namespace
+
+CY_TEST_CASE("authored native frame lights Lit with the device GI and draws every GI view on it") {
+    register_backend();
+    rhi::Device* native = native_frame_device(kSuite);
+    if (native == nullptr) {
+        return;
+    }
+    if (native->capabilities().backend() != rhi::BackendKind::Vulkan ||
+        !rendering::gi_gpu::GpuGiFrame::supported(*native)) {
+        std::fprintf(stderr, "the device GI has not run on this device; skipped\n");
+        rhi::destroy_device(allocator(), native);
+        return;
+    }
+    {
+        // THE GI OUTLIVES THE FRAME: the frame's device half mirrors into the GI's system and lets
+        // it go when the frame goes, so the system is declared first and destroyed last.
+        AuthoredIllumination gi(allocator(), CY_TEST_PROJECT);
+        AuthoredFrame frame(allocator(), *native);
+        CY_REQUIRE(frame.initialize(kGiShotWidth, kGiShotHeight, CY_TEST_PROJECT, false));
+        CY_REQUIRE(frame.global_illumination_supported());
+        reflect::TypeRegistry registry;
+        CY_REQUIRE(reflect::register_scene_types(registry));
+        ser::AuthoringSchema schema(allocator());
+        CY_REQUIRE(ser::build_authoring_schema(registry, schema));
+        const auto read = [&](const std::string& text, ser::World& out) {
+            CY_REQUIRE(ser::read_world(text, "worlds/gi.cyworld", out).has_value());
+            CY_REQUIRE(ser::resolve_against(out, schema).has_value());
+        };
+        ser::World world(allocator());
+        read(gi_room_text(), world);
+        CY_REQUIRE(frame.prepare_world(world));
+        first_light::Camera view;
+        view.position[0] = 0.0;
+        view.position[1] = 4.0;
+        view.position[2] = 7.0;
+        view.forward = normalize(Vec3{0.0F, -0.45F, -1.0F});
+        view.up = Vec3{0.0F, 1.0F, 0.0F};
+        view.fov_y_radians = 0.9F;
+        view.near_plane = 0.1F;
+        const Vec3 eye{0.0F, 4.0F, 7.0F};
+
+        CY_REQUIRE(frame.render(world, view));
+        Array<u32> plain(allocator());
+        CY_REQUIRE(plain.append(frame.pixels()));
+        const f64 plain_ms = frame.last_frame_ms();
+
+        // THE RUNTIME'S ORDER (`prepare_gi`): the world asks for the GI, the system advances a
+        // frame from the camera, and the frame is lit by it on the device.
+        // The GI's sky is the frame's own flat ambient, the studio fill included, as the runtime
+        // sets it every frame.
+        gi.set_sky_radiance(frame.ambient_radiance(true));
+        gi.bind(&world);
+        CY_REQUIRE(gi.lights_frame());
+        CY_CHECK_EQ(gi.preview()->system().sky_term().zenith.y, frame.ambient_radiance(true).y);
+        CY_CHECK_EQ(gi.preview()->system().sky_term().ground.z, frame.ambient_radiance(true).z);
+        const auto advance = [&](u32 frames) {
+            for (u32 index = 0; index < frames; ++index) {
+                AuthoredGi state;
+                CY_REQUIRE(gi.advance(eye, state));
+                state.composite = gi.lights_frame();
+                CY_REQUIRE(frame.set_global_illumination(&state).has_value());
+                CY_REQUIRE(frame.render(world, view));
+            }
+        };
+        advance(8);
+        Array<u32> lit(allocator());
+        CY_REQUIRE(lit.append(frame.pixels()));
+        const usize lit_changed = differing_pixels(plain.span(), lit.span());
+        std::fprintf(stderr,
+                     "device GI: Lit changes %zu of %u pixels; a frame %.2f ms (%.2f ms without), "
+                     "the GI %.3f ms on the device\n",
+                     lit_changed, kGiShotWidth * kGiShotHeight, frame.last_frame_ms(), plain_ms,
+                     frame.gi_device_ms());
+        CY_CHECK_GT(lit_changed, static_cast<usize>(kGiShotWidth * kGiShotHeight / 10U));
+        CY_CHECK_GT(frame.gi_device_ms(), 0.0);
+        CY_CHECK_LT(frame.gi_device_ms(), 8.0);
+
+        // THE DOCUMENT'S SETTINGS, APPLIED IN PLACE. Quality "low" is `gi.settings.set`'s edit: the
+        // preview applies it to the running system (`set_runtime_settings`), nothing is rebuilt,
+        // the device half is the same one, and the device frame changes with it.
+        const u64 rebuilds = gi.preview()->rebuilds();
+        ser::World low(allocator());
+        read(gi_room_with("field 21 \"high\"", "field 21 \"low\""), low);
+        gi.bind(&low);
+        advance(8);
+        CY_CHECK_EQ(gi.preview()->rebuilds(), rebuilds);
+        CY_CHECK(gi.preview()->system().runtime_settings().quality ==
+                 rendering::gi::GiQuality::Low);
+        const usize quality_changed = differing_pixels(lit.span(), frame.pixels());
+        std::fprintf(stderr, "quality low, applied in place: the frame differs in %zu pixels\n",
+                     quality_changed);
+        CY_CHECK_GT(quality_changed, 100U);
+        // Mode "none": the world no longer asks for the GI, and the Lit view is the plain frame.
+        ser::World none(allocator());
+        read(gi_room_with("field 20 \"dynamic\"", "field 20 \"none\""), none);
+        gi.bind(&none);
+        CY_CHECK_FALSE(gi.lights_frame());
+        advance(1);
+        CY_CHECK_EQ(differing_pixels(plain.span(), frame.pixels()), 0U);
+        gi.bind(&world);
+        advance(8);
+
+        // EVERY GI VIEW, ON THE DEVICE, in the viewport's own frame — and what a frame costs with
+        // each, beside what the processor took to draw the same view at a quarter of the size.
+        // A view is DRAWN where the frame with it is far from the Lit frame of the same GI state —
+        // more than an eighth of the byte range in a channel, where two Lit frames of one state
+        // differ by a step or two of the resolve's accumulation.
+        const auto drawn_over = [](Span<const u32> lit_frame, Span<const u32> viewed) {
+            usize count = 0;
+            for (usize index = 0; index < lit_frame.size() && index < viewed.size(); ++index) {
+                for (u32 shift = 0; shift < 24U; shift += 8U) {
+                    const auto a = static_cast<i32>((lit_frame[index] >> shift) & 0xFFU);
+                    const auto b = static_cast<i32>((viewed[index] >> shift) & 0xFFU);
+                    if (a - b > 32 || b - a > 32) {
+                        count += 1;
+                        break;
+                    }
+                }
+            }
+            return count;
+        };
+        f64 worst = 0.0;
+        for (u32 which = 0; which < rendering::gi::kGiDebugViewCount; ++which) {
+            const auto mode = render::debug_view_mode_from_name(
+                rendering::gi::gi_debug_view_name(static_cast<rendering::gi::GiDebugView>(which)));
+            CY_REQUIRE(frame.set_device_gi_view(render::DebugViewMode::Off).has_value());
+            advance(1);
+            Array<u32> before(allocator());
+            CY_REQUIRE(before.append(frame.pixels()));
+            CY_REQUIRE(frame.set_device_gi_view(mode).has_value());
+            CY_CHECK(frame.device_gi_view() == mode);
+            CY_REQUIRE(frame.render(world, view));  // the same GI state, now with the view
+            const usize drawn = drawn_over(before.span(), frame.pixels());
+            const f64 device_ms = frame.last_frame_ms();
+            worst = std::max(worst, device_ms);
+            std::fprintf(stderr, "%-22s device: %6zu pixels drawn, a frame %.2f ms\n",
+                         render::debug_view_mode_name(mode), drawn, device_ms);
+            CY_CHECK_GT(drawn, 1000U);
+        }
+        // And the control: the same two frames with no view between them.
+        CY_REQUIRE(frame.set_device_gi_view(render::DebugViewMode::Off).has_value());
+        advance(1);
+        Array<u32> again(allocator());
+        CY_REQUIRE(again.append(frame.pixels()));
+        CY_REQUIRE(frame.render(world, view));
+        std::fprintf(stderr, "no view: %zu pixels far from the frame before\n",
+                     drawn_over(again.span(), frame.pixels()));
+        CY_CHECK_LT(drawn_over(again.span(), frame.pixels()), 100U);
+        CY_CHECK_LT(worst, 50.0);
+        for (const render::DebugViewMode mode :
+             {render::DebugViewMode::GiProbes, render::DebugViewMode::GiIndirectDiffuse}) {
+            Array<u32> texels(allocator());
+            const auto started = std::chrono::steady_clock::now();
+            CY_REQUIRE(
+                gi.render_view(mode, gi_view_of(view), eye, kGiShotWidth, kGiShotHeight, 4, texels)
+                    .has_value());
+            const f64 host_ms =
+                std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - started)
+                    .count();
+            std::fprintf(stderr, "%-22s host: the view alone %.2f ms at a quarter of the size\n",
+                         render::debug_view_mode_name(mode), host_ms);
+        }
+
+#if defined(CY_EDITOR_WINDOW_HAS_GOLDEN)
+        // With CY_GI_VIEWPORT_SHOT naming a directory, photograph the viewport lit by the device
+        // GI and in four device views: how `docs/design/images/editor-gi-live.png` is made
+        // (tools/docs/compose_gi_live.py lays them out).
+        if (const char* directory = std::getenv("CY_GI_VIEWPORT_SHOT");
+            directory != nullptr && directory[0] != '\0') {
+            const auto write = [directory](const char* name, Span<const u32> pixels) {
+                render_test::Image shot(allocator());
+                CY_REQUIRE(
+                    render_test::adopt(shot, pixels, kGiShotWidth, kGiShotHeight).has_value());
+                const std::string path = std::string(directory) + "/" + name;
+                CY_REQUIRE(render_test::write_png(path.c_str(), shot).has_value());
+                std::fprintf(stderr, "wrote %s\n", path.c_str());
+            };
+            write("editor-gi-live-plain.png", plain.span());
+            write("editor-gi-live-Lit.png", lit.span());
+            for (const render::DebugViewMode mode :
+                 {render::DebugViewMode::GiIndirectDiffuse, render::DebugViewMode::GiProbes,
+                  render::DebugViewMode::GiCards, render::DebugViewMode::GiTier}) {
+                CY_REQUIRE(frame.set_device_gi_view(mode).has_value());
+                advance(2);
+                const std::string name =
+                    std::string("editor-gi-live-") + render::debug_view_mode_name(mode) + ".png";
+                write(name.c_str(), frame.pixels());
+            }
+        }
+#endif
+
+        // DETACHED: the frame it was, byte for byte.
+        CY_REQUIRE(frame.set_device_gi_view(render::DebugViewMode::Off).has_value());
+        CY_REQUIRE(frame.set_global_illumination(nullptr).has_value());
+        CY_REQUIRE(frame.render(world, view));
+        CY_CHECK_EQ(differing_pixels(plain.span(), frame.pixels()), 0U);
     }
     rhi::destroy_device(allocator(), native);
 }

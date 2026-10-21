@@ -307,6 +307,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.volumetric_fog = config.volumetric_fog;
     features.contact_shadows = description_.contact_shadows;
     features.screen_space_gi = description_.global_illumination;
+    features.normal_prepass = description_.normal_prepass;
     features.selection_outlines = description_.selection_outlines;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;

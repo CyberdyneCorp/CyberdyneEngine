@@ -179,7 +179,10 @@ the same world; GCC 13 Development build, one core): that world rebuilt and conv
 an emitter rule applied in place in under 0.01 ms; a GI view at 320x180 (the quarter resolution the
 editor-window runtime draws under a 1280x720 frame) about 35 ms for the probe view and about 240 ms
 for indirect diffuse, the slowest, because each pixel is traced and resolved on the CPU (clang 18 and
-22: 30 ms and 195 ms). The
-runtime draws the view every frame it is selected, so a GI view mode runs the viewport at a few
-frames a second; drawing the views on the device, as the engine's own frame does
-(`render.lightmaps` (p)), is the next step.
+22: 30 ms and 195 ms). That is the fallback now: where the device runs the GI the runtime lights the
+viewport with the device GI over this preview's system and draws every view on the device
+(`gi_gpu::GpuGiFrame`, `GpuGiDebugView`), a frame of 4 to 8 ms at 384x256 with any view
+(`smoke.editor_authored_frame_vulkan`'s device GI case). The preview's accessors `frame()`,
+`field_slice_height()`, `object_nodes()` and `material_names()` are what that path and Play's ABI
+1.9 binding read; the sky is applied in place, like the settings, because the viewport sets it to
+the frame's own ambient and a rebuild per change would converge the whole GI again.

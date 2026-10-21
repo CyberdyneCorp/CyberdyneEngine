@@ -15,6 +15,9 @@
 //                                play each unit's animation from what its agent is doing, and
 //                                order the lockstep company (ABI 1.8, Company.swift)
 //
+// ABI 1.9: the base's light (Lighting.swift) — a GI volume placed in `onCreate`, the beacon put out
+// and lit again from `onUpdate`, and the light read where it falls.
+//
 // ABI 1.7: EVERY UNIT ANIMATES FROM HERE. A unit is given an animator over the host's `worker` rig
 // when it is enlisted. Each fixed step the game plays `walk` while its agent follows a path and
 // `idle` when it stands, crossfading between them; an arrival plays the one-shot `cheer`, and the
@@ -85,6 +88,8 @@ final class Commander: Behaviour {
 
     /// ABI 1.8: the lockstep company, ordered in fixed point (Company.swift).
     private var company = Company()
+    /// ABI 1.9: the base's light (Lighting.swift).
+    private var lighting = BaseLighting()
 
     /// The state each unit was last asked to play, so a request is made only when it changes.
     private var playing: [Entity: String] = [:]
@@ -119,6 +124,7 @@ final class Commander: Behaviour {
         }
         hud = try mountHud()
         _ = try company.enlist()
+        try lighting.create()
         Log.info("Commander: \(squad.count) units ready, \(company.units.count) in the company")
     }
 
@@ -170,6 +176,7 @@ final class Commander: Behaviour {
             }
         }
         try hud?.show(model())
+        try lighting.frame()
     }
 
     /// Every click on the HUD, counted for the report. A button's own action — Build's — has run
@@ -187,6 +194,7 @@ final class Commander: Behaviour {
             tally.orders += 1
         }
         pendingOrder = nil
+        lighting.askFromFixedStep()
         try company.step()
         for unit in squad {
             try listen(to: unit)
@@ -309,6 +317,11 @@ final class Commander: Behaviour {
         try world.setFloat(company.orders, entity, report, field: reportFields.companyOrders)
         try world.setFloat(company.arrivals, entity, report, field: reportFields.companyArrivals)
         try world.setFixed(company.lead, entity, report, field: reportFields.companyLead)
+        try world.setFloat(lighting.volumes, entity, report, field: reportFields.giVolumes)
+        try world.setFloat(lighting.lit, entity, report, field: reportFields.giLit)
+        try world.setFloat(lighting.dark, entity, report, field: reportFields.giDark)
+        try world.setFloat(lighting.relit, entity, report, field: reportFields.giRelit)
+        try world.setFloat(lighting.refused, entity, report, field: reportFields.giRefused)
     }
 }
 
@@ -345,4 +358,9 @@ private struct ReportFields {
     let companyOrders = RtsReport.field("companyOrders")
     let companyArrivals = RtsReport.field("companyArrivals")
     let companyLead = RtsReport.field("companyLead")
+    let giVolumes = RtsReport.field("giVolumes")
+    let giLit = RtsReport.field("giLit")
+    let giDark = RtsReport.field("giDark")
+    let giRelit = RtsReport.field("giRelit")
+    let giRefused = RtsReport.field("giRefused")
 }

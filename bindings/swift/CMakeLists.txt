@@ -230,4 +230,7 @@ if(CY_BUILD_TESTS)
     target_include_directories(cy_test_integration_swift_illumination
                                PRIVATE "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests")
     add_dependencies(cy_test_integration_swift_illumination cy_swift_illumination_fixture)
+    # The editor-hosted runtime's Play binds ABI 1.9 over the GI its viewport is lit by;
+    # `integration.editor_window_play_illumination` runs this same module there.
+    set_property(GLOBAL PROPERTY CY_SWIFT_ILLUMINATION_MODULE "${CY_SWIFT_ILLUMINATION_MODULE}")
 endif()

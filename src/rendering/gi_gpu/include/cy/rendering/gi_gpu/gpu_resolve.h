@@ -70,6 +70,8 @@
 
 namespace cy::rendering::gi_gpu {
 
+class GpuGiDebugView;
+
 struct GpuScreenResolveDescription {
     /// The view's extent. The resolve is full resolution; `ray_density` is how a budget spends
     /// less, and the denoiser's history carries the pixels that did not trace.
@@ -257,6 +259,8 @@ public:
     [[nodiscard]] const GpuScreenResolveDescription& description() const noexcept { return desc_; }
 
 private:
+    friend class GpuGiDebugView;
+
     /// The ray query pipelines last: a device without ray queries creates the ones before them.
     enum Pipeline : u32 {
         kUnpack = 0,

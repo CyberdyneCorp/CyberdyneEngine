@@ -428,7 +428,7 @@ PrepassMode select_prepass_mode(const FrameFeatures& features) noexcept {
         return PrepassMode::DepthNormalVelocity;
     }
     if (features.ambient_occlusion || features.contact_shadows || features.screen_space_gi ||
-        features.screen_space_reflections) {
+        features.screen_space_reflections || features.normal_prepass) {
         return PrepassMode::DepthNormal;
     }
     return PrepassMode::DepthOnly;
@@ -810,7 +810,7 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     const FrameFeatures& features = description.features;
     const bool needs_prepass = features.ambient_occlusion || features.contact_shadows ||
                                features.screen_space_gi || features.screen_space_reflections ||
-                               features.temporal || features.motion_blur;
+                               features.temporal || features.motion_blur || features.normal_prepass;
     if (needs_prepass && !features.depth_prepass) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: screen-space and temporal features require the depth prepass "

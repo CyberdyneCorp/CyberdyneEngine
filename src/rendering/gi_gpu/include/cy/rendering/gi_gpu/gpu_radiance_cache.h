@@ -107,6 +107,7 @@ struct GpuDispatchTime {
 
 class GpuTierTracer;
 class GpuScreenResolve;
+class GpuGiDebugView;
 
 class GpuRadianceCache : public gi::ProbeGatherBackend {
 public:
@@ -179,6 +180,7 @@ public:
 private:
     friend class GpuTierTracer;
     friend class GpuScreenResolve;
+    friend class GpuGiDebugView;
 
     // `GiProbeSet` order, then the host copies no shader binds.
     enum Binding : u32 {

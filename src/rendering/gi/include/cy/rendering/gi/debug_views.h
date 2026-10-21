@@ -147,4 +147,11 @@ struct GiDebugInputs {
 /// A byte from a colour already in [0, 1], opaque.
 [[nodiscard]] u32 pack_colour(Vec3 colour) noexcept;
 
+/// The hue a view gives integer `index` — a card, a clipmap level: the golden-ratio walk round the
+/// colour wheel. Public so a device transcription of a view is compared against the host's own.
+[[nodiscard]] Vec3 debug_view_hue(u32 index) noexcept;
+
+/// The views' green-to-red ramp over [0, 1] (confidence, age, error).
+[[nodiscard]] Vec3 debug_view_ramp(f32 t) noexcept;
+
 }  // namespace cy::rendering::gi

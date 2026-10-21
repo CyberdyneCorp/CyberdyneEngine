@@ -231,6 +231,7 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
 #endif
     host_.game.audio = audio_;
     host_.game.animation = animation_;
+    host_.game.illumination = illumination_;
     Expected<UniquePtr<abi::BehaviourRuntime>, Error> runtime =
         make_unique<abi::BehaviourRuntime>(*allocator_, *allocator_, host_);
     if (!runtime) {
@@ -282,6 +283,13 @@ Status ScriptRuntime::start(gameplay::PlaySession& play, const ser::World& autho
     return ok();
 }
 
+void ScriptRuntime::bind_illumination(abi::game::IlluminationBackend* illumination) noexcept {
+    illumination_ = illumination;
+    if (runtime_) {
+        host_.game.illumination = illumination;
+    }
+}
+
 void ScriptRuntime::stop() noexcept {
     identities_.clear();
     active_library_.clear();
@@ -290,6 +298,7 @@ void ScriptRuntime::stop() noexcept {
     host_.bind_vfx_effects(nullptr);
     host_.game.audio = nullptr;
     host_.game.animation = nullptr;
+    host_.game.illumination = nullptr;
     play_ = nullptr;
     authored_ = nullptr;
     binding_.reset();

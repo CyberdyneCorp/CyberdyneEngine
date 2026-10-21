@@ -112,6 +112,7 @@ class GpuSurfaceShading;
 class GpuRadianceCache;
 class GpuTierTracer;
 class GpuScreenResolve;
+class GpuGiDebugView;
 
 class GpuGiScene {
 public:
@@ -174,6 +175,7 @@ private:
     friend class GpuRadianceCache;
     friend class GpuTierTracer;
     friend class GpuScreenResolve;
+    friend class GpuGiDebugView;
 
     // The descriptor bindings first, in `GiSceneSet` order, then the two readback buffers no
     // shader binds.

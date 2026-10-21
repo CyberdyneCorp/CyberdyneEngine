@@ -7,12 +7,18 @@
 //                                              registered with the engine but never installed
 //   just run-sample rts-api --no-ui            the interface's control: no interface, so no HUD,
 //                                              and the Build click lands on the world
+//   just run-sample rts-api --render <dir>     the same session drawn every frame on a device, lit
+//   by
+//                                              the engine's device GI (render.h); `--gi off` draws
+//                                              it without
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
 // here from anything the game decided.
 
 #include <cy/core/memory/system_allocator.h>
+
+#include <memory>
 
 #include <cmath>
 #include <cstdio>
@@ -21,6 +27,9 @@
 #include "company.h"
 #include "rts_host.h"
 #include "script.h"
+#if defined(CY_RTS_API_RENDER)
+#    include "render.h"
+#endif
 
 namespace {
 
@@ -109,6 +118,14 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
         static_cast<unsigned long long>(now.lockstep.digest),
         static_cast<unsigned long long>(now.lockstep.follower_digest),
         static_cast<unsigned long long>(sample::rts::company::kCompanyDigest));
+    // ABI 1.9: the level's GI as the system holds it, and what the game read and did to it.
+    std::printf(
+        "rts gi       volumes=%u placed=%.0f emitters=%u disabled=%u promoted=%u lit=%.4f "
+        "dark=%.4f relit=%.4f refused=%.0f frame=%llu\n",
+        now.illumination.volumes, wide(now.illumination.placed), now.illumination.emitters,
+        now.illumination.disabled, now.illumination.promoted, wide(now.illumination.lit),
+        wide(now.illumination.dark), wide(now.illumination.relit), wide(now.illumination.refused),
+        static_cast<unsigned long long>(now.illumination.frame));
 }
 
 }  // namespace
@@ -117,8 +134,14 @@ int main(int argc, char** argv) {
     sample::rts::HostOptions options;
     options.module_library = CY_RTS_API_MODULE_LIBRARY;
     options.module_manifest = CY_RTS_API_MODULE_MANIFEST;
+    const char* render_directory = nullptr;
+    bool render_gi = true;
     for (int index = 1; index < argc; ++index) {
-        if (std::strcmp(argv[index], "--no-behaviours") == 0) {
+        if (std::strcmp(argv[index], "--render") == 0 && index + 1 < argc) {
+            render_directory = argv[++index];
+        } else if (std::strcmp(argv[index], "--gi") == 0 && index + 1 < argc) {
+            render_gi = std::strcmp(argv[++index], "off") != 0;
+        } else if (std::strcmp(argv[index], "--no-behaviours") == 0) {
             options.behaviours = false;
         } else if (std::strcmp(argv[index], "--no-systems") == 0) {
             options.systems = false;
@@ -137,10 +160,36 @@ int main(int argc, char** argv) {
                      started.error().message);
         return 1;
     }
+#if defined(CY_RTS_API_RENDER)
+    std::unique_ptr<sample::rts::RtsRenderer> renderer;
+    if (render_directory != nullptr) {
+        renderer = std::make_unique<sample::rts::RtsRenderer>(
+            cy::system_allocator(cy::MemoryDomain::Renderer));
+        sample::rts::RenderOptions render;
+        render.directory = render_directory;
+        render.gi = render_gi;
+        if (const cy::Status started = renderer->start(host, render); !started) {
+            std::fprintf(stderr, "rts-api: --render: %s\n", started.error().message);
+            return started.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+        }
+    }
+#else
+    if (render_directory != nullptr) {
+        std::fprintf(stderr,
+                     "rts-api: --render needs the Vulkan renderer, which this build has not\n");
+        return 2;
+    }
+    (void)render_gi;
+#endif
     sample::rts::Player player(host);
     for (cy::u64 frame = 0; frame < sample::rts::Player::kFrames; ++frame) {
         const cy::Status injected = player.before_frame(frame);
-        const cy::Status ran = injected ? host.frame() : injected;
+        cy::Status ran = injected ? host.frame() : injected;
+#if defined(CY_RTS_API_RENDER)
+        if (ran && renderer != nullptr) {
+            ran = renderer->frame(host);
+        }
+#endif
         if (!ran) {
             std::fprintf(stderr, "rts-api: frame %llu failed: %s\n",
                          static_cast<unsigned long long>(frame), ran.error().message);
@@ -149,6 +198,11 @@ int main(int argc, char** argv) {
         player.after_frame(frame);
     }
     print_report(host, player.findings());
+#if defined(CY_RTS_API_RENDER)
+    if (renderer != nullptr) {
+        renderer->print_report();
+    }
+#endif
     host.shutdown();
     return 0;
 }

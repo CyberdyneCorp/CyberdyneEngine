@@ -31,6 +31,9 @@
 #                               would be evidence of nothing.
 #   cy::rhi-vulkan              the device. Named rather than defaulted — see main.cpp for why a
 #                               fall-back to the null backend would be worse than a refusal.
+#   cy::rendering-gi-gpu        the device GI the viewport's Lit view and its GI views are drawn
+#                               with (`GpuGiFrame`), and cy::game-backend-illumination, the ABI 1.9
+#                               adapter a project's Swift game reaches the same GI through in Play.
 #
 # --- WHERE IT IS NOT DECLARED ---------------------------------------------------------------------
 #
@@ -85,6 +88,8 @@ cy_add_module(
         cy::runtime-editor-bridge
         cy::editor-backend
         cy::rendering-lightmaps
+        cy::rendering-gi-gpu
+        cy::game-backend-illumination
         cy::navigation
         cy::terrain
         cy::game-backend

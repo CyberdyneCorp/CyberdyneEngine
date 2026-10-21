@@ -129,6 +129,25 @@ CY_TEST_CASE("only a world's geometry decides a rebuild, and its settings surviv
     CY_CHECK_EQ(preview.report(nullptr).objects.size(), 1U);
 }
 
+CY_TEST_CASE("the sky is applied in place, as the settings are: nothing is rebuilt") {
+    // A viewport lit by the GI sets the sky to its own flat ambient, which moves with the frame's
+    // sun; before, the sky was part of the geometry's digest and each move rebuilt and converged
+    // the whole GI again.
+    World world;
+    keep_crate_alone(world);
+    IlluminationPreview preview(allocator());
+    CY_REQUIRE(preview.sync(world.scene()).has_value());
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
+    world.sky.zenith = Vec3{12000.0F, 12000.0F, 12000.0F};
+    world.sky.horizon = world.sky.zenith;
+    world.sky.ground = world.sky.zenith;
+    CY_REQUIRE(preview.sync(world.scene()).has_value());
+    CY_CHECK_EQ(preview.rebuilds(), 1U);
+    CY_CHECK_EQ(preview.applications(), 1U);
+    CY_CHECK_EQ(preview.system().sky_term().zenith.x, 12000.0F);
+    CY_CHECK_EQ(preview.system().sky_term().ground.y, 12000.0F);
+}
+
 CY_TEST_CASE("an author's emitter rule switches a lamp off in place, and the report says so") {
     World world;
     IlluminationPreview preview(allocator());

@@ -3,6 +3,7 @@
 
 #include <cy/abi/game/animation.h>
 #include <cy/abi/game/audio.h>
+#include <cy/abi/game/illumination.h>
 #include <cy/abi/host.h>
 #include <cy/abi/module.h>
 #include <cy/core/memory/ownership.h>
@@ -47,6 +48,11 @@ public:
     /// animation system and the project's baked rigs (`play_animation.h`). Bound before `start`, so
     /// a behaviour's `onCreate` can attach an animator. Null: unavailable.
     void bind_animation(abi::game::AnimationBackend* animation) noexcept { animation_ = animation; }
+    /// What ABI 1.9's `gi_*` entries reach during Play: the adapter over the editor's own GI — the
+    /// system the viewport is lit by on the device — so a project's Swift game tunes the GI the
+    /// author sees. Bound before `start` so `onCreate` can place a volume; rebound when the GI is
+    /// rebuilt. Null: unavailable.
+    void bind_illumination(abi::game::IlluminationBackend* illumination) noexcept;
 
 private:
     [[nodiscard]] CyResult set(CyEntity entity, const char* emitter, const char* parameter,
@@ -67,6 +73,7 @@ private:
     const scene::serialization::World* authored_ = nullptr;
     abi::game::AudioBackend* audio_ = nullptr;
     abi::game::AnimationBackend* animation_ = nullptr;
+    abi::game::IlluminationBackend* illumination_ = nullptr;
 #if defined(CY_EDITOR_WINDOW_HAS_VFX)
     SceneVfxRuntime* scene_vfx_ = nullptr;
 #endif

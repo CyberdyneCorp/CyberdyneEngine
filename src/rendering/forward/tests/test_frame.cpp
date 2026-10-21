@@ -83,6 +83,29 @@ CY_TEST_CASE("the prepass mode is derived from what later passes need") {
     CY_CHECK_EQ(cy::rendering::select_prepass_mode(blur), PrepassMode::DepthNormalVelocity);
 }
 
+CY_TEST_CASE("a frame that asks for the prepass normals keeps them with nothing else on") {
+    // An editor viewport that switches the device GI on and off between frames keeps one prepass:
+    // the normals the GI unpacks are written whether or not the stage is in this frame.
+    cy::rendering::FrameFeatures features;
+    features.normal_prepass = true;
+    CY_CHECK_EQ(cy::rendering::select_prepass_mode(features), PrepassMode::DepthNormal);
+    features.screen_space_gi = true;
+    CY_CHECK_EQ(cy::rendering::select_prepass_mode(features), PrepassMode::DepthNormal);
+    features.temporal = true;
+    CY_CHECK_EQ(cy::rendering::select_prepass_mode(features), PrepassMode::DepthNormalVelocity);
+
+    // And it is a prepass feature: without the prepass the frame refuses it.
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    FrameDescription description = make_description();
+    description.features.depth_prepass = false;
+    CY_CHECK(frame.build(graph, description).has_value());  // the control: no prepass, no normals
+    RenderGraph refused(allocator());
+    ForwardFrame second(allocator());
+    description.features.normal_prepass = true;
+    CY_CHECK_FALSE(second.build(refused, description).has_value());
+}
+
 CY_TEST_CASE("a plain frame declares the specification's stages, in its order") {
     RenderGraph graph(allocator());
     ForwardFrame frame(allocator());

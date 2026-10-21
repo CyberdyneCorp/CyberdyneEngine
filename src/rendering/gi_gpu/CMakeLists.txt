@@ -14,7 +14,9 @@
 # `ScreenSpaceGi` stage (cy::rendering-forward's `FrameStageDeclaration`, which is the one reason
 # this module links it): the per-pixel resolve and its denoiser, published as the two textures
 # `cy/frame.slang` composites where the irradiance volume's ambient sits. A frame that does not
-# declare the stage reads nothing this module writes.
+# declare the stage reads nothing this module writes. `GpuGiFrame` is that attachment as one frame
+# feature, with the GI's debug views drawn on the device (`GpuGiDebugView`) — what the editor's
+# viewport and a game's host attach.
 #
 # THE SPIR-V AND MSL ARE CHECKED IN, not compiled by the build, for the reason
 # src/rendering/skinning/CMakeLists.txt gives. shaders/regenerate.py rewrites src/gi_gpu_spirv.h and
@@ -35,7 +37,7 @@ cy_add_module(
     ALIAS cy::rendering-gi-gpu
     TYPE STATIC
     SOURCES src/gpu_scene.cpp src/gpu_surface_cache.cpp src/gpu_radiance_cache.cpp
-            src/gpu_resolve.cpp src/gpu_budget.cpp
+            src/gpu_resolve.cpp src/gpu_budget.cpp src/gpu_debug_view.cpp src/gpu_frame.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::rendering-raytracing-gpu for the hardware tier: the structures a ray query traverses are
     # the acceleration service's, built on the device by that module and never by this one.
