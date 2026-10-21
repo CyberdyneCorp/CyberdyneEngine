@@ -474,13 +474,27 @@ mod tests {
 
     struct Sandbox(PathBuf);
 
+    /// Sandboxes made by this process so far. The clock alone does not separate two of them: the
+    /// tests in this module run on parallel threads, and Windows' system clock advances in 100 ns
+    /// ticks, so two sandboxes made in one tick shared a directory and the first test to finish
+    /// deleted the other's.
+    static SANDBOXES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    /// A sandbox's directory for a clock reading: distinct for every call, whatever the reading.
+    fn sandbox_root(clock: u128) -> PathBuf {
+        let made = SANDBOXES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "cy-source-buffer-{}-{clock}-{made}",
+            std::process::id()
+        ))
+    }
+
     impl Sandbox {
         fn source() -> Self {
-            let unique = std::time::SystemTime::now()
+            let clock = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |elapsed| elapsed.as_nanos());
-            let root = std::env::temp_dir()
-                .join(format!("cy-source-buffer-{}-{unique}", std::process::id()));
+            let root = sandbox_root(clock);
             std::fs::create_dir_all(root.join("game")).unwrap();
             std::fs::write(root.join("game/Player.swift"), "struct Player {}").unwrap();
             Self(root)
@@ -491,6 +505,11 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn two_sandboxes_made_in_one_clock_tick_are_distinct() {
+        assert_ne!(sandbox_root(42), sandbox_root(42));
     }
 
     #[test]
