@@ -57,7 +57,7 @@ CY_TEST_CASE("fog of war: the visibility texture is the gameplay grid, cell for 
     CY_REQUIRE(fog.update({&unit, 1}, 1).has_value());
     unit.x_raw += 8 * kMetre;
     CY_REQUIRE(fog.update({&unit, 1}, 2).has_value());
-    std::vector<u8> states(16U * 8U);
+    std::vector<u8> states(static_cast<usize>(16U) * 8U);
     CY_REQUIRE(fog.write_states(1, {states.data(), states.size()}).has_value());
 
     VisibilityField field(allocator());
@@ -67,7 +67,7 @@ CY_TEST_CASE("fog of war: the visibility texture is the gameplay grid, cell for 
     u32 explored = 0;
     for (u32 z = 0; z < 8U; ++z) {
         for (u32 x = 0; x < 16U; ++x) {
-            const u8* texel = &texels[((z * 16U) + x) * kTexelBytes];
+            const u8* texel = &texels[static_cast<usize>((z * 16U) + x) * kTexelBytes];
             const gfog::CellState state = fog.cell(1, x, z);
             CY_CHECK_EQ(texel[0], state == gfog::CellState::Visible ? 255U : 0U);
             CY_CHECK_EQ(texel[1], state == gfog::CellState::Unexplored ? 0U : 255U);
@@ -192,7 +192,7 @@ CY_TEST_CASE("fog of war: the minimap overlay is the field the frame samples, no
     MinimapRegion region{0.5F, 90.5F, 20.0F, 0.0F};
     MinimapFogStyle style;
     style.colour = 0x204060U;
-    std::vector<u32> overlay(90U * 4U);
+    std::vector<u32> overlay(static_cast<usize>(90U) * 4U);
     CY_REQUIRE(compose_minimap_fog(field.texels(), 9, 2, placement, region, 90, 4, style,
                                    {overlay.data(), overlay.size()})
                    .has_value());

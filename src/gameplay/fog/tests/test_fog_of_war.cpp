@@ -278,16 +278,16 @@ CY_TEST_CASE("fog: two peers fed the same updates agree, and a committed digest 
     FogUnit units[19];
     for (u32 tick = 1; tick <= 40U; ++tick) {
         for (u32 index = 0; index < 16U; ++index) {
-            const i64 phase = static_cast<i64>((tick * (index + 3U)) % 97U);
-            const TeamId team = static_cast<TeamId>(1U + (index % 3U));
+            const auto phase = static_cast<i64>((tick * (index + 3U)) % 97U);
+            const auto team = static_cast<TeamId>(1U + (index % 3U));
             units[index] = unit(100 + index, team, metres(-40) + (phase * (kOneMetreRaw * 4) / 5),
-                                metres(-40 + static_cast<i64>(index) * 5) + (phase << 20),
+                                metres(-40 + (static_cast<i64>(index) * 5)) + (phase << 20),
                                 metres(4) + (static_cast<i64>(index) << 28));
         }
         for (u32 team = 0; team < 3U; ++team) {
             units[16 + team] =
                 unit(900 + team, static_cast<TeamId>(team + 1U),
-                     metres(-30 + static_cast<i64>(team) * 30), metres(10), metres(2), true);
+                     metres(-30 + (static_cast<i64>(team) * 30)), metres(10), metres(2), true);
         }
         CY_REQUIRE(a.update(units, tick).has_value());
         CY_REQUIRE(b.update(units, tick).has_value());

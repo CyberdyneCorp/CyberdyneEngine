@@ -492,15 +492,19 @@ namespace {
 /// The minimap's field: a 16 x 16 grid over the 32 m map, visible round the player's dots, explored
 /// in a band beyond them, and never explored elsewhere.
 [[nodiscard]] std::vector<u8> minimap_states() {
-    std::vector<u8> states(16U * 16U);
+    std::vector<u8> states(static_cast<usize>(16U) * 16U);
     for (u32 z = 0; z < 16U; ++z) {
         for (u32 x = 0; x < 16U; ++x) {
             const f32 dx = (static_cast<f32>(x) * 2.0F) + 1.0F - 9.6F;
             const f32 dz = (static_cast<f32>(z) * 2.0F) + 1.0F - 21.5F;
             const f32 distance = std::sqrt((dx * dx) + (dz * dz));
-            states[(z * 16U) + x] = distance <= 6.0F    ? fog::kCellVisible
-                                    : distance <= 11.0F ? fog::kCellExplored
-                                                        : fog::kCellUnexplored;
+            u8 state = fog::kCellUnexplored;
+            if (distance <= 6.0F) {
+                state = fog::kCellVisible;
+            } else if (distance <= 11.0F) {
+                state = fog::kCellExplored;
+            }
+            states[(z * 16U) + x] = state;
         }
     }
     return states;

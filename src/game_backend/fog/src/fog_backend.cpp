@@ -19,10 +19,6 @@ static_assert(static_cast<u32>(fog::UnitSight::Ghost) == CY_FOG_SIGHT_GHOST);
 static_assert(static_cast<u32>(fog::UnitSight::Visible) == CY_FOG_SIGHT_VISIBLE);
 static_assert(fog::kMaxFogTeams == 32U, "fog_set_vision's team bound is the grid's");
 
-[[nodiscard]] bool by_entity(const auto& a, CyEntity entity) noexcept {
-    return a.entity < entity;
-}
-
 }  // namespace
 
 FogAdapter::FogAdapter(Allocator& allocator) noexcept
@@ -42,9 +38,7 @@ Status FogAdapter::share_vision(gameplay::TeamId a, gameplay::TeamId b) noexcept
 }
 
 usize FogAdapter::find(CyEntity entity) const noexcept {
-    const auto found =
-        std::lower_bound(visions_.begin(), visions_.end(), entity,
-                         [](const Vision& a, CyEntity e) { return by_entity(a, e); });
+    const auto* const found = std::ranges::lower_bound(visions_, entity, {}, &Vision::entity);
     return found != visions_.end() && found->entity == entity
                ? static_cast<usize>(found - visions_.begin())
                : visions_.size();

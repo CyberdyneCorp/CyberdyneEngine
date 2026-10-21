@@ -2,6 +2,8 @@
 #include <cy/gameplay/fog/fog_of_war.h>
 
 #include <algorithm>
+#include <functional>
+#include <utility>
 
 namespace cy::gameplay::fog {
 namespace {
@@ -100,8 +102,8 @@ Status FogOfWar::create(const FogGridDescription& description) noexcept {
     if (Status sized = explored_.resize(cells); !sized) {
         return sized;
     }
-    std::fill(visible_.begin(), visible_.end(), 0U);
-    std::fill(explored_.begin(), explored_.end(), 0U);
+    std::ranges::fill(visible_, 0U);
+    std::ranges::fill(explored_, 0U);
     for (u32 team = 1; team <= kMaxFogTeams; ++team) {
         share_[team - 1U] = bit(team);
     }
@@ -135,8 +137,8 @@ bool FogOfWar::locate(i64 x_raw, i64 z_raw, u32& x, u32& z) const noexcept {
     const i64 cell = description_.cell_size_raw;
     const i64 column = floor_div(wrapping_sub(x_raw, description_.origin_x_raw), cell);
     const i64 row = floor_div(wrapping_sub(z_raw, description_.origin_z_raw), cell);
-    if (column < 0 || row < 0 || column >= static_cast<i64>(width_) ||
-        row >= static_cast<i64>(height_)) {
+    if (column < 0 || row < 0 || std::cmp_greater_equal(column, width_) ||
+        std::cmp_greater_equal(row, height_)) {
         return false;
     }
     x = static_cast<u32>(column);
@@ -214,11 +216,9 @@ u32 FogOfWar::observers_of(u32 cell) const noexcept {
 }
 
 usize FogOfWar::ghost_index(TeamId observer, u64 id) const noexcept {
-    const auto found = std::lower_bound(
-        ghosts_.begin(), ghosts_.end(), std::pair<TeamId, u64>{observer, id},
-        [](const FogGhost& ghost, const std::pair<TeamId, u64>& key) {
-            return ghost.observer != key.first ? ghost.observer < key.first : ghost.id < key.second;
-        });
+    const auto* const found = std::ranges::lower_bound(
+        ghosts_, std::pair<TeamId, u64>{observer, id}, std::less<>{},
+        [](const FogGhost& ghost) { return std::pair<TeamId, u64>{ghost.observer, ghost.id}; });
     if (found != ghosts_.end() && found->observer == observer && found->id == id) {
         return static_cast<usize>(found - ghosts_.begin());
     }
@@ -283,8 +283,7 @@ void FogOfWar::forget_ghosts() noexcept {
     // A ghost whose place its observer sees now and whose unit it does not see there is gone: the
     // structure was destroyed, or is somewhere else.
     usize kept = 0;
-    for (usize index = 0; index < ghosts_.size(); ++index) {
-        const FogGhost& ghost = ghosts_[index];
+    for (const FogGhost& ghost : ghosts_) {
         bool keep = at(ghost.observer, ghost.x_raw, ghost.z_raw) != CellState::Visible;
         if (!keep) {
             const u32* slot = seen_index_.find(ghost.id);
@@ -304,7 +303,7 @@ Status FogOfWar::update(Span<const FogUnit> units, u64 tick) noexcept {
     if (Status checked = check(units); !checked) {
         return checked;
     }
-    std::fill(visible_.begin(), visible_.end(), 0U);
+    std::ranges::fill(visible_, 0U);
     for (const FogUnit& unit : units) {
         stamp(unit);
     }

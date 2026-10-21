@@ -318,7 +318,10 @@ struct RtsRenderer::State {
             return adopted;
         }
         char name[64];
-        const char* kind = options.fog ? "fog" : (options.gi ? "gi" : "nogi");
+        const char* kind = options.gi ? "gi" : "nogi";
+        if (options.fog) {
+            kind = "fog";
+        }
         (void)std::snprintf(name, sizeof(name), "/rts-%s-%03llu.png", kind,
                             static_cast<unsigned long long>(at));
         const std::string path = options.directory + name;

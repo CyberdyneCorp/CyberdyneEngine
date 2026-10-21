@@ -56,8 +56,8 @@ Status VisibilityField::create(u32 width, u32 height, const FogFadeSettings& set
     if (Status sized = texels_.resize(cells * kTexelBytes); !sized) {
         return sized;
     }
-    std::fill(states_.begin(), states_.end(), kCellUnexplored);
-    std::fill(levels_.begin(), levels_.end(), 0.0F);
+    std::ranges::fill(states_, kCellUnexplored);
+    std::ranges::fill(levels_, 0.0F);
     width_ = width;
     height_ = height;
     settings_ = settings;
@@ -75,7 +75,7 @@ Status VisibilityField::set_states(Span<const u8> states) noexcept {
             return fail(ErrorCode::InvalidArgument, "fog of war: a cell state is past visible");
         }
     }
-    std::copy(states.begin(), states.end(), states_.begin());
+    std::ranges::copy(states, states_.begin());
     return ok();
 }
 

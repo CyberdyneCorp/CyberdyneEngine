@@ -28,8 +28,8 @@ class NodeMotion;
 
 /// The enemy camp: the level's nodes and where each stands. game/Contract.swift's `Camp`.
 struct CampMember {
-    const char* node;
-    cy::Vec3 at;
+    const char* node = "";
+    cy::Vec3 at{};
 };
 inline constexpr CampMember kCamp[] = {
     {"RaiderNear", cy::Vec3{8.0F, 0.0F, 13.0F}},
@@ -52,7 +52,7 @@ public:
     void set_motion(const NodeMotion* motion) noexcept { motion_ = motion; }
 
     void bind(cy::abi::Host& host) noexcept;
-    void unbind(cy::abi::Host& host) noexcept;
+    static void unbind(cy::abi::Host& host) noexcept;
     /// After the fixed step: every entity with a vision placed and the grid updated.
     [[nodiscard]] cy::Status update(cy::u64 tick) noexcept;
 
