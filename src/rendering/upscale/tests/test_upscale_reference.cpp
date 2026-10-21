@@ -142,7 +142,8 @@ CY_TEST_CASE("the samples are placed where the jittered projection put them") {
     const Extent2D render = render_of(UpscaleMode::Performance);
     HostRun run(kOutput, render, unsharpened());
     HostRun mirrored(kOutput, render, unsharpened());
-    for (u32 frame = 0; frame < kConvergeFrames; ++frame) {
+    // One whole Performance jitter cycle: every sample position, each once.
+    for (u32 frame = 0; frame < jitter_phase_count(kOutput.width, render.width); ++frame) {
         const Vec2 jitter = run.next_jitter();
         (void)mirrored.next_jitter();
         const Samples samples = sample_scene(scene, render, jitter);
@@ -162,6 +163,8 @@ CY_TEST_CASE("the samples are placed where the jittered projection put them") {
 namespace {
 
 constexpr f32 kLineBackground = 0.12F;
+/// Past the 16-sample cap, so the cycle that follows is measured on a converged line.
+constexpr u32 kLineConvergeFrames = 24;
 
 /// The line's energy near it: every pixel's excess over the background, summed.
 [[nodiscard]] f64 line_energy(const std::vector<Vec4>& image) noexcept {
@@ -188,8 +191,10 @@ struct LineRun {
 [[nodiscard]] LineRun run_line(UpscaleMode mode, const UpscaleSettings& settings, bool history) {
     const SceneFn scene = &line_scene;
     HostRun run(kOutput, render_of(mode), settings);
-    // Forty frames to converge, then a whole jitter cycle measured: seventy-two at performance.
-    for (u32 frame = 0; frame < 40U; ++frame) {
+    // Frames to converge — none without a history, which has nothing to converge — then a whole
+    // jitter cycle measured.
+    const u32 converge = history ? kLineConvergeFrames : 0U;
+    for (u32 frame = 0; frame < converge; ++frame) {
         const Vec2 jitter = run.next_jitter();
         run.step(sample_scene(scene, run.render(), jitter), jitter, true, false, history);
     }
@@ -228,43 +233,61 @@ struct LineRun {
 
 namespace {
 
-/// Measured: deviation 0.010 (quality) and 0.008 (performance) against 0.10 and 0.12 without
-/// history; energy 83 % and 70 % of the supersampled line's with locks, 18 % and 20 % without.
-void check_line(UpscaleMode mode, f64 kept) {
+/// The supersampled line's energy: what full coverage is.
+[[nodiscard]] f64 reference_line_energy() {
     std::vector<Vec4> native;
-    for (const Vec3& texel : supersample(&line_scene, kOutput, 16)) {
+    for (const Vec3& texel : supersample(&line_scene, kOutput, 8)) {
         native.push_back(Vec4{texel.x, texel.y, texel.z, 1.0F});
     }
-    const f64 reference = line_energy(native);
+    return line_energy(native);
+}
+
+/// STABLE: the line does not flicker as the samples hit and miss it. Measured: deviation 0.0062
+/// (quality) and 0.0095 (performance) against 0.100 and 0.118 without history.
+void check_line_stable(UpscaleMode mode) {
+    const LineRun locked = run_line(mode, unsharpened(), true);
+    const LineRun flicker = run_line(mode, unsharpened(), false);
+    if (verbose()) {
+        std::printf("line %-12s deviation %.4f control %.4f\n", upscale_mode_name(mode),
+                    locked.deviation, flicker.deviation);
+    }
+    CY_CHECK_LT(locked.deviation, 0.015);
+    CY_CHECK_LT(locked.deviation * 5.0, flicker.deviation);
+}
+
+/// AND STILL THERE: the frames whose samples miss it do not clip it away — which, without the
+/// locks, is most of it. Measured: 86 % (quality) and 68 % (performance) of the supersampled line's
+/// energy with locks, 24 % and 15 % without.
+void check_line_coverage(UpscaleMode mode, f64 kept) {
+    const f64 reference = reference_line_energy();
     UpscaleSettings unlocked = unsharpened();
     unlocked.lock_thin_features = false;
     const LineRun locked = run_line(mode, unsharpened(), true);
-    const LineRun flicker = run_line(mode, unsharpened(), false);
     const LineRun eroded = run_line(mode, unlocked, true);
     if (verbose()) {
-        std::printf(
-            "line %-12s deviation %.4f control %.4f energy %.1f unlocked %.1f "
-            "reference %.1f\n",
-            upscale_mode_name(mode), locked.deviation, flicker.deviation, locked.energy,
-            eroded.energy, reference);
+        std::printf("line %-12s energy %.1f unlocked %.1f reference %.1f\n",
+                    upscale_mode_name(mode), locked.energy, eroded.energy, reference);
     }
-    // STABLE: the line does not flicker as the samples hit and miss it.
-    CY_CHECK_LT(locked.deviation, 0.015);
-    CY_CHECK_LT(locked.deviation * 5.0, flicker.deviation);
-    // AND STILL THERE: the frames whose samples miss it do not clip it away — which, without the
-    // locks, is most of it.
     CY_CHECK_GT(locked.energy, reference * kept);
     CY_CHECK_GT(locked.energy, eroded.energy * 2.0);
 }
 
 }  // namespace
 
-CY_TEST_CASE("a thin line is stable under the jitter and keeps its coverage (quality)") {
-    check_line(UpscaleMode::Quality, 0.70);
+CY_TEST_CASE("a thin line is stable under the jitter (quality)") {
+    check_line_stable(UpscaleMode::Quality);
 }
 
-CY_TEST_CASE("a thin line is stable under the jitter and keeps its coverage (performance)") {
-    check_line(UpscaleMode::Performance, 0.50);
+CY_TEST_CASE("a thin line is stable under the jitter (performance)") {
+    check_line_stable(UpscaleMode::Performance);
+}
+
+CY_TEST_CASE("a thin line keeps its coverage (quality)") {
+    check_line_coverage(UpscaleMode::Quality, 0.70);
+}
+
+CY_TEST_CASE("a thin line keeps its coverage (performance)") {
+    check_line_coverage(UpscaleMode::Performance, 0.50);
 }
 
 namespace {
