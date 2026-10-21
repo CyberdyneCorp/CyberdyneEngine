@@ -21,7 +21,9 @@
 //   * a read:   src_stage = write_stage, src_access = write_access (read-after-write).
 //               Read-after-read emits nothing unless the layout differs — and when it does, the
 //               transition is a WRITE to the image, so the earlier reads' stages join src_stage
-//               exactly as they do for any other write-after-read.
+//               exactly as they do for any other write-after-read. And a read in the SAME layout,
+//               after a read that made that transition, in a stage the transition was not made
+//               visible to, waits for it: the transition's stages join src_stage too.
 //   * a differing layout, or a differing owning queue family, forces a barrier regardless of
 //   hazard.
 //   * after a write, the write state is overwritten and the read state is ZEROED; after a read, the
@@ -86,6 +88,10 @@ struct CellState {
     rhi::AccessFlags write_access = rhi::AccessFlags::None;
     rhi::Stage read_stage = rhi::Stage::None;
     rhi::AccessFlags read_access = rhi::AccessFlags::None;
+    /// The stages a layout transition made by a READ has been made visible to, since the last
+    /// write: the transition's own destination, and every later read's that waited for it. None
+    /// when the layout last changed at a write, whose stage every later read already waits for.
+    rhi::Stage transition_stage = rhi::Stage::None;
     i32 last_submit = -1;
 };
 
@@ -1098,6 +1104,16 @@ struct Compiler {
         if (use_changes && !access.is_write) {
             source_stage = source_stage | cell.read_stage;
         }
+        // AND A READ IN ANOTHER STAGE, AFTER A READ THAT CHANGED THE LAYOUT, WAITS FOR THAT
+        // TRANSITION. The barrier that made it named only the first reader's stage, so a second
+        // reader in the same layout — a fragment shader sampling the depth a compute pass already
+        // sampled — is ordered after the last write and not after the transition, and
+        // synchronisation validation reports SYNC-HAZARD-READ-AFTER-WRITE against the layout
+        // transition. Chaining through the stages the transition is already visible to orders it.
+        if (!use_changes && !access.is_write && rhi::any(cell.transition_stage) &&
+            (access.stage & cell.transition_stage) != access.stage) {
+            source_stage = source_stage | cell.transition_stage;
+        }
         // METAL GAP 4. A device that needs no ownership transfers turns this term off entirely,
         // rather than each backend answering with an index that happens to compare equal.
         const bool owner_changes = options.queue_ownership_transfers && cell.owner.owned &&
@@ -1151,9 +1167,15 @@ struct Compiler {
             cell.write_access = access.access;
             cell.read_stage = rhi::Stage::None;
             cell.read_access = rhi::AccessFlags::None;
+            cell.transition_stage = rhi::Stage::None;
         } else {
             cell.read_stage |= access.stage;
             cell.read_access |= access.access;
+            if (use_changes) {
+                cell.transition_stage = access.stage;
+            } else if (rhi::any(cell.transition_stage)) {
+                cell.transition_stage |= access.stage;
+            }
         }
         return true;
     }
