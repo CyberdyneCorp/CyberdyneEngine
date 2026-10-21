@@ -80,8 +80,7 @@ const char* unit_sight_name(UnitSight sight) noexcept {
 }
 
 FogOfWar::FogOfWar(Allocator& allocator) noexcept
-    : allocator_(&allocator),
-      visible_(allocator),
+    : visible_(allocator),
       explored_(allocator),
       seen_(allocator),
       seen_index_(allocator),

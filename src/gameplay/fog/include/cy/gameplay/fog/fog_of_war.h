@@ -183,7 +183,6 @@ private:
     /// The bits of the teams `team` sees through: its own and its allies'.
     [[nodiscard]] u32 vision_of(TeamId team) const noexcept;
 
-    Allocator* allocator_;
     FogGridDescription description_{};
     u32 width_ = 0;
     u32 height_ = 0;
