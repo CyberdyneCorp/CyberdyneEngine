@@ -12,6 +12,7 @@
 #include <cy/rendering/forward/frame.h>
 
 #include <cstring>
+#include <string_view>
 
 namespace {
 
@@ -1184,4 +1185,125 @@ CY_TEST_CASE("an output extent and a temporal producer are refused where they ca
     // A producer that refuses fails the frame rather than leaving the stage out.
     producer.refuse = true;
     refuses(make_upscaled(producer), "refused");
+}
+
+namespace {
+
+/// A stand-in for `fog_of_war::FogOfWarPass`: the upload of the visibility texture and the
+/// dispatch that writes the stage's target, as the real producer declares them.
+struct FogOfWarProducer {
+    cy::rendering::ScreenSpaceStageInputs seen{};
+    cy::rendering::PassId dispatch = kInvalidPass;
+};
+
+cy::rendering::PassId declare_fog_of_war(RenderGraph& graph,
+                                         const cy::rendering::ScreenSpaceStageInputs& inputs,
+                                         void* user) noexcept {
+    auto* producer = static_cast<FogOfWarProducer*>(user);
+    producer->seen = inputs;
+    cy::rendering::TextureRequest request;
+    request.name = "fog of war visibility";
+    request.format = cy::rhi::Format::Rgba8Unorm;
+    request.width = 32;
+    request.height = 32;
+    const cy::rendering::ResourceId visibility = graph.create_texture(request);
+    const cy::rendering::PassId upload =
+        graph.add_pass("fog of war upload", cy::rhi::QueueKind::Graphics)
+            .write(visibility, cy::rhi::Access::TransferWrite)
+            .id();
+    producer->dispatch = graph.add_pass("fog of war", cy::rhi::QueueKind::Graphics)
+                             .read(inputs.source, cy::rhi::Access::ComputeSampledRead)
+                             .read(inputs.depth, cy::rhi::Access::ComputeSampledRead)
+                             .read(visibility, cy::rhi::Access::ComputeSampledRead)
+                             .write(inputs.target, cy::rhi::Access::ComputeStorageWrite)
+                             .id();
+    return upload;
+}
+
+}  // namespace
+
+CY_TEST_CASE("fog of war sits after the temporal resolve and before depth of field and bloom") {
+    // Off, neither the stage nor its target exists — the frame it always was.
+    RenderGraph plain(allocator());
+    ForwardFrame plain_frame(allocator());
+    FrameDescription description = make_description();
+    description.features.temporal = true;
+    description.features.bloom = true;
+    description.features.depth_of_field = true;
+    FocusProducer focus;
+    description.depth_of_field_stage = cy::rendering::FrameStageDeclaration{&declare_focus, &focus};
+    CY_REQUIRE(plain_frame.build(plain, description).has_value());
+    CY_CHECK_FALSE(declared(plain_frame, FramePassKind::FogOfWar));
+    CY_CHECK_EQ(plain_frame.resources().fog_of_war, kInvalidResource);
+    const cy::usize plain_passes = plain_frame.passes().size();
+
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    FogOfWarProducer producer;
+    description.features.fog_of_war = true;
+    description.fog_of_war_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog_of_war, &producer};
+    CY_REQUIRE(frame.build(graph, description).has_value());
+    CY_REQUIRE(declared(frame, FramePassKind::FogOfWar));
+    CY_CHECK_EQ(frame.passes().size(), plain_passes + 1U);
+    CY_CHECK_EQ(cy::rendering::frame_pass_kind_name(FramePassKind::FogOfWar),
+                std::string_view("fog of war"));
+    // The value is appended after `Present`; the PLACE is the declaration order's.
+    CY_CHECK_LT(position_of(frame, FramePassKind::Temporal),
+                position_of(frame, FramePassKind::FogOfWar));
+    CY_CHECK_LT(position_of(frame, FramePassKind::FogOfWar),
+                position_of(frame, FramePassKind::DepthOfField));
+    CY_CHECK_LT(position_of(frame, FramePassKind::FogOfWar),
+                position_of(frame, FramePassKind::Bloom));
+    CY_CHECK_LT(position_of(frame, FramePassKind::FogOfWar),
+                position_of(frame, FramePassKind::PostProcess));
+
+    // Handed the temporal history and the depth, and a target of its own at the frame's extent,
+    // which depth of field then reads as its source.
+    const cy::rendering::FrameResources& resources = frame.resources();
+    CY_CHECK_EQ(producer.seen.source, resources.temporal_history);
+    CY_CHECK_EQ(producer.seen.depth, resources.depth);
+    CY_REQUIRE_NE(resources.fog_of_war, kInvalidResource);
+    CY_CHECK_EQ(producer.seen.target, resources.fog_of_war);
+    CY_CHECK_EQ(focus.seen.source, resources.fog_of_war);
+    CY_CHECK_EQ(producer.seen.width, description.width);
+    CY_CHECK_EQ(producer.seen.height, description.height);
+    CY_CHECK_LT(producer.dispatch, frame.pass_of(FramePassKind::DepthOfField));
+    CY_CHECK(graph.compile(compile_options()).has_value());
+
+    // Alone in the chain, the post-process reads what the fog wrote.
+    description.features.bloom = false;
+    description.features.depth_of_field = false;
+    RenderGraph alone(allocator());
+    ForwardFrame alone_frame(allocator());
+    CY_REQUIRE(alone_frame.build(alone, description).has_value());
+    CY_CHECK_EQ(alone_frame.resources().post_source, alone_frame.resources().fog_of_war);
+}
+
+CY_TEST_CASE("fog of war without a producer, or multisampled without a prepass, is refused") {
+    FrameDescription description = make_description();
+    description.features.fog_of_war = true;
+    RenderGraph unproduced(allocator());
+    ForwardFrame unproduced_frame(allocator());
+    const cy::Status unproduced_status = unproduced_frame.build(unproduced, description);
+    CY_REQUIRE_FALSE(unproduced_status.has_value());
+    CY_CHECK(std::strstr(unproduced_status.error().message, "fog of war") != nullptr);
+
+    FogOfWarProducer producer;
+    description.fog_of_war_stage =
+        cy::rendering::FrameStageDeclaration{&declare_fog_of_war, &producer};
+    description.features.depth_prepass = false;
+    description.features.msaa_samples = 4;
+    RenderGraph multisampled(allocator());
+    ForwardFrame multisampled_frame(allocator());
+    const cy::Status refused = multisampled_frame.build(multisampled, description);
+    CY_REQUIRE_FALSE(refused.has_value());
+    CY_CHECK(std::strstr(refused.error().message, "single-sample depth") != nullptr);
+
+    // Single-sample, the opaque pass's own depth is the one it reads.
+    description.features.msaa_samples = 1;
+    RenderGraph single(allocator());
+    ForwardFrame single_frame(allocator());
+    CY_CHECK(single_frame.build(single, description).has_value());
+    CY_CHECK_EQ(producer.seen.depth, single_frame.resources().depth);
 }

@@ -124,6 +124,11 @@ struct FrameFeatures {
     /// mask, the pixels whose history the motion vectors cannot carry (`ScreenSpaceStageInputs::
     /// opaque_color`). Only with `transparency`. Appended.
     bool reactive_mask = false;
+    /// Fog of war: one team's visibility applied to every surface on linear HDR, after the temporal
+    /// stage and before depth of field — `FramePassKind::FogOfWar`, declared by its producer
+    /// (`src/rendering/fog_of_war/`). Off by default, and absent rather than skipped when off.
+    /// Appended.
+    bool fog_of_war = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
@@ -205,6 +210,15 @@ enum class FramePassKind : u8 {
     /// to the presentable layout the same way it derives every other one, and no renderer code
     /// names a layout. The same shape the M3 spike used for the host boundary.
     Present,
+    /// Fog of war: the team's visibility texture uploaded and applied to the colour the chain has
+    /// reached, on linear HDR after the temporal stage and BEFORE depth of field, motion blur and
+    /// bloom — the fog is a property of the surfaces, so a lens blurs it and bloom sees a darkened
+    /// light as the dimmer light it is. Declared by its producer (`src/rendering/fog_of_war/`)
+    /// through `FrameStageDeclaration`, handed the colour as `source` and
+    /// `FrameResources::fog_of_war` as `target`, which its last pass writes. NOT ONE OF THE
+    /// SPECIFICATION'S THIRTEEN, and APPENDED: a kind's value is not its place in the order, which
+    /// is the order `ForwardFrame` declares the stages in.
+    FogOfWar,
     Count,
 };
 
@@ -358,6 +372,9 @@ struct FrameResources {
     /// it — `ScreenSpaceStageInputs::output_depth` and `output_velocity`. Appended.
     ResourceId output_depth = kInvalidResource;
     ResourceId output_velocity = kInvalidResource;
+    /// The fogged colour: the output extent, the scene colour's format, written by the fog of war
+    /// producer. Only with `FrameFeatures::fog_of_war`. Appended.
+    ResourceId fog_of_war = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -468,6 +485,11 @@ struct FrameDescription {
     /// temporal upscaler supplies one for its reactive mask, as a dispatch; null keeps the stage
     /// the single transfer pass recorded by `callbacks[OpaqueColorCopy]`. Appended.
     FrameStageDeclaration opaque_copy_stage;
+    /// The producer that declares the fog of war stage — `fog_of_war::FogOfWarPass` — handed the
+    /// colour the chain has reached as `source` and `FrameResources::fog_of_war` as `target`, which
+    /// its last pass must write. No single-pass fallback: with `features.fog_of_war` and no
+    /// producer, `build()` refuses. Appended.
+    FrameStageDeclaration fog_of_war_stage;
 };
 
 /// Declares one view's frame into a graph.

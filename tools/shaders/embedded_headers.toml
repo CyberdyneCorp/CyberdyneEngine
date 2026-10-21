@@ -27,6 +27,12 @@ run = [["{python}", "src/rendering/fog/shaders/regenerate.py", "--slangc", "{sla
         "--clang-format", "{clang_format}"]]
 
 [[group]]
+name = "fog_of_war"
+headers = ["src/rendering/fog_of_war/src/fog_of_war_spirv.h", "src/rendering/fog_of_war/src/fog_of_war_msl.h"]
+run = [["{python}", "src/rendering/fog_of_war/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
 name = "frame"
 headers = ["src/rendering/pipeline/shaders/frame_spirv.h", "src/rendering/pipeline/shaders/frame_msl.h"]
 run = [["{python}", "src/rendering/pipeline/shaders/regenerate.py", "--slangc", "{slangc}",

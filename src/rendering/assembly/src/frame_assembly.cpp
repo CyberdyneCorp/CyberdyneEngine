@@ -365,6 +365,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.screen_space_gi = description_.global_illumination;
     features.normal_prepass = description_.normal_prepass;
     features.selection_outlines = description_.selection_outlines;
+    features.fog_of_war = description_.fog_of_war;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
     features.motion_blur = config.motion_blur;
@@ -819,6 +820,7 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.contact_shadows_stage = sinks.contact_shadows;
     description.selection_outlines_stage = sinks.selection_outlines;
     description.depth_of_field_stage = sinks.depth_of_field;
+    description.fog_of_war_stage = sinks.fog_of_war;
     description.volumetric_fog_target = view.volumetric_fog;
     description.volumetric_fog_stage = sinks.volumetric_fog;
     description.motion_blur_target = view.motion_blur;

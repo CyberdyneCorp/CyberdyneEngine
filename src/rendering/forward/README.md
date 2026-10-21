@@ -131,6 +131,18 @@ colour's format, storage-writable) and hands it to `FrameDescription::depth_of_f
 `build()` refuses the feature without a producer, and on a multisampled frame without the prepass,
 whose depth resolve is the only single-sample depth such a frame has; a single-sample frame without
 the prepass reads the depth its opaque pass wrote. `src/rendering/depth_of_field/` is the producer.
+## A fifth, in the post chain: fog of war
+
+`FramePassKind::FogOfWar` is APPENDED to the enum, after `Present`; a kind's value is not its place,
+and the frame declares the stage after the temporal one and before depth of field — on linear HDR,
+because the fog is a property of the surfaces, so a lens blurs it and bloom sees a fogged light as
+the dimmer light it is. Like depth of field it writes a NEW colour: the frame creates
+`FrameResources::fog_of_war` (the output extent, the scene colour's format, storage) and hands it to
+`FrameDescription::fog_of_war_stage` as `target` with the colour so far as `source`; every later
+stage reads it. With an upscaler the stage is handed the output-extent depth the temporal producer
+writes (`post_reads_depth` counts it). `build()` refuses it without a producer, and multisampled
+without the prepass. `src/rendering/fog_of_war/` is the producer.
+
 ## A fourth, in the post chain: motion blur
 
 `FramePassKind::MotionBlur` is step 8 of `rendering-post-processing`'s chain — after the temporal
