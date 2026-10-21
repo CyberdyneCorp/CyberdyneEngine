@@ -85,6 +85,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/upscale/upscale.h>
 
 #include "world.h"
 
@@ -135,6 +136,9 @@ struct StageReport {
     /// is "not measured" and not a fast frame.
     bool gpu_measured = false;
     f64 gpu_ms = 0.0;
+    /// The extent the world was drawn at: the output's, or an upscaler's render extent.
+    u32 render_width = 0;
+    u32 render_height = 0;
     f64 water_gpu_ms = 0.0;
 
     // --- WHAT THE ASSEMBLED FRAME DID. M11.c task 3.1. -----------------------------------------
@@ -229,6 +233,15 @@ public:
     /// Off by default, and off is the frame this program drew before, byte for byte: no pass, and
     /// binding 2 is the atmosphere's table as it was.
     void set_fog(bool on) noexcept { fog_ = on; }
+    /// TEMPORAL UPSCALING, before `open`: the world drawn at `mode`'s render extent with the
+    /// temporal framework's jitter, and reconstructed at the output extent by the frame's
+    /// `Temporal` stage, `upscale::TemporalUpscalePass`. This program writes no motion vectors, so
+    /// the reconstruction reprojects by the camera alone. Off by default, and off is the frame
+    /// this program drew before, byte for byte.
+    void set_upscale(bool on, rendering::upscale::UpscaleMode mode) noexcept {
+        upscale_ = on;
+        upscale_mode_ = mode;
+    }
 
     void close() noexcept;
 
@@ -262,6 +275,8 @@ private:
     /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
     /// writes. M11.c task 3.1.
     [[nodiscard]] Status create_frame() noexcept;
+    /// The temporal upscaler, bound to the assembly's temporal framework. Only with `set_upscale`.
+    [[nodiscard]] Status create_upscale() noexcept;
     /// The fog march and its table, bound at set 0 binding 2. Only with `set_fog(true)`.
     [[nodiscard]] Status create_fog(const World& world) noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
@@ -279,6 +294,11 @@ private:
     f32 grade_saturation_ = 1.0F;
     u32 width_ = 0;
     u32 height_ = 0;
+    /// The extent the world is drawn at: `width_` and `height_`, or the upscaler's render extent.
+    u32 render_width_ = 0;
+    u32 render_height_ = 0;
+    bool upscale_ = false;
+    rendering::upscale::UpscaleMode upscale_mode_ = rendering::upscale::UpscaleMode::Quality;
     bool available_ = false;
     bool water_shading_ = true;
     bool ground_marker_ = false;

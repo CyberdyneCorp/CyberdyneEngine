@@ -240,6 +240,31 @@ the turntable always drew.
 frame 20 of the 240-frame orbit, drawn after frame 19, with 0 validation errors. On, the columns'
 masonry and the embers streak along the orbit's direction, most at the frame's edges.
 
+## Temporal upscaling, in every mode
+
+`--upscale <mode>` — `native`, `quality`, `balanced` or `performance` — renders the shot at the
+mode's render extent with the temporal framework's jitter and reconstructs the output at the frame's
+`Temporal` stage through `upscale::TemporalUpscalePass` (`src/rendering/upscale/`). The program adds
+the depth, normal and motion prepass, removes the jitter from its motion vectors (`BeautyFrame::jitter`),
+derives the reactive mask from a copy of the colour taken before the air and the embers are drawn,
+and runs ambient occlusion, the contact trace, the GI, the decals' cluster grid and the air at the
+render extent; depth of field, motion blur, bloom and the resolve run at the output. The still is
+drawn after `--upscale-frames` (48) frames of the same view, `--sharpness` (0.3) is the sharpening,
+and `--timing-frames <n>` prints the median whole-frame device time over `n` more. It refuses
+`--supersample` above one. Off is the frame the program always drew.
+
+`just capture-upscale` times every mode at 1440p and 4K with the GI on, one run at a time, and
+writes `docs/design/images/upscale-beauty-{native,performance}.png` and the crop strips
+`upscale-beauty-crops-{1440,2160}.png`. On an RTX 5060, the whole frame's device time and the PSNR
+of the converged still against native AA:
+
+| Output | Off (no AA) | Native AA | Quality | Balanced | Performance |
+|---|---|---|---|---|---|
+| 2560x1440 | 5.62 ms | 7.62 ms | 6.14 ms, 42.6 dB | 5.32 ms, 40.4 dB | 4.65 ms, 37.3 dB |
+| 3840x2160 | 12.04 ms | 16.47 ms | 10.62 ms, 43.4 dB | 9.49 ms, 41.7 dB | 8.56 ms, 40.3 dB |
+
+The aliased frame is 38.1 dB from native AA at 1440p and 39.5 dB at 4K.
+
 ## Global illumination, off and on
 
 `--gi on` lights the shot with the engine's GI (`gi.h`, issue #35 stages 4 and 5). The GI scene is

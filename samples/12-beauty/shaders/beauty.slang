@@ -134,6 +134,11 @@ struct BeautyFrame
     /// the contact term. APPENDED, so every entry point that predates it reads the block it always
     /// read.
     uint4 giControl;
+    /// TEMPORAL UPSCALING: xy the clip-space offset `viewProjection` is jittered by this frame, which
+    /// the prepass removes from its motion vectors — `temporal-rendering`'s convention, a still
+    /// surface's motion is zero however the projection was jittered. Zero without an upscaler.
+    /// APPENDED, as `giControl` is.
+    float4 jitter;
 };
 
 [[vk::binding(0, 2)]]
@@ -628,7 +633,8 @@ float4 scenePrepassFragment(SceneVarying input) : SV_Target
 /// past — `temporal-rendering`'s convention and the one `cy/frame.slang`'s prepass writes. Drawn
 /// with `sceneVertex`, like the prepass above, so the depth the scene pass tests is this pass's;
 /// both positions are pushed through the interpolated baked-space position, which is exact per
-/// pixel. No jitter to remove: this frame is supersampled and runs no temporal stage.
+/// pixel. The jitter a temporal upscaler applies is removed from this frame's position, so a still
+/// surface's motion is zero; without one it is zero and the expression is the one it always was.
 struct BeautyPrepassMotion
 {
     float4 normalRoughness : SV_Target0;
@@ -643,7 +649,7 @@ BeautyPrepassMotion scenePrepassMotionFragment(SceneVarying input)
                             frame.viewProjection3, point);
     let previous = transform(frame.previousViewProjection0, frame.previousViewProjection1,
                              frame.previousViewProjection2, frame.previousViewProjection3, point);
-    let currentNdc = current.xy / current.w;
+    let currentNdc = current.xy / current.w - frame.jitter.xy;
     let previousNdc = previous.xy / previous.w;
     BeautyPrepassMotion output;
     output.normalRoughness = float4(encodeOctahedral(normalize(input.normal)), 1.0, 1.0);
@@ -669,7 +675,7 @@ BeautyPrepassMotion scenePrepassGiMotionFragment(SceneVarying input)
                             frame.viewProjection3, point);
     let previous = transform(frame.previousViewProjection0, frame.previousViewProjection1,
                              frame.previousViewProjection2, frame.previousViewProjection3, point);
-    let currentNdc = current.xy / current.w;
+    let currentNdc = current.xy / current.w - frame.jitter.xy;
     let previousNdc = previous.xy / previous.w;
     BeautyPrepassMotion output;
     output.normalRoughness =

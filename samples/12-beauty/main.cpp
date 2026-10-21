@@ -30,6 +30,12 @@
 //                    [--gi-reference <pixels>]      the path tracer at that many pixels
 //                    [--gi-reference-step <n> --gi-reference-still <path> --gi-error-map <path>]
 //                                                   the path tracer's picture of the frame
+//                    [--upscale native|quality|balanced|performance]  the scene below the output,
+//                                                   reconstructed by the temporal upscaler
+//                    [--upscale-frames <n>] [--sharpness <0..1>]  frames before the still, and
+//                                                   the sharpening of the reconstruction
+//                    [--timing-frames <n>]          frames after the still the whole frame's
+//                                                   device time is measured over
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
 // committed — the compiled material programs — is produced by that recipe from files that are.
@@ -244,6 +250,37 @@ void read_material_line(const char* line, ShotMaterial& material) {
     return path.substr(begin, dot == std::string::npos ? std::string::npos : dot - begin);
 }
 
+/// THE WHOLE FRAME'S DEVICE TIME over `frames` frames of the still view, after it: the frames are
+/// drawn and written nowhere, each timed by its own two timestamps, and the minimum, median and
+/// mean are printed. The median is the number to quote; the minimum shows the floor a quiet machine
+/// reaches.
+[[nodiscard]] Status print_frame_timing(Stage& stage, const Shot& shot, u32 frames) noexcept {
+    std::vector<f64> times;
+    times.reserve(frames);
+    for (u32 index = 0; index < frames; ++index) {
+        ShotReport timed;
+        if (Status drawn = stage.render(shot, nullptr, nullptr, timed); !drawn) {
+            return drawn;
+        }
+        if (timed.gpu_timed) {
+            times.push_back(timed.gpu_ms);
+        }
+    }
+    if (times.empty()) {
+        std::printf("frame timing  not measured: the device answered no timestamps\n");
+        return ok();
+    }
+    std::ranges::sort(times);
+    f64 sum = 0.0;
+    for (const f64 time : times) {
+        sum += time;
+    }
+    std::printf("frame timing  %llu frames: min %.3f, median %.3f, mean %.3f ms\n",
+                static_cast<unsigned long long>(times.size()), times.front(),
+                times[times.size() / 2U], sum / static_cast<f64>(times.size()));
+    return ok();
+}
+
 void print_report(const Shot& shot, const ShotReport& report) {
     std::printf("shot          %s\n", shot.name.c_str());
     std::printf("content       %u instances, %u triangles, %u materials, %u textures\n",
@@ -266,6 +303,11 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 report.trail_vertices, report.trail_strips, report.trail_segments,
                 report.trail_draws, report.trail_dropped);
     std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms, report.submit_ms);
+    std::printf("render        %ux%u%s\n", report.render_width, report.render_height,
+                report.gpu_timed ? "" : ", device time not measured");
+    if (report.gpu_timed) {
+        std::printf("gpu frame     %.3f ms\n", report.gpu_ms);
+    }
     if (report.gi_cards != 0U) {
         std::printf("gi            %u cards, %u placements, traced through the %s\n",
                     report.gi_cards, report.gi_placements, report.gi_tier);
@@ -382,6 +424,21 @@ int main(int argc, char** argv) {
     const std::string gi_reference_still = option(argc, argv, "--gi-reference-still", "");
     const std::string gi_error_map = option(argc, argv, "--gi-error-map", "");
     const u32 orbit_frame = option_number(argc, argv, "--orbit-frame", 1);
+    // TEMPORAL UPSCALING. Off by default, which is the published frame. The still is drawn after
+    // `--upscale-frames` frames of the same view: a temporal reconstruction converges over frames
+    // as a game's does, and the still is the frame a player standing here would see.
+    const std::string upscale = option(argc, argv, "--upscale", "off");
+    rendering::upscale::UpscaleMode upscale_mode = rendering::upscale::UpscaleMode::Quality;
+    if (upscale != "off" &&
+        !rendering::upscale::parse_upscale_mode(upscale.c_str(), upscale_mode)) {
+        std::fprintf(stderr,
+                     "cy_sample_beauty: --upscale is `off`, `native`, `quality`, `balanced` or "
+                     "`performance`\n");
+        return 1;
+    }
+    const u32 upscale_frames = option_number(argc, argv, "--upscale-frames", 48);
+    const f32 sharpness = std::strtof(option(argc, argv, "--sharpness", "0.3").c_str(), nullptr);
+    const u32 timing_frames = option_number(argc, argv, "--timing-frames", 0);
 
     std::string problem;
     auto parsed = Shot::read(shot_path.c_str(), problem);
@@ -504,6 +561,9 @@ int main(int argc, char** argv) {
     gi_settings.per_pixel = gather == "per-pixel";
     gi_settings.shared_denoiser = denoiser == "shared";
     stage.set_global_illumination(gi_settings);
+    stage.set_upscale(upscale != "off", upscale_mode, sharpness);
+    std::printf("upscale       %s%s\n", upscale.c_str(),
+                upscale == "off" ? "" : ", the scene below the output and reconstructed");
     std::printf(
         "gi            %s, %s tier asked for, resolve grid divisor %u, %s gather, %s "
         "denoiser\n",
@@ -518,6 +578,16 @@ int main(int argc, char** argv) {
         // THE GI CONVERGES OVER FRAMES, as a game's does: the same view drawn and written nowhere,
         // so the still is the frame a player standing here would see after `gi_frames` frames.
         for (u32 index = 1; index < gi_frames; ++index) {
+            ShotReport warm;
+            if (Status drawn = stage.render(shot, nullptr, nullptr, warm); !drawn) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
+                return 1;
+            }
+        }
+    }
+    if (upscale != "off") {
+        // THE RECONSTRUCTION CONVERGES OVER FRAMES: the same view drawn and written nowhere.
+        for (u32 index = 1; index < upscale_frames; ++index) {
             ShotReport warm;
             if (Status drawn = stage.render(shot, nullptr, nullptr, warm); !drawn) {
                 std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
@@ -589,6 +659,14 @@ int main(int argc, char** argv) {
         // the GI's history past the still's.
         stage.set_gi_readback_frames(false);
         if (Status timed = print_gi_timing(stage, shot, gi_timing_frames); !timed) {
+            std::fprintf(stderr, "cy_sample_beauty: %s\n", timed.error().message);
+            return 1;
+        }
+    }
+    if (timing_frames != 0U) {
+        // AFTER the still, so it does not move: a burst of the same view, each frame timed.
+        stage.set_gi_readback_frames(false);
+        if (Status timed = print_frame_timing(stage, shot, timing_frames); !timed) {
             std::fprintf(stderr, "cy_sample_beauty: %s\n", timed.error().message);
             return 1;
         }
