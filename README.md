@@ -12,16 +12,49 @@ editor's node-graph canvas, compiled by the material compiler and bound as BC7 a
 996 ember particles and their trails in the transparent stage and 0 validation errors
 ([what was authored and what the renderer produced](docs/design/beauty-shot.md)).*
 
-> **Status: M0 through M11.d are closed. [M11.d.5 · Backends](docs/ROADMAP.md#m11d5--backends) is
-> closing** — the same golden image now renders and matches on Vulkan, Metal and D3D12 hardware, and
-> the gate waits on the Metal and D3D12 criteria run on that hardware
-> ([#44](https://github.com/CyberdyneCorp/CyberdyneEngine/issues/44)). Next is
+> **Status: M0 through M11.d.5 are closed** — [M11.d.5 · Backends](docs/ROADMAP.md#m11d5--backends)
+> closed on the same golden image rendered and matched on Vulkan, Metal and D3D12 hardware. Now:
 > [M11.e · Ship](docs/ROADMAP.md#m11e--ship) and 1.0, then [M12 · The Game](docs/ROADMAP.md#m12--the-game),
 > an RTS written in Swift that proves the engine by using it.
 
-[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,229 requirements and 2,736
-scenarios** — the contract the implementation must satisfy. Today 16 are Complete, 56 Working, 3
+[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,232 requirements and 2,744
+scenarios** — the contract the implementation must satisfy. Today 17 are Complete, 55 Working, 3
 Seed and 1 not started ([`status.yaml`](docs/roadmap/status.yaml), reported by `just roadmap-status`).
+
+---
+
+## Global illumination
+
+CyberGI lights a frame in real time on the GPU: screen probes gather from a world-space radiance
+cache, tracing with hardware ray queries where the device has them and a software distance-field
+tracer where it does not. It is held to the engine's own path tracer, and every figure below is
+measured at 1920x1080 on an NVIDIA GeForce RTX 5060 (Vulkan).
+
+![The Workshop Hall: GI off, CyberGI, the path tracer, and the error map](docs/design/images/gi-hall-comparison.png)
+
+*The Workshop Hall (`content/beauty/hall.cyshot`): GI off, CyberGI, the path tracer and the error
+map. The lamp has no light of its own; its emissive glow reaches the bench through the GI.
+[A camera swing through the hall](docs/design/videos/gi-hall-orbit.mp4).*
+
+![The Colonnade: GI off, CyberGI, the path tracer, and the error map](docs/design/images/gi-colonnade-comparison.png)
+
+| Scene | GI on the GPU | Error against the path tracer | The path tracer's own noise |
+|---|---|---|---|
+| Workshop Hall | 3.78 ms hardware · 5.40 ms software | 0.148 | 0.088 |
+| Colonnade | 2.73 ms hardware | 0.023 | 0.014 |
+| Sealed room behind a 10 cm wall | — | zero light leaked, through both tiers | — |
+
+The same device GI lights the editor's viewport and a Swift game, which tunes it through ABI 1.9.
+So far it has run on Vulkan only; its Metal and DXIL shaders are compiled but not yet run on a device.
+
+| | |
+|:---:|:---:|
+| ![The editor viewport without GI, lit by the device GI, and in four device debug views](docs/design/images/editor-gi-live.png) | ![The RTS sample without GI, with it, and a beacon put out and lit again from Swift](docs/design/images/rts-api-gi.png) |
+| **Editor** — the viewport without GI, lit by it, and four of its debug views, all on the device | **Swift game** — `samples/13-rts-api` lit by the GI; its Swift code puts a beacon out and lights it again |
+
+→ [**Global illumination guide**](docs/guides/global-illumination.md) — how it works, the
+[measurements](docs/guides/global-illumination.md#7b-beside-the-path-tracer-as-a-picture-a-sunlit-room-a-workshop-hall-and-the-colonnade)
+and [turning it on in your game](docs/guides/global-illumination.md#6g-turn-on-gi-in-your-game).
 
 ---
 
@@ -43,14 +76,16 @@ their module README.
 | **Light probes** — an irradiance volume ([`light_probes/`](src/rendering/light_probes/README.md)) | **Volumetric fog** and light shafts ([`fog/`](src/rendering/fog/README.md)) | **Depth of field** — near and far fields ([`depth_of_field/`](src/rendering/depth_of_field/README.md)) |
 | ![Decals](docs/design/images/decals-beauty-on.png) | ![Motion blur](docs/design/images/motion-blur-beauty-on.png) | ![Baked lightmaps](docs/design/images/lightmaps-on.png) |
 | **Decals** before the light loop ([`decals/`](src/rendering/decals/README.md)) | **Motion blur** from prepass velocity ([`motion_blur/`](src/rendering/motion_blur/README.md)) | **Lightmaps** — path-traced, denoised bake ([`lightmaps/`](src/rendering/lightmaps/README.md)) |
-| ![RTS selection outlines](docs/design/images/rts-selection-after.png) | ![GPU surface cache](docs/design/images/gi-gpu-surface-cache.png) | ![Virtual geometry clusters at 4 px error](docs/design/images/virtual-geometry-clusters-4px.png) |
-| **Selection outlines** — a squad, an enemy, a hidden unit ([`selection/`](src/rendering/selection/README.md)) | **GI surface cache** on the device, host left and device right ([`gi_gpu/`](src/rendering/gi_gpu/README.md)) | **Virtual geometry** — 4.48 M triangles, one colour per cluster ([write-up](docs/design/virtual-geometry.md)) |
+| ![A strategy HUD and the developer console over selected units](docs/design/images/rts-hud-2x.png) | ![The HUD a Swift behaviour built through the ABI](docs/design/images/rts-api-hud.png) | ![A paragraph in the interface font](docs/design/images/text-paragraph.png) |
+| **HUD** — selection outlines, a squad panel, a minimap and the developer console in one interface pass ([UI guide](docs/guides/ui.md)) | **Swift HUD** — built by a Swift behaviour through the ABI, with its Build button ([UI guide](docs/guides/ui.md#6-a-hud-from-game-code)) | **Text** — shaped and drawn from a distance-field atlas, one draw per page ([text guide](docs/guides/text.md)) |
 | ![Vulkan](docs/design/images/m11d5-three-backends-vulkan.png) | ![Metal](docs/design/images/m11d5-three-backends-metal.png) | ![D3D12](docs/design/images/m11d5-three-backends-d3d12.png) |
 | **Vulkan** — NVIDIA GeForce RTX 5060 | **Metal** — Apple M2 Max, max delta 1 | **D3D12** — AMD Radeon RX 6900 XT, max delta 1 |
 | ![The editor with a live textured FBX on Metal](docs/design/images/editor-live-textured-fbx-metal.png) | ![The material graph editor](docs/design/images/editor-material-graph-nodes-metal.png) | ![The open-world sample on an iPhone 16](docs/design/images/ios-open-world-iphone.png) |
 | **Editor** — a live FBX import on Metal ([`editor/`](editor/README.md)) | **Material graph** on the editor's canvas ([`material/`](src/rendering/material/README.md)) | **iOS** — open world on an iPhone 16 at 60 FPS ([building](docs/guides/building.md#ios)) |
-| ![A Mixamo character mid-run, skinned on the GPU](docs/design/images/animated-character.png) | ![The 500-model, 100-emitter RTS load on an iPhone 16](docs/design/images/ios-rts-load-iphone.png) | ![A generated world from M10](docs/design/images/m10-world.png) |
-| **Animation** — a Mixamo character imported from four FBX files, idle to walk to run to a death ([video](docs/design/videos/animated-character.mp4) · [`samples/09b-animated-character`](samples/09b-animated-character/README.md) · [`src/animation/`](src/animation/README.md)) | **GPU skinning** — 500 skinned models and 100 GPU emitters on an iPhone 16 ([building](docs/guides/building.md#rts-capacity-scene)) | **World** — generated from a seed, a day of weather ([video](docs/design/videos/m10-world.mp4) · [`samples/10-world`](samples/10-world/README.md)) |
+| ![The editor's animation tools with a character posed mid-blend](docs/design/images/editor-animation-window.png) | ![A gameplay graph paused at a breakpoint](docs/design/images/editor-gameplay-graph-debugger.png) | ![Virtual geometry clusters at 4 px error](docs/design/images/virtual-geometry-clusters-4px.png) |
+| **Animation editor** — a character the engine posed mid-blend, skinned and shadowed in the viewport ([`editor/`](editor/README.md#the-animation-editor)) | **Visual scripting** — a gameplay graph paused at a breakpoint, with watches ([guide](docs/guides/visual-scripting.md#debugging-in-play)) | **Virtual geometry** — 4.48 M triangles, one colour per cluster ([write-up](docs/design/virtual-geometry.md)) |
+| ![A Mixamo character mid-run, skinned and drawn in the engine's frame](docs/design/images/animated-character-frame.png) | ![The 500-model, 100-emitter RTS load on an iPhone 16](docs/design/images/ios-rts-load-iphone.png) | ![A generated world from M10](docs/design/images/m10-world.png) |
+| **Animation** — a Mixamo character from four FBX files, a skinned draw in the engine's frame casting its shadow ([video](docs/design/videos/animated-character.mp4) · [animation guide](docs/guides/animation.md)) | **GPU skinning** — 500 skinned models and 100 GPU emitters on an iPhone 16 ([building](docs/guides/building.md#rts-capacity-scene)) | **World** — generated from a seed, a day of weather ([video](docs/design/videos/m10-world.mp4) · [`samples/10-world`](samples/10-world/README.md)) |
 
 The three backend images are the M3 golden image, each labelled with the device that answered
 (`m11d5-three-backends-*.manifest`); that comparison is M11.d.5's closing artefact.
@@ -69,16 +104,17 @@ every requirement is. The table groups what is in the tree now.
 | **World model** | Archetype ECS (Complete) under a node façade, prefabs and serialization (Complete) | [`src/ecs/`](src/ecs/README.md) · [`src/scene/`](src/scene/) · [`ecs-core`](openspec/specs/ecs-core/spec.md) |
 | **RHI** | Vulkan, Metal and D3D12 backends plus a null device; a render graph that computes every barrier | [`src/backends/`](src/backends/README.md) · [`rhi-and-render-graph`](openspec/specs/rhi-and-render-graph/spec.md) |
 | **Shaders** | Slang to SPIR-V, permutations, reflection, a tiered cache, hot reload | [`src/backends/shader/`](src/backends/shader/README.md) · [Slang guide](docs/guides/slang.md) |
-| **Frame** | Forward clustered shading, GPU culling and a hierarchical depth pyramid, one temporal framework (jitter, history), post stack (exposure, AgX tonemap, bloom, grading) | [`src/rendering/`](src/rendering/README.md) · [`assembly/`](src/rendering/assembly/README.md) |
+| **Frame** | Forward clustered shading, GPU culling and a hierarchical depth pyramid, one temporal framework (jitter, history), post stack (exposure, AgX tonemap, bloom, grading); an interface pass for HUDs and the developer console | [`src/rendering/`](src/rendering/README.md) · [`assembly/`](src/rendering/assembly/README.md) · [UI guide](docs/guides/ui.md) |
+| **Text** | FreeType, HarfBuzz, msdfgen and ICU behind one text server: font fallback, shaping, bidirectional lines, distance-field atlases, font import and cooking | [`src/text/`](src/text/README.md) · [text guide](docs/guides/text.md) |
 | **Materials** | Node graph → IR → compiled program, bindless, block-compressed textures | [`material/`](src/rendering/material/README.md) · [`material-compiler`](openspec/specs/material-compiler/spec.md) |
-| **Light** | Shadow maps, contact shadows, ambient occlusion, light probes, baked lightmaps, GI with a GPU surface cache, ray-tracing infrastructure and a shared denoiser | [`gi/`](src/rendering/gi/README.md) · [`rendering-global-illumination`](openspec/specs/rendering-global-illumination/spec.md) |
+| **Light** | Shadow maps, contact shadows, ambient occlusion, light probes, baked lightmaps; real-time GI on the GPU (screen probes and a radiance cache, hardware ray queries or a software distance-field tracer), live in the editor and in a Swift game; ray-tracing infrastructure and a shared denoiser | [`gi/`](src/rendering/gi/README.md) · [`gi_gpu/`](src/rendering/gi_gpu/README.md) · [GI guide](docs/guides/global-illumination.md) |
 | **Effects** | Volumetric fog, depth of field, motion blur, decals, selection outlines, GPU particles and trails | [`fog/`](src/rendering/fog/README.md) · [`particles/`](src/rendering/particles/README.md) · [`src/vfx/`](src/vfx/) |
 | **Scale** | Virtual geometry clusters, virtual texturing (Complete), virtual shadows, one residency policy (Complete) | [`virtual_geometry/`](src/rendering/virtual_geometry/) · [`virtual-geometry`](openspec/specs/virtual-geometry/spec.md) |
 | **Environment** | Physical sky and atmosphere, terrain, water, foliage, weather and wind over one field substrate; procedural generation | [`src/environment/`](src/environment/README.md) · [`src/pcg/`](src/pcg/README.md) |
-| **Simulation** | Animation with GPU skinning, AI, navigation, physics (Jolt), audio (miniaudio), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/ai/`](src/ai/README.md) · [`src/physics/`](src/physics/README.md) |
+| **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
 | **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) |
-| **Gameplay** | Swift behaviours and systems over a versioned C ABI; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [`src/gameplay/`](src/gameplay/README.md) |
-| **Editor** | Rust application: documents and transactions, live viewport and gizmos, material graph, FBX import, an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |
+| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.9 (game services, the interface, animation, fixed-point math, GI), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
+| **Editor** | Rust application: documents and transactions, live viewport and gizmos, FBX import; material, VFX and gameplay graphs; terrain, physics, navigation, lighting and lightmap, audio and animation tools; an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |
 | **Platforms** | SDL3 desktop, a native Linux backend, headless, iOS, and a stub that shares no desktop assumption | [`platform/`](platform/README.md) |
 | **Workflow** | One `justfile`, the same recipes CI runs; diagnostics, traces and crash artefacts (Complete) | [`just/`](just/README.md) · [`diagnostics-profiling-and-crash`](openspec/specs/diagnostics-profiling-and-crash/spec.md) |
 
@@ -383,7 +419,7 @@ flowchart TB
     end
     subgraph SH2["Shipping, continued"]
         direction LR
-        M11D["M11.d · Desktop"] --> M11D5["M11.d.5 · Backends<br/><i>closing, #44</i>"] --> M11E["M11.e · Ship<br/><i>1.0</i>"]
+        M11D["M11.d · Desktop"] --> M11D5["M11.d.5 · Backends"] --> M11E["M11.e · Ship<br/><i>1.0</i>"]
     end
     subgraph AF["After the engine"]
         direction LR
@@ -394,12 +430,12 @@ flowchart TB
     classDef closed fill:#14532d,stroke:#4ade80,color:#dcfce7
     classDef active fill:#713f12,stroke:#facc15,stroke-width:2px,color:#fef9c3
     classDef ahead fill:#1f2937,stroke:#6b7280,color:#e5e7eb
-    class M0,M1,M2,M3,M4,M5,M5B,M6,M7,M8A,M8B,M8C,M9,M10,M11A,M11B,M11C,M11D closed
-    class M11D5 active
-    class M11E,M12,M13 ahead
+    class M0,M1,M2,M3,M4,M5,M5B,M6,M7,M8A,M8B,M8C,M9,M10,M11A,M11B,M11C,M11D,M11D5 closed
+    class M11E active
+    class M12,M13 ahead
 ```
 
-Green is closed (18 rungs), amber is closing, grey is ahead.
+Green is closed (19 rungs), amber is current, grey is ahead.
 
 | Era | Rungs | Ends with |
 |---|---|---|
@@ -450,7 +486,14 @@ the hero image above and `just run-ship` packages and launches `samples/11-ship`
 |---|---|
 | [Animation guide](docs/guides/animation.md) | Skeletons, clips, compiled pose programs, retargeting, GPU skinning and ragdolls |
 | [Slang guide](docs/guides/slang.md) | Slang, and how the engine compiles and uses its shaders |
-| [Swift guide](docs/guides/swift.md) | Swift gameplay: behaviours, components, the ABI 1.3 game services, the RTS sample, the bindings and hot reload |
+| [Swift guide](docs/guides/swift.md) | Swift gameplay: behaviours, components, the game services of ABI 1.3 onward, the RTS sample, the bindings and hot reload |
+| [Global illumination guide](docs/guides/global-illumination.md) | CyberGI: the host system and its device half, the tracing tiers, emissive surfaces, GI volumes, turning it on in the editor and a game, the measurements |
+| [Lighting guide](docs/guides/lighting.md) | Authoring static lighting in the editor and baking lightmaps and irradiance volumes |
+| [Deterministic math guide](docs/guides/deterministic-math.md) | Fixed-point types, their rules and bounds, the float boundary, lockstep movement, the ABI |
+| [Visual scripting guide](docs/guides/visual-scripting.md) | Gameplay graphs: authoring, compiling, running in Play, the debugger and reload while Play runs |
+| [Text guide](docs/guides/text.md) | Fonts, shaping and layout, atlases and distance fields, font import, text in the interface |
+| [UI guide](docs/guides/ui.md) | CyberUI: the element store, layout, the interface pass, the developer console, a HUD from game code |
+| [Navigation guide](docs/guides/navigation.md) | Baking and checking a navmesh from the editor or over MCP |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
 | [Roadmap](docs/ROADMAP.md) | The milestone ladder, exit criteria and the invariants that cannot wait |
