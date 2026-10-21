@@ -83,6 +83,7 @@ cy_add_module(
         host/script.cpp
         host/worker_rig.cpp
         host/illumination.cpp
+        host/fog.cpp
     PRIVATE_DEFINITIONS
         "CY_RTS_API_MODULE_LIBRARY=\"${CY_RTS_API_MODULE_LIBRARY}\""
         "CY_RTS_API_MODULE_MANIFEST=\"${CY_RTS_API_MODULE_MANIFEST}\""
@@ -98,6 +99,7 @@ cy_add_module(
         cy::game-backend-lockstep
         cy::game-backend-ui
         cy::game-backend-illumination
+        cy::game-backend-fog
         cy::rendering-gi
         cy::graph
         cy::physics-reference
@@ -119,7 +121,8 @@ if(CY_RENDERER_VULKAN)
                    "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests/frame_scene.cpp"
                    "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
     target_link_libraries(cy_sample_rts-api PRIVATE
-                          cy::rendering-gi-gpu cy::rendering-pipeline cy::rendering-particles
+                          cy::rendering-gi-gpu cy::rendering-fog-of-war cy::rendering-pipeline
+                          cy::rendering-particles
                           cy::rhi cy::rhi-null cy::rhi-vulkan)
     target_include_directories(cy_sample_rts-api PRIVATE
                                "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests"
@@ -167,8 +170,8 @@ if(CY_BUILD_TESTS)
                 "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
                 "${rts_api_selection}/hud.cpp"
             DEPENDENCIES cy::abi cy::game-backend-ui cy::ui-render cy::ui-text
-                         cy::rendering-pipeline cy::rendering-particles cy::rhi-null
-                         cy::rhi-vulkan)
+                         cy::rendering-pipeline cy::rendering-particles cy::rendering-fog-of-war
+                         cy::rhi-null cy::rhi-vulkan)
         target_include_directories(cy_test_render_rts_api_hud
                                    PRIVATE "${rts_api_pipeline_tests}"
                                            "${CMAKE_SOURCE_DIR}/tests/render"
@@ -208,6 +211,26 @@ if(CY_BUILD_TESTS)
                                            "${CMAKE_SOURCE_DIR}/tests/render")
         add_dependencies(cy_test_smoke_rts_api_gi cy_sample_rts-api)
         set_tests_properties(smoke.rts_api_gi PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+        # smoke.rts_api_fog (ABI 1.10): the session drawn with blue's fog of war and without it,
+        # the enemy camp drawn by blue's sight, and what the stage costs. A separate process, as
+        # smoke.rts_api_gi is, for the same reason.
+        cy_add_test(
+            NAME rts_api_fog
+            KIND smoke
+            SOURCES
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_api_fog.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+            DEPENDENCIES cy::core-base cy::core-memory
+            DEFINITIONS
+                CY_SAMPLE_RTS_API="$<TARGET_FILE:cy_sample_rts-api>"
+                CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+        target_include_directories(cy_test_smoke_rts_api_fog
+                                   PRIVATE "${CMAKE_SOURCE_DIR}/tests/smoke"
+                                           "${CMAKE_SOURCE_DIR}/tests/render")
+        add_dependencies(cy_test_smoke_rts_api_fog cy_sample_rts-api)
+        set_tests_properties(smoke.rts_api_fog PROPERTIES
                              SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
     endif()
 endif()

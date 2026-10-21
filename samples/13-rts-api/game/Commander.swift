@@ -68,6 +68,10 @@ final class Commander: Behaviour {
 
     /// The level's barracks node, resolved by the engine at `onReady`. Nil if the level has none.
     @Node("../Barracks") var barracksNode: Entity?
+    /// ABI 1.10: the enemy camp (Contract.swift's `Camp`), resolved the same way.
+    @Node("../RaiderNear") var raiderNear: Entity?
+    @Node("../RaiderFar") var raiderFar: Entity?
+    @Node("../Watchtower") var watchtower: Entity?
 
     // --- State ---------------------------------------------------------------------------------
 
@@ -90,6 +94,9 @@ final class Commander: Behaviour {
     private var company = Company()
     /// ABI 1.9: the base's light (Lighting.swift).
     private var lighting = BaseLighting()
+    /// ABI 1.10: what each side sees (Fog.swift).
+    private var fog = BaseFog()
+    private var fogReady = false
 
     /// The state each unit was last asked to play, so a request is made only when it changes.
     private var playing: [Entity: String] = [:]
@@ -148,6 +155,7 @@ final class Commander: Behaviour {
     override func onReady() throws {
         tally.readied += 1
         tally.barracksFound = barracksNode == nil ? 0 : 1
+        try startFog()
         try publish()
     }
 
@@ -175,7 +183,8 @@ final class Commander: Behaviour {
                 cheered.insert(event.entity)
             }
         }
-        try hud?.show(model())
+        let campDots = try fogReady ? fog.frame(mapSize: mapSize) : []
+        try hud?.show(model(campDots))
         try lighting.frame()
     }
 
@@ -243,6 +252,25 @@ final class Commander: Behaviour {
         playing[unit] = Content.idle
         squad.append(unit)
         health[unit] = (hp, 100)
+        // A worker built in a fixed step sees for blue from the next update; the starting squad is
+        // given its sight with the camp's, in `onReady`.
+        if fogReady {
+            try fog.enlist(unit)
+        }
+    }
+
+    /// The fog's visions, once the camp's nodes are resolved. A host that runs no fog of war binds
+    /// none, and the game plays without it.
+    private func startFog() throws {
+        guard !fogReady else { return }
+        do {
+            try fog.create(
+                squad: squad, barracks: barracksNode, raiders: [raiderNear, raiderFar],
+                tower: watchtower)
+            fogReady = true
+        } catch CyberdyneError.status(.unavailable, _) {
+            Log.info("Commander: the engine runs no fog of war; playing without it")
+        }
     }
 
     /// Play the arrival cue where a unit stopped, on the one tick navigation reports it, and the
@@ -278,7 +306,7 @@ final class Commander: Behaviour {
 
     /// What the HUD shows this frame: the stock less what was spent, the selected unit, and where
     /// every unit and the camera are on the map.
-    private func model() throws -> HudModel {
+    private func model(_ campDots: [HudModel.Dot]) throws -> HudModel {
         var model = HudModel()
         let spent = Float(tally.spawns) * workerCost
         model.resources = .init(
@@ -291,6 +319,10 @@ final class Commander: Behaviour {
             let at = try NavAgent(unit).state.position
             model.dots.append(.init(x: at.x / mapSize, y: at.z / mapSize, team: .player))
         }
+        // The camp's dots, as blue's fog allows: after the squad's, within the minimap's sixteen.
+        model.dots.append(contentsOf: campDots.prefix(RtsHud.minimapDots - model.dots.count))
+        // And the fog itself, on the page an embedder that draws the HUD uploads it to.
+        model.fogPage = fogReady ? Content.fogPage : nil
         // The view the rig frames, about 16 by 12 metres round the focus.
         let focus = camera.focus
         model.camera = UIRect(
@@ -322,6 +354,14 @@ final class Commander: Behaviour {
         try world.setFloat(lighting.dark, entity, report, field: reportFields.giDark)
         try world.setFloat(lighting.relit, entity, report, field: reportFields.giRelit)
         try world.setFloat(lighting.refused, entity, report, field: reportFields.giRefused)
+        try world.setFloat(fog.radius, entity, report, field: reportFields.fogRadius)
+        try world.setFloat(fog.cells, entity, report, field: reportFields.fogCells)
+        try world.setFloat(fog.towerSeen, entity, report, field: reportFields.fogTowerSeen)
+        try world.setFloat(fog.towerGhost, entity, report, field: reportFields.fogTowerGhost)
+        try world.setFloat(fog.raidersSeen, entity, report, field: reportFields.fogRaidersSeen)
+        try world.setFloat(fog.farHiddenAtStart, entity, report, field: reportFields.fogFarHidden)
+        try world.setFloat(fog.enemyDots, entity, report, field: reportFields.fogEnemyDots)
+        try world.setFloat(fog.refused, entity, report, field: reportFields.fogRefused)
     }
 }
 
@@ -363,4 +403,12 @@ private struct ReportFields {
     let giDark = RtsReport.field("giDark")
     let giRelit = RtsReport.field("giRelit")
     let giRefused = RtsReport.field("giRefused")
+    let fogRadius = RtsReport.field("fogRadius")
+    let fogCells = RtsReport.field("fogCells")
+    let fogTowerSeen = RtsReport.field("fogTowerSeen")
+    let fogTowerGhost = RtsReport.field("fogTowerGhost")
+    let fogRaidersSeen = RtsReport.field("fogRaidersSeen")
+    let fogFarHidden = RtsReport.field("fogFarHidden")
+    let fogEnemyDots = RtsReport.field("fogEnemyDots")
+    let fogRefused = RtsReport.field("fogRefused")
 }

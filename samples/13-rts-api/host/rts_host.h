@@ -117,6 +117,7 @@
 #include <cy/ui/store.h>
 #include <cy/ui/text/text_painter.h>
 
+#include "fog.h"
 #include "illumination.h"
 #include "units.h"
 #include "worker_rig.h"
@@ -254,6 +255,29 @@ struct Observation {
         cy::f32 refused = 0.0F;  ///< calls a fixed step had refused
     };
     Illumination illumination;
+    /// ABI 1.10: the level's fog of war as the grid holds it, and what the commander read of it
+    /// and decided with it (game/Fog.swift), from `RtsReport`.
+    struct Fog {
+        cy::u32 width = 0;
+        cy::u32 visions = 0;  ///< entities the game gave a vision
+        cy::u32 units = 0;    ///< of which placed by the last update
+        cy::u32 cells = 0;    ///< cells some unit sees
+        cy::u32 ghosts = 0;
+        cy::u64 tick = 0;
+        cy::u64 digest = 0;
+        /// Blue's view of the camp, from the grid: how many raiders it sees, and the tower's sight.
+        cy::u32 raiders_visible = 0;
+        cy::u32 tower_sight = 0;  ///< a CyFogSight
+        cy::f32 radius = 0.0F;    ///< a worker's reveal radius the game read back
+        cy::f32 game_cells = 0.0F;
+        cy::f32 tower_seen = 0.0F;
+        cy::f32 tower_ghost = 0.0F;
+        cy::f32 raiders_seen = 0.0F;
+        cy::f32 far_hidden = 0.0F;
+        cy::f32 enemy_dots = 0.0F;
+        cy::f32 refused = 0.0F;
+    };
+    Fog fog;
     /// Navigation agents with a body, which is every unit the game configured.
     cy::u32 units = 0;
     /// Agents the navigation adapter drives.
@@ -308,6 +332,10 @@ public:
     [[nodiscard]] cy::Vec3 crate_position() const noexcept;
     /// The level's GI: what the game tunes through ABI 1.9 and a renderer lights its frame with.
     [[nodiscard]] RtsIllumination& illumination() noexcept { return *gi_; }
+    /// The level's fog of war: what the game sees through ABI 1.10 and a renderer draws.
+    [[nodiscard]] const RtsFog& fog() const noexcept { return *fog_; }
+    /// The enemy camp's entities, in `kCamp`'s order.
+    [[nodiscard]] CyEntity camp(cy::u32 index) const noexcept { return camp_[index]; }
     [[nodiscard]] Observation observe() noexcept;
     [[nodiscard]] cy::u64 frames() const noexcept { return frame_; }
     /// The wall time of the last `frame`: the game's frame, its fixed tick and the GI's update.
@@ -329,6 +357,9 @@ private:
     [[nodiscard]] cy::Status start_animation() noexcept;
     [[nodiscard]] cy::Status start_lockstep() noexcept;
     [[nodiscard]] cy::Status start_illumination() noexcept;
+    [[nodiscard]] cy::Status start_fog() noexcept;
+    void observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,
+                     const void* bytes) noexcept;
     void observe_illumination(Observation& seen, const cy::abi::ComponentRecord* report,
                               const void* bytes) noexcept;
     void observe_lockstep(Observation& seen, const cy::abi::ComponentRecord* report,
@@ -424,6 +455,10 @@ private:
     std::unique_ptr<cy::game_backend::LockstepAdapter> lockstep_adapter_;
     // ABI 1.9: the level's global illumination and the adapter the game tunes it through.
     std::unique_ptr<RtsIllumination> gi_;
+    // ABI 1.10: the level's fog of war, and the camp's and the barracks' nodes it places.
+    std::unique_ptr<RtsFog> fog_;
+    CyEntity camp_[kCampSize] = {};
+    cy::scene::Node barracks_;
 
     // Content.
     cy::Array<cy::f32> click_samples_;

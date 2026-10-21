@@ -194,11 +194,17 @@ cy::Status RtsHost::start(const char** detail) noexcept {
         const char* name;
         cy::Status (RtsHost::*step)() noexcept;
     } steps[] = {
-        {"scene", &RtsHost::start_scene},           {"input", &RtsHost::start_input},
-        {"camera", &RtsHost::start_camera},         {"physics", &RtsHost::start_physics},
-        {"navigation", &RtsHost::start_navigation}, {"audio", &RtsHost::start_audio},
-        {"props", &RtsHost::start_props},           {"animation", &RtsHost::start_animation},
-        {"lockstep", &RtsHost::start_lockstep},     {"illumination", &RtsHost::start_illumination},
+        {"scene", &RtsHost::start_scene},
+        {"input", &RtsHost::start_input},
+        {"camera", &RtsHost::start_camera},
+        {"physics", &RtsHost::start_physics},
+        {"navigation", &RtsHost::start_navigation},
+        {"audio", &RtsHost::start_audio},
+        {"props", &RtsHost::start_props},
+        {"animation", &RtsHost::start_animation},
+        {"lockstep", &RtsHost::start_lockstep},
+        {"illumination", &RtsHost::start_illumination},
+        {"fog", &RtsHost::start_fog},
     };
     for (const auto& step : steps) {
         if (cy::Status done = (this->*step.step)(); !done) {
@@ -229,6 +235,7 @@ cy::Status RtsHost::start(const char** detail) noexcept {
     if (cy::Status bound = gi_->bind(host_, cy::abi::to_abi(crate_.entity())); !bound) {
         return bound;
     }
+    fog_->bind(host_);
     started_ = true;
 
     if (cy::Status loaded = load_module(detail); !loaded) {
@@ -248,6 +255,20 @@ cy::Status RtsHost::start(const char** detail) noexcept {
 cy::Status RtsHost::start_illumination() noexcept {
     gi_ = std::make_unique<RtsIllumination>(allocator_);
     return gi_->build();
+}
+
+cy::Status RtsHost::start_fog() noexcept {
+    fog_ = std::make_unique<RtsFog>(allocator_);
+    if (cy::Status built = fog_->build(); !built) {
+        return built;
+    }
+    fog_->set_motion(&motion_);
+    // The barracks stands where its box does; the camp where `kCamp` says.
+    fog_->place(cy::abi::to_abi(barracks_.entity()), field_boxes()[1].centre);
+    for (u32 index = 0; index < kCampSize; ++index) {
+        fog_->place(camp_[index], kCamp[index].at);
+    }
+    return cy::ok();
 }
 
 cy::Status RtsHost::start_lockstep() noexcept {
@@ -385,7 +406,7 @@ cy::Status RtsHost::start_scene() noexcept {
     if (!level) {
         return cy::make_unexpected(level.error());
     }
-    cy::scene::Node* nodes[] = {nullptr, &crate_, &commander_, &scout_};
+    cy::scene::Node* nodes[] = {&barracks_, &crate_, &commander_, &scout_};
     const char* names[] = {"Barracks", "Crate", "Commander", "Scout"};
     for (cy::usize index = 0; index < 4U; ++index) {
         const auto made = tree_.create_node(cy::Name::intern(names[index]), *level);
@@ -395,6 +416,14 @@ cy::Status RtsHost::start_scene() noexcept {
         if (nodes[index] != nullptr) {
             *nodes[index] = *made;
         }
+    }
+    // ABI 1.10: the enemy camp, which the game resolves by `@Node` and gives red's sight.
+    for (u32 index = 0; index < kCampSize; ++index) {
+        const auto made = tree_.create_node(cy::Name::intern(kCamp[index].node), *level);
+        if (!made) {
+            return cy::make_unexpected(made.error());
+        }
+        camp_[index] = cy::abi::to_abi(made->entity());
     }
     return spawn_adapter_.add_prefab(kWorkerPrefab, worker_prefab());
 }
@@ -791,7 +820,11 @@ cy::Status RtsHost::fixed_tick() noexcept {
     cy::physics::StepInput step;
     step.delta_seconds = kStep;
     step.tick = tick;
-    return physics_->step(physics_world_, step);
+    if (cy::Status stepped = physics_->step(physics_world_, step); !stepped) {
+        return stepped;
+    }
+    // The fog last: where every unit stands after this tick decides what each side sees in it.
+    return fog_->update(tick);
 }
 
 cy::Status RtsHost::run_stages(cy::ecs::Stage first, cy::ecs::Stage last) noexcept {
@@ -824,6 +857,9 @@ void RtsHost::shutdown() noexcept {
     host_.bind_world(nullptr);
     if (gi_ != nullptr) {
         gi_->unbind(host_);
+    }
+    if (fog_ != nullptr) {
+        fog_->unbind(host_);
     }
     lockstep_adapter_.reset();
     company_follower_.reset();
@@ -1000,6 +1036,7 @@ Observation RtsHost::observe() noexcept {
     if (record == nullptr) {
         observe_lockstep(seen, nullptr, nullptr);
         observe_illumination(seen, nullptr, nullptr);
+        observe_fog(seen, nullptr, nullptr);
         return seen;
     }
     const void* bytes = world_.get(commander_.entity(), record->id);
@@ -1020,7 +1057,47 @@ Observation RtsHost::observe() noexcept {
     seen.animation.cheer_events = read_field<f32>(bytes, field("cheerEvents"));
     observe_lockstep(seen, record, bytes);
     observe_illumination(seen, record, bytes);
+    observe_fog(seen, record, bytes);
     return seen;
+}
+
+void RtsHost::observe_fog(Observation& seen, const cy::abi::ComponentRecord* report,
+                          const void* bytes) noexcept {
+    if (fog_ == nullptr) {
+        return;
+    }
+    // The grid's own answers, through the adapter: what ABI 1.10 answers `fog_status` with.
+    CyFogStatus status{};
+    status.struct_size = sizeof(status);
+    if (fog_->adapter().status(status) == CY_RESULT_OK) {
+        seen.fog.width = status.width;
+        seen.fog.units = status.units;
+        seen.fog.cells = status.visible_cells;
+        seen.fog.ghosts = status.ghosts;
+        seen.fog.tick = status.tick;
+        seen.fog.digest = status.digest;
+    }
+    seen.fog.visions = fog_->adapter().vision_count();
+    for (u32 index = 0; index < kCampSize; ++index) {
+        const auto sight = fog_->grid().sight(1, camp_[index]);
+        if (index + 1U < kCampSize) {
+            seen.fog.raiders_visible += sight == cy::gameplay::fog::UnitSight::Visible ? 1U : 0U;
+        } else {
+            seen.fog.tower_sight = static_cast<u32>(sight);
+        }
+    }
+    if (report == nullptr || bytes == nullptr) {
+        return;
+    }
+    const auto field = [&](const char* name) { return report_field(binding_, *report, name); };
+    seen.fog.radius = read_field<f32>(bytes, field("fogRadius"));
+    seen.fog.game_cells = read_field<f32>(bytes, field("fogCells"));
+    seen.fog.tower_seen = read_field<f32>(bytes, field("fogTowerSeen"));
+    seen.fog.tower_ghost = read_field<f32>(bytes, field("fogTowerGhost"));
+    seen.fog.raiders_seen = read_field<f32>(bytes, field("fogRaidersSeen"));
+    seen.fog.far_hidden = read_field<f32>(bytes, field("fogFarHidden"));
+    seen.fog.enemy_dots = read_field<f32>(bytes, field("fogEnemyDots"));
+    seen.fog.refused = read_field<f32>(bytes, field("fogRefused"));
 }
 
 void RtsHost::observe_lockstep(Observation& seen, const cy::abi::ComponentRecord* report,

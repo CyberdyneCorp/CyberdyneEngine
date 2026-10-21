@@ -32,6 +32,20 @@ enum Content {
     /// The events the worker's clips fire: a footfall, and the cheer finishing.
     static let footstep: AnimationName = "footstep"
     static let cheerDone: AnimationName = "cheer_done"
+    /// ABI 1.10: the interface atlas page an embedder that draws the HUD uploads the fog of war's
+    /// minimap overlay to (`fog_of_war::compose_minimap_fog`). Page 1 is the glyphs'.
+    static let fogPage: UInt32 = 2
+}
+
+/// ABI 1.10: the enemy camp the host placed in the level — `/Level/RaiderNear`, `/Level/RaiderFar`
+/// and `/Level/Watchtower` — and where each stands, which host/fog.h's `kCamp` states too. What each
+/// sees, and what blue is shown of it, is Fog.swift's.
+enum Camp {
+    /// West of the squad, in its sight from the first frame; and north-east, out of it until the
+    /// ordered worker reaches its point.
+    static let raiders = [Vec3(x: 8, y: 0, z: 13), Vec3(x: 27, y: 0, z: 29)]
+    /// East of the worker that is ordered away: seen at the start, a ghost once it has gone.
+    static let tower = Vec3(x: 25, y: 0, z: 13)
 }
 
 /// The host puts the ground on collision layer 0 and every navigation agent's body on layer 1. A
@@ -101,6 +115,17 @@ struct RtsReport {
     var giDark: Float = 0
     var giRelit: Float = 0
     var giRefused: Float = 0
+    /// ABI 1.10 (Fog.swift). A worker's reveal radius read back, the cells blue sees, the tower
+    /// seen and now a ghost, the raiders blue sees, the far raider hidden on the first frame, the
+    /// camp's minimap dots, and the visions a frame was refused.
+    var fogRadius: Float = 0
+    var fogCells: Float = 0
+    var fogTowerSeen: Float = 0
+    var fogTowerGhost: Float = 0
+    var fogRaidersSeen: Float = 0
+    var fogFarHidden: Float = 0
+    var fogEnemyDots: Float = 0
+    var fogRefused: Float = 0
 }
 
 extension Component {

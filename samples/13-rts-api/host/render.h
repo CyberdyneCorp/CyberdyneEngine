@@ -25,6 +25,12 @@
 // and the mean luminance of the frame round the beacon's foot at the three frames the game reads
 // the light — lit, out, and lit again. It writes the frame at those three frames and the
 // last (`rts-gi-<frame>.png`, or `rts-nogi-<frame>.png`).
+//
+// With `--fog` (ABI 1.10) the frame carries blue's fog of war: the visibility the host's grid keeps
+// (host/fog.h), faded on the frame's clock and applied by `fog_of_war::FogOfWarPass` at the frame's
+// `FogOfWar` stage, and the enemy camp's three boxes — the last three unit slots — drawn by blue's
+// sight of them. The stills are then `rts-fog-<frame>.png`, and the report line says how many of
+// the camp each still drew and how.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -42,6 +48,11 @@ struct RenderOptions {
     std::string directory;
     /// Attach the device GI. False is the control.
     bool gi = true;
+    /// Draw blue's fog of war (ABI 1.10): the frame's `FogOfWar` stage over the grid the game's
+    /// visions keep, and the enemy camp drawn as blue's sight allows — a raider only while blue
+    /// sees it, the watchtower as its ghost once blue has left it. False is the frame it always
+    /// was.
+    bool fog = false;
 };
 
 class RtsRenderer {

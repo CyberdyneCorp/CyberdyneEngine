@@ -64,6 +64,10 @@ public:
     [[nodiscard]] Status set_selection(Span<const SelectedUnit> units) noexcept;
     /// The units on the map and the part of it the camera sees, as a rectangle in map coordinates.
     [[nodiscard]] Status set_minimap(Span<const MinimapDot> dots, ui::Rect camera) noexcept;
+    /// The fog of war over the minimap: atlas page `page`, the whole of it stretched over the map
+    /// between its ground and its dots — the overlay `fog_of_war::compose_minimap_fog` makes, which
+    /// the embedder uploads. Until this is called the fog element is collapsed and draws nothing.
+    [[nodiscard]] Status set_minimap_fog(u16 page) noexcept;
 
     [[nodiscard]] ui::ElementId resource_bar() const noexcept { return bar_; }
     [[nodiscard]] ui::ElementId minimap() const noexcept { return minimap_; }
@@ -96,6 +100,7 @@ private:
     ui::ElementId wood_;
     ui::ElementId food_;
     ui::ElementId minimap_;
+    ui::ElementId fog_;
     ui::ElementId camera_;
     ui::ElementId dots_[kMinimapDots];
     ui::ElementId selection_;

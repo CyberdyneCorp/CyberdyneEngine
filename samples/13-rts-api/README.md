@@ -77,6 +77,29 @@ the ground point the camera looks at, with probe and card ladders sized to the l
 (`host/illumination.cpp`); headless, with the caches on the processor, a run of 420 frames takes
 under two seconds.
 
+ABI 1.10 gives the game FOG OF WAR. The host keeps the grid — `cy::game_backend::FogAdapter` over
+the level's 32 x 32 metres, updated after every fixed step from where each entity with a vision
+stands (`host/fog.*`) — and places an enemy camp in the level: `/Level/RaiderNear`,
+`/Level/RaiderFar` and `/Level/Watchtower`. Everything else is the game's (`game/Fog.swift`): in
+`onReady` it gives its workers blue's sight (7 m) and its barracks a ghost-leaving vision, and the
+camp it resolved by `@Node` red's; every worker it builds gets blue's sight in the fixed step that
+enlists it; in `onUpdate` it reads which of the camp blue sees, shows a raider's minimap dot only
+while blue sees it and the watchtower's as a ghost, puts the fog's overlay page on the minimap, and
+is refused once when it tries to give sight from a frame. By frame 420 blue sees both raiders — the
+far one came into sight when the ordered worker arrived — and remembers the tower it walked away
+from at frame 90.
+
+```
+just run-sample rts-api --render <dir> --fog       blue's fog in the frame, the camp by blue's sight
+ctest -R rts_api_fog                               the picture and its cost (smoke)
+```
+
+![frames 150 and 420, without the fog and with blue's: the far raider unseen, then seen; the tower a ghost](../../docs/design/images/rts-api-fog.png)
+
+Measured on the RTX 5060 (`smoke.rts_api_fog`, 480x270): the fog stage takes about 0.011 ms of
+device time a frame, the host's half a few microseconds, and a frame with the fog and the GI 4.84 ms
+against 4.68 ms without the fog.
+
 ## What is here
 
 | | |
@@ -92,6 +115,9 @@ under two seconds.
 | `host/illumination.*` | ABI 1.9: the level as the GI sees it (`field_boxes`), the `IlluminationSystem` and the adapter the game tunes it through, updated once a frame from the camera. |
 | `host/render.*` | `--render`: the session drawn on a device, lit by `gi_gpu::GpuGiFrame` over the level's GI; the stills and the cost line `smoke.rts_api_gi` reads. |
 | `game/Lighting.swift` | ABI 1.9: the base's volume, the beacon out and on, the light read. |
+| `host/fog.*` | ABI 1.10: the fog grid over the level, the enemy camp's places, and the placer that tells the grid where every entity with a vision stands. |
+| `game/Fog.swift` | ABI 1.10: the squad's, the barracks' and the camp's visions; what blue sees of the camp, for the minimap and the report. |
+| `tests/test_rts_api_fog.cpp` | `smoke.rts_api_fog`: the session drawn with blue's fog and without, the camp by blue's sight, and what the stage costs. |
 | `tests/test_rts_api_gi.cpp` | `smoke.rts_api_gi`: the session drawn with the GI and without, the game's calls seen in the frame, and what a frame costs. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |
 | `tests/test_rts_api_hud_device.cpp` | `render.rts_api_hud`: the Swift HUD against `samples/13-rts-selection`'s C++ HUD, as a primitive stream and on a device, and with its button against `tests/references/rts_api_hud.png`. |
@@ -121,6 +147,8 @@ under two seconds.
 | enlists the lockstep company | `lockstep_enlist` | none (`onCreate`) |
 | computes each waypoint in fixed point and orders the company every 90 ticks | `detmath_cos`, `detmath_sin`, `lockstep_status`, `lockstep_order` | fixed |
 | hears arrivals and reports the lead unit's x as a `Fixed` field | `lockstep_unit`, `component_set_fixed` | fixed |
+| gives the squad, the barracks and the camp their sight | `fog_set_vision`, `fog_get_vision` | none (`onReady`), and fixed for a built worker |
+| reads what blue sees of the camp for the minimap and the report | `fog_sight`, `fog_status` | frame |
 
 The pointer and the camera are refused in a fixed step and spawning is refused in a frame, so a
 click is recorded in `onUpdate` and acted on in the next `onFixedUpdate`. That is the pattern
