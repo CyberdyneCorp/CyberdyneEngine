@@ -185,6 +185,9 @@ struct ProbePlacementContext {
     /// The global settings the volumes resolve from: `IlluminationSystem`'s runtime quality and
     /// tier (`GiRuntimeSettings`). Neutral by default, which is a probe's own default.
     GiRegionSettings global{};
+    /// Test every cell of every window again even when nothing a placement reads has changed: the
+    /// oracle `scroll_to`'s shortcut is held to (`render_gi_pipeline`).
+    bool full_scan = false;
 };
 
 /// One probe's share of a query, term by term: what `RadianceCache::sample` weighted it by. The
@@ -407,7 +410,23 @@ private:
                                     ProbeContribution& out) const noexcept;
     void account() noexcept;
 
+    /// What the last full placement read, so a scroll that would test every cell against the
+    /// same field, lights, volumes and windows — and so reach the same verdicts — tests none.
+    struct PlacementKey {
+        Array<i64> centres;
+        u64 field_revision = ~u64{0};
+        u64 lights = 0;
+        u64 volumes = ~u64{0};
+        u64 region = 0;
+        bool valid = false;
+    };
+    [[nodiscard]] bool placement_unchanged(Vec3 camera, const ProbePlacementContext& context,
+                                           PlacementKey& next) const noexcept;
+
     ProbeCacheSettings settings_{};
+    PlacementKey placed_key_;
+    /// A cell the last placement accepted and could not fill.
+    bool placement_failed_ = false;
     Array<Probe> probes_;
     Array<f32> payloads_;
     Array<u32> proxies_;

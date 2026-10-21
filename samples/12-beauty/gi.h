@@ -52,6 +52,7 @@
 #include <cy/import/mesh.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/gi/lighting.h>
+#include <cy/rendering/gi_gpu/gpu_budget.h>
 #include <cy/rendering/gi_gpu/gpu_resolve.h>
 #include <cy/rendering/graph/graph.h>
 
@@ -116,6 +117,11 @@ public:
     /// device stages run as before over the cache the last update left. For timing a converged
     /// still view, where an update changes nothing and costs tens of milliseconds of host time.
     void set_hold_cache(bool hold) noexcept { hold_cache_ = hold; }
+    /// THE CACHES LIVE, AS A GAME'S ARE: from the next frame on, the GI's sun turns about the
+    /// vertical a tenth of a degree a frame and a 3 m block the GI holds as a moving object (it is
+    /// not drawn) circles the shot's target, so every frame's update has a light and an object
+    /// moving through it. Off, both stand where they were put.
+    void set_live_motion(bool live) noexcept;
 
     [[nodiscard]] rhi::TextureViewHandle diffuse_view() const noexcept;
     [[nodiscard]] rhi::TextureViewHandle specular_view() const noexcept;
@@ -123,6 +129,8 @@ public:
     /// update.
     [[nodiscard]] rendering::gi_gpu::GpuResolveTimes last_times() const noexcept;
     [[nodiscard]] f64 last_update_ms() const noexcept { return update_ms_; }
+    /// The device time of the last frame's card shading and probe gather, with the device caches.
+    [[nodiscard]] rendering::gi_gpu::GpuGiCost last_cache_cost() const noexcept;
     /// What converged mode took before the first frame, when the settings asked for it.
     [[nodiscard]] u32 converged_frames() const noexcept { return converged_frames_; }
     [[nodiscard]] f64 converge_ms() const noexcept { return converge_ms_; }
@@ -146,10 +154,15 @@ public:
 
 private:
     struct State;
+    /// One frame of `set_live_motion`: the sun turned, the block moved (added the first time).
+    [[nodiscard]] Status advance_live_motion(u64 frame) noexcept;
+
     Allocator* allocator_;
     std::unique_ptr<State> state_;
     f64 update_ms_ = 0.0;
     bool hold_cache_ = false;
+    bool live_motion_ = false;
+    u64 live_frames_ = 0;
     u32 converged_frames_ = 0;
     f64 converge_ms_ = 0.0;
 };

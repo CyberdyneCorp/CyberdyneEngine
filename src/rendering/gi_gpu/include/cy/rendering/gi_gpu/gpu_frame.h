@@ -49,6 +49,7 @@
 #include <cy/rendering/forward/frame.h>
 #include <cy/rendering/gi/system.h>
 #include <cy/rendering/gi_gpu/gpu_budget.h>
+#include <cy/rendering/gi_gpu/gpu_caches.h>
 #include <cy/rendering/gi_gpu/gpu_debug_view.h>
 #include <cy/rendering/gi_gpu/gpu_radiance_cache.h>
 #include <cy/rendering/gi_gpu/gpu_resolve.h>
@@ -132,7 +133,10 @@ public:
     void destroy() noexcept;
     /// The system was destroyed before this: forget it, so `destroy` releases the device half
     /// without touching it (its acceleration service's mirror pointer died with it).
-    void forget_system() noexcept { system_ = nullptr; }
+    void forget_system() noexcept {
+        system_ = nullptr;
+        caches_.forget_system();
+    }
     [[nodiscard]] bool created() const noexcept { return device_ != nullptr; }
     [[nodiscard]] gi::IlluminationSystem* system() const noexcept { return system_; }
 
@@ -181,9 +185,6 @@ public:
 
 private:
     [[nodiscard]] Status create_hardware() noexcept;
-    [[nodiscard]] Status declare_caches(RenderGraph& graph) noexcept;
-    void declare_stamp(RenderGraph& graph, u32 index) noexcept;
-    static void record_stamp(const PassContext& context, void* user) noexcept;
     static PassId declare_stage(RenderGraph& graph, const ScreenSpaceStageInputs& inputs,
                                 void* user) noexcept;
 
@@ -192,27 +193,14 @@ private:
     gi::IlluminationSystem* system_ = nullptr;
     GpuGiFrameDescription desc_{};
     GpuGiScene scene_;
-    GpuSurfaceShading shading_;
     GpuRadianceCache cache_;
+    /// The card shading and the probe gather on the device, with `device_caches`.
+    GpuGiCaches caches_;
     GpuScreenResolve resolve_;
     GpuGiDebugView views_;
     GpuGiBudget budget_;
     std::unique_ptr<rt_gpu::DeviceStructures> structures_;
     GpuGiDebugViewSettings view_settings_{};
-    /// The submissions already declared: each is declared once, in the frame after its update.
-    u64 shading_declared_ = ~u64{0};
-    u64 gather_declared_ = ~u64{0};
-    /// Timestamps around the caches' passes: before the card shading, between it and the probe
-    /// gather, after the gather. Which of the two ran in the frame they were written in.
-    rhi::QueryPoolHandle timer_;
-    bool timed_shading_ = false;
-    bool timed_gather_ = false;
-    bool timer_written_ = false;
-    struct Stamp {
-        GpuGiFrame* self = nullptr;
-        u32 index = 0;
-    };
-    Stamp stamps_[3]{};
     bool hardware_ = false;
 };
 

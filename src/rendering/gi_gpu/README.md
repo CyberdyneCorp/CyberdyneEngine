@@ -43,7 +43,9 @@ steps. `docs/design/images/gi-gpu-radiance-cache.png`.
 | `gpu_surface_cache.h` | `GpuSurfaceShading`: a `gi::SurfaceShadingBackend` that shades the selected pages in compute |
 | `shaders/gi_gpu_common.slang` | the one descriptor set, the constant words, and every host function the dispatches transcribe |
 | `shaders/gi_trace.slang` | `cyGiTraceRays`: `DistanceField::sphere_trace` over the uploaded field |
-| `shaders/gi_cards.slang` | `cyGiShadeCards` and `cyGiCommitCards`: the card update, in two dispatches |
+| `shaders/gi_cards.slang` | `cyGiShadeCards` and `cyGiCommitCards`: the card update, in two dispatches — the shade a workgroup a card, its gather and footprint rays across the lanes and combined in the host's order |
+| `gpu_caches.h` | `GpuGiCaches`: the card shading and the probe gather installed through the system's seams, declared once a submission in the frame, and timed — what `GpuGiFrame` and the beauty shot both own |
+| `frame_lights.h` | `promoted_frame_light`, `append_promoted_frame_lights`: the GI's promoted emitters as the forward frame's own lights — a cosine-falloff spot of the emitter's flux (`render::LightDescription::cosine_falloff`) |
 | `gpu_radiance_cache.h` | `GpuRadianceCache`: a `gi::ProbeGatherBackend` that gathers the selected probes on the device and answers `RadianceCache::sample` there; `GpuTierTracer`: the screen, software and hardware tiers and `TieredTracer`'s escalation, on a batch of rays |
 | `shaders/gi_probe_common.slang` | the probe set, the three encodings, the gather, the query, the screen march with its nearest-depth pyramid, the world tiers' radiance and the escalation — each a transcription that names its host function |
 | `shaders/gi_radiance.slang` | `cyGiGatherProbes`, `cyGiSampleProbes`, `cyGiBuildScreenHzb`, `cyGiTraceScreen`, `cyGiTraceSoftware`, `cyGiTraceTiered` — every entry point a device without ray queries has |
@@ -120,6 +122,20 @@ radiance.declare(graph);                       // the gather, through radiance.w
 // ... execute; the next update() applies the gathered probes ...
 ```
 
+Or both at once, through the one class that owns the card shading, installs both seams and times
+them — the per-frame path a game runs (`GpuGiFrame` owns one; the beauty shot owns one beside its
+own resolve):
+
+```cpp
+GpuGiCaches caches;
+caches.create(device, scene, radiance, system);         // installs set_surface_shading and set_probe_gather
+radiance.bind_host_surfaces(nullptr);                   // the cards' radiance is the device's own
+// per frame, after system.update(context):
+caches.declare(graph);                                  // this update's submissions, once each
+// after the frame completed:
+const GpuGiCost cost = caches.cost();                   // cards_ms, gather_ms
+```
+
 `GpuTierTracer tiers(radiance)` traces a batch through the tiers on their own: `set_view` (depth and
 last frame's colour), `set_rays`, `declare(graph, GpuTierMode::Tiered)`, `read_back`.
 
@@ -144,8 +160,9 @@ admits nothing it is the frame without it, byte for byte; (b) an emitter rule an
 changes between frames are in the device result; (c) every one of the nineteen views the device
 draws is the host's view over the frame's own surfaces — seventeen word for word,
 `GiProbeVisibility` within one texel, the indirect diffuse and specular within one 8-bit step (the
-published targets are halves); (d) the GI at 480x270 costs 1.5 ms on the device — the resolve 0.76,
-the card shading 0.55, the probe gather 0.15 — and a whole frame with any view 8 to 15 ms.
+published targets are halves); (d) the GI at 480x270 costs 0.89 ms on the device — the resolve 0.57,
+the card shading 0.18, the probe gather 0.14 (1.5 ms, the card shading 0.55, when the shade was a
+thread a card) — and a whole frame with any view 5 to 13 ms.
 
 ## Incremental, and how that is checked
 
@@ -156,6 +173,17 @@ its page table from `visit_bricks` and reports `full`. Cards carry `SurfacePage:
 allocation, release and invalidation, and a card is written when its revision moved. A still frame
 uploads nothing: `render.gi_gpu`'s `a moved object re-uploads only the bricks it touched` checks
 all three.
+
+The lookup grid follows the cards the same way. A card that was allocated, released or moved is
+listed again — its old cells' buckets lose it, its new cells' gain it — and every other bucket is
+copied (`gi::CardNeighbourGrid::update`), with the bucket count held while the occupied cells fit
+it; the grid is built from every card only the first time, at a new radius, or when the cells
+outgrow the count. `render_gi_pipeline` holds the update to a grid built anew, buffer for buffer,
+and `CardUploadReport::cards_relisted` / `grid_built_whole` say what a frame did. In the workshop
+hall (14 301 cards, 300 000 grid entries) a moved object's re-listing took the grid from 15 ms of
+host time to about 3; `smoke.gi_gpu_streaming` streams cells along a strip and holds every frame's
+upload to the cards that arrived, left or were invalidated, the grid never built whole once the
+working set is resident.
 
 ## How close the device is to the host
 
@@ -406,8 +434,24 @@ uploads zeros there, so a scene with no promoted emitter writes the same bytes a
 
 What it costs, measured with timestamps around the update's passes on the RTX 5060 (`render.gi_gpu`,
 `what a promoted emitter costs the device card update`, median of nine): the room's 403 cards with
-8 gather rays each take 0.348 ms with the point light alone and 0.363 ms with a lamp promoted
-beside it — 0.015 ms for one promoted light's form factor and shadow ray over every card.
+8 gather rays each take 0.039 ms with the point light alone and 0.048 ms with a lamp promoted
+beside it. They took 0.348 and 0.363 ms when the shade was a thread a card: a budget's few hundred
+cards were a few hundred threads tracing their rays one after another, the device idle; a
+workgroup a card traces them side by side, and lane 0 sums the gather's rays in the host's order
+and counts the footprint's lit samples, so every card is the one-thread card to the bit (the
+device-against-host cases of `render.gi_gpu` are unchanged). In the workshop hall the 512 cards a
+frame's budget shades went from 2.15 ms to 0.22 ms.
+
+**The frame's own light for it.** A promoted emitter lights the cards exactly, but its light on the
+surfaces the frame draws is direct light, and the frame's GI composite is indirect only: with the
+lamp's emission out of the cache, nothing put it on the frame's pixels. `append_promoted_frame_lights`
+hands the frame a light per promoted card — a spot down its normal, a right-angled cone, its flux
+`pi * L * A` in lumens, falling as the cosine (`kGpuLightEmitter` in `cy/light.slang`) — which the
+frame shades as the GI shades a card wherever the square is small beside its distance:
+`render.gi_gpu_frame` (f) puts the frame's illuminance within 0.27 % mean and 0.75 % worst of the
+GI's form factor over 64 receivers 2 to 5 m from a 30 cm lamp, where the same light as an ordinary
+squared-cone spot is 46 % out; (g) the frame's lights carry exactly the lamps the system promoted;
+(h) on the device the lamp lights the frame and no pixel is dimmer than the squared cone draws it.
 
 ## What is not here
 
@@ -420,9 +464,9 @@ beside it — 0.015 ms for one promoted light's form factor and shadow ray over 
   update — the beauty shot's and every suite's — and not yet for a pipelined one.
 - **The frame's shadow cascade.** The shadow map is a `gi::ShadowMap` depth array the host provides
   (captured from the field, or assigned from a renderer's pass); binding the cascade is stage 4.
-- **Measured card and gather costs in the budget.** `GpuGiCost` carries them, but the resolve is the
-  only part the beauty shot and the suites feed it; `GpuRadianceCache::last_time()` times the
-  gather and a caller may add it, but nothing observes it on its own yet.
+- **Measured card and gather costs in the beauty shot's budget.** `GpuGiFrame` feeds the budget
+  the cards and the gather beside the resolve; the beauty shot times them (`gi live`) and feeds
+  nothing, so its levers stay where the shot authored them.
 - **D3D12, and ray queries off Vulkan.** SPIR-V and MSL are committed and `just build-shaders
   --strict` compiles every entry point — the ray query ones included — for DXIL too, but there is no
   D3D12 bundle in the module yet, and the D3D12 and Metal backends build no acceleration structure

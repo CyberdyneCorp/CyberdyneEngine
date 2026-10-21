@@ -12,8 +12,9 @@
 //   * MATERIALS BY NAME. `add_material` registers the `Surfel::material_id` a material's cards
 //     carry under its name; a script names it by `CY_NAME_HASH` of the same text.
 //   * VOLUMES BY HANDLE. A handle is a counter, never reused, so a destroyed volume's is NOT_FOUND.
-//     Every change re-places the whole set (`set_volumes`), which retires exactly the probes in
-//     reach of the volumes that changed something placement decides.
+//     Every change re-places the game's whole set (`set_volumes` under `GiVolumeOwner::Game`),
+//     which retires exactly the probes in reach of the volumes that changed something placement
+//     decides, and leaves the author's and the streamed cells' volumes as they are.
 //   * EMISSION RULES BY (ENTITY, MATERIAL). Each call replaces the rule for its pair, AUTOMATIC
 //     removes it, and the whole list is handed to `set_emitter_rules`, which classifies again only
 //     the cells that have an emitter.
@@ -48,6 +49,15 @@ public:
     void unbind_object(CyEntity entity) noexcept;
     /// Register the `Surfel::material_id` the cards of the material called `name` carry.
     [[nodiscard]] Status add_material(const char* name, u32 material_id) noexcept;
+
+    /// THE HOST REBUILT THE GI under a running game (the editor's Play, after an edit that changed
+    /// geometry): from now on the game's calls reach `system`, borrowed as the constructor's. The
+    /// objects and materials bound to the old system are forgotten — bind them again on the new
+    /// one — and the game's volumes and emission rules are kept, with their handles, for `restore`.
+    void rebind(rendering::gi::IlluminationSystem& system) noexcept;
+    /// Place the game's volumes (its own `GiVolumeOwner::Game` set) and its emission rules on the
+    /// system again: after `rebind` and the bindings, so the GI the game tuned is the GI it sees.
+    [[nodiscard]] Status restore() noexcept;
 
     CyResult settings(CyGiSettings& out) const noexcept override;
     CyResult set_settings(const CyGiSettings& settings) noexcept override;

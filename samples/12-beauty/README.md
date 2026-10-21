@@ -284,6 +284,16 @@ published frame's. `--gi-tier software`, `--gi-divisor 2`, `--gi-gather per-pixe
 probes traced a frame, 1), `--gi-frames <n>`, `--gi-timing-frames <n>` (240, the frames the GI is
 timed over after the still) and `--gi-converged off` are the controls.
 
+The caches' arithmetic — the card shading and the probe gather — runs on the device
+(`gi_gpu::GpuGiCaches`, installed after converged mode, which converges on the host); `--gi-caches
+host` keeps it on the processor, the oracle. After the held timing, `--gi-live-frames <n>` (240)
+frames run with the caches live — the GI's sun turning a tenth of a degree a frame and a 3 m block
+the GI holds as a moving object (not drawn) circling the target — printed as `gi live`: the host's
+update at its median, 95th percentile and worst, and the resolve, the card shading and the gather on
+the device. RTX 5060, 1920x1080, hardware tier: the host's update 0.39, 0.48 and 0.38 ms at its
+median in the sunlit room, the workshop hall and the Colonnade, the whole GI 3.87, 4.16 and 3.07 ms
+on the device; with `--gi-caches host` the update is 24.9, 30.4 and 15.1 ms (the guide's section 7b).
+
 A decal whose material glows (`decal-material ... emission r g b`, radiance in the frame's units)
 writes the emission channel where it lands — the shot's soot and moss write none, as before — and,
 with `--gi on`, the GI scene's cards inside its box and facing its way take its emission and albedo,

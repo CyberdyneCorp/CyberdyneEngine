@@ -245,6 +245,25 @@ function(cy_editor_window_runtime_declare_tests)
     target_include_directories(cy_test_integration_editor_window_illumination PRIVATE
                                "${tests_dir}/..")
 
+    # #35, #127's gaps: in Play the simulated bodies move their GI objects, and an author's edit —
+    # applied in place or rebuilding the GI — keeps the volumes the game placed. The game is the
+    # test calling ABI 1.9's adapter directly, so no Swift toolchain is needed.
+    cy_add_test(
+        NAME editor_window_play_gi
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_play_gi_bodies.cpp"
+            "${tests_dir}/../authored_components.cpp"
+            "${tests_dir}/../gi_runtime.cpp"
+            "${tests_dir}/../overlay.cpp"
+        DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
+                     cy::scene cy::servers-render cy::game-backend-illumination
+                     cy::gameplay-play cy::physics-reference cy::abi
+        DEFINITIONS
+            "CY_GI_TEST_DATA=\"${tests_dir}/data\"")
+    target_include_directories(cy_test_integration_editor_window_play_gi PRIVATE
+                               "${tests_dir}/..")
+
     # #35, the live half: a project's Swift game in Play tunes the GI the viewport is lit by —
     # ABI 1.9 bound over the preview's system — and Stop gives the document's GI back. It runs
     # bindings/swift's illumination fixture, so it is declared only where that module is built.

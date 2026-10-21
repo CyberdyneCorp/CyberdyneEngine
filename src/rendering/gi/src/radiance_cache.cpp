@@ -2,7 +2,10 @@
 
 #include <cy/core/math/scalar.h>
 
+#include "ranked_selection.h"
+
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <numbers>
 #include <ranges>
@@ -319,6 +322,7 @@ Status RadianceCache::configure(const ProbeCacheSettings& settings) noexcept {
     free_probes_.clear();
     index_.clear();
     occupancy_ = HashMap<u64, u32>{};
+    placed_key_.valid = false;
     live_probes_ = 0;
     diagnostics_ = RadianceCacheDiagnostics{};
     return ok();
@@ -517,6 +521,7 @@ void RadianceCache::populate_level(u32 level, Vec3 camera, i32 half,
                 }
                 Expected<u32, Error> created = create_probe(position, level);
                 if (!created) {
+                    placement_failed_ = true;
                     continue;
                 }
                 Probe& placed = probes_[created.value()];
@@ -531,6 +536,7 @@ void RadianceCache::populate_level(u32 level, Vec3 camera, i32 half,
                 if (Expected<u32*, Error> stored = occupancy_.insert(key, created.value());
                     !stored) {
                     retire_probe(created.value());
+                    placement_failed_ = true;
                     continue;
                 }
                 report.probes_created += 1;
@@ -539,15 +545,103 @@ void RadianceCache::populate_level(u32 level, Vec3 camera, i32 half,
     }
 }
 
+namespace {
+
+/// FNV-1a over the bits of a few words: the placement key's digest of what it reads.
+struct KeyDigest {
+    u64 value = 1469598103934665603ULL;
+    void add(u64 word) noexcept {
+        for (u32 byte = 0; byte < 8; ++byte) {
+            value ^= (word >> (byte * 8U)) & 0xFFU;
+            value *= 1099511628211ULL;
+        }
+    }
+    void add(f32 number) noexcept { add(static_cast<u64>(std::bit_cast<u32>(number))); }
+    void add(Vec3 point) noexcept {
+        add(point.x);
+        add(point.y);
+        add(point.z);
+    }
+};
+
+}  // namespace
+
+bool RadianceCache::placement_unchanged(Vec3 camera, const ProbePlacementContext& context,
+                                        PlacementKey& next) const noexcept {
+    // Everything `populate_level` reads: each level's window, the field's distances, the
+    // non-directional lights' positions, the volumes and the global and importance regions.
+    next.centres.clear();
+    for (u32 level = 0; level < settings_.levels; ++level) {
+        const f32 spacing = level_spacing(level);
+        (void)next.centres.push_back(floor_div(camera.x, spacing));
+        (void)next.centres.push_back(floor_div(camera.y, spacing));
+        (void)next.centres.push_back(floor_div(camera.z, spacing));
+    }
+    next.field_revision = context.field != nullptr ? context.field->content_revision() : ~u64{0};
+    KeyDigest lights;
+    for (const GiLight& light : context.lights) {
+        if (!light.directional) {
+            lights.add(light.position);
+        }
+    }
+    next.lights = lights.value;
+    next.volumes = context.volumes != nullptr ? context.volumes->revision() : ~u64{0};
+    KeyDigest region;
+    region.add(context.global.ray_scale);
+    region.add(context.global.probe_density);
+    region.add(context.global.update_rate);
+    region.add(static_cast<u64>(context.global.tier));
+    region.add(static_cast<u64>(context.has_importance_region ? 1U : 0U));
+    region.add(context.importance_region.min);
+    region.add(context.importance_region.max);
+    next.region = region.value;
+    next.valid = true;
+    if (!placed_key_.valid || placed_key_.centres.size() != next.centres.size()) {
+        return false;
+    }
+    for (usize index = 0; index < next.centres.size(); ++index) {
+        if (placed_key_.centres[index] != next.centres[index]) {
+            return false;
+        }
+    }
+    return placed_key_.field_revision == next.field_revision && placed_key_.lights == next.lights &&
+           placed_key_.volumes == next.volumes && placed_key_.region == next.region;
+}
+
 ProbePlacementReport RadianceCache::scroll_to(Vec3 camera,
                                               const ProbePlacementContext& context) noexcept {
     ProbePlacementReport report;
     camera_ = camera;
     const auto half = static_cast<i32>(settings_.half_extent_probes);
 
-    retire_outside_window(camera, half, report);
-    for (u32 level = 0; level < settings_.levels; ++level) {
-        populate_level(level, camera, half, context, report);
+    // THE SAME VERDICTS. A placement that would test every cell of the same windows against the
+    // same field, lights, volumes and regions reaches the verdicts the last one reached: every
+    // accepted cell already holds its probe and every rejected one is rejected again. Report that
+    // and test nothing — what the last placement found, less what it created and retired.
+    PlacementKey next;
+    if (!context.full_scan && placement_unchanged(camera, context, next)) {
+        report = diagnostics_.last_placement;
+        report.probes_reused += report.probes_created;
+        report.probes_created = 0;
+        report.probes_retired = 0;
+        report.placed_by_volume_density = 0;
+    } else {
+        placement_failed_ = false;
+        retire_outside_window(camera, half, report);
+        for (u32 level = 0; level < settings_.levels; ++level) {
+            populate_level(level, camera, half, context, report);
+        }
+        // A cell accepted but left without a probe (its creation failed) must be tested again.
+        const bool complete = !placement_failed_;
+        placed_key_.centres.clear();
+        if (complete && next.valid) {
+            (void)placed_key_.centres.append(next.centres.span());
+        }
+        placed_key_.field_revision = next.field_revision;
+        placed_key_.lights = next.lights;
+        placed_key_.volumes = next.volumes;
+        placed_key_.region = next.region;
+        placed_key_.valid = complete && next.valid;
     }
 
     for (Probe& entry : probes_) {
@@ -561,6 +655,8 @@ ProbePlacementReport RadianceCache::scroll_to(Vec3 camera,
 }
 
 u32 RadianceCache::retire_region(const Aabb& region) noexcept {
+    // Retired cells are empty again: the next placement tests them.
+    placed_key_.valid = false;
     u32 count = 0;
     for (u32 handle = 0; handle < probes_.size(); ++handle) {
         Probe& entry = probes_[handle];
@@ -718,43 +814,41 @@ void RadianceCache::gather_probe(u32 handle, const ProbeUpdateContext& context) 
 
 Status RadianceCache::select(Span<const Probe> probes, const ProbeUpdateContext& context,
                              Array<u32>& selected, ProbeUpdateReport& report) noexcept {
-    selected.clear();
-    for (u32 handle = 0; handle < probes.size(); ++handle) {
-        if (probes[handle].live) {
-            if (Status pushed = selected.push_back(handle); !pushed) {
-                return pushed;
-            }
-        }
-    }
-    report.queue_depth = static_cast<u32>(selected.size());
-
     const u64 frame = context.frame;
     const auto age_of = [frame](const Probe& entry) {
         return frame > entry.last_update_frame ? frame - entry.last_update_frame : 0;
     };
-    std::ranges::sort(selected, [&](u32 a, u32 b) {
+    Array<detail::RankedEntry> ranked(selected.allocator());
+    if (Status sized = ranked.reserve(probes.size()); !sized) {
+        return sized;
+    }
+    for (u32 handle = 0; handle < probes.size(); ++handle) {
+        const Probe& entry = probes[handle];
+        if (!entry.live) {
+            continue;
+        }
         // The progress guarantee. Without it a region that is never visible is never updated, and
         // that is not low priority but starvation.
-        const bool starved_a = starved(probes[a], age_of(probes[a]), context.max_age_frames);
-        const bool starved_b = starved(probes[b], age_of(probes[b]), context.max_age_frames);
-        if (starved_a != starved_b) {
-            return starved_a;
+        detail::RankedEntry ranked_entry;
+        ranked_entry.starved = starved(entry, age_of(entry), context.max_age_frames);
+        ranked_entry.priority = priority_of(entry, frame);
+        ranked_entry.handle = handle;
+        if (Status pushed = ranked.push_back(ranked_entry); !pushed) {
+            return pushed;
         }
-        const f32 priority_a = priority_of(probes[a], frame);
-        const f32 priority_b = priority_of(probes[b], frame);
-        if (priority_a != priority_b) {
-            return priority_a > priority_b;
-        }
-        return a < b;
-    });
+    }
+    report.queue_depth = static_cast<u32>(ranked.size());
 
     const usize limit =
-        context.converged ? selected.size() : std::min<usize>(selected.size(), context.budget);
-    for (usize index = limit; index < selected.size(); ++index) {
-        report.oldest_unserviced_age =
-            std::max(report.oldest_unserviced_age, age_of(probes[selected[index]]));
+        context.converged ? ranked.size() : std::min<usize>(ranked.size(), context.budget);
+    if (Status taken = detail::take_ranked(ranked, limit, selected); !taken) {
+        return taken;
     }
-    return selected.resize(limit);
+    for (usize index = limit; index < ranked.size(); ++index) {
+        report.oldest_unserviced_age =
+            std::max(report.oldest_unserviced_age, age_of(probes[ranked[index].handle]));
+    }
+    return ok();
 }
 
 u32 RadianceCache::collect() noexcept {

@@ -2,6 +2,8 @@
 
 #include <cy/core/math/scalar.h>
 
+#include "ranked_selection.h"
+
 #include <algorithm>
 #include <cmath>
 #include <ranges>
@@ -357,45 +359,43 @@ void SurfaceCache::shade(
 
 Status SurfaceCache::select(Span<const SurfacePage> pages, const SurfaceUpdateContext& context,
                             bool all, Array<u32>& selected, SurfaceUpdateReport& report) noexcept {
-    selected.clear();
-    for (u32 handle = 0; handle < pages.size(); ++handle) {
-        if (pages[handle].live) {
-            if (Status pushed = selected.push_back(handle); !pushed) {
-                return pushed;
-            }
-            if (!pages[handle].valid) {
-                report.pages_invalid += 1;
-            }
-        }
-    }
-    report.queue_depth = static_cast<u32>(selected.size());
-
     const u64 frame = context.frame;
     const auto age_of = [frame](const SurfacePage& page) {
         return frame > page.last_update_frame ? frame - page.last_update_frame : 0;
     };
-    std::ranges::sort(selected, [&](u32 a, u32 b) {
+    Array<detail::RankedEntry> ranked(selected.allocator());
+    if (Status sized = ranked.reserve(pages.size()); !sized) {
+        return sized;
+    }
+    for (u32 handle = 0; handle < pages.size(); ++handle) {
+        const SurfacePage& page = pages[handle];
+        if (!page.live) {
+            continue;
+        }
+        if (!page.valid) {
+            report.pages_invalid += 1;
+        }
         // The progress guarantee first: a page older than the cap outranks everything, so no valid
         // page is starved indefinitely by higher-priority work.
-        const bool starved_a = age_of(pages[a]) >= context.max_age_frames;
-        const bool starved_b = age_of(pages[b]) >= context.max_age_frames;
-        if (starved_a != starved_b) {
-            return starved_a;
+        detail::RankedEntry entry;
+        entry.starved = age_of(page) >= context.max_age_frames;
+        entry.priority = priority_of(page, frame);
+        entry.handle = handle;
+        if (Status pushed = ranked.push_back(entry); !pushed) {
+            return pushed;
         }
-        const f32 priority_a = priority_of(pages[a], frame);
-        const f32 priority_b = priority_of(pages[b], frame);
-        if (priority_a != priority_b) {
-            return priority_a > priority_b;
-        }
-        return a < b;
-    });
-
-    const usize limit = all ? selected.size() : std::min<usize>(selected.size(), context.budget);
-    for (usize index = limit; index < selected.size(); ++index) {
-        report.oldest_unserviced_age =
-            std::max(report.oldest_unserviced_age, age_of(pages[selected[index]]));
     }
-    return selected.resize(limit);
+    report.queue_depth = static_cast<u32>(ranked.size());
+
+    const usize limit = all ? ranked.size() : std::min<usize>(ranked.size(), context.budget);
+    if (Status taken = detail::take_ranked(ranked, limit, selected); !taken) {
+        return taken;
+    }
+    for (usize index = limit; index < ranked.size(); ++index) {
+        report.oldest_unserviced_age =
+            std::max(report.oldest_unserviced_age, age_of(pages[ranked[index].handle]));
+    }
+    return ok();
 }
 
 u32 SurfaceCache::collect() noexcept {
@@ -521,16 +521,20 @@ bool SurfaceCache::radiance_at(Vec3 position, Vec3 normal, Vec3& radiance,
     return true;
 }
 
-void SurfaceCache::account() noexcept {
-    u32 valid = 0;
-    for (const SurfacePage& page : pages_) {
-        if (page.live && page.valid) {
-            valid += 1;
+const SurfaceCacheDiagnostics& SurfaceCache::diagnostics() const noexcept {
+    if (counts_stale_) {
+        u32 valid = 0;
+        for (const SurfacePage& page : pages_) {
+            if (page.live && page.valid) {
+                valid += 1;
+            }
         }
+        diagnostics_.page_count = live_pages_;
+        diagnostics_.valid_pages = valid;
+        diagnostics_.bytes = static_cast<u64>(pages_.size()) * sizeof(SurfacePage);
+        counts_stale_ = false;
     }
-    diagnostics_.page_count = live_pages_;
-    diagnostics_.valid_pages = valid;
-    diagnostics_.bytes = static_cast<u64>(pages_.size()) * sizeof(SurfacePage);
+    return diagnostics_;
 }
 
 }  // namespace cy::rendering::gi

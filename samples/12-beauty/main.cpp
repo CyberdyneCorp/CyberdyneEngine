@@ -27,6 +27,9 @@
 //                    [--gi-probe-rays <n>] [--gi-ray-density <f>]  the screen probes' rays
 //                                                   a probe, and the share of probes traced a frame
 //                    [--gi-timing-frames <n>]       frames after the still the GI is timed over
+//                    [--gi-live-frames <n>]         then frames with the caches live, the GI's
+//                                                   sun turning and a block moving through it
+//                    [--gi-caches device|host]      where the caches' arithmetic runs
 //                    [--gi-reference <pixels>]      the path tracer at that many pixels
 //                    [--gi-reference-step <n> --gi-reference-still <path> --gi-error-map <path>]
 //                                                   the path tracer's picture of the frame
@@ -216,6 +219,65 @@ void read_material_line(const char* line, ShotMaterial& material) {
             fastest.gi_accumulate_ms + fastest.gi_variance_ms + fastest.gi_filter_ms +
                 fastest.gi_publish_ms);
     }
+    return ok();
+}
+
+/// The `fraction` quantile of `values` (sorted in place): the nearest rank.
+[[nodiscard]] f64 quantile(std::vector<f64>& values, f64 fraction) noexcept {
+    if (values.empty()) {
+        return 0.0;
+    }
+    std::ranges::sort(values);
+    const auto rank =
+        static_cast<usize>(std::llround(fraction * static_cast<f64>(values.size() - 1)));
+    return values[std::min(rank, values.size() - 1)];
+}
+
+/// THE GI WITH ITS CACHES LIVE, AS A GAME RUNS IT: `frames` frames of the same view in which the
+/// GI's sun turns and a block moves through the GI (`BeautyGi::set_live_motion`), every frame's
+/// update scheduling, shading and gathering what changed. Printed as `gi live`: the host's update
+/// — the processor time a game pays for the GI every frame — at its median, 95th percentile and
+/// worst, and the device's resolve, card shading and probe gather at their median, with the
+/// fastest frame's whole device cost beside them. After the held timing, so the block that moves
+/// here is in no other figure.
+[[nodiscard]] Status print_gi_live_timing(Stage& stage, const Shot& shot, u32 frames) noexcept {
+    std::vector<f64> update;
+    std::vector<f64> resolve;
+    std::vector<f64> cards;
+    std::vector<f64> gather;
+    std::vector<f64> total;
+    stage.set_gi_live_motion(true);
+    for (u32 index = 0; index < frames; ++index) {
+        ShotReport frame;
+        if (Status drawn = stage.render(shot, nullptr, nullptr, frame); !drawn) {
+            stage.set_gi_live_motion(false);
+            return drawn;
+        }
+        // The first frame registers the block (its field and cards are built then): a level's
+        // load, not a frame of it.
+        if (index == 0) {
+            continue;
+        }
+        update.push_back(frame.gi_update_ms);
+        if (!frame.gi_timed) {
+            continue;
+        }
+        const f64 shaded = frame.gi_cards_timed ? frame.gi_cards_ms : 0.0;
+        const f64 gathered = frame.gi_gather_timed ? frame.gi_gather_ms : 0.0;
+        resolve.push_back(frame.gi_total_ms);
+        cards.push_back(shaded);
+        gather.push_back(gathered);
+        total.push_back(frame.gi_total_ms + shaded + gathered);
+    }
+    stage.set_gi_live_motion(false);
+    const f64 fastest = total.empty() ? 0.0 : *std::ranges::min_element(total);
+    std::printf(
+        "gi live       %u frames, caches live (the sun turning, a block moving): host update "
+        "median %.3f, p95 %.3f, worst %.3f ms; device median resolve %.3f, cards %.3f, gather "
+        "%.3f, whole %.3f ms (p95 %.3f, fastest %.3f)\n",
+        frames, quantile(update, 0.5), quantile(update, 0.95), quantile(update, 1.0),
+        quantile(resolve, 0.5), quantile(cards, 0.5), quantile(gather, 0.5), quantile(total, 0.5),
+        quantile(total, 0.95), fastest);
     return ok();
 }
 
@@ -411,6 +473,12 @@ int main(int argc, char** argv) {
     const u32 gi_frames = option_number(argc, argv, "--gi-frames", 48);
     // The frames `print_gi_timing` times the GI over: see there for why this many.
     const u32 gi_timing_frames = option_number(argc, argv, "--gi-timing-frames", 240);
+    const u32 gi_live_frames = option_number(argc, argv, "--gi-live-frames", 240);
+    const std::string gi_caches = option(argc, argv, "--gi-caches", "device");
+    if (gi_caches != "device" && gi_caches != "host") {
+        std::fprintf(stderr, "cy_sample_beauty: --gi-caches is `device` or `host`\n");
+        return 1;
+    }
     const u32 gi_reference = option_number(argc, argv, "--gi-reference", 0);
     const u32 gi_reference_samples = option_number(argc, argv, "--gi-reference-samples", 256);
     // THE PATH TRACER'S PICTURE, beside the GI's: `--gi-reference-step <n>` path traces every
@@ -560,6 +628,7 @@ int main(int argc, char** argv) {
         std::strtof(option(argc, argv, "--gi-ray-density", "1").c_str(), nullptr);
     gi_settings.per_pixel = gather == "per-pixel";
     gi_settings.shared_denoiser = denoiser == "shared";
+    gi_settings.device_caches = gi_caches == "device";
     stage.set_global_illumination(gi_settings);
     stage.set_upscale(upscale != "off", upscale_mode, sharpness);
     std::printf("upscale       %s%s\n", upscale.c_str(),
@@ -659,6 +728,13 @@ int main(int argc, char** argv) {
         // the GI's history past the still's.
         stage.set_gi_readback_frames(false);
         if (Status timed = print_gi_timing(stage, shot, gi_timing_frames); !timed) {
+            std::fprintf(stderr, "cy_sample_beauty: %s\n", timed.error().message);
+            return 1;
+        }
+    }
+    if (gi_settings.enabled && gi_live_frames != 0U) {
+        stage.set_gi_readback_frames(false);
+        if (Status timed = print_gi_live_timing(stage, shot, gi_live_frames); !timed) {
             std::fprintf(stderr, "cy_sample_beauty: %s\n", timed.error().message);
             return 1;
         }

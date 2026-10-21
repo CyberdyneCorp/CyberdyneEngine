@@ -48,6 +48,10 @@
 
 namespace cy::rendering::gi_gpu {
 
+/// The card gather's rays a card the device shades at most: a workgroup holds every ray's radiance
+/// to sum them in the host's order (gi_cards.slang's `kGiCardMaxRays`).
+inline constexpr u32 kMaxCardGatherRays = 64;
+
 /// The most clipmap levels the constant block has room for.
 inline constexpr u32 kMaxFieldLevels = 8;
 /// The most cards the device copy can hold: the lookup grid carries each card's handle as a float
@@ -89,6 +93,12 @@ struct CardUploadReport {
     /// A card was allocated, released or moved, so the lookup grid was rebuilt.
     bool grid_rebuilt = false;
     u64 bytes = 0;
+    /// The cards whose position or liveness changed, which the grid listed again
+    /// (`CardNeighbourGrid::update`): what a streamed cell or a moved object costs the grid.
+    u32 cards_relisted = 0;
+    /// The grid was built from every card: the first upload, a new radius, or a bucket count that
+    /// changed. Otherwise only the changed cards' buckets were.
+    bool grid_built_whole = false;
 };
 
 /// One ray of a trace batch, and its answer: `DistanceField::sphere_trace`'s arguments and result.
@@ -155,6 +165,8 @@ public:
     /// field, as `ShadowMapOccluder` with no map sends it to its fallback.
     [[nodiscard]] Status upload_shadow_map(const gi::ShadowMap* map) noexcept;
     void set_gather(const gi::CardGatherSettings& gather) noexcept;
+    /// The card gather's rays a card, as `set_gather` last wrote them.
+    [[nodiscard]] u32 gather_rays() const noexcept;
 
     // --- A trace batch against the uploaded field -----------------------------------------------
 
@@ -258,6 +270,8 @@ private:
     /// either of the last two is what rebuilds the grid.
     Array<u32> card_revisions_;
     Array<Vec3> card_positions_;
+    /// The pages whose position or liveness the last `upload_cards` found moved.
+    Array<u32> moved_cards_;
     Array<u8> card_live_;
     gi::CardNeighbourGrid grid_;
 

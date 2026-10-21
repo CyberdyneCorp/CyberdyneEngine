@@ -271,6 +271,46 @@ CY_TEST_CASE("removing a GI volume places its region again at the global density
     }
 }
 
+CY_TEST_CASE("each owner replaces its own GI volumes, and a volume placed again keeps its probes") {
+    using cy::rendering::gi::GiVolumeOwner;
+    Interiors marked;
+    const GiVolume authored = important_interior();
+    GiVolume game = important_interior();
+    game.bounds = Aabb::from_center_extents(kLeft, kReach);
+    game.id = 2;
+    CY_REQUIRE(marked.system.set_volumes(GiVolumeOwner::Authored, {&authored, 1}).has_value());
+    CY_REQUIRE(marked.system.set_volumes(GiVolumeOwner::Game, {&game, 1}).has_value());
+    CY_CHECK_EQ(marked.system.volumes().size(), 2U);
+    (void)marked.system.update(Interiors::frame(1));
+    (void)marked.system.update(Interiors::frame(2));
+    const auto revisions = [&marked](Vec3 centre) {
+        std::vector<u32> out;
+        const Aabb region = Aabb::from_center_extents(centre, kReach);
+        for (const Probe& probe : marked.system.radiance().probes()) {
+            if (probe.live && region.contains(probe.position)) {
+                out.push_back(probe.revision);
+            }
+        }
+        return out;
+    };
+    const std::vector<u32> right = revisions(kRight);
+    const std::vector<u32> left = revisions(kLeft);
+    CY_REQUIRE(!right.empty());
+    CY_REQUIRE(!left.empty());
+
+    // The author places the same volume again — an editor applying its document in place: no
+    // probe is retired, on either side.
+    CY_REQUIRE(marked.system.set_volumes({&authored, 1}).has_value());
+    CY_CHECK(revisions(kRight) == right);
+    CY_CHECK(revisions(kLeft) == left);
+    // The author removes theirs: the game's stays placed, and its probes untouched.
+    CY_REQUIRE(marked.system.set_volumes({}).has_value());
+    CY_CHECK_EQ(marked.system.volumes().size(), 1U);
+    CY_CHECK_EQ(marked.system.volumes_of(GiVolumeOwner::Game).size(), 1U);
+    CY_CHECK(revisions(kLeft) == left);
+    CY_CHECK(revisions(kRight) != right);
+}
+
 CY_TEST_CASE("a scene with no GI volume reaching it resolves exactly as one with none placed") {
     // One room with no volume, one with a volume that does not reach it: the same probes, the
     // same frame reports and the same resolve, bit for bit.

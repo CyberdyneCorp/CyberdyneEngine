@@ -151,6 +151,19 @@ function(cy_gi_gpu_declare_tests)
                                PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     set_tests_properties(smoke.gi_gpu_live PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # Cells streamed in and out with the caches' arithmetic on the device: what reaches the device
+    # a frame is what changed, and no frame hitches. Smoke: a route of device frames.
+    cy_add_test(
+        NAME gi_gpu_streaming
+        KIND smoke
+        SOURCES "${tests_dir}/test_gi_gpu_streaming.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-gi-streaming cy::world
+                     cy::rendering-graph cy::rhi cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_smoke_gi_gpu_streaming
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
+    set_tests_properties(smoke.gi_gpu_streaming PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gi_gpu_declare_tests)

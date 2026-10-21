@@ -3215,6 +3215,11 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         report.gi_publish_ms = times.publish_ms;
         report.gi_total_ms = times.total_ms;
         report.gi_timed = times.valid;
+        const rendering::gi_gpu::GpuGiCost caches = device_->gi.last_cache_cost();
+        report.gi_cards_ms = caches.cards_ms;
+        report.gi_gather_ms = caches.gather_ms;
+        report.gi_cards_timed = caches.cards_valid;
+        report.gi_gather_timed = caches.gather_valid;
     }
     return frame;
 }
@@ -3222,6 +3227,12 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
 void Stage::set_gi_hold_cache(bool hold) noexcept {
     if (device_ != nullptr) {
         device_->gi.set_hold_cache(hold);
+    }
+}
+
+void Stage::set_gi_live_motion(bool live) noexcept {
+    if (device_ != nullptr) {
+        device_->gi.set_live_motion(live);
     }
 }
 

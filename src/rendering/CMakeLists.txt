@@ -113,6 +113,11 @@ add_subdirectory(gi)
 # lighting in compute. Straight after gi/ and graph/, the two modules it depends on.
 add_subdirectory(gi_gpu)
 
+# The GI's scene content streamed with world cells (issue #35): a `world::CellEventQueue` consumer
+# that ingests and evicts a cell's cards, fields, emitters and volumes a budget a tick. It links
+# cy::world, which src/CMakeLists.txt reads after rendering/; the layer check defers to the end.
+add_subdirectory(gi_streaming)
+
 # CyberTemporal: ONE temporal framework — jitter, derived motion vectors, history, invalidation and
 # reprojection — consumed by everything stochastic rather than reimplemented per effect. Task 8.3.
 # Before post/ because the post chain's antialiasing and upscaling stages are two of its consumers.

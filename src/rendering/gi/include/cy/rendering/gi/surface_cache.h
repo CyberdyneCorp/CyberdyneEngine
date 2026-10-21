@@ -239,9 +239,9 @@ public:
 
     [[nodiscard]] const SurfacePage& page(u32 handle) const noexcept { return pages_[handle]; }
     [[nodiscard]] u32 page_count() const noexcept { return live_pages_; }
-    [[nodiscard]] const SurfaceCacheDiagnostics& diagnostics() const noexcept {
-        return diagnostics_;
-    }
+    /// Counted when asked: the page and valid counts are a pass over every page, which a cell's
+    /// ingest — one allocation a card — must not pay once per card.
+    [[nodiscard]] const SurfaceCacheDiagnostics& diagnostics() const noexcept;
 
     /// The lookup radius, in metres. A hit further than this from any page finds nothing, which is
     /// a low confidence rather than a wrong answer.
@@ -252,7 +252,8 @@ private:
     [[nodiscard]] static f32 priority_of(const SurfacePage& page, u64 frame) noexcept;
     static void shade(SurfacePage& page, const SurfaceUpdateContext& context) noexcept;
     SurfaceUpdateReport service(const SurfaceUpdateContext& context, bool all) noexcept;
-    void account() noexcept;
+    /// Marks the counts stale; `diagnostics()` counts them again.
+    void account() noexcept { counts_stale_ = true; }
 
     Array<SurfacePage> pages_;
     Array<u32> proxies_;
@@ -263,6 +264,7 @@ private:
     u64 current_frame_ = 0;
     f32 lookup_radius_ = 0.5F;
     mutable SurfaceCacheDiagnostics diagnostics_{};
+    mutable bool counts_stale_ = true;
 };
 
 }  // namespace cy::rendering::gi

@@ -9,6 +9,8 @@
 #include <cy/import/model.h>
 #include <cy/rendering/gi/debug_views.h>
 #include <cy/rendering/gi/resolve.h>
+#include <cy/scene/components.h>
+#include <cy/scene/tree.h>
 #include <cy/servers/render/picking.h>
 
 #include <algorithm>
@@ -433,6 +435,39 @@ bool AuthoredIllumination::advance(Vec3 eye, AuthoredGi& out) noexcept {
     return current(out);
 }
 
+namespace {
+
+/// Whether two transforms are the same, element for element.
+[[nodiscard]] bool same_matrix(const Mat4& a, const Mat4& b) noexcept {
+    for (u32 column = 0; column < 4; ++column) {
+        const Vec4& left = a.columns[column];
+        const Vec4& right = b.columns[column];
+        if (left.x != right.x || left.y != right.y || left.z != right.z || left.w != right.w) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Every object the GI holds by its Play entity and every material by its authored name.
+void bind_names(game_backend::IlluminationAdapter& adapter, const editor::IlluminationPreview& lit,
+                const gameplay::PlaySession& play) noexcept {
+    const Span<const u64> nodes = lit.object_nodes();
+    for (u32 index = 0; index < nodes.size(); ++index) {
+        const ecs::Entity entity = play.entity_for(nodes[index]);
+        if (entity.valid()) {
+            (void)adapter.bind_object(entity.bits(), editor::illumination_object_id(nodes[index]),
+                                      index + 1U);
+        }
+    }
+    const Span<const std::string> materials = lit.material_names();
+    for (u32 index = 0; index < materials.size(); ++index) {
+        (void)adapter.add_material(materials[index].c_str(), index + 1U);
+    }
+}
+
+}  // namespace
+
 std::unique_ptr<game_backend::IlluminationAdapter> AuthoredIllumination::bind_play(
     const gameplay::PlaySession& play) noexcept {
     editor::IlluminationPreview* lit = preview();
@@ -440,20 +475,79 @@ std::unique_ptr<game_backend::IlluminationAdapter> AuthoredIllumination::bind_pl
         return nullptr;
     }
     auto adapter = std::make_unique<game_backend::IlluminationAdapter>(*allocator_, lit->system());
-    const Span<const u64> nodes = lit->object_nodes();
-    for (u32 index = 0; index < nodes.size(); ++index) {
-        const ecs::Entity entity = play.entity_for(nodes[index]);
-        if (entity.valid()) {
-            (void)adapter->bind_object(entity.bits(), editor::illumination_object_id(nodes[index]),
-                                       index + 1U);
-        }
-    }
-    const Span<const std::string> materials = lit->material_names();
-    for (u32 index = 0; index < materials.size(); ++index) {
-        (void)adapter->add_material(materials[index].c_str(), index + 1U);
-    }
+    bind_names(*adapter, *lit, play);
     adapter->begin_frame(lit->frame());
     return adapter;
+}
+
+Status AuthoredIllumination::rebind_play(game_backend::IlluminationAdapter& adapter,
+                                         const gameplay::PlaySession& play) noexcept {
+    editor::IlluminationPreview* lit = preview();
+    if (lit == nullptr) {
+        return fail(ErrorCode::Unavailable, "the world has nothing for the GI to light");
+    }
+    adapter.rebind(lit->system());
+    bind_names(adapter, *lit, play);
+    adapter.begin_frame(lit->frame());
+    // The rebuilt GI placed every object where the document puts it: the bodies move them again
+    // from the next `follow_play`.
+    play_transforms_.clear();
+    played_.clear();
+    return adapter.restore();
+}
+
+u32 AuthoredIllumination::follow_play(gameplay::PlaySession& play) noexcept {
+    editor::IlluminationPreview* lit = preview();
+    if (lit == nullptr || play.world() == nullptr || play.tree() == nullptr) {
+        return 0;
+    }
+    const scene::SceneComponents& ids = play.tree()->components();
+    play_transforms_.resize(scene_objects_.size(), Mat4::identity());
+    played_.resize(scene_objects_.size(), false);
+    u32 moved = 0;
+    for (usize index = 0; index < scene_objects_.size(); ++index) {
+        const editor::IlluminationObject& object = scene_objects_[index];
+        if (!object.movable) {
+            continue;
+        }
+        const ecs::Entity entity = play.entity_for(object.node);
+        const auto* placed =
+            entity.valid() ? play.world()->get<scene::WorldTransform>(entity, ids.world_transform)
+                           : nullptr;
+        if (placed == nullptr) {
+            continue;
+        }
+        const Mat4 transform = placed->value.to_matrix();
+        const Mat4& last = played_[index] ? play_transforms_[index] : object.transform;
+        if (same_matrix(transform, last)) {
+            continue;
+        }
+        if (lit->system()
+                .move_object(editor::illumination_object_id(object.node), transform, lit->frame())
+                .has_value()) {
+            play_transforms_[index] = transform;
+            played_[index] = true;
+            moved += 1;
+        }
+    }
+    return moved;
+}
+
+void AuthoredIllumination::end_play() noexcept {
+    editor::IlluminationPreview* lit = preview_->ready() ? preview_.get() : nullptr;
+    if (lit != nullptr) {
+        // The game's volumes end with it; the document's are the author's and stay.
+        (void)lit->system().set_volumes(gi::GiVolumeOwner::Game, {});
+    }
+    for (usize index = 0; lit != nullptr && index < played_.size(); ++index) {
+        if (played_[index] && index < scene_objects_.size()) {
+            const editor::IlluminationObject& object = scene_objects_[index];
+            (void)lit->system().move_object(editor::illumination_object_id(object.node),
+                                            object.transform, lit->frame());
+        }
+    }
+    play_transforms_.clear();
+    played_.clear();
 }
 
 bool AuthoredIllumination::current(AuthoredGi& out) noexcept {

@@ -288,6 +288,10 @@ struct BeautyGiSettings {
     /// `ScreenResolveSettings::ray_density`.
     u32 probe_rays = 32;
     f32 ray_density = 1.0F;
+    /// The caches' per-frame arithmetic — the card shading and the probe gather — on the device
+    /// (`gi_gpu::GpuGiCaches`), the engine's default; false keeps it on the host, the oracle.
+    /// Converged mode converges on the host before the first frame either way.
+    bool device_caches = true;
 };
 
 /// The path tracer's verdict on one frame of the GI. See gi.h.
@@ -395,6 +399,12 @@ struct ShotReport {
     u32 render_width = 0;
     u32 render_height = 0;
     bool gi_timed = false;
+    /// The caches' arithmetic on the device in the same frame (`gi_gpu::GpuGiCaches`): the card
+    /// shading and the probe gather, when they ran.
+    f64 gi_cards_ms = 0.0;
+    f64 gi_gather_ms = 0.0;
+    bool gi_cards_timed = false;
+    bool gi_gather_timed = false;
 };
 
 /// The device, the content on it, and the frame.
@@ -470,6 +480,9 @@ public:
     /// `BeautyGi::set_hold_cache`: the frames rendered from now on leave the GI's host caches as
     /// they are.
     void set_gi_hold_cache(bool hold) noexcept;
+    /// `BeautyGi::set_live_motion`: the frames rendered from now on move the GI's sun and a block
+    /// through the GI, the caches updating as a game's do.
+    void set_gi_live_motion(bool live) noexcept;
     /// After a render with `BeautyGiSettings::readback`: the path tracer's verdict on its GI.
     [[nodiscard]] Expected<BeautyGiReference, Error> measure_gi_reference(u32 pixels, u32 samples,
                                                                           u32 bounces) noexcept;

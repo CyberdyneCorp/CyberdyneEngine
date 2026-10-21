@@ -229,6 +229,30 @@ volume that sets one of them; intensity and the far-field distance are resolved 
 error by it, which on `integration.render_gi_volumes`'s two mirror-image interiors gives the marked
 one 3.9 times the updates per probe within one budget.
 
+Volumes have OWNERS (`GiVolumeOwner`): the author's (the one-argument `set_volumes`), the running
+game's (ABI 1.9's adapter) and the streamed cells' (`cy::rendering-gi-streaming`). Each replaces
+only its own, samples resolve through all of them, and only a volume an owner added or removed
+retires the probes it reaches — one placed again exactly as it was keeps them.
+
+## The host's update when the device does the arithmetic
+
+With `GpuGiCaches` (or `GpuGiFrame`) installed the host's update is the decisions, and each is
+bounded by what changed rather than by the scene. Every shortcut has an oracle it is held to:
+
+| What | Before | Now | Held to |
+|---|---|---|---|
+| the budgeted selection (`SurfaceCache::select`, `RadianceCache::select`) | a sort of every live entry, the priority recomputed per comparison | a partition about the budget and a sort of the kept part (`src/ranked_selection.h`) | the full sort (`unit.render_gi`) |
+| the field's scroll | every brick of every window visited | nothing, for a window that did not move with nothing pending (`DistanceField::scroll_to(camera, full)`) | the full visit (`render_gi_pipeline`) |
+| the probe placement | every cell of every window tested, the rejected ones against the field again | nothing, while windows, field (`content_revision`), lights, volumes and regions are as they were (`ProbePlacementContext::full_scan`) | the full scan |
+| the card snapshot | a copy and a grid of every card, every update | not taken when a shading backend is installed | — (only the host gather reads it) |
+| a cell's ingest | every page counted at every allocation, quadratic in the cache | counted when asked | — |
+| the device's card lookup (`CardNeighbourGrid`) | built from every card when one moved, its cells counted by a full sort | the moved cards re-listed (`update`), the bucket count held while it fits | a build at the same count, buffer for buffer |
+| a brick's solve | every placement sampled at every sample | the placements whose grid it reaches, and a far one only when its bound is below what those gave (`ClipmapSettings::cull_far_placements`) | the exhaustive solve, value for value |
+
+Measured in the beauty sample with the caches live (the guide's section 7b), the update is 0.38 to
+0.48 ms at its median in three furnished scenes. A moving object of 2.5 m or more is flushed every
+eighth frame — its cards re-listed and its bricks re-solved here — and that frame is 4.5 to 7.9 ms.
+
 ## Tuning a running world: settings, emitter rules, classes
 
 Three calls change a configured system without `configure()`'s rebuild — what a game's options

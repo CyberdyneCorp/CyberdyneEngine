@@ -207,27 +207,85 @@ Span<const GiLight> IlluminationSystem::lights_for(Span<const GiLight> frame) no
 }
 
 Status IlluminationSystem::set_volumes(Span<const GiVolume> volumes) noexcept {
+    return set_volumes(GiVolumeOwner::Authored, volumes);
+}
+
+Status IlluminationSystem::set_volumes(GiVolumeOwner owner, Span<const GiVolume> volumes) noexcept {
+    const auto index = static_cast<usize>(owner);
+    if (index >= kGiVolumeOwners) {
+        return fail(ErrorCode::InvalidArgument, "IlluminationSystem::set_volumes: no such owner");
+    }
     for (const GiVolume& volume : volumes) {
         if (Status valid = validate_gi_volume(volume); !valid) {
             return valid;
         }
     }
-    retire_volume_regions();
-    if (Status assigned = volumes_.assign(volumes); !assigned) {
-        return assigned;
+    // Only what changed is placed again: the probes in reach of a volume this owner held and no
+    // longer does, or now holds and did not. A volume it keeps exactly as it was keeps its probes,
+    // and so does every other owner's region — a streamed cell arriving does not re-place the
+    // volumes of the cells already there, and an editor edit does not re-place a game's.
+    // A copy first: `volumes` may be this owner's own span (`volumes_of`), which the clear frees.
+    Array<GiVolume> next;
+    if (Status copied = next.append(volumes); !copied) {
+        return copied;
     }
-    retire_volume_regions();
-    return ok();
+    Array<GiVolume>& owned = owned_volumes_[index];
+    retire_changed_volumes(owned.span(), next.span());
+    retire_changed_volumes(next.span(), owned.span());
+    owned = std::move(next);
+    // The set every sample resolves through: the owners' volumes in owner order, which is the
+    // order equal priorities resolve in.
+    Array<GiVolume> all;
+    for (const Array<GiVolume>& placed : owned_volumes_) {
+        if (Status appended = all.append(placed.span()); !appended) {
+            return appended;
+        }
+    }
+    return volumes_.assign(all.span());
 }
 
-void IlluminationSystem::retire_volume_regions() noexcept {
+Span<const GiVolume> IlluminationSystem::volumes_of(GiVolumeOwner owner) const noexcept {
+    const auto index = static_cast<usize>(owner);
+    return index < kGiVolumeOwners ? owned_volumes_[index].span() : Span<const GiVolume>{};
+}
+
+namespace {
+
+[[nodiscard]] bool same_volume(const GiVolume& a, const GiVolume& b) noexcept {
+    return a.bounds.min.x == b.bounds.min.x && a.bounds.min.y == b.bounds.min.y &&
+           a.bounds.min.z == b.bounds.min.z && a.bounds.max.x == b.bounds.max.x &&
+           a.bounds.max.y == b.bounds.max.y && a.bounds.max.z == b.bounds.max.z &&
+           a.priority == b.priority && a.blend_distance_metres == b.blend_distance_metres &&
+           a.weight == b.weight && a.sets == b.sets && a.quality == b.quality &&
+           a.probe_density == b.probe_density && a.update_rate == b.update_rate &&
+           a.diffuse_intensity == b.diffuse_intensity &&
+           a.specular_intensity == b.specular_intensity && a.tier == b.tier &&
+           a.far_field_begins_metres == b.far_field_begins_metres && a.id == b.id;
+}
+
+}  // namespace
+
+void IlluminationSystem::retire_changed_volumes(Span<const GiVolume> from,
+                                                Span<const GiVolume> kept) noexcept {
+    Array<GiVolume> changed;
+    for (const GiVolume& volume : from) {
+        const bool still = std::ranges::any_of(
+            kept, [&volume](const GiVolume& other) { return same_volume(volume, other); });
+        if (!still) {
+            (void)changed.push_back(volume);
+        }
+    }
+    retire_volume_regions(changed.span());
+}
+
+void IlluminationSystem::retire_volume_regions(Span<const GiVolume> volumes) noexcept {
     // Only what is decided when a probe is placed needs the probes placed again. An intensity or a
     // far-field distance is resolved per sample, and a volume setting only those touches no probe.
     constexpr u32 kPlacement = gi_volume_bit(GiVolumeParameter::Quality) |
                                gi_volume_bit(GiVolumeParameter::ProbeDensity) |
                                gi_volume_bit(GiVolumeParameter::UpdateRate) |
                                gi_volume_bit(GiVolumeParameter::TierPreference);
-    for (const GiVolume& volume : volumes_.volumes()) {
+    for (const GiVolume& volume : volumes) {
         if ((volume.sets & kPlacement) == 0U) {
             continue;
         }
@@ -1150,7 +1208,11 @@ IlluminationFrameReport IlluminationSystem::update(const FrameContext& context) 
     surfaces.lights = lights;
     surfaces.occluder = &world_;
     surfaces.indirect = &radiance_;
+    // The card-to-card gather reads a snapshot of every card, rebuilt each update. A device shading
+    // backend gathers from its own copy of the cards and never reads it, so with one installed the
+    // snapshot is not taken: it was a copy and a spatial index of the whole cache every frame.
     if (settings_.surface_bounce == SurfaceBounce::Cards &&
+        surfaces_.shading_backend() == nullptr &&
         card_snapshot_.capture(surfaces_, context.frame).has_value()) {
         CardGatherSettings gather = settings_.card_gather;
         gather.sky = settings_.sky;

@@ -221,23 +221,75 @@ struct NeighbourEntry {
     return ok();
 }
 
-/// How many distinct cells `entries`, sorted by cell, name.
-[[nodiscard]] u32 distinct_cells(Span<const NeighbourEntry> entries) noexcept {
-    u32 cells = 0;
-    for (usize index = 0; index < entries.size(); ++index) {
-        const bool fresh = index == 0 || entries[index].cell[0] != entries[index - 1].cell[0] ||
-                           entries[index].cell[1] != entries[index - 1].cell[1] ||
-                           entries[index].cell[2] != entries[index - 1].cell[2];
-        cells += fresh ? 1U : 0U;
+[[nodiscard]] bool cell_before(const NeighbourEntry& a, const NeighbourEntry& b) noexcept {
+    if (a.cell[2] != b.cell[2]) {
+        return a.cell[2] < b.cell[2];
     }
-    return cells;
+    if (a.cell[1] != b.cell[1]) {
+        return a.cell[1] < b.cell[1];
+    }
+    if (a.cell[0] != b.cell[0]) {
+        return a.cell[0] < b.cell[0];
+    }
+    return a.handle < b.handle;
+}
+
+/// A cell's coordinates packed in one key: 21 bits an axis, a million cells either way of the
+/// origin.
+[[nodiscard]] u64 cell_key(const i32 cell[3]) noexcept {
+    return (static_cast<u64>(static_cast<u32>(cell[0]) & 0x1FFFFFU)) |
+           (static_cast<u64>(static_cast<u32>(cell[1]) & 0x1FFFFFU) << 21U) |
+           (static_cast<u64>(static_cast<u32>(cell[2]) & 0x1FFFFFU) << 42U);
+}
+
+/// Count an entry into (`delta` one) or out of (`delta` minus one) its cell.
+[[nodiscard]] Status count_cell(HashMap<u64, u32>& occupied, const NeighbourEntry& entry,
+                                i32 delta) noexcept {
+    const u64 key = cell_key(entry.cell);
+    if (u32* count = occupied.find(key); count != nullptr) {
+        if (delta < 0 && *count <= 1U) {
+            (void)occupied.remove(key);
+        } else {
+            *count = delta < 0 ? *count - 1U : *count + 1U;
+        }
+        return ok();
+    }
+    if (delta < 0) {
+        return ok();
+    }
+    Expected<u32*, Error> inserted = occupied.insert(key, 1U);
+    return inserted ? ok() : make_unexpected(inserted.error());
 }
 
 }  // namespace
 
-Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius,
-                                u32 max_buckets) noexcept {
+u32 CardNeighbourGrid::bucket_count_for(u32 cells, u32 max_buckets) noexcept {
+    // Twice the occupied cells, as `CardGrid` sizes for its cards, within what the caller holds.
+    u32 buckets = 64;
+    while (buckets < cells * 2U && buckets < max_buckets) {
+        buckets <<= 1U;
+    }
+    return buckets;
+}
+
+Status CardNeighbourGrid::remember(Span<const SurfacePage> pages) noexcept {
+    if (Status sized = listed_at_.resize(pages.size()); !sized) {
+        return sized;
+    }
+    if (Status sized = listed_live_.resize(pages.size()); !sized) {
+        return sized;
+    }
+    for (usize handle = 0; handle < pages.size(); ++handle) {
+        listed_at_[handle] = pages[handle].position;
+        listed_live_[handle] = pages[handle].live ? 1U : 0U;
+    }
+    return ok();
+}
+
+Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius, u32 max_buckets,
+                                u32 buckets_wanted) noexcept {
     cell_ = std::max(radius, 1.0e-3F);
+    max_buckets_ = max_buckets;
     Array<NeighbourEntry> entries;
     for (u32 handle = 0; handle < pages.size(); ++handle) {
         if (!pages[handle].live) {
@@ -248,24 +300,17 @@ Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius,
             return listed;
         }
     }
-    std::ranges::sort(entries, [](const NeighbourEntry& a, const NeighbourEntry& b) noexcept {
-        if (a.cell[2] != b.cell[2]) {
-            return a.cell[2] < b.cell[2];
+    // The occupied cells, counted with a hash set rather than by sorting every entry: linear in
+    // the entries, which a cache of tens of thousands of cards lists hundreds of thousands of.
+    occupied_.clear();
+    for (const NeighbourEntry& entry : entries) {
+        if (Status counted = count_cell(occupied_, entry, 1); !counted) {
+            return counted;
         }
-        if (a.cell[1] != b.cell[1]) {
-            return a.cell[1] < b.cell[1];
-        }
-        if (a.cell[0] != b.cell[0]) {
-            return a.cell[0] < b.cell[0];
-        }
-        return a.handle < b.handle;
-    });
-    // Twice the occupied cells, as `CardGrid` sizes for its cards, within what the caller holds.
-    const u32 cells = distinct_cells(entries.span());
-    u32 buckets = 64;
-    while (buckets < cells * 2U && buckets < max_buckets) {
-        buckets <<= 1U;
     }
+    const u32 buckets = buckets_wanted != 0U
+                            ? buckets_wanted
+                            : bucket_count_for(static_cast<u32>(occupied_.size()), max_buckets);
     if (Status sized = ranges_.resize(static_cast<usize>(buckets) * 2U); !sized) {
         return sized;
     }
@@ -282,11 +327,9 @@ Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius,
         ranges_[bucket * 2U] = running;
         running += ranges_[(bucket * 2U) + 1U];
     }
+    Array<NeighbourEntry> grouped;
     Array<u32> cursor;
-    if (Status sized = handles_.resize(running); !sized) {
-        return sized;
-    }
-    if (Status sized = positions_.resize(running); !sized) {
+    if (Status sized = grouped.resize(running); !sized) {
         return sized;
     }
     if (Status sized = cursor.resize(buckets); !sized) {
@@ -296,12 +339,183 @@ Status CardNeighbourGrid::build(Span<const SurfacePage> pages, f32 radius,
         cursor[bucket] = ranges_[bucket * 2U];
     }
     for (const NeighbourEntry& entry : entries) {
-        const u32 slot = cursor[entry.bucket];
-        handles_[slot] = entry.handle;
-        positions_[slot] = pages[entry.handle].position;
-        cursor[entry.bucket] = slot + 1U;
+        grouped[cursor[entry.bucket]] = entry;
+        cursor[entry.bucket] += 1U;
     }
-    return ok();
+    // Each bucket in the order a sort of every entry by cell and then handle leaves it: the layout
+    // the device's buffers, and every suite holding them, have always had.
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
+        NeighbourEntry* first = grouped.data() + ranges_[bucket * 2U];
+        std::sort(first, first + ranges_[(bucket * 2U) + 1U], cell_before);
+    }
+    if (Status sized = handles_.resize(running); !sized) {
+        return sized;
+    }
+    if (Status sized = positions_.resize(running); !sized) {
+        return sized;
+    }
+    if (Status sized = cells_.resize(static_cast<usize>(running) * 3U); !sized) {
+        return sized;
+    }
+    for (usize slot = 0; slot < grouped.size(); ++slot) {
+        handles_[slot] = grouped[slot].handle;
+        positions_[slot] = pages[grouped[slot].handle].position;
+        cells_[(slot * 3U) + 0U] = grouped[slot].cell[0];
+        cells_[(slot * 3U) + 1U] = grouped[slot].cell[1];
+        cells_[(slot * 3U) + 2U] = grouped[slot].cell[2];
+    }
+    return remember(pages);
+}
+
+Expected<bool, Error> CardNeighbourGrid::update(Span<const SurfacePage> pages,
+                                                Span<const u32> changed, f32 radius,
+                                                u32 max_buckets) noexcept {
+    const auto rebuild = [&]() -> Expected<bool, Error> {
+        if (Status built = build(pages, radius, max_buckets); !built) {
+            return make_unexpected(built.error());
+        }
+        return true;
+    };
+    if (ranges_.empty() || cell_ != std::max(radius, 1.0e-3F) || max_buckets != max_buckets_ ||
+        pages.size() < listed_at_.size()) {
+        return rebuild();
+    }
+    // Which pages changed, once each, and the entries they leave and enter.
+    Array<u8> moved;
+    if (Status sized = moved.resize(pages.size()); !sized) {
+        return make_unexpected(sized.error());
+    }
+    for (u8& flag : moved) {
+        flag = 0;
+    }
+    Array<NeighbourEntry> leaving;
+    Array<NeighbourEntry> entering;
+    for (const u32 handle : changed) {
+        if (handle >= pages.size() || moved[handle] != 0U) {
+            continue;
+        }
+        moved[handle] = 1U;
+        if (handle < listed_at_.size() && listed_live_[handle] != 0U) {
+            if (Status listed = list_card_cells(listed_at_[handle], handle, cell_, leaving);
+                !listed) {
+                return make_unexpected(listed.error());
+            }
+        }
+        if (pages[handle].live) {
+            if (Status listed = list_card_cells(pages[handle].position, handle, cell_, entering);
+                !listed) {
+                return make_unexpected(listed.error());
+            }
+        }
+    }
+    for (const NeighbourEntry& entry : leaving) {
+        if (Status counted = count_cell(occupied_, entry, -1); !counted) {
+            return make_unexpected(counted.error());
+        }
+    }
+    for (const NeighbourEntry& entry : entering) {
+        if (Status counted = count_cell(occupied_, entry, 1); !counted) {
+            return make_unexpected(counted.error());
+        }
+    }
+    // THE BUCKET COUNT HOLDS while it fits: a cell arriving or leaving moves the occupied cells
+    // across a power of two often, and a new count hashes every entry somewhere else. A count a
+    // little large or small for the cells lengthens or shortens the lists and changes no answer, so
+    // the grid is built whole only when the cells outgrow it or shrink to under a quarter of it.
+    const u32 wanted = bucket_count_for(static_cast<u32>(occupied_.size()), max_buckets);
+    const u32 buckets = bucket_count();
+    if (wanted > buckets || wanted * 4U < buckets) {
+        return rebuild();
+    }
+
+    // The buckets the changed cards left or entered are rebuilt; every other one is copied.
+    Array<u8> touched;
+    Array<u32> added;
+    if (Status sized = touched.resize(buckets); !sized) {
+        return make_unexpected(sized.error());
+    }
+    if (Status sized = added.resize(buckets); !sized) {
+        return make_unexpected(sized.error());
+    }
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
+        touched[bucket] = 0;
+        added[bucket] = 0;
+    }
+    for (NeighbourEntry& entry : leaving) {
+        entry.bucket = CardGrid::bucket_of(entry.cell[0], entry.cell[1], entry.cell[2], buckets);
+        touched[entry.bucket] = 1U;
+    }
+    for (NeighbourEntry& entry : entering) {
+        entry.bucket = CardGrid::bucket_of(entry.cell[0], entry.cell[1], entry.cell[2], buckets);
+        touched[entry.bucket] = 1U;
+        added[entry.bucket] += 1U;
+    }
+    std::ranges::sort(entering, [](const NeighbourEntry& a, const NeighbourEntry& b) {
+        return a.bucket < b.bucket;
+    });
+
+    Array<u32> ranges;
+    Array<u32> handles;
+    Array<Vec3> positions;
+    Array<i32> cells;
+    if (Status sized = ranges.resize(ranges_.size()); !sized) {
+        return make_unexpected(sized.error());
+    }
+    const usize capacity = handles_.size() + entering.size();
+    if (!handles.reserve(capacity) || !positions.reserve(capacity) ||
+        !cells.reserve(capacity * 3U)) {
+        return make_unexpected(Error{ErrorCode::OutOfMemory, "CardNeighbourGrid::update"});
+    }
+    Array<NeighbourEntry> bucket_entries;
+    usize next_entering = 0;
+    for (usize bucket = 0; bucket < buckets; ++bucket) {
+        const u32 first = ranges_[bucket * 2U];
+        const u32 count = ranges_[(bucket * 2U) + 1U];
+        ranges[bucket * 2U] = static_cast<u32>(handles.size());
+        if (touched[bucket] == 0U) {
+            // Untouched: copied as it was.
+            (void)handles.append(Span<const u32>(handles_.data() + first, count));
+            (void)positions.append(Span<const Vec3>(positions_.data() + first, count));
+            (void)cells.append(Span<const i32>(cells_.data() + (static_cast<usize>(first) * 3U),
+                                               static_cast<usize>(count) * 3U));
+            ranges[(bucket * 2U) + 1U] = count;
+            continue;
+        }
+        // Touched: what stays, what arrives, in the order a build would list them.
+        bucket_entries.clear();
+        for (u32 slot = first; slot < first + count; ++slot) {
+            if (moved[handles_[slot]] != 0U) {
+                continue;
+            }
+            NeighbourEntry kept;
+            kept.cell[0] = cells_[(static_cast<usize>(slot) * 3U) + 0U];
+            kept.cell[1] = cells_[(static_cast<usize>(slot) * 3U) + 1U];
+            kept.cell[2] = cells_[(static_cast<usize>(slot) * 3U) + 2U];
+            kept.handle = handles_[slot];
+            (void)bucket_entries.push_back(kept);
+        }
+        while (next_entering < entering.size() && entering[next_entering].bucket == bucket) {
+            (void)bucket_entries.push_back(entering[next_entering]);
+            ++next_entering;
+        }
+        std::ranges::sort(bucket_entries, cell_before);
+        for (const NeighbourEntry& entry : bucket_entries) {
+            (void)handles.push_back(entry.handle);
+            (void)positions.push_back(pages[entry.handle].position);
+            (void)cells.push_back(entry.cell[0]);
+            (void)cells.push_back(entry.cell[1]);
+            (void)cells.push_back(entry.cell[2]);
+        }
+        ranges[(bucket * 2U) + 1U] = static_cast<u32>(bucket_entries.size());
+    }
+    ranges_ = std::move(ranges);
+    handles_ = std::move(handles);
+    positions_ = std::move(positions);
+    cells_ = std::move(cells);
+    if (Status remembered = remember(pages); !remembered) {
+        return make_unexpected(remembered.error());
+    }
+    return false;
 }
 
 // --- CardSnapshot --------------------------------------------------------------------------------

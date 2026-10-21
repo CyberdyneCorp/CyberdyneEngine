@@ -75,7 +75,14 @@ GpuLight build_gpu_light(const render::LightDescription& light,
     record.color[1] = color.y;
     record.color[2] = color.z;
 
-    if (light.kind == render::LightKind::Spot) {
+    if (light.kind == render::LightKind::Spot && light.cosine_falloff) {
+        // THE COSINE ITSELF: `saturate(cos(angle))`, applied once rather than squared. A small
+        // Lambertian emitter's intensity falls as the cosine from its normal, all the way to the
+        // horizon; the authored cone is not consulted.
+        record.kind = kGpuLightEmitter;
+        record.spot_scale = 1.0F;
+        record.spot_bias = 0.0F;
+    } else if (light.kind == render::LightKind::Spot) {
         spot_terms(light.inner_cone_radians, light.outer_cone_radians, record.spot_scale,
                    record.spot_bias);
     } else {
