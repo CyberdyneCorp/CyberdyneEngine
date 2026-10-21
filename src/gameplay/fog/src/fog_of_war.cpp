@@ -85,6 +85,7 @@ FogOfWar::FogOfWar(Allocator& allocator) noexcept
       explored_(allocator),
       seen_(allocator),
       seen_index_(allocator),
+      next_index_(allocator),
       ghosts_(allocator) {}
 
 Status FogOfWar::create(const FogGridDescription& description) noexcept {
@@ -147,7 +148,11 @@ bool FogOfWar::locate(i64 x_raw, i64 z_raw, u32& x, u32& z) const noexcept {
 }
 
 Status FogOfWar::check(Span<const FogUnit> units) noexcept {
-    HashMap<u64, u32> ids(*allocator_);
+    // The next tick's index is built beside the current one and swapped in only when every unit
+    // passed, so a refused update leaves the current one, and no tick allocates once both have
+    // grown to the unit count.
+    HashMap<u64, u32>& ids = next_index_;
+    ids.clear();
     if (Status reserved = ids.reserve(units.size()); !reserved) {
         return reserved;
     }
@@ -164,7 +169,7 @@ Status FogOfWar::check(Span<const FogUnit> units) noexcept {
             return make_unexpected(added.error());
         }
     }
-    seen_index_ = static_cast<HashMap<u64, u32>&&>(ids);
+    std::swap(seen_index_, next_index_);
     return ok();
 }
 

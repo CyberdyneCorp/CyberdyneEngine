@@ -194,6 +194,8 @@ private:
     u32 share_[kMaxFogTeams] = {};
     Array<Seen> seen_;
     HashMap<u64, u32> seen_index_;
+    /// The next update's index, built beside `seen_index_` and swapped with it.
+    HashMap<u64, u32> next_index_;
     Array<FogGhost> ghosts_;
     FogStatistics statistics_{};
 };
