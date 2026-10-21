@@ -17,6 +17,7 @@
 #include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/rendering/sky/tables.h>
+#include <cy/rendering/upscale/upscale_pass.h>
 #include <cy/water/shading.h>
 
 #include <cy_features.h>
@@ -331,6 +332,10 @@ struct DrawState {
     ResourceId depth = cy::rendering::kInvalidResource;
     u32 width = 0;
     u32 height = 0;
+    /// The temporal framework's jitter in rendered pixels, applied as the viewport's offset: every
+    /// pixel centre stays inside the viewport because the offset is under half a pixel. Zero
+    /// without an upscaler.
+    Vec2 jitter{0.0F, 0.0F};
     DrawRun runs[5];
     u32 run_count = 0;
     /// The water pipeline and this frame's pictures, when a run is drawn with it. The views are
@@ -403,7 +408,9 @@ void record_draw(const PassContext& context, void* user) noexcept {
 
     write_mark(context, state->timer, state->mark_before);
     context.commands->begin_rendering(info);
-    context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
+    // The viewport's y runs down the image and clip space's up, so a jitter up is a negative y.
+    context.commands->set_viewport(rhi::Viewport{state->jitter.x, -state->jitter.y,
+                                                 static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
     bind_run_pipeline(context, *state, false);
@@ -487,9 +494,12 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
+    // THE PIPELINE FIRST: the RHI binds a set at the bind point of the last pipeline the command
+    // buffer bound, so sets bound before it, right after a compute stage such as the temporal
+    // upscaler's, land on the compute bind point and the draw finds the water's sets instead.
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
     // One oversized triangle from `SV_VertexID`; the resolve pipeline has no vertex bindings.
     context.commands->draw(3, 1, 0, 0);
     context.commands->end_rendering();
@@ -746,6 +756,9 @@ struct Stage::Device {
     /// THE FOG, with `--fog`: the march writes `aerial_table`'s layout with the atmosphere's table
     /// composited in, and binding 2 names its buffer instead. See `Stage::set_fog`.
     cy::rendering::fog::FogPass fog;
+    /// THE TEMPORAL UPSCALER, with `--upscale`: the frame's `Temporal` stage. See
+    /// `Stage::set_upscale`.
+    cy::rendering::upscale::TemporalUpscalePass upscale;
 
     // --- THE ATMOSPHERE, INTEGRATED FOR THIS CAMERA. `atmosphere-sky-and-clouds`, "Aerial
     // perspective". Both are built from the world's own `Atmosphere` and `AtmosphereTables` — the
@@ -823,6 +836,13 @@ void Stage::set_jobs(jobs::JobSystem* jobs) noexcept {
 Status Stage::open(u32 width, u32 height) noexcept {
     width_ = width;
     height_ = height;
+    const cy::rendering::upscale::Extent2D render =
+        upscale_ ? cy::rendering::upscale::render_extent_for(
+                       cy::rendering::upscale::Extent2D{width, height},
+                       cy::rendering::upscale::upscale_mode_scale(upscale_mode_))
+                 : cy::rendering::upscale::Extent2D{width, height};
+    render_width_ = render.width;
+    render_height_ = render.height;
     device_ = new (std::nothrow) Device(*allocator_);
     if (device_ == nullptr) {
         return fail(ErrorCode::OutOfMemory, "the stage did not allocate");
@@ -957,8 +977,8 @@ Status Stage::create_pipeline() noexcept {
         return make_unexpected(created.error());
     }
     device_->pipeline = *created;
-    if (Status made =
-            device_->water.create(device, device_->world_set_layout, kSceneFormat, width_, height_);
+    if (Status made = device_->water.create(device, device_->world_set_layout, kSceneFormat,
+                                            render_width_, render_height_);
         !made) {
         return made;
     }
@@ -1016,6 +1036,12 @@ Status Stage::create_pipeline() noexcept {
 // here would put a stage in the manifest that no pass of THIS frame ran, which is the exact
 // dishonesty `capture_manifest.h` exists to detect. The chain this frame runs is the three
 // unconditional stages, and the manifest says three.
+//
+// WITH `--upscale` THERE IS ONE TEMPORAL STAGE, AND THIS PROGRAM RUNS IT. `upscale::
+// TemporalUpscalePass` produces the frame's `Temporal` stage: the world is drawn at the mode's
+// render extent with the framework's jitter as the viewport's offset, and the reconstruction
+// reprojects by the camera from the depth the opaque pass wrote, because there are still no motion
+// vectors. Water and foliage that move under a still camera are rectified rather than reprojected.
 
 Status Stage::create_frame() noexcept {
     rhi::Device& device = *device_->handle.value();
@@ -1023,6 +1049,8 @@ Status Stage::create_frame() noexcept {
     AssemblyDescription description;
     description.width = width_;
     description.height = height_;
+    description.render_width = render_width_;
+    description.render_height = render_height_;
     description.near_plane = kNearPlane;
     description.far_plane = kFarPlane;
     description.clusters = cy::rendering::ClusterGridConfig{16, 8, 24};
@@ -1049,12 +1077,29 @@ Status Stage::create_frame() noexcept {
     // PINNED, because a capture has to be reproducible: `m10:world-still` requires two runs at one
     // seed to draw the byte-identical still, and `temporal-rendering`'s determinism requirement is
     // what makes that a property of the engine rather than of the machine.
-    description.pin_jitter = true;
+    // An upscaler is what the jitter is for, so it is not pinned with one; its sequence is the
+    // framework's own and a run from the same seed still draws the same frames.
+    description.pin_jitter = !upscale_;
+    if (upscale_) {
+        // TEMPORAL UPSCALING: the world below the output and the frame's `Temporal` stage
+        // reconstructing it. No velocity target — this program writes none — so the reconstruction
+        // reprojects by the camera; no reactive mask, because nothing translucent is drawn.
+        description.post.temporal_upscaling = true;
+        description.produced_temporal_stage = true;
+        description.temporal.jitter = cy::rendering::upscale::jitter_config_for(
+            cy::rendering::upscale::Extent2D{width_, height_},
+            cy::rendering::upscale::Extent2D{render_width_, render_height_});
+    }
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
     if (Status attached = device_->assembly.attach_device(device); !attached) {
         return attached;
+    }
+    if (upscale_) {
+        if (Status made = create_upscale(); !made) {
+            return made;
+        }
     }
 
     cy::rendering::pipeline::PipelineSetup setup;
@@ -1069,7 +1114,7 @@ Status Stage::create_frame() noexcept {
     }
 
     Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
-        description.clusters, width_, height_, kNearPlane, kFarPlane);
+        description.clusters, render_width_, render_height_, kNearPlane, kFarPlane);
     if (!grid.has_value()) {
         return make_unexpected(grid.error());
     }
@@ -1093,6 +1138,17 @@ Status Stage::create_frame() noexcept {
     device_->output = *created;
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::create_upscale() noexcept {
+    cy::rendering::upscale::UpscalePassDescription description;
+    description.output = cy::rendering::upscale::Extent2D{width_, height_};
+    description.depth_format = rhi::Format::D32Sfloat;
+    if (Status made = device_->upscale.create(*allocator_, *device_->handle.value(), description);
+        !made) {
+        return made;
+    }
+    return device_->upscale.bind_temporal(device_->assembly.temporal());
 }
 
 /// The cloud shadow placement, `WorldCloudShadow::placement` in shaders/world.slang.
@@ -2081,8 +2137,8 @@ Status Stage::declare_water(const World& world, cy::rendering::RenderGraph& grap
     rhi::Device& device = *device_->handle.value();
     WaterView view;
     view.world_to_clip = world_to_clip;
-    view.width = width_;
-    view.height = height_;
+    view.width = render_width_;
+    view.height = render_height_;
     view.level = static_cast<f32>(world.options().sea_level);
     view.seconds = static_cast<f32>(world.state().seconds);
     view.centre = world.centre();
@@ -2376,8 +2432,8 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     state.dynamic_vertices = device_->dynamic_vertices;
     state.dynamic_colours = device_->dynamic_colours;
     state.dynamic_indices = device_->dynamic_indices;
-    state.width = width_;
-    state.height = height_;
+    state.width = render_width_;
+    state.height = render_height_;
 
     // The sky, emissive, first — so that a frame in which it failed to draw shows black rather than
     // a plausible background this file invented.
@@ -2442,8 +2498,8 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
         }
         cy::rendering::ScreenSpaceStageInputs inputs;
         inputs.target = device_->fog.import_target(graph);
-        inputs.width = width_;
-        inputs.height = height_;
+        inputs.width = render_width_;
+        inputs.height = render_height_;
         if (device_->fog.declare(graph, inputs) == cy::rendering::kInvalidPass) {
             (void)device.end_frame();
             return fail(ErrorCode::InvalidArgument, "the fog march refused its inputs");
@@ -2498,6 +2554,15 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     }
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
+    if (upscale_) {
+        cy::rendering::upscale::UpscaleSettings settings;
+        settings.mode = upscale_mode_;
+        // The resolve's own exposure, so the reconstruction weighs a highlight as bright as the
+        // picture will show it.
+        settings.exposure = std::exp2(exposure_stops_);
+        device_->upscale.set_settings(settings);
+        sinks.temporal = cy::rendering::upscale::stage_of(device_->upscale);
+    }
 
     cy::rendering::SpatialIndex index(*allocator_);
     AssemblyReport report;
@@ -2508,6 +2573,13 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     }
     out.frame_passes = report.passes_declared;
     out.post_stages = report.post_stages;
+    out.render_width = render_width_;
+    out.render_height = render_height_;
+    if (upscale_) {
+        // THE ONE JITTER, from the temporal framework, in rendered pixels. The water's two
+        // pictures are not jittered: they are sampled, not resolved.
+        state.jitter = report.jitter;
+    }
     if (ground_marker_) {
         // A PAINTED MARKER, not a light: a yellow road paint's linear albedo, lit by the sun
         // through the same cloud shadow and seen through the same air as the ground it is on.
@@ -2518,8 +2590,9 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
         paint.shape_b = 0.1F;
         const cy::rendering::assembly::AssemblyDescription& described =
             device_->assembly.description();
-        auto grid = cy::rendering::make_cluster_grid(described.clusters, width_, height_,
-                                                     described.near_plane, described.far_plane);
+        auto grid =
+            cy::rendering::make_cluster_grid(described.clusters, render_width_, render_height_,
+                                             described.near_plane, described.far_plane);
         if (!grid) {
             (void)device.end_frame();
             return make_unexpected(grid.error());
@@ -2531,8 +2604,8 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
         table.clusters = &device_->assembly.clusters();
         table.grid = *grid;
         table.view = camera;
-        table.width = width_;
-        table.height = height_;
+        table.width = render_width_;
+        table.height = render_height_;
         if (Status packed = cy::rendering::decals::pack_decal_table(table, device_->decal_words);
             !packed) {
             (void)device.end_frame();
@@ -2550,7 +2623,8 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     const cy::rendering::FrameResources& resources = device_->assembly.resources();
     state.color = resources.color;
     state.depth = resources.depth;
-    resolve.scene = resources.color;
+    // With an upscaler the resolve reads its reconstruction at the output extent.
+    resolve.scene = upscale_ ? resources.upscaled : resources.color;
     resolve.output = resources.output;
 
     // --- The uploads the resolve reads ---------------------------------------------------------
@@ -2877,6 +2951,7 @@ void Stage::close() noexcept {
         // THE FRAME'S OWN OBJECTS FIRST, and before the device is destroyed: both hold device
         // handles and both state the same contract every device-owning object in this tree does.
         device_->fog.destroy();
+        device_->upscale.destroy();
         device_->bindings.shutdown();
         device_->pipelines.shutdown();
         if (!device_->output.is_null()) {

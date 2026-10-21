@@ -71,6 +71,7 @@
 #include <cy/rendering/decals/decal_table.h>
 #include <cy/rendering/fog/medium.h>
 #include <cy/rendering/post/effects.h>
+#include <cy/rendering/upscale/upscale.h>
 
 #include <string>
 #include <string_view>
@@ -384,6 +385,15 @@ struct ShotReport {
     f64 gi_filter_ms = 0.0;
     f64 gi_publish_ms = 0.0;
     f64 gi_total_ms = 0.0;
+    /// THE WHOLE FRAME'S DEVICE TIME, from timestamps around the frame graph's own passes — the
+    /// first scene pass begins it and the output's read-back ends it, so it holds the prepass, the
+    /// GI, the shading, the upscaler and the post chain and not the sun's shadow map, which this
+    /// program draws in a graph of its own before. False on a device without timestamp queries.
+    bool gpu_timed = false;
+    f64 gpu_ms = 0.0;
+    /// The extent the scene was rendered at: the output's, or an upscaler's render extent.
+    u32 render_width = 0;
+    u32 render_height = 0;
     bool gi_timed = false;
 };
 
@@ -499,6 +509,27 @@ public:
         shutter_degrees_ = shutter_degrees;
     }
 
+    /// TEMPORAL UPSCALING, before `stage_shot`. Off — the default, and the published frame — draws
+    /// exactly the frame this program always drew. On renders the scene at the mode's render
+    /// extent with the temporal framework's jitter, adds the depth, normal and motion prepass, and
+    /// declares the frame's `Temporal` stage through `upscale::TemporalUpscalePass`, which
+    /// reconstructs the output extent; ambient occlusion, the contact trace, the GI and the air run
+    /// at the render extent, depth of field, motion blur, bloom and the resolve at the output.
+    /// `NativeAntialiasing` renders at the output extent through the same reconstruction. With
+    /// `--supersample` above one the frame is refused: the two are alternatives.
+    void set_upscale(bool enabled, rendering::upscale::UpscaleMode mode, f32 sharpness) noexcept {
+        upscale_ = enabled;
+        upscale_mode_ = mode;
+        upscale_sharpness_ = sharpness;
+        const rendering::upscale::Extent2D output{width_, height_};
+        const rendering::upscale::Extent2D render =
+            enabled ? rendering::upscale::render_extent_for(
+                          output, rendering::upscale::upscale_mode_scale(mode))
+                    : output;
+        render_width_ = render.width;
+        render_height_ = render.height;
+    }
+
     /// Upload at most `levels` of every ALBEDO map's cooked mip chain; zero, the default, uploads
     /// all of them. Call it before `stage_shot`. THIS IS A CONTROL AND NOT A QUALITY SETTING: it
     /// exists so `m11c:beauty-shot-reads-the-mip-chain` can photograph the shot once with the chain
@@ -569,8 +600,12 @@ private:
     /// Whether the frame has a depth and normal prepass: ambient occlusion, the contact trace,
     /// motion blur or the GI reads it.
     [[nodiscard]] bool has_prepass() const noexcept {
-        return ambient_occlusion_ || soft_shadows_ || motion_blur_ || gi_.enabled;
+        return ambient_occlusion_ || soft_shadows_ || motion_blur_ || gi_.enabled || upscale_;
     }
+    /// Whether the prepass writes the frame's motion vectors: motion blur and the upscaler read
+    /// them.
+    [[nodiscard]] bool writes_velocity() const noexcept { return motion_blur_ || upscale_; }
+    [[nodiscard]] Status create_upscale() noexcept;
     [[nodiscard]] Status create_motion_blur() noexcept;
     [[nodiscard]] Status create_grading(rhi::Device& device) noexcept;
     [[nodiscard]] Status create_occlusion_pipelines(const ShotMaterial& entry,
@@ -613,6 +648,14 @@ private:
     bool has_previous_view_ = false;
     u32 width_ = 0;
     u32 height_ = 0;
+    /// The extent the scene is rendered at: `width_` and `height_`, or the upscaler's render
+    /// extent. Every scene pass, ambient occlusion, the contact trace, the GI, the decals' cluster
+    /// grid and the air are recorded at it.
+    u32 render_width_ = 0;
+    u32 render_height_ = 0;
+    bool upscale_ = false;
+    rendering::upscale::UpscaleMode upscale_mode_ = rendering::upscale::UpscaleMode::Quality;
+    f32 upscale_sharpness_ = 0.3F;
     u32 supersample_ = 1;
     u32 albedo_level_limit_ = 0;
     rendering::BloomSettings bloom_{};

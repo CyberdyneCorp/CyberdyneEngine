@@ -57,6 +57,12 @@ run = [["{python}", "src/rendering/motion_blur/shaders/regenerate.py", "--slangc
         "--clang-format", "{clang_format}"]]
 
 [[group]]
+name = "upscale"
+headers = ["src/rendering/upscale/src/upscale_spirv.h", "src/rendering/upscale/src/upscale_msl.h"]
+run = [["{python}", "src/rendering/upscale/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
 name = "grading"
 headers = ["src/rendering/grading/src/grading_spirv.h", "src/rendering/grading/src/grading_msl.h"]
 run = [["{python}", "src/rendering/grading/shaders/regenerate.py", "--slangc", "{slangc}",

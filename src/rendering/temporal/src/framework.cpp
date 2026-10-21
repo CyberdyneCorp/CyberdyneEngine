@@ -188,7 +188,10 @@ void TemporalFramework::unpin_jitter() noexcept {
 }
 
 Mat4 TemporalFramework::jittered_view_projection() const noexcept {
-    const Vec2 offset = jitter_.ndc_offset(view_.width, view_.height);
+    // A fraction of a RENDERED pixel: the render extent when an upscaler set one.
+    const u32 width = view_.render_width == 0 ? view_.width : view_.render_width;
+    const u32 height = view_.render_height == 0 ? view_.height : view_.render_height;
+    const Vec2 offset = jitter_.ndc_offset(width, height);
     Mat4 jittered = view_.view_projection();
     // A translation in CLIP space, applied on the left: row0 += offset.x * row3 and
     // row1 += offset.y * row3. In column-major storage that is one line per column, and doing it to
@@ -260,6 +263,22 @@ u64 TemporalFramework::history_bytes(ConsumerId consumer) const noexcept {
         }
     }
     return bytes;
+}
+
+Mat4 camera_relative_to_clip(const TemporalView& view) noexcept {
+    Mat4 rotation = view.view;
+    rotation.columns[3] = Vec4{0.0F, 0.0F, 0.0F, 1.0F};
+    return view.projection * rotation;
+}
+
+Mat4 previous_camera_relative_to_clip(const TemporalFramework& temporal) noexcept {
+    const TemporalView& previous = temporal.previous_view();
+    const Vec3 moved = temporal.view().camera_position - previous.camera_position;
+    Mat4 relative = previous.view;
+    const Vec4 translation = (relative.columns[0] * moved.x) + (relative.columns[1] * moved.y) +
+                             (relative.columns[2] * moved.z);
+    relative.columns[3] = Vec4{translation.x, translation.y, translation.z, 1.0F};
+    return previous.projection * relative;
 }
 
 }  // namespace cy::rendering

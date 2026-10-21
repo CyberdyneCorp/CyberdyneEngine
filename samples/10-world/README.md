@@ -221,6 +221,27 @@ declared before the water's pictures, which are drawn with the lit path and read
 sea and the dome read no table, as for aerial perspective. Off — the default — declares nothing and
 binds the atmosphere's table as before, so the frame is the one drawn before fog existed.
 
+## Temporal upscaling
+
+`--upscale <mode>` draws the world below the output extent and reconstructs it at the frame's
+`Temporal` stage (`src/rendering/upscale/`). The geometry is this program's own, so the jitter is
+applied as the opaque pass's viewport offset rather than through the frame's projection; the water's
+refraction and reflection pictures and the fog run at the render extent; the resolve reads the
+reconstruction. There are no motion vectors, so the history is reprojected by the camera: the
+turning orbit is reprojected exactly, and the water's and the foliage's own motion is rectified and
+rejected rather than followed. Measured on an RTX 5060 with `--seconds 1 --fps 8 --still-frame 2 --hold 60`, with the
+whole frame's device time and the PSNR of the converged still against native AA:
+
+| Output | Off (no AA) | Native AA | Quality | Balanced | Performance |
+|---|---|---|---|---|---|
+| 2560x1440 | 2.86 ms | 4.62 ms | 3.64 ms, 49.1 dB | 3.43 ms, 49.0 dB | 3.28 ms, 49.0 dB |
+| 3840x2160 | 5.55 ms | 9.49 ms | 7.49 ms, 50.4 dB | 7.07 ms, 50.2 dB | 6.76 ms, 50.1 dB |
+
+This world shades per vertex, so the scene is cheap and the reconstruction at the output extent —
+about 4 ms at 4K — is most of what an upscaled frame costs: every mode is cheaper than native AA and
+none is cheaper than the aliased frame. `just capture-upscale` takes these;
+`docs/design/images/upscale-world-crops-{1440,2160}.png` are the forest edge in every mode.
+
 ## The three tasks this artefact answers
 
 **7.1 — the world.** Above. Run it and read the report it prints; every number in it is read back
@@ -442,6 +463,9 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 | `--seed <n>` | the world seed. Accepts `0x` |
 | `--regions <n>` | regions per side. 24 is the 24x24 grid M10's spike measured on |
 | `--still-frame <n>` | which frame the still is taken from |
+| `--upscale <mode>` | `native`, `quality`, `balanced` or `performance`: the world drawn at the mode's render extent with the temporal framework's jitter as the viewport's offset, and reconstructed by `upscale::TemporalUpscalePass` at the frame's `Temporal` stage. No motion vectors, so it reprojects by the camera. `off`, the default, is the frame before, byte for byte |
+| `--hold <n>` | draw the still's view `n` more times with the world held before the still is written, and print the median device time of those frames |
+| `--no-frame-files` | draw every frame of the take without writing its PNG |
 
 ## The picture has no CTest entry here, and that is deliberate
 

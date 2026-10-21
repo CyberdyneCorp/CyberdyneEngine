@@ -365,7 +365,11 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     if (hooks_.configure != nullptr) {
         hooks_.configure(description, hooks_.user);
     }
-    description.post.temporal_antialiasing = true;
+    // Temporal antialiasing, unless the hook chose the other temporal stage: the two are one step
+    // of the chain, and a scene a temporal upscaler reconstructs has the upscaler instead.
+    if (!description.post.temporal_upscaling) {
+        description.post.temporal_antialiasing = true;
+    }
     if (bloom != nullptr) {
         description.post.bloom = true;
         description.bloom = *bloom;

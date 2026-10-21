@@ -13,6 +13,13 @@ struct ForwardFrame::BuildState {
     ResourceId shading_target = kInvalidResource;
     /// The most recently written colour, threaded through the post chain.
     ResourceId current_color = kInvalidResource;
+    /// What a produced stage is handed as its depth, motion and extent: the scene's own targets at
+    /// the render extent up to the temporal stage, and the temporal producer's output-extent ones
+    /// after it when it wrote them.
+    ResourceId stage_depth = kInvalidResource;
+    ResourceId stage_velocity = kInvalidResource;
+    u32 stage_width = 0;
+    u32 stage_height = 0;
 };
 
 namespace {
@@ -29,6 +36,32 @@ constexpr const char* kVirtualGeometrySingleSample =
 
 [[nodiscard]] bool valid(ResourceId resource) noexcept {
     return resource != kInvalidResource;
+}
+
+/// The extent the frame ends at — see `FrameDescription::output_width`. The render extent unless
+/// the description names another.
+[[nodiscard]] u32 output_width(const FrameDescription& description) noexcept {
+    return description.output_width == 0 ? description.width : description.output_width;
+}
+
+[[nodiscard]] u32 output_height(const FrameDescription& description) noexcept {
+    return description.output_height == 0 ? description.height : description.output_height;
+}
+
+/// Whether the frame's temporal stage is a producer's passes rather than the single resolve.
+[[nodiscard]] bool produced_temporal(const FrameDescription& description) noexcept {
+    return description.features.temporal && description.temporal_stage.declare != nullptr;
+}
+
+/// Whether anything after the temporal stage reads the scene's depth or motion, and so needs them
+/// at the output extent when the producer upscales.
+[[nodiscard]] bool post_reads_depth(const FrameFeatures& features) noexcept {
+    return features.depth_of_field || features.motion_blur || features.selection_outlines;
+}
+
+/// The pre-translucency copy: refraction's, or a temporal producer's reactive mask's.
+[[nodiscard]] bool copies_opaque_colour(const FrameFeatures& features) noexcept {
+    return features.transparent_refraction || (features.reactive_mask && features.transparency);
 }
 
 /// Attach a caller's record callback, if it supplied one for this stage.
@@ -144,12 +177,13 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         resources.reflections = graph.create_texture(request);
         request.extra_usage = rhi::TextureUsage::None;
     }
-    if (description.features.transparent_refraction) {
+    if (copies_opaque_colour(description.features)) {
         request.name = "opaque colour copy";
         request.format = description.color_format;
         resources.opaque_color_copy = graph.create_texture(request);
     }
-    if (description.features.temporal) {
+    // A producer of the temporal stage owns its history, at whatever extent it reconstructs to.
+    if (description.features.temporal && !produced_temporal(description)) {
         request.name = "temporal previous";
         request.format = description.color_format;
         resources.temporal_previous = valid(description.temporal_previous)
@@ -167,6 +201,8 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
     if (valid(description.output)) {
         resources.output = description.output;
     } else {
+        request.width = output_width(description);
+        request.height = output_height(description);
         request.name = "output";
         request.format = description.color_format;
         request.extra_usage = rhi::TextureUsage::TransferSource;
@@ -396,7 +432,9 @@ PassId declare_transparent(RenderGraph& graph, FrameState& state) noexcept {
     if (valid(resources.lights)) {
         builder.read(resources.lights, Access::FragmentStorageRead);
     }
-    if (valid(resources.opaque_color_copy)) {
+    // Refraction samples the copy; a copy made only for a temporal producer's reactive mask is not
+    // the transparent pass's to read.
+    if (valid(resources.opaque_color_copy) && state.description->features.transparent_refraction) {
         builder.read(resources.opaque_color_copy, Access::FragmentSampledRead);
     }
     if (valid(resources.reflections)) {
@@ -518,15 +556,17 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
         return;
     }
     ScreenSpaceStageInputs inputs;
-    inputs.depth = resources_.depth;
+    inputs.depth = state.stage_depth;
     inputs.normal_roughness = resources_.normal_roughness;
     inputs.target = target;
     inputs.draw_instances = resources_.draw_instances;
     inputs.source = source;
-    inputs.velocity = resources_.velocity;
+    inputs.velocity = state.stage_velocity;
     inputs.color = state.current_color;
-    inputs.width = state.description->width;
-    inputs.height = state.description->height;
+    inputs.width = state.stage_width;
+    inputs.height = state.stage_height;
+    inputs.render_width = state.description->width;
+    inputs.render_height = state.description->height;
     const PassId first = producer.declare(graph, inputs, producer.user);
     if (first == kInvalidPass) {
         // A producer that refused is a frame that cannot shade what it was configured to shade;
@@ -536,6 +576,64 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
         return;
     }
     stage(kind, name, first);
+}
+
+void ForwardFrame::declare_temporal_producer(RenderGraph& graph, BuildState& state) noexcept {
+    const FrameDescription& description = *state.description;
+    const u32 width = output_width(description);
+    const u32 height = output_height(description);
+    TextureRequest request;
+    request.width = width;
+    request.height = height;
+    request.name = "upscaled colour";
+    request.format = description.color_format;
+    request.extra_usage = rhi::TextureUsage::Storage;
+    resources_.upscaled = graph.create_texture(request);
+    request.extra_usage = rhi::TextureUsage::None;
+    // The depth and motion the stages after this one read, at the extent they run at — only when
+    // one of them reads them, and only when that extent is not the scene's own.
+    const bool rescaled = width != description.width || height != description.height;
+    if (rescaled && post_reads_depth(description.features)) {
+        request.name = "output depth";
+        request.format = description.depth_format;
+        resources_.output_depth = graph.create_texture(request);
+        request.name = "output velocity";
+        request.format = description.velocity_format;
+        resources_.output_velocity = graph.create_texture(request);
+    }
+
+    ScreenSpaceStageInputs inputs;
+    inputs.depth = resources_.depth;
+    inputs.normal_roughness = resources_.normal_roughness;
+    inputs.target = resources_.upscaled;
+    inputs.draw_instances = resources_.draw_instances;
+    inputs.source = state.current_color;
+    inputs.velocity = resources_.velocity;
+    inputs.color = state.current_color;
+    inputs.width = width;
+    inputs.height = height;
+    inputs.render_width = description.width;
+    inputs.render_height = description.height;
+    inputs.opaque_color =
+        description.features.reactive_mask ? resources_.opaque_color_copy : kInvalidResource;
+    inputs.output_depth = resources_.output_depth;
+    inputs.output_velocity = resources_.output_velocity;
+    const FrameStageDeclaration& producer = description.temporal_stage;
+    const PassId first = producer.declare(graph, inputs, producer.user);
+    if (first == kInvalidPass) {
+        status_ =
+            fail(ErrorCode::InvalidArgument,
+                 "forward frame: the temporal stage's producer refused to declare its passes");
+        return;
+    }
+    stage(FramePassKind::Temporal, "temporal", first);
+    state.current_color = resources_.upscaled;
+    state.stage_width = width;
+    state.stage_height = height;
+    if (valid(resources_.output_depth)) {
+        state.stage_depth = resources_.output_depth;
+        state.stage_velocity = resources_.output_velocity;
+    }
 }
 
 Status ForwardFrame::declare_resources(RenderGraph& graph,
@@ -633,7 +731,12 @@ void ForwardFrame::declare_shading(RenderGraph& graph, BuildState& state) noexce
     // 8, with its refraction copy first — the copy is a declared pass and the read is a declared
     // read, which is what makes "the graph SHALL synchronise it" true without anybody saying so.
     if (features.transparency) {
-        if (features.transparent_refraction) {
+        if (copies_opaque_colour(features) &&
+            state.description->opaque_copy_stage.declare != nullptr) {
+            declare_produced_stage(graph, state, state.description->opaque_copy_stage,
+                                   FramePassKind::OpaqueColorCopy, "opaque colour copy",
+                                   resources_.opaque_color_copy, state.shading_target);
+        } else if (copies_opaque_colour(features)) {
             stage(FramePassKind::OpaqueColorCopy, "opaque colour copy",
                   declare_opaque_copy(graph, state));
         }
@@ -656,8 +759,11 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         state.current_color = resources_.color;
     }
 
-    // 10. Temporal.
-    if (features.temporal) {
+    // 10. Temporal: a producer's passes — an upscaler, which reconstructs the output extent from
+    // the render extent — or the single resolve.
+    if (produced_temporal(description)) {
+        declare_temporal_producer(graph, state);
+    } else if (features.temporal) {
         PassBuilder builder = graph.add_pass("temporal", QueueKind::Graphics);
         builder.read(state.current_color, Access::FragmentSampledRead);
         builder.read(resources_.temporal_previous, Access::FragmentSampledRead);
@@ -678,8 +784,8 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         TextureRequest request;
         request.name = "depth of field";
         request.format = description.color_format;
-        request.width = description.width;
-        request.height = description.height;
+        request.width = output_width(description);
+        request.height = output_height(description);
         request.extra_usage = rhi::TextureUsage::Storage;
         resources_.depth_of_field = graph.create_texture(request);
         declare_produced_stage(graph, state, description.depth_of_field_stage,
@@ -703,7 +809,7 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
     // applies, which is what makes its threshold a physical quantity.
     if (features.bloom && status_) {
         status_ = declare_bloom_chain(
-            graph, state.current_color, description.width, description.height,
+            graph, state.current_color, output_width(description), output_height(description),
             description.color_format, features.bloom_levels,
             description.callbacks[static_cast<u32>(FramePassKind::Bloom)], bloom_);
         for (u32 index = 0; index < bloom_.step_count; ++index) {
@@ -771,6 +877,10 @@ Status ForwardFrame::declare_passes(RenderGraph& graph,
     state.mode = prepass_mode_;
     state.multisampled = description.features.msaa_samples > 1;
     state.shading_target = state.multisampled ? resources_.color_multisampled : resources_.color;
+    state.stage_depth = resources_.depth;
+    state.stage_velocity = resources_.velocity;
+    state.stage_width = description.width;
+    state.stage_height = description.height;
 
     declare_prepare_and_depth(graph, state);
     declare_shading(graph, state);
@@ -780,6 +890,40 @@ Status ForwardFrame::declare_passes(RenderGraph& graph,
         return status_;
     }
     return graph.status();
+}
+
+Status ForwardFrame::check_output_extent(const FrameDescription& description) noexcept {
+    const FrameFeatures& features = description.features;
+    // A PRODUCER OF THE TEMPORAL STAGE IS FOR A TEMPORAL FRAME: without `features.temporal` the
+    // frame has no stage to hand it, and declaring nothing would leave its history unwritten.
+    if (description.temporal_stage.declare != nullptr && !features.temporal) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: a temporal stage producer needs a temporal frame");
+    }
+    // ONE SAMPLE A PIXEL INTO THE PRODUCER: a reconstruction reads its jittered samples one texel
+    // at a time, and a multisampled colour is resolved by a stage that does not run before it.
+    if (description.temporal_stage.declare != nullptr && features.msaa_samples != 1) {
+        return fail(ErrorCode::Unsupported,
+                    "forward frame: a temporal stage producer reads single-sample targets");
+    }
+    const u32 width = output_width(description);
+    const u32 height = output_height(description);
+    if (width == description.width && height == description.height) {
+        return ok();
+    }
+    // A FRAME THAT ENDS LARGER THAN IT WAS RENDERED NEEDS A RECONSTRUCTION. Nothing else in the
+    // frame changes extent, so without a producer the post-process would read a smaller image than
+    // it writes and stretch it.
+    if (!produced_temporal(description)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: an output extent other than the render extent needs a temporal "
+                    "stage producer to reconstruct one from the other");
+    }
+    if (width < description.width || height < description.height) {
+        return fail(ErrorCode::InvalidArgument,
+                    "forward frame: the output extent is smaller than the render extent");
+    }
+    return ok();
 }
 
 Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& description) noexcept {
@@ -808,9 +952,15 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
     // specification's own scenario ("SSAO enabled ... the prepass SHALL run in DepthNormal mode")
     // assumes the prepass is there, so this is that assumption stated as a refusal.
     const FrameFeatures& features = description.features;
+    // A TEMPORAL STAGE A PRODUCER DECLARES IS THE EXCEPTION: a temporal upscaler reprojects a pixel
+    // with no motion vector through the camera's own motion and its depth, which the opaque pass
+    // writes when there is no prepass. A frame drawn by a caller whose geometry the prepass does
+    // not walk — `samples/10-world` — is upscaled that way.
+    const bool temporal_needs_prepass = features.temporal && !produced_temporal(description);
     const bool needs_prepass = features.ambient_occlusion || features.contact_shadows ||
                                features.screen_space_gi || features.screen_space_reflections ||
-                               features.temporal || features.motion_blur || features.normal_prepass;
+                               temporal_needs_prepass || features.motion_blur ||
+                               features.normal_prepass;
     if (needs_prepass && !features.depth_prepass) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: screen-space and temporal features require the depth prepass "
@@ -871,6 +1021,9 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                         "forward frame: depth of field reads the single-sample depth, which a "
                         "multisampled frame has only after the depth prepass's resolve");
         }
+    }
+    if (Status extents = check_output_extent(description); !extents) {
+        return extents;
     }
     prepass_mode_ = select_prepass_mode(description.features);
     // A prepass mode that names targets nothing will fill is the failure the derivation exists to

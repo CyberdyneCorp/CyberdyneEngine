@@ -20,24 +20,12 @@ void write_rows(const Mat4& matrix, f32 out[16]) noexcept {
     }
 }
 
-/// LAST FRAME'S PROJECTION, EXPRESSED ABOUT THIS FRAME'S CAMERA. The frame's positions are
-/// camera-RELATIVE (`transformToRelative`), and the prepass derives motion by pushing that same
-/// relative position through both matrices. The framework's previous view is a WORLD view, so
-/// handing it over as it stands put every surface `camera_position` metres from where it was: the
-/// motion vector of a still camera anywhere but the origin pointed off screen, and the resolve
-/// rejected — or worse, clamped in — a history it had reprojected to the wrong place. The
-/// translation is rebuilt from the camera's DISPLACEMENT rather than by composing a world
-/// translation back in, because at a large world coordinate that subtraction is where float
-/// precision goes.
-[[nodiscard]] Mat4 previous_relative_to_clip(const TemporalFramework& temporal) noexcept {
-    const TemporalView& previous = temporal.previous_view();
-    const Vec3 moved = temporal.view().camera_position - previous.camera_position;
-    Mat4 relative = previous.view;
-    const Vec4 translation = (relative.columns[0] * moved.x) + (relative.columns[1] * moved.y) +
-                             (relative.columns[2] * moved.z);
-    relative.columns[3] = Vec4{translation.x, translation.y, translation.z, 1.0F};
-    return previous.projection * relative;
-}
+// LAST FRAME'S PROJECTION, EXPRESSED ABOUT THIS FRAME'S CAMERA, is the temporal framework's
+// `previous_camera_relative_to_clip` — one definition, shared with the temporal upscaler, which
+// reprojects through the same matrix. Its comment says why the translation is rebuilt from the
+// camera's displacement: handing over the framework's WORLD view put every surface
+// `camera_position` metres from where it was, so a still camera anywhere but the origin had motion
+// vectors pointing off screen.
 
 [[nodiscard]] FrameRecorder* recorder_of(void* user) noexcept {
     return static_cast<FrameRecorder*>(user);
@@ -453,10 +441,13 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
     FrameRecorder& recorder = *recorder_of(user);
     FrameAssembly& assembly = *recorder.assembly();
     const FrameResources& resources = assembly.resources();
-    const AssemblyDescription& description = assembly.description();
+    // The SCENE's extent: the render extent, below the output when a temporal upscaler reconstructs
+    // one from the other.
+    const u32 width = assembly.render_width();
+    const u32 height = assembly.render_height();
 
     rhi::RenderingInfo info;
-    info.render_area = rhi::Rect2D{0, 0, description.width, description.height};
+    info.render_area = rhi::Rect2D{0, 0, width, height};
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, true);
     rhi::RenderAttachment colors[2];
     u32 color_count = 0;
@@ -469,13 +460,12 @@ void record_depth_prepass(const PassContext& context, void* user) noexcept {
     }
     info.color_attachments = Span<const rhi::RenderAttachment>(colors, color_count);
     context.commands->begin_rendering(info);
-    set_full_viewport(*context.commands, description.width, description.height);
+    set_full_viewport(*context.commands, width, height);
     bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
                     FramePipelineKind::Depth);
     draw_layer(recorder, context, FramePipelineKind::Depth, render::SortLayer::Opaque,
                recorder.mutable_report().prepass_draws);
-    record_extensions(recorder, context, FramePassKind::DepthPrepass, description.width,
-                      description.height, true);
+    record_extensions(recorder, context, FramePassKind::DepthPrepass, width, height, true);
     context.commands->end_rendering();
     ++recorder.mutable_report().passes;
 }
@@ -503,22 +493,24 @@ void record_opaque(const PassContext& context, void* user) noexcept {
     FrameRecorder& recorder = *recorder_of(user);
     FrameAssembly& assembly = *recorder.assembly();
     const FrameResources& resources = assembly.resources();
-    const AssemblyDescription& description = assembly.description();
+    // The SCENE's extent: the render extent, below the output when a temporal upscaler reconstructs
+    // one from the other.
+    const u32 width = assembly.render_width();
+    const u32 height = assembly.render_height();
 
     const rhi::RenderAttachment color = color_attachment(*context.executor, resources.color, true);
     rhi::RenderingInfo info;
-    info.render_area = rhi::Rect2D{0, 0, description.width, description.height};
+    info.render_area = rhi::Rect2D{0, 0, width, height};
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     // Loaded, not cleared: the prepass wrote it and the opaque pass compares EQUAL against it.
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
-    set_full_viewport(*context.commands, description.width, description.height);
+    set_full_viewport(*context.commands, width, height);
     bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings(),
                     FramePipelineKind::Opaque);
     draw_layer(recorder, context, FramePipelineKind::Opaque, render::SortLayer::Opaque,
                recorder.mutable_report().opaque_draws);
-    record_extensions(recorder, context, FramePassKind::Opaque, description.width,
-                      description.height, true);
+    record_extensions(recorder, context, FramePassKind::Opaque, width, height, true);
     context.commands->end_rendering();
     ++recorder.mutable_report().passes;
 }
@@ -527,15 +519,18 @@ void record_transparent(const PassContext& context, void* user) noexcept {
     FrameRecorder& recorder = *recorder_of(user);
     FrameAssembly& assembly = *recorder.assembly();
     const FrameResources& resources = assembly.resources();
-    const AssemblyDescription& description = assembly.description();
+    // The SCENE's extent: the render extent, below the output when a temporal upscaler reconstructs
+    // one from the other.
+    const u32 width = assembly.render_width();
+    const u32 height = assembly.render_height();
 
     const rhi::RenderAttachment color = color_attachment(*context.executor, resources.color, false);
     rhi::RenderingInfo info;
-    info.render_area = rhi::Rect2D{0, 0, description.width, description.height};
+    info.render_area = rhi::Rect2D{0, 0, width, height};
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
     info.depth_attachment = depth_attachment(*context.executor, resources.depth, false);
     context.commands->begin_rendering(info);
-    set_full_viewport(*context.commands, description.width, description.height);
+    set_full_viewport(*context.commands, width, height);
     // With no transparent pipeline the opaque one stands in for the bind point: the extensions
     // below still read the frame's sets 0 and 1 at the graphics bind point.
     const bool transparent =
@@ -548,8 +543,7 @@ void record_transparent(const PassContext& context, void* user) noexcept {
     }
     // THE PARTICLE RENDERER'S SEAM. `vfx-system` wants particles composited after the transparent
     // draws and before the tonemap, which is exactly here.
-    record_extensions(recorder, context, FramePassKind::Transparent, description.width,
-                      description.height, true);
+    record_extensions(recorder, context, FramePassKind::Transparent, width, height, true);
     context.commands->end_rendering();
     ++recorder.mutable_report().passes;
 }
@@ -737,19 +731,25 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     const AssemblyDescription& description = assembly.description();
     const ClusterAssignment& clusters = assembly.clusters();
 
+    // THE SCENE'S EXTENT, which every quantity below is in pixels of: the jitter is a fraction of a
+    // rendered pixel, the shaders' extent is the target they draw into, and the cluster grid tiles
+    // it. The render extent, which is the output's unless a temporal upscaler reconstructs one.
+    const u32 width = assembly.render_width();
+    const u32 height = assembly.render_height();
+
     FrameUpload upload;
     upload.globals = globals;
     Mat4 jittered = relative_to_clip;
-    if (description.width > 0 && description.height > 0) {
-        const f32 x = report.jitter.x * 2.0F / static_cast<f32>(description.width);
-        const f32 y = report.jitter.y * 2.0F / static_cast<f32>(description.height);
+    if (width > 0 && height > 0) {
+        const f32 x = report.jitter.x * 2.0F / static_cast<f32>(width);
+        const f32 y = report.jitter.y * 2.0F / static_cast<f32>(height);
         for (Vec4& column : jittered.columns) {
             column.x += x * column.w;
             column.y += y * column.w;
         }
     }
     write_rows(jittered, upload.view.relative_to_clip);
-    write_rows(previous_relative_to_clip(assembly.temporal()),
+    write_rows(previous_camera_relative_to_clip(assembly.temporal()),
                upload.view.previous_relative_to_clip);
     write_rows(relative_to_view, upload.view.relative_to_view);
     const Vec3 ambient = assembly.sky_irradiance();
@@ -757,12 +757,10 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     upload.view.ambient_and_occlusion[1] = ambient.y;
     upload.view.ambient_and_occlusion[2] = ambient.z;
     upload.view.ambient_and_occlusion[3] = 1.0F;
-    upload.view.extent_and_inverse[0] = static_cast<f32>(description.width);
-    upload.view.extent_and_inverse[1] = static_cast<f32>(description.height);
-    upload.view.extent_and_inverse[2] =
-        description.width == 0 ? 0.0F : 1.0F / static_cast<f32>(description.width);
-    upload.view.extent_and_inverse[3] =
-        description.height == 0 ? 0.0F : 1.0F / static_cast<f32>(description.height);
+    upload.view.extent_and_inverse[0] = static_cast<f32>(width);
+    upload.view.extent_and_inverse[1] = static_cast<f32>(height);
+    upload.view.extent_and_inverse[2] = width == 0 ? 0.0F : 1.0F / static_cast<f32>(width);
+    upload.view.extent_and_inverse[3] = height == 0 ? 0.0F : 1.0F / static_cast<f32>(height);
 
     // The grid is copied field for field rather than translated: `ClusterGrid` is asserted in
     // forward/cluster.h to BE `cy/cluster.slang`'s struct, so a translation here would be a second
@@ -770,9 +768,8 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     // assembly because the assembly keeps its grid private — and `make_cluster_grid` is a pure
     // function of the same four numbers, so the two cannot disagree.
     ClusterGrid grid;
-    if (Expected<ClusterGrid, Error> made =
-            make_cluster_grid(description.clusters, description.width, description.height,
-                              description.near_plane, description.far_plane);
+    if (Expected<ClusterGrid, Error> made = make_cluster_grid(
+            description.clusters, width, height, description.near_plane, description.far_plane);
         made.has_value()) {
         grid = *made;
     }

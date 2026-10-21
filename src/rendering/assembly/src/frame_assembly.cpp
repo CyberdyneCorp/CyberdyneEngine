@@ -147,10 +147,32 @@ Status FrameAssembly::initialize(const AssemblyDescription& description) noexcep
         return fail(ErrorCode::InvalidArgument,
                     "a frame with no material slots resolves every draw to nothing");
     }
+    const u32 render_width =
+        description.render_width == 0 ? description.width : description.render_width;
+    const u32 render_height =
+        description.render_height == 0 ? description.height : description.render_height;
+    if (render_width > description.width || render_height > description.height) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the render extent is larger than the output it is reconstructed to");
+    }
+    const bool temporal =
+        description.post.temporal_antialiasing || description.post.temporal_upscaling;
+    if (description.produced_temporal_stage && !temporal) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a produced temporal stage needs a temporal stage in the post chain");
+    }
+    if ((render_width != description.width || render_height != description.height) &&
+        !description.produced_temporal_stage) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a render extent below the output needs a temporal stage producer to "
+                    "reconstruct the output from it");
+    }
     description_ = description;
+    render_width_ = render_width;
+    render_height_ = render_height;
 
     const Expected<ClusterGrid, Error> grid =
-        make_cluster_grid(description.clusters, description.width, description.height,
+        make_cluster_grid(description.clusters, render_width_, render_height_,
                           description.near_plane, description.far_plane);
     if (!grid) {
         return make_unexpected(grid.error());
@@ -182,14 +204,18 @@ Status FrameAssembly::initialize(const AssemblyDescription& description) noexcep
         return make_unexpected(consumer.error());
     }
     temporal_consumer_ = *consumer;
-    HistoryDeclaration history;
-    history.format = HistoryFormat::Rgba16F;
-    const Expected<HistoryId, Error> declared =
-        temporal_.declare_history(temporal_consumer_, history);
-    if (!declared) {
-        return make_unexpected(declared.error());
+    // A PRODUCED TEMPORAL STAGE DECLARES ITS OWN HISTORY, through a consumer of its own; declaring
+    // one here as well would report memory nothing allocates.
+    if (!description.produced_temporal_stage) {
+        HistoryDeclaration history;
+        history.format = HistoryFormat::Rgba16F;
+        const Expected<HistoryId, Error> declared =
+            temporal_.declare_history(temporal_consumer_, history);
+        if (!declared) {
+            return make_unexpected(declared.error());
+        }
+        history_ = *declared;
     }
-    history_ = *declared;
     // PINNED BEFORE THE FIRST FRAME, not per frame: `JitterSequence::pin` fixes the STARTING index,
     // and pinning it again every frame would hold the sequence at one sample — an unjittered frame
     // wearing a temporal stage's cost.
@@ -222,7 +248,8 @@ Status FrameAssembly::attach_device(rhi::Device& device) noexcept {
     }
     description_.depth_format = supported;
 
-    if (description_.post.temporal_antialiasing || description_.post.temporal_upscaling) {
+    if ((description_.post.temporal_antialiasing || description_.post.temporal_upscaling) &&
+        !description_.produced_temporal_stage) {
         rhi::TextureDescription history;
         history.name = "temporal history";
         history.format = description_.color_format;
@@ -255,6 +282,35 @@ Status FrameAssembly::attach_device(rhi::Device& device) noexcept {
         return created;
     }
     cull_pass_ready_ = true;
+    return ok();
+}
+
+Status FrameAssembly::set_render_extent(u32 width, u32 height) noexcept {
+    if (!initialized_) {
+        return fail(ErrorCode::InvalidArgument, "set the render extent after initialize()");
+    }
+    if (width == 0 || height == 0 || width > description_.width || height > description_.height) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the render extent must be non-empty and no larger than the output");
+    }
+    if ((width != description_.width || height != description_.height) &&
+        !description_.produced_temporal_stage) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a render extent below the output needs a temporal stage producer");
+    }
+    if (width == render_width_ && height == render_height_) {
+        return ok();
+    }
+    const Expected<ClusterGrid, Error> grid = make_cluster_grid(
+        description_.clusters, width, height, description_.near_plane, description_.far_plane);
+    if (!grid) {
+        return make_unexpected(grid.error());
+    }
+    grid_ = *grid;
+    render_width_ = width;
+    render_height_ = height;
+    description_.render_width = width;
+    description_.render_height = height;
     return ok();
 }
 
@@ -314,6 +370,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.motion_blur = config.motion_blur;
     features.bloom = config.bloom;
     features.depth_of_field = config.depth_of_field;
+    features.reactive_mask = description_.reactive_mask && description_.produced_temporal_stage;
     features.bloom_levels = description_.bloom.mip_count;
     features.post_process = chain.count != 0;
     return ok();
@@ -724,9 +781,29 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
         out.virtual_texture_declared = true;
     }
 
+    // A PRODUCED TEMPORAL STAGE IS ASKED FOR, AND ONLY THEN HANDED OVER: a producer the
+    // description did not ask for would leave the assembly's own history unwritten, and a missing
+    // one would leave the stage with nothing to declare it.
+    if (description_.produced_temporal_stage != (sinks.temporal.declare != nullptr)) {
+        return fail(ErrorCode::InvalidArgument,
+                    description_.produced_temporal_stage
+                        ? "the description asks for a produced temporal stage and the sinks carry "
+                          "no producer"
+                        : "the sinks carry a temporal producer the description did not ask for");
+    }
     FrameDescription description;
-    description.width = description_.width;
-    description.height = description_.height;
+    description.width = render_width_;
+    description.height = render_height_;
+    if (render_width_ != description_.width || render_height_ != description_.height) {
+        description.output_width = description_.width;
+        description.output_height = description_.height;
+    }
+    if (features.temporal && description_.produced_temporal_stage) {
+        description.temporal_stage = sinks.temporal;
+    }
+    description.opaque_copy_stage = sinks.opaque_copy;
+    temporal_producer_ = description.temporal_stage;
+    temporal_produced_ = false;
     description.color_format = description_.color_format;
     description.depth_format = description_.depth_format;
     description.features = features;
@@ -774,6 +851,8 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     if (Status built = frame_.build(graph, description); !built) {
         return built;
     }
+    temporal_produced_ = frame_.pass_of(FramePassKind::Temporal) != kInvalidPass &&
+                         temporal_producer_.declare != nullptr;
     out.prepass = frame_.prepass_mode();
     out.passes_declared = static_cast<u32>(frame_.passes().size());
     return ok();
@@ -798,6 +877,8 @@ Status FrameAssembly::assemble(const SpatialIndex& index, const AssemblyView& vi
     TemporalView temporal_view;
     temporal_view.width = description_.width;
     temporal_view.height = description_.height;
+    temporal_view.render_width = render_width_;
+    temporal_view.render_height = render_height_;
     temporal_view.view = view.view;
     temporal_view.projection = view.projection;
     temporal_view.camera_position = view.cull.camera_position;
@@ -867,6 +948,11 @@ Status FrameAssembly::execute(GraphExecutor& executor, RenderGraph& graph,
             post_reads_it ? rhi::ImageUse::SampledRead : rhi::ImageUse::TransferSource;
         temporal_read_ ^= 1U;
     }
+    // The temporal producer swaps its history only for a frame that ran.
+    if (temporal_produced_ && temporal_producer_.executed != nullptr) {
+        temporal_producer_.executed(temporal_producer_.user);
+    }
+    temporal_produced_ = false;
 
     // The read-backs, after the submit. `GpuCullPass::read_back` says it MUST follow the frame's
     // fence; `execute` waits, which is what makes this legal here rather than a race that shows up

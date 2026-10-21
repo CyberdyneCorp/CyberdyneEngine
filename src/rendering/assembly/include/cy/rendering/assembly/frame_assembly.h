@@ -197,6 +197,23 @@ struct AssemblyDescription {
     /// (`FrameFeatures::normal_prepass`): what a frame that turns `global_illumination` on and off
     /// between frames sets, so its depth pipelines are one set. Appended.
     bool normal_prepass = false;
+    /// THE RENDER EXTENT, when the scene is rendered below `width` and `height` and reconstructed
+    /// to them by a temporal upscaler. `width` and `height` stay the OUTPUT — what the post chain,
+    /// the interface and the temporal framework's view are at — and these are what every scene pass
+    /// is recorded at: the prepass, the screen-space stages, shading, translucency and the cluster
+    /// grid. Zero, the default, is the output extent. Changed between frames by
+    /// `FrameAssembly::set_render_extent`, which is how dynamic resolution reaches the frame.
+    /// Requires `produced_temporal_stage`. Appended.
+    u32 render_width = 0;
+    u32 render_height = 0;
+    /// The temporal stage is declared by `FrameSinks::temporal` — an upscaler — which owns its
+    /// history. The assembly then creates, declares and imports no temporal history of its own.
+    /// Requires `post.temporal_antialiasing` or `post.temporal_upscaling`. Appended.
+    bool produced_temporal_stage = false;
+    /// Copy the colour before translucency for the temporal producer's reactive mask
+    /// (`FrameFeatures::reactive_mask`); the copy is recorded by
+    /// `FrameSinks::passes[OpaqueColorCopy]`. Appended.
+    bool reactive_mask = false;
 };
 
 /// One view of one world, this frame.
@@ -320,6 +337,14 @@ struct FrameSinks {
     /// Null keeps the stage the single pass recorded by `passes[ScreenSpaceGi]`, over a transient
     /// target, that it has always been. Appended.
     FrameStageDeclaration screen_space_gi;
+    /// The producer that declares the temporal stage — `upscale::stage_of(upscaler)`. Required when
+    /// the description says `produced_temporal_stage`, and refused otherwise. Its `executed` hook
+    /// is called by `FrameAssembly::execute` after a frame that ran. Appended.
+    FrameStageDeclaration temporal;
+    /// The producer that declares the opaque colour copy — `upscale::TemporalUpscalePass::
+    /// opaque_copy_stage()` for its reactive mask. Null keeps the transfer pass recorded by
+    /// `passes[OpaqueColorCopy]`. Appended.
+    FrameStageDeclaration opaque_copy;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
@@ -519,6 +544,20 @@ public:
     [[nodiscard]] Vec3 sky_irradiance() const noexcept { return sky_irradiance_; }
     [[nodiscard]] const AssemblyDescription& description() const noexcept { return description_; }
 
+    /// The extent the scene is rendered at: `AssemblyDescription::render_width` and
+    /// `render_height`, or the output extent when those are zero. What every scene pass records at.
+    [[nodiscard]] u32 render_width() const noexcept { return render_width_; }
+    [[nodiscard]] u32 render_height() const noexcept { return render_height_; }
+
+    /// Render the scene at another extent from the next `assemble`: dynamic resolution. Refuses an
+    /// empty extent, one larger than the output, and any extent other than the output for a frame
+    /// whose temporal stage is not a producer's — nothing else reconstructs one from the other.
+    ///
+    /// The temporal framework is NOT told: its view stays at the output extent, so the history a
+    /// temporal upscaler reconstructs into survives the change, which is what makes the internal
+    /// resolution a lever an arbiter can move every period rather than a cut.
+    [[nodiscard]] Status set_render_extent(u32 width, u32 height) noexcept;
+
     /// Turn the frame's `ScreenSpaceGi` stage on or off from the next `assemble`: what
     /// `AssemblyDescription::global_illumination` set at `initialize`, frame by frame. Off is the
     /// frame it always was — no pass, no target. Nothing `initialize` or `attach_device` created
@@ -617,6 +656,13 @@ private:
     bool temporal_declared_ = false;
 
     u64 frame_index_ = 0;
+
+    /// See `render_width()`.
+    u32 render_width_ = 0;
+    u32 render_height_ = 0;
+    /// The temporal producer this frame declared, told by `execute` that the frame ran.
+    FrameStageDeclaration temporal_producer_{};
+    bool temporal_produced_ = false;
 };
 
 }  // namespace cy::rendering::assembly

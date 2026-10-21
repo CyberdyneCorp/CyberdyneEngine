@@ -35,6 +35,7 @@
 #include <cy/rendering/sky/clouds.h>
 #include <cy/rendering/sky/composition.h>
 #include <cy/rendering/sky/tables.h>
+#include <cy/rendering/upscale/upscale_pass.h>
 
 #if defined(CY_SAMPLE_BEAUTY_VULKAN)
 #    include <cy/backends/rhi/vulkan/vulkan_backend.h>
@@ -159,9 +160,12 @@ struct FrameConstants {
     /// `BeautyFrame::giControl`, read only by `sceneFragmentGi`: x 1 when the indirect diffuse is
     /// bound, y the indirect specular, z the ambient occlusion term, w the soft and contact sun.
     u32 gi_control[4] = {};
+    /// `BeautyFrame::jitter`: xy the clip-space offset `view_projection` was jittered by, which the
+    /// motion prepass removes. Zero without an upscaler.
+    f32 jitter[4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 336, "BeautyFrame is twenty-one 16-byte rows");
+static_assert(sizeof(FrameConstants) == 352, "BeautyFrame is twenty-two 16-byte rows");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
@@ -256,6 +260,11 @@ struct Stage::Device {
     rendering::fog::FogPass fog;
     /// Motion blur, created only when the run asked for it. See `Stage::set_motion_blur`.
     rendering::motion_blur::MotionBlurPass motion_blur;
+    /// The temporal upscaler, created only when the run asked for it. See `Stage::set_upscale`.
+    rendering::upscale::TemporalUpscalePass upscale;
+    /// Two timestamps around the frame graph's passes — `ShotReport::gpu_ms`. Null on a device
+    /// without timestamp queries.
+    rhi::QueryPoolHandle timer;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -317,6 +326,10 @@ Stage::~Stage() {
             device_->dof.destroy();
             device_->decal_table.shutdown();
             device_->fog.destroy();
+            device_->upscale.destroy();
+            if (!device_->timer.is_null()) {
+                device_->handle.value()->destroy_query_pool(device_->timer);
+            }
             device_->bindings.shutdown();
             device_->bloom.shutdown();
             device_->grading.shutdown();
@@ -364,6 +377,8 @@ void Stage::set_fog(bool enabled, const Shot& shot) noexcept {
 Status Stage::open(u32 width, u32 height, u32 supersample) noexcept {
     width_ = width * supersample;
     height_ = height * supersample;
+    render_width_ = width_;
+    render_height_ = height_;
     supersample_ = supersample;
     device_ = new (std::nothrow) Device(*allocator_);
     if (device_ == nullptr) {
@@ -1619,9 +1634,10 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     // WITH THE GI, THE MATERIAL'S ROUGHNESS TOO: the resolve's rough specular reads it from the
     // normal target's third channel, which the published prepass leaves at one.
     const char* prepass_entry =
-        motion_blur_ ? "scenePrepassMotionFragment" : "scenePrepassFragment";
+        writes_velocity() ? "scenePrepassMotionFragment" : "scenePrepassFragment";
     if (gi_.enabled) {
-        prepass_entry = motion_blur_ ? "scenePrepassGiMotionFragment" : "scenePrepassGiFragment";
+        prepass_entry =
+            writes_velocity() ? "scenePrepassGiMotionFragment" : "scenePrepassGiFragment";
     }
     auto prepass_fragment = fragment(prepass_entry);
     if (!prepass_fragment) {
@@ -1634,7 +1650,7 @@ Status Stage::create_occlusion_pipelines(const ShotMaterial& entry,
     description.name = "beauty depth and normal prepass";
     description.fragment_shader = *prepass_fragment;
     description.color_attachments =
-        Span<const rhi::ColorAttachmentState>(targets, motion_blur_ ? 2U : 1U);
+        Span<const rhi::ColorAttachmentState>(targets, writes_velocity() ? 2U : 1U);
     made = device.create_graphics_pipeline(description);
     if (!made) {
         return make_unexpected(made.error());
@@ -1673,7 +1689,18 @@ struct SceneState {
     bool prepass = false;
     u32 width = 0;
     u32 height = 0;
+    /// `ShotReport::gpu_ms`'s first timestamp, written by whichever scene pass the frame records
+    /// first — the prepass, or the scene pass without one. Null on a device without timestamps.
+    rhi::QueryPoolHandle timer;
 };
+
+/// The frame's first timestamp, before the pass's own rendering scope opens: a reset and a write.
+void begin_timer(const PassContext& context, const SceneState& state) noexcept {
+    if (!state.timer.is_null()) {
+        context.commands->reset_queries(state.timer, 0, 2);
+        context.commands->write_timestamp(state.timer, 0);
+    }
+}
 
 /// Binds `pipeline`, then the three sets every scene entry point shares. THE PIPELINE FIRST: the
 /// RHI binds a set at the bind point of the last pipeline the command buffer bound, so sets bound
@@ -1689,6 +1716,9 @@ void bind_common(const PassContext& context, const SceneState& state,
 
 void record_scene(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<SceneState*>(user);
+    if (!state->prepass) {
+        begin_timer(context, *state);
+    }
 
     rhi::RenderAttachment colour;
     colour.view = state->executor->view(state->color);
@@ -1741,6 +1771,7 @@ void record_scene(const PassContext& context, void* user) noexcept {
 /// ambient occlusion setting is on, because the horizon search is its one reader.
 void record_prepass(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<SceneState*>(user);
+    begin_timer(context, *state);
     rhi::RenderAttachment targets[2];
     targets[0].view = state->executor->view(state->normal);
     targets[0].load = rhi::LoadOp::Clear;
@@ -1959,6 +1990,14 @@ void record_air(const PassContext& context, void* user) noexcept {
     // THE FRAME'S OWN SETS 0 AND 1, at the frame's own layout. `ParticleRenderer` reuses those two
     // layouts verbatim so that its pipeline layout is COMPATIBLE with this one — which is the seam
     // it exists to prove — and its own ring is set 2.
+    //
+    // A GRAPHICS PIPELINE FIRST, because a set binds at the bind point of the last pipeline the
+    // command buffer bound: with a compute stage just before this one — the temporal upscaler's
+    // copy of the colour before the air, for its reactive mask — the sets landed on the compute
+    // bind point and every sprite drew with set 1 unbound. `pipeline::FrameRecorder` binds the
+    // pass's pipeline before its sets for the same reason.
+    context.commands->bind_graphics_pipeline(
+        state->pipelines->pipeline(cy::rendering::pipeline::FramePipelineKind::Opaque));
     context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
 
     cy::rendering::pipeline::ExtensionContext air;
@@ -1983,6 +2022,9 @@ struct ReadbackState {
     rhi::BufferHandle buffer;
     u32 width = 0;
     u32 height = 0;
+    /// The output's read-back writes the frame's last timestamp once it has copied. Null for the
+    /// scene colour's and on a device without timestamps.
+    rhi::QueryPoolHandle timer;
 };
 
 void record_readback(const PassContext& context, void* user) noexcept {
@@ -1991,6 +2033,9 @@ void record_readback(const PassContext& context, void* user) noexcept {
     region.texture_extent = rhi::Extent3D{state->width, state->height, 1};
     context.commands->copy_texture_to_buffer(state->executor->texture(state->color), state->buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
+    if (!state->timer.is_null()) {
+        context.commands->write_timestamp(state->timer, 1);
+    }
 }
 
 }  // namespace
@@ -2033,8 +2078,8 @@ Status Stage::stage_shot(Shot& shot, ShotReport& report) noexcept {
         light.mean_sky = sky.sky_irradiance;
         const f64 gi_mark = now_millis();
         gi_.emissive_decals = decals_;
-        if (Status built =
-                device_->gi.build(shot, device_->gi_meshes, light, gi_, device, width_, height_);
+        if (Status built = device_->gi.build(shot, device_->gi_meshes, light, gi_, device,
+                                             render_width_, render_height_);
             !built) {
             return built;
         }
@@ -2223,8 +2268,8 @@ Status Stage::create_decals(const Shot& shot) noexcept {
     // RESERVED FROM THE GRID, because the texture's view is written into the material table once,
     // below, and the table is uploaded inside frames where it cannot be recreated: the header, the
     // records, a list header per cluster, and at most one entry per decal per cluster.
-    Expected<cy::rendering::ClusterGrid, Error> grid =
-        cy::rendering::make_cluster_grid(kClusterConfig, width_, height_, kNearPlane, kFarPlane);
+    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
+        kClusterConfig, render_width_, render_height_, kNearPlane, kFarPlane);
     if (!grid.has_value()) {
         return make_unexpected(grid.error());
     }
@@ -2290,6 +2335,24 @@ Status Stage::create_frame() noexcept {
     description.post.volumetric_fog = fog_enabled_;
     // THE GI, ONLY WHEN ASKED FOR: the frame's `ScreenSpaceGi` stage, produced by the resolve.
     description.global_illumination = gi_.enabled;
+    // TEMPORAL UPSCALING, ONLY WHEN ASKED FOR: step 5, the scene below the output and the frame's
+    // `Temporal` stage reconstructing it. The air is translucent and carries no motion vectors, so
+    // the upscaler's reactive mask is derived from a copy of the colour taken before it is drawn.
+    if (upscale_) {
+        if (supersample_ != 1U) {
+            return fail(ErrorCode::InvalidArgument,
+                        "--upscale and --supersample are alternatives: one renders below the "
+                        "output and one above it");
+        }
+        description.post.temporal_upscaling = true;
+        description.produced_temporal_stage = true;
+        description.reactive_mask = true;
+        description.render_width = render_width_;
+        description.render_height = render_height_;
+        description.temporal.jitter = rendering::upscale::jitter_config_for(
+            rendering::upscale::Extent2D{width_, height_},
+            rendering::upscale::Extent2D{render_width_, render_height_});
+    }
     if (Status made = device_->assembly.initialize(description); !made) {
         return made;
     }
@@ -2317,8 +2380,9 @@ Status Stage::create_frame() noexcept {
         }
     }
 
-    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
-        description.clusters, width_, height_, description.near_plane, description.far_plane);
+    Expected<cy::rendering::ClusterGrid, Error> grid =
+        cy::rendering::make_cluster_grid(description.clusters, render_width_, render_height_,
+                                         description.near_plane, description.far_plane);
     if (!grid.has_value()) {
         return make_unexpected(grid.error());
     }
@@ -2384,8 +2448,35 @@ Status Stage::create_frame() noexcept {
             return made;
         }
     }
+    if (upscale_) {
+        if (Status made = create_upscale(); !made) {
+            return made;
+        }
+    }
+    if (device.capabilities().has(rhi::Capability::TimestampQueries)) {
+        rhi::QueryPoolDescription timer;
+        timer.name = "beauty frame timestamps";
+        timer.kind = rhi::QueryKind::Timestamp;
+        timer.count = 2;
+        Expected<rhi::QueryPoolHandle, Error> pool = device.create_query_pool(timer);
+        if (!pool) {
+            return make_unexpected(pool.error());
+        }
+        device_->timer = *pool;
+    }
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::create_upscale() noexcept {
+    rendering::upscale::UpscalePassDescription description;
+    description.output = rendering::upscale::Extent2D{width_, height_};
+    description.depth_format = kDepthFormat;
+    if (Status made = device_->upscale.create(*allocator_, *device_->handle.value(), description);
+        !made) {
+        return made;
+    }
+    return device_->upscale.bind_temporal(device_->assembly.temporal());
 }
 
 Status Stage::set_depth_of_field(f32 fov_y, f32 aspect, const Mat4& projection, Vec3 eye_world,
@@ -2412,8 +2503,9 @@ Status Stage::stage_decals(const Mat4& camera) noexcept {
     const Span<const u32> order = device_->assembly.decal_order();
     const cy::rendering::assembly::AssemblyDescription& description =
         device_->assembly.description();
-    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
-        description.clusters, width_, height_, description.near_plane, description.far_plane);
+    Expected<cy::rendering::ClusterGrid, Error> grid =
+        cy::rendering::make_cluster_grid(description.clusters, render_width_, render_height_,
+                                         description.near_plane, description.far_plane);
     if (!grid.has_value()) {
         return make_unexpected(grid.error());
     }
@@ -2427,8 +2519,8 @@ Status Stage::stage_decals(const Mat4& camera) noexcept {
     input.clusters = &device_->assembly.clusters();
     input.grid = *grid;
     input.view = camera;
-    input.width = width_;
-    input.height = height_;
+    input.width = render_width_;
+    input.height = render_height_;
     Array<u32> words(*allocator_);
     if (Status packed = rendering::decals::pack_decal_table(input, words); !packed) {
         return packed;
@@ -2454,8 +2546,8 @@ Status Stage::create_motion_blur() noexcept {
 Status Stage::create_contact() noexcept {
     rhi::Device& device = *device_->handle.value();
     rendering::contact_shadows::ContactShadowPassDescription description;
-    description.width = width_;
-    description.height = height_;
+    description.width = render_width_;
+    description.height = render_height_;
     if (Status made = device_->contact.create(*allocator_, device, description); !made) {
         return made;
     }
@@ -2532,8 +2624,8 @@ Status Stage::create_grading(rhi::Device& device) noexcept {
 Status Stage::create_occlusion() noexcept {
     rhi::Device& device = *device_->handle.value();
     rendering::occlusion::AmbientOcclusionPassDescription description;
-    description.width = width_;
-    description.height = height_;
+    description.width = render_width_;
+    description.height = render_height_;
     if (Status made = device_->occlusion.create(*allocator_, device, description); !made) {
         return made;
     }
@@ -2736,8 +2828,9 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     scene.sky_indices = device_->sky_indices;
     scene.sky_pipeline = device_->sky_pipeline;
     scene.sky_index_count = device_->sky_index_count;
-    scene.width = width_;
-    scene.height = height_;
+    scene.width = render_width_;
+    scene.height = render_height_;
+    scene.timer = device_->timer;
 
     ResolveState resolve;
     resolve.pipelines = &device_->pipelines;
@@ -2750,16 +2843,16 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     air.bindings = &device_->bindings;
     air.air = &device_->air;
     air.trails = &device_->trails;
-    air.width = width_;
-    air.height = height_;
+    air.width = render_width_;
+    air.height = render_height_;
 
     FrameSinks sinks;
     if (ambient_occlusion_) {
         rendering::occlusion::GtaoView occlusion_view;
         occlusion_view.projection = projection;
         occlusion_view.relative_to_view = camera;
-        occlusion_view.width = width_;
-        occlusion_view.height = height_;
+        occlusion_view.width = render_width_;
+        occlusion_view.height = render_height_;
         if (Status set = device_->occlusion.set_view(occlusion_view); !set) {
             (void)device.end_frame();
             return set;
@@ -2772,8 +2865,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         contact_view.projection = projection;
         contact_view.relative_to_view = camera;
         contact_view.to_light = sun_direction_;
-        contact_view.width = width_;
-        contact_view.height = height_;
+        contact_view.width = render_width_;
+        contact_view.height = render_height_;
         if (Status set = device_->contact.set_view(contact_view); !set) {
             (void)device.end_frame();
             return set;
@@ -2891,6 +2984,17 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         }
         sinks.depth_of_field = device_->dof.stage();
     }
+    if (upscale_) {
+        rendering::upscale::UpscaleSettings settings;
+        settings.mode = upscale_mode_;
+        settings.sharpness = upscale_sharpness_;
+        // The resolve's own exposure, so the reconstruction weighs a highlight as bright as the
+        // picture will show it.
+        settings.exposure = std::exp2(shot.exposure_stops);
+        device_->upscale.set_settings(settings);
+        sinks.temporal = rendering::upscale::stage_of(device_->upscale);
+        sinks.opaque_copy = device_->upscale.opaque_copy_stage();
+    }
 
     cy::rendering::SpatialIndex index(*allocator_);
     AssemblyReport assembly_report;
@@ -2901,6 +3005,24 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     }
     report.frame_passes = assembly_report.passes_declared;
     report.post_stages = assembly_report.post_stages;
+    report.render_width = render_width_;
+    report.render_height = render_height_;
+    if (upscale_) {
+        // THE ONE JITTER, from the temporal framework, at the render extent: the scene's positions
+        // move by it and the motion prepass takes it back out. Written over the block `memcpy`'d
+        // above, before the frame executes.
+        const f32 jitter_x = assembly_report.jitter.x * 2.0F / static_cast<f32>(render_width_);
+        const f32 jitter_y = assembly_report.jitter.y * 2.0F / static_cast<f32>(render_height_);
+        Mat4 jittered = world_to_clip;
+        for (Vec4& column : jittered.columns) {
+            column.x += jitter_x * column.w;
+            column.y += jitter_y * column.w;
+        }
+        write_rows(constants.view_projection, jittered);
+        constants.jitter[0] = jitter_x;
+        constants.jitter[1] = jitter_y;
+        std::memcpy(mapped, &constants, sizeof(constants));
+    }
     if (decals_) {
         if (Status staged = stage_decals(camera); !staged) {
             (void)device.end_frame();
@@ -2962,6 +3084,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     readback.buffer = device_->readback;
     readback.width = width_;
     readback.height = height_;
+    readback.timer = device_->timer;
 
     cy::rendering::BufferRequest readback_request;
     readback_request.name = "beauty colour readback";
@@ -2977,7 +3100,9 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         .side_effect();
 
     ReadbackState linear;
-    linear.color = resources.color;
+    // The scene colour the resolve READ: with an upscaler, its reconstruction at the output
+    // extent rather than the render-extent samples it was made from.
+    linear.color = upscale_ ? resources.upscaled : resources.color;
     linear.buffer = device_->linear_readback;
     linear.width = width_;
     linear.height = height_;
@@ -3014,6 +3139,15 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
             frame = device.wait_idle();
         }
         report.submit_ms = now_millis() - mark;
+        if (frame && !device_->timer.is_null()) {
+            u64 stamps[2] = {};
+            const Expected<u32, Error> read =
+                device.read_query_results(device_->timer, 0, 2, Span<u64>(stamps, 2));
+            if (read.has_value() && *read == 2U && stamps[1] >= stamps[0]) {
+                report.gpu_timed = true;
+                report.gpu_ms = static_cast<f64>(stamps[1] - stamps[0]) / 1.0e6;
+            }
+        }
         if (frame && png_path != nullptr) {
             frame = write_png(png_path);
         }

@@ -1611,6 +1611,57 @@ capture-world-fog *args:
     python3 tools/docs/collect_beauty_shot.py \
         "${images}/volumetric-fog-world-off.png" "${images}/volumetric-fog-world-on.png"
 
+# Photograph and time temporal upscaling in the beauty shot and the world, every mode at 1440p and 4K. Usage: just capture-upscale [--profile <p>]
+capture-upscale *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    beauty="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    world="${build_dir}/samples/10-world/cy_sample_world"
+    for tool in "${beauty}" "${world}" "${build_dir}/tools/material/cy_material" \
+                "${build_dir}/Development/bin/slangc"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-upscale: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    # ONE RUN AT A TIME: every number is the device's own time for the whole frame, and two runs
+    # sharing the device would measure each other.
+    work="${build_dir}/upscale-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}/materials" "${work}/frames" docs/design/images
+    just _beauty-programs "${build_dir}" "${work}/materials" "${work}/materials"
+    for size in "2560 1440" "3840 2160"; do
+        read -r width height <<< "${size}"
+        for mode in off native quality balanced performance; do
+            echo "==> capture     upscale ${mode} at ${width}x${height}"
+            "${beauty}" --shot content/beauty/shot.cyshot --materials "${work}/materials" \
+                --supersample 1 --width "${width}" --height "${height}" --gi on \
+                --gi-timing-frames 0 --upscale "${mode}" --upscale-frames 48 --timing-frames 60 \
+                --still "${work}/beauty-${height}-${mode}.png" ${rest} \
+                > "${work}/beauty-${height}-${mode}.log" 2>&1
+            "${world}" --frames "${work}/frames" --no-frame-files --width "${width}" \
+                --height "${height}" --seconds 1 --fps 8 --still-frame 2 --hold 60 \
+                --upscale "${mode}" --still "${work}/world-${height}-${mode}.png" \
+                > "${work}/world-${height}-${mode}.log" 2>&1
+        done
+    done
+    images=docs/design/images
+    python3 tools/docs/compare_upscale.py --work "${work}" --scene beauty --heights 1440 2160 \
+        --crop 0.547 0.333 0.125 0.139 --out "${images}"
+    python3 tools/docs/compare_upscale.py --work "${work}" --scene world --heights 1440 2160 \
+        --crop 0.70 0.62 0.15 0.12 --out "${images}"
+    cp "${work}/beauty-1440-native.png" "${images}/upscale-beauty-native.png"
+    cp "${work}/beauty-1440-performance.png" "${images}/upscale-beauty-performance.png"
+    python3 tools/docs/collect_beauty_shot.py \
+        "${images}/upscale-beauty-native.png" "${images}/upscale-beauty-performance.png"
+
 # M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
 #
 # Task 8.1 is "one project — built, cooked, packaged and LAUNCHED FROM A SINGLE RECIPE", and the

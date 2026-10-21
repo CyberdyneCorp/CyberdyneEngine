@@ -371,3 +371,47 @@ CY_TEST_CASE(
     }
     CY_CHECK_EQ(counts[static_cast<cy::usize>(TemporalInvalidation::None)], 0U);
 }
+
+CY_TEST_CASE("the jitter is a fraction of a rendered pixel, and a render extent change is no cut") {
+    TemporalFramework framework(allocator());
+    CY_REQUIRE(framework.initialize(TemporalConfig{}).has_value());
+    const cy::Expected<ConsumerId, cy::Error> upscaler =
+        framework.register_consumer("upscaler", true);
+    CY_REQUIRE(upscaler.has_value());
+    cy::rendering::HistoryDeclaration colour;
+    const cy::Expected<HistoryId, cy::Error> history = framework.declare_history(*upscaler, colour);
+    CY_REQUIRE(history.has_value());
+
+    // An upscaler's view: the OUTPUT extent, and the scene rendered at half of it.
+    TemporalView view = view_at(cy::Vec3{0.0F, 0.0F, 0.0F});
+    view.render_width = 960;
+    view.render_height = 540;
+    framework.begin_frame(view);
+    framework.mark_history_written(*history);
+    const cy::Vec2 jitter = framework.jitter().current();
+    CY_REQUIRE(jitter.x != 0.0F);
+    // The clip-space x offset of a point at w = 1 is 2 * jitter / RENDER width: a rendered pixel's
+    // fraction. At the output width it would be half of that, and the samples would cover only half
+    // of each rendered pixel.
+    const cy::Mat4 jittered = framework.jittered_view_projection();
+    const cy::Mat4 plain = framework.view().view_projection();
+    const cy::Vec4 point{0.0F, 0.0F, -5.0F, 1.0F};
+    const cy::Vec4 a = jittered * point;
+    const cy::Vec4 b = plain * point;
+    CY_CHECK_NEAR((a.x / a.w) - (b.x / b.w), 2.0F * jitter.x / 960.0F, 1e-6F);
+
+    // DYNAMIC RESOLUTION: the render extent moves and the output does not. Not a cut, and the
+    // history the consumer wrote is still valid.
+    view.render_width = 640;
+    view.render_height = 360;
+    framework.begin_frame(view);
+    CY_CHECK_FALSE(framework.invalidated_this_frame());
+    CY_CHECK(framework.history(*history)->valid);
+    CY_CHECK_EQ(framework.statistics().last_cause, TemporalInvalidation::None);
+
+    // The camera-relative transforms: this frame's is the projection times the rotation alone, and
+    // a still camera's previous one is the same matrix.
+    const cy::Mat4 relative = cy::rendering::camera_relative_to_clip(framework.view());
+    CY_CHECK(relative == framework.view().projection * framework.view().view);
+    CY_CHECK(cy::rendering::previous_camera_relative_to_clip(framework) == relative);
+}

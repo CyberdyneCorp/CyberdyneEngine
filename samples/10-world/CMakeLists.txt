@@ -78,6 +78,7 @@ cy_add_module(
         cy::rendering-graph
         cy::rendering-pipeline
         cy::rendering-sky
+        cy::rendering-upscale
         cy::rhi
         cy::rhi-null
         cy::terrain

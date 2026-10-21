@@ -118,6 +118,7 @@ cy_add_module(
         cy::rendering-lighting
         cy::rendering-lightmap-bake
         cy::rendering-motion-blur
+        cy::rendering-upscale
         cy::rendering-occlusion
         cy::rendering-particles
         cy::rendering-pipeline

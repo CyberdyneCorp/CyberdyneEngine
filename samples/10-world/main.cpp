@@ -48,6 +48,7 @@
 #include <cy/core/determinism/hash.h>
 #include <cy/core/memory/system_allocator.h>
 
+#include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cmath>
@@ -55,6 +56,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -131,6 +133,18 @@ struct Options {
     /// Ten minutes: a ledger that reaches this criterion just as something else finishes still
     /// measures, and a host that stays busy for ten minutes is reported as busy.
     u32 quiet_wait_s = 600;
+    /// TEMPORAL UPSCALING: `off`, the default and the frame drawn before, or `native`, `quality`,
+    /// `balanced` or `performance`. See `Stage::set_upscale`.
+    std::string upscale = "off";
+    bool upscaled = false;
+    cy::rendering::upscale::UpscaleMode upscale_mode = cy::rendering::upscale::UpscaleMode::Quality;
+    /// Frames the still's view is drawn again before the still is written, with the world held:
+    /// what a temporal reconstruction converges over, and the frames the device time printed for
+    /// the still is the median of. Zero, the default, draws the still once as before.
+    u32 hold = 0;
+    /// Draw every frame of the take without writing its PNG: a run that only wants the still and
+    /// its timing, at an extent where a day of PNGs is minutes of encoding.
+    bool no_frame_files = false;
 };
 
 /// `strtol` and `strtoull` rather than `atoi`, which reports no conversion error at all: a
@@ -261,7 +275,9 @@ private:
             cursor.flag("--ground-marker", out.ground_marker) ||
             cursor.flag("--no-aerial-perspective", out.no_aerial_perspective) ||
             cursor.flag("--fog", out.fog) || cursor.flag("--quiet-host", out.quiet_host) ||
-            cursor.number("--quiet-wait-s", out.quiet_wait_s);
+            cursor.number("--quiet-wait-s", out.quiet_wait_s) ||
+            cursor.text("--upscale", out.upscale) || cursor.number("--hold", out.hold) ||
+            cursor.flag("--no-frame-files", out.no_frame_files);
         if (!recognised) {
             const std::string_view argument = cursor.current();
             std::fprintf(stderr, "unknown argument: %.*s\n", static_cast<int>(argument.size()),
@@ -274,6 +290,13 @@ private:
                          argument.data());
             return false;
         }
+    }
+    out.upscaled = out.upscale != "off";
+    if (out.upscaled &&
+        !cy::rendering::upscale::parse_upscale_mode(out.upscale.c_str(), out.upscale_mode)) {
+        std::fprintf(stderr,
+                     "--upscale is `off`, `native`, `quality`, `balanced` or `performance`\n");
+        return false;
     }
     // An odd dimension is refused HERE, at the earliest of the two places that could: the video
     // encoder's yuv420p needs even dimensions, and refusing at the argument is one place to enforce
@@ -486,6 +509,36 @@ void print_hour(u64 frame, const WorldState& state) {
         static_cast<double>(state.cloud_shadow_brightest));
 }
 
+/// The still's view drawn `frames` more times with the world held, and the median of their device
+/// times printed: the whole frame, from its first pass to the read-back of the output.
+[[nodiscard]] Status hold_still(Stage& stage, const World& world, const WorldVec3d& eye,
+                                const WorldVec3d& target, u32 frames) {
+    if (frames == 0U) {
+        return ok();
+    }
+    std::vector<f64> times;
+    times.reserve(frames);
+    StageReport report;
+    for (u32 index = 0; index < frames; ++index) {
+        if (Status shot = stage.shoot(world, eye, target, nullptr, report); !shot) {
+            return shot;
+        }
+        if (report.gpu_measured) {
+            times.push_back(report.gpu_ms);
+        }
+    }
+    std::printf("\n=== the still, held for %u frames, drawn at %ux%u ===\n", frames,
+                report.render_width, report.render_height);
+    if (times.empty()) {
+        std::printf("  device time: not measured (no timestamp queries)\n");
+        return ok();
+    }
+    std::ranges::sort(times);
+    std::printf("  device time: median %.3f ms, min %.3f ms, max %.3f ms\n",
+                times[times.size() / 2], times.front(), times.back());
+    return ok();
+}
+
 /// One frame's picture, and the still when this is the still's frame. Separated from the loop
 /// because "draw, and maybe draw again" is the only thing in it that can fail two ways.
 [[nodiscard]] Status shoot_frame(Stage& stage, const World& world, const Options& options,
@@ -496,11 +549,15 @@ void print_hour(u64 frame, const WorldState& state) {
     char path[512];
     std::snprintf(path, sizeof(path), "%s/frame_%04llu.png", options.frames.c_str(),
                   static_cast<unsigned long long>(frame));
-    if (Status shot = stage.shoot(world, eye, target, path, out); !shot) {
+    if (Status shot = stage.shoot(world, eye, target, options.no_frame_files ? nullptr : path, out);
+        !shot) {
         return shot;
     }
     if (frame != still_frame || options.still.empty()) {
         return ok();
+    }
+    if (Status held = hold_still(stage, world, eye, target, options.hold); !held) {
+        return held;
     }
     if (Status shot = stage.shoot(world, eye, target, options.still.c_str(), out); !shot) {
         return shot;
@@ -755,6 +812,7 @@ struct Band {
                      options.grade.c_str(), graded.error().message);
         return graded;
     }
+    stage.set_upscale(options.upscaled, options.upscale_mode);
     if (Status opened = stage.open(options.width, options.height); !opened) {
         return opened;
     }

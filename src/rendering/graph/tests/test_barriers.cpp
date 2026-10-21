@@ -154,6 +154,47 @@ CY_TEST_CASE("a read that changes the layout waits for the reads before it") {
     CY_CHECK_EQ(found->src_access, AccessFlags::None);
 }
 
+CY_TEST_CASE("a read in another stage after a read that changed the layout waits for that change") {
+    // THE TRANSITION IS A WRITE, AND A LATER READER MUST BE ORDERED AFTER IT TOO. A depth target
+    // written as an attachment, sampled by a compute pass — whose barrier transitions it and names
+    // the compute stage alone — and then sampled by a fragment shader in the same layout: the
+    // fragment reader's barrier named only the attachment write, so the layout transition was not
+    // ordered before it, and synchronisation validation reported SYNC-HAZARD-READ-AFTER-WRITE
+    // against it when the temporal upscaler's reconstruction and its depth resample both read the
+    // prepass depth.
+    RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
+    const ResourceId target = graph.import_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
+    const ResourceId image = graph.create_texture(colour_target("drawn"));
+
+    graph.add_pass("draw it", cy::rhi::QueueKind::Graphics)
+        .write(image, Access::ColorAttachmentWrite);
+    graph.add_pass("sample it in compute", cy::rhi::QueueKind::Graphics)
+        .read(image, Access::ComputeSampledRead)
+        .side_effect();
+    graph.add_pass("sample it in a fragment shader", cy::rhi::QueueKind::Graphics)
+        .read(image, Access::FragmentSampledRead)
+        .write(target, Access::ColorAttachmentWrite);
+
+    cy::Expected<CompiledGraph, cy::Error> plan = graph.compile(single_queue_options());
+    CY_REQUIRE(plan.has_value());
+    CY_REQUIRE_EQ(plan->submits.size(), 1U);
+    CY_REQUIRE_EQ(plan->submits[0].passes.size(), 3U);
+    const cy::rhi::ImageBarrier* found = nullptr;
+    for (const cy::rhi::ImageBarrier& barrier : plan->submits[0].passes[2].pre.images) {
+        if (barrier.resource == image) {
+            found = &barrier;
+        }
+    }
+    CY_REQUIRE(found != nullptr);
+    CY_CHECK_EQ(found->old_use, ImageUse::SampledRead);
+    CY_CHECK_EQ(found->new_use, ImageUse::SampledRead);
+    // The transition's stage — the compute reader's — is in the first scope beside the write's.
+    CY_CHECK(cy::rhi::any(found->src_stage & Stage::ComputeShader));
+    CY_CHECK(cy::rhi::any(found->src_stage & Stage::ColorAttachmentOutput));
+    CY_CHECK_EQ(found->dst_stage, Stage::FragmentShader);
+}
+
 CY_TEST_CASE("a transient's first use transitions from UNDEFINED, which is what discards it") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target = graph.import_texture(
