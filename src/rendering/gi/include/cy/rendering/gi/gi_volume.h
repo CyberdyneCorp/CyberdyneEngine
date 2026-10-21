@@ -138,6 +138,20 @@ struct GiVolume {
 /// intensity, or an enumerator out of range.
 [[nodiscard]] Status validate_gi_volume(const GiVolume& volume) noexcept;
 
+/// WHO PLACED A SET OF VOLUMES. A level's author, the running game and the world's streamed cells
+/// each place volumes of their own, and each replaces only its own: an editor edit applied during
+/// Play keeps the volumes the game placed, and a cell streaming in or out keeps both. Samples
+/// resolve through all of them together, owners in this order where priorities are equal.
+enum class GiVolumeOwner : u8 {
+    /// The world's authored volumes: the editor's document, a level's file.
+    Authored = 0,
+    /// What the running game placed (ABI 1.9's `GIVolume.place`).
+    Game,
+    /// The volumes of the world cells resident now (`cy::rendering-gi-streaming`).
+    Streaming,
+};
+inline constexpr usize kGiVolumeOwners = 3;
+
 /// The placed volumes, ordered for resolution.
 class GiVolumeSet {
 public:

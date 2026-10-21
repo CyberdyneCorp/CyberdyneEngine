@@ -232,11 +232,18 @@ public:
     /// Exactly the frame's span, not a copy, when nothing is promoted.
     [[nodiscard]] Span<const GiLight> frame_lights() const noexcept { return last_lights_; }
 
-    /// Place the GI volumes (gi_volume.h), replacing any placed before. Every probe inside the
-    /// old and the new volumes' reach is retired, so the next `update()` places those regions
-    /// again at the density, rate and quality now asked for. A refused volume changes nothing.
+    /// Place the GI volumes (gi_volume.h), replacing any placed before by the same owner — the
+    /// author's (`GiVolumeOwner::Authored`) for the one-argument form. Every probe inside the
+    /// reach of a volume the owner removed or added is retired, so the next `update()` places
+    /// those regions again at the density, rate and quality now asked for; a volume placed again
+    /// exactly as it was, and another owner's volumes, keep their probes. Every sample resolves
+    /// through all owners' volumes together. A refused volume changes nothing.
     [[nodiscard]] Status set_volumes(Span<const GiVolume> volumes) noexcept;
+    [[nodiscard]] Status set_volumes(GiVolumeOwner owner, Span<const GiVolume> volumes) noexcept;
+    /// Every owner's volumes, as samples resolve them.
     [[nodiscard]] const GiVolumeSet& volumes() const noexcept { return volumes_; }
+    /// The volumes one owner placed, in the order it gave them.
+    [[nodiscard]] Span<const GiVolume> volumes_of(GiVolumeOwner owner) const noexcept;
 
     /// What the volumes resolve to at `point`, from the global settings. The global settings,
     /// bit for bit, where no volume reaches.
@@ -437,7 +444,9 @@ private:
     [[nodiscard]] bool dynamic_enabled() const noexcept;
     [[nodiscard]] Span<const GiLight> lights_for(Span<const GiLight> frame) noexcept;
     void invalidate_emitters(Span<const GiLight> lights, u64 frame) noexcept;
-    void retire_volume_regions() noexcept;
+    void retire_volume_regions(Span<const GiVolume> volumes) noexcept;
+    /// Retire the reach of every volume of `from` that `kept` does not hold exactly.
+    void retire_changed_volumes(Span<const GiVolume> from, Span<const GiVolume> kept) noexcept;
     [[nodiscard]] GiRegionSettings global_region() const noexcept;
     [[nodiscard]] IlluminationClass derived_class(const GiObject& entry) const noexcept;
     [[nodiscard]] static bool participating(IlluminationClass klass) noexcept {
@@ -493,6 +502,8 @@ private:
     Array<GiLight> frame_lights_;
     Span<const GiLight> last_lights_;
     GiVolumeSet volumes_;
+    /// Each owner's volumes; `volumes_` is their concatenation in owner order.
+    Array<GiVolume> owned_volumes_[kGiVolumeOwners];
 
     Array<GiObject> objects_;
     Array<Sphere> proxies_;

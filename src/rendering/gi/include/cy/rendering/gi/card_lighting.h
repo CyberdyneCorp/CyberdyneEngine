@@ -38,6 +38,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/hash_map.h>
 #include <cy/rendering/gi/distance_field.h>
 #include <cy/rendering/gi/lighting.h>
 #include <cy/rendering/gi/surface_cache.h>
@@ -199,8 +200,21 @@ public:
     CardNeighbourGrid() noexcept = default;
 
     /// List the live pages of `pages` for lookups of `radius`, the cells `radius` across, in at
-    /// most `max_buckets` buckets (a power of two): twice the occupied cells, or all of them.
-    [[nodiscard]] Status build(Span<const SurfacePage> pages, f32 radius, u32 max_buckets) noexcept;
+    /// most `max_buckets` buckets (a power of two): twice the occupied cells, or all of them —
+    /// or exactly `buckets` (a power of two) when it is not zero.
+    [[nodiscard]] Status build(Span<const SurfacePage> pages, f32 radius, u32 max_buckets,
+                               u32 buckets = 0) noexcept;
+
+    /// THE SAME GRID, AFTER A FEW CARDS CHANGED: `changed` names every page whose `live` flag or
+    /// position moved since the last `build` or `update` (in any order, repeats allowed). Only the
+    /// buckets those cards left or entered are sorted again; the rest are copied. The bucket count
+    /// is kept while the occupied cells fit it — more than it wants, or under a quarter of it,
+    /// builds whole — and the result is what `build` over `pages` at that count gives, buffer for
+    /// buffer, so every lookup answers as a grid built anew does. Returns whether it built whole
+    /// (the first time, a new radius, or a count the cells no longer fit).
+    [[nodiscard]] Expected<bool, Error> update(Span<const SurfacePage> pages,
+                                               Span<const u32> changed, f32 radius,
+                                               u32 max_buckets) noexcept;
 
     [[nodiscard]] f32 cell_metres() const noexcept { return cell_; }
     [[nodiscard]] u32 bucket_count() const noexcept {
@@ -229,10 +243,22 @@ public:
     }
 
 private:
+    [[nodiscard]] Status remember(Span<const SurfacePage> pages) noexcept;
+    [[nodiscard]] static u32 bucket_count_for(u32 cells, u32 max_buckets) noexcept;
+
     f32 cell_ = 1.0F;
     Array<u32> ranges_;
     Array<u32> handles_;
     Array<Vec3> positions_;
+    /// Per entry, the cell it lists the card in (x, y, z): the order within a bucket.
+    Array<i32> cells_;
+    /// Per page, where the grid last listed it and whether it was live: what `update` removes.
+    Array<Vec3> listed_at_;
+    Array<u8> listed_live_;
+    /// Every occupied cell's entry count, keyed by its packed coordinates: the distinct cells the
+    /// bucket count is chosen from.
+    HashMap<u64, u32> occupied_;
+    u32 max_buckets_ = 0;
 };
 
 /// One page as a lookup sees it.

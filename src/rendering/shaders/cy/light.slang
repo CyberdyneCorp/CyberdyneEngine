@@ -10,6 +10,9 @@ module light;
 public static const uint kLightDirectional = 0;
 public static const uint kLightPoint = 1;
 public static const uint kLightSpot = 2;
+/// A spot that falls off as the cosine from its axis, not its square: a small Lambertian emitter
+/// (a GI emitter promoted to a light of the frame). `kGpuLightEmitter` on the CPU.
+public static const uint kLightEmitter = 3;
 
 /// One light, as the GPU scene publishes it.
 ///
@@ -67,6 +70,11 @@ public LightSample evaluateLight(Light light, float3 surfaceRelativeToCamera)
         let cosine = dot(-result.direction, light.direction);
         let cone = saturate(cosine * light.spotScaleBias.x + light.spotScaleBias.y);
         result.attenuation *= cone * cone;
+    }
+    else if (light.kind == kLightEmitter)
+    {
+        let cosine = dot(-result.direction, light.direction);
+        result.attenuation *= saturate(cosine * light.spotScaleBias.x + light.spotScaleBias.y);
     }
     result.illuminance = light.color * (light.intensity * result.attenuation);
     return result;

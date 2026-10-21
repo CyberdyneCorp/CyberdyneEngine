@@ -649,7 +649,7 @@ GiTraceHit_0 giSphereTrace_0(float3 origin_1, float3 direction_0, float maxDista
 
 )cy_msl";
 
-/// cyGiShadeCards.metal, 38526 bytes.
+/// cyGiShadeCards.metal, 39508 bytes.
 inline constexpr char kGiShadeCardsMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -977,15 +977,17 @@ struct GiSceneSet_default_0
 };
 
 
-#line 50
+#line 129 "src/rendering/gi_gpu/shaders/gi_cards.slang"
 struct KernelContext_0
 {
     GiDispatch_0 constant* giDispatch_0;
     GiSceneSet_default_0 constant* giScene_0;
+    array<uint, int(32)> threadgroup* gcLit_0;
+    array<float3, int(64)> threadgroup* gcRay_0;
 };
 
 
-#line 407
+#line 407 "src/rendering/gi_gpu/shaders/gi_gpu_common.slang"
 float3 giDirectRadiance_0(uint light_0, float3 position_1, float3 normal_3, KernelContext_0 thread* kernelContext_0)
 {
 
@@ -1113,84 +1115,32 @@ float3 giShadowTarget_0(uint light_1, float3 position_2, KernelContext_0 thread*
 }
 
 
-#line 437
-float3 giShadowTarget_1(uint light_2, float3 position_3, KernelContext_0 thread* kernelContext_2)
-{
-
-#line 438
-    uint _S28 = light_2 * 4U;
-
-#line 438
-    float4 a_2 = kernelContext_2->giScene_0->lights_0[_S28];
-    float4 b_2 = kernelContext_2->giScene_0->lights_0[_S28 + 1U];
-
-    float4 d_2 = kernelContext_2->giScene_0->lights_0[_S28 + 3U];
-
-#line 441
-    float3 _S29;
-    if((kernelContext_2->giScene_0->lights_0[_S28 + 2U].w) != 0.0)
-    {
-
-#line 442
-        _S29 = position_3 - giNormalisedOr_0(b_2.xyz, float3(0.0, 1.0, 0.0)) * float3(1000.0) ;
-
-#line 442
-    }
-    else
-    {
-
-#line 443
-        if((d_2.w) > 0.0)
-        {
-
-#line 443
-            _S29 = a_2.xyz + d_2.xyz * float3(0.30000001192092896) ;
-
-#line 443
-        }
-        else
-        {
-
-#line 443
-            _S29 = a_2.xyz;
-
-#line 443
-        }
-
-#line 442
-    }
-
-#line 442
-    return _S29;
-}
-
-
 #line 295
-bool giShadowMapShadowed_0(float3 p_0, KernelContext_0 thread* kernelContext_3)
+bool giShadowMapShadowed_0(float3 p_0, KernelContext_0 thread* kernelContext_2)
 {
 
 #line 296
-    float4 centre_1 = (as_type<float4>((kernelContext_3->giScene_0->constants_0[5U])));
-    float4 dir_0 = (as_type<float4>((kernelContext_3->giScene_0->constants_0[6U])));
+    float4 centre_1 = (as_type<float4>((kernelContext_2->giScene_0->constants_0[5U])));
+    float4 dir_0 = (as_type<float4>((kernelContext_2->giScene_0->constants_0[6U])));
 
-    float4 up_0 = (as_type<float4>((kernelContext_3->giScene_0->constants_0[8U])));
-    uint resolution_0 = kernelContext_3->giScene_0->constants_0[7U].w;
+    float4 up_0 = (as_type<float4>((kernelContext_2->giScene_0->constants_0[8U])));
+    uint resolution_0 = kernelContext_2->giScene_0->constants_0[7U].w;
     float extent_0 = centre_1.w;
     float3 relative_0 = p_0 - centre_1.xyz;
-    float u_1 = dot(relative_0, (as_type<float4>((kernelContext_3->giScene_0->constants_0[7U]))).xyz);
+    float u_1 = dot(relative_0, (as_type<float4>((kernelContext_2->giScene_0->constants_0[7U]))).xyz);
     float v_2 = dot(relative_0, up_0.xyz);
-    float _S30 = dir_0.w;
+    float _S28 = dir_0.w;
 
 #line 305
-    float depth_0 = dot(relative_0, dir_0.xyz) + _S30 * 0.5;
+    float depth_0 = dot(relative_0, dir_0.xyz) + _S28 * 0.5;
 
 #line 305
-    bool _S31;
+    bool _S29;
     if((abs(u_1)) >= extent_0)
     {
 
 #line 306
-        _S31 = true;
+        _S29 = true;
 
 #line 306
     }
@@ -1198,17 +1148,17 @@ bool giShadowMapShadowed_0(float3 p_0, KernelContext_0 thread* kernelContext_3)
     {
 
 #line 306
-        _S31 = (abs(v_2)) >= extent_0;
+        _S29 = (abs(v_2)) >= extent_0;
 
 #line 306
     }
 
 #line 306
-    if(_S31)
+    if(_S29)
     {
 
 #line 306
-        _S31 = true;
+        _S29 = true;
 
 #line 306
     }
@@ -1216,17 +1166,17 @@ bool giShadowMapShadowed_0(float3 p_0, KernelContext_0 thread* kernelContext_3)
     {
 
 #line 306
-        _S31 = depth_0 < 0.0;
+        _S29 = depth_0 < 0.0;
 
 #line 306
     }
 
 #line 306
-    if(_S31)
+    if(_S29)
     {
 
 #line 306
-        _S31 = true;
+        _S29 = true;
 
 #line 306
     }
@@ -1234,58 +1184,57 @@ bool giShadowMapShadowed_0(float3 p_0, KernelContext_0 thread* kernelContext_3)
     {
 
 #line 306
-        _S31 = depth_0 > _S30;
+        _S29 = depth_0 > _S28;
 
 #line 306
     }
 
 #line 306
-    if(_S31)
+    if(_S29)
     {
 
 #line 307
         return false;
     }
     int last_0 = int(resolution_0) - int(1);
-    float _S32 = float(resolution_0);
+    float _S30 = float(resolution_0);
 
 
-    return kernelContext_3->giScene_0->shadowDepths_0[uint(clamp(int(floor((v_2 / extent_0 * 0.5 + 0.5) * _S32)), int(0), last_0)) * resolution_0 + uint(clamp(int(floor((u_1 / extent_0 * 0.5 + 0.5) * _S32)), int(0), last_0))] < (depth_0 - up_0.w);
+    return kernelContext_2->giScene_0->shadowDepths_0[uint(clamp(int(floor((v_2 / extent_0 * 0.5 + 0.5) * _S30)), int(0), last_0)) * resolution_0 + uint(clamp(int(floor((u_1 / extent_0 * 0.5 + 0.5) * _S30)), int(0), last_0))] < (depth_0 - up_0.w);
 }
 
 
 #line 123
-float giFinestVoxel_0(KernelContext_0 thread* kernelContext_4)
+float giFinestVoxel_0(KernelContext_0 thread* kernelContext_3)
 {
 
-)cy_msl"
-    R"cy_msl(#line 124
+#line 124
+    return (as_type<float>((kernelContext_3->giScene_0->constants_0[9U].y)));
+}
+
+
+#line 123
+float giFinestVoxel_1(KernelContext_0 thread* kernelContext_4)
+{
+
+#line 124
     return (as_type<float>((kernelContext_4->giScene_0->constants_0[9U].y)));
 }
 
 
-#line 123
-float giFinestVoxel_1(KernelContext_0 thread* kernelContext_5)
-{
-
-#line 124
-    return (as_type<float>((kernelContext_5->giScene_0->constants_0[9U].y)));
-}
-
-
 #line 115
-uint giLevelCount_0(KernelContext_0 thread* kernelContext_6)
+uint giLevelCount_0(KernelContext_0 thread* kernelContext_5)
 {
 
 #line 116
-    return kernelContext_6->giScene_0->constants_0[0U].x;
+    return kernelContext_5->giScene_0->constants_0[0U].x;
 }
 
-uint giWindowBricks_0(KernelContext_0 thread* kernelContext_7)
+uint giWindowBricks_0(KernelContext_0 thread* kernelContext_6)
 {
 
 #line 120
-    return kernelContext_7->giScene_0->constants_0[0U].y;
+    return kernelContext_6->giScene_0->constants_0[0U].y;
 }
 
 
@@ -1294,25 +1243,26 @@ int giWrap_0(int value_0, int modulus_0)
 {
 
 #line 168
-    uint _S33 = uint(modulus_0);
-    uint _S34 = (uint(value_0) + (_S33 << 20U)) % _S33;
+    uint _S31 = uint(modulus_0);
+    uint _S32 = (uint(value_0) + (_S31 << 20U)) % _S31;
 
 #line 169
-    return int(_S34);
+    return int(_S32);
 }
 
 
 #line 95
-float giLerp_0(float a_3, float b_3, float t_0)
+float giLerp_0(float a_2, float b_2, float t_0)
 {
 
 #line 96
-    return a_3 + (b_3 - a_3) * t_0;
+    return a_2 + (b_2 - a_2) * t_0;
 }
 
-
+)cy_msl"
+    R"cy_msl(
 #line 128
-float giTrilinear_0(uint slot_0, float fx_0, float fy_0, float fz_0, KernelContext_0 thread* kernelContext_8)
+float giTrilinear_0(uint slot_0, float fx_0, float fy_0, float fz_0, KernelContext_0 thread* kernelContext_7)
 {
     int x0_0 = clamp(int(floor(fx_0)), int(0), int(3));
     int y0_0 = clamp(int(floor(fy_0)), int(0), int(3));
@@ -1325,44 +1275,44 @@ float giTrilinear_0(uint slot_0, float fx_0, float fy_0, float fz_0, KernelConte
 
     uint base_1 = slot_0 * 125U;
 
-    uint _S35 = uint(z0_0) * 5U;
+    uint _S33 = uint(z0_0) * 5U;
 
 #line 141
-    uint _S36 = uint(y0_0);
+    uint _S34 = uint(y0_0);
 
 #line 141
-    uint _S37 = base_1 + (_S35 + _S36) * 5U;
+    uint _S35 = base_1 + (_S33 + _S34) * 5U;
 
 #line 141
-    uint _S38 = uint(x0_0);
-    uint _S39 = uint(x0_0 + int(1));
-    uint _S40 = uint(y0_0 + int(1));
+    uint _S36 = uint(x0_0);
+    uint _S37 = uint(x0_0 + int(1));
+    uint _S38 = uint(y0_0 + int(1));
 
 #line 143
-    uint _S41 = base_1 + (_S35 + _S40) * 5U;
+    uint _S39 = base_1 + (_S33 + _S38) * 5U;
 
-    uint _S42 = uint(z0_0 + int(1)) * 5U;
+    uint _S40 = uint(z0_0 + int(1)) * 5U;
 
 #line 145
-    uint _S43 = base_1 + (_S42 + _S36) * 5U;
+    uint _S41 = base_1 + (_S40 + _S34) * 5U;
 
-    uint _S44 = base_1 + (_S42 + _S40) * 5U;
+    uint _S42 = base_1 + (_S40 + _S38) * 5U;
 
 #line 153
-    return giLerp_0(giLerp_0(giLerp_0(kernelContext_8->giScene_0->bricks_0[_S37 + _S38], kernelContext_8->giScene_0->bricks_0[_S37 + _S39], tx_0), giLerp_0(kernelContext_8->giScene_0->bricks_0[_S41 + _S38], kernelContext_8->giScene_0->bricks_0[_S41 + _S39], tx_0), ty_0), giLerp_0(giLerp_0(kernelContext_8->giScene_0->bricks_0[_S43 + _S38], kernelContext_8->giScene_0->bricks_0[_S43 + _S39], tx_0), giLerp_0(kernelContext_8->giScene_0->bricks_0[_S44 + _S38], kernelContext_8->giScene_0->bricks_0[_S44 + _S39], tx_0), ty_0), clamp(fz_0 - float(z0_0), 0.0, 1.0));
+    return giLerp_0(giLerp_0(giLerp_0(kernelContext_7->giScene_0->bricks_0[_S35 + _S36], kernelContext_7->giScene_0->bricks_0[_S35 + _S37], tx_0), giLerp_0(kernelContext_7->giScene_0->bricks_0[_S39 + _S36], kernelContext_7->giScene_0->bricks_0[_S39 + _S37], tx_0), ty_0), giLerp_0(giLerp_0(kernelContext_7->giScene_0->bricks_0[_S41 + _S36], kernelContext_7->giScene_0->bricks_0[_S41 + _S37], tx_0), giLerp_0(kernelContext_7->giScene_0->bricks_0[_S42 + _S36], kernelContext_7->giScene_0->bricks_0[_S42 + _S37], tx_0), ty_0), clamp(fz_0 - float(z0_0), 0.0, 1.0));
 }
 
 
 #line 175
-float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, KernelContext_0 thread* kernelContext_9)
+float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, KernelContext_0 thread* kernelContext_8)
 {
 
 #line 176
-    uint _S45 = 16U + level_0 * 2U;
+    uint _S43 = 16U + level_0 * 2U;
 
 #line 176
-    float4 shape_0 = (as_type<float4>((kernelContext_9->giScene_0->constants_0[_S45])));
-    int4 origin_0 = (as_type<int4>((kernelContext_9->giScene_0->constants_0[_S45 + 1U])));
+    float4 shape_0 = (as_type<float4>((kernelContext_8->giScene_0->constants_0[_S43])));
+    int4 origin_0 = (as_type<int4>((kernelContext_8->giScene_0->constants_0[_S43 + 1U])));
     float voxel_0 = shape_0.x;
     float brick_0 = shape_0.y;
     *farDistance_0 = shape_0.z;
@@ -1371,19 +1321,19 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     int bz_0 = int(floor(p_1.z / brick_0));
 
 #line 183
-    uint _S46 = giWindowBricks_0(kernelContext_9);
-    int dim_0 = int(_S46);
-    int _S47 = origin_0.x;
+    uint _S44 = giWindowBricks_0(kernelContext_8);
+    int dim_0 = int(_S44);
+    int _S45 = origin_0.x;
 
 #line 185
-    bool _S48;
+    bool _S46;
 
 #line 185
-    if(bx_0 < _S47)
+    if(bx_0 < _S45)
     {
 
 #line 185
-        _S48 = true;
+        _S46 = true;
 
 #line 185
     }
@@ -1391,17 +1341,17 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     {
 
 #line 185
-        _S48 = by_0 < (origin_0.y);
+        _S46 = by_0 < (origin_0.y);
 
 #line 185
     }
 
 #line 185
-    if(_S48)
+    if(_S46)
     {
 
 #line 185
-        _S48 = true;
+        _S46 = true;
 
 #line 185
     }
@@ -1409,17 +1359,17 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     {
 
 #line 185
-        _S48 = bz_0 < (origin_0.z);
+        _S46 = bz_0 < (origin_0.z);
 
 #line 185
     }
 
 #line 185
-    if(_S48)
+    if(_S46)
     {
 
 #line 185
-        _S48 = true;
+        _S46 = true;
 
 #line 185
     }
@@ -1427,17 +1377,17 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     {
 
 #line 185
-        _S48 = bx_0 >= (_S47 + dim_0);
+        _S46 = bx_0 >= (_S45 + dim_0);
 
 #line 185
     }
 
 #line 185
-    if(_S48)
+    if(_S46)
     {
 
 #line 185
-        _S48 = true;
+        _S46 = true;
 
 #line 185
     }
@@ -1445,15 +1395,15 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     {
 
 #line 185
-        _S48 = by_0 >= (origin_0.y + dim_0);
+        _S46 = by_0 >= (origin_0.y + dim_0);
 
 #line 185
     }
-    if(_S48)
+    if(_S46)
     {
 
 #line 186
-        _S48 = true;
+        _S46 = true;
 
 #line 186
     }
@@ -1461,31 +1411,31 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     {
 
 #line 186
-        _S48 = bz_0 >= (origin_0.z + dim_0);
+        _S46 = bz_0 >= (origin_0.z + dim_0);
 
 #line 186
     }
 
 #line 185
-    if(_S48)
+    if(_S46)
     {
         return *farDistance_0;
     }
-    int _S49 = giWrap_0(bz_0, dim_0);
+    int _S47 = giWrap_0(bz_0, dim_0);
 
 #line 189
-    uint _S50 = uint(dim_0);
+    uint _S48 = uint(dim_0);
 
 #line 189
-    uint _S51 = uint(_S49) * _S50;
+    uint _S49 = uint(_S47) * _S48;
 
 #line 189
-    int _S52 = giWrap_0(by_0, dim_0);
+    int _S50 = giWrap_0(by_0, dim_0);
 
 #line 189
-    uint _S53 = (_S51 + uint(_S52)) * _S50;
-    int _S54 = giWrap_0(bx_0, dim_0);
-    uint slot_1 = kernelContext_9->giScene_0->pageTable_0[level_0 * uint(dim_0 * dim_0 * dim_0) + (_S53 + uint(_S54))];
+    uint _S51 = (_S49 + uint(_S50)) * _S48;
+    int _S52 = giWrap_0(bx_0, dim_0);
+    uint slot_1 = kernelContext_8->giScene_0->pageTable_0[level_0 * uint(dim_0 * dim_0 * dim_0) + (_S51 + uint(_S52))];
     if(slot_1 == 4294967295U)
     {
 
@@ -1496,16 +1446,16 @@ float giSampleLevel_0(uint level_0, float3 p_1, float thread* farDistance_0, Ker
     float3 local_0 = (p_1 - float3(float(bx_0) * brick_0, float(by_0) * brick_0, float(bz_0) * brick_0)) / float3(voxel_0) ;
 
 #line 196
-    float _S55 = giTrilinear_0(slot_1, local_0.x, local_0.y, local_0.z, kernelContext_9);
-    return _S55;
+    float _S53 = giTrilinear_0(slot_1, local_0.x, local_0.y, local_0.z, kernelContext_8);
+    return _S53;
 }
 
 
-float giDistance_0(float3 p_2, KernelContext_0 thread* kernelContext_10)
+float giDistance_0(float3 p_2, KernelContext_0 thread* kernelContext_9)
 {
 
 #line 201
-    uint _S56 = giLevelCount_0(kernelContext_10);
+    uint _S54 = giLevelCount_0(kernelContext_9);
 
 #line 201
     float answer_0 = 1.0e+06;
@@ -1518,7 +1468,7 @@ float giDistance_0(float3 p_2, KernelContext_0 thread* kernelContext_10)
     {
 
 #line 204
-        if(level_1 < _S56)
+        if(level_1 < _S54)
         {
         }
         else
@@ -1532,21 +1482,21 @@ float giDistance_0(float3 p_2, KernelContext_0 thread* kernelContext_10)
         thread float farDistance_1 = 0.0;
 
 #line 205
-        float _S57 = giSampleLevel_0(level_1, p_2, &farDistance_1, kernelContext_10);
+        float _S55 = giSampleLevel_0(level_1, p_2, &farDistance_1, kernelContext_9);
 
-        float _S58 = min(answer_0, _S57);
-        if(_S57 < farDistance_1)
+        float _S56 = min(answer_0, _S55);
+        if(_S55 < farDistance_1)
         {
 
 #line 209
-            return _S57;
+            return _S55;
         }
 
 #line 204
         uint level_2 = level_1 + 1U;
 
 #line 204
-        answer_0 = _S58;
+        answer_0 = _S56;
 
 #line 204
         level_1 = level_2;
@@ -1564,12 +1514,11 @@ struct GiTraceHit_0
     bool exhausted_0;
     float t_1;
     float closest_0;
-    float3 position_4;
+    float3 position_3;
     float3 normal_4;
 };
 
-)cy_msl"
-    R"cy_msl(GiTraceHit_0 giSphereTrace_0(float3 origin_1, float3 direction_0, float maxDistance_0, float tMin_0, KernelContext_0 thread* kernelContext_11)
+GiTraceHit_0 giSphereTrace_0(float3 origin_1, float3 direction_0, float maxDistance_0, float tMin_0, KernelContext_0 thread* kernelContext_10)
 {
 
 #line 226
@@ -1578,12 +1527,12 @@ struct GiTraceHit_0
     (&result_0)->exhausted_0 = false;
     (&result_0)->t_1 = 0.0;
     (&result_0)->closest_0 = 0.0;
-    (&result_0)->position_4 = float3(0.0, 0.0, 0.0);
+    (&result_0)->position_3 = float3(0.0, 0.0, 0.0);
     (&result_0)->normal_4 = float3(0.0, 1.0, 0.0);
 
 #line 232
-    uint _S59 = giLevelCount_0(kernelContext_11);
-    if(_S59 == 0U)
+    uint _S57 = giLevelCount_0(kernelContext_10);
+    if(_S57 == 0U)
     {
 
 #line 234
@@ -1591,11 +1540,11 @@ struct GiTraceHit_0
     }
 
 #line 234
-    float _S60 = giFinestVoxel_0(kernelContext_11);
+    float _S58 = giFinestVoxel_0(kernelContext_10);
 
 
-    float surface_0 = _S60 * 0.5;
-    float _S61 = max(tMin_0, surface_0);
+    float surface_0 = _S58 * 0.5;
+    float _S59 = max(tMin_0, surface_0);
     thread array<float, int(3)> recent_0;
 
 #line 239
@@ -1613,11 +1562,12 @@ struct GiTraceHit_0
 #line 239
     uint recentSlot_0 = 0U;
 
-#line 239
+)cy_msl"
+    R"cy_msl(#line 239
     uint step_0 = 0U;
 
 #line 239
-    float t_2 = _S61;
+    float t_2 = _S59;
 
 
     for(;;)
@@ -1640,67 +1590,67 @@ struct GiTraceHit_0
             (&result_0)->closest_0 = min(closest_1, min(recent_0[int(0)], min(recent_0[int(1)], recent_0[int(2)])));
             return result_0;
         }
-        float3 position_5 = origin_1 + direction_0 * float3(t_2) ;
+        float3 position_4 = origin_1 + direction_0 * float3(t_2) ;
 
 #line 248
-        float _S62 = giDistance_0(position_5, kernelContext_11);
+        float _S60 = giDistance_0(position_4, kernelContext_10);
 
-        if(_S62 < surface_0)
+        if(_S60 < surface_0)
         {
 
 #line 251
             (&result_0)->hit_0 = true;
             (&result_0)->t_1 = t_2;
-            (&result_0)->position_4 = position_5;
+            (&result_0)->position_3 = position_4;
 
 
-            float3 _S63 = float3(_S60, 0.0, 0.0);
-
-#line 256
-            float _S64 = giDistance_0(position_5 + _S63, kernelContext_11);
+            float3 _S61 = float3(_S58, 0.0, 0.0);
 
 #line 256
-            float _S65 = giDistance_0(position_5 - _S63, kernelContext_11);
+            float _S62 = giDistance_0(position_4 + _S61, kernelContext_10);
 
 #line 256
-            float _S66 = _S64 - _S65;
+            float _S63 = giDistance_0(position_4 - _S61, kernelContext_10);
 
-            float3 _S67 = float3(0.0, _S60, 0.0);
+#line 256
+            float _S64 = _S62 - _S63;
 
-#line 258
-            float _S68 = giDistance_0(position_5 + _S67, kernelContext_11);
-
-#line 258
-            float _S69 = giDistance_0(position_5 - _S67, kernelContext_11);
+            float3 _S65 = float3(0.0, _S58, 0.0);
 
 #line 258
-            float _S70 = _S68 - _S69;
+            float _S66 = giDistance_0(position_4 + _S65, kernelContext_10);
 
-            float3 _S71 = float3(0.0, 0.0, _S60);
+#line 258
+            float _S67 = giDistance_0(position_4 - _S65, kernelContext_10);
+
+#line 258
+            float _S68 = _S66 - _S67;
+
+            float3 _S69 = float3(0.0, 0.0, _S58);
 
 #line 260
-            float _S72 = giDistance_0(position_5 + _S71, kernelContext_11);
+            float _S70 = giDistance_0(position_4 + _S69, kernelContext_10);
 
 #line 260
-            float _S73 = giDistance_0(position_5 - _S71, kernelContext_11);
+            float _S71 = giDistance_0(position_4 - _S69, kernelContext_10);
 
-            (&result_0)->normal_4 = giNormalisedOr_0(float3(_S66, _S70, _S72 - _S73), - direction_0);
+            (&result_0)->normal_4 = giNormalisedOr_0(float3(_S64, _S68, _S70 - _S71), - direction_0);
             (&result_0)->closest_0 = closest_1;
             return result_0;
         }
-        float _S74 = min(closest_1, recent_0[recentSlot_0]);
-        recent_0[recentSlot_0] = _S62;
-        uint _S75 = (recentSlot_0 + 1U) % 3U;
-        float t_3 = t_2 + max(_S62, surface_0);
+        float _S72 = min(closest_1, recent_0[recentSlot_0]);
+        recent_0[recentSlot_0] = _S60;
+        uint _S73 = (recentSlot_0 + 1U) % 3U;
+        float t_3 = t_2 + max(_S60, surface_0);
 
 #line 242
         uint step_1 = step_0 + 1U;
 
 #line 242
-        closest_1 = _S74;
+        closest_1 = _S72;
 
 #line 242
-        recentSlot_0 = _S75;
+        recentSlot_0 = _S73;
 
 #line 242
         step_0 = step_1;
@@ -1720,7 +1670,7 @@ struct GiTraceHit_0
 
 
 #line 225
-GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDistance_1, float tMin_1, KernelContext_0 thread* kernelContext_12)
+GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDistance_1, float tMin_1, KernelContext_0 thread* kernelContext_11)
 {
 
 #line 226
@@ -1729,12 +1679,12 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDista
     (&result_1)->exhausted_0 = false;
     (&result_1)->t_1 = 0.0;
     (&result_1)->closest_0 = 0.0;
-    (&result_1)->position_4 = float3(0.0, 0.0, 0.0);
+    (&result_1)->position_3 = float3(0.0, 0.0, 0.0);
     (&result_1)->normal_4 = float3(0.0, 1.0, 0.0);
 
 #line 232
-    uint _S76 = giLevelCount_0(kernelContext_12);
-    if(_S76 == 0U)
+    uint _S74 = giLevelCount_0(kernelContext_11);
+    if(_S74 == 0U)
     {
 
 #line 234
@@ -1742,11 +1692,11 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDista
     }
 
 #line 234
-    float _S77 = giFinestVoxel_0(kernelContext_12);
+    float _S75 = giFinestVoxel_0(kernelContext_11);
 
 
-    float surface_1 = _S77 * 0.5;
-    float _S78 = max(tMin_1, surface_1);
+    float surface_1 = _S75 * 0.5;
+    float _S76 = max(tMin_1, surface_1);
     thread array<float, int(3)> recent_1;
 
 #line 239
@@ -1768,7 +1718,7 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDista
     uint step_2 = 0U;
 
 #line 239
-    float t_4 = _S78;
+    float t_4 = _S76;
 
 
     for(;;)
@@ -1791,67 +1741,67 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDista
             (&result_1)->closest_0 = min(closest_2, min(recent_1[int(0)], min(recent_1[int(1)], recent_1[int(2)])));
             return result_1;
         }
-        float3 position_6 = origin_2 + direction_1 * float3(t_4) ;
+        float3 position_5 = origin_2 + direction_1 * float3(t_4) ;
 
 #line 248
-        float _S79 = giDistance_0(position_6, kernelContext_12);
+        float _S77 = giDistance_0(position_5, kernelContext_11);
 
-        if(_S79 < surface_1)
+        if(_S77 < surface_1)
         {
 
 #line 251
             (&result_1)->hit_0 = true;
             (&result_1)->t_1 = t_4;
-            (&result_1)->position_4 = position_6;
+            (&result_1)->position_3 = position_5;
 
 
-            float3 _S80 = float3(_S77, 0.0, 0.0);
-
-#line 256
-            float _S81 = giDistance_0(position_6 + _S80, kernelContext_12);
+            float3 _S78 = float3(_S75, 0.0, 0.0);
 
 #line 256
-            float _S82 = giDistance_0(position_6 - _S80, kernelContext_12);
+            float _S79 = giDistance_0(position_5 + _S78, kernelContext_11);
 
 #line 256
-            float _S83 = _S81 - _S82;
+            float _S80 = giDistance_0(position_5 - _S78, kernelContext_11);
 
-            float3 _S84 = float3(0.0, _S77, 0.0);
+#line 256
+            float _S81 = _S79 - _S80;
 
-#line 258
-            float _S85 = giDistance_0(position_6 + _S84, kernelContext_12);
-
-#line 258
-            float _S86 = giDistance_0(position_6 - _S84, kernelContext_12);
+            float3 _S82 = float3(0.0, _S75, 0.0);
 
 #line 258
-            float _S87 = _S85 - _S86;
+            float _S83 = giDistance_0(position_5 + _S82, kernelContext_11);
 
-            float3 _S88 = float3(0.0, 0.0, _S77);
+#line 258
+            float _S84 = giDistance_0(position_5 - _S82, kernelContext_11);
+
+#line 258
+            float _S85 = _S83 - _S84;
+
+            float3 _S86 = float3(0.0, 0.0, _S75);
 
 #line 260
-            float _S89 = giDistance_0(position_6 + _S88, kernelContext_12);
+            float _S87 = giDistance_0(position_5 + _S86, kernelContext_11);
 
 #line 260
-            float _S90 = giDistance_0(position_6 - _S88, kernelContext_12);
+            float _S88 = giDistance_0(position_5 - _S86, kernelContext_11);
 
-            (&result_1)->normal_4 = giNormalisedOr_0(float3(_S83, _S87, _S89 - _S90), - direction_1);
+            (&result_1)->normal_4 = giNormalisedOr_0(float3(_S81, _S85, _S87 - _S88), - direction_1);
             (&result_1)->closest_0 = closest_2;
             return result_1;
         }
-        float _S91 = min(closest_2, recent_1[recentSlot_1]);
-        recent_1[recentSlot_1] = _S79;
-        uint _S92 = (recentSlot_1 + 1U) % 3U;
-        float t_5 = t_4 + max(_S79, surface_1);
+        float _S89 = min(closest_2, recent_1[recentSlot_1]);
+        recent_1[recentSlot_1] = _S77;
+        uint _S90 = (recentSlot_1 + 1U) % 3U;
+        float t_5 = t_4 + max(_S77, surface_1);
 
 #line 242
         uint step_3 = step_2 + 1U;
 
 #line 242
-        closest_2 = _S91;
+        closest_2 = _S89;
 
 #line 242
-        recentSlot_1 = _S92;
+        recentSlot_1 = _S90;
 
 #line 242
         step_2 = step_3;
@@ -1870,9 +1820,8 @@ GiTraceHit_0 giSphereTrace_1(float3 origin_2, float3 direction_1, float maxDista
 }
 
 
-)cy_msl"
-    R"cy_msl(#line 317
-bool giFieldOccluded_0(float3 from_1, float3 to_1, KernelContext_0 thread* kernelContext_13)
+#line 317
+bool giFieldOccluded_0(float3 from_1, float3 to_1, KernelContext_0 thread* kernelContext_12)
 {
 
 #line 318
@@ -1886,9 +1835,9 @@ bool giFieldOccluded_0(float3 from_1, float3 to_1, KernelContext_0 thread* kerne
     }
 
 #line 321
-    float _S93 = giFinestVoxel_1(kernelContext_13);
+    float _S91 = giFinestVoxel_1(kernelContext_12);
 
-    float bias_0 = _S93 * 2.0;
+    float bias_0 = _S91 * 2.0;
     if(span_0 <= bias_0)
     {
 
@@ -1897,13 +1846,13 @@ bool giFieldOccluded_0(float3 from_1, float3 to_1, KernelContext_0 thread* kerne
     }
 
 #line 325
-    GiTraceHit_0 _S94 = giSphereTrace_1(from_1, offset_1 / float3(span_0) , span_0 * 0.99900001287460327, bias_0, kernelContext_13);
+    GiTraceHit_0 _S92 = giSphereTrace_1(from_1, offset_1 / float3(span_0) , span_0 * 0.99900001287460327, bias_0, kernelContext_12);
 
-    return _S94.hit_0;
+    return _S92.hit_0;
 }
 
 
-bool giOccluded_0(float3 from_2, float3 to_2, KernelContext_0 thread* kernelContext_14)
+bool giOccluded_0(float3 from_2, float3 to_2, KernelContext_0 thread* kernelContext_13)
 {
 
 #line 332
@@ -1915,15 +1864,16 @@ bool giOccluded_0(float3 from_2, float3 to_2, KernelContext_0 thread* kernelCont
 #line 335
         return false;
     }
-    float3 dir_1 = (as_type<float3>((kernelContext_14->giScene_0->constants_0[6U].xyz)));
+    float3 dir_1 = (as_type<float3>((kernelContext_13->giScene_0->constants_0[6U].xyz)));
 
-#line 337
-    bool _S95;
-    if((kernelContext_14->giScene_0->constants_0[9U].x) != 0U)
+)cy_msl"
+    R"cy_msl(#line 337
+    bool _S93;
+    if((kernelContext_13->giScene_0->constants_0[9U].x) != 0U)
     {
 
 #line 338
-        _S95 = (dot(offset_2 / float3(span_1) , - dir_1)) > 0.99989998340606689;
+        _S93 = (dot(offset_2 / float3(span_1) , - dir_1)) > 0.99989998340606689;
 
 #line 338
     }
@@ -1931,405 +1881,468 @@ bool giOccluded_0(float3 from_2, float3 to_2, KernelContext_0 thread* kernelCont
     {
 
 #line 338
-        _S95 = false;
+        _S93 = false;
 
 #line 338
     }
 
 #line 338
-    if(_S95)
+    if(_S93)
     {
 
 #line 338
-        bool _S96 = giShadowMapShadowed_0(from_2, kernelContext_14);
-        return _S96;
+        bool _S94 = giShadowMapShadowed_0(from_2, kernelContext_13);
+        return _S94;
     }
 
 #line 339
-    bool _S97 = giFieldOccluded_0(from_2, to_2, kernelContext_14);
+    bool _S95 = giFieldOccluded_0(from_2, to_2, kernelContext_13);
 
-    return _S97;
+    return _S95;
 }
 
 
-#line 331
-bool giOccluded_1(float3 from_3, float3 to_3, KernelContext_0 thread* kernelContext_15)
+#line 46 "src/rendering/gi_gpu/shaders/gi_cards.slang"
+float giCardLightVisibilityWide_0(uint lane_0, uint light_2, float3 position_6, float3 normal_5, float area_1, KernelContext_0 thread* kernelContext_14)
 {
 
-#line 332
-    float3 offset_3 = to_3 - from_3;
-    float span_2 = length(offset_3);
-    if(span_2 <= 0.00009999999747379)
-    {
+#line 46
+    uint _S96;
 
-#line 335
-        return false;
-    }
-    float3 dir_2 = (as_type<float3>((kernelContext_15->giScene_0->constants_0[6U].xyz)));
+#line 46
+    uint other_0;
+    float3 lift_0 = normal_5 * float3(0.00999999977648258) ;
 
-#line 337
-    bool _S98;
-    if((kernelContext_15->giScene_0->constants_0[9U].x) != 0U)
-    {
+#line 47
+    uint edge_1;
 
-#line 338
-        _S98 = (dot(offset_3 / float3(span_2) , - dir_2)) > 0.99989998340606689;
+#line 47
+    bool _S97;
 
-#line 338
-    }
-    else
-    {
-
-#line 338
-        _S98 = false;
-
-#line 338
-    }
-
-#line 338
-    if(_S98)
-    {
-
-#line 338
-        bool _S99 = giShadowMapShadowed_0(from_3, kernelContext_15);
-        return _S99;
-    }
-
-#line 339
-    bool _S100 = giFieldOccluded_0(from_3, to_3, kernelContext_15);
-
-    return _S100;
-}
-
-
-#line 449
-uint giCardLitShare_0(uint light_3, float3 position_7, float3 lift_0, float3 tangent_3, float3 bitangent_3, float side_0, uint edge_1, KernelContext_0 thread* kernelContext_16)
-{
-
-#line 450
-    uint row_0 = 0U;
-
-#line 450
-    uint lit_0 = 0U;
-
-    for(;;)
-    {
-
-#line 452
-        if(row_0 < edge_1)
-        {
-        }
-        else
-        {
-
-#line 452
-            break;
-        }
-
-#line 452
-        uint column_0 = 0U;
-        for(;;)
-        {
-
-#line 453
-            if(column_0 < edge_1)
-            {
-            }
-            else
-            {
-
-#line 453
-                break;
-            }
-
-#line 454
-            float _S101 = float(edge_1);
-
-            float3 at_0 = position_7 + tangent_3 * float3((((float(column_0) + 0.5) / _S101 - 0.5) * side_0))  + bitangent_3 * float3((((float(row_0) + 0.5) / _S101 - 0.5) * side_0)) ;
-            float3 _S102 = at_0 + lift_0;
-
-#line 457
-            float3 _S103 = giShadowTarget_1(light_3, at_0, kernelContext_16);
-
-#line 457
-            bool _S104 = giOccluded_1(_S102, _S103, kernelContext_16);
-
-#line 457
-            uint _S105;
-
-#line 457
-            if(_S104)
-            {
-
-#line 457
-                _S105 = 0U;
-
-#line 457
-            }
-            else
-            {
-
-#line 457
-                _S105 = 1U;
-
-#line 457
-            }
-
-#line 457
-            uint lit_1 = lit_0 + _S105;
-
-#line 453
-            column_0 = column_0 + 1U;
-
-#line 453
-            lit_0 = lit_1;
-
-#line 453
-        }
-
-#line 452
-        row_0 = row_0 + 1U;
-
-#line 452
-    }
-
-#line 460
-    return lit_0;
-}
-
-
-float giCardLightVisibility_0(uint light_4, float3 position_8, float3 normal_5, float area_1, KernelContext_0 thread* kernelContext_17)
-{
-
-#line 465
-    float3 lift_1 = normal_5 * float3(0.00999999977648258) ;
-
-#line 465
-    float _S106;
+#line 47
+    float whole_0;
     if(!(area_1 > 0.0))
     {
 
-#line 467
-        float3 _S107 = position_8 + lift_1;
-
-#line 467
-        float3 _S108 = giShadowTarget_0(light_4, position_8, kernelContext_17);
-
-#line 467
-        bool _S109 = giOccluded_0(_S107, _S108, kernelContext_17);
-
-#line 467
-        if(_S109)
+#line 49
+        if(lane_0 == 0U)
         {
 
-#line 467
-            _S106 = 0.0;
+#line 49
+            float3 _S98 = position_6 + lift_0;
 
-#line 467
+#line 49
+            float3 _S99 = giShadowTarget_0(light_2, position_6, kernelContext_14);
+
+#line 49
+            bool _S100 = giOccluded_0(_S98, _S99, kernelContext_14);
+
+#line 49
+            _S97 = !_S100;
+
+#line 49
         }
         else
         {
 
-#line 467
-            _S106 = 1.0;
+#line 49
+            _S97 = false;
 
-#line 467
+#line 49
         }
-
-#line 467
-        return _S106;
-    }
-    thread float3 tangent_4;
-    thread float3 bitangent_4;
-    giEmitterBasis_1(normal_5, &tangent_4, &bitangent_4);
-    float side_1 = sqrt(area_1);
-
-#line 472
-    uint _S110 = giCardLitShare_0(light_4, position_8, lift_1, tangent_4, bitangent_4, side_1, 2U, kernelContext_17);
-
-
-    bool _S111 = _S110 == 0U;
-
-#line 475
-    bool _S112;
-
-#line 475
-    if(_S111)
-    {
-
-#line 475
-        _S112 = true;
-
-#line 475
-    }
-    else
-    {
-
-#line 475
-        _S112 = _S110 == 4U;
-
-#line 475
-    }
-
-#line 475
-    if(_S112)
-    {
-
-)cy_msl"
-    R"cy_msl(#line 476
-        if(_S111)
+        if(_S97)
         {
 
-#line 476
-            _S106 = 0.0;
+#line 50
+            edge_1 = 1U;
 
-#line 476
+#line 50
         }
         else
         {
 
-#line 476
-            _S106 = 1.0;
+#line 50
+            edge_1 = 0U;
 
-#line 476
+#line 50
         }
 
-#line 476
-        return _S106;
+#line 49
+        (*kernelContext_14->gcLit_0)[lane_0] = edge_1;
+
+
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if(((*kernelContext_14->gcLit_0)[int(0)]) != 0U)
+        {
+
+#line 53
+            whole_0 = 1.0;
+
+#line 53
+        }
+        else
+        {
+
+#line 53
+            whole_0 = 0.0;
+
+#line 53
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        return whole_0;
     }
+    thread float3 tangent_3;
+    thread float3 bitangent_3;
+    giEmitterBasis_1(normal_5, &tangent_3, &bitangent_3);
+    float _S101 = sqrt(area_1);
 
-#line 476
-    uint _S113 = giCardLitShare_0(light_4, position_8, lift_1, tangent_4, bitangent_4, side_1, 4U, kernelContext_17);
+#line 60
+    edge_1 = 0U;
 
-    return float(_S113) / 16.0;
-}
+#line 60
+    uint pass_0 = 0U;
+
+#line 60
+    uint lit_0 = 0U;
 
 
-
-
-float3 giShadedCardDirect_0(float3 position_9, float3 normal_6, float area_2, KernelContext_0 thread* kernelContext_18)
-{
-    uint _S114 = kernelContext_18->giScene_0->constants_0[0U].z;
-
-#line 486
-    float3 total_0 = float3(0.0, 0.0, 0.0);
-
-#line 486
-    uint light_5 = 0U;
     for(;;)
     {
 
-#line 487
-        if(light_5 < _S114)
+#line 63
+        if(pass_0 < 2U)
         {
         }
         else
         {
 
-#line 487
+#line 63
             break;
         }
 
-#line 487
-        float3 _S115 = giDirectRadiance_0(light_5, position_9, normal_6, kernelContext_18);
+#line 64
+        bool _S102 = pass_0 == 0U;
 
-#line 487
-        bool _S116;
-
-        if((_S115.x) <= 0.0)
+#line 64
+        if(_S102)
         {
 
-#line 489
-            _S116 = (_S115.y) <= 0.0;
+#line 64
+            edge_1 = 2U;
 
-#line 489
+#line 64
         }
         else
         {
 
-#line 489
-            _S116 = false;
+#line 64
+            edge_1 = 4U;
 
-#line 489
+#line 64
         }
 
-#line 489
-        bool _S117;
+#line 64
+        uint sample_0 = lane_0;
 
-#line 489
-        if(_S116)
+#line 64
+        uint mine_0 = 0U;
+
+        for(;;)
         {
 
-#line 489
-            _S117 = (_S115.z) <= 0.0;
+#line 66
+            uint _S103 = edge_1 * edge_1;
 
-#line 489
+#line 66
+            _S96 = _S103;
+
+#line 66
+            if(sample_0 < _S103)
+            {
+            }
+            else
+            {
+
+#line 66
+                break;
+            }
+
+#line 67
+            uint row_0 = sample_0 / edge_1;
+
+            float _S104 = float(edge_1);
+
+            float3 at_0 = position_6 + tangent_3 * float3((((float(sample_0 - row_0 * edge_1) + 0.5) / _S104 - 0.5) * _S101))  + bitangent_3 * float3((((float(row_0) + 0.5) / _S104 - 0.5) * _S101)) ;
+            float3 _S105 = at_0 + lift_0;
+
+#line 72
+            float3 _S106 = giShadowTarget_0(light_2, at_0, kernelContext_14);
+
+#line 72
+            bool _S107 = giOccluded_0(_S105, _S106, kernelContext_14);
+
+#line 72
+            if(_S107)
+            {
+
+#line 72
+                other_0 = 0U;
+
+#line 72
+            }
+            else
+            {
+
+#line 72
+                other_0 = 1U;
+
+#line 72
+            }
+
+#line 72
+            uint mine_1 = mine_0 + other_0;
+
+#line 66
+            sample_0 = sample_0 + 32U;
+
+#line 66
+            mine_0 = mine_1;
+
+#line 66
+        }
+
+#line 74
+        (*kernelContext_14->gcLit_0)[lane_0] = mine_0;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+#line 75
+        other_0 = 0U;
+
+#line 75
+        lit_0 = 0U;
+
+        for(;;)
+        {
+
+#line 77
+            if(other_0 < 32U)
+            {
+            }
+            else
+            {
+
+#line 77
+                break;
+            }
+
+#line 78
+            uint lit_1 = lit_0 + (*kernelContext_14->gcLit_0)[other_0];
+
+#line 77
+            other_0 = other_0 + 1U;
+
+#line 77
+            lit_0 = lit_1;
+
+#line 77
+        }
+
+
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        if(_S102)
+        {
+
+#line 82
+            if(lit_0 == 0U)
+            {
+
+#line 82
+                _S97 = true;
+
+#line 82
+            }
+            else
+            {
+
+#line 82
+                _S97 = lit_0 == _S96;
+
+)cy_msl"
+    R"cy_msl(#line 82
+            }
+
+#line 82
         }
         else
         {
 
-#line 489
-            _S117 = false;
+#line 82
+            _S97 = false;
 
-#line 489
+#line 82
         }
 
-#line 489
-        if(_S117)
+#line 82
+        if(_S97)
         {
 
-#line 490
-            light_5 = light_5 + 1U;
+#line 83
+            if(lit_0 == 0U)
+            {
 
-#line 487
-            continue;
+#line 83
+                whole_0 = 0.0;
+
+#line 83
+            }
+            else
+            {
+
+#line 83
+                whole_0 = 1.0;
+
+#line 83
+            }
+
+#line 83
+            return whole_0;
         }
 
-#line 487
-        float _S118 = giCardLightVisibility_0(light_5, position_9, normal_6, area_2, kernelContext_18);
+#line 63
+        pass_0 = pass_0 + 1U;
 
-#line 493
-        if(_S118 <= 0.0)
-        {
-
-#line 494
-            light_5 = light_5 + 1U;
-
-#line 487
-            continue;
-        }
-
-#line 487
-        total_0 = total_0 + _S115 * float3(_S118) ;
-
-#line 487
-        light_5 = light_5 + 1U;
-
-#line 487
+#line 63
     }
 
-#line 498
+#line 86
+    return float(lit_0) / float(edge_1 * edge_1);
+}
+
+
+float3 giShadedCardDirectWide_0(uint lane_1, float3 position_7, float3 normal_6, float area_2, KernelContext_0 thread* kernelContext_15)
+{
+    uint _S108 = kernelContext_15->giScene_0->constants_0[0U].z;
+
+#line 92
+    float3 total_0 = float3(0.0, 0.0, 0.0);
+
+#line 92
+    uint light_3 = 0U;
+    for(;;)
+    {
+
+#line 93
+        if(light_3 < _S108)
+        {
+        }
+        else
+        {
+
+#line 93
+            break;
+        }
+
+#line 93
+        float3 _S109 = giDirectRadiance_0(light_3, position_7, normal_6, kernelContext_15);
+
+#line 93
+        bool _S110;
+
+        if((_S109.x) <= 0.0)
+        {
+
+#line 95
+            _S110 = (_S109.y) <= 0.0;
+
+#line 95
+        }
+        else
+        {
+
+#line 95
+            _S110 = false;
+
+#line 95
+        }
+
+#line 95
+        bool _S111;
+
+#line 95
+        if(_S110)
+        {
+
+#line 95
+            _S111 = (_S109.z) <= 0.0;
+
+#line 95
+        }
+        else
+        {
+
+#line 95
+            _S111 = false;
+
+#line 95
+        }
+
+#line 95
+        if(_S111)
+        {
+
+#line 96
+            light_3 = light_3 + 1U;
+
+#line 93
+            continue;
+        }
+
+#line 93
+        float _S112 = giCardLightVisibilityWide_0(lane_1, light_3, position_7, normal_6, area_2, kernelContext_15);
+
+#line 99
+        if(_S112 <= 0.0)
+        {
+
+#line 100
+            light_3 = light_3 + 1U;
+
+#line 93
+            continue;
+        }
+
+#line 93
+        total_0 = total_0 + _S109 * float3(_S112) ;
+
+#line 93
+        light_3 = light_3 + 1U;
+
+#line 93
+    }
+
+#line 104
     return total_0;
 }
 
 
-#line 278
+#line 278 "src/rendering/gi_gpu/shaders/gi_gpu_common.slang"
 float3 giHemisphereDirection_0(float3 normal_7, uint index_1, uint count_3)
 {
-    float _S119 = float(index_1);
-    float radius_0 = sqrt((_S119 + 0.5) / float(count_3));
-    float angle_0 = 2.3999631404876709 * _S119;
+    float _S113 = float(index_1);
+    float radius_0 = sqrt((_S113 + 0.5) / float(count_3));
+    float angle_0 = 2.3999631404876709 * _S113;
     float x_0 = radius_0 * cos(angle_0);
     float y_0 = radius_0 * sin(angle_0);
     float z_0 = sqrt(max(0.0, 1.0 - x_0 * x_0 - y_0 * y_0));
 
 #line 285
-    float3 tangent_5;
+    float3 tangent_4;
     if((abs(normal_7.y)) < 0.99000000953674316)
     {
 
 #line 286
-        tangent_5 = cross(float3(0.0, 1.0, 0.0), normal_7);
+        tangent_4 = cross(float3(0.0, 1.0, 0.0), normal_7);
 
 #line 286
     }
@@ -2337,37 +2350,37 @@ float3 giHemisphereDirection_0(float3 normal_7, uint index_1, uint count_3)
     {
 
 #line 286
-        tangent_5 = cross(float3(1.0, 0.0, 0.0), normal_7);
+        tangent_4 = cross(float3(1.0, 0.0, 0.0), normal_7);
 
 #line 286
     }
 
-    float3 tangent_6 = giNormalisedOr_0(tangent_5, float3(1.0, 0.0, 0.0));
+    float3 tangent_5 = giNormalisedOr_0(tangent_4, float3(1.0, 0.0, 0.0));
 
-    return giNormalisedOr_0(tangent_6 * float3(x_0)  + cross(normal_7, tangent_6) * float3(y_0)  + normal_7 * float3(z_0) , normal_7);
+    return giNormalisedOr_0(tangent_5 * float3(x_0)  + cross(normal_7, tangent_5) * float3(y_0)  + normal_7 * float3(z_0) , normal_7);
 }
 
 
 #line 503
-float3 giSky_0(float3 direction_2, KernelContext_0 thread* kernelContext_19)
+float3 giSky_0(float3 direction_2, KernelContext_0 thread* kernelContext_16)
 {
 
 #line 504
-    float4 zenith_0 = (as_type<float4>((kernelContext_19->giScene_0->constants_0[2U])));
-    float3 horizon_0 = (as_type<float3>((kernelContext_19->giScene_0->constants_0[3U].xyz)));
-    float3 ground_0 = (as_type<float3>((kernelContext_19->giScene_0->constants_0[4U].xyz)));
+    float4 zenith_0 = (as_type<float4>((kernelContext_16->giScene_0->constants_0[2U])));
+    float3 horizon_0 = (as_type<float3>((kernelContext_16->giScene_0->constants_0[3U].xyz)));
+    float3 ground_0 = (as_type<float3>((kernelContext_16->giScene_0->constants_0[4U].xyz)));
 
-    float _S120 = giNormalisedOr_0(direction_2, float3(0.0, 1.0, 0.0)).y;
+    float _S114 = giNormalisedOr_0(direction_2, float3(0.0, 1.0, 0.0)).y;
 
 #line 508
-    if(_S120 < 0.0)
+    if(_S114 < 0.0)
     {
 
 #line 509
         return ground_0 * float3(zenith_0.w) ;
     }
 
-    return (horizon_0 + (zenith_0.xyz - horizon_0) * float3(clamp(pow(_S120, 0.44999998807907104), 0.0, 1.0)) ) * float3(zenith_0.w) ;
+    return (horizon_0 + (zenith_0.xyz - horizon_0) * float3(clamp(pow(_S114, 0.44999998807907104), 0.0, 1.0)) ) * float3(zenith_0.w) ;
 }
 
 
@@ -2386,11 +2399,11 @@ uint giBucket_0(int x_1, int y_1, int z_1, uint buckets_0)
 
 
 #line 530
-uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* kernelContext_20)
+uint giFindCard_0(float3 position_8, float3 normal_8, KernelContext_0 thread* kernelContext_17)
 {
 
 #line 531
-    uint4 grid_0 = kernelContext_20->giScene_0->constants_0[1U];
+    uint4 grid_0 = kernelContext_17->giScene_0->constants_0[1U];
     uint buckets_1 = grid_0.x;
     if(buckets_1 == 0U)
     {
@@ -2400,14 +2413,14 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
     }
     float cell_1 = (as_type<float>((grid_0.y)));
     float radius_1 = (as_type<float>((grid_0.z)));
-    float _S121 = radius_1 * radius_1;
+    float _S115 = radius_1 * radius_1;
 
 
-    uint _S122 = giBucket_0(giCell_0(position_10.x, cell_1), giCell_0(position_10.y, cell_1), giCell_0(position_10.z, cell_1), buckets_1) * 2U;
+    uint _S116 = giBucket_0(giCell_0(position_8.x, cell_1), giCell_0(position_8.y, cell_1), giCell_0(position_8.z, cell_1), buckets_1) * 2U;
 
 #line 541
-    uint first_0 = kernelContext_20->giScene_0->gridRanges_0[_S122];
-    uint _S123 = kernelContext_20->giScene_0->gridRanges_0[_S122 + 1U];
+    uint first_0 = kernelContext_17->giScene_0->gridRanges_0[_S116];
+    uint _S117 = kernelContext_17->giScene_0->gridRanges_0[_S116 + 1U];
 
 #line 542
     float bestScore_0 = 1.0e+09;
@@ -2427,7 +2440,7 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
     {
 
 #line 546
-        if(item_0 < (first_0 + _S123))
+        if(item_0 < (first_0 + _S117))
         {
         }
         else
@@ -2438,12 +2451,12 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
         }
 
 #line 547
-        float4 entry_0 = kernelContext_20->giScene_0->gridItems_0[item_0];
+        float4 entry_0 = kernelContext_17->giScene_0->gridItems_0[item_0];
 
 
-        float3 offset_4 = entry_0.xyz - position_10;
-        float squared_1 = dot(offset_4, offset_4);
-        if(squared_1 > _S121)
+        float3 offset_3 = entry_0.xyz - position_8;
+        float squared_1 = dot(offset_3, offset_3);
+        if(squared_1 > _S115)
         {
 
 #line 553
@@ -2456,11 +2469,12 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
 #line 555
         uint handle_0 = uint(entry_0.w);
 
-        float alignment_0 = dot(kernelContext_20->giScene_0->cards_0[handle_0 * 4U + 1U].xyz, normal_8);
+        float alignment_0 = dot(kernelContext_17->giScene_0->cards_0[handle_0 * 4U + 1U].xyz, normal_8);
         if(alignment_0 <= 0.25)
         {
 
-#line 559
+)cy_msl"
+    R"cy_msl(#line 559
             item_0 = item_0 + 1U;
 
 #line 546
@@ -2468,7 +2482,7 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
         }
 
 #line 561
-        if(((*(kernelContext_20->giScene_0->cardState_0+handle_0 * 2U)).w) == 0.0)
+        if(((*(kernelContext_17->giScene_0->cardState_0+handle_0 * 2U)).w) == 0.0)
         {
 
 #line 562
@@ -2478,8 +2492,7 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
             continue;
         }
 
-)cy_msl"
-    R"cy_msl(#line 565
+#line 565
         float score_0 = squared_1 / alignment_0;
 
 #line 565
@@ -2575,130 +2588,168 @@ uint giFindCard_0(float3 position_10, float3 normal_8, KernelContext_0 thread* k
 }
 
 
-
-float3 giGather_0(float3 position_11, float3 normal_9, KernelContext_0 thread* kernelContext_21)
+#line 108 "src/rendering/gi_gpu/shaders/gi_cards.slang"
+float3 giGatherWide_0(uint lane_2, float3 position_9, float3 normal_9, KernelContext_0 thread* kernelContext_18)
 {
 
-#line 581
-    uint rays_1 = kernelContext_21->giScene_0->constants_0[0U].w;
+#line 108
+    float3 radiance_0;
+    uint rays_1 = kernelContext_18->giScene_0->constants_0[0U].w;
 
-#line 581
-    bool _S124;
+#line 109
+    bool _S118;
     if(rays_1 == 0U)
     {
 
-#line 582
-        _S124 = true;
+#line 110
+        _S118 = true;
 
-#line 582
+#line 110
     }
     else
     {
 
-#line 582
-        uint _S125 = giLevelCount_0(kernelContext_21);
+#line 110
+        uint _S119 = giLevelCount_0(kernelContext_18);
 
-#line 582
-        _S124 = _S125 == 0U;
+#line 110
+        _S118 = _S119 == 0U;
 
-#line 582
+#line 110
     }
 
-#line 582
-    if(_S124)
+#line 110
+    if(_S118)
     {
 
-#line 583
+#line 111
         return float3(0.0, 0.0, 0.0);
     }
-    float _S126 = (as_type<float>((kernelContext_21->giScene_0->constants_0[1U].w)));
+    float _S120 = (as_type<float>((kernelContext_18->giScene_0->constants_0[1U].w)));
 
-#line 585
-    float _S127 = giFinestVoxel_0(kernelContext_21);
+#line 113
+    float _S121 = giFinestVoxel_0(kernelContext_18);
 
-    float _S128 = _S127 * 2.0;
-    float3 _S129 = position_11 + normal_9 * float3(_S127) ;
+    float _S122 = _S121 * 2.0;
+    float3 _S123 = position_9 + normal_9 * float3(_S121) ;
 
-#line 588
-    float3 total_1 = float3(0.0, 0.0, 0.0);
-
-#line 588
-    uint index_2 = 0U;
-
+#line 116
+    uint index_2 = lane_2;
     for(;;)
     {
 
-#line 590
+#line 117
         if(index_2 < rays_1)
         {
         }
         else
         {
 
-#line 590
+#line 117
             break;
         }
 
-#line 591
+#line 118
         float3 direction_3 = giHemisphereDirection_0(normal_9, index_2, rays_1);
 
-#line 591
-        GiTraceHit_0 _S130 = giSphereTrace_0(_S129, direction_3, _S126, _S128, kernelContext_21);
+#line 118
+        GiTraceHit_0 _S124 = giSphereTrace_0(_S123, direction_3, _S120, _S122, kernelContext_18);
 
-        if(!_S130.hit_0)
+        float3 _S125 = float3(0.0, 0.0, 0.0);
+        if(!_S124.hit_0)
         {
 
-#line 593
-            float3 _S131 = giSky_0(direction_3, kernelContext_21);
+#line 121
+            float3 _S126 = giSky_0(direction_3, kernelContext_18);
 
-#line 593
-            total_1 = total_1 + _S131;
+#line 121
+            radiance_0 = _S126;
 
-            index_2 = index_2 + 1U;
-
-#line 590
-            continue;
-        }
-
-#line 590
-        uint _S132 = giFindCard_0(_S130.position_4, _S130.normal_4, kernelContext_21);
-
-#line 590
-        float3 total_2;
-
-#line 598
-        if(_S132 != 4294967295U)
-        {
-
-#line 598
-            total_2 = total_1 + (*(kernelContext_21->giScene_0->cardState_0+_S132 * 2U)).xyz;
-
-#line 598
+#line 121
         }
         else
         {
 
-#line 598
-            total_2 = total_1;
+#line 121
+            uint _S127 = giFindCard_0(_S124.position_3, _S124.normal_4, kernelContext_18);
 
-#line 598
+
+
+            if(_S127 != 4294967295U)
+            {
+
+#line 125
+                radiance_0 = (*(kernelContext_18->giScene_0->cardState_0+_S127 * 2U)).xyz;
+
+#line 125
+            }
+            else
+            {
+
+#line 125
+                radiance_0 = _S125;
+
+#line 125
+            }
+
+#line 121
         }
 
-#line 598
-        total_1 = total_2;
+#line 129
+        (*kernelContext_18->gcRay_0)[index_2] = radiance_0;
 
-#line 590
-        index_2 = index_2 + 1U;
+#line 117
+        index_2 = index_2 + 32U;
 
-#line 590
+#line 117
     }
 
-#line 602
-    return total_1 / float3(float(rays_1)) ;
+#line 131
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+#line 131
+    radiance_0 = float3(0.0, 0.0, 0.0);
+
+#line 131
+    index_2 = 0U;
+
+
+
+    for(;;)
+    {
+
+#line 135
+        if(index_2 < rays_1)
+        {
+        }
+        else
+        {
+
+#line 135
+            break;
+        }
+
+#line 136
+        float3 _S128 = radiance_0 + (*kernelContext_18->gcRay_0)[index_2];
+
+#line 135
+        uint index_3 = index_2 + 1U;
+
+#line 135
+        radiance_0 = _S128;
+
+#line 135
+        index_2 = index_3;
+
+#line 135
+    }
+
+
+    return radiance_0 / float3(float(rays_1)) ;
 }
 
 
-#line 105
+#line 105 "src/rendering/gi_gpu/shaders/gi_gpu_common.slang"
 float giRelativeChange_0(float3 before_0, float3 after_0)
 {
 
@@ -2714,84 +2765,106 @@ float giRelativeChange_0(float3 before_0, float3 after_0)
 }
 
 
-#line 33 "src/rendering/gi_gpu/shaders/gi_cards.slang"
-[[kernel]] void cyGiShadeCards(uint3 thread_0 [[thread_position_in_grid]], GiDispatch_0 constant* giDispatch_1 [[buffer(1)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]])
+#line 143 "src/rendering/gi_gpu/shaders/gi_cards.slang"
+[[kernel]] void cyGiShadeCards(uint3 group_0 [[threadgroup_position_in_grid]], uint3 local_1 [[thread_position_in_threadgroup]], GiDispatch_0 constant* giDispatch_1 [[buffer(1)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]])
 {
 
-#line 33
-    thread KernelContext_0 kernelContext_22;
+#line 143
+    thread KernelContext_0 kernelContext_19;
 
-#line 33
-    (&kernelContext_22)->giDispatch_0 = giDispatch_1;
+#line 143
+    (&kernelContext_19)->giDispatch_0 = giDispatch_1;
 
-#line 33
-    (&kernelContext_22)->giScene_0 = giScene_1;
-    uint index_3 = thread_0.x;
-    if(index_3 >= (giDispatch_1->count_2))
+)cy_msl"
+    R"cy_msl(#line 143
+    (&kernelContext_19)->giScene_0 = giScene_1;
+
+#line 143
+    threadgroup array<uint, int(32)> gcLit_1;
+
+#line 143
+    (&kernelContext_19)->gcLit_0 = &gcLit_1;
+
+#line 143
+    threadgroup array<float3, int(64)> gcRay_1;
+
+#line 143
+    (&kernelContext_19)->gcRay_0 = &gcRay_1;
+
+    uint index_4 = group_0.x;
+    if(index_4 >= (giDispatch_1->count_2))
     {
 
-#line 36
+#line 147
         return;
     }
-    uint handle_1 = (&kernelContext_22)->giScene_0->selection_0[index_3];
-    uint _S133 = handle_1 * 4U;
+    uint lane_3 = local_1.x;
+    uint handle_1 = (&kernelContext_19)->giScene_0->selection_0[index_4];
+    uint _S129 = handle_1 * 4U;
 
-#line 39
-    float4 position_12 = (&kernelContext_22)->giScene_0->cards_0[_S133];
+#line 151
+    float4 position_10 = (&kernelContext_19)->giScene_0->cards_0[_S129];
 
-    float4 albedo_0 = (&kernelContext_22)->giScene_0->cards_0[_S133 + 2U];
-    float4 emission_0 = (&kernelContext_22)->giScene_0->cards_0[_S133 + 3U];
-    uint _S134 = handle_1 * 2U;
+    float4 albedo_0 = (&kernelContext_19)->giScene_0->cards_0[_S129 + 2U];
+    float4 emission_0 = (&kernelContext_19)->giScene_0->cards_0[_S129 + 3U];
+    uint _S130 = handle_1 * 2U;
 
-#line 43
-    float3 before_1 = (*((&kernelContext_22)->giScene_0->cardState_0+_S134)).xyz;
+#line 155
+    float3 before_1 = (*((&kernelContext_19)->giScene_0->cardState_0+_S130)).xyz;
 
-    float3 _S135 = position_12.xyz;
+    float3 _S131 = position_10.xyz;
 
-#line 45
-    float3 _S136 = (&kernelContext_22)->giScene_0->cards_0[_S133 + 1U].xyz;
+#line 157
+    float3 _S132 = (&kernelContext_19)->giScene_0->cards_0[_S129 + 1U].xyz;
 
-#line 45
-    float3 _S137 = giShadedCardDirect_0(_S135, _S136, position_12.w, &kernelContext_22);
-    float3 _S138 = (*((&kernelContext_22)->giScene_0->cardState_0+(_S134 + 1U))).xyz;
+#line 157
+    float3 _S133 = giShadedCardDirectWide_0(lane_3, _S131, _S132, position_10.w, &kernelContext_19);
+    float3 _S134 = (*((&kernelContext_19)->giScene_0->cardState_0+(_S130 + 1U))).xyz;
 
-#line 46
+#line 158
     float3 accumulated_0;
-    if(((&kernelContext_22)->giScene_0->constants_0[0U].w) != 0U)
+    if(((&kernelContext_19)->giScene_0->constants_0[0U].w) != 0U)
     {
 
-#line 47
-        float3 _S139 = giGather_0(_S135, _S136, &kernelContext_22);
+#line 159
+        float3 _S135 = giGatherWide_0(lane_3, _S131, _S132, &kernelContext_19);
 
-#line 47
-        accumulated_0 = albedo_0.xyz * _S139;
+#line 159
+        accumulated_0 = albedo_0.xyz * _S135;
 
-#line 47
+#line 159
     }
     else
     {
 
-#line 47
-        accumulated_0 = _S138;
+#line 159
+        accumulated_0 = _S134;
 
-#line 47
+#line 159
     }
 
-#line 52
-    float3 after_1 = emission_0.xyz + albedo_0.xyz * _S137 + accumulated_0;
-    uint _S140 = index_3 * 3U;
 
-)cy_msl"
-    R"cy_msl(#line 53
-    *((&kernelContext_22)->giScene_0->results_0+_S140) = float4(_S137, giRelativeChange_0(before_1, after_1));
-    *((&kernelContext_22)->giScene_0->results_0+(_S140 + 1U)) = float4(accumulated_0, (as_type<float>((handle_1))));
-    *((&kernelContext_22)->giScene_0->results_0+(_S140 + 2U)) = float4(after_1, 1.0);
+
+    if(lane_3 != 0U)
+    {
+
+#line 164
+        return;
+    }
+
+    float3 after_1 = emission_0.xyz + albedo_0.xyz * _S133 + accumulated_0;
+    uint _S136 = index_4 * 3U;
+
+#line 168
+    *((&kernelContext_19)->giScene_0->results_0+_S136) = float4(_S133, giRelativeChange_0(before_1, after_1));
+    *((&kernelContext_19)->giScene_0->results_0+(_S136 + 1U)) = float4(accumulated_0, (as_type<float>((handle_1))));
+    *((&kernelContext_19)->giScene_0->results_0+(_S136 + 2U)) = float4(after_1, 1.0);
     return;
 }
 
 )cy_msl";
 
-/// cyGiCommitCards.metal, 1867 bytes.
+/// cyGiCommitCards.metal, 1877 bytes.
 inline constexpr char kGiCommitCardsMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -2808,7 +2881,7 @@ struct GiDispatch_0
 };
 
 
-#line 65 "src/rendering/gi_gpu/shaders/gi_cards.slang"
+#line 180 "src/rendering/gi_gpu/shaders/gi_cards.slang"
 struct GiSceneSet_default_0
 {
     uint4 device* constants_0;
@@ -2827,7 +2900,7 @@ struct GiSceneSet_default_0
 };
 
 
-#line 65
+#line 180
 struct KernelContext_0
 {
     GiDispatch_0 constant* giDispatch_0;
@@ -2835,36 +2908,36 @@ struct KernelContext_0
 };
 
 
-#line 60
+#line 175
 [[kernel]] void cyGiCommitCards(uint3 thread_0 [[thread_position_in_grid]], GiDispatch_0 constant* giDispatch_1 [[buffer(1)]], GiSceneSet_default_0 constant* giScene_1 [[buffer(0)]])
 {
 
-#line 60
+#line 175
     thread KernelContext_0 kernelContext_0;
 
-#line 60
+#line 175
     (&kernelContext_0)->giDispatch_0 = giDispatch_1;
 
-#line 60
+#line 175
     (&kernelContext_0)->giScene_0 = giScene_1;
     uint index_0 = thread_0.x;
     if(index_0 >= (giDispatch_1->count_0))
     {
 
-#line 63
+#line 178
         return;
     }
     uint _S1 = index_0 * 3U;
 
-#line 65
+#line 180
     float4 device* _S2 = (&kernelContext_0)->giScene_0->results_0+(_S1 + 1U);
 
-#line 65
+#line 180
     float4 accumulated_0 = *_S2;
 
     uint _S3 = (as_type<uint>(((*_S2).w))) * 2U;
 
-#line 67
+#line 182
     *((&kernelContext_0)->giScene_0->cardState_0+_S3) = float4((*((&kernelContext_0)->giScene_0->results_0+(_S1 + 2U))).xyz, 1.0);
 
     *((&kernelContext_0)->giScene_0->cardState_0+(_S3 + 1U)) = float4(accumulated_0.xyz, (as_type<float>(((&kernelContext_0)->giDispatch_0->frame_0))));

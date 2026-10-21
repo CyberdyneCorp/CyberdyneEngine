@@ -5,7 +5,7 @@
 // TWO DISPATCHES, BECAUSE A GATHER READS WHAT THE UPDATE WRITES
 // ================================================================================================
 //
-// `cyGiShadeCards` shades the pages `SurfaceCache::select` chose — one thread per selected page —
+// `cyGiShadeCards` shades the pages `SurfaceCache::select` chose — one workgroup per selected page —
 // and writes each answer into `results`, never into `cardState`. A card's gather looks up OTHER
 // cards' radiance, and some of those cards are being shaded by the same dispatch: writing
 // `cardState` in place would make the answer depend on which thread ran first. So the shade reads
@@ -28,13 +28,125 @@
 
 #include "gi_gpu_common.slang"
 
+/// A WORKGROUP A CARD, ITS RAYS ACROSS THE LANES. One thread a card left a budget's few hundred
+/// cards to a few hundred threads, each tracing its gather's rays and its footprint's shadow rays
+/// one after another: the device idle and the dispatch as long as one card's rays in a row. Here
+/// each lane traces one ray, and lane 0 combines them in the host's order — the gather's radiance
+/// summed ray by ray, the footprint's lit samples counted — so the answer is the one-thread
+/// answer to the bit: a sum in the same order, and a count, which has no order.
+static const uint kGiCardLanes = 32u;
+/// The card gather's rays a card at most: `GpuGiScene::set_gather` refuses more.
+static const uint kGiCardMaxRays = 64u;
+
+groupshared float3 gcRay[kGiCardMaxRays];
+groupshared uint gcLit[kGiCardLanes];
+
+/// `card_light_visibility` across the lanes: each footprint sample's shadow ray on a lane of its
+/// own, the lit ones counted.
+float giCardLightVisibilityWide(uint lane, uint light, float3 position, float3 normal, float area) {
+    const float3 lift = normal * 1.0e-2f;
+    if (!(area > 0.0f)) {
+        gcLit[lane] = lane == 0u && !giOccluded(position + lift, giShadowTarget(light, position))
+                          ? 1u
+                          : 0u;
+        GroupMemoryBarrierWithGroupSync();
+        const float whole = gcLit[0] != 0u ? 1.0f : 0.0f;
+        GroupMemoryBarrierWithGroupSync();
+        return whole;
+    }
+    float3 tangent;
+    float3 bitangent;
+    giEmitterBasis(normal, tangent, bitangent);
+    const float side = sqrt(area);
+    uint lit = 0u;
+    uint visibleEdge = 0u;
+    for (uint pass = 0u; pass < 2u; ++pass) {
+        const uint edge = pass == 0u ? kGiCardShadowCoarse : kGiCardShadowFine;
+        uint mine = 0u;
+        for (uint sample = lane; sample < edge * edge; sample += kGiCardLanes) {
+            const uint row = sample / edge;
+            const uint column = sample - (row * edge);
+            const float u = ((float(column) + 0.5f) / float(edge)) - 0.5f;
+            const float v = ((float(row) + 0.5f) / float(edge)) - 0.5f;
+            const float3 at = position + (tangent * (u * side)) + (bitangent * (v * side));
+            mine += giOccluded(at + lift, giShadowTarget(light, at)) ? 0u : 1u;
+        }
+        gcLit[lane] = mine;
+        GroupMemoryBarrierWithGroupSync();
+        lit = 0u;
+        for (uint other = 0u; other < kGiCardLanes; ++other) {
+            lit += gcLit[other];
+        }
+        GroupMemoryBarrierWithGroupSync();
+        visibleEdge = edge;
+        if (pass == 0u && (lit == 0u || lit == edge * edge)) {
+            return lit == 0u ? 0.0f : 1.0f;
+        }
+    }
+    return float(lit) / float(visibleEdge * visibleEdge);
+}
+
+/// `shaded_card_direct` across the lanes.
+float3 giShadedCardDirectWide(uint lane, float3 position, float3 normal, float area) {
+    float3 total = float3(0.0f, 0.0f, 0.0f);
+    const uint count = giScene.constants[kGiCounts].z;
+    for (uint light = 0u; light < count; ++light) {
+        const float3 contribution = giDirectRadiance(light, position, normal);
+        if (contribution.x <= 0.0f && contribution.y <= 0.0f && contribution.z <= 0.0f) {
+            continue;
+        }
+        const float visibility = giCardLightVisibilityWide(lane, light, position, normal, area);
+        if (visibility <= 0.0f) {
+            continue;
+        }
+        total = total + (contribution * visibility);
+    }
+    return total;
+}
+
+/// `CardGather::gather` across the lanes: a ray a lane, summed by lane 0 in the rays' order.
+float3 giGatherWide(uint lane, float3 position, float3 normal) {
+    const uint rays = giScene.constants[kGiCounts].w;
+    if (rays == 0u || giLevelCount() == 0u) {
+        return float3(0.0f, 0.0f, 0.0f);
+    }
+    const float maxDistance = asfloat(giScene.constants[kGiGrid].w);
+    const float voxel = giFinestVoxel();
+    const float bias = voxel * 2.0f;
+    const float3 origin = position + (normal * voxel);
+    for (uint index = lane; index < rays; index += kGiCardLanes) {
+        const float3 direction = giHemisphereDirection(normal, index, rays);
+        const GiTraceHit hit = giSphereTrace(origin, direction, maxDistance, bias);
+        float3 radiance = float3(0.0f, 0.0f, 0.0f);
+        if (!hit.hit) {
+            radiance = giSky(direction);
+        } else {
+            const uint card = giFindCard(hit.position, hit.normal);
+            if (card != 0xFFFFFFFFu) {
+                radiance = giScene.cardState[card * 2u].xyz;
+            }
+        }
+        gcRay[index] = radiance;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    // `total + radiance` ray by ray, as the host's loop adds them; a ray that met no card adds
+    // zero, which leaves the sum's bits as the loop that skipped it left them.
+    float3 total = float3(0.0f, 0.0f, 0.0f);
+    for (uint index = 0u; index < rays; ++index) {
+        total = total + gcRay[index];
+    }
+    return total / float(rays);
+}
+
 [shader("compute")]
-[numthreads(64, 1, 1)]
-void cyGiShadeCards(uint3 thread : SV_DispatchThreadID) {
-    const uint index = thread.x;
+[numthreads(32, 1, 1)]
+void cyGiShadeCards(uint3 group : SV_GroupID, uint3 local : SV_GroupThreadID) {
+    // One workgroup a selected page: the whole group returns or none of it does.
+    const uint index = group.x;
     if (index >= giDispatch.count) {
         return;
     }
+    const uint lane = local.x;
     const uint handle = giScene.selection[index];
     const float4 position = giScene.cards[handle * 4u];
     const float4 normal = giScene.cards[(handle * 4u) + 1u];
@@ -42,11 +154,14 @@ void cyGiShadeCards(uint3 thread : SV_DispatchThreadID) {
     const float4 emission = giScene.cards[(handle * 4u) + 3u];
     const float3 before = giScene.cardState[handle * 2u].xyz;
 
-    const float3 direct = giShadedCardDirect(position.xyz, normal.xyz, position.w);
+    const float3 direct = giShadedCardDirectWide(lane, position.xyz, normal.xyz, position.w);
     float3 accumulated = giScene.cardState[(handle * 2u) + 1u].xyz;
     if (giScene.constants[kGiCounts].w != 0u) {
-        const float3 incoming = giGather(position.xyz, normal.xyz);
+        const float3 incoming = giGatherWide(lane, position.xyz, normal.xyz);
         accumulated = albedo.xyz * incoming;
+    }
+    if (lane != 0u) {
+        return;
     }
     const float3 reflected = albedo.xyz * direct;
     const float3 after = emission.xyz + reflected + accumulated;

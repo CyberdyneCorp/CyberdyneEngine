@@ -339,7 +339,10 @@ undoable command with an MCP tool of the same name (`cy_editor_services::illumin
   the device, in the viewport's own frame, where the device runs the GI.
 - **The Lit view is lit by the GI**: a world whose GI settings admit the dynamic GI has its viewport
   lit by the engine's device GI, and every edit above reaches it in the next frames, nothing
-  rebuilt but for geometry; in Play, a project's Swift game tunes the same GI through ABI 1.9.
+  rebuilt but for geometry; in Play, a project's Swift game tunes the same GI through ABI 1.9,
+  the simulation's moving bodies move their GI objects (back where the document puts them at
+  Stop), and the volumes the game placed survive an author's edit — applied in place, or rebuilding
+  the GI under the game.
 - **The diagnostics report**: Refresh report, and Explain a point — the viewport's next click asks
   the engine what lit the surface under it (`gi.report` with the frame and pixel). The panel shows
   the settings the GI runs at, the tier its rays took, convergence, cost per stage, rays per tier,

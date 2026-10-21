@@ -127,6 +127,19 @@ public:
     /// game names what the author placed. Null when the world has nothing for the GI to light.
     [[nodiscard]] std::unique_ptr<game_backend::IlluminationAdapter> bind_play(
         const gameplay::PlaySession& play) noexcept;
+    /// THE GI WAS REBUILT UNDER A RUNNING GAME (an edit during Play changed geometry): `adapter`
+    /// is bound again over the new system — every object by its Play entity, every material by
+    /// name — and the volumes and emission rules the game placed are placed again
+    /// (`IlluminationAdapter::rebind`, `restore`). The game's handles stay valid.
+    [[nodiscard]] Status rebind_play(game_backend::IlluminationAdapter& adapter,
+                                     const gameplay::PlaySession& play) noexcept;
+    /// PLAY'S BODIES MOVE THEIR GI OBJECTS: every object the GI holds as movable (a RigidBody or a
+    /// KinematicBody) is moved to its Play entity's world transform when that moved
+    /// (`IlluminationSystem::move_object`, priced by its class). Before the frame's `advance`.
+    /// Returns how many objects moved.
+    u32 follow_play(gameplay::PlaySession& play) noexcept;
+    /// Play stopped: every object Play moved goes back where the document places it.
+    void end_play() noexcept;
     /// The GI's sky: a uniform dome of `radiance`, the frame's own flat ambient
     /// (`AuthoredFrame::ambient_radiance`), so the GI that replaces the ambient lights an open
     /// surface as the ambient did. Applied to the running GI in place; nothing is rebuilt.
@@ -167,6 +180,9 @@ private:
     std::deque<Frame> frames_;
     u32 mesh_failures_ = 0;
     bool stale_ = true;
+    /// What `follow_play` last moved each object of `scene_objects_` to, and whether it did.
+    std::vector<Mat4> play_transforms_;
+    std::vector<bool> played_;
     /// Whether the last gather met the world's GI settings node.
     bool has_settings_ = false;
     /// The sky the GI is lit by: the preview's default until the frame names its ambient.

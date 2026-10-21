@@ -51,6 +51,9 @@ namespace cy::rendering {
 inline constexpr u32 kGpuLightDirectional = 0;
 inline constexpr u32 kGpuLightPoint = 1;
 inline constexpr u32 kGpuLightSpot = 2;
+/// A spot whose cone falls off as the cosine rather than its square: a small Lambertian emitter
+/// (`render::LightDescription::cosine_falloff`). `cy/light.slang`'s `kLightEmitter`.
+inline constexpr u32 kGpuLightEmitter = 3;
 
 /// ONE LIGHT, IN THE LAYOUT THE SHADER SEES. 64 bytes, 16-byte aligned.
 struct alignas(16) GpuLight {

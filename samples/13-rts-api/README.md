@@ -69,9 +69,9 @@ ctest -R rts_api_gi                               the picture and its cost (smok
 
 ![Without the GI, with it, the beacon put out from Swift and lit again](../../docs/design/images/rts-api-gi.png)
 
-Measured on the RTX 5060 (`smoke.rts_api_gi`, 480x270): a frame — the game's 1.3 ms, the GI's host
-update 1.1 ms of it, and the drawn frame's 5.1 ms with the GI 1.0 ms on the device — 6.3 ms
-together; the frame round the beacon's foot falls from 169 to 148 when the game puts it out and
+Measured on the RTX 5060 (`smoke.rts_api_gi`, 480x270): a frame 4.65 ms together — the game's
+0.56 ms with the GI's host update 0.37 ms of it, and the GI 0.64 ms on the device (6.3, 1.1 and
+1.0 ms before the GI's host decisions were bounded and its card shade widened); the frame round the beacon's foot falls from 169 to 148 when the game puts it out and
 returns to 170 when it lights it again, and without the GI reads 197 throughout. The GI runs from
 the ground point the camera looks at, with probe and card ladders sized to the level
 (`host/illumination.cpp`); headless, with the caches on the processor, a run of 420 frames takes

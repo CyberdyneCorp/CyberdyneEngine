@@ -113,7 +113,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -456,7 +456,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -604,7 +604,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -834,7 +834,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -1034,7 +1034,7 @@ struct CyForwardVertex_0
 
 )cy_msl";
 
-/// ForwardFragment.metal, 80578 bytes.
+/// ForwardFragment.metal, 80860 bytes.
 inline constexpr auto kFrameForwardFragmentMslText = detail::join_msl(
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -1106,7 +1106,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -3058,7 +3058,7 @@ CyBakedLights_0 bakedLightsOf_0(bool lightmapped_3, float2 uv_15, KernelContext_
 }
 
 
-#line 42 "src/rendering/shaders/cy/light.slang"
+#line 45 "src/rendering/shaders/cy/light.slang"
 float distanceAttenuation_0(float distanceSquared_0, float range_1)
 {
     float _S207 = distanceSquared_0 / max(range_1 * range_1, 9.99999997475242708e-07);
@@ -3067,7 +3067,7 @@ float distanceAttenuation_0(float distanceSquared_0, float range_1)
 }
 
 
-#line 33
+#line 36
 struct LightSample_0
 {
     float3 direction_1;
@@ -3076,12 +3076,12 @@ struct LightSample_0
 };
 
 
-#line 49
+#line 52
 LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelativeToCamera_0)
 {
     thread LightSample_0 result_4;
 
-#line 51
+#line 54
     uint _S209 = light_0->kind_0;
     if((light_0->kind_0) == 0U)
     {
@@ -3102,12 +3102,27 @@ LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelat
         float _S212 = saturate(dot(- (&result_4)->direction_1, light_0->direction_0) * light_0->spotScaleBias_0.x + light_0->spotScaleBias_0.y);
         (&result_4)->attenuation_0 = (&result_4)->attenuation_0 * (_S212 * _S212);
 
-#line 65
+#line 68
+    }
+    else
+    {
+
+
+
+)cy_msl",
+    R"cy_msl(        if(_S209 == 3U)
+        {
+
+            (&result_4)->attenuation_0 = (&result_4)->attenuation_0 * saturate(dot(- (&result_4)->direction_1, light_0->direction_0) * light_0->spotScaleBias_0.x + light_0->spotScaleBias_0.y);
+
+#line 74
+        }
+
+#line 68
     }
 
-#line 71
-)cy_msl",
-    R"cy_msl(    (&result_4)->illuminance_0 = light_0->color_0 * float3((light_0->intensity_0 * (&result_4)->attenuation_0)) ;
+#line 79
+    (&result_4)->illuminance_0 = light_0->color_0 * float3((light_0->intensity_0 * (&result_4)->attenuation_0)) ;
     return result_4;
 }
 
@@ -3861,7 +3876,8 @@ float3 lightmapAmbient_0(float2 uv_17, float3 normal_6, KernelContext_0 thread* 
 
 #line 1135
         float4 _S272 = cyMaterialSampleTexture_0(kernelContext_43->cyFrameView_0->frame_0->lightmapControl_0.z, uv_17, kernelContext_43);
-
+)cy_msl",
+    R"cy_msl(
 
 
         return float3(max(0.0, _S268.w + dot(_S268.xyz, normal_6)), max(0.0, _S271.w + dot(_S271.xyz, normal_6)), max(0.0, _S272.w + dot(_S272.xyz, normal_6)));
@@ -3873,8 +3889,7 @@ float3 lightmapAmbient_0(float2 uv_17, float3 normal_6, KernelContext_0 thread* 
 
 
 #line 903
-)cy_msl",
-    R"cy_msl(float4 probeVolumeTexel_0(uint3 probe_0, uint texel_3, KernelContext_0 thread* kernelContext_44)
+float4 probeVolumeTexel_0(uint3 probe_0, uint texel_3, KernelContext_0 thread* kernelContext_44)
 {
     uint3 _S273 = kernelContext_44->cyFrameView_0->frame_0->probeVolumeControl_0.yzw;
 
@@ -4615,7 +4630,8 @@ struct pixelInput_0
 {
 
 #line 1361
-    thread KernelContext_0 kernelContext_52;
+)cy_msl",
+    R"cy_msl(    thread KernelContext_0 kernelContext_52;
 
 #line 1361
     (&kernelContext_52)->cyFrameView_0 = cyFrameView_1;
@@ -4623,8 +4639,7 @@ struct pixelInput_0
 #line 1361
     (&kernelContext_52)->cyFrameGlobals_0 = &cyFrameGlobals_1;
 
-)cy_msl",
-    R"cy_msl(    CyDrawInstance_0 _S353 = cyFrameView_1->drawInstances_0[_S352.drawIndex_1];
+    CyDrawInstance_0 _S353 = cyFrameView_1->drawInstances_0[_S352.drawIndex_1];
 
 #line 1363
     Surface_0 _S354 = surfaceOf_0(_S353.material_0, cyFrameView_1->instances_0[_S353.instanceSlot_0].tint_0.xyz, _S352.uv_19, &kernelContext_52);
@@ -4747,7 +4762,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;
@@ -5068,7 +5083,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     packed_float3 positionRelativeToCamera_0;

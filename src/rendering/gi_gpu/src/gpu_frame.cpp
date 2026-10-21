@@ -72,9 +72,7 @@ Status GpuGiFrame::create(Allocator& allocator, rhi::Device& device, gi::Illumin
         made = create_hardware();
     }
     if (made && desc.device_caches) {
-        shading_.bind(scene_, system.field(), system.surfaces().lookup_radius());
-        system.set_surface_shading(&shading_);
-        system.set_probe_gather(&cache_);
+        made = caches_.create(device, scene_, cache_, system);
     }
     if (made) {
         GpuScreenResolveDescription resolve;
@@ -96,15 +94,6 @@ Status GpuGiFrame::create(Allocator& allocator, rhi::Device& device, gi::Illumin
     resolve_.set_field(system.field());
     resolve_.set_sky(system.sky_term());
     resolve_.set_timing(true);
-    if (desc.device_caches && device.capabilities().has(rhi::Capability::TimestampQueries)) {
-        rhi::QueryPoolDescription timer;
-        timer.name = "gi caches timestamps";
-        timer.kind = rhi::QueryKind::Timestamp;
-        timer.count = 3;
-        if (Expected<rhi::QueryPoolHandle, Error> pool = device.create_query_pool(timer); pool) {
-            timer_ = *pool;
-        }
-    }
     return ok();
 }
 
@@ -155,18 +144,8 @@ void GpuGiFrame::destroy() noexcept {
         system_->acceleration().mirror() == structures_.get()) {
         system_->acceleration().set_mirror(nullptr);
     }
-    if (system_ != nullptr && desc_.device_caches) {
-        // The host shades and gathers again from the next update.
-        system_->set_surface_shading(nullptr);
-        system_->set_probe_gather(nullptr);
-    }
-    shading_declared_ = ~u64{0};
-    gather_declared_ = ~u64{0};
-    if (device_ != nullptr && timer_) {
-        device_->destroy_query_pool(timer_);
-    }
-    timer_ = {};
-    timer_written_ = false;
+    // The host shades and gathers again from the next update.
+    caches_.destroy();
     views_.destroy();
     resolve_.destroy();
     cache_.destroy();
@@ -234,8 +213,10 @@ Status GpuGiFrame::prepare(RenderGraph& graph, const GpuGiFrameView& view, u64 f
             return declared;
         }
     }
-    if (Status declared = declare_caches(graph); !declared) {
-        return declared;
+    if (desc_.device_caches) {
+        if (Status declared = caches_.declare(graph); !declared) {
+            return declared;
+        }
     }
     if (views_.created()) {
         if (Status prepared = views_.prepare(system, view.eye, frame, view_settings_); !prepared) {
@@ -250,86 +231,12 @@ Status GpuGiFrame::prepare(RenderGraph& graph, const GpuGiFrameView& view, u64 f
     return ok();
 }
 
-Status GpuGiFrame::declare_caches(RenderGraph& graph) noexcept {
-    if (!desc_.device_caches) {
-        return ok();
-    }
-    // WHAT THE HOST'S UPDATE SUBMITTED, run in this frame before the resolve reads the caches;
-    // the next update applies what comes back. A submission is declared once.
-    gi::CardGatherSettings card_gather = system_->settings().card_gather;
-    card_gather.sky = system_->sky_term();
-    shading_.set_gather(card_gather);
-    const GpuSurfaceSubmission& shaded = shading_.last_submission();
-    const GpuProbeSubmission& gathered = cache_.last_submission();
-    const bool shade = shaded.pages != 0 && shaded.frame != shading_declared_;
-    const bool gather = gathered.probes != 0 && gathered.frame != gather_declared_;
-    if (!shade && !gather) {
-        // Nothing ran on the caches this frame: the last stamps are an older frame's.
-        timed_shading_ = false;
-        timed_gather_ = false;
-    }
-    if (timer_ && (shade || gather)) {
-        declare_stamp(graph, 0);
-    }
-    if (shade) {
-        if (Status declared = shading_.declare(graph); !declared) {
-            return declared;
-        }
-        shading_declared_ = shaded.frame;
-    }
-    if (timer_ && (shade || gather)) {
-        declare_stamp(graph, 1);
-    }
-    if (gather) {
-        if (Status declared = cache_.declare(graph); !declared) {
-            return declared;
-        }
-        gather_declared_ = gathered.frame;
-    }
-    if (timer_ && (shade || gather)) {
-        declare_stamp(graph, 2);
-        timed_shading_ = shade;
-        timed_gather_ = gather;
-    }
-    return ok();
-}
-
-void GpuGiFrame::declare_stamp(RenderGraph& graph, u32 index) noexcept {
-    stamps_[index] = Stamp{this, index};
-    // A pass with no resource is a root only by its side effect: the graph would cull it.
-    graph.add_pass("gi caches timestamp", rhi::QueueKind::Graphics)
-        .side_effect()
-        .record(&record_stamp, &stamps_[index]);
-}
-
-void GpuGiFrame::record_stamp(const PassContext& context, void* user) noexcept {
-    const auto* stamp = static_cast<const Stamp*>(user);
-    GpuGiFrame& self = *stamp->self;
-    if (stamp->index == 0) {
-        context.commands->reset_queries(self.timer_, 0, 3);
-    }
-    context.commands->write_timestamp(self.timer_, stamp->index);
-    self.timer_written_ = self.timer_written_ || stamp->index == 2;
-}
-
 GpuGiCost GpuGiFrame::last_cost() const noexcept {
     GpuGiCost cost;
     const GpuResolveTimes times = resolve_.last_times();
     cost.resolve_ms = times.total_ms;
     cost.resolve_valid = times.valid;
-    if (device_ == nullptr || !timer_ || !timer_written_) {
-        return cost;
-    }
-    u64 stamps[3] = {};
-    Expected<u32, Error> read = device_->read_query_results(timer_, 0, 3, Span<u64>(stamps, 3));
-    if (!read || *read != 3 || stamps[1] < stamps[0] || stamps[2] < stamps[1]) {
-        return cost;
-    }
-    cost.cards_ms = static_cast<f64>(stamps[1] - stamps[0]) / 1.0e6;
-    cost.cards_valid = timed_shading_;
-    cost.gather_ms = static_cast<f64>(stamps[2] - stamps[1]) / 1.0e6;
-    cost.gather_valid = timed_gather_;
-    return cost;
+    return caches_.cost(cost);
 }
 
 FrameStageDeclaration GpuGiFrame::stage() noexcept {

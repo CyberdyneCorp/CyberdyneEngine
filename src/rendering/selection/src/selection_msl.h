@@ -92,7 +92,7 @@ struct CyFrameData_0
 };
 
 
-#line 20 "src/rendering/shaders/cy/light.slang"
+#line 23 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     float3 positionRelativeToCamera_0;

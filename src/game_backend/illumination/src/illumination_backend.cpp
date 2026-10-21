@@ -131,6 +131,35 @@ IlluminationAdapter::IlluminationAdapter(Allocator& allocator,
       volumes_(allocator),
       emissions_(allocator) {}
 
+void IlluminationAdapter::rebind(gi::IlluminationSystem& system) noexcept {
+    system_ = &system;
+    objects_.clear();
+    materials_.clear();
+}
+
+Status IlluminationAdapter::restore() noexcept {
+    Array<Volume> volumes(*allocator_);
+    if (!volumes.append(volumes_.span())) {
+        return fail(ErrorCode::OutOfMemory, "IlluminationAdapter::restore: out of memory");
+    }
+    if (const CyResult placed = apply_volumes(volumes); placed != CY_RESULT_OK) {
+        return fail(ErrorCode::InvalidArgument,
+                    "IlluminationAdapter::restore: the game's volumes were refused");
+    }
+    if (emissions_.empty()) {
+        return ok();
+    }
+    Array<Emission> emissions(*allocator_);
+    if (!emissions.append(emissions_.span())) {
+        return fail(ErrorCode::OutOfMemory, "IlluminationAdapter::restore: out of memory");
+    }
+    if (const CyResult ruled = apply_emission(emissions); ruled != CY_RESULT_OK) {
+        return fail(ErrorCode::InvalidArgument,
+                    "IlluminationAdapter::restore: the game's emission rules were refused");
+    }
+    return ok();
+}
+
 Status IlluminationAdapter::bind_object(CyEntity entity, u64 object, u32 instance) noexcept {
     if (entity == CY_ENTITY_NULL || bound(entity) != nullptr) {
         return fail(ErrorCode::AlreadyExists,
@@ -226,7 +255,8 @@ CyResult IlluminationAdapter::apply_volumes(Array<Volume>& next) noexcept {
             return out_of_memory();
         }
     }
-    if (Status set = system_->set_volumes(placed.span()); !set) {
+    // The game's own set: the author's volumes and the streamed cells' stay as they are.
+    if (Status set = system_->set_volumes(gi::GiVolumeOwner::Game, placed.span()); !set) {
         return refused(set.error());
     }
     volumes_ = std::move(next);

@@ -1,0 +1,45 @@
+== interior device hardware (exit 0)
+gi cost       host cache update 0.81 ms; converged mode took 32 frames, 10292 ms, before the first
+validation    0 error(s)
+gi fastest    3.491 ms over 240 frames of the same view: probe placement 0.018, probe tracing 1.476, probe filter 0.014, integration 0.741, denoiser 0.575 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.389, p95 6.735, worst 14.017 ms; device median resolve 3.573, cards 0.216, gather 0.084, whole 3.872 ms (p95 3.917, fastest 3.768)
+== interior device software (exit 0)
+gi cost       host cache update 0.55 ms; converged mode took 32 frames, 22618 ms, before the first
+validation    0 error(s)
+gi fastest    4.636 ms over 240 frames of the same view: probe placement 0.018, probe tracing 2.375, probe filter 0.014, integration 0.994, denoiser 0.577 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.525, p95 7.718, worst 20.263 ms; device median resolve 4.557, cards 0.212, gather 0.189, whole 4.959 ms (p95 5.055, fastest 4.629)
+== interior host hardware (exit 0)
+gi cost       host cache update 27.91 ms; converged mode took 32 frames, 10147 ms, before the first
+validation    0 error(s)
+gi fastest    3.497 ms over 240 frames of the same view: probe placement 0.018, probe tracing 1.488, probe filter 0.014, integration 0.741, denoiser 0.573 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 24.937, p95 27.704, worst 29.512 ms; device median resolve 4.874, cards 0.000, gather 0.000, whole 4.874 ms (p95 4.917, fastest 3.543)
+== hall device hardware (exit 0)
+gi cost       host cache update 0.50 ms; converged mode took 32 frames, 12338 ms, before the first
+validation    0 error(s)
+gi fastest    3.786 ms over 240 frames of the same view: probe placement 0.018, probe tracing 1.678, probe filter 0.016, integration 0.818, denoiser 0.584 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.482, p95 7.862, worst 13.659 ms; device median resolve 3.833, cards 0.224, gather 0.098, whole 4.157 ms (p95 4.198, fastest 4.004)
+== hall device software (exit 0)
+gi cost       host cache update 0.31 ms; converged mode took 32 frames, 24737 ms, before the first
+validation    0 error(s)
+gi fastest    5.413 ms over 240 frames of the same view: probe placement 0.018, probe tracing 2.955, probe filter 0.014, integration 1.168, denoiser 0.587 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.413, p95 7.621, worst 9.334 ms; device median resolve 5.165, cards 0.224, gather 0.205, whole 5.593 ms (p95 5.839, fastest 5.356)
+== hall host hardware (exit 0)
+gi cost       host cache update 33.04 ms; converged mode took 32 frames, 12268 ms, before the first
+validation    0 error(s)
+gi fastest    3.785 ms over 240 frames of the same view: probe placement 0.018, probe tracing 1.675, probe filter 0.016, integration 0.816, denoiser 0.584 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 30.437, p95 32.919, worst 37.785 ms; device median resolve 5.138, cards 0.000, gather 0.000, whole 5.138 ms (p95 5.165, fastest 3.798)
+== colonnade device hardware (exit 0)
+gi cost       host cache update 0.60 ms; converged mode took 32 frames, 11104 ms, before the first
+validation    0 error(s)
+gi fastest    2.735 ms over 240 frames of the same view: probe placement 0.016, probe tracing 0.905, probe filter 0.014, integration 0.661, denoiser 0.527 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.383, p95 4.503, worst 8.671 ms; device median resolve 2.771, cards 0.236, gather 0.059, whole 3.067 ms (p95 3.095, fastest 2.888)
+== colonnade device software (exit 0)
+gi cost       host cache update 0.32 ms; converged mode took 32 frames, 25748 ms, before the first
+validation    0 error(s)
+gi fastest    5.696 ms over 240 frames of the same view: probe placement 0.018, probe tracing 2.597, probe filter 0.014, integration 1.932, denoiser 0.529 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 0.410, p95 4.629, worst 5.341 ms; device median resolve 5.712, cards 0.236, gather 0.182, whole 6.126 ms (p95 6.185, fastest 6.007)
+== colonnade host hardware (exit 0)
+gi cost       host cache update 16.51 ms; converged mode took 32 frames, 11147 ms, before the first
+validation    0 error(s)
+gi fastest    2.741 ms over 240 frames of the same view: probe placement 0.018, probe tracing 0.913, probe filter 0.014, integration 0.660, denoiser 0.529 ms
+gi live       240 frames, caches live (the sun turning, a block moving): host update median 15.107, p95 18.242, worst 19.668 ms; device median resolve 2.761, cards 0.000, gather 0.000, whole 2.761 ms (p95 4.468, fastest 2.739)

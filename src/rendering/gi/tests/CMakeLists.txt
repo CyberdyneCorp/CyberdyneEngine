@@ -77,6 +77,7 @@ function(cy_render_gi_declare_tests)
         SOURCES
             "${tests_dir}/test_gi_volumes.cpp"
             "${tests_dir}/test_policy.cpp"
+            "${tests_dir}/test_selection.cpp"
         DEPENDENCIES cy::rendering-gi)
 
     cy_add_test(
@@ -84,6 +85,7 @@ function(cy_render_gi_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/test_caches.cpp"
+            "${tests_dir}/test_card_grid.cpp"
             "${tests_dir}/test_card_lighting.cpp"
             "${tests_dir}/test_probe_gather.cpp"
             "${tests_dir}/test_field.cpp"

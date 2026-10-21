@@ -291,6 +291,13 @@ struct LightDescription {
     /// The identity a shadow atlas page and a deterministic light order key off. Same contract as
     /// `InstanceDescription::stable_id`.
     u64 stable_id = 0;
+    /// A SPOT ONLY: fall off as the cosine from the axis — a small Lambertian emitter seen from
+    /// afar, whose intensity is its on-axis candela times that cosine — rather than the authored
+    /// cone's smooth step. What a GI emitter promoted to a light of the frame is
+    /// (`gi_gpu::promoted_frame_light`); with the cone at a right angle and the intensity the
+    /// emitter's flux in lumens, the frame shades it as the GI shades its cards. Appended, so a
+    /// brace-initialised light keeps its meaning.
+    bool cosine_falloff = false;
 };
 
 // --- Scenes ---------------------------------------------------------------------------------

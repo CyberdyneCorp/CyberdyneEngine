@@ -915,8 +915,15 @@ void keep_play_illumination(Host& host, const AuthoredGi* gi) noexcept {
     if (!playing || host.gi_source == nullptr || gi == nullptr) {
         return;
     }
-    if (host.gi_play == nullptr || host.gi_play_generation != gi->generation) {
+    if (host.gi_play == nullptr) {
         bind_play_illumination(host, *gi);
+    } else if (host.gi_play_generation != gi->generation) {
+        // AN EDIT REBUILT THE GI UNDER THE RUNNING GAME: the same adapter, bound again over the
+        // new system, so the volumes and emission rules the game placed are placed again.
+        if (Status rebound = host.gi_source->rebind_play(*host.gi_play, *host.play); !rebound) {
+            report("gi", rebound.error());
+        }
+        host.gi_play_generation = gi->generation;
     }
     if (host.gi_play != nullptr) {
         host.gi_play->begin_frame(gi->frame);
@@ -929,6 +936,7 @@ void end_play_illumination(Host& host) noexcept {
     host.scripts->bind_illumination(nullptr);
     host.gi_play.reset();
     if (host.gi_source != nullptr) {
+        host.gi_source->end_play();
         host.gi_source->world_changed();
     }
 }
@@ -1605,6 +1613,11 @@ void prepare_gi(Host& host) noexcept {
         // the GI that replaces it lights an open surface as it did.
         host.gi_source->set_sky_radiance(
             host.authored_frame->ambient_radiance(host.game_camera == ~u64{0}));
+    }
+    if (host.gi_source != nullptr && host.gi_play != nullptr && host.play != nullptr) {
+        // Play's bodies move their GI objects before the GI's frame, so this frame's update
+        // invalidates where they went.
+        (void)host.gi_source->follow_play(*host.play);
     }
     AuthoredGi gi;
     bool device = (gi_view || lit) && host.authored_frame->global_illumination_supported() &&

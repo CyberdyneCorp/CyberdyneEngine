@@ -8,6 +8,7 @@
 #include <cy/rendering/gi/mesh_cards.h>
 #include <cy/rendering/gi/screen_resolve.h>
 #include <cy/rendering/gi/system.h>
+#include <cy/rendering/gi_gpu/gpu_caches.h>
 #include <cy/rendering/gi_gpu/gpu_radiance_cache.h>
 #include <cy/rendering/gi_gpu/gpu_scene.h>
 #include <cy/rendering/graph/executor.h>
@@ -211,6 +212,38 @@ u32 apply_emissive_decals(const Shot& shot, Array<gi::Surfel>& cards) noexcept {
     return lit;
 }
 
+/// The live block's edge, and how far from the shot's target it circles: a 3 m block is a
+/// `SlowDynamic` object (at least `slow_dynamic_min_size_metres`), whose moves invalidate what it
+/// passes through, the class that costs the caches the most to move.
+constexpr f32 kBlockEdge = 3.0F;
+constexpr f32 kBlockOrbit = 2.0F;
+/// Degrees a frame: the sun's turn about the vertical and the block's round the target.
+constexpr f32 kLiveSunDegrees = 0.1F;
+constexpr f32 kLiveBlockDegrees = 1.0F;
+constexpr u64 kLiveBlockId = 0xB10CU;
+
+/// A cube of `edge` metres standing on its base at the origin: eight corners, twelve triangles
+/// wound outward.
+void block_mesh(f32 edge, std::vector<Vec3>& positions, std::vector<u32>& indices) {
+    const f32 half = edge * 0.5F;
+    positions.clear();
+    for (u32 corner = 0; corner < 8; ++corner) {
+        positions.push_back(Vec3{(corner & 1U) != 0U ? half : -half,
+                                 (corner & 2U) != 0U ? edge : 0.0F,
+                                 (corner & 4U) != 0U ? half : -half});
+    }
+    indices = {0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1,
+               2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3};
+}
+
+[[nodiscard]] Vec3 turned_about_vertical(Vec3 direction, f32 degrees) noexcept {
+    const f32 radians = degrees * std::numbers::pi_v<f32> / 180.0F;
+    const f32 cosine = std::cos(radians);
+    const f32 sine = std::sin(radians);
+    return Vec3{(direction.x * cosine) - (direction.z * sine), direction.y,
+                (direction.x * sine) + (direction.z * cosine)};
+}
+
 [[nodiscard]] bool is_plane(const import::MeshData& mesh) noexcept {
     f32 lo = mesh.positions[0].y;
     f32 hi = lo;
@@ -236,6 +269,17 @@ struct BeautyGi::State {
 
     std::vector<Mesh> meshes;
     std::vector<Vec3> albedo;
+    // Live motion (`set_live_motion`): the shot's target and ground in the baked space, the sun as
+    // the shot placed it, and the block that circles the target.
+    Vec3 target{0.0F, 0.0F, 0.0F};
+    f32 ground = 0.0F;
+    Vec3 to_sun{0.0F, 1.0F, 0.0F};
+    std::vector<Vec3> block_positions;
+    std::vector<u32> block_indices;
+    gi::MeshDistanceField block_field;
+    gi::AssetDistanceField block_asset{};
+    std::vector<gi::Surfel> block_cards;
+    bool block_added = false;
     Array<gi::Surfel> cards;
     std::vector<gi::GiLight> lights;
     gi::IlluminationSystem system;
@@ -245,6 +289,8 @@ struct BeautyGi::State {
     rhi::Device* device = nullptr;
     gi_gpu::GpuGiScene scene;
     gi_gpu::GpuRadianceCache cache;
+    /// The card shading and the probe gather on the device, installed after converged mode.
+    gi_gpu::GpuGiCaches caches;
     gi_gpu::GpuScreenResolve resolve;
     rt_gpu::DeviceStructures structures;
     bool hardware = false;
@@ -275,6 +321,7 @@ void BeautyGi::destroy() noexcept {
         (void)state_->device->wait_idle();
     }
     state_->system.acceleration().set_mirror(nullptr);
+    state_->caches.destroy();
     state_->resolve.destroy();
     state_->cache.destroy();
     state_->scene.destroy();
@@ -297,6 +344,9 @@ Status BeautyGi::build(const Shot& shot,
     state.width = width;
     state.height = height;
     state.hardware = settings.hardware && rt_gpu::DeviceStructures::supported(device);
+    state.target = shot.camera_target - shot.camera_position;
+    state.ground = -shot.camera_position.y;
+    state.to_sun = light.to_sun;
 
     // --- The caches
     // -------------------------------------------------------------------------------
@@ -490,7 +540,9 @@ Status BeautyGi::build(const Shot& shot,
         return made;
     }
     state.cache.bind_field(state.system.field());
-    state.cache.bind_host_surfaces(&state.system.surfaces());
+    // With the device caches the cards' radiance is the device's own, shaded in the frame; on the
+    // host it is uploaded from the host's pages for the gather and the resolve to read.
+    state.cache.bind_host_surfaces(settings.device_caches ? nullptr : &state.system.surfaces());
     if (state.hardware) {
         if (Status made = state.structures.create(*allocator_, device, {}); !made) {
             return made;
@@ -553,6 +605,74 @@ Status BeautyGi::build(const Shot& shot,
     return ok();
 }
 
+void BeautyGi::set_live_motion(bool live) noexcept {
+    live_motion_ = live;
+}
+
+gi_gpu::GpuGiCost BeautyGi::last_cache_cost() const noexcept {
+    return state_ != nullptr ? state_->caches.cost() : gi_gpu::GpuGiCost{};
+}
+
+namespace {
+
+/// The block the live frames move: built and registered the first time they run, so nothing the
+/// still or the held timing drew ever held it.
+[[nodiscard]] Status add_live_block(gi::IlluminationSystem& system, std::vector<Vec3>& positions,
+                                    std::vector<u32>& indices, gi::MeshDistanceField& field,
+                                    gi::AssetDistanceField& asset, std::vector<gi::Surfel>& cards,
+                                    const Mat4& transform, u64 frame) noexcept {
+    block_mesh(kBlockEdge, positions, indices);
+    gi::MeshFieldSettings settings;
+    settings.dimension = kMeshFieldDimension;
+    settings.margin_metres = kMeshFieldMargin;
+    if (Status built = field.build({positions.data(), positions.size()},
+                                   {indices.data(), indices.size()}, settings);
+        !built) {
+        return built;
+    }
+    asset = field.asset();
+    Array<gi::Surfel> carded;
+    gi::MeshCardSettings carding;
+    carding.spacing_metres = kObjectCardSpacing;
+    carding.albedo = Vec3{0.6F, 0.6F, 0.6F};
+    carding.instance_id = static_cast<u32>(kLiveBlockId);
+    if (Status made = gi::append_mesh_cards({positions.data(), positions.size()},
+                                            {indices.data(), indices.size()}, Mat4::identity(),
+                                            carding, carded);
+        !made) {
+        return made;
+    }
+    cards.assign(carded.begin(), carded.end());
+    gi::GiObjectDesc block;
+    block.id = kLiveBlockId;
+    block.mobility = gi::ObjectMobility::Movable;
+    block.local_bounds = field.bounds();
+    block.transform = transform;
+    block.field = &asset;
+    block.surfels = {cards.data(), cards.size()};
+    return system.add_object(block, frame);
+}
+
+}  // namespace
+
+Status BeautyGi::advance_live_motion(u64 frame) noexcept {
+    State& state = *state_;
+    ++live_frames_;
+    const f32 turn = static_cast<f32>(live_frames_);
+    state.lights[0].direction = -turned_about_vertical(state.to_sun, kLiveSunDegrees * turn);
+    const Vec3 round =
+        turned_about_vertical(Vec3{kBlockOrbit, 0.0F, 0.0F}, kLiveBlockDegrees * turn);
+    const Mat4 transform = Mat4::from_translation(
+        Vec3{state.target.x + round.x, state.ground, state.target.z + round.z});
+    if (!state.block_added) {
+        state.block_added = true;
+        return add_live_block(state.system, state.block_positions, state.block_indices,
+                              state.block_field, state.block_asset, state.block_cards, transform,
+                              frame);
+    }
+    return state.system.move_object(kLiveBlockId, transform, frame);
+}
+
 Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::AssemblyView& view,
                          rendering::assembly::FrameSinks& sinks, const BeautyGiView& frame,
                          u64 frame_index) noexcept {
@@ -574,6 +694,21 @@ Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::Ass
             state.system.advance_to_convergence(context, kConvergedThreshold, kConvergedFrames);
         converge_ms_ = now_millis() - converge_mark;
         context.frame = converged_frames_;
+    }
+    // THE DEVICE CACHES ARE INSTALLED AFTER CONVERGED MODE, which updates the caches many times
+    // with no frame executed between: on the host, as the oracle would. The first device update
+    // then uploads every card and probe as the host left them.
+    if (state.settings.device_caches && !state.caches.created()) {
+        if (Status made =
+                state.caches.create(*state.device, state.scene, state.cache, state.system);
+            !made) {
+            return made;
+        }
+    }
+    if (live_motion_ && !hold_cache_) {
+        if (Status moved = advance_live_motion(context.frame); !moved) {
+            return moved;
+        }
     }
     const f64 mark = now_millis();
     if (!hold_cache_) {
@@ -597,6 +732,11 @@ Status BeautyGi::prepare(rendering::RenderGraph& graph, rendering::assembly::Ass
     }
     if (state.hardware) {
         if (Status declared = state.structures.declare(graph); !declared) {
+            return declared;
+        }
+    }
+    if (state.caches.created()) {
+        if (Status declared = state.caches.declare(graph); !declared) {
             return declared;
         }
     }

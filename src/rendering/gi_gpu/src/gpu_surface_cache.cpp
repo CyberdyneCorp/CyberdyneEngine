@@ -39,6 +39,11 @@ u32 GpuSurfaceShading::submit(Span<const gi::SurfacePage> pages, Span<const u32>
         error_ = Error{ErrorCode::InvalidArgument, "the device surface shading is not bound"};
         return 0;
     }
+    if (scene_->gather_rays() > kMaxCardGatherRays) {
+        error_ = Error{ErrorCode::OutOfRange,
+                       "the device card shading gathers at most 64 rays a card (gi_cards.slang)"};
+        return 0;
+    }
 
     // Stage 1 first: the scene representation the dispatch reads, brought up to date by what
     // moved. A frame in which nothing moved writes nothing here.

@@ -72,6 +72,11 @@ struct ClipmapSettings {
     u32 resolution = 32;
     /// The world extent of level 0, in metres.
     f32 base_extent_metres = 8.0F;
+    /// Sample, for each brick, only the placements whose distances can be its least: the ones
+    /// whose grid it reaches, and the far ones whose bound is below what those answered. The same
+    /// values; false samples every placement at every sample, the oracle `render_gi_pipeline` holds
+    /// the culled solve to. Appended, so a brace-initialised settings block keeps its meaning.
+    bool cull_far_placements = true;
 };
 
 /// What a cook produces for one asset: a dense signed distance grid in the asset's own space.
@@ -179,7 +184,16 @@ public:
     // --- The clipmaps ---------------------------------------------------------------------------
 
     /// Centre the clipmaps on `camera`, solving only newly exposed bricks.
-    ScrollReport scroll_to(Vec3 camera) noexcept;
+    ///
+    /// A scroll that moves no level's window and finds no invalidation pending changes nothing, so
+    /// it does nothing: it reports what visiting every brick would have reported — all of them
+    /// reused — without visiting them. `full` visits them anyway: the oracle the shortcut is held
+    /// to (`render_gi_pipeline`).
+    ScrollReport scroll_to(Vec3 camera, bool full = false) noexcept;
+
+    /// Bumped by every `scroll_to` that solved or freed a brick: what `distance()` answers anywhere
+    /// changed only when this moved. What the probe placement keys its own shortcut on.
+    [[nodiscard]] u64 content_revision() const noexcept { return content_revision_; }
 
     /// Mark every brick overlapping `region` for re-solving at the next `scroll_to`.
     u32 invalidate(const Aabb& region) noexcept;
@@ -281,6 +295,15 @@ private:
         bool stale = false;
     };
 
+    /// One placement's answer at `point`: the distance its grid stores, or the bound outside it.
+    [[nodiscard]] static f32 sample_placement(const Placement& placement, Vec3 point) noexcept;
+    /// Whether a brick from `origin`, `extent` a side, has a sample the placement's grid answers.
+    [[nodiscard]] static bool brick_reaches(const Placement& placement, Vec3 origin,
+                                            f32 extent) noexcept;
+    /// No sample of a brick that does not reach the placement's grid is answered below this.
+    [[nodiscard]] static f32 brick_lower_bound(const Placement& placement, Vec3 origin,
+                                               f32 extent) noexcept;
+
     struct Level {
         f32 voxel_size = 0.0F;
         f32 brick_size = 0.0F;
@@ -314,6 +337,11 @@ private:
     Array<Aabb> pending_invalidations_;
     Array<FieldBrickChange> changes_;
     u64 generation_ = 0;
+    u64 content_revision_ = 0;
+    /// Every brick of every window is solved and nothing is pending: a scroll that moves no window
+    /// is `steady_` again, and nothing else.
+    bool window_complete_ = false;
+    ScrollReport steady_{};
     FieldDiagnostics diagnostics_{};
 
     static constexpr u32 kEmptySlot = kEmptyBrick;

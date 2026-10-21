@@ -502,6 +502,7 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
     auto* cards = static_cast<f32*>(mapped(kCards));
     auto* state = static_cast<f32*>(mapped(kCardState));
     bool layout_changed = false;
+    moved_cards_.clear();
     for (u32 handle = 0; handle < pages.size(); ++handle) {
         const gi::SurfacePage& page = pages[handle];
         if (page.revision == card_revisions_[handle]) {
@@ -520,6 +521,7 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
                            page.position.y != card_positions_[handle].y ||
                            page.position.z != card_positions_[handle].z))) {
             layout_changed = true;
+            (void)moved_cards_.push_back(handle);
         }
         card_live_[handle] = live;
         card_positions_[handle] = page.position;
@@ -529,10 +531,16 @@ Expected<CardUploadReport, Error> GpuGiScene::upload_cards(Span<const gi::Surfac
     }
 
     if (layout_changed || grid_.cell_metres() != lookup_radius || grid_.ranges().empty()) {
-        if (Status built = grid_.build(pages, lookup_radius, max_buckets(desc_.max_cards));
-            !built) {
-            return make_unexpected(built.error());
+        // THE CARDS THAT MOVED, not the cache: a cell streamed in or an object moved re-lists its
+        // own cards and the buckets they touch (`CardNeighbourGrid::update`), which is the grid a
+        // build from every card would give — and is that build the first time, or at a new radius.
+        Expected<bool, Error> updated =
+            grid_.update(pages, moved_cards_.span(), lookup_radius, max_buckets(desc_.max_cards));
+        if (!updated) {
+            return make_unexpected(updated.error());
         }
+        report.cards_relisted = static_cast<u32>(moved_cards_.size());
+        report.grid_built_whole = *updated;
         std::memcpy(mapped(kGridRanges), grid_.ranges().data(), grid_.ranges().size() * 4U);
         // AN ENTRY CARRIES ITS CARD'S POSITION beside its handle: a lookup rejects most of the
         // entries it reads by distance, in list order. The handle as a float value, exact below
@@ -615,6 +623,10 @@ Status GpuGiScene::upload_shadow_map(const gi::ShadowMap* map) noexcept {
     return ok();
 }
 
+u32 GpuGiScene::gather_rays() const noexcept {
+    return constants_[kCounts + 3];
+}
+
 void GpuGiScene::set_gather(const gi::CardGatherSettings& gather) noexcept {
     constants_[kCounts + 3] = gather.rays;
     constants_[kGrid + 3] = bits(gather.max_distance_metres);
@@ -649,7 +661,10 @@ void GpuGiScene::record_dispatch(const PassContext& context, void* user) noexcep
     context.commands->push_constants(
         self.pipeline_layout_, rhi::ShaderStage::Compute, 0,
         Span<const u8>(reinterpret_cast<const u8*>(&recording->dispatch), sizeof(Dispatch)));
-    context.commands->dispatch(groups(recording->dispatch.count), 1, 1);
+    // The card shade is a workgroup a card (gi_cards.slang); every other dispatch a thread an item.
+    const u32 count = recording->pipeline == kShade ? recording->dispatch.count
+                                                    : groups(recording->dispatch.count);
+    context.commands->dispatch(count, 1, 1);
 }
 
 void GpuGiScene::record_copy(const PassContext& context, void* user) noexcept {

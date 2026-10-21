@@ -75,10 +75,40 @@ radiance.declare(graph);       // the probes it selected, through radiance.world
 // execute the graph; the next update() applies what came back
 ```
 
+Or both at once, as a game's frame runs them: `gi_gpu::GpuGiCaches` owns the card shading,
+installs it and the probe gather through the two seams, declares each update's submissions once in
+the frame and times them. `GpuGiFrame` owns one, `device_caches` on by default, and the beauty
+shot owns one beside its own resolve (`--gi-caches host` keeps the host path, the oracle):
+
+```cpp
+gi_gpu::GpuGiCaches caches;
+caches.create(device, scene, radiance, system);   // radiance.bind_host_surfaces(nullptr) first
+// each frame, after system.update(context):
+caches.declare(graph);                            // the card shade, then the probe gather
+// once the frame completed:
+const gi_gpu::GpuGiCost cost = caches.cost();     // cards_ms, gather_ms
+```
+
 Every backend is **asynchronous by construction**: `submit` takes this update's selection, the work
 runs when the graph executes, and the cache applies the results at the start of its next update. A
 result for a page or a probe whose `revision` moved while it was in flight — it was invalidated,
 retired or reseeded — is dropped, so a stale answer never undoes an invalidation.
+
+**What the host still does, and what it costs.** With the arithmetic on the device the host's update
+is the decisions, and each is linear in what changed rather than in the scene: the budgeted
+selection of both caches is a partition about the budget and a sort of the part kept, not a sort of
+every card and probe (`ranked_selection.h`); the field's scroll and the probe placement do nothing
+in a frame that moves no window and changes nothing they read (`DistanceField::content_revision`,
+the placement's key of windows, field, lights, volumes and regions); the card snapshot the host
+gather reads is not taken when the device shades; the device's card lookup lists again only the
+cards that moved (`CardNeighbourGrid::update`); and a brick's solve samples only the placements
+that can be its least. Each is held to the computation it replaces — `unit.render_gi`'s selections
+against the full sort, `render_gi_pipeline`'s still window, grid and culled solve against the full
+scan, the build and every placement, value for value. Measured with the caches live (section 7b),
+the host's update is 0.38 to 0.48 ms at its median in the three furnished scenes, where the host
+caches took 15 to 30 ms. What is left above a millisecond is the frame a moving object of at least
+2.5 m (a `SlowDynamic` one) is flushed in, every eighth frame while it moves: its bricks re-solved
+on the host and its cards re-listed, 5 to 8 ms at the 95th percentile (section 10).
 
 ## 3. The tiers, and the one predicate that chooses between them
 
@@ -229,6 +259,18 @@ direct light is within 0.5% of the path tracer with a per-receiver ratio varianc
 reference's own noise); left to the cache, the variance is 4.6 and the receivers range from
 nothing to 7.8 times their reference.
 
+**The frame's own light for it.** A promoted emitter lights the cards exactly, but the light it
+throws directly on the surfaces the frame draws is direct light, and the frame composites only the
+GI's indirect: with the lamp's emission out of the cache, nothing put it on the frame's pixels.
+`gi_gpu::append_promoted_frame_lights(system, lights)` hands the frame a light per promoted card —
+a spot down its normal with a right-angled cone, its flux `pi * L * A` in lumens, falling as the
+cosine (`render::LightDescription::cosine_falloff`, `kLightEmitter` in `cy/light.slang`) — which the
+frame shades as the GI shades a card wherever the square is small beside its distance:
+`render.gi_gpu_frame` (f) puts it within 0.27 % mean and 0.75 % worst of the GI's form factor over
+64 receivers 2 to 5 m from a 30 cm lamp, where the same light as an ordinary squared-cone spot is
+46 % out. Add them with the frame's other lights after the system's update; a system that promoted
+nothing adds nothing, and the frame is the frame it was.
+
 **Energy is never clamped.** `EmissiveLights::report()` gives `total = cached + promoted + demoted`
 and `clamped_power`, which is zero and is checked.
 
@@ -270,6 +312,12 @@ gi.set_volumes({&interior, 1});
 
 With no volume reaching a sample, everything resolves exactly as it did before volumes existed —
 `integration.render_gi_volumes` checks that bit for bit.
+
+**Volumes have owners.** `set_volumes(GiVolumeOwner::Game, ...)` places the running game's,
+`GiVolumeOwner::Streaming` the streamed cells' (section 6h), and the one-argument form the
+author's; each owner replaces only its own, every sample resolves through all of them, and a volume
+placed again exactly as it was keeps its probes — only the volumes an owner added or removed place
+their regions again (`render_gi_volumes`' "each owner replaces its own GI volumes").
 
 ## 6b. Moving objects, transparent ones, and fog
 
@@ -355,7 +403,7 @@ A view's exposure is automatic — the frame's own mean indirect diffuse drawn a
 unless the caller names one. `GiReflectionProbes` over a system that holds reflection probes is the
 one view the device does not draw (`GpuGiDebugView::draws`): their captures are the host's, and the
 caller draws it on the processor. A frame with a view costs what the frame costs plus the view's
-dispatch: 8 to 15 ms for the whole 480x270 frame in `smoke.gi_gpu_live` (d), where the processor
+dispatch: 5 to 13 ms for the whole 480x270 frame in `smoke.gi_gpu_live` (d), where the processor
 took 35 to 240 ms for the view alone at 320x180.
 
 ## 6d. Tuning it while the world runs
@@ -434,6 +482,16 @@ diffuse view alone at a quarter of the size — and detached, the frame is the f
 the preview's system — every object by its Play entity, every material by its authored name — so a
 project's behaviour places volumes, puts lamps out and reads the light the author sees lit in the
 viewport. Stop applies the document's GI again.
+
+Play's simulation reaches the GI too. Every object the GI holds as movable — a `RigidBody` or a
+`KinematicBody` — follows its Play entity's world transform each frame before the GI's update
+(`AuthoredIllumination::follow_play`, priced by its class) and goes back where the document puts it
+at Stop. The game's volumes are the game's own set (`GiVolumeOwner::Game`), so an author's edit
+applied in place during Play leaves them placed; an edit that rebuilds the GI binds the same adapter
+to the new system (`IlluminationAdapter::rebind`, `restore`) and places them again, their handles
+still the game's. `integration.editor_window_play_gi` holds all three: a falling cart's GI object
+where the body is, then back; the game's volume beside the author's moved one; and the game's volume
+on the rebuilt system, updated by its old handle.
 
 ![The editor viewport lit and in the GI Tier view](../design/images/editor-gi-viewport.png)
 
@@ -539,11 +597,12 @@ Illumination" node (`gi.settings.set`) and the viewport is lit by the device GI,
 project's behaviours reach that same GI through ABI 1.9 (section 6e).
 
 **What it costs** (`smoke.rts_api_gi`, RTX 5060, Vulkan, 480x270, `samples/13-rts-api`'s 32 m
-field from the game's camera): the game's frame 1.3 ms of which the GI's host update is 1.1 ms;
-the drawn frame 5.1 ms with the GI's device passes 1.0 ms of it (the resolve, the card shading
-and the probe gather; 0.76, 0.55 and 0.15 ms in `smoke.gi_gpu_live`'s scene); 6.3 ms a frame
-together, where the drawn frame without the GI is 3.9 ms. Two choices make it that: the caches'
-arithmetic on the device (with them on the host the update is 3.7 ms), and **ladders sized to the
+field from the game's camera): 4.65 ms a frame together — the game's 0.56 ms, of which the GI's
+host update is 0.37 ms, and the GI's device passes 0.64 ms (the resolve, the card shading and the
+probe gather; 0.57, 0.18 and 0.14 ms in `smoke.gi_gpu_live`'s scene). It was 6.3 ms, the host
+update 1.1 ms and the device 1.0 ms, before the host's decisions were bounded by what changed and
+the card shade became a workgroup a card (sections 2 and 9). Two choices make it that: the caches'
+arithmetic on the device (with them on the host the update is 2.6 ms), and **ladders sized to the
 level** — `system.budget().declare(GiLever::ProbeUpdates, ...)` and `SurfaceCacheRate` at a quarter
 of the engine's defaults, which are for a world rather than a 32 m field (at the
 defaults the host update was 22 ms a frame). An RTS camera hangs 25 m over the field, so the host
@@ -552,12 +611,47 @@ the player sees rather than the air the camera hangs in.
 
 ![samples/13-rts-api: without the GI, with it, the beacon put out from Swift and lit again](../design/images/rts-api-gi.png)
 
-**An emitter a frame should show lights through the cache.** A *promoted* emitter's light is
-direct light (section 5), and the forward frame's own lights do not carry promoted emitters yet
-(section 10): the frame shows a promoted lamp only in the bounce. The RTS beacon is larger than
-`promotion_max_area_m2`, so its light reaches its surroundings through the surface cache's gather —
-the light the frame's GI composites — and the frame shows the game putting it out (the frame round
-its foot falls from 169 to 148 and rises again to 170; without the GI it reads 197 throughout).
+**An emitter's light in the frame.** A *promoted* emitter's light is direct light (section 5): add
+`gi_gpu::append_promoted_frame_lights(system, lights)` to the frame's lights after the system's
+update and the frame shades a small lamp directly as the GI shades its cards. The RTS beacon is
+larger than `promotion_max_area_m2`, so it stays in the cache and its light reaches its
+surroundings through the surface cache's gather — the light the frame's GI composites — and the
+frame shows the game putting it out (the frame round its foot falls from 169 to 148 and rises again
+to 170; without the GI it reads 197 throughout).
+
+## 6h. Streaming the GI with the world
+
+A world that streams its cells streams their GI with them. `gi_streaming::GiCellStreaming` is a
+consumer of the world's cell events (`world::CellEventQueue`), as foliage and water are: a cell that
+activates carrying `world::Channel::Illumination` is asked of a loader for its GI content — its
+cards, its meshes' distance fields, its instances for the hardware tier and its GI volumes — and
+the content goes in a budget a tick; a cell that deactivates or is evicted takes it out at once.
+
+```cpp
+gi_streaming::GiCellStreaming gi_cells(allocator, system, partition);
+gi_cells.attach(world_streaming.events(), /*order=*/50);
+gi_cells.set_loader(&load_cell_gi, &cooked);       // fills a GiCellContent from the cell's payload
+// each frame, after the world's tick and before the GI's update:
+(void)gi_cells.tick(frame, {/*cards_per_tick=*/2048, /*fields_per_tick=*/8});
+(void)system.update(context);
+```
+
+A cell's cards go in as chunks, each its own GI scene cell through `ingest_cell` — so emitters are
+classified and small lamps promoted — cut only between instances, so no emitter is split; its fields
+and instances a few a tick; its volumes under `GiVolumeOwner::Streaming` once it is whole. What an
+eviction releases is charged to that tick's budget first. The device copies follow by what changed:
+cards by revision, bricks by what a placement touched, and the card lookup only for the cards that
+arrived or left.
+
+`smoke.render_gi_streaming` drives a real `world::WorldStreaming` over an 8 x 8 grid of 16 m cells
+with a traveller across it: 32 cells in and 25 out over 160 ticks with their cards, fields, promoted
+lamps, instances and volumes; the streaming tick 0.03 ms of processor time at its median and under
+1 ms at its worst, no tick over its card budget but for one instance larger than the budget alone in
+its tick; and at the route's end, converged, the GI at 49 points about the traveller is the GI of the
+same cells ingested at once to 1.1e-7 mean relative. `smoke.gi_gpu_streaming` streams a strip with
+the caches on the device: the host's whole GI frame 0.45 ms at its median and 2.5 ms at its worst,
+the device's card shading and gather 0.18 ms, and every frame's upload no more than what arrived,
+left or was invalidated, the lookup grid never rebuilt whole once the working set is resident.
 
 ## 7. Measuring it: against the oracle, and against the engines it competes with
 
@@ -583,7 +677,9 @@ The claims and where each is measured:
 | A game reads the light where a body stands | `integration.game_backend_illumination`, `integration.swift_illumination` | the sample is `indirect_diffuse`'s own answer bit for bit (the six-direction mean for a body); a lamp put out from a script takes the luminance under it from 2.150 to 1.038 in the adapter and from 2.149 to 1.032 through Swift |
 | Every GI view in the editor's viewport, and Lit as before | `smoke.editor_authored_frame_vulkan`, `integration.editor_window_illumination` | 11 136 of 11 200 opaque view texels change the frame, every one of 13 376 clear texels keeps it, and back on Lit the frame is byte for byte the frame before |
 | The views drawn by the device are the host's | `smoke.gi_gpu_live` (c) | seventeen of nineteen word for word over 129 600 texels, `GiProbeVisibility` within one texel, the indirect diffuse and specular within one 8-bit step (the targets are halves) |
-| Live in the editor and in a game, at interactive rates | `smoke.editor_authored_frame_vulkan`'s device GI case, `smoke.gi_gpu_live` (a), (b), (d), `smoke.rts_api_gi` | the editor's Lit view lit by the device GI, a frame 4 to 8 ms at 384x256 with any view; a document edit or a game's ABI 1.9 call in the next frames, nothing rebuilt; the RTS frame 6.3 ms at 480x270 with the GI 1.0 ms on the device and 1.1 ms on the host; off, the frame it was byte for byte |
+| Live in the editor and in a game, at interactive rates | `smoke.editor_authored_frame_vulkan`'s device GI case, `smoke.gi_gpu_live` (a), (b), (d), `smoke.rts_api_gi` | the editor's Lit view lit by the device GI, a frame 4 to 8 ms at 384x256 with any view; a document edit or a game's ABI 1.9 call in the next frames, nothing rebuilt; the RTS frame 4.65 ms at 480x270 with the GI 0.64 ms on the device and 0.37 ms on the host; off, the frame it was byte for byte |
+| Live caches at a bounded host cost | the beauty sample's `gi live` (`--gi-caches device|host`); `unit.render_gi`, `integration.render_gi_pipeline` (every shortcut against the computation it replaces) | 240 frames with the GI's sun turning and a 3 m block moving through it, the caches' arithmetic on the device: the host's update 0.39 / 0.48 / 0.38 ms at its median in the sunlit room, the workshop hall and the Colonnade, where the host caches took 24.9 / 30.4 / 15.1 ms; the whole GI on the device 3.87 / 4.16 / 3.07 ms (hardware), the card shading 0.22 ms and the probe gather 0.06 to 0.10 ms of it |
+| Streams with the world | `smoke.render_gi_streaming`, `smoke.gi_gpu_streaming` | cells streamed in and out a budget a tick; the GI is the never-streamed GI to 1.1e-7; the host's GI frame 0.45 ms median, 2.5 ms worst, while cells arrive and leave |
 | Explicit cost | `smoke.gi_gpu_probe_quality`'s cost cases; `render.gi_gpu_tracing`'s and `render.gi_gpu_resolve`'s; the beauty shot's report | gather at budget 0.078 ms (software) / 0.043 ms (hardware). The GI at 1920x1080, every stage: the screen probes (16 px) 1.99 ms (hardware) / 2.51 ms (software) — 4.75 / 5.27 through the shared denoiser — and 1.19 / 1.65 ms on the half-resolution grid; every 8 px 3.51 / 5.15 ms; the per-pixel gather 10.6 / 13.9 ms, 2.86 ms on the half grid, 1.96 ms with the denoiser lever too. For a 3840x2160 output the probes are 7.7 / 9.7 ms native (per pixel 42.4) and 3.5 / 4.4 ms at the upscaler's 1440p (per pixel 18.9). The scenes of section 7b (the beauty sample, every stage, the fastest of 240 frames at full clocks): the sunlit room 3.49 ms (hardware) / 4.61 ms (software), 2.40 ms on the half grid; the workshop hall 3.78 / 5.40 ms, 2.63 on the half grid; the Colonnade 2.73 / 5.68 ms, 1.73 / 3.88 ms on the half grid (per pixel, 12.3 ms). Stage 5 holds a 960x540 frame of the screen probes to its allocation by dropping from 0.68 ms to 0.35 ms in the declared lever order |
 
 **The path tracer as the reference.** `PathTracer` (`gi/bake.h`) is the same tracer the lightmap bake uses, over the same GI scene. For a
@@ -706,6 +802,26 @@ hall read 0.214.
 And in motion — the camera swinging 30 degrees about the hall's target and back over four seconds,
 the GI at its default every frame, reprojecting its probes and its history through the motion
 (`just capture-gi-hall-video`): [docs/design/videos/gi-hall-orbit.mp4](../design/videos/gi-hall-orbit.mp4).
+
+**With the caches live.** The figures above hold the host's caches still, to time the resolve at
+full clocks. A game's frames do not: `cy_sample_beauty --gi on` now also runs 240 frames in which the
+GI's sun turns a tenth of a degree a frame and a 3 m block the GI holds as a `SlowDynamic` object
+circles the target (it is not drawn), every frame's update scheduling, shading and gathering what
+changed, and prints them as `gi live` (`openspec/changes/finish-gi-live-caches-and-streaming/evidence/live-timing.txt`,
+RTX 5060, 1920x1080):
+
+| | the host's update, median / p95 | the GI on the device, median (resolve + cards + gather) | software tier | the host's caches instead (`--gi-caches host`) |
+|---|---|---|---|---|
+| the sunlit room | 0.39 / 6.7 ms | 3.87 ms (3.57 + 0.22 + 0.08) | 4.96 ms | update 24.9 ms |
+| the workshop hall | 0.48 / 7.9 ms | 4.16 ms (3.83 + 0.22 + 0.10) | 5.59 ms | update 30.4 ms |
+| the Colonnade | 0.38 / 4.5 ms | 3.07 ms (2.77 + 0.24 + 0.06) | 6.13 ms | update 15.1 ms |
+
+The resolve is the held figure within 0.1 ms; the live caches add 0.3 ms on the device. The 95th
+percentile is the block's flush, every eighth frame (section 10).
+
+![The host's GI update with the caches on the host and on the device, and the GI's device cost, caches live](../design/images/gi-live-cost.png)
+
+`tools/docs/plot_gi_live_cost.py` draws it from the timing file.
 
 **The Colonnade** (`content/beauty/shot.cyshot`), outdoors under a low sun, where the sky does most
 of the indirect work:
@@ -854,6 +970,17 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   word, which the host upload and the device gather both write; it was zero before, and a device
   view read every probe as settled.
 
+- **A thread a card leaves the device idle.** The card shade ran one thread a selected card, so a
+  budget's 512 cards were 512 threads each tracing its gather's and its footprint's rays in turn:
+  2.15 ms in the workshop hall. A workgroup a card traces them side by side and lane 0 combines them
+  in the host's order — a sum in the same order, a count of lit samples — so the card is the
+  one-thread card to the bit, in 0.22 ms.
+- **A host update that touches the whole cache every frame is a host update that grows with the
+  world.** With the arithmetic on the device the hall's update was still 1.3 ms: a sort of every
+  card and probe, a rescan of every probe cell and brick, a snapshot of every card nobody read, and
+  every page counted at every allocation (a cell's ingest was quadratic in it). Each is now linear
+  in what changed or skipped, and each is held to what it replaced.
+
 ## 10. What is not built yet
 
 - **The screen tier in the screen probes' rays.** The probes trace the world tiers, as the per-pixel
@@ -869,23 +996,27 @@ both suites. The [Slang guide](slang.md) has the shader rules.
   16-pixel spacing and their origin's lift. The per-pixel gather (0.251 in the sunlit room before
   this rung) is no closer. A short screen-space occlusion term applied to the near field, as Lumen's
   short-range ambient occlusion is, would be the next step; nothing measures one yet.
-- **A small bright emitter in the cache.** The hall's lamp stays in the surface cache because the
-  frame does not read promoted lights (below), and a half-metre lamp is found by few of a probe's 32
-  rays: it lights the bench and the wall under it without fireflies only because it is long — two
-  metres of panel. A smaller lamp shows the blotches section 5 describes.
-- **Card shading and the probe gather in the beauty shot run on the host.** The shot uses the device
-  resolve and denoiser; its caches are updated by the host system, which costs about 17 ms of
-  processor time a frame at the Colonnade's 12 782 cards and 30 to 37 ms in the sunlit room's and
-  the hall's closed interiors. The device card shading and gather (stages 2 and 3) are the
-  installation that removes it.
+- **The hall's lamp in the cache.** The beauty sample keeps every emitter in the surface cache
+  (`CacheOnly`), as it did before the frame took promoted lights (section 5); promoting the hall's
+  lamp and handing the frame its lights is the sample's next step, and the comparison images would
+  move with it.
+- **A large moving object's flush on the host.** A `SlowDynamic` object (2.5 m or more) is flushed
+  every eighth frame while it moves: its cards leave and enter the cache (re-listed in the device's
+  lookup, about 3 ms in the hall's 14 301 cards) and the bricks it left and entered are re-solved on
+  the host (2 to 5 ms). That frame is the 95th percentile of section 7b's table, 4.5 to 7.9 ms. The
+  brick solve on the device, from the placements' grids the device would then hold, is what removes
+  it; objects under 2.5 m (`FastDynamic`) cost the host nothing.
 - **`samples/10-world`**: the world shades per vertex in its own shader with no depth and normal
   prepass and no shadowed sun of its own; it needs the terrain in the GI scene (cards and a
-  heightfield distance grid per chunk) and its ambient replaced before it can take the GI.
+  heightfield distance grid per chunk) and its ambient replaced before it can take the GI. Its cells
+  could stream the GI today (section 6h); `smoke.render_gi_streaming` streams a test world instead,
+  because a GI the sample does not draw with proves nothing the test world does not.
 - **DXR and Metal acceleration structures**: the RHI vocabulary is theirs too, and both backends
   refuse until they implement it; the software tier answers.
-- **Promoted emitters in the frame's own lights**: the forward frame's clustered lights and the
-  stochastic many-light path do not read `frame_lights()` yet; the frame reads the GI's two targets
-  and nothing else of this system.
+- **Promoted emitters in the stochastic many-light path**: the forward frame's clustered lights take
+  them (`append_promoted_frame_lights`, section 5); the stochastic many-light path does not yet, and
+  a promoted light's frame shadow is the frame's spot shadow, not the GI's ray to 30 cm in front of
+  the card.
 - **GI volumes and probe quality on the device gather**: placement, density and the update rate are
   host decisions and hold on both paths; the device gather traces the update's ray count through
   the frame's tier for every probe, so `Quality` and `TierPreference` reach probes on the host
@@ -893,9 +1024,9 @@ both suites. The [Slang guide](slang.md) has the shader rules.
 - **The device GI off Vulkan**: its Metal and DXIL shaders are compiled and committed, and no suite
   has run them on a device, so the editor's viewport keeps the processor's views on Metal (the
   skinned variants' rule) and `samples/13-rts-api --render` is Vulkan only.
-- **The editor's GI in Play is the document's**: Play's moving bodies do not move the GI's objects
-  (the preview is rebuilt from the document on an edit, not from the simulation), and a document
-  edit during Play rebuilds the GI under the running game, which loses the volumes it placed.
+- **The editor's GI in Play**: Play's bodies move their GI objects and the game's volumes survive
+  an edit (section 6e), but an edit applied in place still re-applies the document's settings and
+  emitter rules over any the game set (volumes have owners; settings and emitter rules do not yet).
   Materials are a cooked material's base colour and emission, or the frame's default grey (material
   graphs light as grey). The Swift API sets no transmission and does not tune the per-pixel
   resolve's own settings (grid divisor, denoiser) yet. Every requirement of the row maps to a test

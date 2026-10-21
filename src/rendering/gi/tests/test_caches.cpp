@@ -2,6 +2,7 @@
 
 #include <cy/test/test.h>
 
+#include <cy/core/math/quat.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/gi/radiance_cache.h>
 #include <cy/rendering/gi/scene.h>
@@ -480,4 +481,185 @@ CY_TEST_CASE("probe updates are budgeted, prioritised and bounded in age") {
     update.frame = 100;
     const ProbeUpdateReport all = cache.update(update);
     CY_CHECK_EQ(all.probes_updated, probes);
+}
+
+namespace {
+
+[[nodiscard]] bool same_report(const ProbePlacementReport& a, const ProbePlacementReport& b) {
+    return a.probes_created == b.probes_created && a.probes_reused == b.probes_reused &&
+           a.probes_retired == b.probes_retired &&
+           a.rejected_inside_geometry == b.rejected_inside_geometry &&
+           a.rejected_open_space == b.rejected_open_space &&
+           a.placed_by_volume_density == b.placed_by_volume_density &&
+           a.rejected_by_volume_density == b.rejected_by_volume_density;
+}
+
+[[nodiscard]] bool same_probes(const RadianceCache& a, const RadianceCache& b) {
+    if (a.probes().size() != b.probes().size()) {
+        return false;
+    }
+    for (cy::usize index = 0; index < a.probes().size(); ++index) {
+        const Probe& left = a.probes()[index];
+        const Probe& right = b.probes()[index];
+        if (left.live != right.live || left.revision != right.revision ||
+            left.level != right.level || left.position.x != right.position.x ||
+            left.position.y != right.position.y || left.position.z != right.position.z ||
+            left.camera_distance != right.camera_distance) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+CY_TEST_CASE("a still window is not scanned again, and answers as the scan would") {
+    // The field and the probe placement both skip a frame in which nothing they read changed
+    // (issue #35: the host's update a game pays for every frame). Held here to the full scan they
+    // replace, frame by frame, over a camera that stands, drifts inside a cell, crosses cells, and
+    // a field and a light that change under it.
+    const gi_support::BoxField box(Vec3{1.0F, 1.0F, 1.0F}, 2.0F, 11);
+    ClipmapSettings clipmaps;
+    clipmaps.levels = 2;
+    clipmaps.resolution = 16;
+    clipmaps.base_extent_metres = 16.0F;
+    DistanceField fast;
+    DistanceField full;
+    CY_REQUIRE(fast.configure(clipmaps).has_value());
+    CY_REQUIRE(full.configure(clipmaps).has_value());
+    CY_REQUIRE(
+        fast.place(1, box.asset(), cy::Mat4::from_translation(Vec3{2.0F, 0.0F, 0.0F})).has_value());
+    CY_REQUIRE(
+        full.place(1, box.asset(), cy::Mat4::from_translation(Vec3{2.0F, 0.0F, 0.0F})).has_value());
+
+    ProbeCacheSettings settings;
+    settings.levels = 2;
+    settings.base_spacing_metres = 1.0F;
+    settings.half_extent_probes = 4;
+    RadianceCache shortcut;
+    RadianceCache oracle;
+    CY_REQUIRE(shortcut.configure(settings).has_value());
+    CY_REQUIRE(oracle.configure(settings).has_value());
+    GiLight lamp;
+    lamp.position = Vec3{-2.0F, 1.0F, 0.0F};
+    lamp.intensity = 4.0F;
+
+    const Vec3 route[] = {{0.0F, 0.0F, 0.0F},   {0.0F, 0.0F, 0.0F},  {0.2F, 0.1F, 0.0F},
+                          {0.4F, 0.1F, 0.0F},   {1.3F, 0.1F, 0.0F},  {1.3F, 0.1F, 0.0F},
+                          {1.3F, 0.1F, 0.0F},   {3.1F, 0.0F, -2.0F}, {3.1F, 0.0F, -2.0F},
+                          {3.15F, 0.0F, -2.0F}, {3.15F, 0.0F, -2.0F}};
+    u32 skipped_scrolls = 0;
+    u32 step = 0;
+    for (const Vec3 camera : route) {
+        if (step == 5) {
+            // The box moves: bricks are invalidated, and the placement reads a new field.
+            const cy::Mat4 moved = cy::Mat4::from_translation(Vec3{-1.0F, 0.0F, 2.0F});
+            CY_REQUIRE(fast.move(1, moved).has_value());
+            CY_REQUIRE(full.move(1, moved).has_value());
+        }
+        if (step == 8) {
+            lamp.position = Vec3{4.0F, 1.0F, -2.0F};
+        }
+        const ScrollReport fast_scroll = fast.scroll_to(camera);
+        const ScrollReport full_scroll = full.scroll_to(camera, true);
+        CY_CHECK_EQ(fast_scroll.bricks_solved, full_scroll.bricks_solved);
+        CY_CHECK_EQ(fast_scroll.bricks_reused, full_scroll.bricks_reused);
+        CY_CHECK_EQ(fast_scroll.bricks_freed, full_scroll.bricks_freed);
+        CY_CHECK_EQ(fast_scroll.bricks_empty, full_scroll.bricks_empty);
+        skipped_scrolls +=
+            fast_scroll.bricks_solved == 0 && fast_scroll.bricks_freed == 0 ? 1U : 0U;
+
+        ProbePlacementContext placement;
+        placement.field = &fast;
+        placement.lights = {&lamp, 1};
+        ProbePlacementContext scan = placement;
+        scan.field = &full;
+        scan.full_scan = true;
+        const ProbePlacementReport fast_placed = shortcut.scroll_to(camera, placement);
+        const ProbePlacementReport full_placed = oracle.scroll_to(camera, scan);
+        CY_CHECK(same_report(fast_placed, full_placed));
+        CY_CHECK(same_probes(shortcut, oracle));
+        for (const Vec3 point : {Vec3{0.5F, 0.0F, 0.0F}, Vec3{-1.0F, 0.5F, 2.0F}, camera}) {
+            CY_CHECK_EQ(fast.distance(point), full.distance(point));
+        }
+        ++step;
+    }
+    // The route stood still often enough to take the shortcut.
+    CY_CHECK_GE(skipped_scrolls, 4U);
+}
+
+CY_TEST_CASE("a brick solved from the placements that can answer it is the brick solved from all") {
+    // `solve_brick` samples, for each brick, only the placements whose grid it reaches and the far
+    // ones whose bound is below what those gave (issue #35: an object's move re-solves hundreds of
+    // bricks in a frame). Held to the solve that samples every placement everywhere, value for
+    // value, over a scene of rotated, scaled and scattered boxes — and through a move.
+    const gi_support::BoxField box(Vec3{0.6F, 0.9F, 0.4F}, 1.5F, 11);
+    ClipmapSettings culled_settings;
+    culled_settings.levels = 2;
+    culled_settings.resolution = 32;
+    culled_settings.base_extent_metres = 16.0F;
+    ClipmapSettings exhaustive_settings = culled_settings;
+    exhaustive_settings.cull_far_placements = false;
+    DistanceField culled;
+    DistanceField exhaustive;
+    CY_REQUIRE(culled.configure(culled_settings).has_value());
+    CY_REQUIRE(exhaustive.configure(exhaustive_settings).has_value());
+    for (u32 index = 0; index < 24; ++index) {
+        const f32 angle = 0.37F * static_cast<f32>(index);
+        const u32 row = index / 6U;
+        const cy::Mat4 placed =
+            cy::Mat4::from_translation(Vec3{(static_cast<f32>(index % 6) * 2.7F) - 7.0F,
+                                            (static_cast<f32>(index % 3) * 0.8F) - 1.0F,
+                                            (static_cast<f32>(row) * 3.1F) - 6.0F}) *
+            cy::Mat4::from_quat(cy::Quat::from_axis_angle(Vec3{0.0F, 1.0F, 0.0F}, angle)) *
+            cy::Mat4::from_scale(Vec3{1.0F + (0.1F * static_cast<f32>(index % 4)), 1.0F, 0.8F});
+        CY_REQUIRE(culled.place(index + 1U, box.asset(), placed).has_value());
+        CY_REQUIRE(exhaustive.place(index + 1U, box.asset(), placed).has_value());
+    }
+    const auto agree = [&](Vec3 camera) {
+        const ScrollReport a = culled.scroll_to(camera);
+        const ScrollReport b = exhaustive.scroll_to(camera);
+        CY_CHECK_EQ(a.bricks_solved, b.bricks_solved);
+        CY_CHECK_EQ(a.bricks_empty, b.bricks_empty);
+        u32 differ = 0;
+        u32 points = 0;
+        for (u32 ix = 0; ix <= 64; ++ix) {
+            for (u32 iz = 0; iz <= 58; ++iz) {
+                for (u32 iy = 0; iy <= 4; ++iy) {
+                    const Vec3 point = camera + Vec3{-12.0F + (0.37F * static_cast<f32>(ix)),
+                                                     -2.0F + (0.9F * static_cast<f32>(iy)),
+                                                     -12.0F + (0.41F * static_cast<f32>(iz))};
+                    differ += culled.distance(point) != exhaustive.distance(point) ? 1U : 0U;
+                    points += 1;
+                }
+            }
+        }
+        CY_CHECK_EQ(differ, 0U);
+        return points;
+    };
+    CY_CHECK_GT(agree(Vec3{0.0F, 0.0F, 0.0F}), 1000U);
+    const cy::Mat4 moved = cy::Mat4::from_translation(Vec3{1.0F, 0.0F, 1.5F});
+    CY_REQUIRE(culled.move(3, moved).has_value());
+    CY_REQUIRE(exhaustive.move(3, moved).has_value());
+    (void)agree(Vec3{0.0F, 0.0F, 0.0F});
+    (void)agree(Vec3{5.0F, 0.0F, -3.0F});
+}
+
+CY_TEST_CASE("a region retired under a still window is placed again") {
+    // `retire_region` empties cells the last placement filled; the still-window shortcut must not
+    // take that placement's verdicts as still standing.
+    RadianceCache cache;
+    ProbeCacheSettings settings;
+    settings.levels = 1;
+    settings.base_spacing_metres = 1.0F;
+    settings.half_extent_probes = 3;
+    CY_REQUIRE(cache.configure(settings).has_value());
+    ProbePlacementContext placement;  // no field: every candidate is accepted
+    const ProbePlacementReport first = cache.scroll_to(Vec3{0.0F, 0.0F, 0.0F}, placement);
+    const u32 retired = cache.retire_region(
+        cy::Aabb::from_min_max(Vec3{-1.0F, -1.0F, -1.0F}, Vec3{1.0F, 1.0F, 1.0F}));
+    CY_REQUIRE(retired > 0U);
+    const ProbePlacementReport again = cache.scroll_to(Vec3{0.0F, 0.0F, 0.0F}, placement);
+    CY_CHECK_EQ(again.probes_created, retired);
+    CY_CHECK_EQ(cache.probe_count(), first.probes_created);
 }

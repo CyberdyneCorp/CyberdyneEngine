@@ -144,6 +144,8 @@ Status DistanceField::configure(const ClipmapSettings& settings) noexcept {
                     "non-zero multiple of the brick edge");
     }
     settings_ = settings;
+    window_complete_ = false;
+    content_revision_ += 1;
     levels_.clear();
     brick_pool_.clear();
     free_bricks_.clear();
@@ -300,9 +302,16 @@ u32 DistanceField::placement_count() const noexcept {
 f32 DistanceField::sample_placements(Vec3 point) const noexcept {
     f32 nearest = 1.0e6F;
     for (const Placement& placement : placements_) {
-        if (!placement.live) {
-            continue;
+        if (placement.live) {
+            nearest = std::min(nearest, sample_placement(placement, point));
         }
+    }
+    return nearest;
+}
+
+f32 DistanceField::sample_placement(const Placement& placement, Vec3 point) noexcept {
+    f32 nearest = 1.0e6F;
+    {
         const Vec3 local = transform_point(placement.inverse, point);
         const Vec3 size = placement.local_bounds.size();
         const f32 spacing =
@@ -319,8 +328,7 @@ f32 DistanceField::sample_placements(Vec3 point) const noexcept {
             // just so loose that a brick a clear four metres from a small object never reached the
             // sparsity threshold, and the field allocated storage for empty space.
             const Vec3 closest = placement.local_bounds.closest_point(local);
-            nearest = std::min(nearest, cy::distance(closest, local) + placement.boundary_min);
-            continue;
+            return std::min(nearest, cy::distance(closest, local) + placement.boundary_min);
         }
         const Vec3 relative = local - placement.local_bounds.min;
         const f32 grid = static_cast<f32>(placement.dimension - 1);
@@ -362,23 +370,107 @@ void DistanceField::free_brick(Brick& brick) noexcept {
     brick.empty = true;
 }
 
+namespace {
+
+/// The box the brick from `origin`, `extent` metres a side, covers in a placement's own space: its
+/// corners through the inverse transform, a millimetre wider for the rounding of each sample's.
+[[nodiscard]] Aabb local_box(const Mat4& inverse, Vec3 origin, f32 extent) noexcept {
+    Aabb box =
+        Aabb::from_min_max(transform_point(inverse, origin), transform_point(inverse, origin));
+    for (u32 corner = 1; corner < 8; ++corner) {
+        const Vec3 at =
+            origin + Vec3{(corner & 1U) != 0U ? extent : 0.0F, (corner & 2U) != 0U ? extent : 0.0F,
+                          (corner & 4U) != 0U ? extent : 0.0F};
+        const Vec3 local = transform_point(inverse, at);
+        box = Aabb::from_min_max(cwise_min(box.min, local), cwise_max(box.max, local));
+    }
+    return box.expanded(1.0e-3F);
+}
+
+}  // namespace
+
+bool DistanceField::brick_reaches(const Placement& placement, Vec3 origin, f32 extent) noexcept {
+    // The test `sample_placement` makes for one point, made for the brick's whole box: whether any
+    // sample can fall inside the asset's grid and be answered by its distances.
+    const Vec3 size = placement.local_bounds.size();
+    const f32 spacing =
+        std::max({size.x, size.y, size.z}) / static_cast<f32>(placement.dimension - 1);
+    const Aabb grid = placement.local_bounds.expanded(spacing);
+    const Aabb box = local_box(placement.inverse, origin, extent);
+    return box.min.x <= grid.max.x && box.max.x >= grid.min.x && box.min.y <= grid.max.y &&
+           box.max.y >= grid.min.y && box.min.z <= grid.max.z && box.max.z >= grid.min.z;
+}
+
+f32 DistanceField::brick_lower_bound(const Placement& placement, Vec3 origin, f32 extent) noexcept {
+    // Every sample of a brick that does not reach the grid answers `distance(closest, local) +
+    // boundary_min` (`sample_placement`), and its local point lies in `local_box`, so that is no
+    // less than the distance between the two boxes plus the same term. Lowered by a part in a
+    // thousand and a tenth of a millimetre for the rounding the per-sample arithmetic does.
+    const Aabb box = local_box(placement.inverse, origin, extent);
+    const Aabb& bounds = placement.local_bounds;
+    const Vec3 gap{std::max({bounds.min.x - box.max.x, box.min.x - bounds.max.x, 0.0F}),
+                   std::max({bounds.min.y - box.max.y, box.min.y - bounds.max.y, 0.0F}),
+                   std::max({bounds.min.z - box.max.z, box.min.z - bounds.max.z, 0.0F})};
+    const f32 bound = length(gap) + placement.boundary_min;
+    return (bound * 0.999F) - 1.0e-4F;
+}
+
 Status DistanceField::solve_brick(Level& level, i32 bx, i32 by, i32 bz, Brick& brick) noexcept {
     f32 voxels[kBrickSamples];
     const Vec3 origin{static_cast<f32>(bx) * level.brick_size,
                       static_cast<f32>(by) * level.brick_size,
                       static_cast<f32>(bz) * level.brick_size};
-    f32 nearest = 1.0e6F;
-    for (u32 z = 0; z < kBrickSampleEdge; ++z) {
-        for (u32 y = 0; y < kBrickSampleEdge; ++y) {
-            for (u32 x = 0; x < kBrickSampleEdge; ++x) {
-                const Vec3 point = origin + Vec3{static_cast<f32>(x) * level.voxel_size,
-                                                 static_cast<f32>(y) * level.voxel_size,
-                                                 static_cast<f32>(z) * level.voxel_size};
-                const f32 value = sample_placements(point);
-                voxels[(((z * kBrickSampleEdge) + y) * kBrickSampleEdge) + x] = value;
-                nearest = std::min(nearest, value);
+    // THE PLACEMENTS THAT CAN ANSWER. A brick's value at a sample is the least of every placement's
+    // there, and most placements are far from most bricks. One whose grid the brick cannot reach
+    // answers every sample with its outside bound, never below the bound for the box of the
+    // brick's corners in its own space; once the near placements are sampled, a far one whose bound
+    // is not below the brick's largest value so far cannot lower any sample, and is not sampled.
+    // The least of the rest is the least of all of them: the same values, from fewer evaluations.
+    const f32 extent = level.voxel_size * static_cast<f32>(kBrickSampleEdge - 1U);
+    Array<u32> far;
+    for (f32& value : voxels) {
+        value = 1.0e6F;
+    }
+    const auto sample_into = [&](const Placement& placement) {
+        for (u32 z = 0; z < kBrickSampleEdge; ++z) {
+            for (u32 y = 0; y < kBrickSampleEdge; ++y) {
+                for (u32 x = 0; x < kBrickSampleEdge; ++x) {
+                    const Vec3 point = origin + Vec3{static_cast<f32>(x) * level.voxel_size,
+                                                     static_cast<f32>(y) * level.voxel_size,
+                                                     static_cast<f32>(z) * level.voxel_size};
+                    f32& value = voxels[(((z * kBrickSampleEdge) + y) * kBrickSampleEdge) + x];
+                    value = std::min(value, sample_placement(placement, point));
+                }
             }
         }
+    };
+    for (u32 index = 0; index < placements_.size(); ++index) {
+        const Placement& placement = placements_[index];
+        if (!placement.live) {
+            continue;
+        }
+        if (!settings_.cull_far_placements || brick_reaches(placement, origin, extent)) {
+            sample_into(placement);
+        } else {
+            (void)far.push_back(index);
+        }
+    }
+    f32 largest = -1.0e6F;
+    for (const f32 value : voxels) {
+        largest = std::max(largest, value);
+    }
+    for (const u32 index : far) {
+        const Placement& placement = placements_[index];
+        if (brick_lower_bound(placement, origin, extent) < largest) {
+            sample_into(placement);
+            for (const f32 value : voxels) {
+                largest = std::max(largest, value);
+            }
+        }
+    }
+    f32 nearest = 1.0e6F;
+    for (const f32 value : voxels) {
+        nearest = std::min(nearest, value);
     }
 
     // The sparsity rule, with the margin the far value's conservatism depends on: a brick every
@@ -497,11 +589,26 @@ void DistanceField::visit_brick(Level& level, i32 bx, i32 by, i32 bz,
     }
 }
 
-ScrollReport DistanceField::scroll_to(Vec3 camera) noexcept {
+ScrollReport DistanceField::scroll_to(Vec3 camera, bool full) noexcept {
     ScrollReport report;
     const i32 half = static_cast<i32>(settings_.resolution / kBrickEdge) / 2;
     changes_.clear();
     generation_ += 1;
+
+    // THE STILL WINDOW. Nothing pending and no window moved: every brick a visit would find is
+    // there and current, so every visit would reuse it. Report that, and visit nothing — a few
+    // thousand hash lookups a frame a game's camera standing still does not need.
+    bool moved = false;
+    for (const Level& level : levels_) {
+        moved = moved || !level.centred ||
+                level.origin_brick[0] != floor_div(camera.x, level.brick_size) - half ||
+                level.origin_brick[1] != floor_div(camera.y, level.brick_size) - half ||
+                level.origin_brick[2] != floor_div(camera.z, level.brick_size) - half;
+    }
+    if (!full && !moved && window_complete_ && pending_invalidations_.empty()) {
+        diagnostics_.last_scroll = steady_;
+        return steady_;
+    }
 
     for (Level& level : levels_) {
         level.origin_brick[0] = floor_div(camera.x, level.brick_size) - half;
@@ -521,6 +628,17 @@ ScrollReport DistanceField::scroll_to(Vec3 camera) noexcept {
     }
 
     pending_invalidations_.clear();
+    if (report.bricks_solved != 0 || report.bricks_freed != 0) {
+        content_revision_ += 1;
+    }
+    // A brick whose solve failed is missing, and the next scroll must try it again.
+    const u64 window = static_cast<u64>(half) * 2U * static_cast<u64>(half) * 2U *
+                       static_cast<u64>(half) * 2U * levels_.size();
+    window_complete_ =
+        static_cast<u64>(report.bricks_solved) + static_cast<u64>(report.bricks_reused) == window;
+    steady_ = ScrollReport{};
+    steady_.bricks_reused = report.bricks_solved + report.bricks_reused;
+    steady_.bricks_empty = report.bricks_empty;
     diagnostics_.last_scroll = report;
     account();
     return report;
