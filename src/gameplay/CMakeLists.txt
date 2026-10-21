@@ -104,6 +104,11 @@ add_subdirectory(play)
 # feature into the link closure of every dedicated server. See live/CMakeLists.txt.
 add_subdirectory(live)
 
+# fog/ — fog of war, the simulation half: which cells each team sees and has seen, and the ghosts it
+# remembers. A separate target as abilities/ is, so a game without fog links none of it; it is
+# simulation, so it is held headless below. See fog/CMakeLists.txt.
+add_subdirectory(fog)
+
 # The headless check, deferred to the end of the top-level directory: a target's transitive link
 # closure is only complete once every module in the tree has been declared, so running it here in
 # directory order would check a closure that is not yet the closure.
@@ -119,6 +124,8 @@ function(cy_gameplay_check_headless)
     # give it a renderer or an asset system is real. A `ReloadAsset` policy is handed to a
     # `LiveEditHost` the caller supplies precisely so that it does not need one.
     cy_require_headless(cy_gameplay_live)
+    # Fog of war is simulation: a dedicated server runs it to decide what each team may see.
+    cy_require_headless(cy_gameplay_fog)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gameplay_check_headless)
