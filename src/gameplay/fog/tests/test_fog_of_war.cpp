@@ -117,6 +117,11 @@ CY_TEST_CASE("fog: a position left of the origin is located by flooring, not tru
     CY_CHECK_EQ(x, 3U);
     CY_CHECK_EQ(z, 3U);
     CY_CHECK_FALSE(fog.locate(metres(-5), 0, x, z));
+    // Half a metre left of the origin is off the grid: truncating toward zero would put it in
+    // cell 0 and let a unit standing there see the first column as its own.
+    CY_CHECK_FALSE(fog.locate(metres(-4) - (kOneMetreRaw / 2), metres(-3), x, z));
+    CY_CHECK_FALSE(fog.locate(metres(-3), metres(-4) - (kOneMetreRaw / 2), x, z));
+    CY_CHECK(fog.at(kBlue, metres(-4) - (kOneMetreRaw / 2), metres(-3)) == CellState::Unexplored);
     // A unit off the grid still lights the cells its sight reaches on it.
     // A metre left of the grid, level with row 4's centres.
     const FogUnit outside = unit(1, kBlue, metres(-5), centre(4) - metres(4), metres(2));
