@@ -322,10 +322,11 @@ CY_TEST_CASE("cells streamed in and out reach the device incrementally, with no 
     const f64 device_median = device_sorted[device_sorted.size() / 2];
     const f64 device_worst = device_sorted[device_sorted.size() - 1U];
     std::fprintf(stderr,
-                 "streamed %d cells along the strip in %u frames: host frame median %.3f ms, worst "
-                 "%.3f ms; device cards and gather median %.3f ms, worst %.3f ms; the grid listed "
+                 "streamed %d cells along the strip in %u frames: host frame median %.3f ms, "
+                 "second worst %.3f ms, worst %.3f ms; device cards and gather median %.3f ms, "
+                 "worst %.3f ms; the grid listed "
                  "only the changed cards in %u frames\n",
-                 kCells, frames, host_median, host_worst, device_median, device_worst,
+                 kCells, frames, host_median, host_second, host_worst, device_median, device_worst,
                  incremental_frames);
     // The first frame places every probe and solves every brick: a load, not a stream.
     // Held in an optimised build; printed in every one.
