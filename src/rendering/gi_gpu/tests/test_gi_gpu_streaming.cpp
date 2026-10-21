@@ -328,7 +328,10 @@ CY_TEST_CASE("cells streamed in and out reach the device incrementally, with no 
                  kCells, frames, host_median, host_worst, device_median, device_worst,
                  incremental_frames);
     // The first frame places every probe and solves every brick: a load, not a stream.
+    // Held in an optimised build; printed in every one.
+#if !defined(CY_UNOPTIMISED)
     CY_CHECK_LT(host_second, kHitchThresholdMs * cy::test::kSanitizedAllowance);
+#endif
     CY_CHECK_EQ(over_budget, 0U);
 
     CY_CHECK_GT(streaming.cards_in_gi(), 0U);
