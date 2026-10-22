@@ -60,7 +60,8 @@ CyLightDesc desc_of_kind(u32 kind) noexcept {
 
 }  // namespace
 
-CY_TEST_CASE("game backend lights: every kind round-trips through the table to the engine's light") {
+CY_TEST_CASE(
+    "game backend lights: every kind round-trips through the table to the engine's light") {
     Bound bound(16);
     const u32 kinds[6] = {CY_LIGHT_POINT, CY_LIGHT_SPOT,   CY_LIGHT_RECT,
                           CY_LIGHT_DISC,  CY_LIGHT_SPHERE, CY_LIGHT_TUBE};

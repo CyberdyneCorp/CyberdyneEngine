@@ -1473,13 +1473,13 @@ typedef struct CyFogStatus {
  * the frame's every frame, so a flash is clustered, sampled and lit like an authored lamp. A host
  * that draws nothing binds none, and every 1.11 entry answers UNAVAILABLE.
  *
- * LIGHTS ARE PRESENTATION. Every entry is [N U]: a fixed step is refused, because a resimulated tick
- * would spawn its flash again, and nothing a light does feeds back into the simulation. A light is a
- * slot of a fixed pool, so spawning allocates nothing and is cheap enough for a battle's every
- * shot; a full pool refuses with OUT_OF_RANGE and counts the refusal. A light with a lifetime fades
- * along it by its `CyLightFade` and is freed when it ends; with none it lives until destroyed. A
- * `CyLight` is the slot and its generation, so a handle to a light that ended never answers for the
- * light now in its slot. */
+ * LIGHTS ARE PRESENTATION. Every entry is [N U]: a fixed step is refused, because a resimulated
+ * tick would spawn its flash again, and nothing a light does feeds back into the simulation. A
+ * light is a slot of a fixed pool, so spawning allocates nothing and is cheap enough for a battle's
+ * every shot; a full pool refuses with OUT_OF_RANGE and counts the refusal. A light with a lifetime
+ * fades along it by its `CyLightFade` and is freed when it ends; with none it lives until
+ * destroyed. A `CyLight` is the slot and its generation, so a handle to a light that ended never
+ * answers for the light now in its slot. */
 
 /* `render::LightKind`: what a light is. The numbers are the engine's; a directional light is not a
  * light a game spawns. */

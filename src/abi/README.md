@@ -275,6 +275,31 @@ every range check, `struct_size` both ways; `test_layout.cpp`: the 1.10 layouts;
 shape) and `integration.game_backend_fog` (the adapter through the table: visions, cells, sight,
 ghosts, the phase rule, and the digest independent of the order visions were given in).
 
+## What ABI 1.11 adds, and why
+
+Lights a game makes for a moment. A muzzle flash, a spark or an explosion's fireball is a light
+that lives a few frames; a Swift game could only light the world through authored entities. 1.11
+appends five `light_*` entries over `cy::rendering::TransientLights`, a fixed pool with generational
+handles, through `cy::abi::game::LightsBackend` (`include/cy/abi/game/lights.h`), implemented by
+`cy::game_backend::LightsAdapter` in `src/game_backend/lights/` — a module of its own, because it
+links `cy::rendering-lighting`.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `light_spawn` | N U | `CyLightDesc`: the kind (`CY_LIGHT_POINT`, `SPOT`, `RECT`, `DISC`, `SPHERE`, `TUBE`), a `CyPose`, colour, intensity (candela, or nits for an area light), range, cone, `size[2]` in metres, lifetime in seconds (zero: until destroyed), `CyLightFade`, `CY_LIGHT_TWO_SIDED`, a layer mask. A full pool is OUT_OF_RANGE; a negative number, an unknown kind, fade or flag, or a nonzero `reserved` is INVALID_ARGUMENT |
+| `light_update` | N U | a new description for a live light, keeping its age, lifetime and fade; NOT_FOUND for one that ended |
+| `light_destroy` | N U | end it now; NOT_FOUND for one that ended |
+| `light_alive` | N U | 1 while it lives, 0 after its lifetime or its destruction |
+| `light_status` | N U | `CyLightStatus`: live, capacity, spawned, expired, refused |
+
+Every entry is refused in a fixed update (PERMISSION_DENIED): a light is presentation, and a
+resimulated tick would spawn its flash again. With no pool bound every entry is UNAVAILABLE. The
+host owns the pool's clock: `LightsAdapter::advance` with the frame's delta, and
+`LightsAdapter::append_to` the frame's lights. Tests: `unit.abi` (`test_game_lights.cpp`: the
+phase rule, UNAVAILABLE with no pool, every range check, `struct_size` both ways; `test_layout.cpp`:
+the 1.11 layouts; the 1.11 table shape) and `integration.game_backend_lights` (the adapter through
+the table: spawn, move, fade, expiry, stale handles, a full pool).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

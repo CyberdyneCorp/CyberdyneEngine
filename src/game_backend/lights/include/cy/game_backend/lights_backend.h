@@ -39,7 +39,8 @@ public:
     /// One frame: every light aged by `seconds`, those whose life ended freed.
     void advance(f32 seconds) noexcept;
     /// Append every live light, under its fade, to the frame's lights. Returns how many.
-    [[nodiscard]] Expected<u32, Error> append_to(Array<render::LightDescription>& out) const noexcept;
+    [[nodiscard]] Expected<u32, Error> append_to(
+        Array<render::LightDescription>& out) const noexcept;
 
     [[nodiscard]] const rendering::TransientLights& pool() const noexcept { return pool_; }
 

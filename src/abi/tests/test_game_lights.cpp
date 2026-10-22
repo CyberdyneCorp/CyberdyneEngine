@@ -174,7 +174,8 @@ CY_TEST_CASE("lights: a frame update may spawn, move and end a light; a fixed st
     CyLight light = CY_LIGHT_NULL;
     {
         cy::abi::game::PhaseScope fixed(bound.host.game.clock, CY_PHASE_FIXED_UPDATE);
-        CY_CHECK_EQ(table().light_spawn(bound.engine(), &desc, &light), CY_RESULT_PERMISSION_DENIED);
+        CY_CHECK_EQ(table().light_spawn(bound.engine(), &desc, &light),
+                    CY_RESULT_PERMISSION_DENIED);
         CY_CHECK_EQ(table().light_destroy(bound.engine(), 1), CY_RESULT_PERMISSION_DENIED);
         u32 alive = 0;
         CY_CHECK_EQ(table().light_alive(bound.engine(), 1, &alive), CY_RESULT_PERMISSION_DENIED);

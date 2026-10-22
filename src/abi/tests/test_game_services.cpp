@@ -224,9 +224,8 @@ CY_TEST_CASE("the 1.11 table appends lights after every 1.10 entry") {
     CY_CHECK_GE(iface.header.abi_minor, 11U);
     CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
     const bool entries[] = {
-        iface.light_spawn != nullptr, iface.light_update != nullptr,
-        iface.light_destroy != nullptr, iface.light_alive != nullptr,
-        iface.light_status != nullptr,
+        iface.light_spawn != nullptr, iface.light_update != nullptr, iface.light_destroy != nullptr,
+        iface.light_alive != nullptr, iface.light_status != nullptr,
     };
     CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 5U);
     for (const bool set : entries) {

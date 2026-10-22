@@ -2,9 +2,10 @@
 // cy/abi/game/lights.h — the backend behind ABI 1.11's lights.
 //
 // `cy_abi` cannot name `cy::rendering-lighting`: the table is in every build and a dedicated server
-// draws nothing. So the pool is reached through this backend, which `cy::game_backend::LightsAdapter`
-// (src/game_backend/lights/) implements over `cy::rendering::TransientLights`. A host that draws
-// nothing binds none, and every 1.11 entry answers UNAVAILABLE.
+// draws nothing. So the pool is reached through this backend, which
+// `cy::game_backend::LightsAdapter` (src/game_backend/lights/) implements over
+// `cy::rendering::TransientLights`. A host that draws nothing binds none, and every 1.11 entry
+// answers UNAVAILABLE.
 //
 // The thunks (src/abi/src/game/light_thunks.cpp) check the engine, the phase, the binding and the
 // pointers, normalise every sized struct and refuse a kind, a fade, a flag or a negative number out

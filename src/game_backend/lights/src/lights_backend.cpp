@@ -73,8 +73,8 @@ render::LightDescription light_of(const CyLightDesc& desc) noexcept {
     render::LightDescription light;
     // The ABI's kinds are the engine's numbers: see the assertions at the top of this file.
     light.kind = static_cast<render::LightKind>(desc.kind);
-    light.transform.translation = Vec3{desc.pose.position[0], desc.pose.position[1],
-                                       desc.pose.position[2]};
+    light.transform.translation =
+        Vec3{desc.pose.position[0], desc.pose.position[1], desc.pose.position[2]};
     light.transform.rotation = rotation_of(desc.pose);
     light.color[0] = desc.color[0];
     light.color[1] = desc.color[1];
