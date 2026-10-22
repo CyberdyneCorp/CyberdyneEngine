@@ -16,11 +16,15 @@
 //                                              `--width`, `--height`, `--view overview`,
 //                                              `--video <dir>`, and `--no-fog`, `--no-hud`,
 //                                              `--no-ao`, `--no-shadows` and `--gi off` as controls
+//   just run-sample rts-api --map <frontier.cypak>
+//                                              the session headless on the map: its GI boxes and
+//                                              the fog grid over its ground, nothing drawn
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
 // here from anything the game decided.
 
+#include <cy/core/math/shapes.h>
 #include <cy/core/memory/system_allocator.h>
 
 #include <cstdlib>
@@ -232,15 +236,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (map.package != nullptr && render_directory == nullptr) {
-        std::fprintf(stderr, "rts-api: --map draws the session, and needs --render <dir>\n");
-        return 2;
-    }
 #if defined(CY_RTS_API_MAP)
-    // THE MAP LOADS BEFORE THE HOST STARTS: its buildings are boxes the level's GI holds.
+    // THE MAP LOADS BEFORE THE HOST STARTS: its buildings are boxes the level's GI holds, and the
+    // fog of war's grid covers the ground it spans. Without `--render` the session runs headless on
+    // the map: the gameplay a drawn run is held to.
     sample::rts::map::MapContent map_content;
     std::vector<sample::rts::FieldBox> map_boxes;
-    if (render_directory != nullptr && map.package != nullptr) {
+    cy::Aabb map_ground;
+    if (map.package != nullptr) {
         sample::rts::map::LoadReport loaded;
         std::string detail;
         if (const cy::Status read =
@@ -256,6 +259,8 @@ int main(int argc, char** argv) {
         map_boxes = sample::rts::map_gi_boxes(map_content);
         options.extra_gi_boxes = map_boxes.data();
         options.extra_gi_box_count = static_cast<cy::u32>(map_boxes.size());
+        map_ground = sample::rts::map::map_bounds(map_content);
+        options.fog_bounds = &map_ground;
     }
 #endif
 

@@ -91,8 +91,9 @@ constexpr u64 kStills[] = {150, 250, 350, 420};
 constexpr u64 kWarmFrames = 10;
 /// The game's step: what the fog fades and the company's clips advance on.
 constexpr f32 kFrameSeconds = 1.0F / 60.0F;
-/// Blue, whose fog the frame draws.
+/// Blue, whose fog the frame draws, and the side the company's second group is drawn as.
 constexpr cy::gameplay::TeamId kBlue = 1;
+constexpr cy::gameplay::TeamId kCompanyRival = 3;
 /// Units the frame has room for: the game's workers, the company, the camp's raiders.
 constexpr u32 kMaxWorkers = 8;
 constexpr u32 kCompanySize = 16;
@@ -101,9 +102,6 @@ constexpr u32 kFigures = kMaxWorkers + kCompanySize + kRaiders;
 constexpr u32 kJoints = 8;
 /// Where an unused figure or a hidden camp member waits: far under the map.
 constexpr Vec3 kParked{16.0F, -200.0F, 16.0F};
-/// The fog's grid over the whole map, a cell a metre; the level's own grid is the square at its
-/// origin, and everything outside the level is ground blue has explored and does not see.
-constexpr u32 kMapFogCells = 128;
 /// Team colours, linear: neutral, blue, red, and the company's second group.
 constexpr Vec3 kTeamColours[] = {Vec3{0.78F, 0.74F, 0.66F}, Vec3{0.10F, 0.24F, 0.70F},
                                  Vec3{0.70F, 0.10F, 0.07F}, Vec3{0.08F, 0.46F, 0.50F}};
@@ -454,12 +452,14 @@ struct MapRenderer::State {
     rendering::occlusion::AmbientOcclusionPass occlusion;
     gi_gpu::GpuGiFrame gi;
     fow::FogOfWarPass fog;
+    /// Blue's field over the host's whole grid, which covers the map: what the frame's stage and
+    /// the minimap's fog both show.
     std::unique_ptr<fow::VisibilityField> field;
-    /// Blue's field over the level alone, faded as the frame's is: what the minimap's fog shows.
-    std::unique_ptr<fow::VisibilityField> level_field;
     std::vector<u32> minimap_fog;
-    std::vector<u8> level_states;
-    std::vector<u8> map_states;
+    std::vector<u8> fog_states;
+    /// Where the host's grid lies, and the level's square the minimap shows.
+    fow::FogGridPlacement fog_placement;
+    fow::MinimapRegion minimap_region;
     cy::ui::render::UiRenderer ui;
     cy::ui::PrimitiveBuffer ui_buffer;
     u32 ui_revision = 0xFFFF'FFFFU;
@@ -513,8 +513,6 @@ struct MapRenderer::State {
     f32 shadow_radius = 40.0F;
     rendering::FrameResourceRead opaque_reads[1];
     rendering::ResourceId shadow_resource = rendering::kInvalidResource;
-    f32 map_origin_x = 0.0F;
-    f32 map_origin_z = 0.0F;
     f32 company_x = 0.0F;
     f32 company_z = 0.0F;
     Vec3 sun_travel{-0.28F, -0.82F, -0.50F};
@@ -1144,6 +1142,8 @@ struct MapRenderer::State {
     /// Every figure where its source put it, and its pose for this frame.
     [[nodiscard]] Status place_figures(RtsHost& from) noexcept {
         clock += kFrameSeconds;
+        report.enemies_shown = 0;
+        report.enemies_hidden = 0;
         for (u32 which = 0; which < kFigures; ++which) {
             Mat4* pose = poses.data() + (static_cast<usize>(which) * kJoints);
             Vec3 at = kParked;
@@ -1171,6 +1171,9 @@ struct MapRenderer::State {
                     const f32 z =
                         static_cast<f32>(static_cast<f64>(unit.position.y.raw) / one) + company_z;
                     at = Vec3{x, ground(x, z), z};
+                    if (!company_shown(from, which - kMaxWorkers, at)) {
+                        at = kParked;
+                    }
                     const f64 turn = static_cast<f64>(unit.heading.raw) / 4294967296.0;
                     const f32 h = static_cast<f32>(turn * 2.0 * std::numbers::pi);
                     stated = std::atan2(std::cos(h), std::sin(h));
@@ -1184,6 +1187,7 @@ struct MapRenderer::State {
             }
             if (which >= kMaxWorkers + kCompanySize) {
                 at = camp_position(from, which - (kMaxWorkers + kCompanySize));
+                ++(at.y == kParked.y ? report.enemies_hidden : report.enemies_shown);
                 stated = std::atan2(16.0F - at.x, 16.0F - at.z);
                 heading = &stated;
             }
@@ -1210,6 +1214,18 @@ struct MapRenderer::State {
         return cy::ok();
     }
 
+    /// Whether company unit `member` is drawn: the first group is blue's own and always is; the
+    /// second is another side's, drawn only where blue sees it now. Counted for the report.
+    [[nodiscard]] bool company_shown(const RtsHost& from, u32 member, Vec3 at) noexcept {
+        const cy::gameplay::TeamId owner = member < kCompanySize / 2U ? kBlue : kCompanyRival;
+        if (owner == kBlue) {
+            return true;
+        }
+        const bool shown = !options.fog || shown_by_fog(from.fog().grid(), kBlue, owner, at);
+        ++(shown ? report.enemies_shown : report.enemies_hidden);
+        return shown;
+    }
+
     /// Where camp member `index` is drawn by blue's sight: where it stands, where blue last saw it,
     /// or nowhere.
     [[nodiscard]] Vec3 camp_position(const RtsHost& from, u32 member) const noexcept {
@@ -1232,39 +1248,23 @@ struct MapRenderer::State {
         return kParked;
     }
 
-    /// Blue's field over the map: the level's grid at its square, explored ground round it.
+    /// Blue's field: the host's grid as it is, every cell of the map the simulation's.
     [[nodiscard]] Status fog_field(const RtsHost& from) noexcept {
         const gfog::FogOfWar& grid = from.fog().grid();
-        if (Status written = grid.write_states(
-                kBlue, cy::Span<cy::u8>(level_states.data(), level_states.size()));
+        if (Status written =
+                grid.write_states(kBlue, cy::Span<cy::u8>(fog_states.data(), fog_states.size()));
             !written) {
             return written;
         }
-        std::ranges::fill(map_states, fow::kCellExplored);
-        const auto offset_x = static_cast<u32>(-map_origin_x);
-        const auto offset_z = static_cast<u32>(-map_origin_z);
-        for (u32 z = 0; z < kFogCells; ++z) {
-            for (u32 x = 0; x < kFogCells; ++x) {
-                map_states[((z + offset_z) * kMapFogCells) + x + offset_x] =
-                    level_states[(z * kFogCells) + x];
-            }
-        }
         if (Status set =
-                field->set_states(cy::Span<const u8>(map_states.data(), map_states.size()));
-            !set) {
-            return set;
-        }
-        if (Status set = level_field->set_states(
-                cy::Span<const u8>(level_states.data(), level_states.size()));
+                field->set_states(cy::Span<const u8>(fog_states.data(), fog_states.size()));
             !set) {
             return set;
         }
         if (frame == 0) {
             field->snap();
-            level_field->snap();
         } else {
             field->advance(kFrameSeconds);
-            level_field->advance(kFrameSeconds);
         }
         return cy::ok();
     }
@@ -1272,15 +1272,13 @@ struct MapRenderer::State {
     /// The minimap's fog: blue's field over the level, composed into the atlas page the game's HUD
     /// shows on its minimap (ABI 1.10), as `render.rts_api_hud` composes it.
     [[nodiscard]] Status minimap_page() noexcept {
-        if (!options.fog || level_field == nullptr || frame % kMinimapFogEvery != 0U) {
+        if (!options.fog || field == nullptr || frame % kMinimapFogEvery != 0U) {
             return cy::ok();
         }
-        const fow::FogGridPlacement placement{0.0F, 0.0F, 1.0F};
-        const fow::MinimapRegion region{0.0F, static_cast<f32>(kFogCells), 0.0F,
-                                        static_cast<f32>(kFogCells)};
+        // The frame's own field over the level's square, the minimap's map: the two never disagree.
         if (Status composed = fow::compose_minimap_fog(
-                level_field->texels(), kFogCells, kFogCells, placement, region, kMinimapFogTexels,
-                kMinimapFogTexels, fow::MinimapFogStyle{},
+                field->texels(), field->width(), field->height(), fog_placement, minimap_region,
+                kMinimapFogTexels, kMinimapFogTexels, fow::MinimapFogStyle{},
                 cy::Span<u32>(minimap_fog.data(), minimap_fog.size()));
             !composed) {
             return composed;
@@ -1343,14 +1341,8 @@ struct MapRenderer::State {
             frame_fog.view.projection = projection;
             frame_fog.view.relative_view = relative_view;
             frame_fog.view.eye = eye;
-            frame_fog.placement = fow::FogGridPlacement{map_origin_x, map_origin_z, 1.0F};
-            // Ground blue has explored and does not see now, the map round the level included,
-            // dimmed and greyed less than the engine's default so the map still reads as a place.
-            frame_fog.style.explored_brightness = 0.72F;
-            frame_fog.style.explored_saturation = 0.6F;
-            // Never explored: a dark slate rather than a void, in the frame's scene-referred units
-            // (a dark slate once the frame is exposed and tonemapped).
-            frame_fog.style.unexplored_colour = Vec3{300.0F, 340.0F, 400.0F};
+            // The engine's style: explored ground greyed and dimmed, never-explored ground black.
+            frame_fog.placement = fog_placement;
             frame_fog.field = field.get();
             if (Status set = fog.set_frame(frame_fog); !set) {
                 return set;
@@ -1676,8 +1668,8 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
     state.host = &host;
     state.terrain_copy = content.terrain;
     state.terrain = &state.terrain_copy;
-    state.map_origin_x = content.layout.origin_x;
-    state.map_origin_z = content.layout.origin_z;
+    state.minimap_region = fow::MinimapRegion{content.layout.base_min_x, content.layout.base_max_x,
+                                              content.layout.base_min_z, content.layout.base_max_z};
     state.company_x = content.layout.company_x;
     state.company_z = content.layout.company_z;
     state.sun_travel = content.layout.sun_travel;
@@ -1729,21 +1721,30 @@ cy::Status MapRenderer::start(RtsHost& host, const MapContent& content,
         state.occlusion.set_settings(settings);
     }
     if (options.fog) {
-        state.field = std::make_unique<fow::VisibilityField>(*allocator_);
-        if (Status made = state.field->create(kMapFogCells, kMapFogCells); !made) {
-            return made;
+        // The host's grid is the field, cell for cell; it must cover all the ground drawn, or the
+        // ground off it would be fogged as never explored whatever blue had seen.
+        const gfog::FogGridDescription& grid = host.fog().grid().description();
+        const cy::Aabb covered = fog_grid_bounds(grid);
+        const cy::Aabb drawn = map::map_bounds(content);
+        if (covered.min.x > drawn.min.x || covered.min.z > drawn.min.z ||
+            covered.max.x < drawn.max.x || covered.max.z < drawn.max.z) {
+            return cy::fail(cy::ErrorCode::InvalidArgument,
+                            "rts map: the fog of war's grid does not cover the map (run the host "
+                            "with HostOptions::fog_bounds = map::map_bounds)");
         }
-        state.level_field = std::make_unique<fow::VisibilityField>(*allocator_);
-        if (Status made = state.level_field->create(kFogCells, kFogCells); !made) {
+        state.fog_placement =
+            fow::FogGridPlacement{covered.min.x, covered.min.z,
+                                  (covered.max.x - covered.min.x) / static_cast<f32>(grid.width)};
+        state.field = std::make_unique<fow::VisibilityField>(*allocator_);
+        if (Status made = state.field->create(grid.width, grid.height); !made) {
             return made;
         }
         state.minimap_fog.assign(static_cast<usize>(kMinimapFogTexels) * kMinimapFogTexels, 0U);
-        state.level_states.assign(static_cast<usize>(kFogCells) * kFogCells, 0U);
-        state.map_states.assign(static_cast<usize>(kMapFogCells) * kMapFogCells, 0U);
+        state.fog_states.assign(static_cast<usize>(grid.width) * grid.height, 0U);
         if (Status made =
                 state.fog.create(*allocator_, *state.device,
                                  fow::FogOfWarPassDescription{options.width, options.height,
-                                                              kMapFogCells, kMapFogCells, false});
+                                                              grid.width, grid.height, false});
             !made) {
             return made;
         }
@@ -1857,17 +1858,17 @@ void MapRenderer::print_report() const noexcept {
         "rts map render width=%u height=%u frames=%llu timed=%llu frame_ms=%.3f worst_ms=%.3f "
         "game_ms=%.3f record_ms=%.3f device_wait_ms=%.3f gi_device_ms=%.3f fog_device_ms=%.4f "
         "draws=%u skinned_draws=%u "
-        "instances=%u triangles=%u plants=%u stills=%u validation_errors=%u gi=%d fog=%d hud=%d "
-        "ao=%d shadows=%d\n",
+        "instances=%u triangles=%u plants=%u stills=%u validation_errors=%u enemies_shown=%u "
+        "enemies_hidden=%u gi=%d fog=%d hud=%d ao=%d shadows=%d\n",
         state_->options.width, state_->options.height,
         static_cast<unsigned long long>(report.frames),
         static_cast<unsigned long long>(report.timed), report.frame_ms / timed, report.worst_ms,
         report.game_ms / timed, report.record_ms / timed, report.device_wait_ms / timed,
         report.gi_device_ms / timed, report.fog_device_ms / timed, report.draws,
         report.skinned_draws, report.instances, report.triangles, report.plants, report.stills,
-        report.validation_errors, state_->options.gi ? 1 : 0, state_->options.fog ? 1 : 0,
-        state_->options.hud ? 1 : 0, state_->options.ambient_occlusion ? 1 : 0,
-        state_->options.shadows ? 1 : 0);
+        report.validation_errors, report.enemies_shown, report.enemies_hidden,
+        state_->options.gi ? 1 : 0, state_->options.fog ? 1 : 0, state_->options.hud ? 1 : 0,
+        state_->options.ambient_occlusion ? 1 : 0, state_->options.shadows ? 1 : 0);
 }
 
 }  // namespace sample::rts

@@ -65,6 +65,10 @@ struct FogGridPlacement {
     f32 cell_size = 1.0F;
 };
 
+/// How far past the grid's edge, in cells, a point still reads the edge cell: a surface lying on
+/// the edge reconstructs a hair either side of it from the depth. Beyond it, never explored.
+inline constexpr f32 kFogEdgeSlack = 1.0F / 16.0F;
+
 /// How visible and how explored a point is, each in [0, 1], after the smoothing.
 struct FogSample {
     f32 visible = 0.0F;
@@ -120,7 +124,8 @@ private:
 /// The field at a world position on the ground plane, exactly as fog_of_war.slang samples it:
 /// grid coordinates from the placement, then four bilinear taps half a cell apart — each between
 /// texel centres, the edge clamped, each channel an 8-bit unorm — averaged, then eased. A point
-/// off the grid reads the nearest edge cell.
+/// off the grid is never explored, both levels zero, whatever the edge cells hold: ground the grid
+/// does not cover is ground the simulation knows nothing of, and never reads as seen.
 [[nodiscard]] FogSample sample_visibility(Span<const u8> texels, u32 width, u32 height,
                                           const FogGridPlacement& placement, f32 world_x,
                                           f32 world_z) noexcept;

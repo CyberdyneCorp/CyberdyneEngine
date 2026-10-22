@@ -151,9 +151,57 @@ CY_TEST_CASE("fog of war: the sampled field is continuous across a cell boundary
     const f32 beside = sample_visibility(field.texels(), 4, 1, placement, 3.0F, 1.0F).visible;
     CY_CHECK_GT(beside, 0.5F);
     CY_CHECK_LT(beside, 1.0F);
-    // Off the grid reads the edge cell rather than wrapping or reading nothing.
-    CY_CHECK_EQ(sample_visibility(field.texels(), 4, 1, placement, -50.0F, 1.0F).visible, 1.0F);
+    // Off the grid is never explored, beside a visible edge cell as beside an unexplored one.
+    const FogSample west = sample_visibility(field.texels(), 4, 1, placement, -50.0F, 1.0F);
+    CY_CHECK_EQ(west.visible, 0.0F);
+    CY_CHECK_EQ(west.explored, 0.0F);
     CY_CHECK_EQ(sample_visibility(field.texels(), 4, 1, placement, 50.0F, 9.0F).explored, 0.0F);
+}
+
+CY_TEST_CASE("fog of war: a point off the grid is never explored, whatever the edge cells hold") {
+    // Every cell visible: the edge cells are as seen as a cell can be, and the ground past them is
+    // still ground the simulation knows nothing of. The regression: a frame that read the nearest
+    // edge cell drew everything round a small grid as visible.
+    VisibilityField field(allocator());
+    CY_REQUIRE(settled_field(field, 4, 4, std::vector<u8>(16, kCellVisible)));
+    const FogGridPlacement placement{-8.0F, 10.0F, 2.0F};  // x -8 to 0, z 10 to 18
+    const struct {
+        f32 x;
+        f32 z;
+    } off[] = {{-8.2F, 14.0F}, {0.2F, 14.0F},    {-4.0F, 9.8F},
+               {-4.0F, 18.2F}, {-500.0F, 14.0F}, {300.0F, -300.0F}};
+    for (const auto& point : off) {
+        const FogSample sample =
+            sample_visibility(field.texels(), 4, 4, placement, point.x, point.z);
+        CY_CHECK_EQ(sample.visible, 0.0F);
+        CY_CHECK_EQ(sample.explored, 0.0F);
+        // Shaded, it is the unexplored colour.
+        const FogOfWarStyle style;
+        const Vec3 shaded = shade_fog(Vec3{1.0F, 2.0F, 3.0F}, sample, style);
+        CY_CHECK_EQ(shaded.x, style.unexplored_colour.x);
+        CY_CHECK_EQ(shaded.y, style.unexplored_colour.y);
+        CY_CHECK_EQ(shaded.z, style.unexplored_colour.z);
+    }
+    // On the grid, to its very edge, the field's own state.
+    CY_CHECK_EQ(sample_visibility(field.texels(), 4, 4, placement, -8.0F, 10.0F).visible, 1.0F);
+    CY_CHECK_EQ(sample_visibility(field.texels(), 4, 4, placement, 0.0F, 18.0F).visible, 1.0F);
+    CY_CHECK_EQ(sample_visibility(field.texels(), 4, 4, placement, -4.0F, 14.0F).visible, 1.0F);
+
+    // The minimap agrees: a region wider than the grid is clear over it and fully covered off it.
+    MinimapFogStyle style;
+    std::vector<u32> overlay(16);
+    CY_REQUIRE(compose_minimap_fog(field.texels(), 4, 4, placement, MinimapRegion{-16, 8, 10, 18},
+                                   16, 1, style, {overlay.data(), overlay.size()})
+                   .has_value());
+    // Texel i's centre is at x = -15.25 + 1.5 i: texels 0 to 4 west of the grid, 11 to 15 east.
+    for (u32 texel = 0; texel < 16U; ++texel) {
+        const f32 x = -16.0F + (1.5F * (static_cast<f32>(texel) + 0.5F));
+        if (x < -8.0F || x > 0.0F) {
+            CY_CHECK_EQ(overlay[texel], minimap_fog_texel(FogSample{}, style));
+        } else {
+            CY_CHECK_EQ(overlay[texel], 0U);
+        }
+    }
 }
 
 CY_TEST_CASE(

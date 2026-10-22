@@ -52,17 +52,21 @@ just capture-rts-map                                                        ever
 The controls switch one feature off each: `--gi off`, `--no-fog`, `--no-hud`, `--no-ao`,
 `--no-shadows`; `--no-validation` drops the graphics API's validation layer for a measurement.
 
-A host of its own needs four things from `map_render.cpp`: the map's buildings handed to the GI as
-boxes before the GI is built (`map_gi_boxes`, `HostOptions::extra_gi_boxes`), the package loaded
-before that (`load_map`), a `MapRenderer` started over the host, and `frame()` after every host
-frame. The map is presentation: nothing it does reaches the simulation.
+A host of its own needs five things: the package loaded first (`load_map`), the map's buildings
+handed to the GI as boxes before the GI is built (`map_gi_boxes`, `HostOptions::extra_gi_boxes`),
+the fog of war's grid sized over the map's ground (`map::map_bounds`, `HostOptions::fog_bounds`,
+`host/fog_grid.h`), a `MapRenderer` started over the host, and `frame()` after every host frame.
+`MapRenderer::start` refuses a host whose fog grid does not cover the map. The map does not change
+the game's rules: what it changes is which ground the GI holds and the fog's grid covers.
+`cy_sample_rts-api --map <frontier.cypak>` without `--render` runs the session headless on it.
 
 ## 4. What holds it
 
 | Suite | What it decides |
 |---|---|
 | `integration.rts_map` | two cooks write byte-identical packages; the package loads back by id to the content cooked, digest for digest; the level flat, hills and a lake, painted layers and roads, buildings on the ground, a forest kept off the level and the roads, the skinned worker; damaged, mistyped, newer and truncated assets and malformed sources refused with their reasons |
-| `smoke.rts_api_map` | the session on the map: its gameplay report the headless run's (the lockstep digest included), 420 frames drawn with skinned draws and no validation error, frame 420 against `tests/references/rts_map_420.png`, and a 1080p frame within 16.7 ms |
+| `integration.rts_map` (fog) | the fog grid a run on the map builds covers the cooked terrain and the level; a unit of another side far from blue's sight, or off the grid, is not drawn |
+| `smoke.rts_api_map` | the session on the map: its gameplay report the headless run's on the same map (the lockstep digest included) and every fog decision the run's without a map; the fog grid the map's 128 m and the company's second group withheld; 420 frames drawn with skinned draws and no validation error, frame 420 against `tests/references/rts_map_420.png`, and a 1080p frame within 16.7 ms |
 | `integration.render_assembly` | 'the sky's irradiance is reused while the atmosphere, the eye and the sun hold': the assembly cost the map's measurement found |
 
 Each was proved red by a mutation: a loader that skips the hash, a cook that leaves plants on the
@@ -74,7 +78,11 @@ roads, a renderer that drops the skinned draws, an assembly that integrates the 
   a renderer that wants wind, promotion or per-instance culling reads `FoliageData::plants` instead.
 * **The water is opaque.** The standard material has no opacity term, so the lake is a dark, glossy
   surface rather than a transparent one.
-* **The fog covers the map, the grid covers the level.** Outside the level's 32 m square the frame
-  shows explored ground: the game keeps no fog there.
+* **The fog's grid must cover everything drawn.** Ground off every grid is never explored — the
+  stage draws it black and the simulation answers `Unexplored` — so a grid smaller than the map
+  blacks out the ground past it whatever blue has seen. Size the grid from the cooked map
+  (`map::map_bounds`); `MapRenderer::start` refuses one that does not cover it. Only blue's own
+  units are drawn regardless of the fog: the camp and the company's second group are drawn only
+  where blue sees them.
 * **Metal and D3D12** compile the frame's shaders and were not run on this map; the measurements are
   the RTX 5060's, on Vulkan.

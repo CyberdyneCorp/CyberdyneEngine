@@ -66,12 +66,15 @@ if(TARGET cy::import AND TARGET cy::foliage AND TARGET cy::terrain)
             NAME rts_map
             KIND integration
             SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rts_map.cpp"
-            DEPENDENCIES cy_sample_rts_map cy::core-base cy::core-memory
+            DEPENDENCIES cy_sample_rts_map cy::core-base cy::core-memory cy::gameplay-fog
             DEFINITIONS
                 CY_RTS_MAP_SOURCE="${CY_RTS_MAP_SOURCE}"
                 CY_RTS_MAP_CONTENT_ROOT="${CMAKE_SOURCE_DIR}"
                 CY_RTS_MAP_PACKAGE="${CY_RTS_MAP_PACKAGE}"
                 CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+        # host/fog_grid.h: the grid a run on the map builds, header-only and free of the host.
+        target_include_directories(cy_test_integration_rts_map
+                                   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
         add_dependencies(cy_test_integration_rts_map cy_rts_map_package)
     endif()
 endif()

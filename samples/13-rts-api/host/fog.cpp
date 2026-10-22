@@ -3,29 +3,14 @@
 
 #include "fog.h"
 
-#include <cmath>
-
-#include "level.h"
 #include "units.h"
 
 namespace sample::rts {
-namespace {
-
-/// Metres as Q32.32, rounded to nearest: the one conversion a float position makes.
-[[nodiscard]] cy::i64 to_raw(cy::f32 metres) noexcept {
-    return static_cast<cy::i64>(std::llround(static_cast<cy::f64>(metres) * 4294967296.0));
-}
-
-}  // namespace
 
 RtsFog::RtsFog(cy::Allocator& allocator) noexcept : adapter_(allocator) {}
 
-cy::Status RtsFog::build() noexcept {
-    cy::gameplay::fog::FogGridDescription grid;
-    grid.width = kFogCells;
-    grid.height = kFogCells;
-    grid.cell_size_raw = to_raw(kLevelSize / static_cast<cy::f32>(kFogCells));
-    if (cy::Status made = adapter_.create(grid); !made) {
+cy::Status RtsFog::build(const cy::Aabb& bounds) noexcept {
+    if (cy::Status made = adapter_.create(fog_grid_over(bounds)); !made) {
         return made;
     }
     adapter_.set_placer(&RtsFog::locate, this);
@@ -65,8 +50,8 @@ bool RtsFog::locate(CyEntity entity, cy::i64& x_raw, cy::i64& z_raw, void* user)
     if (!found) {
         return false;
     }
-    x_raw = to_raw(at.x);
-    z_raw = to_raw(at.z);
+    x_raw = fog_raw(at.x);
+    z_raw = fog_raw(at.z);
     return true;
 }
 

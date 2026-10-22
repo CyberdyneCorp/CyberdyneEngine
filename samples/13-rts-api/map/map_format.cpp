@@ -306,6 +306,21 @@ u8 TerrainData::layer_at(f32 x, f32 z) const noexcept {
     return texel * 4U < texel_layers.size() ? texel_layers[texel * 4U] : 0;
 }
 
+cy::Aabb map_bounds(const MapContent& content) noexcept {
+    const MapLayout& layout = content.layout;
+    const TerrainData& terrain = content.terrain;
+    cy::Aabb bounds = cy::Aabb::from_min_max(Vec3{layout.base_min_x, 0.0F, layout.base_min_z},
+                                             Vec3{layout.base_max_x, 0.0F, layout.base_max_z});
+    if (terrain.edge >= 2) {
+        const f32 span = terrain.spacing * static_cast<f32>(terrain.edge - 1U);
+        bounds.min.x = std::min(bounds.min.x, terrain.origin_x);
+        bounds.min.z = std::min(bounds.min.z, terrain.origin_z);
+        bounds.max.x = std::max(bounds.max.x, terrain.origin_x + span);
+        bounds.max.z = std::max(bounds.max.z, terrain.origin_z + span);
+    }
+    return bounds;
+}
+
 // --- Encoders ------------------------------------------------------------------------------------
 
 void encode_layout(const MapLayout& layout, std::vector<u8>& out) {

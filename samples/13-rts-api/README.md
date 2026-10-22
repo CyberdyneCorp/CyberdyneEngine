@@ -78,8 +78,9 @@ the ground point the camera looks at, with probe and card ladders sized to the l
 under two seconds.
 
 ABI 1.10 gives the game FOG OF WAR. The host keeps the grid — `cy::game_backend::FogAdapter` over
-the level's 32 x 32 metres, updated after every fixed step from where each entity with a vision
-stands (`host/fog.*`) — and places an enemy camp in the level: `/Level/RaiderNear`,
+the level's 32 x 32 metres, or over the RTS test map's whole terrain on a run with `--map`
+(`host/fog_grid.h`), updated after every fixed step from where each entity with a vision stands
+(`host/fog.*`) — and places an enemy camp in the level: `/Level/RaiderNear`,
 `/Level/RaiderFar` and `/Level/Watchtower`. Everything else is the game's (`game/Fog.swift`): in
 `onReady` it gives its workers blue's sight (7 m) and its barracks a ghost-leaving vision, and the
 camp it resolved by `@Node` red's; every worker it builds gets blue's sight in the fixed step that
@@ -122,8 +123,9 @@ ctest -R 'rts_map|rts_api_map'                             the cook, the load, t
 
 ![Without shadows, ambient occlusion, the GI and the fog; with shadows; with ambient occlusion and the GI; with the fog and the HUD](../../docs/design/images/rts-map-features.png)
 
-[The video](../../docs/design/videos/rts-map.mp4): the orbit over the level and the company's field,
-the workers and the company walking.
+[The video](../../docs/design/videos/rts-map.mp4): the orbit over the level and the company's field
+under blue's fog — the ground blue's workers see, the ground they saw greyed, and the rest of the
+map, the company's field included, black. `--no-fog` draws the map as it is.
 
 **Where it comes from.** The build cooks the source (`map/map_cook.h`, `cy_rts_map_cook`): the
 terrain is the engine's modifier stack evaluated by `terrain::evaluate_region`, the call the editor's
@@ -142,7 +144,9 @@ with the standard material, its base colour texture table (the albedo and `conte
 stone, gravel and copper), the sun's 2048-texel shadow map with the percentage-closer soft filter,
 `occlusion::AmbientOcclusionPass`, the device GI over the level's `IlluminationSystem` the game tunes
 (the map's buildings and resources are boxes it holds besides its own), blue's fog over the whole
-map (the level's grid at its square, explored ground round it) with the minimap's overlay page, the
+map — the host's grid is sized from the cooked map's bounds (`map::map_bounds`), so ground blue
+never saw is black wherever it lies, and the company's second group is drawn only where blue sees
+it — with the minimap's overlay page from the same field, the
 HUD the game built through `UiRenderer`, and every unit skinned on the device by
 `skinning::SkinnedScene`: the workers posed by the engine's animation system the game drives, the
 company's sixteen and the camp's raiders by the rig's clips sampled for the session's state. The

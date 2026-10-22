@@ -260,7 +260,11 @@ cy::Status RtsHost::start_illumination() noexcept {
 
 cy::Status RtsHost::start_fog() noexcept {
     fog_ = std::make_unique<RtsFog>(allocator_);
-    if (cy::Status built = fog_->build(); !built) {
+    const cy::Aabb level =
+        cy::Aabb::from_min_max(Vec3{0.0F, 0.0F, 0.0F}, Vec3{kLevelSize, 0.0F, kLevelSize});
+    if (cy::Status built =
+            fog_->build(options_.fog_bounds != nullptr ? *options_.fog_bounds : level);
+        !built) {
         return built;
     }
     fog_->set_motion(&motion_);

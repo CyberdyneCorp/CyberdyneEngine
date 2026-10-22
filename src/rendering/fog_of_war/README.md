@@ -28,7 +28,9 @@ is the frame before this module, byte for byte.
 1. Its world position from the depth (reversed Z) through the inverse of `projection × rotation`,
    plus the eye — the frame's rows are camera-relative. The cleared sky is written as read.
 2. The visibility texture at that point: four bilinear taps half a cell apart, averaged — a tent
-   two cells wide, which rounds the cells' staircase — each channel eased by a smoothstep.
+   two cells wide, which rounds the cells' staircase — each channel eased by a smoothstep. A point
+   off the grid is never explored, whatever the edge cells hold: size the grid over everything the
+   frame draws.
 3. The colour: `explored = lerp(luma, colour, saturation) × brightness`,
    `hidden = lerp(unexplored colour, explored, explored level)`,
    `result = lerp(hidden, colour, visible level)`. A fully visible pixel is written as read, bit
@@ -59,13 +61,13 @@ and the camp placed — is a few microseconds.
 ## Tests
 
 * `unit.render_fog_of_war` — the field against the gameplay grid cell for cell, the fade, the
-  smoothing's continuity and slope, the shading, the minimap overlay, the constants' reconstruction
-  of a world position. No device.
+  smoothing's continuity and slope, the shading, a point off the grid never explored, the minimap
+  overlay, the constants' reconstruction of a world position. No device.
 * `render.fog_of_war` (Vulkan) — `pipeline_test::FrameScene` as a strategy field: (a) the device
   texture is the grid; (b) every ground pixel is the host twin's, and a visible one the colour it
   read; (c) explored darker and greyer, unexplored black; (d) smooth edges; (e) enemy units by the
   simulation's sight; (f) off against `references/fog_of_war_off.png`, and everything visible equal
-  to off; (g) the fade.
+  to off; (g) the fade; (h) ground off the grid black, the grid's own ground untouched.
 * `unit.render_forward` — the stage's place and its refusals.
 
 Only Vulkan ran it. The dispatch compiles for every target `just build-shaders --strict` emits; the

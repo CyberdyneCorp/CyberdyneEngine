@@ -18,7 +18,10 @@
 //       where it stood, and a red unit inside vision is drawn as it is;
 //   (f) off is the frame before: the stage absent is byte for byte the committed reference, and
 //       the stage present with blue seeing everything is byte for byte the stage absent;
-//   (g) the fade: a cell revealed this frame is part way between explored and visible.
+//   (g) the fade: a cell revealed this frame is part way between explored and visible;
+//   (h) ground off the grid is never explored: a field over half the ground, every cell of it
+//       visible, leaves that half as it was and draws the other half black — never the edge
+//       cell's state carried past the edge.
 //
 // Vulkan with validation and synchronisation validation on. Without a GPU the suite SKIPS LOUDLY.
 // It writes its pictures to CY_TEST_ARTEFACT_DIR (or the build directory).
@@ -240,6 +243,8 @@ struct Run {
     FogOfWarPass* pass = nullptr;
     FrameScene* scene = nullptr;
     FogOfWarStyle style{};
+    /// Where the field lies: the ground's grid, unless a case moves it.
+    FogGridPlacement placement = kPlacement;
     /// The sub-pixel offset the frame's projection was jittered by, from its report.
     Vec2 jitter{0.0F, 0.0F};
 };
@@ -278,7 +283,7 @@ Status before_assemble(RenderGraph& /*graph*/, rendering::assembly::AssemblyView
     frame.view.projection = run->scene->projection();
     frame.view.relative_view = run->scene->relative_view();
     frame.view.eye = run->scene->eye();
-    frame.placement = kPlacement;
+    frame.placement = run->placement;
     frame.style = run->style;
     frame.field = run->field;
     if (Status set = run->pass->set_frame(frame); !set) {
@@ -868,5 +873,76 @@ CY_TEST_CASE("(g) a cell revealed this frame fades in between explored and visib
     CY_CHECK_EQ(settled[at], without[at]);
     CY_CHECK_LT(luminance(quarter[at]), luminance(settled[at]) - 5.0F);
     CY_CHECK_GT(spread(quarter[at]), 0.0F);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(h) ground off the grid is never explored, whatever the edge cells hold") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // The field covers the ground's western half, x from -16 to 0, and blue sees all of it.
+    constexpr u32 kHalfWidth = kGridWidth / 2U;
+    VisibilityField field(allocator());
+    CY_REQUIRE(field.create(kHalfWidth, kGridHeight).has_value());
+    const std::vector<u8> all_visible(static_cast<usize>(kHalfWidth) * kGridHeight, kCellVisible);
+    CY_REQUIRE(field.set_states({all_visible.data(), all_visible.size()}).has_value());
+    field.snap();
+    FogOfWarPass pass;
+    CY_REQUIRE(pass.create(allocator(), fixture.device(),
+                           FogOfWarPassDescription{kWidth, kHeight, kHalfWidth, kGridHeight, false})
+                   .has_value());
+    gfog::FogOfWar unused(allocator());
+    Run half;
+    half.cast = Run::Cast::GroundOnly;
+    half.simulation = &unused;
+    half.field = &field;
+    half.pass = &pass;
+    std::vector<u32> fogged;
+    CY_REQUIRE(render_field(fixture, half, fogged));
+    CY_CHECK(pass.report().dispatched);
+    Run plain;
+    plain.fog = false;
+    plain.cast = Run::Cast::GroundOnly;
+    std::vector<u32> without;
+    CY_REQUIRE(render_field(fixture, plain, without));
+    save("fog_of_war_off_grid.png", fogged);
+
+    FrameScene probe(allocator());
+    FrameSceneHooks hooks;
+    hooks.shape_box = &shape_box;
+    probe.set_hooks(hooks);
+    CY_REQUIRE(probe.build(fixture.device()).has_value());
+    probe.set_camera(kEye, camera_forward());
+    // A metre clear of the edge either way: the ramp the taps make inside it is the field's own.
+    constexpr f32 kClear = 1.0F;
+    u32 on_grid = 0;
+    u32 on_grid_changed = 0;
+    u32 off_grid = 0;
+    u32 off_grid_lit = 0;
+    for (u32 y = 0; y < kHeight; ++y) {
+        for (u32 x = 0; x < kWidth; ++x) {
+            Vec3 world{};
+            if (!ground_under(pass.constants(), probe.projection(), probe.relative_view(),
+                              half.jitter, x, y, world)) {
+                continue;
+            }
+            const usize at = (static_cast<usize>(y) * kWidth) + x;
+            if (world.x < -kClear) {
+                ++on_grid;
+                on_grid_changed += fogged[at] != without[at] ? 1U : 0U;
+            } else if (world.x > kClear) {
+                ++off_grid;
+                off_grid_lit += luminance(fogged[at]) > 1.0F ? 1U : 0U;
+            }
+        }
+    }
+    std::fprintf(stderr, "(h) on the grid %u pixels, %u changed; off it %u pixels, %u not black\n",
+                 on_grid, on_grid_changed, off_grid, off_grid_lit);
+    CY_CHECK_GT(on_grid, 1000U);
+    CY_CHECK_GT(off_grid, 1000U);
+    CY_CHECK_EQ(on_grid_changed, 0U);
+    CY_CHECK_EQ(off_grid_lit, 0U);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

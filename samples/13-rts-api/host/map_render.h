@@ -20,13 +20,17 @@
 //   the workers        the host's units, posed by the engine's animation system the game drives
 //                      (ABI 1.7): the matrices it published, uploaded as they are
 //   the company        the lockstep session's sixteen units (ABI 1.8), on their field north of the
-//                      level, walking or standing as the session says, the rig's clips sampled here
+//                      level, walking or standing as the session says, the rig's clips sampled
+//                      here; the first group is blue's, the second another side's, drawn only where
+//                      blue's fog of war shows it
 //   the camp           two raiders and the watchtower, drawn by blue's sight (ABI 1.10)
 //   the crate          where its body is
 //
-// THE MAP DOES NOT TOUCH THE GAME. The level is the map's flat square at the origin and the game's
-// rules run there as before; the map is presentation. `smoke.rts_api_map` holds the gameplay half
-// of the report to the run without `--map`.
+// THE MAP DOES NOT TOUCH THE GAME'S RULES. The level is the map's flat square at the origin and the
+// game's rules run there as before; the map adds the GI's boxes for its buildings and the ground
+// the fog of war's grid covers (`map::map_bounds`, fog_grid.h), so every surface drawn has a cell
+// and ground blue never saw is black. `smoke.rts_api_map` holds the gameplay half of the report to
+// the headless run on the same map, and every fog decision to the run without `--map`.
 //
 // What it prints: one line with the frame's wall time over the timed frames (from the start of the
 // frame's recording to its readback, the device's work included), the worst frame, the GI's and
@@ -101,6 +105,10 @@ struct MapRenderReport {
     cy::u32 plants = 0;
     cy::u32 stills = 0;
     cy::u32 validation_errors = 0;
+    /// On the last frame: figures of another side drawn because blue sees them, and withheld
+    /// because it does not (the camp's raiders and the company's second group).
+    cy::u32 enemies_shown = 0;
+    cy::u32 enemies_hidden = 0;
 };
 
 /// The map's buildings and resources as the level's GI holds them (`HostOptions::extra_gi_boxes`):
