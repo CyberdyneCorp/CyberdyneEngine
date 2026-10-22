@@ -65,8 +65,8 @@ constexpr double kFrameBudgetMs = 1000.0 / 60.0;
     std::string kept;
     std::string line;
     while (std::getline(lines, line)) {
-        if (line.rfind("rts ", 0) != 0 || line.rfind("rts gi ", 0) == 0 ||
-            line.rfind("rts map ", 0) == 0 || line.rfind("rts render ", 0) == 0) {
+        if (!line.starts_with("rts ") || line.starts_with("rts gi ") ||
+            line.starts_with("rts map ") || line.starts_with("rts render ")) {
             continue;
         }
         kept += line + "\n";

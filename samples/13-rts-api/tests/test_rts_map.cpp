@@ -42,10 +42,14 @@ using namespace sample::rts::map;
     if (file == nullptr) {
         return out;
     }
-    u8 block[65536];
-    std::size_t read = 0;
-    while ((read = std::fread(block, 1, sizeof(block), file)) > 0) {
-        out.insert(out.end(), block, block + read);
+    bool read = std::fseek(file, 0, SEEK_END) == 0;
+    const long size = read ? std::ftell(file) : -1L;
+    read = read && size >= 0 && std::fseek(file, 0, SEEK_SET) == 0;
+    if (read) {
+        out.resize(static_cast<std::size_t>(size));
+        if (!out.empty() && std::fread(out.data(), 1, out.size(), file) != out.size()) {
+            out.clear();
+        }
     }
     (void)std::fclose(file);
     return out;
@@ -130,8 +134,11 @@ CY_TEST_CASE("samples/13-rts-api map: the build's package is a map, read by id")
     const TerrainData& terrain = map.terrain;
     f32 level_low = 1e9F;
     f32 level_high = -1e9F;
-    for (f32 z = layout.base_min_z; z <= layout.base_max_z; z += 0.5F) {
-        for (f32 x = layout.base_min_x; x <= layout.base_max_x; x += 0.5F) {
+    const auto steps = static_cast<u32>((layout.base_max_x - layout.base_min_x) * 2.0F);
+    for (u32 j = 0; j <= steps; ++j) {
+        for (u32 i = 0; i <= steps; ++i) {
+            const f32 x = layout.base_min_x + (0.5F * static_cast<f32>(i));
+            const f32 z = layout.base_min_z + (0.5F * static_cast<f32>(j));
             level_low = std::min(level_low, terrain.height_at(x, z));
             level_high = std::max(level_high, terrain.height_at(x, z));
         }

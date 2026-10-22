@@ -13,7 +13,6 @@ namespace {
 
 using cy::Status;
 
-constexpr f32 kPi = 3.14159265F;
 constexpr f32 kTau = 6.28318531F;
 
 [[nodiscard]] Vec3 add(Vec3 a, Vec3 b) noexcept {
@@ -536,7 +535,7 @@ void crops(Builder& b) {
     for (u32 row = 0; row < 7U; ++row) {
         const f32 x = -3.0F + static_cast<f32>(row);
         for (u32 tuft = 0; tuft < 11U; ++tuft) {
-            const f32 z = -5.5F + static_cast<f32>(tuft) * 1.1F;
+            const f32 z = -5.5F + (static_cast<f32>(tuft) * 1.1F);
             const f32 h = 0.35F + (0.2F * hash_unit(row, tuft));
             b.box(Vec3{x, h * 0.5F, z}, Vec3{0.22F, h * 0.5F, 0.45F},
                   0.3F * (hash_unit(tuft, row) - 0.5F));
@@ -667,9 +666,8 @@ void water_plane(Builder& b, const TerrainData& terrain, f32 level, Vec3 origin)
     const u32 quads = terrain.edge - 1;
     for (u32 j = 0; j < quads; ++j) {
         for (u32 i = 0; i < quads; ++i) {
-            const f32 lowest =
-                std::min(std::min(terrain.sample(i, j), terrain.sample(i + 1, j)),
-                         std::min(terrain.sample(i, j + 1), terrain.sample(i + 1, j + 1)));
+            const f32 lowest = std::min({terrain.sample(i, j), terrain.sample(i + 1, j),
+                                         terrain.sample(i, j + 1), terrain.sample(i + 1, j + 1)});
             if (lowest >= level) {
                 continue;
             }

@@ -50,16 +50,17 @@ constexpr f32 kClusterMetres = 32.0F;
     if (file == nullptr) {
         return cy::fail(cy::ErrorCode::NotFound, "the cook cannot open a file it was given");
     }
-    out.clear();
-    u8 block[65536];
-    usize read = 0;
-    while ((read = std::fread(block, 1, sizeof(block), file)) > 0) {
-        out.insert(out.end(), block, block + read);
+    // The size first, then one read of exactly that: a file that ends early is a failure.
+    bool read = std::fseek(file, 0, SEEK_END) == 0;
+    const long size = read ? std::ftell(file) : -1L;
+    read = read && size >= 0 && std::fseek(file, 0, SEEK_SET) == 0;
+    if (read) {
+        out.resize(static_cast<usize>(size));
+        read = out.empty() || std::fread(out.data(), 1, out.size(), file) == out.size();
     }
-    const bool failed = std::ferror(file) != 0;
     (void)std::fclose(file);
-    return failed ? cy::fail(cy::ErrorCode::Internal, "the cook could not read a file it opened")
-                  : cy::ok();
+    return read ? cy::ok()
+                : cy::fail(cy::ErrorCode::Internal, "the cook could not read a file it opened");
 }
 
 // --- Noise ---------------------------------------------------------------------------------------
@@ -133,8 +134,8 @@ struct Image {
 
     /// Bilinear, wrapped, at `u, v` in repeats.
     [[nodiscard]] Vec3 sample(f32 u, f32 v) const noexcept {
-        const f32 x = (u - std::floor(u)) * static_cast<f32>(width) - 0.5F;
-        const f32 y = (v - std::floor(v)) * static_cast<f32>(height) - 0.5F;
+        const f32 x = ((u - std::floor(u)) * static_cast<f32>(width)) - 0.5F;
+        const f32 y = ((v - std::floor(v)) * static_cast<f32>(height)) - 0.5F;
         const f32 fx = std::floor(x);
         const f32 fy = std::floor(y);
         const f32 tx = x - fx;
@@ -327,6 +328,7 @@ struct TerrainCook {
     }
     if (step.kind == terrain::ModifierKind::RoadSpline) {
         std::vector<terrain::TerrainPoint> points;
+        points.reserve(step.points.size());
         for (const Vec2& point : step.points) {
             points.push_back(terrain::TerrainPoint{static_cast<f64>(point.x - ox),
                                                    static_cast<f64>(point.y - oz)});
@@ -336,6 +338,7 @@ struct TerrainCook {
     }
     if (step.kind == terrain::ModifierKind::Brush) {
         std::vector<terrain::BrushPoint> dabs;
+        dabs.reserve(step.points.size());
         for (const Vec2& point : step.points) {
             dabs.push_back(terrain::BrushPoint{static_cast<f64>(point.x - ox),
                                                static_cast<f64>(point.y - oz), 1.0F});
@@ -546,11 +549,11 @@ void quad_weights(const TerrainData& terrain, u32 qi, u32 qj, std::vector<f32>& 
             const auto qj = static_cast<u32>(gv);
             const f32 tu = gu - static_cast<f32>(qi);
             const f32 tv = gv - static_cast<f32>(qj);
-            std::fill(weights.begin(), weights.end(), 0.0F);
+            std::ranges::fill(weights, 0.0F);
             const f32 bilinear[4] = {(1.0F - tu) * (1.0F - tv), tu * (1.0F - tv), (1.0F - tu) * tv,
                                      tu * tv};
             for (u32 c = 0; c < 4U; ++c) {
-                std::fill(corner.begin(), corner.end(), 0.0F);
+                std::ranges::fill(corner, 0.0F);
                 quad_weights(terrain, qi + (c & 1U), qj + (c >> 1U), corner);
                 for (usize layer = 0; layer < weights.size(); ++layer) {
                     weights[layer] += corner[layer] * bilinear[c];

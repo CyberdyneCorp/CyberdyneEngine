@@ -248,8 +248,8 @@ void build_foliage(const MapContent& content, Streams& streams, std::vector<Foli
     for (u32 square = 0; square < squares * squares; ++square) {
         const f32 min_x =
             content.layout.origin_x + (static_cast<f32>(square % squares) * kBatchMetres);
-        const f32 min_z =
-            content.layout.origin_z + (static_cast<f32>(square / squares) * kBatchMetres);
+        const u32 row = square / squares;
+        const f32 min_z = content.layout.origin_z + (static_cast<f32>(row) * kBatchMetres);
         for (u32 species = 0; species < foliage.species.size(); ++species) {
             const map::MeshRange& range = library.meshes[foliage.species[species].mesh];
             for (u32 bucket = 0; bucket < kTintBuckets; ++bucket) {
@@ -599,7 +599,8 @@ struct MapRenderer::State {
     }
 
     [[nodiscard]] Status upload_buffer(const char* name, const void* data, u64 bytes,
-                                       rhi::BufferUsage usage, rhi::BufferHandle& out) noexcept {
+                                       rhi::BufferUsage usage,
+                                       rhi::BufferHandle& out) const noexcept {
         rhi::BufferDescription description;
         description.name = name;
         description.size = std::max<u64>(bytes, 16U);
@@ -637,6 +638,7 @@ struct MapRenderer::State {
             return made;
         }
         std::vector<const map::TextureData*> sources;
+        sources.reserve(content.textures.size() + 1U);
         for (const map::TextureData& texture : content.textures) {
             sources.push_back(&texture);
         }
@@ -1238,7 +1240,7 @@ struct MapRenderer::State {
             !written) {
             return written;
         }
-        std::fill(map_states.begin(), map_states.end(), fow::kCellExplored);
+        std::ranges::fill(map_states, fow::kCellExplored);
         const auto offset_x = static_cast<u32>(-map_origin_x);
         const auto offset_z = static_cast<u32>(-map_origin_z);
         for (u32 z = 0; z < kFogCells; ++z) {
