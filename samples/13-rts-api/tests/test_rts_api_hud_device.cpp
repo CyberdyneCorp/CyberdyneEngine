@@ -12,7 +12,11 @@
 //       border, glyph and clip — which needs no device;
 //   (b) on a Vulkan device, over `pipeline_test::FrameScene`, the two frames are the same bytes;
 //   (c) the Swift HUD with its Build button, which the C++ HUD does not have, against a committed
-//       golden image: the picture docs/guides/ui.md shows.
+//       golden image: the picture docs/guides/ui.md shows;
+//   (d) the minimap under a fog of war (ABI 1.10): the overlay `fog_of_war::compose_minimap_fog`
+//       makes from a visibility field, uploaded as an atlas page and drawn between the minimap's
+//       ground and its dots — the same bytes from Swift and C++, clear where the field is visible,
+//       darker where it is explored, black where nothing was ever seen.
 
 #include <cy/abi/cy_abi.h>
 #include <cy/abi/host.h>
@@ -23,11 +27,14 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/ecs/world.h>
 #include <cy/game_backend/ui_backend.h>
+#include <cy/rendering/fog_of_war/minimap.h>
+#include <cy/rendering/fog_of_war/visibility_field.h>
 #include <cy/test/test.h>
 #include <cy/ui/layout.h>
 #include <cy/ui/render/ui_renderer.h>
 #include <cy/ui/text/builtin_font.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -43,6 +50,7 @@ using cy::pipeline_test::FrameSceneHooks;
 using cy::pipeline_test::kHeight;
 using cy::pipeline_test::kWidth;
 using cy::pipeline_test::RecordMode;
+namespace fog = cy::rendering::fog_of_war;
 
 namespace {
 
@@ -270,8 +278,17 @@ private:
     Expected<rhi::Device*, Error> device_ = fail(ErrorCode::Unavailable, "not created");
 };
 
+/// An extra atlas page the frame's interface samples: the fog of war's minimap overlay.
+struct ExtraPage {
+    u16 page = 0;
+    u32 width = 0;
+    u32 height = 0;
+    const std::vector<u32>* texels = nullptr;
+};
+
 /// `interface` drawn over the scene at the frame's interface stage; the frame's pixels in `out`.
-[[nodiscard]] bool draw_frame(DeviceFixture& fixture, Interface& interface, std::vector<u32>& out) {
+[[nodiscard]] bool draw_frame(DeviceFixture& fixture, Interface& interface, std::vector<u32>& out,
+                              const ExtraPage& extra = {}) {
     FrameScene scene(allocator());
     ui::render::UiRenderer renderer(allocator());
     struct Hook {
@@ -298,8 +315,16 @@ private:
             renderer
                 .upload_atlas(kGlyphPage, rhi::Format::R8Unorm, extent, extent,
                               interface.text.atlas_pixels())
-                .has_value() &&
-            renderer.submit(interface.buffer, 1.0F).has_value();
+                .has_value();
+    if (drawn && extra.texels != nullptr) {
+        const Span<const u8> bytes(reinterpret_cast<const u8*>(extra.texels->data()),
+                                   extra.texels->size() * sizeof(u32));
+        drawn =
+            renderer
+                .upload_atlas(extra.page, rhi::Format::Rgba8Unorm, extra.width, extra.height, bytes)
+                .has_value();
+    }
+    drawn = drawn && renderer.submit(interface.buffer, 1.0F).has_value();
     rendering::assembly::AssemblyReport report{};
     drawn = drawn && scene.render(RecordMode::Callbacks, report).has_value() &&
             fixture.device().wait_idle().has_value();
@@ -352,8 +377,9 @@ CY_TEST_CASE(
     CY_REQUIRE(swift.flatten());
     CY_REQUIRE(cpp.flatten());
 
-    // The Swift HUD made its elements through the ABI: 40 of them, every one the module's.
-    CY_CHECK_EQ(swift.adapter.elements(), 40U);
+    // The Swift HUD made its elements through the ABI: 41 of them, every one the module's — the
+    // minimap's fog of war among them, collapsed, and drawing nothing.
+    CY_CHECK_EQ(swift.adapter.elements(), 41U);
     const Span<const ui::Primitive> mine = swift.buffer.primitives();
     const Span<const ui::Primitive> theirs = cpp.buffer.primitives();
     std::fprintf(stderr, "primitives: swift %zu, c++ %zu; batches: %zu, %zu\n", mine.size(),
@@ -432,7 +458,7 @@ CY_TEST_CASE("(c) the Swift HUD with its Build button, against its golden image"
     CY_REQUIRE(GameModule::get().loaded());
     Interface swift;
     CY_REQUIRE(swift.build_swift("HudShowcaseWithButton"));
-    CY_CHECK_EQ(swift.adapter.elements(), 41U);
+    CY_CHECK_EQ(swift.adapter.elements(), 42U);
     CY_REQUIRE(swift.flatten());
     std::vector<u32> frame;
     CY_REQUIRE(draw_frame(fixture, swift, frame));
@@ -458,5 +484,116 @@ CY_TEST_CASE("(c) the Swift HUD with its Build button, against its golden image"
     CY_CHECK(comparison.comparable);
     CY_CHECK_EQ(comparison.differing, 0U);
     CY_CHECK_EQ(comparison.max_channel_delta, 0U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+namespace {
+
+/// The minimap's field: a 16 x 16 grid over the 32 m map, visible round the player's dots, explored
+/// in a band beyond them, and never explored elsewhere.
+[[nodiscard]] std::vector<u8> minimap_states() {
+    std::vector<u8> states(static_cast<usize>(16U) * 16U);
+    for (u32 z = 0; z < 16U; ++z) {
+        for (u32 x = 0; x < 16U; ++x) {
+            const f32 dx = (static_cast<f32>(x) * 2.0F) + 1.0F - 9.6F;
+            const f32 dz = (static_cast<f32>(z) * 2.0F) + 1.0F - 21.5F;
+            const f32 distance = std::sqrt((dx * dx) + (dz * dz));
+            u8 state = fog::kCellUnexplored;
+            if (distance <= 6.0F) {
+                state = fog::kCellVisible;
+            } else if (distance <= 11.0F) {
+                state = fog::kCellExplored;
+            }
+            states[(z * 16U) + x] = state;
+        }
+    }
+    return states;
+}
+
+}  // namespace
+
+CY_TEST_CASE("(d) the minimap under a fog of war: Swift and C++ alike, clear, dimmed and black") {
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    CY_REQUIRE(GameModule::get().loaded());
+    const std::vector<u8> states = minimap_states();
+    fog::VisibilityField field(allocator());
+    CY_REQUIRE(field.create(16, 16).has_value());
+    CY_REQUIRE(field.set_states({states.data(), states.size()}).has_value());
+    field.snap();
+    // The overlay over the map as the minimap shows it: x across, z down, (0, 0) top-left.
+    constexpr u32 kOverlay = 64;
+    std::vector<u32> overlay(static_cast<usize>(kOverlay) * kOverlay);
+    const fog::FogGridPlacement placement{0.0F, 0.0F, 2.0F};
+    const fog::MinimapRegion region{0.0F, 32.0F, 0.0F, 32.0F};
+    CY_REQUIRE(fog::compose_minimap_fog(field.texels(), 16, 16, placement, region, kOverlay,
+                                        kOverlay, fog::MinimapFogStyle{},
+                                        {overlay.data(), overlay.size()})
+                   .has_value());
+    const ExtraPage page{2, kOverlay, kOverlay, &overlay};
+
+    Interface swift;
+    Interface cpp;
+    Interface plain;
+    CY_REQUIRE(swift.build_swift("HudShowcaseFog"));
+    CY_REQUIRE(cpp.build_cpp());
+    CY_REQUIRE(cpp.hud.set_minimap_fog(2).has_value());
+    CY_REQUIRE(plain.build_cpp());
+    CY_REQUIRE(swift.flatten());
+    CY_REQUIRE(cpp.flatten());
+    CY_REQUIRE(plain.flatten());
+    // One image more than the HUD without fog, on page 2, and otherwise the same stream.
+    CY_CHECK_EQ(cpp.buffer.primitives().size(), plain.buffer.primitives().size() + 1U);
+    u32 on_page = 0;
+    for (const ui::Primitive& primitive : cpp.buffer.primitives()) {
+        on_page += primitive.atlas == 2U ? 1U : 0U;
+    }
+    CY_CHECK_EQ(on_page, 1U);
+    CY_REQUIRE_EQ(swift.buffer.primitives().size(), cpp.buffer.primitives().size());
+    u32 different = 0;
+    for (usize index = 0; index < cpp.buffer.primitives().size(); ++index) {
+        different += same_drawing(swift.buffer.primitives()[index], cpp.buffer.primitives()[index])
+                         ? 0U
+                         : 1U;
+    }
+    CY_CHECK_EQ(different, 0U);
+
+    std::vector<u32> swift_frame;
+    std::vector<u32> cpp_frame;
+    std::vector<u32> plain_frame;
+    CY_REQUIRE(draw_frame(fixture, swift, swift_frame, page));
+    CY_REQUIRE(draw_frame(fixture, cpp, cpp_frame, page));
+    CY_REQUIRE(draw_frame(fixture, plain, plain_frame));
+    save("rts-api-hud-fog.png", swift_frame);
+    usize differing = 0;
+    for (usize index = 0; index < swift_frame.size(); ++index) {
+        differing += swift_frame[index] != cpp_frame[index] ? 1U : 0U;
+    }
+    CY_CHECK_EQ(differing, usize{0});
+
+    // Where the minimap is on screen, and what the fog did at three map points away from the dots.
+    const ui::Rect map = cpp.store.layout_output(cpp.hud.minimap())->rect;
+    const auto pixel = [&](const std::vector<u32>& frame, f32 u, f32 v) {
+        const u32 x = static_cast<u32>(map.x + (u * map.width));
+        const u32 y = static_cast<u32>(map.y + (v * map.height));
+        return frame[(static_cast<usize>(y) * kWidth) + x];
+    };
+    const auto sum = [](u32 texel) {
+        return (texel & 0xFFU) + ((texel >> 8U) & 0xFFU) + ((texel >> 16U) & 0xFFU);
+    };
+    // Visible, at the field's centre (9.6, 21.5 m): the minimap as it was.
+    CY_CHECK_EQ(pixel(cpp_frame, 0.3F, 0.6F), pixel(plain_frame, 0.3F, 0.6F));
+    // Explored, eight metres out: darker, not black.
+    const u32 dimmed = pixel(cpp_frame, 0.3F, 0.4F);
+    const u32 ground = pixel(plain_frame, 0.3F, 0.4F);
+    std::fprintf(stderr, "(d) explored %08X over %08X; unexplored %08X\n", dimmed, ground,
+                 pixel(cpp_frame, 0.9F, 0.1F));
+    CY_CHECK_LT(sum(dimmed), sum(ground));
+    CY_CHECK_GT(sum(dimmed), 0U);
+    // Never explored, in the far corner: black.
+    CY_CHECK_EQ(sum(pixel(cpp_frame, 0.9F, 0.1F)), 0U);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

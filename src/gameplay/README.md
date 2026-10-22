@@ -67,6 +67,10 @@ in one place, rather than a capability every system quietly has.
 `abilities/` is `gameplay-abilities-and-effects`, a **separate target**: a project that does not use
 abilities links none of it. See `abilities/README.md`.
 
+`fog/` is fog of war, the simulation half — which cells each team sees and has seen, and the ghosts
+of the structures it remembers, in integer arithmetic so lockstep peers agree — another separate
+target, held headless like this one. A renderer only reads it. See `fog/README.md`.
+
 ## M9: the log seam, and arming the firewall
 
 **`CommandStream` grew a seam and nothing else changed.** `RecordSink` is a function pointer called

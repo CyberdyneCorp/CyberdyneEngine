@@ -290,6 +290,20 @@ public enum GISource: UInt32, Sendable, CaseIterable {
     case sky = 9
 }
 
+/// `CyFogCell`: a fog of war cell as one team knows it.
+public enum FogCell: UInt32, Sendable, CaseIterable {
+    case unexplored = 0
+    case explored = 1
+    case visible = 2
+}
+
+/// `CyFogSight`: how a team sees an entity through the fog.
+public enum FogSight: UInt32, Sendable, CaseIterable {
+    case hidden = 0
+    case ghost = 1
+    case visible = 2
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

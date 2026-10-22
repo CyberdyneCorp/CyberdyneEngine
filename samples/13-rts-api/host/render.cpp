@@ -8,6 +8,8 @@
 #include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #include <cy/core/math/matrix.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/gameplay/fog/fog_of_war.h>
+#include <cy/rendering/fog_of_war/fog_of_war_pass.h>
 #include <cy/rendering/gi_gpu/gpu_frame.h>
 
 #include <algorithm>
@@ -15,16 +17,21 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
+#include <vector>
 
+#include "fog.h"
 #include "frame_scene.h"
 #include "golden.h"
 #include "illumination.h"
+#include "level.h"
 #include "rts_host.h"
 
 namespace sample::rts {
 namespace {
 
 namespace gi_gpu = cy::rendering::gi_gpu;
+namespace fow = cy::rendering::fog_of_war;
+namespace gfog = cy::gameplay::fog;
 using cy::f32;
 using cy::f64;
 using cy::u32;
@@ -54,6 +61,15 @@ constexpr u64 kWarmFrames = 10;
 /// The beacon's foot, where the game reads the light, and the pixels round it the frame is read at.
 constexpr Vec3 kBeaconFoot{12.5F, 0.05F, 24.6F};
 constexpr f32 kBeaconRadiusPixels = 18.0F;
+/// With the fog: the camp takes the last three unit boxes, in `kCamp`'s order.
+constexpr u32 kFirstCampBox = kInstanceCount - kCampSize;
+constexpr Vec3 kRaiderHalf{0.35F, 0.8F, 0.35F};
+constexpr Vec3 kTowerHalf{0.8F, 1.8F, 0.8F};
+constexpr Vec3 kCampAlbedo{0.78F, 0.16F, 0.12F};
+/// Blue, whose fog the frame draws.
+constexpr cy::gameplay::TeamId kBlue = 1;
+/// The host's fixed step: the clock the fog fades on.
+constexpr f32 kFrameSeconds = 1.0F / 60.0F;
 
 void count_validation(cy::rhi::ValidationSeverity severity, const char* message,
                       void* user) noexcept {
@@ -74,6 +90,9 @@ struct RtsRenderer::State {
     u32 validation_errors = 0;
     FrameScene scene;
     gi_gpu::GpuGiFrame gi;
+    fow::FogOfWarPass fog;
+    std::unique_ptr<fow::VisibilityField> field;
+    std::vector<cy::u8> states;
     RtsHost* host = nullptr;
     u64 frame = 0;
 
@@ -87,6 +106,18 @@ struct RtsRenderer::State {
     u64 gi_timed = 0;
     f32 beacon[3] = {-1.0F, -1.0F, -1.0F};
     u32 stills = 0;
+    /// With the fog: at each still, the camp boxes drawn where they stand, as ghosts, and hidden.
+    u32 camp_drawn[4] = {};
+    u32 camp_ghosts[4] = {};
+    u32 camp_hidden[4] = {};
+    u32 stills_counted = 0;
+    /// The fog stage's device time over the timed frames, and the worst.
+    f64 fog_ms_total = 0.0;
+    /// The host's half: the grid read, the field faded and packed, the camp placed.
+    f64 fog_host_ms_total = 0.0;
+    u64 fog_host_frames = 0;
+    f64 fog_ms_worst = 0.0;
+    u64 fog_timed = 0;
 
     // --- The scene's hooks --------------------------------------------------------------------
 
@@ -95,10 +126,11 @@ struct RtsRenderer::State {
         auto* self = static_cast<State*>(user);
         description.pin_jitter = true;
         description.global_illumination = self->options.gi;
+        description.fog_of_war = self->options.fog;
     }
 
     /// The ground is the floor slab, the props are boxes one to three, the units the rest.
-    static void shape_box(u32 which, Vec3& centre, Vec3& half, void*) noexcept {
+    static void shape_box(u32 which, Vec3& centre, Vec3& half, void* user) noexcept {
         const cy::Span<const FieldBox> boxes = field_boxes();
         if (which < boxes.size()) {
             centre = boxes[which].centre;
@@ -107,12 +139,18 @@ struct RtsRenderer::State {
         }
         centre = kParked;
         half = kUnitHalf;
+        if (static_cast<const State*>(user)->camp_box(which)) {
+            half = which + 1U == kInstanceCount ? kTowerHalf : kRaiderHalf;
+        }
     }
 
     /// The colour the GI's cards carry, through the box's material.
-    static void tint_box(u32 which, Vec3& tint, void*) noexcept {
+    static void tint_box(u32 which, Vec3& tint, void* user) noexcept {
         const cy::Span<const FieldBox> boxes = field_boxes();
-        const Vec3 albedo = which < boxes.size() ? boxes[which].albedo : kUnitAlbedo;
+        Vec3 albedo = which < boxes.size() ? boxes[which].albedo : kUnitAlbedo;
+        if (static_cast<const State*>(user)->camp_box(which)) {
+            albedo = kCampAlbedo;
+        }
         const f32* material = kMaterialColours[which % kMaterialCount];
         tint = Vec3{albedo.x / material[0], albedo.y / material[1], albedo.z / material[2]};
     }
@@ -125,11 +163,37 @@ struct RtsRenderer::State {
             cy::Quat::look_rotation(cy::normalize(kSunTravel), Vec3{0.0F, 1.0F, 0.0F});
     }
 
+    /// Whether box `which` is one of the camp's: only with the fog.
+    [[nodiscard]] bool camp_box(u32 which) const noexcept {
+        return options.fog && which >= kFirstCampBox && which < kInstanceCount;
+    }
+
+    /// Blue's fog this frame: the stage's camera, the grid's placement and the faded field.
+    [[nodiscard]] cy::Status frame_fog(cy::rendering::assembly::FrameSinks& sinks) noexcept {
+        fow::FogOfWarFrame frame_fog;
+        frame_fog.view.projection = scene.projection();
+        frame_fog.view.relative_view = scene.relative_view();
+        frame_fog.view.eye = scene.eye();
+        frame_fog.placement =
+            fow::FogGridPlacement{0.0F, 0.0F, kLevelSize / static_cast<f32>(kFogCells)};
+        frame_fog.field = field.get();
+        if (cy::Status set = fog.set_frame(frame_fog); !set) {
+            return set;
+        }
+        sinks.fog_of_war = fog.stage();
+        return cy::ok();
+    }
+
     static cy::Status before_assemble(cy::rendering::RenderGraph& graph,
                                       cy::rendering::assembly::AssemblyView& view,
                                       cy::rendering::assembly::FrameSinks& sinks,
                                       void* user) noexcept {
         auto* self = static_cast<State*>(user);
+        if (self->options.fog) {
+            if (cy::Status fogged = self->frame_fog(sinks); !fogged) {
+                return fogged;
+            }
+        }
         if (!self->options.gi) {
             return cy::ok();
         }
@@ -202,6 +266,51 @@ struct RtsRenderer::State {
         return count == 0 ? -1.0F : static_cast<f32>(sum / static_cast<f64>(count));
     }
 
+    /// Blue's field from the grid, faded by one frame, and the camp placed by blue's sight of it.
+    [[nodiscard]] cy::Status fog_frame(const RtsHost& from) noexcept {
+        const gfog::FogOfWar& grid = from.fog().grid();
+        if (cy::Status written = grid.write_states(kBlue, {states.data(), states.size()});
+            !written) {
+            return written;
+        }
+        if (cy::Status set = field->set_states({states.data(), states.size()}); !set) {
+            return set;
+        }
+        if (frame == 0) {
+            field->snap();
+        } else {
+            field->advance(kFrameSeconds);
+        }
+        const bool still = std::ranges::find(kStills, from.frames()) != std::end(kStills);
+        for (u32 index = 0; index < kCampSize; ++index) {
+            const u32 box = kFirstCampBox + index;
+            const f32 lift = box + 1U == kInstanceCount ? kTowerHalf.y : kRaiderHalf.y;
+            const CyEntity member = from.camp(index);
+            Vec3 at = kParked;
+            switch (grid.sight(kBlue, member)) {
+                case gfog::UnitSight::Visible:
+                    at = Vec3{kCamp[index].at.x, lift, kCamp[index].at.z};
+                    camp_drawn[stills_counted] += still ? 1U : 0U;
+                    break;
+                case gfog::UnitSight::Ghost: {
+                    const gfog::FogGhost* ghost = grid.ghost(kBlue, member);
+                    at = Vec3{static_cast<f32>(static_cast<f64>(ghost->x_raw) / 4294967296.0), lift,
+                              static_cast<f32>(static_cast<f64>(ghost->z_raw) / 4294967296.0)};
+                    camp_ghosts[stills_counted] += still ? 1U : 0U;
+                    break;
+                }
+                case gfog::UnitSight::Hidden:
+                    camp_hidden[stills_counted] += still ? 1U : 0U;
+                    break;
+            }
+            if (cy::Status moved = scene.move_box(box, at); !moved) {
+                return moved;
+            }
+        }
+        stills_counted += still && stills_counted + 1U < 4U ? 1U : 0U;
+        return cy::ok();
+    }
+
     [[nodiscard]] cy::Status write_still(u64 at) noexcept {
         cy::render_test::Image image(cy::system_allocator(cy::MemoryDomain::Renderer));
         if (cy::Status adopted = cy::render_test::adopt(image, scene.pixels(), kWidth, kHeight);
@@ -209,7 +318,11 @@ struct RtsRenderer::State {
             return adopted;
         }
         char name[64];
-        (void)std::snprintf(name, sizeof(name), "/rts-%s-%03llu.png", options.gi ? "gi" : "nogi",
+        const char* kind = options.gi ? "gi" : "nogi";
+        if (options.fog) {
+            kind = "fog";
+        }
+        (void)std::snprintf(name, sizeof(name), "/rts-%s-%03llu.png", kind,
                             static_cast<unsigned long long>(at));
         const std::string path = options.directory + name;
         if (cy::Status written = cy::render_test::write_png(path.c_str(), image); !written) {
@@ -233,6 +346,7 @@ RtsRenderer::~RtsRenderer() {
     if (device != nullptr) {
         (void)device->wait_idle();
         state_->gi.destroy();
+        state_->fog.destroy();
     }
     state_.reset();
     if (device != nullptr) {
@@ -273,6 +387,22 @@ cy::Status RtsRenderer::start(RtsHost& host, const RenderOptions& options) noexc
     if (cy::Status built = state.scene.build(*state.device); !built) {
         return built;
     }
+    if (options.fog) {
+        if (!fow::FogOfWarPass::supported(*state.device)) {
+            return cy::fail(cy::ErrorCode::Unsupported, "the device cannot draw the fog of war");
+        }
+        state.field = std::make_unique<fow::VisibilityField>(*allocator_);
+        if (cy::Status made = state.field->create(kFogCells, kFogCells); !made) {
+            return made;
+        }
+        state.states.assign(static_cast<std::size_t>(kFogCells) * kFogCells, 0U);
+        if (cy::Status made = state.fog.create(
+                *allocator_, *state.device,
+                fow::FogOfWarPassDescription{kWidth, kHeight, kFogCells, kFogCells, false});
+            !made) {
+            return made;
+        }
+    }
     if (!options.gi) {
         return cy::ok();
     }
@@ -289,7 +419,18 @@ cy::Status RtsRenderer::frame(RtsHost& host) noexcept {
     State& state = *state_;
     // THE GAME'S CAMERA AND THE GAME'S UNITS, where this frame left them.
     state.scene.set_camera(host.camera_position(), host.camera_forward());
-    for (u32 box = kFirstUnitBox; box < kInstanceCount; ++box) {
+    const u32 unit_boxes_end = state.options.fog ? kFirstCampBox : kInstanceCount;
+    if (state.options.fog) {
+        const auto fog_started = std::chrono::steady_clock::now();
+        if (cy::Status fogged = state.fog_frame(host); !fogged) {
+            return fogged;
+        }
+        state.fog_host_ms_total +=
+            std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - fog_started)
+                .count();
+        state.fog_host_frames += 1;
+    }
+    for (u32 box = kFirstUnitBox; box < unit_boxes_end; ++box) {
         const u32 index = box - kFirstUnitBox;
         const Vec3 at = index < host.unit_count()
                             ? host.unit_position(host.unit(index)) + Vec3{0.0F, kUnitHalf.y, 0.0F}
@@ -323,6 +464,12 @@ cy::Status RtsRenderer::frame(RtsHost& host) noexcept {
             state.gi_ms_total += cost.total_ms();
             state.gi_timed += 1;
         }
+        const f64 fog_ms = state.options.fog ? state.fog.last_device_ms() : -1.0;
+        if (fog_ms >= 0.0) {
+            state.fog_ms_total += fog_ms;
+            state.fog_ms_worst = std::max(state.fog_ms_worst, fog_ms);
+            state.fog_timed += 1;
+        }
     }
     if (!still) {
         return cy::ok();
@@ -351,6 +498,20 @@ void RtsRenderer::print_report() const noexcept {
         state.update_ms_total / frames, state.gi_ms_total / gi, static_cast<f64>(state.beacon[0]),
         static_cast<f64>(state.beacon[1]), static_cast<f64>(state.beacon[2]), state.stills,
         state.validation_errors);
+    if (!state.options.fog) {
+        return;
+    }
+    // The camp at each still (150, 250, 350, 420): drawn where it stands, as a ghost, hidden.
+    std::printf("rts fog draw");
+    for (u32 index = 0; index < 4U; ++index) {
+        std::printf(" still%u=%u/%u/%u", index, state.camp_drawn[index], state.camp_ghosts[index],
+                    state.camp_hidden[index]);
+    }
+    const f64 timed = static_cast<f64>(std::max<u64>(state.fog_timed, 1));
+    const f64 hosted = static_cast<f64>(std::max<u64>(state.fog_host_frames, 1));
+    std::printf(" fog_device_ms=%.4f fog_worst_ms=%.4f fog_timed=%llu fog_host_ms=%.4f\n",
+                state.fog_ms_total / timed, state.fog_ms_worst,
+                static_cast<unsigned long long>(state.fog_timed), state.fog_host_ms_total / hosted);
 }
 
 }  // namespace sample::rts

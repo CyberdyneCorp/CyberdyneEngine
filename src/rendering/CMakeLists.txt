@@ -246,3 +246,10 @@ add_subdirectory(lightmap_bake)
 # cy::rendering-pipeline, so it is read after both — and after light_probes/, whose volume its
 # device suite binds beside it.
 add_subdirectory(lightmaps)
+
+# FOG OF WAR, DRAWN. One team's visibility — the grid cy::gameplay-fog keeps in the fixed step, read
+# and never written — as a texture faded in time and smoothed at its edges, applied to every
+# surface on linear HDR after the temporal resolve through the forward frame's stage seam, and the
+# same field as the minimap's overlay. Its device suite renders pipeline/'s scene, so it is read
+# after pipeline/.
+add_subdirectory(fog_of_war)

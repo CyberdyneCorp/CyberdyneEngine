@@ -1857,6 +1857,76 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyFogVision>() == 24,
+    "CyFogVision is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFogVision>() == 8,
+    "CyFogVision is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogVision, struct_size) == 0,
+    "CyFogVision::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogVision, team) == 4,
+    "CyFogVision::team is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogVision, reveal_radius) == 8,
+    "CyFogVision::reveal_radius is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogVision, flags) == 16,
+    "CyFogVision::flags is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogVision, reserved) == 20,
+    "CyFogVision::reserved is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyFogStatus>() == 40,
+    "CyFogStatus is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFogStatus>() == 8,
+    "CyFogStatus is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, struct_size) == 0,
+    "CyFogStatus::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, width) == 4,
+    "CyFogStatus::width is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, height) == 8,
+    "CyFogStatus::height is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, units) == 12,
+    "CyFogStatus::units is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, tick) == 16,
+    "CyFogStatus::tick is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, visible_cells) == 24,
+    "CyFogStatus::visible_cells is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, ghosts) == 28,
+    "CyFogStatus::ghosts is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFogStatus, digest) == 32,
+    "CyFogStatus::digest is not at byte 32"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -1882,8 +1952,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1240,
-    "CyInterface is not 1240 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1280,
+    "CyInterface is not 1280 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -2505,6 +2575,26 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, gi_status) == 1232,
     "CyInterface::gi_status is not at byte 1232"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, fog_set_vision) == 1240,
+    "CyInterface::fog_set_vision is not at byte 1240"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, fog_get_vision) == 1248,
+    "CyInterface::fog_get_vision is not at byte 1248"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, fog_cell) == 1256,
+    "CyInterface::fog_cell is not at byte 1256"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, fog_sight) == 1264,
+    "CyInterface::fog_sight is not at byte 1264"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, fog_status) == 1272,
+    "CyInterface::fog_status is not at byte 1272"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2551,7 +2641,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        153,
+        158,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

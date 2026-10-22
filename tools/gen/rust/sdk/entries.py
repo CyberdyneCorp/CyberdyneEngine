@@ -355,6 +355,17 @@ ENTRIES: dict[str, Entry] = {
                                   doc="The indirect light arriving at a point."),
     "gi_status": Entry(("engine", "into"), result="fallible",
                        doc="What the global illumination did on the last frame."),
+    # 1.10: fog of war
+    "fog_set_vision": Entry(("engine", "entity", "vision"), result="fallible",
+                            doc="Give an entity a vision: its team's sight to a reveal radius."),
+    "fog_get_vision": Entry(("engine", "entity", "into"), result="fallible",
+                            doc="The vision an entity was given."),
+    "fog_cell": Entry(("engine", "team", "position", "into"), result="fallible",
+                      doc="How a team knows the fog of war cell holding a position."),
+    "fog_sight": Entry(("engine", "team", "entity", "into"), result="fallible",
+                       doc="How a team sees an entity through the fog of war."),
+    "fog_status": Entry(("engine", "into"), result="fallible",
+                        doc="The fog of war grid and its last update."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

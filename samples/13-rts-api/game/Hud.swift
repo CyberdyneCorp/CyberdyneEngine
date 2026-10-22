@@ -42,6 +42,9 @@ struct HudModel: Equatable {
     var dots: [Dot] = []
     /// The part of the map the camera sees, in map coordinates.
     var camera = UIRect()
+    /// ABI 1.10: the atlas page holding the fog of war's minimap overlay, which the embedder
+    /// uploads; nil draws no fog.
+    var fogPage: UInt32?
 }
 
 /// The HUD's elements and the last model it showed.
@@ -65,6 +68,8 @@ final class RtsHud {
     static let healthBack: UIColour = 0xFF3A_1E1E
     static let health: UIColour = 0xFF4C_C34C
     static let teams: [UIColour] = [0xFF28_8CFF, 0xFFFF_6040, 0xFFC8_C8C8]
+    /// The fog image's tint: none, so the page's own premultiplied colours are drawn.
+    static let fogTint: UIColour = 0xFFFF_FFFF
 
     let tree: UITree
     private var shown: HudModel?
@@ -91,6 +96,9 @@ final class RtsHud {
         }
         if shown?.dots != model.dots || shown?.camera != model.camera {
             try showMinimap(model.dots, camera: model.camera)
+        }
+        if shown?.fogPage != model.fogPage {
+            try showFog(model.fogPage)
         }
         shown = model
     }
@@ -130,6 +138,17 @@ final class RtsHud {
             Panel("water")
                 .layout(.anchored(min: Vec2(x: 0.55, y: 0.12), max: Vec2(x: 0.9, y: 0.42)))
                 .style(UIStyle(background: mapWater, cornerRadius: 6))
+            // The fog of war, over the ground and under the dots, inside the one-unit border;
+            // collapsed until shown.
+            Image(page: 0, name: "fog")
+                .layout(
+                    .anchored(
+                        min: Vec2(x: 0, y: 0), max: Vec2(x: 1, y: 1), offsetMin: Vec2(x: 1, y: 1),
+                        offsetMax: Vec2(x: -1, y: -1))
+                )
+                .style(UIStyle(background: fogTint))
+                .visibility(.collapsed)
+                .id("fog")
             for index in 0..<minimapDots {
                 Panel("unit").visibility(.collapsed).id("dot\(index)")
             }
@@ -242,6 +261,15 @@ final class RtsHud {
             .anchored(
                 min: Vec2(x: camera.x, y: camera.y), max: Vec2(x: camera.right, y: camera.bottom)))
     }
+
+    /// The fog's overlay page over the whole map, or no fog.
+    private func showFog(_ page: UInt32?) throws {
+        let fog = tree["fog"]
+        if let page {
+            try fog.setImage(page: page)
+        }
+        try fog.setShown(page != nil)
+    }
 }
 
 extension HudModel {
@@ -271,6 +299,21 @@ final class HudShowcase: Behaviour {
     override func onCreate() throws {
         let made = try RtsHud(for: self)
         try made.show(.showcase)
+        hud = made
+    }
+}
+
+/// The showcase under a fog of war: the overlay on atlas page 2, which `render.rts_api_hud` uploads
+/// from `fog_of_war::compose_minimap_fog` — the picture of the minimap a fogged game shows.
+@Behaviour(name: "HudShowcaseFog", schema: 1)
+final class HudShowcaseFog: Behaviour {
+    private var hud: RtsHud?
+
+    override func onCreate() throws {
+        let made = try RtsHud(for: self)
+        var model = HudModel.showcase
+        model.fogPage = Content.fogPage
+        try made.show(model)
         hud = made
     }
 }

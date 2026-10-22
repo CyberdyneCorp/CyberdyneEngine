@@ -33,7 +33,10 @@ player still sees where the unit is. The hovered enemy glows rather than being o
 The third frame draws the game's interface over the selection: a resource bar, the minimap with the
 units and the camera's rectangle (clipped where the camera looks past the map), a panel listing the
 units the drag box caught, and the engine's developer console, where the player has typed
-`selection` and is typing `spawn tank`. `hud.h` is game code over CyberUI's `ElementStore`; the
+`selection` and is typing `spawn tank`. The minimap also holds a fog of war image between its ground
+and its dots, collapsed until a game names its page (`Hud::set_minimap_fog`): the overlay
+`fog_of_war::compose_minimap_fog` makes, which `render.rts_api_hud`'s case (d) draws from C++ and
+from Swift alike. `hud.h` is game code over CyberUI's `ElementStore`; the
 console is `ui::DevConsole`; both are laid out and flattened together and drawn by
 `ui::render::UiRenderer` at the frame's interface stage, after the outlines. `render.ui` photographs
 the same HUD against a golden image.

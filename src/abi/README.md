@@ -252,6 +252,29 @@ table shape), `integration.game_backend_illumination` (the adapter over the GI s
 volumes, classes, a lamp put out by entity and by material, the sample bit for bit the resolve's),
 and `integration.swift_illumination` (a real Swift module doing all of it through CyberdyneKit).
 
+## What ABI 1.10 adds, and why
+
+Fog of war for a game. `cy::gameplay::fog::FogOfWar` keeps what each team sees as lockstep state;
+a Swift game could not give a unit sight or ask what its player may be shown. 1.10 appends five
+`fog_*` entries, reaching the grid through `cy::abi::game::FogBackend`
+(`include/cy/abi/game/fog.h`), implemented by `cy::game_backend::FogAdapter` in
+`src/game_backend/fog/` — a module of its own, because it links `cy::gameplay-fog`.
+
+| Entries | Phases | Notes |
+|---|---|---|
+| `fog_set_vision` | N F | `CyFogVision`: the team (1 to 32; 0 gives no sight), the reveal radius as a `CyFixed`, `CY_FOG_LEAVES_GHOST`. Refused in a frame update: giving sight is simulation. A team past 32, a negative radius, an unknown flag or a nonzero `reserved` is INVALID_ARGUMENT; an entity the host does not place is NOT_FOUND |
+| `fog_get_vision` | N F U | the vision an entity was given, NOT_FOUND for one never given |
+| `fog_cell` | N F U | `CyFogCell` of the cell holding a `CyFixedVec2` (`y` is world Z) for a team; off the grid is UNEXPLORED |
+| `fog_sight` | N F U | `CyFogSight` of an entity for a team: HIDDEN, GHOST (a structure, where last seen) or VISIBLE |
+| `fog_status` | N F U | `CyFogStatus`: the grid's size, the units placed, the tick, visible cells, ghosts and the digest |
+
+The adapter keeps its visions ordered by entity, so the grid sees one order whatever order a game
+gave them in, and the digest is the state's. Positions are the host's to supply (`FogPlacer`),
+in Q32.32 metres. Tests: `unit.abi` (`test_game_fog.cpp`: the phase rule, UNAVAILABLE with no fog,
+every range check, `struct_size` both ways; `test_layout.cpp`: the 1.10 layouts; the 1.10 table
+shape) and `integration.game_backend_fog` (the adapter through the table: visions, cells, sight,
+ghosts, the phase rule, and the digest independent of the order visions were given in).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

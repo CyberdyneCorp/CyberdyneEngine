@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 9,
+    "minor": 10,
     "patch": 0
   },
   "functions": [
@@ -792,10 +792,35 @@
         "index": 153,
         "name": "gi_status",
         "type": "CyResult(*)(CyEngine, CyGiStatus*)"
+      },
+      {
+        "index": 154,
+        "name": "fog_set_vision",
+        "type": "CyResult(*)(CyEngine, CyEntity, const CyFogVision*)"
+      },
+      {
+        "index": 155,
+        "name": "fog_get_vision",
+        "type": "CyResult(*)(CyEngine, CyEntity, CyFogVision*)"
+      },
+      {
+        "index": 156,
+        "name": "fog_cell",
+        "type": "CyResult(*)(CyEngine, uint32_t, const CyFixedVec2*, uint32_t*)"
+      },
+      {
+        "index": 157,
+        "name": "fog_sight",
+        "type": "CyResult(*)(CyEngine, uint32_t, CyEntity, uint32_t*)"
+      },
+      {
+        "index": 158,
+        "name": "fog_status",
+        "type": "CyResult(*)(CyEngine, CyFogStatus*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1240
+    "size": 1280
   },
   "types": [
     {
@@ -4539,6 +4564,149 @@
       "size": 48
     },
     {
+      "kind": "enum",
+      "name": "CyFogCell",
+      "values": [
+        {
+          "name": "CY_FOG_CELL_UNEXPLORED",
+          "value": 0
+        },
+        {
+          "name": "CY_FOG_CELL_EXPLORED",
+          "value": 1
+        },
+        {
+          "name": "CY_FOG_CELL_VISIBLE",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyFogSight",
+      "values": [
+        {
+          "name": "CY_FOG_SIGHT_HIDDEN",
+          "value": 0
+        },
+        {
+          "name": "CY_FOG_SIGHT_GHOST",
+          "value": 1
+        },
+        {
+          "name": "CY_FOG_SIGHT_VISIBLE",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "team",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "reveal_radius",
+          "offset": 8,
+          "size": 8,
+          "type": "CyFixed"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyFogVision",
+      "size": 24
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "width",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "height",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "units",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "tick",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 4,
+          "name": "visible_cells",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "ghosts",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "digest",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyFogStatus",
+      "size": 40
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -5655,10 +5823,45 @@
           "offset": 1232,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyGiStatus*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fog_set_vision",
+          "offset": 1240,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, const CyFogVision*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fog_get_vision",
+          "offset": 1248,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyEntity, CyFogVision*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fog_cell",
+          "offset": 1256,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, const CyFixedVec2*, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fog_sight",
+          "offset": 1264,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, CyEntity, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fog_status",
+          "offset": 1272,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyFogStatus*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1240
+      "size": 1280
     },
     {
       "kind": "enum",

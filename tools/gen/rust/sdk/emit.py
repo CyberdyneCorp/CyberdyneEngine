@@ -80,6 +80,9 @@ ENUM_SPECS = {
     "CyGiClass": ("GiClass", "CY_GI_CLASS_", "u32"),
     "CyGiEmission": ("GiEmission", "CY_GI_EMISSION_", "u32"),
     "CyGiSource": ("GiSource", "CY_GI_SOURCE_", "u32"),
+    # ABI 1.10, fog of war.
+    "CyFogCell": ("FogCell", "CY_FOG_CELL_", "u32"),
+    "CyFogSight": ("FogSight", "CY_FOG_SIGHT_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

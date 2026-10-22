@@ -126,6 +126,18 @@ void print_report(RtsHost& host, const Findings& seen) noexcept {
         now.illumination.disabled, now.illumination.promoted, wide(now.illumination.lit),
         wide(now.illumination.dark), wide(now.illumination.relit), wide(now.illumination.refused),
         static_cast<unsigned long long>(now.illumination.frame));
+    // ABI 1.10: the level's fog of war as the grid holds it, and what the game read and decided.
+    std::printf(
+        "rts fog      width=%u visions=%u units=%u cells=%u ghosts=%u tick=%llu "
+        "digest=%016llx raiders_visible=%u tower_sight=%u radius=%.3f game_cells=%.0f "
+        "tower_seen=%.0f tower_ghost=%.0f raiders_seen=%.0f far_hidden=%.0f enemy_dots=%.0f "
+        "refused=%.0f\n",
+        now.fog.width, now.fog.visions, now.fog.units, now.fog.cells, now.fog.ghosts,
+        static_cast<unsigned long long>(now.fog.tick),
+        static_cast<unsigned long long>(now.fog.digest), now.fog.raiders_visible,
+        now.fog.tower_sight, wide(now.fog.radius), wide(now.fog.game_cells),
+        wide(now.fog.tower_seen), wide(now.fog.tower_ghost), wide(now.fog.raiders_seen),
+        wide(now.fog.far_hidden), wide(now.fog.enemy_dots), wide(now.fog.refused));
 }
 
 }  // namespace
@@ -136,11 +148,14 @@ int main(int argc, char** argv) {
     options.module_manifest = CY_RTS_API_MODULE_MANIFEST;
     const char* render_directory = nullptr;
     bool render_gi = true;
+    bool render_fog = false;
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--render") == 0 && index + 1 < argc) {
             render_directory = argv[++index];
         } else if (std::strcmp(argv[index], "--gi") == 0 && index + 1 < argc) {
             render_gi = std::strcmp(argv[++index], "off") != 0;
+        } else if (std::strcmp(argv[index], "--fog") == 0) {
+            render_fog = true;
         } else if (std::strcmp(argv[index], "--no-behaviours") == 0) {
             options.behaviours = false;
         } else if (std::strcmp(argv[index], "--no-systems") == 0) {
@@ -168,6 +183,7 @@ int main(int argc, char** argv) {
         sample::rts::RenderOptions render;
         render.directory = render_directory;
         render.gi = render_gi;
+        render.fog = render_fog;
         if (const cy::Status started = renderer->start(host, render); !started) {
             std::fprintf(stderr, "rts-api: --render: %s\n", started.error().message);
             return started.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
@@ -180,6 +196,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     (void)render_gi;
+    (void)render_fog;
 #endif
     sample::rts::Player player(host);
     for (cy::u64 frame = 0; frame < sample::rts::Player::kFrames; ++frame) {

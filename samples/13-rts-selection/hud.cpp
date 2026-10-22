@@ -2,6 +2,7 @@
 #include "hud.h"
 
 #include <cy/ui/layout.h>
+#include <cy/ui/paint.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -34,6 +35,8 @@ constexpr u32 kCamera = 0xFFFFFFFFU;
 constexpr u32 kHealthBack = 0xFF3A1E1EU;
 constexpr u32 kHealth = 0xFF4CC34CU;
 constexpr u32 kTeamColours[3] = {0xFF288CFFU, 0xFFFF6040U, 0xFFC8C8C8U};
+/// The fog image's tint: none, so the page's own premultiplied colours are drawn.
+constexpr u32 kFogTint = 0xFFFFFFFFU;
 
 void place(LayoutInput& input, Vec2 anchor_min, Vec2 anchor_max, Vec2 offset_min,
            Vec2 offset_max) noexcept {
@@ -159,6 +162,23 @@ Status Hud::create_minimap(ElementId root) noexcept {
     place(*store_->layout_input(*lake), Vec2{0.55F, 0.12F}, Vec2{0.9F, 0.42F}, Vec2{0.0F, 0.0F},
           Vec2{0.0F, 0.0F});
     fill(*store_->paint(*lake), kMapWater, 0, 6.0F);
+
+    // The fog of war, over the ground and under the dots: an image the map's size inside its
+    // one-unit border, collapsed until a game with fog of war names its page.
+    Expected<ElementId, Error> fog = element(minimap_, "fog");
+    if (!fog.has_value()) {
+        return make_unexpected(fog.error());
+    }
+    fog_ = *fog;
+    place(*store_->layout_input(fog_), Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F}, Vec2{1.0F, 1.0F},
+          Vec2{-1.0F, -1.0F});
+    PaintData& fog_paint = *store_->paint(fog_);
+    fill(fog_paint, kFogTint);
+    fog_paint.material = ui::material_index(ui::BuiltinMaterial::Image);
+    fog_paint.uv = ui::Rect{0.0F, 0.0F, 1.0F, 1.0F};
+    if (Status hidden = store_->set_flags(fog_, ElementFlags::Collapsed); !hidden) {
+        return hidden;
+    }
 
     for (ElementId& dot : dots_) {
         Expected<ElementId, Error> made = element(minimap_, "unit");
@@ -341,6 +361,16 @@ Status Hud::set_minimap(Span<const MinimapDot> dots, ui::Rect camera) noexcept {
     place(*store_->layout_input(camera_), Vec2{camera.x, camera.y},
           Vec2{camera.right(), camera.bottom()}, Vec2{0.0F, 0.0F}, Vec2{0.0F, 0.0F});
     store_->mark(camera_, Dirty::Arrange | Dirty::Paint);
+    store_->mark(minimap_, Dirty::Arrange);
+    return ok();
+}
+
+Status Hud::set_minimap_fog(u16 page) noexcept {
+    store_->paint(fog_)->atlas = page;
+    if (Status shown = store_->set_flags(fog_, ElementFlags::Visible); !shown) {
+        return shown;
+    }
+    store_->mark(fog_, Dirty::Arrange | Dirty::Paint);
     store_->mark(minimap_, Dirty::Arrange);
     return ok();
 }

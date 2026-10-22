@@ -56,7 +56,8 @@ constexpr const char* kVirtualGeometrySingleSample =
 /// Whether anything after the temporal stage reads the scene's depth or motion, and so needs them
 /// at the output extent when the producer upscales.
 [[nodiscard]] bool post_reads_depth(const FrameFeatures& features) noexcept {
-    return features.depth_of_field || features.motion_blur || features.selection_outlines;
+    return features.depth_of_field || features.motion_blur || features.selection_outlines ||
+           features.fog_of_war;
 }
 
 /// The pre-translucency copy: refraction's, or a temporal producer's reactive mask's.
@@ -524,6 +525,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "composite";
         case FramePassKind::Present:
             return "present";
+        case FramePassKind::FogOfWar:
+            return "fog of war";
         case FramePassKind::Count:
             break;
     }
@@ -777,6 +780,23 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
         state.current_color = resources_.temporal_history;
     }
 
+    // Fog of war: after the temporal resolve, on the converged image, and before every stage that
+    // filters the picture — a lens blurs the fog like the ground it lies on, and bloom sees a
+    // fogged light as the dimmer light it is. The producer reads the colour so far and the depth,
+    // and writes a new full-resolution colour.
+    if (features.fog_of_war) {
+        TextureRequest request;
+        request.name = "fog of war";
+        request.format = description.color_format;
+        request.width = output_width(description);
+        request.height = output_height(description);
+        request.extra_usage = rhi::TextureUsage::Storage;
+        resources_.fog_of_war = graph.create_texture(request);
+        declare_produced_stage(graph, state, description.fog_of_war_stage, FramePassKind::FogOfWar,
+                               "fog of war", resources_.fog_of_war, state.current_color);
+        state.current_color = resources_.fog_of_war;
+    }
+
     // 7 of the post chain. Depth of field: after the temporal resolve, so it blurs a converged
     // image rather than a jittered one, and before bloom, so a defocused highlight blooms as the
     // disc it became. The producer reads the colour so far and writes a new full-resolution one.
@@ -1019,6 +1039,19 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
         if (samples > 1 && !features.depth_prepass) {
             return fail(ErrorCode::InvalidArgument,
                         "forward frame: depth of field reads the single-sample depth, which a "
+                        "multisampled frame has only after the depth prepass's resolve");
+        }
+    }
+    // FOG OF WAR HAS NO SINGLE-PASS STAND-IN, and it reads the single-sample depth to find where
+    // each pixel lies on the grid: with MSAA that is the prepass's resolve.
+    if (features.fog_of_war) {
+        if (description.fog_of_war_stage.declare == nullptr) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: fog of war needs its producer's stage");
+        }
+        if (samples > 1 && !features.depth_prepass) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: fog of war reads the single-sample depth, which a "
                         "multisampled frame has only after the depth prepass's resolve");
         }
     }

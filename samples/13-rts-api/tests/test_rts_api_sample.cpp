@@ -111,12 +111,13 @@ struct Run {
     std::string anim;
     std::string lockstep;
     std::string gi;
+    std::string fog;
 
     [[nodiscard]] bool parsed() const noexcept {
         return !module.empty() && !camera.empty() && !select.empty() && !order.empty() &&
                !audio.empty() && !spawn.empty() && !tree.empty() && !system.empty() &&
                !hero.empty() && !body.empty() && !hud.empty() && !anim.empty() &&
-               !lockstep.empty() && !gi.empty();
+               !lockstep.empty() && !gi.empty() && !fog.empty();
     }
 };
 
@@ -138,6 +139,7 @@ struct Run {
     run.anim = line_with(run.process.output, "rts anim ");
     run.lockstep = line_with(run.process.output, "rts lockstep ");
     run.gi = line_with(run.process.output, "rts gi ");
+    run.fog = line_with(run.process.output, "rts fog ");
     return run;
 }
 
@@ -318,6 +320,39 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.9 — a volume over the base, a beacon p
     CY_CHECK_EQ(number_after(run.gi, "frame="), 420.0);
 }
 
+CY_TEST_CASE("samples/13-rts-api: ABI 1.10 — blue sees what its units see, and remembers a tower") {
+    const Run run = run_sample("");
+    report_if_broken(run);
+    CY_REQUIRE_EQ(run.process.exit_code, 0);
+    CY_REQUIRE(run.parsed());
+    // The grid over the level, and every vision the game gave placed by the last update: the
+    // four workers (two at the start, two built), the barracks, two raiders and the tower.
+    CY_CHECK_EQ(number_after(run.fog, "width="), 32.0);
+    CY_CHECK_EQ(number_after(run.fog, "visions="), 8.0);
+    CY_CHECK_EQ(number_after(run.fog, "units="), 8.0);
+    CY_CHECK_EQ(number_after(run.fog, "tick="), 420.0);
+    // A worker's reveal radius, read back through the ABI as the Fixed the game gave.
+    CY_CHECK_EQ(number_after(run.fog, "radius="), 7.0);
+    // The far raider was hidden on the first frame; the ordered worker's walk brought it into
+    // sight, and the near one was in sight throughout: both, by the grid and by the game.
+    CY_CHECK_EQ(number_after(run.fog, "far_hidden="), 1.0);
+    CY_CHECK_EQ(number_after(run.fog, "raiders_visible="), 2.0);
+    CY_CHECK_EQ(number_after(run.fog, "raiders_seen="), 2.0);
+    // The tower was seen at the start and is a ghost once its watcher walked away: the grid says
+    // GHOST (1), and the game saw both.
+    CY_CHECK_EQ(number_after(run.fog, "tower_sight="), 1.0);
+    CY_CHECK_EQ(number_after(run.fog, "tower_seen="), 1.0);
+    CY_CHECK_EQ(number_after(run.fog, "tower_ghost="), 1.0);
+    CY_CHECK(number_after(run.fog, "ghosts=") >= 1.0);
+    // The minimap shows both raiders and the tower's ghost; the game's count of seen cells is the
+    // grid's, as of the frame it read it.
+    CY_CHECK_EQ(number_after(run.fog, "enemy_dots="), 3.0);
+    CY_CHECK(number_after(run.fog, "game_cells=") > 0.0);
+    CY_CHECK(number_after(run.fog, "cells=") > 100.0);
+    // A frame that tried to give a vision was refused, once: the grid is simulation.
+    CY_CHECK_EQ(number_after(run.fog, "refused="), 1.0);
+}
+
 CY_TEST_CASE("samples/13-rts-api: with the systems left out of the schedule, none of them runs") {
     const Run control = run_sample(" --no-systems");
     report_if_broken(control);
@@ -380,6 +415,11 @@ CY_TEST_CASE("samples/13-rts-api: with no Swift behaviour, the host decides noth
     CY_CHECK_EQ(number_after(control.gi, "lit="), 0.0);
     CY_CHECK_EQ(number_after(control.gi, "refused="), 0.0);
     CY_CHECK_EQ(number_after(control.gi, "frame="), 420.0);
+    // The fog ran every tick and nobody had a vision: nothing seen, nothing remembered.
+    CY_CHECK_EQ(number_after(control.fog, "visions="), 0.0);
+    CY_CHECK_EQ(number_after(control.fog, "cells="), 0.0);
+    CY_CHECK_EQ(number_after(control.fog, "ghosts="), 0.0);
+    CY_CHECK_EQ(number_after(control.fog, "tick="), 420.0);
 }
 
 CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and its button builds") {
@@ -393,7 +433,8 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and i
     // and its title (2) with three rows of four (12), and the Build button — 41 elements the
     // module made, every one in the store.
     CY_CHECK_EQ(number_after(run.hud, "mounted="), 1.0);
-    CY_CHECK_EQ(number_after(run.hud, "elements="), 41.0);
+    // Forty-one, and the minimap's fog of war (ABI 1.10), shown once the game has fog.
+    CY_CHECK_EQ(number_after(run.hud, "elements="), 42.0);
     CY_CHECK_EQ(number_after(run.hud, "button="), 1.0);
     CY_CHECK_EQ(number_after(run.hud, "aimed="), 1.0);
 
@@ -418,7 +459,9 @@ CY_TEST_CASE("samples/13-rts-api: ABI 1.6 — a Swift HUD follows the game and i
     CY_CHECK(number_after(run.hud, "fill=") > 31.99);
     CY_CHECK(number_after(run.hud, "fill=") < 32.01);
     // One dot per unit on the minimap.
-    CY_CHECK_EQ(number_after(run.hud, "dots="), number_after(run.spawn, "units="));
+    // A dot for every unit, and one for each of the camp blue's fog lets it show (ABI 1.10).
+    CY_CHECK_EQ(number_after(run.hud, "dots="),
+                number_after(run.spawn, "units=") + number_after(run.fog, "enemy_dots="));
 
     // The click on the button was the HUD's: `UI.hitTest` kept it from reaching the world, so the
     // unit selected at frame 81 is still the one selected.
@@ -471,4 +514,5 @@ CY_TEST_CASE("samples/13-rts-api reproduces exactly across two runs") {
     CY_CHECK_EQ(first.hud, second.hud);
     CY_CHECK_EQ(first.anim, second.anim);
     CY_CHECK_EQ(first.lockstep, second.lockstep);
+    CY_CHECK_EQ(first.fog, second.fog);
 }

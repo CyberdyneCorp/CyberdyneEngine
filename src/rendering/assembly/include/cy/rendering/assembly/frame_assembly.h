@@ -214,6 +214,11 @@ struct AssemblyDescription {
     /// (`FrameFeatures::reactive_mask`); the copy is recorded by
     /// `FrameSinks::passes[OpaqueColorCopy]`. Appended.
     bool reactive_mask = false;
+    /// Fog of war: one team's visibility applied to every surface after the temporal stage —
+    /// `FramePassKind::FogOfWar`, declared by `fog_of_war::FogOfWarPass` through
+    /// `FrameSinks::fog_of_war`. Off by default, and absent when off: no pass, no target, and the
+    /// frame it always was. Can change between frames; the graph is rebuilt each frame. Appended.
+    bool fog_of_war = false;
 };
 
 /// One view of one world, this frame.
@@ -345,6 +350,10 @@ struct FrameSinks {
     /// opaque_copy_stage()` for its reactive mask. Null keeps the transfer pass recorded by
     /// `passes[OpaqueColorCopy]`. Appended.
     FrameStageDeclaration opaque_copy;
+    /// The producer that declares the fog of war stage — `fog_of_war::FogOfWarPass::stage()`.
+    /// Required when the description asks for fog of war; the frame refuses to build without it.
+    /// Appended.
+    FrameStageDeclaration fog_of_war;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
@@ -566,6 +575,11 @@ public:
     void set_global_illumination(bool enabled) noexcept {
         description_.global_illumination = enabled;
     }
+
+    /// Turn the frame's `FogOfWar` stage on or off from the next `assemble`: a game that shows an
+    /// observer the whole map, or a replay switched to one team's view. Off is the frame it always
+    /// was. Nothing `initialize` created depends on it.
+    void set_fog_of_war(bool enabled) noexcept { description_.fog_of_war = enabled; }
 
 private:
     [[nodiscard]] Status decide_features(const AssemblyView& view, FrameFeatures& features,

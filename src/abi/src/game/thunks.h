@@ -175,4 +175,12 @@ CyResult gi_sample_irradiance(CyEngine engine, const float* position_xyz, const 
                               CyGiIrradiance* out_irradiance);
 CyResult gi_status(CyEngine engine, CyGiStatus* out_status);
 
+// --- 1.10: fog of war
+// -----------------------------------------------------------------------------
+CyResult fog_set_vision(CyEngine engine, CyEntity entity, const CyFogVision* vision);
+CyResult fog_get_vision(CyEngine engine, CyEntity entity, CyFogVision* out_vision);
+CyResult fog_cell(CyEngine engine, uint32_t team, const CyFixedVec2* position, uint32_t* out_cell);
+CyResult fog_sight(CyEngine engine, uint32_t team, CyEntity entity, uint32_t* out_sight);
+CyResult fog_status(CyEngine engine, CyFogStatus* out_status);
+
 }  // namespace cy::abi::game
