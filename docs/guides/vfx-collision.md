@@ -167,7 +167,7 @@ a collider. `GpuPassDescription::timed` and `last_device_ms` / `last_update_ms` 
 | Suite | What it holds |
 |---|---|
 | `integration.vfx` | rest on a plane within a tenth of a millimetre; restitution exact; one event a contact; kill, stick, friction (Coulomb's stopping distance); sphere, box, capsule; the field seeing what the depth buffer cannot; the depth buffer's thickness; sparks spawned from impacts; the budget's quality |
-| `integration.vfx_compiler` | the plume's generated units and cook key byte-identical to before collision; one contact for six outputs; the collision set in the unit; the palette; event reads refused outside their stage; a reusable collision module |
+| `integration.vfx_compiler` | a collider-free effect's generated units and cook key byte-identical to before collision; one contact for six outputs; the collision set in the unit; the palette; event reads refused outside their stage; a reusable collision module |
 | `render.vfx_collision_gpu` | the device against the CPU executor, particle for particle, for every collider, the impact events and the quality lever; refusing an event-reading emitter; the device timing |
 | `render.vfx_collision` | the pictures above, asserting the sparks are in the frame and the debris is at rest |
 

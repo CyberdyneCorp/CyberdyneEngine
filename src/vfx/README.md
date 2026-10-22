@@ -445,8 +445,11 @@ cheaper normals, 1 the analytic colliders only, 0 nothing. It reaches the CPU ex
 * **Descriptor set 1** (`GpuCollisionBinding`): the constants, the field's two buffers and the depth
   texture, allocated per kernel dispatch because the depth view is the graph's. An emitter that
   collides with nothing binds, generates and dispatches exactly what it did before:
-  `integration.vfx_compiler` holds the plume's dispatch unit, probe unit and cook key to the bytes
-  `main` produced before the nodes existed.
+  `integration.vfx_compiler` holds a collider-free effect's dispatch unit, probe unit and cook key
+  to the bytes `main` produced before the nodes existed, with GCC and clang alike. Not the plume's:
+  its builder allocates node keys inside one call's arguments, whose order C++ leaves to the
+  compiler, and its random streams are named by those keys — so its generated text is the same
+  effect spelled differently by GCC and by clang.
 * **`VfxGpuPass::set_collision`** takes the field and the depth each frame, and the pass can time
   its sub-step on the device (`GpuPassDescription::timed`, `last_device_ms`).
 
