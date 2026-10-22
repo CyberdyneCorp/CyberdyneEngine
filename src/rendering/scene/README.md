@@ -99,6 +99,13 @@ schema: the renderer computes it from screen coverage, and a gameplay system tha
 have made simulation depend on the camera. `read()` requires a witness and the overload does not
 exist for an authoritative one, so that is a compile error rather than a divergence M9 has to find.
 
+### `LightSource`'s area fields
+
+`source_width`, `source_height`, `two_sided` and `mobility` are appended to `LightSource` (identity
+fields 9 to 12) and declared to the hash as authoritative fields 12 to 15: an area light's size is
+authored state like its range. `kind` reflects all seven kinds. Extraction copies them into
+`render::LightDescription`.
+
 ## The shipped node catalogue's renderer half
 
 `node_templates.h`. `scene-graph-and-nodes` ships a catalogue of node types as data and

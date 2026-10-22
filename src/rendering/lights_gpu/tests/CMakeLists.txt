@@ -49,16 +49,23 @@ function(cy_lights_gpu_declare_tests)
         return()
     endif()
     set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+    set(device_sources "${pipeline_tests}/frame_scene.cpp"
+                       "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp")
+    set(device_dependencies cy::rendering-lights-gpu cy::rendering-pipeline cy::rendering-particles
+                            cy::rendering-denoise cy::rhi-null cy::rhi-vulkan)
+    # Two literal declarations rather than a loop: tools/roadmap/requirements.py finds a suite by
+    # its `cy_add_test(NAME ... KIND ...)` text.
+    cy_add_test(
+        NAME area_lights
+        KIND render
+        SOURCES "${tests_dir}/test_area_lights_device.cpp" ${device_sources}
+        DEPENDENCIES ${device_dependencies})
+    cy_add_test(
+        NAME many_lights
+        KIND render
+        SOURCES "${tests_dir}/test_many_lights_device.cpp" ${device_sources}
+        DEPENDENCIES ${device_dependencies})
     foreach(suite IN ITEMS area_lights many_lights)
-        cy_add_test(
-            NAME ${suite}
-            KIND render
-            SOURCES
-                "${tests_dir}/test_${suite}_device.cpp"
-                "${pipeline_tests}/frame_scene.cpp"
-                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
-            DEPENDENCIES cy::rendering-lights-gpu cy::rendering-pipeline cy::rendering-particles
-                         cy::rendering-denoise cy::rhi-null cy::rhi-vulkan)
         target_include_directories(cy_test_render_${suite}
                                    PRIVATE "${tests_dir}" "${pipeline_tests}"
                                            "${CMAKE_SOURCE_DIR}/tests/render")

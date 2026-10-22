@@ -15,7 +15,10 @@
 //   (h) the same content under either path: the two pictures agree where nothing is shadowed;
 //   (i) an area light's shadow is soft: the stochastic path's visibility darkens the floor under a
 //       box, through a penumbra;
-//   (j) the hundreds of coloured lights, written out.
+//   (j) the hundreds of coloured lights, written out;
+//   (k) the path is the frame arbiter's choice: a frame whose clusters drop lights at their bound
+//       leaves for the stochastic path at once, and returns after the dwell once the clustered
+//       lighting fits the arbiter's shading allocation again.
 //
 // Vulkan with validation and synchronisation validation on. Without a GPU the suite SKIPS LOUDLY.
 
@@ -23,6 +26,7 @@
 #include "light_scene.h"
 
 #include <cy/core/math/quat.h>
+#include <cy/rendering/arbiter/profiles.h>
 #include <cy/rendering/denoise/denoiser.h>
 #include <cy/rendering/lighting/area_shading.h>
 #include <cy/rendering/lighting/lights.h>
@@ -849,5 +853,128 @@ CY_TEST_CASE("(j) hundreds of coloured lights, shadowed, on the stochastic path"
     save("many-lights-stochastic.png", run.frame.scene);
     CY_CHECK_GT(run.pass.report().candidate_lights, 390U);
     stop(run);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+namespace {
+
+/// One clustered frame's inputs to the path selection: the device assignment's drops and the
+/// measured lighting cost, prepass end to opaque end, at its steady state.
+struct ClusteredCost {
+    u32 dropped = 0;
+    f32 lighting_ms = 0.0F;
+};
+
+[[nodiscard]] bool clustered_cost(DeviceFixture& fixture,
+                                  std::vector<render::LightDescription> lights,
+                                  ClusteredCost& out) {
+    GpuLightAssignment assignment;
+    Frame frame;
+    frame.run.fixture = &fixture;
+    frame.run.lights = std::move(lights);
+    frame.run.boxes = false;
+    frame.run.floor_albedo = Vec3{0.5F, 0.5F, 0.5F};
+    frame.run.assignment = &assignment;
+    const u32 capacity = static_cast<u32>(frame.run.lights.size()) + 4U;
+    if (!build_scene(frame.run, frame.scene, kWidth, kHeight, capacity)) {
+        return false;
+    }
+    const rendering::assembly::AssemblyDescription& assembled =
+        frame.scene.assembly().description();
+    Expected<rendering::ClusterGrid, Error> grid = rendering::make_cluster_grid(
+        assembled.clusters, kWidth, kHeight, assembled.near_plane, assembled.far_plane);
+    if (!grid.has_value() || !assignment
+                                  .create(allocator(), fixture.device(),
+                                          LightAssignmentDescription{*grid, 4096, 65536, false})
+                                  .has_value()) {
+        return false;
+    }
+    f64 lighting_ms = 1.0e9;
+    for (u32 round = 0; round < 4; ++round) {
+        if (!render_frame(frame.run)) {
+            return false;
+        }
+        lighting_ms = std::min(
+            lighting_ms, frame.run.stamps_ms[kStampOpaque] - frame.run.stamps_ms[kStampPrepass]);
+    }
+    out.dropped = assignment.statistics().overflow;
+    out.lighting_ms = static_cast<f32>(lighting_ms);
+    release_scene(frame.run);
+    assignment.destroy();
+    return true;
+}
+
+}  // namespace
+
+CY_TEST_CASE(
+    "(k) the frame arbiter's choice: past the cluster bound the frame leaves, and returns") {
+    DeviceFixture fixture("cy_test_render_many_lights");
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    rendering::BudgetArbiter arbiter;
+    CY_REQUIRE(rendering::apply_profile(rendering::named_profile(rendering::ProfileName::Standard),
+                                        arbiter)
+                   .has_value());
+    const f32 allocation = rendering::shading_allocation_ms(arbiter);
+    const ManyLightsSettings settings = settings_for(true, true, true);
+    rendering::LightingPathSelector selector(8, 0.7F);
+
+    // Six hundred lights crowded over four square metres: far more reach each cluster than its
+    // list of 64 keeps, so the clustered picture is missing light it should have.
+    constexpr u32 kCrowd = 600;
+    ClusteredCost crowded;
+    CY_REQUIRE(clustered_cost(
+        fixture, coloured_lights(kCrowd, 0, 3.0F, 900.0F, Spread{Vec3{0.0F, -1.9F, -8.0F}, 2.0F}),
+        crowded));
+    rendering::LightingPathInputs inputs;
+    inputs.local_lights = kCrowd;
+    inputs.lights_dropped_by_bound = crowded.dropped;
+    inputs.clustered_ms = crowded.lighting_ms;
+    inputs.allocation_ms = allocation;
+    const rendering::LightingPathDecision left = selector.update(settings.path, inputs);
+    std::fprintf(
+        stderr,
+        "(k) %u crowded lights: %u assignments dropped at the bound, clustered lighting "
+        "%.3f ms against the arbiter's %.3f ms: %s (%s)\n",
+        kCrowd, crowded.dropped, static_cast<f64>(crowded.lighting_ms),
+        static_cast<f64>(allocation),
+        left.path == rendering::LightingPath::StochasticManyLight ? "stochastic" : "clustered",
+        left.reason);
+    CY_CHECK_GT(crowded.dropped, 0U);
+    CY_CHECK_EQ(left.path, rendering::LightingPath::StochasticManyLight);
+    CY_CHECK(left.changed);
+
+    // The frame the decision draws: the stochastic path, its bound a per-pixel sample count.
+    Stochastic run;
+    CY_REQUIRE(
+        start(fixture, run,
+              coloured_lights(kCrowd, 0, 3.0F, 900.0F, Spread{Vec3{0.0F, -1.9F, -8.0F}, 2.0F}),
+              false, settings));
+    for (u32 frame = 0; frame < 4; ++frame) {
+        CY_REQUIRE(step(run));
+    }
+    CY_CHECK_EQ(run.pass.report().stats.path, rendering::LightingPath::StochasticManyLight);
+    CY_CHECK_EQ(run.pass.report().candidate_lights, kCrowd);
+    stop(run);
+
+    // A hundred lights spread wide: the clustered lighting fits the allocation with no drop, so
+    // the frame returns — but only after the dwell, never on the first quiet frame.
+    constexpr u32 kSparse = 100;
+    ClusteredCost sparse;
+    CY_REQUIRE(clustered_cost(fixture, coloured_lights(kSparse, 0, 1.6F, 900.0F), sparse));
+    CY_CHECK_EQ(sparse.dropped, 0U);
+    CY_CHECK_LT(sparse.lighting_ms, allocation);
+    rendering::LightingPathInputs calm;
+    calm.local_lights = kSparse;
+    calm.allocation_ms = allocation;
+    for (u32 frame = 0; frame < 7; ++frame) {
+        CY_CHECK_EQ(selector.update(settings.path, calm).path,
+                    rendering::LightingPath::StochasticManyLight);
+    }
+    const rendering::LightingPathDecision returned = selector.update(settings.path, calm);
+    CY_CHECK_EQ(returned.path, rendering::LightingPath::Clustered);
+    CY_CHECK(returned.changed);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

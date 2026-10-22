@@ -328,6 +328,11 @@ bool append_light(const ser::World& world, const ser::WorldNode& node, const Mat
     light.range = light_float(world, node, "range", 10.0F);
     light.inner_cone_radians = light_float(world, node, "inner_cone", 0.0F);
     light.outer_cone_radians = light_float(world, node, "outer_cone", 0.7853981634F);
+    light.source_width = light_float(world, node, "source_width", 0.0F);
+    light.source_height = light_float(world, node, "source_height", 0.0F);
+    const ser::WorldValue* two_sided = field_value(world, node, "LightSource", "two_sided");
+    light.two_sided = two_sided != nullptr && two_sided->kind == ser::WorldValueKind::Bool &&
+                      two_sided->integer != 0;
     const ser::WorldValue* casts_shadow = field_value(world, node, "LightSource", "casts_shadow");
     light.casts_shadow =
         casts_shadow == nullptr ||
@@ -2248,6 +2253,9 @@ Status AuthoredFrame::render(const ser::World& world, const first_light::Camera&
         sign_shading(light.inner_cone_radians);
         sign_shading(light.outer_cone_radians);
         sign_shading(light.casts_shadow);
+        sign_shading(light.source_width);
+        sign_shading(light.source_height);
+        sign_shading(light.two_sided);
         sign_shading(light.stable_id);
     }
     if (shading_signature_ != previous_shading_signature_) {
