@@ -188,6 +188,16 @@ post-process — left it at compute: the post-process's sets went there and the 
 temporal pass's set, so the blur never reached the frame. `render.motion_blur` (d)'s open-shutter
 control is the regression case.
 
+## Area lights and many lights — `FrameViewData::lighting_control` and `directional_lights`
+
+Two `uint4` appended to the view block (688 bytes). `lighting_control`: x the LTC table's texture
+slot, y the stochastic path's irradiance slot, z its reservoir slot, w `kStochasticLighting` — each
+`kCyNoMaterialTexture`/zero when unused. `directional_lights`: up to three directional light
+indices, flagged `kDirectionalListed`, so the fragment does not walk every light to find them (at a
+thousand lights the walk alone cost 7.7 ms of a 1080p frame). `FrameUpload` gains
+`cluster_headers_buffer`, `cluster_indices_buffer` and `lights_buffer`, which bind the device's lists
+in place of the host's.
+
 ## The render extent — temporal upscaling
 
 With `AssemblyDescription::render_width`/`render_height` below the output, `FrameRecorder` records

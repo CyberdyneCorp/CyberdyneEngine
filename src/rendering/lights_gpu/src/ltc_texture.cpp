@@ -86,13 +86,14 @@ Status pack_ltc_texels(const LtcTable& table, Array<f32>& out) noexcept {
             const LtcEntry& entry = table.entry(x, y);
             // `Minv`'s columns are (a, 0, d), (0, c, 0), (b, 0, 1): area.cpp's `matrix_of`.
             const Mat3& m = entry.inverse_transform;
-            f32* upper = out.data() + ((static_cast<usize>(y) * kLtcTextureWidth) + x) * 4U;
+            f32* upper = out.data() + (((static_cast<usize>(y) * kLtcTextureWidth) + x) * 4U);
             upper[0] = m.columns[0].x;
             upper[1] = m.columns[2].x;
             upper[2] = m.columns[1].y;
             upper[3] = m.columns[0].z;
             f32* lower =
-                out.data() + ((static_cast<usize>(y + kLtcTableSize) * kLtcTextureWidth) + x) * 4U;
+                out.data() +
+                (((static_cast<usize>(y + kLtcTableSize) * kLtcTextureWidth) + x) * 4U);
             lower[0] = entry.magnitude;
             lower[1] = entry.fresnel;
             lower[2] = 0.0F;

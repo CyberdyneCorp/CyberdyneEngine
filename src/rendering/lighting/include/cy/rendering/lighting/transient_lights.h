@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // Lights a game spawns for a moment: a muzzle flash, an explosion, a spark, a thrown torch.
 //

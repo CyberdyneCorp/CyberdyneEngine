@@ -1646,10 +1646,10 @@ note = "the requirement enumerates what the cache key must include — the sourc
 #         are derived` asks for skinned, virtual-geometry, mesh-particle and world-space-UI motion
 #         and the suite covers camera and static motion; `Temporal diagnostics` asks for a
 #         VISUALISATION of motion vectors and disocclusion, which does not exist.
-#   lighting  `Light types` asks for mobility classification, `Point and spot shadow projection` for
-#         cube maps with per-face culling, `Shadow rendering optimisation` for proxy meshes and a
-#         depth-only pipeline, `Decals` for GPU-scene residency, and `Stochastic many-light` for
-#         ray-traced or shadow-map visibility on the selected samples. Each is a device path.
+#   lighting  `Point and spot shadow projection` asks for cube maps with per-face culling, `Shadow
+#         rendering optimisation` for proxy meshes and a depth-only pipeline, and `Decals` for
+#         GPU-scene residency. Each is a device path. (`Light types` and `Stochastic many-light`
+#         were mapped by `add-many-lights-and-area-lights`.)
 #
 # AND ONE ENTRY THAT CANNOT BE WRITTEN YET. `rendering-post-processing` gains "The chain in the
 # picture is the chain in the frame" in `openspec/changes/implement-m11c-image/specs/`, and
@@ -3030,8 +3030,9 @@ note = "the requirement's own scenario is the directional one — 'WHEN a cloud-
 [[coverage]]
 row = "rendering-lighting-and-shadows"
 requirement = "Light types"
-evidence = "exempt:m11e"
-note = "TWO OF THE REQUIREMENT'S OWN LISTS HAVE NO SUBJECT IN THIS TREE. The colour-temperature scenario is answered (`a colour temperature is a tint, not a second intensity`, and the spot cone terms beside it), but MOBILITY DOES NOT EXIST: `grep -rn 'Mobility' --include=*.h --include=*.cpp src` finds nothing, so 'WHEN a light is marked Static THEN its contribution MAY be fully baked and it SHALL contribute no runtime cost' cannot be asked at all. And the six light types are three: `lights.h` declares `kGpuLightDirectional`, `kGpuLightPoint` and `kGpuLightSpot`, and `Rect`, `Disc` and `Tube` exist only as LTC evaluation shapes in `area.h`, never as a light a frame can carry. What would observe it: a mobility classification on the scene light with a case per class over the baked and dynamic paths, and the three area kinds reaching `GpuLight`."
+evidence = "test:render.area_lights"
+case = "(d) a static light costs the frame nothing; stationary and movable are the frame's"
+note = "THE SIX TYPES ARE LIGHTS A FRAME CARRIES, AND MOBILITY DRIVES THE PATH. `render::LightKind` appends `Rect`, `Disc`, `Sphere` and `Tube` (a size in metres, a two-sided flag, nits), `build_gpu_light` packs each into the 64-byte `GpuLight`, and `cy/light.slang`'s `shadeAreaLight` shades them with linearly transformed cosines through the committed SPIR-V; `render::LightMobility` classifies every light. This case answers 'Mobility drives the lighting path': a `Static` light leaves a placeholder record no loop shades, in no cluster list and no candidate set, and the frame with it is the frame without it (0 texels differ), while the same light `Stationary` or `Movable` lights 18 170 texels. The other sentences are the same suite's and its neighbours' cases, each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`): `(a) no area light and no table is the frame before, byte for byte` (by day and by night with points and spots alone, against `references/area_lights_off.png` and `area_lights_off_night.png`, drawn by the pre-change frame shader), `(b) every lit floor pixel is the host's area shading, diffuse and specular` (43 124 pixels, worst 0.30%), `(c) with no table bound an area light shades its diffuse term, and only that`, `(e) the area-lit room`; `integration.render_area_lights` holds the diffuse and specular terms of every shape to a Monte-Carlo integration over the surface; the colour-temperature and cone cases in `unit.render_lighting` stay. Baked indirect for a `Stationary` light is the lightmap bake's (`lighting.md`), which does not take area lights yet. KIND render: the suite skips, loudly, on a machine with no Vulkan device; Metal and D3D12 compile the shaders and were not run."
 
 [[coverage]]
 row = "rendering-lighting-and-shadows"
@@ -3049,8 +3050,44 @@ note = "DECALS ARE APPLIED IN THE FORWARD FRAME, ON A DEVICE, AS THEIR OWN CLUST
 [[coverage]]
 row = "rendering-lighting-and-shadows"
 requirement = "Stochastic many-light direct lighting"
-evidence = "exempt:m11e"
-note = "THE ESTIMATOR IS OBSERVED, THE PATH IS NOT RUN. `many-light: the reservoir estimator is unbiased against a sum over every light` measures the estimator against the exact sum, `many-light: the path is off by default and refused without a denoiser` is the requirement's second scenario verbatim (configuration validation, not a visual discovery), and `two runs of one frame select the same lights` and `a reservoir's sample count is capped` carry reuse and the bound. What is missing is the middle of the requirement's own four-step path: 'RAY-TRACED OR SHADOW-MAP VISIBILITY FOR THE SELECTED SAMPLES'. `many_light.h` says outright that it does not depend on a tracer — visibility is a ray budget the caller spends — so no case here evaluates a shadowed sample, and the third scenario (the same content under both paths) needs two rendered frames. What would observe it: a device case rendering one many-lit scene clustered and stochastically and comparing them."
+evidence = "test:render.many_lights"
+case = "(h) the same content under either path: the two pictures agree where nothing shadows"
+note = "THE PATH IS RUN, ON A DEVICE. `lights_gpu::ManyLightsPass` draws 16 candidates a pixel from an alias table over the frame's lights in proportion to power, resamples them into a reservoir, reuses it temporally with a capped history and spatially with balance-heuristic weights, traces ONE SCREEN-SPACE VISIBILITY RAY for the selected sample, and denoises through `denoising`'s `StochasticDirect` signal transcribed. This case is the requirement's third scenario: 160 lights over an open floor drawn clustered and stochastically agree to -3.82% in the mean and 14.6% mean absolute per pixel (bounds 5% and 20%), and the stochastic frame reports a per-pixel sample count and ray budget instead of a list length. The rest are the same suite's cases, each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`): `(d) the stochastic estimate is unbiased against a sum over every light` (-0.16%), `(e) with temporal and spatial reuse the estimate's bias stays inside its bound` (+0.66%, bound 1%), `(f) the path's denoiser is the engine's` (worst 0.09%), `(g) converged, the denoised signal is quiet and steady` (1.05% against 26.8% raw), `(i) an area light's shadow is soft` (umbra, penumbra, lit), `(c) a thousand lights at 1080p` (0.19 ms assignment, 0.70 ms lighting), `(k) the frame arbiter's choice` (the path leaves the frame the cluster bound drops a light and returns after the dwell). 'Thousands of shadowed area lights … a bounded number of samples per pixel' is (h)'s report; 'Denoiser is required' is `unit.render_lighting`'s 'the path is off by default and refused without a denoiser'. NOT BUILT, and recorded rather than mapped: ray-traced visibility — an occluder off screen does not shadow. KIND render: the suite skips, loudly, on a machine with no Vulkan device; Metal and D3D12 compile the dispatches and were not run."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Area lights are lights the frame carries"
+evidence = "test:render.area_lights"
+case = "(b) every lit floor pixel is the host's area shading, diffuse and specular"
+note = "A rect, a disc, a sphere and a tube over a floor with the LTC table named: 43 124 lit floor pixels against `rendering::shade_area_light` (`area_shading.h`, the host twin of `cy/light.slang`'s `shadeAreaLight`), worst 0.30% under the stated 0.5%. The scenarios' other halves: `(a) no area light and no table is the frame before, byte for byte`, by day and by night, against `references/area_lights_off.png` and `area_lights_off_night.png`, drawn by the pre-change frame shader; `(c) with no table bound an area light shades its diffuse term, and only that`; 'Energy against a reference' is `integration.render_area_lights` (diffuse within 0.001% for a rect, 0.17% a disc, 1.8% a sphere, 1.3% a tube; specular 3.2% of peak in the mean and 11.1% at worst, against a Monte-Carlo integration of GGX over the surface); 'reach CyberGI as emitters radiating its flux' is `unit.render_gi_frame_lights`. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). KIND render: skips loudly with no Vulkan device; Metal and D3D12 compile the shaders and were not run."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Light mobility reaches the frame"
+evidence = "test:render.area_lights"
+case = "(d) a static light costs the frame nothing; stationary and movable are the frame's"
+note = "A `Static` light leaves `baked_light_placeholder()` at its index and is in no cluster list: the frame with it is the frame without it (0 texels, 0 list entries), while the same light `Stationary` or `Movable` lights 18 170 texels. Proved red by drawing the static light as a movable one (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). KIND render: skips loudly with no Vulkan device."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Cluster lists are assigned on the device"
+evidence = "test:render.many_lights"
+case = "(a) the device's lists are the host's, less the lights that miss the tile"
+note = "`lights_gpu::GpuLightAssignment` over 240 lights: in 3 240 clusters no device list names a light the host's does not, every host light that reaches the tile frustum is in the device's (1 193 fewer, every one outside), the overflow is counted (0), and the frame drawn from the device's lists is the host's byte for byte (0 texels, 0 HDR halves). `(l) past its reach a light adds exactly zero` holds the cluster loop's reach test to the walk over every light (0 HDR halves differ). 'A thousand lights inside the budget' is `(c) a thousand lights at 1080p: the assignment and the lighting inside the budget`: 0.19 ms to assign (budget 0.5) and 0.70 ms from the prepass's end to the opaque pass's end (budget 1.5) on the reference RTX 5060. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). KIND render: skips loudly with no Vulkan device; Metal and D3D12 compile the dispatch and were not run."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "The stochastic many-light path is a device frame"
+evidence = "test:render.many_lights"
+case = "(d) the stochastic estimate is unbiased against a sum over every light"
+note = "Averaged over many frames without reuse, the estimate's mean over the open floor is within 0.16% of the exact sum over every light (bound 1%). The other scenarios are the same suite's cases: `(e) with temporal and spatial reuse the estimate's bias stays inside its bound` (+0.66%), `(f) the path's denoiser is the engine's` (`Denoiser::denoise` over the device's own signal, worst 0.09%), `(g) converged, the denoised signal is quiet and steady, and far quieter than raw` (1.05% against 26.8%, 0.24% frame to frame), `(h) the same content under either path` (-3.82% mean, 14.6% mean absolute) and `(k) the frame arbiter's choice` (a frame whose clusters drop 71 134 assignments leaves for the stochastic path at once; a sparse one returns after the dwell, under the Standard profile's shading allocation). Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). KIND render: skips loudly with no Vulkan device."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Lights a game spawns for a moment"
+evidence = "test:unit.render_lighting"
+case = "transient lights: a flash fades over its life and is freed when it ends"
+note = "`rendering::TransientLights`: a 0.1 s flash with a quadratic fade carries a quarter of its intensity half way and is gone, its handle dead and `expired` counted, after its life. The neighbours: 'a stale handle never answers for the light now in its slot', 'a full pool refuses and counts, and nothing is grown' (and a directional light and a negative life refused), 'an area light spawns as cheaply as a point', 'the envelopes start whole and end dark'. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`)."
 
 # --- water, the two shading requirements ----------------------------------------------------------
 #
@@ -6409,6 +6446,13 @@ row = "native-abi"
 requirement = "Rust SDK overlay"
 evidence = "rust:cy-editor-sdk::generated_is_current::the_committed_bindings_are_what_regeneration_produces"
 note = "Runs the real generator in check mode against src/abi/abi_baseline.json, the description the Swift overlay is validated against, so a stale SDK fails; the_generator_is_deterministic in the same file covers determinism. cy-editor-app::safety::no_editor_crate_but_the_sdk_names_the_c_abi confines the C ABI to the SDK crate."
+
+[[coverage]]
+row = "native-abi"
+requirement = "Lights a game spawns through the ABI"
+evidence = "test:unit.abi"
+case = "lights: a frame update may spawn, move and end a light; a fixed step may not"
+note = "ABI 1.11 (`add-many-lights-and-area-lights`): five `light_*` entries over `cy::rendering::TransientLights` through `cy::abi::game::LightsBackend`, every one `[N U]`. This case is the phase rule both ways: spawn, update, alive, destroy and status accepted in a frame update and PERMISSION_DENIED in a fixed step. Its neighbours in `test_game_lights.cpp`: 'without a bound pool every entry is UNAVAILABLE' and 'a description is whole and in range before the backend sees it' (every enumerator, flag, sign and reserved word); `test_layout.cpp` the 1.11 layouts; `integration.game_backend_lights` the adapter through the table — a flash fades and expires, a stale handle never answers, a full pool refuses with OUT_OF_RANGE; CyberdyneKit's `LightsTests` the Swift face through `FakeEngine`. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). No sample binds a pool to a running game yet."
 
 # --- networking-and-replication -------------------------------------------------------------------
 #

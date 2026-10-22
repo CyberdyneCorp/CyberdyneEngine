@@ -84,8 +84,9 @@ final class LightsTests: XCTestCase {
     func testAPanelCrossesWithItsKindSizeAndFaces() throws {
         let pose = Pose(position: Vec3(x: 1, y: 2.5, z: -3))
         let light = try Light.spawn(
-            .rect(pose: pose, width: 1.2, height: 0.4, colour: Vec3(x: 0.4, y: 0.8, z: 1),
-                  nits: 4000, twoSided: true, lifetime: 2))
+            .rect(
+                pose: pose, width: 1.2, height: 0.4, colour: Vec3(x: 0.4, y: 0.8, z: 1),
+                nits: 4000, twoSided: true, lifetime: 2))
         XCTAssertEqual(light.handle, kLive)
         XCTAssertEqual(Seen.spawned.struct_size, UInt32(MemoryLayout<CyLightDesc>.size))
         XCTAssertEqual(Seen.spawned.kind, CY_LIGHT_RECT.rawValue)
@@ -109,8 +110,10 @@ final class LightsTests: XCTestCase {
     func testEveryKindMapsToItsAbiSpelling() {
         let kinds: [(Light.Description, CyLightKind)] = [
             (.point(at: Vec3(), candela: 10, range: 2), CY_LIGHT_POINT),
-            (.spot(pose: Pose(), candela: 10, range: 2, innerCone: 0.2, outerCone: 0.4),
-             CY_LIGHT_SPOT),
+            (
+                .spot(pose: Pose(), candela: 10, range: 2, innerCone: 0.2, outerCone: 0.4),
+                CY_LIGHT_SPOT
+            ),
             (.rect(pose: Pose(), width: 1, height: 1, nits: 10), CY_LIGHT_RECT),
             (.disc(pose: Pose(), diameter: 1, nits: 10), CY_LIGHT_DISC),
             (.sphere(at: Vec3(), diameter: 1, nits: 10), CY_LIGHT_SPHERE),

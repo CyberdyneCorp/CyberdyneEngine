@@ -52,6 +52,20 @@ is `(-d.x, -d.y, d.z)`. Writing `(d.x, d.y, -d.z)` instead — the transcription
 gives `-base` for a flat detail normal, so every decal inverts the surface it lands on. The comment
 is at the site.
 
+## Area lights, mobility and lights for a moment
+
+`build_gpu_light` packs a rect, disc, sphere or tube light into the same 64-byte `GpuLight` a point
+light uses: half extents in `spot_scale` and `spot_bias`, the normal (a tube's axis) in `direction`,
+an octahedral tangent in `shadow_slot`, `kGpuLightTwoSided` above the kind, and a reach where its
+illuminance falls to 0.01 lux when no range is authored. `area_shading.h` is the host twin of
+`cy/light.slang`'s `shadeAreaLight` — the form factor for the diffuse term, the LTC integral with
+Fresnel at the lobe's gather direction for the specular — and `light_irradiance` /
+`sample_light_point` serve the stochastic path's tests. A `Static` light becomes
+`baked_light_placeholder()`, a record no loop shades. `transient_lights.h` is the pool a game spawns
+lights from (ABI 1.11); `many_light.h`'s `LightingPathSelector` chooses the clustered or the
+stochastic path from the cluster bound's drops and `shading_allocation_ms(arbiter)`. The device half
+is `src/rendering/lights_gpu/`.
+
 ## What "physical units" means here, since it is not a scale factor
 
 Three quantities stop being the same number: what an author types (lux for the sun, lumens for a

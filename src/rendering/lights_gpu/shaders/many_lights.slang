@@ -60,7 +60,7 @@ struct CyManyLightSet
     [format("rgba32f")] RWTexture2D<float4> accumulated;
     [format("rgba32f")] RWTexture2D<float4> moments;
     [format("r32f")] RWTexture2D<float> variance;
-    [format("rgba32f")] RWTexture2D<float4> filterIn;
+    [format("rgba32f")] RWTexture2D<float4> filterSource;
     [format("rgba32f")] RWTexture2D<float4> filterOut;
     /// The stage's target: the denoised direct irradiance the forward pass samples.
     [format("rgba16f")] RWTexture2D<float4> target;
@@ -667,7 +667,7 @@ float splineWeight(int offset)
 /// One pixel of one a-trous pass.
 float3 filterPixel(uint2 pixel, uint2 extent)
 {
-    let centre = cyManyLights.filterIn.Load(int2(pixel));
+    let centre = cyManyLights.filterSource.Load(int2(pixel));
     var result = centre.rgb;
     let surface = cyManyLights.surface.Load(int2(pixel));
     let depth = surface.x;
@@ -702,7 +702,7 @@ float3 filterPixel(uint2 pixel, uint2 extent)
                     var weight = splineWeight(dx) * splineWeight(dy);
                     weight *= exp(-abs(theirs.x - depth) / (sigmas.x * abs(depth) + 1e-6));
                     weight *= pow(max(0.0, dot(surface.yzw, theirs.yzw)), sigmas.y);
-                    let value = cyManyLights.filterIn.Load(tap).rgb;
+                    let value = cyManyLights.filterSource.Load(tap).rgb;
                     weight *= exp(-abs(luminance(value) - centreValue) / (sigmas.z * deviation + 1e-6));
                     weight = max(weight, 0.0);
                     if (weight <= 0.0)

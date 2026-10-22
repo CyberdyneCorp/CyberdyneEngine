@@ -90,19 +90,20 @@ constexpr f32 kPi = std::numbers::pi_v<f32>;
     return ok();
 }
 
-/// A strip `length` long along `axis` and `width` across, facing `normal`, as squares of its width.
+/// A strip `along_axis` metres along `axis` and `across_axis` across, facing `normal`, as squares
+/// of its narrower side.
 [[nodiscard]] Status append_strip(const gi::GiLight& prototype, Vec3 centre, Vec3 axis, Vec3 normal,
-                                  f32 length, f32 width, Array<gi::GiLight>& out,
+                                  f32 along_axis, f32 across_axis, Array<gi::GiLight>& out,
                                   u32& appended) noexcept {
-    const f32 side = std::min(length, width);
+    const f32 side = std::min(along_axis, across_axis);
     const u32 count =
-        side > 0.0F ? std::clamp(static_cast<u32>(std::lround(length / side)), 1U, 16U) : 1U;
-    const f32 step = length / static_cast<f32>(count);
-    const f32 area = (length * width) / static_cast<f32>(count);
+        side > 0.0F ? std::clamp(static_cast<u32>(std::lround(along_axis / side)), 1U, 16U) : 1U;
+    const f32 step = along_axis / static_cast<f32>(count);
+    const f32 area = (along_axis * across_axis) / static_cast<f32>(count);
     for (u32 index = 0; index < count; ++index) {
-        const f32 along = ((static_cast<f32>(index) + 0.5F) * step) - (0.5F * length);
+        const f32 offset = ((static_cast<f32>(index) + 0.5F) * step) - (0.5F * along_axis);
         if (Status added =
-                append_square(prototype, centre + axis * along, normal, area, out, appended);
+                append_square(prototype, centre + axis * offset, normal, area, out, appended);
             !added) {
             return added;
         }

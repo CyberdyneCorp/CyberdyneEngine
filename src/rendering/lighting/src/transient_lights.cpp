@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/lighting/transient_lights.h>
 
 #include <cy/core/math/math.h>

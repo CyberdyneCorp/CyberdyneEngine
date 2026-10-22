@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Area lights as lights of the frame, at unit cost: the record a rect, disc, sphere or tube
 // becomes, the unit its intensity is in, its reach, and the static light's placeholder. Nothing
 // here builds an `LtcTable`; `test_area_shading.cpp` holds the shading to its emitter's surface.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <cy/rendering/lighting/area_shading.h>
 
 #include <cy/core/math/math.h>
@@ -207,9 +208,8 @@ Vec3 sample_light_point(const GpuLight& light, Vec3 towards, f32 u, f32 v) noexc
     const f32 sv = (2.0F * v) - 1.0F;
     switch (area.shape) {
         case AreaLightShape::Rect:
-            return center + area.tangent_x * (su * area.half_x) +
-                   area.tangent_y * (sv * area.half_y);
         case AreaLightShape::Tube:
+            // A tube is sampled over its silhouette rectangle, as it is shaded.
             return center + area.tangent_x * (su * area.half_x) +
                    area.tangent_y * (sv * area.half_y);
         case AreaLightShape::Disc:

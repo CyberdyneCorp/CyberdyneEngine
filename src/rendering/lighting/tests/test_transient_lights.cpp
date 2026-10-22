@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Lights for a moment, and which lighting path a frame takes. Unit cost, no device.
 
 #include <cy/test/test.h>

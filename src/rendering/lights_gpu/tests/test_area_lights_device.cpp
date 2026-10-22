@@ -4,8 +4,9 @@
 // `pipeline_test::FrameScene` lit by area lights alone, its HDR colour read back before the post
 // chain. What is asserted:
 //
-//   (a) a frame with no area light and no table bound is the frame before, byte for byte: the
-//       committed reference was drawn by the frame shader as it was before area lights existed;
+//   (a) a frame with no area light and no table bound is the frame before, byte for byte, by day
+//       and by night with points and spots alone: the committed references were drawn by the
+//       frame shader as it was before area lights existed;
 //   (b) every lit floor pixel is the host's `shade_area_light` for every light, diffuse and
 //       specular, through the LTC table on the device — the frame's arithmetic is the twin's;
 //   (c) with no table bound, an area light shades its diffuse term alone, and the table changes
@@ -194,12 +195,70 @@ struct Room {
 
 }  // namespace
 
+namespace {
+
+/// The night half of (a): points and spots alone, exposed so their falloff to the edge of their
+/// reach is in the picture — a punctual light the area dispatch swallowed, or a reach test that
+/// skipped a light short of its range, changes it.
+std::vector<render::LightDescription> night_punctual_lights() {
+    std::vector<render::LightDescription> lights;
+    const Vec3 colours[4] = {Vec3{1.0F, 0.55F, 0.3F}, Vec3{0.35F, 0.6F, 1.0F},
+                             Vec3{0.5F, 1.0F, 0.45F}, Vec3{1.0F, 0.4F, 0.8F}};
+    for (u32 index = 0; index < 4U; ++index) {
+        render::LightDescription light;
+        light.kind = index % 2U == 0U ? render::LightKind::Point : render::LightKind::Spot;
+        light.transform.translation =
+            Vec3{-3.0F + (2.0F * static_cast<f32>(index)), -0.6F, -6.0F - static_cast<f32>(index)};
+        light.transform.rotation = Quat::look_rotation(normalize(Vec3{0.1F, -1.0F, -0.2F}),
+                                                       Vec3{0.0F, 0.0F, -1.0F});
+        light.color[0] = colours[index].x;
+        light.color[1] = colours[index].y;
+        light.color[2] = colours[index].z;
+        light.intensity = 2000.0F;
+        light.range = 6.0F;
+        light.inner_cone_radians = 0.35F;
+        light.outer_cone_radians = 0.8F;
+        light.casts_shadow = false;
+        light.stable_id = 500U + index;
+        lights.push_back(light);
+    }
+    return lights;
+}
+
+/// Draw `room` and hold it to `name` under references/, or write it under CY_RENDER_UPDATE_GOLDEN.
+void hold_to_reference(Room& room, const char* name, const char* label) {
+    render_test::Image rendered(allocator());
+    CY_REQUIRE(render_test::adopt(rendered, room.scene.pixels(), kWidth, kHeight).has_value());
+    char reference_path[1024];
+    (void)std::snprintf(reference_path, sizeof(reference_path), "%s/references/%s",
+                        CY_LIGHTS_GPU_TEST_DIR, name);
+    const char* update = std::getenv("CY_RENDER_UPDATE_GOLDEN");
+    if (update != nullptr && update[0] != '\0' && update[0] != '0') {
+        CY_CHECK(render_test::write_png(reference_path, rendered).has_value());
+        std::fprintf(stderr, "wrote %s — look at it, then commit it. This run FAILS on purpose.\n",
+                     reference_path);
+        CY_TEST_FAIL_CHECK("references were regenerated; this mode never passes");
+        return;
+    }
+    render_test::Image reference(allocator());
+    CY_REQUIRE(render_test::read_png(reference_path, reference).has_value());
+    const render_test::Comparison comparison = render_test::compare(reference, rendered);
+    std::fprintf(stderr, "(a) %s, against the frame before area lights: %u differing, worst %u\n",
+                 label, comparison.differing, comparison.max_channel_delta);
+    CY_CHECK(comparison.comparable);
+    CY_CHECK_EQ(comparison.differing, 0U);
+    CY_CHECK_EQ(comparison.max_channel_delta, 0U);
+}
+
+}  // namespace
+
 CY_TEST_CASE("(a) no area light and no table is the frame before, byte for byte") {
     DeviceFixture fixture("cy_test_render_area_lights");
     if (!fixture.has_gpu()) {
         fixture.report_skip();
         return;
     }
+    // By day: the scene's own sun and two points.
     Room room;
     room.run.replace_lights = false;
     room.run.night = false;
@@ -207,29 +266,17 @@ CY_TEST_CASE("(a) no area light and no table is the frame before, byte for byte"
     room.run.fixture = &fixture;
     CY_REQUIRE(build_scene(room.run, room.scene, kWidth, kHeight, 16));
     CY_REQUIRE(render_frame(room.run));
-    render_test::Image rendered(allocator());
-    CY_REQUIRE(render_test::adopt(rendered, room.scene.pixels(), kWidth, kHeight).has_value());
-    char reference_path[1024];
-    (void)std::snprintf(reference_path, sizeof(reference_path), "%s/references/area_lights_off.png",
-                        CY_LIGHTS_GPU_TEST_DIR);
-    const char* update = std::getenv("CY_RENDER_UPDATE_GOLDEN");
-    if (update != nullptr && update[0] != '\0' && update[0] != '0') {
-        CY_CHECK(render_test::write_png(reference_path, rendered).has_value());
-        std::fprintf(stderr, "wrote %s — look at it, then commit it. This run FAILS on purpose.\n",
-                     reference_path);
-        CY_TEST_FAIL_CHECK("references were regenerated; this mode never passes");
-        release_scene(room.run);
-        return;
-    }
-    render_test::Image reference(allocator());
-    CY_REQUIRE(render_test::read_png(reference_path, reference).has_value());
-    const render_test::Comparison comparison = render_test::compare(reference, rendered);
-    std::fprintf(stderr, "(a) against the frame before area lights: %u differing, worst %u\n",
-                 comparison.differing, comparison.max_channel_delta);
-    CY_CHECK(comparison.comparable);
-    CY_CHECK_EQ(comparison.differing, 0U);
-    CY_CHECK_EQ(comparison.max_channel_delta, 0U);
+    hold_to_reference(room, "area_lights_off.png", "by day");
     release_scene(room.run);
+
+    // By night: points and spots alone, every one's falloff in the picture.
+    Room night;
+    night.run.night = true;
+    night.run.exposure_stops = -3.0F;
+    night.run.floor_albedo = Vec3{0.5F, 0.5F, 0.5F};
+    CY_REQUIRE(render_room(fixture, night, night_punctual_lights(), nullptr, false));
+    hold_to_reference(night, "area_lights_off_night.png", "by night");
+    release_scene(night.run);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 

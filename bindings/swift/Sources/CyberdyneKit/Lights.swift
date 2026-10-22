@@ -46,12 +46,14 @@ public struct Light: Equatable, Hashable, Sendable {
         public var intensity: Float
         /// Metres. Zero derives an area light's reach from its brightness.
         public var range: Float
-        /// A spot's cone, inner and outer, in radians.
+        /// A spot's inner cone, in radians: full brightness inside it.
         public var innerCone: Float
+        /// A spot's outer cone, in radians: dark outside it.
         public var outerCone: Float
-        /// An area light's size, in metres: a rect's width and height, a disc's or a sphere's
-        /// diameter (`width`), a tube's length and diameter.
+        /// An area light's first size, in metres: a rect's width, a disc's or a sphere's
+        /// diameter, a tube's length.
         public var width: Float
+        /// An area light's second size, in metres: a rect's height, a tube's diameter.
         public var height: Float
         /// A rect or a disc that emits from both faces.
         public var twoSided: Bool
@@ -106,7 +108,8 @@ public struct Light: Equatable, Hashable, Sendable {
 
         /// A rectangular panel facing `pose`'s forward axis.
         public static func rect(
-            pose: Pose, width: Float, height: Float, colour: Vec3 = Vec3(x: 1, y: 1, z: 1), nits: Float,
+            pose: Pose, width: Float, height: Float, colour: Vec3 = Vec3(x: 1, y: 1, z: 1),
+            nits: Float,
             range: Float = 0, twoSided: Bool = false, lifetime: Float = 0
         ) -> Description {
             Description(

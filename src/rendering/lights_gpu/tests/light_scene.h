@@ -174,6 +174,9 @@ struct LightScene {
     FrameViewData view{};
     /// The stochastic path's history is cut on the next frame.
     bool cut = false;
+    /// Name no cluster grid in the view block, so the forward pass walks every light in index
+    /// order — the reference the cluster loop's reach test is held to.
+    bool walk_every_light = false;
 };
 
 inline void scene_configure(rendering::assembly::AssemblyDescription& description,
@@ -320,6 +323,9 @@ inline Status scene_before_upload(FrameUpload& upload, void* user) noexcept {
         slots.push_back(run->many->irradiance_slot(kIrradianceSlot));
         slots.push_back(run->many->reservoir_slot(kReservoirSlot));
         write_stochastic_lighting(kIrradianceSlot, kReservoirSlot, upload.view);
+    }
+    if (run->walk_every_light) {
+        upload.view.counts[3] = 0U;
     }
     upload.globals.exposure_stops = run->exposure_stops;
     run->view = upload.view;

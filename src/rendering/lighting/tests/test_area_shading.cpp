@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // AN AREA LIGHT OF THE FRAME, SHADED, AGAINST ITS OWN SURFACE.
 //
 // `shade_area_light` is what the forward pass adds for a rect, disc, sphere or tube light — the C++
@@ -203,10 +204,10 @@ Reference gather(const LightDescription& light, Vec3 position, Vec3 normal, Vec3
 }
 
 struct Configuration {
-    const char* name;
-    LightKind kind;
-    f32 width;
-    f32 height;
+    const char* name = "";
+    LightKind kind = LightKind::Rect;
+    f32 width = 0.0F;
+    f32 height = 0.0F;
     Vec3 position;
     Vec3 forward;
 };
@@ -282,7 +283,7 @@ CY_TEST_CASE("area lights: the specular term is the GGX lobe's over the emitter,
     const GpuLight record = record_of(panel);
     struct Case {
         Vec3 view;
-        f32 roughness;
+        f32 roughness = 0.0F;
     };
     const Case cases[] = {
         {Vec3{0.0F, 0.6F, 0.8F}, 0.3F},  {Vec3{0.0F, 0.6F, 0.8F}, 0.6F},

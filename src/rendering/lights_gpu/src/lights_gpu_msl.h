@@ -921,7 +921,7 @@ struct KernelContext_0
 
 )cy_msl";
 
-/// cyManyLightsCandidates.metal, 30153 bytes.
+/// cyManyLightsCandidates.metal, 30157 bytes.
 inline constexpr char kManyLightsCandidatesMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -964,7 +964,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -2643,7 +2643,7 @@ void reservoirCombine_0(Reservoir_0 thread* reservoir_7, const Reservoir_0 threa
 
 )cy_msl";
 
-/// cyManyLightsSpatial.metal, 36866 bytes.
+/// cyManyLightsSpatial.metal, 36870 bytes.
 inline constexpr char kManyLightsSpatialMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -2686,7 +2686,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -4729,7 +4729,7 @@ float traceVisibility_0(const CySurface_0 thread* surface_4, float3 to_0, uint2 
 
 )cy_msl";
 
-/// cyManyLightsAccumulate.metal, 4486 bytes.
+/// cyManyLightsAccumulate.metal, 4490 bytes.
 inline constexpr char kManyLightsAccumulateMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -4772,7 +4772,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -4934,7 +4934,7 @@ float luminance_0(float3 value_0)
 
 )cy_msl";
 
-/// cyManyLightsVariance.metal, 5982 bytes.
+/// cyManyLightsVariance.metal, 5986 bytes.
 inline constexpr char kManyLightsVarianceMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -4977,7 +4977,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -5267,7 +5267,7 @@ float stableVariance_0(float first_0, float second_0)
 
 )cy_msl";
 
-/// cyManyLightsFilter.metal, 9059 bytes.
+/// cyManyLightsFilter.metal, 9071 bytes.
 inline constexpr char kManyLightsFilterMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -5310,7 +5310,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -5412,7 +5412,7 @@ float3 filterPixel_0(uint2 pixel_0, uint2 extent_0, KernelContext_0 thread* kern
     int2 _S3 = int2(pixel_0);
 
 #line 670
-    float4 _S4 = ((kernelContext_1->cyManyLights_0->filterIn_0).read(vec<uint,2>(((_S3)).xy)));
+    float4 _S4 = ((kernelContext_1->cyManyLights_0->filterSource_0).read(vec<uint,2>(((_S3)).xy)));
     float3 _S5 = _S4.xyz;
     float4 _S6 = ((kernelContext_1->cyManyLights_0->surface_0).read(vec<uint,2>(((_S3)).xy)));
     float _S7 = _S6.x;
@@ -5596,7 +5596,7 @@ float3 filterPixel_0(uint2 pixel_0, uint2 extent_0, KernelContext_0 thread* kern
 
 #line 704
                     float weight_0 = splineWeight_0(dx_0) * splineWeight_0(dy_0) * exp(- abs(_S24 - _S7) / (_S8.x * abs(_S7) + 9.99999997475242708e-07)) * pow(max(0.0, dot(_S6.yzw, _S23.yzw)), _S8.y);
-                    float4 _S25 = ((kernelContext_1->cyManyLights_0->filterIn_0).read(vec<uint,2>(((_S19)).xy)));
+                    float4 _S25 = ((kernelContext_1->cyManyLights_0->filterSource_0).read(vec<uint,2>(((_S19)).xy)));
 
 #line 705
                     float3 _S26 = _S25.xyz;
@@ -5737,7 +5737,7 @@ float3 filterPixel_0(uint2 pixel_0, uint2 extent_0, KernelContext_0 thread* kern
 
 )cy_msl";
 
-/// cyManyLightsFilterLast.metal, 9068 bytes.
+/// cyManyLightsFilterLast.metal, 9080 bytes.
 inline constexpr char kManyLightsFilterLastMsl[] =
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
@@ -5780,7 +5780,7 @@ struct CyManyLightSet_default_0
     texture2d<float, access::read_write> accumulated_0;
     texture2d<float, access::read_write> moments_0;
     texture2d<float, access::read_write> variance_0;
-    texture2d<float, access::read_write> filterIn_0;
+    texture2d<float, access::read_write> filterSource_0;
     texture2d<float, access::read_write> filterOut_0;
     texture2d<float, access::read_write> target_0;
 };
@@ -5882,7 +5882,7 @@ float3 filterPixel_0(uint2 pixel_0, uint2 extent_0, KernelContext_0 thread* kern
     int2 _S3 = int2(pixel_0);
 
 #line 670
-    float4 _S4 = ((kernelContext_1->cyManyLights_0->filterIn_0).read(vec<uint,2>(((_S3)).xy)));
+    float4 _S4 = ((kernelContext_1->cyManyLights_0->filterSource_0).read(vec<uint,2>(((_S3)).xy)));
     float3 _S5 = _S4.xyz;
     float4 _S6 = ((kernelContext_1->cyManyLights_0->surface_0).read(vec<uint,2>(((_S3)).xy)));
     float _S7 = _S6.x;
@@ -6066,7 +6066,7 @@ float3 filterPixel_0(uint2 pixel_0, uint2 extent_0, KernelContext_0 thread* kern
 
 #line 704
                     float weight_0 = splineWeight_0(dx_0) * splineWeight_0(dy_0) * exp(- abs(_S24 - _S7) / (_S8.x * abs(_S7) + 9.99999997475242708e-07)) * pow(max(0.0, dot(_S6.yzw, _S23.yzw)), _S8.y);
-                    float4 _S25 = ((kernelContext_1->cyManyLights_0->filterIn_0).read(vec<uint,2>(((_S19)).xy)));
+                    float4 _S25 = ((kernelContext_1->cyManyLights_0->filterSource_0).read(vec<uint,2>(((_S19)).xy)));
 
 #line 705
                     float3 _S26 = _S25.xyz;

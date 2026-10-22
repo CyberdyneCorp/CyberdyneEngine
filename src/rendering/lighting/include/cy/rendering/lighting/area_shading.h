@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // An area light of the frame, shaded: the C++ twin of `cy/light.slang`'s `shadeAreaLight`.
 //

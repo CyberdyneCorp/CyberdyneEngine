@@ -6,7 +6,7 @@
 
 namespace cy::rendering::particles {
 
-/// issue15-particle-vertex.metal, 5149 bytes.
+/// issue15-particle-vertex.metal, 5231 bytes.
 inline constexpr char kParticleVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -85,10 +85,12 @@ struct CyFrameData_0
     uint4 lightmapDirectLights_0;
     uint4 lightmapDebug_0;
     uint4 giControl_0;
+    uint4 lightingControl_0;
+    uint4 directionalLights_0;
 };
 
 
-#line 23 "src/rendering/shaders/cy/light.slang"
+#line 34 "src/rendering/shaders/cy/light.slang"
 struct Light_0
 {
     float3 positionRelativeToCamera_0;
@@ -98,18 +100,19 @@ struct Light_0
     float3 color_1;
     uint kind_0;
     float2 spotScaleBias_0;
-    float2 padding_0;
+    uint shapeWord_0;
+    uint layerMask_0;
 };
 
 
-#line 303 "src/rendering/shaders/cy/frame.slang"
+#line 321 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
     uint material_0;
     uint parameterOffset_0;
     uint giAddress_0;
-    uint layerMask_0;
+    uint layerMask_1;
     uint lodAndFade_0;
     uint surface_0;
     uint flags_0;
@@ -137,7 +140,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 325
+#line 343
 struct KernelContext_0
 {
     CyParticlePassSet_default_0 constant* cyParticlePass_0;
@@ -145,7 +148,7 @@ struct KernelContext_0
 };
 
 
-#line 380
+#line 398
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);
@@ -153,7 +156,7 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 383
+#line 401
 struct cyParticleVertex_Result_0
 {
     float4 position_0 [[position]];

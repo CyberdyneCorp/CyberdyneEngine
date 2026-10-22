@@ -792,11 +792,11 @@ mod tests {
             ]
         };
         let lights = [light(1), light(3), light(4), light(5), light(6)];
-        for (index, fields) in lights.iter().enumerate() {
+        for (x, fields) in [0.0_f32, 1.0, 2.0, 3.0, 4.0].into_iter().zip(lights.iter()) {
             node(
                 &mut document,
                 None,
-                [index as f32, 2.0, 0.0],
+                [x, 2.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
                 &[(LIGHT, fields)],
             );

@@ -7,9 +7,11 @@
 #include <cy/core/math/matrix.h>
 #include <cy/rendering/graph/executor.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 
 #include "lights_gpu_msl.h"
 #include "lights_gpu_spirv.h"
@@ -21,7 +23,7 @@ using rhi::Access;
 using rhi::QueueKind;
 
 constexpr u32 kGroupSize = 8;
-constexpr f32 kPi = 3.14159265358979F;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /// many_lights.slang's `CyManyLightSet`, in its field order.
 enum Binding : u32 {
@@ -743,12 +745,12 @@ PassId ManyLightsPass::declare(RenderGraph& graph, const ScreenSpaceStageInputs&
         .write(variance_, Access::ComputeStorageWrite)
         .record(kRecorders[kStepVariance], this);
     const u32 passes = filter_pass_count(settings_);
-    const u32 filter_passes =
-        passes == 0U ? 1U : (passes > kMaxFilterPasses ? kMaxFilterPasses : passes);
+    const u32 filter_passes = std::clamp(passes, 1U, kMaxFilterPasses);
     ResourceId input = colour_write;
     for (u32 pass = 0; pass < filter_passes; ++pass) {
         const bool last = pass + 1U == filter_passes;
-        const ResourceId output = last ? irradiance_id_ : ((pass & 1U) == 0U ? ping_ : pong_);
+        const ResourceId alternate = (pass & 1U) == 0U ? ping_ : pong_;
+        const ResourceId output = last ? irradiance_id_ : alternate;
         graph.add_pass(last ? "many lights filter last" : "many lights filter", QueueKind::Graphics)
             .read(input, Access::ComputeStorageRead)
             .read(surface_write, Access::ComputeStorageRead)
@@ -805,11 +807,15 @@ void ManyLightsPass::dispatch(const PassContext& context, const detail::ComputeP
     const auto view_of = [&](u32 kind, u32 half) noexcept {
         return executor.view(persistent_ids_[kind][half]);
     };
+    // The frame's device copy of the lights when it declares one, else the caller's buffer, else a
+    // buffer that is never read (no light is ever drawn from an empty table).
+    rhi::BufferHandle light_records = light_buffer_.is_null() ? words_[slot] : light_buffer_;
+    if (lights_ != kInvalidResource) {
+        light_records = executor.buffer(lights_);
+    }
     rhi::DescriptorWrite writes[kBindingCount] = {
         detail::storage_write(kWords, words_[slot]),
-        detail::storage_write(kLights, lights_ != kInvalidResource ? executor.buffer(lights_)
-                                       : light_buffer_.is_null()   ? words_[slot]
-                                                                   : light_buffer_),
+        detail::storage_write(kLights, light_records),
         detail::storage_write(kCandidates, alias_[slot]),
         detail::texture_write(kDepth, executor.view(depth_), false),
         detail::texture_write(kNormals, executor.view(normals_), false),
@@ -896,8 +902,8 @@ void ManyLightsPass::record_step(const PassContext& context, u32 step) noexcept 
         default: {
             const u32 pass = step - kStepFilter0;
             const bool last = pass + 1U == passes;
-            const rhi::TextureViewHandle in =
-                pass == 0U ? accumulated : ((pass & 1U) == 1U ? ping : pong);
+            const rhi::TextureViewHandle previous = (pass & 1U) == 1U ? ping : pong;
+            const rhi::TextureViewHandle in = pass == 0U ? accumulated : previous;
             const rhi::TextureViewHandle out = (pass & 1U) == 0U ? ping : pong;
             dispatch(context, last ? filter_last_pipeline_ : filter_pipeline_, pass, in, out);
             if (last) {

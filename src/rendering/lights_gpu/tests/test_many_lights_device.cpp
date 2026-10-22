@@ -18,7 +18,9 @@
 //   (j) the hundreds of coloured lights, written out;
 //   (k) the path is the frame arbiter's choice: a frame whose clusters drop lights at their bound
 //       leaves for the stochastic path at once, and returns after the dwell once the clustered
-//       lighting fits the arbiter's shading allocation again.
+//       lighting fits the arbiter's shading allocation again;
+//   (l) past its reach a light adds exactly zero: the cluster loop, which skips it, draws the
+//       frame the walk over every light draws.
 //
 // Vulkan with validation and synchronisation validation on. Without a GPU the suite SKIPS LOUDLY.
 
@@ -156,13 +158,10 @@ bool sphere_in_tile(const rendering::ClusterGrid& grid, u32 x, u32 y, f32 tan_y,
     const f32 r = element.radius;
     const Vec3 planes[4] = {Vec3{1.0F, 0.0F, x0}, Vec3{-1.0F, 0.0F, -x1}, Vec3{0.0F, 1.0F, y0},
                             Vec3{0.0F, -1.0F, -y1}};
-    for (const Vec3 plane : planes) {
-        // A sliver of slack for the device's own rounding at the plane.
-        if (dot(p, plane) < (-r * length(plane)) - 1e-4F) {
-            return false;
-        }
-    }
-    return true;
+    // A sliver of slack for the device's own rounding at the plane.
+    return std::ranges::all_of(planes, [&](const Vec3 plane) {
+        return dot(p, plane) >= (-r * length(plane)) - 1e-4F;
+    });
 }
 
 f64 luminance(Vec3 value) noexcept {
@@ -222,9 +221,10 @@ CY_TEST_CASE("(a) the device's lists are the host's, less the lights that miss t
         device.scene.assembly().light_elements().end());
     CY_REQUIRE_EQ(elements.size(), lights.size());
 
-    std::vector<rendering::ClusterHeader> headers(grid->cluster_count() *
+    std::vector<rendering::ClusterHeader> headers(usize{grid->cluster_count()} *
                                                   rendering::kClusterElementTypeCount);
-    std::vector<u32> indices(65536U + (grid->cluster_count() * grid->max_elements_per_cluster));
+    std::vector<u32> indices(65536U +
+                             (usize{grid->cluster_count()} * grid->max_elements_per_cluster));
     CY_REQUIRE(
         assignment.read_back({headers.data(), headers.size()}, {indices.data(), indices.size()})
             .has_value());
@@ -242,9 +242,9 @@ CY_TEST_CASE("(a) the device's lists are the host's, less the lights that miss t
             for (u32 x = 0; x < grid->dimensions[0]; ++x) {
                 const u32 cluster = rendering::cluster_index_of(*grid, x, y, slice);
                 const rendering::ClusterHeader host_header =
-                    host_headers[cluster * rendering::kClusterElementTypeCount];
+                    host_headers[usize{cluster} * rendering::kClusterElementTypeCount];
                 const rendering::ClusterHeader device_header =
-                    headers[cluster * rendering::kClusterElementTypeCount];
+                    headers[usize{cluster} * rendering::kClusterElementTypeCount];
                 const std::vector<u32> on_host(
                     host_indices.begin() + host_header.offset,
                     host_indices.begin() + host_header.offset + host_header.count);
@@ -256,10 +256,10 @@ CY_TEST_CASE("(a) the device's lists are the host's, less the lights that miss t
                 clusters_equal += on_host == on_device ? 1U : 0U;
                 for (const u32 light : on_device) {
                     extra_on_device +=
-                        std::find(on_host.begin(), on_host.end(), light) == on_host.end() ? 1U : 0U;
+                        std::ranges::find(on_host, light) == on_host.end() ? 1U : 0U;
                 }
                 for (const u32 light : on_host) {
-                    if (std::find(on_device.begin(), on_device.end(), light) != on_device.end()) {
+                    if (std::ranges::find(on_device, light) != on_device.end()) {
                         continue;
                     }
                     if (sphere_in_tile(*grid, x, y, tan_y, aspect, elements[light])) {
@@ -364,7 +364,7 @@ CY_TEST_CASE("(c) a thousand lights at 1080p: the assignment and the lighting in
     // THE BUDGET, on this suite's reference device (an RTX 5060): a thousand dynamic lights cost
     // the frame under half a millisecond to assign and under a millisecond and a half from the end
     // of the depth prepass to the end of the opaque pass — the assignment and the whole lit shading
-    // of 1080p. Measured: 0.19 ms and 0.59 ms.
+    // of 1080p. Measured: 0.19 ms and 0.70 ms.
     CY_CHECK_GT(assign_ms, 0.0);
     CY_CHECK_LT(assign_ms, 0.5);
     CY_CHECK_LT(lighting_ms, 1.5);
@@ -976,5 +976,46 @@ CY_TEST_CASE(
     const rendering::LightingPathDecision returned = selector.update(settings.path, calm);
     CY_CHECK_EQ(returned.path, rendering::LightingPath::Clustered);
     CY_CHECK(returned.changed);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+CY_TEST_CASE("(l) past its reach a light adds exactly zero: the clusters draw the walk's frame") {
+    DeviceFixture fixture("cy_test_render_many_lights");
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+    // Forty lights at night, few enough that no cluster's list is full, with points, spots and
+    // every shape of area light: each pixel sees lights whose reach ends just short of it.
+    const std::vector<render::LightDescription> lights = coloured_lights(40, 5, 2.0F, 900.0F);
+    Frame clustered;
+    clustered.run.floor_albedo = Vec3{0.5F, 0.5F, 0.5F};
+    clustered.run.night = true;
+    CY_REQUIRE(build(fixture, clustered, lights, true, kWidth, kHeight));
+    CY_REQUIRE(render_frame(clustered.run));
+    Frame walked;
+    walked.run.floor_albedo = Vec3{0.5F, 0.5F, 0.5F};
+    walked.run.night = true;
+    walked.run.walk_every_light = true;
+    CY_REQUIRE(build(fixture, walked, lights, true, kWidth, kHeight));
+    CY_REQUIRE(render_frame(walked.run));
+    CY_REQUIRE_EQ(clustered.run.hdr.size(), walked.run.hdr.size());
+    u32 differing = 0;
+    for (usize index = 0; index < clustered.run.hdr.size(); ++index) {
+        differing += clustered.run.hdr[index] != walked.run.hdr[index] ? 1U : 0U;
+    }
+    u32 lit = 0;
+    for (usize index = 0; index < walked.run.hdr.size(); index += 4) {
+        lit += walked.run.hdr[index] != 0U ? 1U : 0U;
+    }
+    std::fprintf(stderr,
+                 "(l) %zu lights: %u HDR halves differ between the cluster loop and the walk over "
+                 "every light (%u lit pixels); cluster overflow %u\n",
+                 lights.size(), differing, lit, clustered.run.report.clusters.overflow);
+    CY_CHECK_EQ(clustered.run.report.clusters.overflow, 0U);
+    CY_CHECK_GT(lit, 1000U);
+    CY_CHECK_EQ(differing, 0U);
+    release_scene(clustered.run);
+    release_scene(walked.run);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
