@@ -270,9 +270,16 @@ CY_TEST_CASE("collision: a sticking particle stops where it hit a wall and stays
     scenario.hold_when_stuck = true;
     Run run(scenario);
     CY_REQUIRE(run.ready());
-    run.steps(30);
+    // THE STEP OF CONTACT ITSELF: `stick` stops the particle there, before the gate — which only
+    // acts on the next step — has had a say. A bounce would leave it heading back at -x.
+    u32 frames = 0;
+    while (run.particle(0).collided == 0.0F && frames < 60) {
+        run.step();
+        ++frames;
+    }
     const ParticleState stuck = run.particle(0);
-    CY_CHECK_EQ(stuck.collided, 1.0F);
+    CY_REQUIRE_EQ(stuck.collided, 1.0F);
+    CY_CHECK_EQ(length(stuck.velocity), 0.0F);
     CY_CHECK_NEAR(stuck.position.x, 0.95F, 1.0e-4F);
     run.steps(60);
     const ParticleState later = run.particle(0);
@@ -442,24 +449,61 @@ CY_TEST_CASE("collision: the depth buffer stops a particle on the surface the ca
     CY_CHECK_EQ(state.collided, 1.0F);
 }
 
+CY_TEST_CASE("collision: a particle further behind a surface than it is thick passes behind it") {
+    // THE DEPTH BUFFER HAS NO BACK. A particle half a metre under the floor the camera sees is
+    // behind that surface, not inside it, once it is deeper than the surface's `thickness`: it
+    // carries on falling rather than being snapped up through the floor. Thicken the surface past
+    // that depth and the same particle is caught and resolved onto it — the control.
+    StairsField field;
+    const DepthScene seen =
+        render_depth(field, Vec3{0.0F, 3.0F, -4.0F}, Vec3{0.0F, 0.0F, -1.5F}, 320, 180);
+    DropScenario scenario;
+    scenario.shape = "depth";
+    scenario.spawn_per_step = 1;
+    scenario.capacity = 1;
+    scenario.start = Vec3{0.0F, -0.5F, -1.5F};
+    scenario.gravity = Vec3{0.0F, 0.0F, 0.0F};
+    scenario.restitution = 0.0F;
+    scenario.a[0] = 0.2F;
+    Run thin(scenario, nullptr, &seen.view);
+    CY_REQUIRE(thin.ready());
+    thin.steps(10);
+    CY_CHECK_NEAR(thin.particle(0).position.y, -0.5F, 1.0e-5F);
+    CY_CHECK_EQ(thin.particle(0).collided, 0.0F);
+
+    scenario.a[0] = 2.0F;
+    Run thick(scenario, nullptr, &seen.view);
+    CY_REQUIRE(thick.ready());
+    thick.steps(10);
+    CY_CHECK_NEAR(thick.particle(0).position.y, 0.0F, 1.0e-2F);
+}
+
 CY_TEST_CASE("collision: an impact spawns one spark at the place it happened") {
     // `vfx-system`'s "Collision raises an event ... for consumption by another emitter": the drops
     // raise `impact` with the resolved position as the payload, and the sparks emitter spawns one
     // particle an event, born at it. Every impact becomes exactly one spark.
+    //
+    // TWO SUB-STEPS A FRAME, so the drops raise in the first and again in the second while the
+    // channel still holds the first's: the sparks' cursor is what keeps the second sub-step from
+    // spawning the first's events a second time.
     DropScenario scenario = ground_drop();
     scenario.restitution = 0.6F;
     scenario.rest_speed = 0.5F;
     scenario.raise_impacts = true;
     scenario.sparks = true;
+    // The instance is a frame — two sub-steps — old when it first simulates.
+    scenario.spawn_until = 0.05F;
     Run run(scenario);
     CY_REQUIRE(run.ready());
     u32 raised = 0;
     u32 spawned = 0;
+    u32 substeps = 0;
     f32 highest = 0.0F;
     f32 widest = 0.0F;
-    for (u32 frame = 0; frame < 180; ++frame) {
+    for (u32 frame = 0; frame < 90; ++frame) {
         StepReport report;
-        CY_REQUIRE(run.world().step(kStep, report).has_value());
+        CY_REQUIRE(run.world().step(2.0F * kStep, report).has_value());
+        substeps += report.substeps;
         raised += run.world().events().report(Name::intern("impact"))->raised;
         // Everything spawned after the drops' first frame is a spark, born from an impact this
         // frame.
@@ -477,6 +521,7 @@ CY_TEST_CASE("collision: an impact spawns one spark at the place it happened") {
                  "sparks: %u impacts raised, %u particles spawned (%u of them drops), highest "
                  "spark %.3f m, widest %.3f m\n",
                  raised, spawned, drops, static_cast<double>(highest), static_cast<double>(widest));
+    CY_CHECK_EQ(substeps, 180U);
     CY_CHECK_GT(raised, 0U);
     CY_CHECK_EQ(spawned, raised + drops);
     // BORN AT THE IMPACT. Thrown up at most 2.5 m/s from the floor, a spark never climbs a metre;
