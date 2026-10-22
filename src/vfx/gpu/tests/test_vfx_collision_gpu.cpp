@@ -576,6 +576,53 @@ CY_TEST_CASE("the budget's collision quality reaches the device") {
     CY_CHECK_EQ(authored.disagreeing, 256U);
 }
 
+CY_TEST_CASE("a depth set for one frame is not bound in the next") {
+    // REGRESSION. The depth is a resource of ONE graph; a pass that kept it across frames bound the
+    // previous graph's resource identifier into the next graph, where it names something else.
+    // A frame that does not call `set_collision` again must collide with no depth, cleanly.
+    DeviceFixture gpu("cy_test_render_vfx_collision_stale_depth", false);
+    if (!ready(gpu)) {
+        return;
+    }
+    vfx_test::StairsField stairs;
+    const vfx_test::DepthScene seen = vfx_test::render_depth(
+        stairs, Vec3{0.0F, 3.0F, -2.5F}, Vec3{0.0F, 0.0F, 1.0F}, 64, 36);
+    DeviceDepth depth(gpu.device(), seen);
+    DropScenario scenario = scattered_drop("depth");
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = vfx_test::cook_drop(allocator(), scenario, sink, report);
+    CY_REQUIRE(system.has_value());
+    VfxGpuPass pass;
+    GpuPassDescription description;
+    description.read_back = true;
+    CY_REQUIRE(pass.create(allocator(), gpu.device(), *system, description).has_value());
+    CY_REQUIRE(run_frame(gpu, allocator(), pass, true));
+    BudgetController controller;
+    GpuStepInputs inputs;
+    inputs.dt = kSubstep;
+    inputs.levers = controller.levers_for(system->importance(), system->scalability());
+    DeviceScene with_depth;
+    with_depth.depth = &depth;
+    inputs.emitter_age = kSubstep;
+    CY_REQUIRE(device_frame(gpu, pass, with_depth, inputs));
+    for (u32 step = 1; step < 4; ++step) {
+        inputs.emitter_age = static_cast<f32>(step + 1U) * kSubstep;
+        CY_REQUIRE(gpu.device().begin_frame().has_value());
+        // No depth in this graph: the identifier the first frame's depth had now names the pass's
+        // own particle block.
+        rendering::RenderGraph graph(allocator());
+        CY_REQUIRE(pass.step(inputs).has_value());
+        CY_REQUIRE(pass.declare(graph).has_value());
+        rendering::GraphExecutor executor(allocator(), gpu.device());
+        CY_REQUIRE(executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
+                       .has_value());
+        CY_REQUIRE(gpu.device().wait_idle().has_value());
+        CY_REQUIRE(gpu.device().end_frame().has_value());
+    }
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
+}
+
 CY_TEST_CASE("a GPU pass refuses an emitter that spawns from events, by name") {
     DeviceFixture gpu("cy_test_render_vfx_collision_refusal", false);
     if (!ready(gpu)) {

@@ -337,6 +337,15 @@ struct Lowering {
                "vfx: this system declares no event channel of that name", channel->text);
         return fail(ErrorCode::NotFound, "vfx: an event read of an undeclared channel");
     }
+    // CPU PATH ONLY, refused at cook like a CPU-only data interface: a device emitter cannot read
+    // a channel's contents, and one that cooked would spawn nothing and say nothing.
+    if (state.emitter->path() != SimulationPath::CpuRequired) {
+        report(*state.sink, node.key, n.prop_channel,
+               "vfx: spawning from events runs on the CPU path, and this emitter does not declare "
+               "it",
+               channel->text);
+        return fail(ErrorCode::Unsupported, "vfx: an event read in a GPU-path emitter");
+    }
     const Stage wanted = count ? Stage::Spawn : Stage::Initialise;
     if (state.stage != wanted) {
         report(*state.sink, node.key, Name{},
