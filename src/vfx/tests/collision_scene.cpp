@@ -21,7 +21,7 @@ f32 box_distance(Vec3 point, Vec3 centre, Vec3 half_extents) noexcept {
                  std::fabs(point.y - centre.y) - half_extents.y,
                  std::fabs(point.z - centre.z) - half_extents.z};
     const Vec3 outside{std::max(q.x, 0.0F), std::max(q.y, 0.0F), std::max(q.z, 0.0F)};
-    const f32 inside = std::min(std::max(q.x, std::max(q.y, q.z)), 0.0F);
+    const f32 inside = std::min(std::max({q.x, q.y, q.z}), 0.0F);
     return std::sqrt((outside.x * outside.x) + (outside.y * outside.y) + (outside.z * outside.z)) +
            inside;
 }
