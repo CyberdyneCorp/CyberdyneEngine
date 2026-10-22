@@ -67,6 +67,16 @@ static_assert(sizeof(EventRecord) == 28,
               "EventRecord is a GPU-side stride: a member that changed its size would change every "
               "declared channel's buffer layout without changing any declaration");
 
+/// One channel's consumption cursor: events `[0, count)` of it have each spawned a particle of the
+/// emitter that holds the cursor, this frame. An emitter spawns from a channel through
+/// `vfx.event_count` in its Spawn stage and reads the event it was spawned for through
+/// `vfx.event_payload` in its Initialise stage — the CPU path's half of "a bullet impact spawns
+/// sparks". The cursor is what keeps a second sub-step from spawning from the same events again.
+struct ConsumedEvents {
+    Name channel;
+    u32 count = 0;
+};
+
 /// What one channel did this frame.
 struct ChannelReport {
     Name channel;

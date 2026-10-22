@@ -149,8 +149,81 @@ enum VfxOp : OpId {
     /// Extract one component: `value.mask`, with the index in `Immediate::mask`.
     Swizzle,
 
+    // --- Collision. Appended, so every op above keeps its number and every cook key its value. ---
+    //
+    // A contact is a QUERY and a response is ARITHMETIC over it, and the split is what lets one
+    // `vfx.collide.*` node have six outputs without the ordered write list learning anything new:
+    // each output is a pure expression over one shared `Contact`, which common-subexpression
+    // elimination keeps to one query however many outputs an author wires. See collision.h.
+
+    /// `(position, radius, shape_a, shape_b)` -> `float4(normal, separation)`. Which collider is
+    /// `ColliderShape` in `Immediate::mask`; `symbol` spells it for a reader. Separation is the
+    /// signed distance from the particle's surface to the collider's, negative when they overlap,
+    /// and `kNoContact` when the collider is absent, off screen or turned off by the budget.
+    Contact,
+    /// `(velocity, contact, response)` -> the velocity after the contact. `response` is
+    /// `float4(restitution, friction, stick, rest_speed)`.
+    Bounce,
+    /// `(position, contact)` -> the position pushed back out to the collider's surface.
+    Resolve,
+    /// `(velocity, contact)` -> the speed the particle was closing on the surface at, along its
+    /// normal, while it touches it; zero otherwise.
+    Impact,
+    /// An event channel's contents, read by the emitter that consumes it: `symbol` is the channel,
+    /// `Immediate::mask` is `EventField`. CPU path only; see `EventField`.
+    EventRead,
+
     VfxOpCount,
 };
+
+/// Which collider a `Contact` queries. The order is the `Immediate::mask` a cooked kernel stores,
+/// so it is append-only for the reason `VfxOp` is.
+enum class ColliderShape : u32 {
+    /// `shape_a = float4(normal, offset)`: the half-space `dot(normal, p) < offset` is solid.
+    Plane = 0,
+    /// `shape_a = float4(centre, radius)`.
+    Sphere,
+    /// An axis-aligned box: `shape_a = float4(centre, 0)`, `shape_b = float4(half_extents, 0)`.
+    Box,
+    /// `shape_a = float4(end_a, radius)`, `shape_b = float4(end_b, 0)`.
+    Capsule,
+    /// The scene signed distance field — the GI clipmaps on the device. World space, so it sees
+    /// geometry off screen and behind the camera. `shape_a.x` is the gradient's sample step.
+    Sdf,
+    /// The depth buffer, in screen space: cheap, and blind to everything the camera does not see.
+    /// `shape_a.x` is how thick a surface is taken to be behind its depth.
+    Depth,
+    Count,
+};
+
+[[nodiscard]] const char* collider_shape_name(ColliderShape shape) noexcept;
+
+/// What an `EventRead` returns.
+enum class EventField : u32 {
+    /// Events on the channel this emitter has not consumed yet, this frame. A Spawn stage that
+    /// writes it to `spawn_count` spawns one particle an event.
+    Count = 0,
+    /// The payload of the event this particle was spawned for: the one at `spawn_index` past the
+    /// emitter's cursor. Read by Initialise.
+    Payload,
+};
+
+/// The most event channels one emitter's Spawn stage may spawn from. The runtime keeps one cursor a
+/// channel per emitter on the stack of a sub-step, and the compiler refuses a fifth rather than let
+/// it be read as though nothing had been consumed from it.
+inline constexpr u32 kMaxConsumedChannels = 4;
+
+/// How close to a collider's surface a particle counts as touching it, in metres. One
+/// millimetre: a resting particle is pushed back to separation zero every step and must still read
+/// as touching, and a particle that has bounced clear moves further than this in one step.
+inline constexpr f32 kContactSkin = 1.0e-3F;
+/// The separation a `Contact` reports when there is nothing to touch.
+inline constexpr f32 kNoContact = 1.0e6F;
+/// The sample step an `sdf` contact takes its gradient over when its node leaves it zero, in
+/// metres.
+inline constexpr f32 kDefaultSdfStep = 0.05F;
+/// How thick a `depth` surface is taken to be when its node leaves it zero, in metres.
+inline constexpr f32 kDefaultDepthThickness = 0.5F;
 
 [[nodiscard]] const char* vfx_op_name(OpId op) noexcept;
 
@@ -200,7 +273,13 @@ struct KernelEvent {
     Name channel;
     u32 root_slot = 0;
     graph::NodeKey origin = graph::kInvalidNodeKey;
+    /// The root the raise's `payload` input landed in, or `kNoPayloadRoot` when the predicate is
+    /// the payload. It shares the same table, so a payload costs the kernel one more root.
+    u32 payload_root = 0xFFFFFFFFU;
 };
+
+/// `KernelEvent::payload_root` for a raise whose predicate is its payload.
+inline constexpr u32 kNoPayloadRoot = 0xFFFFFFFFU;
 
 /// The compiled per-invocation program the CPU path steps through. Not a graph interpreter — see
 /// the note at the top of this file.
@@ -255,6 +334,11 @@ public:
     [[nodiscard]] Span<const KernelEvent> events() const noexcept { return events_.span(); }
     /// The slot each raise's predicate lands in, parallel to `events()`.
     [[nodiscard]] Span<const u16> event_slots() const noexcept { return event_slots_.span(); }
+    /// The slot each raise's payload lands in, parallel to `events()`; `0xFFFF` where the
+    /// predicate is the payload.
+    [[nodiscard]] Span<const u16> event_payload_slots() const noexcept {
+        return event_payload_slots_.span();
+    }
     [[nodiscard]] Span<const KernelStep> program() const noexcept { return program_.span(); }
     [[nodiscard]] u32 slot_count() const noexcept { return slots_; }
     /// The slot each write's value lands in, parallel to `writes()`.
@@ -281,6 +365,7 @@ private:
     Array<KernelStep> program_;
     Array<u16> write_slots_;
     Array<u16> event_slots_;
+    Array<u16> event_payload_slots_;
     u32 slots_ = 0;
     u16 kill_slot_ = 0xFFFFU;
     u16 spawn_slot_ = 0xFFFFU;

@@ -52,6 +52,29 @@ function(cy_vfx_gpu_declare_tests)
                                    CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     endif()
 
+    # COLLISION ON THE DEVICE, against the CPU executor. A suite of its own because it links the
+    # GI scene — the scene field a particle collides with IS the GI field's device copy — and the
+    # plume's suite does not and should not. Vulkan, where the field cases have been run; the
+    # generated collision prelude compiles to MSL with the rest of the kernel (`build-shaders`
+    # covers the fixed shaders, and `VfxGpuPass::create` the generated one on an Apple device).
+    if(CY_RENDERER_VULKAN AND TARGET cy::rendering-gi-gpu)
+        cy_add_test(
+            NAME vfx_collision_gpu
+            KIND render
+            SOURCES
+                "${effects_dir}/effects.cpp"
+                "${effects_dir}/collision_effects.cpp"
+                "${effects_dir}/collision_scene.cpp"
+                "${tests_dir}/test_vfx_collision_gpu.cpp"
+            DEPENDENCIES cy::vfx cy::vfx-gpu cy::rendering-gi cy::rendering-gi-gpu
+                         cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
+        target_include_directories(cy_test_render_vfx_collision_gpu PRIVATE
+                                   "${tests_dir}" "${effects_dir}"
+                                   "${CMAKE_SOURCE_DIR}/src/rendering/gi/tests")
+        target_compile_definitions(cy_test_render_vfx_collision_gpu PRIVATE
+                                   CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+
     if(CY_RENDERER_METAL AND APPLE)
         cy_add_test(
             NAME vfx_gpu_metal
