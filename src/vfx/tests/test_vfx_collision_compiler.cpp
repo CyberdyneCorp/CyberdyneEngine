@@ -25,11 +25,91 @@ Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Renderer);
 }
 
-// The plume's generated units and cook key on `main` before the collide nodes existed (f692e305),
-// FNV-1a over the text.
-constexpr u64 kPlumeDispatchHash = 0x184a45c5e7255ae7ULL;
-constexpr u64 kPlumeProbeHash = 0x489ea6ce1784b8eeULL;
-constexpr u64 kPlumeCookKey = 0x7e0bfc274315679fULL;
+constexpr const char* kQuietAttributes[4][2] = {
+    {"position", "float3"}, {"velocity", "float3"}, {"age", "float"}, {"size", "float"}};
+
+// An effect with no collider, authored one statement at a time — every node key fixed by the order
+// of the statements, which the plume's builder does not promise: it allocates keys inside the
+// arguments of one call, whose evaluation order C++ leaves to the compiler, and its random streams
+// are named by those keys. Its generated units and cook key on `main` before the collide nodes
+// existed (f692e305), FNV-1a over the text, with GCC 13 and clang 22 alike.
+constexpr u64 kQuietDispatchHash = 0x770a2d306494c929ULL;
+constexpr u64 kQuietProbeHash = 0x2d9b0cf19e35c3c0ULL;
+constexpr u64 kQuietCookKey = 0x75f8bfc78aa146e8ULL;
+
+[[nodiscard]] Expected<VfxSystemAsset, Error> quiet_effect() {
+    VfxSystemAsset asset(allocator(), Name::intern("quiet"));
+    ParameterDecl intensity;
+    intensity.name = Name::intern("intensity");
+    intensity.type = Name::intern("float");
+    intensity.value[0] = 1.0F;
+    if (Status declared = asset.declare_parameter(intensity); !declared) {
+        return make_unexpected(declared.error());
+    }
+    EventChannelDecl channel;
+    channel.name = Name::intern("expired");
+    if (Status declared = asset.declare_channel(channel); !declared) {
+        return make_unexpected(declared.error());
+    }
+    Emitter emitter(allocator(), Name::intern("quiet"));
+    emitter.set_capacity(256);
+    for (const auto& row : kQuietAttributes) {
+        AttributeDecl decl;
+        decl.name = Name::intern(row[0]);
+        decl.type = Name::intern(row[1]);
+        decl.minimum = -100.0F;
+        decl.maximum = 100.0F;
+        if (Status declared = emitter.declare_attribute(decl); !declared) {
+            return make_unexpected(declared.error());
+        }
+    }
+    StageBuilder spawn(allocator(), "spawn");
+    const NodeKey rate = spawn.constant(8.0F);
+    const NodeKey scale = spawn.parameter("intensity");
+    const NodeKey count = spawn.binary("vfx.mul", rate, scale);
+    spawn.spawn_count(count);
+    StageBuilder initialise(allocator(), "initialise");
+    const NodeKey draw = initialise.random();
+    const NodeKey speed = initialise.binary("vfx.mul", draw, initialise.constant(3.0F));
+    const NodeKey zero = initialise.constant(0.0F);
+    const NodeKey upward = initialise.make3(zero, speed, zero);
+    initialise.write("velocity", upward);
+    initialise.write("position", initialise.constant(0.0F, 1.0F, 0.0F, 0.0F, "float3"));
+    initialise.write("age", initialise.constant(0.0F));
+    initialise.write("size", initialise.constant(0.1F));
+    StageBuilder update(allocator(), "update");
+    const NodeKey dt = update.input(input::kDeltaTime);
+    const NodeKey velocity = update.attribute("velocity");
+    const NodeKey gravity = update.constant(0.0F, -9.81F, 0.0F, 0.0F, "float3");
+    const NodeKey pull = update.binary("vfx.mul", gravity, dt);
+    const NodeKey moving = update.binary("vfx.add", velocity, pull);
+    update.write("velocity", moving);
+    const NodeKey step = update.binary("vfx.mul", moving, dt);
+    const NodeKey position = update.attribute("position");
+    update.write("position", update.binary("vfx.add", position, step));
+    const NodeKey age = update.binary("vfx.add", update.attribute("age"), dt);
+    update.write("age", age);
+    const NodeKey expired = update.binary("vfx.greater", age, update.constant(2.0F));
+    // The kill before the raise: `main`'s lowering stopped at a stage's first raise.
+    update.kill_if(expired);
+    update.emit_event("expired", expired);
+    if (!spawn.ok() || !initialise.ok() || !update.ok()) {
+        return make_unexpected(Error{ErrorCode::Internal, "quiet effect: did not author"});
+    }
+    if (Status set = emitter.set_stage(Stage::Spawn, spawn.take()); !set) {
+        return make_unexpected(set.error());
+    }
+    if (Status set = emitter.set_stage(Stage::Initialise, initialise.take()); !set) {
+        return make_unexpected(set.error());
+    }
+    if (Status set = emitter.set_stage(Stage::Update, update.take()); !set) {
+        return make_unexpected(set.error());
+    }
+    if (Status added = asset.add_emitter(std::move(emitter)); !added) {
+        return make_unexpected(added.error());
+    }
+    return asset;
+}
 
 [[nodiscard]] u64 fnv1a(Span<const char> text) noexcept {
     u64 hash = 1469598103934665603ULL;
@@ -84,13 +164,19 @@ void write_unit(const char* name, std::string_view text) noexcept {
 }  // namespace
 
 CY_TEST_CASE("collision: an effect that collides with nothing generates what it did before") {
-    // OFF IS BYTE-IDENTICAL. The plume has no collider, and its dispatch unit, its probe unit and
-    // its cook key are the ones `main` produced before the collide nodes existed — measured on
-    // that tree and written here. A change to the shared prelude, the push block, the op table's
+    // OFF IS BYTE-IDENTICAL. An effect with no collider generates the dispatch unit, the probe
+    // unit and the cook key `main` produced before the collide nodes existed — measured on that
+    // tree and written above. A change to the shared prelude, the push block, the op table's
     // existing numbers or the lowering of an existing node moves one of them.
+    NodeRegistry registry(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(prepare(registry, interfaces).has_value());
+    auto asset = quiet_effect();
+    CY_REQUIRE(asset.has_value());
+    asset->resolve(registry);
     graph::DiagnosticSink sink(allocator());
     CompileReport report(allocator());
-    auto system = cook_plume(allocator(), sink, report, CompileOptions{});
+    auto system = compile_system(*asset, registry, interfaces, CompileOptions{}, sink, report);
     CY_REQUIRE(system.has_value());
     const CompiledEmitter& emitter = system->emitters()[0];
     CY_CHECK_FALSE(emitter.collides());
@@ -101,13 +187,13 @@ CY_TEST_CASE("collision: an effect that collides with nothing generates what it 
     CY_REQUIRE(assemble_translation_unit(emitter, system->parameters(), system->channels(), probe)
                    .has_value());
     std::fprintf(stderr,
-                 "plume: dispatch %016llx (%zu bytes), probe %016llx (%zu bytes), key %016llx\n",
+                 "quiet: dispatch %016llx (%zu bytes), probe %016llx (%zu bytes), key %016llx\n",
                  static_cast<unsigned long long>(fnv1a(dispatch.span())), dispatch.size(),
                  static_cast<unsigned long long>(fnv1a(probe.span())), probe.size(),
                  static_cast<unsigned long long>(system->cook_key()));
-    CY_CHECK_EQ(fnv1a(dispatch.span()), kPlumeDispatchHash);
-    CY_CHECK_EQ(fnv1a(probe.span()), kPlumeProbeHash);
-    CY_CHECK_EQ(system->cook_key(), kPlumeCookKey);
+    CY_CHECK_EQ(fnv1a(dispatch.span()), kQuietDispatchHash);
+    CY_CHECK_EQ(fnv1a(probe.span()), kQuietProbeHash);
+    CY_CHECK_EQ(system->cook_key(), kQuietCookKey);
     CY_CHECK_EQ(view_of(dispatch).find("cyVfxCollision"), std::string_view::npos);
     CY_CHECK_EQ(view_of(dispatch).find("collision_quality"), std::string_view::npos);
 }

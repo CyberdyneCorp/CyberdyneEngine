@@ -54,8 +54,8 @@ transcribes `gi_gpu_common.slang`'s `giDistance`, which is itself a transcriptio
 Set 0 is fixed for every effect, so the collision resources are a SECOND descriptor set; only an
 emitter whose kernels contain a `Contact` declares it in its pipeline layout, generates the collision
 prelude, or widens the generated push block to `GpuPushConstants`' last four words (whose layout was
-already 48 bytes; the last word was `reserved` and is now `collision_quality`). The plume's dispatch
-unit, probe unit and cook key are held to `main`'s bytes by `integration.vfx_compiler`.
+already 48 bytes; the last word was `reserved` and is now `collision_quality`). A collider-free effect's
+dispatch unit, probe unit and cook key are held to `main`'s bytes by `integration.vfx_compiler`.
 
 ## Events on the CPU path
 
