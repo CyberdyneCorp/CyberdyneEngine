@@ -148,6 +148,12 @@ struct FrameSceneHooks {
     /// turns — a weapon carried by a turning camera — writes the whole placement. Called whenever
     /// the scene places the row. Appended.
     void (*place_row)(u32 which, InstanceTransform& row, void* user) noexcept = nullptr;
+    /// The particles `RecordMode::CallbacksAndParticles` draws, read each `render`, instead of the
+    /// scene's own plume: what a suite that simulates an effect draws in this frame.
+    /// Camera-relative to the scene's eye, as a publication makes them.
+    Span<const particles::ParticleInstance> (*particles)(void* user) noexcept = nullptr;
+    /// The particle ring's capacity when `particles` draws more than the plume's `kParticleCount`.
+    u32 particle_capacity = 0;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.

@@ -278,6 +278,9 @@ public:
     /// The last timed sub-step's device time from the spawn to the end of the update, in
     /// milliseconds, after its fence. -1 when the pass is not `timed` or the device cannot say.
     [[nodiscard]] f64 last_device_ms() const noexcept;
+    /// The update dispatch alone, the same way: where a collider's cost is, since the spawn, the
+    /// compaction and the initialise do not depend on one.
+    [[nodiscard]] f64 last_update_ms() const noexcept;
 
     /// Refresh `report()` from the read-back copy of the counter block. Must be called after the
     /// fence; never stalls, because it reads a buffer the transfer already filled.
@@ -386,6 +389,8 @@ private:
     /// Bind descriptor set 1 for a kernel dispatch. A transient set, because the depth texture's
     /// view is the executor's and a graph's.
     void bind_collision(const PassContext& context) noexcept;
+
+    [[nodiscard]] f64 timer_ms(u32 first) const noexcept;
 
     static void record(const PassContext& context, void* user) noexcept;
     static void record_readback(const PassContext& context, void* user) noexcept;

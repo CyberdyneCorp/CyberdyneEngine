@@ -25,7 +25,7 @@ statics        # static objects, and `statics` in the material cost report — n
 dependant      # British spelling, which this project uses throughout
 unparseable    # the spelling this tree uses; codespell prefers `unparsable`
 allo           # "Allô" — the French string in the localisation test
-tread          # a stair's tread, the step a foot stands on — the character controller and the third-person demo
+tread          # a stair's tread, the step a foot stands on — the character controller, the third-person demo and the particle-collision suites
 
 # --- Hyphenated forms this project writes with the hyphen --------------------------------------------
 re-use
