@@ -100,6 +100,74 @@ Measured on the RTX 5060 (`smoke.rts_api_fog`, 480x270): the fog stage takes abo
 device time a frame, the host's half a few microseconds, and a frame with the fog and the GI 4.84 ms
 against 4.68 ms without the fog.
 
+## The RTS test map
+
+`--map <package>` draws the same session on **The Frontier** (`content/rts/frontier.cymap`), a map
+that looks like a game rather than a test: hills and a lake round the level, a forest the engine's
+foliage placement grew, a village, a keep, farms, gold, stone and timber, and the enemy camp — and
+the game's units as the skinned worker, walking, cheering and standing as the Swift game plays them.
+
+```
+just build-engine                                          cooks build/<p>/samples/13-rts-api/frontier.cypak
+cy_sample_rts-api --render <dir> --map frontier.cypak      the session drawn on the map, 1920x1080
+    --width <n> --height <n>   --view overview   --video <dir> [--video-every <n>]
+    --gi off   --no-fog   --no-hud   --no-ao   --no-shadows   --no-validation
+just capture-rts-map                                       the images and the video below
+ctest -R 'rts_map|rts_api_map'                             the cook, the load, the run, the golden, the budget
+```
+
+![The player's view of the map at frame 420: blue's fog, the HUD, the camp's tower a ghost](../../docs/design/images/rts-map-game.png)
+
+![The same session over the boxes it was drawn with before, and on the map](../../docs/design/images/rts-map-before-after.png)
+
+![Without shadows, ambient occlusion, the GI and the fog; with shadows; with ambient occlusion and the GI; with the fog and the HUD](../../docs/design/images/rts-map-features.png)
+
+[The video](../../docs/design/videos/rts-map.mp4): the orbit over the level and the company's field,
+the workers and the company walking.
+
+**Where it comes from.** The build cooks the source (`map/map_cook.h`, `cy_rts_map_cook`): the
+terrain is the engine's modifier stack evaluated by `terrain::evaluate_region`, the call the editor's
+terrain tools preview with — noise, hills, the carved lake, the flattened level and company field,
+roads, and brush strokes that raise, smooth and paint — its painted layers baked with the slope's
+rock and the shore's sand into one 2048-texel albedo; the forest is `foliage::generate_region` over
+a `TerrainQuery` of the cooked tiles, with the source's species, rules and exclusion zones; every
+building, resource and plant, and the skinned worker on the worker rig's eight joints, is built from
+primitives at cook time (`map/map_meshes.cpp`). The package is ten assets in the cooked-asset
+envelope under fixed ids (`map/map_format.h`), and the host reads it back BY ID through
+`AssetSystem` (`map/map_load.h`), each payload checked against its header's kind and content hash.
+`content/rts/README.md` is the source's reference.
+
+**How it is drawn** (`host/map_render.h`): the engine's frame — `FrameAssembly` and `FrameRecorder`
+with the standard material, its base colour texture table (the albedo and `content/beauty`'s
+stone, gravel and copper), the sun's 2048-texel shadow map with the percentage-closer soft filter,
+`occlusion::AmbientOcclusionPass`, the device GI over the level's `IlluminationSystem` the game tunes
+(the map's buildings and resources are boxes it holds besides its own), blue's fog over the whole
+map (the level's grid at its square, explored ground round it) with the minimap's overlay page, the
+HUD the game built through `UiRenderer`, and every unit skinned on the device by
+`skinning::SkinnedScene`: the workers posed by the engine's animation system the game drives, the
+company's sixteen and the camp's raiders by the rig's clips sampled for the session's state. The
+forest is merged into one mesh a 32 m square, species and tint, so it is a few hundred draws rather
+than a draw a plant.
+
+**The map does not touch the game.** `smoke.rts_api_map` holds every line of the gameplay report
+to the run with no picture — the lockstep company's digest `a61e5414c179f54a` included — save the GI's
+light readings, which the map's buildings are part of.
+
+Measured on the RTX 5060 at 1920x1080, Development, no validation layer (`smoke.rts_api_map`'s
+third run): **a frame 12.1 ms on average** — recorded, submitted and waited for, so the processor's
+half and the device's in series — against a budget of 16.7 ms (sixty frames a second), the worst
+frame 15.2 ms. The device's half is 8.3 ms, of which the GI 3.7 ms and the fog 0.075 ms; the game's
+own frame before it 1.7 ms. 437 draws (624 of them from the skinning pass over the frame's three
+geometry passes), 195 instances, 100 000 triangles, 684 plants. The cook takes about a second; the
+package is 7.2 MB on disk and 25 MB loaded, read in about 85 ms.
+
+**One cost found on the way**, fixed at its root: assembling a frame integrated the sky's
+irradiance — 32 directions through the atmosphere — every frame although nothing it depends on had
+moved, 4.6 ms of the 5.5 ms the assembly took. `FrameAssembly` now reuses it while the atmosphere,
+the eye's height and the sun are exactly what they were (`integration.render_assembly`'s 'the
+sky's irradiance is reused while the atmosphere, the eye and the sun hold'); every frame of every
+caller pays it once, and the frame it shades with is the one it would have integrated, bit for bit.
+
 ## What is here
 
 | | |
@@ -117,6 +185,10 @@ against 4.68 ms without the fog.
 | `game/Lighting.swift` | ABI 1.9: the base's volume, the beacon out and on, the light read. |
 | `host/fog.*` | ABI 1.10: the fog grid over the level, the enemy camp's places, and the placer that tells the grid where every entity with a vision stands. |
 | `game/Fog.swift` | ABI 1.10: the squad's, the barracks' and the camp's visions; what blue sees of the camp, for the minimap and the report. |
+| `map/` | The RTS test map: `map_source.*` (the `.cymap` reader), `map_cook.*` (the cook) and `cook_main.cpp` (`cy_rts_map_cook`), `map_meshes.*` (the kit, built from primitives), `map_format.*` (the package's assets and their payloads), `map_load.*` (the package read back by id through the asset system). |
+| `host/map_render.*` | `--map`: the session drawn on the cooked map with the engine's frame, its shadows, ambient occlusion, GI and fog, the units skinned, and the HUD. |
+| `tests/test_rts_map.cpp` | `integration.rts_map`: two cooks byte-identical, the package loaded back by id to the content cooked, the map's terrain, layers, buildings and forest, and damaged, mistyped, newer and truncated assets and malformed sources refused. |
+| `tests/test_rts_api_map.cpp` | `smoke.rts_api_map`: the session on the map against the headless run's gameplay, its golden still (`tests/references/rts_map_420.png`), and its frame at 1080p within 16.7 ms. |
 | `tests/test_rts_api_fog.cpp` | `smoke.rts_api_fog`: the session drawn with blue's fog and without, the camp by blue's sight, and what the stage costs. |
 | `tests/test_rts_api_gi.cpp` | `smoke.rts_api_gi`: the session drawn with the GI and without, the game's calls seen in the frame, and what a frame costs. |
 | `tests/test_rts_api_sample.cpp` | `integration.rts_api_sample`, declared from this directory's `CMakeLists.txt`. |

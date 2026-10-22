@@ -34,7 +34,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  | M11.d |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  | M8.b |
-| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 35 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
+| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 36 |  |  |  |  | S |  |  |  |  | S | W |  |  | **C** |  |  |  |  |  |  |  |  | M10 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |  |  | W |  |  |  | **C** |  |  |  |  |  |  | M11.b |
@@ -47,7 +47,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | 12 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`procedural-content-generation`](../../openspec/specs/procedural-content-generation/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`weather-and-wind`](../../openspec/specs/weather-and-wind/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
-| [`atmosphere-sky-and-clouds`](../../openspec/specs/atmosphere-sky-and-clouds/spec.md) | 13 |  |  |  |  |  |  |  |  | S |  |  |  |  | W |  |  |  |  |  | **C** |  |  | M11.e |
+| [`atmosphere-sky-and-clouds`](../../openspec/specs/atmosphere-sky-and-clouds/spec.md) | 14 |  |  |  |  |  |  |  |  | S |  |  |  |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | [`terrain`](../../openspec/specs/terrain/spec.md) | 15 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`foliage`](../../openspec/specs/foliage/spec.md) | 13 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |

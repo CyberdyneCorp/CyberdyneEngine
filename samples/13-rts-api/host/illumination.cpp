@@ -65,6 +65,8 @@ constexpr UnitCube kCube{};
 /// The GI's object id and card instance for the crate, past the static boxes' instances.
 constexpr cy::u64 kCrateObject = 4;
 constexpr u32 kCrateInstance = 4;
+/// The first id an extra box takes: field placement, cards and material alike.
+constexpr u32 kFirstExtraObject = 100;
 
 }  // namespace
 
@@ -76,7 +78,7 @@ RtsIllumination::RtsIllumination(cy::Allocator& allocator) noexcept : allocator_
 
 RtsIllumination::~RtsIllumination() = default;
 
-cy::Status RtsIllumination::build() noexcept {
+cy::Status RtsIllumination::build(cy::Span<const FieldBox> extra) noexcept {
     gi::IlluminationSettings settings;
     settings.field.levels = 2;
     settings.field.resolution = 64;
@@ -130,6 +132,30 @@ cy::Status RtsIllumination::build() noexcept {
                 box.centre + Vec3{-box.half.x, box.half.y - 0.01F, -box.half.z},
                 box.centre + box.half + Vec3{0.0F, 0.01F, 0.0F});
         }
+        if (cy::Status made = gi::append_mesh_cards({kCube.positions, 8}, {kCube.indices, 36},
+                                                    transform, carded, cards);
+            !made) {
+            return made;
+        }
+        bounds = cy::Aabb::from_min_max(cy::cwise_min(bounds.min, box.centre - box.half),
+                                        cy::cwise_max(bounds.max, box.centre + box.half));
+    }
+    // THE MAP'S BOXES, when there are any: placed and carded as the level's own static boxes are,
+    // under ids past the level's, so nothing the game names by id or by material moves.
+    for (u32 index = 0; index < extra.size(); ++index) {
+        const FieldBox& box = extra[index];
+        const cy::Mat4 transform = box_transform(box.centre, box.half);
+        if (cy::Status placed =
+                system_.field().place(kFirstExtraObject + index, cube_field_.asset(), transform);
+            !placed) {
+            return placed;
+        }
+        gi::MeshCardSettings carded;
+        carded.spacing_metres = box.card_spacing;
+        carded.albedo = box.albedo;
+        carded.emission = box.emission;
+        carded.instance_id = kFirstExtraObject + index;
+        carded.material_id = kFirstExtraObject + index;
         if (cy::Status made = gi::append_mesh_cards({kCube.positions, 8}, {kCube.indices, 36},
                                                     transform, carded, cards);
             !made) {

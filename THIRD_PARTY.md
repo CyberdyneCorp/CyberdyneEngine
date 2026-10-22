@@ -884,6 +884,7 @@ which is why no entry appears above for any of it.
 | Three material graphs | `content/beauty/materials/` | authored on the editor's own node-graph canvas by `cy-author-material`; the `.cygraph` is written by the engine |
 | Six primitive sources | `content/beauty/meshes/` | six-line `.cyprim` files; the geometry is `cy::import::build_primitive_mesh`'s |
 | One scene | `content/beauty/shot.cyshot` | the camera, the sun, the grade and thirty-one placements |
+| The RTS test map's source | `content/rts/frontier.cymap` | written by hand in this repository; cooked by `cy_rts_map_cook` into a package whose terrain, painting and forest the engine computes from it, whose meshes `samples/13-rts-api/map/map_meshes.cpp` builds from primitives, and whose textures are the three `content/beauty` albedo images and a baked terrain albedo — [the record](content/rts/PROVENANCE.md) |
 
 **The rule this establishes, for whoever adds the next asset**: a file under `content/` carries a
 `PROVENANCE.md` beside it naming its licence and either the generator and seed that produce it or the

@@ -254,7 +254,8 @@ cy::Status RtsHost::start(const char** detail) noexcept {
 
 cy::Status RtsHost::start_illumination() noexcept {
     gi_ = std::make_unique<RtsIllumination>(allocator_);
-    return gi_->build();
+    return gi_->build(
+        cy::Span<const FieldBox>(options_.extra_gi_boxes, options_.extra_gi_box_count));
 }
 
 cy::Status RtsHost::start_fog() noexcept {
@@ -996,6 +997,37 @@ Vec3 RtsHost::crate_position() const noexcept {
     }
     const auto state = physics_->body_state(crate_body_);
     return state ? state->transform.translation : kCrateStart;
+}
+
+cy::Span<const cy::Mat4> RtsHost::unit_pose(CyEntity unit) const noexcept {
+    if (animation_ == nullptr) {
+        return {};
+    }
+    const cy::ecs::Entity entity = cy::abi::from_abi(unit);
+    if (!animation_->status(entity)) {
+        return {};
+    }
+    return animation_->poses().current(animation_->pose_of(entity));
+}
+
+cy::u32 RtsHost::company_units() const noexcept {
+    return company_ == nullptr ? 0U : company_->units();
+}
+
+bool RtsHost::company_unit(cy::u32 index, cy::game_backend::LockstepUnitState& out) const noexcept {
+    if (company_ == nullptr) {
+        return false;
+    }
+    const auto unit = company_->unit(index);
+    if (!unit) {
+        return false;
+    }
+    out = *unit;
+    return true;
+}
+
+cy::Vec2 RtsHost::ui_viewport() noexcept {
+    return cy::Vec2{static_cast<f32>(kViewportWidth), static_cast<f32>(kViewportHeight)};
 }
 
 Observation RtsHost::observe() noexcept {

@@ -1,0 +1,35 @@
+# Mutations applied to the shipped sources, each rebuilt, run on the suite it targets, and restored
+# from a copy taken before the edit (md5 compared after every restore). Driver: apply -> cmake
+# --build build/dev --target <suite> -j4 -> run the suite binary -> restore -> md5sum.
+# Host: Linux Mint 22.1, NVIDIA RTX 5060 (Vulkan 1.4), GCC 13, Development build.
+#
+# Every mutation below turned its case RED. Line numbers are those of the sources at the time of the
+# run.
+
+== M1: the assembly integrates the sky's irradiance every frame (the reuse disabled)
+   src/rendering/assembly/src/frame_assembly.cpp: `if (sky_irradiance_cached_ && ...` -> `if (false && ...`
+   suite: integration.render_assembly
+   case: the sky's irradiance is reused while the atmosphere, the eye and the sun hold
+   RED src/rendering/assembly/tests/test_assembly.cpp:361: ERROR: CHECK( b.sky_irradiance_reused ) is NOT correct!
+       [doctest] test cases: 20 | 19 passed | 1 failed
+
+== M2: the loader does not check a payload against its header's hash
+   samples/13-rts-api/map/map_load.cpp: read_cooked_payload(..., true) -> (..., false)
+   suite: integration.rts_map
+   case: damaged, mistyped, newer and truncated assets are refused
+   RED samples/13-rts-api/tests/test_rts_map.cpp:241: ERROR: CHECK_FALSE( decode_asset(kLayoutAsset, ... damaged ...).has_value() ) is NOT correct!
+
+== M3: the cook leaves the plants standing on a road
+   samples/13-rts-api/map/map_cook.cpp: `if (cooked.stack.suppresses_foliage(ground.layer))` -> `if (false && ...)`
+   suite: integration.rts_map (applied with M2, each failing its own case)
+   case: the build's package is a map, read by id
+   RED samples/13-rts-api/tests/test_rts_map.cpp:206: ERROR: CHECK_EQ( on_road, 0U ) is NOT correct!
+
+== M4: the renderer drops every skinned draw
+   samples/13-rts-api/host/map_render.cpp: the geometry lookup returns false for a skinned instance
+   suite: smoke.rts_api_map
+   case: the session on the RTS test map, its golden and its budget
+   RED samples/13-rts-api/tests/test_rts_api_map.cpp:117: ERROR: CHECK_GT( number_after(render, "skinned_draws="), 0.0 ) is NOT correct!
+       samples/13-rts-api/tests/test_rts_api_map.cpp:118: ERROR: CHECK_GT( number_after(render, "draws="), 300.0 ) is NOT correct!
+       samples/13-rts-api/tests/test_rts_api_map.cpp:142: ERROR: CHECK_EQ( comparison.differing, 0U ) is NOT correct!
+       rts_map_420.png: 706 texels differ, the largest by 167 at (147, 202)

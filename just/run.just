@@ -1722,3 +1722,76 @@ _ship-stills since images="docs/design/images":
         echo "==> recompress  the stills"
         python3 tools/docs/collect_ship.py "${shots[@]}"
     fi
+
+# THE RTS TEST MAP (content/rts/frontier.cymap) under samples/13-rts-api's Swift session: the
+# game's view at 1080p, the overview the video is filmed from, the session over its old boxes
+# beside the same frame on the map, and the frame's features switched on one at a time. Writes
+# docs/design/images/rts-map-{game,overview,before-after,features}.png and
+# docs/design/videos/rts-map.mp4. Needs a graphics device and ffmpeg.
+# Photograph and film the RTS test map under the RTS sample. Usage: just capture-rts-map [--profile <p>]
+capture-rts-map *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/13-rts-api/cy_sample_rts-api"
+    package="${build_dir}/samples/13-rts-api/frontier.cypak"
+    for needed in "${sample}" "${package}"; do
+        if [ ! -e "${needed}" ]; then
+            echo "capture-rts-map: ${needed} was not built." >&2
+            exit 1
+        fi
+    done
+    if ! command -v ffmpeg > /dev/null; then
+        echo "capture-rts-map: ffmpeg is not installed." >&2
+        exit 1
+    fi
+    work="${build_dir}/rts-map-capture"
+    rm -rf "${work}"
+    mkdir -p "${work}"/{game,overview,frames,boxes,map,plain,shadows,lit,all} docs/design/images \
+        docs/design/videos
+    run() {
+        local directory="$1"
+        shift
+        "${sample}" --render "${work}/${directory}" "$@" ${rest} > "${work}/${directory}.log"
+        tail -n 1 "${work}/${directory}.log"
+    }
+
+    echo "==> game        the player's view at 1920x1080"
+    run game --map "${package}"
+    if [ ! -e "${work}/game/rts-map-420.png" ]; then
+        echo "capture-rts-map: no frame was written (no graphics device?)"
+        exit 0
+    fi
+    echo "==> overview    the orbit, every second frame at 1280x720"
+    run overview --map "${package}" --view overview --width 1280 --height 720 \
+        --video "${work}/frames" --video-every 2
+    ffmpeg -y -loglevel error -framerate 30 -pattern_type glob -i "${work}/frames/frame-*.png" \
+        -c:v libx264 -pix_fmt yuv420p -crf 23 -preset slow docs/design/videos/rts-map.mp4
+    rm -rf "${work}/frames"
+    echo "==> before      the same session over the boxes, and on the map, at frame 420"
+    run boxes --fog
+    run map --map "${package}" --width 960 --height 540
+    echo "==> features    shadows, then ambient occlusion and the GI, then the fog and the HUD"
+    run plain --map "${package}" --width 640 --height 360 --gi off --no-fog --no-hud --no-ao \
+        --no-shadows
+    run shadows --map "${package}" --width 640 --height 360 --gi off --no-fog --no-hud --no-ao
+    run lit --map "${package}" --width 640 --height 360 --no-fog --no-hud
+    run all --map "${package}" --width 640 --height 360
+
+    images=docs/design/images
+    ffmpeg -y -loglevel error -i "${work}/game/rts-map-420.png" "${images}/rts-map-game.png"
+    ffmpeg -y -loglevel error -i "${work}/overview/rts-map-250.png" "${images}/rts-map-overview.png"
+    ffmpeg -y -loglevel error -i "${work}/boxes/rts-fog-420.png" -i "${work}/map/rts-map-420.png" \
+        -filter_complex "[0]scale=960:540:flags=neighbor[a];[a][1]hstack" \
+        "${images}/rts-map-before-after.png"
+    ffmpeg -y -loglevel error -i "${work}/plain/rts-map-350.png" -i "${work}/shadows/rts-map-350.png" \
+        -i "${work}/lit/rts-map-350.png" -i "${work}/all/rts-map-350.png" \
+        -filter_complex "[0][1]hstack[top];[2][3]hstack[bottom];[top][bottom]vstack" \
+        "${images}/rts-map-features.png"
+    echo "    ${images}/rts-map-{game,overview,before-after,features}.png"
+    echo "    docs/design/videos/rts-map.mp4"

@@ -386,6 +386,9 @@ struct AssemblyReport {
     /// Shadow-casting lights whose orientation or position changed this frame.
     u32 shadow_lights_moved = 0;
     bool sky_rebuilt = false;
+    /// The sky's irradiance — the frame's ambient term — was the last frame's, because the
+    /// atmosphere, the eye's height and the sun were all exactly what they were then. Appended.
+    bool sky_irradiance_reused = false;
     /// The GPU material table: how many slots it holds, and how many are allocated.
     u32 material_slots = 0;
     u32 material_slots_live = 0;
@@ -599,6 +602,7 @@ private:
     [[nodiscard]] Status invalidate_moved_lights(const AssemblyView& view,
                                                  AssemblyReport& out) noexcept;
     [[nodiscard]] Status update_sky(const AssemblyView& view, AssemblyReport& out) noexcept;
+    void remember_sky_irradiance(const AssemblyView& view, Vec3 eye) noexcept;
     [[nodiscard]] Status declare_frame(const AssemblyView& view, const FrameFeatures& features,
                                        const FrameSinks& sinks, RenderGraph& graph,
                                        AssemblyReport& out) noexcept;
@@ -636,6 +640,11 @@ private:
     Array<LightPose> light_poses_;
     sky::SkyViewTable sky_;
     Vec3 sky_irradiance_{0.0F, 0.0F, 0.0F};
+    /// What `sky_irradiance_` was integrated from, for `update_sky` to reuse it while they hold.
+    bool sky_irradiance_cached_ = false;
+    Vec3 sky_irradiance_eye_{0.0F, 0.0F, 0.0F};
+    Vec3 sky_irradiance_sun_{0.0F, 0.0F, 0.0F};
+    sky::Atmosphere sky_irradiance_atmosphere_{};
     /// Where the parallel irradiance writes one term per direction. Sized on first use and kept,
     /// so a steady-state frame does not allocate for it.
     Array<Vec3> irradiance_terms_;

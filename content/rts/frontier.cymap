@@ -1,0 +1,168 @@
+# frontier.cymap — "The Frontier", the RTS test map of samples/13-rts-api.
+#
+# The source a cook reads (samples/13-rts-api/map/map_cook.h). One statement a line; `#` starts a
+# comment. Every position is in WORLD metres, the level's own: the level is the square from (0, 0)
+# to (32, 32), flat at height zero, and nothing here may change that — the gameplay of the sample
+# runs on it unchanged. The terrain is the engine's: a generator and an ordered modifier stack
+# (`cy::terrain::ModifierStack`) — mounds, a carved lake, flattened ground, roads and brush strokes
+# of the kinds the editor's terrain tools record — evaluated by `terrain::evaluate_region`.
+#
+# The statement reference is in content/rts/README.md.
+
+map "The Frontier"
+seed 0x13A1F00D
+# The terrain: 128 m from (-48, -64), two 64-quad tiles a side, so a sample a metre.
+extent -48 -64 128 2
+generator 48 1.2 4 0.0
+water -1.0
+sun -0.28 -0.82 -0.50 22000
+base 0 0 32 32
+# The lockstep company's 48 m field is drawn north of the level.
+company -8 -52
+
+# --- Terrain layers: index, name, colour, how its detail is made --------------------------------
+#   layer <index> <name> <r g b> <detail> <metres> <contrast>
+# detail is a content texture's name or `noise`; metres is the detail's repeat, contrast its depth.
+texture stone content/beauty/textures/stone_albedo.png
+texture gravel content/beauty/textures/gravel_albedo.png
+texture copper content/beauty/textures/copper_albedo.png
+
+layer 0 grass 0.30 0.42 0.17 noise 3.0 0.35
+layer 1 dirt 0.45 0.34 0.22 noise 1.5 0.30
+layer 2 rock 0.47 0.45 0.42 stone 4.0 0.55
+layer 3 sand 0.70 0.63 0.47 noise 2.0 0.20
+layer 4 gravel 0.56 0.53 0.48 gravel 2.0 0.60
+layer 5 meadow 0.40 0.47 0.20 noise 5.0 0.40
+layer 6 field 0.42 0.33 0.20 rows 1.2 0.45
+# Painted automatically by the bake, not by the stack: steep ground and the shore.
+slope-layer 2 28 40
+shore-layer 3 0.9
+
+# --- The stack, in order --------------------------------------------------------------------------
+noise 32 1.6 3
+# Hills round the edge: mound <x> <z> <radius> <height>.
+mound 64 -40 18 7.5
+mound 68 -8 20 9.0
+mound 64 24 18 8.0
+mound 60 54 16 6.5
+mound 18 60 16 5.5
+mound -26 58 14 4.5
+mound -34 -50 18 7.0
+mound 10 -66 16 5.0
+mound 44 -64 14 6.0
+# The lake, carved in two lobes.
+mound -32 14 18 -4.5
+mound -30 34 13 -3.6
+# A ridge in the east, raised by an author's stroke: brush raise <radius> <strength> <falloff> : <x z>...
+brush raise 9 0.7 0.6 : 50 -52 54 -36 56 -18 54 2 57 20 58 40
+# The settlement and the company's field, level: flatten <min_x> <min_z> <max_x> <max_z> <height>.
+flatten -16 -2 42 40 0
+flatten -10 -54 42 -2 0
+# Their edges, eased into the land round them.
+brush smooth 6 1.0 0.5 passes 10 : -16 -2 -16 10 -16 22 -16 34 -16 40 -4 40 8 40 20 40 32 40 42 40 42 28 42 16 42 4 42 -2
+brush smooth 6 1.0 0.5 passes 10 : -10 -54 -10 -40 -10 -28 -10 -16 -10 -2 42 -54 42 -40 42 -28 42 -16 30 -54 18 -54 6 -54
+# Roads: road <width> <layer> : <x z>... — level at height zero, painted, and clear of plants.
+road 4 1 : 32 16 38 15 44 12 50 9
+road 4 1 : 0 20 -6 20 -12 24 -16 30 -20 32
+road 4 1 : 16 0 16 -6 16 -14
+road 3 1 : 32 28 36 30 40 30
+# Paint: brush paint <radius> <strength> <falloff> layer <n> : <x z>...
+brush paint 5 1.0 0.4 layer 4 : 6 27 10 27 13 26 9 23 5 23
+brush paint 6 0.9 0.5 layer 4 : -8 18 -8 13 -3 18
+brush paint 4 1.0 0.3 layer 6 : 35 22 39 22 35 26 39 26 35 30 39 30 35 34 39 34
+brush paint 7 0.8 0.6 layer 5 : -6 -10 2 -16 -14 4 28 -14 38 -6 36 36 -2 36
+brush paint 4 0.8 0.5 layer 1 : 48 8 46 4 51 12 -20 -14 -16 -18 -24 -12
+
+# --- Materials: the engine's standard material ----------------------------------------------------
+#   material <name> <r g b> <roughness> <metallic> [texture <name>] [emission <r g b>] [transparent]
+material terrain 1 1 1 0.92 0 texture albedo
+material stone_wall 0.86 0.80 0.70 0.85 0 texture stone
+material plaster 0.82 0.76 0.62 0.90 0
+material roof_copper 0.90 0.95 0.92 0.55 0.35 texture copper
+material roof_wood 0.50 0.20 0.12 0.75 0
+material thatch 0.62 0.50 0.27 0.95 0
+material wood 0.50 0.34 0.20 0.75 0
+material wood_dark 0.28 0.18 0.11 0.80 0
+material bark 0.30 0.21 0.14 0.95 0
+material leaves_oak 0.24 0.40 0.13 0.85 0
+material leaves_pine 0.13 0.27 0.12 0.90 0
+material bush 0.22 0.36 0.12 0.90 0
+material rock 0.62 0.60 0.56 0.88 0 texture stone
+material gold 1.00 0.77 0.25 0.30 1 emission 120 80 15
+material iron 0.30 0.30 0.32 0.45 1
+material cloth 0.80 0.74 0.62 0.90 0
+material team 1 1 1 0.80 0
+material skin 0.80 0.58 0.42 0.70 0
+material trousers 0.26 0.22 0.18 0.90 0
+material straw 0.78 0.66 0.36 0.90 0
+material crop 0.36 0.52 0.16 0.90 0
+material beacon 0.90 0.90 0.85 0.20 0 emission 40000 20000 6000
+material water 0.05 0.17 0.22 0.06 0
+
+# --- Foliage: the engine's placement rules --------------------------------------------------------
+#   species <name> <mesh> <class> <scale_min> <scale_max> <footprint> <tint_a r g b> <tint_b r g b>
+species pine tree_pine canopy 0.8 1.5 2.4 0.85 1.0 0.85 1.10 1.05 0.90
+species oak tree_oak canopy 0.8 1.4 3.0 0.95 1.05 0.80 1.15 1.10 0.85
+species bush bush understory 0.6 1.3 1.0 0.90 1.0 0.80 1.10 1.10 0.90
+species boulder boulder scatter 0.5 1.6 1.4 0.95 0.95 0.95 1.05 1.0 0.95
+#   rule <species> <per hectare> <spacing> <priority> [slope|altitude|noise <a b c d>]... [noise-metres m]
+rule pine 2200 2.2 10 altitude 0.8 2.0 40 50 slope 0 0 28 36 noise 0.30 0.45 1 1 noise-metres 36
+rule oak 1000 3.0 8 altitude -0.3 0.0 2.5 5.0 slope 0 0 16 24 noise 0.35 0.50 1 1 noise-metres 28
+rule bush 2600 1.2 2 altitude -0.4 -0.1 30 40 slope 0 0 30 40
+rule boulder 320 2.0 4 slope 10 18 60 70
+# Where nothing grows: exclude <min_x> <min_z> <max_x> <max_z> [feather <m>].
+exclude -2 -2 34 34 feather 1
+exclude -14 10 -2 26 feather 1
+exclude -16 28 -2 38
+exclude -14 2 -8 10
+exclude 33 20 42 36
+exclude -10 -54 42 -12 feather 2
+exclude 42 2 54 16 feather 1
+exclude -24 -18 -14 -8 feather 1
+exclude -22 26 -16 34
+
+# --- Placements: place <mesh> <kind> <x> <z> [yaw <deg>] [scale <s>] [team <n>] [tag <name>] ----
+# The level's own: the barracks behind the spawn point, the beacon beside it — the boxes the GI
+# holds (host/illumination.cpp) — drawn as what they are.
+place barracks building 8 27 tag Barracks team 1
+place beacon building 12.5 26 tag Beacon
+# The settlement west of the level.
+place keep building -8 18 yaw 90 team 1 tag Keep
+place house building -12 6 yaw 15
+place house building -12 32 yaw -10
+place house building -6 34 yaw 80
+place well building 4 36
+place banner prop 1 -1 team 1
+place banner prop 31 -1 team 1
+# Farms, fenced.
+place crops prop 37 28
+place fence prop 34 21 yaw 0
+place fence prop 36 21 yaw 0
+place fence prop 38 21 yaw 0
+place fence prop 40 21 yaw 0
+place fence prop 41 22 yaw 90
+place fence prop 41 24 yaw 90
+place fence prop 41 26 yaw 90
+place fence prop 41 32 yaw 90
+place fence prop 41 34 yaw 90
+place fence prop 34 35 yaw 0
+place fence prop 38 35 yaw 0
+place fence prop 40 35 yaw 0
+# Resources: gold east of the level, stone north-west, timber by the woods.
+place gold_mine resource 48 8 tag Gold
+place gold_rock resource 45 4 yaw 40
+place gold_rock resource 51 12 yaw 200 scale 0.8
+place rock_pile resource -20 -14 tag Quarry
+place rock_pile resource -17 -18 yaw 120 scale 0.8
+place boulder resource -23 -11 scale 1.4
+place log_pile resource 36 -8 yaw 30 tag Timber
+place log_pile resource 39 -10 yaw 75 scale 0.8
+# The lake's dock.
+place dock prop -20 31 yaw 0
+# Red's camp in the level, which the fog of war hides: tents beside the raiders.
+place tent prop 6 11 yaw 30 team 2
+place tent prop 29 31 yaw -20 team 2
+# The company's field: its pillar block is a rock outcrop.
+place outcrop prop 21 -31
+# The lake.
+place water_plane water -32 24 scale 1

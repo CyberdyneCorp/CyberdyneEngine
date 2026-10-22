@@ -709,6 +709,26 @@ Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyRep
 
 // --- 7. The sky -------------------------------------------------------------------------------
 
+namespace {
+
+/// Every parameter of two atmospheres equal: what decides whether the sky's irradiance can be
+/// reused. Field by field rather than by bytes, so a field added to `sky::Atmosphere` and not here
+/// is a reviewer's question rather than a silent padding comparison.
+[[nodiscard]] bool same_atmosphere(const sky::Atmosphere& a, const sky::Atmosphere& b) noexcept {
+    return a.planet_radius == b.planet_radius && a.atmosphere_radius == b.atmosphere_radius &&
+           a.rayleigh_scattering == b.rayleigh_scattering &&
+           a.rayleigh_scale_height == b.rayleigh_scale_height &&
+           a.mie_scattering == b.mie_scattering && a.mie_extinction == b.mie_extinction &&
+           a.mie_anisotropy == b.mie_anisotropy && a.mie_scale_height == b.mie_scale_height &&
+           a.ozone_absorption == b.ozone_absorption && a.ozone_center == b.ozone_center &&
+           a.ozone_width == b.ozone_width && a.ground_albedo == b.ground_albedo &&
+           a.stellar_illuminance == b.stellar_illuminance &&
+           a.stellar_angular_radius == b.stellar_angular_radius &&
+           a.multiple_scattering_factor == b.multiple_scattering_factor;
+}
+
+}  // namespace
+
 Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) noexcept {
     // THE SKY WANTS A PLANET-CENTRED POSITION AND THE CAMERA IS A WORLD ONE, and the conversion is
     // this line. `cy::rendering::sky`'s frame has its origin at the planet's CENTRE — every
@@ -728,6 +748,19 @@ Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) 
         return make_unexpected(rebuilt.error());
     }
     out.sky_rebuilt = *rebuilt;
+    // THE IRRADIANCE IS A FUNCTION OF THE ATMOSPHERE, THE EYE AND THE SUN, and of nothing else: the
+    // same three give the same three floats. A frame whose camera height and sun have not moved
+    // therefore keeps the last frame's rather than integrating every direction again — which,
+    // serially, was most of what assembling a frame cost (4.6 ms of 5.5 at the RTS test map's
+    // measurement). Compared exactly, so the value a frame shades with is the one it would have
+    // integrated, bit for bit.
+    if (sky_irradiance_cached_ && !*rebuilt && eye == sky_irradiance_eye_ &&
+        view.sun_direction == sky_irradiance_sun_ &&
+        same_atmosphere(view.atmosphere, sky_irradiance_atmosphere_)) {
+        out.sky_irradiance_reused = true;
+        return ok();
+    }
+    sky_irradiance_cached_ = false;
     // Upward-facing, which is the ambient term a frame's sky contributes to a horizontal surface —
     // the reference `fit_sky_gradient` is measured against and the number a light meter would read.
     const Vec3 up{0.0F, 1.0F, 0.0F};
@@ -736,6 +769,7 @@ Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) 
     if (jobs_ == nullptr) {
         sky_irradiance_ =
             sky::sky_irradiance(view.atmosphere, eye, view.sun_direction, up, kAmbientSamples);
+        remember_sky_irradiance(view, eye);
         return ok();
     }
     const u32 directions = sky::sky_irradiance_directions(kAmbientSamples);
@@ -751,7 +785,15 @@ Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) 
         return make_unexpected(irradiance.error());
     }
     sky_irradiance_ = *irradiance;
+    remember_sky_irradiance(view, eye);
     return ok();
+}
+
+void FrameAssembly::remember_sky_irradiance(const AssemblyView& view, Vec3 eye) noexcept {
+    sky_irradiance_cached_ = true;
+    sky_irradiance_eye_ = eye;
+    sky_irradiance_sun_ = view.sun_direction;
+    sky_irradiance_atmosphere_ = view.atmosphere;
 }
 
 // --- 8. The frame -----------------------------------------------------------------------------

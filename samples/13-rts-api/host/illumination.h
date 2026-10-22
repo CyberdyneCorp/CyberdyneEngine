@@ -70,8 +70,9 @@ public:
     RtsIllumination(const RtsIllumination&) = delete;
     RtsIllumination& operator=(const RtsIllumination&) = delete;
 
-    /// Configure the system and hand it the level's boxes and the sun.
-    [[nodiscard]] cy::Status build() noexcept;
+    /// Configure the system and hand it the level's boxes, `extra` beside them, and the sun.
+    /// `extra` is static, in the level's metres: the RTS test map's buildings, when a run draws it.
+    [[nodiscard]] cy::Status build(cy::Span<const FieldBox> extra = {}) noexcept;
     /// Bind ABI 1.9 on `host`, the crate named by its entity.
     [[nodiscard]] cy::Status bind(cy::abi::Host& host, CyEntity crate) noexcept;
     void unbind(cy::abi::Host& host) noexcept;

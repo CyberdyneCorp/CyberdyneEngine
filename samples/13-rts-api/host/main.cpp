@@ -11,6 +11,11 @@
 //   by
 //                                              the engine's device GI (render.h); `--gi off` draws
 //                                              it without
+//   ... --render <dir> --map <frontier.cypak>  the session drawn on the RTS test map
+//   (map_render.h):
+//                                              `--width`, `--height`, `--view overview`,
+//                                              `--video <dir>`, and `--no-fog`, `--no-hud`,
+//                                              `--no-ao`, `--no-shadows` and `--gi off` as controls
 //
 // The report is one line per claim, and tests/test_rts_api_sample.cpp reads it. Every number comes
 // from the engine (the servers and the adapters) or from the game's `RtsReport`; none is computed
@@ -18,7 +23,10 @@
 
 #include <cy/core/memory/system_allocator.h>
 
+#include <cstdlib>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <cmath>
 #include <cstdio>
@@ -29,6 +37,10 @@
 #include "script.h"
 #if defined(CY_RTS_API_RENDER)
 #    include "render.h"
+#endif
+#if defined(CY_RTS_API_MAP)
+#    include "map_load.h"
+#    include "map_render.h"
 #endif
 
 namespace {
@@ -48,6 +60,55 @@ using sample::rts::RtsHost;
 [[nodiscard]] double wide(float value) noexcept {
     return static_cast<double>(value);
 }
+
+/// The flags of a run drawn on the RTS test map. Parsed whatever the build, so a build without the
+/// Vulkan renderer refuses `--map` by name rather than calling it an unknown argument.
+struct MapFlags {
+    const char* package = nullptr;
+#if defined(CY_RTS_API_MAP)
+    sample::rts::MapRenderOptions options;
+#endif
+
+    /// Consume `argv[index]` (and its value) when it is one of the map's flags.
+    bool parse(int argc, char** argv, int& index) noexcept {
+        const char* flag = argv[index];
+        const bool valued = index + 1 < argc;
+        if (std::strcmp(flag, "--map") == 0 && valued) {
+            package = argv[++index];
+            return true;
+        }
+#if defined(CY_RTS_API_MAP)
+        if (std::strcmp(flag, "--width") == 0 && valued) {
+            options.width = static_cast<cy::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (std::strcmp(flag, "--height") == 0 && valued) {
+            options.height = static_cast<cy::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (std::strcmp(flag, "--view") == 0 && valued) {
+            options.view = std::strcmp(argv[++index], "overview") == 0
+                               ? sample::rts::MapView::Overview
+                               : sample::rts::MapView::Game;
+        } else if (std::strcmp(flag, "--video") == 0 && valued) {
+            options.video_directory = argv[++index];
+        } else if (std::strcmp(flag, "--video-every") == 0 && valued) {
+            options.video_every = static_cast<cy::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (std::strcmp(flag, "--no-fog") == 0) {
+            options.fog = false;
+        } else if (std::strcmp(flag, "--no-hud") == 0) {
+            options.hud = false;
+        } else if (std::strcmp(flag, "--no-ao") == 0) {
+            options.ambient_occlusion = false;
+        } else if (std::strcmp(flag, "--no-shadows") == 0) {
+            options.shadows = false;
+        } else if (std::strcmp(flag, "--no-validation") == 0) {
+            options.validation = false;
+        } else {
+            return false;
+        }
+        return true;
+#else
+        return false;
+#endif
+    }
+};
 
 void print_report(RtsHost& host, const Findings& seen) noexcept {
     const Observation now = host.observe();
@@ -149,6 +210,7 @@ int main(int argc, char** argv) {
     const char* render_directory = nullptr;
     bool render_gi = true;
     bool render_fog = false;
+    MapFlags map;
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--render") == 0 && index + 1 < argc) {
             render_directory = argv[++index];
@@ -156,6 +218,8 @@ int main(int argc, char** argv) {
             render_gi = std::strcmp(argv[++index], "off") != 0;
         } else if (std::strcmp(argv[index], "--fog") == 0) {
             render_fog = true;
+        } else if (map.parse(argc, argv, index)) {
+            continue;
         } else if (std::strcmp(argv[index], "--no-behaviours") == 0) {
             options.behaviours = false;
         } else if (std::strcmp(argv[index], "--no-systems") == 0) {
@@ -168,6 +232,33 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (map.package != nullptr && render_directory == nullptr) {
+        std::fprintf(stderr, "rts-api: --map draws the session, and needs --render <dir>\n");
+        return 2;
+    }
+#if defined(CY_RTS_API_MAP)
+    // THE MAP LOADS BEFORE THE HOST STARTS: its buildings are boxes the level's GI holds.
+    sample::rts::map::MapContent map_content;
+    std::vector<sample::rts::FieldBox> map_boxes;
+    if (render_directory != nullptr && map.package != nullptr) {
+        sample::rts::map::LoadReport loaded;
+        std::string detail;
+        if (const cy::Status read =
+                sample::rts::map::load_map(cy::system_allocator(cy::MemoryDomain::Assets),
+                                           map.package, map_content, loaded, detail);
+            !read) {
+            std::fprintf(stderr, "rts-api: --map: %s (%s)\n", read.error().message, detail.c_str());
+            return 1;
+        }
+        std::printf("rts map load assets=%u bytes=%llu load_ms=%.1f digest=%016llx\n",
+                    loaded.assets, static_cast<unsigned long long>(loaded.bytes), loaded.load_ms,
+                    static_cast<unsigned long long>(loaded.digest));
+        map_boxes = sample::rts::map_gi_boxes(map_content);
+        options.extra_gi_boxes = map_boxes.data();
+        options.extra_gi_box_count = static_cast<cy::u32>(map_boxes.size());
+    }
+#endif
+
     RtsHost host(cy::system_allocator(cy::MemoryDomain::World), options);
     const char* detail = "";
     if (const cy::Status started = host.start(&detail); !started) {
@@ -177,7 +268,26 @@ int main(int argc, char** argv) {
     }
 #if defined(CY_RTS_API_RENDER)
     std::unique_ptr<sample::rts::RtsRenderer> renderer;
-    if (render_directory != nullptr) {
+#    if defined(CY_RTS_API_MAP)
+    std::unique_ptr<sample::rts::MapRenderer> map_renderer;
+    if (render_directory != nullptr && map.package != nullptr) {
+        map_renderer = std::make_unique<sample::rts::MapRenderer>(
+            cy::system_allocator(cy::MemoryDomain::Renderer));
+        sample::rts::MapRenderOptions render = map.options;
+        render.directory = render_directory;
+        render.gi = render_gi;
+        if (const cy::Status started = map_renderer->start(host, map_content, render); !started) {
+            std::fprintf(stderr, "rts-api: --render --map: %s\n", started.error().message);
+            return started.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+        }
+    } else
+#    else
+    if (map.package != nullptr) {
+        std::fprintf(stderr, "rts-api: --map needs the map's cook, which this build has not\n");
+        return 2;
+    }
+#    endif
+        if (render_directory != nullptr) {
         renderer = std::make_unique<sample::rts::RtsRenderer>(
             cy::system_allocator(cy::MemoryDomain::Renderer));
         sample::rts::RenderOptions render;
@@ -190,7 +300,7 @@ int main(int argc, char** argv) {
         }
     }
 #else
-    if (render_directory != nullptr) {
+    if (render_directory != nullptr || map.package != nullptr) {
         std::fprintf(stderr,
                      "rts-api: --render needs the Vulkan renderer, which this build has not\n");
         return 2;
@@ -206,6 +316,11 @@ int main(int argc, char** argv) {
         if (ran && renderer != nullptr) {
             ran = renderer->frame(host);
         }
+#    if defined(CY_RTS_API_MAP)
+        if (ran && map_renderer != nullptr) {
+            ran = map_renderer->frame(host);
+        }
+#    endif
 #endif
         if (!ran) {
             std::fprintf(stderr, "rts-api: frame %llu failed: %s\n",
@@ -219,6 +334,11 @@ int main(int argc, char** argv) {
     if (renderer != nullptr) {
         renderer->print_report();
     }
+#    if defined(CY_RTS_API_MAP)
+    if (map_renderer != nullptr) {
+        map_renderer->print_report();
+    }
+#    endif
 #endif
     host.shutdown();
     return 0;
