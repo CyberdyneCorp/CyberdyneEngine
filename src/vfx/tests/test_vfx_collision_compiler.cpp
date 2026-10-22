@@ -100,11 +100,11 @@ CY_TEST_CASE("collision: an effect that collides with nothing generates what it 
                    .has_value());
     CY_REQUIRE(assemble_translation_unit(emitter, system->parameters(), system->channels(), probe)
                    .has_value());
-    std::fprintf(
-        stderr, "plume: dispatch %016llx (%zu bytes), probe %016llx (%zu bytes), key %016llx\n",
-        static_cast<unsigned long long>(fnv1a(dispatch.span())),
-        static_cast<usize>(dispatch.size()), static_cast<unsigned long long>(fnv1a(probe.span())),
-        static_cast<usize>(probe.size()), static_cast<unsigned long long>(system->cook_key()));
+    std::fprintf(stderr,
+                 "plume: dispatch %016llx (%zu bytes), probe %016llx (%zu bytes), key %016llx\n",
+                 static_cast<unsigned long long>(fnv1a(dispatch.span())), dispatch.size(),
+                 static_cast<unsigned long long>(fnv1a(probe.span())), probe.size(),
+                 static_cast<unsigned long long>(system->cook_key()));
     CY_CHECK_EQ(fnv1a(dispatch.span()), kPlumeDispatchHash);
     CY_CHECK_EQ(fnv1a(probe.span()), kPlumeProbeHash);
     CY_CHECK_EQ(system->cook_key(), kPlumeCookKey);

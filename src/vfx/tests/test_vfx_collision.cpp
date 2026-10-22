@@ -52,7 +52,7 @@ public:
         if (!compiled.has_value()) {
             for (const graph::Diagnostic& diagnostic : sink_.entries()) {
                 std::fprintf(stderr, "cook: %s (%s)\n", diagnostic.message,
-                             diagnostic.detail.text().data());
+                             diagnostic.detail.c_str());
             }
             return;
         }

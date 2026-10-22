@@ -39,7 +39,6 @@ using namespace cy::vfx_test;
 using cy::pipeline_test::FrameScene;
 using cy::pipeline_test::FrameSceneHooks;
 using cy::pipeline_test::kHeight;
-using cy::pipeline_test::kInstanceCount;
 using cy::pipeline_test::kMaterialColours;
 using cy::pipeline_test::kMaterialCount;
 using cy::pipeline_test::kWidth;

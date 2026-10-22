@@ -70,7 +70,7 @@ constexpr Vec3 kUp{0.0F, 1.0F, 0.0F};
     const Vec3 q{std::fabs(offset.x) - b.x, std::fabs(offset.y) - b.y, std::fabs(offset.z) - b.z};
     const Vec3 outside{std::max(q.x, 0.0F), std::max(q.y, 0.0F), std::max(q.z, 0.0F)};
     const f32 outside_length = std::sqrt(dot3(outside, outside));
-    const f32 deepest = std::max(q.x, std::max(q.y, q.z));
+    const f32 deepest = std::max({q.x, q.y, q.z});
     const f32 sx = offset.x < 0.0F ? -1.0F : 1.0F;
     const f32 sy = offset.y < 0.0F ? -1.0F : 1.0F;
     const f32 sz = offset.z < 0.0F ? -1.0F : 1.0F;
