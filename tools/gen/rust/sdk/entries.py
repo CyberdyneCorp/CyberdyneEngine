@@ -366,6 +366,17 @@ ENTRIES: dict[str, Entry] = {
                        doc="How a team sees an entity through the fog of war."),
     "fog_status": Entry(("engine", "into"), result="fallible",
                         doc="The fog of war grid and its last update."),
+    # 1.11: lights
+    "light_spawn": Entry(("engine", "desc", "into"), result="fallible",
+                         doc="A light a game makes: a muzzle flash, a spark, a torch."),
+    "light_update": Entry(("engine", "light", "desc"), result="fallible",
+                          doc="Replace a live light's description, keeping its age."),
+    "light_destroy": Entry(("engine", "light"), result="fallible",
+                           doc="End a light now."),
+    "light_alive": Entry(("engine", "light", "into"), result="fallible",
+                         doc="Whether a light is alive."),
+    "light_status": Entry(("engine", "into"), result="fallible",
+                          doc="The light pool: live, capacity, spawned, expired, refused."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

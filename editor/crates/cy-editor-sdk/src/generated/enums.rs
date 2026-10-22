@@ -1969,6 +1969,121 @@ impl FogSight {
         }
     }
 }
+/// `CyLightKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LightKind {
+    /// `CY_LIGHT_POINT` = 1.
+    Point = 1,
+    /// `CY_LIGHT_SPOT` = 2.
+    Spot = 2,
+    /// `CY_LIGHT_RECT` = 3.
+    Rect = 3,
+    /// `CY_LIGHT_DISC` = 4.
+    Disc = 4,
+    /// `CY_LIGHT_SPHERE` = 5.
+    Sphere = 5,
+    /// `CY_LIGHT_TUBE` = 6.
+    Tube = 6,
+}
+
+impl LightKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LightKind; 6] = [
+        LightKind::Point,
+        LightKind::Spot,
+        LightKind::Rect,
+        LightKind::Disc,
+        LightKind::Sphere,
+        LightKind::Tube,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            1 => Some(LightKind::Point),
+            2 => Some(LightKind::Spot),
+            3 => Some(LightKind::Rect),
+            4 => Some(LightKind::Disc),
+            5 => Some(LightKind::Sphere),
+            6 => Some(LightKind::Tube),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LightKind::Point => "CY_LIGHT_POINT",
+            LightKind::Spot => "CY_LIGHT_SPOT",
+            LightKind::Rect => "CY_LIGHT_RECT",
+            LightKind::Disc => "CY_LIGHT_DISC",
+            LightKind::Sphere => "CY_LIGHT_SPHERE",
+            LightKind::Tube => "CY_LIGHT_TUBE",
+        }
+    }
+}
+/// `CyLightFade`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum LightFade {
+    /// `CY_LIGHT_FADE_NONE` = 0.
+    None = 0,
+    /// `CY_LIGHT_FADE_LINEAR` = 1.
+    Linear = 1,
+    /// `CY_LIGHT_FADE_QUADRATIC` = 2.
+    Quadratic = 2,
+}
+
+impl LightFade {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [LightFade; 3] = [LightFade::None, LightFade::Linear, LightFade::Quadratic];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(LightFade::None),
+            1 => Some(LightFade::Linear),
+            2 => Some(LightFade::Quadratic),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            LightFade::None => "CY_LIGHT_FADE_NONE",
+            LightFade::Linear => "CY_LIGHT_FADE_LINEAR",
+            LightFade::Quadratic => "CY_LIGHT_FADE_QUADRATIC",
+        }
+    }
+}
 
 impl Status {
     /// What a caller should understand by this status.

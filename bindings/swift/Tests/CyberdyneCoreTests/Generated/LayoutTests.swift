@@ -641,6 +641,37 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyFogStatus>.offset(of: \CyFogStatus.digest), 32, "CyFogStatus.digest offset")
     }
 
+    func testLightDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.size, 96, "CyLightDesc size")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.alignment, 4, "CyLightDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.struct_size), 0, "CyLightDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.kind), 4, "CyLightDesc.kind offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.pose), 8, "CyLightDesc.pose offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.color), 36, "CyLightDesc.color offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.intensity), 48, "CyLightDesc.intensity offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.range), 52, "CyLightDesc.range offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.inner_cone), 56, "CyLightDesc.inner_cone offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.outer_cone), 60, "CyLightDesc.outer_cone offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.size), 64, "CyLightDesc.size offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.lifetime), 72, "CyLightDesc.lifetime offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.fade), 76, "CyLightDesc.fade offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.flags), 80, "CyLightDesc.flags offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.layer_mask), 84, "CyLightDesc.layer_mask offset")
+        XCTAssertEqual(MemoryLayout<CyLightDesc>.offset(of: \CyLightDesc.reserved), 88, "CyLightDesc.reserved offset")
+    }
+
+    func testLightStatusLayout() {
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.size, 40, "CyLightStatus size")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.alignment, 8, "CyLightStatus alignment")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.struct_size), 0, "CyLightStatus.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.live), 4, "CyLightStatus.live offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.capacity), 8, "CyLightStatus.capacity offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.reserved), 12, "CyLightStatus.reserved offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.spawned), 16, "CyLightStatus.spawned offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.expired), 24, "CyLightStatus.expired offset")
+        XCTAssertEqual(MemoryLayout<CyLightStatus>.offset(of: \CyLightStatus.refused), 32, "CyLightStatus.refused offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -651,7 +682,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1280, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1320, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -812,6 +843,11 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_cell), 1256, "CyInterface.fog_cell offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_sight), 1264, "CyInterface.fog_sight offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.fog_status), 1272, "CyInterface.fog_status offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.light_spawn), 1280, "CyInterface.light_spawn offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.light_update), 1288, "CyInterface.light_update offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.light_destroy), 1296, "CyInterface.light_destroy offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.light_alive), 1304, "CyInterface.light_alive offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.light_status), 1312, "CyInterface.light_status offset")
     }
 
     func testModuleInitLayout() {
@@ -829,7 +865,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1280,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1320,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -875,8 +911,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 158)
+        XCTAssertEqual(ABI.entryNames.count, 163)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "fog_status")
+        XCTAssertEqual(ABI.entryNames.last, "light_status")
     }
 }

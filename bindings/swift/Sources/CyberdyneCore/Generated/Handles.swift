@@ -593,6 +593,31 @@ public struct Engine: @unchecked Sendable {
     public func fogStatus(into: UnsafeMutablePointer<CyFogStatus>?) throws {
         try interface.fogStatus(engine: raw, into: into)
     }
+
+    @inlinable
+    public func lightSpawn(desc: UnsafePointer<CyLightDesc>?, into: UnsafeMutablePointer<CyLight>?) throws {
+        try interface.lightSpawn(engine: raw, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func lightUpdate(light: CyLight, desc: UnsafePointer<CyLightDesc>?) throws {
+        try interface.lightUpdate(engine: raw, light: light, desc: desc)
+    }
+
+    @inlinable
+    public func lightDestroy(light: CyLight) throws {
+        try interface.lightDestroy(engine: raw, light: light)
+    }
+
+    @inlinable
+    public func lightAlive(light: CyLight, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.lightAlive(engine: raw, light: light, into: into)
+    }
+
+    @inlinable
+    public func lightStatus(into: UnsafeMutablePointer<CyLightStatus>?) throws {
+        try interface.lightStatus(engine: raw, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

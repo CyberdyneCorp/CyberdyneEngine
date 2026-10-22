@@ -442,3 +442,28 @@ CY_TEST_CASE("the 1.10 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyFogStatus, ghosts), 28U);
     CY_CHECK_EQ(offsetof(CyFogStatus, digest), 32U);
 }
+
+CY_TEST_CASE("the 1.11 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyLightDesc), 96U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, kind), 4U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, pose), 8U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, color), 36U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, intensity), 48U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, range), 52U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, inner_cone), 56U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, outer_cone), 60U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, size), 64U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, lifetime), 72U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, fade), 76U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, flags), 80U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, layer_mask), 84U);
+    CY_CHECK_EQ(offsetof(CyLightDesc, reserved), 88U);
+
+    CY_CHECK_EQ(sizeof(CyLightStatus), 40U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, live), 4U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, capacity), 8U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, reserved), 12U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, spawned), 16U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, expired), 24U);
+    CY_CHECK_EQ(offsetof(CyLightStatus, refused), 32U);
+}

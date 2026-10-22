@@ -95,6 +95,9 @@ ENUM_SPECS = {
     # ADDED AT ABI 1.10 with fog of war.
     "CyFogCell": ("FogCell", "CY_FOG_CELL_", "UInt32"),
     "CyFogSight": ("FogSight", "CY_FOG_SIGHT_", "UInt32"),
+    # ADDED AT ABI 1.11 with the lights a game makes.
+    "CyLightKind": ("LightKind", "CY_LIGHT_", "UInt32"),
+    "CyLightFade": ("LightFade", "CY_LIGHT_FADE_", "UInt32"),
 }
 
 
@@ -216,6 +219,9 @@ def enums(description: dict) -> str:
         # ABI 1.10.
         ("CyFogCell", "/// `CyFogCell`: a fog of war cell as one team knows it."),
         ("CyFogSight", "/// `CyFogSight`: how a team sees an entity through the fog."),
+        # ABI 1.11.
+        ("CyLightKind", "/// `CyLightKind`: what a light a game spawns is."),
+        ("CyLightFade", "/// `CyLightFade`: how a light with a lifetime fades along it."),
     ))
     return f"""{BANNER}
 {status}

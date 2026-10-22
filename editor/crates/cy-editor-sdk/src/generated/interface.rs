@@ -3944,4 +3944,132 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// A light a game makes: a muzzle flash, a spark, a torch.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn light_spawn(
+        &self,
+        engine: ffi::CyEngine,
+        desc: *const ffi::CyLightDesc,
+        into: *mut ffi::CyLight,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .light_spawn
+            .ok_or(CallError::Missing("light_spawn"))?;
+        let raw = unsafe { entry(engine, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Replace a live light's description, keeping its age.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn light_update(
+        &self,
+        engine: ffi::CyEngine,
+        light: ffi::CyLight,
+        desc: *const ffi::CyLightDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .light_update
+            .ok_or(CallError::Missing("light_update"))?;
+        let raw = unsafe { entry(engine, light, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// End a light now.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn light_destroy(
+        &self,
+        engine: ffi::CyEngine,
+        light: ffi::CyLight,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .light_destroy
+            .ok_or(CallError::Missing("light_destroy"))?;
+        let raw = unsafe { entry(engine, light) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Whether a light is alive.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn light_alive(
+        &self,
+        engine: ffi::CyEngine,
+        light: ffi::CyLight,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .light_alive
+            .ok_or(CallError::Missing("light_alive"))?;
+        let raw = unsafe { entry(engine, light, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The light pool: live, capacity, spawned, expired, refused.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn light_status(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyLightStatus,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .light_status
+            .ok_or(CallError::Missing("light_status"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

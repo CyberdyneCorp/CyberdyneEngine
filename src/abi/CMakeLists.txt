@@ -64,6 +64,8 @@ cy_add_module(
         src/game/illumination_thunks.cpp
         # ABI 1.10: fog of war, over a backend cy::game-backend-fog binds.
         src/game/fog_thunks.cpp
+        # ABI 1.11: lights a game makes, over a backend cy::game-backend-lights binds.
+        src/game/light_thunks.cpp
         src/systems.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation

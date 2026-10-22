@@ -1927,6 +1927,108 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyLightDesc>() == 96,
+    "CyLightDesc is not 96 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLightDesc>() == 4,
+    "CyLightDesc is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, struct_size) == 0,
+    "CyLightDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, kind) == 4,
+    "CyLightDesc::kind is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, pose) == 8,
+    "CyLightDesc::pose is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, color) == 36,
+    "CyLightDesc::color is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, intensity) == 48,
+    "CyLightDesc::intensity is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, range) == 52,
+    "CyLightDesc::range is not at byte 52"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, inner_cone) == 56,
+    "CyLightDesc::inner_cone is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, outer_cone) == 60,
+    "CyLightDesc::outer_cone is not at byte 60"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, size) == 64,
+    "CyLightDesc::size is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, lifetime) == 72,
+    "CyLightDesc::lifetime is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, fade) == 76,
+    "CyLightDesc::fade is not at byte 76"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, flags) == 80,
+    "CyLightDesc::flags is not at byte 80"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, layer_mask) == 84,
+    "CyLightDesc::layer_mask is not at byte 84"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightDesc, reserved) == 88,
+    "CyLightDesc::reserved is not at byte 88"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyLightStatus>() == 40,
+    "CyLightStatus is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyLightStatus>() == 8,
+    "CyLightStatus is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, struct_size) == 0,
+    "CyLightStatus::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, live) == 4,
+    "CyLightStatus::live is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, capacity) == 8,
+    "CyLightStatus::capacity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, reserved) == 12,
+    "CyLightStatus::reserved is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, spawned) == 16,
+    "CyLightStatus::spawned is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, expired) == 24,
+    "CyLightStatus::expired is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyLightStatus, refused) == 32,
+    "CyLightStatus::refused is not at byte 32"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -1952,8 +2054,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1280,
-    "CyInterface is not 1280 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1320,
+    "CyInterface is not 1320 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -2595,6 +2697,26 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, fog_status) == 1272,
     "CyInterface::fog_status is not at byte 1272"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, light_spawn) == 1280,
+    "CyInterface::light_spawn is not at byte 1280"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, light_update) == 1288,
+    "CyInterface::light_update is not at byte 1288"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, light_destroy) == 1296,
+    "CyInterface::light_destroy is not at byte 1296"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, light_alive) == 1304,
+    "CyInterface::light_alive is not at byte 1304"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, light_status) == 1312,
+    "CyInterface::light_status is not at byte 1312"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2641,7 +2763,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        158,
+        163,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

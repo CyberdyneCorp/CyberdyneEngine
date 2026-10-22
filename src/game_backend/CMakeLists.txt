@@ -62,6 +62,10 @@ add_subdirectory(illumination)
 # fog/CMakeLists.txt.
 add_subdirectory(fog)
 
+# ABI 1.11's lights adapter, a module of its own because it links cy::rendering-lighting; see
+# lights/CMakeLists.txt.
+add_subdirectory(lights)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP
