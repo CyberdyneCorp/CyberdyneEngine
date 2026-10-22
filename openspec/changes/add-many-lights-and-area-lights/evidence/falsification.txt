@@ -212,6 +212,22 @@ src/game_backend/lights/tests/test_lights_backend.cpp:114: ERROR: CHECK( (frame[
 [doctest] test cases:   3 |   2 passed | 1 failed | 0 skipped
 restored (lights_backend.cpp md5 e6959beaf2f22a69748077af9c2af5ff: identical)
 
+
+## After the light loops were folded into one call site each (the same mutation, on the new loop)
+
+== reach-skip-inexact-unified-loop-l: src/rendering/shaders/cy/frame.slang: '        if (walk.clustered && dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (walk.clustered && dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:1017: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+(l) 40 lights: 59060 HDR halves differ between the cluster loop and the walk over every light (117103 lit pixels); cluster overflow 0
+restored (frame.slang md5 dbcd4d24623f08e3caf1e44e7abd9ffb, frame_spirv.h md5 7769ecd671541dd9924034ce679a7e3f, frame_msl.h md5 6a4bdd02acaae12cb1e2eb6b1a647789: identical)
+
+== reach-skip-inexact-unified-loop-a: src/rendering/shaders/cy/frame.slang: '        if (walk.clustered && dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (walk.clustered && dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:250: ERROR: CHECK_EQ( comparison.max_channel_delta, 0U ) is NOT correct!
+(a) by day, against the frame before area lights: 0 differing, worst 0
+(a) by night, against the frame before area lights: 0 differing, worst 1
+restored (frame.slang md5 dbcd4d24623f08e3caf1e44e7abd9ffb, frame_spirv.h md5 7769ecd671541dd9924034ce679a7e3f, frame_msl.h md5 6a4bdd02acaae12cb1e2eb6b1a647789: identical)
+
 ## Notes on the two GREEN runs above
 
 ml-f-filter-normal-weight: the filter's normal weight cannot matter on case (f)'s flat floor (every
