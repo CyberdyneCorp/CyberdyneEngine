@@ -209,8 +209,8 @@ std::vector<render::LightDescription> night_punctual_lights() {
         light.kind = index % 2U == 0U ? render::LightKind::Point : render::LightKind::Spot;
         light.transform.translation =
             Vec3{-3.0F + (2.0F * static_cast<f32>(index)), -0.6F, -6.0F - static_cast<f32>(index)};
-        light.transform.rotation = Quat::look_rotation(normalize(Vec3{0.1F, -1.0F, -0.2F}),
-                                                       Vec3{0.0F, 0.0F, -1.0F});
+        light.transform.rotation =
+            Quat::look_rotation(normalize(Vec3{0.1F, -1.0F, -0.2F}), Vec3{0.0F, 0.0F, -1.0F});
         light.color[0] = colours[index].x;
         light.color[1] = colours[index].y;
         light.color[2] = colours[index].z;

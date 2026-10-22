@@ -159,9 +159,8 @@ bool sphere_in_tile(const rendering::ClusterGrid& grid, u32 x, u32 y, f32 tan_y,
     const Vec3 planes[4] = {Vec3{1.0F, 0.0F, x0}, Vec3{-1.0F, 0.0F, -x1}, Vec3{0.0F, 1.0F, y0},
                             Vec3{0.0F, -1.0F, -y1}};
     // A sliver of slack for the device's own rounding at the plane.
-    return std::ranges::all_of(planes, [&](const Vec3 plane) {
-        return dot(p, plane) >= (-r * length(plane)) - 1e-4F;
-    });
+    return std::ranges::all_of(
+        planes, [&](const Vec3 plane) { return dot(p, plane) >= (-r * length(plane)) - 1e-4F; });
 }
 
 f64 luminance(Vec3 value) noexcept {
@@ -255,8 +254,7 @@ CY_TEST_CASE("(a) the device's lists are the host's, less the lights that miss t
                 device_total += on_device.size();
                 clusters_equal += on_host == on_device ? 1U : 0U;
                 for (const u32 light : on_device) {
-                    extra_on_device +=
-                        std::ranges::find(on_host, light) == on_host.end() ? 1U : 0U;
+                    extra_on_device += std::ranges::find(on_host, light) == on_host.end() ? 1U : 0U;
                 }
                 for (const u32 light : on_host) {
                     if (std::ranges::find(on_device, light) != on_device.end()) {

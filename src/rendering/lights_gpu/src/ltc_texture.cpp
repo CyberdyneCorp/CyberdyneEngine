@@ -91,9 +91,8 @@ Status pack_ltc_texels(const LtcTable& table, Array<f32>& out) noexcept {
             upper[1] = m.columns[2].x;
             upper[2] = m.columns[1].y;
             upper[3] = m.columns[0].z;
-            f32* lower =
-                out.data() +
-                (((static_cast<usize>(y + kLtcTableSize) * kLtcTextureWidth) + x) * 4U);
+            f32* lower = out.data() +
+                         (((static_cast<usize>(y + kLtcTableSize) * kLtcTextureWidth) + x) * 4U);
             lower[0] = entry.magnitude;
             lower[1] = entry.fresnel;
             lower[2] = 0.0F;
