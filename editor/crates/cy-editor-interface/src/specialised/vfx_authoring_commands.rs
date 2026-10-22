@@ -2172,9 +2172,9 @@ mod tests {
             ("velocity", 1),
             ("contact", 1),
         ];
-        out.u32(pins.len() as u32);
+        out.u32(u32::try_from(pins.len()).unwrap());
         for (index, (name, direction)) in pins.iter().enumerate() {
-            out.u32(index as u32 + 1);
+            out.u32(u32::try_from(index).unwrap() + 1);
             out.u8(*direction);
             out.text(name);
             out.text("float3");
