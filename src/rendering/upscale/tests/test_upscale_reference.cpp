@@ -9,7 +9,7 @@
 //
 // The output is 96x54 — 16:9 and small enough that sixty-four frames of the reference fit the
 // integration budget several times over on a slower host — and every mode renders at its own scale
-// of it.
+// of it. The thin-line cases run at 64x36 instead (`kLineOutput`), for the reason given there.
 
 #include "upscale_scene.h"
 
@@ -53,14 +53,24 @@ constexpr u32 kConvergeFrames = 64;
     return surface;
 }
 
+/// The thin-line cases' own output: 16:9 like `kOutput` and four ninths of its pixels. Every
+/// pixel a reconstruction runs over costs the same whether the line is near it or not, and at 96x54
+/// two thirds of the frame is flat background the measure never reads — which put the coverage
+/// case within a tenth of its Debug budget on a loaded runner. The line keeps its width, its slope
+/// and its length in output pixels, and every mode keeps its scale, so the jitter cycle a case
+/// measures over is the same number of phases it was at 96x54.
+constexpr Extent2D kLineOutput{64, 36};
+/// Where the line crosses the left edge, in output pixels from the top.
+constexpr f32 kLineOffset = 6.0F;
+
 /// A thin slanted line, 0.35 output pixels wide, over a flat background: narrower than a render
 /// pixel in every mode below native, so most frames' samples miss it.
 [[nodiscard]] Surface line_scene(Vec2 uv) noexcept {
-    const f32 px = uv.x * static_cast<f32>(kOutput.width);
-    const f32 py = uv.y * static_cast<f32>(kOutput.height);
+    const f32 px = uv.x * static_cast<f32>(kLineOutput.width);
+    const f32 py = uv.y * static_cast<f32>(kLineOutput.height);
     Surface surface;
     surface.colour = Vec3{0.12F, 0.12F, 0.14F};
-    const f32 distance = std::fabs((py - 20.0F) - (0.25F * px));
+    const f32 distance = std::fabs((py - kLineOffset) - (0.25F * px));
     if (distance < 0.175F * std::sqrt(1.0F + (0.25F * 0.25F))) {
         surface.colour = Vec3{1.0F, 1.0F, 1.0F};
     }
@@ -70,7 +80,8 @@ constexpr u32 kConvergeFrames = 64;
 [[nodiscard]] bool near_line(u32 x, u32 y) noexcept {
     const f32 px = static_cast<f32>(x) + 0.5F;
     const f32 py = static_cast<f32>(y) + 0.5F;
-    return std::fabs((py - 20.0F) - (0.25F * px)) < 2.0F && x > 4 && x + 4 < kOutput.width;
+    return std::fabs((py - kLineOffset) - (0.25F * px)) < 2.0F && x > 4 &&
+           x + 4 < kLineOutput.width;
 }
 
 [[nodiscard]] UpscaleSettings unsharpened() noexcept {
@@ -79,8 +90,8 @@ constexpr u32 kConvergeFrames = 64;
     return settings;
 }
 
-[[nodiscard]] Extent2D render_of(UpscaleMode mode) noexcept {
-    return render_extent_for(kOutput, upscale_mode_scale(mode));
+[[nodiscard]] Extent2D render_of(UpscaleMode mode, Extent2D output = kOutput) noexcept {
+    return render_extent_for(output, upscale_mode_scale(mode));
 }
 
 }  // namespace
@@ -169,11 +180,11 @@ constexpr u32 kLineConvergeFrames = 24;
 /// The line's energy near it: every pixel's excess over the background, summed.
 [[nodiscard]] f64 line_energy(const std::vector<Vec4>& image) noexcept {
     f64 energy = 0.0;
-    for (u32 y = 0; y < kOutput.height; ++y) {
-        for (u32 x = 0; x < kOutput.width; ++x) {
+    for (u32 y = 0; y < kLineOutput.height; ++y) {
+        for (u32 x = 0; x < kLineOutput.width; ++x) {
             if (near_line(x, y)) {
-                energy += static_cast<f64>(image[(static_cast<usize>(y) * kOutput.width) + x].x -
-                                           kLineBackground);
+                energy += static_cast<f64>(
+                    image[(static_cast<usize>(y) * kLineOutput.width) + x].x - kLineBackground);
             }
         }
     }
@@ -190,7 +201,7 @@ struct LineRun {
 /// every frame from its own samples alone — the line flickering in and out as they hit and miss it.
 [[nodiscard]] LineRun run_line(UpscaleMode mode, const UpscaleSettings& settings, bool history) {
     const SceneFn scene = &line_scene;
-    HostRun run(kOutput, render_of(mode), settings);
+    HostRun run(kLineOutput, render_of(mode, kLineOutput), settings);
     // Frames to converge — none without a history, which has nothing to converge — then a whole
     // jitter cycle measured.
     const u32 converge = history ? kLineConvergeFrames : 0U;
@@ -198,8 +209,8 @@ struct LineRun {
         const Vec2 jitter = run.next_jitter();
         run.step(sample_scene(scene, run.render(), jitter), jitter, true, false, history);
     }
-    const u32 cycle = jitter_phase_count(kOutput.width, run.render().width);
-    const usize pixels = static_cast<usize>(kOutput.width) * kOutput.height;
+    const u32 cycle = jitter_phase_count(kLineOutput.width, run.render().width);
+    const usize pixels = static_cast<usize>(kLineOutput.width) * kLineOutput.height;
     std::vector<f64> sum(pixels, 0.0);
     std::vector<f64> squares(pixels, 0.0);
     for (u32 frame = 0; frame < cycle; ++frame) {
@@ -213,12 +224,12 @@ struct LineRun {
     }
     LineRun out;
     usize count = 0;
-    for (u32 y = 0; y < kOutput.height; ++y) {
-        for (u32 x = 0; x < kOutput.width; ++x) {
+    for (u32 y = 0; y < kLineOutput.height; ++y) {
+        for (u32 x = 0; x < kLineOutput.width; ++x) {
             if (!near_line(x, y)) {
                 continue;
             }
-            const usize at = (static_cast<usize>(y) * kOutput.width) + x;
+            const usize at = (static_cast<usize>(y) * kLineOutput.width) + x;
             const f64 mean = sum[at] / cycle;
             out.deviation += std::sqrt(std::fmax((squares[at] / cycle) - (mean * mean), 0.0));
             ++count;
@@ -236,13 +247,13 @@ namespace {
 /// The supersampled line's energy: what full coverage is.
 [[nodiscard]] f64 reference_line_energy() {
     std::vector<Vec4> native;
-    for (const Vec3& texel : supersample(&line_scene, kOutput, 8)) {
+    for (const Vec3& texel : supersample(&line_scene, kLineOutput, 8)) {
         native.push_back(Vec4{texel.x, texel.y, texel.z, 1.0F});
     }
     return line_energy(native);
 }
 
-/// STABLE: the line does not flicker as the samples hit and miss it. Measured: deviation 0.0062
+/// STABLE: the line does not flicker as the samples hit and miss it. Measured: deviation 0.0054
 /// (quality) and 0.0095 (performance) against 0.100 and 0.118 without history.
 void check_line_stable(UpscaleMode mode) {
     const LineRun locked = run_line(mode, unsharpened(), true);
@@ -257,7 +268,7 @@ void check_line_stable(UpscaleMode mode) {
 
 /// AND STILL THERE: the frames whose samples miss it do not clip it away — which, without the
 /// locks, is most of it. Measured: 86 % (quality) and 68 % (performance) of the supersampled line's
-/// energy with locks, 24 % and 15 % without.
+/// energy with locks, 27 % and 15 % without.
 void check_line_coverage(UpscaleMode mode, f64 kept) {
     const f64 reference = reference_line_energy();
     UpscaleSettings unlocked = unsharpened();
