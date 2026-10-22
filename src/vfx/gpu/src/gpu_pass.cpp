@@ -134,7 +134,7 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
         rhi::QueryPoolDescription timer;
         timer.name = "vfx sub-step timestamps";
         timer.kind = rhi::QueryKind::Timestamp;
-        timer.count = 2;
+        timer.count = 4;
         if (Expected<rhi::QueryPoolHandle, Error> pool = device.create_query_pool(timer); pool) {
             timer_ = *pool;
         }
@@ -142,16 +142,24 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
     return ok();
 }
 
-f64 VfxGpuPass::last_device_ms() const noexcept {
+f64 VfxGpuPass::timer_ms(u32 first) const noexcept {
     if (device_ == nullptr || !timer_ || !timed_frame_) {
         return -1.0;
     }
     u64 stamps[2] = {};
-    Expected<u32, Error> read = device_->read_query_results(timer_, 0, 2, Span<u64>(stamps, 2));
+    Expected<u32, Error> read = device_->read_query_results(timer_, first, 2, Span<u64>(stamps, 2));
     if (!read || *read != 2 || stamps[1] < stamps[0]) {
         return -1.0;
     }
     return static_cast<f64>(stamps[1] - stamps[0]) / 1.0e6;
+}
+
+f64 VfxGpuPass::last_device_ms() const noexcept {
+    return timer_ms(0);
+}
+
+f64 VfxGpuPass::last_update_ms() const noexcept {
+    return timer_ms(2);
 }
 
 Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
@@ -733,8 +741,13 @@ void VfxGpuPass::record(const PassContext& context, void* user) noexcept {
     const bool first = dispatch == &self->dispatches_[0];
     if (self->timer_ && first && dispatch->constants.pass == kGpuPassSpawn &&
         dispatch->pipeline == self->kernel_pipeline_) {
-        context.commands->reset_queries(self->timer_, 0, 2);
+        context.commands->reset_queries(self->timer_, 0, 4);
         context.commands->write_timestamp(self->timer_, 0);
+    }
+    const bool timed_update = self->timer_ && dispatch->constants.pass == kGpuPassUpdate &&
+                              dispatch->pipeline == self->kernel_pipeline_;
+    if (timed_update) {
+        context.commands->write_timestamp(self->timer_, 2);
     }
     context.commands->bind_compute_pipeline(dispatch->pipeline);
     context.commands->bind_descriptor_sets(
@@ -753,8 +766,8 @@ void VfxGpuPass::record(const PassContext& context, void* user) noexcept {
     } else {
         context.commands->dispatch(dispatch->groups == 0 ? 1 : dispatch->groups, 1, 1);
     }
-    if (self->timer_ && dispatch->constants.pass == kGpuPassUpdate &&
-        dispatch->pipeline == self->kernel_pipeline_) {
+    if (timed_update) {
+        context.commands->write_timestamp(self->timer_, 3);
         context.commands->write_timestamp(self->timer_, 1);
         self->timed_frame_ = true;
     }

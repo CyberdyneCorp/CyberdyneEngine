@@ -231,9 +231,12 @@ enum GpuCollisionRow : u32 {
 
 /// The clipmap levels the constants have room for: `GpuGiScene`'s own `kMaxFieldLevels`.
 inline constexpr u32 kGpuCollisionMaxLevels = 8;
+/// The constants block's size in `uint4` rows: what the host allocates and writes each frame.
 inline constexpr u32 kGpuCollisionRows = kGpuCollisionLevels + (2U * kGpuCollisionMaxLevels);
-/// `kGpuCollisionOrigin`'s flags.
+/// `kGpuCollisionOrigin`'s flag for a bound scene field: without it an `sdf` contact finds nothing.
 inline constexpr u32 kGpuCollisionHasField = 1U;
+/// `kGpuCollisionOrigin`'s flag for a bound depth texture: without it a `depth` contact finds
+/// nothing.
 inline constexpr u32 kGpuCollisionHasDepth = 2U;
 
 /// The largest population one sort dispatch orders. The bitonic sort is ONE workgroup over group-

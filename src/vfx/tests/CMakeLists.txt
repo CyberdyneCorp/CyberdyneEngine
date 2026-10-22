@@ -114,6 +114,29 @@ function(cy_vfx_declare_tests)
     target_include_directories(cy_test_render_vfx
                                PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render"
                                        "${CMAKE_SOURCE_DIR}/samples/12-beauty")
+
+    # COLLISION, PHOTOGRAPHED: sparks down a flight of stairs and debris settling on it, in the
+    # pipeline suites' own frame (src/rendering/pipeline/tests/frame_scene.cpp — the one scene),
+    # with the stairs as five of its boxes. `just capture-vfx-collision` copies the pictures into
+    # docs/design/images and films the sparks.
+    set(pipeline_tests "${CMAKE_SOURCE_DIR}/src/rendering/pipeline/tests")
+    cy_add_test(
+        NAME vfx_collision
+        KIND render
+        SOURCES
+            "${tests_dir}/effects.cpp"
+            "${tests_dir}/collision_effects.cpp"
+            "${tests_dir}/collision_scene.cpp"
+            "${tests_dir}/test_vfx_collision_pictures.cpp"
+            "${pipeline_tests}/frame_scene.cpp"
+            "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+        DEPENDENCIES cy::vfx cy::rendering-pipeline cy::rendering-particles cy::rendering-assembly
+                     cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
+    target_include_directories(cy_test_render_vfx_collision
+                               PRIVATE "${tests_dir}" "${pipeline_tests}"
+                                       "${CMAKE_SOURCE_DIR}/tests/render")
+    set_tests_properties(render.vfx_collision PROPERTIES
+                         SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_declare_tests)

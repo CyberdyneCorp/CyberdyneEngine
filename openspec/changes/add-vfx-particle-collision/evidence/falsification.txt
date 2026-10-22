@@ -1,0 +1,109 @@
+# Mutations applied to the shipped sources, each rebuilt, run on the case it targets, and restored
+# with `git checkout`; the tree was clean after every one. Driver: apply -> cmake --build
+# build/debug --target <suite> -j4 -> run the suite binary with -tc=<case> -> restore.
+# Host: Linux Mint 22.1, NVIDIA RTX 5060 (Vulkan 1.4), GCC 13, Debug build.
+#
+# Every mutation below turned its case RED. Four attempts of the first run did not, and are recorded
+# at the end because each changed what a case asserts.
+
+== M1: lower_stage returns at the first event raise (the defect, restored)
+   src/vfx/src/compile.cpp
+   case: an event raise does not end its stage's lowering
+   RED test_vfx_collision_compiler.cpp: CHECK( writes_size ), CHECK_NE( update->kill_slot(), 0xFFFFU )
+
+== M2: a scalar attribute read fills lane zero only (the defect, restored)
+   src/vfx/src/runtime.cpp
+   case: a scalar attribute or parameter scales every component of a vector on the CPU path
+   RED test_vfx_runtime.cpp: CHECK_EQ( read_attribute(..., velocity, component), 6.0F )
+
+== M3: the bounce ignores the restitution (always 0.5)
+   src/vfx/src/collision.cpp
+   case: collision: the bounce keeps exactly the restitution of the closing speed
+   RED test_vfx_collision.cpp: CHECK( ratio == within(restitution, 1e-5) )
+
+== M4: friction takes nothing out of the tangent
+   src/vfx/src/collision.cpp
+   case: collision: friction stops a sliding particle where Coulomb says it should
+   RED test_vfx_collision.cpp: CHECK( stopped.position.x == within_relative(expected, 0.05) ),
+       CHECK_EQ( stopped.velocity.x, 0.0F )
+
+== M5: stick is never taken
+   src/vfx/src/collision.cpp
+   case: collision: a sticking particle stops where it hit a wall and stays there
+   RED test_vfx_collision.cpp: CHECK_EQ( length(stuck.velocity), 0.0F )
+
+== M6: impact is not gated by `began`
+   src/vfx/src/compile.cpp
+   case: collision: an impact event fires once per contact, and not while resting
+   RED test_vfx_collision.cpp: CHECK_EQ( raised, contacts ), CHECK_EQ( resting, 0U )
+
+== M7: a penetrating particle is not resolved
+   src/vfx/src/collision.cpp
+   case: collision: a particle falling on a plane comes to rest on it, within a bound
+   RED test_vfx_collision.cpp: CHECK_LT( worst_height, 1.0e-4F )
+
+== M8: the CPU path ignores collision quality zero
+   src/vfx/src/collision.cpp
+   cases: collision: the budget's collision quality is what the contact reads;
+          collision: the world hands the controller's quality to every contact
+   RED test_vfx_collision.cpp: CHECK_EQ( collision_contact(Plane, ...).w, kNoContact ),
+       CHECK_LT( run.particle(0).position.y, -1.0F )
+
+== M9: a raise's payload input is ignored (the predicate is carried instead)
+   src/vfx/src/runtime.cpp
+   case: collision: an impact spawns one spark at the place it happened
+   RED test_vfx_collision.cpp: CHECK_LT( highest, 1.0F )
+
+== M10: an emitter's event cursor is read as zero
+   src/vfx/src/world.cpp
+   case: collision: an impact spawns one spark at the place it happened
+   RED test_vfx_collision.cpp: CHECK_EQ( spawned, raised + drops )
+
+== M11: the depth surface has no thickness (a particle deep behind it is snapped onto it)
+   src/vfx/src/collision.cpp
+   case: collision: a particle further behind a surface than it is thick passes behind it
+   RED test_vfx_collision.cpp: CHECK( thin.particle(0).position.y == within(-0.5F, 1e-5) ),
+       CHECK_EQ( thin.particle(0).collided, 0.0F )
+
+== M12: a collider's contact is not memoised (one query an output)
+   src/vfx/src/compile.cpp
+   case: collision: a collider's outputs share one contact, however many are wired
+   RED test_vfx_collision_compiler.cpp: CHECK_EQ( count_ops(emitter, Update, Contact), 1U )
+
+== M13: the generated plane contact ignores collision quality zero
+   src/vfx/src/emit_slang.cpp
+   case: the budget's collision quality reaches the device
+   RED test_vfx_collision_gpu.cpp: CHECK_EQ( off.disagreeing, 0U ), CHECK_EQ( authored.disagreeing, 256U )
+
+== M14: the generated field reads a level's origin from its shape row
+   src/vfx/src/emit_slang.cpp
+   case: the device collides with the GI distance field as the CPU executor does
+   RED test_vfx_collision_gpu.cpp: CHECK_EQ( result.disagreeing, 0U )
+
+== M15: the generated depth normal is the cross of a tangent with itself
+   src/vfx/src/emit_slang.cpp
+   case: the device collides with the depth buffer as the CPU executor does
+   RED test_vfx_collision_gpu.cpp: CHECK_EQ( result.disagreeing, 0U )
+
+== M16: set_collision never flags the field as bound
+   src/vfx/gpu/src/gpu_pass.cpp
+   case: the device collides with the GI distance field as the CPU executor does
+   RED test_vfx_collision_gpu.cpp: CHECK_EQ( result.disagreeing, 0U )
+
+== M17: the budget's collision quality is not pushed
+   src/vfx/gpu/src/gpu_pass.cpp
+   case: the budget's collision quality reaches the device
+   RED test_vfx_collision_gpu.cpp: CHECK_EQ( off.disagreeing, 0U ), CHECK_EQ( authored.disagreeing, 256U )
+
+# What the first run did not catch, and what changed.
+#
+# - M4 first replaced the friction expression with `keep = 1.0F`, which left two variables unused
+#   and did not build under -Werror; the mutation was respelled to multiply the friction by zero.
+# - M5 was GREEN: the stick case read the particle after the gate that stops a stuck particle — and
+#   that gate holds a BOUNCED particle still as well. The case now reads the step of contact itself.
+# - M10 was GREEN twice. The spark case ran one sub-step a frame, where a cursor is never read; it
+#   now runs two. And the first spelling of the mutation only dropped the second sub-step's advance,
+#   which three sub-steps would need; the cursor is now mutated where it is read.
+# - M11 first deleted the thickness test, which left `thickness` unused and did not build; and no
+#   case owned the thickness at all. `a particle further behind a surface than it is thick passes
+#   behind it` was written for it.

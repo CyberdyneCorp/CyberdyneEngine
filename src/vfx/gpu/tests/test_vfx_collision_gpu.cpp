@@ -595,3 +595,109 @@ CY_TEST_CASE("a GPU pass refuses an emitter that spawns from events, by name") {
     CY_REQUIRE_FALSE(created.has_value());
     CY_CHECK(std::strstr(created.error().message, "vfx.event_count") != nullptr);
 }
+
+namespace {
+
+struct Timing {
+    /// Spawn to the end of the update.
+    f64 step_ms = -1.0;
+    /// The update dispatch alone.
+    f64 update_ms = -1.0;
+};
+
+/// The device time of one sub-step, averaged over `steps` after `warm` steps to settle, for a
+/// colliding effect of `capacity` particles.
+[[nodiscard]] Timing timed_step(DeviceFixture& gpu, DropScenario scenario, const DeviceScene& scene,
+                                u32 capacity, u32 warm, u32 steps) {
+    scenario.capacity = capacity;
+    scenario.spawn_per_step = capacity;
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = vfx_test::cook_drop(allocator(), scenario, sink, report);
+    CY_REQUIRE(system.has_value());
+    VfxGpuPass pass;
+    GpuPassDescription description;
+    description.timed = true;
+    CY_REQUIRE(pass.create(allocator(), gpu.device(), *system, description).has_value());
+    CY_REQUIRE(run_frame(gpu, allocator(), pass, true));
+    BudgetController controller;
+    BudgetLevers levers = controller.levers_for(system->importance(), system->scalability());
+    levers.sorted = false;
+    f64 total = 0.0;
+    f64 update = 0.0;
+    u32 measured = 0;
+    for (u32 step = 0; step < warm + steps; ++step) {
+        GpuStepInputs inputs;
+        inputs.dt = kSubstep;
+        inputs.emitter_age = static_cast<f32>(step + 1U) * kSubstep;
+        inputs.levers = levers;
+        CY_REQUIRE(device_frame(gpu, pass, scene, inputs));
+        const f64 ms = pass.last_device_ms();
+        if (step >= warm && ms >= 0.0) {
+            total += ms;
+            update += pass.last_update_ms();
+            ++measured;
+        }
+    }
+    Timing timing;
+    if (measured != 0) {
+        timing.step_ms = total / static_cast<f64>(measured);
+        timing.update_ms = update / static_cast<f64>(measured);
+    }
+    return timing;
+}
+
+}  // namespace
+
+CY_TEST_CASE("a colliding sub-step is timed on the device") {
+    // ALWAYS: a small effect against the plane, timed — the diagnostic answers a time. WITH
+    // `CY_VFX_COLLISION_TIMING`: the table the PR and the README quote, 65 536 particles against
+    // nothing, the plane, the scene field and a 1920 x 1080 depth buffer.
+    DeviceFixture gpu("cy_test_render_vfx_collision_timing", false);
+    if (!ready(gpu)) {
+        return;
+    }
+    DropScenario plane = scattered_drop("plane");
+    const Timing small = timed_step(gpu, plane, {}, 1024, 4, 8);
+    std::fprintf(stderr, "1 024 particles against the plane: %.4f ms a sub-step, update %.4f ms\n",
+                 small.step_ms, small.update_ms);
+    if (!gpu.device().capabilities().has(rhi::Capability::TimestampQueries)) {
+        CY_CHECK_LT(small.step_ms, 0.0);
+        return;
+    }
+    CY_CHECK_GT(small.step_ms, 0.0);
+    CY_CHECK_GT(small.update_ms, 0.0);
+    CY_CHECK_LE(small.update_ms, small.step_ms);
+    if (std::getenv("CY_VFX_COLLISION_TIMING") == nullptr) {
+        return;
+    }
+
+    constexpr u32 kParticles = 65536;
+    GiStairs stairs;
+    rendering::gi_gpu::GpuGiScene scene;
+    CY_REQUIRE(scene.create(allocator(), gpu.device(), rendering::gi_gpu::GpuGiSceneDescription{})
+                   .has_value());
+    CY_REQUIRE(scene.upload_field(stairs.field).has_value());
+    const GpuCollisionField field = collision_field(scene.field_binding());
+    const vfx_test::DepthScene floor =
+        vfx_test::render_floor_depth(Vec3{0.0F, 3.0F, -3.0F}, Vec3{0.0F, 0.0F, 1.0F}, 1920, 1080);
+    DeviceDepth depth(gpu.device(), floor);
+
+    DropScenario muted = scattered_drop("plane");
+    muted.mute_collider = true;
+    DeviceScene with_field;
+    with_field.field = &field;
+    DeviceScene with_depth;
+    with_depth.depth = &depth;
+    const Timing none = timed_step(gpu, muted, {}, kParticles, 30, 60);
+    const Timing analytic = timed_step(gpu, plane, {}, kParticles, 30, 60);
+    const Timing sdf = timed_step(gpu, scattered_drop("sdf"), with_field, kParticles, 30, 60);
+    const Timing screen = timed_step(gpu, scattered_drop("depth"), with_depth, kParticles, 30, 60);
+    std::fprintf(stderr,
+                 "65 536 particles, ms (whole sub-step / update dispatch): no collider %.4f / "
+                 "%.4f, plane %.4f / %.4f, scene field %.4f / %.4f, depth 1920x1080 %.4f / %.4f\n",
+                 none.step_ms, none.update_ms, analytic.step_ms, analytic.update_ms, sdf.step_ms,
+                 sdf.update_ms, screen.step_ms, screen.update_ms);
+    CY_CHECK_GT(sdf.update_ms, 0.0);
+    CY_CHECK_GT(screen.update_ms, 0.0);
+}

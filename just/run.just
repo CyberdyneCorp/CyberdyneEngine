@@ -1125,6 +1125,51 @@ capture-gi-hall-video *args:
         -c:v libx264 -pix_fmt yuv420p -crf 22 docs/design/videos/gi-hall-orbit.mp4
     echo "    docs/design/videos/gi-hall-orbit.mp4"
 
+# PARTICLE COLLISION, PHOTOGRAPHED AND TIMED: `render.vfx_collision` draws sparks bouncing down a
+# flight of stairs and a burst of debris settled on it, in the pipeline suites' frame, and writes the
+# two pictures into docs/design/images; with ffmpeg it also films both into docs/design/videos —
+# vfx-collision-sparks.mp4 (five seconds) and vfx-collision-debris.mp4 (four). `render.vfx_collision_gpu`'s timing case then prints
+# the device cost of a 65 536-particle sub-step against no collider, a plane, the scene field and a
+# 1920 x 1080 depth buffer. Needs a graphics device, and says so and writes nothing without one.
+# Photograph, film and time VFX particle collision. Usage: just capture-vfx-collision [--profile <p>]
+capture-vfx-collision *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    pictures="${build_dir}/cy_test_render_vfx_collision"
+    timing="${build_dir}/cy_test_render_vfx_collision_gpu"
+    for tool in "${pictures}" "${timing}"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-vfx-collision: ${tool} was not built (Vulkan off?)." >&2
+            exit 1
+        fi
+    done
+    work="${build_dir}/vfx-collision"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames" docs/design/images docs/design/videos
+    echo "==> capture     sparks down the stairs, and debris settled on them"
+    if command -v ffmpeg > /dev/null; then
+        CY_TEST_ARTEFACT_DIR="$(pwd)/docs/design/images" CY_VFX_COLLISION_FRAMES="${work}/frames" \
+            "${pictures}"
+    else
+        echo "    ffmpeg is not installed: the pictures, but no film"
+        CY_TEST_ARTEFACT_DIR="$(pwd)/docs/design/images" "${pictures}"
+    fi
+    if [ -n "$(ls -A "${work}/frames" 2>/dev/null)" ]; then
+        echo "==> encode      the sparks, and the debris settling"
+        for clip in sparks debris; do
+            ffmpeg -y -loglevel error -framerate 60 -i "${work}/frames/${clip}-%04d.png" \
+                -c:v libx264 -pix_fmt yuv420p -crf 20 "docs/design/videos/vfx-collision-${clip}.mp4"
+            echo "    docs/design/videos/vfx-collision-${clip}.mp4"
+        done
+    fi
+    echo "==> time        a 65 536-particle sub-step on the device"
+    CY_VFX_COLLISION_TIMING=1 "${timing}" --test-case="a colliding sub-step is timed on the device"
+
 # THE BEAUTY SHOT IN AND OUT OF FOCUS: the same scene, the same compiled programs and the same settled
 # embers, photographed without depth of field and at f/1.4 focused on the copper sphere and on a far
 # column — the two focus targets `content/beauty/shot.cyshot` names. Depth of field runs at step 7,

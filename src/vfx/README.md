@@ -363,19 +363,20 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
   absent: no pass projects a decal, feeds a `LightInstance` to clustered assignment, or marches a
   volume.** Those three are rows and nothing more, and the half M8.c called "compositing work in the
   renderer's layer" is still exactly that for them.
-* **Collision is not implemented.** The data interfaces it would read — `scene_sdf`,
-  `scene_depth`, `physics_query` — are declared, versioned, cost-classed and cook-gated, and a graph
-  can sample them; the RESPONSE (bounce, restitution, friction, sliding) does not exist. `kill` and
-  `raise an event` do, so an authored graph can already express the third and fourth of the four
-  responses `vfx-system` lists, against a predicate of its own rather than against a real contact.
+* **Collision is analytic, field and depth, not a physics query on the GPU.** `physics_query` stays
+  the CPU path's interface; physics' own shapes reach a particle as the parameters of a
+  `vfx.collide.<shape>` node a host writes from the body. See "Collision" below for what each mode
+  costs and cannot see.
 * **A sample of an unbound data interface reads zero on the CPU path.** The cook-time gate is what
   stops an effect *depending* on an interface it cannot have; a bound-but-empty one is not an error
   and produces zero, on both paths, at the same place in each.
 * **A GPU event chain is still one level deep**, and the `Event` stage has no dispatch of its own.
   `cyVfxRaise_*` appends into the shared ring and `kGpuCountEventsBase + channel` counts the
   overflow, so a raise is a GPU-side append with both of its declared bounds enforced — but nothing
-  feeds a channel's contents back in as a dispatch, so "a bullet impact spawns sparks, and a spark
-  collision spawns dust" is one link short.
+  feeds a channel's contents back in as a dispatch on the device. The CPU path does
+  (`vfx.event_count`, `vfx.event_payload`, below), so "an impact spawns sparks" runs in a
+  `SimulationWorld`; `VfxGpuPass::create` refuses an emitter that reads events, by name, rather
+  than simulate it with every read answering zero.
 * **The editor's VFX graph editor is partial.** It can author and reopen system/emitter/stage drafts
   through the shared canvas. `vfx-system` still needs compilation, diagnostics, canonical cooking,
   and preview over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`.
@@ -391,6 +392,106 @@ being true. A host that wants the GPU path drives a `VfxGpuPass` per emitter fro
 * **A curve is the identity over [0, 1]** on both paths until a cooked curve resource is bound. Both
   spellings — the CPU executor's and the generated Slang's — say so at the same place, because two
   spellings of one function is how a fallback and a GPU path come to disagree.
+## Collision — `vfx-system`'s "Collision"
+
+![Sparks thrown off the top step bounce down the stairs against the scene field](../../docs/design/images/vfx-collision-sparks.png)
+
+![A burst of debris landed on the stairs and came to rest: every piece one radius from a surface and still](../../docs/design/images/vfx-collision-debris.png)
+
+Six nodes, `vfx.collide.plane`, `.sphere`, `.box`, `.capsule`, `.sdf` and `.depth`. Each takes the
+particle's `position` and `velocity` (required) and, optionally, its `radius`, the response —
+`restitution`, `friction`, `stick`, `rest_speed` — the particle's `was_in_contact` from the step
+before, and its shape's own inputs (a plane's `normal` and `offset`, a sphere's `centre` and
+`sphere_radius`, ...). Each has SIX OUTPUTS: the resolved `position`, the responded `velocity`,
+`contact` (1 while touching), `began` (1 on the step a contact starts), `impact` (the closing speed
+on that step, 0 otherwise) and `normal`. An author wires what the effect does:
+
+| Response | How a graph spells it |
+|---|---|
+| bounce with restitution | `velocity` → `set_attribute(velocity)`, `restitution` in [0, 1] |
+| friction and sliding | `friction`: Coulomb — the tangent loses at most `friction` times the normal impulse, so a particle on a slope slides when it is low and stops when it is high |
+| stick | `stick` above one half stops the particle dead on contact; gate the integration with the contact flag to keep it there |
+| kill | `kill_if(contact)` |
+| raise an event | `emit_event(impact)` — once per contact, never while resting — with the resolved `position` on the new `payload` input |
+| spawn on contact | a second emitter: `vfx.event_count(channel)` → `spawn_count`, `vfx.event_payload(channel)` read by its Initialise (CPU path) |
+
+### What each mode costs, and cannot see
+
+| Mode | Space | Accuracy | Cost a particle | Blind to |
+|---|---|---|---|---|
+| plane, sphere, box, capsule | the effect's own | exact | a few flops | everything else |
+| `sdf` | world | the field's voxel (a quarter metre at level 0 by default) | one field sample when clear, seven touching (five at quality 2) | walls thinner than a voxel |
+| `depth` | screen | the depth buffer's texel | five texels on screen (three at quality 2), none off it | **anything off screen, behind another surface, or behind the camera** — a particle passes through all of them, as specified; a surface is `thickness` deep, and a particle further behind it passes behind it |
+
+**The scene field is the GI field.** `GpuGiScene::field_binding()` hands out the clipmaps' own page
+table and brick pool — bound to the VFX pass, not copied — and the CPU path reads the same field
+through a `CollisionField` adapter over `gi::DistanceField::distance`. The device code is a
+transcription of `gi_gpu_common.slang`'s `giDistance`, which is itself the host's.
+
+**The budget controller's lever is real.** `BudgetLevers::collision_quality`: 3 authored, 2 the
+cheaper normals, 1 the analytic colliders only, 0 nothing. It reaches the CPU executor through
+`CollisionInputs::quality` and the device through the push block's last word, which was `reserved`.
+
+### How it is built
+
+* **A contact is a query and a response is arithmetic.** The IR gains `Contact` (`float4(normal,
+  separation)`), `Bounce`, `Resolve` and `Impact` (`ir.h`), appended so every existing op keeps its
+  number. The six outputs lower to pure expressions over ONE `Contact`, memoised under a pin no
+  author can name, so wiring all six queries the world once — with sample deduplication off too.
+  `Swizzle`, in the op table since M8.c and lowered by nothing, now has both spellings.
+* **The CPU executor** evaluates them through `collision.h`'s four functions; **the generated
+  Slang** carries the same four, in the same order, in a collision prelude written only for an
+  emitter that collides (`CompiledEmitter::collides`).
+* **Descriptor set 1** (`GpuCollisionBinding`): the constants, the field's two buffers and the depth
+  texture, allocated per kernel dispatch because the depth view is the graph's. An emitter that
+  collides with nothing binds, generates and dispatches exactly what it did before:
+  `integration.vfx_compiler` holds the plume's dispatch unit, probe unit and cook key to the bytes
+  `main` produced before the nodes existed.
+* **`VfxGpuPass::set_collision`** takes the field and the depth each frame, and the pass can time
+  its sub-step on the device (`GpuPassDescription::timed`, `last_device_ms`).
+
+### Measured
+
+On the RTX 5060, Vulkan (`render.vfx_collision_gpu`'s timing case with `CY_VFX_COLLISION_TIMING`,
+which `just capture-vfx-collision` runs), 65 536 particles, the update dispatch alone:
+
+| Collider | ms |
+|---|---|
+| none (the collider muted) | 0.0065 |
+| plane | 0.0086 |
+| scene field (GI clipmaps, two levels) | 0.0172 |
+| depth buffer, 1920 x 1080 | 0.0210 |
+
+The whole sub-step is about 1.2 ms at that population with any of the four: the compaction — one
+workgroup scanning the block in slot order — is nearly all of it, collision or not.
+
+Against the CPU executor, particle for particle after two seconds: analytic colliders within
+1.4e-05 m, the depth buffer within 8.7e-05 m, the scene field within 1.6 mm (the normals are
+differences of trilinear field samples, and a particle sliding a metre to rest under friction
+carries the sixth figure into where it stops) — the liveness arrays identical slot for slot, and
+the impact events equal in number: 1 280 on both paths.
+
+### Two defects this found, which the plume never could
+
+* **`lower_stage` returned at the first event raise.** Every write, kill and raise authored after
+  an `emit_event` in a stage's node order was silently dropped. Regression: `an event raise does not
+  end its stage's lowering`.
+* **The CPU executor did not broadcast a scalar attribute or parameter.** A register is four lanes
+  and every elementwise op reads all four; a scalar READ filled lane zero only, so `velocity *
+  scale` scaled x and zeroed y and z on the CPU while the GPU (Slang broadcasts) was right. A scalar
+  constant broadcast already, which is why the plume never showed it; collision's `velocity * (1 -
+  collided)` did. Regression: `a scalar attribute or parameter scales every component of a vector on
+  the CPU path`.
+
+### The adversarial pass, run
+
+Seventeen mutations, each applied to the built tree, rebuilt and run on its case; each went red.
+Two of the first run were cases asserting too little: the stick case checked the particle after a
+gate that holds a bounced particle still too (it now checks the step of contact), and the event
+cursor is only read with two sub-steps a frame (the spark case now runs two). The depth surface's
+thickness had no case of its own until this pass wrote one. The table is
+`openspec/changes/add-vfx-particle-collision/evidence/falsification.txt`.
+
 ## Editor authoring bridge
 
 `read_authoring_document` is compiled into `cy::vfx-compiler`. It decodes editor `.cyvfxdoc`

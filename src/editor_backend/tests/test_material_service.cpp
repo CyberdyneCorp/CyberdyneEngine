@@ -272,6 +272,81 @@ std::string vfx_module_source(std::string_view name, cy::u8 stage,
     return source;
 }
 
+/// A version 2 document whose one GPU emitter bounces its particles off a ground plane in Update:
+/// the collider placed, valued and wired the way the canvas saves it.
+std::string colliding_vfx_document() {
+    std::vector<cy::u8> bytes;
+    append_u32(bytes, 2);
+    append_text(bytes, "bounce");
+    append_u32(bytes, 1);
+    append_text(bytes, "drops");
+    bytes.push_back(0);  // GPU preferred
+    append_text(bytes, "Sprite");
+    append_u32(bytes, 2);
+    bytes.push_back(0);  // Spawn
+    append_text(bytes,
+                "cyvfxcanvas 1\nemitter drops\nnode 1 vfx.constant\nprop 1 value 4\n"
+                "node 2 vfx.spawn_count\nlink 1 out 2 value\n");
+    bytes.push_back(2);  // Update
+    append_text(bytes,
+                "cyvfxcanvas 1\nemitter drops\n"
+                "node 1 vfx.attribute\nprop 1 attribute position\n"
+                "node 2 vfx.attribute\nprop 2 attribute velocity\n"
+                "node 3 vfx.collide.plane\nprop 3 restitution 0.4\nprop 3 normal 0 1 0\n"
+                "link 1 out 3 position\nlink 2 out 3 velocity\n"
+                "node 4 vfx.set_attribute\nprop 4 attribute position\nlink 3 position 4 value\n"
+                "node 5 vfx.set_attribute\nprop 5 attribute velocity\nlink 3 velocity 5 value\n");
+    append_u32(bytes, 0);  // modules
+    append_u32(bytes, 0);  // interfaces
+    append_u32(bytes, 256);
+    append_u32(bytes, 2);
+    for (const char* name : {"position", "velocity"}) {
+        append_text(bytes, name);
+        append_text(bytes, "vec3");
+        append_u32(bytes, 0xc2c80000U);  // minimum -100
+        append_u32(bytes, 0x42c80000U);  // maximum 100
+        append_u32(bytes, 0);
+        append_text(bytes, "Auto");
+    }
+    append_u32(bytes, 0);  // parameters
+    append_u32(bytes, 0);  // channels
+    std::string source = "cyvfxdoc 1\n";
+    constexpr char hex[] = "0123456789abcdef";
+    for (const cy::u8 byte : bytes) {
+        source.push_back(hex[byte >> 4U]);
+        source.push_back(hex[byte & 0x0fU]);
+    }
+    return source;
+}
+
+CY_TEST_CASE("editor_backend: a colliding VFX document compiles through the engine service") {
+    // THE EDITOR'S AND THE AGENT'S PATH TO COLLISION: the same `vfx.compile` the VFX panel and the
+    // MCP tools call, on a document that places `vfx.collide.plane`, gives it a value and wires two
+    // of its six outputs. The completed payload carries the generated Slang, and the collider is in
+    // it — a document the palette can author is a document the engine cooks.
+    const std::string source = colliding_vfx_document();
+    cy::abi::Host host(allocator());
+    cy::editor::MaterialService service(allocator());
+    host.bind_editor_service(&service);
+    const CyInterface* api = cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR);
+    CY_REQUIRE(api != nullptr);
+    CyServiceSession session = nullptr;
+    CY_REQUIRE_EQ(api->service_open(&host, &session), CY_RESULT_OK);
+    const CyServiceRequest request{sizeof(CyServiceRequest),
+                                   1,
+                                   4,
+                                   "vfx.compile",
+                                   reinterpret_cast<const cy::u8*>(source.data()),
+                                   source.size()};
+    const CyServiceEvent event = submit_and_poll(*api, host, session, request);
+    CY_REQUIRE_EQ(event.kind, static_cast<cy::u32>(CY_SERVICE_EVENT_COMPLETED));
+    const std::string_view payload(reinterpret_cast<const char*>(event.payload),
+                                   event.payload_size);
+    CY_CHECK_NE(payload.find("cyVfxContact_plane"), std::string_view::npos);
+    CY_CHECK_NE(payload.find("cyVfxBounce"), std::string_view::npos);
+    api->service_close(&host, session);
+}
+
 CY_TEST_CASE("editor_backend: VFX document compiles through the engine service") {
     const std::string source = vfx_document();
     auto asset = cy::vfx::read_authoring_document(source, allocator());

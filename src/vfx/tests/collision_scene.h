@@ -18,11 +18,11 @@
 namespace cy::vfx_test {
 
 /// The stairs: `kSteps` steps climbing along +z from the origin, each `kTread` deep and `kRise`
-/// high and `kWidth` wide in x, standing on the floor `y = 0`.
+/// high and `kStairWidth` wide in x, standing on the floor `y = 0`.
 inline constexpr u32 kSteps = 5;
 inline constexpr f32 kTread = 0.4F;
 inline constexpr f32 kRise = 0.25F;
-inline constexpr f32 kWidth = 3.0F;
+inline constexpr f32 kStairWidth = 3.0F;
 
 /// Step `index`'s centre and half extents, as an axis-aligned box.
 void step_box(u32 index, Vec3& centre, Vec3& half_extents) noexcept;
@@ -55,5 +55,10 @@ struct DepthScene {
 /// Render `field` from `eye` toward `target` into a `width` x `height` reversed-Z depth buffer.
 [[nodiscard]] DepthScene render_depth(const vfx::CollisionField& field, Vec3 eye, Vec3 target,
                                       u32 width, u32 height, f32 fov_y = 1.0F) noexcept;
+
+/// The floor alone, `y = 0`, intersected rather than marched: a depth buffer of any size in the
+/// time a frame takes to fill one, for a case that measures rather than compares.
+[[nodiscard]] DepthScene render_floor_depth(Vec3 eye, Vec3 target, u32 width, u32 height,
+                                            f32 fov_y = 1.0F) noexcept;
 
 }  // namespace cy::vfx_test
