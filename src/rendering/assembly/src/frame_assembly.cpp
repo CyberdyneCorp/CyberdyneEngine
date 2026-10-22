@@ -109,6 +109,7 @@ FrameAssembly::FrameAssembly(Allocator& allocator) noexcept
       sort_(allocator),
       lights_(allocator),
       elements_(allocator),
+      light_elements_(allocator),
       clusters_(allocator),
       decal_order_(allocator),
       materials_(allocator),
@@ -366,6 +367,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     features.normal_prepass = description_.normal_prepass;
     features.selection_outlines = description_.selection_outlines;
     features.fog_of_war = description_.fog_of_war;
+    features.many_lights = description_.many_lights;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
     features.motion_blur = config.motion_blur;
@@ -510,21 +512,40 @@ Status FrameAssembly::check_materials(AssemblyReport& out) noexcept {
 Status FrameAssembly::build_lights(const AssemblyView& view, AssemblyReport& out) noexcept {
     lights_.clear();
     elements_.clear();
+    light_elements_.clear();
     LightBuildParameters parameters;
     parameters.camera_origin = view.cull.camera_position;
+    out.static_lights = 0;
+    out.area_lights = 0;
     for (usize index = 0; index < view.lights.size(); ++index) {
         const render::LightDescription& light = view.lights[index];
         parameters.unit = default_unit_for(light.kind);
+        // A STATIC LIGHT IS BAKED WHOLE AND COSTS THE FRAME NOTHING: `rendering-lighting-and-
+        // shadows`' "Mobility drives the lighting path". Its record stays — a placeholder no loop
+        // shades — because a light's index is its identity to the lightmap's channels and to the
+        // stochastic path's history; it is in no cluster list and no candidate set.
+        if (light.mobility == render::LightMobility::Static) {
+            if (Status added = lights_.push_back(baked_light_placeholder()); !added) {
+                return added;
+            }
+            ++out.static_lights;
+            continue;
+        }
         if (Status added = lights_.push_back(build_gpu_light(light, parameters)); !added) {
             return added;
         }
+        out.area_lights += render::is_area_light(light.kind) ? 1U : 0U;
         // A directional light has an infinite bound and is not clustered: it reaches every cluster,
         // and putting it in every list would be the whole grid holding one index.
         if (light.kind == render::LightKind::Directional) {
             continue;
         }
+        // On the device the lights go to the assignment's own list and the host assigns the
+        // decals alone; on the host every element goes through one assignment, as it always did.
+        Array<ClusterElement>& elements =
+            description_.device_light_assignment ? light_elements_ : elements_;
         if (Status added =
-                elements_.push_back(element_of(light, view.view, static_cast<u32>(index)));
+                elements.push_back(element_of(light, view.view, static_cast<u32>(index)));
             !added) {
             return added;
         }
@@ -871,6 +892,19 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.screen_space_gi_target = view.screen_space_gi;
     description.screen_space_gi_specular_target = view.screen_space_gi_specular;
     description.screen_space_gi_stage = sinks.screen_space_gi;
+    if (description_.device_light_assignment) {
+        description.cluster_assignment_stage = sinks.cluster_assignment;
+        description.cluster_headers_target = view.cluster_headers;
+        description.cluster_indices_target = view.cluster_indices;
+        description.lights_target = view.lights_buffer;
+    }
+    many_lights_producer_ = FrameStageDeclaration{};
+    if (description_.many_lights) {
+        description.many_lights_stage = sinks.many_lights;
+        description.many_lights_target = view.many_lights;
+        description.many_lights_reservoir_target = view.many_lights_reservoir;
+        many_lights_producer_ = sinks.many_lights;
+    }
     description.cluster_queue = description_.cluster_queue;
     const bool temporal_images = features.temporal && temporal_images_ready_;
     temporal_declared_ =
@@ -997,6 +1031,12 @@ Status FrameAssembly::execute(GraphExecutor& executor, RenderGraph& graph,
         temporal_producer_.executed(temporal_producer_.user);
     }
     temporal_produced_ = false;
+    // THE MANY-LIGHT PATH KEEPS HISTORY TOO — its reservoirs and its accumulation — and swaps it
+    // only for a frame that ran, as the temporal producer does.
+    if (many_lights_producer_.executed != nullptr) {
+        many_lights_producer_.executed(many_lights_producer_.user);
+    }
+    many_lights_producer_ = FrameStageDeclaration{};
 
     // The read-backs, after the submit. `GpuCullPass::read_back` says it MUST follow the frame's
     // fence; `execute` waits, which is what makes this legal here rather than a race that shows up

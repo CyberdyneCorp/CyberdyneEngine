@@ -129,6 +129,11 @@ struct FrameFeatures {
     /// (`src/rendering/fog_of_war/`). Off by default, and absent rather than skipped when off.
     /// Appended.
     bool fog_of_war = false;
+    /// The stochastic many-light path — `FramePassKind::ManyLights`, declared by its producer,
+    /// whose two targets the opaque pass samples. It reads the prepass normals, so it derives the
+    /// `DepthNormal` prepass. Off by default — clustered lighting is the default shipping path —
+    /// and absent rather than skipped when off. Appended.
+    bool many_lights = false;
 };
 
 /// The mode the features require. See the header comment for why this is derived.
@@ -219,6 +224,13 @@ enum class FramePassKind : u8 {
     /// SPECIFICATION'S THIRTEEN, and APPENDED: a kind's value is not its place in the order, which
     /// is the order `ForwardFrame` declares the stages in.
     FogOfWar,
+    /// The stochastic many-light path: every local light importance-sampled per pixel with
+    /// reservoir reuse, its visibility traced, its diffuse half denoised — `rendering-lighting-and-
+    /// shadows`' "Stochastic many-light direct lighting". Declared by its producer
+    /// (`src/rendering/lights_gpu/`) through `FrameStageDeclaration` after the screen-space passes
+    /// and before the opaque pass, which reads its two imported targets in place of the cluster
+    /// loop. NOT ONE OF THE SPECIFICATION'S THIRTEEN, and APPENDED, as `FogOfWar` is.
+    ManyLights,
     Count,
 };
 
@@ -293,6 +305,10 @@ struct ScreenSpaceStageInputs {
     /// `velocity`. Appended.
     ResourceId output_depth = kInvalidResource;
     ResourceId output_velocity = kInvalidResource;
+    /// The frame's light records in device memory, which the prepare stage fills: for a stage that
+    /// shades the frame's lights — the stochastic many-light path — and must declare the read.
+    /// Invalid when the frame has no light. Appended.
+    ResourceId lights = kInvalidResource;
 };
 
 /// Declares a stage as several passes. Returns the FIRST pass it declared, or `kInvalidPass` to
@@ -375,6 +391,11 @@ struct FrameResources {
     /// The fogged colour: the output extent, the scene colour's format, written by the fog of war
     /// producer. Only with `FrameFeatures::fog_of_war`. Appended.
     ResourceId fog_of_war = kInvalidResource;
+    /// The stochastic path's two targets, imported by its producer and sampled by the opaque pass:
+    /// the denoised direct irradiance and the resolved reservoir. Only with
+    /// `FrameFeatures::many_lights`. Appended.
+    ResourceId many_lights = kInvalidResource;
+    ResourceId many_lights_reservoir = kInvalidResource;
 };
 
 /// One declared pass, so a caller can find a pass it wants to inspect or time.
@@ -490,6 +511,25 @@ struct FrameDescription {
     /// its last pass must write. No single-pass fallback: with `features.fog_of_war` and no
     /// producer, `build()` refuses. Appended.
     FrameStageDeclaration fog_of_war_stage;
+    /// THE CLUSTER LISTS ON THE DEVICE: a producer that declares `FramePassKind::ClusterAssignment`
+    /// as its own passes (`lights_gpu::GpuLightAssignment`), handed `cluster_headers_target` as the
+    /// stage's `target`, and the two list buffers it writes — imported, because the frame's set 1
+    /// binds them. Null keeps the stage the single pass, over buffers the frame creates, that it
+    /// has always been. Both buffers or neither. Appended.
+    FrameStageDeclaration cluster_assignment_stage;
+    ResourceId cluster_headers_target = kInvalidResource;
+    ResourceId cluster_indices_target = kInvalidResource;
+    /// The light records in DEVICE memory: a buffer the caller imports, which the prepare stage
+    /// copies the frame's lights into and the frame's set 1 binds, so the shading loop reads its
+    /// lights from the device rather than across the bus from the host's upload ring. Absent, the
+    /// frame creates its transient as it always did. Appended.
+    ResourceId lights_target = kInvalidResource;
+    /// The stochastic many-light path's producer and its two targets. With
+    /// `features.many_lights` all three are required: there is no single-pass stand-in, and the
+    /// opaque pass samples both targets. Appended.
+    FrameStageDeclaration many_lights_stage;
+    ResourceId many_lights_target = kInvalidResource;
+    ResourceId many_lights_reservoir_target = kInvalidResource;
 };
 
 /// Declares one view's frame into a graph.

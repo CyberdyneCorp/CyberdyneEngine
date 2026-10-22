@@ -47,6 +47,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
+#include <cy/rendering/arbiter/arbiter.h>
 
 namespace cy::rendering {
 
@@ -127,6 +128,10 @@ bool reservoir_update(Reservoir& reservoir, const LightCandidate& candidate, f32
 void reservoir_combine(Reservoir& reservoir, const Reservoir& other, f32 other_target_at_here,
                        u32 max_sample_count, SampleStream& stream) noexcept;
 
+/// Hold a reservoir to at most `max_sample_count` samples, scaling its weight sum with its count so
+/// its contribution weight — their ratio — is unchanged. What `reservoir_combine` ends with.
+void cap_reservoir(Reservoir& reservoir, u32 max_sample_count) noexcept;
+
 /// The path's settings. A profile and scene decision, per the requirement.
 struct ManyLightSettings {
     bool enabled = false;
@@ -171,6 +176,71 @@ struct LightingPathStats {
 [[nodiscard]] LightingPathStats lighting_path_stats(const ManyLightSettings& settings,
                                                     u32 max_lights_per_cluster,
                                                     u32 lights_dropped_by_bound) noexcept;
+
+// ================================================================================================
+// WHICH PATH A FRAME TAKES, AND WHO DECIDES
+// ================================================================================================
+//
+// "Clustered lighting SHALL remain the default shipping path. The stochastic path SHALL be a
+// profile and scene decision." The profile decides whether the path is AVAILABLE
+// (`ManyLightSettings`, validated); the frame's budget decides whether it RUNS. The renderer's one
+// budget arbiter grants the forward shading its milliseconds
+// (`BudgetArbiter::allocation_ms(MaterialEvaluation)` — the light loop is the forward pass's cost),
+// and `LightingPathSelector` holds the clustered path to them: past its per-cluster bound, or over
+// its allocation, the scene has outgrown it and the stochastic path takes the local lights; back
+// inside both, with margin, for long enough, the clustered path returns. Leaving is immediate,
+// because a light dropped at the bound is content missing from the picture; returning waits, so a
+// scene at the boundary does not flicker between two noise characters.
+
+/// What the selection reads, a frame at a time.
+struct LightingPathInputs {
+    /// The frame's local lights: every light but the directional and the static ones.
+    u32 local_lights = 0;
+    /// Assignments the clustered path dropped at its per-cluster bound in the last frame it ran.
+    u32 lights_dropped_by_bound = 0;
+    /// The clustered lighting's measured cost in the last frame it ran, in milliseconds; negative
+    /// when it has none.
+    f32 clustered_ms = -1.0F;
+    /// What the arbiter grants the frame's shading, in milliseconds; zero or negative for "no
+    /// budget", which never moves the frame off the clustered path on cost alone.
+    f32 allocation_ms = 0.0F;
+};
+
+/// One frame's decision and the reason for it, which a diagnostic prints.
+struct LightingPathDecision {
+    LightingPath path = LightingPath::Clustered;
+    bool changed = false;
+    const char* reason = "";
+};
+
+class LightingPathSelector {
+public:
+    /// `dwell_frames`: how long the clustered path must fit before it returns. `return_margin`:
+    /// the fraction of the allocation, and of the light count it was left at, it must fit inside.
+    explicit LightingPathSelector(u32 dwell_frames = 60, f32 return_margin = 0.7F) noexcept
+        : dwell_frames_(dwell_frames), return_margin_(return_margin) {}
+
+    /// Decide this frame's path. With the stochastic path unavailable (`settings` off or refused by
+    /// `validate_many_light`) the answer is always the clustered path.
+    [[nodiscard]] LightingPathDecision update(const ManyLightSettings& settings,
+                                              const LightingPathInputs& inputs) noexcept;
+
+    [[nodiscard]] LightingPath path() const noexcept { return path_; }
+
+private:
+    u32 dwell_frames_ = 60;
+    f32 return_margin_ = 0.7F;
+    LightingPath path_ = LightingPath::Clustered;
+    /// The light count and the cost the clustered path was left at.
+    u32 left_at_lights_ = 0;
+    f32 left_at_ms_ = 0.0F;
+    u32 fitting_frames_ = 0;
+};
+
+/// What the frame's arbiter grants the forward shading this frame, in milliseconds: the allocation
+/// of `BudgetSubsystem::MaterialEvaluation`, whose cost the light loop is. The `allocation_ms` a
+/// `LightingPathInputs` carries.
+[[nodiscard]] f32 shading_allocation_ms(const BudgetArbiter& arbiter) noexcept;
 
 /// Draw `settings.candidates_per_pixel` candidates from `candidates` into a fresh reservoir. The
 /// source distribution is uniform over the candidate list, so `source_pdf` is `1/count` — a caller

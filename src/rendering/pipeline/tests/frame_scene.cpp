@@ -86,15 +86,14 @@ inline constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
 struct Readback {
     ResourceId output = kInvalidResource;
     rhi::BufferHandle buffer;
+    u32 width = kWidth;
+    u32 height = kHeight;
 };
-
-/// The size of one capture, in bytes.
-inline constexpr u64 kReadbackBytes = u64{kWidth} * u64{kHeight} * sizeof(u32);
 
 void record_readback(const PassContext& context, void* user) noexcept {
     auto* readback = static_cast<Readback*>(user);
     rhi::BufferTextureCopy region;
-    region.texture_extent = rhi::Extent3D{kWidth, kHeight, 1};
+    region.texture_extent = rhi::Extent3D{readback->width, readback->height, 1};
     context.commands->copy_texture_to_buffer(context.executor->texture(readback->output),
                                              readback->buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
@@ -351,8 +350,8 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     device_ = &device;
 
     AssemblyDescription description;
-    description.width = kWidth;
-    description.height = kHeight;
+    description.width = width_;
+    description.height = height_;
     description.near_plane = 0.1F;
     description.far_plane = 120.0F;
     description.clusters = ClusterGridConfig{32, 24, 32};
@@ -395,12 +394,13 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     }
 
     Expected<ClusterGrid, Error> grid = make_cluster_grid(
-        description.clusters, kWidth, kHeight, description.near_plane, description.far_plane);
+        description.clusters, width_, height_, description.near_plane, description.far_plane);
     if (!grid.has_value()) {
         return make_unexpected(grid.error());
     }
-    const BindingCapacity capacity = BindingCapacity::for_grid(
-        *grid, description.max_draws, description.max_instances, description.material_capacity, 16);
+    const BindingCapacity capacity =
+        BindingCapacity::for_grid(*grid, description.max_draws, description.max_instances,
+                                  description.material_capacity, light_capacity_);
     if (Status made = bindings_.initialize(device, pipelines_, capacity); !made) {
         return made;
     }
@@ -437,7 +437,7 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     geometry.user = this;
     recorder_.set_geometry(geometry);
 
-    projection_ = perspective_reversed_z(0.9F, static_cast<f32>(kWidth) / static_cast<f32>(kHeight),
+    projection_ = perspective_reversed_z(0.9F, static_cast<f32>(width_) / static_cast<f32>(height_),
                                          description.near_plane, description.far_plane);
     view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
     relative_view_ = view_;
@@ -445,7 +445,7 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
 
     rhi::BufferDescription readback_description;
     readback_description.name = "pipeline readback";
-    readback_description.size = kReadbackBytes;
+    readback_description.size = readback_bytes();
     readback_description.usage = rhi::BufferUsage::TransferDestination;
     readback_description.memory = rhi::MemoryUse::Readback;
     Expected<rhi::BufferHandle, Error> readback = device.create_buffer(readback_description);
@@ -457,7 +457,7 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     rhi::TextureDescription output;
     output.name = "pipeline output";
     output.format = kOutputFormat;
-    output.extent = rhi::Extent3D{kWidth, kHeight, 1};
+    output.extent = rhi::Extent3D{width_, height_, 1};
     output.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource;
     Expected<rhi::TextureHandle, Error> created = device.create_texture(output);
     if (!created.has_value()) {
@@ -469,7 +469,7 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
 }
 
 Status FrameScene::read_pixels() noexcept {
-    if (Status sized = pixels_.resize(usize{kWidth} * usize{kHeight}); !sized) {
+    if (Status sized = pixels_.resize(usize{width_} * usize{height_}); !sized) {
         return sized;
     }
     const auto* mapped = static_cast<const u32*>(device_->buffer_mapped_pointer(readback_));
@@ -522,8 +522,8 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     TextureRequest request;
     request.name = "pipeline output";
     request.format = kOutputFormat;
-    request.width = kWidth;
-    request.height = kHeight;
+    request.width = width_;
+    request.height = height_;
     request.extra_usage = rhi::TextureUsage::TransferSource;
     view.output = graph_.import_texture(request, output_, rhi::ImageUse::Undefined);
 
@@ -607,6 +607,8 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     Readback readback;
     readback.output = assembly_.resources().output;
     readback.buffer = readback_;
+    readback.width = width_;
+    readback.height = height_;
     if (read_back_ && readback.output != kInvalidResource) {
         // THE DESTINATION IS IMPORTED AND THE WRITE IS DECLARED, and both halves are load-bearing.
         // `rhi-and-render-graph`'s culling rule drops a pass whose output nothing consumes, and the
@@ -616,7 +618,7 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
         // survive.
         BufferRequest capture_request;
         capture_request.name = "pipeline capture";
-        capture_request.size = kReadbackBytes;
+        capture_request.size = readback_bytes();
         capture_request.extra_usage = rhi::BufferUsage::TransferDestination;
         const ResourceId destination = graph_.import_buffer(capture_request, readback_);
         graph_.add_pass("capture", rhi::QueueKind::Graphics)

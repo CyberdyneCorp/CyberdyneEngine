@@ -41,6 +41,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/area.cpp
+        src/area_shading.cpp
         src/cascades.cpp
         src/channels.cpp
         src/cloud_shadow.cpp
@@ -51,6 +52,7 @@ cy_add_module(
         src/many_light.cpp
         src/shadow_atlas.cpp
         src/soft_shadows.cpp
+        src/transient_lights.cpp
         src/units.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::environment and cy::rendering-sky ARE ILLUMINATION'S HALF OF THE CLOUD SHADOW, and they
@@ -64,7 +66,7 @@ cy_add_module(
     # cy::world, and none of those names cy::rendering-lighting. `just quality-layers` is what says
     # so on every change.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::environment
-                        cy::rendering-sky cy::servers-render cy::world)
+                        cy::rendering-arbiter cy::rendering-sky cy::servers-render cy::world)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

@@ -45,6 +45,12 @@ run = [["{python}", "src/rendering/gi_gpu/shaders/regenerate.py", "--slangc", "{
         "--clang-format", "{clang_format}"]]
 
 [[group]]
+name = "lights_gpu"
+headers = ["src/rendering/lights_gpu/src/lights_gpu_spirv.h", "src/rendering/lights_gpu/src/lights_gpu_msl.h"]
+run = [["{python}", "src/rendering/lights_gpu/shaders/regenerate.py", "--slangc", "{slangc}",
+        "--clang-format", "{clang_format}"]]
+
+[[group]]
 name = "selection"
 headers = ["src/rendering/selection/src/selection_spirv.h", "src/rendering/selection/src/selection_msl.h"]
 run = [["{python}", "src/rendering/selection/shaders/regenerate.py", "--slangc", "{slangc}",

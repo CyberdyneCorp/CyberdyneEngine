@@ -14,6 +14,8 @@ constexpr f32 kDirectionalLow = 0.1F;       // deep twilight, in lux
 constexpr f32 kDirectionalHigh = 150000.F;  // brighter than any real daylight, in lux
 constexpr f32 kPunctualLow = 0.1F;          // a dim indicator, in candela
 constexpr f32 kPunctualHigh = 100000.F;     // a searchlight, in candela
+constexpr f32 kAreaLow = 1.0F;              // a dim backlit panel, in nits
+constexpr f32 kAreaHigh = 1.0e8F;           // a bare incandescent filament, in nits
 
 /// The geometric middle of a range. Used by the arbitrary-to-physical conversion, because a range
 /// spanning six orders of magnitude has no useful arithmetic middle.
@@ -74,6 +76,12 @@ PhotometricUnit default_unit_for(render::LightKind kind) noexcept {
         case render::LightKind::Point:
         case render::LightKind::Spot:
             return PhotometricUnit::Lumen;
+        case render::LightKind::Rect:
+        case render::LightKind::Disc:
+        case render::LightKind::Sphere:
+        case render::LightKind::Tube:
+            // `rendering-lighting-and-shadows`' "Physical light units": nits for area lights.
+            return PhotometricUnit::Nit;
         case render::LightKind::Count:
             break;
     }
@@ -108,6 +116,29 @@ f32 area_nits_from_lumens(f32 lumens, f32 area_square_metres) noexcept {
     return lumens / (area_square_metres * kPi);
 }
 
+f32 area_light_emitting_area(const render::LightDescription& light) noexcept {
+    const f32 width = math::max(light.source_width, 0.0F);
+    const f32 height = math::max(light.source_height, 0.0F);
+    const f32 sides = light.two_sided ? 2.0F : 1.0F;
+    switch (light.kind) {
+        case render::LightKind::Rect:
+            return width * height * sides;
+        case render::LightKind::Disc:
+            return kPi * 0.25F * width * width * sides;
+        case render::LightKind::Sphere:
+            return kPi * width * width;
+        case render::LightKind::Tube:
+            // A cylinder's side: its ends do not emit, as a fluorescent tube's caps do not.
+            return kPi * height * width;
+        case render::LightKind::Directional:
+        case render::LightKind::Point:
+        case render::LightKind::Spot:
+        case render::LightKind::Count:
+            break;
+    }
+    return 0.0F;
+}
+
 f32 to_shading_intensity(render::LightKind kind, PhotometricUnit unit, f32 value,
                          f32 outer_cone_radians, f32 area_square_metres) noexcept {
     switch (unit) {
@@ -133,11 +164,17 @@ f32 to_shading_intensity(render::LightKind kind, PhotometricUnit unit, f32 value
         case render::LightKind::Directional:
             // Flux has no meaning for a light with no position; the value is taken as illuminance.
             return value;
+        case render::LightKind::Rect:
+        case render::LightKind::Disc:
+        case render::LightKind::Sphere:
+        case render::LightKind::Tube:
+            // The EMITTING area: both faces of a two-sided panel, the whole surface of a sphere.
+            // `area_light_emitting_area` is the one place that is worked out.
+            return area_nits_from_lumens(value, area_square_metres);
         case render::LightKind::Count:
             break;
     }
     (void)outer_cone_radians;
-    (void)area_square_metres;
     return value;
 }
 
@@ -146,6 +183,9 @@ f32 to_shading_intensity(render::LightKind kind, PhotometricUnit unit, f32 value
 IntensityRange plausible_range(render::LightKind kind) noexcept {
     if (kind == render::LightKind::Directional) {
         return IntensityRange{kDirectionalLow, kDirectionalHigh};
+    }
+    if (render::is_area_light(kind)) {
+        return IntensityRange{kAreaLow, kAreaHigh};
     }
     return IntensityRange{kPunctualLow, kPunctualHigh};
 }

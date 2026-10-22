@@ -54,6 +54,25 @@ inline constexpr u32 kGpuLightSpot = 2;
 /// A spot whose cone falls off as the cosine rather than its square: a small Lambertian emitter
 /// (`render::LightDescription::cosine_falloff`). `cy/light.slang`'s `kLightEmitter`.
 inline constexpr u32 kGpuLightEmitter = 3;
+/// The four area kinds (`render::is_area_light`). `cy/light.slang`'s `kLightRect` and on.
+inline constexpr u32 kGpuLightRect = 4;
+inline constexpr u32 kGpuLightDisc = 5;
+inline constexpr u32 kGpuLightSphere = 6;
+inline constexpr u32 kGpuLightTube = 7;
+/// A STATIC light (`render::LightMobility::Static`): baked whole, so its record is a placeholder
+/// that keeps its index and that no loop shades. `cy/light.slang`'s `kLightBaked`.
+inline constexpr u32 kGpuLightBaked = 8;
+/// `GpuLight::kind`'s low byte is the kind; the bits above it are flags no punctual light sets, so
+/// every comparison a shader made before area lights existed still compares what it did.
+inline constexpr u32 kGpuLightKindMask = 0xFFU;
+/// A rect or a disc that emits from both faces.
+inline constexpr u32 kGpuLightTwoSided = 0x100U;
+
+/// Whether a record's kind is one of the four area kinds.
+[[nodiscard]] constexpr bool gpu_light_is_area(u32 kind) noexcept {
+    const u32 base = kind & kGpuLightKindMask;
+    return base >= kGpuLightRect && base <= kGpuLightTube;
+}
 
 /// ONE LIGHT, IN THE LAYOUT THE SHADER SEES. 64 bytes, 16-byte aligned.
 struct alignas(16) GpuLight {
@@ -74,10 +93,18 @@ struct alignas(16) GpuLight {
 
     /// The smooth cone attenuation, precomputed: `saturate(cos(angle) * scale + bias)`. Two
     /// multiply-adds in the shader instead of two inverse cosines.
+    ///
+    /// AN AREA LIGHT HAS NO CONE, and the pair is its two half-extents in metres instead: a rect's
+    /// half width and half height, a disc's or a sphere's radius twice, a tube's half length and
+    /// its radius. `direction` is a rect's or a disc's emitting normal and a tube's axis.
     f32 spot_scale = 1.0F;
     f32 spot_bias = 0.0F;
     /// The atlas tile this light's shadow was rendered into, or `kNoShadowSlot`. Filled in by the
     /// shadow pass, after assignment, which is why it is not an argument to `build_gpu_light`.
+    ///
+    /// AN AREA LIGHT TAKES NO ATLAS TILE — its shadow is sampled over its surface by the stochastic
+    /// path — and the word is its TANGENT instead: a rect's width axis, octahedral, two 16-bit
+    /// signed halves (`encode_area_tangent`). `cy/light.slang` calls the word `shapeWord`.
     u32 shadow_slot = 0xFFFFFFFFU;
     /// Which layers this light illuminates. `rendering-lighting-and-shadows`' light channels: "a
     /// compact bitfield test during light assignment, not a per-object light loop", so this word is
@@ -108,6 +135,10 @@ struct LightBuildParameters {
 [[nodiscard]] GpuLight build_gpu_light(const render::LightDescription& light,
                                        const LightBuildParameters& parameters) noexcept;
 
+/// The record a static light keeps its place in the frame's list with: no intensity, no channels,
+/// kind `kGpuLightBaked`.
+[[nodiscard]] GpuLight baked_light_placeholder() noexcept;
+
 /// The importance a light is ranked by when there are more of them than a budget allows.
 ///
 /// `rendering-lighting-and-shadows`: "Lights exceeding budgets SHALL be dropped deterministically
@@ -119,16 +150,33 @@ struct LightBuildParameters {
 
 /// The world-space bounding sphere a light affects: what cluster assignment and the volume index
 /// test against. A directional light has no bound and returns a radius of `math::kInfinity`.
+///
+/// An area light's is its reach about its centre: the authored `range`, or, with none authored,
+/// `area_light_reach` — the shader windows its contribution to zero there, as a punctual light's.
 [[nodiscard]] f32 light_bounding_radius(const render::LightDescription& light) noexcept;
+
+/// The illuminance, in lux, below which an area light with no authored range stops: where the
+/// cluster lists end and the shader's window reaches zero.
+inline constexpr f32 kAreaLightReachIlluminance = 0.01F;
+
+/// How far an area light of this luminance and size reaches, in metres: the distance at which its
+/// far-field illuminance, `L * A / d^2` on a receiver facing it, falls to
+/// `kAreaLightReachIlluminance`, and never less than the emitter's own extent.
+[[nodiscard]] f32 area_light_reach(const render::LightDescription& light,
+                                   f32 shading_luminance) noexcept;
+
+/// A unit vector as `GpuLight::shadow_slot` carries an area light's tangent: octahedral, x in the
+/// low 16 bits and y in the high, each a signed normalised integer. `cy/light.slang`'s
+/// `decodeAreaTangent` is the inverse.
+[[nodiscard]] u32 encode_area_tangent(Vec3 tangent) noexcept;
+[[nodiscard]] Vec3 decode_area_tangent(u32 word) noexcept;
 
 // --- The contract with cy/light.slang -----------------------------------------------------------
 //
-// `Light` in cy/light.slang is float3 + float + float3 + float + float3 + uint + float2 + float2,
-// and every offset below matches it. The shader's final `float2 padding` is where `shadow_slot` and
-// `layer_mask` live: both are consumed on the CPU — by the shadow atlas and by cluster assignment —
-// so the shading loop never reads them and the shader is right to call the pair padding. A shader
-// that later wants to read either declares them there, and these assertions are what make that a
-// two-line change rather than a search.
+// `Light` in cy/light.slang is float3 + float + float3 + float + float3 + uint + float2 + uint +
+// uint, and every offset below matches it. The shader's last two words are `shapeWord` and
+// `layerMask`: the shading loop reads the first for an area light's tangent, and the device's
+// cluster assignment reads the second, which is the light channels' one AND.
 
 static_assert(sizeof(GpuLight) == 64, "GpuLight is cy/light.slang's Light: 64 bytes");
 static_assert(alignof(GpuLight) == 16, "GpuLight must be std430/std140-friendly");

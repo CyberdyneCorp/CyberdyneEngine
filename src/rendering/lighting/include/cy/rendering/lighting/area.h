@@ -83,7 +83,9 @@ enum class AreaLightShape : u8 {
     /// A sphere light: the representative-point form is exact for the diffuse term and the LTC
     /// form uses the sphere's projected disc.
     Sphere,
-    /// A capsule; two spheres and a cylinder, evaluated as the swept disc.
+    /// A cylinder whose ends do not emit, evaluated as its silhouette: the rectangle `2 half_x`
+    /// across and `2 half_y` long, turned about the axis to face the shading point — which is
+    /// exactly what a Lambertian cylinder looks like from the side.
     Tube,
     Count,
 };
@@ -160,6 +162,12 @@ public:
     /// changes shape fastest.
     [[nodiscard]] LtcEntry sample(f32 roughness, f32 cos_theta) const noexcept;
 
+    /// One stored entry: column `x` (roughness, `sqrt` parameterised) of row `y` (`sqrt(1 - cos)`).
+    /// What a device copy of the table uploads, so it interpolates the same numbers `sample` does.
+    [[nodiscard]] const LtcEntry& entry(u32 x, u32 y) const noexcept {
+        return entries_[(y * kLtcTableSize) + x];
+    }
+
 private:
     LtcEntry entries_[kLtcTableSize * kLtcTableSize];
     bool built_ = false;
@@ -170,6 +178,19 @@ private:
 /// are transformed, and it is separated out because it is exact and therefore testable against a
 /// case whose answer is known — a quad subtending a hemisphere integrates to 1.
 [[nodiscard]] f32 integrate_cosine_polygon(const Vec3* corners, u32 count) noexcept;
+
+/// The same integral with its VECTOR form factor: `integral` is `|integrate_cosine_polygon|` over
+/// the corners whichever way they are wound, and `direction` the unit vector the summed edge
+/// vectors point along — the mean direction, cosine-weighted, the polygon is seen in. Through an
+/// LTC's forward transform it is the direction the BRDF lobe gathers the light from, which is where
+/// the frame evaluates the light's Fresnel (`area_shading.h`).
+struct PolygonIntegral {
+    f32 integral = 0.0F;
+    Vec3 direction{0.0F, 0.0F, 1.0F};
+};
+
+[[nodiscard]] PolygonIntegral integrate_cosine_polygon_vector(const Vec3* corners,
+                                                              u32 count) noexcept;
 
 /// Evaluate an area light's contribution through the LTC.
 ///

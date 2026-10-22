@@ -222,11 +222,12 @@ Status FrameBindings::write_sets(u32 frame_slot) noexcept {
 
     const rhi::DescriptorWrite view[] = {
         buffer_write(kViewBindingFrame, rhi::DescriptorKind::UniformBuffer, slot.view),
-        buffer_write(kViewBindingLights, rhi::DescriptorKind::StorageBuffer, slot.lights),
+        buffer_write(kViewBindingLights, rhi::DescriptorKind::StorageBuffer,
+                     bound_lights_.is_null() ? slot.lights : bound_lights_),
         buffer_write(kViewBindingClusterHeaders, rhi::DescriptorKind::StorageBuffer,
-                     slot.cluster_headers),
+                     bound_headers_.is_null() ? slot.cluster_headers : bound_headers_),
         buffer_write(kViewBindingClusterIndices, rhi::DescriptorKind::StorageBuffer,
-                     slot.cluster_indices),
+                     bound_indices_.is_null() ? slot.cluster_indices : bound_indices_),
         buffer_write(kViewBindingDrawInstances, rhi::DescriptorKind::StorageBuffer, slot.draws),
         buffer_write(kViewBindingInstances, rhi::DescriptorKind::StorageBuffer, slot.instances),
         buffer_write(kViewBindingMaterials, rhi::DescriptorKind::StorageBuffer, slot.materials),
@@ -287,6 +288,13 @@ Status FrameBindings::upload(u32 frame_slot, const FrameUpload& upload) noexcept
         !written) {
         return written;
     }
+    if (upload.cluster_headers_buffer.is_null() != upload.cluster_indices_buffer.is_null()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "frame bindings: the device's cluster headers and indices are bound together");
+    }
+    bound_lights_ = upload.lights_buffer;
+    bound_headers_ = upload.cluster_headers_buffer;
+    bound_indices_ = upload.cluster_indices_buffer;
     if (Status written = write_sets(frame_slot); !written) {
         return written;
     }

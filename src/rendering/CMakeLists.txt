@@ -253,3 +253,11 @@ add_subdirectory(lightmaps)
 # same field as the minimap's overlay. Its device suite renders pipeline/'s scene, so it is read
 # after pipeline/.
 add_subdirectory(fog_of_war)
+
+# MANY LIGHTS AND AREA LIGHTS ON THE DEVICE. The device half of cy::rendering-lighting: the LTC
+# table as a texture of the frame's set 0, the clustered light lists assigned by a compute stage at
+# `FramePassKind::ClusterAssignment`, and the stochastic many-light path at
+# `FramePassKind::ManyLights` — reservoirs with temporal and spatial reuse, traced visibility and
+# the engine's denoiser transcribed. It joins cy::rendering-lighting, cy::rendering-denoise and
+# cy::rendering-pipeline, and its device suite renders pipeline/'s scene, so it is read after them.
+add_subdirectory(lights_gpu)

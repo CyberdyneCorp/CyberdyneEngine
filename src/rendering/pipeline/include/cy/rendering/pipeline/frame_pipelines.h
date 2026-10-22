@@ -355,7 +355,28 @@ struct alignas(16) FrameViewData {
     ///
     /// APPENDED, for the reason `material_textures` gives.
     u32 gi_control[4] = {kNoMaterialTexture, kNoMaterialTexture, 0, 0};
+    /// Area lights and the stochastic many-light path. x: the set 0 texture slot of the LTC table
+    /// (`lights_gpu::LtcTableTexture`), or `kNoMaterialTexture` — an area light then shades its
+    /// diffuse term alone. y: the slot of the stochastic path's denoised direct irradiance. z: the
+    /// slot of its resolved reservoir. w: `kStochasticLighting` when the stochastic path is the
+    /// frame's. The defaults are the clustered frame as it was, arithmetic for arithmetic.
+    /// `lights_gpu::write_lighting_control` fills it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 lighting_control[4] = {kNoMaterialTexture, kNoMaterialTexture, kNoMaterialTexture, 0};
+    /// The frame's directional lights by index: x, y and z the first three in ascending order, w
+    /// their count with `kDirectionalListed`. The forward pass shades exactly these instead of
+    /// walking every light for them — the walk cost a frame of a thousand lights a thousand reads a
+    /// pixel. Zero, the default, is the walk. `upload_for` fills it.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    u32 directional_lights[4] = {0, 0, 0, 0};
 };
+
+/// `directional_lights[3]`'s flag, `cy/frame.slang`'s `kCyDirectionalListed`.
+inline constexpr u32 kDirectionalListed = 0x80000000U;
+/// The most directional lights `directional_lights` names; a frame with more walks every light.
+inline constexpr u32 kMaxListedDirectionalLights = 3;
 
 /// `lightmap_shadow_lights`' "no light has this channel" — `cy/frame.slang`'s `kCyNoLightmapLight`.
 inline constexpr u32 kNoLightmapLight = 0xFFFFFFFFU;
@@ -388,8 +409,10 @@ inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 656, "CyFrameData's std140 block is 656 bytes");
+static_assert(sizeof(FrameViewData) == 688, "CyFrameData's std140 block is 688 bytes");
+static_assert(offsetof(FrameViewData, directional_lights) == 672);
 static_assert(offsetof(FrameViewData, gi_control) == 640);
+static_assert(offsetof(FrameViewData, lighting_control) == 656);
 static_assert(offsetof(FrameViewData, lightmap_shadow_lights) == 592);
 static_assert(offsetof(FrameViewData, lightmap_direct_lights) == 608);
 static_assert(offsetof(FrameViewData, lightmap_debug) == 624);

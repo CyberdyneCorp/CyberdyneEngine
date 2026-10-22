@@ -99,6 +99,12 @@ inline constexpr f32 kPi = std::numbers::pi_v<f32>;
 /// spreads over π steradians of projected solid angle, not 2π.
 [[nodiscard]] f32 area_nits_from_lumens(f32 lumens, f32 area_square_metres) noexcept;
 
+/// The area an area light EMITS from, in square metres: both faces of a two-sided rect or disc, the
+/// whole surface of a sphere, a tube's cylinder and its two caps. Zero for a punctual light. What
+/// `to_shading_intensity` divides a lumen value by, so the flux an author types is the flux the
+/// light gives off whatever its shape.
+[[nodiscard]] f32 area_light_emitting_area(const render::LightDescription& light) noexcept;
+
 /// Convert an authored value into the quantity the shader integrates for a light of this kind:
 /// candela for point and spot, lux for directional, nits for area. `Arbitrary` passes through.
 ///

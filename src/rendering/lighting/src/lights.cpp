@@ -15,10 +15,75 @@ namespace {
             return kGpuLightPoint;
         case render::LightKind::Spot:
             return kGpuLightSpot;
+        case render::LightKind::Rect:
+            return kGpuLightRect;
+        case render::LightKind::Disc:
+            return kGpuLightDisc;
+        case render::LightKind::Sphere:
+            return kGpuLightSphere;
+        case render::LightKind::Tube:
+            return kGpuLightTube;
         case render::LightKind::Count:
             break;
     }
     return kGpuLightPoint;
+}
+
+/// An area light's shape words: the two half-extents where a spot keeps its cone, the emitting
+/// normal (a tube's axis) in `direction`, the width axis in the shadow-slot word, and the two-sided
+/// flag above the kind's byte. See `GpuLight`.
+void write_area_shape(const render::LightDescription& light, f32 shading_luminance,
+                      GpuLight& record) noexcept {
+    const f32 width = math::max(light.source_width, 0.0F);
+    const f32 height = math::max(light.source_height, 0.0F);
+    const Vec3 right = normalize(light.transform.right());
+    switch (light.kind) {
+        case render::LightKind::Rect:
+            record.spot_scale = width * 0.5F;
+            record.spot_bias = height * 0.5F;
+            break;
+        case render::LightKind::Disc:
+        case render::LightKind::Sphere:
+            record.spot_scale = width * 0.5F;
+            record.spot_bias = width * 0.5F;
+            break;
+        case render::LightKind::Tube:
+            record.spot_scale = width * 0.5F;
+            record.spot_bias = height * 0.5F;
+            // A tube's one direction is its axis, which is the transform's right axis.
+            record.direction[0] = right.x;
+            record.direction[1] = right.y;
+            record.direction[2] = right.z;
+            break;
+        case render::LightKind::Directional:
+        case render::LightKind::Point:
+        case render::LightKind::Spot:
+        case render::LightKind::Count:
+            break;
+    }
+    const bool faces =
+        light.kind == render::LightKind::Rect || light.kind == render::LightKind::Disc;
+    if (faces && light.two_sided) {
+        record.kind |= kGpuLightTwoSided;
+    }
+    record.shadow_slot = encode_area_tangent(right);
+    record.range = light.range > 0.0F ? light.range : area_light_reach(light, shading_luminance);
+}
+
+/// Octahedral folding of a unit vector onto the square [-1, 1]^2.
+[[nodiscard]] f32 sign_not_zero(f32 value) noexcept {
+    return value >= 0.0F ? 1.0F : -1.0F;
+}
+
+[[nodiscard]] u32 snorm16(f32 value) noexcept {
+    const f32 clamped = math::clamp(value, -1.0F, 1.0F);
+    const auto integer = static_cast<i32>(std::lround(clamped * 32767.0F));
+    return static_cast<u32>(integer) & 0xFFFFU;
+}
+
+[[nodiscard]] f32 from_snorm16(u32 bits) noexcept {
+    const auto integer = static_cast<i32>(static_cast<i16>(static_cast<u16>(bits & 0xFFFFU)));
+    return math::max(static_cast<f32>(integer) / 32767.0F, -1.0F);
 }
 
 /// The smooth cone attenuation, as `saturate(cos(angle) * scale + bias)`.
@@ -61,8 +126,9 @@ GpuLight build_gpu_light(const render::LightDescription& light,
     record.direction[2] = direction.z;
 
     record.range = light.kind == render::LightKind::Directional ? 0.0F : light.range;
-    record.intensity = to_shading_intensity(light.kind, parameters.unit, light.intensity,
-                                            light.outer_cone_radians, 0.0F);
+    record.intensity =
+        to_shading_intensity(light.kind, parameters.unit, light.intensity, light.outer_cone_radians,
+                             area_light_emitting_area(light));
 
     // The temperature is a TINT: unit luminance, so it multiplies the authored colour without
     // changing how bright the light is. units.h is where that normalisation lives.
@@ -94,7 +160,56 @@ GpuLight build_gpu_light(const render::LightDescription& light,
 
     record.shadow_slot = kNoShadowSlot;
     record.layer_mask = light.layer_mask;
+    if (render::is_area_light(light.kind)) {
+        write_area_shape(light, record.intensity, record);
+    }
     return record;
+}
+
+GpuLight baked_light_placeholder() noexcept {
+    GpuLight record;
+    record.kind = kGpuLightBaked;
+    record.intensity = 0.0F;
+    record.range = 0.0F;
+    record.layer_mask = 0U;
+    record.shadow_slot = kNoShadowSlot;
+    return record;
+}
+
+f32 area_light_reach(const render::LightDescription& light, f32 shading_luminance) noexcept {
+    const f32 area = area_light_emitting_area(light);
+    const f32 extent = 0.5F * math::max(light.source_width, light.source_height);
+    const f32 luminance = math::max(shading_luminance, 0.0F) *
+                          math::max(math::max(light.color[0], light.color[1]), light.color[2]);
+    const f32 far_field = std::sqrt(luminance * area / kAreaLightReachIlluminance);
+    return math::max(far_field, extent * 2.0F);
+}
+
+u32 encode_area_tangent(Vec3 tangent) noexcept {
+    const Vec3 unit = normalized_or(tangent, Vec3{1.0F, 0.0F, 0.0F});
+    const f32 sum = std::fabs(unit.x) + std::fabs(unit.y) + std::fabs(unit.z);
+    f32 x = unit.x / sum;
+    f32 y = unit.y / sum;
+    if (unit.z < 0.0F) {
+        const f32 folded_x = (1.0F - std::fabs(y)) * sign_not_zero(x);
+        const f32 folded_y = (1.0F - std::fabs(x)) * sign_not_zero(y);
+        x = folded_x;
+        y = folded_y;
+    }
+    return snorm16(x) | (snorm16(y) << 16U);
+}
+
+Vec3 decode_area_tangent(u32 word) noexcept {
+    const f32 x = from_snorm16(word);
+    const f32 y = from_snorm16(word >> 16U);
+    Vec3 unit{x, y, 1.0F - std::fabs(x) - std::fabs(y)};
+    if (unit.z < 0.0F) {
+        const f32 folded_x = (1.0F - std::fabs(unit.y)) * sign_not_zero(unit.x);
+        const f32 folded_y = (1.0F - std::fabs(unit.x)) * sign_not_zero(unit.y);
+        unit.x = folded_x;
+        unit.y = folded_y;
+    }
+    return normalized_or(unit, Vec3{1.0F, 0.0F, 0.0F});
 }
 
 f32 light_importance(const render::LightDescription& light, Vec3 camera_position,
@@ -116,6 +231,12 @@ f32 light_importance(const render::LightDescription& light, Vec3 camera_position
 f32 light_bounding_radius(const render::LightDescription& light) noexcept {
     if (light.kind == render::LightKind::Directional) {
         return math::kInfinity;
+    }
+    if (render::is_area_light(light.kind) && !(light.range > 0.0F)) {
+        const f32 luminance =
+            to_shading_intensity(light.kind, default_unit_for(light.kind), light.intensity,
+                                 light.outer_cone_radians, area_light_emitting_area(light));
+        return area_light_reach(light, luminance);
     }
     return math::max(light.range, 0.0F);
 }

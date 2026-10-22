@@ -170,6 +170,18 @@ public:
     void release() noexcept;
     /// Before `build`. See `FrameSceneHooks`.
     void set_hooks(const FrameSceneHooks& hooks) noexcept { hooks_ = hooks; }
+    /// Before `build`: the extent the scene renders at, `kWidth` by `kHeight` unless a suite —
+    /// one timed at 1080p — says otherwise.
+    void set_extent(u32 width, u32 height) noexcept {
+        width_ = width;
+        height_ = height;
+    }
+    /// Before `build`: how many lights the frame's ring holds. Sixteen unless a suite with more
+    /// lights says otherwise.
+    void set_light_capacity(u32 lights) noexcept { light_capacity_ = lights; }
+    [[nodiscard]] u32 width() const noexcept { return width_; }
+    [[nodiscard]] u32 height() const noexcept { return height_; }
+    [[nodiscard]] FrameBindings& bindings() noexcept { return bindings_; }
 
     [[nodiscard]] Status render(RecordMode mode, AssemblyReport& out) noexcept;
 
@@ -312,6 +324,13 @@ private:
     bool deformed_second_ = false;
     bool read_back_ = false;
     bool built_ = false;
+    u32 width_ = kWidth;
+    u32 height_ = kHeight;
+    u32 light_capacity_ = 16;
+
+    [[nodiscard]] u64 readback_bytes() const noexcept {
+        return u64{width_} * u64{height_} * sizeof(u32);
+    }
 };
 
 }  // namespace cy::pipeline_test
