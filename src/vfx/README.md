@@ -485,11 +485,14 @@ the impact events equal in number: 1 280 on both paths.
 
 ### The adversarial pass, run
 
-Seventeen mutations, each applied to the built tree, rebuilt and run on its case; each went red.
+Nineteen mutations, each applied to the built tree, rebuilt and run on its case; each went red.
 Two of the first run were cases asserting too little: the stick case checked the particle after a
 gate that holds a bounced particle still too (it now checks the step of contact), and the event
 cursor is only read with two sub-steps a frame (the spark case now runs two). The depth surface's
-thickness had no case of its own until this pass wrote one. The table is
+thickness had no case of its own until this pass wrote one. Reviewing the pass found one defect of
+its own: a depth handed to `set_collision` for one frame was kept for the next, where its resource
+identifier names something else in a new graph — `declare` now drops a depth not set for its graph
+(`a depth set for one frame is not bound in the next`). The table is
 `openspec/changes/add-vfx-particle-collision/evidence/falsification.txt`.
 
 ## Editor authoring bridge

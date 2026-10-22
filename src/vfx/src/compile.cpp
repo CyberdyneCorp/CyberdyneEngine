@@ -823,6 +823,48 @@ constexpr std::string_view kCollidePrefix = "vfx.collide.";
     return state.builder->make(Bounce, Float3, Name{}, Immediate{}, {operands, 3});
 }
 
+[[nodiscard]] Expected<NodeId, Error> resolved(Lowering& state, const Graph& graph, NodeKey key,
+                                               NodeId contact) noexcept {
+    auto position = lower_pin(state, graph, key, "position");
+    if (!position) {
+        return position;
+    }
+    const NodeId operands[2] = {*position, contact};
+    return state.builder->make(Resolve, Float3, Name{}, Immediate{}, {operands, 2});
+}
+
+/// The closing speed, on the step a contact began only.
+[[nodiscard]] Expected<NodeId, Error> impact(Lowering& state, const Graph& graph, NodeKey key,
+                                             NodeId contact) noexcept {
+    auto velocity = lower_pin(state, graph, key, "velocity");
+    if (!velocity) {
+        return velocity;
+    }
+    auto rising = began(state, graph, key, contact);
+    if (!rising) {
+        return rising;
+    }
+    const NodeId closing[2] = {*velocity, contact};
+    auto speed = state.builder->make(Impact, Float, Name{}, Immediate{}, {closing, 2});
+    if (!speed) {
+        return speed;
+    }
+    const NodeId gated[2] = {*speed, *rising};
+    return state.builder->make(Mul, Float, Name{}, Immediate{}, {gated, 2});
+}
+
+[[nodiscard]] Expected<NodeId, Error> contact_normal(Lowering& state, NodeId contact) noexcept {
+    NodeId axes[3] = {};
+    for (u32 index = 0; index < 3U; ++index) {
+        auto axis = component(state, contact, index);
+        if (!axis) {
+            return axis;
+        }
+        axes[index] = *axis;
+    }
+    return state.builder->make(MakeVec3, Float3, Name{}, Immediate{}, {axes, 3});
+}
+
 [[nodiscard]] Expected<NodeId, Error> collide_output(Lowering& state, const Graph& graph,
                                                      const GraphNode& node, ColliderShape shape,
                                                      std::string_view output) noexcept {
@@ -831,12 +873,7 @@ constexpr std::string_view kCollidePrefix = "vfx.collide.";
         return contact;
     }
     if (output == "position") {
-        auto position = lower_pin(state, graph, node.key, "position");
-        if (!position) {
-            return position;
-        }
-        const NodeId operands[2] = {*position, *contact};
-        return state.builder->make(Resolve, Float3, Name{}, Immediate{}, {operands, 2});
+        return resolved(state, graph, node.key, *contact);
     }
     if (output == "velocity") {
         return bounced(state, graph, node.key, *contact);
@@ -848,29 +885,10 @@ constexpr std::string_view kCollidePrefix = "vfx.collide.";
         return began(state, graph, node.key, *contact);
     }
     if (output == "impact") {
-        auto velocity = lower_pin(state, graph, node.key, "velocity");
-        auto rising = began(state, graph, node.key, *contact);
-        if (!velocity || !rising) {
-            return !velocity ? velocity : rising;
-        }
-        const NodeId closing[2] = {*velocity, *contact};
-        auto speed = state.builder->make(Impact, Float, Name{}, Immediate{}, {closing, 2});
-        if (!speed) {
-            return speed;
-        }
-        const NodeId gated[2] = {*speed, *rising};
-        return state.builder->make(Mul, Float, Name{}, Immediate{}, {gated, 2});
+        return impact(state, graph, node.key, *contact);
     }
     if (output == "normal") {
-        NodeId axes[3] = {};
-        for (u32 index = 0; index < 3U; ++index) {
-            auto axis = component(state, *contact, index);
-            if (!axis) {
-                return axis;
-            }
-            axes[index] = *axis;
-        }
-        return state.builder->make(MakeVec3, Float3, Name{}, Immediate{}, {axes, 3});
+        return contact_normal(state, *contact);
     }
     report(*state.sink, node.key, Name::intern(output),
            "vfx: a collide node has no output of that name — position, velocity, contact, began, "
@@ -1261,6 +1279,15 @@ struct StageLowering {
     return ok();
 }
 
+/// The roots the raises take: one a predicate, and one a payload where a raise has one.
+[[nodiscard]] usize roots_for(const Array<PendingEvent>& raises) noexcept {
+    usize roots = raises.size();
+    for (const PendingEvent& raise : raises) {
+        roots += raise.payload != kInvalidNode ? 1U : 0U;
+    }
+    return roots;
+}
+
 /// One kernel, from one or two stages. `fuse` names the second stage lowered onto the first.
 [[nodiscard]] Expected<VfxKernel, Error> compile_kernel(
     const VfxSystemAsset& asset, const Emitter& emitter, Stage primary, Stage fused,
@@ -1333,11 +1360,7 @@ struct StageLowering {
     if (Status folded = collapse_writes(pending, collapsed); !folded) {
         return make_unexpected(folded.error());
     }
-    usize payloads = 0;
-    for (const PendingEvent& raise : raises) {
-        payloads += raise.payload != kInvalidNode ? 1U : 0U;
-    }
-    if (collapsed.size() + raises.size() + payloads > kMaxKernelWrites) {
+    if (collapsed.size() + roots_for(raises) > kMaxKernelWrites) {
         return fail(ErrorCode::OutOfRange,
                     "vfx: a kernel's attribute writes and event raises together need more roots "
                     "than the domain declares");
