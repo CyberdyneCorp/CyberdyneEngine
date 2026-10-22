@@ -585,8 +585,8 @@ CY_TEST_CASE("a depth set for one frame is not bound in the next") {
         return;
     }
     vfx_test::StairsField stairs;
-    const vfx_test::DepthScene seen = vfx_test::render_depth(
-        stairs, Vec3{0.0F, 3.0F, -2.5F}, Vec3{0.0F, 0.0F, 1.0F}, 64, 36);
+    const vfx_test::DepthScene seen =
+        vfx_test::render_depth(stairs, Vec3{0.0F, 3.0F, -2.5F}, Vec3{0.0F, 0.0F, 1.0F}, 64, 36);
     DeviceDepth depth(gpu.device(), seen);
     DropScenario scenario = scattered_drop("depth");
     graph::DiagnosticSink sink(allocator());
