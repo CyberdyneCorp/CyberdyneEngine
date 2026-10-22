@@ -5,7 +5,7 @@ resources and an enemy camp round the 32 m level `samples/13-rts-api`'s Swift ga
 the map that sample draws with `--render <dir> --map <package>`, and the map M12's slice can grow
 from.
 
-![The Frontier from above, the company patrolling north of the level](../../docs/design/images/rts-map-overview.png)
+![The Frontier from above under blue's fog of war: the level blue has seen, and the rest of the map black, never explored](../../docs/design/images/rts-map-overview.png)
 
 A `.cymap` is a SOURCE: the build cooks it into a `.cypak` (`cy_rts_map_cook`,
 `samples/13-rts-api/map/map_cook.h`), and the sample loads the package through the asset system by

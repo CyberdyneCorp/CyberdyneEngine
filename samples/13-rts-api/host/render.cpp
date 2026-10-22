@@ -93,6 +93,8 @@ struct RtsRenderer::State {
     fow::FogOfWarPass fog;
     std::unique_ptr<fow::VisibilityField> field;
     std::vector<cy::u8> states;
+    /// Where the host's grid lies: the level's square, without a map.
+    fow::FogGridPlacement placement;
     RtsHost* host = nullptr;
     u64 frame = 0;
 
@@ -174,8 +176,7 @@ struct RtsRenderer::State {
         frame_fog.view.projection = scene.projection();
         frame_fog.view.relative_view = scene.relative_view();
         frame_fog.view.eye = scene.eye();
-        frame_fog.placement =
-            fow::FogGridPlacement{0.0F, 0.0F, kLevelSize / static_cast<f32>(kFogCells)};
+        frame_fog.placement = placement;
         frame_fog.field = field.get();
         if (cy::Status set = fog.set_frame(frame_fog); !set) {
             return set;
@@ -391,14 +392,19 @@ cy::Status RtsRenderer::start(RtsHost& host, const RenderOptions& options) noexc
         if (!fow::FogOfWarPass::supported(*state.device)) {
             return cy::fail(cy::ErrorCode::Unsupported, "the device cannot draw the fog of war");
         }
+        const cy::gameplay::fog::FogGridDescription& grid = host.fog().grid().description();
+        const cy::Aabb covered = fog_grid_bounds(grid);
+        state.placement =
+            fow::FogGridPlacement{covered.min.x, covered.min.z,
+                                  (covered.max.x - covered.min.x) / static_cast<f32>(grid.width)};
         state.field = std::make_unique<fow::VisibilityField>(*allocator_);
-        if (cy::Status made = state.field->create(kFogCells, kFogCells); !made) {
+        if (cy::Status made = state.field->create(grid.width, grid.height); !made) {
             return made;
         }
-        state.states.assign(static_cast<std::size_t>(kFogCells) * kFogCells, 0U);
+        state.states.assign(static_cast<std::size_t>(grid.width) * grid.height, 0U);
         if (cy::Status made = state.fog.create(
                 *allocator_, *state.device,
-                fow::FogOfWarPassDescription{kWidth, kHeight, kFogCells, kFogCells, false});
+                fow::FogOfWarPassDescription{kWidth, kHeight, grid.width, grid.height, false});
             !made) {
             return made;
         }

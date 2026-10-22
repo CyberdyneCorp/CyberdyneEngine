@@ -26,6 +26,7 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/math/shapes.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/values/asset_id.h>
@@ -313,6 +314,11 @@ void encode_foliage(const std::vector<FoliageSpecies>& species,
 [[nodiscard]] cy::Status decode_skinned(cy::Span<const u8> bytes, SkinnedMesh& out);
 [[nodiscard]] cy::Status decode_texture(cy::Span<const u8> bytes, TextureData& out);
 [[nodiscard]] cy::Status decode_foliage(cy::Span<const u8> bytes, FoliageData& out);
+
+/// The ground the map spans on the plane, in world metres: the cooked terrain's square and the
+/// level's together; y is zero. What a host sizes the fog of war's grid over, so nothing the map
+/// draws lies off it.
+[[nodiscard]] cy::Aabb map_bounds(const MapContent& content) noexcept;
 
 /// A 64-bit digest of everything a loaded map holds, in a fixed order: what two cooks of one
 /// source, and a cook and its load, are compared by.

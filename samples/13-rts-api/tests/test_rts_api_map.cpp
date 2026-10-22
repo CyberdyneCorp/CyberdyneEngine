@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 // smoke.rts_api_map — samples/13-rts-api's session drawn on the RTS test map.
 //
-// The host runs as a separate process with its scripted player, three times:
+// The host runs as a separate process with its scripted player, four times:
 //
-//   headless                      the session with no picture: the gameplay report the others are
-//                                 held to
+//   headless                      the session with no picture and no map: every fog decision the
+//                                 map run makes is held to it
+//   headless --map                the session with no picture on the map: its GI boxes and the fog
+//                                 grid over its ground, the gameplay report the drawn run is held
+//                                 to
 //   --render --map, 480x270       the session drawn on the cooked map — loaded through the asset
 //                                 system, units skinned and animated, the sun's shadows, ambient
 //                                 occlusion, the GI and blue's fog — with validation on
@@ -13,9 +16,14 @@
 //
 // What it asserts:
 //
-//   the map does not touch the game   every line of the gameplay report is the headless run's, the
-//                                     lockstep company's digest is the committed one, save the GI's
-//                                     light readings, which the map's buildings are part of
+//   the map does not touch the game   every line of the gameplay report is the headless map run's,
+//                                     the lockstep company's digest is the committed one; against
+//                                     the run without a map, every line but the GI's light
+//                                     readings, which the map's buildings are part of, and the fog
+//                                     grid's extent, digest and the cells blue sees past the
+//                                     level's edge, which the map's ground is
+//   the fog covers the map            the fog grid is the map's 128 m, and the company's second
+//                                     group, far from blue's sight, is not drawn
 //   it ran N ticks and drew them      420 frames, the four stills, draws from the skinning pass,
 //                                     the forest, and no validation error
 //   the golden image                  frame 420 at 480x270 against `references/rts_map_420.png`
@@ -74,6 +82,26 @@ constexpr double kFrameBudgetMs = 1000.0 / 60.0;
     return kept;
 }
 
+/// The gameplay half with what depends on the fog grid's extent taken out of its line — the extent,
+/// the digest, and the cells blue sees, which on the map include those past the level's edge: what
+/// a run on the map shares with a run on the level alone, whose grid is the level's square.
+[[nodiscard]] std::string fog_decisions(const std::string& output) {
+    std::string kept = gameplay(output);
+    const std::string::size_type line = kept.find("rts fog ");
+    if (line == std::string::npos) {
+        return kept;
+    }
+    for (const char* key : {" width=", " digest=", " cells=", " game_cells="}) {
+        const std::string::size_type at = kept.find(key, line);
+        if (at == std::string::npos) {
+            continue;
+        }
+        const std::string::size_type end = kept.find_first_of(" \n", at + 1);
+        kept.erase(at, end - at);
+    }
+    return kept;
+}
+
 [[nodiscard]] cy::test::smoke::ProcessResult run(const std::string& arguments) {
     return cy::test::smoke::run(cy::test::smoke::quoted(CY_SAMPLE_RTS_API) + " " + arguments +
                                 " 2>&1");
@@ -103,9 +131,23 @@ CY_TEST_CASE("samples/13-rts-api: the session on the RTS test map, its golden an
     CY_REQUIRE(!render.empty());
 
     // THE MAP DOES NOT TOUCH THE GAME.
+    const cy::test::smoke::ProcessResult on_map = run("--map " + package);
+    CY_REQUIRE_EQ(on_map.exit_code, 0);
+    CY_CHECK_EQ(gameplay(drawn.output), gameplay(on_map.output));
     const cy::test::smoke::ProcessResult headless = run("");
     CY_REQUIRE_EQ(headless.exit_code, 0);
-    CY_CHECK_EQ(gameplay(drawn.output), gameplay(headless.output));
+    CY_CHECK_EQ(fog_decisions(drawn.output), fog_decisions(headless.output));
+    CY_CHECK_NE(fog_decisions(headless.output).find("rts fog "), std::string::npos);
+
+    // THE FOG COVERS THE MAP: the grid is the terrain's 128 m, not the level's 32, and the
+    // company's second group — eight units on their field north of the level, far from blue's sight
+    // — is withheld on the last frame.
+    CY_CHECK_EQ(number_after(line_with(drawn.output, "rts fog "), "width="), 128.0);
+    CY_CHECK_EQ(number_after(line_with(headless.output, "rts fog "), "width="), 32.0);
+    // Sight is no longer cut off at the level's edge: blue sees at least what it saw on the level.
+    CY_CHECK_GE(number_after(line_with(drawn.output, "rts fog "), " cells="),
+                number_after(line_with(headless.output, "rts fog "), " cells="));
+    CY_CHECK_GE(number_after(render, "enemies_hidden="), 8.0);
     const std::string lockstep = line_with(drawn.output, "rts lockstep ");
     CY_CHECK_NE(lockstep.find("digest=a61e5414c179f54a follower=a61e5414c179f54a"),
                 std::string::npos);

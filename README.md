@@ -68,7 +68,7 @@ their module README.
 
 *Colour grading: the beauty shot ungraded, warm and cool ([`src/rendering/grading/`](src/rendering/grading/README.md)).*
 
-![The RTS test map under the Swift RTS: the fog of war, the HUD, the village and the forest](docs/design/images/rts-map-game.png)
+![The RTS test map under the Swift RTS: blue's fog of war over the whole map, black where blue never looked, and the HUD](docs/design/images/rts-map-game.png)
 
 *The RTS test map: terrain, painted layers, a forest and a settlement cooked from one source by the
 engine's terrain and foliage code, drawn under the Swift RTS with shadows, ambient occlusion, the GI

@@ -88,6 +88,7 @@
 #include <cy/animation/animation_system.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/determinism/clock.h>
+#include <cy/core/math/shapes.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/ownership.h>
 #include <cy/ecs/system.h>
@@ -144,6 +145,10 @@ struct HostOptions {
     /// always held. Static, in the level's metres; the host does not own them.
     const FieldBox* extra_gi_boxes = nullptr;
     cy::u32 extra_gi_box_count = 0;
+    /// The ground the fog of war's grid covers (fog_grid.h): the RTS test map's whole terrain when
+    /// the run is on it (`map::map_bounds`). None, the default, is the level's square, the grid the
+    /// level always had. The host does not own it.
+    const cy::Aabb* fog_bounds = nullptr;
 };
 
 /// What the game and the engine say happened. Engine facts are read from the servers and the

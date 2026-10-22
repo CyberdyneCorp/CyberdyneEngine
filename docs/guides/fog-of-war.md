@@ -100,7 +100,10 @@ and its dots.
 ## 4. Style and timing
 
 `FogOfWarStyle`: an explored cell's brightness (0.45) and saturation (0.2), and the never-explored
-colour (black). `FogFadeSettings`: a cell is revealed over 0.25 s and hidden over 0.75 s; zero snaps.
+colour (black). A point OFF THE GRID is never explored, whatever the edge cells hold — in the frame,
+on the minimap and in `FogOfWar::at` — so size the grid over everything the frame draws:
+`samples/13-rts-api` sizes it from the cooked map's bounds when it draws the RTS test map
+(`host/fog_grid.h`). `FogFadeSettings`: a cell is revealed over 0.25 s and hidden over 0.75 s; zero snaps.
 The stage runs on linear HDR after the temporal stage and before depth of field and bloom.
 
 ## 5. What it costs
@@ -114,10 +117,10 @@ fog against 4.68 ms without.
 | Suite | What it holds |
 |---|---|
 | `unit.gameplay_fog` | the disc, explored against visible, flooring left of the origin, shared vision, units by sight, ghosts, refusals, the committed digest |
-| `unit.render_fog_of_war` | the field against the grid, the fade, the smoothing, the shading, the minimap overlay, the constants |
+| `unit.render_fog_of_war` | the field against the grid, the fade, the smoothing, the shading, a point off the grid never explored, the minimap overlay, the constants |
 | `unit.render_forward` | the stage's place in the frame and its refusals |
 | `unit.abi`, `integration.game_backend_fog` | ABI 1.10's thunks and phases; the adapter through the table |
-| `render.fog_of_war` | on a device: the texture is the grid, every pixel the host twin's, explored and unexplored ground, enemy units by sight, smooth edges, the fade, off against a reference |
+| `render.fog_of_war` | on a device: the texture is the grid, every pixel the host twin's, explored and unexplored ground, enemy units by sight, smooth edges, the fade, off against a reference, ground off the grid black |
 | `render.rts_api_hud` (d) | the minimap's fog, Swift and C++ alike |
 | `integration.rts_api_sample`, `smoke.rts_api_fog` | the Swift game: visions, the camp by sight, the refusal from a frame; drawn, with its cost |
 
@@ -132,5 +135,8 @@ The device suites ran on Vulkan. Metal and D3D12 compile the dispatch and have n
   `Fixed` positions.
 * **The fog does not hide geometry.** It darkens surfaces. An enemy you do not want seen must be left
   out of the draw list, which is the game's decision (`sight`).
+* **A grid smaller than the world** leaves the ground past it black, never visible. Before this was
+  fixed the stage read the nearest edge cell, so a 32 m grid under a 128 m map drew everything round
+  it as seen.
 * **`snap()` after a cut.** Otherwise a camera that jumps, or a switch to another team's view, fades
   the whole map in over the reveal time.

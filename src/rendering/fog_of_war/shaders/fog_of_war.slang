@@ -4,7 +4,8 @@
 //
 // For each pixel: the surface's world position from the depth (reversed Z; the cleared sky, depth
 // zero, is left as it is), the visibility texture sampled there — four bilinear taps half a cell
-// apart, averaged, the edge clamped, each channel eased by a smoothstep — and the colour shaded:
+// apart, averaged, the edge clamped, each channel eased by a smoothstep; a point off the grid is
+// never explored — and the colour shaded:
 //
 //   explored = lerp(luma, colour, saturation) * brightness
 //   hidden   = lerp(unexplored colour, explored, explored level)
@@ -67,11 +68,20 @@ float2 fogOfWarBilinear(float2 position)
 }
 
 /// `sample_visibility`: x the visible level, y the explored one. The mean of four bilinear taps
-/// half a cell apart — a tent two cells wide, which rounds the cells' corners — each eased.
+/// half a cell apart — a tent two cells wide, which rounds the cells' corners — each eased. A point
+/// off the grid is never explored: zero for both, whatever the edge cells hold.
 float2 fogOfWarSample(float2 world)
 {
     let grid = fogOfWarWord(5);
-    let position = (world - grid.xy) * grid.z - 0.5;
+    let extent = fogOfWarWord(8);
+    let cell = (world - grid.xy) * grid.z;
+    // `kFogEdgeSlack`: a surface on the edge reconstructs a hair either side of it.
+    let slack = 1.0 / 16.0;
+    if (cell.x < -slack || cell.y < -slack || cell.x > extent.z + slack || cell.y > extent.w + slack)
+    {
+        return float2(0.0);
+    }
+    let position = cell - 0.5;
     var level = float2(0.0);
     for (uint tap = 0; tap < 4; ++tap)
     {

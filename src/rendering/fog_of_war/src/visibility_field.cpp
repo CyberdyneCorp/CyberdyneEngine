@@ -177,11 +177,21 @@ FogSample sample_visibility(Span<const u8> texels, u32 width, u32 height,
         !(placement.cell_size > 0.0F)) {
         return FogSample{};
     }
+    // Off the grid is never explored, whatever the edge cells hold: the grid is everything the
+    // simulation knows, so nothing beyond it may read as seen. A surface ON the edge reconstructs
+    // a hair either side of it from the depth, so the edge is `kFogEdgeSlack` of a cell wide.
+    const f32 inverse_cell = 1.0F / placement.cell_size;
+    const f32 cell_x = (world_x - placement.origin_x) * inverse_cell;
+    const f32 cell_z = (world_z - placement.origin_z) * inverse_cell;
+    if (cell_x < -kFogEdgeSlack || cell_z < -kFogEdgeSlack ||
+        cell_x > static_cast<f32>(width) + kFogEdgeSlack ||
+        cell_z > static_cast<f32>(height) + kFogEdgeSlack) {
+        return FogSample{};
+    }
     // Grid coordinates with texel i's centre at i: then four bilinear taps half a cell apart,
     // averaged — a tent two cells wide that rounds the cells' corners — and eased.
-    const f32 inverse_cell = 1.0F / placement.cell_size;
-    const f32 gx = ((world_x - placement.origin_x) * inverse_cell) - 0.5F;
-    const f32 gz = ((world_z - placement.origin_z) * inverse_cell) - 0.5F;
+    const f32 gx = cell_x - 0.5F;
+    const f32 gz = cell_z - 0.5F;
     f32 sum[2] = {0.0F, 0.0F};
     for (u32 tap = 0; tap < 4U; ++tap) {
         const f32 ox = (tap & 1U) != 0U ? 0.5F : -0.5F;

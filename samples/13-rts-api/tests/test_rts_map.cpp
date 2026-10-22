@@ -10,6 +10,9 @@
 //                                 level square flat at zero, hills and a lake round it, painted
 //                                 layers, roads, buildings standing on the ground, resources,
 //                                 a forest kept off the level and the roads, the skinned worker
+//   the fog covers the map        the fog of war's grid a run on the map builds covers the cooked
+//                                 terrain and the level, and a unit of another side far from
+//                                 blue's sight, or off the grid, is not drawn
 //   refusals                      a damaged payload, an asset loaded as the wrong kind, a newer
 //                                 format, a truncated payload and a malformed source each fail and
 //                                 say why
@@ -28,6 +31,7 @@
 #include <string>
 #include <vector>
 
+#include "fog_grid.h"
 #include "map_cook.h"
 #include "map_load.h"
 #include "map_source.h"
@@ -227,6 +231,80 @@ CY_TEST_CASE("samples/13-rts-api map: the build's package is a map, read by id")
         load.assets, static_cast<unsigned long long>(load.bytes), load.load_ms,
         foliage.plants.size(), layout.placements.size(), map.ground.indices.size() / 3U,
         static_cast<unsigned long long>(load.digest));
+}
+
+CY_TEST_CASE("samples/13-rts-api map: the fog of war's grid covers the whole map") {
+    // The regression: the grid was the level's 32 m square while the frame drew 128 m of terrain,
+    // and everything off the square was drawn as seen.
+    MapContent map;
+    LoadReport load;
+    std::string detail;
+    CY_REQUIRE(load_map(cy::system_allocator(cy::MemoryDomain::Assets), CY_RTS_MAP_PACKAGE, map,
+                        load, detail)
+                   .has_value());
+    const TerrainData& terrain = map.terrain;
+    CY_REQUIRE(terrain.edge >= 2U);
+    const f32 terrain_max_x =
+        terrain.origin_x + (terrain.spacing * static_cast<f32>(terrain.edge - 1U));
+    const f32 terrain_max_z =
+        terrain.origin_z + (terrain.spacing * static_cast<f32>(terrain.edge - 1U));
+
+    // The grid the host builds for a run on this map (main.cpp: HostOptions::fog_bounds).
+    const cy::gameplay::fog::FogGridDescription grid = sample::rts::fog_grid_over(map_bounds(map));
+    const cy::Aabb covered = sample::rts::fog_grid_bounds(grid);
+    std::fprintf(stderr,
+                 "fog grid %u x %u from (%.1f, %.1f); terrain (%.1f, %.1f) to (%.1f, %.1f)\n",
+                 grid.width, grid.height, static_cast<double>(covered.min.x),
+                 static_cast<double>(covered.min.z), static_cast<double>(terrain.origin_x),
+                 static_cast<double>(terrain.origin_z), static_cast<double>(terrain_max_x),
+                 static_cast<double>(terrain_max_z));
+    CY_CHECK_LE(covered.min.x, terrain.origin_x);
+    CY_CHECK_LE(covered.min.z, terrain.origin_z);
+    CY_CHECK_GE(covered.max.x, terrain_max_x);
+    CY_CHECK_GE(covered.max.z, terrain_max_z);
+    // And the level's square, whose cells stay the metre cells they were.
+    CY_CHECK_LE(covered.min.x, map.layout.base_min_x);
+    CY_CHECK_LE(covered.min.z, map.layout.base_min_z);
+    CY_CHECK_GE(covered.max.x, map.layout.base_max_x);
+    CY_CHECK_GE(covered.max.z, map.layout.base_max_z);
+    CY_CHECK_EQ(grid.cell_size_raw, cy::gameplay::fog::kOneMetreRaw);
+    CY_CHECK_EQ(grid.origin_x_raw % cy::gameplay::fog::kOneMetreRaw, 0);
+    CY_CHECK_EQ(grid.origin_z_raw % cy::gameplay::fog::kOneMetreRaw, 0);
+    cy::gameplay::fog::FogOfWar fog(cy::system_allocator(cy::MemoryDomain::World));
+    CY_CHECK(fog.create(grid).has_value());
+}
+
+CY_TEST_CASE("samples/13-rts-api map: a unit of another side far from blue's sight is not drawn") {
+    MapContent map;
+    LoadReport load;
+    std::string detail;
+    CY_REQUIRE(load_map(cy::system_allocator(cy::MemoryDomain::Assets), CY_RTS_MAP_PACKAGE, map,
+                        load, detail)
+                   .has_value());
+    namespace gfog = cy::gameplay::fog;
+    constexpr cy::gameplay::TeamId kBlue = 1;
+    constexpr cy::gameplay::TeamId kRival = 3;
+    gfog::FogOfWar fog(cy::system_allocator(cy::MemoryDomain::World));
+    CY_REQUIRE(fog.create(sample::rts::fog_grid_over(map_bounds(map))).has_value());
+    // Blue's worker in the level, seeing 7 m, as game/Fog.swift gives it.
+    gfog::FogUnit worker;
+    worker.id = 1;
+    worker.team = kBlue;
+    worker.x_raw = sample::rts::fog_raw(16.0F);
+    worker.z_raw = sample::rts::fog_raw(16.0F);
+    worker.reveal_radius_raw = sample::rts::fog_raw(7.0F);
+    CY_REQUIRE(fog.update({&worker, 1}, 1).has_value());
+
+    // The company's field, north of the level: far from any blue sight, and never drawn.
+    const Vec3 company{map.layout.company_x + 24.0F, 0.0F, map.layout.company_z + 24.0F};
+    CY_CHECK_FALSE(sample::rts::shown_by_fog(fog, kBlue, kRival, company));
+    // The map's far corners, on the grid but never seen, and a point off the grid altogether.
+    CY_CHECK_FALSE(sample::rts::shown_by_fog(fog, kBlue, kRival, Vec3{-40.0F, 0.0F, 60.0F}));
+    CY_CHECK_FALSE(sample::rts::shown_by_fog(fog, kBlue, kRival, Vec3{70.0F, 0.0F, -60.0F}));
+    CY_CHECK_FALSE(sample::rts::shown_by_fog(fog, kBlue, kRival, Vec3{-500.0F, 0.0F, 0.0F}));
+    // Beside the worker, it is; and blue's own units always are.
+    CY_CHECK(sample::rts::shown_by_fog(fog, kBlue, kRival, Vec3{18.0F, 0.0F, 17.0F}));
+    CY_CHECK(sample::rts::shown_by_fog(fog, kBlue, kBlue, company));
 }
 
 CY_TEST_CASE("samples/13-rts-api map: damaged, mistyped, newer and truncated assets are refused") {
