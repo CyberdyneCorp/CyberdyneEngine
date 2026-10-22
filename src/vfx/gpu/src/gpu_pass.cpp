@@ -467,16 +467,21 @@ Status VfxGpuPass::create_buffers() noexcept {
 Status VfxGpuPass::create_collision_resources() noexcept {
     // The constants are Upload, like the parameters: a few hundred bytes the host rewrites when
     // the camera or the field moves, never per-particle data.
+    //
+    // ONE A FRAME IN FLIGHT. The host writes the camera and the field's placement here every frame,
+    // and a single block written in place would change under a frame the device has not finished.
     rhi::BufferDescription constants;
     constants.name = "vfx collision constants";
     constants.size = static_cast<u64>(kGpuCollisionRows) * 4U * sizeof(u32);
     constants.usage = rhi::BufferUsage::Storage;
     constants.memory = rhi::MemoryUse::Upload;
-    auto constants_buffer = device_->create_buffer(constants);
-    if (!constants_buffer.has_value()) {
-        return make_unexpected(constants_buffer.error());
+    for (rhi::BufferHandle& handle : buffers_.collision_constants) {
+        auto made = device_->create_buffer(constants);
+        if (!made.has_value()) {
+            return make_unexpected(made.error());
+        }
+        handle = *made;
     }
-    buffers_.collision_constants = *constants_buffer;
     rhi::BufferDescription empty = constants;
     empty.name = "vfx collision stand-in";
     empty.size = 16;
@@ -485,14 +490,11 @@ Status VfxGpuPass::create_collision_resources() noexcept {
         return make_unexpected(empty_buffer.error());
     }
     buffers_.collision_empty = *empty_buffer;
-    for (rhi::BufferHandle handle : {buffers_.collision_constants, buffers_.collision_empty}) {
-        void* mapped = device_->buffer_mapped_pointer(handle);
-        if (mapped == nullptr) {
-            return fail(ErrorCode::Internal, "the VFX collision constants are not mapped");
-        }
-        const rhi::BufferDescription* description = device_->buffer_description(handle);
-        std::memset(mapped, 0, static_cast<usize>(description->size));
+    void* stand_in = device_->buffer_mapped_pointer(buffers_.collision_empty);
+    if (stand_in == nullptr) {
+        return fail(ErrorCode::Internal, "the VFX collision stand-in is not mapped");
     }
+    std::memset(stand_in, 0, 16);
     // A texel for the depth binding when the host binds none. Never read: the flags say so first.
     rhi::TextureDescription blank;
     blank.name = "vfx collision depth stand-in";
@@ -518,21 +520,23 @@ Status VfxGpuPass::set_collision(const GpuCollisionInputs& inputs) noexcept {
     }
     collision_ = GpuCollisionInputs{};
     collision_.origin = inputs.origin;
-    u32 flags = 0;
     if (inputs.field != nullptr && inputs.field->levels > 0 && inputs.field->page_table &&
         inputs.field->bricks) {
         collision_field_ = *inputs.field;
         collision_.field = &collision_field_;
-        flags |= kGpuCollisionHasField;
     }
     if (inputs.depth != nullptr && inputs.depth->texture != kInvalidResource &&
         inputs.depth->width > 0 && inputs.depth->height > 0) {
         collision_depth_ = *inputs.depth;
         collision_.depth = &collision_depth_;
-        flags |= kGpuCollisionHasDepth;
     }
+    depth_fresh_ = collision_.depth != nullptr;
+    return ok();
+}
 
-    auto* rows = static_cast<u32*>(device_->buffer_mapped_pointer(buffers_.collision_constants));
+Status VfxGpuPass::write_collision_constants(u32 slot) noexcept {
+    auto* rows =
+        static_cast<u32*>(device_->buffer_mapped_pointer(buffers_.collision_constants[slot]));
     if (rows == nullptr) {
         return fail(ErrorCode::Internal, "the VFX collision constants are not mapped");
     }
@@ -546,8 +550,9 @@ Status VfxGpuPass::set_collision(const GpuCollisionInputs& inputs) noexcept {
         put(row, 2, &value.z);
     };
     put3(kGpuCollisionOrigin, collision_.origin);
-    rows[(kGpuCollisionOrigin * 4U) + 3U] = flags;
+    u32 flags = 0;
     if (collision_.field != nullptr) {
+        flags |= kGpuCollisionHasField;
         rows[(kGpuCollisionField * 4U) + 0U] = collision_field_.levels;
         rows[(kGpuCollisionField * 4U) + 1U] = collision_field_.window_bricks;
         for (u32 level = 0; level < collision_field_.levels; ++level) {
@@ -562,6 +567,7 @@ Status VfxGpuPass::set_collision(const GpuCollisionInputs& inputs) noexcept {
         }
     }
     if (collision_.depth != nullptr) {
+        flags |= kGpuCollisionHasDepth;
         rows[(kGpuCollisionDepthExtent * 4U) + 0U] = collision_depth_.width;
         rows[(kGpuCollisionDepthExtent * 4U) + 1U] = collision_depth_.height;
         put3(kGpuCollisionCamera, collision_depth_.camera);
@@ -574,6 +580,7 @@ Status VfxGpuPass::set_collision(const GpuCollisionInputs& inputs) noexcept {
             }
         }
     }
+    rows[(kGpuCollisionOrigin * 4U) + 3U] = flags;
     return ok();
 }
 
@@ -619,7 +626,6 @@ void VfxGpuPass::destroy() noexcept {
         buffers_.alive_readback,
         buffers_.indices_readback,
         buffers_.counts_readback,
-        buffers_.collision_constants,
         buffers_.collision_empty,
     };
     // NULL HANDLES ARE SKIPPED, and this is not defensive programming. `destroy()` runs on the
@@ -628,6 +634,11 @@ void VfxGpuPass::destroy() noexcept {
     // an error, which would make a create failure look like a device defect in every log that
     // counted validation errors.
     for (rhi::BufferHandle handle : buffers) {
+        if (handle) {
+            device_->destroy_buffer(handle);
+        }
+    }
+    for (rhi::BufferHandle handle : buffers_.collision_constants) {
         if (handle) {
             device_->destroy_buffer(handle);
         }
@@ -784,7 +795,8 @@ void VfxGpuPass::bind_collision(const PassContext& context) noexcept {
     const rhi::BufferHandle bricks =
         collision_.field != nullptr ? collision_field_.bricks : buffers_.collision_empty;
     rhi::DescriptorWrite writes[kGpuCollisionBindingCount] = {};
-    const rhi::BufferHandle handles[3] = {buffers_.collision_constants, pages, bricks};
+    const rhi::BufferHandle handles[3] = {buffers_.collision_constants[collision_slot_], pages,
+                                          bricks};
     for (u32 index = 0; index < 3U; ++index) {
         writes[index].binding = index;
         writes[index].kind = rhi::DescriptorKind::StorageBuffer;
@@ -817,7 +829,7 @@ void VfxGpuPass::import_collision(RenderGraph& graph) noexcept {
         return graph.import_buffer_once(request, handle);
     };
     resources_.collision_constants =
-        buffer("vfx collision constants", buffers_.collision_constants);
+        buffer("vfx collision constants", buffers_.collision_constants[collision_slot_]);
     resources_.collision_pages =
         buffer("vfx collision pages", collision_.field != nullptr ? collision_field_.page_table
                                                                   : buffers_.collision_empty);
@@ -959,6 +971,16 @@ Status VfxGpuPass::declare(RenderGraph& graph) noexcept {
     }
     (void)import_all(graph);
     if (collides_) {
+        // THE DEPTH IS ONE GRAPH'S. A depth set for an earlier frame names a resource of that
+        // frame's graph, so it is dropped rather than bound; the field persists until replaced.
+        if (!depth_fresh_) {
+            collision_.depth = nullptr;
+        }
+        depth_fresh_ = false;
+        collision_slot_ = device_->frame_slot() % rhi::kMaxFramesInFlight;
+        if (Status written = write_collision_constants(collision_slot_); !written) {
+            return written;
+        }
         import_collision(graph);
     }
     const Resources resources = resources_;

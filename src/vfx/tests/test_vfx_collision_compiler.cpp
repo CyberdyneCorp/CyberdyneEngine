@@ -210,6 +210,8 @@ CY_TEST_CASE("collision: event reads are refused outside the stage that can mean
         auto asset = build_drop(allocator(), scenario);
         CY_REQUIRE(asset.has_value());
         Emitter& emitter = asset->edit_emitters()[0];
+        // On the CPU path, so the stage is the only thing wrong.
+        emitter.set_path(SimulationPath::CpuRequired);
         StageBuilder stage(allocator(), payload_in_update ? "update" : "initialise");
         const NodeKey read = payload_in_update ? stage.event_read("vfx.event_payload", "impact")
                                                : stage.event_read("vfx.event_count", "impact");
@@ -230,6 +232,30 @@ CY_TEST_CASE("collision: event reads are refused outside the stage that can mean
         }
         CY_CHECK(named);
     }
+}
+
+CY_TEST_CASE("collision: an event read in a GPU-path emitter fails to cook, naming the channel") {
+    // Like a CPU-only data interface: the device cannot read a channel's contents, so an emitter
+    // that spawns from one must declare the CPU path.
+    NodeRegistry registry(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(prepare(registry, interfaces).has_value());
+    DropScenario scenario;
+    scenario.raise_impacts = true;
+    scenario.sparks = true;
+    auto asset = build_drop(allocator(), scenario);
+    CY_REQUIRE(asset.has_value());
+    asset->edit_emitters()[1].set_path(SimulationPath::GpuPreferred);
+    asset->resolve(registry);
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = compile_system(*asset, registry, interfaces, CompileOptions{}, sink, report);
+    CY_CHECK_FALSE(system.has_value());
+    bool named = false;
+    for (const graph::Diagnostic& diagnostic : sink.entries()) {
+        named = named || diagnostic.detail == Name::intern("impact");
+    }
+    CY_CHECK(named);
 }
 
 CY_TEST_CASE("an event raise does not end its stage's lowering") {

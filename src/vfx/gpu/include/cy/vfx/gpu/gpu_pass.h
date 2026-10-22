@@ -245,9 +245,11 @@ public:
     /// Whether the emitter collides, and therefore binds the collision set (<cy/vfx/gpu_layout.h>).
     [[nodiscard]] bool collides() const noexcept { return collides_; }
 
-    /// What the next `declare` collides with. Call before it, each frame a depth is bound: the
-    /// depth texture is a resource of one graph. Refused on an emitter that does not collide, and
-    /// a field with more levels than the constants hold is refused by name.
+    /// What the next `declare` collides with. Call between the device's `begin_frame` and
+    /// `declare`, each frame a depth is bound: the depth texture is a resource of one graph, and a
+    /// depth set for an earlier frame is dropped by the next `declare` rather than bound. The field
+    /// and the origin persist until replaced. Refused on an emitter that does not collide, and a
+    /// field with more levels than the constants hold is refused by name.
     [[nodiscard]] Status set_collision(const GpuCollisionInputs& inputs) noexcept;
 
     /// Push one sub-step's constants and write the instance parameters. Call before `declare`.
@@ -336,7 +338,7 @@ private:
         /// The collision set's constants, and the stand-ins bound where the host binds no field
         /// or depth — a descriptor must name something, and a contact checks the flags before it
         /// reads either.
-        rhi::BufferHandle collision_constants;
+        rhi::BufferHandle collision_constants[rhi::kMaxFramesInFlight];
         rhi::BufferHandle collision_empty;
     };
 
@@ -377,6 +379,8 @@ private:
     [[nodiscard]] Status create_buffers() noexcept;
     [[nodiscard]] Status write_descriptors() noexcept;
     [[nodiscard]] Status create_collision_resources() noexcept;
+    /// This frame's collision constants, from what `set_collision` last stored.
+    [[nodiscard]] Status write_collision_constants(u32 slot) noexcept;
     [[nodiscard]] Resources import_all(RenderGraph& graph) noexcept;
     /// Declare one dispatch. `reads_args` marks the pass that consumes the indirect arguments, so
     /// the graph derives the barrier between the compaction that wrote them and the dispatch that
@@ -416,6 +420,10 @@ private:
     GpuCollisionInputs collision_{};
     GpuCollisionField collision_field_{};
     GpuCollisionDepth collision_depth_{};
+    /// Which of the constants ring this frame writes and binds.
+    u32 collision_slot_ = 0;
+    /// `set_collision` gave a depth for the graph the next `declare` is given.
+    bool depth_fresh_ = false;
     bool collides_ = false;
     rhi::PipelineLayoutHandle pipeline_layout_;
     rhi::ComputePipelineHandle kernel_pipeline_;
