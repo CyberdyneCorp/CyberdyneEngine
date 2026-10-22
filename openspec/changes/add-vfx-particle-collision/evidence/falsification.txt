@@ -95,6 +95,17 @@
    case: the budget's collision quality reaches the device
    RED test_vfx_collision_gpu.cpp: CHECK_EQ( off.disagreeing, 0U ), CHECK_EQ( authored.disagreeing, 256U )
 
+== M18: a depth set for one frame is kept for the next (the defect review found, restored)
+   src/vfx/gpu/src/gpu_pass.cpp
+   case: a depth set for one frame is not bound in the next
+   RED test_vfx_collision_gpu.cpp: REQUIRE( pass.declare(graph).has_value() ),
+       REQUIRE( executor.execute(...).has_value() )
+
+== M19: an event read cooks in a GPU-path emitter
+   src/vfx/src/compile.cpp
+   case: collision: an event read in a GPU-path emitter fails to cook, naming the channel
+   RED test_vfx_collision_compiler.cpp: CHECK_FALSE( system.has_value() ), CHECK( named )
+
 # What the first run did not catch, and what changed.
 #
 # - M4 first replaced the friction expression with `keep = 1.0F`, which left two variables unused
