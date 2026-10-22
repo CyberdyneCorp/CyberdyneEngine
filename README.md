@@ -68,6 +68,13 @@ their module README.
 
 *Colour grading: the beauty shot ungraded, warm and cool ([`src/rendering/grading/`](src/rendering/grading/README.md)).*
 
+![The RTS test map under the Swift RTS: the fog of war, the HUD, the village and the forest](docs/design/images/rts-map-game.png)
+
+*The RTS test map: terrain, painted layers, a forest and a settlement cooked from one source by the
+engine's terrain and foliage code, drawn under the Swift RTS with shadows, ambient occlusion, the GI
+and the fog of war at 1080p in 12 ms on an RTX 5060 ([guide](docs/guides/rts-map.md),
+[video](docs/design/videos/rts-map.mp4)).*
+
 | | | |
 |:---:|:---:|:---:|
 | ![Water shading at the shore](docs/design/images/water-shading-shore-on.png) | ![Aerial perspective over distant terrain](docs/design/images/aerial-perspective-on.png) | ![Soft and contact shadows](docs/design/images/soft-shadows-beauty-on.png) |
