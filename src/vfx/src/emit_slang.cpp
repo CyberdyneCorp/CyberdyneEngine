@@ -408,6 +408,356 @@ void cyVfxKill(uint particle) {
 }
 )";
 
+/// The collision prelude: the second descriptor set and the Slang spelling of every function in
+/// `src/vfx/src/collision.cpp`, in the same order and the same association, because a reordering
+/// that is equal in exact arithmetic is a disagreement in float and `render.vfx_gpu` compares the
+/// two. Written only for an emitter that collides — see `CompiledEmitter::collides`.
+///
+/// The field read is `GpuGiScene`'s, transcribed from `gi_gpu_common.slang`'s `giDistance`, which
+/// is itself a transcription of `DistanceField::distance`; the buffers are the GI scene's own.
+constexpr const char* kCollisionPrelude = R"(
+// --- Collision: descriptor set 1, bound only for an emitter that collides. The numbers are
+//     `cy::vfx::GpuCollisionBinding` and `GpuCollisionRow` in <cy/vfx/gpu_layout.h>. ---
+struct CyVfxCollisionSet {
+    StructuredBuffer<uint4> constants;
+    StructuredBuffer<uint> pages;
+    StructuredBuffer<float> bricks;
+    Texture2D<float> depth;
+};
+[[vk::binding(0, 1)]] ParameterBlock<CyVfxCollisionSet> cyVfxCollision;
+
+static const uint CY_VFX_FIELD_EMPTY_BRICK = 0xFFFFFFFFu;
+static const uint CY_VFX_FIELD_BRICK_EDGE = 4u;
+static const uint CY_VFX_FIELD_BRICK_SAMPLE_EDGE = 5u;
+static const uint CY_VFX_FIELD_BRICK_SAMPLES = 125u;
+
+float4 cyVfxNoContact() {
+    return float4(0.0, 1.0, 0.0, CY_VFX_NO_CONTACT);
+}
+
+float cyVfxDot3(float3 a, float3 b) {
+    return ((a.x * b.x) + (a.y * b.y)) + (a.z * b.z);
+}
+
+float3 cyVfxNormalisedOr(float3 v, float3 fallback) {
+    float squared = cyVfxDot3(v, v);
+    if (!(squared > 1e-12)) {
+        return fallback;
+    }
+    float inverse = 1.0 / sqrt(squared);
+    return float3(v.x * inverse, v.y * inverse, v.z * inverse);
+}
+
+float4 cyVfxRoundContact(float3 p, float3 centre, float shapeRadius, float radius) {
+    float3 offset = p - centre;
+    float distance = sqrt(cyVfxDot3(offset, offset));
+    float3 n = cyVfxNormalisedOr(offset, float3(0.0, 1.0, 0.0));
+    return float4(n, (distance - shapeRadius) - radius);
+}
+
+float4 cyVfxContact_plane(float3 p, float radius, float4 a, float4 b) {
+    if (cyVfxInput.collision_quality == 0u) {
+        return cyVfxNoContact();
+    }
+    float3 n = cyVfxNormalisedOr(a.xyz, float3(0.0, 1.0, 0.0));
+    return float4(n, (cyVfxDot3(n, p) - a.w) - radius);
+}
+
+float4 cyVfxContact_sphere(float3 p, float radius, float4 a, float4 b) {
+    if (cyVfxInput.collision_quality == 0u) {
+        return cyVfxNoContact();
+    }
+    return cyVfxRoundContact(p, a.xyz, a.w, radius);
+}
+
+float4 cyVfxContact_box(float3 p, float radius, float4 a, float4 b) {
+    if (cyVfxInput.collision_quality == 0u) {
+        return cyVfxNoContact();
+    }
+    float3 offset = p - a.xyz;
+    float3 q = float3(abs(offset.x) - b.x, abs(offset.y) - b.y, abs(offset.z) - b.z);
+    float3 outside = float3(max(q.x, 0.0), max(q.y, 0.0), max(q.z, 0.0));
+    float outsideLength = sqrt(cyVfxDot3(outside, outside));
+    float deepest = max(q.x, max(q.y, q.z));
+    float sx = offset.x < 0.0 ? -1.0 : 1.0;
+    float sy = offset.y < 0.0 ? -1.0 : 1.0;
+    float sz = offset.z < 0.0 ? -1.0 : 1.0;
+    if (outsideLength > 0.0) {
+        float inverse = 1.0 / outsideLength;
+        return float4((sx * outside.x) * inverse, (sy * outside.y) * inverse,
+                      (sz * outside.z) * inverse, outsideLength - radius);
+    }
+    float3 n = float3(0.0, 0.0, sz);
+    if (q.x >= q.y && q.x >= q.z) {
+        n = float3(sx, 0.0, 0.0);
+    } else if (q.y >= q.z) {
+        n = float3(0.0, sy, 0.0);
+    }
+    return float4(n, deepest - radius);
+}
+
+float4 cyVfxContact_capsule(float3 p, float radius, float4 a, float4 b) {
+    if (cyVfxInput.collision_quality == 0u) {
+        return cyVfxNoContact();
+    }
+    float3 start = a.xyz;
+    float3 axis = b.xyz - start;
+    float axisSquared = cyVfxDot3(axis, axis);
+    float along = axisSquared > 1e-12 ? cyVfxDot3(p - start, axis) / axisSquared : 0.0;
+    float t = clamp(along, 0.0, 1.0);
+    float3 closest = start + (axis * t);
+    return cyVfxRoundContact(p, closest, a.w, radius);
+}
+
+uint4 cyVfxCollisionRow(uint row) {
+    return cyVfxCollision.constants[row];
+}
+
+float3 cyVfxCollisionOrigin() {
+    return asfloat(cyVfxCollisionRow(CY_VFX_COLLISION_ORIGIN).xyz);
+}
+
+bool cyVfxCollisionHas(uint flag) {
+    return (cyVfxCollisionRow(CY_VFX_COLLISION_ORIGIN).w & flag) != 0u;
+}
+
+float cyVfxLerp(float a, float b, float t) {
+    return a + ((b - a) * t);
+}
+
+// `giTrilinear`, over the GI scene's brick pool.
+float cyVfxFieldTrilinear(uint slot, float fx, float fy, float fz) {
+    int edge = int(CY_VFX_FIELD_BRICK_EDGE) - 1;
+    int x0 = clamp(int(floor(fx)), 0, edge);
+    int y0 = clamp(int(floor(fy)), 0, edge);
+    int z0 = clamp(int(floor(fz)), 0, edge);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    int z1 = z0 + 1;
+    float tx = clamp(fx - float(x0), 0.0, 1.0);
+    float ty = clamp(fy - float(y0), 0.0, 1.0);
+    float tz = clamp(fz - float(z0), 0.0, 1.0);
+    uint base = slot * CY_VFX_FIELD_BRICK_SAMPLES;
+    uint e = CY_VFX_FIELD_BRICK_SAMPLE_EDGE;
+    float c000 = cyVfxCollision.bricks[base + ((uint(z0) * e + uint(y0)) * e) + uint(x0)];
+    float c100 = cyVfxCollision.bricks[base + ((uint(z0) * e + uint(y0)) * e) + uint(x1)];
+    float c010 = cyVfxCollision.bricks[base + ((uint(z0) * e + uint(y1)) * e) + uint(x0)];
+    float c110 = cyVfxCollision.bricks[base + ((uint(z0) * e + uint(y1)) * e) + uint(x1)];
+    float c001 = cyVfxCollision.bricks[base + ((uint(z1) * e + uint(y0)) * e) + uint(x0)];
+    float c101 = cyVfxCollision.bricks[base + ((uint(z1) * e + uint(y0)) * e) + uint(x1)];
+    float c011 = cyVfxCollision.bricks[base + ((uint(z1) * e + uint(y1)) * e) + uint(x0)];
+    float c111 = cyVfxCollision.bricks[base + ((uint(z1) * e + uint(y1)) * e) + uint(x1)];
+    float c00 = cyVfxLerp(c000, c100, tx);
+    float c10 = cyVfxLerp(c010, c110, tx);
+    float c01 = cyVfxLerp(c001, c101, tx);
+    float c11 = cyVfxLerp(c011, c111, tx);
+    return cyVfxLerp(cyVfxLerp(c00, c10, ty), cyVfxLerp(c01, c11, ty), tz);
+}
+
+// `giWrap`: unsigned throughout, for the reason gi_gpu_common.slang records.
+int cyVfxFieldWrap(int value, int modulus) {
+    uint lifted = uint(value) + (uint(modulus) << 20u);
+    return int(lifted % uint(modulus));
+}
+
+// `giSampleLevel`.
+float cyVfxFieldLevel(uint level, float3 p, out float farDistance) {
+    float4 shape = asfloat(cyVfxCollisionRow(CY_VFX_COLLISION_LEVELS + (level * 2u)));
+    int4 origin = asint(cyVfxCollisionRow(CY_VFX_COLLISION_LEVELS + (level * 2u) + 1u));
+    float voxel = shape.x;
+    float brick = shape.y;
+    farDistance = shape.z;
+    int bx = int(floor(p.x / brick));
+    int by = int(floor(p.y / brick));
+    int bz = int(floor(p.z / brick));
+    int dim = int(cyVfxCollisionRow(CY_VFX_COLLISION_FIELD).y);
+    if (bx < origin.x || by < origin.y || bz < origin.z || bx >= origin.x + dim ||
+        by >= origin.y + dim || bz >= origin.z + dim) {
+        return farDistance;
+    }
+    uint cell = ((uint(cyVfxFieldWrap(bz, dim)) * uint(dim) + uint(cyVfxFieldWrap(by, dim))) *
+                 uint(dim)) + uint(cyVfxFieldWrap(bx, dim));
+    uint slot = cyVfxCollision.pages[(level * uint(dim * dim * dim)) + cell];
+    if (slot == CY_VFX_FIELD_EMPTY_BRICK) {
+        return farDistance;
+    }
+    float3 corner = float3(float(bx) * brick, float(by) * brick, float(bz) * brick);
+    float3 local = (p - corner) / voxel;
+    return cyVfxFieldTrilinear(slot, local.x, local.y, local.z);
+}
+
+// `giDistance`.
+float cyVfxFieldDistance(float3 p) {
+    float answer = 1.0e6;
+    uint levels = cyVfxCollisionRow(CY_VFX_COLLISION_FIELD).x;
+    for (uint level = 0u; level < levels; ++level) {
+        float farDistance = 0.0;
+        float sampled = cyVfxFieldLevel(level, p, farDistance);
+        answer = min(answer, sampled);
+        if (sampled < farDistance) {
+            return sampled;
+        }
+    }
+    return answer;
+}
+
+float4 cyVfxContact_sdf(float3 p, float radius, float4 a, float4 b) {
+    if (cyVfxInput.collision_quality < 2u || !cyVfxCollisionHas(CY_VFX_COLLISION_HAS_FIELD)) {
+        return cyVfxNoContact();
+    }
+    float3 world = p + cyVfxCollisionOrigin();
+    float separation = cyVfxFieldDistance(world) - radius;
+    if (separation >= CY_VFX_CONTACT_SKIN) {
+        return float4(0.0, 1.0, 0.0, separation);
+    }
+    float step = a.x > 0.0 ? a.x : CY_VFX_DEFAULT_SDF_STEP;
+    float3 g;
+    if (cyVfxInput.collision_quality >= 3u) {
+        g = float3(cyVfxFieldDistance(float3(world.x + step, world.y, world.z)) -
+                       cyVfxFieldDistance(float3(world.x - step, world.y, world.z)),
+                   cyVfxFieldDistance(float3(world.x, world.y + step, world.z)) -
+                       cyVfxFieldDistance(float3(world.x, world.y - step, world.z)),
+                   cyVfxFieldDistance(float3(world.x, world.y, world.z + step)) -
+                       cyVfxFieldDistance(float3(world.x, world.y, world.z - step)));
+    } else {
+        float ta = cyVfxFieldDistance(float3(world.x + step, world.y - step, world.z - step));
+        float tb = cyVfxFieldDistance(float3(world.x - step, world.y - step, world.z + step));
+        float tc = cyVfxFieldDistance(float3(world.x - step, world.y + step, world.z - step));
+        float td = cyVfxFieldDistance(float3(world.x + step, world.y + step, world.z + step));
+        g = float3(((ta - tb) - tc) + td, ((-ta - tb) + tc) + td, ((-ta + tb) - tc) + td);
+    }
+    return float4(cyVfxNormalisedOr(g, float3(0.0, 1.0, 0.0)), separation);
+}
+
+// `m * (v, 1)` with m's columns in four rows from `row`, column by column.
+float4 cyVfxClipOf(uint row, float3 v) {
+    float4 c0 = asfloat(cyVfxCollisionRow(row));
+    float4 c1 = asfloat(cyVfxCollisionRow(row + 1u));
+    float4 c2 = asfloat(cyVfxCollisionRow(row + 2u));
+    float4 c3 = asfloat(cyVfxCollisionRow(row + 3u));
+    return float4((((c0.x * v.x) + (c1.x * v.y)) + (c2.x * v.z)) + c3.x,
+                  (((c0.y * v.x) + (c1.y * v.y)) + (c2.y * v.z)) + c3.y,
+                  (((c0.z * v.x) + (c1.z * v.y)) + (c2.z * v.z)) + c3.z,
+                  (((c0.w * v.x) + (c1.w * v.y)) + (c2.w * v.z)) + c3.w);
+}
+
+float cyVfxDepthAt(int x, int y) {
+    uint2 extent = cyVfxCollisionRow(CY_VFX_COLLISION_DEPTH_EXTENT).xy;
+    int cx = clamp(x, 0, int(extent.x) - 1);
+    int cy = clamp(y, 0, int(extent.y) - 1);
+    return cyVfxCollision.depth.Load(int3(cx, cy, 0));
+}
+
+float3 cyVfxUnproject(int x, int y) {
+    uint2 extent = cyVfxCollisionRow(CY_VFX_COLLISION_DEPTH_EXTENT).xy;
+    int cx = clamp(x, 0, int(extent.x) - 1);
+    int cy = clamp(y, 0, int(extent.y) - 1);
+    float u = (float(cx) + 0.5) / float(extent.x);
+    float v = (float(cy) + 0.5) / float(extent.y);
+    float3 ndc = float3((u * 2.0) - 1.0, 1.0 - (v * 2.0), cyVfxDepthAt(cx, cy));
+    float4 world = cyVfxClipOf(CY_VFX_COLLISION_INVERSE_VIEW_PROJECTION, ndc);
+    float inverse = 1.0 / world.w;
+    return float3(world.x * inverse, world.y * inverse, world.z * inverse);
+}
+
+float3 cyVfxDepthTangent(int x, int y, int dx, int dy, float3 centre, float centreDepth) {
+    float3 forward = cyVfxUnproject(x + dx, y + dy) - centre;
+    if (cyVfxInput.collision_quality < 3u) {
+        return forward;
+    }
+    float3 backward = centre - cyVfxUnproject(x - dx, y - dy);
+    float forwardStep = abs(cyVfxDepthAt(x + dx, y + dy) - centreDepth);
+    float backwardStep = abs(centreDepth - cyVfxDepthAt(x - dx, y - dy));
+    return backwardStep < forwardStep ? backward : forward;
+}
+
+float4 cyVfxContact_depth(float3 p, float radius, float4 a, float4 b) {
+    uint2 extent = cyVfxCollisionRow(CY_VFX_COLLISION_DEPTH_EXTENT).xy;
+    if (cyVfxInput.collision_quality < 2u || !cyVfxCollisionHas(CY_VFX_COLLISION_HAS_DEPTH) ||
+        extent.x == 0u || extent.y == 0u) {
+        return cyVfxNoContact();
+    }
+    float3 world = p + cyVfxCollisionOrigin();
+    float4 clip = cyVfxClipOf(CY_VFX_COLLISION_VIEW_PROJECTION, world);
+    if (!(clip.w > 1e-6)) {
+        return cyVfxNoContact();
+    }
+    float ndcX = clip.x / clip.w;
+    float ndcY = clip.y / clip.w;
+    if (!(abs(ndcX) < 1.0) || !(abs(ndcY) < 1.0)) {
+        return cyVfxNoContact();
+    }
+    float sx = ((ndcX * 0.5) + 0.5) * float(extent.x);
+    float sy = (0.5 - (ndcY * 0.5)) * float(extent.y);
+    int x = min(int(sx), int(extent.x) - 1);
+    int y = min(int(sy), int(extent.y) - 1);
+    float centreDepth = cyVfxDepthAt(x, y);
+    if (!(centreDepth > 0.0)) {
+        return cyVfxNoContact();
+    }
+    float3 surface = cyVfxUnproject(x, y);
+    float3 alongX = cyVfxDepthTangent(x, y, 1, 0, surface, centreDepth);
+    float3 alongY = cyVfxDepthTangent(x, y, 0, 1, surface, centreDepth);
+    float3 n = cyVfxNormalisedOr(cross(alongY, alongX), float3(0.0, 1.0, 0.0));
+    float3 camera = asfloat(cyVfxCollisionRow(CY_VFX_COLLISION_CAMERA).xyz);
+    if (cyVfxDot3(n, camera - surface) < 0.0) {
+        n = -n;
+    }
+    float separation = cyVfxDot3(world - surface, n) - radius;
+    float thickness = a.x > 0.0 ? a.x : CY_VFX_DEFAULT_DEPTH_THICKNESS;
+    if (separation < -thickness) {
+        return cyVfxNoContact();
+    }
+    return float4(n, separation);
+}
+
+float3 cyVfxBounce(float3 v, float4 c, float4 response) {
+    if (!(c.w < CY_VFX_CONTACT_SKIN)) {
+        return v;
+    }
+    if (response.z > 0.5) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    float3 n = c.xyz;
+    float closing = cyVfxDot3(v, n);
+    if (!(closing < 0.0)) {
+        return v;
+    }
+    float restitution = -closing < response.w ? 0.0 : response.x;
+    float impulse = -(1.0 + restitution) * closing;
+    float3 tangent = v - (n * closing);
+    float tangentSpeed = sqrt(cyVfxDot3(tangent, tangent));
+    float keep = 1.0;
+    if (tangentSpeed > 1e-6) {
+        keep = max(1.0 - ((response.y * impulse) / tangentSpeed), 0.0);
+    }
+    return (tangent * keep) + (n * (-restitution * closing));
+}
+
+float3 cyVfxResolve(float3 p, float4 c) {
+    if (!(c.w < 0.0)) {
+        return p;
+    }
+    return p + (c.xyz * -c.w);
+}
+
+float cyVfxImpact(float3 v, float4 c) {
+    if (!(c.w < CY_VFX_CONTACT_SKIN)) {
+        return 0.0;
+    }
+    return max(-cyVfxDot3(v, c.xyz), 0.0);
+}
+)";
+
+/// The push-constant fields past `spawn_scale_fixed`, which only a colliding emitter declares: the
+/// struct's layout is `GpuPushConstants`' either way, and an emitter that collides with nothing
+/// generates the struct it always did.
+constexpr const char* kCollisionInputFields =
+    "    uint block_capacity;\n"
+    "    uint sort_n;\n"
+    "    uint sort_passes;\n"
+    "    uint collision_quality;\n";
+
 /// The Slang target. See `cy::graph::emit.h` for the split: the ORDER, the numbering and what is a
 /// statement are the shared core's; everything below is this domain's.
 class SlangTarget final : public SourceTarget {
@@ -534,6 +884,34 @@ public:
                 return;
             case Noise:
                 call(view, operands, "cyVfxNoise");
+                return;
+            case Contact: {
+                char name[48] = "cyVfxContact_";
+                const char* shape =
+                    collider_shape_name(static_cast<ColliderShape>(node.value.mask));
+                usize length = 13;
+                for (; *shape != '\0' && length + 1 < sizeof(name); ++shape) {
+                    name[length++] = *shape;
+                }
+                name[length] = '\0';
+                call(view, operands, name);
+                return;
+            }
+            case Bounce:
+                call(view, operands, "cyVfxBounce");
+                return;
+            case Resolve:
+                call(view, operands, "cyVfxResolve");
+                return;
+            case Impact:
+                call(view, operands, "cyVfxImpact");
+                return;
+            case Swizzle:
+                writer.text("(");
+                view.operand(operands[0]);
+                writer.text(")[");
+                writer.number(node.value.mask);
+                writer.text("]");
                 return;
             default:
                 break;
@@ -781,6 +1159,55 @@ void write_parameter_block(TextWriter& writer, Span<const ParameterDecl> paramet
     writer.text("}\n\n");
 }
 
+/// The fixed helpers, with the push block widened by the collision fields when the emitter
+/// collides. The text either side of the insertion is `kHelpers` byte for byte.
+void write_helpers(TextWriter& writer, bool collides) noexcept {
+    const std::string_view helpers = kHelpers;
+    constexpr std::string_view kInsertBefore = "};\n[[vk::push_constant]]";
+    const usize at = helpers.find(kInsertBefore);
+    if (!collides || at == std::string_view::npos) {
+        writer.text(helpers);
+        return;
+    }
+    writer.text(helpers.substr(0, at));
+    writer.text(kCollisionInputFields);
+    writer.text(helpers.substr(at));
+}
+
+/// The collision scalars, from the C++ constants rather than typed twice.
+void write_collision_constants(TextWriter& writer) noexcept {
+    const auto scalar = [&writer](const char* name, f32 value) noexcept {
+        writer.text("static const float ");
+        writer.text(name);
+        writer.text(" = ");
+        writer.literal(value);
+        writer.text(";\n");
+    };
+    const auto word = [&writer](const char* name, u32 value) noexcept {
+        writer.text("static const uint ");
+        writer.text(name);
+        writer.text(" = ");
+        writer.number(value);
+        writer.text("u;\n");
+    };
+    writer.text(
+        "\n// --- Collision constants: `cy::vfx::kContactSkin` and its neighbours, and the rows\n"
+        "//     of <cy/vfx/gpu_layout.h>'s collision constants. ---\n");
+    scalar("CY_VFX_CONTACT_SKIN", kContactSkin);
+    scalar("CY_VFX_NO_CONTACT", kNoContact);
+    scalar("CY_VFX_DEFAULT_SDF_STEP", kDefaultSdfStep);
+    scalar("CY_VFX_DEFAULT_DEPTH_THICKNESS", kDefaultDepthThickness);
+    word("CY_VFX_COLLISION_ORIGIN", kGpuCollisionOrigin);
+    word("CY_VFX_COLLISION_FIELD", kGpuCollisionField);
+    word("CY_VFX_COLLISION_DEPTH_EXTENT", kGpuCollisionDepthExtent);
+    word("CY_VFX_COLLISION_CAMERA", kGpuCollisionCamera);
+    word("CY_VFX_COLLISION_VIEW_PROJECTION", kGpuCollisionViewProjection);
+    word("CY_VFX_COLLISION_INVERSE_VIEW_PROJECTION", kGpuCollisionInverseViewProjection);
+    word("CY_VFX_COLLISION_LEVELS", kGpuCollisionLevels);
+    word("CY_VFX_COLLISION_HAS_FIELD", kGpuCollisionHasField);
+    word("CY_VFX_COLLISION_HAS_DEPTH", kGpuCollisionHasDepth);
+}
+
 /// Does any kernel of this emitter raise on `channel`? A channel nothing raises on gets no buffer,
 /// for the same reason an attribute nothing touches gets no array.
 [[nodiscard]] bool raises_on(const CompiledEmitter& emitter, Name channel) noexcept {
@@ -806,7 +1233,7 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
     writer.text("// only place it can come from: a parameter block and an attribute layout are\n");
     writer.text("// different for every effect and cannot live in a shared standard library.\n");
     writer.text("// This unit imports nothing, so it compiles on its own.\n\n");
-    writer.text(kHelpers);
+    write_helpers(writer, emitter.collides());
     write_parameter_block(writer, parameters);
 
     writer.text("// --- The derived attribute layout. ");
@@ -875,6 +1302,10 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
         writer.text("(float x) { return ");
         writer.text(slang_type(type));
         writer.text("(0);\n}\n");
+    }
+    if (emitter.collides()) {
+        write_collision_constants(writer);
+        writer.text(kCollisionPrelude);
     }
     writer.text("\n");
     return writer.status();

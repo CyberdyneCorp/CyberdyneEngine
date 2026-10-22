@@ -53,6 +53,7 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/particles/particle_renderer.h>
+#include <cy/vfx/collision.h>
 #include <cy/vfx/events.h>
 #include <cy/vfx/world.h>
 
@@ -158,6 +159,12 @@ struct KernelContext {
     /// Where a kernel's event raises go. Null is legitimate — a cook-time evaluation has no world —
     /// and a raise then evaluates its predicate and puts nothing anywhere.
     EventRouter* events = nullptr;
+    /// What a `Contact` may read and at what quality. Null: every contact answers `kNoContact`,
+    /// which is what an effect with no collider in its world should see.
+    const CollisionInputs* collision = nullptr;
+    /// How many events of each channel this emitter has already spawned from this frame — where an
+    /// `EventRead` starts. A channel absent from the list has had none consumed.
+    Span<const ConsumedEvents> consumed;
 };
 
 /// What it decided.

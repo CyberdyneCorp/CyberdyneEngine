@@ -65,6 +65,14 @@ void read_attribute(const KernelContext& context, u32 particle, Name attribute,
             load_component(Span<const u8>(context.storage.data(), context.storage.size()), *slot,
                            particle, component);
     }
+    // A SCALAR BROADCASTS, as a scalar constant does and as Slang's `float * float3` does. Without
+    // this a scalar attribute times a vector scaled only the first component on the CPU path: an
+    // elementwise op reads all four lanes, and lanes one to three of a scalar read were zero.
+    if (slot->components == 1U) {
+        for (u32 component = 1; component < kSlotWidth; ++component) {
+            destination[component] = destination[0];
+        }
+    }
 }
 
 void read_parameter(const KernelContext& context, Name parameter, f32* destination) noexcept {
@@ -84,6 +92,12 @@ void read_parameter(const KernelContext& context, Name parameter, f32* destinati
         }
         for (u32 component = 0; component < kSlotWidth; ++component) {
             destination[component] = context.parameters[base + component];
+        }
+        // A scalar parameter broadcasts too: the host packs it into the first of its four words.
+        if (vfx_type_components(vfx_type_from_name(declared.type)) == 1U) {
+            for (u32 component = 1; component < kSlotWidth; ++component) {
+                destination[component] = destination[0];
+            }
         }
         return;
     }
@@ -106,6 +120,45 @@ void read_input(const KernelContext& context, Name symbol, u32 particle,
     }
     for (u32 component = 0; component < kSlotWidth; ++component) {
         destination[component] = value;
+    }
+}
+
+/// Where this emitter's cursor on `channel` stands.
+[[nodiscard]] u32 consumed_on(const KernelContext& context, Name channel) noexcept {
+    for (const ConsumedEvents& cursor : context.consumed) {
+        if (cursor.channel == channel) {
+            return cursor.count;
+        }
+    }
+    return 0;
+}
+
+/// `EventRead`: how many of a channel's events this emitter has not spawned from yet, or the
+/// payload of the one this particle is being spawned for. Zero with no router, which is a cook-time
+/// evaluation's answer and an unbound interface's too.
+void read_event(const KernelContext& context, const KernelStep& step, f32* destination) noexcept {
+    for (u32 component = 0; component < kSlotWidth; ++component) {
+        destination[component] = 0.0F;
+    }
+    if (context.events == nullptr) {
+        return;
+    }
+    const Span<const EventRecord> events = context.events->consume(step.symbol);
+    const u32 consumed = consumed_on(context, step.symbol);
+    if (step.value.mask == static_cast<u32>(EventField::Count)) {
+        const u32 waiting =
+            events.size() > consumed ? static_cast<u32>(events.size()) - consumed : 0U;
+        for (u32 component = 0; component < kSlotWidth; ++component) {
+            destination[component] = static_cast<f32>(waiting);
+        }
+        return;
+    }
+    const usize index = static_cast<usize>(consumed) + context.spawn_index;
+    if (index >= events.size()) {
+        return;
+    }
+    for (u32 component = 0; component < kSlotWidth; ++component) {
+        destination[component] = events[index].payload[component];
     }
 }
 
@@ -141,6 +194,9 @@ void evaluate_leaf(const KernelStep& step, const KernelContext& context, u32 par
             }
             return;
         }
+        case EventRead:
+            read_event(context, step, destination);
+            return;
         default:
             break;
     }
@@ -314,6 +370,63 @@ void evaluate_composite(const KernelStep& step, const f32* a, const f32* b, cons
     }
 }
 
+[[nodiscard]] Vec3 vec3_of(const f32* value) noexcept {
+    return Vec3{value[0], value[1], value[2]};
+}
+
+[[nodiscard]] Vec4 vec4_of(const f32* value) noexcept {
+    return Vec4{value[0], value[1], value[2], value[3]};
+}
+
+void store_vec3(Vec3 value, f32* destination) noexcept {
+    destination[0] = value.x;
+    destination[1] = value.y;
+    destination[2] = value.z;
+    destination[3] = 0.0F;
+}
+
+void broadcast(f32 value, f32* destination) noexcept {
+    for (u32 component = 0; component < kSlotWidth; ++component) {
+        destination[component] = value;
+    }
+}
+
+/// The collision operations and the component extraction their outputs are read through. See
+/// collision.h: every one of them is a function of the operands and of `context.collision`, and the
+/// four collider-free answers are what an effect without a world to collide with computes.
+void evaluate_collision(const KernelStep& step, const KernelContext& context, const f32* a,
+                        const f32* b, const f32* c, const f32* d, f32* destination) noexcept {
+    static const CollisionInputs kNothing{};
+    switch (step.op) {
+        case Contact: {
+            const CollisionInputs& inputs =
+                context.collision != nullptr ? *context.collision : kNothing;
+            const Vec4 contact =
+                collision_contact(static_cast<ColliderShape>(step.value.mask), vec3_of(a), b[0],
+                                  vec4_of(c), vec4_of(d), inputs);
+            destination[0] = contact.x;
+            destination[1] = contact.y;
+            destination[2] = contact.z;
+            destination[3] = contact.w;
+            return;
+        }
+        case Bounce:
+            store_vec3(collision_bounce(vec3_of(a), vec4_of(b), vec4_of(c)), destination);
+            return;
+        case Resolve:
+            store_vec3(collision_resolve(vec3_of(a), vec4_of(b)), destination);
+            return;
+        case Impact:
+            broadcast(collision_impact(vec3_of(a), vec4_of(b)), destination);
+            return;
+        default:
+            // `Swizzle`: one component, broadcast, so the scalar it produces reads the same from
+            // any lane.
+            broadcast(a[step.value.mask < kSlotWidth ? step.value.mask : 0U], destination);
+            return;
+    }
+}
+
 /// Step through the kernel's flat program, filling the register file.
 void evaluate_program(const VfxKernel& kernel, const KernelContext& context, u32 particle,
                       KernelRegisters& registers) noexcept {
@@ -344,6 +457,13 @@ void evaluate_program(const VfxKernel& kernel, const KernelContext& context, u32
             case Noise:
             case Sample:
                 evaluate_transcendental(step, a, b, destination);
+                break;
+            case Contact:
+            case Bounce:
+            case Resolve:
+            case Impact:
+            case Swizzle:
+                evaluate_collision(step, context, a, b, c, d, destination);
                 break;
             default:
                 evaluate_composite(step, a, b, c, d, destination);
@@ -381,6 +501,7 @@ void apply_writes(const VfxKernel& kernel, const KernelContext& context, u32 par
                                   u32& raised) noexcept {
     const Span<const KernelEvent> raises = kernel.events();
     const Span<const u16> slots = kernel.event_slots();
+    const Span<const u16> payloads = kernel.event_payload_slots();
     for (usize index = 0; index < raises.size() && index < slots.size(); ++index) {
         if (slots[index] == 0xFFFFU) {
             continue;
@@ -400,8 +521,13 @@ void apply_writes(const VfxKernel& kernel, const KernelContext& context, u32 par
         // and the channel drops by arrival order; a graph that raises with an impact speed gets the
         // hardest impacts kept, which is what a deterministic rank is for.
         record.rank = predicate[0];
+        // The payload input where the graph wired one — an impact's position, say, which a rank
+        // could never be — and the predicate itself where it did not.
+        const f32* payload = index < payloads.size() && payloads[index] != 0xFFFFU
+                                 ? slot_at(registers, payloads[index])
+                                 : predicate;
         for (u32 channel = 0; channel < 4U; ++channel) {
-            record.payload[channel] = predicate[channel];
+            record.payload[channel] = payload[channel];
         }
         if (Status put = context.events->raise(raises[index].channel, record); !put) {
             return put;

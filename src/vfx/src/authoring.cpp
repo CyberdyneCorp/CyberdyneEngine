@@ -5,6 +5,7 @@
 #include <cy/graph/expr.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -163,7 +164,15 @@ private:
                                          std::string_view property,
                                          std::string_view value) noexcept {
     graph::Literal literal;
-    if (property == "value") {
+    // A NUMBER IS A NUMBER WHATEVER THE PROPERTY IS CALLED. `value` was the one numeric property
+    // until the colliders gave every optional input a typed default (`restitution 0.8`, `normal
+    // 0 1 0`); an identifier cannot start with a digit or a sign, so the two never collide.
+    const usize first = value.find_first_not_of(' ');
+    const char lead = first == std::string_view::npos ? '\0' : value[first];
+    const bool numeric = property == "value" ||
+                         std::isdigit(static_cast<unsigned char>(lead)) != 0 || lead == '-' ||
+                         lead == '+' || lead == '.';
+    if (numeric) {
         f32 components[4] = {};
         u32 count = 0;
         while (!value.empty()) {
@@ -820,12 +829,16 @@ struct ModuleResolution {
     /// Check the declared stage before re-keying nodes into the emitter graph.
     [[nodiscard]] Status validate_stage_nodes(const VfxModuleAsset& module) noexcept {
         static const Name spawn_count = Name::intern("vfx.spawn_count");
+        static const Name event_count = Name::intern("vfx.event_count");
+        static const Name event_payload = Name::intern("vfx.event_payload");
         static const Name set_attribute = Name::intern("vfx.set_attribute");
         static const Name kill_if = Name::intern("vfx.kill_if");
         for (const graph::GraphNode& node : module.graph.nodes()) {
-            const bool spawn_only = node.type == spawn_count;
+            const bool spawn_only = node.type == spawn_count || node.type == event_count;
+            const bool initialise_only = node.type == event_payload;
             const bool particle_only = node.type == set_attribute || node.type == kill_if;
             if ((spawn_only && module.stage != Stage::Spawn) ||
+                (initialise_only && module.stage != Stage::Initialise) ||
                 (particle_only && module.stage == Stage::Spawn)) {
                 diagnose("vfx.module.stage", "VFX module's declared stage cannot run this node",
                          module.name, module.stage, node.key);

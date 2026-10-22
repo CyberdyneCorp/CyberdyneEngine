@@ -66,7 +66,9 @@ function(cy_vfx_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/effects.cpp"
+            "${tests_dir}/collision_effects.cpp"
             "${tests_dir}/test_vfx_compiler.cpp"
+            "${tests_dir}/test_vfx_collision_compiler.cpp"
             "${tests_dir}/test_vfx_modules.cpp"
         DEPENDENCIES cy::vfx)
     target_include_directories(cy_test_integration_vfx_compiler PRIVATE "${tests_dir}")
@@ -81,6 +83,9 @@ function(cy_vfx_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/effects.cpp"
+            "${tests_dir}/collision_effects.cpp"
+            "${tests_dir}/collision_scene.cpp"
+            "${tests_dir}/test_vfx_collision.cpp"
             "${tests_dir}/test_vfx_runtime.cpp"
             "${tests_dir}/test_vfx_renderers.cpp"
             "${tests_dir}/test_vfx_in_shot.cpp"

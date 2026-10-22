@@ -350,6 +350,24 @@ struct NodeRow {
     Capability required;
 };
 
+/// A pin of a node the table below cannot describe: an optional input, or one of several outputs.
+struct PinSpec {
+    const char* name;
+    const char* type;
+    PinDirection direction;
+    bool required;
+};
+
+[[nodiscard]] Status push_pin(Array<PinDesc>& pins, const PinSpec& spec) noexcept {
+    PinDesc pin;
+    pin.identity = static_cast<graph::PinId>(pins.size() + 1);
+    pin.name = Name::intern(spec.name);
+    pin.type = Name::intern(spec.type);
+    pin.direction = spec.direction;
+    pin.required = spec.required;
+    return pins.push_back(pin);
+}
+
 constexpr const char* kNone[] = {nullptr};
 constexpr const char* kUnary[] = {"x", "float", nullptr};
 constexpr const char* kBinary[] = {"a", "float", "b", "float", nullptr};
@@ -403,6 +421,10 @@ constexpr NodeRow kLibrary[] = {
      Capability::None},
 };
 
+/// The input a raise gained with collision: what the event carries, when that is not the predicate.
+/// Optional, and appended after `value`, so every pin a saved graph names keeps its identity.
+constexpr PinSpec kEventPayload = {"payload", "float4", PinDirection::Input, false};
+
 [[nodiscard]] Status register_row(NodeRegistry& registry, const NodeRow& row,
                                   Array<PinDesc>& pins) noexcept {
     pins.clear();
@@ -414,6 +436,11 @@ constexpr NodeRow kLibrary[] = {
         pin.direction = PinDirection::Input;
         pin.required = true;
         if (Status pushed = pins.push_back(pin); !pushed) {
+            return pushed;
+        }
+    }
+    if (std::string_view(row.type) == "vfx.emit_event") {
+        if (Status pushed = push_pin(pins, kEventPayload); !pushed) {
             return pushed;
         }
     }
@@ -437,6 +464,116 @@ constexpr NodeRow kLibrary[] = {
     desc.requires_capabilities = row.required;
     desc.determinism = row.determinism;
     desc.pure = row.pure;
+    return registry.register_type(desc);
+}
+
+/// A node with optional inputs or more than one output. The table above gives every node required
+/// inputs and one `out`; the collide nodes have six outputs and a dozen inputs an author may leave
+/// at their defaults, and the event reads produce rather than consume.
+struct WideNode {
+    graph::NodeTypeId identity;
+    const char* type;
+    Span<const PinSpec> shape_inputs;
+    Span<const PinSpec> outputs;
+    Determinism determinism;
+    Capability required;
+};
+
+constexpr PinDirection kIn = PinDirection::Input;
+constexpr PinDirection kOut = PinDirection::Output;
+
+/// What every collider takes before its own shape, in this order. `position` and `velocity` are the
+/// particle's; the rest is the response and is optional.
+constexpr PinSpec kCollideCommon[] = {
+    {"position", "float3", kIn, true},   {"velocity", "float3", kIn, true},
+    {"radius", "float", kIn, false},     {"restitution", "float", kIn, false},
+    {"friction", "float", kIn, false},   {"stick", "float", kIn, false},
+    {"rest_speed", "float", kIn, false}, {"was_in_contact", "float", kIn, false},
+};
+constexpr PinSpec kCollideOutputs[] = {
+    {"position", "float3", kOut, false}, {"velocity", "float3", kOut, false},
+    {"contact", "float", kOut, false},   {"began", "float", kOut, false},
+    {"impact", "float", kOut, false},    {"normal", "float3", kOut, false},
+};
+constexpr PinSpec kPlaneShape[] = {{"normal", "float3", kIn, false},
+                                   {"offset", "float", kIn, false}};
+constexpr PinSpec kSphereShape[] = {{"centre", "float3", kIn, false},
+                                    {"sphere_radius", "float", kIn, false}};
+constexpr PinSpec kBoxShape[] = {{"centre", "float3", kIn, false},
+                                 {"half_extents", "float3", kIn, false}};
+constexpr PinSpec kCapsuleShape[] = {{"start", "float3", kIn, false},
+                                     {"end", "float3", kIn, false},
+                                     {"capsule_radius", "float", kIn, false}};
+constexpr PinSpec kSdfShape[] = {{"step", "float", kIn, false}};
+constexpr PinSpec kDepthShape[] = {{"thickness", "float", kIn, false}};
+constexpr PinSpec kCountOutput[] = {{"out", "float", kOut, false}};
+constexpr PinSpec kPayloadOutput[] = {{"out", "float4", kOut, false}};
+
+template <usize N>
+[[nodiscard]] constexpr Span<const PinSpec> pins_of(const PinSpec (&pins)[N]) noexcept {
+    return {pins, N};
+}
+
+// Identities continue the table above. A collide node's every pin is stable within its type, in
+// the order: the common inputs, the shape's inputs, the outputs.
+const WideNode kWideNodes[] = {
+    {1033, "vfx.collide.plane", pins_of(kPlaneShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::None},
+    {1034, "vfx.collide.sphere", pins_of(kSphereShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::None},
+    {1035, "vfx.collide.box", pins_of(kBoxShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::None},
+    {1036, "vfx.collide.capsule", pins_of(kCapsuleShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::None},
+    // The two that read the world, and say so in the capability they require.
+    {1037, "vfx.collide.sdf", pins_of(kSdfShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::ReadWorld},
+    {1038, "vfx.collide.depth", pins_of(kDepthShape), pins_of(kCollideOutputs),
+     Determinism::Deterministic, Capability::ReadWorld},
+    {1039,
+     "vfx.event_count",
+     {},
+     pins_of(kCountOutput),
+     Determinism::Deterministic,
+     Capability::None},
+    {1040,
+     "vfx.event_payload",
+     {},
+     pins_of(kPayloadOutput),
+     Determinism::Deterministic,
+     Capability::None},
+};
+
+[[nodiscard]] Status register_wide(NodeRegistry& registry, const WideNode& node,
+                                   Array<PinDesc>& pins) noexcept {
+    pins.clear();
+    const bool collider = std::string_view(node.type).starts_with("vfx.collide.");
+    if (collider) {
+        for (const PinSpec& spec : kCollideCommon) {
+            if (Status pushed = push_pin(pins, spec); !pushed) {
+                return pushed;
+            }
+        }
+    }
+    for (const PinSpec& spec : node.shape_inputs) {
+        if (Status pushed = push_pin(pins, spec); !pushed) {
+            return pushed;
+        }
+    }
+    for (const PinSpec& spec : node.outputs) {
+        if (Status pushed = push_pin(pins, spec); !pushed) {
+            return pushed;
+        }
+    }
+    NodeTypeDesc desc;
+    desc.identity = node.identity;
+    desc.name = Name::intern(node.type);
+    desc.plugin = Name::intern(kPlugin);
+    desc.version = 1;
+    desc.pins = pins.span();
+    desc.requires_capabilities = node.required;
+    desc.determinism = node.determinism;
+    desc.pure = true;
     return registry.register_type(desc);
 }
 
@@ -493,6 +630,11 @@ Status register_vfx_nodes(NodeRegistry& registry) noexcept {
     Array<PinDesc> pins(registry.allocator());
     for (const NodeRow& row : kLibrary) {
         if (Status registered = register_row(registry, row, pins); !registered) {
+            return registered;
+        }
+    }
+    for (const WideNode& node : kWideNodes) {
+        if (Status registered = register_wide(registry, node, pins); !registered) {
             return registered;
         }
     }

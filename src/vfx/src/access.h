@@ -29,6 +29,9 @@ public:
     static Array<KernelWrite>& writes(VfxKernel& kernel) noexcept { return kernel.writes_; }
     static Array<KernelEvent>& events(VfxKernel& kernel) noexcept { return kernel.events_; }
     static Array<u16>& event_slots(VfxKernel& kernel) noexcept { return kernel.event_slots_; }
+    static Array<u16>& event_payload_slots(VfxKernel& kernel) noexcept {
+        return kernel.event_payload_slots_;
+    }
     static Array<KernelStep>& program(VfxKernel& kernel) noexcept { return kernel.program_; }
     static Array<u16>& write_slots(VfxKernel& kernel) noexcept { return kernel.write_slots_; }
     static void set_slots(VfxKernel& kernel, u32 slots) noexcept { kernel.slots_ = slots; }

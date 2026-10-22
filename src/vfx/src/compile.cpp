@@ -54,6 +54,8 @@ struct NodeNames {
     Name kill_if;
     Name spawn_count;
     Name emit_event;
+    Name event_count;
+    Name event_payload;
     Name pin_value;
     Name pin_out;
     Name prop_attribute;
@@ -78,6 +80,8 @@ struct NodeNames {
           kill_if(Name::intern("vfx.kill_if")),
           spawn_count(Name::intern("vfx.spawn_count")),
           emit_event(Name::intern("vfx.emit_event")),
+          event_count(Name::intern("vfx.event_count")),
+          event_payload(Name::intern("vfx.event_payload")),
           pin_value(Name::intern(prop::kValue)),
           pin_out(Name::intern("out")),
           prop_attribute(Name::intern(prop::kAttribute)),
@@ -180,16 +184,20 @@ void report(DiagnosticSink& sink, NodeKey node, Name pin, const char* message,
     sink.report(diagnostic);
 }
 
-/// A value already lowered, keyed by the authoring node it came from.
+/// A value already lowered, keyed by the authoring node it came from and — for a node with more
+/// than one output — the output pin. A single-output node is memoised under the empty pin.
 struct Memo {
     NodeKey key = kInvalidNodeKey;
     NodeId value = kInvalidNode;
+    Name pin;
 };
 
 /// One raise the lowering found, before its root slot is assigned.
 struct PendingEvent {
     Name channel;
     NodeId value = kInvalidNode;
+    /// What the event carries when its `payload` input is given; otherwise the predicate does.
+    NodeId payload = kInvalidNode;
     NodeKey origin = kInvalidNodeKey;
 };
 
@@ -218,11 +226,16 @@ struct Lowering {
     /// True while lowering a stage that is fused onto an earlier one: an attribute read then
     /// resolves to the pending value rather than to a fresh `Attribute` op.
     bool substitute_pending = false;
+    /// The stage whose graph is being lowered, for the nodes that belong to one stage only.
+    Stage stage = Stage::Count;
+    /// The channels this kernel's Spawn stage counts events on. See `kMaxConsumedChannels`.
+    Name consumed[kMaxConsumedChannels];
+    u32 consumed_count = 0;
 };
 
-[[nodiscard]] NodeId memo_find(const Array<Memo>& memo, NodeKey key) noexcept {
+[[nodiscard]] NodeId memo_find(const Array<Memo>& memo, NodeKey key, Name pin = Name{}) noexcept {
     for (const Memo& entry : memo) {
-        if (entry.key == key) {
+        if (entry.key == key && entry.pin == pin) {
             return entry.value;
         }
     }
@@ -250,42 +263,105 @@ struct Lowering {
     return literal.value;
 }
 
-/// The single wire arriving at one input pin, or `kInvalidNodeKey`.
-[[nodiscard]] Expected<NodeKey, Error> wired_source(const Graph& graph, NodeKey node, Name pin,
-                                                    Array<Link>& scratch) noexcept {
+/// The single wire arriving at one input pin, or a link whose `from` is `kInvalidNodeKey`.
+[[nodiscard]] Expected<Link, Error> wired_source(const Graph& graph, NodeKey node, Name pin,
+                                                 Array<Link>& scratch) noexcept {
     scratch.clear();
     if (Status collected = graph.inputs_of(node, pin, scratch); !collected) {
         return make_unexpected(collected.error());
     }
     if (scratch.empty()) {
-        return kInvalidNodeKey;
+        return Link{};
     }
-    return scratch[scratch.size() - 1].from;
+    return scratch[scratch.size() - 1];
 }
 
-[[nodiscard]] Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph,
-                                                  NodeKey key) noexcept;
+[[nodiscard]] Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey key,
+                                                  Name from_pin = Name{}) noexcept;
 
 /// Lower whatever feeds `pin`: a wire if there is one, otherwise the node's own property of the
-/// same name, otherwise a node- and pin-precise diagnostic.
-[[nodiscard]] Expected<NodeId, Error> lower_pin(Lowering& state, const Graph& graph, NodeKey node,
-                                                const char* pin_name) noexcept {
+/// same name, otherwise `fallback` — or, with no fallback, a node- and pin-precise diagnostic.
+[[nodiscard]] Expected<NodeId, Error> lower_input(Lowering& state, const Graph& graph, NodeKey node,
+                                                  const char* pin_name, const Immediate* fallback,
+                                                  TypeId fallback_type) noexcept {
     const Name pin = Name::intern(pin_name);
     Array<Link> scratch(state.layout->allocator());
     auto source = wired_source(graph, node, pin, scratch);
     if (!source) {
         return make_unexpected(source.error());
     }
-    if (source.value() != kInvalidNodeKey) {
-        return lower_value(state, graph, source.value());
+    if (source.value().from != kInvalidNodeKey) {
+        return lower_value(state, graph, source.value().from, source.value().from_pin);
     }
     if (const Literal* literal = graph.property(node, pin); literal != nullptr) {
         return state.builder->make(Constant, literal_type(*literal), Name{},
                                    literal_value(*literal), {});
     }
+    if (fallback != nullptr) {
+        return state.builder->make(Constant, fallback_type, Name{}, *fallback, {});
+    }
     report(*state.sink, node, pin,
            "vfx: this input has neither a wire nor a value — a required input must have one");
     return fail(ErrorCode::InvalidArgument, "vfx: an unwired required input");
+}
+
+[[nodiscard]] Expected<NodeId, Error> lower_pin(Lowering& state, const Graph& graph, NodeKey node,
+                                                const char* pin_name) noexcept {
+    return lower_input(state, graph, node, pin_name, nullptr, Float);
+}
+
+/// True when the pin has a wire or a value of its own, which is what makes an optional input given.
+[[nodiscard]] bool input_given(Lowering& state, const Graph& graph, NodeKey node,
+                               const char* pin_name) noexcept {
+    const Name pin = Name::intern(pin_name);
+    Array<Link> scratch(state.layout->allocator());
+    auto source = wired_source(graph, node, pin, scratch);
+    return (source.has_value() && source.value().from != kInvalidNodeKey) ||
+           graph.property(node, pin) != nullptr;
+}
+
+/// `vfx.event_count` in a Spawn stage and `vfx.event_payload` in an Initialise stage: a channel's
+/// events consumed by this emitter, one particle an event. The channel must be one this system
+/// declares, for the reason a raise's must.
+[[nodiscard]] Expected<NodeId, Error> lower_event_read(Lowering& state, const Graph& graph,
+                                                       const GraphNode& node) noexcept {
+    const NodeNames& n = names();
+    const bool count = node.type == n.event_count;
+    const Literal* channel = graph.property(node.key, n.prop_channel);
+    if (channel == nullptr || channel->text.is_empty()) {
+        report(*state.sink, node.key, n.prop_channel, "vfx: an event read names no channel");
+        return fail(ErrorCode::InvalidArgument, "vfx: an event read with no channel");
+    }
+    if (state.asset->find_channel(channel->text) == nullptr) {
+        report(*state.sink, node.key, n.prop_channel,
+               "vfx: this system declares no event channel of that name", channel->text);
+        return fail(ErrorCode::NotFound, "vfx: an event read of an undeclared channel");
+    }
+    const Stage wanted = count ? Stage::Spawn : Stage::Initialise;
+    if (state.stage != wanted) {
+        report(*state.sink, node.key, Name{},
+               count ? "vfx: an event count is a spawn request and belongs to the Spawn stage"
+                     : "vfx: an event payload is read by the particle the event spawned, in the "
+                       "Initialise stage");
+        return fail(ErrorCode::InvalidArgument, "vfx: an event read in the wrong stage");
+    }
+    if (count) {
+        bool seen = false;
+        for (u32 index = 0; index < state.consumed_count; ++index) {
+            seen = seen || state.consumed[index] == channel->text;
+        }
+        if (!seen && state.consumed_count == kMaxConsumedChannels) {
+            report(*state.sink, node.key, n.prop_channel,
+                   "vfx: a Spawn stage spawns from at most four event channels", channel->text);
+            return fail(ErrorCode::OutOfRange, "vfx: too many consumed event channels");
+        }
+        if (!seen) {
+            state.consumed[state.consumed_count++] = channel->text;
+        }
+    }
+    Immediate field;
+    field.mask = static_cast<u32>(count ? EventField::Count : EventField::Payload);
+    return state.builder->make(EventRead, count ? Float : Float4, channel->text, field, {});
 }
 
 [[nodiscard]] Expected<NodeId, Error> lower_leaf(Lowering& state, const Graph& graph,
@@ -371,6 +447,10 @@ struct Lowering {
         Immediate stream;
         stream.mask = static_cast<u32>(node.key);
         return builder.make(Random, Float, Name{}, stream, {});
+    }
+
+    if (node.type == n.event_count || node.type == n.event_payload) {
+        return lower_event_read(state, graph, node);
     }
 
     report(*state.sink, node.key, Name{}, "vfx: this node type has no lowering", node.type);
@@ -459,7 +539,385 @@ struct Lowering {
                                {operands, 1});
 }
 
-Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey key) noexcept {
+// --- Collision --------------------------------------------------------------------------------
+//
+// `vfx.collide.<shape>` is the one node in this library with more than one output, and its outputs
+// are pure expressions over ONE `Contact`: see collision.h. Each output is lowered on demand and
+// memoised under its pin, and the contact is memoised under a pin no author can name, so six wired
+// outputs still query the world once — with sample deduplication on or off.
+
+constexpr std::string_view kCollidePrefix = "vfx.collide.";
+
+[[nodiscard]] bool is_collide(Name type) noexcept {
+    return type.text().starts_with(kCollidePrefix);
+}
+
+[[nodiscard]] ColliderShape collide_shape(Name type) noexcept {
+    const std::string_view suffix = type.text().substr(kCollidePrefix.size());
+    for (u32 index = 0; index < static_cast<u32>(ColliderShape::Count); ++index) {
+        const auto shape = static_cast<ColliderShape>(index);
+        if (suffix == collider_shape_name(shape)) {
+            return shape;
+        }
+    }
+    return ColliderShape::Count;
+}
+
+/// What one collider costs to query, in the cook report's units. The analytic primitives are
+/// arithmetic; the field and the depth buffer are reads.
+[[nodiscard]] u32 collide_cost(ColliderShape shape) noexcept {
+    switch (shape) {
+        case ColliderShape::Sdf:
+            return interface_cost_weight(InterfaceCost::Expensive);
+        case ColliderShape::Depth:
+            return interface_cost_weight(InterfaceCost::Moderate);
+        default:
+            return interface_cost_weight(InterfaceCost::Trivial);
+    }
+}
+
+[[nodiscard]] Immediate immediate4(f32 x, f32 y, f32 z, f32 w) noexcept {
+    return Immediate{x, y, z, w, 0};
+}
+
+[[nodiscard]] Expected<NodeId, Error> optional_float(Lowering& state, const Graph& graph,
+                                                     NodeKey node, const char* pin,
+                                                     f32 fallback) noexcept {
+    const Immediate value = Immediate::scalar(fallback);
+    return lower_input(state, graph, node, pin, &value, Float);
+}
+
+[[nodiscard]] Expected<NodeId, Error> optional_float3(Lowering& state, const Graph& graph,
+                                                      NodeKey node, const char* pin, f32 x, f32 y,
+                                                      f32 z) noexcept {
+    const Immediate value = immediate4(x, y, z, 0.0F);
+    return lower_input(state, graph, node, pin, &value, Float3);
+}
+
+/// One component of a value, as a scalar. A scalar is its own every component — an author who
+/// wires a float into a float3 input means it broadcast, as everywhere else in this library.
+[[nodiscard]] Expected<NodeId, Error> component(Lowering& state, NodeId value, u32 index) noexcept {
+    const graph::Node& node = state.builder->node(value);
+    const u32 components = vfx_type_components(node.type);
+    if (components <= 1U) {
+        return value;
+    }
+    if (index >= components) {
+        return state.builder->make(Constant, Float, Name{}, Immediate{}, {});
+    }
+    if (node.op == Constant) {
+        return state.builder->make(Constant, Float, Name{},
+                                   Immediate::scalar(immediate_component(node.value, index)), {});
+    }
+    Immediate mask;
+    mask.mask = index;
+    const NodeId operands[1] = {value};
+    return state.builder->make(Swizzle, Float, Name{}, mask, {operands, 1});
+}
+
+/// Four scalars as one `float4` — a constant when all four are, so an unwired shape costs the
+/// kernel a literal rather than four extractions.
+[[nodiscard]] Expected<NodeId, Error> pack4(Lowering& state, const NodeId (&parts)[4]) noexcept {
+    bool constant = true;
+    Immediate folded;
+    for (u32 index = 0; index < 4U; ++index) {
+        const graph::Node& node = state.builder->node(parts[index]);
+        constant = constant && node.op == Constant;
+        if (constant) {
+            set_immediate_component(folded, index, immediate_component(node.value, 0));
+        }
+    }
+    if (constant) {
+        return state.builder->make(Constant, Float4, Name{}, folded, {});
+    }
+    return state.builder->make(MakeVec4, Float4, Name{}, Immediate{}, {parts, 4});
+}
+
+/// A `float3` and a scalar as `float4(xyz, w)`.
+[[nodiscard]] Expected<NodeId, Error> pack31(Lowering& state, NodeId xyz, NodeId w) noexcept {
+    NodeId parts[4] = {kInvalidNode, kInvalidNode, kInvalidNode, w};
+    for (u32 index = 0; index < 3U; ++index) {
+        auto part = component(state, xyz, index);
+        if (!part) {
+            return part;
+        }
+        parts[index] = *part;
+    }
+    return pack4(state, parts);
+}
+
+/// The two shape operands of a contact, from the inputs the shape's node declares. Every one is
+/// optional and defaults to a collider an author can see: a ground plane, a unit sphere at the
+/// origin, a unit box, a capsule standing on the origin.
+[[nodiscard]] Status shape_operands(Lowering& state, const Graph& graph, NodeKey key,
+                                    ColliderShape shape, NodeId& a, NodeId& b) noexcept {
+    Expected<NodeId, Error> first = fail(ErrorCode::Internal, "vfx: no shape");
+    Expected<NodeId, Error> second = state.builder->make(Constant, Float4, Name{}, Immediate{}, {});
+    const auto pair = [&state](Expected<NodeId, Error> xyz, Expected<NodeId, Error> w) noexcept {
+        if (!xyz) {
+            return xyz;
+        }
+        if (!w) {
+            return w;
+        }
+        return pack31(state, *xyz, *w);
+    };
+    const auto zero = [&state]() noexcept {
+        return state.builder->make(Constant, Float, Name{}, Immediate{}, {});
+    };
+    switch (shape) {
+        case ColliderShape::Plane:
+            first = pair(optional_float3(state, graph, key, "normal", 0.0F, 1.0F, 0.0F),
+                         optional_float(state, graph, key, "offset", 0.0F));
+            break;
+        case ColliderShape::Sphere:
+            first = pair(optional_float3(state, graph, key, "centre", 0.0F, 0.0F, 0.0F),
+                         optional_float(state, graph, key, "sphere_radius", 1.0F));
+            break;
+        case ColliderShape::Box:
+            first = pair(optional_float3(state, graph, key, "centre", 0.0F, 0.0F, 0.0F), zero());
+            second =
+                pair(optional_float3(state, graph, key, "half_extents", 0.5F, 0.5F, 0.5F), zero());
+            break;
+        case ColliderShape::Capsule:
+            first = pair(optional_float3(state, graph, key, "start", 0.0F, 0.0F, 0.0F),
+                         optional_float(state, graph, key, "capsule_radius", 0.5F));
+            second = pair(optional_float3(state, graph, key, "end", 0.0F, 1.0F, 0.0F), zero());
+            break;
+        case ColliderShape::Sdf:
+            first = pair(optional_float(state, graph, key, "step", 0.0F), zero());
+            break;
+        case ColliderShape::Depth:
+            first = pair(optional_float(state, graph, key, "thickness", 0.0F), zero());
+            break;
+        case ColliderShape::Count:
+            break;
+    }
+    if (!first) {
+        return make_unexpected(first.error());
+    }
+    if (!second) {
+        return make_unexpected(second.error());
+    }
+    a = *first;
+    b = *second;
+    return ok();
+}
+
+/// The one query a collide node makes, memoised under a pin no author can name.
+[[nodiscard]] Expected<NodeId, Error> collide_contact(Lowering& state, const Graph& graph,
+                                                      const GraphNode& node,
+                                                      ColliderShape shape) noexcept {
+    static const Name kContactPin = Name::intern(" contact");
+    if (const NodeId cached = memo_find(*state.memo, node.key, kContactPin);
+        cached != kInvalidNode) {
+        return cached;
+    }
+    auto position = lower_pin(state, graph, node.key, "position");
+    if (!position) {
+        return position;
+    }
+    auto radius = optional_float(state, graph, node.key, "radius", 0.0F);
+    if (!radius) {
+        return radius;
+    }
+    NodeId a = kInvalidNode;
+    NodeId b = kInvalidNode;
+    if (Status operands = shape_operands(state, graph, node.key, shape, a, b); !operands) {
+        return make_unexpected(operands.error());
+    }
+    Immediate which;
+    which.mask = static_cast<u32>(shape);
+    const NodeId operands[4] = {*position, *radius, a, b};
+    auto contact = state.builder->make(Contact, Float4, Name::intern(collider_shape_name(shape)),
+                                       which, {operands, 4});
+    if (!contact) {
+        return contact;
+    }
+    state.report->sample_cost_weight += collide_cost(shape);
+    if (Status remembered = state.memo->push_back(Memo{node.key, *contact, kContactPin});
+        !remembered) {
+        return make_unexpected(remembered.error());
+    }
+    return contact;
+}
+
+/// `1` while touching, `0` otherwise: separation within the contact skin.
+[[nodiscard]] Expected<NodeId, Error> touching(Lowering& state, NodeId contact) noexcept {
+    auto separation = component(state, contact, 3);
+    if (!separation) {
+        return separation;
+    }
+    auto skin = state.builder->make(Constant, Float, Name{}, Immediate::scalar(kContactSkin), {});
+    if (!skin) {
+        return skin;
+    }
+    const NodeId compared[2] = {*separation, *skin};
+    auto inside = state.builder->make(Less, Bool, Name{}, Immediate{}, {compared, 2});
+    if (!inside) {
+        return inside;
+    }
+    auto one = state.builder->make(Constant, Float, Name{}, Immediate::scalar(1.0F), {});
+    auto none = state.builder->make(Constant, Float, Name{}, Immediate{}, {});
+    if (!one || !none) {
+        return !one ? one : none;
+    }
+    const NodeId arms[3] = {*inside, *one, *none};
+    return state.builder->make(Select, Float, Name{}, Immediate{}, {arms, 3});
+}
+
+/// `1` on the step a contact starts, given whether the particle touched on the step before.
+[[nodiscard]] Expected<NodeId, Error> began(Lowering& state, const Graph& graph, NodeKey key,
+                                            NodeId contact) noexcept {
+    auto now = touching(state, contact);
+    if (!now) {
+        return now;
+    }
+    auto before = optional_float(state, graph, key, "was_in_contact", 0.0F);
+    if (!before) {
+        return before;
+    }
+    const NodeId difference[2] = {*now, *before};
+    auto rising = state.builder->make(Sub, Float, Name{}, Immediate{}, {difference, 2});
+    if (!rising) {
+        return rising;
+    }
+    auto none = state.builder->make(Constant, Float, Name{}, Immediate{}, {});
+    if (!none) {
+        return none;
+    }
+    const NodeId clamped[2] = {*rising, *none};
+    return state.builder->make(Max, Float, Name{}, Immediate{}, {clamped, 2});
+}
+
+[[nodiscard]] Expected<NodeId, Error> bounced(Lowering& state, const Graph& graph, NodeKey key,
+                                              NodeId contact) noexcept {
+    auto velocity = lower_pin(state, graph, key, "velocity");
+    if (!velocity) {
+        return velocity;
+    }
+    NodeId response[4] = {};
+    const char* const pins[4] = {"restitution", "friction", "stick", "rest_speed"};
+    const f32 defaults[4] = {0.5F, 0.0F, 0.0F, 0.0F};
+    for (u32 index = 0; index < 4U; ++index) {
+        auto value = optional_float(state, graph, key, pins[index], defaults[index]);
+        if (!value) {
+            return value;
+        }
+        response[index] = *value;
+    }
+    auto packed = pack4(state, response);
+    if (!packed) {
+        return packed;
+    }
+    const NodeId operands[3] = {*velocity, contact, *packed};
+    return state.builder->make(Bounce, Float3, Name{}, Immediate{}, {operands, 3});
+}
+
+[[nodiscard]] Expected<NodeId, Error> collide_output(Lowering& state, const Graph& graph,
+                                                     const GraphNode& node, ColliderShape shape,
+                                                     std::string_view output) noexcept {
+    auto contact = collide_contact(state, graph, node, shape);
+    if (!contact) {
+        return contact;
+    }
+    if (output == "position") {
+        auto position = lower_pin(state, graph, node.key, "position");
+        if (!position) {
+            return position;
+        }
+        const NodeId operands[2] = {*position, *contact};
+        return state.builder->make(Resolve, Float3, Name{}, Immediate{}, {operands, 2});
+    }
+    if (output == "velocity") {
+        return bounced(state, graph, node.key, *contact);
+    }
+    if (output == "contact") {
+        return touching(state, *contact);
+    }
+    if (output == "began") {
+        return began(state, graph, node.key, *contact);
+    }
+    if (output == "impact") {
+        auto velocity = lower_pin(state, graph, node.key, "velocity");
+        auto rising = began(state, graph, node.key, *contact);
+        if (!velocity || !rising) {
+            return !velocity ? velocity : rising;
+        }
+        const NodeId closing[2] = {*velocity, *contact};
+        auto speed = state.builder->make(Impact, Float, Name{}, Immediate{}, {closing, 2});
+        if (!speed) {
+            return speed;
+        }
+        const NodeId gated[2] = {*speed, *rising};
+        return state.builder->make(Mul, Float, Name{}, Immediate{}, {gated, 2});
+    }
+    if (output == "normal") {
+        NodeId axes[3] = {};
+        for (u32 index = 0; index < 3U; ++index) {
+            auto axis = component(state, *contact, index);
+            if (!axis) {
+                return axis;
+            }
+            axes[index] = *axis;
+        }
+        return state.builder->make(MakeVec3, Float3, Name{}, Immediate{}, {axes, 3});
+    }
+    report(*state.sink, node.key, Name::intern(output),
+           "vfx: a collide node has no output of that name — position, velocity, contact, began, "
+           "impact or normal");
+    return fail(ErrorCode::NotFound, "vfx: an unknown collide output");
+}
+
+/// A MUTED COLLIDER IS NO COLLIDER, not a zero: the particle keeps its position and velocity and
+/// never touches anything, which is what an author muting a floor means. Everywhere else a muted
+/// node reads zero, and a muted collider that zeroed every position would be a defect.
+[[nodiscard]] Expected<NodeId, Error> muted_collide_output(Lowering& state, const Graph& graph,
+                                                           const GraphNode& node,
+                                                           std::string_view output) noexcept {
+    if (output == "position" || output == "velocity") {
+        return lower_pin(state, graph, node.key, output == "position" ? "position" : "velocity");
+    }
+    if (output == "normal") {
+        return state.builder->make(Constant, Float3, Name{}, immediate4(0.0F, 1.0F, 0.0F, 0.0F),
+                                   {});
+    }
+    return state.builder->make(Constant, Float, Name{}, Immediate{}, {});
+}
+
+[[nodiscard]] Expected<NodeId, Error> lower_collide(Lowering& state, const Graph& graph,
+                                                    const GraphNode& node, Name pin) noexcept {
+    const NodeNames& n = names();
+    const Name output = pin.is_empty() ? n.pin_out : pin;
+    if (const NodeId cached = memo_find(*state.memo, node.key, output); cached != kInvalidNode) {
+        return cached;
+    }
+    const ColliderShape shape = collide_shape(node.type);
+    if (shape == ColliderShape::Count) {
+        report(*state.sink, node.key, Name{}, "vfx: no collider of that shape", node.type);
+        return fail(ErrorCode::NotFound, "vfx: an unknown collider shape");
+    }
+    auto produced = node.muted ? muted_collide_output(state, graph, node, output.text())
+                               : collide_output(state, graph, node, shape, output.text());
+    if (!produced) {
+        return produced;
+    }
+    if (Status attributed = state.builder->add_origin(*produced, static_cast<u32>(node.key));
+        !attributed) {
+        return make_unexpected(attributed.error());
+    }
+    if (Status remembered = state.memo->push_back(Memo{node.key, *produced, output}); !remembered) {
+        return make_unexpected(remembered.error());
+    }
+    return produced;
+}
+
+Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey key,
+                                    Name from_pin) noexcept {
+    if (const GraphNode* collide = graph.find_node(key);
+        collide != nullptr && is_collide(collide->type)) {
+        return lower_collide(state, graph, *collide, from_pin);
+    }
     if (const NodeId cached = memo_find(*state.memo, key); cached != kInvalidNode) {
         return cached;
     }
@@ -520,7 +978,7 @@ Expected<NodeId, Error> lower_value(Lowering& state, const Graph& graph, NodeKey
         !attributed) {
         return make_unexpected(attributed.error());
     }
-    Memo entry{key, produced.value()};
+    Memo entry{key, produced.value(), Name{}};
     if (Status remembered = state.memo->push_back(entry); !remembered) {
         return make_unexpected(remembered.error());
     }
@@ -537,6 +995,7 @@ struct StageLowering {
 [[nodiscard]] Status lower_stage(Lowering& state, const Graph& graph, Stage stage,
                                  StageLowering& out) noexcept {
     const NodeNames& n = names();
+    state.stage = stage;
     for (const GraphNode& node : graph.nodes()) {
         if (node.muted) {
             continue;
@@ -575,7 +1034,19 @@ struct StageLowering {
             raise.channel = channel->text;
             raise.value = value.value();
             raise.origin = node.key;
-            return state.raises->push_back(raise);
+            // THE PAYLOAD IS OPTIONAL, and without it the predicate is the payload — which is what
+            // every raise did before the input existed, so an old graph raises the same record.
+            if (input_given(state, graph, node.key, "payload")) {
+                auto payload = lower_pin(state, graph, node.key, "payload");
+                if (!payload) {
+                    return make_unexpected(payload.error());
+                }
+                raise.payload = *payload;
+            }
+            if (Status pushed = state.raises->push_back(raise); !pushed) {
+                return pushed;
+            }
+            continue;
         }
         if (is_spawn) {
             if (stage != Stage::Spawn) {
@@ -697,6 +1168,16 @@ struct StageLowering {
             return pushed;
         }
     }
+    Array<u16>& payload_slots = KernelAccess::event_payload_slots(kernel);
+    payload_slots.clear();
+    for (const KernelEvent& raise : kernel.events()) {
+        const NodeId id =
+            raise.payload_root == kNoPayloadRoot ? kInvalidNode : module.root(raise.payload_root);
+        if (Status pushed = payload_slots.push_back(id == kInvalidNode ? 0xFFFFU : slot_of[id]);
+            !pushed) {
+            return pushed;
+        }
+    }
     const NodeId kill = module.root(kKillRoot);
     KernelAccess::set_kill_slot(kernel, kill == kInvalidNode ? 0xFFFFU : slot_of[kill]);
     const NodeId spawn = module.root(kSpawnRoot);
@@ -729,10 +1210,12 @@ struct StageLowering {
     return ok();
 }
 
-/// The same, for the event raises, which take the slots after the writes.
+/// The same, for the event raises, which take the slots after the writes — and their payloads,
+/// where a raise has one, the slots after those.
 [[nodiscard]] Status assign_event_roots(Builder& builder, VfxKernel& kernel,
                                         Span<const PendingEvent> raises, u32 first_slot,
                                         Array<u32>& roots) noexcept {
+    u32 next_payload = first_slot + static_cast<u32>(raises.size());
     for (usize index = 0; index < raises.size(); ++index) {
         const auto slot = static_cast<u32>(first_slot + index);
         if (Status set = builder.set_root(slot, raises[index].value); !set) {
@@ -742,6 +1225,12 @@ struct StageLowering {
         raise.channel = raises[index].channel;
         raise.root_slot = slot;
         raise.origin = raises[index].origin;
+        if (raises[index].payload != kInvalidNode) {
+            raise.payload_root = next_payload++;
+            if (Status set = builder.set_root(raise.payload_root, raises[index].payload); !set) {
+                return set;
+            }
+        }
         if (Status pushed = KernelAccess::events(kernel).push_back(raise); !pushed) {
             return pushed;
         }
@@ -835,7 +1324,11 @@ struct StageLowering {
     if (Status folded = collapse_writes(pending, collapsed); !folded) {
         return make_unexpected(folded.error());
     }
-    if (collapsed.size() + raises.size() > kMaxKernelWrites) {
+    usize payloads = 0;
+    for (const PendingEvent& raise : raises) {
+        payloads += raise.payload != kInvalidNode ? 1U : 0U;
+    }
+    if (collapsed.size() + raises.size() + payloads > kMaxKernelWrites) {
         return fail(ErrorCode::OutOfRange,
                     "vfx: a kernel's attribute writes and event raises together need more roots "
                     "than the domain declares");

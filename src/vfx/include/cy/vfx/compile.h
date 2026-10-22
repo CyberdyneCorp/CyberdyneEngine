@@ -170,11 +170,28 @@ public:
     [[nodiscard]] u32 capacity() const noexcept { return capacity_; }
     /// Over the kernels' digests, the layout's digest and the interface registry's digest.
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
+    /// Whether any kernel queries a collider. What decides that the generated unit carries the
+    /// collision prelude and that a GPU pass binds the collision set: an emitter that collides with
+    /// nothing generates and binds exactly what it did before collision existed.
+    [[nodiscard]] bool collides() const noexcept { return uses_op(Contact); }
+    /// Whether any kernel spawns from, or reads, another emitter's events. CPU path only.
+    [[nodiscard]] bool consumes_events() const noexcept { return uses_op(EventRead); }
 
     [[nodiscard]] Allocator& allocator() const noexcept { return kernels_.allocator(); }
 
 private:
     friend class CompiledAccess;
+
+    [[nodiscard]] bool uses_op(OpId op) const noexcept {
+        for (const VfxKernel& kernel : kernels_) {
+            for (const KernelStep& step : kernel.program()) {
+                if (step.op == op) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     Name name_;
     AttributeLayout layout_;
