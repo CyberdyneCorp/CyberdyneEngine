@@ -139,6 +139,11 @@ struct HostOptions {
     /// The interface's control (ABI 1.6). False brings up no interface: the game finds none, mounts
     /// no HUD, and every click is the world's.
     bool ui = true;
+    /// Boxes the level's GI holds besides its own (`field_boxes`): the RTS test map's buildings
+    /// and resources when a run draws the map (`--map`). None, the default, is the level the GI
+    /// always held. Static, in the level's metres; the host does not own them.
+    const FieldBox* extra_gi_boxes = nullptr;
+    cy::u32 extra_gi_box_count = 0;
 };
 
 /// What the game and the engine say happened. Engine facts are read from the servers and the
@@ -338,6 +343,29 @@ public:
     [[nodiscard]] CyEntity camp(cy::u32 index) const noexcept { return camp_[index]; }
     [[nodiscard]] Observation observe() noexcept;
     [[nodiscard]] cy::u64 frames() const noexcept { return frame_; }
+
+    // --- What a renderer draws besides the boxes
+    // ---------------------------------------------------
+    /// A unit's skinning matrices as the engine's animation system last published them — model
+    /// times inverse bind, one a joint of the worker rig — or empty for a unit with no animator.
+    [[nodiscard]] cy::Span<const cy::Mat4> unit_pose(CyEntity unit) const noexcept;
+    /// The worker's rig, as the loader read it back: what a renderer evaluates the clips of for a
+    /// figure the game does not animate.
+    [[nodiscard]] const cy::animation::AnimationRig& worker_rig() const noexcept {
+        return worker_rig_.rig();
+    }
+    /// The lockstep company's units, from the issuing peer.
+    [[nodiscard]] cy::u32 company_units() const noexcept;
+    [[nodiscard]] bool company_unit(cy::u32 index,
+                                    cy::game_backend::LockstepUnitState& out) const noexcept;
+    /// The interface (ABI 1.6) as the host laid it out this frame, for a renderer to flatten and
+    /// draw. Null without one (`--no-ui`).
+    [[nodiscard]] cy::ui::ElementStore* ui_store() noexcept {
+        return ui_adapter_.get() == nullptr ? nullptr : &ui_store_;
+    }
+    [[nodiscard]] cy::ui::TextPainter& ui_text() noexcept { return text_; }
+    /// The extent the interface is laid out in, in pixels.
+    [[nodiscard]] static cy::Vec2 ui_viewport() noexcept;
     /// The wall time of the last `frame`: the game's frame, its fixed tick and the GI's update.
     [[nodiscard]] cy::f64 last_frame_ms() const noexcept { return frame_ms_; }
     [[nodiscard]] cy::u32 behaviours() const noexcept { return runtime_.live_instances(); }

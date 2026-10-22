@@ -338,6 +338,51 @@ CY_TEST_CASE("a second frame finds its shadow pages resident and its sky table r
     CY_CHECK_EQ(b.temporal_frame, 2U);
 }
 
+CY_TEST_CASE("the sky's irradiance is reused while the atmosphere, the eye and the sun hold") {
+    // REGRESSION. The irradiance — the frame's ambient term, 32 directions integrated through the
+    // atmosphere — was integrated again every frame though nothing it depends on had moved: 4.6 ms
+    // of the 5.5 a frame of the RTS test map spent assembling, serially. It is now reused exactly
+    // while its three inputs are exactly what they were, and integrated again the moment one moves.
+    FrameAssembly assembly(allocator());
+    CY_REQUIRE(assembly.initialize(make_description()).has_value());
+    SpatialIndex index(allocator());
+    const cy::render::LightDescription lights[] = {point_light(Vec3{0.0F, 0.0F, -6.0F}, 2)};
+    AssemblyView view = make_view({lights, 1});
+
+    RenderGraph first(allocator());
+    AssemblyReport a;
+    CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, first, a).has_value());
+    CY_CHECK_FALSE(a.sky_irradiance_reused);
+    const Vec3 integrated = assembly.sky_irradiance();
+
+    RenderGraph second(allocator());
+    AssemblyReport b;
+    CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, second, b).has_value());
+    CY_CHECK(b.sky_irradiance_reused);
+    CY_CHECK(assembly.sky_irradiance() == integrated);
+
+    // The camera climbs: the eye the sky is integrated from moves, and so does the irradiance.
+    view.cull.camera_position.y += 200.0F;
+    RenderGraph third(allocator());
+    AssemblyReport c;
+    CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, third, c).has_value());
+    CY_CHECK_FALSE(c.sky_irradiance_reused);
+
+    // The sun moves: integrated again, and the value it gives is the one a fresh frame gives.
+    view.sun_direction = cy::normalize(Vec3{0.3F, 0.5F, 0.2F});
+    RenderGraph fourth(allocator());
+    AssemblyReport d;
+    CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, fourth, d).has_value());
+    CY_CHECK_FALSE(d.sky_irradiance_reused);
+    FrameAssembly fresh(allocator());
+    CY_REQUIRE(fresh.initialize(make_description()).has_value());
+    RenderGraph fifth(allocator());
+    AssemblyReport e;
+    CY_REQUIRE(fresh.assemble(index, view, FrameSinks{}, fifth, e).has_value());
+    CY_CHECK(fresh.sky_irradiance() == assembly.sky_irradiance());
+    CY_CHECK_FALSE(assembly.sky_irradiance() == integrated);
+}
+
 CY_TEST_CASE("a post chain that cannot be built stops the frame instead of dropping a stage") {
     // "WHEN temporal antialiasing and temporal upscaling are both enabled" — they are alternatives
     // at the same step, and a frame that quietly picked one would be a project shipping without the
