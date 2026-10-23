@@ -108,6 +108,26 @@ CY_TEST_CASE("input: a modal over gameplay consumes the action, and says so") {
     CY_CHECK_EQ(fixture.server.user(0).outcome(confirm), ActionOutcome::ConsumedByHigherContext);
 }
 
+CY_TEST_CASE("input: two controls bound to one action in one context both drive it") {
+    // REGRESSION: the shadow chain took any earlier binding of the same action as a higher-priority
+    // consumer, including one in the same context — so a context binding Confirm to Enter and to a
+    // gamepad's south button answered only Enter, and the pad reported ConsumedByHigherContext.
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    const ActionId confirm = fixture.declare("Confirm", 1, ActionValueType::Digital);
+    CY_REQUIRE(!fixture.attach(DeviceKind::Keyboard).is_null());
+    const DeviceId pad = fixture.attach(DeviceKind::Gamepad, 0, "pad");
+    MappingContext context(allocator());
+    CY_REQUIRE(context.add(simple(confirm, key_control(Key::Enter))).has_value());
+    CY_REQUIRE(context.add(simple(confirm, gamepad_control(GamepadControl::South))).has_value());
+    CY_REQUIRE(fixture.install(std::move(context)));
+
+    fixture.press(pad, gamepad_control(GamepadControl::South), kMs);
+    fixture.server.resolve_tick(1, 10 * kMs, 1.0F / 60.0F);
+    CY_CHECK(fixture.server.user(0).action_state(confirm).pressed());
+    CY_CHECK_EQ(fixture.server.user(0).outcome(confirm), ActionOutcome::Triggered);
+}
+
 CY_TEST_CASE("input: a context that does not consume lets a lower one augment it") {
     Fixture fixture;
     CY_REQUIRE(fixture.start());
