@@ -46,6 +46,23 @@ if(CY_ANIMATION)
     target_compile_definitions(cy_editor_backend PUBLIC CY_EDITOR_HAS_ANIMATION=1)
 endif()
 
+# THE UI LAYOUT EDITOR'S CANVAS (#29, "UI layout"). `ui.*` makes a `.cyui` document into the
+# toolkit's widgets and draws it with the interface renderer's host path, so it needs CyberUI; with
+# `-D CY_UI=OFF` the service is not built and the editor's UI layout editor refuses, naming
+# `ui-system`. The interface font comes with the complete text backend; without it the preview
+# draws in the built-in font, as a game does.
+if(CY_UI)
+    target_sources(cy_editor_backend PRIVATE src/ui_layout_service.cpp)
+    target_link_libraries(cy_editor_backend PUBLIC cy::ui-toolkit cy::ui-text
+                                            PRIVATE cy::ui-render)
+    target_compile_definitions(cy_editor_backend PUBLIC CY_EDITOR_HAS_UI_LAYOUT=1)
+    if(CY_TEXT)
+        target_link_libraries(cy_editor_backend PRIVATE cy::text-complete)
+        # PUBLIC: a host or a suite that compares with the preview starts the same font.
+        target_compile_definitions(cy_editor_backend PUBLIC CY_EDITOR_HAS_UI_FONT=1)
+    endif()
+endif()
+
 if(CY_BUILD_TESTS)
     set_property(GLOBAL PROPERTY CY_EDITOR_BACKEND_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     function(cy_editor_backend_declare_tests)
@@ -148,6 +165,20 @@ if(CY_BUILD_TESTS)
             SOURCES "${tests_dir}/test_illumination_preview.cpp"
             DEPENDENCIES cy::editor-backend
             DEFINITIONS "CY_ILLUMINATION_WIRE_DIR=\"${tests_dir}/data\"")
+        # THE UI LAYOUT EDITOR, ENGINE SIDE (#29). `integration` because every case makes a
+        # document into widgets and draws it on the host with the interface renderer's shader.
+        if(CY_UI)
+            cy_add_test(
+                NAME editor_backend_ui_layout
+                KIND integration
+                SOURCES "${tests_dir}/test_ui_layout_service.cpp"
+                DEPENDENCIES cy::editor-backend cy::ui-toolkit
+                DEFINITIONS "CY_UI_LAYOUT_WIRE_DIR=\"${tests_dir}/data\"")
+            if(CY_TEXT)
+                target_link_libraries(cy_test_integration_editor_backend_ui_layout
+                                      PRIVATE cy::text-complete)
+            endif()
+        endif()
         # What the editor's GI costs on the host, measured over the same world: a rebuild and two
         # views at 320x180 take more than an integration case's second on a slow runner.
         # The smoke taxonomy is tests/CMakeLists.txt's, which this deferred call does not see.

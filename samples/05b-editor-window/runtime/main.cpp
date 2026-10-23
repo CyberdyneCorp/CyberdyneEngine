@@ -76,6 +76,9 @@
 #include <cy/editor/material_service.h>
 #include <cy/editor/navigation_service.h>
 #include <cy/editor/terrain_service.h>
+#if defined(CY_EDITOR_HAS_UI_LAYOUT)
+#    include <cy/editor/ui_layout_service.h>
+#endif
 #include <cy/game_backend/illumination_backend.h>
 #include <cy/rendering/gi/debug_views.h>
 #include <cy/runtime/editor_bridge/bridge.h>
@@ -1904,7 +1907,8 @@ int run_host_loop(Host& host, const Options& options, u64 started) {
 [[nodiscard]] Status route_services(editor::CompositeEditorService& composite,
                                     editor::MaterialService& material,
                                     editor::NavigationService& navigation,
-                                    editor::IlluminationService& illumination) noexcept {
+                                    editor::IlluminationService& illumination,
+                                    abi::EditorServiceBackend* ui) noexcept {
     for (const std::string_view prefix : editor::kMaterialServicePrefixes) {
         if (Status routed = composite.route(prefix, material); !routed) {
             return routed;
@@ -1913,15 +1917,21 @@ int run_host_loop(Host& host, const Options& options, u64 started) {
     if (Status routed = composite.route("navigation.", navigation); !routed) {
         return routed;
     }
-    return composite.route("illumination.", illumination);
+    if (Status routed = composite.route("illumination.", illumination); !routed) {
+        return routed;
+    }
+    // The UI layout editor's canvas (#29): `ui.*`, drawn by the engine without a device.
+    return ui == nullptr ? ok() : composite.route("ui.", *ui);
 }
 
 /// The one session every editor request is served in, or null after saying why there is none.
 [[nodiscard]] CyServiceSession open_services(editor::CompositeEditorService& composite,
                                              editor::MaterialService& material,
                                              editor::NavigationService& navigation,
-                                             editor::IlluminationService& illumination) noexcept {
-    if (Status routed = route_services(composite, material, navigation, illumination); !routed) {
+                                             editor::IlluminationService& illumination,
+                                             abi::EditorServiceBackend* ui) noexcept {
+    if (Status routed = route_services(composite, material, navigation, illumination, ui);
+        !routed) {
         report("editor service", routed.error());
         return nullptr;
     }
@@ -2164,8 +2174,15 @@ int main(int argc, char** argv) {
         host.play_animation = &play_animation;
 #endif
         editor::CompositeEditorService composite_service(allocator);
-        CyServiceSession service_session = open_services(composite_service, editor_service,
-                                                         navigation_service, illumination_service);
+#if defined(CY_EDITOR_HAS_UI_LAYOUT)
+        editor::UiLayoutService ui_layout_service(allocator);
+        abi::EditorServiceBackend* ui_service = &ui_layout_service;
+#else
+        abi::EditorServiceBackend* ui_service = nullptr;
+#endif
+        CyServiceSession service_session =
+            open_services(composite_service, editor_service, navigation_service,
+                          illumination_service, ui_service);
         NavigationDriver nav_driver(composite_service, service_session);
         host.options = options;
         host.authored_frame = view_world.loaded() ? &authored_frame : nullptr;
