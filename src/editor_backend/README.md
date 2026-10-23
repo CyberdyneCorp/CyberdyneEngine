@@ -46,6 +46,16 @@ The first vertical slice supports:
   autoplaying `cy::audio::AudioSource`. `tests/data/audio_*` holds the wire the Rust editor's
   suites read and write.
 
+- `ui.catalogue.get` and `ui.preview.render` — the UI layout editor's (#29), answered by
+  `cy::editor::UiLayoutService` (`include/cy/editor/ui_layout_service.h`) under `CY_UI`. The
+  catalogue is the toolkit's widget kinds with their properties, its style properties, the states a
+  widget can be previewed in and the binding modes. A preview request carries a document, the files
+  it reaches, an optional theme, the target size, scale and DPI, and a state for one widget; the
+  reply is the picture `ui::render::draw_reference` drew, every line's laid-out rectangle, the
+  diagnostics, the classes the sheets define, and the counts and times. A document that does not
+  parse keeps the last good picture and says why. The runtime routes `ui.` to it
+  (`samples/05b-editor-window/runtime/main.cpp`); `tests/data/ui_*.wire` holds the wire.
+
 - `script.catalogue.get`, `script.compile`, `script.event.raise` and `script.state.get` — the gameplay
   graph editor's (#29, visual scripting; `include/cy/editor/script_service.h` gives the payloads). The
   catalogue is the material catalogue's schema 3 over `cy::graph`'s script vocabulary without
