@@ -273,6 +273,16 @@ public:
                                  u32 context_capacity) noexcept;
 
     [[nodiscard]] u32 resolved_count() const noexcept { return static_cast<u32>(resolved_.size()); }
+    /// The control `action`'s `slot`-th component has on `scheme` in the resolved table — the
+    /// player's override or the authored binding — the slot numbering `BindingOverride` uses. False
+    /// when the action has no such binding. Read after a rebuild: the table is the last one built.
+    [[nodiscard]] bool binding_control(ActionId action, SchemeKind scheme, u8 slot,
+                                       Control& out) const noexcept;
+    /// The first binding on `scheme` holding `control` in the resolved table: its action and slot.
+    /// What a rebinding menu's conflict check asks — of the bindings in effect, authored ones
+    /// included, not only of the overrides the profile holds.
+    [[nodiscard]] bool holder_of(Control control, SchemeKind scheme, ActionId& action,
+                                 u8& slot) const noexcept;
     [[nodiscard]] const ResolvedBinding& resolved(u32 index) const noexcept {
         return resolved_[index];
     }
@@ -328,6 +338,9 @@ private:
     [[nodiscard]] Status collect_bindings(const MappingContext* const* contexts,
                                           u32 context_capacity, const u32* order) noexcept;
     void apply_overrides(const ActionRegistry& actions) noexcept;
+    /// How many bindings of the same action on the same scheme come before resolved binding
+    /// `index`: the binding's ordinal in an override's slot.
+    [[nodiscard]] u32 ordinal_of(u32 index) const noexcept;
     void compute_shadow_chain() noexcept;
     [[nodiscard]] Status build_control_index() noexcept;
     /// The trigger state machine for one binding. Returns the flags to fold into the action.

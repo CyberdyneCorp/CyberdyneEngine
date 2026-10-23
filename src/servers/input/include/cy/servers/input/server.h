@@ -170,6 +170,10 @@ public:
 
     [[nodiscard]] u64 tick() const noexcept { return tick_; }
 
+    /// Rebuild user `index`'s resolved table now when its stack or profile changed, rather than at
+    /// the next `resolve_tick`: what a rebinding menu calls before it shows the bindings in effect.
+    [[nodiscard]] Status refresh_user(u32 index) noexcept;
+
 private:
     [[nodiscard]] Status rebuild_user(InputUser& target) noexcept;
 

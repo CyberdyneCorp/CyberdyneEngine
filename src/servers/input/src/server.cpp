@@ -228,6 +228,14 @@ void InputServer::submit_text(const TextEvent& event) noexcept {
     (void)text_.push_back(event);
 }
 
+Status InputServer::refresh_user(u32 index) noexcept {
+    if (index >= users_.size()) {
+        return fail(ErrorCode::OutOfRange, "input: no such user");
+    }
+    InputUser& target = *users_[index];
+    return target.dirty() ? rebuild_user(target) : ok();
+}
+
 Status InputServer::rebuild_user(InputUser& target) noexcept {
     return target.rebuild(actions_, contexts_.data(), static_cast<u32>(contexts_.size()));
 }
