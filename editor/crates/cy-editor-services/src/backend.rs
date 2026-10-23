@@ -280,6 +280,8 @@ pub struct BackendServices {
     pub animation: crate::animation_requests::AnimationRequests,
     /// `illumination.report`, the lighting panel's GI report: see `crate::illumination_requests`.
     pub illumination: crate::illumination_requests::IlluminationRequests,
+    /// The `ui.*` operations, the UI layout editor's: see `crate::ui_layout_requests`.
+    pub ui_layout: crate::ui_layout_requests::UiLayoutRequests,
 }
 
 impl Default for BackendServices {
@@ -314,6 +316,7 @@ impl Default for BackendServices {
             script: crate::script_requests::ScriptRequests::default(),
             animation: crate::animation_requests::AnimationRequests::default(),
             illumination: crate::illumination_requests::IlluminationRequests::default(),
+            ui_layout: crate::ui_layout_requests::UiLayoutRequests::default(),
         }
     }
 }
@@ -333,6 +336,7 @@ impl BackendServices {
             let _ = self.script.maintain(runtime);
             let _ = self.animation.maintain(runtime);
             let _ = self.illumination.maintain(runtime);
+            let _ = self.ui_layout.maintain(runtime);
             return None;
         }
         // Only once discovery is done, so a runtime's first answers stay in the order they always
@@ -368,6 +372,13 @@ impl BackendServices {
         if self.connected
             && self.catalogue_request.is_none()
             && let Some(problem) = self.illumination.maintain(runtime)
+        {
+            return Some(problem);
+        }
+        // And for the UI layout editor's vocabulary and canvas.
+        if self.connected
+            && self.catalogue_request.is_none()
+            && let Some(problem) = self.ui_layout.maintain(runtime)
         {
             return Some(problem);
         }
@@ -494,6 +505,9 @@ impl BackendServices {
             return outcome;
         }
         if let Some(outcome) = self.illumination.accept(message) {
+            return outcome;
+        }
+        if let Some(outcome) = self.ui_layout.accept(message) {
             return outcome;
         }
         if Some(*request) == self.catalogue_request {

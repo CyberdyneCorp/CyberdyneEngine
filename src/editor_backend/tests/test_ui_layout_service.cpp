@@ -560,6 +560,30 @@ CY_TEST_CASE("ui layout: the service answers over a session, and the editor's by
     CY_CHECK_EQ(reply.u32v(), kWidth);
     CY_CHECK_EQ(reply.u32v(), kHeight);
 
+    // The engine's answer to a small preview, which the Rust suites replay as the runtime's: the
+    // gallery at 320x180, scaled from 640x360 — half the units a pixel.
+    UiPreviewRequest small = request_for(kGallery);
+    small.width = 320;
+    small.height = 180;
+    small.scale.mode = ui::ScaleMode::ScaleWithSmaller;
+    small.scale.reference = Vec2{640.0F, 360.0F};
+    Array<u8> small_request(allocator());
+    CY_REQUIRE(editor::encode_ui_preview_request(small, small_request).has_value());
+    CY_REQUIRE_EQ(session.ask("ui.preview.render", small_request.span()),
+                  static_cast<u32>(CY_SERVICE_EVENT_COMPLETED));
+    if (updating_wire()) {
+        Array<u8> reply_bytes(allocator());
+        CY_REQUIRE(reply_bytes.append(Span<const u8>(session.reply.data(), session.reply.size()))
+                       .has_value());
+        write_file("ui_preview_reply_v1.wire", reply_bytes);
+    }
+    const std::string committed_reply = read_file("ui_preview_reply_v1.wire");
+    Reply small_reply(Span<const u8>(reinterpret_cast<const u8*>(committed_reply.data()),
+                                     committed_reply.size()));
+    CY_CHECK_EQ(small_reply.u32v(), 1U);
+    CY_CHECK_EQ(small_reply.u32v(), 320U);
+    CY_CHECK_EQ(small_reply.u32v(), 180U);
+
     // A request cut short is refused by name, and changes nothing.
     const u8 short_payload[] = {1, 0, 0};
     CY_CHECK_EQ(session.ask("ui.preview.render", Span<const u8>(short_payload, 3)),
@@ -597,4 +621,45 @@ CY_TEST_CASE("ui layout: a target, scale or state out of range is refused before
     request = request_for(kGallery);
     request.image_max_width = 0;
     CY_CHECK(refused(request));
+}
+
+CY_TEST_CASE(
+    "ui layout: the menus sample's documents, made in the editor, load and lay out whole") {
+    // samples/16-menus/project/ui: what the UI layout tools wrote for the menus a game copies.
+    // Every element line makes a widget, nothing is named as a mistake, and each document fills
+    // the 1280x720 target it is designed at, in both themes the sample ships and the built-in one.
+    const std::filesystem::path ui =
+        std::filesystem::path(CY_SOURCE_DIR) / "samples/16-menus/project";
+    const auto slurp = [](const std::filesystem::path& path) {
+        std::ifstream input(path, std::ios::binary);
+        CY_REQUIRE(input.good());
+        std::ostringstream text;
+        text << input.rdbuf();
+        return text.str();
+    };
+    const std::string sheet = slurp(ui / "ui/menus.cyss");
+    const editor::UiPreviewFile files[] = {{"ui/menus.cyss", sheet}};
+    for (const char* theme : {"", "ui/themes/ember.cyss", "ui/themes/high-contrast.cyss"}) {
+        const std::string theme_text = theme[0] == '\0' ? std::string() : slurp(ui / theme);
+        for (const char* name : {"ui/main_menu.cyui", "ui/settings.cyui", "ui/pause.cyui",
+                                 "ui/inventory.cyui", "ui/playing.cyui"}) {
+            const std::string document = slurp(ui / name);
+            UiPreviewRequest request = request_for(document);
+            request.width = 1280;
+            request.height = 720;
+            request.scale.mode = ui::ScaleMode::ScaleWithSmaller;
+            request.scale.reference = Vec2{1280.0F, 720.0F};
+            request.image_max_width = 1280;
+            request.image_max_height = 720;
+            request.files = Span<const editor::UiPreviewFile>(files, 1);
+            request.theme = theme_text;
+            const UiPreviewResult result = render(request);
+            CY_CHECK_MESSAGE(result.diagnostics.empty(), name, ": ", diagnostics_of(result));
+            CY_REQUIRE(!result.nodes.empty());
+            for (const editor::UiPreviewNode& node : result.nodes) {
+                CY_CHECK_MESSAGE(node.made, name, " line ", node.line);
+            }
+            CY_CHECK_EQ(result.nodes[0].rect, (ui::Rect{0.0F, 0.0F, 1280.0F, 720.0F}));
+        }
+    }
 }
