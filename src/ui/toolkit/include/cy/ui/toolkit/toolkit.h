@@ -465,6 +465,10 @@ private:
     [[nodiscard]] Status build(Widget& widget, const WidgetDesc& desc) noexcept;
     [[nodiscard]] Status attach_to_parent(Widget& widget, WidgetId parent) noexcept;
     void forget(ElementId element) noexcept;
+    /// Destroy every dialog made under `holder` or under its widgets: they live in the overlay.
+    [[nodiscard]] Status destroy_held_dialogs(WidgetId holder) noexcept;
+    /// Close the drop-down list and the dialogs `doomed` holds, before it is destroyed.
+    [[nodiscard]] Status close_layers_in(Span<const ElementId> doomed) noexcept;
     void push_event(WidgetEventKind kind, const Widget& widget) noexcept;
     [[nodiscard]] Status set_caption(Widget& widget, std::string_view text) noexcept;
     [[nodiscard]] Status set_element_text(ElementId element, std::string_view text) noexcept;
