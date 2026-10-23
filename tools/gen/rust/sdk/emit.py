@@ -86,6 +86,11 @@ ENUM_SPECS = {
     # ABI 1.11, lights a game makes.
     "CyLightKind": ("LightKind", "CY_LIGHT_", "u32"),
     "CyLightFade": ("LightFade", "CY_LIGHT_FADE_", "u32"),
+    # ABI 1.12, the widget toolkit.
+    "CyUiWidgetKind": ("UiWidgetKind", "CY_UI_WIDGET_", "u32"),
+    "CyUiAction": ("UiAction", "CY_UI_ACTION_", "u32"),
+    "CyUiAnimatedProperty": ("UiAnimatedProperty", "CY_UI_ANIMATE_", "u32"),
+    "CyUiEasing": ("UiEasing", "CY_UI_EASING_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

@@ -119,6 +119,27 @@ CyResult ui_element_rect(CyEngine engine, CyUiElement element, float* out_rect_x
 CyResult ui_hit_test(CyEngine engine, const float* position_xy, CyUiElement* out_element);
 CyResult ui_focus(CyEngine engine, CyUiElement* out_element);
 CyResult ui_set_focus(CyEngine engine, CyUiElement element);
+// 1.12: the widget toolkit — toolkit_thunks.cpp.
+CyResult ui_load_document(CyEngine engine, CyUiElement parent, const CyUiDocumentDesc* desc,
+                          CyUiElement* out_root);
+CyResult ui_load_stylesheet(CyEngine engine, const char* utf8, uint64_t size);
+CyResult ui_find(CyEngine engine, CyUiElement scope, const char* id, CyUiElement* out_widget);
+CyResult ui_create_widget(CyEngine engine, CyUiElement parent, const CyUiWidgetDesc* desc,
+                          CyUiElement* out_widget);
+CyResult ui_widget_set_text(CyEngine engine, CyUiElement widget, const char* utf8);
+CyResult ui_widget_text(CyEngine engine, CyUiElement widget, char* buffer, uint32_t capacity,
+                        uint32_t* out_size);
+CyResult ui_widget_set_value(CyEngine engine, CyUiElement widget, float value);
+CyResult ui_widget_value(CyEngine engine, CyUiElement widget, float* out_value);
+CyResult ui_widget_set_selected(CyEngine engine, CyUiElement widget, uint32_t index);
+CyResult ui_widget_selected(CyEngine engine, CyUiElement widget, uint32_t* out_index);
+CyResult ui_widget_set_items(CyEngine engine, CyUiElement widget, const char* const* items,
+                             uint32_t count);
+CyResult ui_widget_set_enabled(CyEngine engine, CyUiElement widget, uint32_t enabled);
+CyResult ui_widget_set_classes(CyEngine engine, CyUiElement widget, const char* classes);
+CyResult ui_widget_open(CyEngine engine, CyUiElement widget, uint32_t open);
+CyResult ui_widget_animate(CyEngine engine, CyUiElement widget, const CyUiAnimation* animation);
+CyResult ui_navigate(CyEngine engine, uint32_t action, uint32_t* out_consumed);
 
 // --- 1.7: animation ------------------------------------------------------------------------------
 CyResult animation_attach(CyEngine engine, CyEntity entity, const CyAnimatorDesc* desc);

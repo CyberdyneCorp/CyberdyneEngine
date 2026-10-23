@@ -98,6 +98,11 @@ ENUM_SPECS = {
     # ADDED AT ABI 1.11 with the lights a game makes.
     "CyLightKind": ("LightKind", "CY_LIGHT_", "UInt32"),
     "CyLightFade": ("LightFade", "CY_LIGHT_FADE_", "UInt32"),
+    # ADDED AT ABI 1.12 with the widget toolkit.
+    "CyUiWidgetKind": ("UIWidgetKind", "CY_UI_WIDGET_", "UInt32"),
+    "CyUiAction": ("UIAction", "CY_UI_ACTION_", "UInt32"),
+    "CyUiAnimatedProperty": ("UIAnimatedProperty", "CY_UI_ANIMATE_", "UInt32"),
+    "CyUiEasing": ("UIEasing", "CY_UI_EASING_", "UInt32"),
 }
 
 
@@ -222,6 +227,10 @@ def enums(description: dict) -> str:
         # ABI 1.11.
         ("CyLightKind", "/// `CyLightKind`: what a light a game spawns is."),
         ("CyLightFade", "/// `CyLightFade`: how a light with a lifetime fades along it."),
+        ("CyUiWidgetKind", "/// `CyUiWidgetKind`: what a toolkit widget is."),
+        ("CyUiAction", "/// `CyUiAction`: a semantic interface action, for `ui_navigate`."),
+        ("CyUiAnimatedProperty", "/// `CyUiAnimatedProperty`: the paint property an animation drives."),
+        ("CyUiEasing", "/// `CyUiEasing`: how an animation's time becomes progress."),
     ))
     return f"""{BANNER}
 {status}

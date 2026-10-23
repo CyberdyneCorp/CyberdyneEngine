@@ -2029,6 +2029,165 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyUiWidgetDesc>() == 96,
+    "CyUiWidgetDesc is not 96 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyUiWidgetDesc>() == 8,
+    "CyUiWidgetDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, struct_size) == 0,
+    "CyUiWidgetDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, kind) == 4,
+    "CyUiWidgetDesc::kind is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, id) == 8,
+    "CyUiWidgetDesc::id is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, classes) == 16,
+    "CyUiWidgetDesc::classes is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, text) == 24,
+    "CyUiWidgetDesc::text is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, placeholder) == 32,
+    "CyUiWidgetDesc::placeholder is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, title) == 40,
+    "CyUiWidgetDesc::title is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, items) == 48,
+    "CyUiWidgetDesc::items is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, item_count) == 56,
+    "CyUiWidgetDesc::item_count is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, flags) == 60,
+    "CyUiWidgetDesc::flags is not at byte 60"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, value) == 64,
+    "CyUiWidgetDesc::value is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, minimum) == 68,
+    "CyUiWidgetDesc::minimum is not at byte 68"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, maximum) == 72,
+    "CyUiWidgetDesc::maximum is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, step) == 76,
+    "CyUiWidgetDesc::step is not at byte 76"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, columns) == 80,
+    "CyUiWidgetDesc::columns is not at byte 80"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, row_height) == 84,
+    "CyUiWidgetDesc::row_height is not at byte 84"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiWidgetDesc, owner) == 88,
+    "CyUiWidgetDesc::owner is not at byte 88"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyUiDocumentDesc>() == 40,
+    "CyUiDocumentDesc is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyUiDocumentDesc>() == 8,
+    "CyUiDocumentDesc is not 8-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, struct_size) == 0,
+    "CyUiDocumentDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, reserved) == 4,
+    "CyUiDocumentDesc::reserved is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, text) == 8,
+    "CyUiDocumentDesc::text is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, text_size) == 16,
+    "CyUiDocumentDesc::text_size is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, path) == 24,
+    "CyUiDocumentDesc::path is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiDocumentDesc, owner) == 32,
+    "CyUiDocumentDesc::owner is not at byte 32"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyUiAnimation>() == 40,
+    "CyUiAnimation is not 40 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyUiAnimation>() == 4,
+    "CyUiAnimation is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, struct_size) == 0,
+    "CyUiAnimation::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, property) == 4,
+    "CyUiAnimation::property is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, from) == 8,
+    "CyUiAnimation::from is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, to) == 12,
+    "CyUiAnimation::to is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, from_colour) == 16,
+    "CyUiAnimation::from_colour is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, to_colour) == 20,
+    "CyUiAnimation::to_colour is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, duration) == 24,
+    "CyUiAnimation::duration is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, delay) == 28,
+    "CyUiAnimation::delay is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, easing) == 32,
+    "CyUiAnimation::easing is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyUiAnimation, flags) == 36,
+    "CyUiAnimation::flags is not at byte 36"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2054,8 +2213,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1320,
-    "CyInterface is not 1320 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1448,
+    "CyInterface is not 1448 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -2717,6 +2876,70 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, light_status) == 1312,
     "CyInterface::light_status is not at byte 1312"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_load_document) == 1320,
+    "CyInterface::ui_load_document is not at byte 1320"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_load_stylesheet) == 1328,
+    "CyInterface::ui_load_stylesheet is not at byte 1328"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_find) == 1336,
+    "CyInterface::ui_find is not at byte 1336"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_create_widget) == 1344,
+    "CyInterface::ui_create_widget is not at byte 1344"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_text) == 1352,
+    "CyInterface::ui_widget_set_text is not at byte 1352"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_text) == 1360,
+    "CyInterface::ui_widget_text is not at byte 1360"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_value) == 1368,
+    "CyInterface::ui_widget_set_value is not at byte 1368"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_value) == 1376,
+    "CyInterface::ui_widget_value is not at byte 1376"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_selected) == 1384,
+    "CyInterface::ui_widget_set_selected is not at byte 1384"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_selected) == 1392,
+    "CyInterface::ui_widget_selected is not at byte 1392"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_items) == 1400,
+    "CyInterface::ui_widget_set_items is not at byte 1400"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_enabled) == 1408,
+    "CyInterface::ui_widget_set_enabled is not at byte 1408"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_set_classes) == 1416,
+    "CyInterface::ui_widget_set_classes is not at byte 1416"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_open) == 1424,
+    "CyInterface::ui_widget_open is not at byte 1424"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_widget_animate) == 1432,
+    "CyInterface::ui_widget_animate is not at byte 1432"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, ui_navigate) == 1440,
+    "CyInterface::ui_navigate is not at byte 1440"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2763,7 +2986,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        163,
+        179,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }

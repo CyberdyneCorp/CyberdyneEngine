@@ -40,6 +40,25 @@
 // visibility whatever `ElementStore::set_flags` decides. That is what makes a HUD built through the
 // ABI lay out and draw exactly as the same HUD built in C++, and `render.rts_api_hud` holds the two
 // to the byte.
+//
+// ================================================================================================
+// THE WIDGET TOOLKIT, ABI 1.12
+// ================================================================================================
+//
+// `attach_toolkit` gives the adapter a started `cy::ui::Toolkit` — its own root, beside this
+// adapter's — and every 1.12 entry then reaches it: widgets made one at a time or a `.cyui`
+// document at once, their values, items and text, a sheet, animations and navigation. A widget a
+// module made is recorded with its owner, and a document's widgets with the document's owner; a
+// widget the embedder made itself answers NOT_FOUND as the console does. The toolkit's events —
+// a click, a change, a submission, focus, a dialog opening — are queued as `CyUiEvent`s for the
+// owner, beside 1.6's, and leave through the same `drain_events`.
+//
+// With a toolkit, `frame` replaces `layout`: the toolkit's update — bindings, animations, styles,
+// the lists' rows — lays the whole store out, 1.6's elements with it — and it polls the documents
+// loaded by path, and clears the toolkit's event queue once it is translated: an embedder that
+// reads the toolkit's events itself reads them before `frame`. `route_pointer` routes the pointer
+// through both, so a click lands on whichever is under it. `destroy`, `set_visibility`, `rect` and
+// `set_focus` take a module's widget as they take a 1.6 element.
 
 #pragma once
 
@@ -47,10 +66,13 @@
 #include <cy/abi/host.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/ownership.h>
 #include <cy/ui/interaction.h>
 #include <cy/ui/layout.h>
 #include <cy/ui/store.h>
 #include <cy/ui/text/text_painter.h>
+#include <cy/ui/toolkit/document_host.h>
+#include <cy/ui/toolkit/toolkit.h>
 
 #include <string_view>
 #include <utility>
@@ -87,6 +109,21 @@ public:
 
     /// Lay the store out — the whole store, the embedder's elements as well — measuring text.
     [[nodiscard]] Status layout(const ui::ScaleSettings& settings, Vec2 viewport) noexcept;
+
+    /// ABI 1.12: the widget toolkit the widget entries reach, started on the same store and text.
+    /// `resolver` reads a document's paths and its `use`d documents and sheets; `files`, when
+    /// given, is where a document loaded by path is read from and watched, and reloaded on a save.
+    /// Both outlive the adapter, as the toolkit does. Null detaches nothing already loaded.
+    void attach_toolkit(ui::Toolkit* toolkit, ui::DocumentResolver* resolver,
+                        assets::VirtualFileSystem* files = nullptr) noexcept;
+    [[nodiscard]] ui::Toolkit* toolkit() const noexcept { return toolkit_; }
+    /// One frame of the interface: with a toolkit, its update — which lays out the whole store —
+    /// and the reload of any document whose file settled into a change at `now_ns`; without one,
+    /// `layout`.
+    [[nodiscard]] Status frame(f32 seconds, const ui::ScaleSettings& settings, Vec2 viewport,
+                               i64 now_ns = 0) noexcept;
+    /// Documents loaded through 1.12 and still alive.
+    [[nodiscard]] u32 documents() const noexcept { return static_cast<u32>(documents_.size()); }
     /// Route the pointer. `pressed` and `released` are CY_INPUT_BUTTON_* edges since the last
     /// call; only the left button presses a button.
     [[nodiscard]] Status route_pointer(Vec2 position, u32 pressed, u32 released) noexcept;
@@ -138,7 +175,69 @@ public:
     [[nodiscard]] CyUiElement focus() const noexcept override;
     [[nodiscard]] CyResult set_focus(CyUiElement element) noexcept override;
 
+    // --- UiBackend, 1.12 -----------------------------------------------------------------------
+    [[nodiscard]] CyResult load_document(CyUiElement parent, const CyUiDocumentDesc& desc,
+                                         CyUiElement& out_root) noexcept override;
+    [[nodiscard]] CyResult load_stylesheet(const char* utf8, u64 size) noexcept override;
+    [[nodiscard]] CyResult find(CyUiElement scope, const char* id,
+                                CyUiElement& out) const noexcept override;
+    [[nodiscard]] CyResult create_widget(CyUiElement parent, const CyUiWidgetDesc& desc,
+                                         CyUiElement& out) noexcept override;
+    [[nodiscard]] CyResult widget_set_text(CyUiElement widget, const char* utf8) noexcept override;
+    [[nodiscard]] CyResult widget_text(CyUiElement widget, const char*& out,
+                                       u32& size) const noexcept override;
+    [[nodiscard]] CyResult widget_set_value(CyUiElement widget, f32 value) noexcept override;
+    [[nodiscard]] CyResult widget_value(CyUiElement widget, f32& out) const noexcept override;
+    [[nodiscard]] CyResult widget_set_selected(CyUiElement widget, u32 index) noexcept override;
+    [[nodiscard]] CyResult widget_selected(CyUiElement widget, u32& out) const noexcept override;
+    [[nodiscard]] CyResult widget_set_items(CyUiElement widget, const char* const* items,
+                                            u32 count) noexcept override;
+    [[nodiscard]] CyResult widget_set_enabled(CyUiElement widget, bool enabled) noexcept override;
+    [[nodiscard]] CyResult widget_set_classes(CyUiElement widget,
+                                              const char* classes) noexcept override;
+    [[nodiscard]] CyResult widget_open(CyUiElement widget, bool open) noexcept override;
+    [[nodiscard]] CyResult widget_animate(CyUiElement widget,
+                                          const CyUiAnimation& animation) noexcept override;
+    [[nodiscard]] CyResult navigate(u32 action, bool& consumed) noexcept override;
+
 private:
+    /// A widget a module made, and whose behaviours receive its events.
+    struct WidgetRecord {
+        ui::WidgetId widget;
+        CyEntity owner = CY_ENTITY_NULL;
+    };
+
+    /// One loaded document: from text, or — `host` — from a watched path.
+    struct LoadedDocument {
+        UniquePtr<ui::DocumentInstance> instance;
+        UniquePtr<ui::DocumentHost> host;
+        CyEntity owner = CY_ENTITY_NULL;
+
+        [[nodiscard]] ui::DocumentInstance& document() const noexcept {
+            return host ? host->instance() : *instance;
+        }
+    };
+
+    /// A live widget a module made — not a 1.6 element — that the 1.6 entries also take.
+    [[nodiscard]] bool is_widget(CyUiElement element) const noexcept;
+    /// The toolkit, or null having reported UNAVAILABLE.
+    [[nodiscard]] ui::Toolkit* kit() const noexcept;
+    /// The module's widget, or none having reported NOT_FOUND (or UNAVAILABLE, with no toolkit).
+    [[nodiscard]] ui::WidgetId owned_widget(CyUiElement widget) const noexcept;
+    /// A parent for a new widget or document: the module's widget, or the toolkit's root for null.
+    [[nodiscard]] bool parent_widget(CyUiElement parent, ui::WidgetId& out) const noexcept;
+    /// Who made `widget` or a widget above it, or null when no module did.
+    [[nodiscard]] const CyEntity* owner_of(ui::WidgetId widget) const noexcept;
+    /// The toolkit's events since the last call, as `CyUiEvent`s for their owners.
+    void pump_widget_events() noexcept;
+    void forget_dead_widgets() noexcept;
+    [[nodiscard]] CyResult load_text(ui::WidgetId parent, std::string_view text,
+                                     LoadedDocument& loaded) noexcept;
+    [[nodiscard]] CyResult load_path(ui::WidgetId parent, const char* path,
+                                     LoadedDocument& loaded) noexcept;
+    /// A widget's call answered: OK, or the toolkit's refusal as INVALID_ARGUMENT.
+    [[nodiscard]] static CyResult answer(const Status& status) noexcept;
+
     /// What the adapter knows about one module element, at its store index.
     struct Record {
         ui::ElementId element;
@@ -160,6 +259,7 @@ private:
     void note_focus() noexcept;
     void push_event(CyUiEventKind kind, const Record& target, Vec2 position, u32 button) noexcept;
 
+    Allocator* allocator_;
     ui::ElementStore& store_;
     ui::TextPainter& text_;
     ui::ElementId root_;
@@ -171,6 +271,16 @@ private:
     u32 live_ = 0;
     u32 clicks_ = 0;
     bool pointer_over_ = false;
+
+    ui::Toolkit* toolkit_ = nullptr;
+    ui::DocumentResolver* resolver_ = nullptr;
+    assets::VirtualFileSystem* files_ = nullptr;
+    Array<WidgetRecord> widget_records_;
+    Array<LoadedDocument> documents_;
+    /// How many of the toolkit's queued events are already translated; `frame` clears the queue.
+    usize events_seen_ = 0;
+    /// The primary button as the toolkit was last told it, from `route_pointer`'s edges.
+    bool pointer_down_ = false;
 };
 
 /// Bind `adapter` as the host's interface; null unbinds it, and every `ui_*` entry then answers

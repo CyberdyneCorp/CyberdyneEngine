@@ -56,7 +56,13 @@ def _pointer(spelling: str, enums: frozenset[str], prefix: str) -> str | None:
         return None
     pointee = spelling[:-1].strip()
     mutability = "*mut "
-    if pointee.startswith("const "):
+    if pointee.endswith(" const"):
+        # `const char* const*` — ABI 1.11's list of strings: a pointer to CONST POINTERS. The
+        # trailing `const` qualifies the pointee, which is itself a pointer, so it is read before
+        # the leading one, which belongs to that inner pointer's own pointee.
+        pointee = pointee[: -len(" const")].strip()
+        mutability = "*const "
+    elif pointee.startswith("const "):
         pointee = pointee[len("const ") :].strip()
         mutability = "*const "
     if pointee == "void":

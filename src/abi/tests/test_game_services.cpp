@@ -231,7 +231,37 @@ CY_TEST_CASE("the 1.11 table appends lights after every 1.10 entry") {
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, light_status) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, light_status) + sizeof(void*),
+                offsetof(CyInterface, ui_load_document));
+}
+
+CY_TEST_CASE("the 1.12 table appends the widget toolkit after every 1.11 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 12U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.ui_load_document != nullptr,
+        iface.ui_load_stylesheet != nullptr,
+        iface.ui_find != nullptr,
+        iface.ui_create_widget != nullptr,
+        iface.ui_widget_set_text != nullptr,
+        iface.ui_widget_text != nullptr,
+        iface.ui_widget_set_value != nullptr,
+        iface.ui_widget_value != nullptr,
+        iface.ui_widget_set_selected != nullptr,
+        iface.ui_widget_selected != nullptr,
+        iface.ui_widget_set_items != nullptr,
+        iface.ui_widget_set_enabled != nullptr,
+        iface.ui_widget_set_classes != nullptr,
+        iface.ui_widget_open != nullptr,
+        iface.ui_widget_animate != nullptr,
+        iface.ui_navigate != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 16U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, ui_navigate) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

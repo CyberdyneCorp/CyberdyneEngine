@@ -855,11 +855,27 @@ pub enum UiEventKind {
     Focus = 1,
     /// `CY_UI_EVENT_BLUR` = 2.
     Blur = 2,
+    /// `CY_UI_EVENT_CHANGED` = 3.
+    Changed = 3,
+    /// `CY_UI_EVENT_SUBMITTED` = 4.
+    Submitted = 4,
+    /// `CY_UI_EVENT_OPENED` = 5.
+    Opened = 5,
+    /// `CY_UI_EVENT_CLOSED` = 6.
+    Closed = 6,
 }
 
 impl UiEventKind {
     /// Every value, in declaration order. Lets a caller enumerate without a range.
-    pub const ALL: [UiEventKind; 3] = [UiEventKind::Click, UiEventKind::Focus, UiEventKind::Blur];
+    pub const ALL: [UiEventKind; 7] = [
+        UiEventKind::Click,
+        UiEventKind::Focus,
+        UiEventKind::Blur,
+        UiEventKind::Changed,
+        UiEventKind::Submitted,
+        UiEventKind::Opened,
+        UiEventKind::Closed,
+    ];
 
     /// The value the ABI carries, or `None` when this build has no name for it.
     #[must_use]
@@ -868,6 +884,10 @@ impl UiEventKind {
             0 => Some(UiEventKind::Click),
             1 => Some(UiEventKind::Focus),
             2 => Some(UiEventKind::Blur),
+            3 => Some(UiEventKind::Changed),
+            4 => Some(UiEventKind::Submitted),
+            5 => Some(UiEventKind::Opened),
+            6 => Some(UiEventKind::Closed),
             _ => None,
         }
     }
@@ -885,6 +905,10 @@ impl UiEventKind {
             UiEventKind::Click => "CY_UI_EVENT_CLICK",
             UiEventKind::Focus => "CY_UI_EVENT_FOCUS",
             UiEventKind::Blur => "CY_UI_EVENT_BLUR",
+            UiEventKind::Changed => "CY_UI_EVENT_CHANGED",
+            UiEventKind::Submitted => "CY_UI_EVENT_SUBMITTED",
+            UiEventKind::Opened => "CY_UI_EVENT_OPENED",
+            UiEventKind::Closed => "CY_UI_EVENT_CLOSED",
         }
     }
 }
@@ -2081,6 +2105,379 @@ impl LightFade {
             LightFade::None => "CY_LIGHT_FADE_NONE",
             LightFade::Linear => "CY_LIGHT_FADE_LINEAR",
             LightFade::Quadratic => "CY_LIGHT_FADE_QUADRATIC",
+        }
+    }
+}
+/// `CyUiWidgetKind`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiWidgetKind {
+    /// `CY_UI_WIDGET_PANEL` = 0.
+    Panel = 0,
+    /// `CY_UI_WIDGET_ROW` = 1.
+    Row = 1,
+    /// `CY_UI_WIDGET_COLUMN` = 2.
+    Column = 2,
+    /// `CY_UI_WIDGET_GRID` = 3.
+    Grid = 3,
+    /// `CY_UI_WIDGET_STACK` = 4.
+    Stack = 4,
+    /// `CY_UI_WIDGET_SCROLL_VIEW` = 5.
+    ScrollView = 5,
+    /// `CY_UI_WIDGET_LABEL` = 6.
+    Label = 6,
+    /// `CY_UI_WIDGET_RICH_TEXT` = 7.
+    RichText = 7,
+    /// `CY_UI_WIDGET_IMAGE` = 8.
+    Image = 8,
+    /// `CY_UI_WIDGET_BUTTON` = 9.
+    Button = 9,
+    /// `CY_UI_WIDGET_TOGGLE` = 10.
+    Toggle = 10,
+    /// `CY_UI_WIDGET_CHECKBOX` = 11.
+    Checkbox = 11,
+    /// `CY_UI_WIDGET_RADIO_GROUP` = 12.
+    RadioGroup = 12,
+    /// `CY_UI_WIDGET_SLIDER` = 13.
+    Slider = 13,
+    /// `CY_UI_WIDGET_PROGRESS_BAR` = 14.
+    ProgressBar = 14,
+    /// `CY_UI_WIDGET_TEXT_FIELD` = 15.
+    TextField = 15,
+    /// `CY_UI_WIDGET_DROPDOWN` = 16.
+    Dropdown = 16,
+    /// `CY_UI_WIDGET_LIST_VIEW` = 17.
+    ListView = 17,
+    /// `CY_UI_WIDGET_TABS` = 18.
+    Tabs = 18,
+    /// `CY_UI_WIDGET_DIALOG` = 19.
+    Dialog = 19,
+}
+
+impl UiWidgetKind {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiWidgetKind; 20] = [
+        UiWidgetKind::Panel,
+        UiWidgetKind::Row,
+        UiWidgetKind::Column,
+        UiWidgetKind::Grid,
+        UiWidgetKind::Stack,
+        UiWidgetKind::ScrollView,
+        UiWidgetKind::Label,
+        UiWidgetKind::RichText,
+        UiWidgetKind::Image,
+        UiWidgetKind::Button,
+        UiWidgetKind::Toggle,
+        UiWidgetKind::Checkbox,
+        UiWidgetKind::RadioGroup,
+        UiWidgetKind::Slider,
+        UiWidgetKind::ProgressBar,
+        UiWidgetKind::TextField,
+        UiWidgetKind::Dropdown,
+        UiWidgetKind::ListView,
+        UiWidgetKind::Tabs,
+        UiWidgetKind::Dialog,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiWidgetKind::Panel),
+            1 => Some(UiWidgetKind::Row),
+            2 => Some(UiWidgetKind::Column),
+            3 => Some(UiWidgetKind::Grid),
+            4 => Some(UiWidgetKind::Stack),
+            5 => Some(UiWidgetKind::ScrollView),
+            6 => Some(UiWidgetKind::Label),
+            7 => Some(UiWidgetKind::RichText),
+            8 => Some(UiWidgetKind::Image),
+            9 => Some(UiWidgetKind::Button),
+            10 => Some(UiWidgetKind::Toggle),
+            11 => Some(UiWidgetKind::Checkbox),
+            12 => Some(UiWidgetKind::RadioGroup),
+            13 => Some(UiWidgetKind::Slider),
+            14 => Some(UiWidgetKind::ProgressBar),
+            15 => Some(UiWidgetKind::TextField),
+            16 => Some(UiWidgetKind::Dropdown),
+            17 => Some(UiWidgetKind::ListView),
+            18 => Some(UiWidgetKind::Tabs),
+            19 => Some(UiWidgetKind::Dialog),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiWidgetKind::Panel => "CY_UI_WIDGET_PANEL",
+            UiWidgetKind::Row => "CY_UI_WIDGET_ROW",
+            UiWidgetKind::Column => "CY_UI_WIDGET_COLUMN",
+            UiWidgetKind::Grid => "CY_UI_WIDGET_GRID",
+            UiWidgetKind::Stack => "CY_UI_WIDGET_STACK",
+            UiWidgetKind::ScrollView => "CY_UI_WIDGET_SCROLL_VIEW",
+            UiWidgetKind::Label => "CY_UI_WIDGET_LABEL",
+            UiWidgetKind::RichText => "CY_UI_WIDGET_RICH_TEXT",
+            UiWidgetKind::Image => "CY_UI_WIDGET_IMAGE",
+            UiWidgetKind::Button => "CY_UI_WIDGET_BUTTON",
+            UiWidgetKind::Toggle => "CY_UI_WIDGET_TOGGLE",
+            UiWidgetKind::Checkbox => "CY_UI_WIDGET_CHECKBOX",
+            UiWidgetKind::RadioGroup => "CY_UI_WIDGET_RADIO_GROUP",
+            UiWidgetKind::Slider => "CY_UI_WIDGET_SLIDER",
+            UiWidgetKind::ProgressBar => "CY_UI_WIDGET_PROGRESS_BAR",
+            UiWidgetKind::TextField => "CY_UI_WIDGET_TEXT_FIELD",
+            UiWidgetKind::Dropdown => "CY_UI_WIDGET_DROPDOWN",
+            UiWidgetKind::ListView => "CY_UI_WIDGET_LIST_VIEW",
+            UiWidgetKind::Tabs => "CY_UI_WIDGET_TABS",
+            UiWidgetKind::Dialog => "CY_UI_WIDGET_DIALOG",
+        }
+    }
+}
+/// `CyUiAction`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiAction {
+    /// `CY_UI_ACTION_ACCEPT` = 0.
+    Accept = 0,
+    /// `CY_UI_ACTION_CANCEL` = 1.
+    Cancel = 1,
+    /// `CY_UI_ACTION_NAVIGATE_UP` = 2.
+    NavigateUp = 2,
+    /// `CY_UI_ACTION_NAVIGATE_DOWN` = 3.
+    NavigateDown = 3,
+    /// `CY_UI_ACTION_NAVIGATE_LEFT` = 4.
+    NavigateLeft = 4,
+    /// `CY_UI_ACTION_NAVIGATE_RIGHT` = 5.
+    NavigateRight = 5,
+    /// `CY_UI_ACTION_NEXT_TAB` = 6.
+    NextTab = 6,
+    /// `CY_UI_ACTION_PREVIOUS_TAB` = 7.
+    PreviousTab = 7,
+    /// `CY_UI_ACTION_CONTEXT` = 8.
+    Context = 8,
+    /// `CY_UI_ACTION_SCROLL_UP` = 9.
+    ScrollUp = 9,
+    /// `CY_UI_ACTION_SCROLL_DOWN` = 10.
+    ScrollDown = 10,
+    /// `CY_UI_ACTION_FOCUS_NEXT` = 11.
+    FocusNext = 11,
+    /// `CY_UI_ACTION_FOCUS_PREVIOUS` = 12.
+    FocusPrevious = 12,
+}
+
+impl UiAction {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiAction; 13] = [
+        UiAction::Accept,
+        UiAction::Cancel,
+        UiAction::NavigateUp,
+        UiAction::NavigateDown,
+        UiAction::NavigateLeft,
+        UiAction::NavigateRight,
+        UiAction::NextTab,
+        UiAction::PreviousTab,
+        UiAction::Context,
+        UiAction::ScrollUp,
+        UiAction::ScrollDown,
+        UiAction::FocusNext,
+        UiAction::FocusPrevious,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiAction::Accept),
+            1 => Some(UiAction::Cancel),
+            2 => Some(UiAction::NavigateUp),
+            3 => Some(UiAction::NavigateDown),
+            4 => Some(UiAction::NavigateLeft),
+            5 => Some(UiAction::NavigateRight),
+            6 => Some(UiAction::NextTab),
+            7 => Some(UiAction::PreviousTab),
+            8 => Some(UiAction::Context),
+            9 => Some(UiAction::ScrollUp),
+            10 => Some(UiAction::ScrollDown),
+            11 => Some(UiAction::FocusNext),
+            12 => Some(UiAction::FocusPrevious),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiAction::Accept => "CY_UI_ACTION_ACCEPT",
+            UiAction::Cancel => "CY_UI_ACTION_CANCEL",
+            UiAction::NavigateUp => "CY_UI_ACTION_NAVIGATE_UP",
+            UiAction::NavigateDown => "CY_UI_ACTION_NAVIGATE_DOWN",
+            UiAction::NavigateLeft => "CY_UI_ACTION_NAVIGATE_LEFT",
+            UiAction::NavigateRight => "CY_UI_ACTION_NAVIGATE_RIGHT",
+            UiAction::NextTab => "CY_UI_ACTION_NEXT_TAB",
+            UiAction::PreviousTab => "CY_UI_ACTION_PREVIOUS_TAB",
+            UiAction::Context => "CY_UI_ACTION_CONTEXT",
+            UiAction::ScrollUp => "CY_UI_ACTION_SCROLL_UP",
+            UiAction::ScrollDown => "CY_UI_ACTION_SCROLL_DOWN",
+            UiAction::FocusNext => "CY_UI_ACTION_FOCUS_NEXT",
+            UiAction::FocusPrevious => "CY_UI_ACTION_FOCUS_PREVIOUS",
+        }
+    }
+}
+/// `CyUiAnimatedProperty`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiAnimatedProperty {
+    /// `CY_UI_ANIMATE_OPACITY` = 0.
+    Opacity = 0,
+    /// `CY_UI_ANIMATE_TRANSLATE_X` = 1.
+    TranslateX = 1,
+    /// `CY_UI_ANIMATE_TRANSLATE_Y` = 2.
+    TranslateY = 2,
+    /// `CY_UI_ANIMATE_SCALE` = 3.
+    Scale = 3,
+    /// `CY_UI_ANIMATE_BACKGROUND` = 4.
+    Background = 4,
+}
+
+impl UiAnimatedProperty {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiAnimatedProperty; 5] = [
+        UiAnimatedProperty::Opacity,
+        UiAnimatedProperty::TranslateX,
+        UiAnimatedProperty::TranslateY,
+        UiAnimatedProperty::Scale,
+        UiAnimatedProperty::Background,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiAnimatedProperty::Opacity),
+            1 => Some(UiAnimatedProperty::TranslateX),
+            2 => Some(UiAnimatedProperty::TranslateY),
+            3 => Some(UiAnimatedProperty::Scale),
+            4 => Some(UiAnimatedProperty::Background),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiAnimatedProperty::Opacity => "CY_UI_ANIMATE_OPACITY",
+            UiAnimatedProperty::TranslateX => "CY_UI_ANIMATE_TRANSLATE_X",
+            UiAnimatedProperty::TranslateY => "CY_UI_ANIMATE_TRANSLATE_Y",
+            UiAnimatedProperty::Scale => "CY_UI_ANIMATE_SCALE",
+            UiAnimatedProperty::Background => "CY_UI_ANIMATE_BACKGROUND",
+        }
+    }
+}
+/// `CyUiEasing`, as the ABI declares it.
+///
+/// Stored as `u32` because that is what the ABI carries it in. `from_raw` is the only
+/// way in: a value the engine sent that this SDK does not know is a `None` to be reported,
+/// never a transmute — an unknown discriminant in a Rust enum is undefined behaviour, and an
+/// engine one minor version ahead is exactly how one arrives.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u32)]
+pub enum UiEasing {
+    /// `CY_UI_EASING_LINEAR` = 0.
+    Linear = 0,
+    /// `CY_UI_EASING_EASE_IN` = 1.
+    EaseIn = 1,
+    /// `CY_UI_EASING_EASE_OUT` = 2.
+    EaseOut = 2,
+    /// `CY_UI_EASING_EASE_IN_OUT` = 3.
+    EaseInOut = 3,
+    /// `CY_UI_EASING_EASE` = 4.
+    Ease = 4,
+    /// `CY_UI_EASING_SPRING` = 5.
+    Spring = 5,
+    /// `CY_UI_EASING_BACK` = 6.
+    Back = 6,
+}
+
+impl UiEasing {
+    /// Every value, in declaration order. Lets a caller enumerate without a range.
+    pub const ALL: [UiEasing; 7] = [
+        UiEasing::Linear,
+        UiEasing::EaseIn,
+        UiEasing::EaseOut,
+        UiEasing::EaseInOut,
+        UiEasing::Ease,
+        UiEasing::Spring,
+        UiEasing::Back,
+    ];
+
+    /// The value the ABI carries, or `None` when this build has no name for it.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            0 => Some(UiEasing::Linear),
+            1 => Some(UiEasing::EaseIn),
+            2 => Some(UiEasing::EaseOut),
+            3 => Some(UiEasing::EaseInOut),
+            4 => Some(UiEasing::Ease),
+            5 => Some(UiEasing::Spring),
+            6 => Some(UiEasing::Back),
+            _ => None,
+        }
+    }
+
+    /// The integer the ABI carries this value as.
+    #[must_use]
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    /// The C spelling, for diagnostics that have to be read beside the header.
+    #[must_use]
+    pub const fn c_name(self) -> &'static str {
+        match self {
+            UiEasing::Linear => "CY_UI_EASING_LINEAR",
+            UiEasing::EaseIn => "CY_UI_EASING_EASE_IN",
+            UiEasing::EaseOut => "CY_UI_EASING_EASE_OUT",
+            UiEasing::EaseInOut => "CY_UI_EASING_EASE_IN_OUT",
+            UiEasing::Ease => "CY_UI_EASING_EASE",
+            UiEasing::Spring => "CY_UI_EASING_SPRING",
+            UiEasing::Back => "CY_UI_EASING_BACK",
         }
     }
 }

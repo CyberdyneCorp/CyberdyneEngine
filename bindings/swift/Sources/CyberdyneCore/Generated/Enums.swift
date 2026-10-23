@@ -144,6 +144,10 @@ public enum UIEventKind: UInt32, Sendable, CaseIterable {
     case click = 0
     case focus = 1
     case blur = 2
+    case changed = 3
+    case submitted = 4
+    case opened = 5
+    case closed = 6
 }
 
 /// `CyUiKind`: what an interface element is, and so which writes it takes.
@@ -319,6 +323,67 @@ public enum LightFade: UInt32, Sendable, CaseIterable {
     case none = 0
     case linear = 1
     case quadratic = 2
+}
+
+/// `CyUiWidgetKind`: what a toolkit widget is.
+public enum UIWidgetKind: UInt32, Sendable, CaseIterable {
+    case panel = 0
+    case row = 1
+    case column = 2
+    case grid = 3
+    case stack = 4
+    case scrollView = 5
+    case label = 6
+    case richText = 7
+    case image = 8
+    case button = 9
+    case toggle = 10
+    case checkbox = 11
+    case radioGroup = 12
+    case slider = 13
+    case progressBar = 14
+    case textField = 15
+    case dropdown = 16
+    case listView = 17
+    case tabs = 18
+    case dialog = 19
+}
+
+/// `CyUiAction`: a semantic interface action, for `ui_navigate`.
+public enum UIAction: UInt32, Sendable, CaseIterable {
+    case accept = 0
+    case cancel = 1
+    case navigateUp = 2
+    case navigateDown = 3
+    case navigateLeft = 4
+    case navigateRight = 5
+    case nextTab = 6
+    case previousTab = 7
+    case context = 8
+    case scrollUp = 9
+    case scrollDown = 10
+    case focusNext = 11
+    case focusPrevious = 12
+}
+
+/// `CyUiAnimatedProperty`: the paint property an animation drives.
+public enum UIAnimatedProperty: UInt32, Sendable, CaseIterable {
+    case opacity = 0
+    case translateX = 1
+    case translateY = 2
+    case scale = 3
+    case background = 4
+}
+
+/// `CyUiEasing`: how an animation's time becomes progress.
+public enum UIEasing: UInt32, Sendable, CaseIterable {
+    case linear = 0
+    case easeIn = 1
+    case easeOut = 2
+    case easeInOut = 3
+    case ease = 4
+    case spring = 5
+    case back = 6
 }
 
 /// The error every throwing overlay call raises.

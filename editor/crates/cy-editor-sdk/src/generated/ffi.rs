@@ -1228,6 +1228,90 @@ pub struct CyLightStatus {
     pub refused: u64,
 }
 
+/// `CyUiWidgetDesc` — 96 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiWidgetDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `const char*` at byte 8.
+    pub id: *const ::std::ffi::c_char,
+    /// `const char*` at byte 16.
+    pub classes: *const ::std::ffi::c_char,
+    /// `const char*` at byte 24.
+    pub text: *const ::std::ffi::c_char,
+    /// `const char*` at byte 32.
+    pub placeholder: *const ::std::ffi::c_char,
+    /// `const char*` at byte 40.
+    pub title: *const ::std::ffi::c_char,
+    /// `const char* const*` at byte 48.
+    pub items: *const *const ::std::ffi::c_char,
+    /// `uint32_t` at byte 56.
+    pub item_count: u32,
+    /// `uint32_t` at byte 60.
+    pub flags: u32,
+    /// `float` at byte 64.
+    pub value: f32,
+    /// `float` at byte 68.
+    pub minimum: f32,
+    /// `float` at byte 72.
+    pub maximum: f32,
+    /// `float` at byte 76.
+    pub step: f32,
+    /// `uint32_t` at byte 80.
+    pub columns: u32,
+    /// `float` at byte 84.
+    pub row_height: f32,
+    /// `CyEntity` at byte 88.
+    pub owner: CyEntity,
+}
+
+/// `CyUiDocumentDesc` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiDocumentDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub reserved: u32,
+    /// `const char*` at byte 8.
+    pub text: *const ::std::ffi::c_char,
+    /// `uint64_t` at byte 16.
+    pub text_size: u64,
+    /// `const char*` at byte 24.
+    pub path: *const ::std::ffi::c_char,
+    /// `CyEntity` at byte 32.
+    pub owner: CyEntity,
+}
+
+/// `CyUiAnimation` — 40 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyUiAnimation {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub property: u32,
+    /// `float` at byte 8.
+    pub from: f32,
+    /// `float` at byte 12.
+    pub to: f32,
+    /// `uint32_t` at byte 16.
+    pub from_colour: u32,
+    /// `uint32_t` at byte 20.
+    pub to_colour: u32,
+    /// `float` at byte 24.
+    pub duration: f32,
+    /// `float` at byte 28.
+    pub delay: f32,
+    /// `uint32_t` at byte 32.
+    pub easing: u32,
+    /// `uint32_t` at byte 36.
+    pub flags: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1242,7 +1326,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1320 bytes, 8-byte aligned.
+/// `CyInterface` — 1448 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1747,6 +1831,62 @@ pub struct CyInterface {
     pub light_alive: Option<unsafe extern "C" fn(CyEngine, CyLight, *mut u32) -> i32>,
     /// `CyResult(*)(CyEngine, CyLightStatus*)` at byte 1312.
     pub light_status: Option<unsafe extern "C" fn(CyEngine, *mut CyLightStatus) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiDocumentDesc*, CyUiElement*)` at byte 1320.
+    pub ui_load_document: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyUiElement,
+            *const CyUiDocumentDesc,
+            *mut CyUiElement,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, const char*, uint64_t)` at byte 1328.
+    pub ui_load_stylesheet:
+        Option<unsafe extern "C" fn(CyEngine, *const ::std::ffi::c_char, u64) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char*, CyUiElement*)` at byte 1336.
+    pub ui_find: Option<
+        unsafe extern "C" fn(
+            CyEngine,
+            CyUiElement,
+            *const ::std::ffi::c_char,
+            *mut CyUiElement,
+        ) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiWidgetDesc*, CyUiElement*)` at byte 1344.
+    pub ui_create_widget: Option<
+        unsafe extern "C" fn(CyEngine, CyUiElement, *const CyUiWidgetDesc, *mut CyUiElement) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char*)` at byte 1352.
+    pub ui_widget_set_text:
+        Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const ::std::ffi::c_char) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, char*, uint32_t, uint32_t*)` at byte 1360.
+    pub ui_widget_text: Option<
+        unsafe extern "C" fn(CyEngine, CyUiElement, *mut ::std::ffi::c_char, u32, *mut u32) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, float)` at byte 1368.
+    pub ui_widget_set_value: Option<unsafe extern "C" fn(CyEngine, CyUiElement, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, float*)` at byte 1376.
+    pub ui_widget_value: Option<unsafe extern "C" fn(CyEngine, CyUiElement, *mut f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t)` at byte 1384.
+    pub ui_widget_set_selected: Option<unsafe extern "C" fn(CyEngine, CyUiElement, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t*)` at byte 1392.
+    pub ui_widget_selected: Option<unsafe extern "C" fn(CyEngine, CyUiElement, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char* const*, uint32_t)` at byte 1400.
+    pub ui_widget_set_items: Option<
+        unsafe extern "C" fn(CyEngine, CyUiElement, *const *const ::std::ffi::c_char, u32) -> i32,
+    >,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t)` at byte 1408.
+    pub ui_widget_set_enabled: Option<unsafe extern "C" fn(CyEngine, CyUiElement, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const char*)` at byte 1416.
+    pub ui_widget_set_classes:
+        Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const ::std::ffi::c_char) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, uint32_t)` at byte 1424.
+    pub ui_widget_open: Option<unsafe extern "C" fn(CyEngine, CyUiElement, u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyUiElement, const CyUiAnimation*)` at byte 1432.
+    pub ui_widget_animate:
+        Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const CyUiAnimation) -> i32>,
+    /// `CyResult(*)(CyEngine, uint32_t, uint32_t*)` at byte 1440.
+    pub ui_navigate: Option<unsafe extern "C" fn(CyEngine, u32, *mut u32) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1952,5 +2092,21 @@ impl CyInterface {
         light_destroy: None,
         light_alive: None,
         light_status: None,
+        ui_load_document: None,
+        ui_load_stylesheet: None,
+        ui_find: None,
+        ui_create_widget: None,
+        ui_widget_set_text: None,
+        ui_widget_text: None,
+        ui_widget_set_value: None,
+        ui_widget_value: None,
+        ui_widget_set_selected: None,
+        ui_widget_selected: None,
+        ui_widget_set_items: None,
+        ui_widget_set_enabled: None,
+        ui_widget_set_classes: None,
+        ui_widget_open: None,
+        ui_widget_animate: None,
+        ui_navigate: None,
     };
 }

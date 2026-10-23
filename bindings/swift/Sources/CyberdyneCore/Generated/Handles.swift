@@ -618,6 +618,86 @@ public struct Engine: @unchecked Sendable {
     public func lightStatus(into: UnsafeMutablePointer<CyLightStatus>?) throws {
         try interface.lightStatus(engine: raw, into: into)
     }
+
+    @inlinable
+    public func uiLoadDocument(parent: CyUiElement, desc: UnsafePointer<CyUiDocumentDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiLoadDocument(engine: raw, parent: parent, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func uiLoadStylesheet(text: UnsafePointer<CChar>?, size: UInt64) throws {
+        try interface.uiLoadStylesheet(engine: raw, text: text, size: size)
+    }
+
+    @inlinable
+    public func uiFind(scope: CyUiElement, id: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiFind(engine: raw, scope: scope, id: id, into: into)
+    }
+
+    @inlinable
+    public func uiCreateWidget(parent: CyUiElement, desc: UnsafePointer<CyUiWidgetDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try interface.uiCreateWidget(engine: raw, parent: parent, desc: desc, into: into)
+    }
+
+    @inlinable
+    public func uiWidgetSetText(widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
+        try interface.uiWidgetSetText(engine: raw, widget: widget, text: text)
+    }
+
+    @inlinable
+    public func uiWidgetText(widget: CyUiElement, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.uiWidgetText(engine: raw, widget: widget, buffer: buffer, capacity: capacity, size: size)
+    }
+
+    @inlinable
+    public func uiWidgetSetValue(widget: CyUiElement, value: Float) throws {
+        try interface.uiWidgetSetValue(engine: raw, widget: widget, value: value)
+    }
+
+    @inlinable
+    public func uiWidgetValue(widget: CyUiElement, into: UnsafeMutablePointer<Float>?) throws {
+        try interface.uiWidgetValue(engine: raw, widget: widget, into: into)
+    }
+
+    @inlinable
+    public func uiWidgetSetSelected(widget: CyUiElement, index: UInt32) throws {
+        try interface.uiWidgetSetSelected(engine: raw, widget: widget, index: index)
+    }
+
+    @inlinable
+    public func uiWidgetSelected(widget: CyUiElement, into: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.uiWidgetSelected(engine: raw, widget: widget, into: into)
+    }
+
+    @inlinable
+    public func uiWidgetSetItems(widget: CyUiElement, items: UnsafePointer<UnsafePointer<CChar>?>?, count: UInt32) throws {
+        try interface.uiWidgetSetItems(engine: raw, widget: widget, items: items, count: count)
+    }
+
+    @inlinable
+    public func uiWidgetSetEnabled(widget: CyUiElement, enabled: UInt32) throws {
+        try interface.uiWidgetSetEnabled(engine: raw, widget: widget, enabled: enabled)
+    }
+
+    @inlinable
+    public func uiWidgetSetClasses(widget: CyUiElement, classes: UnsafePointer<CChar>?) throws {
+        try interface.uiWidgetSetClasses(engine: raw, widget: widget, classes: classes)
+    }
+
+    @inlinable
+    public func uiWidgetOpen(widget: CyUiElement, open: UInt32) throws {
+        try interface.uiWidgetOpen(engine: raw, widget: widget, open: open)
+    }
+
+    @inlinable
+    public func uiWidgetAnimate(widget: CyUiElement, animation: UnsafePointer<CyUiAnimation>?) throws {
+        try interface.uiWidgetAnimate(engine: raw, widget: widget, animation: animation)
+    }
+
+    @inlinable
+    public func uiNavigate(action: UInt32, consumed: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.uiNavigate(engine: raw, action: action, consumed: consumed)
+    }
 }
 
 public struct World: @unchecked Sendable {

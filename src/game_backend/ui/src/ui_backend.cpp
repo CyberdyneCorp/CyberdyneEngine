@@ -96,14 +96,23 @@ constexpr const char* kKindNames[] = {"panel", "label", "image", "progress", "bu
 
 }  // namespace
 
+bool UiAdapter::is_widget(CyUiElement element) const noexcept {
+    const ElementId id = element_of(element);
+    return toolkit_ != nullptr && lookup(id) == nullptr && toolkit_->alive(id) &&
+           owner_of(id) != nullptr;
+}
+
 UiAdapter::UiAdapter(Allocator& allocator, ui::ElementStore& store, ui::TextPainter& text,
                      ElementId root) noexcept
-    : store_(store),
+    : allocator_(&allocator),
+      store_(store),
       text_(text),
       root_(root),
       interaction_(allocator),
       records_(allocator),
-      events_(allocator) {}
+      events_(allocator),
+      widget_records_(allocator),
+      documents_(allocator) {}
 
 Status UiAdapter::start() noexcept {
     if (!store_.alive(root_)) {
@@ -135,6 +144,16 @@ Status UiAdapter::route_pointer(Vec2 position, u32 pressed, u32 released) noexce
     // ending.
     const ui::RouteResult under = interaction_.probe(store_, position);
     pointer_over_ = under.target.is_valid();
+    if (toolkit_ != nullptr) {
+        // The toolkit routes its own widgets; its answer is "over the interface" too.
+        pointer_down_ = (pointer_down_ || (pressed & CY_INPUT_BUTTON_LEFT) != 0U) &&
+                        (released & CY_INPUT_BUTTON_LEFT) == 0U;
+        ui::PointerInput input;
+        input.position = position;
+        input.down = pointer_down_;
+        pointer_over_ = toolkit_->pointer(input) || pointer_over_;
+        pump_widget_events();
+    }
     ui::PointerEvent event;
     event.position = position;
     event.pressed = (pressed & CY_INPUT_BUTTON_LEFT) != 0U;
@@ -298,6 +317,14 @@ CyResult UiAdapter::create(CyUiElement parent, const CyUiElementDesc& desc,
 }
 
 CyResult UiAdapter::destroy(CyUiElement element) noexcept {
+    if (is_widget(element)) {
+        if (Status gone = toolkit_->destroy(element_of(element)); !gone) {
+            return abi::report(gone.error());
+        }
+        forget_dead_widgets();
+        pump_widget_events();
+        return CY_RESULT_OK;
+    }
     Record* entry = record(element);
     if (entry == nullptr) {
         return CY_RESULT_NOT_FOUND;
@@ -410,6 +437,14 @@ CyResult UiAdapter::set_progress(CyUiElement element, f32 value) noexcept {
 }
 
 CyResult UiAdapter::set_visibility(CyUiElement element, CyUiVisibility visibility) noexcept {
+    if (is_widget(element)) {
+        // A widget is shown or collapsed; HIDDEN keeps its space only for a 1.6 element.
+        const ElementId widget = element_of(element);
+        if (Status set = toolkit_->set_visible(widget, visibility == CY_UI_VISIBLE); !set) {
+            return abi::report(set.error());
+        }
+        return CY_RESULT_OK;
+    }
     Record* entry = record(element);
     if (entry == nullptr) {
         return CY_RESULT_NOT_FOUND;
@@ -434,11 +469,12 @@ CyResult UiAdapter::set_opacity(CyUiElement element, f32 opacity) noexcept {
 
 CyResult UiAdapter::rect(CyUiElement element, f32 (&out)[4]) const noexcept {
     const Record* entry = lookup(element_of(element));
-    if (entry == nullptr || !store_.alive(entry->element)) {
+    const bool known = (entry != nullptr && store_.alive(entry->element)) || is_widget(element);
+    if (!known) {
         return abi::report(CY_RESULT_NOT_FOUND,
                            "no such interface element: stale, or not created by this module");
     }
-    const ui::Rect& placed = store_.layout_output(entry->element)->rect;
+    const ui::Rect& placed = store_.layout_output(element_of(element))->rect;
     out[0] = placed.x;
     out[1] = placed.y;
     out[2] = placed.width;
@@ -454,10 +490,26 @@ CyUiElement UiAdapter::hit_test(f32 x, f32 y) const noexcept {
 
 CyUiElement UiAdapter::focus() const noexcept {
     const Record* owned = lookup(interaction_.focus());
-    return owned != nullptr ? to_abi(owned->element) : CY_UI_ELEMENT_NULL;
+    if (owned != nullptr) {
+        return to_abi(owned->element);
+    }
+    if (toolkit_ != nullptr) {
+        const ui::WidgetId widget = toolkit_->focused();
+        if (widget.is_valid() && owner_of(widget) != nullptr) {
+            return to_abi(widget);
+        }
+    }
+    return CY_UI_ELEMENT_NULL;
 }
 
 CyResult UiAdapter::set_focus(CyUiElement element) noexcept {
+    if (is_widget(element)) {
+        if (Status focused = toolkit_->focus(element_of(element)); !focused) {
+            return refuse("ui_set_focus: this widget does not take focus");
+        }
+        pump_widget_events();
+        return CY_RESULT_OK;
+    }
     ElementId target = ui::kNoElement;
     if (element != CY_UI_ELEMENT_NULL) {
         Record* entry = record(element);

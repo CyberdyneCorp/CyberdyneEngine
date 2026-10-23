@@ -467,3 +467,41 @@ CY_TEST_CASE("the 1.11 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyLightStatus, expired), 24U);
     CY_CHECK_EQ(offsetof(CyLightStatus, refused), 32U);
 }
+
+CY_TEST_CASE("the 1.12 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyUiWidgetDesc), 96U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, kind), 4U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, id), 8U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, classes), 16U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, text), 24U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, placeholder), 32U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, title), 40U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, items), 48U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, item_count), 56U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, flags), 60U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, value), 64U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, minimum), 68U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, maximum), 72U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, step), 76U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, columns), 80U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, row_height), 84U);
+    CY_CHECK_EQ(offsetof(CyUiWidgetDesc, owner), 88U);
+
+    CY_CHECK_EQ(sizeof(CyUiDocumentDesc), 40U);
+    CY_CHECK_EQ(offsetof(CyUiDocumentDesc, reserved), 4U);
+    CY_CHECK_EQ(offsetof(CyUiDocumentDesc, text), 8U);
+    CY_CHECK_EQ(offsetof(CyUiDocumentDesc, text_size), 16U);
+    CY_CHECK_EQ(offsetof(CyUiDocumentDesc, path), 24U);
+    CY_CHECK_EQ(offsetof(CyUiDocumentDesc, owner), 32U);
+
+    CY_CHECK_EQ(sizeof(CyUiAnimation), 40U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, property), 4U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, from), 8U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, to), 12U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, from_colour), 16U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, to_colour), 20U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, duration), 24U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, delay), 28U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, easing), 32U);
+    CY_CHECK_EQ(offsetof(CyUiAnimation, flags), 36U);
+}
