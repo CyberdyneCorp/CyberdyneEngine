@@ -173,7 +173,8 @@ if(CY_BUILD_TESTS)
                 KIND integration
                 SOURCES "${tests_dir}/test_ui_layout_service.cpp"
                 DEPENDENCIES cy::editor-backend cy::ui-toolkit
-                DEFINITIONS "CY_UI_LAYOUT_WIRE_DIR=\"${tests_dir}/data\"")
+                DEFINITIONS "CY_UI_LAYOUT_WIRE_DIR=\"${tests_dir}/data\""
+                            "CY_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
             if(CY_TEXT)
                 target_link_libraries(cy_test_integration_editor_backend_ui_layout
                                       PRIVATE cy::text-complete)

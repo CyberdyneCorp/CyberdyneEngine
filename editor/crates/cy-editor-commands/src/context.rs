@@ -867,6 +867,65 @@ pub trait ProjectHost {
             "this host has no engine animation service",
         ))
     }
+
+    /// Save a UI document (`.cyui`) or a style sheet or theme (`.cyss`) in one undoable project
+    /// transaction. Issue #29, "UI layout". A document or sheet the canvas shows is drawn again.
+    fn ui_asset_save(&mut self, reference: &str, source: &str) -> Result<()> {
+        let _ = (reference, source);
+        Err(cy_editor_core::problem::Problem::new(
+            "save a UI document",
+            "this host has no project to save it in",
+        ))
+    }
+
+    /// The widget kinds the engine's toolkit makes, once it has answered. Asking is what makes the
+    /// editor request them, so the first call on a fresh connection answers `None`.
+    fn ui_kinds(&mut self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Change how the canvas previews and ask the engine to draw `reference` from its saved text.
+    /// The request's identity, or `0` when it waits behind one in flight.
+    fn ui_preview(&mut self, reference: &str, change: &UiPreviewChange) -> Result<u64> {
+        let _ = (reference, change);
+        Err(cy_editor_core::problem::Problem::new(
+            "preview a UI document",
+            "this host has no engine UI service",
+        ))
+    }
+
+    /// The engine's last preview: every widget's rectangle, what it named, what it cost.
+    fn ui_status(&self, reference: &str) -> Outcome {
+        let _ = reference;
+        Outcome::new("Engine UI preview unavailable")
+    }
+
+    /// A UI document's or sheet's saved text changed — an edit, an undo or a redo. A host whose
+    /// canvas shows it draws it again. Ignored by default.
+    fn ui_asset_changed(&mut self, reference: &str) {
+        let _ = reference;
+    }
+}
+
+/// A change to how the UI layout editor's canvas previews. Issue #29, "UI layout".
+///
+/// Plain data, so a command at this layer can say it. `None` keeps a field as it was.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct UiPreviewChange {
+    /// The target's size in pixels.
+    pub size: Option<(u32, u32)>,
+    /// The platform's DPI scale.
+    pub dpi: Option<f32>,
+    /// `fixed`, `width`, `height`, `smaller` or `larger`.
+    pub scale_mode: Option<String>,
+    /// The reference resolution the document is designed at.
+    pub reference: Option<(f32, f32)>,
+    /// A project `.cyss` theme, or empty for the built-in theme.
+    pub theme: Option<String>,
+    /// The widget, by index, put into `state`; `Some(None)` clears it.
+    pub state_widget: Option<Option<usize>>,
+    /// `none`, `hover`, `pressed`, `focused`, `disabled` or `open`.
+    pub state: Option<String>,
 }
 
 /// A project's characters and clips, as `animation.character.list` reports them. #112.

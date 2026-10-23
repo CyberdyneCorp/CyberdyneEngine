@@ -436,6 +436,7 @@ pub struct SpecialisedEditors {
     audio_vocabulary: Option<cy_editor_services::audio::AudioVocabulary>,
     script_catalogue_ready: bool,
     animation_catalogue_ready: bool,
+    ui_catalogue_ready: bool,
 }
 
 impl SpecialisedEditors {
@@ -487,6 +488,7 @@ impl SpecialisedEditors {
             audio_vocabulary: None,
             script_catalogue_ready: false,
             animation_catalogue_ready: false,
+            ui_catalogue_ready: false,
         })
     }
 
@@ -842,6 +844,14 @@ impl SpecialisedEditors {
                 Domain::Terrain | Domain::LightingAndLightmapBaking | Domain::NavigationBaking
             )
             || (domain == Domain::AudioBusesAndMixing && self.audio_vocabulary.is_some())
+            || (domain == Domain::UiLayout && self.ui_catalogue_ready)
+    }
+
+    /// Record that the engine's widget vocabulary (`ui.catalogue.get`) arrived. Until it does the
+    /// UI layout editor refuses, naming `ui-system`: a palette the editor made up would offer
+    /// widgets the engine's toolkit may not make. Issue #29, "UI layout".
+    pub fn install_ui_catalogue(&mut self) {
+        self.ui_catalogue_ready = true;
     }
 
     /// Install the audio vocabulary the engine's `audio.capabilities.get` answered: its effect

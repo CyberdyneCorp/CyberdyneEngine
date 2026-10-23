@@ -51,7 +51,7 @@ pub use assets::{
 pub use context::{
     AnimationCharacters, AnimationPreviewChange, AssetMove, CommandContext, Manipulation,
     ManipulationKind, NavmeshHost, Outcome, ProjectHost, SettingsHost, SourceControlHost,
-    SourceWrite, ViewportControls,
+    SourceWrite, UiPreviewChange, ViewportControls,
 };
 pub use metadata::{Availability, EffectClass, Metadata, ParameterSpec};
 pub use registry::{Arguments, Command, CommandId, Registry};
