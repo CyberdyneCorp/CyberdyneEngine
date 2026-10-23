@@ -1179,7 +1179,7 @@ fn vfx_system_is_created_with_two_emitters_and_reopened_over_mcp() {
         let reply = converse(
             &[
                 INITIALIZE,
-                r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"##,
+                r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
             ],
             &mut editor,
         );
@@ -1616,7 +1616,7 @@ fn vfx_stage_wire_and_property_round_trip_over_mcp() {
     let undone = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -1751,7 +1751,7 @@ fn vfx_module_canvas_round_trips_over_mcp() {
     let undone = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -1836,7 +1836,7 @@ fn vfx_capacity_attributes_and_channels_round_trip_with_mcp_undo() {
     let undone = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -1981,7 +1981,7 @@ fn vfx_renderer_target_and_interface_edits_round_trip_over_mcp() {
     let removed = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.interface.unbind","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","interface":"texture"}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.interface.unbind","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers","interface":"texture"}}}"#,
         ],
         &mut editor,
     );
@@ -2046,7 +2046,7 @@ fn vfx_emitter_removal_preserves_other_emitters_and_undoes_over_mcp() {
     let redone = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -2098,7 +2098,7 @@ fn reusable_vfx_module_edits_and_attachment_round_trip_over_mcp() {
     let duplicate = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"replacement","stage":"spawn"}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.module.create","arguments":{"reference":"game/shared_drag.cyvfxmodule","name":"replacement","stage":"spawn"}}}"#,
         ],
         &mut editor,
     );
@@ -2828,7 +2828,7 @@ fn emitter_parameter_commands_save_reopen_and_undo_over_mcp() {
     let removed = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.emitter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers"}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"vfx.emitter.remove","arguments":{"reference":"game/sparks.cyvfxdoc","emitter":"embers"}}}"#,
         ],
         &mut editor,
     );
@@ -2930,7 +2930,7 @@ fn scene_effect_instances_keep_independent_overrides_through_mcp_and_world_reope
     let redo = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.redo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -3569,7 +3569,7 @@ fn terrain_brushes_are_evaluated_by_the_engine_and_undo_over_mcp() {
     let undone = converse(
         &[
             INITIALIZE,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"edit.undo","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -4334,7 +4334,7 @@ fn the_mixer_is_an_undoable_mcp_peer_of_the_panel_and_reaches_the_engine() {
             &tool_call(4, "audio.bus.add", &[("name", "Reverb")]),
             r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"Music","volume":0.5}}}"#,
             r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"SFX","volume":0.8}}}"#,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"Reverb","volume":0.6}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.volume","arguments":{"name":"Reverb","volume":0.6}}}"#,
             r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"audio.bus.send","arguments":{"from":"SFX","to":"Reverb","level":0.3}}}"#,
             r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Master","kind":"limiter","a":0.95,"b":0}}}"#,
             r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"SFX","kind":"low-pass","a":0,"b":0.5}}}"#,
@@ -4563,7 +4563,7 @@ fn every_mixer_edit_tool_changes_the_saved_mixer() {
                 &[("name", "Stems"), ("output", "Music")],
             ),
             r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"audio.bus.flag","arguments":{"name":"Music","flag":"mute","enabled":true}}}"#,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Music","kind":"gain","a":0.5,"b":0}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Music","kind":"gain","a":0.5,"b":0}}}"#,
             r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"audio.bus.effect.add","arguments":{"bus":"Music","kind":"limiter","a":0.9,"b":0}}}"#,
             r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"audio.bus.effect.set","arguments":{"bus":"Music","index":1,"a":0.7,"b":0,"bypass":true}}}"#,
             r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"audio.bus.effect.remove","arguments":{"bus":"Music","index":0}}}"#,
@@ -6316,7 +6316,7 @@ fn the_global_illumination_tools_author_and_undo_over_the_wire() {
             r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"gi.volume.create","arguments":{"at":[1.5,0.5,0.0],"size":[2.0,2.0,2.0]}}}"#,
             r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"gi.emission.set","arguments":{"material":"materials/lamp-glass","mode":"off"}}}"#,
             r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"viewport.view-mode.gi-tier","arguments":{}}}"#,
-            r##"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"gi.status","arguments":{}}}"##,
+            r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"gi.status","arguments":{}}}"#,
         ],
         &mut editor,
     );
@@ -6488,6 +6488,10 @@ fn previewed_text(payload: &[u8]) -> String {
 const UI_DOCUMENT: &str = "game/ui/menu.cyui";
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one conversation: create, add, lay out, bind, style, preview, then undo it all"
+)]
 fn a_ui_document_is_laid_out_previewed_and_undone_over_mcp() {
     let sandbox = Sandbox::new("ui-layout");
     let mut editor =

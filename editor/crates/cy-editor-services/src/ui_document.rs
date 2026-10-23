@@ -397,9 +397,7 @@ impl UiDocument {
             return Err("indentation is two spaces a level".into());
         }
         let depth = spaces / 2;
-        let word_end = rest
-            .find(|character: char| character == ' ' || character == '\t' || character == '\r')
-            .unwrap_or(rest.len());
+        let word_end = rest.find([' ', '\t', '\r']).unwrap_or(rest.len());
         let word = &rest[..word_end];
         let mut cursor = Cursor::new(&rest[word_end..]);
         if word == "stylesheet" || word == "param" {
