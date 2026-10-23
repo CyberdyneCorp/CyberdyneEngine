@@ -310,24 +310,25 @@ CY_TEST_CASE("ui_toolkit: a scroll view clips, scrolls by wheel and by focus mov
         rows[index] = kit.make(view, WidgetKind::Button, {}, "Row");
     }
     CY_REQUIRE(kit.frame());
-    // Ten 24-unit buttons and nine 6-unit gaps: 294 units in a 100-unit window.
+    // Ten 24-unit buttons and nine 6-unit gaps: 294 units in a window the theme's padding of four
+    // above and below makes 92 units tall, from y = 4 to 96.
     const ElementId port = kit.toolkit.part(view, "scroll-viewport");
     CY_CHECK(has_flag(kit.store.flags(port), ElementFlags::ClipsChildren));
-    CY_CHECK_EQ(kit.store.layout_output(rows[9])->clip.bottom(), 100.0F);
+    CY_CHECK_EQ(kit.store.layout_output(rows[9])->clip.bottom(), 96.0F);
     CY_CHECK(kit.toolkit.pointer(PointerInput{Vec2{50.0F, 50.0F}, false, Vec2{0.0F, 1.0F}, 0}));
     CY_CHECK_EQ(kit.toolkit.scroll(view), 40.0F);
     CY_REQUIRE(kit.frame());
-    CY_CHECK_EQ(kit.rect(rows[0]).y, -40.0F);
+    CY_CHECK_EQ(kit.rect(rows[0]).y, 4.0F - 40.0F);
     // Not past the end.
     (void)kit.toolkit.pointer(PointerInput{Vec2{50.0F, 50.0F}, false, Vec2{0.0F, 50.0F}, 0});
-    CY_CHECK_EQ(kit.toolkit.scroll(view), 194.0F);
+    CY_CHECK_EQ(kit.toolkit.scroll(view), 294.0F - 92.0F);
     CY_REQUIRE(kit.toolkit.set_scroll(view, 0.0F).has_value());
     CY_REQUIRE(kit.frame());
     // Focus moved to the last row brings it into view.
     CY_REQUIRE(kit.toolkit.focus(rows[9]).has_value());
     CY_REQUIRE(kit.frame());
-    CY_CHECK_LE(kit.rect(rows[9]).bottom(), 100.0F + 0.01F);
-    CY_CHECK_GE(kit.rect(rows[9]).y, 0.0F);
+    CY_CHECK_LE(kit.rect(rows[9]).bottom(), 96.0F + 0.01F);
+    CY_CHECK_GE(kit.rect(rows[9]).y, 4.0F);
 }
 
 CY_TEST_CASE("ui_toolkit: a tooltip shows after the pointer rests, beside it, and hides on leave") {

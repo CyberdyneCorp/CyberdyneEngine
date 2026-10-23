@@ -509,6 +509,7 @@ private:
     // toolkit_list.cpp — scrolling, virtual rows, and what layout places.
     [[nodiscard]] Status realise_lists(u32& realised) noexcept;
     [[nodiscard]] Status realise_list(Widget& widget, u32& realised) noexcept;
+    [[nodiscard]] Status place_thumb(ElementId thumb, f32 window, f32 total, f32 scroll) noexcept;
     [[nodiscard]] Status place_overlays(f32 seconds) noexcept;
     [[nodiscard]] Status update_bindings(u32& applied) noexcept;
     [[nodiscard]] Status write_back(Widget& widget, WidgetProperty property) noexcept;

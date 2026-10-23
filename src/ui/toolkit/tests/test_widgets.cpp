@@ -51,8 +51,8 @@ CY_TEST_CASE("ui_toolkit: every widget kind is made, named for its type, and lai
     Array<WidgetId> children(allocator());
     CY_REQUIRE(kit.toolkit.children(column, children).has_value());
     CY_CHECK_EQ(children.size(), static_cast<usize>(WidgetKind::Radio));
-    // Every kind with content of its own has a height; an empty container, an image with no size
-    // and a closed dialog have none, which is right.
+    // Every kind with content or padding of its own has a height; an empty container, an image with
+    // no size and a closed dialog have none, which is right.
     for (const WidgetId child : children.span()) {
         const WidgetKind kind = kit.toolkit.kind(child);
         const bool sized = kind == WidgetKind::Label || kind == WidgetKind::RichText ||
@@ -60,7 +60,8 @@ CY_TEST_CASE("ui_toolkit: every widget kind is made, named for its type, and lai
                            kind == WidgetKind::Checkbox || kind == WidgetKind::RadioGroup ||
                            kind == WidgetKind::Slider || kind == WidgetKind::ProgressBar ||
                            kind == WidgetKind::TextField || kind == WidgetKind::Dropdown ||
-                           kind == WidgetKind::ListView || kind == WidgetKind::Tabs;
+                           kind == WidgetKind::ListView || kind == WidgetKind::Tabs ||
+                           kind == WidgetKind::ScrollView;
         CY_TEST_INFO(std::string_view(widget_kind_name(kind)));
         CY_CHECK_EQ(kit.rect(child).height > 0.0F, sized);
     }

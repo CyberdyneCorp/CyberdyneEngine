@@ -211,14 +211,15 @@ public float4 cyUiFragment(CyUiVertex input) : SV_Target
     {
         discard;
     }
-    if (primitive.shape.w > 0.0)
-    {
-        // An HDR document's emissive colour: radiance above one, which only a float target keeps.
-        result.rgb *= primitive.shape.w;
-    }
     if ((cyUiPush.flags & kCyUiOutputLinear) != 0u)
     {
         result = toLinear(result);
+    }
+    if (primitive.shape.w > 0.0)
+    {
+        // An HDR document's radiance: the decoded colour times the element's intensity and the
+        // renderer's scene scale, which only a float target keeps above one.
+        result.rgb *= primitive.shape.w;
     }
     return result;
 }

@@ -79,6 +79,13 @@ struct UiRendererDescription {
     /// The most primitives one frame may submit. A larger stream is refused by `submit()` rather
     /// than truncated.
     u32 max_primitives = 16384;
+    /// The scene-referred radiance an interface colour of one is drawn at, on a float target —
+    /// the HDR composite. A frame exposed at -11 stops shows a radiance of one as nearly black, so
+    /// a game draws its HDR document at `2^-stops` (`set_scene_scale` as the exposure moves) and an
+    /// element at intensity one lands on its own colour while an emissive one blooms. A float
+    /// target decodes the interface's display-encoded colours to linear light first, as an sRGB
+    /// one does. Ignored on an eight-bit target.
+    f32 scene_scale = 1.0F;
 };
 
 /// What the last frame drew.
@@ -126,6 +133,9 @@ public:
     [[nodiscard]] Status submit(const PrimitiveBuffer& buffer, f32 scale) noexcept;
     /// Draw nothing this frame.
     void clear() noexcept;
+    /// `UiRendererDescription::scene_scale`, for the next `submit` — what a frame whose exposure
+    /// adapts calls every frame.
+    void set_scene_scale(f32 scale) noexcept;
 
     /// The frame's hook for `FrameSinks::ui`.
     [[nodiscard]] rendering::FrameStageDeclaration stage() noexcept;

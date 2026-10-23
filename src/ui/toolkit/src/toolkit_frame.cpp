@@ -109,6 +109,10 @@ list-row:checked { background-color: #2d4a7a; }
 list-thumb { background-color: #5a647899; corner-radius: 2; }
 scroll-thumb { background-color: #5a647899; corner-radius: 2; }
 scroll-content { gap: 6; }
+scroll-view {
+    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;
+    padding-left: 6; padding-top: 4; padding-right: 10; padding-bottom: 4;
+}
 tab-bar { gap: 2; }
 tab {
     background-color: #20252f; corner-radius: 4; padding-left: 10; padding-right: 10;
@@ -492,41 +496,72 @@ Status Toolkit::realise_list(Widget& widget, u32& realised) noexcept {
         }
         ++realised;
     }
-    // The thumb: where the visible window is in the whole, as long as the window is of the whole.
     owner = record(list_id);
-    const ElementId thumb = owner->parts[2];
-    const f32 total = range.total_height;
-    const bool shows = total > list.viewport_height && list.viewport_height > 0.0F;
-    const ElementFlags thumb_flags = store_.flags(thumb);
-    if (has_flag(thumb_flags, ElementFlags::Visible) != shows) {
-        (void)store_.set_flags(thumb, shows ? (thumb_flags | ElementFlags::Visible)
-                                            : without_flag(thumb_flags, ElementFlags::Visible));
+    return place_thumb(owner->parts[2], list.viewport_height, range.total_height, owner->scroll);
+}
+
+namespace {
+
+/// A scroll bar's thumb: where the window is in the whole, as long as the window is of the whole.
+/// Returns whether it shows.
+[[nodiscard]] bool thumb_layout(f32 window, f32 total, f32 scroll, LayoutInput& layout) noexcept {
+    if (!(total > window && window > 0.0F)) {
+        return false;
     }
-    if (shows) {
-        const f32 length = std::max(16.0F, list.viewport_height * list.viewport_height / total);
-        const f32 top = (owner->scroll / (total - list.viewport_height)) *
-                        (list.viewport_height - length);
-        Part* part = part_record(thumb);
-        LayoutInput next = part->base_layout;
-        anchor(next, Vec2{1.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{-5.0F, top + 1.0F},
-               Vec2{-2.0F, top + length - 1.0F});
-        if (std::memcmp(&next, &part->base_layout, sizeof(LayoutInput)) != 0) {
-            part->base_layout = next;
-            mark_style(thumb);
+    const f32 length = std::max(16.0F, window * window / total);
+    const f32 top = (scroll / (total - window)) * (window - length);
+    anchor(layout, Vec2{1.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{-5.0F, top + 1.0F},
+           Vec2{-2.0F, top + length - 1.0F});
+    return true;
+}
+
+}  // namespace
+
+Status Toolkit::place_thumb(ElementId thumb, f32 window, f32 total, f32 scroll) noexcept {
+    Part* part = part_record(thumb);
+    if (part == nullptr) {
+        return ok();
+    }
+    LayoutInput next = part->base_layout;
+    const bool shows = thumb_layout(window, total, scroll, next);
+    const ElementFlags flags = store_.flags(thumb);
+    if (has_flag(flags, ElementFlags::Visible) != shows) {
+        if (Status set = store_.set_flags(thumb, shows ? (flags | ElementFlags::Visible)
+                                                       : without_flag(flags, ElementFlags::Visible));
+            !set) {
+            return set;
         }
+    }
+    if (shows && std::memcmp(&next, &part->base_layout, sizeof(LayoutInput)) != 0) {
+        part->base_layout = next;
+        mark_style(thumb);
     }
     return ok();
 }
 
 Status Toolkit::realise_lists(u32& realised) noexcept {
     for (usize index = 0; index < widgets_.size(); ++index) {
-        if (!widgets_[index].alive || widgets_[index].kind != WidgetKind::ListView) {
+        const Widget& widget = widgets_[index];
+        if (!widget.alive || has_flag(store_.flags(widget.element), ElementFlags::Collapsed)) {
             continue;
         }
-        const WidgetId list = widgets_[index].element;
-        if (has_flag(store_.flags(list), ElementFlags::Collapsed)) {
+        if (widget.kind == WidgetKind::ScrollView) {
+            // A scroll view's thumb, from its viewport and what its content asked for.
+            const LayoutOutput* port = store_.layout_output(widget.parts[0]);
+            const LayoutOutput* content = store_.layout_output(widget.content);
+            if (port != nullptr && content != nullptr) {
+                if (Status placed = place_thumb(widget.parts[2], port->rect.height,
+                                                content->desired.y, widget.scroll);
+                    !placed) {
+                    return placed;
+                }
+            }
             continue;
         }
+        if (widget.kind != WidgetKind::ListView) {
+            continue;
+        }
+        const WidgetId list = widget.element;
         if (Status done = realise_list(*record(list), realised); !done) {
             return done;
         }
@@ -575,6 +610,16 @@ void show(ElementStore& store, ElementId element, bool on) noexcept {
 }  // namespace
 
 Status Toolkit::place_overlays(f32 seconds) noexcept {
+    // THE RING AND THE TOOLTIP ARE DRAWN LAST, over a dialog or a drop-down opened after them:
+    // each is moved to the end of the overlay whenever something was put after it.
+    if (const Hierarchy* overlay = store_.hierarchy(overlay_);
+        overlay != nullptr && overlay->last_child != tooltip_) {
+        for (const ElementId floating : {focus_ring_, tooltip_}) {
+            if (Status moved = store_.reparent(floating, overlay_); !moved) {
+                return moved;
+            }
+        }
+    }
     // THE FOCUS RING: around the focused widget, two units out, only when focus came from a
     // keyboard or a gamepad.
     const WidgetId focus = focused();

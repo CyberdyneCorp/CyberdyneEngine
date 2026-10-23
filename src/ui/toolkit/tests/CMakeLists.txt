@@ -32,6 +32,15 @@ function(cy_ui_toolkit_declare_tests)
             "${tests_dir}/test_list_binding.cpp"
             "${tests_dir}/test_document.cpp"
         DEPENDENCIES cy::ui-toolkit)
+
+    cy_add_test(
+        NAME ui_toolkit
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_integration.cpp"
+        DEPENDENCIES cy::ui-toolkit)
+    target_compile_definitions(cy_test_integration_ui_toolkit
+                               PRIVATE CY_UI_TOOLKIT_DATA_DIR="${tests_dir}/data")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_ui_toolkit_declare_tests)

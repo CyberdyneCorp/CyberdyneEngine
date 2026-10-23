@@ -1,0 +1,50 @@
+cyui 1
+stylesheet "gallery.cyss"
+// CyberUI's widget gallery: every widget the toolkit has, in one document. It is the picture the
+// toolkit's documentation shows, and render.ui_toolkit draws it against a golden image.
+panel #gallery anchor=[0, 0, 1, 1]
+  column #controls .panel anchor=[0, 0, 0, 0] offset=[16, 16, 336, 524]
+    label .heading text="Controls"
+    rich-text #resources text="Gold [color=#ffd34d]1250[/color]  Wood [color=#7fd06a]430[/color]  [img=2,0,0,1,1]"
+    row #actions
+      button #play .primary text="Play"
+      button #options text="Options"
+      button #quit .danger text="Quit"
+    toggle #music text="Music" checked=true
+    checkbox #hints text="Show hints" checked=true
+    checkbox #subtitles text="Subtitles"
+    radio-group #difficulty items=["Easy", "Normal", "Hard"] selected=1
+    label .caption text="Volume"
+    slider #volume min=0 max=1 step=0.05 value=0.65
+    label .caption text="Loading"
+    progress-bar #loading value=0.4
+    text-field #name placeholder="Commander name" text="Ada"
+    text-field #filter placeholder="Filter the inventory"
+    dropdown #quality items=["Low", "Medium", "High", "Ultra"] selected=2
+  column #data .panel anchor=[0, 0, 0, 0] offset=[352, 16, 944, 524]
+    label .heading text="Data"
+    tabs #tabs
+      column #inventory-page title="Inventory" gap=6
+        list-view #inventory row-height=20 height=210
+        row #detail gap=10 align-items=center
+          image #portrait page=2 size=[48, 48] tooltip="The selected item"
+          column gap=2
+            label #item-name text="Item 0"
+            label .caption text="A thing the commander carries."
+      column #stats-page title="Stats" gap=6
+        label text="Units lost: 3"
+      column #log-page title="Log" gap=6
+        label text="Nothing yet."
+    scroll-view #notes height=120
+      label text="Scroll views clip what they hold."
+      label text="The wheel, a gamepad's right stick and focus scroll them."
+      label text="Line three."
+      label text="Line four."
+      label text="Line five."
+      label text="Line six."
+      label text="Line seven."
+  dialog #confirm title="Quit to the menu?"
+    label text="Unsaved progress will be lost."
+    row justify-content=end
+      button #stay text="Stay"
+      button #leave .danger text="Quit"

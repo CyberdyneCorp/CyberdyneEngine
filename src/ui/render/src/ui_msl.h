@@ -106,7 +106,7 @@ struct CyUiVertex_0
 
 )cy_msl";
 
-/// cyUiFragment.metal, 5795 bytes.
+/// cyUiFragment.metal, 5796 bytes.
 inline constexpr char kUiFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -407,30 +407,31 @@ struct KernelContext_0
 
 
 
-    float _S27 = _S9.shape_0.w;
-
-#line 214
-    if(_S27 > 0.0)
-    {
-
-        result_0.xyz = result_0.xyz * float3(_S27) ;
-
-#line 214
-    }
-
-#line 219
     if((((&kernelContext_0)->cyUiPush_0->flags_0) & 1U) != 0U)
     {
         result_0 = toLinear_0(result_0);
 
-#line 219
+#line 214
     }
 
-#line 219
+
+
+    float _S27 = _S9.shape_0.w;
+
+#line 218
+    if(_S27 > 0.0)
+    {
+
+
+        result_0.xyz = result_0.xyz * float3(_S27) ;
+
+#line 218
+    }
+
+#line 218
     pixelOutput_0 _S28 = { result_0 };
 
-
-
+#line 224
     return _S28;
 }
 

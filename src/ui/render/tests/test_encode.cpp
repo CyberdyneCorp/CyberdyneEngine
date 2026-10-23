@@ -303,3 +303,88 @@ CY_TEST_CASE("ui_render: a distance-field glyph is its colour inside, the outlin
     CY_REQUIRE(shade_reference(large, 15, 0, &page, out));
     CY_CHECK_NEAR(out[0], 0.0F, 0.03F);
 }
+
+// --- Opacity groups and the HDR intensity (issue #91, stage 2) -----------------------------------
+
+namespace {
+
+/// Two opaque squares overlapping in a 64 by 48 target, in a panel at half opacity.
+struct Faded {
+    explicit Faded(ElementStore& store, bool grouped) noexcept {
+        holder = panel(store, kNoElement, ui::Rect{4.0F, 4.0F, 56.0F, 40.0F}, 0U);
+        (void)panel(store, holder, ui::Rect{8.0F, 8.0F, 24.0F, 24.0F}, 0xFFE0302AU);
+        (void)panel(store, holder, ui::Rect{20.0F, 12.0F, 24.0F, 24.0F}, 0xFF2A5CE0U);
+        store.paint(holder)->opacity = 0.5F;
+        if (grouped) {
+            (void)store.set_flags(holder, store.flags(holder) | ElementFlags::OpacityGroup);
+        }
+    }
+    ElementId holder;
+};
+
+[[nodiscard]] std::vector<u32> draw_faded(bool grouped) {
+    ElementStore store(allocator());
+    Faded faded(store, grouped);
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(flatten(store, ui::Rect{0.0F, 0.0F, 64.0F, 48.0F}, buffer, report).has_value());
+    UiDrawList list(allocator());
+    CY_REQUIRE(build_draws(buffer, 1.0F, 64, 48, list).has_value());
+    std::vector<u32> target(static_cast<usize>(64) * 48, texel_of(0xFF000000U));
+    CY_REQUIRE(draw_reference(list, {}, 64, 48, Span<u32>(target.data(), target.size())).has_value());
+    return target;
+}
+
+}  // namespace
+
+CY_TEST_CASE("ui_render: a group's composite is pixel-aligned and samples its own texels") {
+    ElementStore store(allocator());
+    Faded faded(store, true);
+    PrimitiveBuffer buffer(allocator());
+    FlattenReport report;
+    CY_REQUIRE(flatten(store, ui::Rect{0.0F, 0.0F, 64.0F, 48.0F}, buffer, report).has_value());
+    UiDrawList list(allocator());
+    // At 1.5 pixels a unit the group's region (8, 8)-(44, 36) is not whole pixels: it grows to them.
+    CY_REQUIRE(build_draws(buffer, 1.5F, 96, 72, list).has_value());
+    CY_REQUIRE_EQ(list.groups.size(), 1U);
+    CY_CHECK_EQ(list.groups[0].region.x, 12U);
+    CY_CHECK_EQ(list.groups[0].region.width, 54U);
+    CY_CHECK_EQ(list.groups[0].draw_count, 1U);
+    CY_REQUIRE_EQ(list.draws.size(), 1U);
+    CY_CHECK(samples_group(list.draws[0].atlas));
+    const GpuUiPrimitive& composite = list.rows[list.draws[0].first];
+    CY_CHECK_EQ(composite.bounds[0], 12.0F);
+    CY_CHECK_EQ(composite.uv[0], 12.0F / 96.0F);
+    CY_CHECK_EQ(composite.uv[2], 54.0F / 96.0F);
+}
+
+CY_TEST_CASE("ui_render: a faded group's overlap is its non-overlap; multiplied down, it is darker") {
+    // `ui-system`: "WHEN a panel with overlapping children is faded to 50 % THEN it SHALL be
+    // composited once at 50 %, without the overlaps darkening." Drawn by the host reference.
+    const std::vector<u32> grouped = draw_faded(true);
+    const std::vector<u32> multiplied = draw_faded(false);
+    const auto pixel = [](const std::vector<u32>& image, u32 x, u32 y) noexcept {
+        return image[(static_cast<usize>(y) * 64) + x];
+    };
+    // (26, 20) is where the blue square covers the red; (40, 20) is blue alone.
+    CY_CHECK_EQ(pixel(grouped, 26, 20), pixel(grouped, 40, 20));
+    CY_CHECK_NE(pixel(multiplied, 26, 20), pixel(multiplied, 40, 20));
+    // Away from the overlap the two agree: a group changes only where children overlap.
+    CY_CHECK_EQ(pixel(grouped, 40, 20), pixel(multiplied, 40, 20));
+    CY_CHECK_EQ(pixel(grouped, 10, 10), pixel(multiplied, 10, 10));
+}
+
+CY_TEST_CASE("ui_render: an intensity rides in the row's fourth shape word, and one is no word") {
+    Primitive primitive;
+    primitive.bounds = ui::Rect{0.0F, 0.0F, 4.0F, 4.0F};
+    primitive.colour = 0xFF404040U;
+    CY_CHECK_EQ(encode_primitive(primitive, 1.0F).shape[3], 0.0F);
+    primitive.intensity = 6.0F;
+    const GpuUiPrimitive row = encode_primitive(primitive, 2.0F);
+    CY_CHECK_EQ(row.shape[3], 6.0F);
+    CY_CHECK_EQ(decode_primitive(row, 2.0F).intensity, 6.0F);
+    f32 shaded[4] = {};
+    CY_REQUIRE(shade_reference(row, 2, 2, nullptr, shaded));
+    CY_CHECK_NEAR(shaded[0], (64.0F / 255.0F) * 6.0F, 1e-5F);
+    CY_CHECK_NEAR(shaded[3], 1.0F, 1e-6F);  // coverage, not colour: alpha is not scaled
+}

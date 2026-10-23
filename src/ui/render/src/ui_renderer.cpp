@@ -78,6 +78,11 @@ template <usize N>
     return format == rhi::Format::Rgba8Srgb || format == rhi::Format::Bgra8Srgb;
 }
 
+/// A float target holds linear light: the HDR composite's.
+[[nodiscard]] bool is_float(rhi::Format format) noexcept {
+    return format == rhi::Format::Rgba16Sfloat || format == rhi::Format::Rgba32Sfloat;
+}
+
 [[nodiscard]] u32 bytes_per_texel(rhi::Format format) noexcept {
     if (format == rhi::Format::R8Unorm) {
         return 1U;
@@ -196,7 +201,9 @@ Status UiRenderer::create(rhi::Device& device, const UiRendererDescription& desc
     }
     device_ = &device;
     desc_ = desc;
-    flags_ = is_srgb(desc.output_format) ? kUiOutputLinear : 0U;
+    // An sRGB target re-encodes what the shader writes, and a float one holds linear light: both
+    // want the interface's display-encoded colours decoded first.
+    flags_ = (is_srgb(desc.output_format) || is_float(desc.output_format)) ? kUiOutputLinear : 0U;
     Status made = create_pipeline();
     if (made) {
         made = create_buffers();
@@ -519,11 +526,25 @@ Status UiRenderer::submit(const PrimitiveBuffer& buffer, f32 scale) noexcept {
         list_.clear();
         return fail(ErrorCode::InvalidArgument, "ui renderer: the scale must be positive");
     }
-    return build_draws(buffer, scale, desc_.width, desc_.height, list_);
+    if (Status built = build_draws(buffer, scale, desc_.width, desc_.height, list_); !built) {
+        return built;
+    }
+    if (is_float(desc_.output_format) && desc_.scene_scale != 1.0F) {
+        // THE SCENE SCALE rides on each row's intensity — zero in a row meaning one — so the
+        // shader and the host reference multiply by one number either way.
+        for (GpuUiPrimitive& row : list_.rows.span()) {
+            row.shape[3] = ((row.shape[3] > 0.0F) ? row.shape[3] : 1.0F) * desc_.scene_scale;
+        }
+    }
+    return ok();
 }
 
 void UiRenderer::clear() noexcept {
     list_.clear();
+}
+
+void UiRenderer::set_scene_scale(f32 scale) noexcept {
+    desc_.scene_scale = scale > 0.0F ? scale : 1.0F;
 }
 
 rendering::FrameStageDeclaration UiRenderer::stage() noexcept {
