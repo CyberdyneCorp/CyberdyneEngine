@@ -300,6 +300,36 @@ phase rule, UNAVAILABLE with no pool, every range check, `struct_size` both ways
 the 1.11 layouts; the 1.11 table shape) and `integration.game_backend_lights` (the adapter through
 the table: spawn, move, fade, expiry, stale handles, a full pool).
 
+## What ABI 1.12 adds, and why
+
+Issue #91, stages 4 and 5: CyberUI's widget toolkit (`cy::ui-toolkit`) for a module. 1.6 gave a
+game five element kinds set one write at a time; 1.12 appends sixteen `ui_*` entries that reach a
+`cy::ui::Toolkit` the embedder attached to the same `UiBackend` — `cy::game_backend::UiAdapter`,
+through non-pure virtuals cy/abi/game/ui.h appends, which answer UNAVAILABLE for a backend with no
+toolkit. Every one is [N U], as 1.6's are.
+
+| Entries | Notes |
+|---|---|
+| `ui_load_document`, `ui_load_stylesheet` | `CyUiDocumentDesc`: a `.cyui` document's text with its byte count, or — text null — a path the embedder reads through its VFS and reloads on a save. INVALID_ARGUMENT for a document with a mistake, naming its line, having made nothing. A sheet is `.cyss` over the built-in theme |
+| `ui_find`, `ui_create_widget` | `CyUiWidgetDesc`: `CyUiWidgetKind` (`cy::ui::WidgetKind` value for value; `IMAGE` is a document's only), strings borrowed and copied, `maximum` zero read as one, `row_height` zero as the default, `CY_UI_WIDGET_CHECKED`/`DISABLED`, and the owner whose behaviours receive the events. `ui_find` with a null scope searches everything this module made |
+| `ui_widget_set_text`, `ui_widget_text` | the text is copied NUL-terminated and cut at a code point; a null buffer asks the size |
+| `ui_widget_set_value`, `ui_widget_value`, `ui_widget_set_selected`, `ui_widget_selected`, `ui_widget_set_items` | a toggle's or a checkbox's value is its state, on at 0.5; a selection on a widget with none is INVALID_ARGUMENT. No CHANGED event: the game set it |
+| `ui_widget_set_enabled`, `ui_widget_set_classes`, `ui_widget_open` | a dialog opens modal and returns focus where it was when it closes |
+| `ui_widget_animate` | `CyUiAnimation`: one of `CyUiAnimatedProperty` (paint only — no relayout), a `CyUiEasing`, finite non-negative times, `CY_UI_ANIMATION_STATE_FEEDBACK` to play under reduced motion |
+| `ui_navigate` | a `CyUiAction` (`cy::ui::UiAction` value for value); `*out_consumed` says whether the interface took it |
+
+`CyUiEventKind` gains CHANGED (`position[0]` the value, `button` the index), SUBMITTED, OPENED and
+CLOSED, delivered through the same vtable `ui_event` as a click. A widget a module made, or a widget
+under one, or a widget of a document it loaded, is the module's; the embedder's own widgets answer
+NOT_FOUND. 1.6's `ui_destroy`, `ui_set_visibility`, `ui_element_rect`, `ui_focus` and
+`ui_set_focus` take a module's widget as they take an element.
+
+Tests: `unit.abi` (`test_game_toolkit.cpp`: the phase rule, UNAVAILABLE with no toolkit, every
+pointer, `struct_size`, enumerator and float check, the code-point cut; `test_layout.cpp`: the 1.12
+layouts; the 1.12 table shape) and `integration.game_backend_ui` (`test_ui_toolkit_backend.cpp`: a
+real toolkit through the table — widgets, documents by text and by path with a reload, events to
+their owners, navigation, animation by time, and the embedder's widgets out of reach).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

@@ -246,6 +246,23 @@ ENTRIES: dict[str, Entry] = {
     "light_destroy": Entry(("engine", "light"), result="throwing"),
     "light_alive": Entry(("engine", "light", "into"), result="throwing"),
     "light_status": Entry(("engine", "into"), result="throwing"),
+    # 1.12: the widget toolkit
+    "ui_load_document": Entry(("engine", "parent", "desc", "into"), result="throwing"),
+    "ui_load_stylesheet": Entry(("engine", "text", "size"), result="throwing"),
+    "ui_find": Entry(("engine", "scope", "id", "into"), result="throwing"),
+    "ui_create_widget": Entry(("engine", "parent", "desc", "into"), result="throwing"),
+    "ui_widget_set_text": Entry(("engine", "widget", "text"), result="throwing"),
+    "ui_widget_text": Entry(("engine", "widget", "buffer", "capacity", "size"), result="throwing"),
+    "ui_widget_set_value": Entry(("engine", "widget", "value"), result="throwing"),
+    "ui_widget_value": Entry(("engine", "widget", "into"), result="throwing"),
+    "ui_widget_set_selected": Entry(("engine", "widget", "index"), result="throwing"),
+    "ui_widget_selected": Entry(("engine", "widget", "into"), result="throwing"),
+    "ui_widget_set_items": Entry(("engine", "widget", "items", "count"), result="throwing"),
+    "ui_widget_set_enabled": Entry(("engine", "widget", "enabled"), result="throwing"),
+    "ui_widget_set_classes": Entry(("engine", "widget", "classes"), result="throwing"),
+    "ui_widget_open": Entry(("engine", "widget", "open"), result="throwing"),
+    "ui_widget_animate": Entry(("engine", "widget", "animation"), result="throwing"),
+    "ui_navigate": Entry(("engine", "action", "consumed"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

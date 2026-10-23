@@ -1,0 +1,95 @@
+# Mutations applied to the shipped sources, each rebuilt, run on the case it targets, and restored;
+# the tree was clean after every one. Driver: apply -> cmake --build build/dev --target <suite> -j4 ->
+# run the suite binary with -tc=<case> -> restore. Host: Linux Mint 22.1, NVIDIA RTX 5060 (Vulkan 1.4),
+# GCC 13, Development build. Every mutation below turned its case RED. A negative exit is the
+# harness continuing past a failed REQUIRE (no exceptions) into the state the mutation broke.
+
+== M1: a list realises a row per item instead of per visible row
+   src/ui/toolkit/src/toolkit_frame.cpp
+   case: ui_toolkit_list: ten thousand items scroll*
+   RED exit=1 src/ui/toolkit/tests/test_integration.cpp:152: FATAL ERROR: REQUIRE( kit.frame() ) is NOT correct! [doctest] test cases:   1 |   0 passed |   1 failed | 4 skipped
+
+== M2: a state transition jumps instead of easing
+   src/ui/toolkit/src/toolkit_style.cpp
+   case: ui_style: a 0.1 s hover transition*
+   RED exit=1 src/ui/toolkit/tests/test_style_animation.cpp:84: ERROR: CHECK( strictly_between(midway, 0xFF000000U, 0xFFC08040U) ) is NOT correct! [doctest] test cases:  1 | 0 passed | 1 failed | 46 skipped
+
+== M3: reduced motion is ignored
+   src/ui/toolkit/src/toolkit_style.cpp
+   case: ui_animation: reduced motion*
+   RED exit=1 src/ui/toolkit/tests/test_style_animation.cpp:247: ERROR: CHECK_EQ( kit.store.paint(button)->opacity, 1.0F ) is NOT correct! [doctest] test cases:  1 |  0 passed | 1 failed | 46 skipped
+
+== M4: a staggered entrance gives every item the same delay
+   src/ui/toolkit/src/toolkit_style.cpp
+   case: ui_animation: a staggered entrance*
+   RED exit=1 src/ui/toolkit/tests/test_style_animation.cpp:227: ERROR: CHECK( (kit.store.paint(items[1])->opacity) == ::cy::test::within(0.25F, 1e-5F) ) is NOT correct! [doctest] test cases:  1 |  0 passed | 1 failed | 46 skipped
+
+== M5: a binding overwrites a field the player is editing
+   src/ui/toolkit/src/toolkit_frame.cpp
+   case: ui_binding: two-way writes*
+   RED exit=1 src/ui/toolkit/tests/test_list_binding.cpp:223: ERROR: CHECK_EQ( kit.toolkit.value(*slider), 7.0F ) is NOT correct! [doctest] test cases:  1 |  0 passed | 1 failed | 46 skipped
+
+== M6: an opacity group never opens
+   src/ui/src/paint.cpp
+   case: ui_groups: an opacity group flattens*
+   RED exit=-11 src/ui/tests/test_groups.cpp:55: ERROR: CHECK_EQ( report.groups, 1U ) is NOT correct! [doctest] test cases: 1 | 0 passed | 1 failed | 57 skipped
+
+== M7: the input bridge never gives the interface the focus layer
+   src/ui/input/src/ui_input.cpp
+   case: ui_input: a modal suppresses*
+   RED exit=1 src/ui/input/tests/test_ui_input.cpp:216: ERROR: CHECK_EQ( rig.server.user(0).focus(), input::FocusLayer::Interface ) is NOT correct! [doctest] test cases:  1 | 0 passed | 1 failed | 4 skipped
+
+== M8: a .cyss colour with alpha is not premultiplied
+   src/ui/src/style.cpp
+   case: ui_style: a straight*
+   RED exit=1 src/ui/toolkit/tests/test_style_animation.cpp:136: ERROR: CHECK_EQ( sheet.declarations()[0].value.colour, 0x80800000U ) is NOT correct! [doctest] test cases: 1 | 0 passed | 1 failed | 46 skipped
+
+== M9: focus may land under a collapsed ancestor
+   src/ui/src/interaction.cpp
+   case: ui_focus: directional navigation skips*
+   RED exit=1 src/ui/tests/test_groups.cpp:215: ERROR: CHECK_EQ( interaction.navigate(store, UiAction::NavigateDown), bottom ) is NOT correct! [doctest] test cases: 1 | 0 passed | 1 failed | 57 skipped
+
+== M10: a binding of an action shadows another binding of it in the same context
+   src/servers/input/src/user.cpp
+   case: input: two controls bound to one action in one context*
+   RED exit=1 src/servers/input/tests/test_bindings.cpp:127: ERROR: CHECK( fixture.server.user(0).action_state(confirm).pressed() ) is NOT correct! [doctest] test cases: 1 | 0 passed | 1 failed | 65 skipped
+
+== M11: ui_widget_text cuts inside a code point
+   src/abi/src/game/toolkit_thunks.cpp
+   case: a widget's text comes back whole*
+   RED exit=1 src/abi/tests/test_game_toolkit.cpp:355: ERROR: CHECK_EQ( std::string_view(short_buffer), "pur" ) is NOT correct! [doctest] test cases:  1 |  0 passed | 1 failed | 175 skipped
+
+== M12: a reload remakes every widget instead of matching it
+   src/ui/toolkit/src/toolkit_document.cpp
+   case: ui_document: a reload keeps every matched widget*
+   RED exit=-6 src/ui/toolkit/tests/test_document.cpp:260: ERROR: CHECK_EQ( instance.find("volume"), volume ) is NOT correct! [doctest] test cases:  1 |  0 passed | 1 failed | 46 skipped
+
+== M13: a composition is committed into the text as it is typed
+   src/ui/toolkit/src/text_edit.cpp
+   case: ui_text_edit: an input method's composition*
+   RED exit=1 src/ui/toolkit/tests/test_text_edit.cpp:119: ERROR: CHECK_EQ( editor.text(), std::string_view("ab") ) is NOT correct! [doctest] test cases:  1 | 0 passed | 1 failed | 46 skipped
+
+== M14: the adapter lets a module reach any widget
+   src/game_backend/ui/src/ui_toolkit_backend.cpp
+   case: ui toolkit: a widget the embedder made*
+   RED exit=1 src/game_backend/tests/test_ui_toolkit_backend.cpp:232: ERROR: CHECK_EQ( iface.ui_widget_set_text(&fixture.host, console, "mine"), CY_RESULT_NOT_FOUND ) is NOT correct! [doctest] test cases:  1 | 0 passed | 1 failed | 18 skipped
+
+== M15: the UI adapter translates the toolkit's queued events again on every pump
+   src/game_backend/ui/src/ui_toolkit_backend.cpp (events_seen_ reset to 0 instead of the queue size)
+   case: ui toolkit: a document's widgets are found by id and report to its owner
+   RED src/game_backend/tests/test_ui_toolkit_backend.cpp:267 CHECK_EQ( changed.position[0], 6.0F ); :283 CHECK_EQ( fixture.adapter.events().size(), queued )
+
+== M16: a Swift binding does not note the player's change, so refresh pushes it straight back
+   bindings/swift/Sources/CyberdyneKit/UIWidgetBuilder.swift (tree?.noted(...) removed)
+   case: UIToolkitTests.testThePlayersChangeIsWrittenBackBeforeTheNodesOwnHandlerRuns
+   RED UIToolkitTests.swift: XCTAssertEqual failed: ("4") is not equal to ("0") — refresh wrote four values back
+
+== M17: the ui producer cooks a document whose parse left diagnostics
+   tools/build/src/ui_producer.cpp (the diagnostics check removed: the code as first written)
+   case: an interface cook fails naming a missing sheet or a document that does not parse
+   RED tools/build/tests/test_build_content.cpp:700 CHECK_FALSE( report->succeeded() ); :706 CHECK( named )
+
+== Regression cases proven red on the code before their fix
+   input: two controls bound to one action in one context both drive it      (M10)
+   ui_focus: directional navigation skips what a collapsed ancestor hides     (M9)
+   ui_style: a straight `.cyss` colour with alpha is premultiplied as it is read (M8)

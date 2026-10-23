@@ -68,6 +68,7 @@ struct Rect {
     }
     [[nodiscard]] Rect intersected(const Rect& other) const noexcept;
     [[nodiscard]] constexpr bool empty() const noexcept { return width <= 0.0F || height <= 0.0F; }
+    [[nodiscard]] friend constexpr bool operator==(const Rect&, const Rect&) noexcept = default;
 };
 
 /// Insets: margins and padding, in the order a CSS author expects.
@@ -79,6 +80,7 @@ struct Insets {
 
     [[nodiscard]] constexpr f32 horizontal() const noexcept { return left + right; }
     [[nodiscard]] constexpr f32 vertical() const noexcept { return top + bottom; }
+    [[nodiscard]] friend constexpr bool operator==(const Insets&, const Insets&) noexcept = default;
 };
 
 /// Which layout model a container uses. THREE, AND NO OTHERS — `ui-system` says so in a table, and
@@ -128,6 +130,12 @@ enum class ElementFlags : u32 {
     Checked = 1U << 8U,
     /// Realised by a virtualised container this frame. A row scrolled out of view loses it.
     Realised = 1U << 9U,
+    /// An OPACITY GROUP: the subtree is drawn offscreen at full opacity and composited once at the
+    /// element's opacity, so two overlapping children of a panel faded to 50 % do not darken where
+    /// they overlap. Without it, opacity multiplies down the tree into every primitive, which is
+    /// cheaper and right whenever the children do not overlap. Only an element whose opacity is
+    /// below one pays for the offscreen target; see `flatten()`.
+    OpacityGroup = 1U << 10U,
 };
 
 [[nodiscard]] constexpr ElementFlags operator|(ElementFlags a, ElementFlags b) noexcept {
@@ -208,6 +216,9 @@ struct LayoutInput {
     u16 grid_row_span = 1;
     /// `Grid` container: how many explicit columns. Zero means one column.
     u16 grid_columns = 0;
+
+    /// Member by member: a padded struct's bytes are not its value.
+    [[nodiscard]] friend bool operator==(const LayoutInput&, const LayoutInput&) noexcept = default;
 };
 
 /// What layout WRITES.
@@ -238,6 +249,18 @@ struct PaintData {
     u16 atlas = 0;
     /// The UV rectangle within that atlas.
     Rect uv;
+    /// A RENDER TRANSFORM, applied when the subtree is flattened and never seen by layout: the
+    /// subtree is scaled by `scale` about the element's centre, then moved by `translate` reference
+    /// units. It is what a slide or a pop animates, so an animated element relays out nothing.
+    Vec2 translate{0.0F, 0.0F};
+    f32 scale = 1.0F;
+    /// The colour's multiplier for an interface drawn BEFORE the tone curve (the HDR composite):
+    /// an emissive panel at 4 is four times its colour's radiance, and blooms. One on every element
+    /// of a display-referred interface, where a value above one would only clip.
+    f32 intensity = 1.0F;
+
+    /// Member by member: a padded struct's bytes are not its value.
+    [[nodiscard]] friend bool operator==(const PaintData&, const PaintData&) noexcept = default;
 };
 
 /// Which of the six per-frame counters a report carries. `ui-system`'s diagnostics ask for "counts

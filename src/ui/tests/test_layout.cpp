@@ -254,3 +254,29 @@ CY_TEST_CASE("ui_layout: the scale strategy is one number, computed once") {
     settings.user_scale = 1.25F;
     CY_CHECK_NEAR(resolve_scale(settings, Vec2{1920.0F, 1080.0F}), 2.5F, 1e-5F);
 }
+
+CY_TEST_CASE("ui_layout: an anchored child's margins inset it, stretched or sized by its content") {
+    ElementStore store(allocator());
+    const ElementId root = add(store, kNoElement, "panel");
+    const ElementId stretched = add(store, root, "panel");
+    const ElementId sized = add(store, root, "panel");
+    store.layout_input(root)->model = LayoutModel::Absolute;
+    LayoutInput& fill = *store.layout_input(stretched);
+    fill.anchor_max = Vec2{1.0F, 1.0F};
+    fill.margin = Insets{8.0F, 4.0F, 8.0F, 4.0F};
+    LayoutInput& corner = *store.layout_input(sized);
+    corner.preferred = Vec2{30.0F, 20.0F};
+    corner.margin = Insets{5.0F, 6.0F, 0.0F, 0.0F};
+    LayoutReport report;
+    CY_REQUIRE(layout(store, settings_1080p(), Vec2{200.0F, 100.0F}, nullptr, report).has_value());
+    const Rect inner = store.layout_output(stretched)->rect;
+    CY_CHECK_EQ(inner.x, 8.0F);
+    CY_CHECK_EQ(inner.y, 4.0F);
+    CY_CHECK_EQ(inner.width, 184.0F);
+    CY_CHECK_EQ(inner.height, 92.0F);
+    const Rect placed = store.layout_output(sized)->rect;
+    CY_CHECK_EQ(placed.x, 5.0F);
+    CY_CHECK_EQ(placed.y, 6.0F);
+    CY_CHECK_EQ(placed.width, 30.0F);
+    CY_CHECK_EQ(placed.height, 20.0F);
+}

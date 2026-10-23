@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 11u
+#define CY_ABI_MINOR 12u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -368,7 +368,16 @@ typedef enum CyUiEventKind {
     /* The element took keyboard focus. */
     CY_UI_EVENT_FOCUS = 1,
     /* The element lost keyboard focus. */
-    CY_UI_EVENT_BLUR = 2
+    CY_UI_EVENT_BLUR = 2,
+    /* --- 1.12: a widget's (see CyUiWidgetKind). For CHANGED and SUBMITTED, `position[0]` is the
+     * widget's value — a slider's, a toggle's 0 or 1 — and `button` its selected index. */
+    /* The player changed a widget's value, selection or text. */
+    CY_UI_EVENT_CHANGED = 3,
+    /* A text field's Enter, or UI.Accept on a list's selected row. */
+    CY_UI_EVENT_SUBMITTED = 4,
+    /* A drop-down's list or a dialog opened, or closed. */
+    CY_UI_EVENT_OPENED = 5,
+    CY_UI_EVENT_CLOSED = 6
 } CyUiEventKind;
 
 typedef struct CyUiEvent {
@@ -1535,6 +1544,138 @@ typedef struct CyLightStatus {
     uint64_t expired;  /* whose lifetime ended */
     uint64_t refused;  /* spawns refused by a full pool */
 } CyLightStatus;
+/* --- 1.12: the widget toolkit ------------------------------------------------------------------
+ *
+ * CyberUI's widget toolkit (`cy::ui::Toolkit`, src/ui/toolkit/) from a module: widgets made one at
+ * a time or a whole `.cyui` document at once, their values, items, selection and text, a style
+ * sheet over them, animations, and navigation driven by a game's own input. Reached through the 1.6
+ * backend (`cy::abi::game::UiBackend`), which `cy::game_backend::UiAdapter` implements over a
+ * toolkit the embedder attached; without one every 1.12 entry answers UNAVAILABLE.
+ *
+ * A WIDGET IS A CyUiElement: its root element. The 1.6 entries that take any element — destroy,
+ * visibility, opacity, rect, hit test, focus — take a widget; the 1.6 kinds and the widgets are
+ * otherwise separate, and a widget takes no `ui_set_layout`: it is laid out by its kind, its sheet
+ * and its document. Events arrive through `CyBehaviourVTable.ui_event` exactly as a button's click
+ * does, to the behaviours of the widget's owner — the owner it was made with, or its document's.
+ *
+ * [N U] every one, as 1.6's: the interface is presentation. */
+
+/* `cy::ui::WidgetKind`, value for value: what `ui_create_widget` makes. */
+typedef enum CyUiWidgetKind {
+    CY_UI_WIDGET_PANEL = 0,        /* children placed by anchors */
+    CY_UI_WIDGET_ROW = 1,          /* a flex row */
+    CY_UI_WIDGET_COLUMN = 2,       /* a flex column */
+    CY_UI_WIDGET_GRID = 3,         /* `columns` columns */
+    CY_UI_WIDGET_STACK = 4,        /* children layered, each filling it */
+    CY_UI_WIDGET_SCROLL_VIEW = 5,  /* a clipped, scrolled viewport */
+    CY_UI_WIDGET_LABEL = 6,        /* `text` */
+    CY_UI_WIDGET_RICH_TEXT = 7,    /* `text` as markup: [color=#rrggbb], [size=N], [img=...] */
+    CY_UI_WIDGET_IMAGE = 8,        /* not made through this entry: a document's `image` */
+    CY_UI_WIDGET_BUTTON = 9,       /* CLICK */
+    CY_UI_WIDGET_TOGGLE = 10,      /* a switch: CHANGED, the value 0 or 1 */
+    CY_UI_WIDGET_CHECKBOX = 11,    /* CHANGED, the value 0 or 1 */
+    CY_UI_WIDGET_RADIO_GROUP = 12, /* one of `items`: CHANGED, the selection */
+    CY_UI_WIDGET_SLIDER = 13,      /* `value` in [minimum, maximum] by `step`: CHANGED */
+    CY_UI_WIDGET_PROGRESS_BAR = 14,
+    CY_UI_WIDGET_TEXT_FIELD = 15, /* CHANGED on each edit, SUBMITTED on Enter */
+    CY_UI_WIDGET_DROPDOWN = 16,   /* one of `items`, picked from a list: OPENED, CHANGED, CLOSED */
+    CY_UI_WIDGET_LIST_VIEW = 17,  /* `items`, virtualised: CHANGED, SUBMITTED */
+    CY_UI_WIDGET_TABS = 18,       /* every child a page, titled by its `title`: CHANGED */
+    CY_UI_WIDGET_DIALOG = 19      /* modal, opened by `ui_widget_open`: OPENED, CLOSED */
+} CyUiWidgetKind;
+
+/* `cy::ui::UiAction`, value for value: the semantic actions `ui_navigate` delivers. */
+typedef enum CyUiAction {
+    CY_UI_ACTION_ACCEPT = 0,
+    CY_UI_ACTION_CANCEL = 1,
+    CY_UI_ACTION_NAVIGATE_UP = 2,
+    CY_UI_ACTION_NAVIGATE_DOWN = 3,
+    CY_UI_ACTION_NAVIGATE_LEFT = 4,
+    CY_UI_ACTION_NAVIGATE_RIGHT = 5,
+    CY_UI_ACTION_NEXT_TAB = 6,
+    CY_UI_ACTION_PREVIOUS_TAB = 7,
+    CY_UI_ACTION_CONTEXT = 8,
+    CY_UI_ACTION_SCROLL_UP = 9,
+    CY_UI_ACTION_SCROLL_DOWN = 10,
+    CY_UI_ACTION_FOCUS_NEXT = 11,    /* the tab order: Tab */
+    CY_UI_ACTION_FOCUS_PREVIOUS = 12 /* Shift+Tab */
+} CyUiAction;
+
+/* `cy::ui::AnimatedProperty`, value for value: paint properties only, so an animation never lays
+ * anything out again. */
+typedef enum CyUiAnimatedProperty {
+    CY_UI_ANIMATE_OPACITY = 0,
+    CY_UI_ANIMATE_TRANSLATE_X = 1, /* units, a render transform: layout never sees it */
+    CY_UI_ANIMATE_TRANSLATE_Y = 2,
+    CY_UI_ANIMATE_SCALE = 3,     /* about the widget's centre */
+    CY_UI_ANIMATE_BACKGROUND = 4 /* `from_colour` to `to_colour`, premultiplied */
+} CyUiAnimatedProperty;
+
+/* `cy::ui::Easing`, value for value. */
+typedef enum CyUiEasing {
+    CY_UI_EASING_LINEAR = 0,
+    CY_UI_EASING_EASE_IN = 1,
+    CY_UI_EASING_EASE_OUT = 2,
+    CY_UI_EASING_EASE_IN_OUT = 3,
+    CY_UI_EASING_EASE = 4,
+    CY_UI_EASING_SPRING = 5, /* past the target and back */
+    CY_UI_EASING_BACK = 6    /* overshoots and settles */
+} CyUiEasing;
+
+#define CY_UI_WIDGET_CHECKED 0x1u  /* a toggle or a checkbox made on */
+#define CY_UI_WIDGET_DISABLED 0x2u /* made refusing input */
+
+/* What `ui_create_widget` makes. Every string is borrowed for the call and copied; null is empty.
+ * Zero is the default for every number but `maximum`, whose zero is one. */
+typedef struct CyUiWidgetDesc {
+    uint32_t struct_size;
+    uint32_t kind;           /* CyUiWidgetKind */
+    const char* id;          /* `ui_find`'s key and a sheet's #id */
+    const char* classes;     /* space-separated, at most four */
+    const char* text;        /* a caption, a text field's text, a rich text's markup */
+    const char* placeholder; /* a text field's hint */
+    const char* title;       /* a tab page's or a dialog's */
+    const char* const* items;
+    uint32_t item_count;
+    uint32_t flags; /* CY_UI_WIDGET_* */
+    float value;
+    float minimum;
+    float maximum;
+    float step;
+    uint32_t columns; /* a grid's */
+    float row_height; /* a list's; zero is 22 */
+    CyEntity owner;   /* whose behaviours receive the widget's events; null for nobody */
+} CyUiWidgetDesc;
+
+/* What `ui_load_document` loads: the document's own text, or — `text` null — a path the embedder
+ * reads, resolves the document's `use` and `stylesheet` paths against, and reloads when it changes
+ * on disk. */
+typedef struct CyUiDocumentDesc {
+    uint32_t struct_size;
+    uint32_t reserved;  /* zero */
+    const char* text;   /* `.cyui`, borrowed for the call; null to read `path` */
+    uint64_t text_size; /* bytes of `text` */
+    const char* path;   /* the document's path, when `text` is null */
+    CyEntity owner;     /* every widget the document makes reports to this entity's behaviours */
+} CyUiDocumentDesc;
+
+/* Not decorative: still played under reduced motion. */
+#define CY_UI_ANIMATION_STATE_FEEDBACK 0x1u
+
+/* One animation of one paint property of a widget, evaluated by the toolkit every frame — nothing
+ * crosses the boundary until it is over. */
+typedef struct CyUiAnimation {
+    uint32_t struct_size;
+    uint32_t property; /* CyUiAnimatedProperty */
+    float from;
+    float to;
+    uint32_t from_colour; /* CY_UI_ANIMATE_BACKGROUND's */
+    uint32_t to_colour;
+    float duration; /* seconds */
+    float delay;
+    uint32_t easing; /* CyUiEasing */
+    uint32_t flags;  /* CY_UI_ANIMATION_* */
+} CyUiAnimation;
 
 /* --- The interface table -----------------------------------------------------------------------
  *
@@ -2175,6 +2316,60 @@ typedef struct CyInterface {
     CyResult (*light_alive)(CyEngine engine, CyLight light, uint32_t* out_alive);
     /* [N U] The pool. */
     CyResult (*light_status)(CyEngine engine, CyLightStatus* out_status);
+    /* --- 1.12: the widget toolkit ---
+     *
+     * Every entry is [N U] (see CyUiWidgetKind's section). A widget a module did not make, or that
+     * is gone, answers NOT_FOUND; a write the widget's kind does not take, INVALID_ARGUMENT. */
+
+    /* [N U] Make a document's widgets under `parent` (a widget, or CY_UI_ELEMENT_NULL for the
+     * toolkit's root). `*out_root` is its first top-level widget. INVALID_ARGUMENT for a document
+     * that does not parse, naming its first mistake's line, having made nothing. */
+    CyResult (*ui_load_document)(CyEngine engine, CyUiElement parent, const CyUiDocumentDesc* desc,
+                                 CyUiElement* out_root);
+    /* [N U] Replace the toolkit's style sheet — `.cyss`, over the built-in theme. INVALID_ARGUMENT
+     * for a sheet with a mistake, naming it; what parsed still applies. */
+    CyResult (*ui_load_stylesheet)(CyEngine engine, const char* utf8, uint64_t size);
+    /* [N U] The first widget at or under `scope` (null: everything this module made) whose id is
+     * `id`; CY_UI_ELEMENT_NULL when there is none. */
+    CyResult (*ui_find)(CyEngine engine, CyUiElement scope, const char* id,
+                        CyUiElement* out_widget);
+    /* [N U] A widget, the last child of `parent` (a widget, or null for the toolkit's root). */
+    CyResult (*ui_create_widget)(CyEngine engine, CyUiElement parent, const CyUiWidgetDesc* desc,
+                                 CyUiElement* out_widget);
+    /* [N U] A caption, a text field's text, a rich text's markup. */
+    CyResult (*ui_widget_set_text)(CyEngine engine, CyUiElement widget, const char* utf8);
+    /* [N U] A widget's text into `buffer`, NUL-terminated and cut at a code point when it does not
+     * fit; `*out_size` is its whole length in bytes, without the NUL. A null buffer asks the size.
+     */
+    CyResult (*ui_widget_text)(CyEngine engine, CyUiElement widget, char* buffer, uint32_t capacity,
+                               uint32_t* out_size);
+    /* [N U] A slider's or progress bar's value, clamped to its range; a toggle's or a checkbox's
+     * state, on at 0.5 and above. Finite. No CHANGED event: the game set it. */
+    CyResult (*ui_widget_set_value)(CyEngine engine, CyUiElement widget, float value);
+    CyResult (*ui_widget_value)(CyEngine engine, CyUiElement widget, float* out_value);
+    /* [N U] A radio group's, drop-down's, list's or tabs' selected index, clamped to its items. */
+    CyResult (*ui_widget_set_selected)(CyEngine engine, CyUiElement widget, uint32_t index);
+    CyResult (*ui_widget_selected)(CyEngine engine, CyUiElement widget, uint32_t* out_index);
+    /* [N U] A radio group's, drop-down's or list's items, each borrowed for the call and copied. A
+     * null list is no items. */
+    CyResult (*ui_widget_set_items)(CyEngine engine, CyUiElement widget, const char* const* items,
+                                    uint32_t count);
+    /* [N U] Taking input, or refusing it and drawn as `:disabled`. */
+    CyResult (*ui_widget_set_enabled)(CyEngine engine, CyUiElement widget, uint32_t enabled);
+    /* [N U] Space-separated classes, at most four, replacing the widget's: what a sheet's `.name`
+     * selects, and how a variant is chosen. */
+    CyResult (*ui_widget_set_classes)(CyEngine engine, CyUiElement widget, const char* classes);
+    /* [N U] Open or close a drop-down's list or a dialog. A dialog opens modal: it takes focus and
+     * the input until it closes, and focus goes back where it was. */
+    CyResult (*ui_widget_open)(CyEngine engine, CyUiElement widget, uint32_t open);
+    /* [N U] Start an animation of one of the widget's paint properties, replacing one of the same
+     * property. INVALID_ARGUMENT for an unknown property or easing, or a negative or non-finite
+     * time. */
+    CyResult (*ui_widget_animate)(CyEngine engine, CyUiElement widget,
+                                  const CyUiAnimation* animation);
+    /* [N U] Deliver a CyUiAction — a game that maps its own input drives the focus with this.
+     * `*out_consumed` is 1 when the interface took it, 0 when it is the game's. */
+    CyResult (*ui_navigate)(CyEngine engine, uint32_t action, uint32_t* out_consumed);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2312,6 +2507,10 @@ CY_ABI_STATIC_ASSERT(sizeof(CyFogStatus) == 40, "CyFogStatus is 40 bytes");
 /* 1.11 */
 CY_ABI_STATIC_ASSERT(sizeof(CyLightDesc) == 96, "CyLightDesc is 96 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyLightStatus) == 40, "CyLightStatus is 40 bytes");
+/* 1.12 */
+CY_ABI_STATIC_ASSERT(sizeof(CyUiWidgetDesc) == 96, "CyUiWidgetDesc is 96 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyUiDocumentDesc) == 40, "CyUiDocumentDesc is 40 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyUiAnimation) == 40, "CyUiAnimation is 40 bytes");
 
 #ifdef __cplusplus
 }

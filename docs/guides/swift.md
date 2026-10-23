@@ -955,6 +955,65 @@ without a HUD.
 `integration.game_backend_ui`; `render.rts_api_hud` holds a Swift HUD to the C++ HUD it was written
 from, primitive for primitive and byte for byte on a device.
 
+### The widget toolkit (ABI 1.12)
+
+Sixteen more `ui_*` entries put CyberUI's widget toolkit behind the same boundary, wrapped by
+`CyberdyneKit/UIToolkit.swift` and `UIWidgetBuilder.swift`: real widgets (sliders, text fields,
+drop-downs, virtualised lists, tabs, modal dialogs), `.cyui` documents and `.cyss` sheets,
+animations, and navigation. The C++ side and the widget set are in
+[the UI guide](ui.md#7-the-widget-toolkit).
+
+```swift
+final class SettingsMenu: Behaviour {
+    var volume: Float = 0.5
+    var subtitles = true
+    var menu: WidgetTree?
+
+    override func onCreate() throws {
+        menu = try mountWidgets {
+            WidgetNode.column(id: "menu") {
+                WidgetNode.slider(in: 0...1, step: 0.05, id: "volume")
+                    .bind(.value(self, \.volume))
+                    .onChange { [unowned self] _ in self.applyVolume() }   // volume is already new
+                WidgetNode.checkbox("Subtitles").bind(.checked(self, \.subtitles))
+                WidgetNode.button("Back") { [unowned self] _ in self.close() }
+            }
+        }
+    }
+
+    override func onUpdate(_ delta: Double) throws {
+        try menu?.refresh()            // what the game changed since, and nothing else
+    }
+}
+```
+
+| Facade | What it does |
+|---|---|
+| `Widget` | a handle: `text`/`setText`, `value`/`setValue`, `isChecked`/`setChecked`, `selected`/`select`, `setItems`, `setEnabled`, `setClasses`, `open`/`close`, `animate`, `find`, and 1.6's `focus`, `setShown`, `destroy` |
+| `UI.createWidget(_:in:owner:)` | one widget from a `UIWidgetDesc` |
+| `UI.loadDocument(_:)`, `UI.loadDocument(path:)`, `Behaviour.loadUI` | a document's widgets; by path, reloaded by the embedder on a save with every widget's state kept |
+| `UI.loadStylesheet(_:)` | the game's sheet over the built-in theme |
+| `UI.find(_:in:)`, `UIDocument[id]` | a widget by its `#id` |
+| `UI.navigate(_:)` | a `UIAction` delivered; true when the interface took it |
+| `UIAnimation` | `.fade`, `.slideX`, `.slideY`, `.pop`, `.background`, or any `UIAnimatedProperty` with a `UIEasing`; `stateFeedback` still plays under reduced motion |
+| `WidgetNode`, `mountWidgets`, `WidgetTree` | the declarative layer: containers and leaves, `.id`, `.classes`, `.disabled`, `.onClick`, `.onChange`, `.onSubmit`, `.on(kind)`, `.bind`, `.appear` |
+| `UIWidgetBinding` | `.value`, `.checked`, `.selected`, `.text` over a key path, held weakly; `.display` one way |
+| `Behaviour.on(_:of:run:)` | a handler for one event kind of one widget, before `onUIEvent` |
+
+**Events.** `.changed` carries a value in `UIEvent.value` (a toggle's 0 or 1) and a selection in
+`UIEvent.index`; `.submitted` is a text field's Enter or Accept on a list row; `.opened` and
+`.closed` a drop-down's list or a dialog. They reach the behaviours of the widget's owner — the
+behaviour's own entity for `mountWidgets` and `loadUI` — through the same `ui_event` as a click. A
+binding writes the player's value back before the node's own handler runs, and `refresh` does not
+push it straight back.
+
+**What a module may touch.** The widgets it made and the widgets of the documents it loaded; a
+widget the embedder made answers `.notFound`. With no toolkit attached every 1.12 call throws
+`.unavailable` while 1.6 still works.
+
+`UIToolkitTests.swift` drives it against `FakeEngine`; the engine half — a real toolkit behind the
+same entries — is `integration.game_backend_ui`.
+
 ### Deterministic math and the lockstep path (ABI 1.8)
 
 `openspec/changes/add-deterministic-math` stage 8. Three files of CyberdyneKit:

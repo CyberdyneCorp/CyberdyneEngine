@@ -873,4 +873,84 @@ public struct Interface: @unchecked Sendable {
     public func lightStatus(engine: CyEngine, into: UnsafeMutablePointer<CyLightStatus>?) throws {
         try check(table.pointee.light_status(engine, into))
     }
+
+    @inlinable
+    public func uiLoadDocument(engine: CyEngine, parent: CyUiElement, desc: UnsafePointer<CyUiDocumentDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_load_document(engine, parent, desc, into))
+    }
+
+    @inlinable
+    public func uiLoadStylesheet(engine: CyEngine, text: UnsafePointer<CChar>?, size: UInt64) throws {
+        try check(table.pointee.ui_load_stylesheet(engine, text, size))
+    }
+
+    @inlinable
+    public func uiFind(engine: CyEngine, scope: CyUiElement, id: UnsafePointer<CChar>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_find(engine, scope, id, into))
+    }
+
+    @inlinable
+    public func uiCreateWidget(engine: CyEngine, parent: CyUiElement, desc: UnsafePointer<CyUiWidgetDesc>?, into: UnsafeMutablePointer<CyUiElement>?) throws {
+        try check(table.pointee.ui_create_widget(engine, parent, desc, into))
+    }
+
+    @inlinable
+    public func uiWidgetSetText(engine: CyEngine, widget: CyUiElement, text: UnsafePointer<CChar>?) throws {
+        try check(table.pointee.ui_widget_set_text(engine, widget, text))
+    }
+
+    @inlinable
+    public func uiWidgetText(engine: CyEngine, widget: CyUiElement, buffer: UnsafeMutablePointer<CChar>?, capacity: UInt32, size: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.ui_widget_text(engine, widget, buffer, capacity, size))
+    }
+
+    @inlinable
+    public func uiWidgetSetValue(engine: CyEngine, widget: CyUiElement, value: Float) throws {
+        try check(table.pointee.ui_widget_set_value(engine, widget, value))
+    }
+
+    @inlinable
+    public func uiWidgetValue(engine: CyEngine, widget: CyUiElement, into: UnsafeMutablePointer<Float>?) throws {
+        try check(table.pointee.ui_widget_value(engine, widget, into))
+    }
+
+    @inlinable
+    public func uiWidgetSetSelected(engine: CyEngine, widget: CyUiElement, index: UInt32) throws {
+        try check(table.pointee.ui_widget_set_selected(engine, widget, index))
+    }
+
+    @inlinable
+    public func uiWidgetSelected(engine: CyEngine, widget: CyUiElement, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.ui_widget_selected(engine, widget, into))
+    }
+
+    @inlinable
+    public func uiWidgetSetItems(engine: CyEngine, widget: CyUiElement, items: UnsafePointer<UnsafePointer<CChar>?>?, count: UInt32) throws {
+        try check(table.pointee.ui_widget_set_items(engine, widget, items, count))
+    }
+
+    @inlinable
+    public func uiWidgetSetEnabled(engine: CyEngine, widget: CyUiElement, enabled: UInt32) throws {
+        try check(table.pointee.ui_widget_set_enabled(engine, widget, enabled))
+    }
+
+    @inlinable
+    public func uiWidgetSetClasses(engine: CyEngine, widget: CyUiElement, classes: UnsafePointer<CChar>?) throws {
+        try check(table.pointee.ui_widget_set_classes(engine, widget, classes))
+    }
+
+    @inlinable
+    public func uiWidgetOpen(engine: CyEngine, widget: CyUiElement, open: UInt32) throws {
+        try check(table.pointee.ui_widget_open(engine, widget, open))
+    }
+
+    @inlinable
+    public func uiWidgetAnimate(engine: CyEngine, widget: CyUiElement, animation: UnsafePointer<CyUiAnimation>?) throws {
+        try check(table.pointee.ui_widget_animate(engine, widget, animation))
+    }
+
+    @inlinable
+    public func uiNavigate(engine: CyEngine, action: UInt32, consumed: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.ui_navigate(engine, action, consumed))
+    }
 }

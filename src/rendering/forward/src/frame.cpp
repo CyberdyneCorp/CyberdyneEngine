@@ -545,6 +545,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "fog of war";
         case FramePassKind::ManyLights:
             return "many lights";
+        case FramePassKind::UiHdr:
+            return "ui hdr";
         case FramePassKind::Count:
             break;
     }
@@ -856,6 +858,14 @@ void ForwardFrame::declare_post_chain(RenderGraph& graph, BuildState& state) noe
                                FramePassKind::MotionBlur, "motion blur", resources_.motion_blur,
                                state.current_color);
         state.current_color = resources_.motion_blur;
+    }
+
+    // The interface's HDR composite: a document drawn onto the linear colour before bloom and the
+    // tone curve, so an emissive element blooms like a light. Only with a producer; without one the
+    // frame declares nothing here, as it never did.
+    if (description.ui_hdr_stage.declare != nullptr) {
+        declare_produced_stage(graph, state, description.ui_hdr_stage, FramePassKind::UiHdr,
+                               "ui hdr", state.current_color);
     }
 
     // Bloom: scene-referred, after the temporal resolve and before the exposure the post-process

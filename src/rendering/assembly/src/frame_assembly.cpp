@@ -889,6 +889,7 @@ Status FrameAssembly::declare_frame(const AssemblyView& view, const FrameFeature
     description.motion_blur_target = view.motion_blur;
     description.motion_blur_stage = sinks.motion_blur;
     description.ui_stage = sinks.ui;
+    description.ui_hdr_stage = sinks.ui_hdr;
     description.screen_space_gi_target = view.screen_space_gi;
     description.screen_space_gi_specular_target = view.screen_space_gi_specular;
     description.screen_space_gi_stage = sinks.screen_space_gi;

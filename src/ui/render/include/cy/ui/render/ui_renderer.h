@@ -11,8 +11,24 @@
 // The frame's `FramePassKind::UiAndDebug` stage, declared through `FrameStageDeclaration`: after
 // the tone curve, bloom, grading and the selection outlines, over the colour the chain ended in. A
 // colour an interface asks for is therefore the colour in the output, byte for byte — `ui-system`'s
-// "By default UI SHALL be drawn after tonemapping in display-referred colour". The HDR option the
-// same requirement names, an interface composited before the tone curve, is not built.
+// "By default UI SHALL be drawn after tonemapping in display-referred colour".
+//
+// THE HDR COMPOSITE is the same class at another stage: a second renderer, created for the frame's
+// HDR colour format, handed to `FrameSinks::ui_hdr` through `stage()`, draws its document onto the
+// linear colour after motion blur and before bloom — so an emissive element (`PaintData::intensity`
+// above one) blooms and is exposed like the light it is. "a per-document option SHALL allow HDR UI
+// drawn before tonemapping."
+//
+// ================================================================================================
+// OPACITY GROUPS
+// ================================================================================================
+//
+// A document's opacity groups (`cy::ui::OpacityGroup`) are each one more graph pass before the
+// interface pass: the group's primitives drawn into a cleared transient target the frame's size, in
+// the order `flatten()` listed them, so a nested group is ready before the group that samples it.
+// The interface pass then draws each group's composite — the target's texels under the group's
+// region at the group's opacity — and the graph derives the barrier between the two from the
+// declared write and read. No group, no extra pass: a frame without one is the frame it always was.
 //
 // ================================================================================================
 // WHAT A FRAME COSTS
@@ -63,11 +79,20 @@ struct UiRendererDescription {
     /// The most primitives one frame may submit. A larger stream is refused by `submit()` rather
     /// than truncated.
     u32 max_primitives = 16384;
+    /// The scene-referred radiance an interface colour of one is drawn at, on a float target —
+    /// the HDR composite. A frame exposed at -11 stops shows a radiance of one as nearly black, so
+    /// a game draws its HDR document at `2^-stops` (`set_scene_scale` as the exposure moves) and an
+    /// element at intensity one lands on its own colour while an emissive one blooms. A float
+    /// target decodes the interface's display-encoded colours to linear light first, as an sRGB
+    /// one does. Ignored on an eight-bit target.
+    f32 scene_scale = 1.0F;
 };
 
 /// What the last frame drew.
 struct UiRenderReport {
     u32 primitives = 0;
+    /// Opacity groups drawn offscreen this frame: one graph pass and one transient target each.
+    u32 groups = 0;
     /// Indirect draws recorded: one per batch with a non-empty scissor.
     u32 draws = 0;
     /// Batches whose clip covered no pixel, and so drew nothing.
@@ -108,6 +133,9 @@ public:
     [[nodiscard]] Status submit(const PrimitiveBuffer& buffer, f32 scale) noexcept;
     /// Draw nothing this frame.
     void clear() noexcept;
+    /// `UiRendererDescription::scene_scale`, for the next `submit` — what a frame whose exposure
+    /// adapts calls every frame.
+    void set_scene_scale(f32 scale) noexcept;
 
     /// The frame's hook for `FrameSinks::ui`.
     [[nodiscard]] rendering::FrameStageDeclaration stage() noexcept;
@@ -122,6 +150,12 @@ public:
 
     // Public because `RecordFn` is a plain function pointer and the callback is a free function.
     void record(const rendering::PassContext& context) noexcept;
+    /// One opacity group's pass: its draws into its own cleared target.
+    void record_group(const rendering::PassContext& context, u32 group) noexcept;
+
+    /// The format an opacity group's target is created in: the output's, with an eight-bit output
+    /// drawn into an eight-bit UNORM target so the group's texels are the interface's own bytes.
+    [[nodiscard]] rhi::Format group_format() const noexcept;
 
 private:
     struct AtlasPage {
@@ -129,10 +163,25 @@ private:
         rhi::TextureViewHandle view;
     };
 
+    /// What a group pass's record callback is handed: the renderer and the group's index.
+    struct GroupPass {
+        UiRenderer* renderer = nullptr;
+        u32 group = 0;
+    };
+
     [[nodiscard]] Status create_pipeline() noexcept;
+    [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_pipeline(
+        rhi::Format format, const char* name) noexcept;
+    /// Bind each draw's page and scissor and issue it. `arguments_base` is the draws' first slot
+    /// in the frame's argument buffer.
+    void issue(const rendering::PassContext& context, Span<const UiDraw> draws, u32 arguments_base,
+               u32 flags) noexcept;
+    /// Declare the opacity groups' passes. False when one could not be declared.
+    [[nodiscard]] bool declare_groups(rendering::RenderGraph& graph) noexcept;
     [[nodiscard]] Status create_buffers() noexcept;
     void destroy_page(AtlasPage& page) noexcept;
-    [[nodiscard]] Expected<rhi::DescriptorSetHandle, Error> set_for(u16 page, u32 slot) noexcept;
+    [[nodiscard]] Expected<rhi::DescriptorSetHandle, Error> set_for(
+        const rendering::PassContext& context, u16 page, u32 slot) noexcept;
     static rendering::PassId declare_stage(rendering::RenderGraph& graph,
                                            const rendering::ScreenSpaceStageInputs& inputs,
                                            void* user) noexcept;
@@ -149,6 +198,9 @@ private:
     rhi::DescriptorSetLayoutHandle set_layout_;
     rhi::PipelineLayoutHandle layout_;
     rhi::GraphicsPipelineHandle pipeline_;
+    /// The pipeline a group's target is drawn with: `pipeline_` itself unless the group's format
+    /// differs from the output's.
+    rhi::GraphicsPipelineHandle group_pipeline_;
     rhi::SamplerHandle point_sampler_;
     rhi::SamplerHandle linear_sampler_;
     rhi::BufferHandle indices_;
@@ -163,6 +215,9 @@ private:
 
     // This frame's target, from `declare`.
     rendering::ResourceId target_ = rendering::kInvalidResource;
+    /// This frame's opacity group targets and their passes' callbacks.
+    rendering::ResourceId group_targets_[kMaxOpacityGroups] = {};
+    GroupPass group_passes_[kMaxOpacityGroups] = {};
 };
 
 }  // namespace cy::ui::render

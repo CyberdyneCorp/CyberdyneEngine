@@ -105,6 +105,37 @@ struct Primitive {
     /// atlas pixel covers. Scaled to pixels by the renderer like `corner_radius`. Zero for every
     /// other material.
     f32 distance_range = 0.0F;
+    /// `PaintData::intensity`: the colour's multiplier for an interface composited before the tone
+    /// curve. One everywhere else, and a display-referred target clips anything above it.
+    f32 intensity = 1.0F;
+};
+
+/// The first atlas number that names an OPACITY GROUP's target rather than an uploaded page: a
+/// group's composite primitive carries `kFirstGroupAtlas + index` into `PrimitiveBuffer::groups()`,
+/// and its `uv` is the region it covers in the document's units, which the renderer turns into the
+/// target's texels.
+inline constexpr u16 kFirstGroupAtlas = 0x8000U;
+
+/// The most opacity groups one document flattens to. Each is an offscreen target the size of the
+/// frame on the device; a document that needs more is refused rather than drawn wrong.
+inline constexpr u32 kMaxOpacityGroups = 16;
+
+/// One OPACITY GROUP: an element whose `ElementFlags::OpacityGroup` is set and whose opacity is
+/// below one, flattened with its subtree at full opacity into a stream of its own. A renderer draws
+/// that stream into an offscreen target, then the group's composite primitive in the parent stream
+/// draws the target once at `opacity` — so overlapping children do not double-blend.
+struct OpacityGroup {
+    /// `PrimitiveBuffer::primitives()[first, first + count)`: after the main stream.
+    u32 first = 0;
+    u32 count = 0;
+    /// `PrimitiveBuffer::group_batches()[first_batch, first_batch + batch_count)`.
+    u32 first_batch = 0;
+    u32 batch_count = 0;
+    /// The region the group's primitives cover, clipped: what its composite draws.
+    Rect bounds;
+    /// The opacity the composite applies: the element's own, times its ancestors'.
+    f32 opacity = 1.0F;
+    ElementId source;
 };
 
 /// A premultiplied colour scaled by an opacity: every channel, alpha included, rounded to the
@@ -157,6 +188,8 @@ struct FlattenReport {
     /// Visible elements with nothing of their own to draw — a built-in material with no colour and
     /// no border, which is what a layout container is — that put no primitive in the stream.
     u32 empty = 0;
+    /// Opacity groups flattened into streams of their own.
+    u32 groups = 0;
 };
 
 /// The flattened output, retained between frames so that "unchanged regions SHALL reuse their
@@ -171,6 +204,11 @@ public:
     [[nodiscard]] Span<const Primitive> primitives() const noexcept { return primitives_.span(); }
     [[nodiscard]] Span<const Batch> batches() const noexcept { return batches_.span(); }
     [[nodiscard]] Span<const Rect> clips() const noexcept { return clips_.span(); }
+    /// The opacity groups, in the order they must be drawn: a group nested in another first.
+    [[nodiscard]] Span<const OpacityGroup> groups() const noexcept { return groups_.span(); }
+    /// The groups' batches. `batches()` holds the main stream's only, so a renderer that knows
+    /// nothing of groups draws exactly what it drew before them.
+    [[nodiscard]] Span<const Batch> group_batches() const noexcept { return group_batches_.span(); }
     void clear() noexcept;
 
     friend Status flatten(ElementStore&, const Rect&, PrimitiveBuffer&, FlattenReport&,
@@ -183,6 +221,8 @@ private:
     /// The element each primitive belongs to, so an incremental re-emit can find and replace one
     /// element's run without rebuilding the array.
     Array<ElementId> owners_;
+    Array<OpacityGroup> groups_;
+    Array<Batch> group_batches_;
 };
 
 /// Flatten the tree into primitives, cull against `viewport`, and batch.
@@ -191,8 +231,12 @@ private:
 /// full rebuild clears the buffer first, which is what a resolution change does.
 ///
 /// An element's opacity multiplies down the tree into every primitive beneath it, so a panel at
-/// half opacity draws its children at half too. Overlapping children of a faded panel each blend
-/// on their own: the offscreen opacity group `ui-system` asks for is not built yet.
+/// half opacity draws its children at half too, and overlapping children each blend on their own.
+/// An element flagged `ElementFlags::OpacityGroup` with an opacity below one is an OPACITY GROUP
+/// instead: see `OpacityGroup`.
+///
+/// A RENDER TRANSFORM (`PaintData::translate`, `scale`) moves and scales the element's subtree as
+/// it is flattened — bounds, corner radii, borders and the clips set inside it — without layout.
 ///
 /// `painter`, when given, draws each visible element's content; see `ContentPainter`.
 [[nodiscard]] Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,

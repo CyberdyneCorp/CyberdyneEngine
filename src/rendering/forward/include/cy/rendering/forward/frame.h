@@ -231,6 +231,13 @@ enum class FramePassKind : u8 {
     /// and before the opaque pass, which reads its two imported targets in place of the cluster
     /// loop. NOT ONE OF THE SPECIFICATION'S THIRTEEN, and APPENDED, as `FogOfWar` is.
     ManyLights,
+    /// The interface's HDR composite: a document that opted into HDR drawn onto the linear colour
+    /// after motion blur and BEFORE bloom and the tone curve, so an emissive element blooms and is
+    /// exposed like any other light (`ui-system`'s "HDR UI"). Declared only by a producer
+    /// (`ui::render::UiRenderer::stage()` on a renderer created for the HDR format, in
+    /// `FrameSinks::ui_hdr`); with none the stage does not exist and the frame is the frame it
+    /// was. APPENDED, as `FogOfWar` is.
+    UiHdr,
     Count,
 };
 
@@ -530,6 +537,10 @@ struct FrameDescription {
     FrameStageDeclaration many_lights_stage;
     ResourceId many_lights_target = kInvalidResource;
     ResourceId many_lights_reservoir_target = kInvalidResource;
+    /// The producer that declares the interface's HDR composite — a `ui::render::UiRenderer`
+    /// created for `color_format` — handed the colour the chain has reached after motion blur as
+    /// `target`, which it draws over before bloom. Null: no stage, and no pass. Appended.
+    FrameStageDeclaration ui_hdr_stage;
 };
 
 /// Declares one view's frame into a graph.

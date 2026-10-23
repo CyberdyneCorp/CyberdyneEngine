@@ -36,7 +36,8 @@ struct alignas(16) GpuUiPrimitive {
     /// u0, v0, width, height, normalised to the atlas page.
     f32 uv[4] = {};
     /// Corner radius, border (or glyph outline) width and a glyph field's distance range, in
-    /// pixels, then a zero.
+    /// pixels, then the colour's intensity for an interface drawn before the tone curve — zero
+    /// for one, which is every display-referred primitive, so their rows are what they always were.
     f32 shape[4] = {};
     /// Colour, border colour, material, atlas page.
     u32 colour = 0;
@@ -90,21 +91,43 @@ struct UiDraw {
 /// pixel is inside when its centre is.
 [[nodiscard]] PixelRect scissor_for(const Rect& clip, f32 scale, u32 width, u32 height) noexcept;
 
+/// One opacity group's target: the draws that fill it, and the pixels its composite reads.
+struct UiGroupTarget {
+    /// `UiDrawList::group_draws[first_draw, first_draw + draw_count)`.
+    u32 first_draw = 0;
+    u32 draw_count = 0;
+    /// The region its composite covers, in whole pixels.
+    PixelRect region;
+};
+
 /// What `build_draws` produced from one flattened buffer.
 struct UiDrawList {
-    explicit UiDrawList(Allocator& allocator) noexcept : rows(allocator), draws(allocator) {}
+    explicit UiDrawList(Allocator& allocator) noexcept
+        : rows(allocator), draws(allocator), group_draws(allocator), groups(allocator) {}
 
     Array<GpuUiPrimitive> rows;
+    /// The main stream's draws, onto the frame's colour.
     Array<UiDraw> draws;
+    /// Every opacity group's draws, group by group, each onto its own target. A draw here samples
+    /// another group's target only when that group is nested in it, and nested groups come first.
+    Array<UiDraw> group_draws;
+    Array<UiGroupTarget> groups;
     /// Batches whose scissor was empty and that therefore draw nothing.
     u32 clipped_batches = 0;
 
     void clear() noexcept {
         rows.clear();
         draws.clear();
+        group_draws.clear();
+        groups.clear();
         clipped_batches = 0;
     }
 };
+
+/// Whether a draw samples an opacity group's target rather than an uploaded page.
+[[nodiscard]] constexpr bool samples_group(u16 atlas) noexcept {
+    return atlas >= kFirstGroupAtlas;
+}
 
 /// Encode every primitive of `buffer` and turn each of its batches into a draw, in order.
 [[nodiscard]] Status build_draws(const PrimitiveBuffer& buffer, f32 scale, u32 width, u32 height,
@@ -134,8 +157,10 @@ struct ReferenceAtlas {
                                      const ReferenceAtlas* atlas, f32 (&out)[4]) noexcept;
 
 /// Draw `list` over `target` (`width * height` RGBA8 texels, red in the low byte) as the device
-/// does: each draw in order, scissored, every primitive blended `One, OneMinusSourceAlpha` and
-/// rounded to the nearest 8-bit step. `atlases[page]` is the page a draw samples, or empty.
+/// does: each opacity group into a cleared target of its own first, then each draw in order,
+/// scissored, every primitive blended `One, OneMinusSourceAlpha` and rounded to the nearest 8-bit
+/// step. `atlases[page]` is the page a draw samples, or empty; a group's composite samples the
+/// group's own target.
 [[nodiscard]] Status draw_reference(const UiDrawList& list, Span<const ReferenceAtlas> atlases,
                                     u32 width, u32 height, Span<u32> target) noexcept;
 

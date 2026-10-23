@@ -78,6 +78,9 @@ struct TextStyle {
     /// A horizontal gradient across the line: `colour` at its start, this at its end, each glyph
     /// the blend at its centre. Zero draws none.
     u32 gradient_colour = 0;
+
+    /// Member by member: a padded struct's bytes are not its value.
+    [[nodiscard]] friend bool operator==(const TextStyle&, const TextStyle&) noexcept = default;
 };
 
 /// One colour over a range of a label's text — per-character colour. `begin` and `end` are byte

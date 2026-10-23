@@ -46,6 +46,9 @@ _SCALARS = {
 # Pointers whose pointee is not a named ABI struct.
 _POINTERS = {
     "const char*": "UnsafePointer<CChar>",
+    # ABI 1.11's `ui_widget_set_items` and `CyUiWidgetDesc.items`: a list of strings. The importer
+    # gives the inner pointer its `?`, as it does every pointer-to-pointer — see `_named_pointer`.
+    "const char* const*": "UnsafePointer<UnsafePointer<CChar>?>",
     "char*": "UnsafeMutablePointer<CChar>",
     "const void*": "UnsafeRawPointer",
     "void*": "UnsafeMutableRawPointer",

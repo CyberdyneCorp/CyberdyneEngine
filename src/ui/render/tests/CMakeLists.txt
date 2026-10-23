@@ -68,6 +68,32 @@ function(cy_ui_render_declare_tests)
     endif()
     set_tests_properties(render.ui PROPERTIES
                          SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+
+    # The widget toolkit, opacity groups and the HDR composite (issue #91, stages 2, 4 and 5): the
+    # gallery document against its golden, a group's overlap, and an emissive panel's bloom.
+    if(TARGET cy::ui-toolkit)
+        cy_add_test(
+            NAME ui_toolkit
+            KIND render
+            SOURCES
+                "${tests_dir}/test_ui_toolkit_device.cpp"
+                "${pipeline_tests}/frame_scene.cpp"
+                "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+            DEPENDENCIES cy::ui-render cy::ui-text cy::ui-toolkit cy::rendering-pipeline
+                         cy::rendering-particles cy::rhi-null cy::rhi-vulkan)
+        target_include_directories(cy_test_render_ui_toolkit
+                                   PRIVATE "${tests_dir}" "${pipeline_tests}"
+                                           "${CMAKE_SOURCE_DIR}/tests/render")
+        target_compile_definitions(cy_test_render_ui_toolkit
+                                   PRIVATE CY_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+                                           CY_UI_RENDER_TEST_DIR="${tests_dir}"
+                                           CY_UI_TOOLKIT_DATA_DIR="${CMAKE_SOURCE_DIR}/src/ui/toolkit/tests/data")
+        if(CY_TEXT)
+            target_link_libraries(cy_test_render_ui_toolkit PRIVATE cy::text-complete)
+        endif()
+        set_tests_properties(render.ui_toolkit PROPERTIES
+                             SKIP_REGULAR_EXPRESSION "no requested graphics device on this machine")
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_ui_render_declare_tests)

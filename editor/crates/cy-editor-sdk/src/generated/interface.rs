@@ -4072,4 +4072,423 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Make a UI document's widgets under a parent.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_load_document(
+        &self,
+        engine: ffi::CyEngine,
+        parent: ffi::CyUiElement,
+        desc: *const ffi::CyUiDocumentDesc,
+        into: *mut ffi::CyUiElement,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_load_document
+            .ok_or(CallError::Missing("ui_load_document"))?;
+        let raw = unsafe { entry(engine, parent, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Replace the widget toolkit's style sheet.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_load_stylesheet(
+        &self,
+        engine: ffi::CyEngine,
+        text: *const ::std::ffi::c_char,
+        size: u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_load_stylesheet
+            .ok_or(CallError::Missing("ui_load_stylesheet"))?;
+        let raw = unsafe { entry(engine, text, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The first widget under a scope with an id.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_find(
+        &self,
+        engine: ffi::CyEngine,
+        scope: ffi::CyUiElement,
+        id: *const ::std::ffi::c_char,
+        into: *mut ffi::CyUiElement,
+    ) -> Result<(), CallError> {
+        let entry = self.table().ui_find.ok_or(CallError::Missing("ui_find"))?;
+        let raw = unsafe { entry(engine, scope, id, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Make a widget under a parent.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_create_widget(
+        &self,
+        engine: ffi::CyEngine,
+        parent: ffi::CyUiElement,
+        desc: *const ffi::CyUiWidgetDesc,
+        into: *mut ffi::CyUiElement,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_create_widget
+            .ok_or(CallError::Missing("ui_create_widget"))?;
+        let raw = unsafe { entry(engine, parent, desc, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's caption or text.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_text(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        text: *const ::std::ffi::c_char,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_text
+            .ok_or(CallError::Missing("ui_widget_set_text"))?;
+        let raw = unsafe { entry(engine, widget, text) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's text, into a buffer.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_text(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        buffer: *mut ::std::ffi::c_char,
+        capacity: u32,
+        size: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_text
+            .ok_or(CallError::Missing("ui_widget_text"))?;
+        let raw = unsafe { entry(engine, widget, buffer, capacity, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A slider's, progress bar's or toggle's value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_value(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        value: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_value
+            .ok_or(CallError::Missing("ui_widget_set_value"))?;
+        let raw = unsafe { entry(engine, widget, value) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's value.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_value(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        into: *mut f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_value
+            .ok_or(CallError::Missing("ui_widget_value"))?;
+        let raw = unsafe { entry(engine, widget, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's selected item.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_selected(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        index: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_selected
+            .ok_or(CallError::Missing("ui_widget_set_selected"))?;
+        let raw = unsafe { entry(engine, widget, index) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's selected item.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_selected(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        into: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_selected
+            .ok_or(CallError::Missing("ui_widget_selected"))?;
+        let raw = unsafe { entry(engine, widget, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A radio group's, drop-down's or list's items.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_items(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        items: *const *const ::std::ffi::c_char,
+        count: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_items
+            .ok_or(CallError::Missing("ui_widget_set_items"))?;
+        let raw = unsafe { entry(engine, widget, items, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Whether a widget takes input.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_enabled(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        enabled: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_enabled
+            .ok_or(CallError::Missing("ui_widget_set_enabled"))?;
+        let raw = unsafe { entry(engine, widget, enabled) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's style classes.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_classes(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        classes: *const ::std::ffi::c_char,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_classes
+            .ok_or(CallError::Missing("ui_widget_set_classes"))?;
+        let raw = unsafe { entry(engine, widget, classes) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Open or close a drop-down or a dialog.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_open(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        open: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_open
+            .ok_or(CallError::Missing("ui_widget_open"))?;
+        let raw = unsafe { entry(engine, widget, open) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Animate one of a widget's paint properties.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_animate(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        animation: *const ffi::CyUiAnimation,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_animate
+            .ok_or(CallError::Missing("ui_widget_animate"))?;
+        let raw = unsafe { entry(engine, widget, animation) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Deliver a semantic interface action.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_navigate(
+        &self,
+        engine: ffi::CyEngine,
+        action: u32,
+        consumed: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_navigate
+            .ok_or(CallError::Missing("ui_navigate"))?;
+        let raw = unsafe { entry(engine, action, consumed) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

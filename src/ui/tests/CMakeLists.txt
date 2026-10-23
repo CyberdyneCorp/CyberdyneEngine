@@ -32,6 +32,7 @@ function(cy_ui_declare_tests)
             "${tests_dir}/test_style.cpp"
             "${tests_dir}/test_interaction.cpp"
             "${tests_dir}/test_paint.cpp"
+            "${tests_dir}/test_groups.cpp"
         DEPENDENCIES cy::ui)
 
     # The scale `ui-system` states — twenty thousand elements — and the teardown under it hard rule

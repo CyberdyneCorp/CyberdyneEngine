@@ -80,9 +80,9 @@ if(CY_UI)
         LAYER abi
         ALIAS cy::game-backend-ui
         TYPE STATIC
-        SOURCES ui/src/ui_backend.cpp
+        SOURCES ui/src/ui_backend.cpp ui/src/ui_toolkit_backend.cpp
         PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/ui/include"
-        PUBLIC_DEPENDENCIES cy::abi cy::ui cy::ui-text)
+        PUBLIC_DEPENDENCIES cy::abi cy::ui cy::ui-text cy::ui-toolkit)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -126,7 +126,7 @@ if(CY_BUILD_TESTS)
             cy_add_test(
                 NAME game_backend_ui
                 KIND integration
-                SOURCES "${tests_dir}/test_ui_backend.cpp"
+                SOURCES "${tests_dir}/test_ui_backend.cpp" "${tests_dir}/test_ui_toolkit_backend.cpp"
                 DEPENDENCIES cy::game-backend-ui)
         endif()
         # The gameplay graph suite reads the graph the editor writes for #29's acceptance scenario

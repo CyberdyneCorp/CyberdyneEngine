@@ -48,6 +48,12 @@ enum class UiAction : u8 {
     Context,
     ScrollUp,
     ScrollDown,
+    /// TAB ORDER: the next and the previous focusable element in document order within the active
+    /// layer, wrapping at the ends — Tab and Shift+Tab on a keyboard. Not in `input-and-actions`'
+    /// original list, which has no way to walk focus without a direction; appended rather than
+    /// inserted so every value above keeps its number.
+    FocusNext,
+    FocusPrevious,
     Count,
 };
 
@@ -158,6 +164,10 @@ public:
     [[nodiscard]] ElementId navigate(const ElementStore& store, UiAction direction) noexcept;
     /// Declare an explicit neighbour, which wins over the geometric fallback.
     [[nodiscard]] Status set_neighbour(ElementId from, UiAction direction, ElementId to) noexcept;
+    /// Move focus along the TAB ORDER: the next (or, `reverse`, the previous) focusable, enabled,
+    /// visible element in document order within the active layer, wrapping at either end. With
+    /// nothing focused it takes the first (or the last). Returns the element focused afterwards.
+    [[nodiscard]] ElementId focus_next(const ElementStore& store, bool reverse) noexcept;
 
     // --- Pointer ----------------------------------------------------------------------------
 

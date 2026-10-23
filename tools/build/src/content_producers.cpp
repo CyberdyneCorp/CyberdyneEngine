@@ -19,6 +19,9 @@
 #if defined(CY_BUILD_HAS_VFX)
 #    include "vfx_producer.h"
 #endif
+#if defined(CY_BUILD_HAS_UI)
+#    include "ui_producer.h"
+#endif
 
 #include <atomic>
 #include <cstdio>
@@ -365,11 +368,21 @@ Status add_content_producers(ProducerRegistry& registry, const ecs::World* world
 #if defined(CY_BUILD_HAS_VFX)
     // Distributable: a VFX cook reads nothing but its declared system and the modules it
     // discovers, and names no registry a remote worker could disagree about.
-    return registry.add(Producer{"vfx", kVfxProducerVersion, produce_vfx,
-                                 /*distributable=*/true});
-#else
-    return ok();
+    if (Status added = registry.add(Producer{"vfx", kVfxProducerVersion, produce_vfx,
+                                             /*distributable=*/true});
+        !added) {
+        return added;
+    }
 #endif
+#if defined(CY_BUILD_HAS_UI)
+    // Distributable: an interface cook reads its document and what it discovers, nothing else.
+    if (Status added = registry.add(Producer{"ui", kUiProducerVersion, produce_ui,
+                                             /*distributable=*/true});
+        !added) {
+        return added;
+    }
+#endif
+    return ok();
 }
 
 }  // namespace cy::build

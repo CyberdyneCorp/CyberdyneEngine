@@ -1,0 +1,5 @@
+/* The gallery's own sheet, over the built-in theme. */
+.heading { color: #ffffff; }
+.caption { color: #8a93a6; }
+#gallery { background-color: #0b0e13; }
+#tabs { flex-grow: 1; }

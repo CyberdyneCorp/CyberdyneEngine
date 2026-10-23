@@ -76,6 +76,14 @@ if(CY_VFX)
     target_compile_definitions(cy_build_content PUBLIC CY_BUILD_HAS_VFX=1)
 endif()
 
+# The `ui` producer (issue #91) cooks `.cyui` documents into bundles with every document and sheet
+# they reach. It links the toolkit's document reader, and exists only where CY_UI does.
+if(TARGET cy_ui_toolkit)
+    target_sources(cy_build_content PRIVATE src/ui_producer.cpp)
+    target_link_libraries(cy_build_content PRIVATE cy::ui-toolkit)
+    target_compile_definitions(cy_build_content PUBLIC CY_BUILD_HAS_UI=1)
+endif()
+
 cy_add_module(
     NAME cy_build
     LAYER tools

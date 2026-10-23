@@ -1,0 +1,36 @@
+cyui 1
+// One of each container, laid out against a golden: rows and columns with grow, gaps, alignment
+// and justification; a grid with a span-free auto placement; a stack's layers; anchors and margins
+// in a panel; a clipped scroll view; and size constraints.
+panel #root anchor=[0, 0, 1, 1]
+  row #row anchor=[0, 0, 0, 0] offset=[10, 10, 410, 50] gap=10 align-items=center
+    button #fixed text="Fixed" width=80
+    button #grow text="Grows" flex-grow=1
+    button #grow-twice text="Grows twice" flex-grow=2 max-width=120
+  column #column anchor=[0, 0, 0, 0] offset=[10, 60, 210, 300] gap=4 justify-content=space-between
+    label text="Top"
+    button #wide text="Stretched"
+    button #centred text="Centred" align-self=center
+    label text="Bottom"
+  grid #grid columns=3 anchor=[0, 0, 0, 0] offset=[220, 60, 520, 180] gap=6
+    button text="1"
+    button text="2"
+    button text="3"
+    button text="4"
+    button text="5"
+  stack #stack anchor=[0, 0, 0, 0] offset=[220, 190, 420, 290]
+    panel .panel
+    label #over text="Over the panel" margin-left=12 margin-top=12
+  panel #anchored anchor=[0, 0, 1, 1] offset=[530, 60, -10, -10]
+    button #corner text="Corner" anchor=[1, 1, 1, 1] offset=[-90, -34, -10, -10]
+    button #centre text="Centre" anchor=[0.5, 0.5, 0.5, 0.5] offset=[-40, -12, 40, 12]
+    button #span text="Span" anchor=[0, 0, 1, 0] offset=[10, 10, -10, 34]
+  scroll-view #scroll anchor=[0, 0, 0, 0] offset=[10, 310, 210, 390]
+    button text="One"
+    button text="Two"
+    button text="Three"
+    button text="Four"
+  column #bounded anchor=[0, 0, 0, 0] offset=[220, 300, 520, 390] gap=4
+    button #minimum text="Min" min-width=150 align-self=start
+    button #maximum text="Max is fifty" max-width=50 align-self=start
+    button #aspect text="Aspect" aspect-ratio=4 align-self=start width=200 height=200

@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 11,
+    "minor": 12,
     "patch": 0
   },
   "functions": [
@@ -842,10 +842,90 @@
         "index": 163,
         "name": "light_status",
         "type": "CyResult(*)(CyEngine, CyLightStatus*)"
+      },
+      {
+        "index": 164,
+        "name": "ui_load_document",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiDocumentDesc*, CyUiElement*)"
+      },
+      {
+        "index": 165,
+        "name": "ui_load_stylesheet",
+        "type": "CyResult(*)(CyEngine, const char*, uint64_t)"
+      },
+      {
+        "index": 166,
+        "name": "ui_find",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char*, CyUiElement*)"
+      },
+      {
+        "index": 167,
+        "name": "ui_create_widget",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiWidgetDesc*, CyUiElement*)"
+      },
+      {
+        "index": 168,
+        "name": "ui_widget_set_text",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+      },
+      {
+        "index": 169,
+        "name": "ui_widget_text",
+        "type": "CyResult(*)(CyEngine, CyUiElement, char*, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 170,
+        "name": "ui_widget_set_value",
+        "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+      },
+      {
+        "index": 171,
+        "name": "ui_widget_value",
+        "type": "CyResult(*)(CyEngine, CyUiElement, float*)"
+      },
+      {
+        "index": 172,
+        "name": "ui_widget_set_selected",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+      },
+      {
+        "index": 173,
+        "name": "ui_widget_selected",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t*)"
+      },
+      {
+        "index": 174,
+        "name": "ui_widget_set_items",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char* const*, uint32_t)"
+      },
+      {
+        "index": 175,
+        "name": "ui_widget_set_enabled",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+      },
+      {
+        "index": 176,
+        "name": "ui_widget_set_classes",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+      },
+      {
+        "index": 177,
+        "name": "ui_widget_open",
+        "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+      },
+      {
+        "index": 178,
+        "name": "ui_widget_animate",
+        "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiAnimation*)"
+      },
+      {
+        "index": 179,
+        "name": "ui_navigate",
+        "type": "CyResult(*)(CyEngine, uint32_t, uint32_t*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1320
+    "size": 1448
   },
   "types": [
     {
@@ -1508,6 +1588,22 @@
         {
           "name": "CY_UI_EVENT_BLUR",
           "value": 2
+        },
+        {
+          "name": "CY_UI_EVENT_CHANGED",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_EVENT_SUBMITTED",
+          "value": 4
+        },
+        {
+          "name": "CY_UI_EVENT_OPENED",
+          "value": 5
+        },
+        {
+          "name": "CY_UI_EVENT_CLOSED",
+          "value": 6
         }
       ]
     },
@@ -4948,6 +5044,465 @@
       "size": 40
     },
     {
+      "kind": "enum",
+      "name": "CyUiWidgetKind",
+      "values": [
+        {
+          "name": "CY_UI_WIDGET_PANEL",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_WIDGET_ROW",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_WIDGET_COLUMN",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_WIDGET_GRID",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_WIDGET_STACK",
+          "value": 4
+        },
+        {
+          "name": "CY_UI_WIDGET_SCROLL_VIEW",
+          "value": 5
+        },
+        {
+          "name": "CY_UI_WIDGET_LABEL",
+          "value": 6
+        },
+        {
+          "name": "CY_UI_WIDGET_RICH_TEXT",
+          "value": 7
+        },
+        {
+          "name": "CY_UI_WIDGET_IMAGE",
+          "value": 8
+        },
+        {
+          "name": "CY_UI_WIDGET_BUTTON",
+          "value": 9
+        },
+        {
+          "name": "CY_UI_WIDGET_TOGGLE",
+          "value": 10
+        },
+        {
+          "name": "CY_UI_WIDGET_CHECKBOX",
+          "value": 11
+        },
+        {
+          "name": "CY_UI_WIDGET_RADIO_GROUP",
+          "value": 12
+        },
+        {
+          "name": "CY_UI_WIDGET_SLIDER",
+          "value": 13
+        },
+        {
+          "name": "CY_UI_WIDGET_PROGRESS_BAR",
+          "value": 14
+        },
+        {
+          "name": "CY_UI_WIDGET_TEXT_FIELD",
+          "value": 15
+        },
+        {
+          "name": "CY_UI_WIDGET_DROPDOWN",
+          "value": 16
+        },
+        {
+          "name": "CY_UI_WIDGET_LIST_VIEW",
+          "value": 17
+        },
+        {
+          "name": "CY_UI_WIDGET_TABS",
+          "value": 18
+        },
+        {
+          "name": "CY_UI_WIDGET_DIALOG",
+          "value": 19
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiAction",
+      "values": [
+        {
+          "name": "CY_UI_ACTION_ACCEPT",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_ACTION_CANCEL",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_ACTION_NAVIGATE_UP",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_ACTION_NAVIGATE_DOWN",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_ACTION_NAVIGATE_LEFT",
+          "value": 4
+        },
+        {
+          "name": "CY_UI_ACTION_NAVIGATE_RIGHT",
+          "value": 5
+        },
+        {
+          "name": "CY_UI_ACTION_NEXT_TAB",
+          "value": 6
+        },
+        {
+          "name": "CY_UI_ACTION_PREVIOUS_TAB",
+          "value": 7
+        },
+        {
+          "name": "CY_UI_ACTION_CONTEXT",
+          "value": 8
+        },
+        {
+          "name": "CY_UI_ACTION_SCROLL_UP",
+          "value": 9
+        },
+        {
+          "name": "CY_UI_ACTION_SCROLL_DOWN",
+          "value": 10
+        },
+        {
+          "name": "CY_UI_ACTION_FOCUS_NEXT",
+          "value": 11
+        },
+        {
+          "name": "CY_UI_ACTION_FOCUS_PREVIOUS",
+          "value": 12
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiAnimatedProperty",
+      "values": [
+        {
+          "name": "CY_UI_ANIMATE_OPACITY",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_ANIMATE_TRANSLATE_X",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_ANIMATE_TRANSLATE_Y",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_ANIMATE_SCALE",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_ANIMATE_BACKGROUND",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyUiEasing",
+      "values": [
+        {
+          "name": "CY_UI_EASING_LINEAR",
+          "value": 0
+        },
+        {
+          "name": "CY_UI_EASING_EASE_IN",
+          "value": 1
+        },
+        {
+          "name": "CY_UI_EASING_EASE_OUT",
+          "value": 2
+        },
+        {
+          "name": "CY_UI_EASING_EASE_IN_OUT",
+          "value": 3
+        },
+        {
+          "name": "CY_UI_EASING_EASE",
+          "value": 4
+        },
+        {
+          "name": "CY_UI_EASING_SPRING",
+          "value": 5
+        },
+        {
+          "name": "CY_UI_EASING_BACK",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "id",
+          "offset": 8,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "classes",
+          "offset": 16,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "text",
+          "offset": 24,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "placeholder",
+          "offset": 32,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "title",
+          "offset": 40,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "items",
+          "offset": 48,
+          "size": 8,
+          "type": "const char* const*"
+        },
+        {
+          "alignment": 4,
+          "name": "item_count",
+          "offset": 56,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 60,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "value",
+          "offset": 64,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "minimum",
+          "offset": 68,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "maximum",
+          "offset": 72,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "step",
+          "offset": 76,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "columns",
+          "offset": 80,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "row_height",
+          "offset": 84,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 8,
+          "name": "owner",
+          "offset": 88,
+          "size": 8,
+          "type": "CyEntity"
+        }
+      ],
+      "name": "CyUiWidgetDesc",
+      "size": 96
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "text",
+          "offset": 8,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "text_size",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "path",
+          "offset": 24,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "owner",
+          "offset": 32,
+          "size": 8,
+          "type": "CyEntity"
+        }
+      ],
+      "name": "CyUiDocumentDesc",
+      "size": 40
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "property",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "from",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "to",
+          "offset": 12,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "from_colour",
+          "offset": 16,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "to_colour",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "duration",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "delay",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "easing",
+          "offset": 32,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 36,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyUiAnimation",
+      "size": 40
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -6134,10 +6689,122 @@
           "offset": 1312,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyLightStatus*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_load_document",
+          "offset": 1320,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiDocumentDesc*, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_load_stylesheet",
+          "offset": 1328,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const char*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_find",
+          "offset": 1336,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char*, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_create_widget",
+          "offset": 1344,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiWidgetDesc*, CyUiElement*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_text",
+          "offset": 1352,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_text",
+          "offset": 1360,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, char*, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_value",
+          "offset": 1368,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_value",
+          "offset": 1376,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_selected",
+          "offset": 1384,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_selected",
+          "offset": 1392,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_items",
+          "offset": 1400,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char* const*, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_enabled",
+          "offset": 1408,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_set_classes",
+          "offset": 1416,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_open",
+          "offset": 1424,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_widget_animate",
+          "offset": 1432,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyUiElement, const CyUiAnimation*)"
+        },
+        {
+          "alignment": 8,
+          "name": "ui_navigate",
+          "offset": 1440,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, uint32_t, uint32_t*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1320
+      "size": 1448
     },
     {
       "kind": "enum",

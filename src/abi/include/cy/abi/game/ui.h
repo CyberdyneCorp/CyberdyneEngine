@@ -6,10 +6,10 @@
 // `cy::ui::ElementStore`, `cy::ui::TextPainter` and `cy::ui::Interaction`. A build without the
 // interface binds none, and every 1.6 entry answers UNAVAILABLE.
 //
-// The thunks (src/abi/src/game/ui_thunks.cpp) check the engine, the phase, the binding and the
-// pointers, and normalise every sized struct; a backend validates DOMAIN facts — a stale element,
-// one the module did not create, a write the kind does not take — and reports them with
-// `cy::abi::report`, returning the code.
+// The thunks (src/abi/src/game/ui_thunks.cpp, and toolkit_thunks.cpp for 1.12's widgets) check the
+// engine, the phase, the binding and the pointers, and normalise every sized struct; a backend
+// validates DOMAIN facts — a stale element, one the module did not create, a write the kind does
+// not take — and reports them with `cy::abi::report`, returning the code.
 
 #pragma once
 
@@ -53,6 +53,45 @@ public:
     [[nodiscard]] virtual CyUiElement focus() const noexcept = 0;
     /// CY_UI_ELEMENT_NULL clears focus.
     [[nodiscard]] virtual CyResult set_focus(CyUiElement element) noexcept = 0;
+
+    // --- 1.12: the widget toolkit --------------------------------------------------------------
+    //
+    // Not pure: a backend with no toolkit attached answers every one of them UNAVAILABLE, which is
+    // what these defaults do. The thunks have normalised every sized struct and checked every
+    // enumerator and float; a backend validates what only it knows — the widget, its kind.
+
+    /// `desc` is whole; exactly one of its text and its path is set.
+    [[nodiscard]] virtual CyResult load_document(CyUiElement parent, const CyUiDocumentDesc& desc,
+                                                 CyUiElement& out_root) noexcept;
+    /// `utf8` is `size` bytes, not necessarily terminated.
+    [[nodiscard]] virtual CyResult load_stylesheet(const char* utf8, u64 size) noexcept;
+    /// `id` is non-null.
+    [[nodiscard]] virtual CyResult find(CyUiElement scope, const char* id,
+                                        CyUiElement& out) const noexcept;
+    /// `desc` is whole, its kind a CyUiWidgetKind other than IMAGE, its floats finite.
+    [[nodiscard]] virtual CyResult create_widget(CyUiElement parent, const CyUiWidgetDesc& desc,
+                                                 CyUiElement& out) noexcept;
+    [[nodiscard]] virtual CyResult widget_set_text(CyUiElement widget, const char* utf8) noexcept;
+    /// The widget's text, valid until the next write to the interface.
+    [[nodiscard]] virtual CyResult widget_text(CyUiElement widget, const char*& out,
+                                               u32& size) const noexcept;
+    [[nodiscard]] virtual CyResult widget_set_value(CyUiElement widget, f32 value) noexcept;
+    [[nodiscard]] virtual CyResult widget_value(CyUiElement widget, f32& out) const noexcept;
+    [[nodiscard]] virtual CyResult widget_set_selected(CyUiElement widget, u32 index) noexcept;
+    [[nodiscard]] virtual CyResult widget_selected(CyUiElement widget, u32& out) const noexcept;
+    /// Every item is non-null.
+    [[nodiscard]] virtual CyResult widget_set_items(CyUiElement widget, const char* const* items,
+                                                    u32 count) noexcept;
+    [[nodiscard]] virtual CyResult widget_set_enabled(CyUiElement widget, bool enabled) noexcept;
+    /// `classes` is non-null.
+    [[nodiscard]] virtual CyResult widget_set_classes(CyUiElement widget,
+                                                      const char* classes) noexcept;
+    [[nodiscard]] virtual CyResult widget_open(CyUiElement widget, bool open) noexcept;
+    /// `animation` is whole, its property and easing known, its times finite and non-negative.
+    [[nodiscard]] virtual CyResult widget_animate(CyUiElement widget,
+                                                  const CyUiAnimation& animation) noexcept;
+    /// `action` is a CyUiAction.
+    [[nodiscard]] virtual CyResult navigate(u32 action, bool& consumed) noexcept;
 };
 
 }  // namespace cy::abi::game

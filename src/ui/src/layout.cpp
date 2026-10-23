@@ -525,14 +525,23 @@ Status measure_element(Cursor& cursor, ElementId element, Vec2 available) noexce
             content.x + (content.width * child_input->anchor_max.x) + child_input->offset_max.x;
         const f32 far_y =
             content.y + (content.height * child_input->anchor_max.y) + child_input->offset_max.y;
-        rect.width = far_x - rect.x;
-        rect.height = far_y - rect.y;
+        // MARGINS INSET THE ANCHORED RECT, as CSS's do an absolutely positioned box's: a child
+        // stretched over its parent with a margin of eight sits eight in from every edge.
+        const Insets& margin = child_input->margin;
+        rect.x += margin.left;
+        rect.y += margin.top;
+        rect.width = (far_x - margin.right) - rect.x;
+        rect.height = (far_y - margin.bottom) - rect.y;
         // A degenerate anchor pair — both anchors equal, no offsets — means "use the desired size
         // at this point", which is how a fixed-size element is anchored to a corner.
-        if (rect.width <= 0.0F) {
+        if (far_x - (content.x + (content.width * child_input->anchor_min.x) +
+                     child_input->offset_min.x) <=
+            0.0F) {
             rect.width = child_output->desired.x;
         }
-        if (rect.height <= 0.0F) {
+        if (far_y - (content.y + (content.height * child_input->anchor_min.y) +
+                     child_input->offset_min.y) <=
+            0.0F) {
             rect.height = child_output->desired.y;
         }
         const Vec2 constrained = constrain(*child_input, Vec2{rect.width, rect.height});
