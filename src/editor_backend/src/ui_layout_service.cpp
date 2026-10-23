@@ -489,7 +489,7 @@ namespace {
         for (u32 part = 0; part < rule.part_count; ++part) {
             for (u32 index = 0; index < rule.parts[part].class_count; ++index) {
                 const Name name = rule.parts[part].classes[index];
-                if (std::find(out.begin(), out.end(), name) != out.end()) {
+                if (std::ranges::find(out.begin(), out.end(), name) != out.end()) {
                     continue;
                 }
                 if (Status pushed = out.push_back(name); !pushed) {
@@ -673,8 +673,10 @@ Status UiLayoutPreview::draw(const UiPreviewRequest& request, UiPreviewResult& o
         std::min({1.0F, static_cast<f32>(request.image_max_width) / static_cast<f32>(request.width),
                   static_cast<f32>(request.image_max_height) / static_cast<f32>(request.height)});
     out.image_factor = factor;
-    out.image_width = std::max(1U, static_cast<u32>(std::lround(request.width * factor)));
-    out.image_height = std::max(1U, static_cast<u32>(std::lround(request.height * factor)));
+    out.image_width =
+        std::max(1U, static_cast<u32>(std::lround(static_cast<f32>(request.width) * factor)));
+    out.image_height =
+        std::max(1U, static_cast<u32>(std::lround(static_cast<f32>(request.height) * factor)));
     const ui::Rect viewport{0.0F, 0.0F, static_cast<f32>(request.width) / out.scale,
                             static_cast<f32>(request.height) / out.scale};
     ui::FlattenReport flattened;
@@ -695,7 +697,7 @@ Status UiLayoutPreview::draw(const UiPreviewRequest& request, UiPreviewResult& o
         !sized) {
         return sized;
     }
-    std::fill(out.pixels.begin(), out.pixels.end(), kCanvasBackground);
+    std::ranges::fill(out.pixels.begin(), out.pixels.end(), kCanvasBackground);
     if (Status drawn = ui::render::draw_reference(
             state.draws, Span<const ui::render::ReferenceAtlas>(atlases, kAtlasPages),
             out.image_width, out.image_height, out.pixels.span());

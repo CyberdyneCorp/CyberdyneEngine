@@ -18,6 +18,7 @@
 #include <cy/game_backend/input_backend.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -61,8 +62,33 @@ void spell(Control control, char (&out)[64]) noexcept {
 }
 
 template <usize Size>
-void copy_out(char (&out)[Size], const char* text) noexcept {
-    (void)std::snprintf(out, Size, "%s", text);
+void copy_out(char (&out)[Size], std::string_view text) noexcept {
+    (void)std::snprintf(out, Size, "%.*s", static_cast<int>(text.size()), text.data());
+}
+
+/// The next space-separated word of `line`, consumed from it; empty at the end.
+[[nodiscard]] std::string_view next_word(std::string_view& line) noexcept {
+    const usize start = line.find_first_not_of(' ');
+    if (start == std::string_view::npos) {
+        line = {};
+        return {};
+    }
+    line.remove_prefix(start);
+    const usize end = std::min(line.find(' '), line.size());
+    const std::string_view word = line.substr(0, end);
+    line.remove_prefix(end);
+    return word;
+}
+
+/// A whole decimal word as a number, or false.
+[[nodiscard]] bool read_number(std::string_view word, u32& out) noexcept {
+    if (word.empty()) {
+        return false;
+    }
+    const char* first = &word.front();
+    const char* last = first + word.size();
+    const std::from_chars_result read = std::from_chars(first, last, out);
+    return read.ec == std::errc{} && read.ptr == last;
 }
 
 /// Whether `control` is the cancel control of the scheme being rebound.
@@ -73,23 +99,18 @@ void copy_out(char (&out)[Size], const char* text) noexcept {
 
 /// One profile line's four fields, or false. `unbound` is set for the explicit `none`.
 [[nodiscard]] bool read_line(std::string_view line, BindingOverride& out, bool& unbound) noexcept {
-    char scheme[16] = {};
+    u32 stable = 0;
+    u32 slot = 0;
+    const bool numbered = read_number(next_word(line), stable);
+    const std::string_view word = next_word(line);
+    const bool slotted = read_number(next_word(line), slot);
+    const std::string_view spelled = next_word(line);
     char path[64] = {};
-    unsigned stable = 0;
-    unsigned slot = 0;
-    char copy[160] = {};
-    if (line.size() >= sizeof(copy)) {
+    if (!numbered || !slotted || stable == 0U || slot > 255U || spelled.empty() ||
+        spelled.size() >= sizeof(path) || (word != "keyboard" && word != "gamepad")) {
         return false;
     }
-    std::memcpy(copy, line.data(), line.size());
-    if (std::sscanf(copy, "%u %15s %u %63s", &stable, scheme, &slot, path) != 4 || stable == 0U ||
-        slot > 255U) {
-        return false;
-    }
-    const std::string_view word(scheme);
-    if (word != "keyboard" && word != "gamepad") {
-        return false;
-    }
+    std::memcpy(path, spelled.data(), spelled.size());
     out.action = ActionStableId{stable};
     out.scheme = word == "gamepad" ? SchemeKind::Gamepad : SchemeKind::KeyboardMouse;
     out.slot = static_cast<u8>(slot);
@@ -135,7 +156,7 @@ void InputAdapter::offer(const cy::input::DeviceEvent& event) noexcept {
     const u32 routed = devices.route(event.device, shared);
     for (u32 user = 0; user < kMaxPointerUsers && user < server_->user_count(); ++user) {
         Rebind& rebind = rebinds_[user];
-        if (rebind.status != CY_INPUT_REBIND_LISTENING || !(shared || routed == user)) {
+        if (rebind.status != CY_INPUT_REBIND_LISTENING || (!shared && routed != user)) {
             continue;
         }
         if (event.value != 0.0F && cancels(event.control)) {
@@ -161,7 +182,7 @@ void InputAdapter::settle(u32 user, Rebind& rebind) noexcept {
     u8 holder_slot = 0;
     const bool held =
         target.holder_of(rebind.candidate, scheme, rebind.action, holder, holder_slot) &&
-        !(holder == rebind.action && holder_slot == rebind.slot);
+        (holder != rebind.action || holder_slot != rebind.slot);
     if (held && holder != rebind.action && rebind.policy == CY_INPUT_CONFLICT_REJECT) {
         rebind.status = CY_INPUT_REBIND_CONFLICT;
         rebind.conflict = holder;
@@ -209,7 +230,7 @@ CyResult InputAdapter::rebind_poll(u32 user, CyInputRebind& out) noexcept {
         copy_out(out.control, path);
     }
     if (rebind.has_conflict && rebind.conflict < server_->actions().count()) {
-        copy_out(out.conflict, server_->actions().at(rebind.conflict).name.text().data());
+        copy_out(out.conflict, server_->actions().at(rebind.conflict).name.text());
     }
     return CY_RESULT_OK;
 }
