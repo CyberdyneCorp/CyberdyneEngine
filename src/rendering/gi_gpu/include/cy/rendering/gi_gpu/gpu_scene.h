@@ -118,6 +118,22 @@ struct GpuTraceHit {
     Vec3 normal{0.0F, 1.0F, 0.0F};
 };
 
+/// The field as a reader outside this module binds it: the two buffers and the placement the last
+/// `upload_field` wrote. What particle collision reads the scene through (`vfx.collide.sdf`): the
+/// field's own device copy, bound rather than copied, so a particle collides with the geometry the
+/// GI traces against in the same frame.
+struct FieldBinding {
+    /// `uint` per brick of every level's window, toroidally addressed: a brick-pool slot, or
+    /// `gi::kEmptyBrick`.
+    rhi::BufferHandle page_table;
+    /// `gi::DistanceField::brick_pool()`, `gi::kBrickSamples` floats a slot.
+    rhi::BufferHandle bricks;
+    u32 levels = 0;
+    /// Bricks along each axis of a level's window.
+    u32 window_bricks = 0;
+    gi::FieldLevelView level[kMaxFieldLevels];
+};
+
 class GpuSurfaceShading;
 class GpuRadianceCache;
 class GpuTierTracer;
@@ -179,6 +195,8 @@ public:
     [[nodiscard]] const FieldUploadReport& last_field_upload() const noexcept {
         return field_report_;
     }
+    /// The field's buffers and placement as of the last `upload_field`; zero levels before one.
+    [[nodiscard]] FieldBinding field_binding() const noexcept;
     [[nodiscard]] const CardUploadReport& last_card_upload() const noexcept { return card_report_; }
     [[nodiscard]] const GpuGiSceneDescription& description() const noexcept { return desc_; }
 

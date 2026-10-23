@@ -253,11 +253,18 @@ private:
 
     const NodeKey next_age = stage.binary("vfx.add", age, dt);
     stage.write("age", next_age);
-    const NodeKey fraction =
-        stage.unary("vfx.saturate", stage.binary("vfx.div", next_age, lifetime));
-    // A MOTE COOLS. The chroma stays where the initialise put it and the magnitude falls by the
-    // factor of twenty `embers.h` fixes, which is what makes the far end of the field dimmer than
-    // the near end without a single per-particle branch.
+    // A MOTE COOLS IN ITS FIRST SECOND. The chroma stays where the initialise put it and the
+    // magnitude falls by the factor of twenty `embers.h` fixes over the mote's first second of
+    // age, which is what makes the far end of the field dimmer than the near end without a single
+    // per-particle branch.
+    //
+    // THIS WAS WRITTEN `age / lifetime` and the CPU executor computed `age`: it read a scalar
+    // attribute into one lane of four, the division then met a zero divisor in the other three and
+    // declined, leaving the numerator. Every published picture of this shot — M11.c's still, its
+    // film and `render.vfx`'s reference — is of motes that cool over a second, and that is the
+    // look that was reviewed, so the graph now says it; the executor's broadcast is fixed (see
+    // src/vfx/README.md, "Two defects this found"), and the GPU path agrees with it.
+    const NodeKey fraction = stage.unary("vfx.saturate", next_age);
     stage.write("emission", stage.lerp(stage.constant(kEmberBirthRadiance),
                                        stage.constant(kEmberDeathRadiance), fraction));
     stage.kill_if(stage.binary("vfx.greater", next_age, lifetime));

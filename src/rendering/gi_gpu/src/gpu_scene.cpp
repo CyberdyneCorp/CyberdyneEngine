@@ -392,6 +392,29 @@ void GpuGiScene::write_constants() noexcept {
 
 // --- The field -----------------------------------------------------------------------------------
 
+FieldBinding GpuGiScene::field_binding() const noexcept {
+    FieldBinding binding;
+    binding.page_table = buffers_[kPageTable];
+    binding.bricks = buffers_[kBricks];
+    if (!field_uploaded_) {
+        return binding;
+    }
+    binding.levels = std::min(field_levels_, kMaxFieldLevels);
+    binding.window_bricks = field_window_;
+    // The rows `upload_field` wrote for the trace, read back rather than kept twice.
+    for (u32 level = 0; level < binding.levels; ++level) {
+        const u32 row = kLevels + (level * 8U);
+        gi::FieldLevelView& view = binding.level[level];
+        std::memcpy(&view.voxel_size, &constants_[row + 0U], sizeof(f32));
+        std::memcpy(&view.brick_size, &constants_[row + 1U], sizeof(f32));
+        std::memcpy(&view.far_distance, &constants_[row + 2U], sizeof(f32));
+        for (u32 axis = 0; axis < 3U; ++axis) {
+            std::memcpy(&view.origin_brick[axis], &constants_[row + 4U + axis], sizeof(i32));
+        }
+    }
+    return binding;
+}
+
 void GpuGiScene::apply_brick(const gi::DistanceField& field, const gi::FieldBrickChange& change,
                              FieldUploadReport& report) noexcept {
     const i32 dim = static_cast<i32>(field_window_);

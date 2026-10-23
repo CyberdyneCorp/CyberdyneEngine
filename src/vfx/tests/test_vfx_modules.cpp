@@ -15,6 +15,7 @@
 #include <cy/vfx/world.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -466,4 +467,95 @@ CY_TEST_CASE("a stage-incompatible module fails naming the emitter, the module a
     CY_REQUIRE(nested.ok);
     CY_CHECK_FALSE(nested.run(system_text({"user"}, {"user", "spawner"}), {user, spawner}));
     check_names_emitter_and_module(nested, "vfx.module.stage", "spawner");
+}
+
+namespace {
+
+[[nodiscard]] u32 float_bits(f32 value) noexcept {
+    u32 bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+/// A reusable collision module, as the desktop saves one: an Update module that integrates gravity
+/// and hands the result to a ground plane with no bounce. Every value an author would type is a
+/// property on the collider node — `restitution 0`, `friction 0.4` — rather than a constant node.
+[[nodiscard]] ModuleSpec ground_bounce_module() {
+    ModuleSpec spec;
+    spec.name = "ground_bounce";
+    spec.inputs = {{"position", "vec3"}, {"velocity", "vec3"}};
+    spec.body =
+        "node 1 vfx.attribute\nprop 1 attribute position\n"
+        "node 2 vfx.attribute\nprop 2 attribute velocity\n"
+        "node 3 vfx.input\nprop 3 input dt\n"
+        "node 4 vfx.constant\nprop 4 value 0 -9.81 0\n"
+        "node 5 vfx.mul\nlink 4 out 5 a\nlink 3 out 5 b\n"
+        "node 6 vfx.add\nlink 2 out 6 a\nlink 5 out 6 b\n"
+        "node 7 vfx.mul\nlink 6 out 7 a\nlink 3 out 7 b\n"
+        "node 8 vfx.add\nlink 1 out 8 a\nlink 7 out 8 b\n"
+        "node 9 vfx.collide.plane\nprop 9 restitution 0\nprop 9 friction 0.4\n"
+        "prop 9 radius 0.05\nlink 8 out 9 position\nlink 6 out 9 velocity\n"
+        "node 10 vfx.set_attribute\nprop 10 attribute position\nlink 9 position 10 value\n"
+        "node 11 vfx.set_attribute\nprop 11 attribute velocity\nlink 9 velocity 11 value\n";
+    return spec;
+}
+
+/// One CPU emitter that drops a particle from two metres and uses `ground_bounce` for its Update.
+[[nodiscard]] std::string dropping_system() {
+    Payload payload;
+    payload.u32v(3).text("drop").u32v(1);
+    const std::string header = "cyvfxcanvas 1\nemitter drops\n";
+    payload.text("drops").u8v(1).text("Sprite").u32v(2);
+    payload.u8v(static_cast<u8>(Stage::Spawn))
+        .text(header +
+              "node 1 vfx.constant\nprop 1 value 1\nnode 2 vfx.spawn_count\n"
+              "link 1 out 2 value\n");
+    payload.u8v(static_cast<u8>(Stage::Initialise))
+        .text(header +
+              "node 1 vfx.constant\nprop 1 value 0 2 0\nnode 2 vfx.set_attribute\n"
+              "prop 2 attribute position\nlink 1 out 2 value\n"
+              "node 3 vfx.constant\nprop 3 value 1 0 0\nnode 4 vfx.set_attribute\n"
+              "prop 4 attribute velocity\nlink 3 out 4 value\n");
+    payload.u32v(1).text("ground_bounce");
+    payload.u32v(0);          // interfaces
+    payload.u32v(1).u32v(2);  // capacity, attributes
+    for (const char* name : {"position", "velocity"}) {
+        payload.text(name).text("vec3");
+        payload.u32v(float_bits(-100.0F)).u32v(float_bits(100.0F)).u32v(0).text("Auto");
+    }
+    payload.u32v(0).u32v(0);  // parameters, channels
+    payload.u32v(1).text("ground_bounce").text("effects/modules/ground_bounce.cyvfxmodule");
+    return payload.envelope("cyvfxdoc 1\n");
+}
+
+}  // namespace
+
+CY_TEST_CASE("a saved collision module lands a particle on the ground, with friction") {
+    // The collide nodes are reusable through #24's module assets like any other node: the module's
+    // collider lowers into the emitter's Update and the particle, launched sideways at 1 m/s,
+    // lands one radius above the floor and is stopped by its friction there.
+    Cook cook;
+    CY_REQUIRE(cook.ok);
+    const bool cooked = cook.run(dropping_system(), {ground_bounce_module()});
+    for (const graph::Diagnostic& entry : cook.sink.entries()) {
+        std::fprintf(stderr, "cook: %s [%s] %s\n", entry.message, entry.detail.c_str(),
+                     entry.code != nullptr ? entry.code : "");
+    }
+    CY_REQUIRE(cooked);
+    CY_CHECK(cook.cooked->emitters()[0].collides());
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(WorldDescription{}).has_value());
+    EffectSpawn spawn;
+    spawn.simulation_hz = 60.0F;
+    CY_REQUIRE(world.play(*cook.cooked, spawn).has_value());
+    StepReport stepped;
+    for (u32 frame = 0; frame < 120; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, stepped).has_value());
+    }
+    const EffectInstance& instance = world.instances()[0];
+    const Name position = Name::intern("position");
+    const Name velocity = Name::intern("velocity");
+    CY_CHECK_NEAR(world.read_attribute(instance, 0, 0, position, 1), 0.05F, 1.0e-4F);
+    CY_CHECK_EQ(world.read_attribute(instance, 0, 0, velocity, 0), 0.0F);
+    CY_CHECK_GT(world.read_attribute(instance, 0, 0, position, 0), 0.5F);
 }

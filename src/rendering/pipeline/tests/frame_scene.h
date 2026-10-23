@@ -141,6 +141,12 @@ struct FrameSceneHooks {
     /// The frame's lights, after the scene's sun and two point lights are written: a sample lit by
     /// its own sun replaces them.
     void (*lights)(Array<render::LightDescription>& lights, void* user) noexcept = nullptr;
+    /// The particles `RecordMode::CallbacksAndParticles` draws, read each `render`, instead of the
+    /// scene's own plume: what a suite that simulates an effect draws in this frame.
+    /// Camera-relative to the scene's eye, as a publication makes them.
+    Span<const particles::ParticleInstance> (*particles)(void* user) noexcept = nullptr;
+    /// The particle ring's capacity when `particles` draws more than the plume's `kParticleCount`.
+    u32 particle_capacity = 0;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.

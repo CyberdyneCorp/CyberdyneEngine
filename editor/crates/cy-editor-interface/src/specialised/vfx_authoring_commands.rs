@@ -2155,6 +2155,69 @@ mod tests {
         );
     }
 
+    /// The engine's colliders are the one VFX node with several outputs: a link leaves the output
+    /// it names, and the saved canvas says which.
+    fn collider_catalogue() -> Vec<u8> {
+        let mut out = Writer::new();
+        out.u32(1); // schema
+        out.u32(1); // engine catalogue version
+        out.u32(2);
+        out.u32(1033);
+        out.u32(1);
+        out.text("vfx.collide.plane");
+        let pins = [
+            ("position", 0_u8),
+            ("velocity", 0),
+            ("position", 1),
+            ("velocity", 1),
+            ("contact", 1),
+        ];
+        out.u32(u32::try_from(pins.len()).unwrap());
+        for (index, (name, direction)) in pins.iter().enumerate() {
+            out.u32(u32::try_from(index).unwrap() + 1);
+            out.u8(*direction);
+            out.text(name);
+            out.text("float3");
+        }
+        out.u32(0); // properties
+        out.u32(1029);
+        out.u32(1);
+        out.text("vfx.set_attribute");
+        out.u32(1);
+        out.u32(1);
+        out.u8(0);
+        out.text("value");
+        out.text("float3");
+        out.u32(0);
+        out.finish()
+    }
+
+    #[test]
+    fn a_collider_links_from_the_output_it_names_and_reopens_so() {
+        let catalogue = collider_catalogue();
+        let mut document = document();
+        edit_canvas(
+            &mut document,
+            &catalogue,
+            "embers",
+            Stage::Update,
+            |canvas| {
+                let collider = canvas.add("vfx.collide.plane", Layout::default())?;
+                let write = canvas.add("vfx.set_attribute", Layout::default())?;
+                canvas.connect(collider, "velocity", write, "value")?;
+                Ok(Outcome::new("collider wired"))
+            },
+        )
+        .unwrap();
+        let saved = document.encode_text().unwrap();
+        let reopened = VfxDocument::decode_text(&saved).unwrap();
+        let canvas = stage_canvas(&catalogue, &reopened, 0, Stage::Update).unwrap();
+        assert_eq!(canvas.nodes().count(), 2);
+        assert_eq!(canvas.links().count(), 1);
+        let link = canvas.links().next().unwrap();
+        assert_eq!(link.from_pin.as_str(), "velocity");
+    }
+
     #[test]
     fn stage_wire_and_node_removal_preserve_other_saved_nodes() {
         let catalogue = engine_catalogue();

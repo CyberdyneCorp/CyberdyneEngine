@@ -5,6 +5,7 @@
 
 #include <cy/backends/rhi/validation.h>
 #include <cy/core/memory/scope.h>
+#include <cy/rendering/graph/executor.h>
 
 #include <algorithm>
 #include <cstring>
@@ -79,6 +80,14 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
         return fail(ErrorCode::OutOfRange,
                     "GpuPassDescription::emitter is past the end of the compiled system");
     }
+    if (system.emitters()[desc.emitter].consumes_events()) {
+        // REFUSED BY NAME rather than simulated with every event read answering zero: a spark
+        // emitter that silently spawned nothing on the device would be a false green.
+        return fail(ErrorCode::Unsupported,
+                    "this emitter spawns from another emitter's events (`vfx.event_count`, "
+                    "`vfx.event_payload`), which the CPU path runs and the GPU path does not: a "
+                    "GPU event chain is still one level deep");
+    }
 
     allocator_ = &allocator;
     device_ = &device;
@@ -95,6 +104,7 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
     block_words_ = gpu_block_words(emitter.layout(), block_capacity_);
     parameter_words_ = static_cast<u32>(system.parameters().size()) * 4U;
     channel_count_ = std::min(static_cast<u32>(system.channels().size()), kGpuMaxEventChannels);
+    collides_ = emitter.collides();
     has_position_ = false;
     if (const AttributeSlot* position = emitter.layout().find(Name::intern("position"));
         position != nullptr) {
@@ -120,7 +130,36 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
         destroy();
         return written;
     }
+    if (desc.timed && device.capabilities().has(rhi::Capability::TimestampQueries)) {
+        rhi::QueryPoolDescription timer;
+        timer.name = "vfx sub-step timestamps";
+        timer.kind = rhi::QueryKind::Timestamp;
+        timer.count = 4;
+        if (Expected<rhi::QueryPoolHandle, Error> pool = device.create_query_pool(timer); pool) {
+            timer_ = *pool;
+        }
+    }
     return ok();
+}
+
+f64 VfxGpuPass::timer_ms(u32 first) const noexcept {
+    if (device_ == nullptr || !timer_ || !timed_frame_) {
+        return -1.0;
+    }
+    u64 stamps[2] = {};
+    Expected<u32, Error> read = device_->read_query_results(timer_, first, 2, Span<u64>(stamps, 2));
+    if (!read || *read != 2 || stamps[1] < stamps[0]) {
+        return -1.0;
+    }
+    return static_cast<f64>(stamps[1] - stamps[0]) / 1.0e6;
+}
+
+f64 VfxGpuPass::last_device_ms() const noexcept {
+    return timer_ms(0);
+}
+
+f64 VfxGpuPass::last_update_ms() const noexcept {
+    return timer_ms(2);
 }
 
 Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
@@ -235,10 +274,36 @@ Status VfxGpuPass::create_pipelines(const rhi::ShaderModuleBundle& kernel) noexc
     }
     set_layout_ = *layout;
 
+    // THE COLLISION SET, for an emitter that collides and for no other: the layout of every other
+    // emitter's pipelines is the one it had before collision existed.
+    rhi::DescriptorSetLayoutHandle set_layouts[2] = {set_layout_, {}};
+    if (collides_) {
+        rhi::DescriptorBinding collision[kGpuCollisionBindingCount] = {};
+        for (u32 index = 0; index < kGpuCollisionBindingCount; ++index) {
+            collision[index].binding = index;
+            collision[index].kind = index == kGpuCollisionDepth
+                                        ? rhi::DescriptorKind::SampledTexture
+                                        : rhi::DescriptorKind::StorageBuffer;
+            collision[index].count = 1;
+            collision[index].stages = rhi::ShaderStage::Compute;
+        }
+        rhi::DescriptorSetLayoutDescription collision_layout;
+        collision_layout.name = "vfx collision set";
+        collision_layout.bindings =
+            Span<const rhi::DescriptorBinding>(collision, kGpuCollisionBindingCount);
+        auto made = device_->create_descriptor_set_layout(collision_layout);
+        if (!made.has_value()) {
+            return make_unexpected(made.error());
+        }
+        collision_layout_ = *made;
+        set_layouts[kGpuCollisionSet] = collision_layout_;
+    }
+
     const rhi::PushConstantRange range{rhi::ShaderStage::Compute, 0, sizeof(GpuPushConstants)};
     rhi::PipelineLayoutDescription pipeline_layout;
     pipeline_layout.name = "vfx layout";
-    pipeline_layout.set_layouts = Span<const rhi::DescriptorSetLayoutHandle>(&set_layout_, 1);
+    pipeline_layout.set_layouts =
+        Span<const rhi::DescriptorSetLayoutHandle>(set_layouts, collides_ ? 2U : 1U);
     pipeline_layout.push_constants = Span<const rhi::PushConstantRange>(&range, 1);
     auto pipeline_layout_handle = device_->create_pipeline_layout(pipeline_layout);
     if (!pipeline_layout_handle.has_value()) {
@@ -363,6 +428,11 @@ Status VfxGpuPass::create_buffers() noexcept {
         }
         *request.out = *buffer;
     }
+    if (collides_) {
+        if (Status created = create_collision_resources(); !created) {
+            return created;
+        }
+    }
     if (!desc_.read_back) {
         return ok();
     }
@@ -391,6 +461,126 @@ Status VfxGpuPass::create_buffers() noexcept {
         }
         *request.out = *buffer;
     }
+    return ok();
+}
+
+Status VfxGpuPass::create_collision_resources() noexcept {
+    // The constants are Upload, like the parameters: a few hundred bytes the host rewrites when
+    // the camera or the field moves, never per-particle data.
+    //
+    // ONE A FRAME IN FLIGHT. The host writes the camera and the field's placement here every frame,
+    // and a single block written in place would change under a frame the device has not finished.
+    rhi::BufferDescription constants;
+    constants.name = "vfx collision constants";
+    constants.size = static_cast<u64>(kGpuCollisionRows) * 4U * sizeof(u32);
+    constants.usage = rhi::BufferUsage::Storage;
+    constants.memory = rhi::MemoryUse::Upload;
+    for (rhi::BufferHandle& handle : buffers_.collision_constants) {
+        auto made = device_->create_buffer(constants);
+        if (!made.has_value()) {
+            return make_unexpected(made.error());
+        }
+        handle = *made;
+    }
+    rhi::BufferDescription empty = constants;
+    empty.name = "vfx collision stand-in";
+    empty.size = 16;
+    auto empty_buffer = device_->create_buffer(empty);
+    if (!empty_buffer.has_value()) {
+        return make_unexpected(empty_buffer.error());
+    }
+    buffers_.collision_empty = *empty_buffer;
+    void* stand_in = device_->buffer_mapped_pointer(buffers_.collision_empty);
+    if (stand_in == nullptr) {
+        return fail(ErrorCode::Internal, "the VFX collision stand-in is not mapped");
+    }
+    std::memset(stand_in, 0, 16);
+    // A texel for the depth binding when the host binds none. Never read: the flags say so first.
+    rhi::TextureDescription blank;
+    blank.name = "vfx collision depth stand-in";
+    blank.format = rhi::Format::R32Sfloat;
+    blank.extent = rhi::Extent3D{1, 1, 1};
+    blank.usage = rhi::TextureUsage::Sampled;
+    auto texture = device_->create_texture(blank);
+    if (!texture.has_value()) {
+        return make_unexpected(texture.error());
+    }
+    collision_blank_ = *texture;
+    return ok();
+}
+
+Status VfxGpuPass::set_collision(const GpuCollisionInputs& inputs) noexcept {
+    if (device_ == nullptr || !collides_) {
+        return fail(ErrorCode::InvalidArgument,
+                    "set_collision on a VFX GPU pass whose emitter collides with nothing");
+    }
+    if (inputs.field != nullptr && inputs.field->levels > kGpuCollisionMaxLevels) {
+        return fail(ErrorCode::OutOfRange,
+                    "the scene field has more clipmap levels than the collision constants hold");
+    }
+    collision_ = GpuCollisionInputs{};
+    collision_.origin = inputs.origin;
+    if (inputs.field != nullptr && inputs.field->levels > 0 && inputs.field->page_table &&
+        inputs.field->bricks) {
+        collision_field_ = *inputs.field;
+        collision_.field = &collision_field_;
+    }
+    if (inputs.depth != nullptr && inputs.depth->texture != kInvalidResource &&
+        inputs.depth->width > 0 && inputs.depth->height > 0) {
+        collision_depth_ = *inputs.depth;
+        collision_.depth = &collision_depth_;
+    }
+    depth_fresh_ = collision_.depth != nullptr;
+    return ok();
+}
+
+Status VfxGpuPass::write_collision_constants(u32 slot) noexcept {
+    auto* rows =
+        static_cast<u32*>(device_->buffer_mapped_pointer(buffers_.collision_constants[slot]));
+    if (rows == nullptr) {
+        return fail(ErrorCode::Internal, "the VFX collision constants are not mapped");
+    }
+    std::memset(rows, 0, static_cast<usize>(kGpuCollisionRows) * 4U * sizeof(u32));
+    const auto put = [rows](u32 row, u32 lane, const void* value) noexcept {
+        std::memcpy(&rows[(row * 4U) + lane], value, sizeof(u32));
+    };
+    const auto put3 = [&put](u32 row, Vec3 value) noexcept {
+        put(row, 0, &value.x);
+        put(row, 1, &value.y);
+        put(row, 2, &value.z);
+    };
+    put3(kGpuCollisionOrigin, collision_.origin);
+    u32 flags = 0;
+    if (collision_.field != nullptr) {
+        flags |= kGpuCollisionHasField;
+        rows[(kGpuCollisionField * 4U) + 0U] = collision_field_.levels;
+        rows[(kGpuCollisionField * 4U) + 1U] = collision_field_.window_bricks;
+        for (u32 level = 0; level < collision_field_.levels; ++level) {
+            const GpuCollisionField::Level& view = collision_field_.level[level];
+            const u32 row = kGpuCollisionLevels + (level * 2U);
+            put(row, 0, &view.voxel_size);
+            put(row, 1, &view.brick_size);
+            put(row, 2, &view.far_distance);
+            for (u32 axis = 0; axis < 3U; ++axis) {
+                put(row + 1U, axis, &view.origin_brick[axis]);
+            }
+        }
+    }
+    if (collision_.depth != nullptr) {
+        flags |= kGpuCollisionHasDepth;
+        rows[(kGpuCollisionDepthExtent * 4U) + 0U] = collision_depth_.width;
+        rows[(kGpuCollisionDepthExtent * 4U) + 1U] = collision_depth_.height;
+        put3(kGpuCollisionCamera, collision_depth_.camera);
+        for (u32 column = 0; column < 4U; ++column) {
+            for (u32 lane = 0; lane < 4U; ++lane) {
+                put(kGpuCollisionViewProjection + column, lane,
+                    &collision_depth_.view_projection.columns[column][lane]);
+                put(kGpuCollisionInverseViewProjection + column, lane,
+                    &collision_depth_.inverse_view_projection.columns[column][lane]);
+            }
+        }
+    }
+    rows[(kGpuCollisionOrigin * 4U) + 3U] = flags;
     return ok();
 }
 
@@ -436,6 +626,7 @@ void VfxGpuPass::destroy() noexcept {
         buffers_.alive_readback,
         buffers_.indices_readback,
         buffers_.counts_readback,
+        buffers_.collision_empty,
     };
     // NULL HANDLES ARE SKIPPED, and this is not defensive programming. `destroy()` runs on the
     // failure path of `create()` as well as from the destructor — a pass whose kernel would not
@@ -443,6 +634,11 @@ void VfxGpuPass::destroy() noexcept {
     // an error, which would make a create failure look like a device defect in every log that
     // counted validation errors.
     for (rhi::BufferHandle handle : buffers) {
+        if (handle) {
+            device_->destroy_buffer(handle);
+        }
+    }
+    for (rhi::BufferHandle handle : buffers_.collision_constants) {
         if (handle) {
             device_->destroy_buffer(handle);
         }
@@ -458,9 +654,24 @@ void VfxGpuPass::destroy() noexcept {
     if (pipeline_layout_) {
         device_->destroy_pipeline_layout(pipeline_layout_);
     }
+    if (timer_) {
+        device_->destroy_query_pool(timer_);
+    }
+    timer_ = {};
+    timed_frame_ = false;
     if (set_layout_) {
         device_->destroy_descriptor_set_layout(set_layout_);
     }
+    if (collision_layout_) {
+        device_->destroy_descriptor_set_layout(collision_layout_);
+    }
+    if (collision_blank_) {
+        device_->destroy_texture(collision_blank_);
+    }
+    collision_layout_ = {};
+    collision_blank_ = {};
+    collision_ = GpuCollisionInputs{};
+    collides_ = false;
     const rhi::ShaderModuleHandle modules[] = {kernel_module_, reset_module_, compact_module_,
                                                sort_module_};
     for (rhi::ShaderModuleHandle handle : modules) {
@@ -504,6 +715,7 @@ Status VfxGpuPass::step(const GpuStepInputs& inputs) noexcept {
     constants_.capacity =
         capped(block_capacity_, inputs.levers.count_cap_scale, inputs.reserved_particles);
     constants_.spawn_scale_fixed = gpu_fixed_from_float(inputs.levers.spawn_scale);
+    constants_.collision_quality = inputs.levers.collision_quality;
 
     // THE SORT IS THE CONTROLLER'S LEVER AND NOTHING ELSE READS IT. `sorted` false leaves `sort_n`
     // zero, `declare` puts neither sort pass in the graph, and `kGpuCountSortPasses` ends the step
@@ -537,9 +749,23 @@ Status VfxGpuPass::step(const GpuStepInputs& inputs) noexcept {
 void VfxGpuPass::record(const PassContext& context, void* user) noexcept {
     const auto* dispatch = static_cast<const Dispatch*>(user);
     VfxGpuPass* self = dispatch->pass;
+    const bool first = dispatch == &self->dispatches_[0];
+    if (self->timer_ && first && dispatch->constants.pass == kGpuPassSpawn &&
+        dispatch->pipeline == self->kernel_pipeline_) {
+        context.commands->reset_queries(self->timer_, 0, 4);
+        context.commands->write_timestamp(self->timer_, 0);
+    }
+    const bool timed_update = self->timer_ && dispatch->constants.pass == kGpuPassUpdate &&
+                              dispatch->pipeline == self->kernel_pipeline_;
+    if (timed_update) {
+        context.commands->write_timestamp(self->timer_, 2);
+    }
     context.commands->bind_compute_pipeline(dispatch->pipeline);
     context.commands->bind_descriptor_sets(
         self->pipeline_layout_, 0, Span<const rhi::DescriptorSetHandle>(&self->descriptor_set_, 1));
+    if (self->collides_ && dispatch->pipeline == self->kernel_pipeline_) {
+        self->bind_collision(context);
+    }
     context.commands->push_constants(
         self->pipeline_layout_, rhi::ShaderStage::Compute, 0,
         Span<const u8>(reinterpret_cast<const u8*>(&dispatch->constants),
@@ -548,9 +774,80 @@ void VfxGpuPass::record(const PassContext& context, void* user) noexcept {
         // THE REQUIREMENT, IN ONE CALL. The group count is three words of device memory that
         // `vfx_compact` wrote; this process never read them and could not have.
         context.commands->dispatch_indirect(self->buffers_.args, dispatch->argument_offset);
+    } else {
+        context.commands->dispatch(dispatch->groups == 0 ? 1 : dispatch->groups, 1, 1);
+    }
+    if (timed_update) {
+        context.commands->write_timestamp(self->timer_, 3);
+        context.commands->write_timestamp(self->timer_, 1);
+        self->timed_frame_ = true;
+    }
+}
+
+void VfxGpuPass::bind_collision(const PassContext& context) noexcept {
+    Expected<rhi::DescriptorSetHandle, Error> set =
+        device_->allocate_descriptor_set(collision_layout_, true);
+    if (!set.has_value()) {
         return;
     }
-    context.commands->dispatch(dispatch->groups == 0 ? 1 : dispatch->groups, 1, 1);
+    const rhi::BufferHandle pages =
+        collision_.field != nullptr ? collision_field_.page_table : buffers_.collision_empty;
+    const rhi::BufferHandle bricks =
+        collision_.field != nullptr ? collision_field_.bricks : buffers_.collision_empty;
+    rhi::DescriptorWrite writes[kGpuCollisionBindingCount] = {};
+    const rhi::BufferHandle handles[3] = {buffers_.collision_constants[collision_slot_], pages,
+                                          bricks};
+    for (u32 index = 0; index < 3U; ++index) {
+        writes[index].binding = index;
+        writes[index].kind = rhi::DescriptorKind::StorageBuffer;
+        writes[index].buffer = handles[index];
+    }
+    writes[kGpuCollisionDepth].binding = kGpuCollisionDepth;
+    writes[kGpuCollisionDepth].kind = rhi::DescriptorKind::SampledTexture;
+    writes[kGpuCollisionDepth].texture_view = context.executor->view(resources_.collision_depth);
+    writes[kGpuCollisionDepth].use = rhi::ImageUse::SampledRead;
+    if (!device_
+             ->update_descriptor_set(
+                 *set, Span<const rhi::DescriptorWrite>(writes, kGpuCollisionBindingCount))
+             .has_value()) {
+        return;
+    }
+    context.commands->bind_descriptor_sets(pipeline_layout_, kGpuCollisionSet,
+                                           Span<const rhi::DescriptorSetHandle>(&*set, 1));
+}
+
+void VfxGpuPass::import_collision(RenderGraph& graph) noexcept {
+    // ONCE A GRAPH, through `import_buffer_once`: the field's buffers are the GI scene's, and a
+    // second import of the same handle would be a second resource the graph derives no barrier
+    // against.
+    const auto buffer = [&graph, this](const char* name, rhi::BufferHandle handle) noexcept {
+        BufferRequest request;
+        request.name = name;
+        const rhi::BufferDescription* description = device_->buffer_description(handle);
+        request.size = description != nullptr ? description->size : 0;
+        request.extra_usage = rhi::BufferUsage::Storage;
+        return graph.import_buffer_once(request, handle);
+    };
+    resources_.collision_constants =
+        buffer("vfx collision constants", buffers_.collision_constants[collision_slot_]);
+    resources_.collision_pages =
+        buffer("vfx collision pages", collision_.field != nullptr ? collision_field_.page_table
+                                                                  : buffers_.collision_empty);
+    resources_.collision_bricks =
+        buffer("vfx collision bricks",
+               collision_.field != nullptr ? collision_field_.bricks : buffers_.collision_empty);
+    if (collision_.depth != nullptr) {
+        resources_.collision_depth = collision_depth_.texture;
+        return;
+    }
+    rendering::TextureRequest request;
+    request.name = "vfx collision depth stand-in";
+    request.format = rhi::Format::R32Sfloat;
+    request.width = 1;
+    request.height = 1;
+    request.extra_usage = rhi::TextureUsage::Sampled;
+    resources_.collision_depth =
+        graph.import_texture(request, collision_blank_, rhi::ImageUse::Undefined);
 }
 
 void VfxGpuPass::record_readback(const PassContext& context, void* user) noexcept {
@@ -623,6 +920,14 @@ void VfxGpuPass::declare_dispatch(RenderGraph& graph, const Resources& resources
         .read(resources.parameters, Access::ComputeStorageRead)
         .use(resources.keys, Access::ComputeStorageReadWrite)
         .use(resources.events, Access::ComputeStorageReadWrite);
+    if (collides_ && dispatch.pipeline == kernel_pipeline_) {
+        builder.read(resources.collision_constants, Access::ComputeStorageRead)
+            .read(resources.collision_pages, Access::ComputeStorageRead)
+            .read(resources.collision_depth, Access::ComputeSampledRead);
+        if (resources.collision_bricks != resources.collision_pages) {
+            builder.read(resources.collision_bricks, Access::ComputeStorageRead);
+        }
+    }
     if (dispatch.indirect) {
         // The one hazard an indirect dispatch adds over a direct one: the arguments were written by
         // a compute pass and are read by the command processor, and the two are different pipeline
@@ -664,7 +969,21 @@ Status VfxGpuPass::declare(RenderGraph& graph) noexcept {
                     "step() has not been called for this sub-step; a dispatch declared with no "
                     "constant block would run at a zero cap and report success");
     }
-    const Resources resources = import_all(graph);
+    (void)import_all(graph);
+    if (collides_) {
+        // THE DEPTH IS ONE GRAPH'S. A depth set for an earlier frame names a resource of that
+        // frame's graph, so it is dropped rather than bound; the field persists until replaced.
+        if (!depth_fresh_) {
+            collision_.depth = nullptr;
+        }
+        depth_fresh_ = false;
+        collision_slot_ = device_->frame_slot() % rhi::kMaxFramesInFlight;
+        if (Status written = write_collision_constants(collision_slot_); !written) {
+            return written;
+        }
+        import_collision(graph);
+    }
+    const Resources resources = resources_;
     dispatch_count_ = 0;
     report_.indirect_dispatches = 0;
 

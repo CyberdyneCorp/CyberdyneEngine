@@ -129,21 +129,53 @@ NodeKey StageBuilder::make4(NodeKey x, NodeKey y, NodeKey z, NodeKey w) noexcept
     return key;
 }
 
-void StageBuilder::write(const char* attribute_name, NodeKey value) noexcept {
+void StageBuilder::write(const char* attribute_name, NodeKey value, const char* from_pin) noexcept {
     const NodeKey key = add("vfx.set_attribute");
     set_text(key, "attribute", attribute_name);
-    wire(value, key, "value");
+    connect(value, from_pin, key, "value");
 }
 
-void StageBuilder::kill_if(NodeKey predicate) noexcept {
+void StageBuilder::kill_if(NodeKey predicate, const char* from_pin) noexcept {
     const NodeKey key = add("vfx.kill_if");
-    wire(predicate, key, "value");
+    connect(predicate, from_pin, key, "value");
 }
 
-void StageBuilder::emit_event(const char* channel, NodeKey predicate) noexcept {
+void StageBuilder::emit_event(const char* channel, NodeKey predicate,
+                              const char* from_pin) noexcept {
     const NodeKey key = add("vfx.emit_event");
     set_text(key, "channel", channel);
-    wire(predicate, key, "value");
+    connect(predicate, from_pin, key, "value");
+}
+
+void StageBuilder::emit_event_with(const char* channel, NodeKey predicate,
+                                   const char* predicate_pin, NodeKey payload,
+                                   const char* payload_pin) noexcept {
+    const NodeKey key = add("vfx.emit_event");
+    set_text(key, "channel", channel);
+    connect(predicate, predicate_pin, key, "value");
+    connect(payload, payload_pin, key, "payload");
+}
+
+NodeKey StageBuilder::collide(const char* shape) noexcept {
+    const std::string type = std::string("vfx.collide.") + shape;
+    return add(type.c_str());
+}
+
+NodeKey StageBuilder::event_read(const char* type, const char* channel) noexcept {
+    const NodeKey key = add(type);
+    set_text(key, "channel", channel);
+    return key;
+}
+
+void StageBuilder::connect(NodeKey from, const char* from_pin, NodeKey to,
+                           const char* to_pin) noexcept {
+    ok_ = ok_ && graph_.connect(from, Name::intern(from_pin), to, Name::intern(to_pin)).has_value();
+}
+
+void StageBuilder::number(NodeKey key, const char* property, f32 x, f32 y, f32 z, f32 w,
+                          const char* type) noexcept {
+    ok_ = ok_ && graph_.set_property(key, Name::intern(property), float_literal(x, y, z, w, type))
+                     .has_value();
 }
 
 void StageBuilder::spawn_count(NodeKey value) noexcept {

@@ -53,10 +53,25 @@ public:
     [[nodiscard]] NodeKey make3(NodeKey x, NodeKey y, NodeKey z) noexcept;
     [[nodiscard]] NodeKey make4(NodeKey x, NodeKey y, NodeKey z, NodeKey w) noexcept;
 
-    void write(const char* attribute_name, NodeKey value) noexcept;
-    void kill_if(NodeKey predicate) noexcept;
-    void emit_event(const char* channel, NodeKey predicate) noexcept;
+    /// `from_pin` names the output a value comes from, for the one node with several: a collider.
+    void write(const char* attribute_name, NodeKey value, const char* from_pin = "out") noexcept;
+    void kill_if(NodeKey predicate, const char* from_pin = "out") noexcept;
+    void emit_event(const char* channel, NodeKey predicate, const char* from_pin = "out") noexcept;
     void spawn_count(NodeKey value) noexcept;
+
+    /// A node of any type with nothing wired: the inputs are wired with `connect`.
+    [[nodiscard]] NodeKey node(const char* type) noexcept { return add(type); }
+    /// A `vfx.collide.<shape>` node; its inputs are wired with `connect` and set with `number`.
+    [[nodiscard]] NodeKey collide(const char* shape) noexcept;
+    /// A `vfx.event_count` or `vfx.event_payload` node on `channel`.
+    [[nodiscard]] NodeKey event_read(const char* type, const char* channel) noexcept;
+    void connect(NodeKey from, const char* from_pin, NodeKey to, const char* to_pin) noexcept;
+    /// A numeric property: an optional input's value, typed by its component count.
+    void number(NodeKey key, const char* property, f32 x, f32 y = 0.0F, f32 z = 0.0F, f32 w = 0.0F,
+                const char* type = "float") noexcept;
+    /// A `vfx.emit_event` whose payload input is wired from `payload`.
+    void emit_event_with(const char* channel, NodeKey predicate, const char* predicate_pin,
+                         NodeKey payload, const char* payload_pin = "out") noexcept;
 
     /// True when every call above succeeded. A builder that swallowed a failure would author a
     /// graph missing a wire and the suite would blame the compiler.

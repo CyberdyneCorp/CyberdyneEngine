@@ -71,6 +71,8 @@
 #include <cy/backends/rhi/handles.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/math/matrix.h>
+#include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/system_allocator.h>
@@ -108,6 +110,10 @@ struct GpuPassDescription {
     /// BLOCK is copied too, and that one is for the suite: it is a full copy of every attribute of
     /// every slot and a frame must never ask for it.
     bool read_back = false;
+    /// Whether the pass times its sub-step on the device: a timestamp before the spawn and one
+    /// after the update, read with `last_device_ms`. A diagnostic, off unless asked for, and
+    /// silently absent on a device without timestamp queries — `last_device_ms` then answers -1.
+    bool timed = false;
     /// Pre-cooked backend forms for the generated kernel, for a build with no Slang front end.
     /// An entirely empty bundle means "compile the generated source", which needs one.
     rhi::ShaderModuleBundle kernel;
@@ -163,6 +169,44 @@ struct GpuStepInputs {
     Span<const f32> parameters;
 };
 
+/// The scene field a `vfx.collide.sdf` reads on the device: the GI clipmaps' own device copy,
+/// bound rather than copied — `GpuGiScene::field_binding()` is what a host fills this from. This
+/// module names no GI type, so the host does the one-line conversion; see
+/// `src/vfx/gpu/tests/test_vfx_collision_gpu.cpp`.
+struct GpuCollisionField {
+    rhi::BufferHandle page_table;
+    rhi::BufferHandle bricks;
+    u32 levels = 0;
+    u32 window_bricks = 0;
+    struct Level {
+        f32 voxel_size = 0.0F;
+        f32 brick_size = 0.0F;
+        f32 far_distance = 0.0F;
+        i32 origin_brick[3] = {0, 0, 0};
+    };
+    Level level[kGpuCollisionMaxLevels];
+};
+
+/// The depth a `vfx.collide.depth` reads: the frame's own, already a resource of the graph the
+/// next `declare` is given, reversed Z, at `width` x `height`.
+struct GpuCollisionDepth {
+    ResourceId texture = kInvalidResource;
+    Mat4 view_projection = Mat4::identity();
+    Mat4 inverse_view_projection = Mat4::identity();
+    Vec3 camera{0.0F, 0.0F, 0.0F};
+    u32 width = 0;
+    u32 height = 0;
+};
+
+/// What the next `declare` collides with. Either may be null, and then the contacts that read it
+/// find nothing — the CPU path's answer for the same absence.
+struct GpuCollisionInputs {
+    const GpuCollisionField* field = nullptr;
+    const GpuCollisionDepth* depth = nullptr;
+    /// The effect's world origin: a particle's position is relative to it.
+    Vec3 origin{0.0F, 0.0F, 0.0F};
+};
+
 /// One emitter's simulation, resident on the device.
 ///
 /// The lifecycle is: `create` once, then per sub-step `step()` to push the constants and write the
@@ -198,6 +242,16 @@ public:
                                 const CompiledSystem& system,
                                 const GpuPassDescription& desc) noexcept;
 
+    /// Whether the emitter collides, and therefore binds the collision set (<cy/vfx/gpu_layout.h>).
+    [[nodiscard]] bool collides() const noexcept { return collides_; }
+
+    /// What the next `declare` collides with. Call between the device's `begin_frame` and
+    /// `declare`, each frame a depth is bound: the depth texture is a resource of one graph, and a
+    /// depth set for an earlier frame is dropped by the next `declare` rather than bound. The field
+    /// and the origin persist until replaced. Refused on an emitter that does not collide, and a
+    /// field with more levels than the constants hold is refused by name.
+    [[nodiscard]] Status set_collision(const GpuCollisionInputs& inputs) noexcept;
+
     /// Push one sub-step's constants and write the instance parameters. Call before `declare`.
     ///
     /// TAKES NO POPULATION, and there is nowhere to put one. The live count, the free count and the
@@ -222,6 +276,13 @@ public:
     /// only on a pass created with `read_back`; otherwise every member is zero and
     /// `report().dispatches` still says what was declared.
     [[nodiscard]] const GpuStepReport& report() const noexcept { return report_; }
+
+    /// The last timed sub-step's device time from the spawn to the end of the update, in
+    /// milliseconds, after its fence. -1 when the pass is not `timed` or the device cannot say.
+    [[nodiscard]] f64 last_device_ms() const noexcept;
+    /// The update dispatch alone, the same way: where a collider's cost is, since the spawn, the
+    /// compaction and the initialise do not depend on one.
+    [[nodiscard]] f64 last_update_ms() const noexcept;
 
     /// Refresh `report()` from the read-back copy of the counter block. Must be called after the
     /// fence; never stalls, because it reads a buffer the transfer already filled.
@@ -274,6 +335,11 @@ private:
         rhi::BufferHandle alive_readback;
         rhi::BufferHandle indices_readback;
         rhi::BufferHandle counts_readback;
+        /// The collision set's constants, and the stand-ins bound where the host binds no field
+        /// or depth — a descriptor must name something, and a contact checks the flags before it
+        /// reads either.
+        rhi::BufferHandle collision_constants[rhi::kMaxFramesInFlight];
+        rhi::BufferHandle collision_empty;
     };
 
     /// One graph resource per buffer, refreshed every `declare` because an imported resource's
@@ -288,6 +354,10 @@ private:
         ResourceId keys = kInvalidResource;
         ResourceId events = kInvalidResource;
         ResourceId args = kInvalidResource;
+        ResourceId collision_constants = kInvalidResource;
+        ResourceId collision_pages = kInvalidResource;
+        ResourceId collision_bricks = kInvalidResource;
+        ResourceId collision_depth = kInvalidResource;
     };
 
     /// What one recorded dispatch needs. A small value rather than a member, so the four passes'
@@ -308,12 +378,23 @@ private:
     [[nodiscard]] Status create_pipelines(const rhi::ShaderModuleBundle& kernel) noexcept;
     [[nodiscard]] Status create_buffers() noexcept;
     [[nodiscard]] Status write_descriptors() noexcept;
+    [[nodiscard]] Status create_collision_resources() noexcept;
+    /// This frame's collision constants, from what `set_collision` last stored.
+    [[nodiscard]] Status write_collision_constants(u32 slot) noexcept;
     [[nodiscard]] Resources import_all(RenderGraph& graph) noexcept;
     /// Declare one dispatch. `reads_args` marks the pass that consumes the indirect arguments, so
     /// the graph derives the barrier between the compaction that wrote them and the dispatch that
     /// is fed by them — which is the one hazard an indirect dispatch adds over a direct one.
     void declare_dispatch(RenderGraph& graph, const Resources& resources, const char* name,
                           u32 which) noexcept;
+
+    /// Import the collision set's resources into this frame's graph.
+    void import_collision(RenderGraph& graph) noexcept;
+    /// Bind descriptor set 1 for a kernel dispatch. A transient set, because the depth texture's
+    /// view is the executor's and a graph's.
+    void bind_collision(const PassContext& context) noexcept;
+
+    [[nodiscard]] f64 timer_ms(u32 first) const noexcept;
 
     static void record(const PassContext& context, void* user) noexcept;
     static void record_readback(const PassContext& context, void* user) noexcept;
@@ -334,12 +415,24 @@ private:
     rhi::ShaderModuleHandle compact_module_;
     rhi::ShaderModuleHandle sort_module_;
     rhi::DescriptorSetLayoutHandle set_layout_;
+    rhi::DescriptorSetLayoutHandle collision_layout_;
+    rhi::TextureHandle collision_blank_;
+    GpuCollisionInputs collision_{};
+    GpuCollisionField collision_field_{};
+    GpuCollisionDepth collision_depth_{};
+    /// Which of the constants ring this frame writes and binds.
+    u32 collision_slot_ = 0;
+    /// `set_collision` gave a depth for the graph the next `declare` is given.
+    bool depth_fresh_ = false;
+    bool collides_ = false;
     rhi::PipelineLayoutHandle pipeline_layout_;
     rhi::ComputePipelineHandle kernel_pipeline_;
     rhi::ComputePipelineHandle reset_pipeline_;
     rhi::ComputePipelineHandle compact_pipeline_;
     rhi::ComputePipelineHandle sort_pipeline_;
     rhi::DescriptorSetHandle descriptor_set_;
+    rhi::QueryPoolHandle timer_;
+    bool timed_frame_ = false;
     Buffers buffers_{};
     Resources resources_{};
 

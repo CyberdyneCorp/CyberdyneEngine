@@ -99,7 +99,20 @@ constexpr OpDesc kOps[VfxOpCount] = {
     arithmetic("make_float3", 3, false),
     arithmetic("make_float4", 4, false),
     arithmetic("swizzle", 1, false),
+    // A QUERY OF THE WORLD, like `sample`: varying, and merged under the sample-deduplication
+    // switch, so the six outputs of one `vfx.collide.*` node share one contact.
+    sampler("contact", 4),
+    arithmetic("bounce", 3, false),
+    arithmetic("resolve", 2, false),
+    arithmetic("impact", 2, false),
+    // A LEAF, and varying: which event a particle reads depends on its spawn index.
+    leaf("event_read", true, MergeClass::Leaf),
 };
+
+constexpr const char* kColliderShapeNames[] = {"plane", "sphere", "box", "capsule", "sdf", "depth"};
+static_assert(sizeof(kColliderShapeNames) / sizeof(kColliderShapeNames[0]) ==
+                  static_cast<usize>(ColliderShape::Count),
+              "every collider shape has a name");
 
 /// Eighteen roots: sixteen writes, the kill predicate and the spawn count. Every one accepts any
 /// type, because what a write's type is depends on the attribute and the domain's root table is
@@ -263,7 +276,15 @@ public:
             case MakeVec4:
                 return static_cast<TypeId>(Float4);
             case Swizzle:
+            case Impact:
                 return static_cast<TypeId>(Float);
+            case Contact:
+                return static_cast<TypeId>(Float4);
+            case Bounce:
+            case Resolve:
+                return static_cast<TypeId>(Float3);
+            case EventRead:
+                return query.hint == kInvalidType ? static_cast<TypeId>(Float) : query.hint;
             case Select:
                 // The condition is operand zero and is not part of the result type: `select` is a
                 // value, and its type is the type of the arms.
@@ -384,6 +405,11 @@ TypeId vfx_type_from_name(Name name) noexcept {
     return kInvalidType;
 }
 
+const char* collider_shape_name(ColliderShape shape) noexcept {
+    const auto index = static_cast<usize>(shape);
+    return index < static_cast<usize>(ColliderShape::Count) ? kColliderShapeNames[index] : "?";
+}
+
 const char* vfx_op_name(OpId op) noexcept {
     return op < VfxOpCount ? kOps[op].name : "?";
 }
@@ -415,6 +441,7 @@ VfxKernel::VfxKernel(Allocator& allocator, const Domain& domain) noexcept
       events_(allocator),
       program_(allocator),
       write_slots_(allocator),
-      event_slots_(allocator) {}
+      event_slots_(allocator),
+      event_payload_slots_(allocator) {}
 
 }  // namespace cy::vfx
