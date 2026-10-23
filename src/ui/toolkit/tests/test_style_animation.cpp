@@ -158,8 +158,8 @@ CY_TEST_CASE("ui_animation: every easing starts at zero and ends at one, and mov
     CY_CHECK_NEAR(ease(Easing::EaseInOut, 0.5F), 0.5F, 1e-3F);
     // A spring and a back curve overshoot before they settle.
     bool overshoots = false;
-    for (f32 t = 0.0F; t < 1.0F; t += 0.01F) {
-        overshoots = overshoots || ease(Easing::Spring, t) > 1.0F;
+    for (u32 step = 0; step < 100; ++step) {
+        overshoots = overshoots || ease(Easing::Spring, static_cast<f32>(step) / 100.0F) > 1.0F;
     }
     CY_CHECK(overshoots);
     CY_CHECK_GT(ease(Easing::Back, 0.6F), 1.0F);

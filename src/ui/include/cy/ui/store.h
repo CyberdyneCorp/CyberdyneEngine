@@ -68,6 +68,7 @@ struct Rect {
     }
     [[nodiscard]] Rect intersected(const Rect& other) const noexcept;
     [[nodiscard]] constexpr bool empty() const noexcept { return width <= 0.0F || height <= 0.0F; }
+    [[nodiscard]] friend constexpr bool operator==(const Rect&, const Rect&) noexcept = default;
 };
 
 /// Insets: margins and padding, in the order a CSS author expects.
@@ -79,6 +80,7 @@ struct Insets {
 
     [[nodiscard]] constexpr f32 horizontal() const noexcept { return left + right; }
     [[nodiscard]] constexpr f32 vertical() const noexcept { return top + bottom; }
+    [[nodiscard]] friend constexpr bool operator==(const Insets&, const Insets&) noexcept = default;
 };
 
 /// Which layout model a container uses. THREE, AND NO OTHERS — `ui-system` says so in a table, and
@@ -214,6 +216,9 @@ struct LayoutInput {
     u16 grid_row_span = 1;
     /// `Grid` container: how many explicit columns. Zero means one column.
     u16 grid_columns = 0;
+
+    /// Member by member: a padded struct's bytes are not its value.
+    [[nodiscard]] friend bool operator==(const LayoutInput&, const LayoutInput&) noexcept = default;
 };
 
 /// What layout WRITES.
@@ -253,6 +258,9 @@ struct PaintData {
     /// an emissive panel at 4 is four times its colour's radiance, and blooms. One on every element
     /// of a display-referred interface, where a value above one would only clip.
     f32 intensity = 1.0F;
+
+    /// Member by member: a padded struct's bytes are not its value.
+    [[nodiscard]] friend bool operator==(const PaintData&, const PaintData&) noexcept = default;
 };
 
 /// Which of the six per-frame counters a report carries. `ui-system`'s diagnostics ask for "counts

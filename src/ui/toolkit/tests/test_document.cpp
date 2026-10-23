@@ -48,9 +48,12 @@ constexpr std::string_view kSheet =
 class Files final : public DocumentResolver {
 public:
     [[nodiscard]] Status read(std::string_view path, Array<char>& out) noexcept override {
-        const std::string_view text = path == "stat.cyui"   ? stat
-                                      : path == "menu.cyss" ? kSheet
-                                                            : std::string_view{};
+        std::string_view text;
+        if (path == "stat.cyui") {
+            text = stat;
+        } else if (path == "menu.cyss") {
+            text = kSheet;
+        }
         if (text.empty()) {
             return fail(ErrorCode::NotFound, "no such file");
         }

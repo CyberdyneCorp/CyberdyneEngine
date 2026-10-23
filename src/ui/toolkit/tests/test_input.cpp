@@ -104,9 +104,9 @@ CY_TEST_CASE("ui_toolkit: the tab order walks the widgets in document order, and
     Grid grid(kit);
     CY_REQUIRE(kit.frame());
     WidgetId visited[7];
-    for (u32 step = 0; step < 7; ++step) {
+    for (WidgetId& seen : visited) {
         CY_CHECK(kit.toolkit.action(UiAction::FocusNext));
-        visited[step] = kit.toolkit.focused();
+        seen = kit.toolkit.focused();
     }
     for (u32 index = 0; index < 6; ++index) {
         CY_CHECK_EQ(visited[index], grid.buttons[index]);
@@ -308,8 +308,8 @@ CY_TEST_CASE("ui_toolkit: a scroll view clips, scrolls by wheel and by focus mov
     CY_REQUIRE(kit.toolkit.set_anchors(view, Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}, Vec2{200, 100})
                    .has_value());
     WidgetId rows[10];
-    for (u32 index = 0; index < 10; ++index) {
-        rows[index] = kit.make(view, WidgetKind::Button, {}, "Row");
+    for (WidgetId& row : rows) {
+        row = kit.make(view, WidgetKind::Button, {}, "Row");
     }
     CY_REQUIRE(kit.frame());
     // Ten 24-unit buttons and nine 6-unit gaps: 294 units in a window the theme's padding of four

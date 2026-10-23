@@ -507,7 +507,7 @@ namespace {
 /// A scroll bar's thumb: where the window is in the whole, as long as the window is of the whole.
 /// Returns whether it shows.
 [[nodiscard]] bool thumb_layout(f32 window, f32 total, f32 scroll, LayoutInput& layout) noexcept {
-    if (!(total > window && window > 0.0F)) {
+    if (total <= window || window <= 0.0F) {
         return false;
     }
     const f32 length = std::max(16.0F, window * window / total);
@@ -535,7 +535,7 @@ Status Toolkit::place_thumb(ElementId thumb, f32 window, f32 total, f32 scroll) 
             return set;
         }
     }
-    if (shows && std::memcmp(&next, &part->base_layout, sizeof(LayoutInput)) != 0) {
+    if (shows && next != part->base_layout) {
         part->base_layout = next;
         mark_style(thumb);
     }
@@ -543,6 +543,8 @@ Status Toolkit::place_thumb(ElementId thumb, f32 window, f32 total, f32 scroll) 
 }
 
 Status Toolkit::realise_lists(u32& realised) noexcept {
+    // BY INDEX, NOT BY RANGE: realising a list's rows creates widgets, which may grow `widgets_`.
+    // NOLINTNEXTLINE(modernize-loop-convert)
     for (usize index = 0; index < widgets_.size(); ++index) {
         const Widget& widget = widgets_[index];
         if (!widget.alive || has_flag(store_.flags(widget.element), ElementFlags::Collapsed)) {
@@ -583,7 +585,7 @@ namespace {
     next.anchor_max = Vec2{0.0F, 0.0F};
     next.offset_min = Vec2{rect.x, rect.y};
     next.offset_max = Vec2{rect.right(), rect.bottom()};
-    if (std::memcmp(&next, &layout, sizeof(LayoutInput)) == 0) {
+    if (next == layout) {
         return false;
     }
     layout = next;
@@ -769,8 +771,7 @@ Status Toolkit::write_back(Widget& widget, WidgetProperty property) noexcept {
 }
 
 Status Toolkit::update_bindings(u32& applied) noexcept {
-    for (usize index = 0; index < bindings_.size(); ++index) {
-        BoundWidget& binding = bindings_[index];
+    for (BoundWidget& binding : bindings_) {
         Widget* widget = record(binding.widget);
         if (widget == nullptr || binding.source == nullptr) {
             continue;

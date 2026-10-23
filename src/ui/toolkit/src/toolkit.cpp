@@ -69,7 +69,37 @@ static_assert(sizeof(kKinds) / sizeof(kKinds[0]) == static_cast<usize>(WidgetKin
 }
 
 [[nodiscard]] bool same_layout(const LayoutInput& a, const LayoutInput& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(LayoutInput)) == 0;
+    return a == b;
+}
+
+/// The caption part of a button, a tab or a drop-down's option.
+[[nodiscard]] const char* caption_part(WidgetKind kind) noexcept {
+    switch (kind) {
+        case WidgetKind::Button:
+            return "button-label";
+        case WidgetKind::Tab:
+            return "tab-label";
+        default:
+            return "option-label";
+    }
+}
+
+/// The parts of a toggle, a checkbox or a radio: what holds the mark, the mark, the caption.
+struct SwitchParts {
+    const char* box;
+    const char* mark;
+    const char* label;
+};
+
+[[nodiscard]] SwitchParts switch_parts(WidgetKind kind) noexcept {
+    switch (kind) {
+        case WidgetKind::Toggle:
+            return {"toggle-track", "toggle-knob", "toggle-label"};
+        case WidgetKind::Checkbox:
+            return {"checkbox-box", "checkbox-mark", "checkbox-label"};
+        default:
+            return {"radio-ring", "radio-dot", "radio-label"};
+    }
 }
 
 }  // namespace
@@ -273,9 +303,10 @@ void Toolkit::push_event(WidgetEventKind kind, const Widget& widget) noexcept {
     event.kind = kind;
     event.widget = widget.element;
     event.id = widget.id;
-    event.value = (widget.kind == WidgetKind::Toggle || widget.kind == WidgetKind::Checkbox)
-                      ? (widget.checked ? 1.0F : 0.0F)
-                      : widget.value;
+    event.value = widget.value;
+    if (widget.kind == WidgetKind::Toggle || widget.kind == WidgetKind::Checkbox) {
+        event.value = widget.checked ? 1.0F : 0.0F;
+    }
     event.index = widget.selected;
     (void)events_.push_back(event);
 }
@@ -622,10 +653,8 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
                 root->base_layout.justify = Justify::Centre;
             }
             focusable();
-            const char* label = desc.kind == WidgetKind::Button ? "button-label"
-                                : desc.kind == WidgetKind::Tab  ? "tab-label"
-                                                                : "option-label";
-            if (Status made = text_part(element, label, LayoutInput{}, desc.text); !made) {
+            if (Status made = text_part(element, caption_part(desc.kind), LayoutInput{}, desc.text);
+                !made) {
                 return made;
             }
             break;
@@ -635,15 +664,10 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
         case WidgetKind::Radio: {
             root->base_layout = centred_row;
             focusable();
-            const char* box = desc.kind == WidgetKind::Toggle     ? "toggle-track"
-                              : desc.kind == WidgetKind::Checkbox ? "checkbox-box"
-                                                                  : "radio-ring";
-            const char* mark = desc.kind == WidgetKind::Toggle     ? "toggle-knob"
-                               : desc.kind == WidgetKind::Checkbox ? "checkbox-mark"
-                                                                   : "radio-dot";
-            const char* label = desc.kind == WidgetKind::Toggle     ? "toggle-label"
-                                : desc.kind == WidgetKind::Checkbox ? "checkbox-label"
-                                                                    : "radio-label";
+            const SwitchParts parts = switch_parts(desc.kind);
+            const char* box = parts.box;
+            const char* mark = parts.mark;
+            const char* label = parts.label;
             Expected<ElementId, Error> outer = add(element, box, container(LayoutModel::Absolute));
             if (!outer) {
                 return make_unexpected(outer.error());

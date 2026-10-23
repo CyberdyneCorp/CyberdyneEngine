@@ -15,15 +15,15 @@ namespace {
 constexpr u32 kMaxDepth = 24;
 
 [[nodiscard]] bool same_paint(const PaintData& a, const PaintData& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(PaintData)) == 0;
+    return a == b;
 }
 
 [[nodiscard]] bool same_layout(const LayoutInput& a, const LayoutInput& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(LayoutInput)) == 0;
+    return a == b;
 }
 
 [[nodiscard]] bool same_text(const TextStyle& a, const TextStyle& b) noexcept {
-    return std::memcmp(&a, &b, sizeof(TextStyle)) == 0;
+    return a == b;
 }
 
 /// A channel's number in a paint, or its colour.
@@ -450,7 +450,7 @@ Status Toolkit::restyle() noexcept {
     // its inheritance down is already done.
     Array<ElementId> pending = std::move(restyle_);
     restyle_ = Array<ElementId>(*allocator_);
-    std::sort(pending.begin(), pending.end(), [this](ElementId a, ElementId b) noexcept {
+    std::ranges::sort(pending, [this](ElementId a, ElementId b) noexcept {
         const Hierarchy* left = store_.hierarchy(a);
         const Hierarchy* right = store_.hierarchy(b);
         const u16 left_depth = left != nullptr ? left->depth : 0U;
@@ -486,8 +486,11 @@ Status Toolkit::advance_tracks(f32 seconds) noexcept {
             track.elapsed = track.delay + track.duration;
         }
         const f32 running = track.elapsed - track.delay;
-        const f32 t =
-            track.duration > 0.0F ? running / track.duration : (running >= 0.0F ? 1.0F : 0.0F);
+        // A zero-length track is at its end once its delay has passed.
+        f32 t = running >= 0.0F ? 1.0F : 0.0F;
+        if (track.duration > 0.0F) {
+            t = running / track.duration;
+        }
         const f32 eased = ease(track.easing, t);
         const f32 number = track.from + ((track.to - track.from) * eased);
         const u32 colour = mix_colour(track.from_colour, track.to_colour, eased);

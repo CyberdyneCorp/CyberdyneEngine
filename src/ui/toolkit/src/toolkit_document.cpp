@@ -482,9 +482,12 @@ Status DocumentInstance::make(Expansion& expansion, u32 node, WidgetId parent) n
         } else if (key == "max-length") {
             desc.max_length = static_cast<u32>(number);
         } else if (key == "mask") {
-            desc.mask = text == "digits"    ? TextMask::Digits
-                        : text == "decimal" ? TextMask::Decimal
-                                            : TextMask::Any;
+            desc.mask = TextMask::Any;
+            if (text == "digits") {
+                desc.mask = TextMask::Digits;
+            } else if (text == "decimal") {
+                desc.mask = TextMask::Decimal;
+            }
         } else if (key == "row-height") {
             desc.row_height = number;
         } else if (key == "checked") {

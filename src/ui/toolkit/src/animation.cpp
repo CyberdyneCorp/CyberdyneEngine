@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace cy::ui {
 namespace {
@@ -90,7 +91,7 @@ f32 ease(Easing easing, f32 t) noexcept {
             // half visible swings, its envelope scaled so the curve is within 0.1 % of one at the
             // end, and the clamp above makes the end exactly one.
             constexpr f32 kDamping = 6.9F;
-            constexpr f32 kFrequency = 4.5F * 3.14159265F;
+            constexpr f32 kFrequency = 4.5F * std::numbers::pi_v<f32>;
             return 1.0F - (std::exp(-kDamping * x) * std::cos(kFrequency * x));
         }
         case Easing::Back: {

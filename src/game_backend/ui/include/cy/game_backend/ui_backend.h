@@ -213,8 +213,9 @@ private:
         UniquePtr<ui::DocumentHost> host;
         CyEntity owner = CY_ENTITY_NULL;
 
-        [[nodiscard]] ui::DocumentInstance& document() const noexcept {
-            return host ? host->instance() : *instance;
+        /// The loaded instance; null only for a record whose load failed.
+        [[nodiscard]] const ui::DocumentInstance* document() const noexcept {
+            return host ? &host->instance() : instance.get();
         }
     };
 

@@ -42,7 +42,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace cy;
@@ -377,16 +380,10 @@ struct Interface {
 };
 
 [[nodiscard]] std::string read_text(const std::string& path) {
-    std::string text;
-    if (FILE* file = std::fopen(path.c_str(), "rb"); file != nullptr) {
-        char chunk[4096];
-        usize got = 0;
-        while ((got = std::fread(chunk, 1, sizeof(chunk), file)) > 0) {
-            text.append(chunk, got);
-        }
-        (void)std::fclose(file);
-    }
-    return text;
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream text;
+    text << file.rdbuf();
+    return text.str();
 }
 
 // --- The HDR frame ------------------------------------------------------------------------------
@@ -520,8 +517,9 @@ private:
             const i32 dx = std::max({left - x, x - (left + side - 1), 0});
             const i32 dy = std::max({top - y, y - (top + side - 1), 0});
             const i32 distance = std::max(dx, dy);
-            if (distance < static_cast<i32>(inner) || distance >= static_cast<i32>(outer) ||
-                x < 0 || y < 0 || x >= static_cast<i32>(kWidth) || y >= static_cast<i32>(kHeight)) {
+            if (std::cmp_less(distance, inner) || std::cmp_greater_equal(distance, outer) ||
+                x < 0 || y < 0 || std::cmp_greater_equal(x, kWidth) ||
+                std::cmp_greater_equal(y, kHeight)) {
                 continue;
             }
             const u32 texel = pixels[(static_cast<usize>(y) * kWidth) + static_cast<usize>(x)];

@@ -166,7 +166,7 @@ void read_sampled_groups(rendering::PassBuilder& builder, Span<const UiDraw> dra
     bool declared[kMaxOpacityGroups] = {};
     for (const UiDraw& draw : draws) {
         const u32 group = sampled_group(draw);
-        if (group < group_count && !declared[group]) {
+        if (group < group_count && group < kMaxOpacityGroups && !declared[group]) {
             builder.read(targets[group], Access::FragmentSampledRead);
             declared[group] = true;
         }

@@ -107,14 +107,26 @@ Expected<input::MappingContext, Error> make_ui_context(Allocator& allocator,
     return context;
 }
 
+namespace {
+
+/// The glyph of a control by scheme: a gamepad's, a touch screen's, or a keyboard and mouse's.
+[[nodiscard]] const char* by_scheme(input::SchemeKind scheme, const char* pad, const char* touch,
+                                    const char* keys) noexcept {
+    if (scheme == input::SchemeKind::Gamepad) {
+        return pad;
+    }
+    return scheme == input::SchemeKind::Touch ? touch : keys;
+}
+
+}  // namespace
+
 const char* ui_action_glyph(UiAction action, input::SchemeKind scheme) noexcept {
     const bool pad = scheme == input::SchemeKind::Gamepad;
-    const bool touch = scheme == input::SchemeKind::Touch;
     switch (action) {
         case UiAction::Accept:
-            return pad ? "A" : (touch ? "Tap" : "Enter");
+            return by_scheme(scheme, "A", "Tap", "Enter");
         case UiAction::Cancel:
-            return pad ? "B" : (touch ? "Back" : "Esc");
+            return by_scheme(scheme, "B", "Back", "Esc");
         case UiAction::NavigateUp:
             return pad ? "D-pad Up" : "Up";
         case UiAction::NavigateDown:
@@ -128,7 +140,7 @@ const char* ui_action_glyph(UiAction action, input::SchemeKind scheme) noexcept 
         case UiAction::PreviousTab:
             return pad ? "LB" : "Ctrl+Shift+Tab";
         case UiAction::Context:
-            return pad ? "Y" : (touch ? "Hold" : "Right click");
+            return by_scheme(scheme, "Y", "Hold", "Right click");
         case UiAction::ScrollUp:
             return pad ? "Right stick up" : "Wheel up";
         case UiAction::ScrollDown:

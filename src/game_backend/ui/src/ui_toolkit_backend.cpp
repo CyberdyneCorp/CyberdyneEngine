@@ -90,8 +90,9 @@ constexpr u32 kMaxItems = 4096;
     }
     const ui::DocumentDiagnostic& first = diagnostics[0];
     char message[192];
-    (void)std::snprintf(message, sizeof(message), "ui_load_document: line %u: %s %s", first.line,
-                        first.message, first.detail.text().data());
+    const std::string_view detail = first.detail.text();
+    (void)std::snprintf(message, sizeof(message), "ui_load_document: line %u: %s %.*s", first.line,
+                        first.message, static_cast<int>(detail.size()), detail.data());
     return abi::report(CY_RESULT_INVALID_ARGUMENT, message);
 }
 
@@ -145,7 +146,11 @@ const CyEntity* UiAdapter::owner_of(ui::WidgetId widget) const noexcept {
             }
         }
         for (const LoadedDocument& loaded : documents_.span()) {
-            for (const ui::WidgetId root : loaded.document().roots()) {
+            const ui::DocumentInstance* document = loaded.document();
+            if (document == nullptr) {
+                continue;
+            }
+            for (const ui::WidgetId root : document->roots()) {
                 if (root == at) {
                     return &loaded.owner;
                 }
@@ -270,8 +275,10 @@ CyResult UiAdapter::load_document(CyUiElement parent, const CyUiDocumentDesc& de
     if (result != CY_RESULT_OK) {
         return result;
     }
-    const Span<const ui::WidgetId> roots = loaded.document().roots();
-    const CyUiElement first = roots.empty() ? CY_UI_ELEMENT_NULL : to_abi(roots[0]);
+    const ui::DocumentInstance* document = loaded.document();
+    const CyUiElement first = (document == nullptr || document->roots().empty())
+                                  ? CY_UI_ELEMENT_NULL
+                                  : to_abi(document->roots()[0]);
     if (Status kept = documents_.push_back(std::move(loaded)); !kept) {
         return abi::report(kept.error());
     }
@@ -307,7 +314,11 @@ CyResult UiAdapter::find(CyUiElement scope, const char* id, CyUiElement& out) co
         }
     }
     for (const LoadedDocument& loaded : documents_.span()) {
-        for (const ui::WidgetId root : loaded.document().roots()) {
+        const ui::DocumentInstance* document = loaded.document();
+        if (document == nullptr) {
+            continue;
+        }
+        for (const ui::WidgetId root : document->roots()) {
             if (const ui::WidgetId found = toolkit_->find(root, id); found.is_valid()) {
                 out = to_abi(found);
                 return CY_RESULT_OK;
@@ -379,8 +390,10 @@ CyResult UiAdapter::widget_value(CyUiElement widget, f32& out) const noexcept {
     if (!target.is_valid()) {
         return abi::last_error_code();
     }
-    out = is_switch(toolkit_->kind(target)) ? (toolkit_->checked(target) ? 1.0F : 0.0F)
-                                            : toolkit_->value(target);
+    out = toolkit_->value(target);
+    if (is_switch(toolkit_->kind(target))) {
+        out = toolkit_->checked(target) ? 1.0F : 0.0F;
+    }
     return CY_RESULT_OK;
 }
 

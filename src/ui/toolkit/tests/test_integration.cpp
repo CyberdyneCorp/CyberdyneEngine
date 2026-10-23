@@ -13,6 +13,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -27,16 +29,10 @@ namespace {
 }
 
 [[nodiscard]] std::string read_text(const std::string& path) {
-    std::string text;
-    if (FILE* file = std::fopen(path.c_str(), "rb"); file != nullptr) {
-        char buffer[4096];
-        usize got = 0;
-        while ((got = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
-            text.append(buffer, got);
-        }
-        (void)std::fclose(file);
-    }
-    return text;
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream text;
+    text << file.rdbuf();
+    return text.str();
 }
 
 void write_text(const std::string& path, std::string_view text) {
@@ -61,11 +57,13 @@ void dump(const Toolkit& toolkit, const ElementStore& store, WidgetId widget, u3
     for (const WidgetId child : children.span()) {
         const LayoutOutput* output = store.layout_output(child);
         char line[256];
-        (void)std::snprintf(
-            line, sizeof(line), "%*s%s #%s %.2f %.2f %.2f %.2f\n", static_cast<int>(depth * 2), "",
-            widget_kind_name(toolkit.kind(child)), toolkit.id_of(child).text().data(),
-            static_cast<double>(output->rect.x), static_cast<double>(output->rect.y),
-            static_cast<double>(output->rect.width), static_cast<double>(output->rect.height));
+        (void)std::snprintf(line, sizeof(line), "%*s%s #%.*s %.2f %.2f %.2f %.2f\n",
+                            static_cast<int>(depth * 2), "", widget_kind_name(toolkit.kind(child)),
+                            static_cast<int>(toolkit.id_of(child).text().size()),
+                            toolkit.id_of(child).text().data(), static_cast<double>(output->rect.x),
+                            static_cast<double>(output->rect.y),
+                            static_cast<double>(output->rect.width),
+                            static_cast<double>(output->rect.height));
         out += line;
         dump(toolkit, store, child, depth + 1, out);
     }
@@ -82,8 +80,9 @@ void check_layout(const char* document, const char* golden, f32 dpi_scale) {
     const std::string text = read_text(data_path(document));
     const Status loaded = instance.load(text, kNoElement, &files, nullptr);
     for (const DocumentDiagnostic& diagnostic : instance.diagnostics()) {
-        std::fprintf(stderr, "%s:%u: %s %s\n", document, diagnostic.line, diagnostic.message,
-                     diagnostic.detail.text().data());
+        const std::string_view detail = diagnostic.detail.text();
+        std::fprintf(stderr, "%s:%u: %s %.*s\n", document, diagnostic.line, diagnostic.message,
+                     static_cast<int>(detail.size()), detail.data());
     }
     CY_REQUIRE(loaded.has_value());
     CY_REQUIRE(kit.frame());

@@ -194,7 +194,7 @@ public:
     FileDocumentResolver(Allocator& allocator, std::string_view root) noexcept;
     void set_root(std::string_view root) noexcept;
     /// `root/path`, as a C string in `out`.
-    [[nodiscard]] Status full_path(std::string_view path, Array<char>& out) const noexcept;
+    [[nodiscard]] Status full_path(std::string_view path, Array<char>& full) const noexcept;
     [[nodiscard]] Status read(std::string_view path, Array<char>& out) noexcept override;
 
 private:
