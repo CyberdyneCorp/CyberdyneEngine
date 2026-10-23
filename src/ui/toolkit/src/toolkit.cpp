@@ -843,6 +843,12 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
         (void)close_dialog(*widget);
     }
     unbind(widget_id);
+    // A DIALOG LIVES IN THE OVERLAY, not under the widget it was made in: one that widget holds,
+    // or holds through its children, goes with it rather than staying on screen with no parent.
+    if (Status held = destroy_held_dialogs(widget_id); !held) {
+        return held;
+    }
+    widget = record(widget_id);
     // A TAB PAGE TAKES ITS TAB WITH IT, and the tabs after it move up one.
     if (Widget* owner = record(widget->parent);
         owner != nullptr && owner->kind == WidgetKind::Tabs) {
@@ -883,6 +889,11 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
             return appended;
         }
     }
+    // A drop-down's list and a dialog live in the overlay, outside what is destroyed: one that a
+    // destroyed ANCESTOR held open is closed here, or its list stays on screen with no owner.
+    if (Status closed = close_layers_in(doomed.span()); !closed) {
+        return closed;
+    }
     for (const ElementId element : doomed.span()) {
         const Part* part = part_record(element);
         if (part != nullptr && part->widget != kNone) {
@@ -911,6 +922,48 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
     }
     if (interaction_.focus().is_valid() && !store_.alive(interaction_.focus())) {
         (void)interaction_.set_focus(store_, kNoElement);
+    }
+    return ok();
+}
+
+Status Toolkit::destroy_held_dialogs(WidgetId holder) noexcept {
+    for (u32 index = 0; index < widgets_.size(); ++index) {
+        const Widget& other = widgets_[index];
+        if (!other.alive || other.kind != WidgetKind::Dialog || other.element == holder) {
+            continue;
+        }
+        WidgetId walk = other.parent;
+        while (walk.is_valid() && walk != holder) {
+            const Widget* up = record(walk);
+            walk = up != nullptr ? up->parent : kNoElement;
+        }
+        if (walk == holder) {
+            if (Status destroyed = destroy(other.element); !destroyed) {
+                return destroyed;
+            }
+        }
+    }
+    return ok();
+}
+
+Status Toolkit::close_layers_in(Span<const ElementId> doomed) noexcept {
+    const auto contains = [doomed](ElementId element) noexcept {
+        return std::find(doomed.begin(), doomed.end(), element) != doomed.end();
+    };
+    if (popup_.is_valid() && contains(popup_owner_)) {
+        if (Status closed = close_dropdown(); !closed) {
+            return closed;
+        }
+    }
+    while (!dialogs_.empty() && contains(dialogs_[dialogs_.size() - 1])) {
+        Widget* dialog = record(dialogs_[dialogs_.size() - 1]);
+        if (dialog == nullptr) {
+            dialogs_.pop_back();
+            continue;
+        }
+        if (Status closed = close_dialog(*dialog); !closed) {
+            return closed;
+        }
     }
     return ok();
 }

@@ -41,6 +41,9 @@ struct DocumentInstance::Expanded {
     u32 parent = DocumentNode::kNoParent;
     u32 first_property = 0;
     u32 property_count = 0;
+    /// The line of the ROOT document this element came from — a `use` line for the top of what it
+    /// instantiated — or zero for one a used document holds. What an editor maps its lines by.
+    u32 source_line = 0;
     WidgetId widget;
 };
 
@@ -226,6 +229,9 @@ public:
                 return element;
             }
             mapped[index] = made;
+            if (document == 0 && made != DocumentNode::kNoParent) {
+                out_->nodes[made].source_line = node.line;
+            }
             if (node.parent == DocumentNode::kNoParent && first_top == DocumentNode::kNoParent &&
                 made != DocumentNode::kNoParent) {
                 first_top = made;
@@ -762,10 +768,10 @@ Status DocumentInstance::adopt(Expansion& next) noexcept {
         if (Status kept = sheet_.append(next.sheet.span()); !kept) {
             return kept;
         }
-        if (!sheet.empty()) {
-            if (Status applied = toolkit_->set_stylesheet(sheet); !applied) {
-                return applied;
-            }
+        // An empty sheet is applied too: a document that stopped naming its sheet is no longer
+        // styled by it.
+        if (Status applied = toolkit_->set_stylesheet(sheet); !applied) {
+            return applied;
         }
     }
     return ok();
@@ -906,6 +912,18 @@ Status DocumentInstance::unload() noexcept {
     allocator_->deallocate(current_, sizeof(Expansion), alignof(Expansion));
     current_ = nullptr;
     return ok();
+}
+
+WidgetId DocumentInstance::widget_at_line(u32 line) const noexcept {
+    if (current_ == nullptr || line == 0) {
+        return kNoElement;
+    }
+    for (const Expanded& node : current_->nodes.span()) {
+        if (node.source_line == line) {
+            return node.widget;
+        }
+    }
+    return kNoElement;
 }
 
 WidgetId DocumentInstance::find(std::string_view id) const noexcept {
