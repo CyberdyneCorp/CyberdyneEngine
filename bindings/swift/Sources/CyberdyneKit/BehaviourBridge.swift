@@ -260,8 +260,9 @@ private let behaviourExitTree: @convention(c) (CyInstance?, UnsafeMutableRawPoin
     treeCallback(raw, userData, .exitTree, "onExitTree") { try $0.onExitTree() }
 }
 
-/// `ui_event`, ABI 1.6: a click runs the action the button was mounted with, then `onUIEvent` if the
-/// class wrote it. A throw from either disables the instance, as from any callback.
+/// `ui_event`, ABI 1.6: a click runs the action the button was mounted with; ABI 1.11: any event runs
+/// the handler `on(_:of:run:)` registered for its widget and kind; then `onUIEvent` if the class
+/// wrote it. A throw from any of them disables the instance, as from any callback.
 private let behaviourUIEvent:
     @convention(c) (CyInstance?, UnsafePointer<CyUiEvent>?, UnsafeMutableRawPointer?)
         -> Void = { raw, event, userData in
@@ -272,6 +273,9 @@ private let behaviourUIEvent:
             do {
                 if value.kind == .click, let action = object.uiHandlers[value.element.raw] {
                     try action(value)
+                }
+                if let handler = object.uiEventHandlers[value.element.raw]?[value.kind] {
+                    try handler(value)
                 }
                 if record.callbacks.contains(.uiEvent) {
                     try object.onUIEvent(value)
