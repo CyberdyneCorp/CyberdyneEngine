@@ -196,6 +196,12 @@ add_subdirectory(14-third-person)
 # CY_VFX, like 13-rts-api.
 add_subdirectory(15-first-person)
 
+# A game's menus, in Swift, over documents made in the UI layout editor (#29, #91): a main menu, a
+# settings screen that applies the display, GI and audio settings to the engine and rebinds the
+# game's actions through the input system, a pause menu and an inventory with drag and drop — all
+# driven by a keyboard and a gamepad. Declares nothing without Swift or CyberUI, like 13-rts-api.
+add_subdirectory(16-menus)
+
 # THE FIXTURE'S SHAPE, CHECKED AGAINST THE CONFIGURED TREE. Every entry that drives the editor must
 # require `cy_editor` and pass no `--build`, or the editor's cold build is back inside a session's
 # smoke budget — which is how `agent` and `authorable` timed out. Declared here, after every sample

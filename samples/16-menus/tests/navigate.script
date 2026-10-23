@@ -1,0 +1,118 @@
+# The menus driven as a player with a gamepad would, from a first start: every screen, every
+# setting kind, a rebind on each scheme, the inventory by d-pad and by pointer, and a save of a
+# document in the editor while the game runs. test_menus_sample.cpp reads the reports, in order.
+#
+# frame  verb  arguments                                   report: what it shows
+
+# --- The main menu: Continue is disabled with no saved session, so the d-pad skips it.
+5    report                                                # 0  main menu, New game focused
+10   tap   gamepad/dpadDown
+20   tap   gamepad/south
+24   report                                                # 1  settings, Resolution focused
+
+# --- Graphics: 1920x1080, Medium, Quality upscaling, Medium GI — nothing applied until Apply.
+30   tap   gamepad/south
+40   tap   gamepad/dpadDown
+50   tap   gamepad/south
+60   tap   gamepad/dpadDown
+70   tap   gamepad/south
+80   tap   gamepad/dpadUp
+90   tap   gamepad/south
+100  tap   gamepad/dpadDown
+110  tap   gamepad/south
+120  tap   gamepad/dpadDown
+130  tap   gamepad/south
+140  tap   gamepad/dpadDown
+150  tap   gamepad/south
+160  tap   gamepad/dpadUp
+170  tap   gamepad/south
+172  shot  settings-graphics
+175  report                                                # 2  still 1280x720, High
+
+# --- Audio: the right shoulder; the sliders are the buses, so a step is heard at once.
+180  tap   gamepad/rightShoulder
+190  tap   gamepad/dpadDown
+200  tap   gamepad/dpadLeft
+210  tap   gamepad/dpadLeft
+220  tap   gamepad/dpadDown
+230  tap   gamepad/dpadLeft
+232  shot  settings-audio
+234  report                                                # 3  Master 0.9, Music 0.95
+
+# --- Controls: Jump to the gamepad's north button (Inventory's: swapped), and to E on the
+# keyboard (Interact's: swapped), then a rebind cancelled with Escape.
+240  tap   gamepad/rightShoulder
+250  tap   gamepad/dpadDown
+260  tap   gamepad/dpadRight
+270  tap   gamepad/south
+276  report                                                # 4  listening
+282  shot  settings-rebind
+285  tap   gamepad/north
+294  report                                                # 5  Jump on north
+300  tap   gamepad/dpadLeft
+310  tap   gamepad/south
+320  tap   keyboard/e
+330  report                                                # 6  Jump on E, Interact on Space
+340  tap   gamepad/south
+350  tap   keyboard/escape
+354  shot  settings-controls
+356  report                                                # 7  cancelled: nothing changed
+
+# --- Apply, then back to the main menu with B.
+360  tap   gamepad/dpadDown
+370  tap   gamepad/dpadDown
+380  tap   gamepad/dpadDown
+390  tap   gamepad/dpadDown
+400  tap   gamepad/dpadDown
+410  tap   gamepad/south
+414  report                                                # 8  applied: 1920x1080 and the rest
+420  tap   gamepad/east
+424  report                                                # 9  main menu
+
+# --- New game, the pause menu, the inventory.
+430  tap   gamepad/south
+434  report                                                # 10 playing, no focus
+440  tap   gamepad/start
+444  report                                                # 11 paused, Resume focused
+450  tap   gamepad/dpadDown
+460  tap   gamepad/south
+464  report                                                # 12 inventory, slot 0 focused
+470  tap   gamepad/south
+480  tap   gamepad/dpadRight
+490  tap   gamepad/south
+494  report                                                # 13 the potion moved to slot 1
+500  tap   gamepad/dpadDown
+510  tap   gamepad/south
+520  tap   gamepad/east
+524  report                                                # 14 picked up, put back
+530  point #slot-1
+532  press mouse/left
+534  point #slot-2
+536  point #slot-3
+538  point #slot-4
+539  shot  inventory-drag
+540  point #slot-5
+544  release mouse/left
+548  report                                                # 15 the potion dragged to slot 5
+550  point #slot-2
+610  shot  inventory-tooltip
+620  tap   gamepad/east
+630  tap   gamepad/east
+634  report                                                # 16 playing again
+640  tap   keyboard/escape
+644  shot  pause
+646  report                                                # 17 paused by the keyboard
+650  tap   gamepad/dpadDown
+660  tap   gamepad/dpadDown
+670  tap   gamepad/dpadDown
+680  tap   gamepad/south
+684  report                                                # 18 main menu
+
+# --- A save in the editor: the subtitle changes under the running game.
+690  edit  ui/main_menu.cyui made remade
+700  shot  main-menu-reloaded
+704  report                                                # 19 reloaded
+710  tap   gamepad/dpadDown
+720  tap   gamepad/dpadDown
+730  tap   gamepad/south
+734  report                                                # 20 quit
