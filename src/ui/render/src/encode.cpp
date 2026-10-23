@@ -329,10 +329,9 @@ Status build_draws(const PrimitiveBuffer& buffer, f32 scale, u32 width, u32 heig
         UiGroupTarget target;
         target.first_draw = static_cast<u32>(out.group_draws.size());
         target.region = pixels_covering(group.bounds, scale, width, height);
-        if (Status appended = append_draws(group_batches.subspan(group.first_batch,
-                                                                 group.batch_count),
-                                           primitives, clips, scale, width, height,
-                                           out.group_draws, out.clipped_batches);
+        if (Status appended = append_draws(
+                group_batches.subspan(group.first_batch, group.batch_count), primitives, clips,
+                scale, width, height, out.group_draws, out.clipped_batches);
             !appended) {
             return appended;
         }

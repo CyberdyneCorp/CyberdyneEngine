@@ -4,10 +4,11 @@
 // The toolkit driven by the engine's input actions, and gameplay suppressed while the interface
 // holds the input. Issue #91, stage 4.
 //
-// `ui-system`: "UI SHALL consume semantic actions from `input-and-actions`, never raw device input",
-// and "Interface actions SHALL live in mapping contexts pushed onto the input user's context stack,
-// so that a modal consumes navigation while a background context does not observe it, and so that
-// gameplay actions bound to the same controls are suppressed while the interface holds focus."
+// `ui-system`: "UI SHALL consume semantic actions from `input-and-actions`, never raw device
+// input", and "Interface actions SHALL live in mapping contexts pushed onto the input user's
+// context stack, so that a modal consumes navigation while a background context does not observe
+// it, and so that gameplay actions bound to the same controls are suppressed while the interface
+// holds focus."
 //
 // ================================================================================================
 // THE ACTIONS, THE CONTEXT, THE BRIDGE
@@ -22,8 +23,8 @@
 //                                   field holds the input, `Gameplay` otherwise
 //
 // THE SUPPRESSION IS THE INPUT SYSTEM'S. The interface context is pushed at
-// `FocusLayer::Interface`; the game's own at `Gameplay`. `InputUser` drops every binding whose layer
-// is not the user's focus, so while a modal is open a gameplay action bound to Enter is not
+// `FocusLayer::Interface`; the game's own at `Gameplay`. `InputUser` drops every binding whose
+// layer is not the user's focus, so while a modal is open a gameplay action bound to Enter is not
 // observed — not because game code checked a flag, but because the input user's focus is the
 // interface. And the interface's own bindings do nothing while the game has the focus, so pressing
 // Enter in play does not click a HUD button nobody is looking at.
@@ -50,8 +51,8 @@ struct UiInputActions {
                                         UiInputActions& out) noexcept;
 
 /// The default interface bindings. Keyboard: Enter and Space accept, Escape cancels, the arrows
-/// navigate, Tab and Shift+Tab walk the tab order, Page Up and Page Down scroll, Q and E change tabs.
-/// Gamepad: south accepts, east cancels, the d-pad and the left stick navigate, the shoulders
+/// navigate, Tab and Shift+Tab walk the tab order, Page Up and Page Down scroll, Q and E change
+/// tabs. Gamepad: south accepts, east cancels, the d-pad and the left stick navigate, the shoulders
 /// change tabs, the right stick scrolls, north is the context action.
 [[nodiscard]] Expected<input::MappingContext, Error> make_ui_context(
     Allocator& allocator, const UiInputActions& actions) noexcept;

@@ -67,7 +67,7 @@ class FakeToolkit final : public cy::abi::game::UiBackend {
 public:
     CyUiWidgetDesc widget{};
     std::vector<std::string> items;
-    std::string text = "caf\xC3\xA9";  // five bytes, the last code point two
+    std::string text = "pur\xC3\xA9";  // five bytes, the last code point two
     std::string sheet;
     std::string classes;
     std::string document;
@@ -348,11 +348,11 @@ CY_TEST_CASE("a widget's text comes back whole, or cut at a code point when the 
     char whole[8] = {};
     CY_REQUIRE_EQ(iface.ui_widget_text(&bound.host, kWidget, whole, sizeof(whole), &size),
                   CY_RESULT_OK);
-    CY_CHECK_EQ(std::string_view(whole), "caf\xC3\xA9");
+    CY_CHECK_EQ(std::string_view(whole), "pur\xC3\xA9");
     // Five bytes into a five-byte buffer: four fit, and the fourth is half the é — so three.
     char short_buffer[5] = {'x', 'x', 'x', 'x', 'x'};
     CY_REQUIRE_EQ(iface.ui_widget_text(&bound.host, kWidget, short_buffer, 5, &size), CY_RESULT_OK);
-    CY_CHECK_EQ(std::string_view(short_buffer), "caf");
+    CY_CHECK_EQ(std::string_view(short_buffer), "pur");
     CY_CHECK_EQ(size, 5U);
     CY_CHECK_EQ(iface.ui_widget_text(&bound.host, kWidget, nullptr, 4, &size),
                 CY_RESULT_INVALID_ARGUMENT);

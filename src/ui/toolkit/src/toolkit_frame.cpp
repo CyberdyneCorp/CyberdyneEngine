@@ -251,7 +251,9 @@ Status Toolkit::build_rich_text(Widget& widget) noexcept {
     Array<f32> sizes(*allocator_);
     RichRun current;
     bool span_open = false;
-    const auto run_offset = [&]() noexcept { return static_cast<u32>(plain.size() - current.begin); };
+    const auto run_offset = [&]() noexcept {
+        return static_cast<u32>(plain.size() - current.begin);
+    };
     const auto open_span = [&]() noexcept -> Status {
         span_open = false;
         if (colours.empty()) {
@@ -345,8 +347,8 @@ Status Toolkit::build_rich_text(Widget& widget) noexcept {
             for (f32& field : fields) {
                 const usize comma = rest.find(',');
                 (void)parse_number(rest.substr(0, comma), field);
-                rest = (comma == std::string_view::npos) ? std::string_view{}
-                                                         : rest.substr(comma + 1);
+                rest =
+                    (comma == std::string_view::npos) ? std::string_view{} : rest.substr(comma + 1);
             }
             image.page = static_cast<u16>(fields[0]);
             image.uv = Rect{fields[1], fields[2], fields[3], fields[4]};
@@ -526,8 +528,9 @@ Status Toolkit::place_thumb(ElementId thumb, f32 window, f32 total, f32 scroll) 
     const bool shows = thumb_layout(window, total, scroll, next);
     const ElementFlags flags = store_.flags(thumb);
     if (has_flag(flags, ElementFlags::Visible) != shows) {
-        if (Status set = store_.set_flags(thumb, shows ? (flags | ElementFlags::Visible)
-                                                       : without_flag(flags, ElementFlags::Visible));
+        if (Status set =
+                store_.set_flags(thumb, shows ? (flags | ElementFlags::Visible)
+                                              : without_flag(flags, ElementFlags::Visible));
             !set) {
             return set;
         }
@@ -627,8 +630,8 @@ Status Toolkit::place_overlays(f32 seconds) noexcept {
     if (ring) {
         const Rect rect = store_.layout_output(focus)->rect;
         Part* part = part_record(focus_ring_);
-        if (place_at(part->base_layout, Rect{rect.x - 3.0F, rect.y - 3.0F, rect.width + 6.0F,
-                                             rect.height + 6.0F})) {
+        if (place_at(part->base_layout,
+                     Rect{rect.x - 3.0F, rect.y - 3.0F, rect.width + 6.0F, rect.height + 6.0F})) {
             mark_style(focus_ring_);
         }
     }
@@ -646,8 +649,7 @@ Status Toolkit::place_overlays(f32 seconds) noexcept {
     if (popup_.is_valid() && store_.alive(popup_owner_)) {
         const Rect owner = store_.layout_output(popup_owner_)->rect;
         Part* part = part_record(popup_);
-        if (place_at(part->base_layout,
-                     Rect{owner.x, owner.bottom() + 2.0F, owner.width, 0.0F})) {
+        if (place_at(part->base_layout, Rect{owner.x, owner.bottom() + 2.0F, owner.width, 0.0F})) {
             mark_style(popup_);
         }
     }
@@ -661,9 +663,8 @@ Status Toolkit::place_overlays(f32 seconds) noexcept {
     const bool tooltip = wants && hover_seconds_ >= settings_.tooltip_delay;
     if (tooltip && tooltip_target_ != hovered_) {
         tooltip_target_ = hovered_;
-        if (Status set = set_element_text(tooltip_label_,
-                                          std::string_view(hovered->tooltip.data(),
-                                                           hovered->tooltip.size()));
+        if (Status set = set_element_text(
+                tooltip_label_, std::string_view(hovered->tooltip.data(), hovered->tooltip.size()));
             !set) {
             return set;
         }
@@ -742,10 +743,10 @@ Status Toolkit::write_back(Widget& widget, WidgetProperty property) noexcept {
             break;
         case WidgetProperty::Text: {
             value.kind = BoundValue::Kind::Text;
-            const std::string_view text = widget.kind == WidgetKind::TextField
-                                              ? widget.editor.text()
-                                              : std::string_view(widget.caption.data(),
-                                                                 widget.caption.size());
+            const std::string_view text =
+                widget.kind == WidgetKind::TextField
+                    ? widget.editor.text()
+                    : std::string_view(widget.caption.data(), widget.caption.size());
             value.text = Name::intern(text);
             break;
         }

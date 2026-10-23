@@ -363,10 +363,9 @@ Expected<bool, Error> TextEditor::step(Array<Change>& from, Array<Change>& to,
     }
     const Change change = from[from.size() - 1];
     from.pop_back();
-    const std::string_view removed = view_of(history_, change.removed_first,
-                                             change.removed_length);
-    const std::string_view inserted = view_of(history_, change.inserted_first,
-                                              change.inserted_length);
+    const std::string_view removed = view_of(history_, change.removed_first, change.removed_length);
+    const std::string_view inserted =
+        view_of(history_, change.inserted_first, change.inserted_length);
     // Undoing puts back what the change removed; redoing does the change again. Either way the
     // inverse goes on the other stack, so undo and redo alternate for ever.
     const std::string_view put = undoing ? removed : inserted;

@@ -55,10 +55,12 @@ struct Rig {
     }
 
     [[nodiscard]] bool attach() noexcept {
-        for (const input::DeviceKind kind : {input::DeviceKind::Keyboard, input::DeviceKind::Gamepad}) {
+        for (const input::DeviceKind kind :
+             {input::DeviceKind::Keyboard, input::DeviceKind::Gamepad}) {
             input::DeviceDescription description;
             description.kind = kind;
-            description.hardware_id = Name::intern(kind == input::DeviceKind::Keyboard ? "kb" : "pad");
+            description.hardware_id =
+                Name::intern(kind == input::DeviceKind::Keyboard ? "kb" : "pad");
             description.display_name = description.hardware_id;
             auto connected = server.devices().connect(description, 0);
             if (!connected || !server.assign(*connected, 0, 0).has_value()) {
@@ -76,8 +78,9 @@ struct Rig {
         }
         auto ui_handle = server.register_context(std::move(*ui));
         input::MappingContext game(allocator());
-        for (const input::Control control : {input::key_control(input::Key::Enter),
-                                             input::gamepad_control(input::GamepadControl::South)}) {
+        for (const input::Control control :
+             {input::key_control(input::Key::Enter),
+              input::gamepad_control(input::GamepadControl::South)}) {
             input::Binding binding;
             binding.action = confirm;
             binding.component_count = 1;
@@ -88,7 +91,9 @@ struct Rig {
         }
         auto game_handle = server.register_context(std::move(game));
         return ui_handle && game_handle &&
-               server.user(0).push_context(*game_handle, 0, input::FocusLayer::Gameplay).has_value() &&
+               server.user(0)
+                   .push_context(*game_handle, 0, input::FocusLayer::Gameplay)
+                   .has_value() &&
                bridge.start(actions, *ui_handle).has_value();
     }
 
@@ -165,7 +170,8 @@ struct Rig {
 
 }  // namespace
 
-CY_TEST_CASE("ui_input: Enter, the gamepad's south button and a click each reach a button as UI.Accept") {
+CY_TEST_CASE(
+    "ui_input: Enter, the gamepad's south button and a click each reach a button as UI.Accept") {
     // `ui-system`: "WHEN a button handles UI.Accept THEN it SHALL respond to Enter, left click,
     // gamepad south button, or tap, with no device-specific code."
     Rig rig;
@@ -185,15 +191,16 @@ CY_TEST_CASE("ui_input: Enter, the gamepad's south button and a click each reach
     CY_CHECK_EQ(rig.clicks(play), 2U);
     // A click and a tap are the pointer's, through the same toolkit and the same event.
     const LayoutOutput* out = rig.store.layout_output(play);
-    const Vec2 centre{out->rect.x + (out->rect.width * 0.5F), out->rect.y + (out->rect.height * 0.5F)};
+    const Vec2 centre{out->rect.x + (out->rect.width * 0.5F),
+                      out->rect.y + (out->rect.height * 0.5F)};
     (void)rig.toolkit.pointer(PointerInput{centre, true, {}, 0});
     (void)rig.toolkit.pointer(PointerInput{centre, false, {}, 0});
     CY_CHECK_EQ(rig.clicks(play), 3U);
 }
 
 CY_TEST_CASE("ui_input: a modal suppresses the game's action on the same key, and gives it back") {
-    // `ui-system`: "WHEN a modal interface layer is open THEN its context SHALL consume the actions it
-    // uses, and gameplay bound to the same controls SHALL NOT observe them."
+    // `ui-system`: "WHEN a modal interface layer is open THEN its context SHALL consume the actions
+    // it uses, and gameplay bound to the same controls SHALL NOT observe them."
     Rig rig;
     CY_REQUIRE(rig.started);
     WidgetDesc desc;
@@ -229,7 +236,8 @@ CY_TEST_CASE("ui_input: a modal suppresses the game's action on the same key, an
     CY_CHECK(rig.confirmed());
 }
 
-CY_TEST_CASE("ui_input: the d-pad, the stick and the keyboard navigate; Tab and Shift+Tab walk the order") {
+CY_TEST_CASE(
+    "ui_input: the d-pad, the stick and the keyboard navigate; Tab and Shift+Tab walk the order") {
     Rig rig;
     CY_REQUIRE(rig.started);
     WidgetDesc grid;
@@ -268,8 +276,8 @@ CY_TEST_CASE("ui_input: the d-pad, the stick and the keyboard navigate; Tab and 
 }
 
 CY_TEST_CASE("ui_input: the prompt glyph follows the device last used") {
-    // `ui-system`: "WHEN the player switches from keyboard to gamepad THEN prompts SHALL update to the
-    // gamepad's glyphs."
+    // `ui-system`: "WHEN the player switches from keyboard to gamepad THEN prompts SHALL update to
+    // the gamepad's glyphs."
     Rig rig;
     CY_REQUIRE(rig.started);
     rig.tick();

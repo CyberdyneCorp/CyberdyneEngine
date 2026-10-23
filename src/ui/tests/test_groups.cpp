@@ -17,7 +17,8 @@ Allocator& allocator() noexcept {
 
 const ui::Rect kScreen{0.0F, 0.0F, 640.0F, 480.0F};
 
-[[nodiscard]] ElementId add(ElementStore& store, ElementId parent, ui::Rect rect, u32 colour) noexcept {
+[[nodiscard]] ElementId add(ElementStore& store, ElementId parent, ui::Rect rect,
+                            u32 colour) noexcept {
     auto created = store.create(parent, Name::intern("panel"));
     if (!created) {
         return kNoElement;
@@ -127,7 +128,8 @@ CY_TEST_CASE("ui_groups: a group inside a group is listed first, and sampled by 
     CY_CHECK_EQ(buffer.groups()[0].opacity, 0.5F);
 }
 
-CY_TEST_CASE("ui_transform: a render transform moves and scales a subtree, and layout never knows") {
+CY_TEST_CASE(
+    "ui_transform: a render transform moves and scales a subtree, and layout never knows") {
     ElementStore store(allocator());
     const ElementId panel = add(store, kNoElement, ui::Rect{100, 100, 100, 100}, 0xFF202020U);
     const ElementId child = add(store, panel, ui::Rect{100, 100, 50, 50}, 0xFFFFFFFFU);
@@ -176,7 +178,8 @@ CY_TEST_CASE("ui_focus: the tab order is document order within the active layer,
     ElementId buttons[4];
     for (u32 index = 0; index < 4; ++index) {
         buttons[index] = add(store, root, ui::Rect{static_cast<f32>(index) * 50.0F, 0, 40, 40}, 1U);
-        (void)store.set_flags(buttons[index], store.flags(buttons[index]) | ElementFlags::Focusable);
+        (void)store.set_flags(buttons[index],
+                              store.flags(buttons[index]) | ElementFlags::Focusable);
     }
     // A focusable element inside a collapsed parent is not in the order.
     const ElementId hidden = add(store, root, ui::Rect{0, 100, 40, 40}, 0U);
@@ -187,7 +190,7 @@ CY_TEST_CASE("ui_focus: the tab order is document order within the active layer,
     CY_CHECK_EQ(interaction.focus_next(store, false), buttons[0]);
     CY_CHECK_EQ(interaction.focus_next(store, false), buttons[1]);
     CY_CHECK_EQ(interaction.focus_next(store, true), buttons[0]);
-    CY_CHECK_EQ(interaction.focus_next(store, true), buttons[3]);  // wrapped backwards
+    CY_CHECK_EQ(interaction.focus_next(store, true), buttons[3]);   // wrapped backwards
     CY_CHECK_EQ(interaction.focus_next(store, false), buttons[0]);  // and forwards
     auto routed = interaction.route_action(store, UiAction::FocusNext);
     CY_REQUIRE(routed.has_value());

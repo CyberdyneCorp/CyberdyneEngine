@@ -208,9 +208,7 @@ public:
     [[nodiscard]] Span<const OpacityGroup> groups() const noexcept { return groups_.span(); }
     /// The groups' batches. `batches()` holds the main stream's only, so a renderer that knows
     /// nothing of groups draws exactly what it drew before them.
-    [[nodiscard]] Span<const Batch> group_batches() const noexcept {
-        return group_batches_.span();
-    }
+    [[nodiscard]] Span<const Batch> group_batches() const noexcept { return group_batches_.span(); }
     void clear() noexcept;
 
     friend Status flatten(ElementStore&, const Rect&, PrimitiveBuffer&, FlattenReport&,

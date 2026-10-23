@@ -3,7 +3,8 @@
 CyberUI on the device: the flattened primitive stream drawn over the frame at its interface stage.
 
 **Governed by**: `ui-system` — "Rendering", "GPU-driven rendering". Change:
-`openspec/changes/add-runtime-ui-rendering/` (issue #91, stage 1). Behind `CY_UI` with the rest of
+`openspec/changes/add-runtime-ui-rendering/` (issue #91, stage 1) and
+`openspec/changes/add-ui-toolkit/` (stage 2: opacity groups and the HDR composite). Behind `CY_UI` with the rest of
 `src/ui/`.
 
 ## The files
@@ -28,6 +29,21 @@ post-process ─► output ─► selection outlines ─► ui ─► present
 pass that loads and stores the colour the chain ended in. Without a producer the stage is the single
 pass it always was. With one attached and nothing to draw, the pass records nothing and the frame is
 the frame from before the pass existed, byte for byte (`render.ui`, case (a)).
+
+**Opacity groups.** An element flagged `ElementFlags::OpacityGroup` has its subtree flattened after
+the main stream, with batches of its own (`PrimitiveBuffer::groups()`). The renderer declares one
+graph pass per group, drawing it into a cleared transient target the size of the frame
+(`group_format`), and the interface pass samples it once through a composite primitive at the
+group's opacity — atlas `kFirstGroupAtlas + n` — so overlapping children of a faded panel do not
+darken their overlap. At most `kMaxOpacityGroups` (16) a frame; a frame with none declares nothing
+new (`render.ui_toolkit` (a), (b)).
+
+**The HDR composite.** `FramePassKind::UiHdr` is declared after motion blur and before bloom when
+`FrameSinks::ui_hdr` has a producer. A second renderer created for the frame's float colour format
+decodes the rows' sRGB colours to linear light and multiplies them by `scene_scale` (the frame's
+exposure, so a document is as bright on screen as it was authored); a row's fourth shape word,
+`PaintData::intensity`, multiplies further, so an emissive element blooms (`render.ui_toolkit` (c),
+(e)). Zero is read as one, which keeps every row written before it unchanged.
 
 ## What a caller does
 
@@ -75,15 +91,22 @@ device does; `render.ui` requires every pixel within one 8-bit step of it.
 
 ## Not built
 
-Offscreen opacity groups, the HDR composite before the tone curve, custom UI materials, blur-behind,
-world-space and surface-space documents, and transforms other than the identity (`ui-system` stage 2
-and 3 of issue #91). Metal's MSL is generated and committed and not exercised on this host; D3D12 is
-compiled and compared by `just build-shaders --strict`, and no DXIL is embedded.
+Custom UI materials, blur-behind, world-space and surface-space documents (`ui-system` stage 2 and
+3 of issue #91), and a render transform beyond a translation and a uniform scale. Metal's MSL is
+generated and committed and not exercised on this host; D3D12 is compiled and compared by
+`just build-shaders --strict`, and no DXIL is embedded.
 
 ## Testing
 
-`unit.ui_render` — the rows, the scissor rule, one draw per batch, and the reference. `render.ui` —
-seven cases on a Vulkan device, with validation on; see `tests/test_ui_device.cpp`'s header.
+`unit.ui_render` — the rows, the scissor rule, one draw per batch, groups and their composite, and
+the reference. `render.ui` — seven cases on a Vulkan device, with validation on; see
+`tests/test_ui_device.cpp`'s header. `render.ui_toolkit` — five, for the toolkit, groups and the
+HDR stage; see `tests/test_ui_toolkit_device.cpp`'s.
+
+| The widget gallery | With its dialog open |
+|---|---|
+| ![](../../../docs/design/images/ui-widget-gallery.png) | ![](../../../docs/design/images/ui-widget-gallery-dialog.png) |
+
 
 | No interface | The strategy HUD and the console |
 |---|---|

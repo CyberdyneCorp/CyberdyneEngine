@@ -44,6 +44,15 @@ by handle. No SwiftUI. A button's action and `Behaviour.onUIEvent` are reached t
 `UITests.swift` covers the facades and the routing against `FakeEngine`; the guide is
 [docs/guides/swift.md](../../docs/guides/swift.md#the-interface-abi-16).
 
+`UIToolkit.swift` and `UIWidgetBuilder.swift` wrap ABI 1.12's widget toolkit: `Widget` handles
+(text, value, selection, items, classes, open and close, animations), `UI.loadDocument` and
+`Behaviour.loadUI` for `.cyui` documents, `UI.loadStylesheet`, `UI.find`, `UI.navigate`, and a
+declarative layer — `WidgetNode` containers and leaves, `mountWidgets`, `WidgetTree` — whose
+`UIWidgetBinding`s push the game's state on `refresh` and write the player's changes back from
+CHANGED and SUBMITTED events. `Behaviour.on(_:of:run:)` registers a handler for one event kind of
+one widget. `UIToolkitTests.swift` covers it against `FakeEngine`; the guide is
+[docs/guides/swift.md](../../docs/guides/swift.md#the-widget-toolkit-abi-112).
+
 ## Writing a game
 
 ```swift

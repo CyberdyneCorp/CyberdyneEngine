@@ -628,8 +628,8 @@ bool UiRenderer::declare_groups(RenderGraph& graph) noexcept {
     return graph.status().has_value();
 }
 
-Expected<rhi::DescriptorSetHandle, Error> UiRenderer::set_for(const PassContext& context,
-                                                              u16 page, u32 slot) noexcept {
+Expected<rhi::DescriptorSetHandle, Error> UiRenderer::set_for(const PassContext& context, u16 page,
+                                                              u32 slot) noexcept {
     // An opacity group's composite samples the group's target, which this frame's graph made.
     rhi::TextureViewHandle view = (has_atlas(page) ? pages_[page] : pages_[0]).view;
     if (samples_group(page)) {

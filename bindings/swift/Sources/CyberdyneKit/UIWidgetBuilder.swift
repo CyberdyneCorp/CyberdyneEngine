@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// UIWidgetBuilder.swift — a declarative way to write a toolkit interface over ABI 1.11: widget
+// UIWidgetBuilder.swift — a declarative way to write a toolkit interface over ABI 1.12: widget
 // nodes in a result builder, their handlers, and values bound both ways to the game's state.
 //
 //     let menu = try mountWidgets {

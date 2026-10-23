@@ -84,7 +84,7 @@ open class Behaviour {
     /// fills it; the bridge's `ui_event` thunk reads it.
     var uiHandlers: [CyUiElement: UIEventHandler] = [:]
 
-    /// ABI 1.11: the handlers `on(_:of:run:)` registered, by widget and then by event kind.
+    /// ABI 1.12: the handlers `on(_:of:run:)` registered, by widget and then by event kind.
     var uiEventHandlers: [CyUiElement: [UIEventKind: UIEventHandler]] = [:]
 
     public required init(entity: Entity) {

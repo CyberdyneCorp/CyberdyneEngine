@@ -81,8 +81,8 @@ Status Toolkit::focus(WidgetId widget_id) noexcept {
     if (record(widget_id) == nullptr) {
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
-    // A widget that is not drawn — on a tab page not shown, under a collapsed panel — is not a place
-    // focus may go, whatever its own flags say.
+    // A widget that is not drawn — on a tab page not shown, under a collapsed panel — is not a
+    // place focus may go, whatever its own flags say.
     for (ElementId walk = widget_id; walk.is_valid();) {
         const ElementFlags flags = store_.flags(walk);
         if (!has_flag(flags, ElementFlags::Visible) || has_flag(flags, ElementFlags::Collapsed)) {
@@ -194,15 +194,16 @@ Status Toolkit::select(Widget& widget, u32 index, bool by_player) noexcept {
                 }
             }
             if (widget.kind == WidgetKind::Tabs) {
-                // ONLY THE SELECTED PAGE TAKES PART IN LAYOUT: the others are collapsed, so a hidden
-                // page costs nothing and nothing on it is a place focus can go.
+                // ONLY THE SELECTED PAGE TAKES PART IN LAYOUT: the others are collapsed, so a
+                // hidden page costs nothing and nothing on it is a place focus can go.
                 Array<WidgetId> pages(*allocator_);
                 if (Status listed = children(id, pages); !listed) {
                     return listed;
                 }
                 for (const WidgetId page : pages.span()) {
                     const Widget* page_widget = record(page);
-                    if (Status shown = set_visible(page, page_widget->index == record(id)->selected);
+                    if (Status shown =
+                            set_visible(page, page_widget->index == record(id)->selected);
                         !shown) {
                         return shown;
                     }
@@ -236,9 +237,9 @@ Status Toolkit::set_slider_from(Widget& widget, f32 x) noexcept {
     if (output == nullptr || output->rect.width <= 2.0F * kThumbInset) {
         return ok();
     }
-    const f32 fraction = std::clamp((x - output->rect.x - kThumbInset) /
-                                        (output->rect.width - (2.0F * kThumbInset)),
-                                    0.0F, 1.0F);
+    const f32 fraction =
+        std::clamp((x - output->rect.x - kThumbInset) / (output->rect.width - (2.0F * kThumbInset)),
+                   0.0F, 1.0F);
     f32 value = widget.minimum + (fraction * (widget.maximum - widget.minimum));
     if (widget.step > 0.0F) {
         value = widget.minimum + (std::round((value - widget.minimum) / widget.step) * widget.step);
@@ -450,9 +451,11 @@ bool Toolkit::handle_widget_action(Widget& widget, UiAction action) noexcept {
     if (widget.kind == WidgetKind::Slider &&
         (action == UiAction::NavigateLeft || action == UiAction::NavigateRight)) {
         // A FOCUSED SLIDER TAKES LEFT AND RIGHT AS ITS OWN: a step, or a hundredth of the range.
-        const f32 step = widget.step > 0.0F ? widget.step : (widget.maximum - widget.minimum) / 100.0F;
-        const f32 next = std::clamp(widget.value + (action == UiAction::NavigateRight ? step : -step),
-                                    widget.minimum, widget.maximum);
+        const f32 step =
+            widget.step > 0.0F ? widget.step : (widget.maximum - widget.minimum) / 100.0F;
+        const f32 next =
+            std::clamp(widget.value + (action == UiAction::NavigateRight ? step : -step),
+                       widget.minimum, widget.maximum);
         if (next != widget.value) {
             widget.value = next;
             (void)update_parts(widget);
@@ -696,11 +699,8 @@ Status Toolkit::refresh_text_field(Widget& widget) noexcept {
     };
     const f32 text_width = width_to(static_cast<u32>(text.size()));
     place(widget.parts[1], origin, -half, origin + std::max(text_width, 1.0F), half);
-    place(widget.parts[2], 0.0F, -half, std::max(text_.measure(text_.text_of(widget.parts[2]),
-                                                               style)
-                                                     .x,
-                                                 1.0F),
-          half);
+    place(widget.parts[2], 0.0F, -half,
+          std::max(text_.measure(text_.text_of(widget.parts[2]), style).x, 1.0F), half);
     const bool selecting = editor.has_selection() && !editor.composing();
     const f32 begin_x = width_to(editor.selection_begin());
     const f32 end_x = width_to(editor.selection_end());
@@ -874,8 +874,7 @@ Status Toolkit::close_dropdown() noexcept {
 Status Toolkit::open_dialog(Widget& widget) noexcept {
     const WidgetId dialog_id = widget.element;
     const ElementId backdrop = widget.parts[0];
-    (void)store_.set_flags(backdrop,
-                           without_flag(store_.flags(backdrop), ElementFlags::Collapsed));
+    (void)store_.set_flags(backdrop, without_flag(store_.flags(backdrop), ElementFlags::Collapsed));
     // A DIALOG FADES IN AS ONE: an opacity group, so its overlapping panels do not show through
     // each other while it is half there.
     (void)store_.set_flags(dialog_id, store_.flags(dialog_id) | ElementFlags::OpacityGroup);

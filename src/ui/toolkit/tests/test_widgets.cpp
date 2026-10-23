@@ -126,8 +126,7 @@ CY_TEST_CASE("ui_toolkit: a slider places its thumb and fill at its value, insid
     desc.value = 2.5F;
     auto slider = kit.toolkit.create(kNoElement, desc);
     CY_REQUIRE(slider.has_value());
-    CY_REQUIRE(kit.toolkit.set_anchors(*slider, Vec2{0, 0}, Vec2{0, 0}, Vec2{20, 20},
-                                       Vec2{234, 44})
+    CY_REQUIRE(kit.toolkit.set_anchors(*slider, Vec2{0, 0}, Vec2{0, 0}, Vec2{20, 20}, Vec2{234, 44})
                    .has_value());
     CY_REQUIRE(kit.frame());
     const ui::Rect root = kit.rect(*slider);
@@ -140,8 +139,7 @@ CY_TEST_CASE("ui_toolkit: a slider places its thumb and fill at its value, insid
     CY_REQUIRE(kit.toolkit.set_value(*slider, 99.0F).has_value());
     CY_CHECK_EQ(kit.toolkit.value(*slider), 10.0F);
     CY_REQUIRE(kit.frame());
-    CY_CHECK_NEAR(kit.rect(kit.toolkit.part(*slider, "slider-thumb")).right(), root.right(),
-                  0.01F);
+    CY_CHECK_NEAR(kit.rect(kit.toolkit.part(*slider, "slider-thumb")).right(), root.right(), 0.01F);
 }
 
 CY_TEST_CASE("ui_toolkit: a progress bar fills its fraction, and an empty one draws no fill") {
@@ -179,8 +177,7 @@ CY_TEST_CASE("ui_toolkit: a radio group is one radio per item, exactly one of th
     for (usize index = 0; index < 3; ++index) {
         CY_CHECK_EQ(kit.toolkit.kind(radios[index]), WidgetKind::Radio);
         CY_CHECK_EQ(kit.toolkit.checked(radios[index]), index == 2);
-        CY_CHECK_EQ(kit.text.text_of(kit.toolkit.part(radios[index], "radio-label")),
-                    items[index]);
+        CY_CHECK_EQ(kit.text.text_of(kit.toolkit.part(radios[index], "radio-label")), items[index]);
     }
     // A click on the first selects it and says so, once.
     kit.click(kit.centre(radios[0]));
@@ -222,8 +219,9 @@ CY_TEST_CASE("ui_toolkit: a label measures its text and an image its natural siz
 CY_TEST_CASE("ui_toolkit: rich text is a run per size and per image, with colours per character") {
     Kit kit;
     CY_REQUIRE(kit.started);
-    const WidgetId rich = kit.make(kNoElement, WidgetKind::RichText, "status",
-                                   "Gold [color=#ffd34d]1250[/color] [img=2,0,0,1,1][size=26]x2[/size]");
+    const WidgetId rich =
+        kit.make(kNoElement, WidgetKind::RichText, "status",
+                 "Gold [color=#ffd34d]1250[/color] [img=2,0,0,1,1][size=26]x2[/size]");
     CY_REQUIRE(rich.is_valid());
     CY_REQUIRE(kit.frame());
     Array<ElementId> runs(allocator());

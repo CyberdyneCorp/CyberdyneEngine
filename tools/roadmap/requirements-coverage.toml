@@ -8306,7 +8306,7 @@ note = "`maintenance-deps-check` runs `tools/deps/selftest.py`, which requires `
 row = "ui-system"
 requirement = "Engine-owned UI system"
 evidence = "exempt:m11e"
-note = "WHAT EXISTS: src/ui is engine code (store, layout, .cyss, interaction, flattening, budget, accessibility) and links no third-party UI toolkit. CY_UI removes it and its three on-screen targets (cy::ui-text, cy::ui-render, cy::ui-console); criterion m8b:feature-options-off builds the tree with CY_UI off. Two first-party consumers now draw from one ElementStore, one flatten() and one pass: render.ui's '(f) a strategy game's HUD and the console over the scene, against its golden image' draws samples/13-rts-selection's HUD and the developer console together, and since ABI 1.6 a scripting module builds in the same store: render.rts_api_hud's '(a) the Swift HUD flattens to the C++ HUD's primitive stream, primitive for primitive' holds a HUD written in Swift (samples/13-rts-api) to the same flatten() output as the C++ one. WHAT IS MISSING: the third consumer of the replacing case, a world-space health bar, because there is no world-space document (issue #91 stage 3). REPLACING CASE: a console, a HUD and a world-space health bar drawn in one frame, with a case requiring all three to come from one ElementStore and one flatten() call."
+note = "WHAT EXISTS: src/ui is engine code (store, layout, .cyss, interaction, flattening, budget, accessibility, and since issue #91 stages 4 and 5 the widget toolkit, its documents and its input bridge) and links no third-party UI toolkit. CY_UI removes it and its on-screen targets (cy::ui-text, cy::ui-render, cy::ui-console, cy::ui-toolkit, cy::ui-input); criterion m8b:feature-options-off builds the tree with CY_UI off. Two first-party consumers draw from one ElementStore, one flatten() and one pass: render.ui's '(f) a strategy game's HUD and the console over the scene, against its golden image', and render.rts_api_hud's '(a) the Swift HUD flattens to the C++ HUD's primitive stream, primitive for primitive'. WHAT IS MISSING: the third consumer of the replacing case, a world-space health bar, because there is no world-space document (issue #91 stage 3). REPLACING CASE: a console, a HUD and a world-space health bar drawn in one frame, with a case requiring all three to come from one ElementStore and one flatten() call."
 
 [[coverage]]
 row = "ui-system"
@@ -8325,15 +8325,16 @@ note = "A label's paint change marks that label and leaves the row and the root 
 [[coverage]]
 row = "ui-system"
 requirement = "UI document asset"
-evidence = "exempt:m11e"
-note = "NOT BUILT. src/ui has no document type, no text form and no sub-document instantiation. A tree exists only as an ElementStore or as a C++ `Description` handed to `reconcile()`, and no designer or Swift surface reads or writes either one. None of the three scenarios (designer opens what code wrote, reusable component with overrides, a single-line text diff) has a subject in the tree. REPLACING CASE: a UI document serialised in a text form, round-tripped, instantiated twice as a sub-tree with a parameter override, and edited in one property with a diff of exactly one line."
+evidence = "test:unit.ui_toolkit"
+case = "ui_document: a document becomes widgets, its components instantiated with parameters"
+note = "A .cyui document is the toolkit's asset: its text form, `use` of another document with parameters (two instances, one overriding a parameter), its sheets and its bindings by name. This case instantiates a component twice with an override. 'ui_document: the text form parses, and writes back byte for byte' is the round trip, and 'ui_document: one property changed is one line of the text changed' is the 'Diffable text form' scenario. 'ui_document: a reload keeps every matched widget, its focus and the player's value' and integration.ui_toolkit's 'ui_toolkit_document: a document on disk reloads when it is saved, keeping its state' are the source document's changes reaching its instances. The build graph cooks it: integration.build_content's 'an interface document's sheets and used documents are discovered by its cook'. Swift loads the same documents (ABI 1.12 ui_load_document). NOT BUILT: the visual designer, so 'Designer opens what code wrote' has no subject; and the Swift DSL (WidgetNode) makes widgets through the ABI rather than writing a document."
 
 [[coverage]]
 row = "ui-system"
 requirement = "Declarative authoring"
 evidence = "test:unit.ui"
 case = "ui_reconcile: keys carry state across a reorder, and their absence is reported"
-note = "C++ `Description`s are diffed into the retained tree by `reconcile()`. Here keyed rows reorder with created=0 and removed=0 and keep their elements, which is 'Keys preserve identity across reorder'. Without keys, the identity change is counted in identity_churn. 'ui_reconcile: a rebuild preserves identity and only applies differences' reconciles the same description twice and creates nothing on the second pass. NOT BUILT: the Swift DSL (no Swift binding reaches cy::ui), reactive state that schedules a rebuild of only the affected subtree, and preservation of focus, caret, selection and scroll position, which no case asserts across a rebuild ('Focus survives a rebuild' is unobserved)."
+note = "C++ `Description`s are diffed into the retained tree by `reconcile()`. Here keyed rows reorder with created=0 and removed=0 and keep their elements, which is 'Keys preserve identity across reorder'. Without keys, the identity change is counted in identity_churn. 'ui_reconcile: a rebuild preserves identity and only applies differences' reconciles the same description twice and creates nothing on the second pass. The toolkit's document reload is the same diff over widgets, and unit.ui_toolkit's 'ui_document: a reload keeps every matched widget, its focus and the player's value' is 'Focus survives a rebuild'. Swift has a declarative layer over ABI 1.12 (CyberdyneKit's WidgetNode, mountWidgets and two-way UIWidgetBinding, held by UIToolkitTests against FakeEngine). NOT BUILT: reactive state that schedules a rebuild of only the affected subtree; Swift's tree is mounted once and updated by handle or binding."
 
 [[coverage]]
 row = "ui-system"
@@ -8365,15 +8366,16 @@ note = "A .cyss type rule and a class rule with :hover resolve as CSS would: the
 [[coverage]]
 row = "ui-system"
 requirement = "Styling and theming"
-evidence = "exempt:m11e"
-note = "HALF-BUILT. Themes are built: 'ui_style: a theme supplies the base and the sheet overrides it' and 'ui_style: applying a style says whether layout has to run again' (unit.ui) answer the theme-change scenario. Two of the three scenarios are not. There are no VARIANTS: style.h has no derived named style, so 'danger' falling back to the base button has no subject. There are no STATE TRANSITIONS: `transition-duration` parses but nothing evaluates it (src/ui/README.md: declared in the style subset and not evaluated), so a hovered background switches rather than interpolating. Nine-slice, shadows and transforms are not paint inputs either. REPLACING CASE: a button with variant 'danger' resolving each property from the variant and then the base, and a 0.1 s hover transition sampled mid-way and required to sit strictly between the two colours."
+evidence = "test:unit.ui_toolkit"
+case = "ui_style: a variant resolves from itself first and falls back to the base"
+note = "A button with the 'danger' class resolves each property from the variant and then the base button rule, which is the variant half of the replacing case. 'ui_style: a 0.1 s hover transition interpolates, and is strictly between midway' samples a hover transition mid-way strictly between the two colours. 'ui_style: a theme swap restyles everything, and an inline declaration still wins' is the theme-change scenario; 'ui_style: a part takes its widget's states, so one selector styles it' is how a widget's parts follow its hover and press. NOT BUILT: nine-slice and shadows as paint inputs; transforms are a render transform (translate and scale) driven by animation, not by a sheet's rotation."
 
 [[coverage]]
 row = "ui-system"
 requirement = "Data binding"
-evidence = "test:unit.ui"
-case = "ui_binding: a bound value that does not affect layout dirties paint only"
-note = "A colour binding dirties only the bound element's paint and leaves its parent clean, while a width binding dirties measure. That is the 'Binding granularity' scenario. 'ui_binding: an unchanged source costs nothing, and a spurious change is counted' is 'update only when their source changes', and 'ui_binding: two-way writes back, and one-way refuses' is the write-back half of 'Two-way binding'. NOT BUILT: no source reads ECS change detection (cy::ui does not link cy::ecs, so 'Health bar' bound to a component is unobserved), and 'external changes SHALL update the field unless it is being edited' has no case."
+evidence = "test:unit.ui_toolkit"
+case = "ui_binding: two-way writes the player's edits back, and waits while they edit"
+note = "A two-way slider binding writes the player's drag back to its source, and a source change during the drag does not overwrite the field until it ends: 'external changes SHALL update the field unless it is being edited'. 'ui_binding: a bound value updates the widget when it changes, and not otherwise' is 'update only when their source changes'; unit.ui's 'ui_binding: a bound value that does not affect layout dirties paint only' is 'Binding granularity'. Swift binds a behaviour's state both ways (UIWidgetBinding, UIToolkitTests). NOT BUILT: a source over ECS change detection (cy::ui does not link cy::ecs), so 'Health bar' bound to a component is unobserved."
 
 [[coverage]]
 row = "ui-system"
@@ -8385,27 +8387,30 @@ note = "A pressed element captures the pointer and keeps receiving moves outside
 [[coverage]]
 row = "ui-system"
 requirement = "Semantic input actions"
-evidence = "exempt:m11e"
-note = "WHAT EXISTS: `ui::UiAction` is the eleven named actions and `Interaction::route_action` consumes only them. Text entry is a separate TextInput path, and unit.ui's 'ui_input: an action reaches focus and bubbles past a disabled element' routes UI.Accept to focus. WHAT IS MISSING: the connection to `input-and-actions`. cy::ui does not link the input module, so no mapping context is pushed for an interface, there are no default bindings per device, no active control scheme for glyphs, and no suppression of gameplay actions bound to the same controls. 'Device-agnostic game code', 'Glyph display follows the device' and 'A modal suppresses gameplay' have no subject. REPLACING CASE: an interface context pushed on an input user's stack where Enter, a left click, gamepad south and a tap each reach a button as UI.Accept, a gameplay action on the same key is not observed while the modal is open, and the reported control scheme changes after a gamepad press."
+evidence = "test:unit.ui_input"
+case = "ui_input: Enter, the gamepad's south button and a click each reach a button as UI.Accept"
+note = "cy::ui-input declares the UI.* actions in the input server with default keyboard and gamepad bindings and pushes them as a mapping context; UiInputBridge delivers what fired to the toolkit. Enter, gamepad south and a pointer click each activate the same button: 'Device-agnostic game code'. 'ui_input: a modal suppresses the game's action on the same key, and gives it back' is 'A modal suppresses gameplay': the bridge sets the input user's focus layer to Interface, and the input system drops the gameplay binding. 'ui_input: the prompt glyph follows the device last used' is 'Glyph display follows the device'. NOT BUILT: a touch tap as UI.Accept; there is no touch device in the input server's tests."
 
 [[coverage]]
 row = "ui-system"
 requirement = "UI layer stack and navigation"
 evidence = "test:unit.ui"
 case = "ui_focus: a modal scopes focus, blocks input, and restores focus when it pops"
-note = "This is the 'Opening a settings screen' and 'Focus restoration' scenarios in one case. Pushing a Modal moves focus into it, refuses focus on a HUD element beneath, blocks a probe at a point over the HUD, and UI.Cancel pops it with focus back on the HUD button. 'ui_layers: the default behaviours are the semantics the specification describes' covers the per-kind table: HUD non-interactive, Overlay and Modal block, Modal handles back, System does not, and Modal dims more than Overlay. NOT BUILT: the enter and exit transitions and the dim or blur beneath are declared values that nothing animates or draws."
+note = "This is the 'Opening a settings screen' and 'Focus restoration' scenarios in one case. Pushing a Modal moves focus into it, refuses focus on a HUD element beneath, blocks a probe at a point over the HUD, and UI.Cancel pops it with focus back on the HUD button. 'ui_layers: the default behaviours are the semantics the specification describes' covers the per-kind table. The toolkit's dialog is that layer drawn: unit.ui_toolkit's 'ui_toolkit: a modal dialog takes focus, keeps it, blocks what is under it, and gives it back', with a dimmed backdrop and a fade-in as an opacity group (render.ui_toolkit '(d) the widget gallery against its golden image, closed and with its dialog open'). NOT BUILT: a blur beneath a layer (no blur-behind)."
 
 [[coverage]]
 row = "ui-system"
 requirement = "Widget set"
-evidence = "exempt:m11e"
-note = "NOT BUILT. src/ui/README.md records that the widget set is not built: widgets.h has the reconciler, virtualisation and data binding that widgets are made of, and none of the twenty-six named widgets is written. Virtualisation exists and is measured: unit.ui's 'ui_virtual: a hundred thousand rows realise a dozen' answers the 'Large list' arithmetic. There is no ListView, TextArea or other widget to carry it, and no IME composition path. REPLACING CASE: each named widget constructed through the reconciler, a ListView of 100,000 items realising only visible rows through it, and a TextField taking an IME composition with the candidate rectangle reported at the caret."
+evidence = "test:integration.ui_toolkit"
+case = "ui_toolkit_list: ten thousand items scroll at the cost of a hundred, inside a frame budget"
+note = "The toolkit's list view realises the same 25 rows for 10 000 items as for 100 while it scrolls to a new place every frame (69 us a frame on the dev preset), which is 'Large list'; unit.ui's 'ui_virtual: a hundred thousand rows realise a dozen' is the arithmetic at 100 000. unit.ui_toolkit's 'ui_text_edit: an input method's composition is shown at the caret, not stored' is 'IME input', with the candidate rectangle reported at the caret. Built: Panel (and row, column, grid, stack containers), Label, RichText (markup, inline images, per-character colour), Image, Button, Toggle, Checkbox, RadioGroup, Slider, ProgressBar, TextField (selection, clipboard, undo and redo, IME composition, masks), Dropdown, ListView (virtualised), TabView, ScrollView, Tooltip, Popup (the drop-down's list) and Modal; 'ui_toolkit: every widget kind is made, named for its type, and laid out'. NOT BUILT: TextArea, TreeView, SplitView, MenuBar, ContextMenu, ColorPicker, NumericField and Separator, and RTL editing."
 
 [[coverage]]
 row = "ui-system"
 requirement = "Animation and transitions"
-evidence = "exempt:m11e"
-note = "NOT BUILT. src/ui/README.md records that animation and transitions are declared in the style subset (`transition-duration`) and not evaluated: there is no keyframe player, no spring and no stagger. style.h's divergence 6 excludes keyframes from the sheet. No case can observe 'Menu entrance', 'Paint-only animation' or 'Reduced motion honoured'. REPLACING CASE: a staggered menu entrance evaluated inside the UI system with incremental delays, an opacity animation over N frames with LayoutReport::measured zero on every one, and a reduced-motion flag that shortens a decorative transition while a state change still applies."
+evidence = "test:unit.ui_toolkit"
+case = "ui_animation: a staggered entrance delays each item by one more step"
+note = "Animations are the toolkit's own, evaluated inside its update with no call across the scripting boundary per frame (ABI 1.12's ui_widget_animate starts one; nothing more crosses). This case is 'Menu entrance'. 'ui_animation: a fade, a slide and a pop are sampled by time, and relay out nothing' holds the layout report at zero measured and arranged elements on every frame of an opacity animation, which is 'Paint-only animation'. 'ui_animation: reduced motion ends decorative animations at once, keeps state feedback' is 'Reduced motion honoured'. Style state transitions with duration, delay and easing are 'ui_style: a 0.1 s hover transition interpolates, and is strictly between midway'; a spring is one of the seven easings. NOT BUILT: keyframe animations declared in style sheets, and the designer's timeline and curve editor."
 
 [[coverage]]
 row = "ui-system"
@@ -8417,9 +8422,9 @@ note = "Two hundred labels flatten to 201 primitives and one batch, and a second
 [[coverage]]
 row = "ui-system"
 requirement = "Rendering"
-evidence = "test:render.ui"
-case = "(d) a scroll view inside a scroll view draws exactly the intersection"
-note = "The flattened stream is drawn on a Vulkan device by ui::render::UiRenderer at the frame's UiAndDebug stage, after tonemapping and the selection outlines, in display-referred colour. A scroll view inside a scroll view draws exactly the 60 by 50 pixels of the intersection of their clips and leaves every other pixel the frame's own, which is 'Nested clipping' on screen. '(c) a later sibling covers an earlier one and glyphs cover their panel' is the tree-order half of draw order, '(b) the device draws the stream as the shader on the host does' holds every pixel within one step of the host reference, and '(a) with nothing to draw the frame is the frame before the interface, byte for byte' pins the frame with no interface to a reference drawn before the pass existed. NOT BUILT: offscreen opacity groups (flatten() multiplies opacity down the tree, so the overlap of two children of a faded panel darkens; '(e) opacity blends premultiplied...' covers single-layer opacity only), the per-document HDR option composited before tonemapping, stencil clipping for rotated or rounded clips, explicit z-overrides, and per-element custom materials. Those are issue #91 stage 2."
+evidence = "test:render.ui_toolkit"
+case = "(b) an opacity group's overlap is its non-overlap on the device, as on the host"
+note = "A panel flagged as an opacity group with overlapping children, faded to 50 %, is drawn offscreen and composited once: the overlap is the colour of either child alone, on the device and in the host reference, which is the 'Opacity group' scenario. '(c) an HDR document composited before the tone curve blooms, and after it does not' is 'HDR UI': a second renderer at FramePassKind::UiHdr, before bloom on the linear colour, with an emissive element brightening the bloom around it. render.ui's '(d) a scroll view inside a scroll view draws exactly the intersection' is 'Nested clipping', '(c) a later sibling covers an earlier one and glyphs cover their panel' the tree order, and '(a) with nothing to draw the frame is the frame before the interface, byte for byte' the untouched frame; render.ui_toolkit's '(a)' keeps that with a started toolkit. NOT BUILT: stencil clipping for rotated or rounded clips, explicit z-overrides, per-element custom materials, and HDR as a per-document option inside one renderer (it is a second renderer on the HDR stage)."
 
 [[coverage]]
 row = "ui-system"
@@ -8445,7 +8450,7 @@ row = "ui-system"
 requirement = "Accessibility"
 evidence = "test:unit.ui"
 case = "ui_accessibility: the contrast ratio is WCAG's, and focus is announced"
-note = "Focus on a slider publishes role, label and value through the accessibility bridge, which is the 'Screen reader' scenario. Contrast is WCAG's ratio (21:1 black on white). 'ui_accessibility: an interface that passes, and each way one fails' is the audit, with its unreachable, unlabelled and contrast (below 4.5:1) findings each produced on purpose. NOT BUILT: no platform accessibility bridge implements the interface (the case uses a recording bridge), and the reduced-motion and text-scaling settings have nothing to act on, because no animation exists (see 'Animation and transitions')."
+note = "Focus on a slider publishes role, label and value through the accessibility bridge, which is the 'Screen reader' scenario. Contrast is WCAG's ratio (21:1 black on white). 'ui_accessibility: an interface that passes, and each way one fails' is the audit, with its unreachable, unlabelled and contrast (below 4.5:1) findings each produced on purpose. The reduced-motion setting acts on the toolkit's animations (unit.ui_toolkit's 'ui_animation: reduced motion ends decorative animations at once, keeps state feedback'). NOT BUILT: no platform accessibility bridge implements the interface (the case uses a recording bridge), and text scaling has no setting of its own beyond the DPI and user scale."
 
 [[coverage]]
 row = "ui-system"
@@ -8457,7 +8462,7 @@ note = "THE INGREDIENTS EXIST, AND THE INSPECTOR DOES NOT. The store counts meas
 row = "ui-system"
 requirement = "Forcing functions for the UI system"
 evidence = "exempt:m11e"
-note = "HALF-BUILT, and the requirement says to record the gap rather than assume it covered. The developer console ships on CyberUI (src/ui/console, cy::ui-console): commands with replies, an input line and a scrollback whose rows are virtualised, held by unit.ui_console's 'ui_console: the scrollback is virtualised — rows stay fixed however much is printed' and drawn by render.ui. NOT BUILT: text editing beyond append and backspace (no caret movement, selection or IME), autocompletion, the gameplay and network debuggers, the profiler overlays, the settings interface, and the conformance suite (no docking layouts, property grids, graph canvas or timing thresholds run by a gate). REPLACING CASE: the shipped developer console with scrollback virtualisation, and a conformance suite (virtualised tree of tens of thousands of rows, docking, property grid, text editing) with timing thresholds run by a gate."
+note = "HALF-BUILT, and the requirement says to record the gap rather than assume it covered. The developer console ships on CyberUI (src/ui/console, cy::ui-console), held by unit.ui_console's 'ui_console: the scrollback is virtualised — rows stay fixed however much is printed' and drawn by render.ui. The toolkit's text field has caret movement, selection, undo and IME composition (unit.ui_toolkit's ui_text_edit cases), and the widget gallery is a settings-style interface drawn against golden images (render.ui_toolkit (d)). NOT BUILT: the console's input line still appends and deletes only (it is not a toolkit text field), autocompletion, the gameplay and network debuggers, the profiler overlays, a shipped settings interface, and the conformance suite (no docking layouts, property grids, graph canvas or timing thresholds run by a gate). REPLACING CASE: the shipped developer console on the toolkit's text field, and a conformance suite (virtualised tree of tens of thousands of rows, docking, property grid, text editing) with timing thresholds run by a gate."
 
 [[coverage]]
 row = "ui-system"

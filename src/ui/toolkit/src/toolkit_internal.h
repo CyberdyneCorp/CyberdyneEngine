@@ -42,8 +42,7 @@ enum class Channel : u8 {
 }
 
 [[nodiscard]] constexpr bool is_colour_channel(Channel channel) noexcept {
-    return channel == Channel::Background || channel == Channel::Border ||
-           channel == Channel::Text;
+    return channel == Channel::Background || channel == Channel::Border || channel == Channel::Text;
 }
 
 /// The values a mask of channels carries: one slot per channel.
@@ -57,9 +56,7 @@ struct ChannelValues {
         colours[static_cast<u32>(channel)] = colour;
         mask = static_cast<u8>(mask | channel_bit(channel));
     }
-    void clear(Channel channel) noexcept {
-        mask = static_cast<u8>(mask & ~channel_bit(channel));
-    }
+    void clear(Channel channel) noexcept { mask = static_cast<u8>(mask & ~channel_bit(channel)); }
     [[nodiscard]] bool has(Channel channel) const noexcept {
         return (mask & channel_bit(channel)) != 0U;
     }

@@ -21,7 +21,8 @@
 // (Ctrl+C here, Cmd+C on macOS). Neither is a `UiAction`: a text field that moved its caret on
 // `UI.NavigateLeft` would move it when a gamepad's stick was nudged.
 //
-// --- OFFSETS ARE BYTES, MOVEMENT IS BY CODE POINT -------------------------------------------------
+// --- OFFSETS ARE BYTES, MOVEMENT IS BY CODE POINT
+// -------------------------------------------------
 //
 // The caret and the selection are byte offsets into the UTF-8 text, always on a code point
 // boundary: a caret move steps over a whole code point, a backspace removes one, and nothing here

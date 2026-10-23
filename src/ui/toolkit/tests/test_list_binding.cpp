@@ -209,8 +209,8 @@ CY_TEST_CASE("ui_binding: two-way writes the player's edits back, and waits whil
                    .has_value());
     GameValue volume;
     volume.set_number(4.0F);
-    CY_REQUIRE(kit.toolkit.bind(*slider, WidgetProperty::Value, volume, BindingMode::TwoWay)
-                   .has_value());
+    CY_REQUIRE(
+        kit.toolkit.bind(*slider, WidgetProperty::Value, volume, BindingMode::TwoWay).has_value());
     CY_REQUIRE(kit.frame());
     CY_CHECK_EQ(kit.toolkit.value(*slider), 4.0F);
     // The player drags it to 7: written back.
@@ -242,8 +242,8 @@ CY_TEST_CASE("ui_binding: a text, a flag and a selection bind by kind") {
     music.value.boolean = true;
     music.dirty = true;
     CY_REQUIRE(kit.toolkit.bind(label, WidgetProperty::Text, gold).has_value());
-    CY_REQUIRE(kit.toolkit.bind(toggle, WidgetProperty::Checked, music, BindingMode::TwoWay)
-                   .has_value());
+    CY_REQUIRE(
+        kit.toolkit.bind(toggle, WidgetProperty::Checked, music, BindingMode::TwoWay).has_value());
     CY_REQUIRE(kit.frame());
     CY_CHECK_EQ(kit.toolkit.text(label), std::string_view("1250"));
     CY_CHECK(kit.toolkit.checked(toggle));

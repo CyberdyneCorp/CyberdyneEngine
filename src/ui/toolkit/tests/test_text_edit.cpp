@@ -23,17 +23,17 @@ namespace {
 
 CY_TEST_CASE("ui_text_edit: typing, moving and deleting step over whole code points") {
     TextEditor editor(allocator());
-    CY_REQUIRE(editor.set_text("caf\xC3\xA9").has_value());  // "café", the é two bytes
+    CY_REQUIRE(editor.set_text("pur\xC3\xA9").has_value());  // "puré", the é two bytes
     CY_CHECK_EQ(editor.caret(), 5U);
     CY_REQUIRE(editor.apply(TextCommand::MoveLeft, false, nullptr).has_value());
     CY_CHECK_EQ(editor.caret(), 3U);  // before the é, not inside it
     CY_REQUIRE(editor.apply(TextCommand::DeleteForward, false, nullptr).has_value());
-    CY_CHECK_EQ(editor.text(), std::string_view("caf"));
+    CY_CHECK_EQ(editor.text(), std::string_view("pur"));
     CY_REQUIRE(editor.insert("\xC3\xA8s").has_value());  // "ès"
-    CY_CHECK_EQ(editor.text(), std::string_view("caf\xC3\xA8s"));
+    CY_CHECK_EQ(editor.text(), std::string_view("pur\xC3\xA8s"));
     CY_REQUIRE(editor.apply(TextCommand::DeleteBackward, false, nullptr).has_value());
     CY_REQUIRE(editor.apply(TextCommand::DeleteBackward, false, nullptr).has_value());
-    CY_CHECK_EQ(editor.text(), std::string_view("caf"));
+    CY_CHECK_EQ(editor.text(), std::string_view("pur"));
     // A caret placed inside a code point snaps to its start.
     CY_REQUIRE(editor.set_text("\xC3\xA9t\xC3\xA9").has_value());
     editor.set_caret(1, false);
@@ -117,13 +117,15 @@ CY_TEST_CASE("ui_text_edit: an input method's composition is shown at the caret,
     CY_REQUIRE(editor.compose("\xE3\x81\x8B", 3).has_value());  // か, being composed
     CY_CHECK(editor.composing());
     CY_CHECK_EQ(editor.text(), std::string_view("ab"));
-    CY_CHECK_EQ(shown(editor, scratch), std::string_view("a\xE3\x81\x8B" "b"));
+    CY_CHECK_EQ(shown(editor, scratch), std::string_view("a\xE3\x81\x8B"
+                                                         "b"));
     CY_CHECK_EQ(editor.undo_depth(), 0U);
     // Committing replaces the composition with the text the IME chose, as one undoable step.
     CY_REQUIRE(editor.compose({}, 0).has_value());
     CY_REQUIRE(editor.insert("\xE6\xBC\xA2").has_value());  // 漢
     CY_CHECK_FALSE(editor.composing());
-    CY_CHECK_EQ(editor.text(), std::string_view("a\xE6\xBC\xA2" "b"));
+    CY_CHECK_EQ(editor.text(), std::string_view("a\xE6\xBC\xA2"
+                                                "b"));
     CY_CHECK_EQ(editor.undo_depth(), 1U);
 }
 
@@ -165,8 +167,7 @@ CY_TEST_CASE("ui_toolkit: a text field edits through text input and commands, an
     desc.placeholder = "Your name";
     auto field = kit.toolkit.create(kNoElement, desc);
     CY_REQUIRE(field.has_value());
-    CY_REQUIRE(kit.toolkit.set_anchors(*field, Vec2{0, 0}, Vec2{0, 0}, Vec2{10, 10},
-                                       Vec2{210, 34})
+    CY_REQUIRE(kit.toolkit.set_anchors(*field, Vec2{0, 0}, Vec2{0, 0}, Vec2{10, 10}, Vec2{210, 34})
                    .has_value());
     CY_REQUIRE(kit.frame());
     const ElementId placeholder = kit.toolkit.part(*field, "text-placeholder");

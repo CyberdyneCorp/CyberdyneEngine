@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// UIToolkit.swift — ABI 1.11's widget toolkit: real widgets (sliders, text fields, drop-downs,
+// UIToolkit.swift — ABI 1.12's widget toolkit: real widgets (sliders, text fields, drop-downs,
 // lists, tabs, dialogs), `.cyui` documents, `.cyss` sheets, animations and focus navigation. The
 // declarative layer over it is UIWidgetBuilder.swift.
 //
@@ -163,15 +163,19 @@ public struct Widget: Hashable, Sendable {
 public struct UIAnimation: Equatable, Sendable {
     /// What it drives.
     public var property: UIAnimatedProperty
-    /// The start and the end, for every property but the background.
+    /// Where it starts, for every property but the background.
     public var from: Float = 0
+    /// Where it ends, for every property but the background.
     public var to: Float = 1
-    /// The background's start and end, premultiplied.
+    /// The background's start, premultiplied.
     public var fromColour: UIColour = 0
+    /// The background's end, premultiplied.
     public var toColour: UIColour = 0
-    /// Seconds.
+    /// How long it runs, in seconds.
     public var duration: Float = 0.25
+    /// How long it waits before starting, in seconds; a stagger's step.
     public var delay: Float = 0
+    /// How time becomes progress.
     public var easing: UIEasing = .easeOut
     /// State feedback still plays under the reduced-motion preference; decoration jumps to its end.
     public var stateFeedback = false
@@ -252,8 +256,11 @@ public struct UIWidgetDesc: Equatable, Sendable {
     public var title: String?
     /// A radio group's, drop-down's or list's items.
     public var items: [String] = []
+    /// A slider's or progress bar's initial value.
     public var value: Float = 0
+    /// The low end of a slider's or progress bar's range.
     public var minimum: Float = 0
+    /// The high end of the range.
     public var maximum: Float = 1
     /// A slider's step; zero is a hundredth of its range.
     public var step: Float = 0
@@ -261,7 +268,9 @@ public struct UIWidgetDesc: Equatable, Sendable {
     public var columns: UInt32 = 0
     /// A list's row height; nil is the engine's.
     public var rowHeight: Float?
+    /// A toggle or checkbox made on.
     public var checked = false
+    /// False to make it refusing input, drawn `:disabled`.
     public var enabled = true
 
     /// A widget of `kind`.

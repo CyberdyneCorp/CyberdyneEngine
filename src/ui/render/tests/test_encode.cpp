@@ -331,7 +331,8 @@ struct Faded {
     UiDrawList list(allocator());
     CY_REQUIRE(build_draws(buffer, 1.0F, 64, 48, list).has_value());
     std::vector<u32> target(static_cast<usize>(64) * 48, texel_of(0xFF000000U));
-    CY_REQUIRE(draw_reference(list, {}, 64, 48, Span<u32>(target.data(), target.size())).has_value());
+    CY_REQUIRE(
+        draw_reference(list, {}, 64, 48, Span<u32>(target.data(), target.size())).has_value());
     return target;
 }
 
@@ -344,7 +345,8 @@ CY_TEST_CASE("ui_render: a group's composite is pixel-aligned and samples its ow
     FlattenReport report;
     CY_REQUIRE(flatten(store, ui::Rect{0.0F, 0.0F, 64.0F, 48.0F}, buffer, report).has_value());
     UiDrawList list(allocator());
-    // At 1.5 pixels a unit the group's region (8, 8)-(44, 36) is not whole pixels: it grows to them.
+    // At 1.5 pixels a unit the group's region (8, 8)-(44, 36) is not whole pixels: it grows to
+    // them.
     CY_REQUIRE(build_draws(buffer, 1.5F, 96, 72, list).has_value());
     CY_REQUIRE_EQ(list.groups.size(), 1U);
     CY_CHECK_EQ(list.groups[0].region.x, 12U);
@@ -358,7 +360,8 @@ CY_TEST_CASE("ui_render: a group's composite is pixel-aligned and samples its ow
     CY_CHECK_EQ(composite.uv[2], 54.0F / 96.0F);
 }
 
-CY_TEST_CASE("ui_render: a faded group's overlap is its non-overlap; multiplied down, it is darker") {
+CY_TEST_CASE(
+    "ui_render: a faded group's overlap is its non-overlap; multiplied down, it is darker") {
     // `ui-system`: "WHEN a panel with overlapping children is faded to 50 % THEN it SHALL be
     // composited once at 50 %, without the overlaps darkening." Drawn by the host reference.
     const std::vector<u32> grouped = draw_faded(true);

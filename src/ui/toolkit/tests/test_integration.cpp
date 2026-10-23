@@ -61,13 +61,11 @@ void dump(const Toolkit& toolkit, const ElementStore& store, WidgetId widget, u3
     for (const WidgetId child : children.span()) {
         const LayoutOutput* output = store.layout_output(child);
         char line[256];
-        (void)std::snprintf(line, sizeof(line), "%*s%s #%s %.2f %.2f %.2f %.2f\n",
-                            static_cast<int>(depth * 2), "", widget_kind_name(toolkit.kind(child)),
-                            toolkit.id_of(child).text().data(),
-                            static_cast<double>(output->rect.x),
-                            static_cast<double>(output->rect.y),
-                            static_cast<double>(output->rect.width),
-                            static_cast<double>(output->rect.height));
+        (void)std::snprintf(
+            line, sizeof(line), "%*s%s #%s %.2f %.2f %.2f %.2f\n", static_cast<int>(depth * 2), "",
+            widget_kind_name(toolkit.kind(child)), toolkit.id_of(child).text().data(),
+            static_cast<double>(output->rect.x), static_cast<double>(output->rect.y),
+            static_cast<double>(output->rect.width), static_cast<double>(output->rect.height));
         out += line;
         dump(toolkit, store, child, depth + 1, out);
     }
@@ -150,8 +148,8 @@ struct Scrolled {
         const auto begin = std::chrono::steady_clock::now();
         CY_REQUIRE(kit.toolkit.set_scroll(*list, step * static_cast<f32>(frame)).has_value());
         CY_REQUIRE(kit.frame());
-        CY_REQUIRE(flatten(kit.store, ui::Rect{0, 0, 800, 600}, buffer, flattened, &kit.text)
-                       .has_value());
+        CY_REQUIRE(
+            flatten(kit.store, ui::Rect{0, 0, 800, 600}, buffer, flattened, &kit.text).has_value());
         const auto end = std::chrono::steady_clock::now();
         const f64 us = std::chrono::duration<f64, std::micro>(end - begin).count();
         result.worst_us = us > result.worst_us ? us : result.worst_us;
@@ -180,10 +178,11 @@ CY_TEST_CASE("ui_toolkit_layout: the widget gallery lays out as its golden says"
     check_layout("gallery.cyui", "gallery_layout.txt", 1.0F);
 }
 
-CY_TEST_CASE("ui_toolkit_list: ten thousand items scroll at the cost of a hundred, inside a frame budget") {
-    // `ui-system`: "WHEN a list view displays 100 000 items THEN only visible rows SHALL be realised,
-    // and scrolling SHALL cost the same as for 100 items." Every frame scrolls to a new place: the
-    // rows are given new items, laid out, styled and flattened.
+CY_TEST_CASE(
+    "ui_toolkit_list: ten thousand items scroll at the cost of a hundred, inside a frame budget") {
+    // `ui-system`: "WHEN a list view displays 100 000 items THEN only visible rows SHALL be
+    // realised, and scrolling SHALL cost the same as for 100 items." Every frame scrolls to a new
+    // place: the rows are given new items, laid out, styled and flattened.
     const Scrolled few = scroll_through(100, 60);
     const Scrolled many = scroll_through(10000, 60);
     std::fprintf(stderr,
@@ -201,7 +200,8 @@ CY_TEST_CASE("ui_toolkit_list: ten thousand items scroll at the cost of a hundre
 #endif
 }
 
-CY_TEST_CASE("ui_toolkit_document: a document on disk reloads when it is saved, keeping its state") {
+CY_TEST_CASE(
+    "ui_toolkit_document: a document on disk reloads when it is saved, keeping its state") {
     const std::string directory = "cy_ui_toolkit_hot_reload";
     (void)assets::fs::remove_directory_recursive(directory.c_str());
     CY_REQUIRE(assets::fs::create_directories(directory.c_str()).has_value());
@@ -211,7 +211,8 @@ column #menu
   slider #volume min=0 max=10 step=1 value=5
 )");
     assets::VirtualFileSystem files;
-    auto mount = assets::DirectoryMount::create(directory.c_str(), assets::MountKind::Project, false);
+    auto mount =
+        assets::DirectoryMount::create(directory.c_str(), assets::MountKind::Project, false);
     CY_REQUIRE(mount.has_value());
     CY_REQUIRE(files.mount_owned(std::move(*mount), 0).has_value());
 

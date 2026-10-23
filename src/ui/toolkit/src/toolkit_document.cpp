@@ -14,15 +14,13 @@ namespace {
 constexpr u32 kMaxUseDepth = 8;
 
 /// The properties a widget is CREATED with: changing one on reload makes the widget again.
-constexpr std::string_view kCreationKeys[] = {"placeholder", "title", "columns", "page",
-                                              "uv",          "size",  "max-length", "mask",
-                                              "row-height"};
+constexpr std::string_view kCreationKeys[] = {
+    "placeholder", "title", "columns", "page", "uv", "size", "max-length", "mask", "row-height"};
 
 /// The properties a widget takes after it exists.
-constexpr std::string_view kWidgetKeys[] = {"text",    "value",   "min",    "max",
-                                            "step",    "items",   "selected", "checked",
-                                            "enabled", "visible", "tooltip", "anchor",
-                                            "offset",  "bind",    "bind-mode"};
+constexpr std::string_view kWidgetKeys[] = {
+    "text",    "value",   "min",     "max",    "step",   "items", "selected", "checked",
+    "enabled", "visible", "tooltip", "anchor", "offset", "bind",  "bind-mode"};
 
 [[nodiscard]] bool is_creation_key(std::string_view key) noexcept {
     return std::ranges::find(kCreationKeys, key) != std::end(kCreationKeys);
@@ -224,8 +222,7 @@ public:
                 if (Status used = use(document, node, under, scope, depth, made); !used) {
                     return used;
                 }
-            } else if (Status element = add_element(document, node, under, scope, made);
-                       !element) {
+            } else if (Status element = add_element(document, node, under, scope, made); !element) {
                 return element;
             }
             mapped[index] = made;
@@ -269,7 +266,8 @@ private:
                 }
             }
         }
-        const DocumentValue* fallback = out_->documents[scope.document].parameter(Name::intern(name));
+        const DocumentValue* fallback =
+            out_->documents[scope.document].parameter(Name::intern(name));
         if (fallback == nullptr) {
             return false;
         }
@@ -299,10 +297,9 @@ private:
             ExpandedProperty resolved;
             resolved.key = property.key;
             if (!resolve(document, property.value, scope, resolved)) {
-                if (Status reported = diagnose(out_->diagnostics,
-                                               "a parameter with no value and no default",
-                                               Name::intern(out_->documents[document].text(
-                                                   property.value)));
+                if (Status reported =
+                        diagnose(out_->diagnostics, "a parameter with no value and no default",
+                                 Name::intern(out_->documents[document].text(property.value)));
                     !reported) {
                     return reported;
                 }
@@ -377,9 +374,8 @@ public:
                 return diagnose(out_->diagnostics, "a stylesheet with no resolver to read it");
             }
             if (Status read = resolver_->read(path, out_->sheet); !read) {
-                if (Status reported = diagnose(out_->diagnostics,
-                                               "a stylesheet that cannot be read",
-                                               Name::intern(path));
+                if (Status reported = diagnose(
+                        out_->diagnostics, "a stylesheet that cannot be read", Name::intern(path));
                     !reported) {
                     return reported;
                 }
@@ -556,8 +552,8 @@ Status DocumentInstance::apply(const Expansion& expansion, u32 node, WidgetId wi
         if (style != StyleProperty::Count) {
             // A `.cyss` property: an inline declaration, spelled as the sheet would spell it.
             styles_changed = styles_changed || fresh;
-            for (const std::string_view part : {key, std::string_view(": "), text,
-                                                std::string_view("; ")}) {
+            for (const std::string_view part :
+                 {key, std::string_view(": "), text, std::string_view("; ")}) {
                 if (Status built = declarations.append(Span<const char>(part.data(), part.size()));
                     !built) {
                     return built;
@@ -623,14 +619,14 @@ Status DocumentInstance::apply(const Expansion& expansion, u32 node, WidgetId wi
         } else if (key == "bind" && bindings_ != nullptr) {
             bound = bindings_->find(expansion.text(property));
         } else if (key == "bind-mode") {
-            mode = expansion.text(property) == "two-way" ? BindingMode::TwoWay : BindingMode::OneWay;
+            mode =
+                expansion.text(property) == "two-way" ? BindingMode::TwoWay : BindingMode::OneWay;
         }
     }
     if (range_changed) {
         const ExpandedProperty* step = expansion.find(node, "step");
         const ExpandedProperty* maximum = expansion.find(node, "max");
-        if (Status set = toolkit_->set_range(widget, range[1],
-                                             maximum != nullptr ? range[2] : 1.0F,
+        if (Status set = toolkit_->set_range(widget, range[1], maximum != nullptr ? range[2] : 1.0F,
                                              step != nullptr ? step->value.number : 0.0F);
             !set) {
             return set;
@@ -640,10 +636,9 @@ Status DocumentInstance::apply(const Expansion& expansion, u32 node, WidgetId wi
         }
     }
     if (anchors_changed) {
-        if (Status set = toolkit_->set_anchors(widget, Vec2{anchors[0], anchors[1]},
-                                               Vec2{anchors[2], anchors[3]},
-                                               Vec2{anchors[4], anchors[5]},
-                                               Vec2{anchors[6], anchors[7]});
+        if (Status set = toolkit_->set_anchors(
+                widget, Vec2{anchors[0], anchors[1]}, Vec2{anchors[2], anchors[3]},
+                Vec2{anchors[4], anchors[5]}, Vec2{anchors[6], anchors[7]});
             !set) {
             return set;
         }
@@ -694,8 +689,8 @@ Status DocumentInstance::apply(const Expansion& expansion, u32 node, WidgetId wi
             (void)classes.append(Span<const char>(name.data(), name.size()));
             (void)classes.push_back(' ');
         }
-        if (Status set = toolkit_->set_classes(widget,
-                                               std::string_view(classes.data(), classes.size()));
+        if (Status set =
+                toolkit_->set_classes(widget, std::string_view(classes.data(), classes.size()));
             !set) {
             return set;
         }
@@ -802,8 +797,8 @@ Status DocumentInstance::sync(Expansion& next, u32 parent_new, WidgetId parent_w
         for (usize slot = 0; slot < stale.size(); ++slot) {
             const Expanded& candidate = old.nodes[stale[slot]];
             const bool same_kind = candidate.kind == wanted.kind;
-            const bool same_key = wanted.id.is_empty() ? candidate.id.is_empty()
-                                                       : candidate.id == wanted.id;
+            const bool same_key =
+                wanted.id.is_empty() ? candidate.id.is_empty() : candidate.id == wanted.id;
             if (same_kind && same_key) {
                 match = stale[slot];
                 match_slot = slot;
@@ -936,8 +931,8 @@ Status VfsDocumentResolver::read(std::string_view path, Array<char>& out) noexce
     return out.append(Span<const char>(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
 }
 
-DocumentHost::DocumentHost(Allocator& allocator, Toolkit& toolkit,
-                           assets::VirtualFileSystem& files, i64 settle_ns) noexcept
+DocumentHost::DocumentHost(Allocator& allocator, Toolkit& toolkit, assets::VirtualFileSystem& files,
+                           i64 settle_ns) noexcept
     : allocator_(&allocator),
       files_(&files),
       instance_(allocator, toolkit),
@@ -1002,8 +997,7 @@ Status DocumentHost::reload(i64 now_ns) noexcept {
         ++failed_;
         return read_status;
     }
-    if (Status reloaded = instance_.reload(std::string_view(text.data(), text.size()));
-        !reloaded) {
+    if (Status reloaded = instance_.reload(std::string_view(text.data(), text.size())); !reloaded) {
         ++failed_;
         return reloaded;
     }

@@ -167,7 +167,9 @@ CY_TEST_CASE("ui_toolkit: a gamepad navigates by direction, and the ring follows
     CY_CHECK_EQ(kit.count_events(WidgetEventKind::Clicked, grid.buttons[2]), 1U);
 }
 
-CY_TEST_CASE("ui_toolkit: a modal dialog takes focus, keeps it, blocks what is under it, and gives it back") {
+CY_TEST_CASE(
+    "ui_toolkit: a modal dialog takes focus, keeps it, blocks what is under it, and gives it "
+    "back") {
     Kit kit;
     CY_REQUIRE(kit.started);
     const WidgetId row = kit.make(kNoElement, WidgetKind::Row);
@@ -225,9 +227,9 @@ CY_TEST_CASE("ui_toolkit: a drop-down opens a list in a layer of its own and pic
     desc.items = Span<const std::string_view>(items, 3);
     auto dropdown = kit.toolkit.create(kNoElement, desc);
     CY_REQUIRE(dropdown.has_value());
-    CY_REQUIRE(kit.toolkit.set_anchors(*dropdown, Vec2{0, 0}, Vec2{0, 0}, Vec2{20, 20},
-                                       Vec2{180, 44})
-                   .has_value());
+    CY_REQUIRE(
+        kit.toolkit.set_anchors(*dropdown, Vec2{0, 0}, Vec2{0, 0}, Vec2{20, 20}, Vec2{180, 44})
+            .has_value());
     CY_REQUIRE(kit.toolkit.set_selected(*dropdown, 1).has_value());
     CY_REQUIRE(kit.frame());
     CY_CHECK_EQ(kit.text.text_of(kit.toolkit.part(*dropdown, "dropdown-label")),

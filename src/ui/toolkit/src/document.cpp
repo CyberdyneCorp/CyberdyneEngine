@@ -150,8 +150,8 @@ Expected<u32, Error> Document::add(u32 parent, std::string_view kind) noexcept {
     node.kind = Name::intern(kind);
     node.parent = parent;
     node.depth = depth;
-    node.first_property = at < nodes_.size() ? nodes_[at].first_property
-                                             : static_cast<u32>(properties_.size());
+    node.first_property =
+        at < nodes_.size() ? nodes_[at].first_property : static_cast<u32>(properties_.size());
     if (Status inserted = insert_at(nodes_, at, node); !inserted) {
         return make_unexpected(inserted.error());
     }
@@ -267,7 +267,8 @@ public:
             if (!header) {
                 header = true;
                 if (content != kHeader) {
-                    if (Status reported = report("a document starts `cyui 1`", line, 1); !reported) {
+                    if (Status reported = report("a document starts `cyui 1`", line, 1);
+                        !reported) {
                         return reported;
                     }
                 }
@@ -303,7 +304,8 @@ private:
         }
         const std::string_view rest = content.substr(spaces);
         if (rest.empty() || rest.starts_with("//")) {
-            return comment(rest.empty() ? rest : rest.substr(2), static_cast<u32>(spaces / 2), line);
+            return comment(rest.empty() ? rest : rest.substr(2), static_cast<u32>(spaces / 2),
+                           line);
         }
         if (spaces % 2 != 0) {
             if (Status reported = report("indentation is two spaces a level", line, 1); !reported) {
@@ -889,10 +891,9 @@ Status append_bundle_entry(Array<char>& bundle, std::string_view kind, std::stri
     }
     char size[24] = {};
     const int length = std::snprintf(size, sizeof(size), "%zu", bytes.size());
-    for (const std::string_view part :
-         {kind, std::string_view(" "), path, std::string_view(" "),
-          std::string_view(size, static_cast<usize>(length)), std::string_view("\n"), bytes,
-          std::string_view("\n")}) {
+    for (const std::string_view part : {kind, std::string_view(" "), path, std::string_view(" "),
+                                        std::string_view(size, static_cast<usize>(length)),
+                                        std::string_view("\n"), bytes, std::string_view("\n")}) {
         if (Status appended = put(bundle, part); !appended) {
             return appended;
         }

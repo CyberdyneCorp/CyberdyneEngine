@@ -285,7 +285,8 @@ public:
     // --- The tree -------------------------------------------------------------------------------
 
     /// Create a widget under `parent` (a widget, or the root when null).
-    [[nodiscard]] Expected<WidgetId, Error> create(WidgetId parent, const WidgetDesc& desc) noexcept;
+    [[nodiscard]] Expected<WidgetId, Error> create(WidgetId parent,
+                                                   const WidgetDesc& desc) noexcept;
     /// Destroy a widget and every widget under it.
     [[nodiscard]] Status destroy(WidgetId widget) noexcept;
     [[nodiscard]] bool alive(WidgetId widget) const noexcept;

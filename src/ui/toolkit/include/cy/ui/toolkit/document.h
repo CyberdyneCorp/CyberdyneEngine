@@ -5,9 +5,9 @@
 // #91, stage 5.
 //
 // `ui-system`: "A UI document SHALL be the single asset representation of a UI tree, its styles,
-// its bindings, and its animations", with "a text form for version control" where "WHEN one property
-// of one element changes THEN the text diff SHALL show that single change", and "Documents SHALL
-// be composable: a document may instantiate another as a sub-tree with parameters".
+// its bindings, and its animations", with "a text form for version control" where "WHEN one
+// property of one element changes THEN the text diff SHALL show that single change", and "Documents
+// SHALL be composable: a document may instantiate another as a sub-tree with parameters".
 //
 // ================================================================================================
 // THE TEXT FORM — `.cyui`
@@ -29,7 +29,8 @@
 // ONE ELEMENT A LINE, its children indented two spaces under it, and ONE PROPERTY A TOKEN on that
 // line: `#id`, `.class`, `key=value`. So the scenario holds by construction — changing a property
 // changes one token on one line, and reordering nothing moves anything else. A value is a number,
-// a word, a "string", a `$param`, or a [list]. A key is a widget property (`text`, `value`, `items`,
+// a word, a "string", a `$param`, or a [list]. A key is a widget property (`text`, `value`,
+// `items`,
 // ...), a binding (`bind`, `bind-mode`), or any `.cyss` property, which becomes an inline
 // declaration — the closed property set and its diagnostics are the style sheet's.
 //

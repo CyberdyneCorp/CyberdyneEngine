@@ -159,8 +159,8 @@ Status Toolkit::restyle_text(ElementId element, const TextStyle& style) noexcept
         !copied) {
         return copied;
     }
-    if (Status set = text_.set_text(element, std::string_view(scratch_.data(), scratch_.size()),
-                                    style);
+    if (Status set =
+            text_.set_text(element, std::string_view(scratch_.data(), scratch_.size()), style);
         !set) {
         return set;
     }
@@ -308,8 +308,8 @@ Status Toolkit::restyle_element(ElementId element) noexcept {
     }
     ResolvedStyle resolved(*allocator_);
     Array<StyleDiagnostic> diagnostics(*allocator_);
-    if (Status cascaded = resolve_style(sheet_, &theme_, subjects[0], inline_overrides,
-                                        &inherited, resolved, diagnostics);
+    if (Status cascaded = resolve_style(sheet_, &theme_, subjects[0], inline_overrides, &inherited,
+                                        resolved, diagnostics);
         !cascaded) {
         return cascaded;
     }
@@ -349,8 +349,8 @@ Status Toolkit::restyle_element(ElementId element) noexcept {
                                                : without_flag(flags, ElementFlags::Collapsed));
     }
     if (part->hit_follows_background) {
-        (void)store_.set_hit_test_mode(element, paint.background != 0U ? HitTestMode::Block
-                                                                       : HitTestMode::Ignore);
+        (void)store_.set_hit_test_mode(
+            element, paint.background != 0U ? HitTestMode::Block : HitTestMode::Ignore);
     }
 
     // PAINT TRANSITIONS: a cascaded paint value that moved, under a duration, is interpolated from
@@ -486,8 +486,8 @@ Status Toolkit::advance_tracks(f32 seconds) noexcept {
             track.elapsed = track.delay + track.duration;
         }
         const f32 running = track.elapsed - track.delay;
-        const f32 t = track.duration > 0.0F ? running / track.duration : (running >= 0.0F ? 1.0F
-                                                                                          : 0.0F);
+        const f32 t =
+            track.duration > 0.0F ? running / track.duration : (running >= 0.0F ? 1.0F : 0.0F);
         const f32 eased = ease(track.easing, t);
         const f32 number = track.from + ((track.to - track.from) * eased);
         const u32 colour = mix_colour(track.from_colour, track.to_colour, eased);

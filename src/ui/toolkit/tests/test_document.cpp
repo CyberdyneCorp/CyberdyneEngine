@@ -153,9 +153,9 @@ CY_TEST_CASE("ui_document: one property changed is one line of the text changed"
 
 CY_TEST_CASE("ui_document: mistakes are named with a line and a column, and parsing goes on") {
     Document document(allocator());
-    CY_REQUIRE(parse_document("cyui 1\ncolumn\n   label\n  label text=\"open\n  slider oops\n",
-                              document)
-                   .has_value());
+    CY_REQUIRE(
+        parse_document("cyui 1\ncolumn\n   label\n  label text=\"open\n  slider oops\n", document)
+            .has_value());
     CY_REQUIRE(document.diagnostics().size() >= 3U);
     CY_CHECK_EQ(document.diagnostics()[0].line, 3U);  // three spaces
     bool unclosed = false;
@@ -171,7 +171,8 @@ CY_TEST_CASE("ui_document: mistakes are named with a line and a column, and pars
     CY_CHECK_EQ(headless.diagnostics().size(), 1U);
 }
 
-CY_TEST_CASE("ui_document: a document becomes widgets, its components instantiated with parameters") {
+CY_TEST_CASE(
+    "ui_document: a document becomes widgets, its components instantiated with parameters") {
     // `ui-system`: "WHEN a document instantiates another with parameters THEN the instance SHALL
     // reflect the source document's changes, with parameter overrides preserved."
     Kit kit;

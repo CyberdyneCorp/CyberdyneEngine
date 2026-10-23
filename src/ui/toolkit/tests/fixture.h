@@ -28,8 +28,7 @@ struct Kit {
         config.atlas.initial_extent = 256;
         config.atlas.maximum_extent = 256;
         started = server.start(config).has_value() &&
-                  text.start(server, builtin_font(), 1).has_value() &&
-                  toolkit.start().has_value();
+                  text.start(server, builtin_font(), 1).has_value() && toolkit.start().has_value();
         settings.mode = ScaleMode::FixedPixel;
         settings.reference = Vec2{800.0F, 600.0F};
     }
@@ -65,7 +64,8 @@ struct Kit {
         (void)toolkit.pointer(PointerInput{point, false, {}, 0});
     }
 
-    [[nodiscard]] u32 count_events(WidgetEventKind kind, WidgetId widget = kNoElement) const noexcept {
+    [[nodiscard]] u32 count_events(WidgetEventKind kind,
+                                   WidgetId widget = kNoElement) const noexcept {
         u32 count = 0;
         for (const WidgetEvent& event : toolkit.events()) {
             if (event.kind == kind && (!widget.is_valid() || event.widget == widget)) {

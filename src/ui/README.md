@@ -40,13 +40,15 @@ counts the rest as reused. Both are numbers a test reads.
 | `paint.h` | flattening to primitives, batching with break reasons, the budget ladder, accessibility |
 | `widgets.h` | declarative descriptions and the reconciler, virtualisation, data binding |
 
-Three targets beside `cy::ui` put it on screen, each with only the dependency it needs:
+Five targets beside `cy::ui` put it on screen and make it an interface, each with only the dependency it needs:
 
 | directory | target | what it holds |
 |---|---|---|
 | `text/` | `cy::ui-text` | `TextPainter` — `ContentMeasurer` and `ContentPainter` over `cy::servers-text` — the interface font (Noto Sans as a distance field, with `CY_TEXT`, #86) and the built-in bitmap font, its fallback and the whole of the text with `CY_TEXT` off |
 | `render/` | `cy::ui-render` | the primitive stream drawn on the device at the frame's `UiAndDebug` stage ([its README](render/README.md)) |
 | `console/` | `cy::ui-console` | `DevConsole`, the developer console: commands, an input line, a virtualised scrollback |
+| `toolkit/` | `cy::ui-toolkit` | `Toolkit` — the widget set (issue #91 stage 4) as elements with part records: containers, text, buttons, switches, a radio group, a slider, a progress bar, a text field, a drop-down, a virtualised list, tabs, a modal dialog, a tooltip, a focus ring; their states, transitions, animations and bindings; `.cyui` documents, their `use`, their diffing reload and `DocumentHost`'s hot reload over the VFS; the cooked bundle (stage 5) |
+| `input/` | `cy::ui-input` | the `UI.*` input actions with default keyboard and gamepad bindings, and `UiInputBridge`: the actions to the toolkit, the input user's focus layer to `Interface` while the toolkit holds the input |
 
 `cy::ui` itself still names neither a font server nor a device: text and drawing arrive through the
 `ContentMeasurer` and `ContentPainter` interfaces and through the stream `flatten()` returns.
@@ -59,36 +61,43 @@ discovered". `style.h`'s header carries the full list; the short version:
 1. **The property set is closed.** A property outside the subset is an error with a line and a
    column, not a silently ignored declaration.
 2. **Lengths are unitless or `px`, and both mean reference units.** `em`, `rem`, `%`, `vh` and `vw`
-   are not in the subset.
+   are not in the subset. Times are `s` or `ms`.
 3. **The cascade order is `ui-system`'s**: inline overrides, matched rules by specificity, inherited
    properties, the theme, engine defaults.
 4. **No `!important`.** An inline override always wins.
 5. **`var()` resolves at match time**, and an undefined reference is a diagnostic rather than a zero.
-6. **No `@media`, no `@supports`, no keyframes in the sheet.**
+6. **No `@media`, no `@supports`, no keyframes in the sheet.** A state change eases by
+   `transition-*`; an animation is code's (`Toolkit::animate`).
+7. **A colour with alpha is premultiplied as it is read**: `#ff000080` is half-transparent red in
+   the store's premultiplied form, not a half-bright red.
 
 ## What `ui-system` asks for that this module does not yet have
 
 Recorded rather than left for a reader to find:
 
-* **The widget set is not built.** `widgets.h` has the reconciler, virtualisation and data binding —
-  the machinery every widget is made of — and the twenty-six named widgets are not written. What is
-  here is what they would be built from.
-* **Animation and transitions** are declared in the style subset (`transition-duration`) and not
-  evaluated: there is no keyframe player, no spring and no stagger.
+* **The widget set** is `toolkit/`: the widgets `docs/guides/ui.md` section 7 lists. Not built:
+  a colour picker, a tree view, a table with sortable columns, a numeric spinner, a context menu,
+  and multi-line text editing.
+* **Animation and transitions** are `toolkit/`'s: `.cyss` transitions between states, and paint
+  animations by time with seven easings, a spring among them, staggered, and shortened under the
+  reduced-motion preference. No keyframes in a sheet.
 * **The immediate-mode API** is absent.
-* **The renderer is stage 1 of issue #91.** `render/` draws rectangles, rounded and bordered boxes,
-  images and glyphs, clipped by scissor, after the tone curve. Not built: offscreen opacity groups
-  (`flatten()` multiplies opacity down the tree, so overlapping children of a faded panel each
-  blend), the HDR composite before tonemapping, custom UI materials, blur-behind, transforms other
-  than the identity, and world-space and surface-space documents.
+* **The renderer is stages 1 and 2 of issue #91.** `render/` draws rectangles, rounded and
+  bordered boxes, images and glyphs, clipped by scissor, after the tone curve; offscreen opacity
+  groups (`ElementFlags::OpacityGroup`); and, through `FrameSinks::ui_hdr`, an HDR composite on the
+  linear scene colour before bloom, with `PaintData::intensity` for emissive elements. Not built:
+  custom UI materials, blur-behind, and world-space and surface-space documents. The render
+  transform is a translation and a uniform scale, which is what the animations need.
 * **Text is one line.** `text/`'s painter lays out a single left-aligned line — shaped by HarfBuzz
   and bidirectional with `CY_TEXT`, drawn from a distance field at any size with outline, shadow,
-  gradient and per-character colour; wrapping, carets and selection come with the widget set.
+  gradient and per-character colour. The toolkit's text field adds a caret, a selection and a
+  composition over that line; wrapping is not built.
 * **The forcing functions** are begun: `console/` is the developer console, and
   `samples/13-rts-selection` draws a strategy HUD on the same store. The same HUD is built from Swift
   in `samples/13-rts-api` through ABI 1.6's `ui_*` entries; the adapter that implements them over
   this store is `cy::game-backend-ui` (`src/game_backend/ui/`), and `render.rts_api_hud` holds the
-  two HUDs to the same primitives and bytes. The debuggers, the profiler
+  two HUDs to the same primitives and bytes. ABI 1.12 puts the toolkit behind the same adapter, and
+  CyberdyneKit builds widget interfaces declaratively with bindings. The debuggers, the profiler
   overlays, the settings interface and the conformance suite are not built.
 
 ## Testing
@@ -98,9 +107,15 @@ Recorded rather than left for a reader to find:
 from before the renderer, the device to the host reference, order, nested clipping and opacity byte
 for byte, and the HUD with the console to a golden image.
 
-`unit.ui` — 50 cases: the store's identity and dirty propagation, the reconciler's identity and
+`unit.ui_toolkit` (47 cases), `unit.ui_input`, `integration.ui_toolkit` and `render.ui_toolkit`
+hold the toolkit: widgets, editing, focus, styles, animation, bindings, documents and their reload,
+layout goldens per container at one DPI and two, the ten-thousand-item list in a frame budget, an
+opacity group and the HDR composite on a device, and the widget gallery against golden images
+([`docs/guides/ui.md`](../../docs/guides/ui.md#13-testing)).
+
+`unit.ui` — 58 cases: the store's identity and dirty propagation, the reconciler's identity and
 churn reporting, virtualisation at a hundred thousand rows, flex/grid/absolute layout, the scale
 strategies, `.cyss` parsing and cascade, hit testing and capture, focus scoping and navigation, the
 layer stack's semantics, flattening and batching, the budget ladder, data binding granularity, and
-the accessibility audit with each of its four findings, and opacity, content painting and empty
-containers in the stream.
+the accessibility audit with each of its four findings, opacity, content painting and empty
+containers in the stream, and opacity groups and the render transform in `flatten()`.

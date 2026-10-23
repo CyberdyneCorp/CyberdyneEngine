@@ -29,7 +29,7 @@ using input::Key;
 
 /// One half of a stick's axis: down while the stick is pushed past half way in that direction.
 [[nodiscard]] input::Binding half_axis(input::ActionId action, GamepadControl axis,
-                                f32 direction) noexcept {
+                                       f32 direction) noexcept {
     input::Binding binding = simple(action, input::gamepad_control(axis));
     binding.components[0].weight = Vec3{direction, 0.0F, 0.0F};
     binding.processor_count = 1;
@@ -152,8 +152,8 @@ Status UiInputBridge::start(const UiInputActions& actions, input::ContextHandle 
     context_ = context;
     // AT THE INTERFACE'S LAYER, without pass-through: these bindings act only while the user's
     // focus is the interface, and the game's act only while it is not.
-    Expected<u32, Error> pushed = server_->user(user_).push_context(
-        context, priority, input::FocusLayer::Interface, false);
+    Expected<u32, Error> pushed =
+        server_->user(user_).push_context(context, priority, input::FocusLayer::Interface, false);
     return pushed ? ok() : Status{make_unexpected(pushed.error())};
 }
 

@@ -38,6 +38,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -283,8 +284,7 @@ void record_readback(const rendering::PassContext& context, void* user) noexcept
             .read(read_id, rhi::Access::HostRead)
             .side_effect();
         drawn = declared && graph.status().has_value() &&
-                executor
-                    .execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
+                executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{})
                     .has_value() &&
                 device.wait_idle().has_value();
         executor.release();
@@ -352,8 +352,14 @@ struct Interface {
                  .has_value()) {
             return false;
         }
-        return upload_text_atlases(renderer, text).has_value() &&
-               renderer.submit(buffer, scale).has_value();
+        // The pages again only when the text made new glyphs resident, as the guide says.
+        if (text.atlas_revision() != uploaded_revision) {
+            if (!upload_text_atlases(renderer, text).has_value()) {
+                return false;
+            }
+            uploaded_revision = text.atlas_revision();
+        }
+        return renderer.submit(buffer, scale).has_value();
     }
 
     ElementStore store{allocator()};
@@ -365,6 +371,7 @@ struct Interface {
     Toolkit toolkit{allocator(), store, text};
     UiRenderer renderer{allocator()};
     PrimitiveBuffer buffer{allocator()};
+    u32 uploaded_revision = ~0U;
     FlattenReport flattened{};
     bool ready = false;
 };
@@ -499,7 +506,8 @@ private:
     std::vector<u32> pixels_;
 };
 
-/// The mean of the red, green and blue bytes in a ring `inner` to `outer` pixels out from the panel.
+/// The mean of the red, green and blue bytes in a ring `inner` to `outer` pixels out from the
+/// panel.
 [[nodiscard]] f64 ring_brightness(const std::vector<u32>& pixels, u32 inner, u32 outer) noexcept {
     f64 sum = 0.0;
     u32 count = 0;
@@ -562,7 +570,8 @@ CY_TEST_CASE("(b) an opacity group's overlap is its non-overlap on the device, a
         Interface interface(fixture.device(), kSize, kSize, false);
         CY_REQUIRE(interface.ready);
         ElementStore& store = interface.store;
-        const auto box = [&store](ElementId parent, f32 x, f32 y, f32 w, f32 h, u32 colour) noexcept {
+        const auto box = [&store](ElementId parent, f32 x, f32 y, f32 w, f32 h,
+                                  u32 colour) noexcept {
             auto made = store.create(parent, Name::intern("box"));
             LayoutInput* input = store.layout_input(*made);
             input->model = LayoutModel::Absolute;
@@ -581,8 +590,8 @@ CY_TEST_CASE("(b) an opacity group's overlap is its non-overlap on the device, a
         }
         CY_REQUIRE(interface.submit(Vec2{static_cast<f32>(kSize), static_cast<f32>(kSize)}, 1.0F));
         std::vector<u32> drawn;
-        CY_REQUIRE(draw_canvas(fixture.device(), interface.renderer, kSize, kSize, 0xFF000000U,
-                               drawn));
+        CY_REQUIRE(
+            draw_canvas(fixture.device(), interface.renderer, kSize, kSize, 0xFF000000U, drawn));
         CY_CHECK_EQ(interface.renderer.report().groups, grouped ? 1U : 0U);
         // (60, 50) is where blue covers red; (80, 50) is blue alone.
         const u32 overlap = drawn[(50U * kSize) + 60U];
@@ -627,9 +636,10 @@ CY_TEST_CASE("(c) an HDR document composited before the tone curve blooms, and a
     const f64 before_ring = ring_brightness(before.pixels(), 2, 14);
     std::fprintf(stderr, "ring brightness: bare %.2f, after the tone curve %.2f, before it %.2f\n",
                  bare_ring, after_ring, before_ring);
-    const usize centre = (static_cast<usize>(BloomRun::kTop + 20U) * kWidth) + BloomRun::kLeft + 20U;
-    std::fprintf(stderr, "panel centre: bare %08x, after %08x, before %08x\n", bare.pixels()[centre],
-                 after.pixels()[centre], before.pixels()[centre]);
+    const usize centre =
+        (static_cast<usize>(BloomRun::kTop + 20U) * kWidth) + BloomRun::kLeft + 20U;
+    std::fprintf(stderr, "panel centre: bare %08x, after %08x, before %08x\n",
+                 bare.pixels()[centre], after.pixels()[centre], before.pixels()[centre]);
     // After the tone curve the panel is drawn over the bloomed frame: the ring is the frame's own.
     CY_CHECK_LT(std::fabs(after_ring - bare_ring), 0.01);
     // Before it, the panel's light is in the HDR colour bloom reads: the ring brightens.
@@ -674,6 +684,22 @@ CY_TEST_CASE("(d) the widget gallery against its golden image, closed and with i
     std::vector<u32> closed;
     CY_REQUIRE(draw_canvas(fixture.device(), interface.renderer, kGalleryWidth, kGalleryHeight,
                            0xFF000000U, closed));
+    const UiRenderReport drawn = interface.renderer.report();
+    // The measured cost the guide quotes: a frame of the whole gallery on the CPU — bindings,
+    // styles, layout, the list's rows, flattening and the rows' upload — with nothing changed.
+    constexpr u32 kFrames = 60;
+    const auto begin = std::chrono::steady_clock::now();
+    for (u32 frame = 0; frame < kFrames; ++frame) {
+        CY_REQUIRE(interface.submit(output, kScale));
+    }
+    const f64 us =
+        std::chrono::duration<f64, std::micro>(std::chrono::steady_clock::now() - begin).count() /
+        kFrames;
+    std::fprintf(stderr,
+                 "gallery: %u widgets, %u primitives, %u draws, %u page binds, %.1f us a frame "
+                 "on the CPU\n",
+                 interface.toolkit.widget_count(), drawn.primitives, drawn.draws, drawn.page_binds,
+                 us);
     save("ui-widget-gallery.png", closed, kGalleryWidth, kGalleryHeight);
     if (kInterfaceFont) {
         check_against_reference("ui_widget_gallery.png", closed, kGalleryWidth, kGalleryHeight);
@@ -740,9 +766,9 @@ CY_TEST_CASE("(e) the HDR stage is declared before bloom with a producer, and no
         if (produced) {
             // Before the first of bloom's passes, which read what it drew.
             CY_CHECK_LT(hdr, frame.pass_of(rendering::FramePassKind::Bloom));
-            CY_CHECK_EQ(std::string_view(rendering::frame_pass_kind_name(
-                            rendering::FramePassKind::UiHdr)),
-                        std::string_view("ui hdr"));
+            CY_CHECK_EQ(
+                std::string_view(rendering::frame_pass_kind_name(rendering::FramePassKind::UiHdr)),
+                std::string_view("ui hdr"));
         }
     }
 }

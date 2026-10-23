@@ -208,8 +208,8 @@ struct FlattenWalk {
         return painted;
     }
     for (const Primitive& primitive : content.span()) {
-        const Rect bounds = transform.identity() ? primitive.bounds
-                                                 : transform.apply(primitive.bounds);
+        const Rect bounds =
+            transform.identity() ? primitive.bounds : transform.apply(primitive.bounds);
         if (bounds.intersected(clip).empty()) {
             ++walk.report.culled;
             continue;
@@ -356,8 +356,7 @@ struct FlattenWalk {
 /// Whether an element opens an opacity group here: it asks for one, its own opacity is below one,
 /// and it is not the element whose group is being drawn.
 [[nodiscard]] bool opens_group(const ElementStore& store, const Pending& pending) noexcept {
-    if (pending.group_root ||
-        !has_flag(store.flags(pending.element), ElementFlags::OpacityGroup)) {
+    if (pending.group_root || !has_flag(store.flags(pending.element), ElementFlags::OpacityGroup)) {
         return false;
     }
     const f32 own = store.paint(pending.element)->opacity;
@@ -391,7 +390,8 @@ struct FlattenWalk {
 /// opacity, and ONE composite primitive in the parent stream that draws that stream's target at
 /// the element's opacity. `ui-system`: "WHEN a panel with overlapping children is faded to 50 %
 /// THEN it SHALL be composited once at 50 %, without the overlaps darkening."
-[[nodiscard]] Status open_group(FlattenWalk& walk, Stream& parent, const Pending& pending) noexcept {
+[[nodiscard]] Status open_group(FlattenWalk& walk, Stream& parent,
+                                const Pending& pending) noexcept {
     Allocator& allocator = parent.emitted.allocator();
     Array<Primitive> emitted(allocator);
     Array<ElementId> owners(allocator);
@@ -449,8 +449,7 @@ struct FlattenWalk {
     composite.material = material_index(BuiltinMaterial::Image);
     composite.atlas = static_cast<u16>(kFirstGroupAtlas + index);
     composite.colour = 0xFFFFFFFFU;
-    return emit(parent, composite, pending.element, clip_slot.value(), group.opacity,
-                Transform{});
+    return emit(parent, composite, pending.element, clip_slot.value(), group.opacity, Transform{});
 }
 
 /// The pending element's own state for its children: its opacity folded in, its transform
@@ -541,8 +540,8 @@ Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
         }
     }
 
-    FlattenWalk walk{store,  viewport,         report,       painter,
-                     clips,  group_primitives, group_owners, groups};
+    FlattenWalk walk{store, viewport,         report,       painter,
+                     clips, group_primitives, group_owners, groups};
     Stream main{emitted, owners};
     if (Status walked = walk_stream(walk, main, stack); !walked) {
         return walked;
@@ -564,9 +563,8 @@ Status flatten(ElementStore& store, const Rect& viewport, PrimitiveBuffer& out,
     const auto base = static_cast<u32>(emitted.size());
     for (OpacityGroup& group : groups.span()) {
         group.first_batch = static_cast<u32>(group_batches.size());
-        if (Status built = build_batches(
-                group_primitives.span().subspan(group.first, group.count), base + group.first,
-                group_batches);
+        if (Status built = build_batches(group_primitives.span().subspan(group.first, group.count),
+                                         base + group.first, group_batches);
             !built) {
             return built;
         }

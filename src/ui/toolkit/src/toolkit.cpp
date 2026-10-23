@@ -16,18 +16,30 @@ struct KindRow {
 };
 
 constexpr KindRow kKinds[] = {
-    {WidgetKind::Panel, "panel"},          {WidgetKind::Row, "row"},
-    {WidgetKind::Column, "column"},        {WidgetKind::Grid, "grid"},
-    {WidgetKind::Stack, "stack"},          {WidgetKind::ScrollView, "scroll-view"},
-    {WidgetKind::Label, "label"},          {WidgetKind::RichText, "rich-text"},
-    {WidgetKind::Image, "image"},          {WidgetKind::Button, "button"},
-    {WidgetKind::Toggle, "toggle"},        {WidgetKind::Checkbox, "checkbox"},
-    {WidgetKind::RadioGroup, "radio-group"}, {WidgetKind::Slider, "slider"},
-    {WidgetKind::ProgressBar, "progress-bar"}, {WidgetKind::TextField, "text-field"},
-    {WidgetKind::Dropdown, "dropdown"},    {WidgetKind::ListView, "list-view"},
-    {WidgetKind::Tabs, "tabs"},            {WidgetKind::Dialog, "dialog"},
-    {WidgetKind::Radio, "radio"},          {WidgetKind::Tab, "tab"},
-    {WidgetKind::ListRow, "list-row"},     {WidgetKind::Option, "option"},
+    {WidgetKind::Panel, "panel"},
+    {WidgetKind::Row, "row"},
+    {WidgetKind::Column, "column"},
+    {WidgetKind::Grid, "grid"},
+    {WidgetKind::Stack, "stack"},
+    {WidgetKind::ScrollView, "scroll-view"},
+    {WidgetKind::Label, "label"},
+    {WidgetKind::RichText, "rich-text"},
+    {WidgetKind::Image, "image"},
+    {WidgetKind::Button, "button"},
+    {WidgetKind::Toggle, "toggle"},
+    {WidgetKind::Checkbox, "checkbox"},
+    {WidgetKind::RadioGroup, "radio-group"},
+    {WidgetKind::Slider, "slider"},
+    {WidgetKind::ProgressBar, "progress-bar"},
+    {WidgetKind::TextField, "text-field"},
+    {WidgetKind::Dropdown, "dropdown"},
+    {WidgetKind::ListView, "list-view"},
+    {WidgetKind::Tabs, "tabs"},
+    {WidgetKind::Dialog, "dialog"},
+    {WidgetKind::Radio, "radio"},
+    {WidgetKind::Tab, "tab"},
+    {WidgetKind::ListRow, "list-row"},
+    {WidgetKind::Option, "option"},
 };
 static_assert(sizeof(kKinds) / sizeof(kKinds[0]) == static_cast<usize>(WidgetKind::Count),
               "every widget kind has a name");
@@ -350,7 +362,8 @@ Expected<WidgetId, Error> Toolkit::create(WidgetId parent, const WidgetDesc& des
         return make_unexpected(Error{ErrorCode::InvalidArgument, "toolkit: not started", 0});
     }
     if (desc.kind >= WidgetKind::Count) {
-        return make_unexpected(Error{ErrorCode::InvalidArgument, "toolkit: no such widget kind", 0});
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "toolkit: no such widget kind", 0});
     }
     const Widget* parent_widget = parent.is_valid() ? record(parent) : nullptr;
     if (parent.is_valid() && parent_widget == nullptr) {
@@ -371,8 +384,9 @@ Expected<WidgetId, Error> Toolkit::create(WidgetId parent, const WidgetDesc& des
             return make_unexpected(pushed.error());
         }
     }
-    // A DIALOG LIVES IN THE OVERLAY, whatever it was declared under: it is drawn over everything and
-    // is the root of the modal layer it opens. Its declared parent is still its parent to `find`.
+    // A DIALOG LIVES IN THE OVERLAY, whatever it was declared under: it is drawn over everything
+    // and is the root of the modal layer it opens. Its declared parent is still its parent to
+    // `find`.
     ElementId attach_to = parent_content;
     if (desc.kind == WidgetKind::Dialog) {
         Expected<ElementId, Error> backdrop = make_element(overlay_, "dialog-backdrop", slot);
@@ -381,8 +395,7 @@ Expected<WidgetId, Error> Toolkit::create(WidgetId parent, const WidgetDesc& des
         }
         attach_to = *backdrop;
     }
-    Expected<ElementId, Error> element =
-        make_element(attach_to, widget_kind_name(desc.kind), slot);
+    Expected<ElementId, Error> element = make_element(attach_to, widget_kind_name(desc.kind), slot);
     if (!element) {
         return make_unexpected(element.error());
     }
@@ -440,8 +453,8 @@ Status Toolkit::attach_to_parent(Widget& widget, WidgetId parent) noexcept {
                    Vec2{0.0F, 0.0F});
             return ok();
         case WidgetKind::Tabs: {
-            // EVERY CHILD OF A TABS IS A PAGE, with a tab in the bar titled by its title. Pages fill
-            // the page area; only the selected one takes part in layout.
+            // EVERY CHILD OF A TABS IS A PAGE, with a tab in the bar titled by its title. Pages
+            // fill the page area; only the selected one takes part in layout.
             anchor(part->base_layout, Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F}, Vec2{0.0F, 0.0F},
                    Vec2{0.0F, 0.0F});
             const u32 index = static_cast<u32>(owner->rows.size());
@@ -481,8 +494,9 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
     const u32 slot = part_record(widget.element)->widget;
     Part* root = part_record(widget.element);
     // Every helper below may grow `parts_`; `root` and `widget` are refreshed after each one.
-    const auto add = [this, slot](ElementId parent, const char* type,
-                                  const LayoutInput& layout) noexcept -> Expected<ElementId, Error> {
+    const auto add = [this, slot](
+                         ElementId parent, const char* type,
+                         const LayoutInput& layout) noexcept -> Expected<ElementId, Error> {
         Expected<ElementId, Error> made = make_element(parent, type, slot);
         if (made) {
             part_record(*made)->base_layout = layout;
@@ -518,15 +532,15 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
         case WidgetKind::Panel:
         case WidgetKind::Stack:
         case WidgetKind::Dialog:
-            root->base_layout = container(desc.kind == WidgetKind::Dialog ? LayoutModel::Flex
-                                                                          : LayoutModel::Absolute,
-                                          FlexDirection::Column);
+            root->base_layout = container(
+                desc.kind == WidgetKind::Dialog ? LayoutModel::Flex : LayoutModel::Absolute,
+                FlexDirection::Column);
             root->hit_follows_background = true;
             if (desc.kind == WidgetKind::Dialog) {
                 Part* backdrop = part_record(widget.parts[0]);
                 backdrop->base_layout = container(LayoutModel::Flex, FlexDirection::Column);
-                anchor(backdrop->base_layout, Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F},
-                       Vec2{0.0F, 0.0F}, Vec2{0.0F, 0.0F});
+                anchor(backdrop->base_layout, Vec2{0.0F, 0.0F}, Vec2{1.0F, 1.0F}, Vec2{0.0F, 0.0F},
+                       Vec2{0.0F, 0.0F});
                 backdrop->base_layout.justify = Justify::Centre;
                 backdrop->base_layout.align = Align::Centre;
                 (void)store_.set_hit_test_mode(widget.parts[0], HitTestMode::Block);
@@ -537,8 +551,8 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
                     !title) {
                     return title;
                 }
-                Expected<ElementId, Error> body =
-                    add(element, "dialog-body", container(LayoutModel::Flex, FlexDirection::Column));
+                Expected<ElementId, Error> body = add(
+                    element, "dialog-body", container(LayoutModel::Flex, FlexDirection::Column));
                 if (!body) {
                     return make_unexpected(body.error());
                 }
@@ -547,9 +561,9 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
             break;
         case WidgetKind::Row:
         case WidgetKind::Column:
-            root->base_layout = container(LayoutModel::Flex, desc.kind == WidgetKind::Row
-                                                                 ? FlexDirection::Row
-                                                                 : FlexDirection::Column);
+            root->base_layout =
+                container(LayoutModel::Flex, desc.kind == WidgetKind::Row ? FlexDirection::Row
+                                                                          : FlexDirection::Column);
             root->hit_follows_background = true;
             break;
         case WidgetKind::Grid:
@@ -568,8 +582,7 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
             (void)store_.set_flags(*port, store_.flags(*port) | ElementFlags::ClipsChildren);
             (void)store_.set_hit_test_mode(*port, HitTestMode::Block);
             LayoutInput content = container(LayoutModel::Flex, FlexDirection::Column);
-            anchor(content, Vec2{0.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{0.0F, 0.0F},
-                   Vec2{0.0F, 0.0F});
+            anchor(content, Vec2{0.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{0.0F, 0.0F}, Vec2{0.0F, 0.0F});
             Expected<ElementId, Error> body = add(*port, "scroll-content", content);
             if (!body) {
                 return make_unexpected(body.error());
@@ -680,8 +693,8 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
             if (Status made = text_part(element, "text-value", LayoutInput{}, desc.text); !made) {
                 return made;
             }
-            if (Status made = text_part(element, "text-placeholder", LayoutInput{},
-                                        desc.placeholder);
+            if (Status made =
+                    text_part(element, "text-placeholder", LayoutInput{}, desc.placeholder);
                 !made) {
                 return made;
             }
@@ -715,8 +728,7 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
             (void)store_.set_flags(*port, store_.flags(*port) | ElementFlags::ClipsChildren);
             (void)store_.set_hit_test_mode(*port, HitTestMode::Block);
             LayoutInput content = container(LayoutModel::Absolute);
-            anchor(content, Vec2{0.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{0.0F, 0.0F},
-                   Vec2{0.0F, 0.0F});
+            anchor(content, Vec2{0.0F, 0.0F}, Vec2{1.0F, 0.0F}, Vec2{0.0F, 0.0F}, Vec2{0.0F, 0.0F});
             Expected<ElementId, Error> body = add(*port, "list-content", content);
             if (!body) {
                 return make_unexpected(body.error());
@@ -760,8 +772,8 @@ Status Toolkit::build(Widget& widget, const WidgetDesc& desc) noexcept {
     // `set_text` nor `set_items` keeps a reference into `widgets_`, which making a radio grows.
     if (!desc.title.empty()) {
         Widget& titled = widgets_[slot];
-        if (Status kept = titled.caption.append(Span<const char>(desc.title.data(),
-                                                                 desc.title.size()));
+        if (Status kept =
+                titled.caption.append(Span<const char>(desc.title.data(), desc.title.size()));
             !kept) {
             return kept;
         }
@@ -797,8 +809,8 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
     if (widget == nullptr) {
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
-    if (popup_owner_ == widget_id || (popup_.is_valid() && widget->kind == WidgetKind::Dropdown &&
-                                      popup_owner_ == widget_id)) {
+    if (popup_owner_ == widget_id ||
+        (popup_.is_valid() && widget->kind == WidgetKind::Dropdown && popup_owner_ == widget_id)) {
         (void)close_dropdown();
     }
     if (widget->kind == WidgetKind::Dialog && widget->open) {
@@ -806,7 +818,8 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
     }
     unbind(widget_id);
     // A TAB PAGE TAKES ITS TAB WITH IT, and the tabs after it move up one.
-    if (Widget* owner = record(widget->parent); owner != nullptr && owner->kind == WidgetKind::Tabs) {
+    if (Widget* owner = record(widget->parent);
+        owner != nullptr && owner->kind == WidgetKind::Tabs) {
         for (usize index = 0; index < owner->rows.size(); ++index) {
             Widget* tab = record(owner->rows[index]);
             if (tab == nullptr || store_.hierarchy(widget_id) == nullptr) {
@@ -1128,8 +1141,8 @@ Status Toolkit::set_range(WidgetId widget_id, f32 minimum, f32 maximum, f32 step
     if (widget == nullptr) {
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
-    if (!std::isfinite(minimum) || !std::isfinite(maximum) || !std::isfinite(step) ||
-        step < 0.0F || maximum < minimum) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || !std::isfinite(step) || step < 0.0F ||
+        maximum < minimum) {
         return fail(ErrorCode::InvalidArgument,
                     "toolkit: a range is finite, its maximum not below its minimum, its step not "
                     "negative");
@@ -1217,9 +1230,9 @@ Status Toolkit::item_text(WidgetId widget_id, u32 index, Array<char>& out) const
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
     if (widget->source != nullptr) {
-        return index < widget->source->count() ? widget->source->text(index, out)
-                                               : fail(ErrorCode::InvalidArgument,
-                                                      "toolkit: no such item");
+        return index < widget->source->count()
+                   ? widget->source->text(index, out)
+                   : fail(ErrorCode::InvalidArgument, "toolkit: no such item");
     }
     if (index >= widget->item_ends.size()) {
         return fail(ErrorCode::InvalidArgument, "toolkit: no such item");
@@ -1296,9 +1309,9 @@ Status Toolkit::set_enabled(WidgetId widget_id, bool enabled) noexcept {
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
     const ElementFlags flags = store_.flags(widget->element);
-    if (Status set = store_.set_flags(widget->element,
-                                      enabled ? without_flag(flags, ElementFlags::Disabled)
-                                              : (flags | ElementFlags::Disabled));
+    if (Status set =
+            store_.set_flags(widget->element, enabled ? without_flag(flags, ElementFlags::Disabled)
+                                                      : (flags | ElementFlags::Disabled));
         !set) {
         return set;
     }
@@ -1321,9 +1334,8 @@ Status Toolkit::set_visible(WidgetId widget_id, bool visible) noexcept {
         return fail(ErrorCode::NotFound, "toolkit: no such widget");
     }
     const ElementFlags flags = store_.flags(widget->element);
-    return store_.set_flags(widget->element, visible
-                                                 ? without_flag(flags, ElementFlags::Collapsed)
-                                                 : (flags | ElementFlags::Collapsed));
+    return store_.set_flags(widget->element, visible ? without_flag(flags, ElementFlags::Collapsed)
+                                                     : (flags | ElementFlags::Collapsed));
 }
 
 bool Toolkit::visible(WidgetId widget_id) const noexcept {
@@ -1352,7 +1364,8 @@ Status Toolkit::set_classes(WidgetId widget_id, std::string_view classes) noexce
         if (widget->class_count >= kMaxClasses) {
             return fail(ErrorCode::InvalidArgument, "toolkit: at most four classes a widget");
         }
-        widget->classes[widget->class_count++] = Name::intern(classes.substr(begin, cursor - begin));
+        widget->classes[widget->class_count++] =
+            Name::intern(classes.substr(begin, cursor - begin));
     }
     mark_widget_style(*widget);
     return ok();

@@ -1659,8 +1659,8 @@ typedef struct CyUiDocumentDesc {
     CyEntity owner;     /* every widget the document makes reports to this entity's behaviours */
 } CyUiDocumentDesc;
 
-#define CY_UI_ANIMATION_STATE_FEEDBACK 0x1u /* not decorative: still played under reduced motion \
-                                             */
+/* Not decorative: still played under reduced motion. */
+#define CY_UI_ANIMATION_STATE_FEEDBACK 0x1u
 
 /* One animation of one paint property of a widget, evaluated by the toolkit every frame — nothing
  * crosses the boundary until it is over. */

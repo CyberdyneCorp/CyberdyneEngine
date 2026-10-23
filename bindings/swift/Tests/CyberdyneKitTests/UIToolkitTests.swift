@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// UIToolkitTests.swift — ABI 1.11's widget toolkit through `FakeEngine`: `Widget`, `UI`'s documents
+// UIToolkitTests.swift — ABI 1.12's widget toolkit through `FakeEngine`: `Widget`, `UI`'s documents
 // and navigation, the declarative `mountWidgets` with its bindings, and widget events reaching the
 // handlers registered for them through `ui_event`.
 //

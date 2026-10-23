@@ -408,10 +408,10 @@ void InputUser::compute_shadow_chain() noexcept {
     // For each binding, the nearest higher-priority binding of the same action that consumes it.
     // Computed here, once, rather than searched per event.
     //
-    // HIGHER PRIORITY MEANS ANOTHER CONTEXT, above this one on the stack. Two bindings of one action
-    // in ONE context — Enter and a gamepad's south button both confirming — are alternatives, and
-    // the earlier one shadowing the later would leave the gamepad dead in every context that also
-    // binds a key, which is every context with more than one device.
+    // HIGHER PRIORITY MEANS ANOTHER CONTEXT, above this one on the stack. Two bindings of one
+    // action in ONE context — Enter and a gamepad's south button both confirming — are
+    // alternatives, and the earlier one shadowing the later would leave the gamepad dead in every
+    // context that also binds a key, which is every context with more than one device.
     for (usize index = 0; index < resolved_.size(); ++index) {
         resolved_[index].shadow_by = kNoBinding;
         for (usize above = index; above-- > 0;) {

@@ -136,9 +136,9 @@ CY_TEST_CASE("ui_style: a straight `.cyss` colour with alpha is premultiplied as
     CY_CHECK_EQ(sheet.declarations()[0].value.colour, 0x80800000U);
     // And durations take their CSS units.
     StyleSheet times(allocator());
-    CY_REQUIRE(parse_stylesheet("panel { transition-duration: 150ms; transition-delay: 0.2s; }",
-                                times)
-                   .has_value());
+    CY_REQUIRE(
+        parse_stylesheet("panel { transition-duration: 150ms; transition-delay: 0.2s; }", times)
+            .has_value());
     CY_REQUIRE(times.diagnostics().empty());
     CY_CHECK_NEAR(times.declarations()[0].value.number, 0.15F, 1e-6F);
     CY_CHECK_NEAR(times.declarations()[1].value.number, 0.2F, 1e-6F);
@@ -171,9 +171,9 @@ CY_TEST_CASE("ui_animation: a fade, a slide and a pop are sampled by time, and r
     Kit kit;
     CY_REQUIRE(kit.started);
     const WidgetId panel = kit.make(kNoElement, WidgetKind::Panel, "menu");
-    CY_REQUIRE(kit.toolkit.set_anchors(panel, Vec2{0, 0}, Vec2{0, 0}, Vec2{100, 100},
-                                       Vec2{300, 200})
-                   .has_value());
+    CY_REQUIRE(
+        kit.toolkit.set_anchors(panel, Vec2{0, 0}, Vec2{0, 0}, Vec2{100, 100}, Vec2{300, 200})
+            .has_value());
     CY_REQUIRE(kit.frame());
     Animation fade;
     fade.property = AnimatedProperty::Opacity;
@@ -219,8 +219,8 @@ CY_TEST_CASE("ui_animation: a staggered entrance delays each item by one more st
     fade.to = 1.0F;
     fade.duration = 0.2F;
     fade.easing = Easing::Linear;
-    CY_REQUIRE(kit.toolkit.animate_staggered(Span<const WidgetId>(items, 4), fade, 0.1F)
-                   .has_value());
+    CY_REQUIRE(
+        kit.toolkit.animate_staggered(Span<const WidgetId>(items, 4), fade, 0.1F).has_value());
     CY_REQUIRE(kit.frame(0.15F));
     // 0.15 s in: the first is 75 % there, the second 25 %, the third and fourth still waiting.
     CY_CHECK_NEAR(kit.store.paint(items[0])->opacity, 0.75F, 1e-5F);
@@ -233,7 +233,8 @@ CY_TEST_CASE("ui_animation: a staggered entrance delays each item by one more st
     }
 }
 
-CY_TEST_CASE("ui_animation: reduced motion ends decorative animations at once, keeps state feedback") {
+CY_TEST_CASE(
+    "ui_animation: reduced motion ends decorative animations at once, keeps state feedback") {
     // `ui-system`: "WHEN the platform reports a reduced-motion preference THEN decorative
     // animations SHALL be shortened or disabled while state feedback remains."
     Kit kit;
