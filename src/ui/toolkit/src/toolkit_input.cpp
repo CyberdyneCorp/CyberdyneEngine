@@ -33,19 +33,6 @@ constexpr f32 kThumbInset = 7.0F;
     return false;
 }
 
-/// Whether an element is drawn: neither it nor an ancestor is hidden or collapsed.
-[[nodiscard]] bool is_shown(const ElementStore& store, ElementId element) noexcept {
-    for (ElementId walk = element; walk.is_valid();) {
-        const ElementFlags flags = store.flags(walk);
-        if (!has_flag(flags, ElementFlags::Visible) || has_flag(flags, ElementFlags::Collapsed)) {
-            return false;
-        }
-        const Hierarchy* node = store.hierarchy(walk);
-        walk = node != nullptr ? node->parent : ElementId{};
-    }
-    return true;
-}
-
 /// Whether a kind does something when it is clicked or accepted.
 [[nodiscard]] bool activates(WidgetKind kind) noexcept {
     switch (kind) {
@@ -96,7 +83,7 @@ Status Toolkit::focus(WidgetId widget_id) noexcept {
     }
     // A widget that is not drawn — on a tab page not shown, under a collapsed panel — is not a
     // place focus may go, whatever its own flags say.
-    if (!is_shown(store_, widget_id)) {
+    if (!element_shown(store_, widget_id)) {
         return fail(ErrorCode::InvalidArgument, "toolkit: that widget is not shown");
     }
     if (Status set = interaction_.set_focus(store_, widget_id); !set) {
@@ -543,7 +530,7 @@ bool Toolkit::handle_tabs_action(UiAction action) noexcept {
     // The page the focus was on is collapsed now, and a widget not drawn is no place for focus:
     // it moves to the new page's tab, from where the d-pad goes down into the page.
     const ElementId focus = interaction_.focus();
-    if (focus.is_valid() && !is_shown(store_, focus)) {
+    if (focus.is_valid() && !element_shown(store_, focus)) {
         (void)this->focus(header);
     }
     return true;
