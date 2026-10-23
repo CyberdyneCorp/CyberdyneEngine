@@ -279,7 +279,7 @@ CY_TEST_CASE("ui layout: the catalogue is the toolkit's vocabulary, with each ki
             CY_CHECK(reply.u8v() < static_cast<u8>(editor::UiPropertyType::Count));
         }
         const auto has = [&keys](std::string_view key) {
-            return std::find(keys.begin(), keys.end(), key) != keys.end();
+            return std::ranges::find(keys.begin(), keys.end(), key) != keys.end();
         };
         // Every kind can be anchored, offset, hidden and given a tooltip.
         const bool placed = has("anchor") && has("offset") && has("visible") && has("tooltip");

@@ -171,7 +171,7 @@ private:
     [[nodiscard]] cy::Status run_frame() noexcept;
     [[nodiscard]] cy::Status fixed_tick() noexcept;
     [[nodiscard]] cy::Status interface_frame() noexcept;
-    [[nodiscard]] cy::ui::ScaleSettings ui_scale() const noexcept;
+    [[nodiscard]] static cy::ui::ScaleSettings ui_scale() noexcept;
     [[nodiscard]] cy::Vec2 output() const noexcept;
     [[nodiscard]] std::string binding(const char* action, cy::u32 scheme) noexcept;
 

@@ -116,7 +116,7 @@ struct Rig {
     void tap(DeviceId device, Control control) noexcept {
         for (const cy::f32 value : {1.0F, 0.0F}) {
             DeviceEvent event;
-            event.timestamp = static_cast<Nanoseconds>(tick) * 16 * kMs + (value > 0 ? 1 : 2);
+            event.timestamp = (static_cast<Nanoseconds>(tick) * 16 * kMs) + (value > 0 ? 1 : 2);
             event.device = device;
             event.control = control;
             event.value = value;
@@ -138,7 +138,7 @@ struct Rig {
             CY_RESULT_OK) {
             return "(none)";
         }
-        return std::string(path, size);
+        return {path, size};
     }
 
     [[nodiscard]] CyInputRebind poll() noexcept {

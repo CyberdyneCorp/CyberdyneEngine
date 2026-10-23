@@ -5,6 +5,7 @@
 #include <cy/core/assets/file.h>
 #include <cy/game_backend/menu_backends.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace cy::game_backend {
@@ -16,12 +17,9 @@ namespace {
 }
 
 [[nodiscard]] bool offered(Span<const CyVideoMode> modes, u32 width, u32 height) noexcept {
-    for (const CyVideoMode& mode : modes) {
-        if (mode.width == width && mode.height == height) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(modes, [width, height](const CyVideoMode& mode) {
+        return mode.width == width && mode.height == height;
+    });
 }
 
 }  // namespace

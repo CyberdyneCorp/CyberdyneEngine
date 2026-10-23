@@ -927,8 +927,7 @@ Status Toolkit::destroy(WidgetId widget_id) noexcept {
 }
 
 Status Toolkit::destroy_held_dialogs(WidgetId holder) noexcept {
-    for (u32 index = 0; index < widgets_.size(); ++index) {
-        const Widget& other = widgets_[index];
+    for (const Widget& other : widgets_.span()) {
         if (!other.alive || other.kind != WidgetKind::Dialog || other.element == holder) {
             continue;
         }
@@ -948,7 +947,7 @@ Status Toolkit::destroy_held_dialogs(WidgetId holder) noexcept {
 
 Status Toolkit::close_layers_in(Span<const ElementId> doomed) noexcept {
     const auto contains = [doomed](ElementId element) noexcept {
-        return std::find(doomed.begin(), doomed.end(), element) != doomed.end();
+        return std::ranges::find(doomed, element) != doomed.end();
     };
     if (popup_.is_valid() && contains(popup_owner_)) {
         if (Status closed = close_dropdown(); !closed) {

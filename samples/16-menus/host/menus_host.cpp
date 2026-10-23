@@ -499,7 +499,7 @@ cy::Status MenusHost::fixed_tick() noexcept {
     return cy::ok();
 }
 
-cy::ui::ScaleSettings MenusHost::ui_scale() const noexcept {
+cy::ui::ScaleSettings MenusHost::ui_scale() noexcept {
     cy::ui::ScaleSettings settings;
     settings.mode = cy::ui::ScaleMode::ScaleWithSmaller;
     settings.reference =
@@ -549,13 +549,13 @@ cy::Status MenusHost::press(const char* path, bool down) noexcept {
     } else if (control.kind == cy::input::DeviceKind::Mouse) {
         device = mouse_;
     }
-    const auto at = static_cast<cy::Nanoseconds>(frame_) * kStepNs + 1;
+    const auto at = (static_cast<cy::Nanoseconds>(frame_) * kStepNs) + 1;
     return input_.inject(device, control, down ? 1.0F : 0.0F, at);
 }
 
 cy::Status MenusHost::move_pointer(f32 x, f32 y) noexcept {
     const f32 scale = cy::ui::resolve_scale(ui_scale(), output());
-    const auto at = static_cast<cy::Nanoseconds>(frame_) * kStepNs + 1;
+    const auto at = (static_cast<cy::Nanoseconds>(frame_) * kStepNs) + 1;
     const auto mouse = [](cy::input::MouseControl control) noexcept {
         return cy::input::Control{cy::input::DeviceKind::Mouse, static_cast<cy::u16>(control)};
     };
