@@ -437,11 +437,20 @@ bool InputUser::binding_control(ActionId action, SchemeKind scheme, u8 slot,
     return false;
 }
 
-bool InputUser::holder_of(Control control, SchemeKind scheme, ActionId& action,
+bool InputUser::holder_of(Control control, SchemeKind scheme, ActionId within, ActionId& action,
                           u8& slot) const noexcept {
+    const auto binds_within = [&](u16 context_slot) noexcept {
+        for (const ResolvedBinding& entry : resolved_.span()) {
+            if (entry.context_slot == context_slot && entry.binding.action == within) {
+                return true;
+            }
+        }
+        return false;
+    };
     for (u32 index = 0; index < resolved_.size(); ++index) {
         const Binding& binding = resolved_[index].binding;
-        if (scheme_of(binding.components[0].control.kind) != scheme) {
+        if (scheme_of(binding.components[0].control.kind) != scheme ||
+            !binds_within(resolved_[index].context_slot)) {
             continue;
         }
         for (u8 component = 0; component < binding.component_count; ++component) {

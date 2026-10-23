@@ -278,11 +278,13 @@ public:
     /// when the action has no such binding. Read after a rebuild: the table is the last one built.
     [[nodiscard]] bool binding_control(ActionId action, SchemeKind scheme, u8 slot,
                                        Control& out) const noexcept;
-    /// The first binding on `scheme` holding `control` in the resolved table: its action and slot.
-    /// What a rebinding menu's conflict check asks — of the bindings in effect, authored ones
-    /// included, not only of the overrides the profile holds.
-    [[nodiscard]] bool holder_of(Control control, SchemeKind scheme, ActionId& action,
-                                 u8& slot) const noexcept;
+    /// The first binding on `scheme` holding `control` in the resolved table, in a context that
+    /// also binds `within`: its action and slot. What a rebinding menu's conflict check asks — of
+    /// the bindings in effect, authored ones included, not only of the overrides the profile
+    /// holds. Another context binding the same control is no conflict: a menu's Accept and a
+    /// game's Jump share a gamepad's south button by design.
+    [[nodiscard]] bool holder_of(Control control, SchemeKind scheme, ActionId within,
+                                 ActionId& action, u8& slot) const noexcept;
     [[nodiscard]] const ResolvedBinding& resolved(u32 index) const noexcept {
         return resolved_[index];
     }
