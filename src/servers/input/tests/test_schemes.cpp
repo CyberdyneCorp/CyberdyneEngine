@@ -267,10 +267,12 @@ CY_TEST_CASE("input: any action of a context is rebound at its own slot, not the
     // And who holds a control, authored bindings included.
     ActionId holder = kInvalidAction;
     cy::u8 slot = 0xFF;
-    CY_REQUIRE(user.holder_of(key_control(Key::Enter), SchemeKind::KeyboardMouse, holder, slot));
+    CY_REQUIRE(
+        user.holder_of(key_control(Key::Enter), SchemeKind::KeyboardMouse, jump, holder, slot));
     CY_CHECK_EQ(holder, fire);
     CY_CHECK_EQ(slot, kMaxComponents);
-    CY_CHECK_FALSE(user.holder_of(key_control(Key::F), SchemeKind::KeyboardMouse, holder, slot));
+    CY_CHECK_FALSE(
+        user.holder_of(key_control(Key::F), SchemeKind::KeyboardMouse, jump, holder, slot));
 
     // The player's G fires; the authored F no longer does.
     fixture.press(keyboard, key_control(Key::G), 2 * kMs);
@@ -278,4 +280,40 @@ CY_TEST_CASE("input: any action of a context is rebound at its own slot, not the
     fixture.server.resolve_tick(1, 10 * kMs, 1.0F / 60.0F);
     CY_CHECK(user.action_state(fire).pressed());
     CY_CHECK_FALSE(user.action_state(jump).pressed());
+}
+
+CY_TEST_CASE("input: a control held in another context is no conflict for a rebind") {
+    // Regression: the conflict check searched every context on the stack, so rebinding a game's
+    // Jump to a gamepad's north button "swapped" it with the interface's own north-button action —
+    // two contexts binding one control is how a menu and a game share a gamepad, not a conflict.
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    const ActionId jump = fixture.declare("Jump", 1, ActionValueType::Digital);
+    const ActionId inventory = fixture.declare("Inventory", 2, ActionValueType::Digital);
+    const ActionId menu = fixture.declare("Menu", 3, ActionValueType::Digital);
+    MappingContext game(allocator());
+    CY_REQUIRE(game.add(simple(jump, gamepad_control(GamepadControl::South))).has_value());
+    CY_REQUIRE(game.add(simple(inventory, gamepad_control(GamepadControl::West))).has_value());
+    MappingContext interface(allocator());
+    CY_REQUIRE(interface.add(simple(menu, gamepad_control(GamepadControl::North))).has_value());
+    CY_REQUIRE(fixture.install(std::move(game)));
+    auto registered = fixture.server.register_context(std::move(interface));
+    CY_REQUIRE(registered.has_value());
+    InputUser& user = fixture.server.user(0);
+    CY_REQUIRE(user.push_context(*registered, 100, FocusLayer::Interface).has_value());
+    CY_REQUIRE(fixture.server.refresh_user(0).has_value());
+
+    ActionId holder = kInvalidAction;
+    cy::u8 slot = 0xFF;
+    CY_CHECK_FALSE(user.holder_of(gamepad_control(GamepadControl::North), SchemeKind::Gamepad, jump,
+                                  holder, slot));
+    // Within the game's own context the check still finds the holder.
+    CY_REQUIRE(user.holder_of(gamepad_control(GamepadControl::West), SchemeKind::Gamepad, jump,
+                              holder, slot));
+    CY_CHECK_EQ(holder, inventory);
+    CY_CHECK_EQ(slot, 0);
+    // And the interface's control is found from the interface's action.
+    CY_REQUIRE(user.holder_of(gamepad_control(GamepadControl::North), SchemeKind::Gamepad, menu,
+                              holder, slot));
+    CY_CHECK_EQ(holder, menu);
 }

@@ -159,8 +159,9 @@ void InputAdapter::settle(u32 user, Rebind& rebind) noexcept {
     const ActionStableId mine = server_->actions().at(rebind.action).stable_id;
     ActionId holder = cy::input::kInvalidAction;
     u8 holder_slot = 0;
-    const bool held = target.holder_of(rebind.candidate, scheme, holder, holder_slot) &&
-                      !(holder == rebind.action && holder_slot == rebind.slot);
+    const bool held =
+        target.holder_of(rebind.candidate, scheme, rebind.action, holder, holder_slot) &&
+        !(holder == rebind.action && holder_slot == rebind.slot);
     if (held && holder != rebind.action && rebind.policy == CY_INPUT_CONFLICT_REJECT) {
         rebind.status = CY_INPUT_REBIND_CONFLICT;
         rebind.conflict = holder;
