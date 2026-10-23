@@ -301,6 +301,38 @@ CY_TEST_CASE("ui_toolkit: tabs switch by click and by the shoulder buttons, one 
     CY_CHECK_EQ(kit.count_events(WidgetEventKind::Changed, tabs), 3U);
 }
 
+CY_TEST_CASE("ui_toolkit: a shoulder button leaves focus on the new page's tab, not a hidden page") {
+    Kit kit;
+    CY_REQUIRE(kit.started);
+    const WidgetId tabs = kit.make(kNoElement, WidgetKind::Tabs, "tabs");
+    CY_REQUIRE(kit.toolkit.set_anchors(tabs, Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}, Vec2{400, 300})
+                   .has_value());
+    WidgetDesc page;
+    page.kind = WidgetKind::Column;
+    page.title = "Video";
+    auto video = kit.toolkit.create(tabs, page);
+    page.title = "Audio";
+    auto audio = kit.toolkit.create(tabs, page);
+    CY_REQUIRE(video.has_value());
+    CY_REQUIRE(audio.has_value());
+    const WidgetId resolution = kit.make(*video, WidgetKind::Button, "resolution", "1280x720");
+    (void)kit.make(*audio, WidgetKind::Button, "volume", "Volume");
+    CY_REQUIRE(kit.frame());
+    CY_REQUIRE(kit.toolkit.focus(resolution).has_value());
+    const ElementId bar = kit.toolkit.part(tabs, "tab-bar");
+    Array<ElementId> buttons(allocator());
+    CY_REQUIRE(kit.store.children_of(bar, buttons).has_value());
+    CY_REQUIRE_EQ(buttons.size(), 2U);
+    CY_CHECK(kit.toolkit.action(UiAction::NextTab));
+    CY_CHECK_FALSE(kit.toolkit.visible(*video));
+    // The control on the page just collapsed kept the focus, and the d-pad went nowhere a
+    // player could see.
+    CY_CHECK_EQ(kit.toolkit.focused(), buttons[1]);
+    CY_REQUIRE(kit.frame());
+    CY_CHECK(kit.toolkit.action(UiAction::NavigateDown));
+    CY_CHECK_EQ(kit.toolkit.text(kit.toolkit.focused()), std::string_view("Volume"));
+}
+
 CY_TEST_CASE("ui_toolkit: a scroll view clips, scrolls by wheel and by focus moving into it") {
     Kit kit;
     CY_REQUIRE(kit.started);
