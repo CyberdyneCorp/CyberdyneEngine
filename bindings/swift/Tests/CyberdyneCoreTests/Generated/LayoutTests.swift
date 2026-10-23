@@ -720,6 +720,36 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyUiAnimation>.offset(of: \CyUiAnimation.flags), 36, "CyUiAnimation.flags offset")
     }
 
+    func testInputRebindLayout() {
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.size, 116, "CyInputRebind size")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.alignment, 4, "CyInputRebind alignment")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.struct_size), 0, "CyInputRebind.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.status), 4, "CyInputRebind.status offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.action), 8, "CyInputRebind.action offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.scheme), 12, "CyInputRebind.scheme offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.slot), 16, "CyInputRebind.slot offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.control), 20, "CyInputRebind.control offset")
+        XCTAssertEqual(MemoryLayout<CyInputRebind>.offset(of: \CyInputRebind.conflict), 52, "CyInputRebind.conflict offset")
+    }
+
+    func testVideoSettingsLayout() {
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.size, 24, "CyVideoSettings size")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.alignment, 4, "CyVideoSettings alignment")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.struct_size), 0, "CyVideoSettings.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.width), 4, "CyVideoSettings.width offset")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.height), 8, "CyVideoSettings.height offset")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.quality), 12, "CyVideoSettings.quality offset")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.upscale), 16, "CyVideoSettings.upscale offset")
+        XCTAssertEqual(MemoryLayout<CyVideoSettings>.offset(of: \CyVideoSettings.flags), 20, "CyVideoSettings.flags offset")
+    }
+
+    func testVideoModeLayout() {
+        XCTAssertEqual(MemoryLayout<CyVideoMode>.size, 8, "CyVideoMode size")
+        XCTAssertEqual(MemoryLayout<CyVideoMode>.alignment, 4, "CyVideoMode alignment")
+        XCTAssertEqual(MemoryLayout<CyVideoMode>.offset(of: \CyVideoMode.width), 0, "CyVideoMode.width offset")
+        XCTAssertEqual(MemoryLayout<CyVideoMode>.offset(of: \CyVideoMode.height), 4, "CyVideoMode.height offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -730,7 +760,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1448, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1552, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -912,6 +942,19 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_open), 1424, "CyInterface.ui_widget_open offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_animate), 1432, "CyInterface.ui_widget_animate offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_navigate), 1440, "CyInterface.ui_navigate offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_rebind_begin), 1448, "CyInterface.input_rebind_begin offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_rebind_poll), 1456, "CyInterface.input_rebind_poll offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_rebind_cancel), 1464, "CyInterface.input_rebind_cancel offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_binding), 1472, "CyInterface.input_binding offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_profile_save), 1480, "CyInterface.input_profile_save offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_profile_load), 1488, "CyInterface.input_profile_load offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.input_profile_reset), 1496, "CyInterface.input_profile_reset offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.video_get_settings), 1504, "CyInterface.video_get_settings offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.video_set_settings), 1512, "CyInterface.video_set_settings offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.video_modes), 1520, "CyInterface.video_modes offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.user_data_write), 1528, "CyInterface.user_data_write offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.user_data_read), 1536, "CyInterface.user_data_read offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_set_tooltip), 1544, "CyInterface.ui_widget_set_tooltip offset")
     }
 
     func testModuleInitLayout() {
@@ -929,7 +972,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1448,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1552,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -975,8 +1018,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 179)
+        XCTAssertEqual(ABI.entryNames.count, 192)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "ui_navigate")
+        XCTAssertEqual(ABI.entryNames.last, "ui_widget_set_tooltip")
     }
 }

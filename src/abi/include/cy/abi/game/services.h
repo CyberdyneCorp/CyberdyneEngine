@@ -59,6 +59,8 @@ class LockstepBackend;
 class IlluminationBackend;
 class FogBackend;
 class LightsBackend;
+class VideoBackend;
+class UserDataBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -117,6 +119,10 @@ struct GameServices {
     FogBackend* fog = nullptr;
     /// ABI 1.11: `light_*`. Null in a host that draws nothing.
     LightsBackend* lights = nullptr;
+    /// ABI 1.13: `video_*`. Null in a host with no display.
+    VideoBackend* video = nullptr;
+    /// ABI 1.13: `user_data_*`. Null in a host that keeps no player files.
+    UserDataBackend* user_data = nullptr;
     GameClock clock;
 };
 

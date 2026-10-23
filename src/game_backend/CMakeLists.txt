@@ -21,6 +21,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/input_backend.cpp
+        src/input_rebinding.cpp
         src/camera_backend.cpp
         src/physics_backend.cpp
         src/navigation_backend.cpp
@@ -31,9 +32,12 @@ cy_add_module(
         src/body_backend.cpp
         src/character_backend.cpp
         src/scene_bridge.cpp
+        # ABI 1.13: the display settings and the player's files a game's menus change.
+        src/menu_backends.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES
         cy::abi
+        cy::core-assets
         cy::graph
         cy::servers-input
         cy::servers-camera
@@ -109,7 +113,7 @@ if(CY_BUILD_TESTS)
         set(extra_bodies cy::physics-reference)
         set(extra_character cy::physics-reference)
         foreach(service IN ITEMS input camera physics navigation audio spawn graph bodies
-                                 character scene)
+                                 character scene menu)
             if(EXISTS "${tests_dir}/test_${service}_backend.cpp")
                 cy_add_test(
                     NAME game_backend_${service}

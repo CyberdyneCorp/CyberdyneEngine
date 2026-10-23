@@ -1,0 +1,11 @@
+cyui 1
+stylesheet "ui/menus.cyss"
+panel #main-menu .screen anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]
+  column #menu .menu-panel anchor=[0.5, 0.5, 0.5, 0.5] offset=[-190, -165, 190, 165]
+    label #title .title text="CYBERDYNE"
+    label #subtitle .subtitle text="Menus made in the editor"
+    button #new-game .menu-button .primary text="New game"
+    button #continue .menu-button text="Continue" tooltip="Pick up where the last session saved"
+    button #settings .menu-button text="Settings"
+    button #quit .menu-button .danger text="Quit"
+    label #main-hint .hint text="Arrows or D-pad to move - Enter or A to choose"

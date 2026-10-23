@@ -21,16 +21,17 @@ namespace cy::editor {
 /// matching prefix and merging their `capabilities.get` answers.
 class CompositeEditorService final : public abi::EditorServiceBackend {
 public:
-    /// The most routes one composite holds.
-    static constexpr u32 kMaxRoutes = 8;
+    /// The most routes one composite holds. The hosted runtime routes MaterialService's seven
+    /// prefixes, navigation, illumination and the UI layout editor's: ten, with room to grow.
+    static constexpr u32 kMaxRoutes = 16;
     /// The longest route prefix, in bytes.
     static constexpr u32 kMaxPrefix = 47;
 
     explicit CompositeEditorService(Allocator& allocator) noexcept : allocator_(&allocator) {}
 
     /// Routes every operation starting with `prefix` to `backend`. One backend may serve several
-    /// prefixes and still gets one child session. Refuses a ninth route, a duplicate or empty
-    /// prefix, and any change once a session is open.
+    /// prefixes and still gets one child session. Refuses a route past `kMaxRoutes`, a duplicate or
+    /// empty prefix, and any change once a session is open — each with its own reason.
     [[nodiscard]] Status route(std::string_view prefix,
                                abi::EditorServiceBackend& backend) noexcept;
 

@@ -4491,4 +4491,354 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Begin rebinding one of an action's controls.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_rebind_begin(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+        action: ffi::CyInputAction,
+        scheme: u32,
+        slot: u32,
+        conflict: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_rebind_begin
+            .ok_or(CallError::Missing("input_rebind_begin"))?;
+        let raw = unsafe { entry(engine, user, action, scheme, slot, conflict) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Where a user's rebind is.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_rebind_poll(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+        into: *mut ffi::CyInputRebind,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_rebind_poll
+            .ok_or(CallError::Missing("input_rebind_poll"))?;
+        let raw = unsafe { entry(engine, user, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Cancel a user's rebind.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_rebind_cancel(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_rebind_cancel
+            .ok_or(CallError::Missing("input_rebind_cancel"))?;
+        let raw = unsafe { entry(engine, user) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The control a binding has now, as a path.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    #[allow(clippy::too_many_arguments, reason = "mirrors the C ABI entry")]
+    pub unsafe fn input_binding(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+        action: ffi::CyInputAction,
+        scheme: u32,
+        slot: u32,
+        buffer: *mut ::std::ffi::c_char,
+        capacity: u32,
+        size: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_binding
+            .ok_or(CallError::Missing("input_binding"))?;
+        let raw = unsafe { entry(engine, user, action, scheme, slot, buffer, capacity, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A user's rebinding profile, as text.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_profile_save(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+        buffer: *mut ::std::ffi::c_char,
+        capacity: u32,
+        size: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_profile_save
+            .ok_or(CallError::Missing("input_profile_save"))?;
+        let raw = unsafe { entry(engine, user, buffer, capacity, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Replace a user's overrides with a saved profile.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_profile_load(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+        text: *const ::std::ffi::c_char,
+        size: u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_profile_load
+            .ok_or(CallError::Missing("input_profile_load"))?;
+        let raw = unsafe { entry(engine, user, text, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Drop every override of a user.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn input_profile_reset(
+        &self,
+        engine: ffi::CyEngine,
+        user: u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .input_profile_reset
+            .ok_or(CallError::Missing("input_profile_reset"))?;
+        let raw = unsafe { entry(engine, user) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The display settings in effect.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn video_get_settings(
+        &self,
+        engine: ffi::CyEngine,
+        into: *mut ffi::CyVideoSettings,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .video_get_settings
+            .ok_or(CallError::Missing("video_get_settings"))?;
+        let raw = unsafe { entry(engine, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Apply display settings from the next frame.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn video_set_settings(
+        &self,
+        engine: ffi::CyEngine,
+        settings: *const ffi::CyVideoSettings,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .video_set_settings
+            .ok_or(CallError::Missing("video_set_settings"))?;
+        let raw = unsafe { entry(engine, settings) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// The resolutions the display offers.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn video_modes(
+        &self,
+        engine: ffi::CyEngine,
+        modes: *mut ffi::CyVideoMode,
+        capacity: u32,
+        count: *mut u32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .video_modes
+            .ok_or(CallError::Missing("video_modes"))?;
+        let raw = unsafe { entry(engine, modes, capacity, count) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Write one of the player's files.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn user_data_write(
+        &self,
+        engine: ffi::CyEngine,
+        name: *const ::std::ffi::c_char,
+        bytes: *const ::std::ffi::c_void,
+        size: u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .user_data_write
+            .ok_or(CallError::Missing("user_data_write"))?;
+        let raw = unsafe { entry(engine, name, bytes, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Read one of the player's files.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn user_data_read(
+        &self,
+        engine: ffi::CyEngine,
+        name: *const ::std::ffi::c_char,
+        buffer: *mut ::std::ffi::c_void,
+        capacity: u64,
+        size: *mut u64,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .user_data_read
+            .ok_or(CallError::Missing("user_data_read"))?;
+        let raw = unsafe { entry(engine, name, buffer, capacity, size) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A widget's tooltip.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn ui_widget_set_tooltip(
+        &self,
+        engine: ffi::CyEngine,
+        widget: ffi::CyUiElement,
+        text: *const ::std::ffi::c_char,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .ui_widget_set_tooltip
+            .ok_or(CallError::Missing("ui_widget_set_tooltip"))?;
+        let raw = unsafe { entry(engine, widget, text) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

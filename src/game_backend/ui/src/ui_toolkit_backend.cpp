@@ -228,7 +228,7 @@ CyResult UiAdapter::load_text(ui::WidgetId parent, std::string_view text,
         return abi::report(made.error());
     }
     loaded.instance = std::move(*made);
-    if (Status opened = loaded.instance->load(text, parent, resolver_, nullptr); !opened) {
+    if (Status opened = loaded.instance->load(text, parent, resolver_, bindings_); !opened) {
         return refuse_document(*loaded.instance, opened.error());
     }
     return CY_RESULT_OK;
@@ -243,7 +243,7 @@ CyResult UiAdapter::load_path(ui::WidgetId parent, const char* path,
             return abi::report(made.error());
         }
         loaded.host = std::move(*made);
-        if (Status opened = loaded.host->open(path, parent, nullptr); !opened) {
+        if (Status opened = loaded.host->open(path, parent, bindings_); !opened) {
             return refuse_document(loaded.host->instance(), opened.error());
         }
         return CY_RESULT_OK;
@@ -449,6 +449,14 @@ CyResult UiAdapter::widget_set_classes(CyUiElement widget, const char* classes) 
         return abi::last_error_code();
     }
     return answer(toolkit_->set_classes(target, view(classes)));
+}
+
+CyResult UiAdapter::widget_set_tooltip(CyUiElement widget, const char* utf8) noexcept {
+    const ui::WidgetId target = owned_widget(widget);
+    if (!target.is_valid()) {
+        return abi::last_error_code();
+    }
+    return answer(toolkit_->set_tooltip(target, view(utf8)));
 }
 
 CyResult UiAdapter::widget_open(CyUiElement widget, bool open) noexcept {

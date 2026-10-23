@@ -63,6 +63,8 @@ _POINTERS = {
     "const uint32_t*": "UnsafePointer<UInt32>",
     "uint32_t*": "UnsafeMutablePointer<UInt32>",
     "bool*": "UnsafeMutablePointer<Bool>",
+    # ABI 1.13's `user_data_read`: a file's size, which a 32-bit count cannot hold.
+    "uint64_t*": "UnsafeMutablePointer<UInt64>",
 }
 
 

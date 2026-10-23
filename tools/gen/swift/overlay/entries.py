@@ -263,6 +263,23 @@ ENTRIES: dict[str, Entry] = {
     "ui_widget_open": Entry(("engine", "widget", "open"), result="throwing"),
     "ui_widget_animate": Entry(("engine", "widget", "animation"), result="throwing"),
     "ui_navigate": Entry(("engine", "action", "consumed"), result="throwing"),
+    # 1.13: what a game's menus need
+    "input_rebind_begin": Entry(("engine", "user", "action", "scheme", "slot", "conflict"),
+                                result="throwing"),
+    "input_rebind_poll": Entry(("engine", "user", "into"), result="throwing"),
+    "input_rebind_cancel": Entry(("engine", "user"), result="throwing"),
+    "input_binding": Entry(("engine", "user", "action", "scheme", "slot", "buffer", "capacity",
+                            "size"), result="throwing"),
+    "input_profile_save": Entry(("engine", "user", "buffer", "capacity", "size"),
+                                result="throwing"),
+    "input_profile_load": Entry(("engine", "user", "text", "size"), result="throwing"),
+    "input_profile_reset": Entry(("engine", "user"), result="throwing"),
+    "video_get_settings": Entry(("engine", "into"), result="throwing"),
+    "video_set_settings": Entry(("engine", "settings"), result="throwing"),
+    "video_modes": Entry(("engine", "modes", "capacity", "count"), result="throwing"),
+    "user_data_write": Entry(("engine", "name", "bytes", "size"), result="throwing"),
+    "user_data_read": Entry(("engine", "name", "buffer", "capacity", "size"), result="throwing"),
+    "ui_widget_set_tooltip": Entry(("engine", "widget", "text"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

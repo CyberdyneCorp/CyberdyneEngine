@@ -99,8 +99,11 @@ Status CompositeEditorService::route(std::string_view prefix,
     if (open_sessions_ != 0) {
         return fail(ErrorCode::InvalidArgument, "routes are fixed once a session is open");
     }
-    if (prefix.empty() || prefix.size() > kMaxPrefix || route_count_ == kMaxRoutes) {
+    if (prefix.empty() || prefix.size() > kMaxPrefix) {
         return fail(ErrorCode::InvalidArgument, "a route needs a prefix of 1 to 47 bytes");
+    }
+    if (route_count_ == kMaxRoutes) {
+        return fail(ErrorCode::OutOfRange, "the composite already holds its most routes");
     }
     for (u32 index = 0; index < route_count_; ++index) {
         if (std::string_view(routes_[index].prefix, routes_[index].length) == prefix) {

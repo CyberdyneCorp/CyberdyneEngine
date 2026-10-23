@@ -69,6 +69,7 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     // `crate::audio_commands`.
     crate::audio_commands::register(registry)?;
     crate::script_commands::register(registry)?;
+    crate::ui_layout_commands::register(registry)?;
     crate::animation_commands::register(registry)?;
     crate::script_debug_commands::register(registry)?;
     // Project settings and user preferences, through typed command parameters.
@@ -539,6 +540,7 @@ fn apply_sources(
     let script_graphs = script_sources(transaction, forward);
     let animation_graphs =
         domain_sources(transaction, forward, crate::animation_graph::DOMAIN_PREFIX);
+    let ui_assets = domain_sources(transaction, forward, crate::ui_document::DOMAIN_PREFIX);
     if wanted.is_empty()
         && moves.is_empty()
         && graphs.is_empty()
@@ -546,6 +548,7 @@ fn apply_sources(
         && audio_assets.is_empty()
         && script_graphs.is_empty()
         && animation_graphs.is_empty()
+        && ui_assets.is_empty()
     {
         return;
     }
@@ -575,6 +578,19 @@ fn apply_sources(
     restore_script_graphs(project, script_graphs);
     restore_animation_graphs(project, animation_graphs);
     restore_audio(project, audio_assets);
+    restore_ui_assets(project, ui_assets);
+}
+
+/// Put UI documents and sheets back. The canvas showing one draws it again, and a running game's
+/// document host reloads the file it watches, as it did for the edit.
+fn restore_ui_assets(
+    project: &mut dyn cy_editor_commands::ProjectHost,
+    assets: Vec<(String, Option<String>)>,
+) {
+    for (reference, source) in assets {
+        let _ = project.put_source(&reference, source.as_deref());
+        project.ui_asset_changed(&reference);
+    }
 }
 
 /// The material graphs a transaction saved: each reference with the graph and canvas text it must
@@ -827,6 +843,9 @@ mod tests {
         // `crate::illumination`: settings, volume create and set, an object's class, a material's
         // emitter rule; the report and its status.
         let illumination = 5 + 2;
+        // The UI layout editor (#29) adds ten undoable document, widget and theme edits and three
+        // reads and engine requests in `crate::ui_layout_commands`: read, preview and status.
+        let ui_layout = 10 + 3;
         assert_eq!(
             registry.len(),
             earlier
@@ -837,6 +856,7 @@ mod tests {
                 + animation
                 + gi_view_modes
                 + illumination
+                + ui_layout
         );
         for metadata in registry.all() {
             metadata.validate().unwrap();

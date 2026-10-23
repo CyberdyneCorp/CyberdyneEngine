@@ -1,0 +1,253 @@
+{"name":"ui.theme.save","arguments":{"reference":"ui/menus.cyss","source":"/* samples/16-menus: the menus' own look, over whichever theme is in effect. */\n.screen { background-color: #0b0f16; }\n.overlay { background-color: #05080ccc; }\n.menu-panel {\n    background-color: #141b26; border-color: #2f3b52; border-width: 1; corner-radius: 10;\n    padding-left: 28; padding-right: 28; padding-top: 22; padding-bottom: 22; gap: 10;\n}\n.title { color: #e8b64c; font-size: 28; }\n.subtitle { color: #8a93a6; }\n.hint { color: #6b7488; font-size: 11; }\n.menu-button { min-height: 36; }\n.setting { gap: 12; align-items: center; min-height: 30; }\n.setting-name { min-width: 170; }\n.setting-column { min-width: 120; color: #8a93a6; }\n.binding { min-width: 120; }\n.slot {\n    width: 58; height: 58; corner-radius: 6; padding-left: 4; padding-right: 4;\n    background-color: #1b2230; border-color: #33405a; border-width: 1;\n}\n.slot:hover { background-color: #26324a; }\n.held { border-color: #e8b64c; border-width: 2; }\n.item-name { color: #e8b64c; font-size: 16; }\n.details { gap: 6; width: 170; }\n"}}
+{"name":"ui.theme.save","arguments":{"reference":"ui/themes/high-contrast.cyss","source":"/* samples/16-menus: the built-in theme in high contrast, for the accessibility option. */\n:root {\n    --text: #ffffff;\n    --muted: #d0d6e0;\n    --surface: #000000;\n    --raised: #1a1a1a;\n    --hover: #3d3d00;\n    --sunken: #12151b;\n    --line: #ffffff;\n    --accent: #ffd400;\n    --good: #3ccf91;\n}\nlabel, rich-text, button-label, toggle-label, checkbox-label, radio-label, option-label,\nlist-row-label, text-value, dialog-title, tooltip-label { color: var(--text); }\n.panel {\n    background-color: var(--surface); border-color: var(--line); border-width: 1;\n    corner-radius: 6; padding-left: 10; padding-top: 10; padding-right: 10; padding-bottom: 10;\n}\nrow { gap: 6; }\ncolumn { gap: 6; }\ngrid { gap: 6; }\nbutton {\n    background-color: var(--raised); border-color: var(--line); border-width: 1; corner-radius: 4;\n    padding-left: 10; padding-right: 10; padding-top: 4; padding-bottom: 4; min-height: 24;\n    transition-duration: 0.1s; transition-timing-function: ease-out;\n}\nbutton:hover { background-color: var(--hover); }\nbutton:active { background-color: #22334f; }\nbutton:disabled { opacity: 0.45; }\n.primary { background-color: var(--accent); border-color: var(--accent); }\n.primary:hover { background-color: #5a9dff; }\n.danger { background-color: #8c2f39; border-color: #b23a48; }\n.danger:hover { background-color: #a8384a; }\ntoggle { gap: 6; min-height: 24; }\ntoggle-track {\n    width: 34; height: 18; corner-radius: 9; background-color: var(--line);\n    transition-duration: 0.12s;\n}\ntoggle-track:checked { background-color: var(--accent); }\ntoggle-knob { corner-radius: 7; background-color: var(--text); }\ncheckbox { gap: 6; min-height: 24; }\ncheckbox-box {\n    width: 16; height: 16; corner-radius: 3; border-width: 1; border-color: #5a6478;\n    background-color: #20252f;\n}\ncheckbox-box:checked { background-color: var(--accent); border-color: var(--accent); }\ncheckbox-mark { background-color: #ffffff; corner-radius: 1; }\nradio-group { gap: 4; }\nradio { gap: 6; min-height: 24; }\nradio-ring {\n    width: 16; height: 16; corner-radius: 8; border-width: 1; border-color: #5a6478;\n    background-color: #20252f;\n}\nradio-ring:checked { border-color: var(--accent); }\nradio-dot { background-color: var(--accent); corner-radius: 4; }\nslider { height: 24; min-width: 140; }\nslider-track { background-color: var(--line); corner-radius: 2; }\nslider-fill { background-color: var(--accent); corner-radius: 2; }\nslider-thumb {\n    background-color: var(--text); corner-radius: 7; border-width: 1; border-color: var(--surface);\n}\nslider-thumb:hover { background-color: #ffffff; }\nprogress-bar { height: 10; min-width: 140; background-color: var(--raised); corner-radius: 5; }\nprogress-fill { background-color: var(--good); corner-radius: 5; }\ntext-field {\n    height: 24; min-width: 180; background-color: var(--sunken); border-width: 1;\n    border-color: var(--line); corner-radius: 4; padding-left: 6; padding-right: 6;\n}\ntext-field:focus { border-color: var(--accent); }\ntext-placeholder { color: #6b7488; }\ntext-caret { background-color: var(--text); }\ntext-selection { background-color: #3d8bfd70; }\ntext-composition { background-color: var(--text); }\ndropdown {\n    height: 24; min-width: 160; background-color: var(--raised); border-width: 1;\n    border-color: var(--line); corner-radius: 4; padding-left: 8; padding-right: 8; gap: 6;\n}\ndropdown:hover { background-color: var(--hover); }\ndropdown-label { color: var(--text); flex-grow: 1; }\ndropdown-arrow { color: var(--muted); }\ndropdown-popup {\n    background-color: #20252f; border-width: 1; border-color: var(--line); corner-radius: 4;\n    padding-top: 2; padding-bottom: 2;\n}\noption { height: 22; padding-left: 8; padding-right: 8; }\noption:hover { background-color: var(--hover); }\noption:checked { background-color: #2d4a7a; }\nlist-view {\n    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;\n    min-height: 88; min-width: 180;\n}\nlist-row:hover { background-color: var(--raised); }\nlist-row:checked { background-color: #2d4a7a; }\nlist-thumb { background-color: #5a647899; corner-radius: 2; }\nscroll-thumb { background-color: #5a647899; corner-radius: 2; }\nscroll-content { gap: 6; }\nscroll-view {\n    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;\n    padding-left: 6; padding-top: 4; padding-right: 10; padding-bottom: 4;\n}\ntab-bar { gap: 2; }\ntab {\n    background-color: #20252f; corner-radius: 4; padding-left: 10; padding-right: 10;\n    padding-top: 4; padding-bottom: 4; min-height: 24;\n}\ntab:hover { background-color: var(--raised); }\ntab:checked { background-color: var(--hover); }\ntab-label { color: var(--muted); }\ntab-label:checked { color: var(--text); }\ntab-pages { padding-top: 8; }\ndialog-backdrop { background-color: #00000099; }\ndialog {\n    background-color: var(--surface); border-width: 1; border-color: var(--line); corner-radius: 8;\n    padding-left: 16; padding-top: 14; padding-right: 16; padding-bottom: 14; gap: 10;\n    min-width: 280;\n}\ndialog-body { gap: 8; }\nfocus-ring { border-width: 2; border-color: #ffd34d; corner-radius: 6; }\ntooltip {\n    background-color: #0d0f13; border-width: 1; border-color: var(--line); corner-radius: 3;\n    padding-left: 6; padding-top: 3; padding-right: 6; padding-bottom: 3;\n}\n"}}
+{"name":"ui.theme.save","arguments":{"reference":"ui/themes/ember.cyss","source":"/* samples/16-menus: the built-in theme in warm colours, to show a theme switched. */\n:root {\n    --text: #e6e9ef;\n    --muted: #8a93a6;\n    --surface: #231c18;\n    --raised: #3a2c22;\n    --hover: #5a4030;\n    --sunken: #12151b;\n    --line: #5c4636;\n    --accent: #e0742c;\n    --good: #3ccf91;\n}\nlabel, rich-text, button-label, toggle-label, checkbox-label, radio-label, option-label,\nlist-row-label, text-value, dialog-title, tooltip-label { color: var(--text); }\n.panel {\n    background-color: var(--surface); border-color: var(--line); border-width: 1;\n    corner-radius: 6; padding-left: 10; padding-top: 10; padding-right: 10; padding-bottom: 10;\n}\nrow { gap: 6; }\ncolumn { gap: 6; }\ngrid { gap: 6; }\nbutton {\n    background-color: var(--raised); border-color: var(--line); border-width: 1; corner-radius: 4;\n    padding-left: 10; padding-right: 10; padding-top: 4; padding-bottom: 4; min-height: 24;\n    transition-duration: 0.1s; transition-timing-function: ease-out;\n}\nbutton:hover { background-color: var(--hover); }\nbutton:active { background-color: #22334f; }\nbutton:disabled { opacity: 0.45; }\n.primary { background-color: var(--accent); border-color: var(--accent); }\n.primary:hover { background-color: #5a9dff; }\n.danger { background-color: #8c2f39; border-color: #b23a48; }\n.danger:hover { background-color: #a8384a; }\ntoggle { gap: 6; min-height: 24; }\ntoggle-track {\n    width: 34; height: 18; corner-radius: 9; background-color: var(--line);\n    transition-duration: 0.12s;\n}\ntoggle-track:checked { background-color: var(--accent); }\ntoggle-knob { corner-radius: 7; background-color: var(--text); }\ncheckbox { gap: 6; min-height: 24; }\ncheckbox-box {\n    width: 16; height: 16; corner-radius: 3; border-width: 1; border-color: #5a6478;\n    background-color: #20252f;\n}\ncheckbox-box:checked { background-color: var(--accent); border-color: var(--accent); }\ncheckbox-mark { background-color: #ffffff; corner-radius: 1; }\nradio-group { gap: 4; }\nradio { gap: 6; min-height: 24; }\nradio-ring {\n    width: 16; height: 16; corner-radius: 8; border-width: 1; border-color: #5a6478;\n    background-color: #20252f;\n}\nradio-ring:checked { border-color: var(--accent); }\nradio-dot { background-color: var(--accent); corner-radius: 4; }\nslider { height: 24; min-width: 140; }\nslider-track { background-color: var(--line); corner-radius: 2; }\nslider-fill { background-color: var(--accent); corner-radius: 2; }\nslider-thumb {\n    background-color: var(--text); corner-radius: 7; border-width: 1; border-color: var(--surface);\n}\nslider-thumb:hover { background-color: #ffffff; }\nprogress-bar { height: 10; min-width: 140; background-color: var(--raised); corner-radius: 5; }\nprogress-fill { background-color: var(--good); corner-radius: 5; }\ntext-field {\n    height: 24; min-width: 180; background-color: var(--sunken); border-width: 1;\n    border-color: var(--line); corner-radius: 4; padding-left: 6; padding-right: 6;\n}\ntext-field:focus { border-color: var(--accent); }\ntext-placeholder { color: #6b7488; }\ntext-caret { background-color: var(--text); }\ntext-selection { background-color: #3d8bfd70; }\ntext-composition { background-color: var(--text); }\ndropdown {\n    height: 24; min-width: 160; background-color: var(--raised); border-width: 1;\n    border-color: var(--line); corner-radius: 4; padding-left: 8; padding-right: 8; gap: 6;\n}\ndropdown:hover { background-color: var(--hover); }\ndropdown-label { color: var(--text); flex-grow: 1; }\ndropdown-arrow { color: var(--muted); }\ndropdown-popup {\n    background-color: #20252f; border-width: 1; border-color: var(--line); corner-radius: 4;\n    padding-top: 2; padding-bottom: 2;\n}\noption { height: 22; padding-left: 8; padding-right: 8; }\noption:hover { background-color: var(--hover); }\noption:checked { background-color: #2d4a7a; }\nlist-view {\n    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;\n    min-height: 88; min-width: 180;\n}\nlist-row:hover { background-color: var(--raised); }\nlist-row:checked { background-color: #2d4a7a; }\nlist-thumb { background-color: #5a647899; corner-radius: 2; }\nscroll-thumb { background-color: #5a647899; corner-radius: 2; }\nscroll-content { gap: 6; }\nscroll-view {\n    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;\n    padding-left: 6; padding-top: 4; padding-right: 10; padding-bottom: 4;\n}\ntab-bar { gap: 2; }\ntab {\n    background-color: #20252f; corner-radius: 4; padding-left: 10; padding-right: 10;\n    padding-top: 4; padding-bottom: 4; min-height: 24;\n}\ntab:hover { background-color: var(--raised); }\ntab:checked { background-color: var(--hover); }\ntab-label { color: var(--muted); }\ntab-label:checked { color: var(--text); }\ntab-pages { padding-top: 8; }\ndialog-backdrop { background-color: #00000099; }\ndialog {\n    background-color: var(--surface); border-width: 1; border-color: var(--line); corner-radius: 8;\n    padding-left: 16; padding-top: 14; padding-right: 16; padding-bottom: 14; gap: 10;\n    min-width: 280;\n}\ndialog-body { gap: 8; }\nfocus-ring { border-width: 2; border-color: #ffd34d; corner-radius: 6; }\ntooltip {\n    background-color: #0d0f13; border-width: 1; border-color: var(--line); corner-radius: 3;\n    padding-left: 6; padding-top: 3; padding-right: 6; padding-bottom: 3;\n}\n"}}
+{"name":"ui.document.create","arguments":{"reference":"ui/main_menu.cyui"}}
+{"name":"ui.document.stylesheet","arguments":{"reference":"ui/main_menu.cyui","sheet":"ui/menus.cyss"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#root","id":"main-menu","classes":"screen"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"column","parent":"#main-menu","id":"menu"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#menu","id":"menu","classes":"menu-panel"}}
+{"name":"ui.widget.layout","arguments":{"reference":"ui/main_menu.cyui","widget":"#menu","anchor":[0.5,0.5,0.5,0.5],"offset":[-190.0,-165.0,190.0,165.0]}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"label","parent":"#menu","id":"title","text":"CYBERDYNE"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#title","id":"title","classes":"title"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"label","parent":"#menu","id":"subtitle","text":"Menus made in the editor"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#subtitle","id":"subtitle","classes":"subtitle"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"button","parent":"#menu","id":"new-game","text":"New game"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#new-game","id":"new-game","classes":"menu-button primary"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"button","parent":"#menu","id":"continue","text":"Continue"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#continue","id":"continue","classes":"menu-button"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"button","parent":"#menu","id":"settings","text":"Settings"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#settings","id":"settings","classes":"menu-button"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"button","parent":"#menu","id":"quit","text":"Quit"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#quit","id":"quit","classes":"menu-button danger"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/main_menu.cyui","kind":"label","parent":"#menu","id":"main-hint","text":"Arrows or D-pad to move - Enter or A to choose"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/main_menu.cyui","widget":"#main-hint","id":"main-hint","classes":"hint"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/main_menu.cyui","widget":"#continue","key":"tooltip","value":"\"Pick up where the last session saved\""}}
+{"name":"ui.document.create","arguments":{"reference":"ui/settings.cyui"}}
+{"name":"ui.document.stylesheet","arguments":{"reference":"ui/settings.cyui","sheet":"ui/menus.cyss"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#root","id":"settings-screen","classes":"screen"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"column","parent":"#settings-screen","id":"settings"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#settings","id":"settings","classes":"menu-panel"}}
+{"name":"ui.widget.layout","arguments":{"reference":"ui/settings.cyui","widget":"#settings","anchor":[0.5,0.5,0.5,0.5],"offset":[-330.0,-250.0,330.0,250.0]}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#settings","id":"settings-title","text":"Settings"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#settings-title","id":"settings-title","classes":"title"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"tabs","parent":"#settings","id":"settings-tabs"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#settings-tabs","key":"flex-grow","value":"1"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"column","parent":"#settings-tabs","id":"graphics"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#graphics","key":"title","value":"\"Graphics\""}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#graphics","key":"gap","value":"8"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#graphics","id":"resolution-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#resolution-row","id":"resolution-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#resolution-row","id":"resolution-row-name","text":"Resolution"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#resolution-row-name","id":"resolution-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"dropdown","parent":"#resolution-row","id":"resolution"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#resolution","key":"items","value":"[\"1280x720\", \"1920x1080\", \"2560x1440\"]"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#resolution","key":"selected","value":"0"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#graphics","id":"quality-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#quality-row","id":"quality-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#quality-row","id":"quality-row-name","text":"Quality preset"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#quality-row-name","id":"quality-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"dropdown","parent":"#quality-row","id":"quality"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#quality","key":"items","value":"[\"Low\", \"Medium\", \"High\", \"Ultra\"]"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#quality","key":"selected","value":"2"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#graphics","id":"upscaler-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#upscaler-row","id":"upscaler-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#upscaler-row","id":"upscaler-row-name","text":"Upscaler"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#upscaler-row-name","id":"upscaler-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"dropdown","parent":"#upscaler-row","id":"upscaler"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#upscaler","key":"items","value":"[\"Native\", \"Quality\", \"Balanced\", \"Performance\"]"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#upscaler","key":"selected","value":"0"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#graphics","id":"gi-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#gi-row","id":"gi-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#gi-row","id":"gi-row-name","text":"Global illumination"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#gi-row-name","id":"gi-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"dropdown","parent":"#gi-row","id":"gi-quality"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#gi-quality","key":"items","value":"[\"Low\", \"Medium\", \"High\", \"Epic\"]"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#gi-quality","key":"selected","value":"2"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#graphics","id":"fullscreen-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#fullscreen-row","id":"fullscreen-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#fullscreen-row","id":"fullscreen-row-name","text":"Fullscreen"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#fullscreen-row-name","id":"fullscreen-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"toggle","parent":"#fullscreen-row","id":"fullscreen"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"column","parent":"#settings-tabs","id":"audio"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#audio","key":"title","value":"\"Audio\""}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#audio","key":"gap","value":"8"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#audio","id":"master-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#master-row","id":"master-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#master-row","id":"master-row-name","text":"Master"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#master-row-name","id":"master-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"slider","parent":"#master-row","id":"volume-master"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-master","key":"min","value":"0"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-master","key":"max","value":"1"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-master","key":"step","value":"0.05"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-master","key":"value","value":"1"}}
+{"name":"ui.widget.bind","arguments":{"reference":"ui/settings.cyui","widget":"#volume-master","name":"volume.master","mode":"two-way"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#audio","id":"music-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#music-row","id":"music-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#music-row","id":"music-row-name","text":"Music"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#music-row-name","id":"music-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"slider","parent":"#music-row","id":"volume-music"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-music","key":"min","value":"0"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-music","key":"max","value":"1"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-music","key":"step","value":"0.05"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-music","key":"value","value":"1"}}
+{"name":"ui.widget.bind","arguments":{"reference":"ui/settings.cyui","widget":"#volume-music","name":"volume.music","mode":"two-way"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#audio","id":"sfx-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#sfx-row","id":"sfx-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#sfx-row","id":"sfx-row-name","text":"Effects"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#sfx-row-name","id":"sfx-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"slider","parent":"#sfx-row","id":"volume-sfx"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-sfx","key":"min","value":"0"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-sfx","key":"max","value":"1"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-sfx","key":"step","value":"0.05"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-sfx","key":"value","value":"1"}}
+{"name":"ui.widget.bind","arguments":{"reference":"ui/settings.cyui","widget":"#volume-sfx","name":"volume.sfx","mode":"two-way"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#audio","id":"voice-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#voice-row","id":"voice-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#voice-row","id":"voice-row-name","text":"Voice"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#voice-row-name","id":"voice-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"slider","parent":"#voice-row","id":"volume-voice"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-voice","key":"min","value":"0"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-voice","key":"max","value":"1"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-voice","key":"step","value":"0.05"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#volume-voice","key":"value","value":"1"}}
+{"name":"ui.widget.bind","arguments":{"reference":"ui/settings.cyui","widget":"#volume-voice","name":"volume.voice","mode":"two-way"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"column","parent":"#settings-tabs","id":"controls"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#controls","key":"title","value":"\"Controls\""}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#controls","key":"gap","value":"6"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#controls","id":"controls-header"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#controls-header","id":"controls-header","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#controls-header","id":"controls-header-name","text":"Action"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#controls-header-name","id":"controls-header-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#controls-header","id":"column-keyboard","text":"Keyboard"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#column-keyboard","id":"column-keyboard","classes":"setting-column"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#controls-header","id":"column-gamepad","text":"Gamepad"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#column-gamepad","id":"column-gamepad","classes":"setting-column"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#controls","id":"jump-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#jump-row","id":"jump-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#jump-row","id":"jump-row-name","text":"Jump"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#jump-row-name","id":"jump-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#jump-row","id":"bind-jump-keyboard","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-jump-keyboard","id":"bind-jump-keyboard","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#jump-row","id":"bind-jump-gamepad","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-jump-gamepad","id":"bind-jump-gamepad","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#controls","id":"interact-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#interact-row","id":"interact-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#interact-row","id":"interact-row-name","text":"Interact"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#interact-row-name","id":"interact-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#interact-row","id":"bind-interact-keyboard","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-interact-keyboard","id":"bind-interact-keyboard","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#interact-row","id":"bind-interact-gamepad","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-interact-gamepad","id":"bind-interact-gamepad","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#controls","id":"inventory-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#inventory-row","id":"inventory-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#inventory-row","id":"inventory-row-name","text":"Inventory"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#inventory-row-name","id":"inventory-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#inventory-row","id":"bind-inventory-keyboard","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-inventory-keyboard","id":"bind-inventory-keyboard","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#inventory-row","id":"bind-inventory-gamepad","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-inventory-gamepad","id":"bind-inventory-gamepad","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#controls","id":"sprint-row"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#sprint-row","id":"sprint-row","classes":"setting"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#sprint-row","id":"sprint-row-name","text":"Sprint"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#sprint-row-name","id":"sprint-row-name","classes":"setting-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#sprint-row","id":"bind-sprint-keyboard","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-sprint-keyboard","id":"bind-sprint-keyboard","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#sprint-row","id":"bind-sprint-gamepad","text":"-"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#bind-sprint-gamepad","id":"bind-sprint-gamepad","classes":"binding"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#controls","id":"reset-bindings","text":"Reset to defaults"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"row","parent":"#settings","id":"settings-actions"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#settings-actions","key":"gap","value":"8"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#settings-actions","key":"justify-content","value":"end"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#settings-actions","id":"apply","text":"Apply"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#apply","id":"apply","classes":"primary"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"button","parent":"#settings-actions","id":"back","text":"Back"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"dialog","parent":"#settings-screen","id":"rebind-dialog"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/settings.cyui","widget":"#rebind-dialog","key":"title","value":"\"Rebind\""}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#rebind-dialog","id":"rebind-prompt","text":"Press a key or a button"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/settings.cyui","kind":"label","parent":"#rebind-dialog","id":"rebind-hint","text":"Escape or Back cancels"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/settings.cyui","widget":"#rebind-hint","id":"rebind-hint","classes":"hint"}}
+{"name":"ui.document.create","arguments":{"reference":"ui/pause.cyui"}}
+{"name":"ui.document.stylesheet","arguments":{"reference":"ui/pause.cyui","sheet":"ui/menus.cyss"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#root","id":"pause-screen","classes":"overlay"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"column","parent":"#pause-screen","id":"pause"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#pause","id":"pause","classes":"menu-panel"}}
+{"name":"ui.widget.layout","arguments":{"reference":"ui/pause.cyui","widget":"#pause","anchor":[0.5,0.5,0.5,0.5],"offset":[-170.0,-165.0,170.0,165.0]}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"label","parent":"#pause","id":"pause-title","text":"Paused"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#pause-title","id":"pause-title","classes":"title"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"button","parent":"#pause","id":"resume","text":"Resume"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#resume","id":"resume","classes":"menu-button primary"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"button","parent":"#pause","id":"open-inventory","text":"Inventory"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#open-inventory","id":"open-inventory","classes":"menu-button"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"button","parent":"#pause","id":"pause-settings","text":"Settings"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#pause-settings","id":"pause-settings","classes":"menu-button"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/pause.cyui","kind":"button","parent":"#pause","id":"to-main-menu","text":"Main menu"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/pause.cyui","widget":"#to-main-menu","id":"to-main-menu","classes":"menu-button"}}
+{"name":"ui.document.create","arguments":{"reference":"ui/inventory.cyui"}}
+{"name":"ui.document.stylesheet","arguments":{"reference":"ui/inventory.cyui","sheet":"ui/menus.cyss"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#root","id":"inventory-screen","classes":"overlay"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"column","parent":"#inventory-screen","id":"inventory"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory","id":"inventory","classes":"menu-panel"}}
+{"name":"ui.widget.layout","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory","anchor":[0.5,0.5,0.5,0.5],"offset":[-320.0,-175.0,320.0,175.0]}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"label","parent":"#inventory","id":"inventory-title","text":"Inventory"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory-title","id":"inventory-title","classes":"title"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"row","parent":"#inventory","id":"inventory-body"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory-body","key":"gap","value":"18"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"grid","parent":"#inventory-body","id":"slots"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/inventory.cyui","widget":"#slots","key":"columns","value":"6"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/inventory.cyui","widget":"#slots","key":"gap","value":"6"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-0"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-0","id":"slot-0","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-1"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-1","id":"slot-1","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-2"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-2","id":"slot-2","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-3"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-3","id":"slot-3","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-4"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-4","id":"slot-4","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-5"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-5","id":"slot-5","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-6"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-6","id":"slot-6","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-7"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-7","id":"slot-7","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-8"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-8","id":"slot-8","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-9"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-9","id":"slot-9","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-10"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-10","id":"slot-10","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-11"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-11","id":"slot-11","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-12"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-12","id":"slot-12","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-13"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-13","id":"slot-13","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-14"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-14","id":"slot-14","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-15"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-15","id":"slot-15","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-16"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-16","id":"slot-16","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#slots","id":"slot-17"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#slot-17","id":"slot-17","classes":"slot"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"column","parent":"#inventory-body","id":"details"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#details","id":"details","classes":"details"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"label","parent":"#details","id":"item-name","text":"Nothing held"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#item-name","id":"item-name","classes":"item-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"rich-text","parent":"#details","id":"item-description","text":"Choose a slot to see what is in it."}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"label","parent":"#inventory","id":"inventory-hint","text":"Drag an item, or Enter / A to pick it up and again to put it down"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory-hint","id":"inventory-hint","classes":"hint"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"row","parent":"#inventory","id":"inventory-actions"}}
+{"name":"ui.widget.set","arguments":{"reference":"ui/inventory.cyui","widget":"#inventory-actions","key":"justify-content","value":"end"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/inventory.cyui","kind":"button","parent":"#inventory-actions","id":"inventory-back","text":"Back"}}
+{"name":"ui.document.create","arguments":{"reference":"ui/playing.cyui"}}
+{"name":"ui.document.stylesheet","arguments":{"reference":"ui/playing.cyui","sheet":"ui/menus.cyss"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/playing.cyui","widget":"#root","id":"playing-screen","classes":""}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/playing.cyui","kind":"column","parent":"#playing-screen","id":"hud"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/playing.cyui","widget":"#hud","id":"hud","classes":"menu-panel"}}
+{"name":"ui.widget.layout","arguments":{"reference":"ui/playing.cyui","widget":"#hud","anchor":[0,0,0,0],"offset":[24,24,344,104]}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/playing.cyui","kind":"label","parent":"#hud","id":"hud-title","text":"Playing"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/playing.cyui","widget":"#hud-title","id":"hud-title","classes":"item-name"}}
+{"name":"ui.widget.add","arguments":{"reference":"ui/playing.cyui","kind":"label","parent":"#hud","id":"hud-hint","text":"Escape or Start pauses"}}
+{"name":"ui.widget.identity","arguments":{"reference":"ui/playing.cyui","widget":"#hud-hint","id":"hud-hint","classes":"hint"}}

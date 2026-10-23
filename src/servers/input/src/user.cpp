@@ -374,6 +374,20 @@ Status InputUser::collect_bindings(const MappingContext* const* contexts, u32 co
     return ok();
 }
 
+u32 InputUser::ordinal_of(u32 index) const noexcept {
+    const Binding& binding = resolved_[index].binding;
+    const SchemeKind scheme = scheme_of(binding.components[0].control.kind);
+    u32 ordinal = 0;
+    for (u32 earlier = 0; earlier < index; ++earlier) {
+        const Binding& other = resolved_[earlier].binding;
+        if (other.action == binding.action &&
+            scheme_of(other.components[0].control.kind) == scheme) {
+            ++ordinal;
+        }
+    }
+    return ordinal;
+}
+
 void InputUser::apply_overrides(const ActionRegistry& actions) noexcept {
     // The player's overrides, applied into the copy. The authored context is never touched — see
     // binding.h — which is what makes "a game ships new default bindings and player overrides still
@@ -384,24 +398,67 @@ void InputUser::apply_overrides(const ActionRegistry& actions) noexcept {
     // component rather than a binding is what makes `input-and-actions`' accessibility requirement
     // — "full remapping including composite elements" — expressible: a player may rebind the 'A' of
     // WASD without rebinding the other three.
-    u16 ordinal[static_cast<usize>(SchemeKind::Count)] = {};
-    for (auto& entry : resolved_) {
-        Binding& binding = entry.binding;
+    //
+    // THE ORDINAL IS THE ACTION'S OWN. It once counted every binding of the scheme, whatever its
+    // action, so only the first action of a context could be rebound at slot 0: the second
+    // action's primary binding was slot 4, and the override a rebinding menu stored for it never
+    // applied.
+    for (u32 index = 0; index < resolved_.size(); ++index) {
+        Binding& binding = resolved_[index].binding;
         if (binding.action >= actions.count()) {
             continue;
         }
         const ActionStableId stable = actions.at(binding.action).stable_id;
+        const u32 ordinal = ordinal_of(index);
         for (u8 component = 0; component < binding.component_count; ++component) {
             const SchemeKind scheme = scheme_of(binding.components[component].control.kind);
-            const auto scheme_index = static_cast<usize>(scheme);
-            const auto slot = static_cast<u8>((ordinal[scheme_index] * kMaxComponents) + component);
+            const auto slot = static_cast<u8>((ordinal * kMaxComponents) + component);
             if (const BindingOverride* override_entry = profile_.find(stable, scheme, slot);
                 override_entry != nullptr) {
                 binding.components[component].control = override_entry->control;
             }
         }
-        ++ordinal[static_cast<usize>(scheme_of(binding.components[0].control.kind))];
     }
+}
+
+bool InputUser::binding_control(ActionId action, SchemeKind scheme, u8 slot,
+                                Control& out) const noexcept {
+    for (u32 index = 0; index < resolved_.size(); ++index) {
+        const Binding& binding = resolved_[index].binding;
+        if (binding.action != action || scheme_of(binding.components[0].control.kind) != scheme) {
+            continue;
+        }
+        const u32 first = ordinal_of(index) * kMaxComponents;
+        if (slot >= first && slot < first + binding.component_count) {
+            out = binding.components[slot - first].control;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InputUser::holder_of(Control control, SchemeKind scheme, ActionId within, ActionId& action,
+                          u8& slot) const noexcept {
+    const auto binds_within = [&](u16 context_slot) noexcept {
+        return std::ranges::any_of(resolved_.span(), [&](const ResolvedBinding& entry) {
+            return entry.context_slot == context_slot && entry.binding.action == within;
+        });
+    };
+    for (u32 index = 0; index < resolved_.size(); ++index) {
+        const Binding& binding = resolved_[index].binding;
+        if (scheme_of(binding.components[0].control.kind) != scheme ||
+            !binds_within(resolved_[index].context_slot)) {
+            continue;
+        }
+        for (u8 component = 0; component < binding.component_count; ++component) {
+            if (binding.components[component].control == control) {
+                action = binding.action;
+                slot = static_cast<u8>((ordinal_of(index) * kMaxComponents) + component);
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void InputUser::compute_shadow_chain() noexcept {

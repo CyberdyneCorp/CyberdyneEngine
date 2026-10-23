@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 12u
+#define CY_ABI_MINOR 13u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1677,6 +1677,92 @@ typedef struct CyUiAnimation {
     uint32_t flags;  /* CY_UI_ANIMATION_* */
 } CyUiAnimation;
 
+/* --- 1.13: what a game's menus need ------------------------------------------------------------
+ *
+ * The toolkit draws a menu; these let the menu DO what a settings screen does: rebind an action
+ * through the input system's own rebinding flow and keep the player's profile, change the
+ * resolution, the quality preset and the upscaler, keep the player's choices in their user-data
+ * directory, and give a widget a tooltip. Each reaches a backend the embedder binds — the 1.3 input
+ * backend for rebinding, a video backend for the display settings, a user-data backend for the
+ * files, the 1.6 interface backend for tooltips — and answers UNAVAILABLE without one.
+ *
+ * REBINDING IS THE INPUT SYSTEM'S FLOW, not a key the game reads. `input_rebind_begin` opens a
+ * `cy::input::RebindOperation` for one action, scheme and slot; the next eligible control the
+ * player presses on that scheme is offered to it as the input server resolves it, under the
+ * conflict policy the game chose; `input_rebind_poll` says where it is. An applied rebind is an
+ * override in the user's profile, over the authored bindings, which stay immutable — so a shipped
+ * update to the defaults keeps the player's choices. `input_profile_save` writes the profile as
+ * text a game keeps with `user_data_write`; `input_profile_load` puts it back.
+ *
+ * [N U] every one: menus, display and files are not the simulation's. */
+
+typedef enum CyInputScheme {
+    CY_INPUT_SCHEME_KEYBOARD_MOUSE = 0,
+    CY_INPUT_SCHEME_GAMEPAD = 1
+} CyInputScheme;
+
+/* `cy::input::ConflictPolicy`: what a rebind to a control another action holds does. */
+typedef enum CyInputConflict {
+    CY_INPUT_CONFLICT_REJECT = 0,         /* refused: the rebind ends in CONFLICT */
+    CY_INPUT_CONFLICT_SWAP = 1,           /* the other action takes this one's old control */
+    CY_INPUT_CONFLICT_ALLOW = 2,          /* both actions on one control */
+    CY_INPUT_CONFLICT_UNBIND_PREVIOUS = 3 /* the other action is left unbound */
+} CyInputConflict;
+
+typedef enum CyInputRebindStatus {
+    CY_INPUT_REBIND_IDLE = 0,      /* no rebind was begun for this user */
+    CY_INPUT_REBIND_LISTENING = 1, /* waiting for a control */
+    CY_INPUT_REBIND_APPLIED = 2,   /* the control is the action's now */
+    CY_INPUT_REBIND_CONFLICT = 3,  /* refused under REJECT: `conflict` holds it */
+    CY_INPUT_REBIND_CANCELLED = 4  /* cancelled by the game, or by the cancel control */
+} CyInputRebindStatus;
+
+/* Where a user's rebind is. Strings are NUL-terminated and cut to fit. */
+typedef struct CyInputRebind {
+    uint32_t struct_size;
+    uint32_t status; /* CyInputRebindStatus */
+    CyInputAction action;
+    uint32_t scheme; /* CyInputScheme */
+    uint32_t slot;
+    char control[32];  /* the control offered, as a path: "keyboard/f", "gamepad/south" */
+    char conflict[64]; /* CONFLICT: the action that holds it */
+} CyInputRebind;
+
+/* A quality preset: one level for every post-processing stage (`rendering::QualityLevel`). */
+typedef enum CyVideoQuality {
+    CY_VIDEO_QUALITY_LOW = 0,
+    CY_VIDEO_QUALITY_MEDIUM = 1,
+    CY_VIDEO_QUALITY_HIGH = 2,
+    CY_VIDEO_QUALITY_ULTRA = 3
+} CyVideoQuality;
+
+/* `rendering::upscale::UpscaleMode`, value for value. */
+typedef enum CyVideoUpscale {
+    CY_VIDEO_UPSCALE_NATIVE = 0,     /* rendered at the output resolution, antialiased */
+    CY_VIDEO_UPSCALE_QUALITY = 1,    /* 67 % per axis */
+    CY_VIDEO_UPSCALE_BALANCED = 2,   /* 58 % per axis */
+    CY_VIDEO_UPSCALE_PERFORMANCE = 3 /* 50 % per axis */
+} CyVideoUpscale;
+
+#define CY_VIDEO_FULLSCREEN 0x1u
+#define CY_VIDEO_VSYNC 0x2u
+
+/* The display settings a game's settings screen changes. */
+typedef struct CyVideoSettings {
+    uint32_t struct_size;
+    uint32_t width; /* the output resolution, one of `video_modes` */
+    uint32_t height;
+    uint32_t quality; /* CyVideoQuality */
+    uint32_t upscale; /* CyVideoUpscale */
+    uint32_t flags;   /* CY_VIDEO_* */
+} CyVideoSettings;
+
+/* One resolution the display offers. */
+typedef struct CyVideoMode {
+    uint32_t width;
+    uint32_t height;
+} CyVideoMode;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2370,6 +2456,56 @@ typedef struct CyInterface {
     /* [N U] Deliver a CyUiAction — a game that maps its own input drives the focus with this.
      * `*out_consumed` is 1 when the interface took it, 0 when it is the game's. */
     CyResult (*ui_navigate)(CyEngine engine, uint32_t action, uint32_t* out_consumed);
+    /* --- 1.13: what a game's menus need ---
+     *
+     * Every entry is [N U] (see CyInputRebind's section). */
+
+    /* [N U] Begin rebinding `action`'s `slot`-th control on `scheme` (CyInputScheme) for `user`,
+     * replacing a rebind already listening. `conflict` is a CyInputConflict. INVALID_ARGUMENT for
+     * a scheme or a policy out of range; NOT_FOUND for an action the server does not have;
+     * OUT_OF_RANGE for a user it does not have. */
+    CyResult (*input_rebind_begin)(CyEngine engine, uint32_t user, CyInputAction action,
+                                   uint32_t scheme, uint32_t slot, uint32_t conflict);
+    /* [N U] Where `user`'s rebind is: IDLE when none was begun. */
+    CyResult (*input_rebind_poll)(CyEngine engine, uint32_t user, CyInputRebind* out_rebind);
+    /* [N U] Cancel `user`'s rebind; OK when none is listening. */
+    CyResult (*input_rebind_cancel)(CyEngine engine, uint32_t user);
+    /* [N U] The control `action`'s `slot`-th binding on `scheme` has now for `user` — the player's
+     * override, or the authored one — as a path into `buffer`, NUL-terminated; `*out_size` is its
+     * length without the NUL; a null buffer asks the size. NOT_FOUND when the action has no such
+     * binding on the user's contexts. */
+    CyResult (*input_binding)(CyEngine engine, uint32_t user, CyInputAction action, uint32_t scheme,
+                              uint32_t slot, char* buffer, uint32_t capacity, uint32_t* out_size);
+    /* [N U] `user`'s profile — every override — as text into `buffer`, the sizing of
+     * `input_binding`. Empty for a user who changed nothing. */
+    CyResult (*input_profile_save)(CyEngine engine, uint32_t user, char* buffer, uint32_t capacity,
+                                   uint32_t* out_size);
+    /* [N U] Replace `user`'s overrides with a profile `input_profile_save` wrote, effective from
+     * the next tick. INVALID_ARGUMENT naming the first line that does not read, having changed
+     * nothing; a line naming an action or a control this build does not have is skipped. */
+    CyResult (*input_profile_load)(CyEngine engine, uint32_t user, const char* text, uint64_t size);
+    /* [N U] Drop every override of `user`: the authored bindings again. */
+    CyResult (*input_profile_reset)(CyEngine engine, uint32_t user);
+    /* [N U] The display settings in effect. */
+    CyResult (*video_get_settings)(CyEngine engine, CyVideoSettings* out_settings);
+    /* [N U] Apply display settings from the next frame. INVALID_ARGUMENT for a quality, an
+     * upscaler or a flag out of range; NOT_FOUND for a resolution `video_modes` does not list;
+     * having changed nothing either way. */
+    CyResult (*video_set_settings)(CyEngine engine, const CyVideoSettings* settings);
+    /* [N U] The resolutions the display offers, the sizing of `physics_raycast_all`. */
+    CyResult (*video_modes)(CyEngine engine, CyVideoMode* out_modes, uint32_t capacity,
+                            uint32_t* out_count);
+    /* [N U] Write `size` bytes to the player's file `name` in the game's user-data directory,
+     * replacing it whole. `name` is one plain file name: letters, digits, '.', '-' and '_'. */
+    CyResult (*user_data_write)(CyEngine engine, const char* name, const void* bytes,
+                                uint64_t size);
+    /* [N U] Read the player's file `name` into `buffer`; `*out_size` is its whole size, a null
+     * buffer asks it, and BUFFER_TOO_SMALL fills `capacity` bytes. NOT_FOUND when there is none. */
+    CyResult (*user_data_read)(CyEngine engine, const char* name, void* buffer, uint64_t capacity,
+                               uint64_t* out_size);
+    /* [N U] The tooltip a widget shows when the pointer rests on it, or a gamepad focuses it
+     * long enough; null or empty removes it. */
+    CyResult (*ui_widget_set_tooltip)(CyEngine engine, CyUiElement widget, const char* utf8);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.

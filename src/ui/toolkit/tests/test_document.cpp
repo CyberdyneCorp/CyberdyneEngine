@@ -300,3 +300,105 @@ CY_TEST_CASE("ui_document: a cooked bundle carries a document and everything it 
     Array<BundleEntry> entries(allocator());
     CY_CHECK_FALSE(parse_bundle("cyuicook 1\ndocument a.cyui 99\nshort", entries).has_value());
 }
+
+CY_TEST_CASE("ui_document: every line of the document names the widget it made") {
+    // What the editor's layout canvas draws its handles from: the engine's rectangle for each line
+    // the author sees, a `use` line being the top of the component it instantiated.
+    Kit kit;
+    CY_REQUIRE(kit.started);
+    Files files;
+    DocumentInstance instance(allocator(), kit.toolkit);
+    CY_REQUIRE(instance.load(kSettings, kNoElement, &files, nullptr).has_value());
+    CY_CHECK_EQ(instance.widget_at_line(4), instance.roots()[0]);       // column #settings
+    CY_CHECK(!instance.widget_at_line(5).is_valid());                   // a comment
+    CY_CHECK_EQ(instance.widget_at_line(6), instance.find("title"));    // label #title
+    CY_CHECK_EQ(instance.widget_at_line(10), instance.find("health"));  // use "stat.cyui" #health
+    CY_CHECK_EQ(instance.widget_at_line(14), instance.find("apply"));
+    CY_CHECK(!instance.widget_at_line(0).is_valid());
+    CY_CHECK(!instance.widget_at_line(1).is_valid());   // the header
+    CY_CHECK(!instance.widget_at_line(99).is_valid());  // past the end
+    // A used document's own elements are not the root document's lines.
+    const WidgetId bar = kit.toolkit.find(instance.find("health"), "bar");
+    for (u32 line = 0; line < 20; ++line) {
+        CY_CHECK(instance.widget_at_line(line) != bar);
+    }
+
+    // A reload that moves a line moves the answer with it.
+    constexpr std::string_view kMoved = R"(cyui 1
+stylesheet "menu.cyss"
+param heading "Settings"
+column #settings .panel gap=8 width=320
+  label #title .title text=$heading
+  slider #volume min=0 max=1 step=0.05 value=0.8
+)";
+    CY_REQUIRE(instance.reload(kMoved).has_value());
+    CY_CHECK_EQ(instance.widget_at_line(5), instance.find("title"));
+    CY_CHECK_EQ(instance.widget_at_line(6), instance.find("volume"));
+}
+
+CY_TEST_CASE("ui_document: a reload that drops the stylesheet line is no longer styled by it") {
+    // Regression: the instance applied the sheets a reload collected only when there were some, so
+    // a document whose `stylesheet` line was deleted kept being drawn with the sheet it no longer
+    // names until the game restarted.
+    Kit kit;
+    CY_REQUIRE(kit.started);
+    Files files;
+    DocumentInstance instance(allocator(), kit.toolkit);
+    constexpr std::string_view kStyled = R"(cyui 1
+stylesheet "menu.cyss"
+row .stat
+)";
+    constexpr std::string_view kBare = R"(cyui 1
+row .stat
+)";
+    CY_REQUIRE(instance.load(kStyled, kNoElement, &files, nullptr).has_value());
+    CY_REQUIRE(kit.frame());
+    const WidgetId row = instance.roots()[0];
+    CY_CHECK_EQ(kit.store.paint(row)->background, 0xFF102030U);
+    CY_CHECK(!kit.toolkit.stylesheet().rules().empty());
+    CY_REQUIRE(instance.reload(kBare).has_value());
+    CY_REQUIRE(kit.frame());
+    CY_CHECK(kit.toolkit.stylesheet().rules().empty());
+    CY_CHECK(kit.store.paint(instance.roots()[0])->background != 0xFF102030U);
+}
+
+CY_TEST_CASE("ui_document: unloading takes an open drop-down's list and the document's dialogs") {
+    // Regression: a drop-down's list and a dialog live in the toolkit's overlay, not under the
+    // widgets they were made in. Destroying the document's root destroyed the drop-down and left
+    // its open list on screen with no owner, and left every dialog the document held — open or
+    // closed — alive and drawn, after the document that made it was gone.
+    Kit kit;
+    CY_REQUIRE(kit.started);
+    constexpr std::string_view kMenu = R"(cyui 1
+panel #menu
+  dropdown #quality items=["Low", "High"] selected=0
+  dialog #confirm title="Sure?"
+    label text="Really?"
+)";
+    DocumentInstance instance(allocator(), kit.toolkit);
+    CY_REQUIRE(instance.load(kMenu, kNoElement, nullptr, nullptr).has_value());
+    CY_REQUIRE(kit.frame());
+    const WidgetId quality = instance.find("quality");
+    const WidgetId confirm = instance.find("confirm");
+    CY_REQUIRE(kit.toolkit.alive(confirm));
+    CY_REQUIRE(kit.toolkit.open(quality).has_value());
+    CY_REQUIRE(kit.frame());
+    CY_REQUIRE(kit.toolkit.is_open(quality));
+    const u32 with_list = kit.toolkit.widget_count();
+    CY_REQUIRE(with_list > 4U);  // the options are widgets while the list is open
+
+    CY_REQUIRE(instance.unload().has_value());
+    CY_REQUIRE(kit.frame());
+    CY_CHECK_FALSE(kit.toolkit.alive(confirm));
+    CY_CHECK_EQ(kit.toolkit.widget_count(), 0U);
+    CY_CHECK_FALSE(kit.toolkit.captures_input());
+
+    // And an open dialog goes the same way, giving the input back.
+    CY_REQUIRE(instance.load(kMenu, kNoElement, nullptr, nullptr).has_value());
+    CY_REQUIRE(kit.frame());
+    CY_REQUIRE(kit.toolkit.open(instance.find("confirm")).has_value());
+    CY_REQUIRE(kit.toolkit.captures_input());
+    CY_REQUIRE(instance.unload().has_value());
+    CY_CHECK_EQ(kit.toolkit.widget_count(), 0U);
+    CY_CHECK_FALSE(kit.toolkit.captures_input());
+}

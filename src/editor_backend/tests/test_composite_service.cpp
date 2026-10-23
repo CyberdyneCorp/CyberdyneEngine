@@ -9,6 +9,7 @@
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -184,6 +185,40 @@ CY_TEST_CASE("composite: capabilities wait for a busy child and a route table re
     CY_REQUIRE_EQ(table.open(&open), CY_RESULT_OK);
     CY_CHECK_FALSE(table.route("navigation.", services.navigation).has_value());
     table.close(open);
+}
+
+CY_TEST_CASE("composite: the hosted runtime's whole route table fits, and the limit names itself") {
+    // Regression: the composite held eight routes, and the hosted runtime routes MaterialService's
+    // seven prefixes, navigation and illumination. The ninth route was refused — as "a route needs
+    // a prefix of 1 to 47 bytes" — so `cy_editor_window_runtime` started with NO editor service and
+    // every material, VFX, audio, script, animation, navigation and GI request went unanswered.
+    Services services;
+    CompositeEditorService table(allocator());
+    for (const std::string_view prefix : kMaterialServicePrefixes) {
+        CY_REQUIRE(table.route(prefix, services.material).has_value());
+    }
+    CY_REQUIRE(table.route("navigation.", services.navigation).has_value());
+    // illumination. and ui. stand for the other two backends; one child serves both here.
+    CY_REQUIRE(table.route("illumination.", services.navigation).has_value());
+    CY_REQUIRE(table.route("ui.", services.navigation).has_value());
+    CyServiceSession open = nullptr;
+    CY_REQUIRE_EQ(table.open(&open), CY_RESULT_OK);
+    table.close(open);
+
+    // Past the limit, the refusal says what it is, not that the prefix was malformed.
+    CompositeEditorService full(allocator());
+    char prefixes[CompositeEditorService::kMaxRoutes + 1][16] = {};
+    for (u32 index = 0; index <= CompositeEditorService::kMaxRoutes; ++index) {
+        (void)std::snprintf(prefixes[index], sizeof(prefixes[index]), "route%u.", index);
+        const Status routed = full.route(prefixes[index], services.material);
+        if (index < CompositeEditorService::kMaxRoutes) {
+            CY_CHECK(routed.has_value());
+        } else {
+            CY_REQUIRE_FALSE(routed.has_value());
+            CY_CHECK(std::string_view(routed.error().message).find("most routes") !=
+                     std::string_view::npos);
+        }
+    }
 }
 
 CY_TEST_CASE("composite: terrain.evaluate reaches MaterialService through the one binding") {

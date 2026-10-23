@@ -95,6 +95,10 @@ public:
     [[nodiscard]] Span<const WidgetId> roots() const noexcept { return roots_.span(); }
     /// The widget made for the element with this id, anywhere in the expanded document.
     [[nodiscard]] WidgetId find(std::string_view id) const noexcept;
+    /// The widget made for the element on `line` of the document `load` was given — for a `use`
+    /// line, the top of what it instantiated — or none: a comment, a kind that does not exist, a
+    /// line past the end. What an editor that shows the document's lines maps them to widgets by.
+    [[nodiscard]] WidgetId widget_at_line(u32 line) const noexcept;
     /// What the last load or reload reported, and why one failed.
     [[nodiscard]] Span<const DocumentDiagnostic> diagnostics() const noexcept {
         return diagnostics_.span();

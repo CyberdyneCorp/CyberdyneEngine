@@ -1097,6 +1097,35 @@ frame costs 6.3 ms at 480x270 with the GI 1.0 ms on the device. Two rules carry 
 every call is refused from `onFixedUpdate`, and a lamp you want seen in the frame should light
 through the cache rather than be promoted — the GI guide's section 6g says why.
 
+### Menus: rebinding, display settings and player files (ABI 1.13)
+
+A game's settings screen goes to the engine through four Kit types (`Menus.swift`):
+
+| Type | What it wraps |
+|---|---|
+| `InputAction.rebind(scheme:slot:conflict:user:)`, `Rebinding.poll()`, `Rebinding.cancel()`, `InputAction.binding(scheme:slot:)` | the input system's rebinding flow: the ENGINE listens, takes the next control on that scheme and settles a conflict by the policy given (`.reject`, `.swap`, `.allow`, `.unbindPrevious`) |
+| `InputProfile.save()`, `.load(_:)`, `.reset()` | the player's overrides as text, over the authored bindings |
+| `Video.settings`, `Video.apply(_:)`, `Video.modes` | resolution, quality preset, upscaler mode, fullscreen and v-sync; the host's renderer acts on them |
+| `UserData.write(_:text:)`, `.readText(_:)` | the player's files, one plain name each |
+
+and `Widget.setTooltip(_:)`. A rebind is not a key the game reads:
+
+```swift
+try jump.rebind(scheme: .gamepad, conflict: .swap)
+// ...each frame:
+let state = try Rebinding.poll()
+switch state.status {
+case .listening: break
+case .applied:   try UserData.write("bindings.cyinputprofile", text: try InputProfile.save())
+case .conflict:  showConflict(state.conflict)   // only under .reject
+default:         break                           // cancelled by Escape or Back
+}
+```
+
+`samples/16-menus` is the worked example, with its settings, controls and inventory screens in
+`game/`; [the UI guide](ui.md#14-menus-settings-rebinding-and-player-files) has the C++ side and
+the pictures.
+
 ### Lights for a moment (ABI 1.11)
 
 `Lights.swift` spawns lights that live a few frames — a muzzle flash, a spark, a fireball — or until

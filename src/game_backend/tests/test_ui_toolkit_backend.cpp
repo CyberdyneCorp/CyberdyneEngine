@@ -422,3 +422,85 @@ CY_TEST_CASE("ui toolkit: a document loaded by path reloads on a save, keeping i
                 CY_RESULT_OK);
     (void)assets::fs::remove_directory_recursive(directory.c_str());
 }
+
+CY_TEST_CASE(
+    "ui toolkit: a module's document binds to the embedder's values, and takes a tooltip") {
+    // ABI 1.13's `set_document_bindings`: the host owns the game value a slider drives — a bus's
+    // gain, say — and a module's document reaches it by name with no module code between.
+    Fixture fixture;
+    CY_REQUIRE(fixture.started);
+    class Gain final : public ui::BindingSource {
+    public:
+        [[nodiscard]] ui::BoundValue read() noexcept override {
+            ui::BoundValue value;
+            value.kind = ui::BoundValue::Kind::Number;
+            value.number = gain;
+            dirty = false;
+            return value;
+        }
+        [[nodiscard]] bool changed() const noexcept override { return dirty; }
+        [[nodiscard]] Status write(const ui::BoundValue& value) noexcept override {
+            gain = value.number;
+            ++writes;
+            return ok();
+        }
+        f32 gain = 0.25F;
+        u32 writes = 0;
+        bool dirty = true;
+    };
+    class Values final : public ui::DocumentBindings {
+    public:
+        [[nodiscard]] ui::BindingSource* find(std::string_view name) noexcept override {
+            return name == "volume.music" ? &music : nullptr;
+        }
+        Gain music;
+    };
+    Values values;
+    fixture.adapter.set_document_bindings(&values);
+    constexpr const char* kSettings = R"(cyui 1
+column #settings
+  slider #music min=0 max=1 step=0.25 value=1 bind=volume.music bind-mode=two-way
+)";
+    CyUiElement root = CY_UI_ELEMENT_NULL;
+    CY_REQUIRE_EQ(fixture.load(kSettings, root), CY_RESULT_OK);
+    CY_REQUIRE(fixture.frame());
+    const CyUiElement music = fixture.find("music");
+    f32 value = 0.0F;
+    CY_REQUIRE_EQ(table().ui_widget_value(&fixture.host, music, &value), CY_RESULT_OK);
+    CY_CHECK_EQ(value, 0.25F);  // the embedder's value, not the document's 1
+    CY_REQUIRE_EQ(table().ui_set_focus(&fixture.host, music), CY_RESULT_OK);
+    u32 consumed = 0;
+    CY_REQUIRE_EQ(table().ui_navigate(&fixture.host, CY_UI_ACTION_NAVIGATE_RIGHT, &consumed),
+                  CY_RESULT_OK);
+    CY_REQUIRE(fixture.frame());
+    CY_CHECK_EQ(values.music.gain, 0.5F);  // the player's step written back to the embedder
+    CY_CHECK(values.music.writes >= 1U);
+
+    // And a tooltip: set through the table, shown when the pointer rests on the widget.
+    CY_REQUIRE_EQ(table().ui_widget_set_tooltip(&fixture.host, music, "The music bus"),
+                  CY_RESULT_OK);
+    // A stale handle — the slider's index in a later generation — is no widget of the module's.
+    const CyUiElement stale = music + (1ULL << 40U);
+    CY_CHECK_EQ(table().ui_widget_set_tooltip(&fixture.host, stale, "x"), CY_RESULT_NOT_FOUND);
+}
+
+CY_TEST_CASE("ui toolkit: clearing the focus takes it from a widget too") {
+    // Regression: `ui_set_focus(NULL)` cleared only the 1.6 elements' focus. A widget keeping the
+    // toolkit's focus kept the input bridge in menu mode, so a game going back to gameplay from a
+    // menu never saw its own actions again.
+    Fixture fixture;
+    CY_REQUIRE(fixture.started);
+    constexpr const char* kPlayMenu = R"(cyui 1
+column #menu
+  button #play text="Play"
+)";
+    CyUiElement root = CY_UI_ELEMENT_NULL;
+    CY_REQUIRE_EQ(fixture.load(kPlayMenu, root), CY_RESULT_OK);
+    CY_REQUIRE(fixture.frame());
+    const CyUiElement play = fixture.find("play");
+    CY_REQUIRE_EQ(table().ui_set_focus(&fixture.host, play), CY_RESULT_OK);
+    CY_REQUIRE(fixture.toolkit.focused().is_valid());
+    CY_REQUIRE_EQ(table().ui_set_focus(&fixture.host, CY_UI_ELEMENT_NULL), CY_RESULT_OK);
+    CY_CHECK_FALSE(fixture.toolkit.focused().is_valid());
+    CY_CHECK_FALSE(fixture.toolkit.focus_visible());
+}

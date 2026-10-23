@@ -259,3 +259,40 @@ CY_TEST_CASE("ui_style: applying a style says whether layout has to run again") 
     CY_CHECK(apply_style(sized, layout, paint));
     CY_CHECK_EQ(layout.preferred.x, 120.0F);
 }
+
+CY_TEST_CASE("ui_style: a comma-separated selector list is one rule per selector") {
+    // Regression: a comma was skipped as an unknown character, so `label, toggle-label { ... }`
+    // became the descendant chain `label toggle-label`, matched nothing, and a list of more than
+    // four selectors — the built-in theme's text colour rule — was reported as an over-long chain.
+    // Every label of every widget was drawn without the theme's colour.
+    constexpr std::string_view sheet_text = R"(
+        label, rich-text, button-label, toggle-label, checkbox-label { color: #e6e9ef; }
+        .primary, button:hover { background-color: #3d8bfd; }
+    )";
+    StyleSheet sheet(allocator());
+    CY_REQUIRE(parse_stylesheet(sheet_text, sheet).has_value());
+    CY_CHECK_EQ(sheet.diagnostics().size(), 0U);
+    CY_REQUIRE_EQ(sheet.rules().size(), 7U);
+    // Each selector shares the one declaration block, and carries its own specificity and order.
+    CY_CHECK_EQ(sheet.rules()[0].first_declaration, sheet.rules()[4].first_declaration);
+    CY_CHECK_EQ(sheet.rules()[0].declaration_count, 1U);
+    CY_CHECK(sheet.rules()[6].specificity > sheet.rules()[0].specificity);
+    CY_CHECK(sheet.rules()[6].order > sheet.rules()[5].order);
+
+    Array<StyleDiagnostic> diagnostics(allocator());
+    for (const char* type : {"label", "rich-text", "button-label", "checkbox-label"}) {
+        ResolvedStyle resolved(allocator());
+        CY_REQUIRE(resolve_style(sheet, nullptr, subject_of(type, nullptr),
+                                 Span<const StyleDeclaration>{}, nullptr, resolved, diagnostics)
+                       .has_value());
+        const ResolvedProperty* colour = resolved.find(StyleProperty::Colour);
+        CY_REQUIRE_MESSAGE(colour != nullptr, type);
+        CY_CHECK_EQ(colour->value.colour, 0xFFE6E9EFU);
+    }
+    ResolvedStyle hovered(allocator());
+    CY_REQUIRE(resolve_style(sheet, nullptr, subject_of("button", nullptr, PseudoState::Hover),
+                             Span<const StyleDeclaration>{}, nullptr, hovered, diagnostics)
+                   .has_value());
+    CY_REQUIRE(hovered.find(StyleProperty::BackgroundColour) != nullptr);
+    CY_CHECK_EQ(hovered.find(StyleProperty::BackgroundColour)->value.colour, 0xFF3D8BFDU);
+}
