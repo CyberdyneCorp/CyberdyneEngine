@@ -22,6 +22,7 @@ use cy_editor_services::ui_layout::{
     DPI_SCALES, PreviewSettings, PreviewState, PropertyType, RESOLUTIONS, ScaleMode, UiCatalogue,
 };
 use cy_editor_visual::colour::Semantic;
+use std::fmt::Write as _;
 
 use super::specialised::{SpecialisedTool, ToolDiagnostic, ToolFrame};
 use super::{Inputs, Intent, Panels, heading, nothing_here, secondary};
@@ -142,9 +143,7 @@ impl SpecialisedTool for UiLayoutTool {
         };
         let documents = project_files(panels, ".cyui");
         let themes = project_files(panels, ".cyss");
-        let Some(reference) = chosen_document(panels, ui, &documents) else {
-            return None;
-        };
+        let reference = chosen_document(panels, ui, &documents)?;
         let source = panels.editor.project.read_source(&reference).ok()?;
         let document = match UiDocument::decode(&source) {
             Ok(document) => document,
@@ -187,7 +186,10 @@ impl SpecialisedTool for UiLayoutTool {
         let height = ui.available_height();
         ui.horizontal_top(|ui| {
             let side = (ui.available_width() * 0.22).clamp(150.0, 260.0);
-            ui.allocate_ui(egui::vec2(side, height), |ui| {
+            // Each column top-down: inside `horizontal_top` a plain allocation would lay its
+            // widgets out in a row.
+            let column = egui::Layout::top_down(egui::Align::Min);
+            ui.allocate_ui_with_layout(egui::vec2(side, height), column, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("ui-layout-left")
                     .show(ui, |ui| {
@@ -196,10 +198,10 @@ impl SpecialisedTool for UiLayoutTool {
                     });
             });
             let canvas_width = (ui.available_width() - side - 8.0).max(160.0);
-            ui.allocate_ui(egui::vec2(canvas_width, height), |ui| {
+            ui.allocate_ui_with_layout(egui::vec2(canvas_width, height), column, |ui| {
                 canvas(frame, ui, &target);
             });
-            ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), column, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("ui-layout-inspector")
                     .show(ui, |ui| inspector(frame, ui, &target));
@@ -209,13 +211,7 @@ impl SpecialisedTool for UiLayoutTool {
 }
 
 fn project_files(panels: &Panels<'_>, extension: &str) -> Vec<String> {
-    panels
-        .editor
-        .project
-        .source_paths()
-        .into_iter()
-        .filter(|path| path.ends_with(extension))
-        .collect()
+    panels.editor.project.paths_with_extension(extension)
 }
 
 /// The document on the canvas: the one chosen, else the first the project has. Draws the empty
@@ -489,20 +485,32 @@ fn palette(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target) {
         frame.shell,
         "Click to add into the selection, or drag onto the canvas or a row.",
     ));
-    ui.horizontal_wrapped(|ui| {
-        for kind in &target.catalogue.kinds {
-            let id = egui::Id::new(("ui-palette", &kind.name));
-            let response = ui
-                .dnd_drag_source(id, NewWidget(kind.name.clone()), |ui| {
-                    ui.add(egui::Button::new(&kind.name).sense(egui::Sense::click()))
-                })
-                .inner;
-            if response.clicked() {
-                let parent = container_for(target, frame.inputs.ui_layout.selected);
-                add_widget(frame, target, &kind.name, parent, None);
+    // Rows of a few kinds: a kind's name is one word on its button, never broken across lines,
+    // and a column as narrow as the side panel has no room for a wrapped row to measure.
+    for row in target.catalogue.kinds.chunks(PALETTE_COLUMNS) {
+        ui.horizontal(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            for kind in row {
+                palette_entry(frame, ui, target, &kind.name);
             }
-        }
-    });
+        });
+    }
+}
+
+/// Kinds a palette row holds.
+const PALETTE_COLUMNS: usize = 3;
+
+fn palette_entry(frame: &mut ToolFrame<'_>, ui: &mut egui::Ui, target: &Target, kind: &str) {
+    let id = egui::Id::new(("ui-palette", kind));
+    let response = ui
+        .dnd_drag_source(id, NewWidget(kind.to_owned()), |ui| {
+            ui.add(egui::Button::new(kind).sense(egui::Sense::click()))
+        })
+        .inner;
+    if response.clicked() {
+        let parent = container_for(target, frame.inputs.ui_layout.selected);
+        add_widget(frame, target, kind, parent, None);
+    }
 }
 
 /// The container a new widget goes into: the selection when it holds children, else its parent.
@@ -666,10 +674,10 @@ fn row_name(summary: &WidgetSummary, line: &UiLine) -> String {
         name.push_str(&line.id);
     }
     if let Some(UiValue::Text(caption)) = line.property("text") {
-        name.push_str(&format!(" \"{caption}\""));
+        let _ = write!(name, " \"{caption}\"");
     }
     if let LineKind::Use(path) = &line.kind {
-        name.push_str(&format!(" {}", path.as_text()));
+        let _ = write!(name, " {}", path.as_text());
     }
     name
 }
@@ -915,13 +923,13 @@ fn commit_drag(
                 }
             };
             let mut next = lanes(&anchor);
-            let lane = if drag.handle == Handle::AnchorMin {
+            let column = if drag.handle == Handle::AnchorMin {
                 0
             } else {
                 2
             };
-            next[lane] = quarter(next[lane] + drag.delta[0] / parent[0]);
-            next[lane + 1] = quarter(next[lane + 1] + drag.delta[1] / parent[1]);
+            next[column] = quarter(next[column] + drag.delta[0] / parent[0]);
+            next[column + 1] = quarter(next[column + 1] + drag.delta[1] / parent[1]);
             arguments.with("anchor", Value::Vec4(next))
         }
     };
@@ -938,6 +946,14 @@ fn lanes(values: &[f32]) -> [f32; 4] {
     [values[0], values[1], values[2], values[3]]
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a preview is a few thousand pixels across"
+)]
+fn pixels(value: u32) -> f32 {
+    value as f32
+}
+
 fn parent_rect(target: &Target, view: &CanvasView, widget: usize) -> Option<[f32; 4]> {
     let parent = target.document.widgets()[widget].parent?;
     view.rects.get(parent).copied().flatten()
@@ -947,8 +963,8 @@ fn parent_size(target: &Target, view: &CanvasView, widget: usize) -> [f32; 2] {
     parent_rect(target, view, widget).map_or_else(
         || {
             [
-                view.size[0] as f32 / view.per_unit,
-                view.size[1] as f32 / view.per_unit,
+                pixels(view.size[0]) / view.per_unit,
+                pixels(view.size[1]) / view.per_unit,
             ]
         },
         |[_, _, width, height]| [width.max(1.0), height.max(1.0)],
@@ -1174,7 +1190,11 @@ fn property(
     let current = line.property(key);
     match kind {
         PropertyType::Bool => {
-            let was = matches!(current, Some(UiValue::Word(word)) if word == "true");
+            let was = match current {
+                Some(UiValue::Word(word)) => word == "true",
+                // Unwritten: what the toolkit makes the widget with.
+                _ => bool_default(key),
+            };
             let mut now = was;
             if ui.checkbox(&mut now, "").changed() {
                 set(
@@ -1204,6 +1224,12 @@ fn property(
             }
         }
     }
+}
+
+/// A boolean property's value when the document does not write it: a widget is made enabled and
+/// visible, and every other switch off.
+fn bool_default(key: &str) -> bool {
+    matches!(key, "enabled" | "visible")
 }
 
 fn layout(

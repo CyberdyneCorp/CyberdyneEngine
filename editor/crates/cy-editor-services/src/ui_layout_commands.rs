@@ -696,10 +696,10 @@ fn widget_bind() -> Command {
                     let index = document.resolve(&target)?;
                     let line = document.widget_mut(index).expect("resolved");
                     let bound = !name.is_empty();
-                    line.set_property("bind", bound.then(|| UiValue::Word(name)));
+                    line.set_property("bind", bound.then_some(UiValue::Word(name)));
                     line.set_property(
                         "bind-mode",
-                        (bound && mode == "two-way").then(|| UiValue::Word(mode)),
+                        (bound && mode == "two-way").then_some(UiValue::Word(mode)),
                     );
                     Ok(vec![("widget".into(), index_value(index))])
                 },

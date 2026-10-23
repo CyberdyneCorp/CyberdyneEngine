@@ -811,7 +811,10 @@ impl Editor {
     /// layout". The canvas follows the file: a document it shows, or one that names the sheet or
     /// theme it is drawn in, is drawn again.
     fn save_ui_asset(&mut self, reference: &str, source: &str) -> Result<()> {
-        if reference.ends_with(".cyss") {
+        if std::path::Path::new(reference)
+            .extension()
+            .is_some_and(|extension| extension == "cyss")
+        {
             crate::ui_document::validate_sheet_reference(reference)?;
         } else {
             crate::ui_document::validate_reference(reference)?;
