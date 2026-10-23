@@ -490,12 +490,12 @@ CY_TEST_CASE("ui toolkit: clearing the focus takes it from a widget too") {
     // menu never saw its own actions again.
     Fixture fixture;
     CY_REQUIRE(fixture.started);
-    constexpr const char* kMenu = R"(cyui 1
+    constexpr const char* kPlayMenu = R"(cyui 1
 column #menu
   button #play text="Play"
 )";
     CyUiElement root = CY_UI_ELEMENT_NULL;
-    CY_REQUIRE_EQ(fixture.load(kMenu, root), CY_RESULT_OK);
+    CY_REQUIRE_EQ(fixture.load(kPlayMenu, root), CY_RESULT_OK);
     CY_REQUIRE(fixture.frame());
     const CyUiElement play = fixture.find("play");
     CY_REQUIRE_EQ(table().ui_set_focus(&fixture.host, play), CY_RESULT_OK);
