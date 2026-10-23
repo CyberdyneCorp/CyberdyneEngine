@@ -79,7 +79,18 @@ namespace {
 }  // namespace
 
 CY_TEST_CASE("the surface cache's selection is the full sort's, budget for budget") {
+    // THE ORACLE IS SORTED ONCE. A budget's expected selection is a prefix of the one full ranking,
+    // which is what `full_sort` cuts to; sorting all three hundred pages again for each of five
+    // budgets, and finding each page in the selection by a linear search, put this unit case at
+    // the edge of its Debug budget on a loaded runner without asking anything more of `select`.
     const std::vector<gi::SurfacePage> all = pages(300);
+    const std::vector<u32> ranking = full_sort(all, 1000, 240, static_cast<u32>(all.size()));
+    u32 live = 0;
+    u32 invalid = 0;
+    for (const gi::SurfacePage& page : all) {
+        live += page.live ? 1U : 0U;
+        invalid += page.live && !page.valid ? 1U : 0U;
+    }
     for (const u32 budget : {0U, 1U, 37U, 255U, 10000U}) {
         gi::SurfaceUpdateContext context;
         context.frame = 1000;
@@ -90,24 +101,19 @@ CY_TEST_CASE("the surface cache's selection is the full sort's, budget for budge
         CY_REQUIRE(
             gi::SurfaceCache::select({all.data(), all.size()}, context, false, selected, report)
                 .has_value());
-        const std::vector<u32> expected = full_sort(all, 1000, 240, budget);
-        CY_REQUIRE_EQ(selected.size(), expected.size());
-        for (std::size_t index = 0; index < expected.size(); ++index) {
-            CY_CHECK_EQ(selected[index], expected[index]);
+        const std::size_t kept = std::min<std::size_t>(ranking.size(), budget);
+        CY_REQUIRE_EQ(selected.size(), kept);
+        std::vector<bool> chosen(all.size(), false);
+        for (std::size_t index = 0; index < kept; ++index) {
+            CY_CHECK_EQ(selected[index], ranking[index]);
+            chosen[ranking[index]] = true;
         }
         // The report: the live count, the invalid count, and the oldest page left out.
-        u32 live = 0;
-        u32 invalid = 0;
-        for (const gi::SurfacePage& page : all) {
-            live += page.live ? 1U : 0U;
-            invalid += page.live && !page.valid ? 1U : 0U;
-        }
         CY_CHECK_EQ(report.queue_depth, live);
         CY_CHECK_EQ(report.pages_invalid, invalid);
         u64 oldest = 0;
         for (u32 handle = 0; handle < all.size(); ++handle) {
-            const bool chosen = std::ranges::find(expected, handle) != expected.end();
-            if (all[handle].live && !chosen) {
+            if (all[handle].live && !chosen[handle]) {
                 oldest = std::max<u64>(oldest, 1000U - all[handle].last_update_frame);
             }
         }
