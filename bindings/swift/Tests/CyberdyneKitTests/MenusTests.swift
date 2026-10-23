@@ -109,8 +109,10 @@ final class MenusTests: XCTestCase {
                 return CY_RESULT_OK
             }
             table.video_modes = { _, out, capacity, count in
-                let modes = [CyVideoMode(width: 1280, height: 720),
-                             CyVideoMode(width: 1920, height: 1080)]
+                let modes = [
+                    CyVideoMode(width: 1280, height: 720),
+                    CyVideoMode(width: 1920, height: 1080),
+                ]
                 count?.pointee = UInt32(modes.count)
                 if let out {
                     for index in 0..<min(Int(capacity), modes.count) { out[index] = modes[index] }
@@ -119,9 +121,10 @@ final class MenusTests: XCTestCase {
             }
             table.user_data_write = { _, name, bytes, size in
                 guard let name else { return CY_RESULT_INVALID_ARGUMENT }
-                let data = bytes.map {
-                    Array(UnsafeRawBufferPointer(start: $0, count: Int(size)))
-                } ?? []
+                let data =
+                    bytes.map {
+                        Array(UnsafeRawBufferPointer(start: $0, count: Int(size)))
+                    } ?? []
                 Seen.files[String(cString: name)] = data
                 return CY_RESULT_OK
             }
@@ -132,7 +135,9 @@ final class MenusTests: XCTestCase {
                 size?.pointee = UInt64(data.count)
                 if let buffer {
                     let count = min(Int(capacity), data.count)
-                    data.withUnsafeBytes { buffer.copyMemory(from: $0.baseAddress!, byteCount: count) }
+                    data.withUnsafeBytes {
+                        buffer.copyMemory(from: $0.baseAddress!, byteCount: count)
+                    }
                 }
                 return CY_RESULT_OK
             }
