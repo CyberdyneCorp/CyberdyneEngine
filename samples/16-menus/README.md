@@ -66,8 +66,13 @@ Measured on this machine (GeForce RTX 5060, Development build): a frame (game, i
 6.4 ms on average over 756 timed frames, and the interface's flatten and submit 0.035 ms of it. The
 headless run of both scripts takes 2.5 s.
 
-![The rebind dialog](../../docs/design/images/menus-settings-rebind.png)
-![An item dragged with the pointer](../../docs/design/images/menus-inventory-drag.png)
+| ![The audio tab](../../docs/design/images/menus-settings-audio.png) | ![The rebind dialog](../../docs/design/images/menus-settings-rebind.png) |
+|---|---|
+| ![An item dragged with the pointer](../../docs/design/images/menus-inventory-drag.png) | ![The main menu after a save in the editor](../../docs/design/images/menus-main-menu-reloaded.png) |
+
+*The audio tab after two steps on Master and one on Music; the rebind dialog listening for Jump; a
+potion dragged by the pointer at 1920x1080; and the main menu after `edit` saved "remade" over its
+subtitle while the game ran.*
 
 [A video](../../docs/design/videos/menus-gamepad.mp4) of `navigate.script`, recorded with
 `--record` and encoded with ffmpeg.
