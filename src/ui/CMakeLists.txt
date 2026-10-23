@@ -50,7 +50,11 @@ endif()
 #   text/     cy::ui-text     the text painter over cy::servers-text and the built-in font
 #   render/   cy::ui-render   the primitive stream drawn on the device, at the frame's UI stage
 #   console/  cy::ui-console  the developer console, the first first-party consumer
-# cy::ui itself still names neither a font server nor a device. All three are behind CY_UI with it.
+#   toolkit/  cy::ui-toolkit  the widget toolkit: widgets, focus, styles, animation, documents
+#   input/    cy::ui-input    the toolkit driven by the input server's actions and focus layers
+# cy::ui itself still names neither a font server nor a device. All five are behind CY_UI with it.
 add_subdirectory(text)
 add_subdirectory(render)
 add_subdirectory(console)
+add_subdirectory(toolkit)
+add_subdirectory(input)

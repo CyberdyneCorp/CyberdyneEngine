@@ -82,6 +82,16 @@ enum class StyleProperty : u16 {
     AspectRatio,
     Display,
     TransitionDuration,
+    // --- Appended with the toolkit (issue #91, stage 5) ------------------------------------------
+    /// `ease`, `linear`, `ease-in`, `ease-out`, `ease-in-out`, `spring`. Read by the toolkit's
+    /// transitions; the cascade carries it like any other keyword.
+    TransitionTimingFunction,
+    /// Seconds before a state transition starts.
+    TransitionDelay,
+    /// The render transform (`PaintData::translate` and `scale`): paint-only, never layout.
+    TranslateX,
+    TranslateY,
+    Scale,
     Count,
 };
 

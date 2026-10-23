@@ -49,6 +49,11 @@ constexpr PropertyRow kProperties[] = {
     {"aspect-ratio", StyleProperty::AspectRatio, false},
     {"display", StyleProperty::Display, false},
     {"transition-duration", StyleProperty::TransitionDuration, false},
+    {"transition-timing-function", StyleProperty::TransitionTimingFunction, false},
+    {"transition-delay", StyleProperty::TransitionDelay, false},
+    {"translate-x", StyleProperty::TranslateX, false},
+    {"translate-y", StyleProperty::TranslateY, false},
+    {"scale", StyleProperty::Scale, false},
 };
 
 [[nodiscard]] bool is_space(char byte) noexcept {
@@ -100,6 +105,12 @@ constexpr PropertyRow kProperties[] = {
     } else {
         return false;
     }
+    // PREMULTIPLIED HERE, ONCE: every colour in CyberUI is, and the device blends `One,
+    // OneMinusSourceAlpha`. A straight `#ff000080` written through unscaled would put a red of 255
+    // under an alpha of 128 and add light rather than blend it.
+    for (u32 index = 0; index < 3U; ++index) {
+        channels[index] = ((channels[index] * channels[3]) + 127U) / 255U;
+    }
     out = (channels[3] << 24U) | (channels[0] << 16U) | (channels[1] << 8U) | channels[2];
     return true;
 }
@@ -139,7 +150,10 @@ constexpr PropertyRow kProperties[] = {
     // DIVERGENCE 2: a bare number and `px` are the same thing, and both are REFERENCE UNITS. `em`,
     // `%` and the viewport units are not in the subset, so they are refused rather than guessed.
     const std::string_view rest = text.substr(cursor);
-    if (!rest.empty() && rest != "px") {
+    // Durations take CSS's `s` and `ms`, and are held in seconds.
+    if (rest == "ms") {
+        value *= 0.001F;
+    } else if (!rest.empty() && rest != "px" && rest != "s") {
         return false;
     }
     out = value * sign;
@@ -825,9 +839,20 @@ bool apply_style(const ResolvedStyle& style, LayoutInput& layout, PaintData& pai
                 // flag still gets nothing drawn.
                 layout_changed = true;
                 break;
+            case StyleProperty::TranslateX:
+                paint.translate.x = property.value.number;
+                break;
+            case StyleProperty::TranslateY:
+                paint.translate.y = property.value.number;
+                break;
+            case StyleProperty::Scale:
+                paint.scale = property.value.number;
+                break;
             case StyleProperty::FontSize:
             case StyleProperty::FontFamily:
             case StyleProperty::TransitionDuration:
+            case StyleProperty::TransitionTimingFunction:
+            case StyleProperty::TransitionDelay:
             case StyleProperty::Count:
                 break;
         }

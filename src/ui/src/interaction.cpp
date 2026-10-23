@@ -51,6 +51,62 @@ namespace {
     return along + (across * 2.0F);
 }
 
+/// Whether an element is drawn at all: it and every ancestor visible and not collapsed. A control
+/// on a tab page that is not shown is not a place focus may go, whatever its own flags say.
+[[nodiscard]] bool shown(const ElementStore& store, ElementId element) noexcept {
+    for (ElementId walk = element; walk.is_valid();) {
+        const ElementFlags flags = store.flags(walk);
+        if (!has_flag(flags, ElementFlags::Visible) || has_flag(flags, ElementFlags::Collapsed)) {
+            return false;
+        }
+        const Hierarchy* node = store.hierarchy(walk);
+        if (node == nullptr) {
+            return false;
+        }
+        walk = node->parent;
+    }
+    return true;
+}
+
+/// Whether focus may land on `element` at all, before the layer's scope is considered.
+[[nodiscard]] bool takes_focus(const ElementStore& store, ElementId element) noexcept {
+    const ElementFlags flags = store.flags(element);
+    return has_flag(flags, ElementFlags::Focusable) && !has_flag(flags, ElementFlags::Disabled) &&
+           shown(store, element);
+}
+
+/// Every element under `root` in document order — a parent before its children, children in
+/// order — appended to `out`.
+[[nodiscard]] Status document_order(const ElementStore& store, ElementId root,
+                                    Array<ElementId>& out) noexcept {
+    Array<ElementId> stack(store.allocator());
+    if (Status pushed = stack.push_back(root); !pushed) {
+        return pushed;
+    }
+    while (!stack.empty()) {
+        const ElementId element = stack[stack.size() - 1];
+        stack.pop_back();
+        const Hierarchy* node = store.hierarchy(element);
+        if (node == nullptr) {
+            continue;
+        }
+        if (Status pushed = out.push_back(element); !pushed) {
+            return pushed;
+        }
+        for (ElementId child = node->last_child; child.is_valid();) {
+            const Hierarchy* child_node = store.hierarchy(child);
+            if (child_node == nullptr) {
+                break;
+            }
+            if (Status pushed = stack.push_back(child); !pushed) {
+                return pushed;
+            }
+            child = child_node->previous_sibling;
+        }
+    }
+    return ok();
+}
+
 }  // namespace
 
 const char* ui_action_name(UiAction action) noexcept {
@@ -77,6 +133,10 @@ const char* ui_action_name(UiAction action) noexcept {
             return "UI.ScrollUp";
         case UiAction::ScrollDown:
             return "UI.ScrollDown";
+        case UiAction::FocusNext:
+            return "UI.FocusNext";
+        case UiAction::FocusPrevious:
+            return "UI.FocusPrevious";
         case UiAction::Count:
             break;
     }
@@ -298,10 +358,9 @@ ElementId Interaction::navigate(const ElementStore& store, UiAction direction) n
             if (element == focus_) {
                 continue;
             }
-            const ElementFlags flags = store.flags(element);
-            if (!has_flag(flags, ElementFlags::Focusable) ||
-                has_flag(flags, ElementFlags::Disabled) ||
-                !has_flag(flags, ElementFlags::Visible)) {
+            // A control inside a collapsed or hidden ancestor — a tab page not shown, a closed
+            // drop-down — is not in that direction, however near its stale rect is.
+            if (!takes_focus(store, element)) {
                 continue;
             }
             if (!within_layer(store, element, scope)) {
@@ -323,6 +382,48 @@ ElementId Interaction::navigate(const ElementStore& store, UiAction direction) n
     }
     if (best.is_valid() && set_focus(store, best)) {
         return focus_;
+    }
+    return focus_;
+}
+
+ElementId Interaction::focus_next(const ElementStore& store, bool reverse) noexcept {
+    const Layer* top = top_layer();
+    Array<ElementId> order(store.allocator());
+    if (top != nullptr && top->behaviour.captures_focus && top->root.is_valid()) {
+        if (!document_order(store, top->root, order)) {
+            return focus_;
+        }
+    } else {
+        for (const ElementId root : store.roots()) {
+            if (!document_order(store, root, order)) {
+                return focus_;
+            }
+        }
+    }
+    // The candidates, in order; the current focus's position among ALL elements decides where the
+    // walk starts, so focus on an element that is itself no longer focusable still moves onwards.
+    const usize count = order.size();
+    usize start = count;
+    for (usize index = 0; index < count; ++index) {
+        if (order[index] == focus_) {
+            start = index;
+            break;
+        }
+    }
+    for (usize step = 1; step <= count; ++step) {
+        usize index = 0;
+        if (start == count) {
+            index = reverse ? (count - step) : (step - 1);
+        } else {
+            index = reverse ? ((start + count - step) % count) : ((start + step) % count);
+        }
+        const ElementId candidate = order[index];
+        if (candidate == focus_ || !takes_focus(store, candidate)) {
+            continue;
+        }
+        if (set_focus(store, candidate)) {
+            return focus_;
+        }
     }
     return focus_;
 }
@@ -504,6 +605,12 @@ Expected<RouteResult, Error> Interaction::route_pointer(ElementStore& store,
 Expected<RouteResult, Error> Interaction::route_action(ElementStore& store,
                                                        UiAction action) noexcept {
     RouteResult result;
+    if (action == UiAction::FocusNext || action == UiAction::FocusPrevious) {
+        result.target = focus_next(store, action == UiAction::FocusPrevious);
+        result.layer =
+            layers_.empty() ? RouteResult::kNoLayer : static_cast<u32>(layers_.size() - 1);
+        return result;
+    }
     if (is_navigation(action)) {
         result.target = navigate(store, action);
         result.layer =
