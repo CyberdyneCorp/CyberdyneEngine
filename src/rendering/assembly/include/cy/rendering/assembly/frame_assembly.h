@@ -378,6 +378,10 @@ struct FrameSinks {
     /// The device's light assignment and the stochastic many-light path. Appended.
     FrameStageDeclaration cluster_assignment;
     FrameStageDeclaration many_lights;
+    /// The producer that declares the interface's HDR composite — a second
+    /// `ui::render::UiRenderer`, created for the frame's colour format, through its `stage()`. It
+    /// draws an HDR document before bloom and the tone curve. Null: no such stage. Appended.
+    FrameStageDeclaration ui_hdr;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
