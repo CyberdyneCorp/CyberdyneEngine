@@ -1,0 +1,9 @@
+cyui 1
+stylesheet "ui/menus.cyss"
+panel #pause-screen .overlay anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]
+  column #pause .menu-panel anchor=[0.5, 0.5, 0.5, 0.5] offset=[-170, -165, 170, 165]
+    label #pause-title .title text="Paused"
+    button #resume .menu-button .primary text="Resume"
+    button #open-inventory .menu-button text="Inventory"
+    button #pause-settings .menu-button text="Settings"
+    button #to-main-menu .menu-button text="Main menu"

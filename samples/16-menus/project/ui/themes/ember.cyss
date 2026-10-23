@@ -1,0 +1,122 @@
+/* samples/16-menus: the built-in theme in warm colours, to show a theme switched. */
+:root {
+    --text: #e6e9ef;
+    --muted: #8a93a6;
+    --surface: #231c18;
+    --raised: #3a2c22;
+    --hover: #5a4030;
+    --sunken: #12151b;
+    --line: #5c4636;
+    --accent: #e0742c;
+    --good: #3ccf91;
+}
+label, rich-text, button-label, toggle-label, checkbox-label, radio-label, option-label,
+list-row-label, text-value, dialog-title, tooltip-label { color: var(--text); }
+.panel {
+    background-color: var(--surface); border-color: var(--line); border-width: 1;
+    corner-radius: 6; padding-left: 10; padding-top: 10; padding-right: 10; padding-bottom: 10;
+}
+row { gap: 6; }
+column { gap: 6; }
+grid { gap: 6; }
+button {
+    background-color: var(--raised); border-color: var(--line); border-width: 1; corner-radius: 4;
+    padding-left: 10; padding-right: 10; padding-top: 4; padding-bottom: 4; min-height: 24;
+    transition-duration: 0.1s; transition-timing-function: ease-out;
+}
+button:hover { background-color: var(--hover); }
+button:active { background-color: #22334f; }
+button:disabled { opacity: 0.45; }
+.primary { background-color: var(--accent); border-color: var(--accent); }
+.primary:hover { background-color: #5a9dff; }
+.danger { background-color: #8c2f39; border-color: #b23a48; }
+.danger:hover { background-color: #a8384a; }
+toggle { gap: 6; min-height: 24; }
+toggle-track {
+    width: 34; height: 18; corner-radius: 9; background-color: var(--line);
+    transition-duration: 0.12s;
+}
+toggle-track:checked { background-color: var(--accent); }
+toggle-knob { corner-radius: 7; background-color: var(--text); }
+checkbox { gap: 6; min-height: 24; }
+checkbox-box {
+    width: 16; height: 16; corner-radius: 3; border-width: 1; border-color: #5a6478;
+    background-color: #20252f;
+}
+checkbox-box:checked { background-color: var(--accent); border-color: var(--accent); }
+checkbox-mark { background-color: #ffffff; corner-radius: 1; }
+radio-group { gap: 4; }
+radio { gap: 6; min-height: 24; }
+radio-ring {
+    width: 16; height: 16; corner-radius: 8; border-width: 1; border-color: #5a6478;
+    background-color: #20252f;
+}
+radio-ring:checked { border-color: var(--accent); }
+radio-dot { background-color: var(--accent); corner-radius: 4; }
+slider { height: 24; min-width: 140; }
+slider-track { background-color: var(--line); corner-radius: 2; }
+slider-fill { background-color: var(--accent); corner-radius: 2; }
+slider-thumb {
+    background-color: var(--text); corner-radius: 7; border-width: 1; border-color: var(--surface);
+}
+slider-thumb:hover { background-color: #ffffff; }
+progress-bar { height: 10; min-width: 140; background-color: var(--raised); corner-radius: 5; }
+progress-fill { background-color: var(--good); corner-radius: 5; }
+text-field {
+    height: 24; min-width: 180; background-color: var(--sunken); border-width: 1;
+    border-color: var(--line); corner-radius: 4; padding-left: 6; padding-right: 6;
+}
+text-field:focus { border-color: var(--accent); }
+text-placeholder { color: #6b7488; }
+text-caret { background-color: var(--text); }
+text-selection { background-color: #3d8bfd70; }
+text-composition { background-color: var(--text); }
+dropdown {
+    height: 24; min-width: 160; background-color: var(--raised); border-width: 1;
+    border-color: var(--line); corner-radius: 4; padding-left: 8; padding-right: 8; gap: 6;
+}
+dropdown:hover { background-color: var(--hover); }
+dropdown-label { color: var(--text); flex-grow: 1; }
+dropdown-arrow { color: var(--muted); }
+dropdown-popup {
+    background-color: #20252f; border-width: 1; border-color: var(--line); corner-radius: 4;
+    padding-top: 2; padding-bottom: 2;
+}
+option { height: 22; padding-left: 8; padding-right: 8; }
+option:hover { background-color: var(--hover); }
+option:checked { background-color: #2d4a7a; }
+list-view {
+    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;
+    min-height: 88; min-width: 180;
+}
+list-row:hover { background-color: var(--raised); }
+list-row:checked { background-color: #2d4a7a; }
+list-thumb { background-color: #5a647899; corner-radius: 2; }
+scroll-thumb { background-color: #5a647899; corner-radius: 2; }
+scroll-content { gap: 6; }
+scroll-view {
+    background-color: var(--sunken); border-width: 1; border-color: var(--line); corner-radius: 4;
+    padding-left: 6; padding-top: 4; padding-right: 10; padding-bottom: 4;
+}
+tab-bar { gap: 2; }
+tab {
+    background-color: #20252f; corner-radius: 4; padding-left: 10; padding-right: 10;
+    padding-top: 4; padding-bottom: 4; min-height: 24;
+}
+tab:hover { background-color: var(--raised); }
+tab:checked { background-color: var(--hover); }
+tab-label { color: var(--muted); }
+tab-label:checked { color: var(--text); }
+tab-pages { padding-top: 8; }
+dialog-backdrop { background-color: #00000099; }
+dialog {
+    background-color: var(--surface); border-width: 1; border-color: var(--line); corner-radius: 8;
+    padding-left: 16; padding-top: 14; padding-right: 16; padding-bottom: 14; gap: 10;
+    min-width: 280;
+}
+dialog-body { gap: 8; }
+focus-ring { border-width: 2; border-color: #ffd34d; corner-radius: 6; }
+tooltip {
+    background-color: #0d0f13; border-width: 1; border-color: var(--line); corner-radius: 3;
+    padding-left: 6; padding-top: 3; padding-right: 6; padding-bottom: 3;
+}
