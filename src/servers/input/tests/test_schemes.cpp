@@ -221,3 +221,61 @@ CY_TEST_CASE("input: a composite element can be rebound on its own") {
     fixture.server.resolve_tick(3, 30 * kMs, 1.0F / 60.0F);
     CY_CHECK_NEAR(fixture.server.user(0).action_state(move).value.axis.y, 1.0F, 1e-5F);
 }
+
+CY_TEST_CASE("input: any action of a context is rebound at its own slot, not the first action's") {
+    // Regression: an override's slot counted the bindings of every action before it in the scheme,
+    // so a second action's primary binding was slot 4, not 0, and a rebinding menu's override for
+    // it — stored at slot 0, as `BindingOverride` documents — never applied.
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    const ActionId jump = fixture.declare("Jump", 1, ActionValueType::Digital);
+    const ActionId fire = fixture.declare("Fire", 2, ActionValueType::Digital);
+    const DeviceId keyboard = fixture.attach(DeviceKind::Keyboard);
+    const DeviceId pad = fixture.attach(DeviceKind::Gamepad);
+    MappingContext context(allocator());
+    CY_REQUIRE(context.add(simple(jump, key_control(Key::Space))).has_value());
+    CY_REQUIRE(context.add(simple(jump, gamepad_control(GamepadControl::South))).has_value());
+    CY_REQUIRE(context.add(simple(fire, key_control(Key::F))).has_value());
+    CY_REQUIRE(context.add(simple(fire, key_control(Key::Enter))).has_value());
+    CY_REQUIRE(context.add(simple(fire, gamepad_control(GamepadControl::West))).has_value());
+    CY_REQUIRE(fixture.install(std::move(context)));
+
+    InputUser& user = fixture.server.user(0);
+    CY_REQUIRE(user.profile()
+                   .set(BindingOverride{ActionStableId{2}, SchemeKind::KeyboardMouse, 0,
+                                        key_control(Key::G)})
+                   .has_value());
+    CY_REQUIRE(user.profile()
+                   .set(BindingOverride{ActionStableId{2}, SchemeKind::Gamepad, 0,
+                                        gamepad_control(GamepadControl::North)})
+                   .has_value());
+    user.invalidate();
+    CY_REQUIRE(fixture.server.refresh_user(0).has_value());
+
+    // The table in effect, as a menu reads it: Fire's primary key is G, its second still Enter.
+    Control control;
+    CY_REQUIRE(user.binding_control(fire, SchemeKind::KeyboardMouse, 0, control));
+    CY_CHECK(control == key_control(Key::G));
+    CY_REQUIRE(user.binding_control(fire, SchemeKind::KeyboardMouse, kMaxComponents, control));
+    CY_CHECK(control == key_control(Key::Enter));
+    CY_REQUIRE(user.binding_control(fire, SchemeKind::Gamepad, 0, control));
+    CY_CHECK(control == gamepad_control(GamepadControl::North));
+    CY_REQUIRE(user.binding_control(jump, SchemeKind::KeyboardMouse, 0, control));
+    CY_CHECK(control == key_control(Key::Space));
+    CY_CHECK_FALSE(user.binding_control(jump, SchemeKind::KeyboardMouse, kMaxComponents, control));
+
+    // And who holds a control, authored bindings included.
+    ActionId holder = kInvalidAction;
+    cy::u8 slot = 0xFF;
+    CY_REQUIRE(user.holder_of(key_control(Key::Enter), SchemeKind::KeyboardMouse, holder, slot));
+    CY_CHECK_EQ(holder, fire);
+    CY_CHECK_EQ(slot, kMaxComponents);
+    CY_CHECK_FALSE(user.holder_of(key_control(Key::F), SchemeKind::KeyboardMouse, holder, slot));
+
+    // The player's G fires; the authored F no longer does.
+    fixture.press(keyboard, key_control(Key::G), 2 * kMs);
+    fixture.press(pad, gamepad_control(GamepadControl::North), 3 * kMs);
+    fixture.server.resolve_tick(1, 10 * kMs, 1.0F / 60.0F);
+    CY_CHECK(user.action_state(fire).pressed());
+    CY_CHECK_FALSE(user.action_state(jump).pressed());
+}
