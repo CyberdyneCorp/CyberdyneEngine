@@ -149,6 +149,25 @@ void record_fn(const PassContext& context, void* user) noexcept {
     static_cast<UiRenderer*>(user)->record(context);
 }
 
+/// The group a draw samples, or `kMaxOpacityGroups` when it samples an uploaded page.
+[[nodiscard]] u32 sampled_group(const UiDraw& draw) noexcept {
+    return samples_group(draw.atlas) ? static_cast<u32>(draw.atlas - kFirstGroupAtlas)
+                                     : kMaxOpacityGroups;
+}
+
+/// Declare a read of every group target `draws` sample, once each.
+void read_sampled_groups(rendering::PassBuilder& builder, Span<const UiDraw> draws,
+                         const ResourceId (&targets)[kMaxOpacityGroups], u32 group_count) noexcept {
+    bool declared[kMaxOpacityGroups] = {};
+    for (const UiDraw& draw : draws) {
+        const u32 group = sampled_group(draw);
+        if (group < group_count && !declared[group]) {
+            builder.read(targets[group], Access::FragmentSampledRead);
+            declared[group] = true;
+        }
+    }
+}
+
 }  // namespace
 
 UiRenderer::UiRenderer(Allocator& allocator) noexcept : allocator_(&allocator), list_(allocator) {}
@@ -237,29 +256,21 @@ Status UiRenderer::create_pipeline() noexcept {
     }
     layout_ = *created;
 
-    // PREMULTIPLIED, as the shader writes it: `One, OneMinusSourceAlpha` puts an opaque colour's
-    // bytes into the output exactly and blends a translucent one over what is there.
-    rhi::ColorAttachmentState color;
-    color.format = desc_.output_format;
-    color.blend_enable = true;
-    color.source_color = rhi::BlendFactor::One;
-    color.destination_color = rhi::BlendFactor::OneMinusSourceAlpha;
-    color.source_alpha = rhi::BlendFactor::One;
-    color.destination_alpha = rhi::BlendFactor::OneMinusSourceAlpha;
-    rhi::GraphicsPipelineDescription description;
-    description.name = "cy ui";
-    description.layout = layout_;
-    description.vertex_shader = vertex_;
-    description.fragment_shader = fragment_;
-    description.color_attachments = Span<const rhi::ColorAttachmentState>(&color, 1);
-    description.rasterisation.cull_mode = rhi::CullMode::None;
-    description.depth_stencil.format = rhi::Format::Undefined;
     Expected<rhi::GraphicsPipelineHandle, Error> pipeline =
-        device_->create_graphics_pipeline(description);
+        make_pipeline(desc_.output_format, "cy ui");
     if (!pipeline.has_value()) {
         return make_unexpected(pipeline.error());
     }
     pipeline_ = *pipeline;
+    if (group_format() == desc_.output_format) {
+        group_pipeline_ = pipeline_;
+    } else {
+        pipeline = make_pipeline(group_format(), "cy ui opacity group");
+        if (!pipeline.has_value()) {
+            return make_unexpected(pipeline.error());
+        }
+        group_pipeline_ = *pipeline;
+    }
 
     rhi::SamplerDescription sampler;
     sampler.name = "cy ui point clamp";
@@ -283,6 +294,40 @@ Status UiRenderer::create_pipeline() noexcept {
     }
     linear_sampler_ = *linear;
     return ok();
+}
+
+Expected<rhi::GraphicsPipelineHandle, Error> UiRenderer::make_pipeline(rhi::Format format,
+                                                                       const char* name) noexcept {
+    // PREMULTIPLIED, as the shader writes it: `One, OneMinusSourceAlpha` puts an opaque colour's
+    // bytes into the output exactly and blends a translucent one over what is there.
+    rhi::ColorAttachmentState color;
+    color.format = format;
+    color.blend_enable = true;
+    color.source_color = rhi::BlendFactor::One;
+    color.destination_color = rhi::BlendFactor::OneMinusSourceAlpha;
+    color.source_alpha = rhi::BlendFactor::One;
+    color.destination_alpha = rhi::BlendFactor::OneMinusSourceAlpha;
+    rhi::GraphicsPipelineDescription description;
+    description.name = name;
+    description.layout = layout_;
+    description.vertex_shader = vertex_;
+    description.fragment_shader = fragment_;
+    description.color_attachments = Span<const rhi::ColorAttachmentState>(&color, 1);
+    description.rasterisation.cull_mode = rhi::CullMode::None;
+    description.depth_stencil.format = rhi::Format::Undefined;
+    return device_->create_graphics_pipeline(description);
+}
+
+rhi::Format UiRenderer::group_format() const noexcept {
+    switch (desc_.output_format) {
+        case rhi::Format::Rgba8Unorm:
+        case rhi::Format::Rgba8Srgb:
+        case rhi::Format::Bgra8Unorm:
+        case rhi::Format::Bgra8Srgb:
+            return rhi::Format::Rgba8Unorm;
+        default:
+            return desc_.output_format;
+    }
 }
 
 Status UiRenderer::create_buffers() noexcept {
@@ -371,6 +416,10 @@ void UiRenderer::destroy() noexcept {
             *sampler = rhi::SamplerHandle{};
         }
     }
+    if (!group_pipeline_.is_null() && group_pipeline_ != pipeline_) {
+        device.destroy_graphics_pipeline(group_pipeline_);
+    }
+    group_pipeline_ = rhi::GraphicsPipelineHandle{};
     if (!pipeline_.is_null()) {
         device.destroy_graphics_pipeline(pipeline_);
         pipeline_ = rhi::GraphicsPipelineHandle{};
@@ -508,19 +557,68 @@ PassId UiRenderer::declare(RenderGraph& graph, const ScreenSpaceStageInputs& inp
     if (!list_.rows.empty()) {
         std::memcpy(rows, list_.rows.data(), list_.rows.size() * sizeof(GpuUiPrimitive));
     }
+    // The main stream's draws first, then every group's: one indirect argument per draw.
     for (usize index = 0; index < list_.draws.size(); ++index) {
         arguments[index] = IndirectArguments{kQuadIndices, list_.draws[index].count, 0, 0, 0};
     }
+    for (usize index = 0; index < list_.group_draws.size(); ++index) {
+        arguments[list_.draws.size() + index] =
+            IndirectArguments{kQuadIndices, list_.group_draws[index].count, 0, 0, 0};
+    }
 
     target_ = inputs.target;
-    return graph.add_pass("ui", QueueKind::Graphics)
-        .use(target_, Access::ColorAttachmentReadWrite)
-        .record(&record_fn, this)
-        .id();
+    if (!declare_groups(graph)) {
+        return rendering::kInvalidPass;
+    }
+    rendering::PassBuilder builder = graph.add_pass("ui", QueueKind::Graphics);
+    builder.use(target_, Access::ColorAttachmentReadWrite);
+    read_sampled_groups(builder, list_.draws.span(), group_targets_,
+                        static_cast<u32>(list_.groups.size()));
+    return builder.record(&record_fn, this).id();
 }
 
-Expected<rhi::DescriptorSetHandle, Error> UiRenderer::set_for(u16 page, u32 slot) noexcept {
-    const AtlasPage& bound = has_atlas(page) ? pages_[page] : pages_[0];
+bool UiRenderer::declare_groups(RenderGraph& graph) noexcept {
+    const auto count = static_cast<u32>(list_.groups.size());
+    if (count > kMaxOpacityGroups) {
+        return false;
+    }
+    report_.groups = count;
+    for (u32 group = 0; group < count; ++group) {
+        rendering::TextureRequest request;
+        request.name = "ui opacity group";
+        request.format = group_format();
+        request.width = desc_.width;
+        request.height = desc_.height;
+        group_targets_[group] = graph.create_texture(request);
+        group_passes_[group] = GroupPass{this, group};
+        const UiGroupTarget& target = list_.groups[group];
+        rendering::PassBuilder builder = graph.add_pass("ui opacity group", QueueKind::Graphics);
+        builder.write(group_targets_[group], Access::ColorAttachmentWrite);
+        read_sampled_groups(builder,
+                            list_.group_draws.span().subspan(target.first_draw, target.draw_count),
+                            group_targets_, group);
+        builder.record(
+            [](const PassContext& context, void* user) noexcept {
+                const auto* pass = static_cast<const GroupPass*>(user);
+                pass->renderer->record_group(context, pass->group);
+            },
+            &group_passes_[group]);
+    }
+    return graph.status().has_value();
+}
+
+Expected<rhi::DescriptorSetHandle, Error> UiRenderer::set_for(const PassContext& context,
+                                                              u16 page, u32 slot) noexcept {
+    // An opacity group's composite samples the group's target, which this frame's graph made.
+    rhi::TextureViewHandle view = (has_atlas(page) ? pages_[page] : pages_[0]).view;
+    if (samples_group(page)) {
+        const u32 group = page - kFirstGroupAtlas;
+        if (group >= list_.groups.size()) {
+            return make_unexpected(
+                Error{ErrorCode::InvalidArgument, "ui renderer: no such opacity group", 0});
+        }
+        view = context.executor->view(group_targets_[group]);
+    }
     Expected<rhi::DescriptorSetHandle, Error> set =
         device_->allocate_descriptor_set(set_layout_, true);
     if (!set.has_value()) {
@@ -532,7 +630,7 @@ Expected<rhi::DescriptorSetHandle, Error> UiRenderer::set_for(u16 page, u32 slot
     writes[0].buffer = rows_[slot];
     writes[1].binding = 1;
     writes[1].kind = rhi::DescriptorKind::SampledTexture;
-    writes[1].texture_view = bound.view;
+    writes[1].texture_view = view;
     writes[1].use = rhi::ImageUse::SampledRead;
     writes[2].binding = 2;
     writes[2].kind = rhi::DescriptorKind::Sampler;
@@ -563,21 +661,54 @@ void UiRenderer::record(const PassContext& context) noexcept {
 
     rhi::CommandBuffer& commands = *context.commands;
     commands.begin_rendering(info);
+    commands.bind_graphics_pipeline(pipeline_);
+    issue(context, list_.draws.span(), 0, flags_);
+    commands.end_rendering();
+    report_.recorded = true;
+}
+
+void UiRenderer::record_group(const PassContext& context, u32 group) noexcept {
+    if (group >= list_.groups.size()) {
+        return;
+    }
+    // A CLEARED target: whatever the group does not cover is transparent, and its composite adds
+    // nothing there.
+    rhi::RenderAttachment target;
+    target.view = context.executor->view(group_targets_[group]);
+    target.load = rhi::LoadOp::Clear;
+    target.store = rhi::StoreOp::Store;
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, desc_.width, desc_.height};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&target, 1);
+    const UiGroupTarget& own = list_.groups[group];
+
+    rhi::CommandBuffer& commands = *context.commands;
+    commands.begin_rendering(info);
+    commands.bind_graphics_pipeline(group_pipeline_);
+    // The group's texels are its primitives' own encoding, decoded by nobody: the composite that
+    // samples them is drawn with the output's flags.
+    issue(context, list_.group_draws.span().subspan(own.first_draw, own.draw_count),
+          static_cast<u32>(list_.draws.size()) + own.first_draw, 0U);
+    commands.end_rendering();
+}
+
+void UiRenderer::issue(const PassContext& context, Span<const UiDraw> draws, u32 arguments_base,
+                       u32 flags) noexcept {
+    rhi::CommandBuffer& commands = *context.commands;
     commands.set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(desc_.width),
                                         static_cast<f32>(desc_.height), 0.0F, 1.0F});
-    commands.bind_graphics_pipeline(pipeline_);
     commands.bind_index_buffer(indices_, 0, false);
 
     UiPush push;
     push.inverse_extent[0] = 2.0F / static_cast<f32>(desc_.width);
     push.inverse_extent[1] = 2.0F / static_cast<f32>(desc_.height);
-    push.flags = flags_;
+    push.flags = flags;
     bool bound = false;
     u16 bound_page = 0;
-    for (usize index = 0; index < list_.draws.size(); ++index) {
-        const UiDraw& draw = list_.draws[index];
+    for (usize index = 0; index < draws.size(); ++index) {
+        const UiDraw& draw = draws[index];
         if (!bound || draw.atlas != bound_page) {
-            Expected<rhi::DescriptorSetHandle, Error> set = set_for(draw.atlas, slot_);
+            Expected<rhi::DescriptorSetHandle, Error> set = set_for(context, draw.atlas, slot_);
             if (!set.has_value()) {
                 break;
             }
@@ -593,12 +724,11 @@ void UiRenderer::record(const PassContext& context) noexcept {
         push.first = draw.first;
         commands.push_constants(layout_, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
                                 Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
-        commands.draw_indexed_indirect(arguments_[slot_], index * sizeof(IndirectArguments), 1,
+        commands.draw_indexed_indirect(arguments_[slot_],
+                                       (arguments_base + index) * sizeof(IndirectArguments), 1,
                                        sizeof(IndirectArguments));
         ++report_.draws;
     }
-    commands.end_rendering();
-    report_.recorded = true;
 }
 
 }  // namespace cy::ui::render

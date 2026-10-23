@@ -23,12 +23,15 @@
 //
 // --- HOT RELOAD ---------------------------------------------------------------------------------
 //
-// `DocumentHost` watches the document's file, and every sheet and document it reaches, with the
-// engine's polling `FileWatcher`, and reloads on a settled change. A document that no longer parses
-// keeps the interface it had and reports why — `core-assets-and-io`'s "reload failure keeps the old
-// asset". The editor saving the file is the change; nothing else needs to know a reload happened.
+// `DocumentHost` reads the document through the engine's virtual file system — the project mount
+// the editor saves into, a package, or memory — and watches it, and every sheet and document it
+// reaches, with the engine's polling `FileWatcher`. A change that has settled reloads. A document
+// that no longer parses keeps the interface it had and reports why — `core-assets-and-io`'s "reload
+// failure keeps the old asset". The editor saving the file is the change; nothing else needs to
+// know a reload happened.
 
-#include <cy/core/assets/hot_reload.h>
+#include <cy/core/assets/vfs.h>
+#include <cy/core/assets/watch.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
@@ -133,10 +136,25 @@ private:
     DocumentReport report_;
 };
 
-/// A document loaded from a file and reloaded whenever it, or anything it reaches, changes.
+/// Reads a document's paths through a virtual file system.
+class VfsDocumentResolver final : public DocumentResolver {
+public:
+    explicit VfsDocumentResolver(const assets::VirtualFileSystem& files) noexcept
+        : files_(&files) {}
+    [[nodiscard]] Status read(std::string_view path, Array<char>& out) noexcept override;
+
+private:
+    const assets::VirtualFileSystem* files_;
+};
+
+/// A document loaded from the virtual file system and reloaded whenever it, or anything it
+/// reaches, changes.
 class DocumentHost {
 public:
-    DocumentHost(Allocator& allocator, Toolkit& toolkit) noexcept;
+    /// `files` outlives the host. `settle_ns` is how long a change must hold still before it is
+    /// reloaded — the watcher's rule against reading a file an editor is half-way through saving.
+    DocumentHost(Allocator& allocator, Toolkit& toolkit, assets::VirtualFileSystem& files,
+                 i64 settle_ns = 100'000'000) noexcept;
 
     DocumentHost(const DocumentHost&) = delete;
     DocumentHost& operator=(const DocumentHost&) = delete;
@@ -144,30 +162,31 @@ public:
     DocumentHost& operator=(DocumentHost&&) = delete;
     ~DocumentHost() = default;
 
-    /// Load `path` (relative to `root`) under `parent`, its sheets applied, and watch it.
-    [[nodiscard]] Status open(std::string_view root, std::string_view path, WidgetId parent,
-                              DocumentBindings* bindings) noexcept;
-    /// Poll the watcher; reload on a settled change. True when a reload was applied; a reload that
-    /// failed leaves the interface as it was, and `instance().diagnostics()` says why.
-    [[nodiscard]] Expected<bool, Error> poll() noexcept;
+    /// Load `path` under `parent`, its sheets applied, and watch it from `now_ns`.
+    [[nodiscard]] Status open(std::string_view path, WidgetId parent, DocumentBindings* bindings,
+                              i64 now_ns = 0) noexcept;
+    /// Poll the watcher at `now_ns`; reload on a settled change. True when a reload was applied; a
+    /// reload that failed leaves the interface as it was, and `instance().diagnostics()` says why.
+    [[nodiscard]] Expected<bool, Error> poll(i64 now_ns) noexcept;
     /// Reload now, whatever the watcher says — what an editor's "reload" command does.
-    [[nodiscard]] Status reload() noexcept;
+    [[nodiscard]] Status reload(i64 now_ns = 0) noexcept;
     [[nodiscard]] DocumentInstance& instance() noexcept { return instance_; }
     [[nodiscard]] u32 reloads() const noexcept { return reloads_; }
+    [[nodiscard]] u32 failed_reloads() const noexcept { return failed_; }
 
 private:
     [[nodiscard]] Status read(Array<char>& out) noexcept;
-    [[nodiscard]] Status watch() noexcept;
+    [[nodiscard]] Status watch(i64 now_ns) noexcept;
 
     Allocator* allocator_;
-    Toolkit* toolkit_;
+    assets::VirtualFileSystem* files_;
     DocumentInstance instance_;
-    FileDocumentResolver resolver_;
-    DocumentBindings* bindings_ = nullptr;
-    Array<char> path_;
+    VfsDocumentResolver resolver_;
     assets::FileWatcher watcher_;
-    Array<assets::FileEvent> events_;
+    i64 settle_ns_;
+    Array<char> path_;
     u32 reloads_ = 0;
+    u32 failed_ = 0;
 };
 
 }  // namespace cy::ui

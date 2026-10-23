@@ -30,6 +30,7 @@ function(cy_ui_toolkit_declare_tests)
             "${tests_dir}/test_input.cpp"
             "${tests_dir}/test_style_animation.cpp"
             "${tests_dir}/test_list_binding.cpp"
+            "${tests_dir}/test_document.cpp"
         DEPENDENCIES cy::ui-toolkit)
 endfunction()
 

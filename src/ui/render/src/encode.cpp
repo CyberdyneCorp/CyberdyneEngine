@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace cy::ui::render {
 namespace {
@@ -192,6 +193,7 @@ GpuUiPrimitive encode_primitive(const Primitive& primitive, f32 scale) noexcept 
     row.shape[0] = primitive.corner_radius * scale;
     row.shape[1] = primitive.border_width * scale;
     row.shape[2] = primitive.distance_range * scale;
+    row.shape[3] = (primitive.intensity != 1.0F) ? primitive.intensity : 0.0F;
     row.colour = primitive.colour;
     row.border_colour = primitive.border_colour;
     row.material = primitive.material;
@@ -208,6 +210,7 @@ Primitive decode_primitive(const GpuUiPrimitive& row, f32 scale) noexcept {
     primitive.corner_radius = row.shape[0] * inverse;
     primitive.border_width = row.shape[1] * inverse;
     primitive.distance_range = row.shape[2] * inverse;
+    primitive.intensity = (row.shape[3] > 0.0F) ? row.shape[3] : 1.0F;
     primitive.colour = row.colour;
     primitive.border_colour = row.border_colour;
     primitive.material = static_cast<u16>(row.material);
@@ -230,20 +233,43 @@ PixelRect scissor_for(const Rect& clip, f32 scale, u32 width, u32 height) noexce
     return rect;
 }
 
-Status build_draws(const PrimitiveBuffer& buffer, f32 scale, u32 width, u32 height,
-                   UiDrawList& out) noexcept {
-    out.clear();
-    const Span<const Primitive> primitives = buffer.primitives();
-    if (Status reserved = out.rows.reserve(primitives.size()); !reserved) {
-        return reserved;
-    }
-    for (const Primitive& primitive : primitives) {
-        if (Status pushed = out.rows.push_back(encode_primitive(primitive, scale)); !pushed) {
-            return pushed;
-        }
-    }
-    const Span<const Rect> clips = buffer.clips();
-    for (const Batch& batch : buffer.batches()) {
+namespace {
+
+/// The whole pixels a region in reference units touches at `scale`, clamped to the target: grown
+/// outwards, because a group's target is transparent wherever nothing was drawn into it.
+[[nodiscard]] PixelRect pixels_covering(const Rect& region, f32 scale, u32 width,
+                                        u32 height) noexcept {
+    const u32 left = clamp_to(static_cast<i64>(std::floor(region.x * scale)), width);
+    const u32 top = clamp_to(static_cast<i64>(std::floor(region.y * scale)), height);
+    const u32 right = clamp_to(static_cast<i64>(std::ceil(region.right() * scale)), width);
+    const u32 bottom = clamp_to(static_cast<i64>(std::ceil(region.bottom() * scale)), height);
+    PixelRect rect;
+    rect.x = left;
+    rect.y = top;
+    rect.width = right > left ? right - left : 0U;
+    rect.height = bottom > top ? bottom - top : 0U;
+    return rect;
+}
+
+/// A group's composite as a row: the region in whole pixels, and the target's texels under it —
+/// the target is the frame's size, so the texel under a pixel is that pixel.
+void encode_composite(const PixelRect& region, u32 width, u32 height,
+                      GpuUiPrimitive& row) noexcept {
+    row.bounds[0] = static_cast<f32>(region.x);
+    row.bounds[1] = static_cast<f32>(region.y);
+    row.bounds[2] = static_cast<f32>(region.width);
+    row.bounds[3] = static_cast<f32>(region.height);
+    row.uv[0] = static_cast<f32>(region.x) / static_cast<f32>(width);
+    row.uv[1] = static_cast<f32>(region.y) / static_cast<f32>(height);
+    row.uv[2] = static_cast<f32>(region.width) / static_cast<f32>(width);
+    row.uv[3] = static_cast<f32>(region.height) / static_cast<f32>(height);
+}
+
+/// One draw per batch whose scissor covers a pixel, appended to `out`.
+[[nodiscard]] Status append_draws(Span<const Batch> batches, Span<const Primitive> primitives,
+                                  Span<const Rect> clips, f32 scale, u32 width, u32 height,
+                                  Array<UiDraw>& out, u32& clipped) noexcept {
+    for (const Batch& batch : batches) {
         if (batch.count == 0 || batch.first + batch.count > primitives.size()) {
             return fail(ErrorCode::InvalidArgument, "ui renderer: a batch is outside the stream");
         }
@@ -258,14 +284,65 @@ Status build_draws(const PrimitiveBuffer& buffer, f32 scale, u32 width, u32 heig
         draw.atlas = batch.atlas;
         draw.scissor = scissor_for(clips[clip], scale, width, height);
         if (draw.scissor.empty()) {
-            ++out.clipped_batches;
+            ++clipped;
             continue;
         }
-        if (Status pushed = out.draws.push_back(draw); !pushed) {
+        if (Status pushed = out.push_back(draw); !pushed) {
             return pushed;
         }
     }
     return ok();
+}
+
+}  // namespace
+
+Status build_draws(const PrimitiveBuffer& buffer, f32 scale, u32 width, u32 height,
+                   UiDrawList& out) noexcept {
+    out.clear();
+    const Span<const Primitive> primitives = buffer.primitives();
+    const Span<const OpacityGroup> groups = buffer.groups();
+    if (Status reserved = out.rows.reserve(primitives.size()); !reserved) {
+        return reserved;
+    }
+    for (const Primitive& primitive : primitives) {
+        GpuUiPrimitive row = encode_primitive(primitive, scale);
+        if (samples_group(primitive.atlas)) {
+            const u32 group = primitive.atlas - kFirstGroupAtlas;
+            if (group >= groups.size()) {
+                return fail(ErrorCode::InvalidArgument,
+                            "ui renderer: a composite names no opacity group");
+            }
+            encode_composite(pixels_covering(groups[group].bounds, scale, width, height), width,
+                             height, row);
+        }
+        if (Status pushed = out.rows.push_back(row); !pushed) {
+            return pushed;
+        }
+    }
+    const Span<const Rect> clips = buffer.clips();
+    const Span<const Batch> group_batches = buffer.group_batches();
+    for (const OpacityGroup& group : groups) {
+        if (group.first_batch + group.batch_count > group_batches.size()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "ui renderer: an opacity group's batches are outside the list");
+        }
+        UiGroupTarget target;
+        target.first_draw = static_cast<u32>(out.group_draws.size());
+        target.region = pixels_covering(group.bounds, scale, width, height);
+        if (Status appended = append_draws(group_batches.subspan(group.first_batch,
+                                                                 group.batch_count),
+                                           primitives, clips, scale, width, height,
+                                           out.group_draws, out.clipped_batches);
+            !appended) {
+            return appended;
+        }
+        target.draw_count = static_cast<u32>(out.group_draws.size()) - target.first_draw;
+        if (Status pushed = out.groups.push_back(target); !pushed) {
+            return pushed;
+        }
+    }
+    return append_draws(buffer.batches(), primitives, clips, scale, width, height, out.draws,
+                        out.clipped_batches);
 }
 
 bool shade_reference(const GpuUiPrimitive& row, u32 px, u32 py, const ReferenceAtlas* atlas,
@@ -296,16 +373,81 @@ bool shade_reference(const GpuUiPrimitive& row, u32 px, u32 py, const ReferenceA
         out[channel] = (fill[channel] * inner) + (edge[channel] * (outer - inner));
         drawn = drawn || out[channel] != 0.0F;
     }
+    // cy/ui.slang: an intensity scales the premultiplied colour, never the coverage.
+    if (row.shape[3] > 0.0F) {
+        for (usize channel = 0; channel < 3U; ++channel) {
+            out[channel] *= row.shape[3];
+        }
+    }
     return drawn;
 }
+
+namespace {
+
+/// The page a draw samples: an uploaded one, or an opacity group's target drawn earlier.
+[[nodiscard]] const ReferenceAtlas* page_for(u16 atlas, Span<const ReferenceAtlas> atlases,
+                                             Span<const ReferenceAtlas> groups) noexcept {
+    if (samples_group(atlas)) {
+        const u32 group = atlas - kFirstGroupAtlas;
+        return group < groups.size() ? &groups[group] : nullptr;
+    }
+    return atlas < atlases.size() ? &atlases[atlas] : nullptr;
+}
+
+/// The draws `[first, first + count)` of `draws`, onto `target`.
+void draw_range(const UiDrawList& list, Span<const UiDraw> draws,
+                Span<const ReferenceAtlas> atlases, Span<const ReferenceAtlas> groups, u32 width,
+                u32 height, Span<u32> target) noexcept;
+
+}  // namespace
 
 Status draw_reference(const UiDrawList& list, Span<const ReferenceAtlas> atlases, u32 width,
                       u32 height, Span<u32> target) noexcept {
     if (target.size() != static_cast<usize>(width) * height) {
         return fail(ErrorCode::InvalidArgument, "ui reference: the target is not the extent");
     }
-    for (const UiDraw& draw : list.draws) {
-        const ReferenceAtlas* atlas = draw.atlas < atlases.size() ? &atlases[draw.atlas] : nullptr;
+    // EACH GROUP INTO A CLEARED TARGET OF ITS OWN, the frame's size, in the order listed — a nested
+    // group before the group that samples it — exactly as the device's group passes do.
+    Allocator& allocator = list.rows.allocator();
+    Array<Array<u32>> targets(allocator);
+    Array<ReferenceAtlas> pages(allocator);
+    if (Status reserved = targets.reserve(list.groups.size()); !reserved) {
+        return reserved;
+    }
+    if (Status reserved = pages.reserve(list.groups.size()); !reserved) {
+        return reserved;
+    }
+    for (const UiGroupTarget& group : list.groups) {
+        Array<u32> pixels(allocator);
+        if (Status sized = pixels.resize(static_cast<usize>(width) * height); !sized) {
+            return sized;
+        }
+        draw_range(list, list.group_draws.span().subspan(group.first_draw, group.draw_count),
+                   atlases, pages.span(), width, height, pixels.span());
+        if (Status pushed = targets.push_back(std::move(pixels)); !pushed) {
+            return pushed;
+        }
+        const Array<u32>& kept = targets[targets.size() - 1];
+        ReferenceAtlas page;
+        page.texels = Span<const u8>(reinterpret_cast<const u8*>(kept.data()), kept.size() * 4U);
+        page.width = width;
+        page.height = height;
+        page.channels = 4;
+        if (Status pushed = pages.push_back(page); !pushed) {
+            return pushed;
+        }
+    }
+    draw_range(list, list.draws.span(), atlases, pages.span(), width, height, target);
+    return ok();
+}
+
+namespace {
+
+void draw_range(const UiDrawList& list, Span<const UiDraw> draws,
+                Span<const ReferenceAtlas> atlases, Span<const ReferenceAtlas> groups, u32 width,
+                u32 height, Span<u32> target) noexcept {
+    for (const UiDraw& draw : draws) {
+        const ReferenceAtlas* atlas = page_for(draw.atlas, atlases, groups);
         for (u32 index = draw.first; index < draw.first + draw.count; ++index) {
             const GpuUiPrimitive& row = list.rows[index];
             // The grown quad, clipped to the scissor: the pixels the device rasterises.
@@ -327,7 +469,8 @@ Status draw_reference(const UiDrawList& list, Span<const ReferenceAtlas> atlases
             }
         }
     }
-    return ok();
 }
+
+}  // namespace
 
 }  // namespace cy::ui::render

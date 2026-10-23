@@ -143,11 +143,12 @@ const char* ui_action_glyph(UiAction action, input::SchemeKind scheme) noexcept 
     return "";
 }
 
-UiInputBridge::UiInputBridge(Toolkit& toolkit, input::InputServer& server, u32 user,
-                             const UiInputActions& actions) noexcept
-    : toolkit_(&toolkit), server_(&server), user_(user), actions_(actions) {}
+UiInputBridge::UiInputBridge(Toolkit& toolkit, input::InputServer& server, u32 user) noexcept
+    : toolkit_(&toolkit), server_(&server), user_(user) {}
 
-Status UiInputBridge::start(input::ContextHandle context, i32 priority) noexcept {
+Status UiInputBridge::start(const UiInputActions& actions, input::ContextHandle context,
+                            i32 priority) noexcept {
+    actions_ = actions;
     context_ = context;
     // AT THE INTERFACE'S LAYER, without pass-through: these bindings act only while the user's
     // focus is the interface, and the game's act only while it is not.

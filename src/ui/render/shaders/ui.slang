@@ -57,7 +57,8 @@ public struct CyUiPrimitive
     /// u0, v0, width, height, normalised to the atlas page.
     public float4 uv;
     /// Corner radius, border (or glyph outline) width, and a glyph field's distance range, in
-    /// pixels; the last is zero.
+    /// pixels; then the colour's intensity for an interface composited before the tone curve, or
+    /// zero for one.
     public float4 shape;
     /// Colour, border colour (both premultiplied 0xAARRGGBB), material, atlas page.
     public uint4 words;
@@ -209,6 +210,11 @@ public float4 cyUiFragment(CyUiVertex input) : SV_Target
     if (all(result == float4(0.0, 0.0, 0.0, 0.0)))
     {
         discard;
+    }
+    if (primitive.shape.w > 0.0)
+    {
+        // An HDR document's emissive colour: radiance above one, which only a float target keeps.
+        result.rgb *= primitive.shape.w;
     }
     if ((cyUiPush.flags & kCyUiOutputLinear) != 0u)
     {

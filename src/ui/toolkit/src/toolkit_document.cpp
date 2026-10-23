@@ -924,48 +924,62 @@ WidgetId DocumentInstance::find(std::string_view id) const noexcept {
 
 // --- The host ------------------------------------------------------------------------------------
 
-DocumentHost::DocumentHost(Allocator& allocator, Toolkit& toolkit) noexcept
+Status VfsDocumentResolver::read(std::string_view path, Array<char>& out) noexcept {
+    Expected<assets::VirtualPath, Error> virtual_path = assets::VirtualPath::normalise(path);
+    if (!virtual_path) {
+        return make_unexpected(virtual_path.error());
+    }
+    Array<u8> bytes(out.allocator());
+    if (Status read_status = files_->read(*virtual_path, bytes); !read_status) {
+        return read_status;
+    }
+    return out.append(Span<const char>(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+}
+
+DocumentHost::DocumentHost(Allocator& allocator, Toolkit& toolkit,
+                           assets::VirtualFileSystem& files, i64 settle_ns) noexcept
     : allocator_(&allocator),
-      toolkit_(&toolkit),
+      files_(&files),
       instance_(allocator, toolkit),
-      resolver_(allocator, {}),
-      path_(allocator),
+      resolver_(files),
       watcher_(allocator),
-      events_(allocator) {}
+      settle_ns_(settle_ns),
+      path_(allocator) {}
 
 Status DocumentHost::read(Array<char>& out) noexcept {
     out.clear();
     return resolver_.read(std::string_view(path_.data(), path_.size()), out);
 }
 
-Status DocumentHost::watch() noexcept {
+Status DocumentHost::watch(i64 now_ns) noexcept {
     // The document and everything it reached: an edit to a sheet or a component reloads too.
-    watcher_.clear();
-    Array<char> full(*allocator_);
-    if (Status built = resolver_.full_path(std::string_view(path_.data(), path_.size()), full);
-        !built) {
-        return built;
+    watcher_.stop();
+    assets::FileWatcherConfig config;
+    config.settle_ns = settle_ns_;
+    if (Status started = watcher_.start(*files_, config); !started) {
+        return started;
     }
-    if (Status watched = watcher_.watch_file(full.data()); !watched) {
+    const auto watch_path = [this](std::string_view path) noexcept -> Status {
+        Expected<assets::VirtualPath, Error> virtual_path = assets::VirtualPath::normalise(path);
+        if (!virtual_path) {
+            return make_unexpected(virtual_path.error());
+        }
+        return watcher_.watch(*virtual_path);
+    };
+    if (Status watched = watch_path(std::string_view(path_.data(), path_.size())); !watched) {
         return watched;
     }
     for (const std::string_view dependency : instance_.dependencies()) {
-        if (Status built = resolver_.full_path(dependency, full); !built) {
-            return built;
-        }
-        if (Status watched = watcher_.watch_file(full.data()); !watched) {
+        if (Status watched = watch_path(dependency); !watched) {
             return watched;
         }
     }
-    // The first poll records what is there; only a change after it is reported.
-    Expected<u32, Error> primed = watcher_.poll(events_);
-    return primed ? ok() : Status{make_unexpected(primed.error())};
+    // What is there now is what was loaded; only a change after it is news.
+    return watcher_.prime(now_ns);
 }
 
-Status DocumentHost::open(std::string_view root, std::string_view path, WidgetId parent,
-                          DocumentBindings* bindings) noexcept {
-    resolver_.set_root(root);
-    bindings_ = bindings;
+Status DocumentHost::open(std::string_view path, WidgetId parent, DocumentBindings* bindings,
+                          i64 now_ns) noexcept {
     path_.clear();
     if (Status kept = path_.append(Span<const char>(path.data(), path.size())); !kept) {
         return kept;
@@ -979,36 +993,44 @@ Status DocumentHost::open(std::string_view root, std::string_view path, WidgetId
         !loaded) {
         return loaded;
     }
-    return watch();
+    return watch(now_ns);
 }
 
-Status DocumentHost::reload() noexcept {
+Status DocumentHost::reload(i64 now_ns) noexcept {
     Array<char> text(*allocator_);
     if (Status read_status = read(text); !read_status) {
+        ++failed_;
         return read_status;
     }
     if (Status reloaded = instance_.reload(std::string_view(text.data(), text.size()));
         !reloaded) {
+        ++failed_;
         return reloaded;
     }
     ++reloads_;
-    return watch();
+    // What the reload reached may have changed — a new component, a sheet dropped.
+    return watch(now_ns);
 }
 
-Expected<bool, Error> DocumentHost::poll() noexcept {
-    Expected<u32, Error> changes = watcher_.poll(events_);
+Expected<bool, Error> DocumentHost::poll(i64 now_ns) noexcept {
+    // The watcher reports to an observer, and counts nothing without one.
+    u32 seen = 0;
+    Expected<u32, Error> changes = watcher_.poll(
+        now_ns,
+        [](void* user, const assets::WatchEvent& event) noexcept {
+            (void)event;
+            ++*static_cast<u32*>(user);
+        },
+        &seen);
     if (!changes) {
         return make_unexpected(changes.error());
     }
     if (*changes == 0) {
         return false;
     }
-    if (Status reloaded = reload(); !reloaded) {
-        // The interface stays as it was; the diagnostics say why, and the next save tries again.
-        (void)watch();
-        return false;
-    }
-    return true;
+    // A reload that fails keeps the interface, and the watcher keeps watching: the next save is
+    // the next attempt.
+    return reload(now_ns).has_value();
 }
 
 }  // namespace cy::ui

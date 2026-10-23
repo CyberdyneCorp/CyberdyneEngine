@@ -73,11 +73,13 @@ struct UiInputReport {
 class UiInputBridge {
 public:
     /// `server`, `toolkit` and the context the caller registered from `make_ui_context` outlive the
-    /// bridge. The context is pushed on the user's stack at `FocusLayer::Interface`.
-    UiInputBridge(Toolkit& toolkit, input::InputServer& server, u32 user,
-                  const UiInputActions& actions) noexcept;
+    /// bridge.
+    UiInputBridge(Toolkit& toolkit, input::InputServer& server, u32 user) noexcept;
 
-    [[nodiscard]] Status start(input::ContextHandle context, i32 priority = 100) noexcept;
+    /// Push the interface context on the user's stack at `FocusLayer::Interface`, and remember the
+    /// actions `declare_ui_actions` declared — copied here, once they exist.
+    [[nodiscard]] Status start(const UiInputActions& actions, input::ContextHandle context,
+                               i32 priority = 100) noexcept;
     /// Pop the interface context.
     void stop() noexcept;
 
