@@ -301,7 +301,8 @@ CY_TEST_CASE("ui_toolkit: tabs switch by click and by the shoulder buttons, one 
     CY_CHECK_EQ(kit.count_events(WidgetEventKind::Changed, tabs), 3U);
 }
 
-CY_TEST_CASE("ui_toolkit: a shoulder button leaves focus on the new page's tab, not a hidden page") {
+CY_TEST_CASE(
+    "ui_toolkit: a shoulder button leaves focus on the new page's tab, not a hidden page") {
     Kit kit;
     CY_REQUIRE(kit.started);
     const WidgetId tabs = kit.make(kNoElement, WidgetKind::Tabs, "tabs");
@@ -389,6 +390,15 @@ CY_TEST_CASE("ui_toolkit: a tooltip shows after the pointer rests, beside it, an
     CY_CHECK(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
     CY_CHECK_EQ(kit.rect(tooltip).x, over.x + 12.0F);
     (void)kit.toolkit.pointer(PointerInput{Vec2{700.0F, 500.0F}, false, {}, 0});
+    CY_REQUIRE(kit.frame());
+    CY_CHECK_FALSE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
+
+    // Regression: a screen hidden under a resting pointer kept its widget's tooltip on screen,
+    // over whatever screen came next, until the pointer moved.
+    (void)kit.toolkit.pointer(PointerInput{over, false, {}, 0});
+    CY_REQUIRE(kit.frame(0.6F));
+    CY_REQUIRE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
+    CY_REQUIRE(kit.toolkit.set_visible(row, false).has_value());
     CY_REQUIRE(kit.frame());
     CY_CHECK_FALSE(has_flag(kit.store.flags(tooltip), ElementFlags::Visible));
 }
