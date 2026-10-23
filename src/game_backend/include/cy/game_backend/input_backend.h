@@ -35,7 +35,10 @@
 #include <cy/abi/game/input.h>
 #include <cy/abi/host.h>
 #include <cy/core/base/types.h>
+#include <cy/servers/input/profile.h>
 #include <cy/servers/input/server.h>
+
+#include <string_view>
 
 namespace cy::game_backend {
 
@@ -73,6 +76,25 @@ public:
                                         i32 priority) noexcept override;
     [[nodiscard]] CyResult pop_context(u32 user, CyInputContext context) noexcept override;
 
+    // --- ABI 1.13: rebinding and the player's profile -----------------------------------------
+    //
+    // A rebind is the input system's `RebindOperation`, offered every event `observe_pending`
+    // walks for that user while it listens — so a host that calls `observe_pending` before each
+    // `resolve_tick`, as it must for the pointer, rebinds with nothing more. The conflict policy
+    // is applied against the bindings IN EFFECT (the authored ones and the overrides), not only
+    // against the overrides a profile holds: a player binding Jump to W is told W moves forward.
+    // Escape cancels on a keyboard and Back on a gamepad.
+
+    [[nodiscard]] CyResult rebind_begin(u32 user, CyInputAction action, u32 scheme, u32 slot,
+                                        u32 conflict) noexcept override;
+    [[nodiscard]] CyResult rebind_poll(u32 user, CyInputRebind& out) noexcept override;
+    [[nodiscard]] CyResult rebind_cancel(u32 user) noexcept override;
+    [[nodiscard]] CyResult binding(u32 user, CyInputAction action, u32 scheme, u32 slot,
+                                   char (&out)[64]) noexcept override;
+    [[nodiscard]] CyResult profile_save(u32 user, const char*& text, u32& size) noexcept override;
+    [[nodiscard]] CyResult profile_load(u32 user, const char* text, u64 size) noexcept override;
+    [[nodiscard]] CyResult profile_reset(u32 user) noexcept override;
+
 private:
     /// One user's pointer edges over one window.
     struct PointerEdges {
@@ -98,8 +120,33 @@ private:
         CyInputContext context) const noexcept;
     void observe(const cy::input::DeviceEvent& event, u32 user) noexcept;
 
+    /// One user's rebind: the flow, and what it was begun for.
+    struct Rebind {
+        cy::input::RebindOperation operation{cy::input::ActionStableId{},
+                                             cy::input::SchemeKind::KeyboardMouse, 0,
+                                             cy::input::ConflictPolicy::Allow};
+        CyInputAction action = 0;
+        u32 scheme = 0;
+        u32 slot = 0;
+        u32 policy = 0;
+        u32 status = CY_INPUT_REBIND_IDLE;
+        cy::input::Control candidate;
+        CyInputAction conflict = 0;
+        bool has_conflict = false;
+    };
+
+    /// Offer one event to every rebind it reaches, and settle the ones it completes.
+    void offer(const cy::input::DeviceEvent& event) noexcept;
+    /// Apply a candidate under the rebind's policy, against the bindings in effect.
+    void settle(u32 user, Rebind& rebind) noexcept;
+    /// Read a profile's lines; put each into the user's profile when `applying`.
+    [[nodiscard]] CyResult load_lines(u32 user, std::string_view text, bool applying) noexcept;
+
     cy::input::InputServer* server_;
     PointerTrack tracks_[kMaxPointerUsers];
+    Rebind rebinds_[kMaxPointerUsers];
+    /// The last `profile_save`'s text.
+    char profile_text_[8192] = {};
 };
 
 /// Bind `adapter` as `host`'s input backend (`host.game.input`), or unbind with null. The one place

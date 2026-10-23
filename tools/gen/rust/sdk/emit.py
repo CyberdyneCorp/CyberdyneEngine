@@ -91,6 +91,12 @@ ENUM_SPECS = {
     "CyUiAction": ("UiAction", "CY_UI_ACTION_", "u32"),
     "CyUiAnimatedProperty": ("UiAnimatedProperty", "CY_UI_ANIMATE_", "u32"),
     "CyUiEasing": ("UiEasing", "CY_UI_EASING_", "u32"),
+    # ABI 1.13, what a game's menus need.
+    "CyInputScheme": ("InputScheme", "CY_INPUT_SCHEME_", "u32"),
+    "CyInputConflict": ("InputConflict", "CY_INPUT_CONFLICT_", "u32"),
+    "CyInputRebindStatus": ("InputRebindStatus", "CY_INPUT_REBIND_", "u32"),
+    "CyVideoQuality": ("VideoQuality", "CY_VIDEO_QUALITY_", "u32"),
+    "CyVideoUpscale": ("VideoUpscale", "CY_VIDEO_UPSCALE_", "u32"),
 }
 
 # What each `CyResult` means to a caller who has to act on it. `native-abi` requires a failure to be

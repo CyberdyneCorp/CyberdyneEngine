@@ -103,6 +103,12 @@ ENUM_SPECS = {
     "CyUiAction": ("UIAction", "CY_UI_ACTION_", "UInt32"),
     "CyUiAnimatedProperty": ("UIAnimatedProperty", "CY_UI_ANIMATE_", "UInt32"),
     "CyUiEasing": ("UIEasing", "CY_UI_EASING_", "UInt32"),
+    # ADDED AT ABI 1.13 with what a game's menus need.
+    "CyInputScheme": ("InputScheme", "CY_INPUT_SCHEME_", "UInt32"),
+    "CyInputConflict": ("InputConflict", "CY_INPUT_CONFLICT_", "UInt32"),
+    "CyInputRebindStatus": ("RebindStatus", "CY_INPUT_REBIND_", "UInt32"),
+    "CyVideoQuality": ("VideoQuality", "CY_VIDEO_QUALITY_", "UInt32"),
+    "CyVideoUpscale": ("VideoUpscale", "CY_VIDEO_UPSCALE_", "UInt32"),
 }
 
 
@@ -231,6 +237,12 @@ def enums(description: dict) -> str:
         ("CyUiAction", "/// `CyUiAction`: a semantic interface action, for `ui_navigate`."),
         ("CyUiAnimatedProperty", "/// `CyUiAnimatedProperty`: the paint property an animation drives."),
         ("CyUiEasing", "/// `CyUiEasing`: how an animation's time becomes progress."),
+        # ABI 1.13.
+        ("CyInputScheme", "/// `CyInputScheme`: the devices a binding belongs to."),
+        ("CyInputConflict", "/// `CyInputConflict`: what a rebind to a control in use does."),
+        ("CyInputRebindStatus", "/// `CyInputRebindStatus`: where a rebind is."),
+        ("CyVideoQuality", "/// `CyVideoQuality`: a quality preset for every post stage."),
+        ("CyVideoUpscale", "/// `CyVideoUpscale`: the temporal upscaler's mode."),
     ))
     return f"""{BANNER}
 {status}

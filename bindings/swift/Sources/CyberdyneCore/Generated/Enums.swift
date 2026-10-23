@@ -386,6 +386,45 @@ public enum UIEasing: UInt32, Sendable, CaseIterable {
     case back = 6
 }
 
+/// `CyInputScheme`: the devices a binding belongs to.
+public enum InputScheme: UInt32, Sendable, CaseIterable {
+    case keyboardMouse = 0
+    case gamepad = 1
+}
+
+/// `CyInputConflict`: what a rebind to a control in use does.
+public enum InputConflict: UInt32, Sendable, CaseIterable {
+    case reject = 0
+    case swap = 1
+    case allow = 2
+    case unbindPrevious = 3
+}
+
+/// `CyInputRebindStatus`: where a rebind is.
+public enum RebindStatus: UInt32, Sendable, CaseIterable {
+    case idle = 0
+    case listening = 1
+    case applied = 2
+    case conflict = 3
+    case cancelled = 4
+}
+
+/// `CyVideoQuality`: a quality preset for every post stage.
+public enum VideoQuality: UInt32, Sendable, CaseIterable {
+    case low = 0
+    case medium = 1
+    case high = 2
+    case ultra = 3
+}
+
+/// `CyVideoUpscale`: the temporal upscaler's mode.
+public enum VideoUpscale: UInt32, Sendable, CaseIterable {
+    case native = 0
+    case quality = 1
+    case balanced = 2
+    case performance = 3
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

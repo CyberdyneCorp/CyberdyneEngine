@@ -261,7 +261,28 @@ CY_TEST_CASE("the 1.12 table appends the widget toolkit after every 1.11 entry")
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, ui_navigate) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, ui_navigate) + sizeof(void*),
+                offsetof(CyInterface, input_rebind_begin));
+}
+
+CY_TEST_CASE("the 1.13 table appends what a game's menus need after every 1.12 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 13U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.input_rebind_begin != nullptr,    iface.input_rebind_poll != nullptr,
+        iface.input_rebind_cancel != nullptr,   iface.input_binding != nullptr,
+        iface.input_profile_save != nullptr,    iface.input_profile_load != nullptr,
+        iface.input_profile_reset != nullptr,   iface.video_get_settings != nullptr,
+        iface.video_set_settings != nullptr,    iface.video_modes != nullptr,
+        iface.user_data_write != nullptr,       iface.user_data_read != nullptr,
+        iface.ui_widget_set_tooltip != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 13U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, ui_widget_set_tooltip) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {

@@ -106,6 +106,8 @@ void InputAdapter::observe_pending() noexcept {
     // when two producers interleaved.
     for (usize index = 0; index < pending.size(); ++index) {
         const cy::input::DeviceEvent& event = pending[index];
+        // ABI 1.13: a listening rebind sees every device's events, before the pointer's.
+        offer(event);
         const DeviceRecord* record = devices.find(event.device);
         if (record == nullptr || !record->connected ||
             record->description.kind != DeviceKind::Mouse) {

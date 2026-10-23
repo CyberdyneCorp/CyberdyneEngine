@@ -451,6 +451,14 @@ CyResult UiAdapter::widget_set_classes(CyUiElement widget, const char* classes) 
     return answer(toolkit_->set_classes(target, view(classes)));
 }
 
+CyResult UiAdapter::widget_set_tooltip(CyUiElement widget, const char* utf8) noexcept {
+    const ui::WidgetId target = owned_widget(widget);
+    if (!target.is_valid()) {
+        return abi::last_error_code();
+    }
+    return answer(toolkit_->set_tooltip(target, view(utf8)));
+}
+
 CyResult UiAdapter::widget_open(CyUiElement widget, bool open) noexcept {
     const ui::WidgetId target = owned_widget(widget);
     if (!target.is_valid()) {

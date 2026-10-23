@@ -92,6 +92,9 @@ public:
                                                   const CyUiAnimation& animation) noexcept;
     /// `action` is a CyUiAction.
     [[nodiscard]] virtual CyResult navigate(u32 action, bool& consumed) noexcept;
+    /// ABI 1.13. `utf8` is non-null; empty removes the tooltip.
+    [[nodiscard]] virtual CyResult widget_set_tooltip(CyUiElement widget,
+                                                      const char* utf8) noexcept;
 };
 
 }  // namespace cy::abi::game
