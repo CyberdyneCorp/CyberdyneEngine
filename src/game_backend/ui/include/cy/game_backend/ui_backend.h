@@ -117,6 +117,10 @@ public:
     void attach_toolkit(ui::Toolkit* toolkit, ui::DocumentResolver* resolver,
                         assets::VirtualFileSystem* files = nullptr) noexcept;
     [[nodiscard]] ui::Toolkit* toolkit() const noexcept { return toolkit_; }
+    /// The game values a module's documents' `bind=` names reach: the embedder's, so a slider a
+    /// document binds to `volume.music` drives the engine's music bus with no game code between.
+    /// Borrowed; null leaves `bind=` unbound. Applies to documents loaded after it is set.
+    void set_document_bindings(ui::DocumentBindings* bindings) noexcept { bindings_ = bindings; }
     /// One frame of the interface: with a toolkit, its update — which lays out the whole store —
     /// and the reload of any document whose file settled into a change at `now_ns`; without one,
     /// `layout`.
@@ -278,6 +282,7 @@ private:
 
     ui::Toolkit* toolkit_ = nullptr;
     ui::DocumentResolver* resolver_ = nullptr;
+    ui::DocumentBindings* bindings_ = nullptr;
     assets::VirtualFileSystem* files_ = nullptr;
     Array<WidgetRecord> widget_records_;
     Array<LoadedDocument> documents_;

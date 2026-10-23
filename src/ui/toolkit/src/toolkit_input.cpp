@@ -108,6 +108,12 @@ Status Toolkit::focus(WidgetId widget_id) noexcept {
     return ok();
 }
 
+void Toolkit::clear_focus() noexcept {
+    (void)interaction_.set_focus(store_, kNoElement);
+    focus_visible_ = false;
+    note_focus();
+}
+
 void Toolkit::note_focus() noexcept {
     const ElementId current = interaction_.focus();
     if (current == last_focus_) {

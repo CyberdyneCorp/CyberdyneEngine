@@ -363,6 +363,9 @@ public:
 
     /// Move focus to a widget, as navigation would — the ring shows.
     [[nodiscard]] Status focus(WidgetId widget) noexcept;
+    /// Take focus from whatever has it — a game going back to gameplay — so no widget answers
+    /// navigation and the input bridge hands the controls back.
+    void clear_focus() noexcept;
     /// The widget with focus, or none.
     [[nodiscard]] WidgetId focused() const noexcept;
     /// Whether the focus ring is drawn: focus moved by a keyboard or a gamepad, not a pointer.
