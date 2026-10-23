@@ -1,0 +1,63 @@
+cyui 1
+stylesheet "ui/menus.cyss"
+panel #settings-screen .screen anchor=[0, 0, 1, 1] offset=[0, 0, 0, 0]
+  column #settings .menu-panel anchor=[0.5, 0.5, 0.5, 0.5] offset=[-330, -250, 330, 250]
+    label #settings-title .title text="Settings"
+    tabs #settings-tabs flex-grow=1
+      column #graphics title="Graphics" gap=8
+        row #resolution-row .setting
+          label #resolution-row-name .setting-name text="Resolution"
+          dropdown #resolution items=["1280x720", "1920x1080", "2560x1440"] selected=0
+        row #quality-row .setting
+          label #quality-row-name .setting-name text="Quality preset"
+          dropdown #quality items=["Low", "Medium", "High", "Ultra"] selected=2
+        row #upscaler-row .setting
+          label #upscaler-row-name .setting-name text="Upscaler"
+          dropdown #upscaler items=["Native", "Quality", "Balanced", "Performance"] selected=0
+        row #gi-row .setting
+          label #gi-row-name .setting-name text="Global illumination"
+          dropdown #gi-quality items=["Low", "Medium", "High", "Epic"] selected=2
+        row #fullscreen-row .setting
+          label #fullscreen-row-name .setting-name text="Fullscreen"
+          toggle #fullscreen
+      column #audio title="Audio" gap=8
+        row #master-row .setting
+          label #master-row-name .setting-name text="Master"
+          slider #volume-master min=0 max=1 step=0.05 value=1 bind=volume.master bind-mode=two-way
+        row #music-row .setting
+          label #music-row-name .setting-name text="Music"
+          slider #volume-music min=0 max=1 step=0.05 value=1 bind=volume.music bind-mode=two-way
+        row #sfx-row .setting
+          label #sfx-row-name .setting-name text="Effects"
+          slider #volume-sfx min=0 max=1 step=0.05 value=1 bind=volume.sfx bind-mode=two-way
+        row #voice-row .setting
+          label #voice-row-name .setting-name text="Voice"
+          slider #volume-voice min=0 max=1 step=0.05 value=1 bind=volume.voice bind-mode=two-way
+      column #controls title="Controls" gap=6
+        row #controls-header .setting
+          label #controls-header-name .setting-name text="Action"
+          label #column-keyboard .setting-column text="Keyboard"
+          label #column-gamepad .setting-column text="Gamepad"
+        row #jump-row .setting
+          label #jump-row-name .setting-name text="Jump"
+          button #bind-jump-keyboard .binding text="-"
+          button #bind-jump-gamepad .binding text="-"
+        row #interact-row .setting
+          label #interact-row-name .setting-name text="Interact"
+          button #bind-interact-keyboard .binding text="-"
+          button #bind-interact-gamepad .binding text="-"
+        row #inventory-row .setting
+          label #inventory-row-name .setting-name text="Inventory"
+          button #bind-inventory-keyboard .binding text="-"
+          button #bind-inventory-gamepad .binding text="-"
+        row #sprint-row .setting
+          label #sprint-row-name .setting-name text="Sprint"
+          button #bind-sprint-keyboard .binding text="-"
+          button #bind-sprint-gamepad .binding text="-"
+        button #reset-bindings text="Reset to defaults"
+    row #settings-actions gap=8 justify-content=end
+      button #apply .primary text="Apply"
+      button #back text="Back"
+  dialog #rebind-dialog title="Rebind"
+    label #rebind-prompt text="Press a key or a button"
+    label #rebind-hint .hint text="Escape or Back cancels"
