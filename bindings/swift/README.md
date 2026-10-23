@@ -391,6 +391,14 @@ step, and refused from `onUpdate`, because the grid is lockstep state; `vision(o
 crosses as a float. `FogOfWarTests.swift` checks the raw bits through `FakeEngine`;
 `samples/13-rts-api/game/Fog.swift` plays it end to end, and docs/guides/fog-of-war.md is the guide.
 
+## Lights (ABI 1.11)
+
+`Lights.swift` is the face of the five `light_*` entries: `Light.spawn(_:)` takes a
+`Light.Description` — built with `.point`, `.spot`, `.rect`, `.disc`, `.sphere` or `.tube` — and
+returns a `Light`; `update(_:)`, `move(_:to:)`, `destroy()`, `isAlive` and `Light.status` follow.
+Every call is refused from `onFixedUpdate`. `LightsTests.swift` checks the description's fields,
+the kind numbers and the refusals through `FakeEngine`; docs/guides/many-lights.md is the guide.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

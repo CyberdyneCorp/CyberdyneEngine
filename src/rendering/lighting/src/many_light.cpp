@@ -78,21 +78,31 @@ void reservoir_combine(Reservoir& reservoir, const Reservoir& other, f32 other_t
     // looking at, and the symptom is a soft halo of the wrong colour around every geometric edge.
     const f32 weight =
         other.contribution_weight() * other_target_at_here * static_cast<f32>(other.sample_count);
-    if (!(weight > 0.0F)) {
-        // The neighbour's light contributes nothing here — a different surface, or the light is on
-        // the wrong side. Its SAMPLE COUNT still counts: it really did consider those candidates,
-        // and dropping the count would inflate this pixel's estimate.
-        reservoir.sample_count =
-            math::min(reservoir.sample_count + other.sample_count, max_sample_count);
+    if (weight > 0.0F) {
+        reservoir.weight_sum += weight;
+        if (stream.next_unit() * reservoir.weight_sum <= weight) {
+            reservoir.light = other.light;
+            reservoir.target = other_target_at_here;
+        }
+    }
+    // The neighbour's SAMPLE COUNT counts whether or not its light contributes here — it really did
+    // consider those candidates, and dropping the count would inflate this pixel's estimate.
+    reservoir.sample_count += other.sample_count;
+    cap_reservoir(reservoir, max_sample_count);
+}
+
+void cap_reservoir(Reservoir& reservoir, u32 max_sample_count) noexcept {
+    if (max_sample_count == 0 || reservoir.sample_count <= max_sample_count) {
         return;
     }
-    reservoir.weight_sum += weight;
-    if (stream.next_unit() * reservoir.weight_sum <= weight) {
-        reservoir.light = other.light;
-        reservoir.target = other_target_at_here;
-    }
-    reservoir.sample_count =
-        math::min(reservoir.sample_count + other.sample_count, max_sample_count);
+    // THE WEIGHT SUM IS SCALED WITH THE COUNT. The contribution weight is their ratio, so capping
+    // the count alone made it grow by the excess on every combination: a temporal reservoir
+    // combined with its own history every frame brightened without bound — the stochastic path's
+    // frame went to infinity in a few dozen frames on the device. Scaling both keeps the estimate
+    // and bounds how much the history speaks for, which is what the cap is for.
+    const f32 scale = static_cast<f32>(max_sample_count) / static_cast<f32>(reservoir.sample_count);
+    reservoir.weight_sum *= scale;
+    reservoir.sample_count = max_sample_count;
 }
 
 Status validate_many_light(const ManyLightSettings& settings) noexcept {
@@ -148,6 +158,59 @@ LightingPathStats lighting_path_stats(const ManyLightSettings& settings, u32 max
     stats.max_lights_per_cluster = max_lights_per_cluster;
     stats.lights_dropped_by_bound = lights_dropped_by_bound;
     return stats;
+}
+
+f32 shading_allocation_ms(const BudgetArbiter& arbiter) noexcept {
+    return arbiter.allocation_ms(BudgetSubsystem::MaterialEvaluation);
+}
+
+LightingPathDecision LightingPathSelector::update(const ManyLightSettings& settings,
+                                                  const LightingPathInputs& inputs) noexcept {
+    LightingPathDecision decision;
+    const LightingPath before = path_;
+    if (active_lighting_path(settings) != LightingPath::StochasticManyLight) {
+        path_ = LightingPath::Clustered;
+        fitting_frames_ = 0;
+        decision.reason = "the stochastic path is not available under this profile";
+    } else if (path_ == LightingPath::Clustered) {
+        const bool overflowing = inputs.lights_dropped_by_bound > 0;
+        const bool over_budget = inputs.allocation_ms > 0.0F && inputs.clustered_ms >= 0.0F &&
+                                 inputs.clustered_ms > inputs.allocation_ms;
+        if (overflowing || over_budget) {
+            path_ = LightingPath::StochasticManyLight;
+            left_at_lights_ = inputs.local_lights;
+            left_at_ms_ = inputs.clustered_ms;
+            fitting_frames_ = 0;
+            decision.reason = overflowing
+                                  ? "the clustered path dropped lights at its per-cluster bound"
+                                  : "the clustered lighting costs more than the arbiter grants";
+        } else {
+            decision.reason = "the clustered path fits its bound and its allocation";
+        }
+    } else {
+        // THE CLUSTERED PATH'S COST, PREDICTED: the light loop's cost scales with the lights it
+        // walks, so the cost it was left at, scaled by the lights there are now.
+        const f32 scale = left_at_lights_ > 0 ? static_cast<f32>(inputs.local_lights) /
+                                                    static_cast<f32>(left_at_lights_)
+                                              : 0.0F;
+        const f32 predicted_ms = left_at_ms_ * scale;
+        const bool fewer = static_cast<f32>(inputs.local_lights) <=
+                           return_margin_ * static_cast<f32>(left_at_lights_);
+        const bool affordable = inputs.allocation_ms <= 0.0F || left_at_ms_ < 0.0F ||
+                                predicted_ms <= return_margin_ * inputs.allocation_ms;
+        fitting_frames_ = fewer && affordable ? fitting_frames_ + 1U : 0U;
+        if (fitting_frames_ >= dwell_frames_) {
+            path_ = LightingPath::Clustered;
+            fitting_frames_ = 0;
+            decision.reason =
+                "the scene fits the clustered path again, with margin, for long enough";
+        } else {
+            decision.reason = "the scene has outgrown the clustered path";
+        }
+    }
+    decision.path = path_;
+    decision.changed = path_ != before;
+    return decision;
 }
 
 Reservoir sample_lights(Span<const LightCandidate> candidates, const ManyLightSettings& settings,

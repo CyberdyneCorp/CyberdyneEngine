@@ -9,6 +9,7 @@
 #include <cy/import/model.h>
 #include <cy/rendering/gi/debug_views.h>
 #include <cy/rendering/gi/resolve.h>
+#include <cy/rendering/gi_gpu/frame_lights.h>
 #include <cy/scene/components.h>
 #include <cy/scene/tree.h>
 #include <cy/servers/render/picking.h>
@@ -159,6 +160,45 @@ template <class Enum, class Namer>
     return true;
 }
 
+/// An area light (rect, disc, sphere, tube) as the GI's lights are given: the emitter squares that
+/// cover its surface (`gi_gpu::append_gi_lights`), so its flux reaches the bounce rather than a
+/// point of nits it never radiated. False when the reader is not an enabled area light.
+[[nodiscard]] bool append_area_light(const ComponentReader& reader, const Mat4& matrix, u64 id,
+                                     std::vector<gi::GiLight>& out, Allocator& allocator) {
+    const ser::WorldValue* kind = reader.value("kind");
+    if (kind == nullptr || kind->kind != ser::WorldValueKind::Int ||
+        kind->integer < static_cast<i64>(render::LightKind::Rect) ||
+        kind->integer >= static_cast<i64>(render::LightKind::Count)) {
+        return false;
+    }
+    if (!reader.flag("enabled", true)) {
+        return true;
+    }
+    render::LightDescription light;
+    light.kind = static_cast<render::LightKind>(kind->integer);
+    light.transform.translation = transform_point(matrix, Vec3{});
+    const Vec3 forward = normalized_or(
+        transform_point(matrix, Vec3{0.0F, 0.0F, -1.0F}) - light.transform.translation,
+        Vec3{0.0F, -1.0F, 0.0F});
+    const Vec3 up =
+        normalized_or(transform_point(matrix, Vec3{0.0F, 1.0F, 0.0F}) - light.transform.translation,
+                      Vec3{0.0F, 0.0F, -1.0F});
+    light.transform.rotation = Quat::look_rotation(forward, up);
+    light.color[0] = reader.real("color.r", 1.0F);
+    light.color[1] = reader.real("color.g", 1.0F);
+    light.color[2] = reader.real("color.b", 1.0F);
+    light.intensity = reader.real("intensity", 1000.0F);
+    light.range = reader.real("range", 0.0F);
+    light.source_width = reader.real("source_width", 0.0F);
+    light.source_height = reader.real("source_height", 0.0F);
+    light.two_sided = reader.flag("two_sided", false);
+    light.stable_id = id;
+    Array<gi::GiLight> squares(allocator);
+    (void)rendering::gi_gpu::append_gi_lights(light, squares);
+    out.insert(out.end(), squares.begin(), squares.end());
+    return true;
+}
+
 [[nodiscard]] bool movable(const ser::World& world, const ser::WorldNode& node) noexcept {
     return ComponentReader(world, node, "RigidBody").present() ||
            ComponentReader(world, node, "KinematicBody").present();
@@ -270,8 +310,11 @@ Status AuthoredIllumination::gather() noexcept {
             emission.emplace_back(rule.text("material"), mode);
         }
         if (const ComponentReader light(*world_, node, kLightType); light.present()) {
+            // An area light's squares are appended; it is not also a point.
+            const bool area =
+                append_area_light(light, matrices[row], node.identity, scene_lights_, *allocator_);
             gi::GiLight entry;
-            if (light_of(light, matrices[row], node.identity, entry)) {
+            if (!area && light_of(light, matrices[row], node.identity, entry)) {
                 scene_lights_.push_back(entry);
             }
         }

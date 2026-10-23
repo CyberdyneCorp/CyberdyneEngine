@@ -356,7 +356,7 @@ name = "cy::rendering::LightSource"
 module = "rendering-scene"
 header = "src/rendering/scene/include/cy/rendering/scene/components.h"
 status = "live"
-next_field_id = 9
+next_field_id = 13
 
 [[type.field]]
 id = 1
@@ -396,6 +396,26 @@ status = "live"
 [[type.field]]
 id = 8
 name = "enabled"
+status = "live"
+
+[[type.field]]
+id = 9
+name = "source_width"
+status = "live"
+
+[[type.field]]
+id = 10
+name = "source_height"
+status = "live"
+
+[[type.field]]
+id = 11
+name = "two_sided"
+status = "live"
+
+[[type.field]]
+id = 12
+name = "mobility"
 status = "live"
 
 [[type]]

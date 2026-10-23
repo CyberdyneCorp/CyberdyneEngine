@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 10u
+#define CY_ABI_MINOR 11u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1473,6 +1473,78 @@ typedef struct CyFogStatus {
     uint64_t digest;        /* equal on every peer after the same updates */
 } CyFogStatus;
 
+/* --- 1.11: lights ------------------------------------------------------------------------------
+ *
+ * Lights a game makes while it runs — a muzzle flash, an explosion, a spark, a torch carried by a
+ * character — kept by `cy::rendering::TransientLights` (rendering/lighting/transient_lights.h) and
+ * reached through `cy::abi::game::LightsBackend` (cy/abi/game/lights.h), implemented by
+ * `cy::game_backend::LightsAdapter` (src/game_backend/lights/). The host appends the live lights to
+ * the frame's every frame, so a flash is clustered, sampled and lit like an authored lamp. A host
+ * that draws nothing binds none, and every 1.11 entry answers UNAVAILABLE.
+ *
+ * LIGHTS ARE PRESENTATION. Every entry is [N U]: a fixed step is refused, because a resimulated
+ * tick would spawn its flash again, and nothing a light does feeds back into the simulation. A
+ * light is a slot of a fixed pool, so spawning allocates nothing and is cheap enough for a battle's
+ * every shot; a full pool refuses with OUT_OF_RANGE and counts the refusal. A light with a lifetime
+ * fades along it by its `CyLightFade` and is freed when it ends; with none it lives until
+ * destroyed. A `CyLight` is the slot and its generation, so a handle to a light that ended never
+ * answers for the light now in its slot. */
+
+/* `render::LightKind`: what a light is. The numbers are the engine's; a directional light is not a
+ * light a game spawns. */
+typedef enum CyLightKind {
+    CY_LIGHT_POINT = 1,  /* candela */
+    CY_LIGHT_SPOT = 2,   /* candela, a cone along the pose's forward axis */
+    CY_LIGHT_RECT = 3,   /* nits; a panel facing forward, `size` its width and height */
+    CY_LIGHT_DISC = 4,   /* nits; a disc facing forward, `size[0]` across */
+    CY_LIGHT_SPHERE = 5, /* nits; `size[0]` across */
+    CY_LIGHT_TUBE = 6    /* nits; along the pose's right axis, `size[0]` long, `size[1]` across */
+} CyLightKind;
+
+/* `rendering::TransientFade`: how a light with a lifetime fades along it. */
+typedef enum CyLightFade {
+    CY_LIGHT_FADE_NONE = 0,     /* whole until it ends */
+    CY_LIGHT_FADE_LINEAR = 1,   /* to zero along its life */
+    CY_LIGHT_FADE_QUADRATIC = 2 /* as (1 - t)^2: a flash's afterglow */
+} CyLightFade;
+
+/* A rect or a disc that emits from both faces. */
+#define CY_LIGHT_TWO_SIDED 0x1u
+
+/* A light a game spawns. The pose is world metres; its forward axis (local -Z) is a spot's axis and
+ * a panel's facing, its right axis (local +X) a panel's width and a tube's length. */
+typedef struct CyLightDesc {
+    uint32_t struct_size;
+    uint32_t kind;        /* CyLightKind */
+    CyPose pose;          /* an all-zero rotation is the identity: forward is -Z */
+    float color[3];       /* linear */
+    float intensity;      /* candela for a point or a spot, nits for an area light; >= 0 */
+    float range;          /* metres, >= 0; zero derives an area light's reach */
+    float inner_cone;     /* radians, a spot */
+    float outer_cone;     /* radians, a spot */
+    float size[2];        /* metres, an area light's: see CyLightKind */
+    float lifetime;       /* seconds, >= 0; zero lives until destroyed */
+    uint32_t fade;        /* CyLightFade */
+    uint32_t flags;       /* CY_LIGHT_TWO_SIDED */
+    uint32_t layer_mask;  /* the channels it lights; zero lights every channel */
+    uint32_t reserved[2]; /* zero */
+} CyLightDesc;
+
+/* A light a game spawned: its pool slot in the low 32 bits and the slot's generation above. */
+typedef uint64_t CyLight;
+#define CY_LIGHT_NULL ((CyLight)0)
+
+/* What the pool holds and has done. */
+typedef struct CyLightStatus {
+    uint32_t struct_size;
+    uint32_t live;     /* lights alive now */
+    uint32_t capacity; /* the most alive at once */
+    uint32_t reserved; /* zero */
+    uint64_t spawned;  /* since the pool was made */
+    uint64_t expired;  /* whose lifetime ended */
+    uint64_t refused;  /* spawns refused by a full pool */
+} CyLightStatus;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2095,6 +2167,23 @@ typedef struct CyInterface {
     CyResult (*fog_sight)(CyEngine engine, uint32_t team, CyEntity entity, uint32_t* out_sight);
     /* [N F U] The grid and its last update. */
     CyResult (*fog_status)(CyEngine engine, CyFogStatus* out_status);
+    /* --- 1.11: lights ---
+     *
+     * Every entry is [N U] (see CyLightKind's section). */
+
+    /* [N U] A light, from this frame. INVALID_ARGUMENT for a kind, a fade or a flag out of range, a
+     * negative intensity, range, size or lifetime, or a nonzero reserved word, having made nothing.
+     * OUT_OF_RANGE with every slot of the pool taken. */
+    CyResult (*light_spawn)(CyEngine engine, const CyLightDesc* desc, CyLight* out_light);
+    /* [N U] Replace a live light's description — move a torch, recolour a flash — keeping its age;
+     * `lifetime` and `fade` are its spawn's and are not read. NOT_FOUND for a light that ended. */
+    CyResult (*light_update)(CyEngine engine, CyLight light, const CyLightDesc* desc);
+    /* [N U] End a light now. NOT_FOUND for one that already ended. */
+    CyResult (*light_destroy)(CyEngine engine, CyLight light);
+    /* [N U] Whether a light is alive: 1, or 0 for one that ended or never was. */
+    CyResult (*light_alive)(CyEngine engine, CyLight light, uint32_t* out_alive);
+    /* [N U] The pool. */
+    CyResult (*light_status)(CyEngine engine, CyLightStatus* out_status);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2229,6 +2318,9 @@ CY_ABI_STATIC_ASSERT(sizeof(CyGiStatus) == 48, "CyGiStatus is 48 bytes");
 /* 1.10 */
 CY_ABI_STATIC_ASSERT(sizeof(CyFogVision) == 24, "CyFogVision is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyFogStatus) == 40, "CyFogStatus is 40 bytes");
+/* 1.11 */
+CY_ABI_STATIC_ASSERT(sizeof(CyLightDesc) == 96, "CyLightDesc is 96 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyLightStatus) == 40, "CyLightStatus is 40 bytes");
 
 #ifdef __cplusplus
 }

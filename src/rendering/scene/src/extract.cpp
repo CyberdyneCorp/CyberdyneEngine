@@ -135,6 +135,10 @@ struct Placement {
     published.desc.outer_cone_radians = light.outer_cone_radians;
     published.desc.layer_mask = light.layer_mask;
     published.desc.casts_shadow = light.casts_shadow;
+    published.desc.source_width = light.source_width;
+    published.desc.source_height = light.source_height;
+    published.desc.two_sided = light.two_sided;
+    published.desc.mobility = light.mobility;
     // The identity a shadow atlas page and the deterministic light order key off. The entity's, for
     // the same reason an instance's is: it is stable across two runs and the slot a light lands in
     // is not.

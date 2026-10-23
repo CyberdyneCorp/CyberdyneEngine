@@ -364,6 +364,16 @@ constexpr Enumerator enumerators_1_0_[] = {
     Enumerator{"Directional", 0},
     Enumerator{"Point", 1},
     Enumerator{"Spot", 2},
+    Enumerator{"Rect", 3},
+    Enumerator{"Disc", 4},
+    Enumerator{"Sphere", 5},
+    Enumerator{"Tube", 6},
+};
+
+constexpr Enumerator enumerators_1_11_[] = {
+    Enumerator{"Static", 0},
+    Enumerator{"Stationary", 1},
+    Enumerator{"Movable", 2},
 };
 
 constexpr FieldInfo fields_1_[] = {
@@ -378,7 +388,7 @@ constexpr FieldInfo fields_1_[] = {
             .declared = AttributeKind::Category
                         | AttributeKind::Enum
                         | AttributeKind::Persistence,
-            .enumeration = EnumAttribute{enumerators_1_0_, 3},
+            .enumeration = EnumAttribute{enumerators_1_0_, 7},
             .category = TextAttribute{"Lighting"},
             .unit = UnitKind::None,
             .persistence = PersistenceKind::Authoring,
@@ -396,7 +406,7 @@ constexpr FieldInfo fields_1_[] = {
                         | AttributeKind::Persistence
                         | AttributeKind::Tooltip,
             .category = TextAttribute{"Lighting"},
-            .tooltip = TextAttribute{"Lux for a directional light, candela for a point or a spot"},
+            .tooltip = TextAttribute{"Lux (directional), candela (point, spot), nits (area)"},
             .unit = UnitKind::None,
             .persistence = PersistenceKind::Authoring,
         },
@@ -491,6 +501,69 @@ constexpr FieldInfo fields_1_[] = {
             .persistence = PersistenceKind::Authoring,
         },
     },
+    FieldInfo{
+        .name = "source_width",
+        .id = FieldId{9},
+        .kind = FieldKind::F32,
+        .type = TypeId{},
+        .offset = static_cast<u32>(offsetof(Type1, source_width)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().source_width)),
+        .attributes = FieldAttributes{
+            .declared = AttributeKind::Category
+                        | AttributeKind::Persistence
+                        | AttributeKind::Unit,
+            .category = TextAttribute{"Lighting"},
+            .unit = UnitKind::Metres,
+            .persistence = PersistenceKind::Authoring,
+        },
+    },
+    FieldInfo{
+        .name = "source_height",
+        .id = FieldId{10},
+        .kind = FieldKind::F32,
+        .type = TypeId{},
+        .offset = static_cast<u32>(offsetof(Type1, source_height)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().source_height)),
+        .attributes = FieldAttributes{
+            .declared = AttributeKind::Category
+                        | AttributeKind::Persistence
+                        | AttributeKind::Unit,
+            .category = TextAttribute{"Lighting"},
+            .unit = UnitKind::Metres,
+            .persistence = PersistenceKind::Authoring,
+        },
+    },
+    FieldInfo{
+        .name = "two_sided",
+        .id = FieldId{11},
+        .kind = FieldKind::Bool,
+        .type = TypeId{},
+        .offset = static_cast<u32>(offsetof(Type1, two_sided)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().two_sided)),
+        .attributes = FieldAttributes{
+            .declared = AttributeKind::Category | AttributeKind::Persistence,
+            .category = TextAttribute{"Lighting"},
+            .unit = UnitKind::None,
+            .persistence = PersistenceKind::Authoring,
+        },
+    },
+    FieldInfo{
+        .name = "mobility",
+        .id = FieldId{12},
+        .kind = FieldKind::Enum,
+        .type = TypeId{},
+        .offset = static_cast<u32>(offsetof(Type1, mobility)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().mobility)),
+        .attributes = FieldAttributes{
+            .declared = AttributeKind::Category
+                        | AttributeKind::Enum
+                        | AttributeKind::Persistence,
+            .enumeration = EnumAttribute{enumerators_1_11_, 3},
+            .category = TextAttribute{"Lighting"},
+            .unit = UnitKind::None,
+            .persistence = PersistenceKind::Authoring,
+        },
+    },
 };
 
 constexpr TypeInfo type_1_ = TypeInfo{
@@ -504,14 +577,14 @@ constexpr TypeInfo type_1_ = TypeInfo{
     .destruct = &destruct_1_,
     .copy_assign = &copy_assign_1_,
     .fields = fields_1_,
-    .field_count = 8,
+    .field_count = 12,
     .methods = nullptr,
     .method_count = 0,
     .header = "src/rendering/scene/include/cy/rendering/scene/components.h",
     .module = "rendering-scene",
 };
 
-// cy::rendering::Camera — TypeId 10, declared at src/rendering/scene/include/cy/rendering/scene/components.h:228.
+// cy::rendering::Camera — TypeId 10, declared at src/rendering/scene/include/cy/rendering/scene/components.h:244.
 using Type2 = ::cy::rendering::Camera;
 
 static_assert(std::is_standard_layout_v<Type2>,

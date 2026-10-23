@@ -304,6 +304,23 @@ public enum FogSight: UInt32, Sendable, CaseIterable {
     case visible = 2
 }
 
+/// `CyLightKind`: what a light a game spawns is.
+public enum LightKind: UInt32, Sendable, CaseIterable {
+    case point = 1
+    case spot = 2
+    case rect = 3
+    case disc = 4
+    case sphere = 5
+    case tube = 6
+}
+
+/// `CyLightFade`: how a light with a lifetime fades along it.
+public enum LightFade: UInt32, Sendable, CaseIterable {
+    case none = 0
+    case linear = 1
+    case quadratic = 2
+}
+
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

@@ -90,6 +90,17 @@ struct FrameUpload {
     /// History means nothing this frame — a cut or a teleport. `upload_for` fills it from
     /// `AssemblyReport::temporal_invalidated`.
     bool motion_cut = false;
+    /// THE DEVICE'S LIGHT LISTS: buffers the frame's set 1 binds in place of the ring's
+    /// `cluster_headers` and `cluster_indices` — `lights_gpu::GpuLightAssignment::headers()` and
+    /// `indices()`, written by its dispatch before the opaque pass reads them. Null, the default,
+    /// binds the ring's, which `cluster_headers` and `cluster_indices` above fill. Both or neither.
+    /// Appended.
+    rhi::BufferHandle cluster_headers_buffer;
+    rhi::BufferHandle cluster_indices_buffer;
+    /// The light records in DEVICE memory, bound in place of the ring's: the buffer the frame's
+    /// prepare stage copies `lights` into (`FrameDescription::lights_target`). Null, the default,
+    /// binds the ring's, which the shading loop then reads across the bus. Appended.
+    rhi::BufferHandle lights_buffer;
 };
 
 /// The ring of per-frame buffers, and the descriptor sets that name them.
@@ -209,6 +220,10 @@ private:
     /// Last frame's rows. The ring cannot hold them: with one frame in flight the slot they were
     /// written to is the slot this frame writes.
     InstanceHistory history_{system_allocator(MemoryDomain::Renderer)};
+    /// `FrameUpload::cluster_headers_buffer` and `cluster_indices_buffer` of the last upload.
+    rhi::BufferHandle bound_lights_;
+    rhi::BufferHandle bound_headers_;
+    rhi::BufferHandle bound_indices_;
     u64 staged_light_bytes_ = 0;
     u64 staged_draw_bytes_ = 0;
     u64 uploads_ = 0;

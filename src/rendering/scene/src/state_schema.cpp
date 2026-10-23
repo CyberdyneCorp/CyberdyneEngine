@@ -116,10 +116,18 @@ Status declare_render_state(determinism::StateSchema& schema,
                    SimulationClass::Authoritative, StateEncoding::Direct},
         StateField{"enabled", 11, offsetof(LightSource, enabled), FieldKind::Bool,
                    SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"source_width", 12, offsetof(LightSource, source_width), FieldKind::F32,
+                   SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"source_height", 13, offsetof(LightSource, source_height), FieldKind::F32,
+                   SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"two_sided", 14, offsetof(LightSource, two_sided), FieldKind::Bool,
+                   SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"mobility", 15, offsetof(LightSource, mobility), FieldKind::Enum,
+                   SimulationClass::Authoritative, StateEncoding::Direct},
     };
     if (Status declared =
             schema.declare(SchemaSubject{components.light_source}, kLightSourceComponentName,
-                           Span<const StateField>(light_fields, 11));
+                           Span<const StateField>(light_fields, 15));
         !declared) {
         return declared;
     }

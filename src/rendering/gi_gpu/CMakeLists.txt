@@ -43,7 +43,8 @@ cy_add_module(
     # the acceleration service's, built on the device by that module and never by this one.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rendering-gi
                         cy::rendering-graph cy::rendering-raytracing cy::rendering-raytracing-gpu
-                        cy::rendering-forward cy::rendering-arbiter cy::rhi)
+                        cy::rendering-forward cy::rendering-arbiter cy::rhi
+    PRIVATE_DEPENDENCIES cy::rendering-lighting)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

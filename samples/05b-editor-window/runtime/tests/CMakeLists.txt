@@ -240,6 +240,7 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
                      cy::scene cy::servers-render cy::game-backend-illumination cy::gameplay-play
+                     cy::rendering-gi-gpu
         DEFINITIONS
             "CY_GI_TEST_DATA=\"${tests_dir}/data\"")
     target_include_directories(cy_test_integration_editor_window_illumination PRIVATE
@@ -257,7 +258,7 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../gi_runtime.cpp"
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
-                     cy::scene cy::servers-render cy::game-backend-illumination
+                     cy::scene cy::servers-render cy::game-backend-illumination cy::rendering-gi-gpu
                      cy::gameplay-play cy::physics-reference cy::abi
         DEFINITIONS
             "CY_GI_TEST_DATA=\"${tests_dir}/data\"")
@@ -279,7 +280,7 @@ function(cy_editor_window_runtime_declare_tests)
                 "${tests_dir}/../overlay.cpp"
                 "${tests_dir}/../script_runtime.cpp"
             DEPENDENCIES cy::editor-backend cy::import cy::core-assets cy::scene-serialization
-                         cy::scene cy::servers-render cy::game-backend-illumination
+                         cy::scene cy::servers-render cy::game-backend-illumination cy::rendering-gi-gpu
                          cy::gameplay-play cy::physics-reference cy::abi cy::game-backend
             DEFINITIONS
                 "CY_GI_TEST_DATA=\"${tests_dir}/data\""

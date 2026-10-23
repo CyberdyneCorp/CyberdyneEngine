@@ -155,6 +155,10 @@ fn menu(
                     ("Create Directional Light", "directional"),
                     ("Create Point Light", "point"),
                     ("Create Spot Light", "spot"),
+                    ("Create Rect Light", "rect"),
+                    ("Create Disc Light", "disc"),
+                    ("Create Sphere Light", "sphere"),
+                    ("Create Tube Light", "tube"),
                 ] {
                     if ui.button(label).clicked() {
                         intents.push(Intent::Invoke(

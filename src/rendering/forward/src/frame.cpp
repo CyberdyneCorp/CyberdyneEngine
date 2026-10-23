@@ -157,6 +157,11 @@ void declare_textures(RenderGraph& graph, FrameState& state) noexcept {
         // through a texture-table slot.
         resources.volumetric_fog = description.volumetric_fog_target;
     }
+    if (description.features.many_lights) {
+        // The producer's, for the same reason: both are sampled through texture-table slots.
+        resources.many_lights = description.many_lights_target;
+        resources.many_lights_reservoir = description.many_lights_reservoir_target;
+    }
     if (description.features.screen_space_gi) {
         if (description.screen_space_gi_stage.declare != nullptr) {
             // The producer's, as the contact shadows' are: the opaque pass samples both targets
@@ -215,14 +220,21 @@ void declare_buffers(RenderGraph& graph, FrameState& state) noexcept {
     const FrameDescription& description = *state.description;
     FrameResources& resources = *state.resources;
 
-    if (description.light_count > 0) {
+    if (description.light_count > 0 && valid(description.lights_target)) {
+        resources.lights = description.lights_target;
+    } else if (description.light_count > 0) {
         BufferRequest lights;
         lights.name = "lights";
         lights.size = static_cast<u64>(description.light_count) * 64U;  // sizeof(GpuLight)
         resources.lights = graph.create_buffer(lights);
     }
     const u32 clusters = description.cluster_grid.cluster_count();
-    if (clusters > 0) {
+    if (clusters > 0 && valid(description.cluster_headers_target)) {
+        // The device assignment's: imported, because the frame's set 1 binds the producer's own
+        // buffers rather than transients the graph recreates.
+        resources.cluster_headers = description.cluster_headers_target;
+        resources.cluster_indices = description.cluster_indices_target;
+    } else if (clusters > 0) {
         BufferRequest headers;
         headers.name = "cluster headers";
         headers.size = static_cast<u64>(clusters) * kClusterElementTypeCount * 2U * sizeof(u32);
@@ -387,6 +399,10 @@ PassId declare_opaque(RenderGraph& graph, FrameState& state) noexcept {
     if (valid(resources.screen_space_gi_specular)) {
         builder.read(resources.screen_space_gi_specular, Access::FragmentSampledRead);
     }
+    if (valid(resources.many_lights)) {
+        builder.read(resources.many_lights, Access::FragmentSampledRead);
+        builder.read(resources.many_lights_reservoir, Access::FragmentSampledRead);
+    }
     if (valid(resources.volumetric_fog)) {
         // A texture the opaque pass samples through the frame's table, or — for a caller that
         // composites the fog into the atmosphere's own froxel table — a buffer it reads as one.
@@ -467,7 +483,7 @@ PrepassMode select_prepass_mode(const FrameFeatures& features) noexcept {
         return PrepassMode::DepthNormalVelocity;
     }
     if (features.ambient_occlusion || features.contact_shadows || features.screen_space_gi ||
-        features.screen_space_reflections || features.normal_prepass) {
+        features.screen_space_reflections || features.normal_prepass || features.many_lights) {
         return PrepassMode::DepthNormal;
     }
     return PrepassMode::DepthOnly;
@@ -527,6 +543,8 @@ const char* frame_pass_kind_name(FramePassKind kind) noexcept {
             return "present";
         case FramePassKind::FogOfWar:
             return "fog of war";
+        case FramePassKind::ManyLights:
+            return "many lights";
         case FramePassKind::Count:
             break;
     }
@@ -570,6 +588,7 @@ void ForwardFrame::declare_produced_stage(RenderGraph& graph, const BuildState& 
     inputs.height = state.stage_height;
     inputs.render_width = state.description->width;
     inputs.render_height = state.description->height;
+    inputs.lights = resources_.lights;
     const PassId first = producer.declare(graph, inputs, producer.user);
     if (first == kInvalidPass) {
         // A producer that refused is a frame that cannot shade what it was configured to shade;
@@ -675,9 +694,16 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
               declare_virtual_geometry(graph, state));
     }
 
-    // 3. Cluster assignment.
-    stage(FramePassKind::ClusterAssignment, "cluster assignment",
-          declare_cluster_assignment(graph, state));
+    // 3. Cluster assignment: the device's producer, or the single pass.
+    if (state.description->cluster_assignment_stage.declare != nullptr &&
+        valid(resources_.cluster_headers)) {
+        declare_produced_stage(graph, state, state.description->cluster_assignment_stage,
+                               FramePassKind::ClusterAssignment, "cluster assignment",
+                               resources_.cluster_headers);
+    } else {
+        stage(FramePassKind::ClusterAssignment, "cluster assignment",
+              declare_cluster_assignment(graph, state));
+    }
 
     // 4. The screen-space passes that need depth and normals.
     if (features.ambient_occlusion) {
@@ -714,6 +740,13 @@ void ForwardFrame::declare_prepare_and_depth(RenderGraph& graph, BuildState& sta
         declare_produced_stage(graph, state, state.description->volumetric_fog_stage,
                                FramePassKind::VolumetricFog, "volumetric fog",
                                resources_.volumetric_fog);
+    }
+
+    // The stochastic many-light path, last before shading: it reads the depth and the normals and
+    // writes the two terms the opaque pass samples in place of the cluster loop.
+    if (features.many_lights) {
+        declare_produced_stage(graph, state, state.description->many_lights_stage,
+                               FramePassKind::ManyLights, "many lights", resources_.many_lights);
     }
 }
 
@@ -1006,6 +1039,29 @@ Status ForwardFrame::build(RenderGraph& graph, const FrameDescription& descripti
                                     !valid(description.volumetric_fog_target))) {
         return fail(ErrorCode::InvalidArgument,
                     "forward frame: volumetric fog needs its producer's stage and target");
+    }
+    // NOR DOES THE STOCHASTIC MANY-LIGHT PATH: the opaque pass samples both of its producer's
+    // targets in place of the cluster loop, and it reconstructs every surface from the prepass.
+    if (features.many_lights) {
+        if (description.many_lights_stage.declare == nullptr ||
+            !valid(description.many_lights_target) ||
+            !valid(description.many_lights_reservoir_target)) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: the many-light path needs its producer's stage and both "
+                        "of its targets");
+        }
+        if (!features.depth_prepass) {
+            return fail(ErrorCode::InvalidArgument,
+                        "forward frame: the many-light path reconstructs every surface from the "
+                        "depth prepass, and this frame has none");
+        }
+    }
+    // THE DEVICE'S CLUSTER LISTS COME AS A PAIR: a header array whose runs index a buffer the
+    // frame did not bind is a frame reading somebody else's words.
+    if (valid(description.cluster_headers_target) != valid(description.cluster_indices_target)) {
+        return fail(
+            ErrorCode::InvalidArgument,
+            "forward frame: the device's cluster headers and indices are imported together");
     }
     // NOR DOES MOTION BLUR. The gather reads the tile reductions its producer declares, and the
     // chain continues from the producer's target: without one, post-processing would read an image

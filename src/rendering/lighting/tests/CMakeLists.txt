@@ -44,6 +44,8 @@ function(cy_render_lighting_declare_tests)
         KIND unit
         SOURCES
             "${cy_lighting_tests_dir}/test_area.cpp"
+            "${cy_lighting_tests_dir}/test_area_lights.cpp"
+            "${cy_lighting_tests_dir}/test_transient_lights.cpp"
             "${cy_lighting_tests_dir}/test_decals.cpp"
             "${cy_lighting_tests_dir}/test_many_light.cpp"
             "${cy_lighting_tests_dir}/test_shadows.cpp"
@@ -61,6 +63,17 @@ function(cy_render_lighting_declare_tests)
         SOURCES
             "${cy_lighting_tests_dir}/test_reference.cpp"
             "${cy_lighting_tests_dir}/test_cookie_scroll.cpp"
+        DEPENDENCIES cy::rendering-lighting)
+
+    # AN AREA LIGHT OF THE FRAME AGAINST ITS OWN SURFACE. `shade_area_light` — the C++ twin of
+    # what the forward pass adds for a rect, disc, sphere or tube light — against the direct term
+    # integrated over the emitter's true surface, diffuse and specular, and the far field of a light
+    # given in lumens against its flux. Integration: the table is built once and each reference is
+    # tens of thousands of BRDF evaluations.
+    cy_add_test(
+        NAME render_area_lights
+        KIND integration
+        SOURCES "${cy_lighting_tests_dir}/test_area_shading.cpp"
         DEPENDENCIES cy::rendering-lighting)
 
     # PERCENTAGE-CLOSER SOFT SHADOWS, measured. `cy/shadow.slang`'s three steps over an analytic

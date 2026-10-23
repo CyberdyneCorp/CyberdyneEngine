@@ -169,6 +169,14 @@ prepass of its own: a frame without one reads the depth the opaque pass wrote. `
 output extent without a producer, a producer without a temporal frame or over multisampled targets,
 and an output smaller than the scene. `src/rendering/upscale/` is the producer.
 
+## Lights at scale: the device's lists and the stochastic path
+
+`FrameDescription::cluster_assignment_stage` is a producer the frame declares before the prepass
+(the device's light lists, `cluster_headers_target`, `cluster_indices_target`, `lights_target`);
+`FramePassKind::ManyLights` (`FrameFeatures::many_lights`, which derives the prepass's normals) is
+the stochastic path's stage after the prepass, writing `FrameResources::many_lights` and
+`many_lights_reservoir`. Each is refused without its producer. Both are `src/rendering/lights_gpu/`.
+
 ## Why the cluster assignment exists twice
 
 The specification requires it to run as a compute pass, and `frame.h` declares one. The C++ version in

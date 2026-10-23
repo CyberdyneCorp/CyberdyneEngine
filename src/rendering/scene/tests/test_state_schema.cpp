@@ -101,7 +101,8 @@ CY_TEST_CASE("a light is authoritative state, every field of it") {
         fixture.schema.find(cy::determinism::SchemaSubject{fixture.components.light_source});
     CY_REQUIRE(light != nullptr);
     CY_CHECK_EQ(light->field_count, light->hashed_field_count);
-    CY_CHECK_EQ(light->field_count, 11U);
+    // Eleven, and the four an area light and its mobility appended.
+    CY_CHECK_EQ(light->field_count, 15U);
 }
 
 CY_TEST_CASE("declaring over an unregistered set is refused rather than reporting coverage") {

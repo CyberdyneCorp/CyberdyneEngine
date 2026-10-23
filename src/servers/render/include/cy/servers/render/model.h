@@ -266,10 +266,47 @@ enum class LightKind : u8 {
     Directional = 0,
     Point,
     Spot,
+    /// THE AREA LIGHTS, appended so a kind's value is what it always was. Each emits from a surface
+    /// whose size is `LightDescription::source_width` and `source_height`, with luminance in nits,
+    /// and is shaded by linearly transformed cosines (`rendering/lighting/area.h`).
+    ///
+    /// A rectangle facing along the transform's forward axis: `source_width` along its right axis,
+    /// `source_height` along its up axis.
+    Rect,
+    /// A disc facing along the forward axis, `source_width` across.
+    Disc,
+    /// A sphere `source_width` across. Emits in every direction.
+    Sphere,
+    /// A cylinder along the transform's right axis, `source_width` long and `source_height`
+    /// across. Its side emits in every direction; its ends, like a fluorescent tube's caps, do not.
+    Tube,
     Count,
 };
 
 [[nodiscard]] const char* light_kind_name(LightKind kind) noexcept;
+
+/// Whether a kind emits from a surface rather than a point.
+[[nodiscard]] constexpr bool is_area_light(LightKind kind) noexcept {
+    return kind == LightKind::Rect || kind == LightKind::Disc || kind == LightKind::Sphere ||
+           kind == LightKind::Tube;
+}
+
+/// What a light's placement and intensity may do at run time, and so what of it may be baked.
+/// `rendering-lighting-and-shadows` — "Light types": "WHEN a light is marked `Static` THEN its
+/// contribution MAY be fully baked into lightmaps and it SHALL contribute no runtime cost;
+/// `Stationary` lights SHALL have baked indirect but dynamic direct light and shadows; `Movable`
+/// lights SHALL be fully dynamic." The same three words `gi::LightMobility` bakes by.
+enum class LightMobility : u8 {
+    /// Baked whole. The frame does not carry it at all: no record, no cluster entry, no cost.
+    Static = 0,
+    /// Baked indirect; the frame shades its direct term and its shadows.
+    Stationary,
+    /// Nothing baked. The default, because it is what every light was before mobility existed.
+    Movable,
+    Count,
+};
+
+[[nodiscard]] const char* light_mobility_name(LightMobility mobility) noexcept;
 
 struct LightDescription {
     LightKind kind = LightKind::Directional;
@@ -277,9 +314,9 @@ struct LightDescription {
     /// Linear, un-premultiplied. The intensity carries the magnitude.
     f32 color[3] = {1.0F, 1.0F, 1.0F};
     /// PHYSICAL UNITS, and which one depends on the kind: lux (lm/m²) for a directional light,
-    /// candela (lm/sr) for a point or spot. Named in the field rather than left to a convention,
-    /// because "intensity 5" means two different things for two kinds and a comment on a header is
-    /// where that stops being ambiguous.
+    /// candela (lm/sr) for a point or spot, nits (cd/m²) for an area light. Named in the field
+    /// rather than left to a convention, because "intensity 5" means two different things for two
+    /// kinds and a comment on a header is where that stops being ambiguous.
     f32 intensity = 100000.0F;  // roughly midday sun, in lux
     /// Metres. Zero for a directional light.
     f32 range = 0.0F;
@@ -298,6 +335,15 @@ struct LightDescription {
     /// emitter's flux in lumens, the frame shades it as the GI shades its cards. Appended, so a
     /// brace-initialised light keeps its meaning.
     bool cosine_falloff = false;
+    /// AN AREA LIGHT'S SIZE, in metres — what `LightKind`'s area enumerators say each is. Zero for
+    /// the punctual kinds, which ignore both. Appended, as `cosine_falloff` is.
+    f32 source_width = 0.0F;
+    f32 source_height = 0.0F;
+    /// A rect or a disc that emits from both faces. Ignored by every other kind: a sphere and a
+    /// tube emit in every direction already.
+    bool two_sided = false;
+    /// See `LightMobility`. Appended; `Movable` is every light written before it existed.
+    LightMobility mobility = LightMobility::Movable;
 };
 
 // --- Scenes ---------------------------------------------------------------------------------

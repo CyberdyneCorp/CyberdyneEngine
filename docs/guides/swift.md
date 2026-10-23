@@ -1038,6 +1038,21 @@ frame costs 6.3 ms at 480x270 with the GI 1.0 ms on the device. Two rules carry 
 every call is refused from `onFixedUpdate`, and a lamp you want seen in the frame should light
 through the cache rather than be promoted — the GI guide's section 6g says why.
 
+### Lights for a moment (ABI 1.11)
+
+`Lights.swift` spawns lights that live a few frames — a muzzle flash, a spark, a fireball — or until
+destroyed (see [the many-lights guide](many-lights.md)). A light is presentation: every call is
+accepted from `onUpdate` and refused from `onFixedUpdate`.
+
+| | What |
+|---|---|
+| `Light.spawn(.point(at:colour:candela:range:lifetime:fade:))` | a point light; `.spot`, `.rect`, `.disc`, `.sphere` and `.tube` likewise, area lights in nits and metres |
+| `update(_:)`, `move(_:to:)` | a new description, or the same one somewhere else, keeping the light's age |
+| `destroy()`, `isAlive` | end it now; whether it still lives |
+| `Light.status` | live, capacity, spawned, expired, refused |
+
+A full pool throws `.outOfRange`, a light that ended `.notFound`.
+
 ### Fog of war (ABI 1.10)
 
 `FogOfWar.swift` gives entities sight and asks what a team sees (see [the fog of war

@@ -612,6 +612,81 @@ void check_directional_light(AuthoredFrame& frame, const ser::AuthoringSchema& s
     CY_CHECK(differing_pixels(lit_directional.span(), frame.pixels()) > 50);
 }
 
+// A rect light the editor authored (`scene.create-light kind=rect`) reaches the frame as an area
+// light: it lights the sphere, its two-sided flag and its size are the frame's, and a panel of
+// zero size is the frame without it.
+constexpr std::string_view kAreaLit = R"(cyworld 1
+type 1 runtime "Transform"
+  field 1 quat "rotation" ""
+  field 2 vec3 "translation" ""
+  field 3 vec3 "scale" ""
+type 2 runtime "MeshRenderer"
+  field 4 text "mesh" ""
+type 3 runtime "LightSource"
+  field 5 int "kind" ""
+  field 6 float "intensity" ""
+  field 7 float "range" ""
+  field 8 bool "enabled" ""
+  field 9 float "source_width" ""
+  field 10 float "source_height" ""
+  field 11 bool "two_sided" ""
+node 0 - "test" "Sphere"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 0 0
+    field 3 1 1 1
+  component 2
+    field 4 "content/beauty/meshes/block.cyprim"
+node 1 - "test" "Rect Light"
+  component 1
+    field 1 0 0 0 1
+    field 2 0 1 2.5
+    field 3 1 1 1
+  component 3
+    field 5 3
+    field 6 4000
+    field 7 0
+    field 8 true
+    field 9 1.5
+    field 10 1
+    field 11 false
+)";
+
+void check_area_light(AuthoredFrame& frame, const ser::AuthoringSchema& schema,
+                      const first_light::Camera& view) {
+    // The panel hangs between the camera and the block, facing -Z: onto the block's front face.
+    ser::World lit(allocator());
+    read_resolved(kAreaLit, schema, lit);
+    const std::string dark_text =
+        edited(kAreaLit, "field 8 true\n", "field 8 false\n", Occurrence::First);
+    ser::World dark(allocator());
+    read_resolved(dark_text, schema, dark);
+    CY_REQUIRE(frame.render(dark, view, false));
+    Array<u32> unlit(allocator());
+    CY_REQUIRE(unlit.append(frame.pixels()));
+    CY_REQUIRE(frame.render(lit, view, false));
+    Array<u32> panel(allocator());
+    CY_REQUIRE(panel.append(frame.pixels()));
+    CY_CHECK(differing_pixels(unlit.span(), panel.span()) > 50);
+    CY_CHECK(red_sum(panel.span()) > red_sum(unlit.span()) + 1000U);
+    // Turned to face the camera, the block sees only its back face, which emits nothing...
+    const std::string away_text =
+        edited(kAreaLit, "field 1 0 0 0 1\n", "field 1 0 1 0 0\n", Occurrence::Last);
+    ser::World away(allocator());
+    read_resolved(away_text, schema, away);
+    CY_REQUIRE(frame.render(away, view, false));
+    Array<u32> one_sided(allocator());
+    CY_REQUIRE(one_sided.append(frame.pixels()));
+    CY_CHECK(red_sum(one_sided.span()) < red_sum(panel.span()));
+    // ...until it is two-sided.
+    const std::string both_text =
+        edited(away_text, "field 11 false\n", "field 11 true\n", Occurrence::First);
+    ser::World both(allocator());
+    read_resolved(both_text, schema, both);
+    CY_REQUIRE(frame.render(both, view, false));
+    CY_CHECK(red_sum(frame.pixels()) > red_sum(one_sided.span()) + 1000U);
+}
+
 // The sun casts a shadow only while the light, the caster and the receiver all say so, and the
 // shadow moves with the sun.
 void check_shadows(AuthoredFrame& frame, const ser::AuthoringSchema& schema,
@@ -1398,6 +1473,7 @@ CY_TEST_CASE("authored native frame renders a mesh and publishes its transformed
         check_directional_light(frame, schema, view);
         check_shadows(frame, schema, view);
         check_graph_material(frame, view);
+        check_area_light(frame, schema, view);
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
         check_graph_displacement_matches_cpu(schema, view);
         check_graph_motion_matches_cpu(schema, view);

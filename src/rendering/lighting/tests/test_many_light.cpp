@@ -240,6 +240,29 @@ CY_TEST_CASE("many-light: a reservoir's sample count is capped so history stops 
     CY_CHECK_EQ(saturated.sample_count, 500U);
 }
 
+CY_TEST_CASE("many-light: capping a reservoir keeps its contribution weight") {
+    // A reservoir combined with its own history every frame — temporal reuse — holds its estimate.
+    // Capping the count without the weight sum grew the contribution weight by the excess on every
+    // combination, and a static scene's estimate went to infinity frame by frame.
+    constexpr f32 kTarget = 2.0F;
+    constexpr f32 kSourcePdf = 0.5F;
+    Reservoir history;
+    SampleStream stream(3, 4, 5);
+    for (u32 frame = 0; frame < 200; ++frame) {
+        // This frame's candidates: sixteen draws of one light from a pdf of one half.
+        Reservoir current;
+        for (u32 draw = 0; draw < 16; ++draw) {
+            (void)cy::rendering::reservoir_update(current, LightCandidate{1, kTarget}, kSourcePdf,
+                                                  stream);
+        }
+        cy::rendering::reservoir_combine(current, history, kTarget, 64U, stream);
+        history = current;
+    }
+    // f(y) W is the light's contribution over its pdf: kTarget / kSourcePdf, every frame.
+    CY_CHECK_NEAR(history.contribution_weight() * kTarget, kTarget / kSourcePdf, 1e-3F);
+    CY_CHECK_EQ(history.sample_count, 64U);
+}
+
 CY_TEST_CASE("many-light: two runs of one frame select the same lights") {
     // A stochastic frame still has to be reproducible: the seed is a hash of (pixel, frame) and
     // nothing else, so a replay and a capture agree.

@@ -59,4 +59,29 @@ u32 append_promoted_frame_lights(const gi::IlluminationSystem& system,
                                  Array<render::LightDescription>& out,
                                  const PromotedLightOptions& options = {}) noexcept;
 
+// ================================================================================================
+// AND THE OTHER WAY: THE FRAME'S AREA LIGHTS AS THE GI'S EMITTERS
+// ================================================================================================
+//
+// A rect, disc, sphere or tube light of the frame is an emitter, and the GI integrates an emitter
+// as `GiLight`s with `emitter_area` — one-sided Lambertian squares it shades in closed form
+// (`emitter_form_factor`) with a shadow ray, exactly as it shades a promoted emissive card. So an
+// area light reaches the GI as the squares that cover its surface: a rect split along its long side
+// into squares of its short side, a disc as one square of its area, a tube as eight rows of squares
+// around its axis covering its side, and a two-sided panel twice, back to back. A SPHERE is a point
+// of its radius: it presents the same disc in every direction, so to every receiver outside it it
+// is exactly a point of `L r^2`, where a cube of its area is a third dim face-on. Each square
+// radiates the light's luminance, so the flux the GI receives is the flux the frame shades with,
+// and a receiver a few emitter sizes away is lit by the squares as by the light
+// (`unit.render_gi_frame_lights` measures how close).
+//
+// THE GI'S UNITS: its `direct` term is irradiance over pi — a card is shaded `albedo * direct` — so
+// an emitter's intensity is its luminance as it is, and a punctual light's is its candela over pi.
+
+/// Append the GI's lights for one light of the frame: the emitter squares of an area light, one
+/// light of the frame's position and candela over pi for a point or a spot, the illuminance over pi
+/// for a directional one. A static light (`render::LightMobility::Static`) is the bake's and is
+/// appended too, with its mobility. Returns how many were appended.
+u32 append_gi_lights(const render::LightDescription& light, Array<gi::GiLight>& out) noexcept;
+
 }  // namespace cy::rendering::gi_gpu

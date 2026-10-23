@@ -1,0 +1,270 @@
+# Mutations applied to the shipped sources, each rebuilt (SPIR-V/MSL regenerated for shader
+# mutations with the staged slangc, by each module's regenerate.py), run, and restored; the md5 of
+# every touched file verified identical after restore.
+# Driver: apply -> regenerate -> cmake --build build/dev --target <suite> -> run the suite binary on
+# the case the mutation targets -> restore -> regenerate -> md5.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build.
+
+## render.many_lights, render.area_lights and the host suites
+
+== ml-d-candidate-pdf-ignored: src/rendering/lights_gpu/shaders/many_lights.slang: '    let weight = target / sourcePdf;\n' -> '    let weight = target;\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:502: ERROR: CHECK_LT( std::fabs(bias.relative), 0.01 ) is NOT correct!
+  values: CHECK_LT( 0.967179, 0.01 )
+[doctest] test cases: 1 | 0 passed | 1 failed | 9 skipped
+(d) 43124 floor pixels, 48 frames, 16 candidates, no reuse: relative bias -96.7179%; 0.0% of pixels within 10% of the sum
+restored (many_lights.slang md5 9e9039219d71941239a67c741e13cf9d, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== ml-e-spatial-without-mis: src/rendering/lights_gpu/shaders/many_lights.slang: '        let weight = share * here * contributionWeight(candidate);\n' -> '        let weight = here * contributionWeight(candidate);\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:522: ERROR: CHECK_LT( std::fabs(bias.relative), 0.01 ) is NOT correct!
+  values: CHECK_LT( 4.23345e+18, 0.01 )
+[doctest] test cases: 1 | 0 passed | 1 failed | 9 skipped
+(e) with reuse: relative bias +423345359530160226304.0000%; 0.0% of pixels within 10% of the sum
+restored (many_lights.slang md5 9e9039219d71941239a67c741e13cf9d, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== ml-f-filter-normal-weight: src/rendering/lights_gpu/shaders/many_lights.slang: 'dot(surface.yzw, theirs.yzw)), sigmas.y);' -> 'dot(surface.yzw, theirs.yzw)), sigmas.y * 0.25);'
+exit 0 (GREEN)
+[doctest] test cases:  1 |  1 passed | 0 failed | 9 skipped
+(f) 130020 pixels over 3 frames against Denoiser::denoise: 0 outside, worst 0.00091
+restored (many_lights.slang md5 9e9039219d71941239a67c741e13cf9d, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== ml-h-stochastic-scaled: src/rendering/lights_gpu/shaders/many_lights.slang: '    cyManyLights.noisy[pixel] = float4(irradiance * (weight * visibility), 1.0);\n' -> '    cyManyLights.noisy[pixel] = float4(irradiance * (weight * visibility * 1.1), 1.0);\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:774: ERROR: CHECK_LT( std::fabs((stochastic_mean / clustered_mean) - 1.0), 0.05 ) is NOT correct!
+  values: CHECK_LT( 0.0542408, 0.05 )
+[doctest] test cases:  1 |  0 passed | 1 failed | 9 skipped
+(h) open floor, 160 lights: clustered mean 82.235, stochastic mean 86.696 (+5.42%); mean absolute difference 17.62% of the clustered mean
+restored (many_lights.slang md5 9e9039219d71941239a67c741e13cf9d, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== ml-i-no-visibility: src/rendering/lights_gpu/shaders/many_lights.slang: '        visibility = traceVisibility(surface, point, extent);\n' -> '        visibility = 1.0;\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:833: ERROR: CHECK_GT( umbra, 200U ) is NOT correct!
+  values: CHECK_GT( 0, 200 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:834: ERROR: CHECK_GT( penumbra, 400U ) is NOT correct!
+  values: CHECK_GT( 0, 400 )
+[doctest] test cases:  1 |  0 passed | 1 failed | 9 skipped
+(i) floor under a 2 m panel: 0 pixels in umbra, 0 in penumbra, 27100 lit
+restored (many_lights.slang md5 9e9039219d71941239a67c741e13cf9d, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== area-a-reach-skip-inexact: src/rendering/shaders/cy/frame.slang: '        if (dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 0 (GREEN)
+[doctest] test cases: 1 | 1 passed | 0 failed | 4 skipped
+(a) against the frame before area lights: 0 differing, worst 0
+restored (frame.slang md5 ee09f3f4e3532d6bc2fffc3af44c5768, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f: identical)
+
+== area-b-fresnel-at-normal: src/rendering/shaders/cy/light.slang: '    let half = unitOr(view + polygon.direction, normal);\n' -> '    let half = normal;\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:258: ERROR: CHECK_EQ( agreement.outside, 0U ) is NOT correct!
+  values: CHECK_EQ( 42954, 0 )
+[doctest] test cases: 1 | 0 passed | 1 failed | 4 skipped
+(b) 43124 floor pixels against shade_area_light: 42954 outside, worst 0.62997 of the pixel, mean lit radiance 1141.47
+restored (light.slang md5 579cc5c695af40693706d52ee1d04b3b, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== area-c-specular-without-table: src/rendering/shaders/cy/light.slang: '    if (!hasLtc)\n    {\n        return result;\n    }\n' -> ''
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:279: ERROR: CHECK_EQ( diffuse.outside, 0U ) is NOT correct!
+  values: CHECK_EQ( 42925, 0 )
+[doctest] test cases: 1 | 0 passed | 1 failed | 4 skipped
+(c) 43124 floor pixels against the diffuse term: 42925 outside, worst 0.14667
+restored (light.slang md5 579cc5c695af40693706d52ee1d04b3b, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== area-d-static-in-the-frame: src/rendering/assembly/src/frame_assembly.cpp: '        if (light.mobility == render::LightMobility::Static) {\n' -> '        if (false) {\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:314: ERROR: CHECK_EQ( room.run.report.static_lights, is_static ? 1U : 0U ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:318: ERROR: CHECK_EQ( room.run.uploaded[0].kind == rendering::kGpuLightBaked, is_static ) is NOT correct!
+  values: CHECK_EQ( false, true )
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:319: ERROR: CHECK_EQ( room.run.report.clusters.elements, is_static ? 0U : 1U ) is NOT correct!
+  values: CHECK_EQ( 1, 0 )
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:321: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+  values: CHECK_EQ( 18170, 0 )
+[doctest] test cases:  1 |  0 passed | 1 failed | 4 skipped
+(d) Static: 18170 texels differ from the frame without it; 1 in lists
+(d) Stationary: 18170 texels differ from the frame without it; 1 in lists
+(d) Movable: 18170 texels differ from the frame without it; 1 in lists
+restored (frame_assembly.cpp md5 05004b1e58ce7cff0f683b08ecad846c: identical)
+
+== transient-quadratic-as-linear: src/rendering/lighting/src/transient_lights.cpp: '    return remaining * remaining;\n}' -> '    return remaining;\n}'
+exit 1 (RED)
+src/rendering/lighting/tests/test_transient_lights.cpp:68: ERROR: CHECK( (frame[0].intensity) == ::cy::test::within(250.0F, 1e-2F) ) is NOT correct!
+  values: CHECK( 500 == 250 +/- 0.01 )
+src/rendering/lighting/tests/test_transient_lights.cpp:83: ERROR: CHECK( (transient_envelope(TransientFade::Quadratic, 0.25F, 1.0F)) == ::cy::test::within(0.5625F, 1e-6F) ) is NOT correct!
+  values: CHECK( 0.75 == 0.5625 +/- 1e-06 )
+[doctest] test cases:  5 |  3 passed | 2 failed | 58 skipped
+restored (transient_lights.cpp md5 4cb87861d54daa96952c270e90075d01: identical)
+
+== abi-lights-in-fixed-step: src/abi/src/game/light_thunks.cpp: 'constexpr u32 kLightPhases = kPhaseNone | kPhaseFrame;' -> 'constexpr u32 kLightPhases = kPhaseAny;'
+exit 1 (RED)
+src/abi/tests/test_game_lights.cpp:177: ERROR: CHECK_EQ( table().light_spawn(bound.engine(), &desc, &light), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+  values: CHECK_EQ( 0, 6 )
+src/abi/tests/test_game_lights.cpp:179: ERROR: CHECK_EQ( table().light_destroy(bound.engine(), 1), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+  values: CHECK_EQ( 0, 6 )
+src/abi/tests/test_game_lights.cpp:181: ERROR: CHECK_EQ( table().light_alive(bound.engine(), 1, &alive), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+  values: CHECK_EQ( 0, 6 )
+src/abi/tests/test_game_lights.cpp:183: ERROR: CHECK_EQ( bound.lights.calls, 0U ) is NOT correct!
+  values: CHECK_EQ( 2, 0 )
+[doctest] test cases:  3 |  2 passed | 1 failed | 170 skipped
+restored (light_thunks.cpp md5 76cc6694a2334a32572e916b395ad8d5: identical)
+
+== gi-squares-half-area: src/rendering/gi_gpu/src/frame_lights.cpp: '    square.emitter_area = area;\n' -> '    square.emitter_area = area * 0.5F;\n'
+exit 1 (RED)
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 0.24 == 0.48 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 0.48 == 0.96 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 0.565487 == 1.13097 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 1.13097 == 2.26195 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 0.113097 == 0.226195 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:89: ERROR: CHECK( (area_sum) == ::cy::test::within_relative(rendering::area_light_emitting_area(light), 1e-4F) ) is NOT correct!
+  values: CHECK( 0.113097 == 0.226195 +/- (relative) 0.0001 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 21.6227 == 43.1273 +/- (relative) 0.01 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 17.1307 == 34.2016 +/- (relative) 0.01 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 12.2355 == 24.4554 +/- (relative) 0.01 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 17.6139 == 34.9054 +/- (relative) 0.02 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 13.6353 == 27.1285 +/- (relative) 0.02 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 9.58243 == 19.1361 +/- (relative) 0.02 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 2.38063 == 4.96137 +/- (relative) 0.05 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 1.97946 == 3.93978 +/- (relative) 0.05 )
+src/rendering/gi_gpu/tests/test_gi_frame_lights.cpp:125: ERROR: CHECK( (gi.x) == ::cy::test::within_relative(frame.x, configuration.tolerance) ) is NOT correct!
+  values: CHECK( 1.48841 == 2.90114 +/- (relative) 0.05 )
+[doctest] test cases:   3 |   1 passed |  2 failed | 0 skipped
+restored (frame_lights.cpp md5 8b77264f5669ac84eaebcb622b081aa6: identical)
+
+== extract-drops-area-size: src/rendering/scene/src/extract.cpp: '    published.desc.source_width = light.source_width;\n' -> ''
+exit 1 (RED)
+src/rendering/scene/tests/test_extract.cpp:388: ERROR: CHECK_EQ( published.source_width, 1.2F ) is NOT correct!
+  values: CHECK_EQ( 0, 1.2 )
+[doctest] test cases:  1 | 0 passed | 1 failed | 30 skipped
+restored (extract.cpp md5 9708494a06d8c645c062c6c411a5335e: identical)
+
+== selector-ignores-drops: src/rendering/lighting/src/many_light.cpp: '        const bool overflowing = inputs.lights_dropped_by_bound > 0;' -> '        const bool overflowing = false;'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:946: ERROR: CHECK_EQ( left.path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:947: ERROR: CHECK( left.changed ) is NOT correct!
+  values: CHECK( false )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:973: ERROR: CHECK_EQ( selector.update(settings.path, calm).path, rendering::LightingPath::StochasticManyLight ) is NOT correct!
+  values: CHECK_EQ( 0, 1 )
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:978: ERROR: CHECK( returned.changed ) is NOT correct!
+  values: CHECK( false )
+[doctest] test cases:  1 |  0 passed |  1 failed | 9 skipped
+(k) 600 crowded lights: 71134 assignments dropped at the bound, clustered lighting 0.967 ms against the arbiter's 2.106 ms: clustered (the clustered path fits its bound and its allocation)
+restored (many_light.cpp md5 524e88991f029d481b569f8dc31fdb53: identical)
+
+== editor-frame-ignores-two-sided: samples/05b-editor-window/runtime/authored_frame.cpp: '    light.two_sided = two_sided != nullptr && two_sided->kind == ser::WorldValueKind::Bool &&\n                      two_sided->integer != 0;\n' -> '    light.two_sided = false;\n    (void)two_sided;\n'
+exit 1 (RED)
+samples/05b-editor-window/runtime/tests/test_authored_frame.cpp:687: ERROR: CHECK( red_sum(frame.pixels()) > red_sum(one_sided.span()) + 1000U ) is NOT correct!
+  values: CHECK( 75811 >  79114 )
+[doctest] test cases:  14 |  13 passed | 1 failed | 0 skipped
+restored (authored_frame.cpp md5 d6ae10dac2174333c43a9d19d540eb2d: identical)
+
+== area-a-reach-skip-inexact-against-l: src/rendering/shaders/cy/frame.slang: '        if (dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:1019: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+  values: CHECK_EQ( 59060, 0 )
+[doctest] test cases: 1 | 0 passed | 1 failed | 10 skipped
+(l) 40 lights: 59060 HDR halves differ between the cluster loop and the walk over every light (117103 lit pixels); cluster overflow 0
+restored (frame.slang md5 ee09f3f4e3532d6bc2fffc3af44c5768, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f: identical)
+
+== area-a-spot-taken-for-area: src/rendering/shaders/cy/light.slang: '    return base >= kLightRect && base <= kLightTube;' -> '    return base >= kLightSpot && base <= kLightTube;'
+exit 0 (GREEN)
+[doctest] test cases: 1 | 1 passed | 0 failed | 4 skipped
+(a) against the frame before area lights: 0 differing, worst 0
+restored (light.slang md5 579cc5c695af40693706d52ee1d04b3b, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f, lights_gpu_spirv.h md5 760ca85cb3579f94f7f40af5e07b9a5b, lights_gpu_msl.h md5 14d4a9ea3cc43bb010817fde202cbbd1: identical)
+
+== area-a-reach-skip-inexact: src/rendering/shaders/cy/frame.slang: '        if (dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:250: ERROR: CHECK_EQ( comparison.max_channel_delta, 0U ) is NOT correct!
+  values: CHECK_EQ( 1, 0 )
+[doctest] test cases:  1 |  0 passed | 1 failed | 4 skipped
+(a) by day, against the frame before area lights: 0 differing, worst 0
+(a) by night, against the frame before area lights: 0 differing, worst 1
+restored (frame.slang md5 ee09f3f4e3532d6bc2fffc3af44c5768, frame_spirv.h md5 ab5059db51f481afa88534ae615adf13, frame_msl.h md5 93dc275a3389dc7b219b70b2d9771d5f: identical)
+
+== backend-fade-linear-as-quadratic: src/game_backend/lights/src/lights_backend.cpp: '            return rendering::TransientFade::Linear;\n' -> '            return rendering::TransientFade::Quadratic;\n'
+exit 1 (RED)
+src/game_backend/lights/tests/test_lights_backend.cpp:114: ERROR: CHECK( (frame[0].intensity) == ::cy::test::within(600.0F, 1e-2F) ) is NOT correct!
+  values: CHECK( 300 == 600 +/- 0.01 )
+[doctest] test cases:   3 |   2 passed | 1 failed | 0 skipped
+restored (lights_backend.cpp md5 e6959beaf2f22a69748077af9c2af5ff: identical)
+
+
+## After the light loops were folded into one call site each (the same mutation, on the new loop)
+
+== reach-skip-inexact-unified-loop-l: src/rendering/shaders/cy/frame.slang: '        if (walk.clustered && dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (walk.clustered && dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_many_lights_device.cpp:1017: ERROR: CHECK_EQ( differing, 0U ) is NOT correct!
+(l) 40 lights: 59060 HDR halves differ between the cluster loop and the walk over every light (117103 lit pixels); cluster overflow 0
+restored (frame.slang md5 dbcd4d24623f08e3caf1e44e7abd9ffb, frame_spirv.h md5 7769ecd671541dd9924034ce679a7e3f, frame_msl.h md5 6a4bdd02acaae12cb1e2eb6b1a647789: identical)
+
+== reach-skip-inexact-unified-loop-a: src/rendering/shaders/cy/frame.slang: '        if (walk.clustered && dot(reach, reach) >= cyLights[index].range * cyLights[index].range)\n' -> '        if (walk.clustered && dot(reach, reach) >= 0.81 * cyLights[index].range * cyLights[index].range)\n'
+exit 1 (RED)
+src/rendering/lights_gpu/tests/test_area_lights_device.cpp:250: ERROR: CHECK_EQ( comparison.max_channel_delta, 0U ) is NOT correct!
+(a) by day, against the frame before area lights: 0 differing, worst 0
+(a) by night, against the frame before area lights: 0 differing, worst 1
+restored (frame.slang md5 dbcd4d24623f08e3caf1e44e7abd9ffb, frame_spirv.h md5 7769ecd671541dd9924034ce679a7e3f, frame_msl.h md5 6a4bdd02acaae12cb1e2eb6b1a647789: identical)
+
+## Notes on the two GREEN runs above
+
+ml-f-filter-normal-weight: the filter's normal weight cannot matter on case (f)'s flat floor (every
+normal is equal), so the mutation was a poor choice rather than a gap; ml-f-filter-value-weight,
+which changes the value edge-stopping every pixel uses, is RED.
+
+area-a-reach-skip-inexact and area-a-spot-taken-for-area were GREEN against (a) by day alone: the
+scene's two points light little that the 8-bit picture keeps under a 22 000 lux sun, and there is no
+spot. Two cases were added in answer: (a) by night (points and spots alone, against
+references/area_lights_off_night.png drawn by the pre-change frame shader) and render.many_lights (l)
+(the cluster loop against the walk over every light, HDR halves). Both mutations are RED against
+them in the later runs above.
+
+## Earlier mutations (recorded while the path was built)
+
+unit.render_lighting "many-light: capping a reservoir keeps its contribution weight"
+  mutation: cap_reservoir caps sample_count without scaling weight_sum (the behaviour before)
+  result: RED — contribution weight x target 200 against 4 +/- 0.001
+render.many_lights "(c) a thousand lights at 1080p: the assignment and the lighting inside the budget"
+  mutation: cy/frame.slang walks every light for the directional ones (the frame before this change)
+  result: RED — prepass end to opaque end 7.738 ms against the 1.5 ms budget (0.588 ms with the directional lights named)
+render.many_lights "(e) with temporal and spatial reuse the estimate's bias stays inside its bound"
+  mutation: no 1/Z normalisation after spatial reuse (every neighbour's samples counted)
+  result: RED — relative bias -10.74% against the 1% bound
+render.many_lights "(d)/(e)": the reservoir cap without scaling the weight sum
+  result: RED — relative bias +1.16e18% (the estimate diverged frame by frame)
+
+## The editor (Rust) and CyberdyneKit (Swift)
+
+== editor-lightmap-bakes-area-lights: editor/crates/cy-editor-services/src/lightmap_description.rs: 'if kind >= FIRST_AREA_LIGHT_KIND {' -> 'if kind >= FIRST_AREA_LIGHT_KIND && false {'
+RED — lightmap_description::tests::an_area_light_is_not_baked_as_a_point: left 5, right 1 light lines
+restored (md5 9200782c2f7abaf90c4f83f160ca844b: identical)
+
+== editor-create-light-drops-size: editor/crates/cy-editor-services/src/scene_actors.rs: 'preset.size {' -> 'preset.size.filter(|_| false) {'
+RED — scene_actors::tests::area_lights_carry_their_kind_and_size_through_undo_and_a_world_save: source_width None, expected Some(Float(1.0))
+restored (md5 1289c3684f007fd30f57634d739817a8: identical)
+
+== swift-two-sided-dropped: bindings/swift/Sources/CyberdyneKit/Lights.swift: 'out.flags = twoSided ? CY_LIGHT_TWO_SIDED : 0' -> 'out.flags = 0'
+RED — LightsTests.testAPanelCrossesWithItsKindSizeAndFaces: XCTAssertEqual failed ("0") is not equal to ("1"); XCTAssertTrue failed
+restored (md5 8f9de51fbd472320f9e9ff77248be200: identical)

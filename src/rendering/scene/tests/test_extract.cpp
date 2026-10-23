@@ -364,6 +364,33 @@ CY_TEST_CASE("cameras and lights cross the boundary whole, with the entity as th
     CY_CHECK_EQ(fixture.published().lights.size(), 1U);
 }
 
+CY_TEST_CASE("an area light's size, faces and mobility ride the snapshot") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+    cy::ecs::ComponentTypeId components[2] = {fixture.scene().world_transform,
+                                              fixture.render().light_source};
+    const auto entity =
+        fixture.world.create(cy::Span<const cy::ecs::ComponentTypeId>(components, 2));
+    CY_REQUIRE(entity.has_value());
+    LightSource light;
+    light.kind = cy::render::LightKind::Rect;
+    light.intensity = 4000.0F;
+    light.source_width = 1.2F;
+    light.source_height = 0.4F;
+    light.two_sided = true;
+    light.mobility = cy::render::LightMobility::Stationary;
+    CY_REQUIRE(fixture.world.set(*entity, fixture.render().light_source, light).has_value());
+
+    CY_REQUIRE(fixture.commit(1));
+    CY_REQUIRE_EQ(fixture.published().lights.size(), 1U);
+    const cy::render::LightDescription& published = fixture.published().lights[0].desc;
+    CY_CHECK(published.kind == cy::render::LightKind::Rect);
+    CY_CHECK_EQ(published.source_width, 1.2F);
+    CY_CHECK_EQ(published.source_height, 0.4F);
+    CY_CHECK(published.two_sided);
+    CY_CHECK(published.mobility == cy::render::LightMobility::Stationary);
+}
+
 CY_TEST_CASE("the environment rides the snapshot") {
     Fixture fixture;
     CY_REQUIRE(fixture.start());

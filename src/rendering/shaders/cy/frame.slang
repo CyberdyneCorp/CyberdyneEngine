@@ -248,7 +248,25 @@ public struct CyFrameData
     /// whether the frame's GI mode admits the dynamic sources there, which `gi::exclusion_for()`
     /// answered on the host. w: reserved. `gi_gpu::write_gi_control` fills it.
     public uint4 giControl;
+    /// Area lights and the stochastic many-light path, appended for the reason `materialTextures`
+    /// gives. x: the frame texture slot of the LTC table (`lights_gpu::LtcTableTexture`), or
+    /// `kCyNoMaterialTexture` — an area light then shades its diffuse term alone. y: the slot of
+    /// the stochastic path's denoised direct irradiance (`lights_gpu::ManyLightsPass`). z: the
+    /// slot of its resolved reservoir — the selected light's index and its contribution weight. w:
+    /// `kCyStochasticLighting` when the stochastic path is the frame's: the clustered loop then
+    /// shades the directional lights alone. Zero, the default, is the clustered frame as it was.
+    public uint4 lightingControl;
+    /// The frame's directional lights by index, appended for the reason `materialTextures` gives:
+    /// x, y, z the first three in ascending order, w their count with `kCyDirectionalListed`. Zero,
+    /// the default, walks every light for them, as the frame always did.
+    public uint4 directionalLights;
 };
+
+/// `directionalLights.w`'s flag. `cy::rendering::pipeline::kDirectionalListed` is the same number.
+public static const uint kCyDirectionalListed = 0x80000000u;
+
+/// `lightingControl.w`'s bit. `cy::rendering::lights_gpu::kStochasticLighting` is the same number.
+public static const uint kCyStochasticLighting = 1u;
 
 /// `giControl.z`'s bits. `cy::rendering::gi_gpu::kGiAdmitPlain`, `kGiAdmitLightmapped` and
 /// `kGiAdmitWithVolume` are the same numbers.
@@ -735,6 +753,75 @@ float bakedLightFactor(uint index, float4 mask)
     return 1.0;
 }
 
+// --- Area lights ----------------------------------------------------------------------------------
+//
+// THE LTC TABLE IS A TEXTURE OF THE FRAME'S: `lights_gpu::LtcTableTexture` uploads
+// `LtcTable`'s 24x24 entries as two stacked 24x24 halves of an `Rgba32Sfloat` image — the inverse
+// transform's (a, b, c, d) above, (magnitude, fresnel) below — and `lightingControl.x` names its
+// slot. `LtcTable::sample`'s bilinear filter is transcribed here texel for texel, read at texel
+// centres, so the device interpolates in f32 exactly as the host does rather than in a sampler's
+// fixed-point weights.
+
+static const uint kCyLtcSize = 24u;
+
+float4 frameLtcTexel(uint x, uint y)
+{
+    let size = float(kCyLtcSize);
+    let uv = float2((float(x) + 0.5) / size, (float(y) + 0.5) / (2.0 * size));
+    return cyMaterialSampleTextureLevel(cyFrame.lightingControl.x, uv, 0.0);
+}
+
+/// `LtcTable::sample`.
+AreaLtc frameAreaLtc(float roughness, float cosTheta)
+{
+    let last = float(kCyLtcSize - 1u);
+    let u = sqrt(saturate(roughness)) * float(kCyLtcSize) - 0.5;
+    let v = sqrt(saturate(1.0 - cosTheta)) * float(kCyLtcSize) - 0.5;
+    let uf = clamp(u, 0.0, last);
+    let vf = clamp(v, 0.0, last);
+    let x0 = uint(uf);
+    let y0 = uint(vf);
+    let x1 = min(x0 + 1u, kCyLtcSize - 1u);
+    let y1 = min(y0 + 1u, kCyLtcSize - 1u);
+    let fx = uf - float(x0);
+    let fy = vf - float(y0);
+    let top = lerp(frameLtcTexel(x0, y0), frameLtcTexel(x1, y0), fx);
+    let bottom = lerp(frameLtcTexel(x0, y1), frameLtcTexel(x1, y1), fx);
+    let lowerTop = lerp(frameLtcTexel(x0, y0 + kCyLtcSize), frameLtcTexel(x1, y0 + kCyLtcSize), fx);
+    let lowerBottom =
+        lerp(frameLtcTexel(x0, y1 + kCyLtcSize), frameLtcTexel(x1, y1 + kCyLtcSize), fx);
+    let energy = lerp(lowerTop, lowerBottom, fy);
+    AreaLtc entry;
+    entry.transform = lerp(top, bottom, fy);
+    entry.magnitude = energy.x;
+    return entry;
+}
+
+/// One area light's two terms at a surface: `shade_area_light`.
+AreaShading frameAreaShading(uint index, Surface surface, float3 relativePosition, float3 normal,
+                             float3 viewDir)
+{
+    let hasLtc = cyFrame.lightingControl.x != kCyNoMaterialTexture;
+    AreaLtc ltc;
+    ltc.transform = float4(1.0, 0.0, 1.0, 0.0);
+    ltc.magnitude = 1.0;
+    if (hasLtc)
+    {
+        ltc = frameAreaLtc(surface.roughness, clamp(dot(normal, viewDir), 1e-3, 1.0));
+    }
+    return shadeAreaLight(cyLights[index], relativePosition, normal, viewDir, surface.albedo,
+                          surface.roughness, surface.metallic, hasLtc, ltc);
+}
+
+// --- The stochastic many-light path -------------------------------------------------------------
+//
+// `lights_gpu::ManyLightsPass` resolves, per pixel, a reservoir over every local light: its
+// selected light and the contribution weight `W * V` that makes `f(y) W V` an unbiased estimate of
+// the sum of every light's shadowed contribution. The DIFFUSE half of that estimate is denoised
+// (`denoising`'s `StochasticDirect` signal) and arrives as irradiance; the SPECULAR half needs the
+// material, which only this pass has, so it is the reservoir's light shaded by `accumulateLights`'
+// local loop and weighted — one sample a pixel, reused spatially and temporally, and not denoised.
+
 /// A punctual light's sample, scaled by what the lightmap left of it. Unchanged, bit for bit, on a
 /// surface with no lightmap.
 LightSample bakedLightSample(uint index, float3 relativePosition, CyBakedLights baked)
@@ -745,6 +832,92 @@ LightSample bakedLightSample(uint index, float3 relativePosition, CyBakedLights 
         sample.illuminance *= bakedLightFactor(index, baked.mask);
     }
     return sample;
+}
+
+/// One directional light's term at a surface, shadowed.
+float3 directionalContribution(uint global, Surface surface, float3 relativePosition, float3 normal,
+                               float3 viewDir, float2 fragmentCentre, uint instanceFlags,
+                               CyBakedLights baked)
+{
+    let sunSample = evaluateLight(cyLights[global], relativePosition);
+    // THE CONTACT TERM IS AN ADDITION TO THE MAP'S, NOT A REPLACEMENT: `virtual-shadows`'
+    // "Contact and traced refinement". The darker of the two, so an occluder both see is not
+    // counted twice and one only the trace sees still darkens the contact.
+    var visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
+                         ? min(directionalShadowVisibility(relativePosition, normal,
+                                                           fragmentCentre),
+                               contactShadowVisibility(fragmentCentre))
+                         : 1.0;
+    // A STATIONARY SUN ON A LIGHTMAPPED SURFACE: the baked mask is its shadow from the static
+    // world, the map (when there is one) its shadow from everything, and the darker of the two
+    // counts an occluder both see once. A static sun's direct term is in the texels: zero.
+    if (baked.active)
+    {
+        visibility = min(visibility, bakedLightFactor(global, baked.mask));
+    }
+    return shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
+}
+
+/// The local lights a pixel shades, and how: every light in index order, a cluster's list, or —
+/// on the stochastic path — the reservoir's one selected light, its specular term weighted. ONE
+/// LOOP SHADES ALL THREE, so each kind of light is shaded at one place in the shader: the fragment
+/// is one inlined function, and every call site of the area and shadow code is a copy of it the
+/// driver compiles.
+struct LocalLightWalk
+{
+    uint count;
+    uint offset;
+    bool clustered;
+    bool stochastic;
+    uint selected;
+    float weight;
+};
+
+LocalLightWalk localLightWalk(float3 relativePosition, uint2 pixel, float2 fragmentCentre)
+{
+    LocalLightWalk walk;
+    walk.count = cyFrame.counts.x;
+    walk.offset = 0u;
+    walk.clustered = false;
+    walk.stochastic = false;
+    walk.selected = 0u;
+    walk.weight = 0.0;
+    // THE STOCHASTIC PATH REPLACES THE CLUSTER LOOP FOR EVERY LOCAL LIGHT, and never adds to it:
+    // the reservoir already stands for every light the loop would have walked.
+    if ((cyFrame.lightingControl.w & kCyStochasticLighting) != 0u)
+    {
+        let uv = fragmentCentre * cyFrame.extentAndInverse.zw;
+        let reservoir = cyMaterialSampleTextureLevel(cyFrame.lightingControl.z, uv, 0.0);
+        walk.stochastic = true;
+        walk.weight = reservoir.y;
+        let valid = reservoir.x >= 0.0 && walk.weight > 0.0 && reservoir.x < float(walk.count);
+        walk.selected = valid ? uint(reservoir.x) : 0u;
+        walk.count = valid ? 1u : 0u;
+        return walk;
+    }
+    if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0)
+    {
+        return walk;
+    }
+    let extent = uint2(cyFrame.extentAndInverse.xy);
+    let coord = clusterCoordOf(cyFrame.clusterGrid, pixel, extent, viewDepthOf(relativePosition));
+    let cluster = clusterIndexOf(cyFrame.clusterGrid, coord);
+    // The headers are indexed `cluster * kClusterElementTypeCount + type`, and the light type is
+    // zero. The stride comes from `counts.z` so the two sides cannot disagree about it.
+    let header = cyClusterHeaders[cluster * cyFrame.counts.z];
+    walk.clustered = true;
+    walk.offset = header.x;
+    walk.count = header.y;
+    return walk;
+}
+
+uint localLightIndex(LocalLightWalk walk, uint slot)
+{
+    if (walk.stochastic)
+    {
+        return walk.selected;
+    }
+    return walk.clustered ? cyClusterIndices[walk.offset + slot] : slot;
 }
 
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
@@ -761,62 +934,80 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
     // sun is evaluated globally. The first version of this shader looped the cluster list alone; the
     // captured frame came back lit by two point lights and nothing else, which is how the omission
     // was found. There are a handful of directional lights in any frame, so the loop is short.
-    for (uint global = 0; global < lightCount; ++global)
+    // THE DIRECTIONAL LIGHTS BY NAME, WHEN THE FRAME NAMES THEM. Walking the whole list for them
+    // costs every pixel every light of the frame — a thousand lights made this loop, not the
+    // clustered one, seven milliseconds of a 1080p frame — so `directionalLights` lists them, in
+    // ascending order, and the walk is the fallback for a frame that does not. Either way the same
+    // lights are shaded in the same order, so the sum is the same bits; and either way through ONE
+    // call site, so the shadow code is compiled once.
+    let listed = (cyFrame.directionalLights.w & kCyDirectionalListed) != 0u;
+    let directionalCount = listed ? min(cyFrame.directionalLights.w & 0xFFu, 3u) : lightCount;
+    for (uint slot = 0u; slot < directionalCount; ++slot)
     {
-        if (cyLights[global].kind != kLightDirectional)
+        let global = listed ? cyFrame.directionalLights[slot] : slot;
+        if (!listed && cyLights[global].kind != kLightDirectional)
         {
             continue;
         }
-        let sunSample = evaluateLight(cyLights[global], relativePosition);
-        // THE CONTACT TERM IS AN ADDITION TO THE MAP'S, NOT A REPLACEMENT: `virtual-shadows`'
-        // "Contact and traced refinement". The darker of the two, so an occluder both see is not
-        // counted twice and one only the trace sees still darkens the contact.
-        var visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
-                             ? min(directionalShadowVisibility(relativePosition, normal,
-                                                               fragmentCentre),
-                                   contactShadowVisibility(fragmentCentre))
-                             : 1.0;
-        // A STATIONARY SUN ON A LIGHTMAPPED SURFACE: the baked mask is its shadow from the static
-        // world, the map (when there is one) its shadow from everything, and the darker of the two
-        // counts an occluder both see once. A static sun's direct term is in the texels: zero.
-        if (baked.active)
-        {
-            visibility = min(visibility, bakedLightFactor(global, baked.mask));
-        }
-        lit += shadeSurfaceWithLight(surface, normal, viewDir, sunSample) * visibility;
+        lit += directionalContribution(global, surface, relativePosition, normal, viewDir,
+                                       fragmentCentre, instanceFlags, baked);
     }
 
-    if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0)
+    let walk = localLightWalk(relativePosition, pixel, fragmentCentre);
+    // The stochastic path's DIFFUSE half arrives denoised, as irradiance (`denoising`'s
+    // `StochasticDirect` signal); its SPECULAR half needs the material, which only this pass has, so
+    // it is the reservoir's light shaded below and weighted — one sample a pixel, reused spatially
+    // and temporally, and not denoised. Kept apart from `lit` and added last.
+    float3 sampled = float3(0.0);
+    if (walk.stochastic)
     {
-        for (uint index = 0; index < lightCount; ++index)
+        let uv = fragmentCentre * cyFrame.extentAndInverse.zw;
+        let irradiance = cyMaterialSampleTextureLevel(cyFrame.lightingControl.y, uv, 0.0).rgb;
+        sampled = surface.albedo * (1.0 - surface.metallic) * (1.0 / 3.14159265) * irradiance;
+    }
+    for (uint slot = 0; slot < walk.count; ++slot)
+    {
+        let index = localLightIndex(walk, slot);
+        if (index >= lightCount || cyLights[index].kind == kLightDirectional ||
+            cyLights[index].kind == kLightBaked)
         {
-            if (cyLights[index].kind == kLightDirectional)
+            continue;  // already accumulated above, or baked whole
+        }
+        // PAST ITS REACH A LIGHT ADDS EXACTLY ZERO — its window is (1 - 1)^2 there, for a punctual
+        // light and an area light alike — so the test that skips it changes no bit of the sum. A
+        // cluster's list is every light whose sphere touches the cluster's box, and a box far down
+        // a grazing floor is metres deep; most of its lights reach no pixel of it.
+        let reach = cyLights[index].positionRelativeToCamera - relativePosition;
+        if (walk.clustered && dot(reach, reach) >= cyLights[index].range * cyLights[index].range)
+        {
+            continue;
+        }
+        if (isAreaLight(cyLights[index].kind))
+        {
+            let shading = frameAreaShading(index, surface, relativePosition, normal, viewDir);
+            if (walk.stochastic)
             {
-                continue;  // already accumulated above
+                sampled += shading.specular * walk.weight;
+                continue;
             }
-            let sample = bakedLightSample(index, relativePosition, baked);
-            lit += shadeSurfaceWithLight(surface, normal, viewDir, sample);
+            // Scaled by what the lightmap left of it.
+            let factor = baked.active ? bakedLightFactor(index, baked.mask) : 1.0;
+            lit += (shading.diffuse + shading.specular) * factor;
+            continue;
         }
-        return lit;
-    }
-
-    let extent = uint2(cyFrame.extentAndInverse.xy);
-    let coord = clusterCoordOf(cyFrame.clusterGrid, pixel, extent, viewDepthOf(relativePosition));
-    let cluster = clusterIndexOf(cyFrame.clusterGrid, coord);
-    // The headers are indexed `cluster * kClusterElementTypeCount + type`, and the light type is
-    // zero. The stride comes from `counts.z` so the two sides cannot disagree about it.
-    let header = cyClusterHeaders[cluster * cyFrame.counts.z];
-    for (uint slot = 0; slot < header.y; ++slot)
-    {
-        let index = cyClusterIndices[header.x + slot];
-        if (index >= lightCount || cyLights[index].kind == kLightDirectional)
+        if (walk.stochastic)
         {
+            let sample = evaluateLight(cyLights[index], relativePosition);
+            let normalDotLight = saturate(dot(normal, sample.direction));
+            let f0 = computeF0(surface.albedo, surface.metallic);
+            sampled += specularGgx(normal, viewDir, sample.direction, surface.roughness, f0) *
+                       sample.illuminance * normalDotLight * walk.weight;
             continue;
         }
         let sample = bakedLightSample(index, relativePosition, baked);
         lit += shadeSurfaceWithLight(surface, normal, viewDir, sample);
     }
-    return lit;
+    return walk.stochastic ? lit + sampled : lit;
 }
 
 /// The ambient occlusion term's visibility at a fragment. The target is the frame's own extent, so

@@ -848,4 +848,29 @@ public struct Interface: @unchecked Sendable {
     public func fogStatus(engine: CyEngine, into: UnsafeMutablePointer<CyFogStatus>?) throws {
         try check(table.pointee.fog_status(engine, into))
     }
+
+    @inlinable
+    public func lightSpawn(engine: CyEngine, desc: UnsafePointer<CyLightDesc>?, into: UnsafeMutablePointer<CyLight>?) throws {
+        try check(table.pointee.light_spawn(engine, desc, into))
+    }
+
+    @inlinable
+    public func lightUpdate(engine: CyEngine, light: CyLight, desc: UnsafePointer<CyLightDesc>?) throws {
+        try check(table.pointee.light_update(engine, light, desc))
+    }
+
+    @inlinable
+    public func lightDestroy(engine: CyEngine, light: CyLight) throws {
+        try check(table.pointee.light_destroy(engine, light))
+    }
+
+    @inlinable
+    public func lightAlive(engine: CyEngine, light: CyLight, into: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.light_alive(engine, light, into))
+    }
+
+    @inlinable
+    public func lightStatus(engine: CyEngine, into: UnsafeMutablePointer<CyLightStatus>?) throws {
+        try check(table.pointee.light_status(engine, into))
+    }
 }

@@ -58,7 +58,29 @@ const char* light_kind_name(LightKind kind) noexcept {
             return "Point";
         case LightKind::Spot:
             return "Spot";
+        case LightKind::Rect:
+            return "Rect";
+        case LightKind::Disc:
+            return "Disc";
+        case LightKind::Sphere:
+            return "Sphere";
+        case LightKind::Tube:
+            return "Tube";
         case LightKind::Count:
+            break;
+    }
+    return "<invalid>";
+}
+
+const char* light_mobility_name(LightMobility mobility) noexcept {
+    switch (mobility) {
+        case LightMobility::Static:
+            return "Static";
+        case LightMobility::Stationary:
+            return "Stationary";
+        case LightMobility::Movable:
+            return "Movable";
+        case LightMobility::Count:
             break;
     }
     return "<invalid>";

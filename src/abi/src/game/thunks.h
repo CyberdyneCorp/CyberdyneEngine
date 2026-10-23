@@ -183,4 +183,11 @@ CyResult fog_cell(CyEngine engine, uint32_t team, const CyFixedVec2* position, u
 CyResult fog_sight(CyEngine engine, uint32_t team, CyEntity entity, uint32_t* out_sight);
 CyResult fog_status(CyEngine engine, CyFogStatus* out_status);
 
+// --- 1.11: lights
+CyResult light_spawn(CyEngine engine, const CyLightDesc* desc, CyLight* out_light);
+CyResult light_update(CyEngine engine, CyLight light, const CyLightDesc* desc);
+CyResult light_destroy(CyEngine engine, CyLight light);
+CyResult light_alive(CyEngine engine, CyLight light, uint32_t* out_alive);
+CyResult light_status(CyEngine engine, CyLightStatus* out_status);
+
 }  // namespace cy::abi::game

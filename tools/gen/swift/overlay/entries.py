@@ -240,6 +240,12 @@ ENTRIES: dict[str, Entry] = {
     "fog_cell": Entry(("engine", "team", "position", "into"), result="throwing"),
     "fog_sight": Entry(("engine", "team", "entity", "into"), result="throwing"),
     "fog_status": Entry(("engine", "into"), result="throwing"),
+    # 1.11: lights
+    "light_spawn": Entry(("engine", "desc", "into"), result="throwing"),
+    "light_update": Entry(("engine", "light", "desc"), result="throwing"),
+    "light_destroy": Entry(("engine", "light"), result="throwing"),
+    "light_alive": Entry(("engine", "light", "into"), result="throwing"),
+    "light_status": Entry(("engine", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

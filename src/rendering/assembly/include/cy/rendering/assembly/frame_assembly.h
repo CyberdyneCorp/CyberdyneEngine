@@ -219,6 +219,16 @@ struct AssemblyDescription {
     /// `FrameSinks::fog_of_war`. Off by default, and absent when off: no pass, no target, and the
     /// frame it always was. Can change between frames; the graph is rebuilt each frame. Appended.
     bool fog_of_war = false;
+    /// THE LIGHT LISTS ARE ASSIGNED ON THE DEVICE: `FrameSinks::cluster_assignment` declares the
+    /// `ClusterAssignment` stage (`lights_gpu::GpuLightAssignment`) over the two buffers
+    /// `AssemblyView::cluster_headers` and `cluster_indices` import, and the host's assignment runs
+    /// over the decals alone. The lights' view-space elements are `light_elements()`. Off, the
+    /// default, is the host's assignment of everything, as it always was. Appended.
+    bool device_light_assignment = false;
+    /// THE STOCHASTIC MANY-LIGHT PATH IS THE FRAME'S: `FramePassKind::ManyLights`, declared by
+    /// `FrameSinks::many_lights` with `AssemblyView::many_lights` and `many_lights_reservoir` as
+    /// its targets. Set per frame by the lighting path selection (`set_many_lights`). Appended.
+    bool many_lights = false;
 };
 
 /// One view of one world, this frame.
@@ -301,6 +311,17 @@ struct AssemblyView {
     /// and then the diffuse one is required. Appended.
     ResourceId screen_space_gi = kInvalidResource;
     ResourceId screen_space_gi_specular = kInvalidResource;
+    /// The device's light lists, imported by `lights_gpu::GpuLightAssignment::import_lists`. Only
+    /// with `AssemblyDescription::device_light_assignment`. Appended.
+    ResourceId cluster_headers = kInvalidResource;
+    ResourceId cluster_indices = kInvalidResource;
+    /// The light records in device memory the frame's prepare stage fills and its set 1 binds
+    /// (`GpuLightAssignment::import_lists`). Only with `device_light_assignment`. Appended.
+    ResourceId lights_buffer = kInvalidResource;
+    /// The stochastic path's two targets, imported by its producer. Only with
+    /// `AssemblyDescription::many_lights`. Appended.
+    ResourceId many_lights = kInvalidResource;
+    ResourceId many_lights_reservoir = kInvalidResource;
 };
 
 /// What the caller supplies for the parts the assembly does not own: how a mesh becomes draws, and
@@ -354,6 +375,9 @@ struct FrameSinks {
     /// Required when the description asks for fog of war; the frame refuses to build without it.
     /// Appended.
     FrameStageDeclaration fog_of_war;
+    /// The device's light assignment and the stochastic many-light path. Appended.
+    FrameStageDeclaration cluster_assignment;
+    FrameStageDeclaration many_lights;
 };
 
 /// What one assembled frame did. Every number is read off a module's own report rather than
@@ -437,6 +461,10 @@ struct AssemblyReport {
     /// second.
     u32 decals = 0;
     u32 decal_assignments = 0;
+    /// Lights marked `render::LightMobility::Static`: in the light list as placeholders and in no
+    /// cluster list, so they cost the frame nothing. Area lights among the rest.
+    u32 static_lights = 0;
+    u32 area_lights = 0;
 };
 
 /// Where one shadow-casting light was, so that "it moved" is a comparison rather than a guess.
@@ -584,6 +612,16 @@ public:
     /// was. Nothing `initialize` created depends on it.
     void set_fog_of_war(bool enabled) noexcept { description_.fog_of_war = enabled; }
 
+    /// Make the stochastic many-light path the frame's, or the clustered path again: what the
+    /// lighting path selection decides each frame (`LightingPathSelector`).
+    void set_many_lights(bool enabled) noexcept { description_.many_lights = enabled; }
+
+    /// The frame's light elements in view space, in light order, when the lists are assigned on the
+    /// device (`AssemblyDescription::device_light_assignment`); empty otherwise.
+    [[nodiscard]] Span<const ClusterElement> light_elements() const noexcept {
+        return light_elements_.span();
+    }
+
 private:
     [[nodiscard]] Status decide_features(const AssemblyView& view, FrameFeatures& features,
                                          AssemblyReport& out) const noexcept;
@@ -627,6 +665,7 @@ private:
     // Lights and clusters.
     Array<GpuLight> lights_;
     Array<ClusterElement> elements_;
+    Array<ClusterElement> light_elements_;
     ClusterAssignment clusters_;
     /// See `decal_order()`.
     Array<u32> decal_order_;
@@ -686,6 +725,8 @@ private:
     /// The temporal producer this frame declared, told by `execute` that the frame ran.
     FrameStageDeclaration temporal_producer_{};
     bool temporal_produced_ = false;
+    /// The many-light producer the last declared frame carried, told when the frame ran.
+    FrameStageDeclaration many_lights_producer_{};
 };
 
 }  // namespace cy::rendering::assembly

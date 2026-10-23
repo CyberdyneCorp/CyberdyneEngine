@@ -332,6 +332,12 @@ fn light_line(
         return None;
     }
     let kind = field(document, node, LIGHT, "kind").and_then(Value::as_int)?;
+    // An area light (rect, disc, sphere, tube: kinds 3 to 6) has no `.cylightmap` line yet, and
+    // writing one as a point would bake nits as candela. It is left to the frame, which shades it
+    // directly and hands it to the runtime GI as emitter squares.
+    if kind >= FIRST_AREA_LIGHT_KIND {
+        return None;
+    }
     let matrix = world(document, binding, node);
     let colour = numbers(&[
         float_field(document, node, LIGHT, "color.r", 1.0),
@@ -363,6 +369,9 @@ fn light_line(
         )
     })
 }
+
+/// `render::LightKind::Rect`, the first of the area lights.
+const FIRST_AREA_LIGHT_KIND: i64 = 3;
 
 /// The file an instance's mesh reference names: a `.cyprim` source as it is, anything else the
 /// cooked asset the importer wrote for it.
@@ -768,6 +777,37 @@ mod tests {
             lights[0].starts_with("light point 0 3 0 50 8 1 1 1 stationary id "),
             "{}",
             lights[0]
+        );
+    }
+
+    #[test]
+    fn an_area_light_is_not_baked_as_a_point() {
+        let mut document = Document::new("levels/area.cyworld");
+        let light = |kind: i64| {
+            [
+                ("kind", Value::Int(kind)),
+                ("intensity", Value::Float(2000.0)),
+                ("source_width", Value::Float(1.0)),
+                ("enabled", Value::Bool(true)),
+            ]
+        };
+        let lights = [light(1), light(3), light(4), light(5), light(6)];
+        for (x, fields) in [0.0_f32, 1.0, 2.0, 3.0, 4.0].into_iter().zip(lights.iter()) {
+            node(
+                &mut document,
+                None,
+                [x, 2.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                &[(LIGHT, fields)],
+            );
+        }
+        let text = write(&document, "levels/area.cyworld", &LevelSettings::default());
+        let written = lines(&text, "light ");
+        assert_eq!(written.len(), 1, "{text}");
+        assert!(
+            written[0].starts_with("light point 0 2 0 2000 "),
+            "{}",
+            written[0]
         );
     }
 

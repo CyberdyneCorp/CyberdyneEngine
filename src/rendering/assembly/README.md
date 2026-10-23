@@ -89,6 +89,15 @@ extent between frames — dynamic resolution, the arbiter's allocation times the
 the cluster grid; the temporal framework is not told, so the history survives it. `execute()` calls
 the producer's `executed` hook after a frame that ran, which is when it swaps its history.
 
+## Many lights — device assignment, the stochastic path and mobility
+
+`AssemblyDescription::device_light_assignment` hands the light lists to
+`lights_gpu::GpuLightAssignment` (`FrameSinks::cluster_assignment`; `light_elements()` is what it
+assigns) and `AssemblyDescription::many_lights` / `set_many_lights` turns the stochastic path on
+(`FrameSinks::many_lights`, `AssemblyView::many_lights`, `many_lights_reservoir`). A `Static` light
+leaves a placeholder record at its index and is counted in `AssemblyReport::static_lights`; area
+lights in `area_lights`.
+
 ## The suites
 
 | Suite | Kind | What it proves |

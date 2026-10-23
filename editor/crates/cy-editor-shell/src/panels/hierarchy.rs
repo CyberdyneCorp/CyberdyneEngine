@@ -252,6 +252,10 @@ fn show_create_menu(panels: &mut Panels<'_>, ui: &mut egui::Ui) {
             ("Directional Light", "directional"),
             ("Point Light", "point"),
             ("Spot Light", "spot"),
+            ("Rect Light", "rect"),
+            ("Disc Light", "disc"),
+            ("Sphere Light", "sphere"),
+            ("Tube Light", "tube"),
         ] {
             if ui.button(label).clicked() {
                 panels.intents.push(Intent::Invoke(

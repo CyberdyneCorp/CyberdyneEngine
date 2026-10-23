@@ -189,7 +189,8 @@ static_assert(std::is_trivially_copyable_v<MeshRenderer>,
 struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A light attached to this entity"))
     LightSource {
     CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring),
-                     Enum(Directional = 0, Point = 1, Spot = 2))
+                     Enum(Directional = 0, Point = 1, Spot = 2, Rect = 3, Disc = 4, Sphere = 5,
+                          Tube = 6))
     render::LightKind kind = render::LightKind::Point;
     /// Linear, un-premultiplied. `intensity` carries the magnitude.
     ///
@@ -201,7 +202,7 @@ struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A light attached to this 
     /// a point or a spot. `rendering-lighting-and-shadows` requires the unit to be stated where the
     /// value is, because "intensity 5" means two different things for two kinds.
     CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring),
-                     Tooltip("Lux for a directional light, candela for a point or a spot"))
+                     Tooltip("Lux (directional), candela (point, spot), nits (area)"))
     f32 intensity = 1000.0F;
     /// Metres. Zero for a directional light.
     CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Metres)) f32 range = 10.0F;
@@ -213,6 +214,21 @@ struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A light attached to this 
     render::LayerMask layer_mask = render::kAllLayers;
     CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring)) bool casts_shadow = true;
     CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring)) bool enabled = true;
+    /// An area light's size, in metres (`render::LightDescription::source_width`): a rect's width,
+    /// a disc's or a sphere's diameter, a tube's length. Appended, so an authored light that never
+    /// set it reads as the zero every punctual light carries.
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Metres))
+    f32 source_width = 0.0F;
+    /// A rect's height, a tube's diameter.
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Metres))
+    f32 source_height = 0.0F;
+    /// A rect or a disc that emits from both faces.
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring)) bool two_sided = false;
+    /// What the bake owns of the light: a static light is baked whole and the frame never carries
+    /// it, a stationary one has its indirect baked, a movable one nothing.
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring),
+                     Enum(Static = 0, Stationary = 1, Movable = 2))
+    render::LightMobility mobility = render::LightMobility::Movable;
 };
 
 static_assert(std::is_trivially_copyable_v<LightSource>);

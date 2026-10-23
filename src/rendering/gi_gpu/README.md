@@ -453,6 +453,15 @@ GI's form factor over 64 receivers 2 to 5 m from a 30 cm lamp, where the same li
 squared-cone spot is 46 % out; (g) the frame's lights carry exactly the lamps the system promoted;
 (h) on the device the lamp lights the frame and no pixel is dimmer than the squared cone draws it.
 
+## Area lights as emitters
+
+`frame_lights.h`'s `append_gi_lights` hands a frame light to the GI: a punctual light as a light of
+its candela over pi, an area light as the emitter squares that cover its surface — a rect in strips
+of squares, a disc as the square of its area, a tube in rows, a sphere as a point of `L r²` with its
+radius — so every consumer of `gi::shaded_direct` integrates its flux in closed form.
+`unit.render_gi_frame_lights` holds the squares to the light's flux and a receiver's light to the
+frame's own area shading (a rect within 1%, a disc 2%, a sphere and a tube 5%).
+
 ## What is not here
 
 - **The card gather through the radiance cache.** The card gather traces the field and reads the

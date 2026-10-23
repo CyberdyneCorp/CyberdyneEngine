@@ -33,6 +33,18 @@ function(cy_gi_gpu_declare_tests)
     get_directory_property(CY_TEST_TIMEOUT_smoke DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                            DEFINITION CY_TEST_TIMEOUT_smoke)
 
+    # The frame's area lights as the GI's emitter squares: host arithmetic, no device. Before the
+    # Vulkan gate, so every leg runs it.
+    get_directory_property(CY_TEST_BUDGET_unit DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_unit)
+    get_directory_property(CY_TEST_TIMEOUT_unit DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_unit)
+    cy_add_test(
+        NAME render_gi_frame_lights
+        KIND unit
+        SOURCES "${tests_dir}/test_gi_frame_lights.cpp"
+        DEPENDENCIES cy::rendering-gi-gpu cy::rendering-gi cy::rendering-lighting)
+
     if(NOT CY_RENDERER_VULKAN)
         return()
     endif()

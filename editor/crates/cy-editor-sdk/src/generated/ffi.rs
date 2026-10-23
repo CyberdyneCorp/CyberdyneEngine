@@ -1171,6 +1171,63 @@ pub struct CyFogStatus {
     pub digest: u64,
 }
 
+/// `CyLightDesc` — 96 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLightDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub kind: u32,
+    /// `CyPose` at byte 8.
+    pub pose: CyPose,
+    /// `float[3]` at byte 36.
+    pub color: [f32; 3],
+    /// `float` at byte 48.
+    pub intensity: f32,
+    /// `float` at byte 52.
+    pub range: f32,
+    /// `float` at byte 56.
+    pub inner_cone: f32,
+    /// `float` at byte 60.
+    pub outer_cone: f32,
+    /// `float[2]` at byte 64.
+    pub size: [f32; 2],
+    /// `float` at byte 72.
+    pub lifetime: f32,
+    /// `uint32_t` at byte 76.
+    pub fade: u32,
+    /// `uint32_t` at byte 80.
+    pub flags: u32,
+    /// `uint32_t` at byte 84.
+    pub layer_mask: u32,
+    /// `uint32_t[2]` at byte 88.
+    pub reserved: [u32; 2],
+}
+
+/// `CyLight`, the ABI's alias for `uint64_t`.
+pub type CyLight = u64;
+
+/// `CyLightStatus` — 40 bytes, 8-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyLightStatus {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub live: u32,
+    /// `uint32_t` at byte 8.
+    pub capacity: u32,
+    /// `uint32_t` at byte 12.
+    pub reserved: u32,
+    /// `uint64_t` at byte 16.
+    pub spawned: u64,
+    /// `uint64_t` at byte 24.
+    pub expired: u64,
+    /// `uint64_t` at byte 32.
+    pub refused: u64,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1185,7 +1242,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1280 bytes, 8-byte aligned.
+/// `CyInterface` — 1320 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1679,6 +1736,17 @@ pub struct CyInterface {
     pub fog_sight: Option<unsafe extern "C" fn(CyEngine, u32, CyEntity, *mut u32) -> i32>,
     /// `CyResult(*)(CyEngine, CyFogStatus*)` at byte 1272.
     pub fog_status: Option<unsafe extern "C" fn(CyEngine, *mut CyFogStatus) -> i32>,
+    /// `CyResult(*)(CyEngine, const CyLightDesc*, CyLight*)` at byte 1280.
+    pub light_spawn:
+        Option<unsafe extern "C" fn(CyEngine, *const CyLightDesc, *mut CyLight) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLight, const CyLightDesc*)` at byte 1288.
+    pub light_update: Option<unsafe extern "C" fn(CyEngine, CyLight, *const CyLightDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLight)` at byte 1296.
+    pub light_destroy: Option<unsafe extern "C" fn(CyEngine, CyLight) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLight, uint32_t*)` at byte 1304.
+    pub light_alive: Option<unsafe extern "C" fn(CyEngine, CyLight, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyLightStatus*)` at byte 1312.
+    pub light_status: Option<unsafe extern "C" fn(CyEngine, *mut CyLightStatus) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -1879,5 +1947,10 @@ impl CyInterface {
         fog_cell: None,
         fog_sight: None,
         fog_status: None,
+        light_spawn: None,
+        light_update: None,
+        light_destroy: None,
+        light_alive: None,
+        light_status: None,
     };
 }

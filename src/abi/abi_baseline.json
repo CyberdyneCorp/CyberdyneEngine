@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 10,
+    "minor": 11,
     "patch": 0
   },
   "functions": [
@@ -817,10 +817,35 @@
         "index": 158,
         "name": "fog_status",
         "type": "CyResult(*)(CyEngine, CyFogStatus*)"
+      },
+      {
+        "index": 159,
+        "name": "light_spawn",
+        "type": "CyResult(*)(CyEngine, const CyLightDesc*, CyLight*)"
+      },
+      {
+        "index": 160,
+        "name": "light_update",
+        "type": "CyResult(*)(CyEngine, CyLight, const CyLightDesc*)"
+      },
+      {
+        "index": 161,
+        "name": "light_destroy",
+        "type": "CyResult(*)(CyEngine, CyLight)"
+      },
+      {
+        "index": 162,
+        "name": "light_alive",
+        "type": "CyResult(*)(CyEngine, CyLight, uint32_t*)"
+      },
+      {
+        "index": 163,
+        "name": "light_status",
+        "type": "CyResult(*)(CyEngine, CyLightStatus*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1280
+    "size": 1320
   },
   "types": [
     {
@@ -4707,6 +4732,222 @@
       "size": 40
     },
     {
+      "kind": "enum",
+      "name": "CyLightKind",
+      "values": [
+        {
+          "name": "CY_LIGHT_POINT",
+          "value": 1
+        },
+        {
+          "name": "CY_LIGHT_SPOT",
+          "value": 2
+        },
+        {
+          "name": "CY_LIGHT_RECT",
+          "value": 3
+        },
+        {
+          "name": "CY_LIGHT_DISC",
+          "value": 4
+        },
+        {
+          "name": "CY_LIGHT_SPHERE",
+          "value": 5
+        },
+        {
+          "name": "CY_LIGHT_TUBE",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyLightFade",
+      "values": [
+        {
+          "name": "CY_LIGHT_FADE_NONE",
+          "value": 0
+        },
+        {
+          "name": "CY_LIGHT_FADE_LINEAR",
+          "value": 1
+        },
+        {
+          "name": "CY_LIGHT_FADE_QUADRATIC",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "kind",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "pose",
+          "offset": 8,
+          "size": 28,
+          "type": "CyPose"
+        },
+        {
+          "alignment": 4,
+          "name": "color",
+          "offset": 36,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "intensity",
+          "offset": 48,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "range",
+          "offset": 52,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "inner_cone",
+          "offset": 56,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "outer_cone",
+          "offset": 60,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "size",
+          "offset": 64,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "lifetime",
+          "offset": 72,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "fade",
+          "offset": 76,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 80,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "layer_mask",
+          "offset": 84,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 88,
+          "size": 8,
+          "type": "uint32_t[2]"
+        }
+      ],
+      "name": "CyLightDesc",
+      "size": 96
+    },
+    {
+      "kind": "alias",
+      "name": "CyLight",
+      "underlying": "uint64_t"
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "live",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "capacity",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "spawned",
+          "offset": 16,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "expired",
+          "offset": 24,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "refused",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyLightStatus",
+      "size": 40
+    },
+    {
       "alignment": 4,
       "kind": "struct",
       "members": [
@@ -5858,10 +6099,45 @@
           "offset": 1272,
           "size": 8,
           "type": "CyResult(*)(CyEngine, CyFogStatus*)"
+        },
+        {
+          "alignment": 8,
+          "name": "light_spawn",
+          "offset": 1280,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, const CyLightDesc*, CyLight*)"
+        },
+        {
+          "alignment": 8,
+          "name": "light_update",
+          "offset": 1288,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLight, const CyLightDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "light_destroy",
+          "offset": 1296,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLight)"
+        },
+        {
+          "alignment": 8,
+          "name": "light_alive",
+          "offset": 1304,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLight, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "light_status",
+          "offset": 1312,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyLightStatus*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1280
+      "size": 1320
     },
     {
       "kind": "enum",

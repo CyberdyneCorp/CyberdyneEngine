@@ -811,6 +811,21 @@ FrameUpload upload_for(const FrameAssembly& assembly, const AssemblyReport& repo
     upload.motion_cut = report.temporal_invalidated;
 
     upload.lights = assembly.lights();
+    // THE DIRECTIONAL LIGHTS BY NAME, so the forward pass does not walk every light for them. More
+    // than the block names leaves the walk, which shades the same lights in the same order.
+    u32 directional = 0;
+    for (u32 index = 0; index < upload.lights.size(); ++index) {
+        if (upload.lights[index].kind != kGpuLightDirectional) {
+            continue;
+        }
+        if (directional < kMaxListedDirectionalLights) {
+            upload.view.directional_lights[directional] = index;
+        }
+        ++directional;
+    }
+    if (directional <= kMaxListedDirectionalLights) {
+        upload.view.directional_lights[3] = kDirectionalListed | directional;
+    }
     upload.cluster_headers = clusters.headers.span();
     upload.cluster_indices = clusters.indices.span();
     upload.draws = assembly.draws().instances.span();

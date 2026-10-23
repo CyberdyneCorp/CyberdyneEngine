@@ -233,9 +233,11 @@ struct FitTarget {
     return fit;
 }
 
-/// The edge term of the spherical-polygon cosine integral: the angle between two unit vectors
-/// times the z component of their normalised cross product.
-[[nodiscard]] f32 edge_integral(Vec3 a, Vec3 b) noexcept {
+/// The edge term of the spherical-polygon cosine integral, as a VECTOR: the angle between two unit
+/// vectors along their normalised cross product. Its z component is the scalar integral's term;
+/// the whole vector, summed over the edges, is the polygon's vector form factor, which points along
+/// the mean direction the polygon is seen in.
+[[nodiscard]] Vec3 edge_vector(Vec3 a, Vec3 b) noexcept {
     const f32 cosine = math::clamp(dot(a, b), -1.0F, 1.0F);
     const f32 theta = std::acos(cosine);
     const Vec3 axis = cross(a, b);
@@ -243,7 +245,11 @@ struct FitTarget {
     // theta / sin(theta) is 1 in the limit; taking it as 1 below the threshold avoids a 0/0 on two
     // coincident corners, which a degenerate quad produces every time a light is edge on.
     const f32 ratio = sine > 1.0e-6F ? theta / sine : 1.0F;
-    return axis.z * ratio;
+    return axis * ratio;
+}
+
+[[nodiscard]] f32 edge_integral(Vec3 a, Vec3 b) noexcept {
+    return edge_vector(a, b).z;
 }
 
 /// Clip a polygon against the z > 0 half space, in place. Returns the new vertex count, 0 to 5.
@@ -349,7 +355,11 @@ AreaQuad area_light_quad(const AreaLight& light) noexcept {
             extent_y = light.half_x * kDiscToQuad;
             break;
         case AreaLightShape::Tube:
-            extent_x = light.half_x * kDiscToQuad;
+            // A Lambertian cylinder seen from the side is a rectangle of its full DIAMETER at its
+            // own radiance: its silhouette, not an equal-area disc. Scaling the width by
+            // `kDiscToQuad` here, as the disc does, dimmed every tube by 11%;
+            // `integration.render_area_lights` measures the tube against its own surface.
+            extent_x = light.half_x;
             extent_y = light.half_y;
             break;
         case AreaLightShape::Rect:
@@ -449,6 +459,36 @@ LtcEntry LtcTable::sample(f32 roughness, f32 cos_theta) const noexcept {
                                   math::lerp(c.magnitude, d.magnitude, fx), fy);
     result.fresnel =
         math::lerp(math::lerp(a.fresnel, b.fresnel, fx), math::lerp(c.fresnel, d.fresnel, fx), fy);
+    return result;
+}
+
+PolygonIntegral integrate_cosine_polygon_vector(const Vec3* corners, u32 count) noexcept {
+    PolygonIntegral result;
+    if (corners == nullptr || count < 3 || count > 4) {
+        return result;
+    }
+    Vec3 working[5];
+    for (u32 index = 0; index < count; ++index) {
+        working[index] = normalized_or(corners[index], Vec3{0.0F, 0.0F, 1.0F});
+    }
+    const u32 clipped = clip_to_horizon(working, count);
+    if (clipped < 3) {
+        return result;
+    }
+    for (u32 index = 0; index < clipped; ++index) {
+        working[index] = normalized_or(working[index], Vec3{0.0F, 0.0F, 1.0F});
+    }
+    Vec3 sum{0.0F, 0.0F, 0.0F};
+    for (u32 index = 0; index < clipped; ++index) {
+        sum = sum + edge_vector(working[index], working[(index + 1U) % clipped]);
+    }
+    // The winding is the emitter's authoring, not a property of the light: a negative z is the
+    // same polygon wound the other way, and its vector points the other way with it.
+    if (sum.z < 0.0F) {
+        sum = sum * -1.0F;
+    }
+    result.integral = sum.z / (2.0F * math::kPi);
+    result.direction = normalized_or(sum, Vec3{0.0F, 0.0F, 1.0F});
     return result;
 }
 
