@@ -67,6 +67,7 @@ adds them by default:
 | `lightmap` | `Cook` | a `cylightmap 1` description and its upstream mesh bundles | one cooked lightmap, and the captured irradiance volumes when the node declares a second output |
 | `navmesh` | `Cook` | one saved `.cynavmesh` sidecar and a `bake-identity` option naming the world's bake | the verified navigation mesh |
 | `animation` | `Cook` | a `cyanim 1` character description and the upstream import bundles it names | the character's cooked skeleton, its clips (retargeted onto its rig where their rigs differ) and its compiled locomotion program — only with `CY_ANIMATION` |
+| `ui` | `Cook` | one `.cyui` document, plus every sheet it names and document it `use`s, DISCOVERED through `NodeContext::discover` | one `cyuicook 1` bundle a runtime loads through `cy::ui::BundleResolver` — only with `CY_UI` |
 
 It is a **separate target** from `cy_build_graph`, which links `cy::core-assets` and
 `cy::core-memory` and nothing else: the importer links ufbx and xatlas, the cook links the ECS and
@@ -135,6 +136,21 @@ last frame), and optional blend durations; `docs/guides/animation.md` section 2 
 are matched by suffix (`.skeleton`, `.program`, `.<clip>.clip`), and a declared output nothing
 matches is refused. The key covers the description and every upstream bundle, so re-exporting one
 motion re-cooks the character. Cases: `integration.build_animation`.
+
+### The `ui` producer (issue #91)
+
+```text
+node "ui:menu" cook "ui" 1
+  source "ui/menu.cyui"
+  output "derived/menu.cyuicook"
+```
+
+The description names the document only. `produce_ui` parses it, then reads every `stylesheet` it
+names and every document it `use`s — and theirs — through `NodeContext::discover`, so saving a
+shared sheet re-cooks each document that reaches it and nothing else. A file that does not exist
+fails the node as `ui.document.missing`, a document with a mistake as `ui.document.parse` with its
+line: the mistakes the editor's hot reload shows, found at build time. The bundle is the toolkit's
+own format (`cy/ui/toolkit/document.h`). Cases: `integration.build_content`.
 
 ## Running it
 

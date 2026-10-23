@@ -578,3 +578,135 @@ CY_TEST_CASE("a VFX cook node naming a missing module fails and names it") {
 }
 
 #endif  // CY_BUILD_HAS_VFX
+
+#if defined(CY_BUILD_HAS_UI)
+
+namespace {
+
+constexpr std::string_view kMenuDocument = R"(cyui 1
+stylesheet "ui/menu.cyss"
+column #menu
+  use "ui/stat.cyui" #health label="Health"
+  use "ui/stat.cyui" #mana label="Mana"
+)";
+
+constexpr std::string_view kStatDocument = R"(cyui 1
+stylesheet "ui/stat.cyss"
+param label="Stat"
+row .stat
+  label text=$label
+)";
+
+/// A graph of one `ui` node over `ui/menu.cyui` and one node that reads none of it.
+[[nodiscard]] BuildGraph ui_graph(const ProducerRegistry& producers) {
+    BuildGraph graph;
+    CY_REQUIRE(read_description("cybuild 1\n"
+                                "node \"ui:menu\" cook \"ui\" 1\n"
+                                "  source \"ui/menu.cyui\"\n"
+                                "  output \"derived/menu.cyuicook\"\n"
+                                "node \"unrelated\" import \"copy\" 1\n"
+                                "  source \"assets/notes.txt\"\n"
+                                "  output \"derived/notes.bin\"\n",
+                                graph, &producers)
+                   .has_value());
+    return graph;
+}
+
+}  // namespace
+
+CY_TEST_CASE("an interface document's sheets and used documents are discovered by its cook") {
+    // Issue #91, stage 5: "a UI document is cooked by the build graph". The description names only
+    // the document; the producer reads each sheet and used document through `discover`.
+    Project project("content-ui");
+    seed(project);
+    project.write("ui/menu.cyui", std::string(kMenuDocument));
+    project.write("ui/stat.cyui", std::string(kStatDocument));
+    project.write("ui/menu.cyss", ".stat { gap: 4; }\n");
+    project.write("ui/stat.cyss", "label { color: #ffffff; }\n");
+
+    ProducerRegistry producers;
+    CY_REQUIRE(producers.add_builtins().has_value());
+    CY_REQUIRE(add_content_producers(producers, nullptr).has_value());
+    const Producer* ui = producers.find("ui");
+    CY_REQUIRE(ui != nullptr);
+    CY_CHECK(ui->distributable);
+    CY_CHECK_EQ(ui->version, kUiProducerVersion);
+    BuildGraph graph = ui_graph(producers);
+    DirectorySourceProvider sources(project.sources());
+    const std::string cache = project.cache();
+    const auto build = [&]() {
+        BuildConfig config;
+        config.graph = &graph;
+        config.producers = &producers;
+        config.sources = &sources;
+        config.artefact_root = project.artefacts();
+        config.cache.local = cache.c_str();
+        config.workers = 0;
+        BuildService service;
+        CY_REQUIRE(service.configure(std::move(config)).has_value());
+        Expected<BuildReport, Error> report = service.build();
+        CY_REQUIRE(report.has_value());
+        CY_REQUIRE(report->succeeded());
+        CY_CHECK(report->violations.empty());
+        return std::make_pair(std::move(*report),
+                              artefact_of(*report, service.artefacts(), "ui:menu"));
+    };
+
+    const auto [cold, cooked] = build();
+    CY_CHECK(result_for(cold, "ui:menu")->outcome == NodeOutcome::Ran);
+    CY_CHECK(cooked.starts_with("cyuicook 1\ndocument ui/menu.cyui "));
+    // Each file once, the used document's own sheet too.
+    for (const std::string_view entry :
+         {"stylesheet ui/menu.cyss ", "document ui/stat.cyui ", "stylesheet ui/stat.cyss "}) {
+        CY_CHECK(cooked.find(entry) != std::string::npos);
+        CY_CHECK_EQ(cooked.find(entry), cooked.rfind(entry));
+    }
+
+    const auto [warm, cached] = build();
+    CY_CHECK(result_for(warm, "ui:menu")->outcome == NodeOutcome::Cached);
+    CY_CHECK_EQ(cached, cooked);
+
+    // The used document's sheet is saved: the document re-cooks, and nothing else does.
+    project.write("ui/stat.cyss", "label { color: #ffd34d; }\n");
+    const auto [edited, recooked] = build();
+    CY_CHECK(result_for(edited, "ui:menu")->outcome != NodeOutcome::Cached);
+    CY_CHECK(recooked.find("#ffd34d") != std::string::npos);
+    CY_CHECK(result_for(edited, "unrelated")->outcome == NodeOutcome::Cached);
+}
+
+CY_TEST_CASE("an interface cook fails naming a missing sheet or a document that does not parse") {
+    const auto failing = [](const char* name, std::string_view stat, const char* code,
+                            std::string_view location) {
+        Project project(name);
+        seed(project);
+        project.write("ui/menu.cyui", std::string(kMenuDocument));
+        project.write("ui/menu.cyss", ".stat { gap: 4; }\n");
+        project.write("ui/stat.cyui", std::string(stat));
+        ProducerRegistry producers;
+        CY_REQUIRE(producers.add_builtins().has_value());
+        CY_REQUIRE(add_content_producers(producers, nullptr).has_value());
+        BuildGraph graph = ui_graph(producers);
+        DirectorySourceProvider sources(project.sources());
+        BuildConfig config;
+        config.graph = &graph;
+        config.producers = &producers;
+        config.sources = &sources;
+        config.artefact_root = project.artefacts();
+        config.workers = 0;
+        BuildService service;
+        CY_REQUIRE(service.configure(std::move(config)).has_value());
+        const Expected<BuildReport, Error> report = service.build();
+        CY_REQUIRE(report.has_value());
+        CY_CHECK_FALSE(report->succeeded());
+        bool named = false;
+        for (const Diagnostic& diagnostic : report->diagnostics) {
+            named = named || (diagnostic.code == code && diagnostic.location == location);
+        }
+        CY_CHECK(named);
+    };
+    // `ui/stat.cyss` was never written.
+    failing("content-ui-missing", kStatDocument, "ui.document.missing", "ui/stat.cyss");
+    failing("content-ui-broken", "cyui 1\nrow\n   label\n", "ui.document.parse", "ui/stat.cyui");
+}
+
+#endif  // CY_BUILD_HAS_UI

@@ -49,7 +49,8 @@ class World;
 
 namespace cy::build {
 
-/// Register `import`, `lightmap`, `cook`, `navmesh` and, in a build with `CY_VFX`, `vfx`.
+/// Register `import`, `lightmap`, `cook`, `navmesh` and, in a build with `CY_VFX`, `vfx`, and in
+/// one with `CY_UI`, `ui`.
 /// `cy_build` calls this after `add_builtins()`.
 ///
 /// `world` is the component registry the cook emits blocks against, and may be null — in which case
@@ -69,6 +70,10 @@ inline constexpr u32 kCookProducerVersion = 1;
 /// cooked-system record out, and every `.cyvfxmodule` the system reaches read through
 /// `NodeContext::discover` — so editing a module re-cooks every system that uses it.
 inline constexpr u32 kVfxProducerVersion = 1;
+/// The `ui` producer, registered when the build has `CY_UI`: one `.cyui` document in, one cooked
+/// bundle (`cyuicook 1`) out, and every document it `use`s and sheet it names read through
+/// `NodeContext::discover` — so saving a shared sheet re-cooks every document that reaches it.
+inline constexpr u32 kUiProducerVersion = 1;
 
 /// The `lightmap` producer: a level's bake description and its meshes in, a cooked lightmap out.
 /// Version 3: the payload carries the mip chain and the directly baked lights (asset version 3).
