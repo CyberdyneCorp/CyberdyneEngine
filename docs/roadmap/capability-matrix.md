@@ -77,7 +77,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | **5 — Simulation** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
+| [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 32 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |  |  | S |  |  |  |  |  |  |  |  |  | **C** | M13 |

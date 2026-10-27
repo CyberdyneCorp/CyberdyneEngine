@@ -9244,3 +9244,24 @@ row = "xr-support"
 requirement = "Comfort and safety requirements"
 evidence = "exempt:m11e"
 note = "No XR frame-rate budget, locomotion comfort defaults, boundary API or cadence warning exists, because XR is unimplemented. Re-enter with an XR session and a case where frames consistently exceed the display cadence, requiring a prominent development-build report, and a boundary query answered from the runtime."
+
+[[coverage]]
+row = "animation-and-skinning"
+requirement = "Blend spaces with marker-space sync"
+evidence = "test:integration.animation_runtime"
+case = "animation: a sync group keeps a walk and a run of different lengths in step"
+note = "Issue #92 (`add-blend-spaces-and-foot-placement`). The marker-space scenario is this case: a one-second walk and a 0.6 s run starting on the other foot stay within 0.001 of a stride segment on every tick of a speed sweep, and drift by more than a quarter without sync. 'animation: a synchronised space strides at the blend of its clips' cadences' is the blended-cadence scenario and 'animation: a two-dimensional blend space blends the three poses around the character' the barycentric one (two samples never sampled, root motion by the same weights); integration.graph_compiler's test_blend_space.cpp asserts the weights exactly in 1D and 2D, outside the hull, over a grid's triangulation, and the refusals. Each proved red by a mutation (openspec/changes/add-blend-spaces-and-foot-placement/evidence/falsification.txt)."
+
+[[coverage]]
+row = "animation-and-skinning"
+requirement = "Foot placement on the host's ground"
+evidence = "test:unit.animation"
+case = "foot placement: on a slope both feet stand on the ground and turn to it"
+note = "Issue #92. The planted-on-a-slope scenario is this case (each ankle its height above a 20° slope to a millimetre, soles within a degree, the hips dropped by the lower foot's offset); 'foot placement: smoothing follows simulation time, not the number of solves' is the smoothing scenario. The off scenario is integration.animation_system 'animation_system: foot placement off is the frame before, bit for bit' (zero weight and no ground, against a program without the node), and the same suite places a turned character on a slope through its world placement and compares job workers with one thread. integration.animation_ground answers the ground from a reference physics world and a terrain. Each proved red by a mutation, except workers against one thread (see the evidence file)."
+
+[[coverage]]
+row = "native-abi"
+requirement = "Aim and foot placement through the ABI"
+evidence = "test:integration.game_backend_animation"
+case = "animation abi: an aim takes a world point into the character, and feet report"
+note = "ABI 1.13 (issue #92): a character two metres along x and turned a quarter receives a world aim point in its model space, an unknown target is NOT_FOUND having written nothing, and animation_foot_placement reports the step under its right foot in the world. unit.abi 'animation: an aim is simulation, a foot placement is the frame's, and both check' holds the phases, the refusals before the backend, struct_size both ways and a 1.12 backend answering UNAVAILABLE; CyberdyneKit's AnimationTests 'testABehaviourSetsSpeedAndDirectionFromItsVelocity' is the speed-and-direction scenario. Each proved red by a mutation."

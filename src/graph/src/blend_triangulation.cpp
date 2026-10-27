@@ -153,12 +153,13 @@ Status triangulate_blend_space(Span<const BlendSample> samples,
                     "a two-dimensional blend space needs three to sixteen samples");
     }
     Mesh mesh;
-    double low_x = samples[0].x;
-    double high_x = samples[0].x;
-    double low_y = samples[0].y;
-    double high_y = samples[0].y;
+    const auto widen = [](f32 value) noexcept { return static_cast<double>(value); };
+    double low_x = widen(samples[0].x);
+    double high_x = low_x;
+    double low_y = widen(samples[0].y);
+    double high_y = low_y;
     for (u32 index = 0; index < count; ++index) {
-        mesh.points[index] = Point{samples[index].x, samples[index].y};
+        mesh.points[index] = Point{widen(samples[index].x), widen(samples[index].y)};
         low_x = std::fmin(low_x, mesh.points[index].x);
         high_x = std::fmax(high_x, mesh.points[index].x);
         low_y = std::fmin(low_y, mesh.points[index].y);
