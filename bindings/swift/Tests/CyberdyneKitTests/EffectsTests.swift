@@ -122,10 +122,10 @@ final class EffectsTests: XCTestCase {
         XCTAssertEqual(Seen.spawned.half_extent.2, 0.05)
         // +Z turned onto +Y: a quarter turn about -X.
         let rotation = Seen.spawned.pose.rotation
-        XCTAssertEqual(rotation.0, -0.5.squareRoot(), accuracy: 1e-6)
+        XCTAssertEqual(rotation.0, -Float(0.5).squareRoot(), accuracy: 1e-6)
         XCTAssertEqual(rotation.1, 0, accuracy: 1e-6)
         XCTAssertEqual(rotation.2, 0, accuracy: 1e-6)
-        XCTAssertEqual(rotation.3, 0.5.squareRoot(), accuracy: 1e-6)
+        XCTAssertEqual(rotation.3, Float(0.5).squareRoot(), accuracy: 1e-6)
     }
 
     func testTheTurnOntoANormalTakesPlusZThere() {
