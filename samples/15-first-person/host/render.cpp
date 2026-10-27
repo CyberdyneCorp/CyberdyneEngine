@@ -11,6 +11,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/decals/decal_table.h>
+#include <cy/rendering/gi/system.h>
 #include <cy/rendering/gi_gpu/gpu_frame.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/lighting/soft_shadows.h>
@@ -904,6 +905,37 @@ struct FpsRenderer::State {
 
     u64 host_frame = 0;
 
+    /// The sun's shadow map in the view block: which light is the sun, the map's transform, and the
+    /// soft filter's words.
+    void write_shadows(pipeline::FrameUpload& upload) const noexcept {
+        u32 sun = static_cast<u32>(upload.lights.size());
+        for (usize light = 0; light < upload.lights.size(); ++light) {
+            if (upload.lights[light].kind == rendering::kGpuLightDirectional) {
+                sun = static_cast<u32>(light);
+            }
+        }
+        for (u32 row = 0; row < 4U; ++row) {
+            for (u32 column = 0; column < 4U; ++column) {
+                upload.view.shadow_to_clip[(row * 4U) + column] = shadow_to_clip.at(row, column);
+            }
+        }
+        upload.view.shadow_control[0] = kShadowSlot;
+        upload.view.shadow_control[1] = sun;
+        upload.view.shadow_control[2] = kShadowExtent;
+        upload.view.shadow_control[3] = 1U;
+        rendering::SoftShadowSettings soft;
+        soft.quality = rendering::ShadowQuality::High;
+        soft.max_radius_texels = 6.0F;
+        rendering::DirectionalShadowFootprint footprint;
+        footprint.depth_range_metres = (kShadowRadius * 4.0F) - 0.5F;
+        footprint.width_metres = kShadowRadius * 2.0F;
+        footprint.extent = kShadowExtent;
+        rendering::write_soft_shadow_words(pipeline::kSoftShadowPcss, pipeline::kNoMaterialTexture,
+                                           rendering::make_pcss_shape(soft, footprint),
+                                           upload.view.soft_shadow_control,
+                                           upload.view.soft_shadow_shape);
+    }
+
     [[nodiscard]] Status before_upload(pipeline::FrameUpload& upload) noexcept {
         std::vector<pipeline::MaterialTextureSlot> slots = resident;
         const Vec2 jitter{upload.view.temporal_jitter[0], upload.view.temporal_jitter[1]};
@@ -930,33 +962,7 @@ struct FpsRenderer::State {
                 kOcclusionSlot, occlusion.settings().shared, upload.view.occlusion_control);
         }
         if (options.shadows) {
-            u32 sun = static_cast<u32>(upload.lights.size());
-            for (usize light = 0; light < upload.lights.size(); ++light) {
-                if (upload.lights[light].kind == rendering::kGpuLightDirectional) {
-                    sun = static_cast<u32>(light);
-                }
-            }
-            for (u32 row = 0; row < 4U; ++row) {
-                for (u32 column = 0; column < 4U; ++column) {
-                    upload.view.shadow_to_clip[(row * 4U) + column] =
-                        shadow_to_clip.at(row, column);
-                }
-            }
-            upload.view.shadow_control[0] = kShadowSlot;
-            upload.view.shadow_control[1] = sun;
-            upload.view.shadow_control[2] = kShadowExtent;
-            upload.view.shadow_control[3] = 1U;
-            rendering::SoftShadowSettings soft;
-            soft.quality = rendering::ShadowQuality::High;
-            soft.max_radius_texels = 6.0F;
-            rendering::DirectionalShadowFootprint footprint;
-            footprint.depth_range_metres = (kShadowRadius * 4.0F) - 0.5F;
-            footprint.width_metres = kShadowRadius * 2.0F;
-            footprint.extent = kShadowExtent;
-            rendering::write_soft_shadow_words(
-                pipeline::kSoftShadowPcss, pipeline::kNoMaterialTexture,
-                rendering::make_pcss_shape(soft, footprint), upload.view.soft_shadow_control,
-                upload.view.soft_shadow_shape);
+            write_shadows(upload);
             slots.push_back(pipeline::MaterialTextureSlot{kShadowSlot, shadow_view});
         }
         if (options.decals && decal_table.ready()) {
@@ -1029,18 +1035,8 @@ struct FpsRenderer::State {
         return recorder.add_extension(effect.extension());
     }
 
-    [[nodiscard]] Status render(bool read_back, rendering::assembly::AssemblyReport& out) noexcept {
-        cy::Expected<u32, cy::Error> began = device->begin_frame();
-        if (!began) {
-            return cy::make_unexpected(began.error());
-        }
-        const u32 slot = *began;
-        graph.reset();
-        stamped = false;
-        if (Status attached = attach_effects(slot); !attached) {
-            (void)device->end_frame();
-            return attached;
-        }
+    /// This frame's view: the camera, its cull, the lights, the sun and the imported output.
+    [[nodiscard]] rendering::assembly::AssemblyView describe_view() noexcept {
         rendering::assembly::AssemblyView frame_view;
         frame_view.fov_y_radians = fov;
         frame_view.view = view;
@@ -1058,11 +1054,13 @@ struct FpsRenderer::State {
         request.height = options.height;
         request.extra_usage = rhi::TextureUsage::TransferSource;
         frame_view.output = graph.import_texture(request, output, rhi::ImageUse::Undefined);
+        return frame_view;
+    }
 
-        if (Status bound = recorder.bind(assembly); !bound) {
-            (void)device->end_frame();
-            return bound;
-        }
+    /// The frame's passes declared, its decal table staged and its view block written.
+    [[nodiscard]] Status assemble_and_upload(u32 slot,
+                                             rendering::assembly::AssemblyView& frame_view,
+                                             rendering::assembly::AssemblyReport& out) noexcept {
         rendering::assembly::FrameSinks sinks = recorder.sinks();
         sinks.surfaces = &State::surfaces;
         sinks.surfaces_user = this;
@@ -1087,6 +1085,26 @@ struct FpsRenderer::State {
             if (executed) {
                 executed = bindings.upload(slot, upload);
             }
+        }
+        return executed;
+    }
+
+    [[nodiscard]] Status render(bool read_back, rendering::assembly::AssemblyReport& out) noexcept {
+        cy::Expected<u32, cy::Error> began = device->begin_frame();
+        if (!began) {
+            return cy::make_unexpected(began.error());
+        }
+        const u32 slot = *began;
+        graph.reset();
+        stamped = false;
+        if (Status attached = attach_effects(slot); !attached) {
+            (void)device->end_frame();
+            return attached;
+        }
+        rendering::assembly::AssemblyView frame_view = describe_view();
+        Status executed = recorder.bind(assembly);
+        if (executed) {
+            executed = assemble_and_upload(slot, frame_view, out);
         }
         capture = Capture{assembly.resources().output, readback, options.width, options.height};
         if (executed && read_back && capture.output != rendering::kInvalidResource) {
@@ -1173,6 +1191,112 @@ struct FpsRenderer::State {
         }
     }
 
+    // --- The stages beside the frame ---------------------------------------------------------
+
+    /// The render extent: the output's, or below it when the upscaler reconstructs.
+    [[nodiscard]] Status choose_extent() noexcept {
+        render_width = options.width;
+        render_height = options.height;
+        if (options.upscale == "off") {
+            return cy::ok();
+        }
+        if (!upscale::parse_upscale_mode(options.upscale.c_str(), upscale_mode)) {
+            return cy::fail(cy::ErrorCode::InvalidArgument,
+                            "--upscale is off, native, quality, balanced or performance");
+        }
+        const upscale::Extent2D extent =
+            upscale::render_extent_for(upscale::Extent2D{options.width, options.height},
+                                       upscale::upscale_mode_scale(upscale_mode));
+        render_width = extent.width;
+        render_height = extent.height;
+        upscaling = true;
+        return cy::ok();
+    }
+
+    /// The decal table, the upscaler and ambient occlusion, each only when the run asked for it.
+    [[nodiscard]] Status create_passes() noexcept {
+        if (options.decals) {
+            decal_table.initialize(*device, *allocator);
+            if (Status reserved = decal_table.reserve(kDecalRows); !reserved) {
+                return reserved;
+            }
+        }
+        if (upscaling) {
+            upscale::UpscalePassDescription description;
+            description.output = upscale::Extent2D{options.width, options.height};
+            if (Status made = upscaler.create(*allocator, *device, description); !made) {
+                return made;
+            }
+            if (Status bound = upscaler.bind_temporal(assembly.temporal()); !bound) {
+                return bound;
+            }
+        }
+        if (!options.ambient_occlusion) {
+            return cy::ok();
+        }
+        rendering::occlusion::AmbientOcclusionPassDescription description;
+        description.width = render_width;
+        description.height = render_height;
+        if (Status made = occlusion.create(*allocator, *device, description); !made) {
+            return made;
+        }
+        rendering::occlusion::GtaoSettings settings;
+        settings.shared.radius = 1.2F;
+        occlusion.set_settings(settings);
+        return cy::ok();
+    }
+
+    /// The device GI over the arena's system, at the render extent.
+    [[nodiscard]] Status create_gi(rendering::gi::IlluminationSystem& system) noexcept {
+        if (!options.gi) {
+            return cy::ok();
+        }
+        if (!gi_gpu::GpuGiFrame::supported(*device)) {
+            return cy::fail(cy::ErrorCode::Unsupported, "the device cannot run the GI");
+        }
+        gi_gpu::GpuGiFrameDescription description;
+        description.width = render_width;
+        description.height = render_height;
+        return gi.create(*allocator, *device, system, description);
+    }
+
+    /// One frame's numbers into the report: the frames that are timed are past the warm-up and
+    /// write no picture.
+    void account(const FpsHost& host, const rendering::assembly::AssemblyReport& assembled,
+                 f64 elapsed, bool written) noexcept {
+        draws = recorder.report().draws();
+        viewmodel_draws = std::max(viewmodel_draws, assembled.viewmodel_draws);
+        decals_assigned = std::max(decals_assigned, assembled.decals);
+        particles_drawn = std::max(particles_drawn, effect.report().particles);
+        if (frame <= kWarmFrames || written) {
+            return;
+        }
+        timed += 1;
+        frame_ms += elapsed;
+        worst_ms = std::max(worst_ms, elapsed);
+        record_ms += last_record_ms;
+        device_wait_ms += last_wait_ms;
+        game_ms += host.last_frame_ms();
+        const f64 measured = device_ms();
+        if (measured >= 0.0) {
+            gpu_ms += measured;
+            ++gpu_timed;
+        }
+        const gi_gpu::GpuGiCost cost = gi.last_cost();
+        if (options.gi && cost.any()) {
+            gi_ms += cost.total_ms();
+        }
+    }
+
+    /// Write this frame as `directory/<prefix><frame number, zero-padded to digits>.png`.
+    [[nodiscard]] Status write_frame(const std::string& directory, const char* prefix,
+                                     int digits) noexcept {
+        char number[32];
+        (void)std::snprintf(number, sizeof(number), "%0*llu", digits,
+                            static_cast<unsigned long long>(frame));
+        return write_png(directory + "/" + prefix + number + ".png");
+    }
+
     [[nodiscard]] Status write_png(const std::string& path) noexcept {
         cy::render_test::Image image(cy::system_allocator(cy::MemoryDomain::Renderer));
         if (Status adopted =
@@ -1235,76 +1359,17 @@ cy::Status FpsRenderer::start(FpsHost& host, const RenderOptions& options) noexc
     state_ = std::make_unique<State>(*allocator_);
     State& state = *state_;
     state.options = options;
-    state.render_width = options.width;
-    state.render_height = options.height;
-    if (options.upscale != "off") {
-        if (!upscale::parse_upscale_mode(options.upscale.c_str(), state.upscale_mode)) {
-            return cy::fail(cy::ErrorCode::InvalidArgument,
-                            "--upscale is off, native, quality, balanced or performance");
-        }
-        const upscale::Extent2D extent =
-            upscale::render_extent_for(upscale::Extent2D{options.width, options.height},
-                                       upscale::upscale_mode_scale(state.upscale_mode));
-        state.render_width = extent.width;
-        state.render_height = extent.height;
-        state.upscaling = true;
-    }
     state.decal_materials_ = host.effects().decal_materials();
-    if (Status made = state.create_device(); !made) {
-        return made;
-    }
-    if (Status made = state.create_frame(); !made) {
-        return made;
-    }
-    if (Status made = state.create_textures(); !made) {
-        return made;
-    }
-    if (Status made = state.create_materials(); !made) {
-        return made;
-    }
-    if (Status made = state.create_geometry(); !made) {
-        return made;
-    }
-    if (Status made = state.create_targets(); !made) {
-        return made;
-    }
-    if (options.decals) {
-        state.decal_table.initialize(*state.device, *allocator_);
-        if (Status reserved = state.decal_table.reserve(kDecalRows); !reserved) {
-            return reserved;
-        }
-    }
-    if (state.upscaling) {
-        upscale::UpscalePassDescription description;
-        description.output = upscale::Extent2D{options.width, options.height};
-        if (Status made = state.upscaler.create(*allocator_, *state.device, description); !made) {
+    using Step = Status (State::*)() noexcept;
+    for (const Step step :
+         {&State::choose_extent, &State::create_device, &State::create_frame,
+          &State::create_textures, &State::create_materials, &State::create_geometry,
+          &State::create_targets, &State::create_passes}) {
+        if (Status made = (state.*step)(); !made) {
             return made;
         }
-        if (Status bound = state.upscaler.bind_temporal(state.assembly.temporal()); !bound) {
-            return bound;
-        }
     }
-    if (options.ambient_occlusion) {
-        rendering::occlusion::AmbientOcclusionPassDescription description;
-        description.width = state.render_width;
-        description.height = state.render_height;
-        if (Status made = state.occlusion.create(*allocator_, *state.device, description); !made) {
-            return made;
-        }
-        rendering::occlusion::GtaoSettings settings;
-        settings.shared.radius = 1.2F;
-        state.occlusion.set_settings(settings);
-    }
-    if (!options.gi) {
-        return cy::ok();
-    }
-    if (!gi_gpu::GpuGiFrame::supported(*state.device)) {
-        return cy::fail(cy::ErrorCode::Unsupported, "the device cannot run the GI");
-    }
-    gi_gpu::GpuGiFrameDescription gi;
-    gi.width = state.render_width;
-    gi.height = state.render_height;
-    return state.gi.create(*allocator_, *state.device, host.illumination().system(), gi);
+    return state.create_gi(host.illumination().system());
 }
 
 cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
@@ -1319,10 +1384,8 @@ cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
     if (Status gathered = state.gather(host); !gathered) {
         return gathered;
     }
-    if (state.options.decals) {
-        if (Status packed = state.pack_decals(); !packed) {
-            return packed;
-        }
+    if (Status packed = state.options.decals ? state.pack_decals() : cy::ok(); !packed) {
+        return packed;
     }
     state.place_rows();
     const bool still = std::ranges::find(kStills, state.frame) != std::end(kStills);
@@ -1332,47 +1395,23 @@ cy::Status FpsRenderer::frame(FpsHost& host) noexcept {
     if (Status rendered = state.render(still || video, assembled); !rendered) {
         return rendered;
     }
-    const f64 elapsed = since_ms(started);
-    state.draws = state.recorder.report().draws();
-    state.viewmodel_draws = std::max(state.viewmodel_draws, assembled.viewmodel_draws);
-    state.decals_assigned = std::max(state.decals_assigned, assembled.decals);
-    state.particles_drawn = std::max(state.particles_drawn, state.effect.report().particles);
-    if (state.frame > kWarmFrames && !still && !video) {
-        state.timed += 1;
-        state.frame_ms += elapsed;
-        state.worst_ms = std::max(state.worst_ms, elapsed);
-        state.record_ms += state.last_record_ms;
-        state.device_wait_ms += state.last_wait_ms;
-        state.game_ms += host.last_frame_ms();
-        const f64 device = state.device_ms();
-        if (device >= 0.0) {
-            state.gpu_ms += device;
-            ++state.gpu_timed;
-        }
-        const gi_gpu::GpuGiCost cost = state.gi.last_cost();
-        if (state.options.gi && cost.any()) {
-            state.gi_ms += cost.total_ms();
-        }
-    }
+    state.account(host, assembled, since_ms(started), still || video);
     if (video) {
-        char name[64];
-        (void)std::snprintf(name, sizeof(name), "/frame-%04llu.png",
-                            static_cast<unsigned long long>(state.frame));
-        if (Status written = state.write_png(state.options.video_directory + name); !written) {
+        if (Status written = state.write_frame(state.options.video_directory, "frame-", 4);
+            !written) {
             return written;
         }
     }
-    if (still) {
-        char name[64];
-        (void)std::snprintf(name, sizeof(name), "/fps-%03llu.png",
-                            static_cast<unsigned long long>(state.frame));
-        if (Status written = state.write_png(state.options.directory + name); !written) {
-            return written;
-        }
-        std::fprintf(stderr, "wrote %s%s\n", state.options.directory.c_str(), name);
-        state.stills += 1;
-        state.print_marks(host);
+    if (!still) {
+        return cy::ok();
     }
+    if (Status written = state.write_frame(state.options.directory, "fps-", 3); !written) {
+        return written;
+    }
+    std::fprintf(stderr, "wrote %s/fps-%03llu.png\n", state.options.directory.c_str(),
+                 static_cast<unsigned long long>(state.frame));
+    state.stills += 1;
+    state.print_marks(host);
     return cy::ok();
 }
 

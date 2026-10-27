@@ -52,6 +52,10 @@ private:
 
     [[nodiscard]] cy::Status walk(cy::u64 frame) noexcept;
     [[nodiscard]] cy::Status shoot(cy::u64 frame) noexcept;
+    /// One frame of the task's phase: aim, settle, pull the trigger, let the kick settle.
+    [[nodiscard]] cy::Status advance(const Task& task) noexcept;
+    /// Move the mouse toward the mark, or call the aim done.
+    [[nodiscard]] cy::Status aim(const Task& task) noexcept;
     [[nodiscard]] cy::Vec3 aim_point(const Task& task) const noexcept;
     [[nodiscard]] bool on_mark(const Task& task) const noexcept;
     [[nodiscard]] bool mark_gone(const Task& task) const noexcept;

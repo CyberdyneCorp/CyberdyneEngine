@@ -180,14 +180,10 @@ void print_report(FpsHost& host, const sample::fps::ScriptFindings& script) noex
     print_shots(host);
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
-    sample::fps::HostOptions options;
-    options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
-    options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
-    RenderFlags render;
-    cy::u64 frames = sample::fps::ScriptedPlayer::kFrames;
+/// The run's arguments: the host's options, the picture's, and how many frames. False, having said
+/// why, for an argument the sample does not take.
+[[nodiscard]] bool parse_arguments(int argc, char** argv, sample::fps::HostOptions& options,
+                                   RenderFlags& render, cy::u64& frames) noexcept {
     for (int index = 1; index < argc; ++index) {
         if (render.parse(argc, argv, index)) {
             continue;
@@ -198,16 +194,89 @@ int main(int argc, char** argv) {
             frames = std::strtoull(argv[++index], nullptr, 10);
         } else if (std::strcmp(argv[index], "--headless") != 0) {
             std::fprintf(stderr, "first-person: unknown argument '%s'\n", argv[index]);
-            return 2;
+            return false;
         }
     }
-
     // THE GI IS PRESENTATION: a run with no picture has nothing to light, and nothing the game
     // decides reads it, so a headless run leaves it off — the drawn run's game is held to it.
     options.illumination = render.directory != nullptr;
 #if defined(CY_FIRST_PERSON_RENDER)
     options.illumination = options.illumination && render.options.gi;
 #endif
+    return true;
+}
+
+/// The picture, when the run asked for one: nothing at all otherwise, and a refusal by name in a
+/// build without the Vulkan renderer.
+class Picture {
+public:
+    /// 0 to go on, otherwise the exit code: a machine with no device skips with 0, saying so.
+    [[nodiscard]] int start(FpsHost& host, const RenderFlags& render) noexcept {
+        if (render.directory == nullptr) {
+            return 0;
+        }
+#if defined(CY_FIRST_PERSON_RENDER)
+        renderer_ = std::make_unique<sample::fps::FpsRenderer>(
+            cy::system_allocator(cy::MemoryDomain::Renderer));
+        sample::fps::RenderOptions drawn = render.options;
+        drawn.directory = render.directory;
+        if (const cy::Status started = renderer_->start(host, drawn); !started) {
+            std::fprintf(stderr, "first-person: --render: %s\n", started.error().message);
+            return started.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
+        }
+        return 0;
+#else
+        (void)host;
+        std::fprintf(
+            stderr, "first-person: --render needs the Vulkan renderer, which this build has not\n");
+        return 2;
+#endif
+    }
+
+    [[nodiscard]] bool skipped(const RenderFlags& render) const noexcept {
+#if defined(CY_FIRST_PERSON_RENDER)
+        return render.directory != nullptr && renderer_ == nullptr;
+#else
+        (void)render;
+        return false;
+#endif
+    }
+
+    [[nodiscard]] cy::Status frame(FpsHost& host) noexcept {
+#if defined(CY_FIRST_PERSON_RENDER)
+        if (renderer_ != nullptr) {
+            return renderer_->frame(host);
+        }
+#endif
+        (void)host;
+        return cy::ok();
+    }
+
+    void report() const noexcept {
+#if defined(CY_FIRST_PERSON_RENDER)
+        if (renderer_ != nullptr) {
+            renderer_->print_report();
+        }
+#endif
+    }
+
+private:
+#if defined(CY_FIRST_PERSON_RENDER)
+    std::unique_ptr<sample::fps::FpsRenderer> renderer_;
+#endif
+};
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    sample::fps::HostOptions options;
+    options.module_library = CY_FIRST_PERSON_MODULE_LIBRARY;
+    options.module_manifest = CY_FIRST_PERSON_MODULE_MANIFEST;
+    RenderFlags render;
+    cy::u64 frames = sample::fps::ScriptedPlayer::kFrames;
+    if (!parse_arguments(argc, argv, options, render, frames)) {
+        return 2;
+    }
     FpsHost host(cy::system_allocator(cy::MemoryDomain::World), options);
     const char* detail = "";
     if (const cy::Status started = host.start(&detail); !started) {
@@ -215,41 +284,15 @@ int main(int argc, char** argv) {
                      started.error().message);
         return 1;
     }
-#if defined(CY_FIRST_PERSON_RENDER)
-    std::unique_ptr<sample::fps::FpsRenderer> renderer;
-    if (render.directory != nullptr) {
-        renderer = std::make_unique<sample::fps::FpsRenderer>(
-            cy::system_allocator(cy::MemoryDomain::Renderer));
-        sample::fps::RenderOptions drawn = render.options;
-        drawn.directory = render.directory;
-        if (const cy::Status started = renderer->start(host, drawn); !started) {
-            std::fprintf(stderr, "first-person: --render: %s\n", started.error().message);
-            return started.error().code == cy::ErrorCode::Unavailable ? 0 : 1;
-        }
-    }
-#else
-    if (render.directory != nullptr) {
-        std::fprintf(
-            stderr, "first-person: --render needs the Vulkan renderer, which this build has not\n");
-        return 2;
-    }
-#endif
-    if (std::getenv("CY_FPS_DEBUG") != nullptr) {
-        cy::physics::RayCastHit hit;
-        const CyEntity e =
-            host.raycast(cy::Vec3{0.0F, 5.0F, 0.0F}, cy::Vec3{0.0F, -1.0F, 0.0F}, 10.0F, &hit);
-        std::printf("debug ray entity=%llu body=%d y=%.3f\n", bits(e), hit.body.is_null() ? 0 : 1,
-                    wide(hit.position.y));
+    Picture picture;
+    if (const int refused = picture.start(host, render); refused != 0 || picture.skipped(render)) {
+        return refused;
     }
     sample::fps::ScriptedPlayer player(host);
     for (cy::u64 frame = 0; frame < frames; ++frame) {
-        const cy::Status injected = player.before_frame(frame);
-        cy::Status ran = injected ? host.frame() : injected;
-#if defined(CY_FIRST_PERSON_RENDER)
-        if (ran && renderer != nullptr) {
-            ran = renderer->frame(host);
-        }
-#endif
+        cy::Status ran = player.before_frame(frame);
+        ran = ran ? host.frame() : ran;
+        ran = ran ? picture.frame(host) : ran;
         if (!ran) {
             std::fprintf(stderr, "first-person: frame %llu failed: %s\n",
                          static_cast<unsigned long long>(frame), ran.error().message);
@@ -257,11 +300,7 @@ int main(int argc, char** argv) {
         }
     }
     print_report(host, player.findings());
-#if defined(CY_FIRST_PERSON_RENDER)
-    if (renderer != nullptr) {
-        renderer->print_report();
-    }
-#endif
+    picture.report();
     host.shutdown();
     return 0;
 }

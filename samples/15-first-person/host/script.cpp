@@ -175,25 +175,13 @@ cy::Status ScriptedPlayer::shoot(u64 frame) noexcept {
         ++findings_.abandoned;
         return next_task(frame);
     }
-    const Vec3 eye = host_->eye().translation;
-    const Vec3 to = aim_point(task) - eye;
-    const f32 flat = std::sqrt((to.x * to.x) + (to.z * to.z));
-    const f32 yaw_error = wrap(std::atan2(to.x, -to.z) - host_->look_yaw());
-    const f32 pitch_error = std::atan2(to.y, flat) - host_->look_pitch();
-    const bool aimed = std::fabs(yaw_error) < kOnAim && std::fabs(pitch_error) < kOnAim;
+    return advance(task);
+}
+
+cy::Status ScriptedPlayer::advance(const Task& task) noexcept {
     switch (phase_) {
-        case Phase::Aim: {
-            if (aimed) {
-                phase_ = Phase::Settle;
-                phase_frames_ = 0;
-                return cy::ok();
-            }
-            // Mouse counts: +x turns right, and the pointer's +y is down, so looking up is −y.
-            const f32 dx = cy::math::clamp(yaw_error / kRadiansPerCount, -kMaxCounts, kMaxCounts);
-            const f32 dy =
-                cy::math::clamp(-pitch_error / kRadiansPerCount, -kMaxCounts, kMaxCounts);
-            return host_->move_pointer(std::round(dx), std::round(dy));
-        }
+        case Phase::Aim:
+            return aim(task);
         case Phase::Settle:
             if (phase_frames_ >= kSettleFrames) {
                 phase_ = on_mark(task) ? Phase::Fire : Phase::Aim;
@@ -215,6 +203,23 @@ cy::Status ScriptedPlayer::shoot(u64 frame) noexcept {
             return cy::ok();
     }
     return cy::ok();
+}
+
+cy::Status ScriptedPlayer::aim(const Task& task) noexcept {
+    const Vec3 eye = host_->eye().translation;
+    const Vec3 to = aim_point(task) - eye;
+    const f32 flat = std::sqrt((to.x * to.x) + (to.z * to.z));
+    const f32 yaw_error = wrap(std::atan2(to.x, -to.z) - host_->look_yaw());
+    const f32 pitch_error = std::atan2(to.y, flat) - host_->look_pitch();
+    if (std::fabs(yaw_error) < kOnAim && std::fabs(pitch_error) < kOnAim) {
+        phase_ = Phase::Settle;
+        phase_frames_ = 0;
+        return cy::ok();
+    }
+    // Mouse counts: +x turns right, and the pointer's +y is down, so looking up is −y.
+    const f32 dx = cy::math::clamp(yaw_error / kRadiansPerCount, -kMaxCounts, kMaxCounts);
+    const f32 dy = cy::math::clamp(-pitch_error / kRadiansPerCount, -kMaxCounts, kMaxCounts);
+    return host_->move_pointer(std::round(dx), std::round(dy));
 }
 
 }  // namespace sample::fps
