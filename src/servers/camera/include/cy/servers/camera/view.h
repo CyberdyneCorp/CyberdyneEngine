@@ -91,6 +91,10 @@ struct RenderViewRequest {
     render::DebugViewMode debug_mode = render::DebugViewMode::Off;
 };
 
+/// The key a camera's first-person weapon view takes: distinct from the primary view's zero, so the
+/// two keep apart the temporal histories they accumulate.
+inline constexpr u32 kWeaponViewKey = 1;
+
 /// The identity temporal history follows for one view of one camera. See the header comment.
 [[nodiscard]] u64 history_identity(const EvaluatedCamera& camera, u32 view_key) noexcept;
 
@@ -101,5 +105,18 @@ struct RenderViewRequest {
 /// frame with an empty rectangle in it.
 [[nodiscard]] Status produce_view(const EvaluatedCamera& camera, const RenderViewRequest& request,
                                   render::ViewDescription& out) noexcept;
+
+/// The first-person WEAPON VIEW of a camera whose primary view `primary` describes: the same pose,
+/// target, viewport and family, `render::ViewPurpose::Viewmodel`, `kWeaponViewKey`, the weapon's
+/// own lens, and `layers` — the layers the arms and the weapon are on. `camera-system`: "WHEN a
+/// first-person camera renders the world and a separate weapon view THEN both SHALL be render views
+/// derived from one evaluated camera" — this is the second of the two, and
+/// `rendering::viewmodel::settings_from_views` is where the renderer checks that it is.
+///
+/// Fails as `produce_view` does, and when `layers` is empty: a weapon view that draws nothing.
+[[nodiscard]] Status produce_weapon_view(const EvaluatedCamera& camera,
+                                         const RenderViewRequest& primary, const Lens& lens,
+                                         render::LayerMask layers,
+                                         render::ViewDescription& out) noexcept;
 
 }  // namespace cy::camera

@@ -148,6 +148,21 @@ rhi::GraphicsPipelineHandle FramePipelines::skinned_pipeline(
     return index < kFramePipelineKindCount ? skinned_[index] : rhi::GraphicsPipelineHandle{};
 }
 
+rhi::GraphicsPipelineHandle FramePipelines::viewmodel_pipeline(FramePipelineKind kind,
+                                                               bool skinned) const noexcept {
+    if (!setup_.viewmodel || (skinned && !setup_.skinned)) {
+        return rhi::GraphicsPipelineHandle{};
+    }
+    if (kind == FramePipelineKind::Shadow) {
+        return pipelines_[static_cast<u32>(FramePipelineKind::Shadow)];
+    }
+    const auto index = static_cast<u32>(kind);
+    if (index >= kFramePipelineKindCount) {
+        return rhi::GraphicsPipelineHandle{};
+    }
+    return skinned ? skinned_viewmodel_[index] : viewmodel_[index];
+}
+
 Expected<rhi::GraphicsPipelineHandle, Error> FramePipelines::create_vertex_variant(
     FramePipelineKind kind, rhi::ShaderModuleHandle vertex, rhi::PipelineLayoutHandle layout,
     rhi::ShaderModuleHandle fragment) const noexcept {
@@ -220,11 +235,44 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
          words(kFrameSkinnedForwardVertexSpirv), kFrameSkinnedForwardVertexMsl,
          sizeof(kFrameSkinnedForwardVertexMsl) - 1, &skinned_forward_vertex_},
     };
+    // The weapon view's vertex stages, likewise only for a frame that draws one — and their skinned
+    // forms only for a frame that also draws skinned meshes.
+    const Request viewmodel[] = {
+        {"cy frame viewmodel depth vertex", rhi::ShaderStage::Vertex, "cyViewmodelDepthVertex",
+         words(kFrameViewmodelDepthVertexSpirv), kFrameViewmodelDepthVertexMsl,
+         sizeof(kFrameViewmodelDepthVertexMsl) - 1, &viewmodel_depth_vertex_},
+        {"cy frame viewmodel forward vertex", rhi::ShaderStage::Vertex, "cyViewmodelForwardVertex",
+         words(kFrameViewmodelForwardVertexSpirv), kFrameViewmodelForwardVertexMsl,
+         sizeof(kFrameViewmodelForwardVertexMsl) - 1, &viewmodel_forward_vertex_},
+        {"cy frame skinned viewmodel depth vertex", rhi::ShaderStage::Vertex,
+         "cySkinnedViewmodelDepthVertex", words(kFrameSkinnedViewmodelDepthVertexSpirv),
+         kFrameSkinnedViewmodelDepthVertexMsl, sizeof(kFrameSkinnedViewmodelDepthVertexMsl) - 1,
+         &skinned_viewmodel_depth_vertex_},
+        {"cy frame skinned viewmodel forward vertex", rhi::ShaderStage::Vertex,
+         "cySkinnedViewmodelForwardVertex", words(kFrameSkinnedViewmodelForwardVertexSpirv),
+         kFrameSkinnedViewmodelForwardVertexMsl, sizeof(kFrameSkinnedViewmodelForwardVertexMsl) - 1,
+         &skinned_viewmodel_forward_vertex_},
+    };
     const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
-    const usize standard = sizeof(requests) / sizeof(requests[0]);
-    const usize total = standard + (setup_.skinned ? sizeof(skinned) / sizeof(skinned[0]) : 0U);
+    const usize skinned_count = setup_.skinned ? sizeof(skinned) / sizeof(skinned[0]) : 0U;
+    // The rigid pair, and the skinned pair after it only with skinned draws.
+    usize viewmodel_count = 0;
+    if (setup_.viewmodel) {
+        viewmodel_count = setup_.skinned ? 4U : 2U;
+    }
+    const Request* selected[(sizeof(requests) / sizeof(requests[0])) + 2U + 4U] = {};
+    usize total = 0;
+    for (const Request& request : requests) {
+        selected[total++] = &request;
+    }
+    for (usize index = 0; index < skinned_count; ++index) {
+        selected[total++] = &skinned[index];
+    }
+    for (usize index = 0; index < viewmodel_count; ++index) {
+        selected[total++] = &viewmodel[index];
+    }
     for (usize index = 0; index < total; ++index) {
-        const Request& request = index < standard ? requests[index] : skinned[index - standard];
+        const Request& request = *selected[index];
         rhi::ShaderModuleDescription description;
         description.name = request.name;
         description.stage = request.stage;
@@ -385,6 +433,36 @@ Status FramePipelines::create_skinned_pipelines(rhi::Device& device,
         }
         skinned_[static_cast<u32>(kind)] = *created;
         ++created_;
+    }
+    return ok();
+}
+
+Status FramePipelines::create_viewmodel_pipelines(rhi::Device& device,
+                                                  const PipelineSetup& setup) noexcept {
+    const FramePipelineKind kinds[] = {FramePipelineKind::Depth, FramePipelineKind::Opaque,
+                                       FramePipelineKind::Transparent};
+    for (const bool skinned : {false, true}) {
+        if (skinned && !setup.skinned) {
+            continue;
+        }
+        for (const FramePipelineKind kind : kinds) {
+            if (kind == FramePipelineKind::Transparent && !setup.transparency) {
+                continue;
+            }
+            const bool depth = kind == FramePipelineKind::Depth;
+            const rhi::ShaderModuleHandle rigid =
+                depth ? viewmodel_depth_vertex_ : viewmodel_forward_vertex_;
+            const rhi::ShaderModuleHandle deformed =
+                depth ? skinned_viewmodel_depth_vertex_ : skinned_viewmodel_forward_vertex_;
+            const rhi::ShaderModuleHandle vertex = skinned ? deformed : rigid;
+            auto created =
+                make_geometry_pipeline(device, setup, kind, vertex, layout_, false, {}, skinned);
+            if (!created) {
+                return make_unexpected(created.error());
+            }
+            (skinned ? skinned_viewmodel_ : viewmodel_)[static_cast<u32>(kind)] = *created;
+            ++created_;
+        }
     }
     return ok();
 }
@@ -630,6 +708,11 @@ Status FramePipelines::create_pipelines(rhi::Device& device, const PipelineSetup
             return made;
         }
     }
+    if (setup.viewmodel) {
+        if (Status made = create_viewmodel_pipelines(device, setup); !made) {
+            return made;
+        }
+    }
     if (setup.tonemap) {
         if (Status made = create_resolve_pipeline(device, setup); !made) {
             return made;
@@ -687,10 +770,12 @@ void FramePipelines::shutdown() noexcept {
             handle = rhi::GraphicsPipelineHandle{};
         }
     }
-    for (rhi::GraphicsPipelineHandle& handle : skinned_) {
-        if (!handle.is_null()) {
-            device.destroy_graphics_pipeline(handle);
-            handle = rhi::GraphicsPipelineHandle{};
+    for (rhi::GraphicsPipelineHandle* family : {skinned_, viewmodel_, skinned_viewmodel_}) {
+        for (u32 index = 0; index < kFramePipelineKindCount; ++index) {
+            if (!family[index].is_null()) {
+                device.destroy_graphics_pipeline(family[index]);
+                family[index] = rhi::GraphicsPipelineHandle{};
+            }
         }
     }
     if (!sampler_.is_null()) {
@@ -711,10 +796,21 @@ void FramePipelines::shutdown() noexcept {
             handle = rhi::DescriptorSetLayoutHandle{};
         }
     }
-    rhi::ShaderModuleHandle* modules[] = {
-        &depth_vertex_,      &depth_fragment_,       &shadow_vertex_,         &shadow_fragment_,
-        &forward_vertex_,    &forward_fragment_,     &resolve_vertex_,        &resolve_fragment_,
-        &temporal_fragment_, &skinned_depth_vertex_, &skinned_forward_vertex_};
+    rhi::ShaderModuleHandle* modules[] = {&depth_vertex_,
+                                          &depth_fragment_,
+                                          &shadow_vertex_,
+                                          &shadow_fragment_,
+                                          &forward_vertex_,
+                                          &forward_fragment_,
+                                          &resolve_vertex_,
+                                          &resolve_fragment_,
+                                          &temporal_fragment_,
+                                          &skinned_depth_vertex_,
+                                          &skinned_forward_vertex_,
+                                          &viewmodel_depth_vertex_,
+                                          &viewmodel_forward_vertex_,
+                                          &skinned_viewmodel_depth_vertex_,
+                                          &skinned_viewmodel_forward_vertex_};
     for (rhi::ShaderModuleHandle* handle : modules) {
         if (!handle->is_null()) {
             device.destroy_shader_module(*handle);

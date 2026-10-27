@@ -1312,6 +1312,118 @@ pub struct CyUiAnimation {
     pub flags: u32,
 }
 
+/// `CyFirstPersonDesc` — 96 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFirstPersonDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float` at byte 8.
+    pub look_sensitivity: f32,
+    /// `float` at byte 12.
+    pub aim_sensitivity: f32,
+    /// `float` at byte 16.
+    pub pitch_limit: f32,
+    /// `float` at byte 20.
+    pub hip_fov: f32,
+    /// `float` at byte 24.
+    pub aim_fov: f32,
+    /// `float` at byte 28.
+    pub hip_viewmodel_fov: f32,
+    /// `float` at byte 32.
+    pub aim_viewmodel_fov: f32,
+    /// `float` at byte 36.
+    pub aim_half_life: f32,
+    /// `float` at byte 40.
+    pub bob_stride: f32,
+    /// `float` at byte 44.
+    pub bob_vertical: f32,
+    /// `float` at byte 48.
+    pub bob_lateral: f32,
+    /// `float` at byte 52.
+    pub bob_reference_speed: f32,
+    /// `float` at byte 56.
+    pub recoil_frequency: f32,
+    /// `float` at byte 60.
+    pub recoil_damping: f32,
+    /// `float` at byte 64.
+    pub recoil_camera_share: f32,
+    /// `float` at byte 68.
+    pub motion_reduction: f32,
+    /// `float[3]` at byte 72.
+    pub hip_offset: [f32; 3],
+    /// `float[3]` at byte 84.
+    pub aim_offset: [f32; 3],
+}
+
+/// `CyFirstPersonInput` — 24 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFirstPersonInput {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub flags: u32,
+    /// `float[2]` at byte 8.
+    pub look: [f32; 2],
+    /// `float` at byte 16.
+    pub move_speed: f32,
+    /// `uint32_t` at byte 20.
+    pub reserved: u32,
+}
+
+/// `CyFirstPersonState` — 96 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyFirstPersonState {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `float` at byte 4.
+    pub yaw: f32,
+    /// `float` at byte 8.
+    pub pitch: f32,
+    /// `float[2]` at byte 12.
+    pub recoil: [f32; 2],
+    /// `float` at byte 20.
+    pub aim: f32,
+    /// `float` at byte 24.
+    pub fov: f32,
+    /// `float` at byte 28.
+    pub viewmodel_fov: f32,
+    /// `float[3]` at byte 32.
+    pub eye_offset: [f32; 3],
+    /// `CyPose` at byte 44.
+    pub weapon: CyPose,
+    /// `float[3]` at byte 72.
+    pub view_aim: [f32; 3],
+    /// `float[3]` at byte 84.
+    pub weapon_aim: [f32; 3],
+}
+
+/// `CyViewmodelDesc` — 32 bytes, 4-byte aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CyViewmodelDesc {
+    /// `uint32_t` at byte 0.
+    pub struct_size: u32,
+    /// `uint32_t` at byte 4.
+    pub layers: u32,
+    /// `float` at byte 8.
+    pub fov: f32,
+    /// `float` at byte 12.
+    pub near_plane: f32,
+    /// `float` at byte 16.
+    pub far_plane: f32,
+    /// `float` at byte 20.
+    pub depth_fraction: f32,
+    /// `uint32_t` at byte 24.
+    pub flags: u32,
+    /// `uint32_t` at byte 28.
+    pub reserved: u32,
+}
+
 /// `CyInterfaceHeader` — 16 bytes, 4-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -1326,7 +1438,7 @@ pub struct CyInterfaceHeader {
     pub table_size: u32,
 }
 
-/// `CyInterface` — 1448 bytes, 8-byte aligned.
+/// `CyInterface` — 1512 bytes, 8-byte aligned.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CyInterface {
@@ -1887,6 +1999,27 @@ pub struct CyInterface {
         Option<unsafe extern "C" fn(CyEngine, CyUiElement, *const CyUiAnimation) -> i32>,
     /// `CyResult(*)(CyEngine, uint32_t, uint32_t*)` at byte 1440.
     pub ui_navigate: Option<unsafe extern "C" fn(CyEngine, u32, *mut u32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const CyFirstPersonDesc*)` at byte 1448.
+    pub first_person_configure:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *const CyFirstPersonDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const CyFirstPersonInput*)` at byte 1456.
+    pub first_person_input:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *const CyFirstPersonInput) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, float, float)` at byte 1464.
+    pub first_person_kick: Option<unsafe extern "C" fn(CyEngine, CyCamera, f32, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, float, float)` at byte 1472.
+    pub first_person_reset: Option<unsafe extern "C" fn(CyEngine, CyCamera, f32, f32) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, CyFirstPersonState*)` at byte 1480.
+    pub first_person_state:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *mut CyFirstPersonState) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera)` at byte 1488.
+    pub first_person_release: Option<unsafe extern "C" fn(CyEngine, CyCamera) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, const CyViewmodelDesc*)` at byte 1496.
+    pub viewmodel_configure:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *const CyViewmodelDesc) -> i32>,
+    /// `CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)` at byte 1504.
+    pub viewmodel_get:
+        Option<unsafe extern "C" fn(CyEngine, CyCamera, *mut CyViewmodelDesc) -> i32>,
 }
 
 /// `CyModuleInit` — 40 bytes, 8-byte aligned.
@@ -2108,5 +2241,13 @@ impl CyInterface {
         ui_widget_open: None,
         ui_widget_animate: None,
         ui_navigate: None,
+        first_person_configure: None,
+        first_person_input: None,
+        first_person_kick: None,
+        first_person_reset: None,
+        first_person_state: None,
+        first_person_release: None,
+        viewmodel_configure: None,
+        viewmodel_get: None,
     };
 }

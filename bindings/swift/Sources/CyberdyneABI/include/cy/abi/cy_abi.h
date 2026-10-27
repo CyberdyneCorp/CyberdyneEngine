@@ -78,7 +78,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 12u
+#define CY_ABI_MINOR 13u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -1686,6 +1686,101 @@ typedef struct CyUiAnimation {
     uint32_t flags;  /* CY_UI_ANIMATION_* */
 } CyUiAnimation;
 
+/* --- 1.13: the first-person camera and the weapon view -----------------------------------------
+ *
+ * A first-person camera's behaviours — mouse look with a sensitivity, head bob, recoil kick and
+ * recovery, the change of lens for aiming down the sights — and the WEAPON VIEW drawn beside it:
+ * the arms and the weapon through their own field of view and near plane, in front of every wall
+ * they are pushed into (`camera-system`'s "one camera, several views"). Kept by
+ * `cy::camera::FirstPersonCamera` (servers/camera/first_person.h) and
+ * `cy::rendering::viewmodel` (rendering/viewmodel/), reached through
+ * `cy::abi::game::FirstPersonBackend` (cy/abi/game/first_person.h), implemented by
+ * `cy::game_backend::FirstPersonAdapter` (src/game_backend/first_person/). A host that draws
+ * nothing binds none, and every 1.13 entry answers UNAVAILABLE.
+ *
+ * THE CAMERA IS PRESENTATION. Every entry is [N U]: a fixed step is refused, because the camera is
+ * not authoritative and a resimulated tick must not kick it again. A first-person camera is named
+ * by the `CyCamera` its rig is; the host advances each one once a frame by the frame's time, places
+ * the eye at the character's head and the weapon's instances at `CyFirstPersonState::weapon` in the
+ * eye's space, and draws the weapon view's layers through its lens.
+ *
+ * THE LOOK'S SENSITIVITY IS APPLIED HERE, ONCE: `CyFirstPersonInput::look` is the device's deltas —
+ * mouse counts — and the action that reads them carries no sensitivity processor. */
+
+/* `CyFirstPersonDesc::flags`. */
+#define CY_FIRST_PERSON_INVERT_Y 0x1u
+
+/* A first-person camera's behaviours. Every number finite; angles in radians, lengths in metres. */
+typedef struct CyFirstPersonDesc {
+    uint32_t struct_size;
+    uint32_t flags;            /* CY_FIRST_PERSON_INVERT_Y */
+    float look_sensitivity;    /* radians a device count, >= 0 */
+    float aim_sensitivity;     /* its multiplier with the sights fully up, >= 0 */
+    float pitch_limit;         /* (0, pi/2]: the pitch is clamped to plus or minus this */
+    float hip_fov;             /* the world's vertical field of view from the hip, (0, pi) */
+    float aim_fov;             /* and with the sights up */
+    float hip_viewmodel_fov;   /* the weapon view's, from the hip, (0, pi) */
+    float aim_viewmodel_fov;   /* and with the sights up */
+    float aim_half_life;       /* seconds the sights take to come half way, >= 0 */
+    float bob_stride;          /* metres walked a full bob cycle, > 0 */
+    float bob_vertical;        /* metres at the reference speed, >= 0 */
+    float bob_lateral;         /* metres at the reference speed, >= 0 */
+    float bob_reference_speed; /* metres a second, > 0 */
+    float recoil_frequency;    /* the recoil spring's, hertz, > 0 */
+    float recoil_damping;      /* its damping ratio, >= 0; one is critical */
+    float recoil_camera_share; /* [0, 1]: the recoil the view takes; the weapon takes the rest */
+    float motion_reduction;    /* [0, 1]: accessibility; one leaves no bob and no view recoil */
+    float hip_offset[3];       /* the weapon in the eye's space (-Z ahead), from the hip */
+    float aim_offset[3];       /* and with the sights up */
+} CyFirstPersonDesc;
+
+/* `CyFirstPersonInput::flags`. */
+#define CY_FIRST_PERSON_AIMING 0x1u   /* the sights are held up */
+#define CY_FIRST_PERSON_AIRBORNE 0x2u /* off the ground: the stride stops */
+
+/* One frame's input to a first-person camera. Inputs between two frames add up. */
+typedef struct CyFirstPersonInput {
+    uint32_t struct_size;
+    uint32_t flags;    /* CY_FIRST_PERSON_AIMING, CY_FIRST_PERSON_AIRBORNE */
+    float look[2];     /* the device's deltas: +x turns right, +y looks up; no sensitivity */
+    float move_speed;  /* metres a second over the ground, >= 0 */
+    uint32_t reserved; /* zero */
+} CyFirstPersonInput;
+
+/* What a first-person camera's last frame produced. */
+typedef struct CyFirstPersonState {
+    uint32_t struct_size;
+    float yaw; /* the look the player controls — the control aim — recoil excluded */
+    float pitch;
+    float recoil[2];     /* the recoil spring's displacement: pitch, yaw */
+    float aim;           /* 0 at the hip, 1 with the sights fully up */
+    float fov;           /* the world's vertical field of view now */
+    float viewmodel_fov; /* the weapon view's */
+    float eye_offset[3]; /* the bob, in the eye's space */
+    CyPose weapon;       /* the weapon in the eye's space: held, bobbing, kicked */
+    float view_aim[3];   /* where the camera looks, in the world */
+    float weapon_aim[3]; /* where the weapon points, in the world */
+} CyFirstPersonState;
+
+/* `CyViewmodelDesc::flags`: the weapon view's part in the world's shadows. Zero, the default, is
+ * a weapon that is shadowed by the world and casts nothing. */
+#define CY_VIEWMODEL_IGNORE_SHADOWS 0x1u  /* not shadowed by the world's shadow map */
+#define CY_VIEWMODEL_CAST_SHADOWS 0x2u    /* drawn into the world's shadow map from where it is */
+#define CY_VIEWMODEL_CONTACT_SHADOWS 0x4u /* takes the screen-space contact term too */
+
+/* A camera's weapon view: which layers it draws — and the world view therefore does not — and its
+ * lens. `layers` zero is no weapon view. */
+typedef struct CyViewmodelDesc {
+    uint32_t struct_size;
+    uint32_t layers;      /* the layers the arms and the weapon are on; zero for none */
+    float fov;            /* vertical, (0, pi); zero follows the first-person camera's */
+    float near_plane;     /* metres, > 0 */
+    float far_plane;      /* metres, beyond the near plane */
+    float depth_fraction; /* (0, 0.5]: the slice of the depth range nearest the eye it takes */
+    uint32_t flags;       /* CY_VIEWMODEL_* */
+    uint32_t reserved;    /* zero */
+} CyViewmodelDesc;
+
 /* --- The interface table -----------------------------------------------------------------------
  *
  * `table_size` is what makes growth additive: a module reads only the prefix it was compiled
@@ -2379,6 +2474,34 @@ typedef struct CyInterface {
     /* [N U] Deliver a CyUiAction — a game that maps its own input drives the focus with this.
      * `*out_consumed` is 1 when the interface took it, 0 when it is the game's. */
     CyResult (*ui_navigate)(CyEngine engine, uint32_t action, uint32_t* out_consumed);
+    /* --- 1.13: the first-person camera and the weapon view ---
+     *
+     * Every entry is [N U] (see CyFirstPersonDesc's section). A camera that has no first-person
+     * behaviours answers NOT_FOUND, except to `first_person_configure`, which gives it some. */
+
+    /* [N U] Give `camera` first-person behaviours, or replace their settings keeping the state —
+     * the look, the bob, the recoil, the sights. INVALID_ARGUMENT for a number out of its range, an
+     * unknown flag or a null camera, having changed nothing. OUT_OF_RANGE with every slot taken. */
+    CyResult (*first_person_configure)(CyEngine engine, CyCamera camera,
+                                       const CyFirstPersonDesc* desc);
+    /* [N U] This frame's input, added to what arrived since the last frame: the look deltas sum,
+     * the speed and the flags are the latest. Applied when the host advances the camera. */
+    CyResult (*first_person_input)(CyEngine engine, CyCamera camera,
+                                   const CyFirstPersonInput* input);
+    /* [N U] A shot's kick: an impulse into the recoil spring, radians a second up and right. */
+    CyResult (*first_person_kick)(CyEngine engine, CyCamera camera, float pitch, float yaw);
+    /* [N U] A cut: the look set, the bob, the recoil and the sights at rest. */
+    CyResult (*first_person_reset)(CyEngine engine, CyCamera camera, float yaw, float pitch);
+    /* [N U] What the camera's last frame produced. */
+    CyResult (*first_person_state)(CyEngine engine, CyCamera camera, CyFirstPersonState* out_state);
+    /* [N U] Take the behaviours, and the weapon view, away from `camera`. */
+    CyResult (*first_person_release)(CyEngine engine, CyCamera camera);
+    /* [N U] Set `camera`'s weapon view — `layers` zero turns it off. INVALID_ARGUMENT for a lens
+     * out of range, an unknown flag or a nonzero reserved word, having changed nothing. NOT_FOUND
+     * for a camera with no first-person behaviours. */
+    CyResult (*viewmodel_configure)(CyEngine engine, CyCamera camera, const CyViewmodelDesc* desc);
+    /* [N U] `camera`'s weapon view as it was set, `fov` the one it draws with now. */
+    CyResult (*viewmodel_get)(CyEngine engine, CyCamera camera, CyViewmodelDesc* out_desc);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -2520,6 +2643,11 @@ CY_ABI_STATIC_ASSERT(sizeof(CyLightStatus) == 40, "CyLightStatus is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiWidgetDesc) == 96, "CyUiWidgetDesc is 96 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiDocumentDesc) == 40, "CyUiDocumentDesc is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyUiAnimation) == 40, "CyUiAnimation is 40 bytes");
+/* 1.13 */
+CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonDesc) == 96, "CyFirstPersonDesc is 96 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonInput) == 24, "CyFirstPersonInput is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyFirstPersonState) == 96, "CyFirstPersonState is 96 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyViewmodelDesc) == 32, "CyViewmodelDesc is 32 bytes");
 
 #ifdef __cplusplus
 }

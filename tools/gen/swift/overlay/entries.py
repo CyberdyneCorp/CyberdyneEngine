@@ -263,6 +263,15 @@ ENTRIES: dict[str, Entry] = {
     "ui_widget_open": Entry(("engine", "widget", "open"), result="throwing"),
     "ui_widget_animate": Entry(("engine", "widget", "animation"), result="throwing"),
     "ui_navigate": Entry(("engine", "action", "consumed"), result="throwing"),
+    # 1.13: the first-person camera and the weapon view
+    "first_person_configure": Entry(("engine", "camera", "desc"), result="throwing"),
+    "first_person_input": Entry(("engine", "camera", "input"), result="throwing"),
+    "first_person_kick": Entry(("engine", "camera", "pitch", "yaw"), result="throwing"),
+    "first_person_reset": Entry(("engine", "camera", "yaw", "pitch"), result="throwing"),
+    "first_person_state": Entry(("engine", "camera", "into"), result="throwing"),
+    "first_person_release": Entry(("engine", "camera"), result="throwing"),
+    "viewmodel_configure": Entry(("engine", "camera", "desc"), result="throwing"),
+    "viewmodel_get": Entry(("engine", "camera", "into"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

@@ -66,6 +66,10 @@ add_subdirectory(fog)
 # lights/CMakeLists.txt.
 add_subdirectory(lights)
 
+# ABI 1.13's first-person adapter, a module of its own because it links cy::rendering-viewmodel;
+# see first_person/CMakeLists.txt.
+add_subdirectory(first_person)
+
 # #29: `step_towards` is the one statement of a graph unit's arithmetic, and its Swift twin must agree
 # with it float for float. Swift does not contract; GCC (aarch64) and clang (macOS) fuse
 # `x += dx / distance * step` into a multiply-add, which moved the graph unit off its twin by an ULP

@@ -505,3 +505,35 @@ CY_TEST_CASE("the 1.12 structs have the offsets the description generator comput
     CY_CHECK_EQ(offsetof(CyUiAnimation, easing), 32U);
     CY_CHECK_EQ(offsetof(CyUiAnimation, flags), 36U);
 }
+
+CY_TEST_CASE("the 1.13 structs have the offsets the description generator computes") {
+    CY_CHECK_EQ(sizeof(CyFirstPersonDesc), 96U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, flags), 4U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, look_sensitivity), 8U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, hip_fov), 20U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, aim_half_life), 36U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, bob_stride), 40U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, recoil_frequency), 56U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, motion_reduction), 68U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, hip_offset), 72U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonDesc, aim_offset), 84U);
+
+    CY_CHECK_EQ(sizeof(CyFirstPersonInput), 24U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonInput, look), 8U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonInput, move_speed), 16U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonInput, reserved), 20U);
+
+    CY_CHECK_EQ(sizeof(CyFirstPersonState), 96U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, recoil), 12U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, aim), 20U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, eye_offset), 32U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, weapon), 44U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, view_aim), 72U);
+    CY_CHECK_EQ(offsetof(CyFirstPersonState, weapon_aim), 84U);
+
+    CY_CHECK_EQ(sizeof(CyViewmodelDesc), 32U);
+    CY_CHECK_EQ(offsetof(CyViewmodelDesc, layers), 4U);
+    CY_CHECK_EQ(offsetof(CyViewmodelDesc, fov), 8U);
+    CY_CHECK_EQ(offsetof(CyViewmodelDesc, depth_fraction), 20U);
+    CY_CHECK_EQ(offsetof(CyViewmodelDesc, flags), 24U);
+}

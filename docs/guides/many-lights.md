@@ -205,4 +205,4 @@ The render suites skip loudly without a Vulkan device. Metal and D3D12 compile e
 
 - Ray-traced visibility for the stochastic path.
 - Area lights in the lightmap bake.
-- A sample game that spawns lights through ABI 1.11 (the first-person weapon view will).
+- A sample game that spawns lights through ABI 1.11.

@@ -261,7 +261,25 @@ CY_TEST_CASE("the 1.12 table appends the widget toolkit after every 1.11 entry")
     for (const bool set : entries) {
         CY_CHECK(set);
     }
-    CY_CHECK_EQ(offsetof(CyInterface, ui_navigate) + sizeof(void*), sizeof(CyInterface));
+    CY_CHECK_EQ(offsetof(CyInterface, ui_navigate) + sizeof(void*),
+                offsetof(CyInterface, first_person_configure));
+}
+
+CY_TEST_CASE("the 1.13 table appends the first-person camera after every 1.12 entry") {
+    const CyInterface& iface = table();
+    CY_CHECK_GE(iface.header.abi_minor, 13U);
+    CY_CHECK_EQ(iface.header.table_size, sizeof(CyInterface));
+    const bool entries[] = {
+        iface.first_person_configure != nullptr, iface.first_person_input != nullptr,
+        iface.first_person_kick != nullptr,      iface.first_person_reset != nullptr,
+        iface.first_person_state != nullptr,     iface.first_person_release != nullptr,
+        iface.viewmodel_configure != nullptr,    iface.viewmodel_get != nullptr,
+    };
+    CY_CHECK_EQ(sizeof(entries) / sizeof(entries[0]), 8U);
+    for (const bool set : entries) {
+        CY_CHECK(set);
+    }
+    CY_CHECK_EQ(offsetof(CyInterface, viewmodel_get) + sizeof(void*), sizeof(CyInterface));
 }
 
 CY_TEST_CASE("each scheduler stage runs in the phase cy_abi.h states") {
@@ -291,6 +309,7 @@ CY_TEST_CASE("a new host starts with no game backend and in no phase") {
     CY_CHECK(host.game.illumination == nullptr);
     CY_CHECK(host.game.fog == nullptr);
     CY_CHECK(host.game.lights == nullptr);
+    CY_CHECK(host.game.first_person == nullptr);
     CY_CHECK_EQ(host.game.clock.phase, CY_PHASE_NONE);
     CY_CHECK_FALSE(host.game.clock.resimulating());
 }

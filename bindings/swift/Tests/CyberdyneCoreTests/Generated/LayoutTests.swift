@@ -720,6 +720,70 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyUiAnimation>.offset(of: \CyUiAnimation.flags), 36, "CyUiAnimation.flags offset")
     }
 
+    func testFirstPersonDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.size, 96, "CyFirstPersonDesc size")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.alignment, 4, "CyFirstPersonDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.struct_size), 0, "CyFirstPersonDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.flags), 4, "CyFirstPersonDesc.flags offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.look_sensitivity), 8, "CyFirstPersonDesc.look_sensitivity offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.aim_sensitivity), 12, "CyFirstPersonDesc.aim_sensitivity offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.pitch_limit), 16, "CyFirstPersonDesc.pitch_limit offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.hip_fov), 20, "CyFirstPersonDesc.hip_fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.aim_fov), 24, "CyFirstPersonDesc.aim_fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.hip_viewmodel_fov), 28, "CyFirstPersonDesc.hip_viewmodel_fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.aim_viewmodel_fov), 32, "CyFirstPersonDesc.aim_viewmodel_fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.aim_half_life), 36, "CyFirstPersonDesc.aim_half_life offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.bob_stride), 40, "CyFirstPersonDesc.bob_stride offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.bob_vertical), 44, "CyFirstPersonDesc.bob_vertical offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.bob_lateral), 48, "CyFirstPersonDesc.bob_lateral offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.bob_reference_speed), 52, "CyFirstPersonDesc.bob_reference_speed offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.recoil_frequency), 56, "CyFirstPersonDesc.recoil_frequency offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.recoil_damping), 60, "CyFirstPersonDesc.recoil_damping offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.recoil_camera_share), 64, "CyFirstPersonDesc.recoil_camera_share offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.motion_reduction), 68, "CyFirstPersonDesc.motion_reduction offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.hip_offset), 72, "CyFirstPersonDesc.hip_offset offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonDesc>.offset(of: \CyFirstPersonDesc.aim_offset), 84, "CyFirstPersonDesc.aim_offset offset")
+    }
+
+    func testFirstPersonInputLayout() {
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.size, 24, "CyFirstPersonInput size")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.alignment, 4, "CyFirstPersonInput alignment")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.offset(of: \CyFirstPersonInput.struct_size), 0, "CyFirstPersonInput.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.offset(of: \CyFirstPersonInput.flags), 4, "CyFirstPersonInput.flags offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.offset(of: \CyFirstPersonInput.look), 8, "CyFirstPersonInput.look offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.offset(of: \CyFirstPersonInput.move_speed), 16, "CyFirstPersonInput.move_speed offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonInput>.offset(of: \CyFirstPersonInput.reserved), 20, "CyFirstPersonInput.reserved offset")
+    }
+
+    func testFirstPersonStateLayout() {
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.size, 96, "CyFirstPersonState size")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.alignment, 4, "CyFirstPersonState alignment")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.struct_size), 0, "CyFirstPersonState.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.yaw), 4, "CyFirstPersonState.yaw offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.pitch), 8, "CyFirstPersonState.pitch offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.recoil), 12, "CyFirstPersonState.recoil offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.aim), 20, "CyFirstPersonState.aim offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.fov), 24, "CyFirstPersonState.fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.viewmodel_fov), 28, "CyFirstPersonState.viewmodel_fov offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.eye_offset), 32, "CyFirstPersonState.eye_offset offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.weapon), 44, "CyFirstPersonState.weapon offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.view_aim), 72, "CyFirstPersonState.view_aim offset")
+        XCTAssertEqual(MemoryLayout<CyFirstPersonState>.offset(of: \CyFirstPersonState.weapon_aim), 84, "CyFirstPersonState.weapon_aim offset")
+    }
+
+    func testViewmodelDescLayout() {
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.size, 32, "CyViewmodelDesc size")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.alignment, 4, "CyViewmodelDesc alignment")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.struct_size), 0, "CyViewmodelDesc.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.layers), 4, "CyViewmodelDesc.layers offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.fov), 8, "CyViewmodelDesc.fov offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.near_plane), 12, "CyViewmodelDesc.near_plane offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.far_plane), 16, "CyViewmodelDesc.far_plane offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.depth_fraction), 20, "CyViewmodelDesc.depth_fraction offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.flags), 24, "CyViewmodelDesc.flags offset")
+        XCTAssertEqual(MemoryLayout<CyViewmodelDesc>.offset(of: \CyViewmodelDesc.reserved), 28, "CyViewmodelDesc.reserved offset")
+    }
+
     func testInterfaceHeaderLayout() {
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.size, 16, "CyInterfaceHeader size")
         XCTAssertEqual(MemoryLayout<CyInterfaceHeader>.alignment, 4, "CyInterfaceHeader alignment")
@@ -730,7 +794,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1448, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1512, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -912,6 +976,14 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_open), 1424, "CyInterface.ui_widget_open offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_widget_animate), 1432, "CyInterface.ui_widget_animate offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.ui_navigate), 1440, "CyInterface.ui_navigate offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_configure), 1448, "CyInterface.first_person_configure offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_input), 1456, "CyInterface.first_person_input offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_kick), 1464, "CyInterface.first_person_kick offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_reset), 1472, "CyInterface.first_person_reset offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_state), 1480, "CyInterface.first_person_state offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.first_person_release), 1488, "CyInterface.first_person_release offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.viewmodel_configure), 1496, "CyInterface.viewmodel_configure offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.viewmodel_get), 1504, "CyInterface.viewmodel_get offset")
     }
 
     func testModuleInitLayout() {
@@ -929,7 +1001,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1448,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 1512,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -975,8 +1047,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 179)
+        XCTAssertEqual(ABI.entryNames.count, 187)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "ui_navigate")
+        XCTAssertEqual(ABI.entryNames.last, "viewmodel_get")
     }
 }

@@ -249,6 +249,9 @@ Status FrameScene::fill_index() noexcept {
         entry.stable_id =
             hooks_.stable_id != nullptr ? hooks_.stable_id(which, hooks_.user) : 900U + which;
         entry.gpu_slot = which;
+        if (hooks_.layer_mask != nullptr) {
+            entry.layer_mask = hooks_.layer_mask(which, hooks_.user);
+        }
         // The half-diagonal of a cube of this half-extent: sqrt(3), which is what bounds a box
         // by a sphere and is spelled from the standard library rather than as a literal.
         entry.radius = half * std::numbers::sqrt3_v<f32>;
@@ -278,6 +281,9 @@ Status FrameScene::fill_index() noexcept {
         transform.tint[1] = tint.y;
         transform.tint[2] = tint.z;
         transform.tint[3] = 1.0F;
+        if (hooks_.place_row != nullptr) {
+            hooks_.place_row(which, transform, hooks_.user);
+        }
     }
 
     if (Status sized = lights_.resize(3); !sized) {
@@ -437,8 +443,11 @@ Status FrameScene::build(rhi::Device& device, const BloomSettings* bloom) noexce
     geometry.user = this;
     recorder_.set_geometry(geometry);
 
-    projection_ = perspective_reversed_z(0.9F, static_cast<f32>(width_) / static_cast<f32>(height_),
-                                         description.near_plane, description.far_plane);
+    near_plane_ = description.near_plane;
+    far_plane_ = description.far_plane;
+    projection_ =
+        perspective_reversed_z(fov_y_radians_, static_cast<f32>(width_) / static_cast<f32>(height_),
+                               description.near_plane, description.far_plane);
     view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
     relative_view_ = view_;
     set_eye(eye_);
@@ -506,7 +515,7 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
 
     graph_.reset();
     assembly::AssemblyView view;
-    view.fov_y_radians = 0.9F;
+    view.fov_y_radians = fov_y_radians_;
     view.view = view_;
     view.projection = projection_;
     view.cull.frustum = Frustum::from_view_projection(projection_ * view_);
@@ -652,6 +661,18 @@ void FrameScene::place_row(u32 which) noexcept {
     transform.row0[3] = centres_[which].x - eye_.x;
     transform.row1[3] = centres_[which].y - eye_.y;
     transform.row2[3] = centres_[which].z - eye_.z;
+    if (hooks_.place_row != nullptr) {
+        hooks_.place_row(which, transform, hooks_.user);
+    }
+}
+
+void FrameScene::set_fov(f32 fov_y_radians) noexcept {
+    fov_y_radians_ = fov_y_radians;
+    if (built_) {
+        projection_ = perspective_reversed_z(fov_y_radians_,
+                                             static_cast<f32>(width_) / static_cast<f32>(height_),
+                                             near_plane_, far_plane_);
+    }
 }
 
 Status FrameScene::move_box(u32 which, Vec3 centre) noexcept {

@@ -231,6 +231,34 @@ struct AssemblyDescription {
     bool many_lights = false;
 };
 
+/// The first-person WEAPON VIEW, as the assembly needs it: which layers are the viewmodel's, the
+/// frustum they are culled against, and the shadow policy their draws carry.
+///
+/// `camera-system`'s "WHEN a first-person camera renders the world and a separate weapon view THEN
+/// both SHALL be render views derived from one evaluated camera". The two views share ONE frame —
+/// one depth buffer, one prepass, one light loop — and differ in what each draws and how it is
+/// projected, so the assembly culls each against its own frustum and marks the weapon view's draws
+/// `render::kInstanceViewmodel`, which is what makes the recorder project them through the
+/// viewmodel's rows. `viewmodel::assembly_view` fills this from a `viewmodel::ViewmodelSettings`.
+///
+/// `layers == 0`, THE DEFAULT, IS NO WEAPON VIEW: one cull, no mark, and the frame it always was —
+/// an instance on a layer a weapon view would select is then an ordinary world instance, which is
+/// exactly the "without the separate view" picture.
+struct AssemblyViewmodel {
+    /// The layers the weapon view draws, and the primary view therefore does not.
+    render::LayerMask layers = render::kNoLayers;
+    /// World space, UNJITTERED, from the viewmodel's own projection — its field of view and near
+    /// plane — and the camera's view matrix, uncompressed: a frustum built from the compressed
+    /// depth would have no far plane where one is meant.
+    Frustum frustum{};
+    f32 fov_y_radians = 0.95993109F;
+    /// The weapon view's shadow policy, carried on each of its draws as the instance flags the
+    /// shadow pass and the forward pass already read: `kInstanceCastsShadow` cleared unless it
+    /// casts into the world's shadow map, `kInstanceReceivesShadow` cleared unless it receives.
+    bool cast_shadows = false;
+    bool receive_shadows = true;
+};
+
 /// One view of one world, this frame.
 struct AssemblyView {
     /// The cull's own view: frustum, camera pose, layers, LOD settings. UNJITTERED.
@@ -322,6 +350,9 @@ struct AssemblyView {
     /// `AssemblyDescription::many_lights`. Appended.
     ResourceId many_lights = kInvalidResource;
     ResourceId many_lights_reservoir = kInvalidResource;
+    /// The first-person weapon view drawn into this frame, or none — see `AssemblyViewmodel`. The
+    /// processor cull only: a frame culled on the device refuses one. Appended.
+    AssemblyViewmodel viewmodel;
 };
 
 /// What the caller supplies for the parts the assembly does not own: how a mesh becomes draws, and
@@ -469,6 +500,10 @@ struct AssemblyReport {
     /// cluster list, so they cost the frame nothing. Area lights among the rest.
     u32 static_lights = 0;
     u32 area_lights = 0;
+    /// The weapon view's survivors of its own cull, and the draws they became — marked
+    /// `render::kInstanceViewmodel`. Zero for a frame with no weapon view. Appended.
+    u32 viewmodel_visible = 0;
+    u32 viewmodel_draws = 0;
 };
 
 /// Where one shadow-casting light was, so that "it moved" is a comparison rather than a guess.
@@ -633,7 +668,14 @@ private:
                                   AssemblyReport& out) noexcept;
     [[nodiscard]] Status run_device_cull(const SpatialIndex& index, const AssemblyView& view,
                                          AssemblyReport& out) noexcept;
-    [[nodiscard]] Status build_draws(const FrameSinks& sinks, AssemblyReport& out) noexcept;
+    [[nodiscard]] Status run_viewmodel_cull(const SpatialIndex& index, const AssemblyView& view,
+                                            AssemblyReport& out) noexcept;
+    [[nodiscard]] Status build_draws(const FrameSinks& sinks, const AssemblyView& view,
+                                     AssemblyReport& out) noexcept;
+    /// Build `visible`'s draws and add them, records and all, to the end of the frame's list,
+    /// with `set` ORed into and `clear` taken out of each record's flags.
+    [[nodiscard]] Status append_draws(Span<const VisibleInstance> visible, const FrameSinks& sinks,
+                                      u32 set, u32 clear, u32& count) noexcept;
     [[nodiscard]] Status check_materials(AssemblyReport& out) noexcept;
     [[nodiscard]] Status build_lights(const AssemblyView& view, AssemblyReport& out) noexcept;
     [[nodiscard]] Status add_decal_elements(const AssemblyView& view, AssemblyReport& out) noexcept;
@@ -657,6 +699,8 @@ private:
     // Culling.
     CullWorkspace workspace_;
     CullResults results_;
+    /// The weapon view's own survivors. Empty in a frame with no weapon view.
+    CullResults viewmodel_results_;
     Array<u32> previous_lod_levels_;
 
     // The draw list and its sort scratch.

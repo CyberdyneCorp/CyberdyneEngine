@@ -211,4 +211,14 @@ CyResult light_destroy(CyEngine engine, CyLight light);
 CyResult light_alive(CyEngine engine, CyLight light, uint32_t* out_alive);
 CyResult light_status(CyEngine engine, CyLightStatus* out_status);
 
+// --- 1.13: the first-person camera and the weapon view
+CyResult first_person_configure(CyEngine engine, CyCamera camera, const CyFirstPersonDesc* desc);
+CyResult first_person_input(CyEngine engine, CyCamera camera, const CyFirstPersonInput* input);
+CyResult first_person_kick(CyEngine engine, CyCamera camera, float pitch, float yaw);
+CyResult first_person_reset(CyEngine engine, CyCamera camera, float yaw, float pitch);
+CyResult first_person_state(CyEngine engine, CyCamera camera, CyFirstPersonState* out_state);
+CyResult first_person_release(CyEngine engine, CyCamera camera);
+CyResult viewmodel_configure(CyEngine engine, CyCamera camera, const CyViewmodelDesc* desc);
+CyResult viewmodel_get(CyEngine engine, CyCamera camera, CyViewmodelDesc* out_desc);
+
 }  // namespace cy::abi::game

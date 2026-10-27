@@ -260,7 +260,36 @@ public struct CyFrameData
     /// x, y, z the first three in ascending order, w their count with `kCyDirectionalListed`. Zero,
     /// the default, walks every light for them, as the frame always did.
     public uint4 directionalLights;
+    /// The first-person weapon view, appended for the reason `materialTextures` gives: camera-
+    /// relative space to the VIEWMODEL's clip space — its own field of view and near plane, the
+    /// frame's jitter, and a depth squeezed into the slice of the range nearest the eye
+    /// (`viewmodel::compress_depth`), so it is in front of every world surface past the world's
+    /// near plane. Read only by the `cyViewmodel*` entry points at the end of this file, and only
+    /// for a draw that carries `kCyInstanceViewmodel`; a frame with no weapon view never reads it.
+    public float4 viewmodelToClipRow0;
+    public float4 viewmodelToClipRow1;
+    public float4 viewmodelToClipRow2;
+    public float4 viewmodelToClipRow3;
+    /// The same for last frame, unjittered and about THIS frame's camera, as
+    /// `previousRelativeToClip` is: where the motion vectors of a weapon view come from.
+    public float4 previousViewmodelToClipRow0;
+    public float4 previousViewmodelToClipRow1;
+    public float4 previousViewmodelToClipRow2;
+    public float4 previousViewmodelToClipRow3;
+    /// x: `kCyViewmodel*` flags — the weapon view's policies the forward pass applies. yzw:
+    /// reserved. Zero, the default, is a frame with no weapon view.
+    public uint4 viewmodelControl;
 };
+
+/// `CyDrawInstance::flags`' bit for a draw in the weapon view. `cy::render::kInstanceViewmodel` is
+/// the same number. The bit next to it, 8, is `kInstanceReceivesShadow`.
+public static const uint kCyInstanceViewmodel = 256u;
+public static const uint kCyInstanceReceivesShadow = 8u;
+
+/// `viewmodelControl.x`'s bits. `cy::rendering::viewmodel::kViewmodelContactShadows` is the same
+/// number: the weapon view's surfaces take the screen-space contact term as well as the shadow
+/// map's. Off by default — see `viewmodel::ViewmodelShadowPolicy`.
+public static const uint kCyViewmodelContactShadows = 1u;
 
 /// `directionalLights.w`'s flag. `cy::rendering::pipeline::kDirectionalListed` is the same number.
 public static const uint kCyDirectionalListed = 0x80000000u;
@@ -834,6 +863,20 @@ LightSample bakedLightSample(uint index, float3 relativePosition, CyBakedLights 
     return sample;
 }
 
+/// The contact term a surface takes. A weapon view's surface takes it only when its policy asks
+/// (`kCyViewmodelContactShadows`): its depth is squeezed into the slice nearest the eye, so the
+/// screen-space trace marches through a weapon flattened against the near plane and finds it as
+/// its own occluder. Every other surface takes it exactly as it always did.
+float frameContactVisibility(uint instanceFlags, float2 fragmentCentre)
+{
+    if ((instanceFlags & kCyInstanceViewmodel) != 0u &&
+        (cyFrame.viewmodelControl.x & kCyViewmodelContactShadows) == 0u)
+    {
+        return 1.0;
+    }
+    return contactShadowVisibility(fragmentCentre);
+}
+
 /// One directional light's term at a surface, shadowed.
 float3 directionalContribution(uint global, Surface surface, float3 relativePosition, float3 normal,
                                float3 viewDir, float2 fragmentCentre, uint instanceFlags,
@@ -846,7 +889,7 @@ float3 directionalContribution(uint global, Surface surface, float3 relativePosi
     var visibility = global == cyFrame.shadowControl.y && (instanceFlags & 8u) != 0u
                          ? min(directionalShadowVisibility(relativePosition, normal,
                                                            fragmentCentre),
-                               contactShadowVisibility(fragmentCentre))
+                               frameContactVisibility(instanceFlags, fragmentCentre))
                          : 1.0;
     // A STATIONARY SUN ON A LIGHTMAPPED SURFACE: the baked mask is its shadow from the static
     // world, the map (when there is one) its shadow from everything, and the darker of the two
@@ -873,7 +916,32 @@ struct LocalLightWalk
     float weight;
 };
 
-LocalLightWalk localLightWalk(float3 relativePosition, uint2 pixel, float2 fragmentCentre)
+/// THE PIXEL WHOSE CLUSTER HOLDS A SURFACE: the fragment's own for every world surface, and for a
+/// weapon view's surface the pixel its position projects to through the WORLD's projection — the
+/// one the cluster grid tiles — because the fragment it was rasterised at is the viewmodel's
+/// projection of it and lies under another column of clusters. A position outside the world's
+/// frustum, or nearer than its near plane, is in no cluster at all: (-1, -1), and the light loop
+/// walks every light, the frame's declared fallback.
+float2 frameClusterPixel(uint instanceFlags, float3 relativePosition, float2 fragmentCentre)
+{
+    if ((instanceFlags & kCyInstanceViewmodel) == 0u)
+    {
+        return fragmentCentre;
+    }
+    let clip = transformToClip(relativePosition);
+    if (clip.w <= 0.0 || viewDepthOf(relativePosition) < cyFrame.clusterGrid.nearPlane)
+    {
+        return float2(-1.0, -1.0);
+    }
+    let ndc = clip.xy / clip.w;
+    if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0)
+    {
+        return float2(-1.0, -1.0);
+    }
+    return float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * cyFrame.extentAndInverse.xy;
+}
+
+LocalLightWalk localLightWalk(float3 relativePosition, float2 clusterPixel, float2 fragmentCentre)
 {
     LocalLightWalk walk;
     walk.count = cyFrame.counts.x;
@@ -895,12 +963,13 @@ LocalLightWalk localLightWalk(float3 relativePosition, uint2 pixel, float2 fragm
         walk.count = valid ? 1u : 0u;
         return walk;
     }
-    if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0)
+    if (cyFrame.counts.w == 0 || cyFrame.clusterGrid.dimensions.z == 0 || clusterPixel.x < 0.0)
     {
         return walk;
     }
     let extent = uint2(cyFrame.extentAndInverse.xy);
-    let coord = clusterCoordOf(cyFrame.clusterGrid, pixel, extent, viewDepthOf(relativePosition));
+    let coord = clusterCoordOf(cyFrame.clusterGrid, uint2(clusterPixel), extent,
+                               viewDepthOf(relativePosition));
     let cluster = clusterIndexOf(cyFrame.clusterGrid, coord);
     // The headers are indexed `cluster * kClusterElementTypeCount + type`, and the light type is
     // zero. The stride comes from `counts.z` so the two sides cannot disagree about it.
@@ -923,7 +992,7 @@ uint localLightIndex(LocalLightWalk walk, uint slot)
 float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal, float3 viewDir,
                         float2 fragmentCentre, uint instanceFlags, CyBakedLights baked)
 {
-    let pixel = uint2(fragmentCentre);
+    let clusterPixel = frameClusterPixel(instanceFlags, relativePosition, fragmentCentre);
     float3 lit = float3(0.0);
     let lightCount = cyFrame.counts.x;
 
@@ -953,7 +1022,7 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
                                        fragmentCentre, instanceFlags, baked);
     }
 
-    let walk = localLightWalk(relativePosition, pixel, fragmentCentre);
+    let walk = localLightWalk(relativePosition, clusterPixel, fragmentCentre);
     // The stochastic path's DIFFUSE half arrives denoised, as irradiance (`denoising`'s
     // `StochasticDirect` signal); its SPECULAR half needs the material, which only this pass has, so
     // it is the reservoir's light shaded below and weighted — one sample a pixel, reused spatially
@@ -1613,6 +1682,122 @@ public CyForwardVertex cySkinnedForwardVertex(float3 modelPosition : POSITION, f
     CyForwardVertex output;
     output.relativePosition = transformToRelative(instance, modelPosition);
     output.position = transformToClip(output.relativePosition);
+    output.normal = rotateToRelative(instance, decodeOctahedral(cySkinnedNormalToStream(frame)));
+    output.uv = uv;
+    output.drawIndex = cyDraw.drawIndex;
+    output.lightmapUv = lightmapUv;
+    return output;
+}
+
+// --- The first-person weapon view -----------------------------------------------------------------
+//
+// `camera-system`: "WHEN a first-person camera renders the world and a separate weapon view THEN
+// both SHALL be render views derived from one evaluated camera". The weapon view is drawn INTO THE
+// WORLD'S FRAME — one depth buffer, one prepass, one light loop — rather than composited from a
+// second one, and these four entries are the whole of what makes a draw belong to it: they push the
+// same camera-relative position through `viewmodelToClip` instead of `relativeToClip`.
+//
+// WHAT THAT GIVES, AND WHY THE POSITION IS STILL THE WORLD'S. The rows carry the viewmodel's own
+// field of view and near plane, so the arms and the weapon keep their shape whatever the world's
+// lens does, and a depth squeezed into the slice of the range nearest the eye, so a weapon pushed
+// into a wall is drawn in front of it rather than through it. But `relativePosition` — what the
+// forward pass lights, shadows, fogs and samples the irradiance volume at — is where the instance
+// row put the weapon in the world: a weapon in a dark corridor is lit by the corridor.
+//
+// THE MOTION IS THE VIEWMODEL'S OWN: last frame's viewmodel projection over last frame's placement,
+// so a weapon carried by a turning camera has no motion relative to the screen and the temporal
+// resolve does not smear it, and a weapon whose field of view changes as it is raised to the eye
+// moves the way it was drawn to move.
+//
+// New entries rather than a branch in the rigid ones, for the reason the skinned section gives:
+// the rigid entries are untouched, so a frame with no weapon view runs the code it always ran.
+//
+//   slangc ... -entry cyViewmodelDepthVertex          -stage vertex -o frame_viewmodel_depth.spv
+//   slangc ... -entry cyViewmodelForwardVertex        -stage vertex -o frame_viewmodel_forward.spv
+//   slangc ... -entry cySkinnedViewmodelDepthVertex   -stage vertex -o ...
+//   slangc ... -entry cySkinnedViewmodelForwardVertex -stage vertex -o ...
+
+public float4 transformToViewmodelClip(float3 relative)
+{
+    let point = float4(relative, 1.0);
+    return float4(dot(cyFrame.viewmodelToClipRow0, point), dot(cyFrame.viewmodelToClipRow1, point),
+                  dot(cyFrame.viewmodelToClipRow2, point), dot(cyFrame.viewmodelToClipRow3, point));
+}
+
+float4 transformToPreviousViewmodelClip(float3 relative)
+{
+    let point = float4(relative, 1.0);
+    return float4(dot(cyFrame.previousViewmodelToClipRow0, point),
+                  dot(cyFrame.previousViewmodelToClipRow1, point),
+                  dot(cyFrame.previousViewmodelToClipRow2, point),
+                  dot(cyFrame.previousViewmodelToClipRow3, point));
+}
+
+[shader("vertex")]
+public CyDepthVertex cyViewmodelDepthVertex(float3 modelPosition : POSITION,
+                                            float4 packedNormal : NORMAL,
+                                            float3 previousModelPosition : PREVIOUS_POSITION)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    CyDepthVertex output;
+    let relative = transformToRelative(instance, modelPosition);
+    output.position = transformToViewmodelClip(relative);
+    output.currentClip = output.position;
+    output.previousClip = transformToPreviousViewmodelClip(
+        previousRelativeOf(draw.instanceSlot, instance, previousModelPosition));
+    output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
+    return output;
+}
+
+[shader("vertex")]
+public CyForwardVertex cyViewmodelForwardVertex(float3 modelPosition : POSITION,
+                                                float4 packedNormal : NORMAL,
+                                                float2 uv : TEXCOORD0,
+                                                float2 lightmapUv : TEXCOORD1)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+
+    CyForwardVertex output;
+    output.relativePosition = transformToRelative(instance, modelPosition);
+    output.position = transformToViewmodelClip(output.relativePosition);
+    output.normal = rotateToRelative(instance, decodeOctahedral(packedNormal.xy));
+    output.uv = uv;
+    output.drawIndex = cyDraw.drawIndex;
+    output.lightmapUv = lightmapUv;
+    return output;
+}
+
+[shader("vertex")]
+public CyDepthVertex cySkinnedViewmodelDepthVertex(float3 modelPosition : POSITION,
+                                                   float4 frame : NORMAL,
+                                                   float3 previousModelPosition : PREVIOUS_POSITION)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+    CyDepthVertex output;
+    let relative = transformToRelative(instance, modelPosition);
+    output.position = transformToViewmodelClip(relative);
+    output.currentClip = output.position;
+    output.previousClip = transformToPreviousViewmodelClip(
+        previousRelativeOf(draw.instanceSlot, instance, previousModelPosition));
+    output.normal = rotateToRelative(instance, decodeOctahedral(cySkinnedNormalToStream(frame)));
+    return output;
+}
+
+[shader("vertex")]
+public CyForwardVertex cySkinnedViewmodelForwardVertex(float3 modelPosition : POSITION,
+                                                       float4 frame : NORMAL,
+                                                       float2 uv : TEXCOORD0,
+                                                       float2 lightmapUv : TEXCOORD1)
+{
+    let draw = cyDrawInstances[cyDraw.drawIndex];
+    let instance = cyInstances[draw.instanceSlot];
+
+    CyForwardVertex output;
+    output.relativePosition = transformToRelative(instance, modelPosition);
+    output.position = transformToViewmodelClip(output.relativePosition);
     output.normal = rotateToRelative(instance, decodeOctahedral(cySkinnedNormalToStream(frame)));
     output.uv = uv;
     output.drawIndex = cyDraw.drawIndex;

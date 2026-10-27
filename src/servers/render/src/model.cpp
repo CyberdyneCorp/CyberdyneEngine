@@ -9,7 +9,8 @@ namespace cy::render {
 namespace {
 
 constexpr const char* kViewPurposeNames[] = {
-    "Primary", "Shadow", "ReflectionProbe", "SceneCapture", "EditorViewport", "Thumbnail", "XrEye",
+    "Primary",        "Shadow",    "ReflectionProbe", "SceneCapture",
+    "EditorViewport", "Thumbnail", "XrEye",           "Viewmodel",
 };
 static_assert(sizeof(kViewPurposeNames) / sizeof(kViewPurposeNames[0]) ==
               static_cast<usize>(ViewPurpose::Count));

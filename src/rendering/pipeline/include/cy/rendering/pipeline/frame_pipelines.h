@@ -371,6 +371,18 @@ struct alignas(16) FrameViewData {
     ///
     /// APPENDED, for the reason `material_textures` gives.
     u32 directional_lights[4] = {0, 0, 0, 0};
+    /// The first-person weapon view: camera-relative to the VIEWMODEL's clip space — its own field
+    /// of view and near plane, this frame's jitter, and its depth squeezed into the slice of the
+    /// range nearest the eye — as four rows, then last frame's, unjittered and about this frame's
+    /// camera. Read only by the `cyViewmodel*` vertex entries, for a draw carrying
+    /// `render::kInstanceViewmodel`. `viewmodel::write_viewmodel` fills all three fields.
+    ///
+    /// APPENDED, for the reason `material_textures` gives.
+    f32 viewmodel_to_clip[16] = {};
+    f32 previous_viewmodel_to_clip[16] = {};
+    /// x: `viewmodel::kViewmodelContactShadows` — the weapon view's policies the forward pass
+    /// applies. yzw: reserved. Zero, the default, is a frame with no weapon view.
+    u32 viewmodel_control[4] = {0, 0, 0, 0};
 };
 
 /// `directional_lights[3]`'s flag, `cy/frame.slang`'s `kCyDirectionalListed`.
@@ -409,7 +421,10 @@ inline constexpr u32 kNoPreviousInstances = 0xFFFFFFFFU;
 inline constexpr u32 kSoftShadowPcss = 1U;
 inline constexpr u32 kSoftShadowContact = 2U;
 
-static_assert(sizeof(FrameViewData) == 688, "CyFrameData's std140 block is 688 bytes");
+static_assert(sizeof(FrameViewData) == 832, "CyFrameData's std140 block is 832 bytes");
+static_assert(offsetof(FrameViewData, viewmodel_to_clip) == 688);
+static_assert(offsetof(FrameViewData, previous_viewmodel_to_clip) == 752);
+static_assert(offsetof(FrameViewData, viewmodel_control) == 816);
 static_assert(offsetof(FrameViewData, directional_lights) == 672);
 static_assert(offsetof(FrameViewData, gi_control) == 640);
 static_assert(offsetof(FrameViewData, lighting_control) == 656);
@@ -484,6 +499,12 @@ struct PipelineSetup {
     /// frame before skinned draws did not create. Appended, so a brace-initialised setup keeps its
     /// meaning.
     bool skinned = false;
+    /// Create the WEAPON VIEW's variants of the depth, opaque and transparent pipelines — the same
+    /// state with `cyViewmodelDepthVertex` / `cyViewmodelForwardVertex`, which project through the
+    /// viewmodel's rows (`FrameViewData::viewmodel_to_clip`) — and, with `skinned`, their skinned
+    /// forms. A draw carrying `render::kInstanceViewmodel` binds them. Off, the default, creates
+    /// nothing a frame before the weapon view did not create. Appended.
+    bool viewmodel = false;
 };
 
 /// Which pipeline a pass binds.
@@ -540,6 +561,13 @@ public:
     /// the pipelines were created without `PipelineSetup::skinned`.
     [[nodiscard]] rhi::GraphicsPipelineHandle skinned_pipeline(
         FramePipelineKind kind) const noexcept;
+    /// The pipeline a WEAPON VIEW draw binds in a pass of `kind`: the viewmodel variant of depth,
+    /// opaque and transparent — rigid or `skinned` — and the standard shadow pipeline, because a
+    /// weapon that casts into the world's shadow map casts from where it is in the world. Null for
+    /// any other kind, and for every kind when the pipelines were created without
+    /// `PipelineSetup::viewmodel` (or, for a skinned draw, without `PipelineSetup::skinned`).
+    [[nodiscard]] rhi::GraphicsPipelineHandle viewmodel_pipeline(FramePipelineKind kind,
+                                                                 bool skinned) const noexcept;
     /// Create a caller-owned geometry pipeline with compiled material shaders. The supplied
     /// layout must preserve the frame's sets 0-2 and may append material set 3. A fragment shader
     /// may replace the standard one in opaque and transparent passes; depth and shadow keep their
@@ -570,6 +598,8 @@ private:
                                                   FramePipelineKind kind) noexcept;
     [[nodiscard]] Status create_skinned_pipelines(rhi::Device& device,
                                                   const PipelineSetup& setup) noexcept;
+    [[nodiscard]] Status create_viewmodel_pipelines(rhi::Device& device,
+                                                    const PipelineSetup& setup) noexcept;
     [[nodiscard]] Status create_shadow_pipeline(rhi::Device& device) noexcept;
     [[nodiscard]] Expected<rhi::GraphicsPipelineHandle, Error> make_geometry_pipeline(
         rhi::Device& device, const PipelineSetup& setup, FramePipelineKind kind,
@@ -596,6 +626,10 @@ private:
     rhi::ShaderModuleHandle temporal_fragment_;
     rhi::ShaderModuleHandle skinned_depth_vertex_;
     rhi::ShaderModuleHandle skinned_forward_vertex_;
+    rhi::ShaderModuleHandle viewmodel_depth_vertex_;
+    rhi::ShaderModuleHandle viewmodel_forward_vertex_;
+    rhi::ShaderModuleHandle skinned_viewmodel_depth_vertex_;
+    rhi::ShaderModuleHandle skinned_viewmodel_forward_vertex_;
     rhi::DescriptorSetLayoutHandle sets_[kSetCount];
     rhi::PipelineLayoutHandle layout_;
     rhi::SamplerHandle sampler_;
@@ -603,6 +637,9 @@ private:
     rhi::GraphicsPipelineHandle pipelines_[kFramePipelineKindCount];
     /// Indexed by `FramePipelineKind`; only depth, opaque and transparent are ever filled.
     rhi::GraphicsPipelineHandle skinned_[kFramePipelineKindCount];
+    /// The weapon view's, rigid and skinned, indexed the same way and filled the same way.
+    rhi::GraphicsPipelineHandle viewmodel_[kFramePipelineKindCount];
+    rhi::GraphicsPipelineHandle skinned_viewmodel_[kFramePipelineKindCount];
     u32 created_ = 0;
     bool ready_ = false;
 };

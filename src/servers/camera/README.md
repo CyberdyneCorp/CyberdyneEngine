@@ -47,7 +47,8 @@ no longer holds.
 | `camera.h` | targets, intent, impulses, cuts, the listener anchor, the streaming source, the three aims |
 | `rig.h` | node kinds, the authored graph, the compiled program, evaluation and its trace |
 | `stack.h` | one player's contributions, their priorities, weights, blends and the report |
-| `view.h` | render view production, and the history identity a cut invalidates |
+| `view.h` | render view production, the history identity a cut invalidates, and `produce_weapon_view` — a camera's first-person weapon view beside its primary view |
+| `first_person.h` | the first-person camera's behaviours: mouse look with its sensitivity applied once, head bob by distance walked, recoil as a damped spring stepped in closed form, aiming down the sights over both lenses, motion reduction, and the three aims derived. A rig parameter producer, not a camera — see [the guide](../../../docs/guides/first-person-weapon-view.md) |
 | `server.h` | the pools, the impulse bus, the query batch, the settings, and evaluation |
 
 ## Four decisions worth knowing before changing anything

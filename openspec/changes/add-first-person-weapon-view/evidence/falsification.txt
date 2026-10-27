@@ -1,0 +1,79 @@
+# Mutations applied to the shipped sources, each rebuilt (the frame's SPIR-V and MSL regenerated
+# with the staged slangc by src/rendering/pipeline/shaders/regenerate.py for the shader ones), the
+# targeted suite run whole, and the source restored from the index and rebuilt.
+# Driver: apply -> regenerate (shaders) -> just build-engine -> ctest -R <suite> -> git checkout.
+# Host: Linux, NVIDIA RTX 5060 (Vulkan 1.4), Development build, GCC 13.
+# Every mutation below turned its suite RED; the suites are green on the restored tree.
+# M2 to M9 ran while the scene's lantern was narrowed for M1, so the composition golden they also
+# report is the stale reference, not the mutation; the case each one targets is the other it lists.
+# M1 was run again after the lantern change and is the first entry.
+
+== M1 weapon cluster lookup by its own pixel
+   render.weapon_view: RED
+   TEST CASE:  lit as the world lights it, and its field of view is its own
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:408: ERROR: CHECK_EQ( recoloured, 0U ) is NOT correct!
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:408: ERROR: CHECK_EQ( recoloured, 0U ) is NOT correct!
+== M2 no depth squeeze
+   render.weapon_view: RED
+   TEST CASE:  the weapon never clips into a wall it touches
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:275: ERROR: CHECK_EQ( lost, 0U ) is NOT correct!
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:290: ERROR: CHECK_EQ( count(world_open), open_texels ) is NOT correct!
+   TEST CASE:  depth composition: the weapon in front of the world it reaches into, held to gold
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:98: ERROR: CHECK_EQ( compared.differing_off_edge, 0U ) is NOT correct!
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:99: ERROR: CHECK_LE( compared.differing, compared.edge_texels ) is NOT correct!
+== M3 no memory of last lens
+   render.weapon_view: RED
+   TEST CASE:  motion vectors: none for a weapon a turning camera carries, its lens's when raised
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:499: ERROR: CHECK_LT( worst_error, 2e-4F ) is NOT correct!
+== M4 weapon rows unjittered
+   render.weapon_view: RED
+   TEST CASE:  the weapon never clips into a wall it touches
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:290: ERROR: CHECK_EQ( count(world_open), open_texels ) is NOT correct!
+   TEST CASE:  depth composition: the weapon in front of the world it reaches into, held to gold
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:98: ERROR: CHECK_EQ( compared.differing_off_edge, 0U ) is NOT correct!
+   TEST CASE:  lit as the world lights it, and its field of view is its own
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:389: ERROR: CHECK_EQ( mask_difference(world_mask, view_mask), 0U ) is NOT correct!
+== M5 receive policy ignored
+   render.weapon_view: RED
+   TEST CASE:  depth composition: the weapon in front of the world it reaches into, held to gold
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:98: ERROR: CHECK_EQ( compared.differing_off_edge, 0U ) is NOT correct!
+   TEST CASE:  the shadow policy: the world's shadow received by default, none cast, both settable
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:542: ERROR: CHECK_LT( shaded, lit * 0.95 ) is NOT correct!
+== M6 weapon layers kept in the world's list
+   integration.viewmodel_assembly: RED
+   TEST CASE:  the weapon view's layers are not the world's, even where the world could see them
+   src/rendering/viewmodel/tests/test_viewmodel_assembly.cpp:156: ERROR: CHECK_EQ( report.draws, 1U ) is NOT correct!
+== M7 recoil by explicit Euler
+   unit.camera_system: RED
+   TEST CASE:  the spring's closed form is exact: one step of 2dt is two steps of dt
+   src/servers/camera/tests/test_first_person.cpp:143: ERROR: CHECK( (one_x) == ::cy::test::within(two_x, 1e-6F) ) is NOT correct!
+   src/servers/camera/tests/test_first_person.cpp:144: ERROR: CHECK( (one_v) == ::cy::test::within(two_v, 1e-5F) ) is NOT correct!
+   src/servers/camera/tests/test_first_person.cpp:143: ERROR: CHECK( (one_x) == ::cy::test::within(two_x, 1e-6F) ) is NOT correct!
+   src/servers/camera/tests/test_first_person.cpp:144: ERROR: CHECK( (one_v) == ::cy::test::within(two_v, 1e-5F) ) is NOT correct!
+   src/servers/camera/tests/test_first_person.cpp:143: ERROR: CHECK( (one_x) == ::cy::test::within(two_x, 1e-6F) ) is NOT correct!
+== M8 recorder draws the weapon through the world's pipelines
+   render.weapon_view: RED
+   TEST CASE:  the weapon never clips into a wall it touches
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:269: ERROR: CHECK_EQ( bench.scene().recorded().viewmodel_draws, kPartCount * 2U ) is NOT correct!
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:275: ERROR: CHECK_EQ( lost, 0U ) is NOT correct!
+   TEST CASE:  its own near plane: a weapon nearer than the world's near plane is still whole
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:320: ERROR: CHECK_GT( count(weapon), count(world) + 500U ) is NOT correct!
+   TEST CASE:  depth composition: the weapon in front of the world it reaches into, held to gold
+== M9 weapon motion through the world's previous rows
+   render.weapon_view: RED
+   TEST CASE:  depth composition: the weapon in front of the world it reaches into, held to gold
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:98: ERROR: CHECK_EQ( compared.differing_off_edge, 0U ) is NOT correct!
+   TEST CASE:  motion vectors: none for a weapon a turning camera carries, its lens's when raised
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:457: ERROR: CHECK_LT( weapon_worst, 2e-4F ) is NOT correct!
+   src/rendering/viewmodel/tests/test_weapon_view_device.cpp:499: ERROR: CHECK_LT( worst_error, 2e-4F ) is NOT correct!
+== M10 the camera kicked in a fixed step
+   unit.abi: RED
+   TEST CASE:  first person: a frame update drives it; a fixed step may not touch it
+   src/abi/tests/test_game_first_person.cpp:265: ERROR: CHECK_EQ( table().first_person_configure(bound.engine(), kCamera, &made), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_first_person.cpp:267: ERROR: CHECK_EQ( table().first_person_kick(bound.engine(), kCamera, 1.0F, 0.0F), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_first_person.cpp:271: ERROR: CHECK_EQ( table().first_person_state(bound.engine(), kCamera, &state), CY_RESULT_PERMISSION_DENIED ) is NOT correct!
+   src/abi/tests/test_game_first_person.cpp:274: ERROR: CHECK_EQ( bound.backend.calls, 0U ) is NOT correct!
+== M11 the look applied every frame
+   integration.game_backend_first_person: RED
+   TEST CASE:  the look a game feeds turns the camera once, when the host advances it
+   src/game_backend/first_person/tests/test_first_person_backend.cpp:90: ERROR: CHECK( (state_of(bound).yaw) == ::cy::test::within(0.24F, 1e-6F) ) is NOT correct!

@@ -201,6 +201,9 @@ struct RecorderReport {
     u32 skinned_draws = 0;
     /// Bytes copied by the Prepare pass into the frame's own buffers.
     u64 uploaded_bytes = 0;
+    /// Draws recorded through the weapon view's pipelines, over every geometry pass but the shadow
+    /// one — counted once per pass that drew them. Zero in a frame with no weapon view. Appended.
+    u32 viewmodel_draws = 0;
 
     [[nodiscard]] u32 draws() const noexcept { return opaque_draws + transparent_draws; }
 };

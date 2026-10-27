@@ -102,6 +102,10 @@ enum class ViewPurpose : u8 {
     Thumbnail,
     /// One eye of a stereo pair. Two of these in one family is the case the family exists for.
     XrEye,
+    /// The first-person WEAPON VIEW: the arms and the weapon, drawn through their own field of view
+    /// and near plane from the same evaluated camera as the primary view, into the primary view's
+    /// frame — `camera-system`'s "one camera, several views". Appended.
+    Viewmodel,
     Count,
 };
 
