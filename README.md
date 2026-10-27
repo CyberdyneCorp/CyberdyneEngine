@@ -15,9 +15,9 @@ editor's node-graph canvas, compiled by the material compiler and bound as BC7 a
 > **Status: M0 through M11.d.5 are closed** — [M11.d.5 · Backends](docs/ROADMAP.md#m11d5--backends)
 > closed on the same golden image rendered and matched on Vulkan, Metal and D3D12 hardware. Now:
 > [M11.e · Ship](docs/ROADMAP.md#m11e--ship) and 1.0, then [M12 · The Game](docs/ROADMAP.md#m12--the-game),
-> an RTS written in Swift that proves the engine by using it.
+> an RTS written in Swift that proves the engine by using it; its [test map](#rts-showcase) already runs.
 
-[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,232 requirements and 2,744
+[`openspec/specs/`](openspec/specs/README.md) holds **76 capabilities, 1,248 requirements and 2,792
 scenarios** — the contract the implementation must satisfy. Today 17 are Complete, 55 Working, 3
 Seed and 1 not started ([`status.yaml`](docs/roadmap/status.yaml), reported by `just roadmap-status`).
 
@@ -58,6 +58,28 @@ and [turning it on in your game](docs/guides/global-illumination.md#6g-turn-on-g
 
 ---
 
+## RTS showcase
+
+**The Frontier** (`content/rts/frontier.cymap`) is a 128 m test map — hills, a lake, a forest, a
+village, a keep, farms and an enemy camp — cooked from one text source by the engine's terrain and
+foliage code and drawn under the Swift RTS of `samples/13-rts-api`.
+
+![The Frontier under the Swift RTS: skinned workers, painted terrain, a keep, blue's fog of war and the HUD](docs/design/images/rts-map-game.png)
+
+*The player's view at 1920x1080: skinned, animated units on painted terrain, a village and a forest,
+blue's fog of war over the whole map (black where blue never looked, grey where it looked before),
+the game's HUD and minimap, with shadows, ambient occlusion and the GI. 12.1–13.0 ms a frame from
+recording to readback on an RTX 5060 (Vulkan), within the 16.7 ms budget `smoke.rts_api_map` asserts.*
+
+| | |
+|:---:|:---:|
+| ![The same frame with no features, with shadows, with AO and GI, and with fog and HUD](docs/design/images/rts-map-features.png) | ![The overview camera over the level, with the fog of war and the HUD](docs/design/images/rts-map-overview.png) |
+| **Feature by feature** — none, shadows, AO and GI, then fog and HUD | **Overview** — the video's camera; [watch the 7 s orbit](docs/design/videos/rts-map.mp4) with the workers and the company walking |
+
+→ [**RTS map guide**](docs/guides/rts-map.md) · [fog of war guide](docs/guides/fog-of-war.md)
+
+---
+
 ## Gallery
 
 Every image below is a frame the engine rendered and read back, committed under
@@ -68,23 +90,22 @@ their module README.
 
 *Colour grading: the beauty shot ungraded, warm and cool ([`src/rendering/grading/`](src/rendering/grading/README.md)).*
 
-![The RTS test map under the Swift RTS: blue's fog of war over the whole map, black where blue never looked, and the HUD](docs/design/images/rts-map-game.png)
+![The same 4K beauty-shot crops with no upscaler, native AA, and the Quality, Balanced and Performance modes](docs/design/images/upscale-beauty-crops-2160.png)
 
-*The RTS test map: terrain, painted layers, a forest and a settlement cooked from one source by the
-engine's terrain and foliage code, drawn under the Swift RTS with shadows, ambient occlusion, the GI
-and the fog of war at 1080p in 12 ms on an RTX 5060 ([guide](docs/guides/rts-map.md),
-[video](docs/design/videos/rts-map.mp4)).*
+*Temporal upscaling at 3840x2160, the same crops with no upscaler, native AA, Quality (67 %),
+Balanced (58 %) and Performance (50 %): the beauty shot with GI takes 16.47 ms of GPU time with native AA and
+8.56 ms in Performance, 40.3 dB from native AA, on an RTX 5060 ([guide](docs/guides/temporal-upscaling.md)).*
 
 | | | |
 |:---:|:---:|:---:|
 | ![Water shading at the shore](docs/design/images/water-shading-shore-on.png) | ![Aerial perspective over distant terrain](docs/design/images/aerial-perspective-on.png) | ![Soft and contact shadows](docs/design/images/soft-shadows-beauty-on.png) |
 | **Water** — shading in the shallows ([`samples/10-world`](samples/10-world/README.md)) | **Aerial perspective** — the atmosphere's own table ([`samples/10-world`](samples/10-world/README.md#aerial-perspective)) | **Soft shadows** with contact shadows ([`contact_shadows/`](src/rendering/contact_shadows/README.md)) |
-| ![Light probes](docs/design/images/light-probes-on.png) | ![Volumetric fog](docs/design/images/volumetric-fog-beauty-on.png) | ![Depth of field focused on the sphere](docs/design/images/depth-of-field-beauty-sphere.png) |
-| **Light probes** — an irradiance volume ([`light_probes/`](src/rendering/light_probes/README.md)) | **Volumetric fog** and light shafts ([`fog/`](src/rendering/fog/README.md)) | **Depth of field** — near and far fields ([`depth_of_field/`](src/rendering/depth_of_field/README.md)) |
-| ![Decals](docs/design/images/decals-beauty-on.png) | ![Motion blur](docs/design/images/motion-blur-beauty-on.png) | ![Baked lightmaps](docs/design/images/lightmaps-on.png) |
-| **Decals** before the light loop ([`decals/`](src/rendering/decals/README.md)) | **Motion blur** from prepass velocity ([`motion_blur/`](src/rendering/motion_blur/README.md)) | **Lightmaps** — path-traced, denoised bake ([`lightmaps/`](src/rendering/lightmaps/README.md)) |
-| ![A strategy HUD and the developer console over selected units](docs/design/images/rts-hud-2x.png) | ![The HUD a Swift behaviour built through the ABI](docs/design/images/rts-api-hud.png) | ![A paragraph in the interface font](docs/design/images/text-paragraph.png) |
-| **HUD** — selection outlines, a squad panel, a minimap and the developer console in one interface pass ([UI guide](docs/guides/ui.md)) | **Swift HUD** — built by a Swift behaviour through the ABI, with its Build button ([UI guide](docs/guides/ui.md#6-a-hud-from-game-code)) | **Text** — shaped and drawn from a distance-field atlas, one draw per page ([text guide](docs/guides/text.md)) |
+| ![A thousand coloured lights at 1080p](docs/design/images/many-lights-1080p.png) | ![Volumetric fog](docs/design/images/volumetric-fog-beauty-on.png) | ![Depth of field focused on the sphere](docs/design/images/depth-of-field-beauty-sphere.png) |
+| **Many lights** — 1,000 lights at 1080p: 0.19 ms to assign on the device, 0.70 ms of shading ([guide](docs/guides/many-lights.md)) | **Volumetric fog** and light shafts ([`fog/`](src/rendering/fog/README.md)) | **Depth of field** — near and far fields ([`depth_of_field/`](src/rendering/depth_of_field/README.md)) |
+| ![Decals](docs/design/images/decals-beauty-on.png) | ![Motion blur](docs/design/images/motion-blur-beauty-on.png) | ![A room lit by a rect, a disc, a sphere and a tube light](docs/design/images/area-lit-room.png) |
+| **Decals** before the light loop ([`decals/`](src/rendering/decals/README.md)) | **Motion blur** from prepass velocity ([`motion_blur/`](src/rendering/motion_blur/README.md)) | **Area lights** — a rect, a disc, a sphere and a tube, shaded with LTC ([guide](docs/guides/many-lights.md#2-area-lights)) |
+| ![A strategy HUD and the developer console over selected units](docs/design/images/rts-hud-2x.png) | ![The widget gallery: buttons, toggles, radios, a slider, text fields, tabs and a list](docs/design/images/ui-widget-gallery.png) | ![The widget gallery with a modal dialog holding focus](docs/design/images/ui-widget-gallery-dialog.png) |
+| **HUD** — selection outlines, a squad panel, a minimap and the developer console in one interface pass ([UI guide](docs/guides/ui.md)) | **Widget toolkit** — 65 widgets, 64 µs a frame on the CPU, styled by `.cyss` and loaded from `.cyui` documents ([UI guide](docs/guides/ui.md#7-the-widget-toolkit)) | **Modal dialog** — it blocks the layer below and holds keyboard and gamepad focus; text is shaped and drawn from a distance-field atlas ([text guide](docs/guides/text.md)) |
 | ![Vulkan](docs/design/images/m11d5-three-backends-vulkan.png) | ![Metal](docs/design/images/m11d5-three-backends-metal.png) | ![D3D12](docs/design/images/m11d5-three-backends-d3d12.png) |
 | **Vulkan** — NVIDIA GeForce RTX 5060 | **Metal** — Apple M2 Max, max delta 1 | **D3D12** — AMD Radeon RX 6900 XT, max delta 1 |
 | ![The editor with a live textured FBX on Metal](docs/design/images/editor-live-textured-fbx-metal.png) | ![The material graph editor](docs/design/images/editor-material-graph-nodes-metal.png) | ![The open-world sample on an iPhone 16](docs/design/images/ios-open-world-iphone.png) |
@@ -111,16 +132,17 @@ every requirement is. The table groups what is in the tree now.
 | **World model** | Archetype ECS (Complete) under a node façade, prefabs and serialization (Complete) | [`src/ecs/`](src/ecs/README.md) · [`src/scene/`](src/scene/) · [`ecs-core`](openspec/specs/ecs-core/spec.md) |
 | **RHI** | Vulkan, Metal and D3D12 backends plus a null device; a render graph that computes every barrier | [`src/backends/`](src/backends/README.md) · [`rhi-and-render-graph`](openspec/specs/rhi-and-render-graph/spec.md) |
 | **Shaders** | Slang to SPIR-V, permutations, reflection, a tiered cache, hot reload | [`src/backends/shader/`](src/backends/shader/README.md) · [Slang guide](docs/guides/slang.md) |
-| **Frame** | Forward clustered shading, GPU culling and a hierarchical depth pyramid, one temporal framework (jitter, history), post stack (exposure, AgX tonemap, bloom, grading); an interface pass for HUDs and the developer console | [`src/rendering/`](src/rendering/README.md) · [`assembly/`](src/rendering/assembly/README.md) · [UI guide](docs/guides/ui.md) |
+| **Frame** | Forward clustered shading, GPU culling and a hierarchical depth pyramid, one temporal framework (jitter, history), a temporal upscaler (Quality, Balanced and Performance modes, dynamic resolution, a seam for vendor upscalers), post stack (exposure, AgX tonemap, bloom, grading), a fog of war stage | [`src/rendering/`](src/rendering/README.md) · [`assembly/`](src/rendering/assembly/README.md) · [`upscale/`](src/rendering/upscale/README.md) · [upscaling guide](docs/guides/temporal-upscaling.md) |
 | **Text** | FreeType, HarfBuzz, msdfgen and ICU behind one text server: font fallback, shaping, bidirectional lines, distance-field atlases, font import and cooking | [`src/text/`](src/text/README.md) · [text guide](docs/guides/text.md) |
+| **Interface** | CyberUI: an element store, layout and an interface pass for HUDs and the developer console; a widget toolkit with `.cyui` documents, `.cyss` style sheets, hot reload, bindings, animation, keyboard and gamepad focus, opacity groups and an HDR composite | [`src/ui/`](src/ui/README.md) · [UI guide](docs/guides/ui.md) |
 | **Materials** | Node graph → IR → compiled program, bindless, block-compressed textures | [`material/`](src/rendering/material/README.md) · [`material-compiler`](openspec/specs/material-compiler/spec.md) |
-| **Light** | Shadow maps, contact shadows, ambient occlusion, light probes, baked lightmaps; real-time GI on the GPU (screen probes and a radiance cache, hardware ray queries or a software distance-field tracer), live in the editor and in a Swift game; ray-tracing infrastructure and a shared denoiser | [`gi/`](src/rendering/gi/README.md) · [`gi_gpu/`](src/rendering/gi_gpu/README.md) · [GI guide](docs/guides/global-illumination.md) |
+| **Light** | Shadow maps, contact shadows, ambient occlusion, light probes, baked lightmaps; thousands of lights assigned on the device, a stochastic many-light path, and rect, disc, sphere and tube area lights; real-time GI on the GPU (screen probes and a radiance cache, hardware ray queries or a software distance-field tracer), live in the editor and in a Swift game; ray-tracing infrastructure and a shared denoiser | [`gi/`](src/rendering/gi/README.md) · [`gi_gpu/`](src/rendering/gi_gpu/README.md) · [GI guide](docs/guides/global-illumination.md) · [many lights guide](docs/guides/many-lights.md) |
 | **Effects** | Volumetric fog, depth of field, motion blur, decals, selection outlines, GPU particles and trails | [`fog/`](src/rendering/fog/README.md) · [`particles/`](src/rendering/particles/README.md) · [`src/vfx/`](src/vfx/) |
 | **Scale** | Virtual geometry clusters, virtual texturing (Complete), virtual shadows, one residency policy (Complete) | [`virtual_geometry/`](src/rendering/virtual_geometry/) · [`virtual-geometry`](openspec/specs/virtual-geometry/spec.md) |
 | **Environment** | Physical sky and atmosphere, terrain, water, foliage, weather and wind over one field substrate; procedural generation | [`src/environment/`](src/environment/README.md) · [`src/pcg/`](src/pcg/README.md) |
 | **Simulation** | Animation with GPU skinning, drawn in the engine's frame and driven from Swift; deterministic fixed-point math and a fixed-point mover for lockstep units; AI, navigation, physics (Jolt), audio (miniaudio), abilities, cameras, cinematics | [`src/animation/`](src/animation/README.md) · [`src/core/detmath/`](src/core/detmath/README.md) · [`src/movement/`](src/movement/README.md) · [`src/physics/`](src/physics/README.md) |
-| **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) |
-| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.10 (game services, the interface, animation, fixed-point math, GI, fog of war), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
+| **Integrity** | Deterministic simulation, replay and rollback, networking and replication, saves; a deterministic fog of war grid with shared vision and ghosts | [`src/replay/`](src/replay/) · [`src/networking/`](src/networking/README.md) · [`src/save/`](src/save/) · [fog of war guide](docs/guides/fog-of-war.md) |
+| **Gameplay** | Swift behaviours and systems over a versioned C ABI, now 1.14 (game services, the interface, animation with blend spaces and foot placement, fixed-point math, GI, fog of war, lights for a moment, the widget toolkit, the first-person camera), with hot reload; visual scripting compiled by the engine, with a breakpoint debugger and reload during Play; the gameplay framework (Complete) | [`bindings/swift/`](bindings/swift/README.md) · [`src/abi/`](src/abi/README.md) · [visual scripting](docs/guides/visual-scripting.md) |
 | **Editor** | Rust application: documents and transactions, live viewport and gizmos, FBX import; material, VFX and gameplay graphs; terrain, physics, navigation, lighting and lightmap, audio and animation tools; an MCP agent interface | [`editor/`](editor/README.md) · [`editor-agent-interface`](openspec/specs/editor-agent-interface/spec.md) |
 | **Platforms** | SDL3 desktop, a native Linux backend, headless, iOS, and a stub that shares no desktop assumption | [`platform/`](platform/README.md) |
 | **Workflow** | One `justfile`, the same recipes CI runs; diagnostics, traces and crash artefacts (Complete) | [`just/`](just/README.md) · [`diagnostics-profiling-and-crash`](openspec/specs/diagnostics-profiling-and-crash/spec.md) |
@@ -500,8 +522,13 @@ the hero image above and `just run-ship` packages and launches `samples/11-ship`
 | [Lighting guide](docs/guides/lighting.md) | Authoring static lighting in the editor and baking lightmaps and irradiance volumes |
 | [Deterministic math guide](docs/guides/deterministic-math.md) | Fixed-point types, their rules and bounds, the float boundary, lockstep movement, the ABI |
 | [Visual scripting guide](docs/guides/visual-scripting.md) | Gameplay graphs: authoring, compiling, running in Play, the debugger and reload while Play runs |
+| [Temporal upscaling guide](docs/guides/temporal-upscaling.md) | Rendering below the output resolution, the modes, dynamic resolution, the vendor seam, the measurements |
+| [Many lights guide](docs/guides/many-lights.md) | Area lights, device light lists, the stochastic path, lights a game spawns for a moment |
+| [First-person weapon view guide](docs/guides/first-person-weapon-view.md) | The arms and weapon through their own lens, drawn into the world's frame; the first-person camera from C++ and Swift |
 | [Text guide](docs/guides/text.md) | Fonts, shaping and layout, atlases and distance fields, font import, text in the interface |
-| [UI guide](docs/guides/ui.md) | CyberUI: the element store, layout, the interface pass, the developer console, a HUD from game code |
+| [UI guide](docs/guides/ui.md) | CyberUI: the element store, layout, the interface pass, the developer console, a HUD from game code, the widget toolkit, documents and style sheets, opacity groups and HDR, the toolkit from Swift |
+| [RTS map guide](docs/guides/rts-map.md) | The Frontier: its source, the cook, drawing it under the Swift RTS, what holds it |
+| [Fog of war guide](docs/guides/fog-of-war.md) | The deterministic grid, the frame stage, the minimap, turning it on in a game |
 | [Navigation guide](docs/guides/navigation.md) | Baking and checking a navmesh from the editor or over MCP |
 | [Physics guide](docs/guides/physics.md) | Physics and Jolt: components, the bridge, stepping, queries from C++ and Swift, determinism |
 | [Building and running](docs/guides/building.md) | Toolchains, Linux, macOS editor, iOS, CI targets |
