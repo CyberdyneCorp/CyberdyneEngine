@@ -52,7 +52,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`foliage`](../../openspec/specs/foliage/spec.md) | 13 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |  |  |  | W | **C** |  |  |  |  |  |  |  | M11.a |
 | **3 — Scripting** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 14 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
+| [`native-abi`](../../openspec/specs/native-abi/spec.md) | 15 |  |  |  |  | W | **C** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | M5 |
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | **4 — Rendering** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 | [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  |  | M11.d.5 |
@@ -74,9 +74,9 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **C** |  |  | M11.e |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
-| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
+| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 27 |  |  |  |  |  |  |  |  |  |  |  | S |  | W |  |  |  |  |  | **C** |  |  | M11.e |
 | **5 — Simulation** |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
+| [`physics`](../../openspec/specs/physics/spec.md) | 17 |  |  |  |  | W |  |  |  |  | W |  |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 32 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  | W |  |  |  |  | **C** |  |  |  |  |  |  | M11.b |
