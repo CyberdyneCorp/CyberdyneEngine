@@ -34,6 +34,7 @@ function(cy_camera_declare_tests)
         KIND unit
         SOURCES
             "${camera_tests_dir}/test_camera.cpp"
+            "${camera_tests_dir}/test_first_person.cpp"
             "${camera_tests_dir}/test_lens.cpp"
             "${camera_tests_dir}/test_rig.cpp"
             "${camera_tests_dir}/test_server.cpp"

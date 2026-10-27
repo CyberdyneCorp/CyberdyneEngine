@@ -30,6 +30,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/camera.cpp
+        src/first_person.cpp
         src/lens.cpp
         src/rig_compile.cpp
         src/rig_evaluate.cpp

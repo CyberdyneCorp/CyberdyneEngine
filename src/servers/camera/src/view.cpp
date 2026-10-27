@@ -66,4 +66,22 @@ Status produce_view(const EvaluatedCamera& camera, const RenderViewRequest& requ
     return ok();
 }
 
+Status produce_weapon_view(const EvaluatedCamera& camera, const RenderViewRequest& primary,
+                           const Lens& lens, render::LayerMask layers,
+                           render::ViewDescription& out) noexcept {
+    if (layers == render::kNoLayers) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a weapon view needs the layers the arms and the weapon are on");
+    }
+    RenderViewRequest weapon = primary;
+    weapon.purpose = render::ViewPurpose::Viewmodel;
+    weapon.view_key = kWeaponViewKey;
+    weapon.layer_mask = layers;
+    // THE LENS, NOT THE POSE: a weapon view is the same camera through another lens, and a request
+    // that overrode the pose would be a second camera pretending to be a view.
+    weapon.override_lens = true;
+    weapon.lens = lens;
+    return produce_view(camera, weapon, out);
+}
+
 }  // namespace cy::camera
