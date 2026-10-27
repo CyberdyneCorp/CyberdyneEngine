@@ -113,6 +113,13 @@ ci-free-disk:
 # commit it was built from; `ci-build-tree-unpack` refuses it at any other commit. The archive is
 # tar through zstd because the artefact store's zip loses the modification times Ninja compares.
 #
+# AND IT CARRIES ITS OWN SIZE AND DIGEST, because the download can end short and still succeed. Three
+# nightly runs of one commit (40059896233, 40159825948, 40266516833) lost ten jobs between them to
+# "build-tree.tar.zst : Read error (39) : premature end": `actions/download-artifact` stopped partway
+# through the six-gigabyte archive without its "download completed" line and without failing the
+# step. `<archive>.digest` is written here; `ci-build-tree-verify` lets a job download again when
+# what arrived is not what was packed, and `ci-build-tree-unpack` refuses it outright.
+#
 # Pack the build tree for the jobs of this run that test it. Usage: just ci-build-tree-pack [archive]
 ci-build-tree-pack *args:
     #!/usr/bin/env bash
@@ -135,10 +142,67 @@ ci-build-tree-pack *args:
         exit 1
     fi
     git rev-parse HEAD > "${tree}/.cy-build-tree-commit"
-    rm -f "${archive}"
+    rm -f "${archive}" "${archive}.digest"
     echo "==> pack        ${tree} at $(git rev-parse --short HEAD) -> ${archive}"
     tar -cf - "${tree}" | zstd -T0 -3 -q -o "${archive}"
-    echo "==> packed      $(wc -c < "${archive}" | tr -d ' ') bytes"
+    just _ci-build-tree-digest "${archive}" > "${archive}.digest"
+    echo "==> packed      $(cat "${archive}.digest")"
+
+# Whether a downloaded archive is the one the build job packed, as `intact=true` or `intact=false`
+# in the step's outputs, so that the workflow can download it again. Never fails on a short or
+# corrupt archive — the second download is the remedy, and `ci-build-tree-unpack` the refusal.
+# Usage: just ci-build-tree-verify [archive]
+ci-build-tree-verify *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r _ rest <<< "$(just _split {{args}})"
+    archive="${rest:-build-tree.tar.zst}"
+    if just _ci-build-tree-intact "${archive}"; then
+        intact=true
+    else
+        intact=false
+        echo "ci-build-tree-verify: ${archive} is not the archive the build job packed; download it again" >&2
+    fi
+    echo "==> verify      ${archive}: intact=${intact}"
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then
+        echo "intact=${intact}" >> "${GITHUB_OUTPUT}"
+    fi
+
+# `<sha256> <bytes>` of a file, on every host the legs run on.
+[private]
+_ci-build-tree-digest archive:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        digest="$(sha256sum "{{archive}}" | cut -d' ' -f1)"
+    else
+        digest="$(shasum -a 256 "{{archive}}" | cut -d' ' -f1)"
+    fi
+    echo "${digest} $(wc -c < "{{archive}}" | tr -d ' ')"
+
+# Succeeds when `archive` matches the `<archive>.digest` packed beside it, and says why when not.
+[private]
+_ci-build-tree-intact archive:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ ! -f "{{archive}}" ] || [ ! -f "{{archive}}.digest" ]; then
+        echo "ci-build-tree: {{archive}} or its .digest is missing" >&2
+        exit 1
+    fi
+    read -r packed_digest packed_bytes < "{{archive}}.digest"
+    bytes="$(wc -c < "{{archive}}" | tr -d ' ')"
+    if [ "${bytes}" != "${packed_bytes}" ]; then
+        echo "ci-build-tree: {{archive}} is ${bytes} bytes and was packed as ${packed_bytes}" >&2
+        exit 1
+    fi
+    read -r digest _ <<< "$(just _ci-build-tree-digest "{{archive}}")"
+    if [ "${digest}" != "${packed_digest}" ]; then
+        echo "ci-build-tree: {{archive}} has sha256 ${digest} and was packed as ${packed_digest}" >&2
+        exit 1
+    fi
 
 # A FRESH CHECKOUT IS NEWER THAN EVERY OUTPUT, so after unpacking, every tracked file is dated to
 # 2000-01-01: the sources are the very bytes the tree was built from, and Ninja, which compares
@@ -171,12 +235,16 @@ ci-build-tree-unpack *args:
         git status --short --untracked-files=no >&2
         exit 1
     fi
+    if ! just _ci-build-tree-intact "${archive}"; then
+        echo "ci-build-tree-unpack: ${archive} is not the archive the build job packed — a download that ended short — so it is not unpacked" >&2
+        exit 1
+    fi
     echo "==> unpack      ${archive} -> ${tree}"
     # MSYS's tar, which Git Bash runs on Windows, emulates a symlink by copying its target, so a link
     # extracted before its target fails ("Cannot create symlink to 'zstd'", in _deps/zstd-src's test
     # data). A shortcut needs no target and no privilege; elsewhere the variable means nothing.
     zstd -dc "${archive}" | MSYS="${MSYS:+${MSYS} }winsymlinks:lnk" tar -xf -
-    rm -f "${archive}"
+    rm -f "${archive}" "${archive}.digest"
     head="$(git rev-parse HEAD)"
     built="$(cat "${tree}/.cy-build-tree-commit" 2>/dev/null || echo "an unrecorded commit")"
     if [ "${built}" != "${head}" ]; then

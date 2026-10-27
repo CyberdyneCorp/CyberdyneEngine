@@ -576,44 +576,67 @@ CY_TEST_CASE(
     // The measurement this milestone's brief asks for, in the shape M8.b used for agents and
     // effects: a per-unit cost at four times the population. What is asserted is that the cost is
     // LINEAR in the population — bounded by configuration rather than by the frame.
-    const u32 populations[2] = {256, 1024};
-    f64 per_particle[2] = {0.0, 0.0};
-    for (u32 which = 0; which < 2U; ++which) {
-        Cooked cooked(1, populations[which]);
-        CY_REQUIRE(cooked.ok);
-        SimulationWorld world(allocator());
+    struct Population {
+        explicit Population(u32 capacity) noexcept : cooked(1, capacity), world(allocator()) {}
+        Cooked cooked;
+        SimulationWorld world;
+        StepReport report;
+        f64 fastest_ns_per_particle = 0.0;
+        u32 live = 0;
+    };
+    Population small(256);
+    Population large(1024);
+    Population* const populations[2] = {&small, &large};
+    for (Population* population : populations) {
+        CY_REQUIRE(population->cooked.ok);
         WorldDescription description = small_world();
         description.pool_bytes = 16ULL * 1024ULL * 1024ULL;
-        CY_REQUIRE(world.initialize(description).has_value());
+        CY_REQUIRE(population->world.initialize(description).has_value());
         EffectSpawn spawn;
-        CY_REQUIRE(world.play(*cooked, spawn).has_value());
-
-        StepReport report;
-        // Fill the block first: what is measured is the steady state, not the ramp.
-        for (u32 frame = 0; frame < 40U; ++frame) {
-            CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+        CY_REQUIRE(population->world.play(*population->cooked, spawn).has_value());
+        // Fill the block first: what is measured is the steady state, not the ramp. The plume
+        // spawns sixteen a step and lives up to 1.45 s, so it settles after 87 steps; this warmed
+        // up for 40 until the macOS failures below, when the larger block was still filling.
+        for (u32 frame = 0; frame < 120U; ++frame) {
+            CY_REQUIRE(population->world.step(1.0F / 60.0F, population->report).has_value());
         }
-        const u32 live = report.live_particles;
-        CY_REQUIRE(live > 0U);
+        CY_REQUIRE(population->report.live_particles > 0U);
+    }
 
-        // THE FASTEST OF FIVE WINDOWS, not one. Thread CPU time on a shared virtual machine still
-        // counts the cycles a noisy neighbour's cache traffic costs this thread: one 30-step window
-        // on the hosted macOS runner read 2.4 times the smaller population's cost where the next
-        // run read under 2. Noise only ever adds, so the minimum is the step's own cost, and the
-        // bound below is unchanged.
-        u64 elapsed = ~0ULL;
-        for (u32 window = 0; window < 5U; ++window) {
+    // THE COST OF ONE PARTICLE-STEP, AS THE FASTEST OF FIVE WINDOWS EACH, AND THE WINDOWS
+    // ALTERNATE. Three things the hosted macOS runner taught this case, which failed it twice on
+    // PR #139 at 2.05 and 2.28 times the smaller population's cost:
+    //  - the divisor is the particles each step actually simulated, summed over the window. It was
+    //    the live count once, before the window, taken while the larger block was still filling,
+    //    so its windows simulated half as many again as they were charged for;
+    //  - thread CPU time on a shared virtual machine still counts the cycles a noisy neighbour's
+    //    cache traffic costs this thread, and noise only ever adds, so the minimum is the step's
+    //    own cost;
+    //  - measuring all of one population's windows and then all of the other's let one burst of
+    //    that noise land on a single side; alternating puts every burst across both.
+    // The bound below is unchanged.
+    for (u32 window = 0; window < 5U; ++window) {
+        for (Population* population : populations) {
+            u64 stepped = 0;
             const u64 before = thread_cpu_ns();
             for (u32 frame = 0; frame < 30U; ++frame) {
-                CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+                CY_REQUIRE(population->world.step(1.0F / 60.0F, population->report).has_value());
+                stepped += population->report.live_particles;
             }
             const u64 spent = thread_cpu_ns() - before;
-            elapsed = spent < elapsed ? spent : elapsed;
+            CY_REQUIRE(stepped > 0U);
+            const f64 per_particle = static_cast<f64>(spent) / static_cast<f64>(stepped);
+            if (window == 0U || per_particle < population->fastest_ns_per_particle) {
+                population->fastest_ns_per_particle = per_particle;
+            }
+            population->live = population->report.live_particles;
         }
-        per_particle[which] = static_cast<f64>(elapsed) / (30.0 * static_cast<f64>(live));
-        std::fprintf(stderr, "population %u: %u live, %.1f ns a particle a step\n",
-                     populations[which], live, per_particle[which]);
     }
+    const f64 per_particle[2] = {small.fastest_ns_per_particle, large.fastest_ns_per_particle};
+    std::fprintf(stderr, "population 256: %u live, %.1f ns a particle a step\n", small.live,
+                 per_particle[0]);
+    std::fprintf(stderr, "population 1024: %u live, %.1f ns a particle a step\n", large.live,
+                 per_particle[1]);
     // Four times the population at no worse than twice the per-unit cost. A quadratic step would
     // land at four times and fail this.
     CY_CHECK_LT(per_particle[1], per_particle[0] * 2.0);

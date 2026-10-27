@@ -106,6 +106,11 @@ most favourable sample rather than the cleanest.
 Quote the median and the p99. The worst tick is worth printing — a hitch has to show up somewhere —
 but it is a single extreme, not a figure to compare across builds.
 
+The hitch threshold is 8 ms of CPU in every uninstrumented build and twenty times that under a
+sanitizer (`kSanitizedAllowance` in `run.h`, the harness's sanitizer scale): the nightly
+ThreadSanitizer leg measured a 4.35 ms median tick and failed `smoke.open_world` on a single
+8.57 ms one.
+
 The counters do not move at all: 383 activated, 354 withdrawn, 338 evicted, 166 pages, 0 missing
 samples, 13 cells resident with nothing simulating in them, in every run. That is why
 `m6.toml`'s `continuous-traversal` criterion asserts *identical counters across two runs* and not a

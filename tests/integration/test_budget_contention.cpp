@@ -924,6 +924,85 @@ CY_TEST_CASE("harness: the gate's probe — a held mutex is a stall, a spin over
 #endif
 }
 
+namespace {
+
+#if defined(__linux__)
+/// How many times the probe's body ran, from the "<tag>: run N" lines it printed.
+[[nodiscard]] int runs_of(const ProbeRun& run, const char* tag) {
+    const std::string prefix = std::string(tag) + ": run ";
+    int runs = 0;
+    for (std::size_t at = run.output.find(prefix); at != std::string::npos;
+         at = run.output.find(prefix, at + 1)) {
+        ++runs;
+    }
+    return runs;
+}
+#endif
+
+}  // namespace
+
+CY_TEST_CASE("harness: an overrun is re-measured, and judged on the fastest run") {
+#if defined(__linux__)
+    // THE NIGHTLY FLAKES' REGRESSION. On the hosted macOS runner `unit.rhi`, `unit.gameplay_core`
+    // and `unit.render_lights_gpu` each failed one run at 1.06 to 1.82 times a 1 ms budget, at a
+    // commit that passed everywhere else. The probe is that case made deterministic: five times
+    // the budget on its first run and nothing after. It passes, and says it was re-measured.
+    const ProbeRun noisy = run_probe("probe: a case that is slow only on its first run", {});
+    CY_TEST_MESSAGE(noisy.output);
+    CY_REQUIRE(noisy.started);
+    CY_CHECK(WIFEXITED(noisy.status));
+    CY_CHECK_EQ(WEXITSTATUS(noisy.status), 0);
+    CY_CHECK(has(noisy, "re-measured:"));
+    CY_CHECK_FALSE(has(noisy, "over budget:"));
+    CY_CHECK_EQ(runs_of(noisy, "slow-once"), 2);
+
+    // The behaviour before: judged on the first run alone, the same case fails.
+    const ProbeRun first_only = run_probe("probe: a case that is slow only on its first run",
+                                          {.extra = "CY_TEST_BUDGET_REPEATS=0"});
+    CY_TEST_MESSAGE(first_only.output);
+    CY_REQUIRE(first_only.started);
+    CY_CHECK_NE(WEXITSTATUS(first_only.status), 0);
+    CY_CHECK(has(first_only, "over budget:"));
+    CY_CHECK_EQ(runs_of(first_only, "slow-once"), 1);
+
+    // A regression is over on every run, and fails on the fastest of five.
+    const ProbeRun slow = run_probe("probe: a case that is slow on every run", {});
+    CY_TEST_MESSAGE(slow.output);
+    CY_REQUIRE(slow.started);
+    CY_CHECK_NE(WEXITSTATUS(slow.status), 0);
+    CY_CHECK(has(slow, "over budget:"));
+    CY_CHECK(has(slow, "on the fastest of 5 runs"));
+    CY_CHECK_EQ(runs_of(slow, "slow-always"), 5);
+#else
+    CY_TEST_MESSAGE("the probe is run as a POSIX child process; nothing to run here");
+#endif
+}
+
+CY_TEST_CASE("harness: a case with a subcase, or a failed check, is never run again") {
+#if defined(__linux__)
+    // doctest walks subcases by re-entering the case; a run the harness started itself would
+    // derail that walk, so such a case is judged on its one run.
+    const ProbeRun subcase = run_probe("probe: a subcase that is slow only on its first run", {});
+    CY_TEST_MESSAGE(subcase.output);
+    CY_REQUIRE(subcase.started);
+    CY_CHECK_NE(WEXITSTATUS(subcase.status), 0);
+    CY_CHECK(has(subcase, "over budget:"));
+    CY_CHECK_FALSE(has(subcase, "re-measured:"));
+    CY_CHECK_EQ(runs_of(subcase, "slow-once-subcase"), 1);
+
+    // A case that failed a check has failed; a second run could only muddy the report.
+    const ProbeRun failed =
+        run_probe("probe: a case that fails a check and is slow only on its first run", {});
+    CY_TEST_MESSAGE(failed.output);
+    CY_REQUIRE(failed.started);
+    CY_CHECK_NE(WEXITSTATUS(failed.status), 0);
+    CY_CHECK_FALSE(has(failed, "re-measured:"));
+    CY_CHECK_EQ(runs_of(failed, "slow-once-failed"), 1);
+#else
+    CY_TEST_MESSAGE("the probe is run as a POSIX child process; nothing to run here");
+#endif
+}
+
 CY_TEST_CASE("harness: a forged quiet-host marker is not trusted, and the stall is only reported") {
 #if defined(__linux__)
     // Option B's forgeries. The harness trusts `CY_QUIET_HOST=<pid>:<start ticks>` only when the

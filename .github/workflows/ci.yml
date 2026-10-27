@@ -284,7 +284,9 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
-          path: build-tree.tar.zst
+          path: |
+            build-tree.tar.zst
+            build-tree.tar.zst.digest
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
@@ -381,6 +383,15 @@ jobs:
       # the commit and comes AFTER the editor build: a Cargo tree restored from an older commit's
       # cache must be rebuilt while its sources still look new.
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit
@@ -573,6 +584,15 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # A structural change attempted mid-iteration is refused and counted, in every profile — a
@@ -642,6 +662,15 @@ jobs:
       # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
       # a cache.
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
@@ -727,6 +756,15 @@ jobs:
       # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
       # a cache.
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
@@ -862,6 +900,15 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # The importer's purity and the cache's honesty, neither of which a functional test notices
@@ -924,6 +971,15 @@ jobs:
       # The linux-x86_64 leg's tree from the build job; see that job's upload for why this is not
       # a cache.
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
@@ -1022,6 +1078,15 @@ jobs:
           python-version: '3.12'
       # After the editor build, for the reason the `test` job's twin step gives.
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
@@ -1771,6 +1836,15 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: build-tree-linux-x86_64
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: build-tree-linux-x86_64
       - name: The tree the build job built, at this commit
         run: just ci-build-tree-unpack
       # m11d5: `milestone-m11d5` reached `state = "green"` in gates.toml in the same commit that moved
@@ -1853,6 +1927,15 @@ jobs:
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v5
+        with:
+          name: build-tree-${{ matrix.label }}
+      # A six-gigabyte download can end short and still pass: see `ci-build-tree-pack`. Downloaded
+      # once more when what arrived is not what was packed; `ci-build-tree-unpack` refuses it then.
+      - name: The download is the archive the build job packed
+        id: build-tree
+        run: just ci-build-tree-verify
+      - if: steps.build-tree.outputs.intact != 'true'
+        uses: actions/download-artifact@v5
         with:
           name: build-tree-${{ matrix.label }}
       - name: The tree the build job built, at this commit

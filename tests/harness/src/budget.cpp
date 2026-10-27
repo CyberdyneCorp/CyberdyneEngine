@@ -8,6 +8,7 @@
 #include <cy/test/quiet_host.h>
 #include <cy/test/test.h>
 
+#include "case_state.h"
 #include "host_blocking.h"
 
 #include <algorithm>
@@ -417,6 +418,20 @@ const char* stall_ceiling_state() noexcept {
 /// is contended every run is visible as a number rather than as one line lost in the output.
 std::atomic<std::uint64_t> contended_cases_{0};
 
+/// How many cases this binary passed on a re-run, and the CPU every re-run has cost it so far.
+std::atomic<std::uint64_t> remeasured_cases_{0};
+std::atomic<std::uint64_t> repeat_cpu_spent_ns_{0};
+
+/// What a binary may spend re-running cases, in all: twenty seconds of CPU, a third of the unit
+/// tier's sixty-second CTest timeout. A configuration in which every case is over budget (a scale
+/// set wrongly, a sanitizer not detected) then fails as over budget, rather than as a timeout that
+/// says nothing about why.
+constexpr unsigned long long kRepeatAllowanceNs = 20'000'000'000ULL;
+
+/// Four more runs, so the verdict is on the fastest of five — the count `integration.vfx` chose for
+/// its own scaling windows on the same macOS runner.
+constexpr unsigned kDefaultRepeats = 4;
+
 /// THE DECISION, AS A PURE FUNCTION OF THREE NUMBERS, so that it can be tested without a machine
 /// in a particular state. The empirical half — that runqueue wait actually moves under load and
 /// does not move while blocking — is asserted separately, in `tests/integration/` and
@@ -504,6 +519,130 @@ unsigned long long stall_ceiling(unsigned long long budget_ns) {
 
 }  // namespace
 
+namespace {
+
+/// Everything the verdict on one case is about: the run it is judged on, and how it was chosen.
+struct Verdict {
+    const char* name = nullptr;
+    const char* file = nullptr;
+    int line = 0;
+    BudgetGuard::Sample sample;
+    unsigned long long budget_ns = 0;
+    unsigned long long first_cpu_ns = 0;
+    unsigned runs = 1;
+};
+
+void report_over_budget(const Verdict& verdict) {
+    // ENFORCED ON EVERY HOST, on the fastest run when there was more than one: a case still over
+    // its budget then is over it every time, which no neighbour explains. The stall ceiling's state
+    // is named anyway, so that a reader of any failure knows which one ran.
+    const BudgetGuard::Sample& sample = verdict.sample;
+    char runs[160] = "";
+    if (verdict.runs > 1) {
+        std::snprintf(runs, sizeof(runs),
+                      " on the fastest of %u runs (the first spent %.3f ms; see "
+                      "CY_TEST_BUDGET_REPEATS)",
+                      verdict.runs, static_cast<double>(verdict.first_cpu_ns) / 1e6);
+    }
+    char message[2048];
+    std::snprintf(
+        message, sizeof(message),
+        "over budget: '%s' spent %.3f ms of CPU (%llu ns)%s against a budget of %.3f ms "
+        "(%llu ns), in %.3f ms of wall clock. The taxonomy in `testing-and-quality` places a "
+        "test this expensive in the next suite up — move it, or make it cheaper. The clock is "
+        "the case's own CPU time, which counts SECONDS rather than cycles: on a host whose "
+        "governor idles at 800 MHz, M7's gate measured the same case at five times its "
+        "boosted-clock figure, so an IDLE machine is this instrument's worst case. Check the "
+        "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression. The CPU budget "
+        "is enforced on every host; the stall ceiling here is %s: %s.",
+        verdict.name, static_cast<double>(sample.cpu_ns) / 1e6, sample.cpu_ns, runs,
+        static_cast<double>(verdict.budget_ns) / 1e6, verdict.budget_ns,
+        static_cast<double>(sample.wall_ns) / 1e6, stall_ceiling_state(), quiet_host().reason);
+    CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(verdict.file, verdict.line, message)
+        CY_TEST_COUNTER_END;
+}
+
+void report_remeasured(const Verdict& verdict) {
+    ++remeasured_cases_;
+    // REPORTED, NOT FAILED, for the reason a contended stall is: `testing-and-quality` asks for "a
+    // case that exceeds its budget only under load" to be reported rather than to fail the build.
+    // A case that appears here every run is marginal, and moving it up a suite is the fix.
+    std::fprintf(stderr,
+                 "cy::test: re-measured: '%s' spent %.3f ms of CPU on its first run against a "
+                 "budget of %.3f ms, and %.3f ms on the fastest of %u. Judged on the fastest: "
+                 "noise on a shared machine only ever adds, and a regression is over in every "
+                 "run. A case reported here on every run is marginal; move it up a suite.\n",
+                 verdict.name, static_cast<double>(verdict.first_cpu_ns) / 1e6,
+                 static_cast<double>(verdict.budget_ns) / 1e6,
+                 static_cast<double>(verdict.sample.cpu_ns) / 1e6, verdict.runs);
+}
+
+void judge_stall(const Verdict& verdict) {
+    const std::uint64_t wall_ns = verdict.sample.wall_ns;
+    const std::uint64_t cpu_ns = verdict.sample.cpu_ns;
+    const std::uint64_t contended = verdict.sample.contended_ns;
+    const std::uint64_t blocked = verdict.sample.blocked_ns;
+    const bool host_sampled = verdict.sample.host_sampled;
+    const unsigned long long budget_ns = verdict.budget_ns;
+    if constexpr (!kHaveCpuClock) {
+        return;
+    }
+    const unsigned long long ceiling = stall_ceiling(budget_ns);
+    const StallVerdict stall = stall_verdict(wall_ns, contended, ceiling);
+    if (stall == StallVerdict::Fine) {
+        return;
+    }
+
+    if (stall == StallVerdict::Contended) {
+        ++contended_cases_;
+        // REPORTED, NOT FAILED, and `testing-and-quality` asks for exactly that: "a case that
+        // exceeds its budget only under load SHALL be reported as a case to reclassify rather than
+        // failing the build outright". stderr rather than a check failure, so that `ctest
+        // --output-on-failure` shows it beside a real failure and a green run stays green.
+        std::fprintf(
+            stderr,
+            "cy::test: contended: '%s' held the suite for %.3f ms of wall clock against a "
+            "ceiling of %.3f ms, of which %.3f ms was spent waiting for a core on a busy "
+            "machine, %.3f ms in an uninterruptible wait (%s, and not excused) and "
+            "%.3f ms was CPU. Reported rather than failed: the machine was loaded, not "
+            "the case. Run it on an idle machine to see its own figure.\n",
+            verdict.name, static_cast<double>(wall_ns) / 1e6, static_cast<double>(ceiling) / 1e6,
+            static_cast<double>(contended) / 1e6, static_cast<double>(blocked) / 1e6,
+            host_sampled ? "sampled" : "not measured here", static_cast<double>(cpu_ns) / 1e6);
+        return;
+    }
+
+    char message[2048];
+    std::snprintf(
+        message, sizeof(message),
+        "stalled: '%s' held the suite for %.3f ms of wall clock (%llu ns) while spending %.3f ms "
+        "of CPU, %.3f ms waiting for a core and %.3f ms in an uninterruptible wait (%s) against a "
+        "ceiling of %.3f ms — %llux its budget. A case within its budget that takes this long is "
+        "waiting rather than working: a sleep, a lock, a thread it joined, a read from a pipe or "
+        "socket, or the disk — its own, or one that a build beside this run kept busy. "
+        "`testing-and-quality` places any of those in tests/integration/ or above. Only waiting "
+        "for a core is subtracted; an uninterruptible wait is NEVER excused, because nothing a "
+        "process can read says whether it or the host caused it (M11.c's fifth to seventh closes). "
+        "The ceiling is %s: %s. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
+        verdict.name, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
+        static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
+        static_cast<double>(blocked) / 1e6, host_sampled ? "sampled" : "not measured here",
+        static_cast<double>(ceiling) / 1e6, kStallMultiplier, stall_ceiling_state(),
+        quiet_host().reason);
+    if (!stall_ceiling_enforced()) {
+        // REPORTED, NOT FAILED: wall clock measures the machine as much as the case, and no
+        // `cy_quiet_host` checked this machine for this run (the owner's option B, M11.c's ninth
+        // close). The same diagnosis, so that a stall seen on a developer's machine is still a
+        // stall to look at, and a run under the wrapper fails it.
+        std::fprintf(stderr, "cy::test: %s\n", message);
+        return;
+    }
+    CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(verdict.file, verdict.line, message)
+        CY_TEST_COUNTER_END;
+}
+
+}  // namespace
+
 BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const char* file, int line)
     : name_(name),
       file_(file),
@@ -519,19 +658,21 @@ BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const c
       started_cpu_ns_(cpu_now_ns()),
       started_wall_ns_(steady_now_ns()) {}
 
-BudgetGuard::~BudgetGuard() {
-    if (budget_ns_ == 0) {
-        return;
-    }
-    const std::uint64_t wall_ns = steady_now_ns() - started_wall_ns_;
-    const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
-    const std::uint64_t contended = contended_now_ns() - started_contended_ns_;
-    std::uint64_t blocked = 0;
+BudgetGuard::Sample BudgetGuard::stop() noexcept {
+    Sample sample;
+    sample.wall_ns = steady_now_ns() - started_wall_ns_;
+    sample.cpu_ns = cpu_now_ns() - started_cpu_ns_;
+    sample.contended_ns = contended_now_ns() - started_contended_ns_;
+    sample.host_sampled = host_sampled_;
     if (host_sampled_) {
-        blocked = blocked_on_host_ns() - started_blocked_ns_;
+        sample.blocked_ns = blocked_on_host_ns() - started_blocked_ns_;
         host_blocking::end();
+        host_sampled_ = false;
     }
+    return sample;
+}
 
+unsigned long long BudgetGuard::budget_after(unsigned long long cpu_ns) const {
     // THE RE-CHECK. See `second_opinion_scale`: the calibration is taken once at process start and
     // a governor that settles afterwards makes every later case look late. Re-measure now, beside
     // the case that just ran, and let the larger of the two budgets stand.
@@ -542,81 +683,88 @@ BudgetGuard::~BudgetGuard() {
             static_cast<unsigned long long>(static_cast<double>(declared_ns_) * fresh);
         budget_ns = std::max(budget_ns, rebuilt);
     }
+    return budget_ns;
+}
 
-    char message[2048];
-    if (cpu_ns > budget_ns) {
-        // ENFORCED ON EVERY HOST: CPU time does not grow when a neighbour spins. The stall
-        // ceiling's state is named anyway, so that a reader of any failure knows which one ran.
-        std::snprintf(
-            message, sizeof(message),
-            "over budget: '%s' spent %.3f ms of CPU (%llu ns) against a budget of %.3f ms "
-            "(%llu ns), in %.3f ms of wall clock. The taxonomy in `testing-and-quality` places a "
-            "test this expensive in the next suite up — move it, or make it cheaper. The clock is "
-            "the case's own CPU time, which counts SECONDS rather than cycles: on a host whose "
-            "governor idles at 800 MHz, M7's gate measured the same case at five times its "
-            "boosted-clock figure, so an IDLE machine is this instrument's worst case. Check the "
-            "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression. The CPU budget "
-            "is enforced on every host; the stall ceiling here is %s: %s.",
-            name_, static_cast<double>(cpu_ns) / 1e6, static_cast<unsigned long long>(cpu_ns),
-            static_cast<double>(budget_ns) / 1e6, budget_ns, static_cast<double>(wall_ns) / 1e6,
-            stall_ceiling_state(), quiet_host().reason);
-        CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message) CY_TEST_COUNTER_END;
+void BudgetGuard::remeasure(void (*body)()) {
+    if (budget_ns_ == 0 || measured_) {
         return;
     }
+    sample_ = stop();
+    measured_ = true;
+    first_cpu_ns_ = sample_.cpu_ns;
+    judged_budget_ns_ = budget_after(sample_.cpu_ns);
+    const unsigned repeats = budget_repeats();
+    for (unsigned repeat = 0; repeat < repeats && sample_.cpu_ns > judged_budget_ns_; ++repeat) {
+        const detail::CaseState state = detail::current_case_state();
+        const unsigned long long spent = repeat_cpu_spent_ns_.load();
+        const unsigned long long left =
+            spent < kRepeatAllowanceNs ? kRepeatAllowanceNs - spent : 0ULL;
+        if (!may_remeasure(sample_.cpu_ns, state.failed_checks, state.entered_subcase, left)) {
+            break;
+        }
+        // The same clocks as the first run, minus the host-blocking sampler: that is a diagnostic
+        // of a stall, and a re-run exists only because the first run was over its CPU budget.
+        started_contended_ns_ = contended_now_ns();
+        started_cpu_ns_ = cpu_now_ns();
+        started_wall_ns_ = steady_now_ns();
+        body();
+        const Sample again = stop();
+        repeat_cpu_spent_ns_ += again.cpu_ns;
+        ++runs_;
+        if (again.cpu_ns < sample_.cpu_ns) {
+            sample_ = again;
+        }
+    }
+}
 
-    if constexpr (!kHaveCpuClock) {
+BudgetGuard::~BudgetGuard() {
+    if (budget_ns_ == 0) {
         return;
     }
-    const unsigned long long ceiling = stall_ceiling(budget_ns);
-    const StallVerdict verdict = stall_verdict(wall_ns, contended, ceiling);
-    if (verdict == StallVerdict::Fine) {
+    if (!measured_) {
+        sample_ = stop();
+        first_cpu_ns_ = sample_.cpu_ns;
+        judged_budget_ns_ = budget_after(sample_.cpu_ns);
+    }
+    const Verdict verdict{name_, file_, line_, sample_, judged_budget_ns_, first_cpu_ns_, runs_};
+    if (sample_.cpu_ns > judged_budget_ns_) {
+        report_over_budget(verdict);
         return;
     }
+    if (runs_ > 1) {
+        report_remeasured(verdict);
+    }
+    judge_stall(verdict);
+}
 
-    if (verdict == StallVerdict::Contended) {
-        ++contended_cases_;
-        // REPORTED, NOT FAILED, and `testing-and-quality` asks for exactly that: "a case that
-        // exceeds its budget only under load SHALL be reported as a case to reclassify rather than
-        // failing the build outright". stderr rather than a check failure, so that `ctest
-        // --output-on-failure` shows it beside a real failure and a green run stays green.
-        std::fprintf(stderr,
-                     "cy::test: contended: '%s' held the suite for %.3f ms of wall clock against a "
-                     "ceiling of %.3f ms, of which %.3f ms was spent waiting for a core on a busy "
-                     "machine, %.3f ms in an uninterruptible wait (%s, and not excused) and "
-                     "%.3f ms was CPU. Reported rather than failed: the machine was loaded, not "
-                     "the case. Run it on an idle machine to see its own figure.\n",
-                     name_, static_cast<double>(wall_ns) / 1e6, static_cast<double>(ceiling) / 1e6,
-                     static_cast<double>(contended) / 1e6, static_cast<double>(blocked) / 1e6,
-                     host_sampled_ ? "sampled" : "not measured here",
-                     static_cast<double>(cpu_ns) / 1e6);
-        return;
-    }
+unsigned budget_repeats() noexcept {
+    static const unsigned repeats = []() noexcept {
+        const char* value = std::getenv("CY_TEST_BUDGET_REPEATS");
+        if (value == nullptr || *value == '\0') {
+            return kDefaultRepeats;
+        }
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(value, &end, 10);
+        if (end == value || *end != '\0' || parsed > 100UL) {
+            std::fprintf(stderr,
+                         "cy::test: CY_TEST_BUDGET_REPEATS='%s' is not a count from 0 to 100; "
+                         "using %u\n",
+                         value, kDefaultRepeats);
+            return kDefaultRepeats;
+        }
+        return static_cast<unsigned>(parsed);
+    }();
+    return repeats;
+}
 
-    std::snprintf(
-        message, sizeof(message),
-        "stalled: '%s' held the suite for %.3f ms of wall clock (%llu ns) while spending %.3f ms "
-        "of CPU, %.3f ms waiting for a core and %.3f ms in an uninterruptible wait (%s) against a "
-        "ceiling of %.3f ms — %llux its budget. A case within its budget that takes this long is "
-        "waiting rather than working: a sleep, a lock, a thread it joined, a read from a pipe or "
-        "socket, or the disk — its own, or one that a build beside this run kept busy. "
-        "`testing-and-quality` places any of those in tests/integration/ or above. Only waiting "
-        "for a core is subtracted; an uninterruptible wait is NEVER excused, because nothing a "
-        "process can read says whether it or the host caused it (M11.c's fifth to seventh closes). "
-        "The ceiling is %s: %s. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
-        name_, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
-        static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
-        static_cast<double>(blocked) / 1e6, host_sampled_ ? "sampled" : "not measured here",
-        static_cast<double>(ceiling) / 1e6, kStallMultiplier, stall_ceiling_state(),
-        quiet_host().reason);
-    if (!stall_ceiling_enforced()) {
-        // REPORTED, NOT FAILED: wall clock measures the machine as much as the case, and no
-        // `cy_quiet_host` checked this machine for this run (the owner's option B, M11.c's ninth
-        // close). The same diagnosis, so that a stall seen on a developer's machine is still a
-        // stall to look at, and a run under the wrapper fails it.
-        std::fprintf(stderr, "cy::test: %s\n", message);
-        return;
-    }
-    CY_TEST_COUNTER_BEGIN DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message) CY_TEST_COUNTER_END;
+bool may_remeasure(unsigned long long cpu_ns, int failed_checks, bool entered_subcase,
+                   unsigned long long allowance_left_ns) noexcept {
+    return failed_checks == 0 && !entered_subcase && cpu_ns <= allowance_left_ns;
+}
+
+unsigned long long remeasured_cases() noexcept {
+    return remeasured_cases_;
 }
 
 unsigned long long contended_cases() noexcept {

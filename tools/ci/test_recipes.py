@@ -1659,6 +1659,77 @@ def a_build_tree_is_trusted_only_at_its_own_commit(root: pathlib.Path) -> list[s
     return failures
 
 
+def a_build_tree_that_arrived_short_is_fetched_again_not_unpacked(root: pathlib.Path) -> list[str]:
+    """A download that ended short is reported for a second download, and never unpacked.
+
+    THE DEFECT: three nightly runs of one commit lost ten jobs between them to "build-tree.tar.zst :
+    Read error (39) : premature end" — `actions/download-artifact` stopped partway through the
+    six-gigabyte archive and passed. `ci-build-tree-pack` now writes `<archive>.digest`;
+    `ci-build-tree-verify` must say `intact=false` for a short or altered archive (so the workflow
+    downloads it again) and `intact=true` for the packed one, and `ci-build-tree-unpack` must refuse
+    the short one, leaving no tree behind, and remove the digest with the archive when it unpacks.
+    """
+    if shutil.which("zstd") is None:
+        return ["zstd is not on PATH, so the build-tree recipes cannot be exercised on this host"]
+    failures: list[str] = []
+    archive_name = "build-tree.tar.zst"
+
+    def verdict(directory: pathlib.Path, environment: dict[str, str]) -> str:
+        outputs = directory / "outputs"
+        outputs.write_text("", encoding="utf-8")
+        result = subprocess.run(["just", "ci-build-tree-verify"], cwd=directory,
+                                env={**environment, "GITHUB_OUTPUT": str(outputs)},
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            return f"failed: {result.stderr.strip()}"
+        return outputs.read_text(encoding="utf-8").strip()
+
+    with tempfile.TemporaryDirectory() as scratch:
+        directory = pathlib.Path(scratch)
+        environment = _scratch_repository(root, directory)
+        packed = _packed_tree(directory, environment)
+        if packed.returncode != 0:
+            return [f"ci-build-tree-pack failed on a clean commit: {packed.stderr.strip()}"]
+        archive = directory / archive_name
+        if not (directory / f"{archive_name}.digest").exists():
+            return ["ci-build-tree-pack wrote no digest beside the archive"]
+        if verdict(directory, environment) != "intact=true":
+            failures.append(f"the packed archive was not verified intact: "
+                            f"{verdict(directory, environment)}")
+        whole = archive.read_bytes()
+
+        archive.write_bytes(whole[: len(whole) // 2])
+        if verdict(directory, environment) != "intact=false":
+            failures.append("an archive cut to half its size was not reported for a second "
+                            f"download: {verdict(directory, environment)}")
+        flipped = bytearray(whole)
+        flipped[len(flipped) // 2] ^= 0xFF
+        archive.write_bytes(bytes(flipped))
+        if verdict(directory, environment) != "intact=false":
+            failures.append("an archive of the packed size with one byte changed was verified "
+                            "intact")
+
+        archive.write_bytes(whole[: len(whole) // 2])
+        result = subprocess.run(["just", "ci-build-tree-unpack"], cwd=directory, env=environment,
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            failures.append("a short archive was unpacked")
+        elif "not the archive the build job packed" not in result.stderr:
+            failures.append(f"a short archive was refused without saying why: "
+                            f"{result.stderr.strip()}")
+        if (directory / "build" / "dev").exists():
+            failures.append("a short archive left a partial tree behind")
+
+        archive.write_bytes(whole)
+        result = subprocess.run(["just", "ci-build-tree-unpack"], cwd=directory, env=environment,
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            failures.append(f"the archive as downloaded again was refused: {result.stderr.strip()}")
+        if (directory / f"{archive_name}.digest").exists():
+            failures.append("the digest was left beside the tree after unpacking")
+    return failures
+
+
 def a_build_tree_with_a_link_before_its_target_unpacks_on_windows(root: pathlib.Path) -> list[str]:
     """`ci-build-tree-unpack` extracts symlinks MSYS cannot copy yet.
 
@@ -1803,6 +1874,9 @@ def main() -> int:
         "run-ship leaves the committed stills alone": run_ship_leaves_the_committed_stills_alone,
         "a build tree is trusted only at its own commit": (
             a_build_tree_is_trusted_only_at_its_own_commit
+        ),
+        "a build tree that arrived short is fetched again, not unpacked": (
+            a_build_tree_that_arrived_short_is_fetched_again_not_unpacked
         ),
         "a build tree with a link before its target unpacks on Windows": (
             a_build_tree_with_a_link_before_its_target_unpacks_on_windows

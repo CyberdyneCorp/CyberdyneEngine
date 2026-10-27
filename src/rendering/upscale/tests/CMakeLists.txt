@@ -82,6 +82,13 @@ function(cy_upscale_declare_tests)
     if(NOT EXISTS "${tests_dir}/test_upscale_device.cpp")
         return()
     endif()
+    # Case (e) draws the interface through CyberUI, so the device suite is not declared without it
+    # — the way samples/13-rts-api declines. `m8b:feature-options-off` configures a CY_UI=OFF tree,
+    # where cy::ui-render does not exist and naming it failed the generate step.
+    if(NOT CY_UI)
+        message(STATUS "src/rendering/upscale/tests: CY_UI is off, so render.upscale is not declared")
+        return()
+    endif()
     cy_add_test(
         NAME upscale
         KIND render
