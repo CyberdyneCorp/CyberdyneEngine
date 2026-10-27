@@ -408,6 +408,16 @@ returns a `Light`; `update(_:)`, `move(_:to:)`, `destroy()`, `isAlive` and `Ligh
 Every call is refused from `onFixedUpdate`. `LightsTests.swift` checks the description's fields,
 the kind numbers and the refusals through `FakeEngine`; docs/guides/many-lights.md is the guide.
 
+## The first-person camera and the weapon view (ABI 1.13)
+
+`FirstPerson.swift` is the face of the eight `first_person_*` and `viewmodel_*` entries:
+`FirstPersonCamera(camera:settings:)` gives a camera first-person behaviours (`FirstPersonSettings`
+carries the engine's defaults), then `feed(look:speed:aiming:airborne:)`, `kick(pitch:yaw:)`,
+`reset(yaw:pitch:)`, `state()` and `release()`; `setWeaponView(_:)` and `weaponView()` take a
+`WeaponView` — its layers, its lens (nil follows the sights) and its shadow policy. Every call is
+refused from `onFixedUpdate`. `FirstPersonTests.swift` checks the settings, the flags, the state and
+the refusals through `FakeEngine`; docs/guides/first-person-weapon-view.md is the guide.
+
 ## What is thinner than `swift-scripting` asks for
 
 Recorded here rather than only in a report, because these are the places a reader will look:

@@ -4452,7 +4452,7 @@ row = "camera-system"
 requirement = "Four separated concepts"
 evidence = "test:unit.camera_system"
 case = "one camera produces several views, each with its own temporal history"
-note = "One EvaluatedCamera yields a main and a weapon ViewDescription with distinct history identities, so a view is derived rather than the camera itself. 'a view carries everything the requirement lists and nothing a backend would know' pins the other half: jitter, clip convention and resource binding are absent from the camera vocabulary and appear only on the view."
+note = "One EvaluatedCamera yields a main and a weapon ViewDescription with distinct history identities, so a view is derived rather than the camera itself. 'a view carries everything the requirement lists and nothing a backend would know' pins the other half: jitter, clip convention and resource binding are absent from the camera vocabulary and appear only on the view. render.weapon_view's 'the weapon never clips into a wall it touches' draws a primary view and a weapon view of one camera into one frame."
 
 [[coverage]]
 row = "camera-system"
@@ -4527,8 +4527,9 @@ note = "Two weighted targets moving apart are kept in view, and FramingSolution 
 [[coverage]]
 row = "camera-system"
 requirement = "Aim is three things"
-evidence = "exempt:m11e"
-note = "AimState in src/servers/camera/include/cy/servers/camera/camera.h holds view, control and weapon aim as separate fields, and unit.camera_system's 'the three aims are three fields and the view aim has no setter' asserts only that they are distinct. Nothing derives weapon aim from offsets or recoil, there is no aim rig layer, and no networked hit validation reads a command's control aim. Re-enter with a case that fires from an offset weapon and requires the shot to follow weapon aim while the reticle follows control aim, and a server validation case that ignores a client camera transform."
+evidence = "test:unit.camera_system"
+case = "the three aims: the view takes its share of the recoil, the weapon all of it"
+note = "FirstPersonCamera derives control aim from the player's look alone, view aim from the look plus the camera's share of the recoil, and weapon aim from the view composed with the weapon's own turn in the eye; the case holds each to the recoil spring's displacement. Aiming is a rig layer (the sights blend the lens and the weapon's offset over the same camera). A server validating a command's control aim is gameplay's, and no networked hit test reads it yet."
 
 [[coverage]]
 row = "camera-system"
@@ -4542,7 +4543,7 @@ row = "camera-system"
 requirement = "Shake, recoil, and the impulse bus"
 evidence = "test:unit.camera_system"
 case = "an impulse shakes each camera by its own distance, and the setting scales all of it"
-note = "One emitted impulse disturbs a near camera more than a far one, and setting shake_scale to zero removes it from every camera with no per-effect handling. 'an impulse older than its duration is dropped' and 'a full impulse bus is reported rather than silently louder' cover the bus. Recoil as a spring with recovery integrated with the aim layer is not implemented."
+note = "One emitted impulse disturbs a near camera more than a far one, and setting shake_scale to zero removes it from every camera with no per-effect handling. 'an impulse older than its duration is dropped' and 'a full impulse bus is reported rather than silently louder' cover the bus. Recoil is FirstPersonCamera's impulse into a damped spring stepped in closed form: 'recoil kicks the aim up and recovers to it over the same time at 60 and 144 hertz' and 'the spring's closed form is exact: one step of 2dt is two steps of dt'."
 
 [[coverage]]
 row = "camera-system"
@@ -4615,9 +4616,23 @@ note = "Candidate shots are scored and the director moves to a better one while 
 
 [[coverage]]
 row = "camera-system"
+requirement = "First-person weapon view"
+evidence = "test:render.weapon_view"
+case = "the weapon never clips into a wall it touches"
+note = "A weapon of five boxes on a layer of its own reaches 0.85 m into a wall 0.45 m out and covers exactly the texels it covers in open air, while the same boxes as world geometry lose 1341 of 5995. Neighbours: 'lit as the world lights it, and its field of view is its own' (the world's lens changed, no weapon texel moved or changed a byte), 'off is the frame before: no weapon view, and one with nothing in it' (byte for byte against frame_scene_before_bloom.png), 'motion vectors: none for a weapon a turning camera carries, its lens's when raised', 'the shadow policy: ...' and the composition golden. Vulkan only; Metal and D3D12 compile the entries."
+
+[[coverage]]
+row = "camera-system"
+requirement = "First-person camera behaviours"
+evidence = "test:unit.camera_system"
+case = "recoil kicks the aim up and recovers to it over the same time at 60 and 144 hertz"
+note = "FirstPersonCamera steps the recoil spring in closed form, so the kick's curve and its recovery match at 60 and 144 hertz. Neighbours: 'the head bob ends a second on the same phase and height at 60 and at 144 hertz', 'aiming down the sights narrows both lenses over the same time at 60 and 144 hertz', 'mouse look turns by the sensitivity once, clamps the pitch and honours inversion', 'motion reduction scales the bob and the camera's recoil together' and 'the three aims: ...'."
+
+[[coverage]]
+row = "camera-system"
 requirement = "Camera settings and accessibility"
 evidence = "exempt:m11e"
-note = "CameraSettings in server.h carries sensitivity, inversion, field-of-view override, shake scale, collision strength, reduce_motion and auto_centre. unit.camera_system observes the field-of-view override and shake scale, but reduce_motion only scales shake (server.cpp:308), not head motion or acceleration, and auto_centre is read nowhere. No case shows look sensitivity applied once through input. Re-enter with a motion-reduction case where shake, head motion and acceleration all respond, and a sensitivity case through the input pipeline."
+note = "CameraSettings in server.h carries sensitivity, inversion, field-of-view override, shake scale, collision strength, reduce_motion and auto_centre. unit.camera_system observes the field-of-view override and shake scale, but reduce_motion only scales shake (server.cpp:308), not head motion or acceleration, and auto_centre is read nowhere. No case shows look sensitivity applied once through input. Re-enter with a motion-reduction case where shake, head motion and acceleration all respond, and a sensitivity case through the input pipeline. The first-person camera covers part of it: 'motion reduction scales the bob and the camera's recoil together', and its look sensitivity is applied once as a rig parameter ('mouse look turns by the sensitivity once, clamps the pitch and honours inversion'); CameraSettings::reduce_motion does not yet drive its motion_scale."
 
 [[coverage]]
 row = "camera-system"
@@ -6453,6 +6468,13 @@ requirement = "Lights a game spawns through the ABI"
 evidence = "test:unit.abi"
 case = "lights: a frame update may spawn, move and end a light; a fixed step may not"
 note = "ABI 1.11 (`add-many-lights-and-area-lights`): five `light_*` entries over `cy::rendering::TransientLights` through `cy::abi::game::LightsBackend`, every one `[N U]`. This case is the phase rule both ways: spawn, update, alive, destroy and status accepted in a frame update and PERMISSION_DENIED in a fixed step. Its neighbours in `test_game_lights.cpp`: 'without a bound pool every entry is UNAVAILABLE' and 'a description is whole and in range before the backend sees it' (every enumerator, flag, sign and reserved word); `test_layout.cpp` the 1.11 layouts; `integration.game_backend_lights` the adapter through the table — a flash fades and expires, a stale handle never answers, a full pool refuses with OUT_OF_RANGE; CyberdyneKit's `LightsTests` the Swift face through `FakeEngine`. Each proved red by a mutation (`openspec/changes/add-many-lights-and-area-lights/evidence/falsification.txt`). No sample binds a pool to a running game yet."
+
+[[coverage]]
+row = "native-abi"
+requirement = "The first-person camera through the ABI"
+evidence = "test:unit.abi"
+case = "first person: a frame update drives it; a fixed step may not touch it"
+note = "ABI 1.13 (`add-first-person-weapon-view`): eight `first_person_*` and `viewmodel_*` entries over `cy::abi::game::FirstPersonBackend`, every one `[N U]`. This case is the phase rule both ways. Its neighbours in `test_game_first_person.cpp` cover UNAVAILABLE, every range, flag and reserved word, and `struct_size` both ways; `integration.game_backend_first_person`'s 'the look a game feeds turns the camera once, when the host advances it' is the first scenario through the real behaviours; CyberdyneKit's `FirstPersonTests` the Swift face. Each proved red by a mutation (`openspec/changes/add-first-person-weapon-view/evidence/falsification.txt`). No sample drives a first-person rig yet."
 
 # --- networking-and-replication -------------------------------------------------------------------
 #

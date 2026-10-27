@@ -600,6 +600,9 @@ CY_TEST_CASE("at 1080p: the frame's GPU time with the weapon view and with the w
             totals[pass][1] += run.stamps_ms[2] - run.stamps_ms[1];
             totals[pass][2] += run.stamps_ms[3];
         }
+        if (pass == 0U) {
+            save("weapon_view_1080p.png", bench.scene().pixels(), 1920, 1080);
+        }
     }
     for (u32 pass = 0; pass < 2U; ++pass) {
         std::fprintf(stderr,
@@ -609,6 +612,5 @@ CY_TEST_CASE("at 1080p: the frame's GPU time with the weapon view and with the w
                      totals[pass][0] / kFrames, totals[pass][1] / kFrames,
                      totals[pass][2] / kFrames, kFrames);
     }
-    save("weapon_view_1080p.png", bench.scene().pixels(), 1920, 1080);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }

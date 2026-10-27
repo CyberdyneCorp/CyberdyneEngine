@@ -109,7 +109,8 @@ final class FirstPersonTests: XCTestCase {
     }
 
     func testFeedingCarriesTheLookTheSpeedAndTheFlags() throws {
-        let eye = try FirstPersonCamera(camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
+        let eye = try FirstPersonCamera(
+            camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
         try eye.feed(look: Vec2(x: 12, y: -3), speed: 4, aiming: true, airborne: true)
         XCTAssertEqual(Seen.input.look.0, 12)
         XCTAssertEqual(Seen.input.look.1, -3)
@@ -121,7 +122,8 @@ final class FirstPersonTests: XCTestCase {
     }
 
     func testTheStateReadsBack() throws {
-        let eye = try FirstPersonCamera(camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
+        let eye = try FirstPersonCamera(
+            camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
         let state = try eye.state()
         XCTAssertEqual(state.yaw, 0.5)
         XCTAssertEqual(state.aim, 1)
@@ -134,7 +136,8 @@ final class FirstPersonTests: XCTestCase {
     }
 
     func testTheWeaponViewCrossesAndFollowsTheSights() throws {
-        let eye = try FirstPersonCamera(camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
+        let eye = try FirstPersonCamera(
+            camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
         try eye.setWeaponView(WeaponView(layers: 1 << 5, castsShadows: true))
         XCTAssertEqual(Seen.weapon.layers, 1 << 5)
         XCTAssertEqual(Seen.weapon.fov, 0)  // follows the sights
@@ -158,7 +161,8 @@ final class FirstPersonTests: XCTestCase {
             }
             XCTAssertEqual(status, .invalidArgument)
         }
-        let eye = try FirstPersonCamera(camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
+        let eye = try FirstPersonCamera(
+            camera: Camera(raw: kPlayer), settings: FirstPersonSettings())
         let stranger = FirstPersonCamera(attachedTo: Camera(raw: 0x9))
         XCTAssertThrowsError(try stranger.feed(look: Vec2(), speed: 0)) { error in
             guard case CyberdyneError.status(let status, _) = error else {

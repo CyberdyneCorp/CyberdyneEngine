@@ -342,13 +342,15 @@ inline void scene_lights(Array<render::LightDescription>& lights, void* user) no
     sun.casts_shadow = true;
     (void)lights.push_back(sun);
     if (run->lantern) {
-        // Beside the sleeve, right of the receiver, reaching the weapon's right flank and nothing
-        // a few centimetres past it.
+        // Two centimetres off the receiver's left flank — the one the camera sees — reaching six
+        // centimetres: narrower than the shift between where the weapon view draws a texel and
+        // where the world's projection would put it, so a light list looked up by the texel
+        // misses it. With the default camera the eye's space is the world's.
         render::LightDescription lantern;
         lantern.kind = render::LightKind::Point;
-        lantern.intensity = 260.0F;
-        lantern.range = 0.16F;
-        lantern.transform = Transform::from_translation(run->hold + Vec3{0.075F, -0.02F, -0.08F});
+        lantern.intensity = 60.0F;
+        lantern.range = 0.06F;
+        lantern.transform = Transform::from_translation(run->hold + Vec3{-0.05F, 0.0F, -0.12F});
         lantern.color[0] = 1.0F;
         lantern.color[1] = 0.62F;
         lantern.color[2] = 0.30F;

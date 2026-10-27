@@ -330,6 +330,29 @@ layouts; the 1.12 table shape) and `integration.game_backend_ui` (`test_ui_toolk
 real toolkit through the table — widgets, documents by text and by path with a reload, events to
 their owners, navigation, animation by time, and the embedder's widgets out of reach).
 
+## What ABI 1.13 adds, and why
+
+`camera-system`'s "one camera, several views": a first-person camera's behaviours and the weapon view
+drawn beside it, for a game written in Swift. Eight entries over `cy::abi::game::FirstPersonBackend`,
+implemented by `cy::game_backend::FirstPersonAdapter` (`src/game_backend/first_person/`), which links
+`cy::servers-camera` and `cy::rendering-viewmodel`. Every one is [N U]: the camera is presentation.
+A camera is named by its rig's `CyCamera`; a null one is INVALID_ARGUMENT, one with no behaviours
+NOT_FOUND.
+
+| Entries | Notes |
+|---|---|
+| `first_person_configure` | `CyFirstPersonDesc`: the look's sensitivity and its multiplier with the sights up, the pitch limit, both lenses from the hip and with the sights up, the sights' half-life, the bob, the recoil spring and the view's share of it, `motion_reduction`, the weapon's offsets; `CY_FIRST_PERSON_INVERT_Y`. Every number checked against its range. A camera already configured keeps its state. OUT_OF_RANGE with every slot taken |
+| `first_person_input` | `CyFirstPersonInput`: the device's deltas (no sensitivity — it is applied once, in the camera), the speed, `CY_FIRST_PERSON_AIMING` and `CY_FIRST_PERSON_AIRBORNE`. Inputs between two frames add their look; the host applies them in `FirstPersonAdapter::advance` |
+| `first_person_kick`, `first_person_reset` | an impulse into the recoil spring; a cut |
+| `first_person_state` | `CyFirstPersonState`: the control look, the recoil, the sights, both lenses now, the bob, the weapon in the eye's space, the view and weapon aims |
+| `first_person_release` | the behaviours and the weapon view taken away |
+| `viewmodel_configure`, `viewmodel_get` | `CyViewmodelDesc`: the layers (zero is off), the lens (`fov` zero follows the sights), the near and far planes, the depth fraction, and `CY_VIEWMODEL_IGNORE_SHADOWS` / `CAST_SHADOWS` / `CONTACT_SHADOWS` |
+
+Tests: `unit.abi` (`test_game_first_person.cpp` against a fake backend: the phase rule, UNAVAILABLE,
+every range and flag, `struct_size` both ways; `test_layout.cpp`: the 1.13 layouts; the 1.13 table
+shape) and `integration.game_backend_first_person` (the real behaviours through the table). See
+[the guide](../../docs/guides/first-person-weapon-view.md).
+
 ## Reload while the runtime is live
 
 `include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved

@@ -27,30 +27,39 @@ public struct FirstPersonSettings: Equatable, Sendable {
     public var lookSensitivity: Float = 0.0022
     /// Its multiplier with the sights fully up.
     public var aimSensitivity: Float = 0.7
+    /// Pushing the mouse forward looks down.
     public var invertY: Bool = false
     /// The pitch is clamped to plus or minus this, radians.
     public var pitchLimit: Float = 1.553_343
-    /// The world's vertical field of view from the hip and with the sights up, radians.
+    /// The world's vertical field of view from the hip, radians.
     public var hipFieldOfView: Float = 1.308_997
+    /// The world's vertical field of view with the sights up, radians.
     public var aimFieldOfView: Float = 0.959_931
-    /// The weapon view's.
+    /// The weapon view's vertical field of view from the hip, radians.
     public var hipWeaponFieldOfView: Float = 0.959_931
+    /// The weapon view's vertical field of view with the sights up, radians.
     public var aimWeaponFieldOfView: Float = 0.698_132
     /// Seconds the sights take to come half way.
     public var aimHalfLife: Float = 0.06
-    /// Metres walked a full bob cycle, the bob's height and sway at the reference speed.
+    /// Metres walked a full bob cycle: the bob follows distance, not time.
     public var bobStride: Float = 1.6
+    /// How far the eye rises and falls at the reference speed, metres.
     public var bobVertical: Float = 0.03
+    /// How far the eye sways at the reference speed, metres.
     public var bobLateral: Float = 0.02
+    /// The speed the bob's sizes are given at, metres a second; faster bobs more.
     public var bobReferenceSpeed: Float = 4.0
-    /// The recoil spring: its frequency in hertz, its damping ratio, the view's share of it.
+    /// The recoil spring's frequency, hertz: higher recovers faster.
     public var recoilFrequency: Float = 6.0
+    /// The recoil spring's damping ratio: below one it springs past the aim and settles.
     public var recoilDamping: Float = 0.75
+    /// The share of the recoil the view takes; the weapon turns by the rest.
     public var recoilCameraShare: Float = 0.6
     /// Accessibility: one leaves no bob and no view recoil.
     public var motionReduction: Float = 0
-    /// The weapon in the eye's space (-Z ahead), from the hip and with the sights up.
+    /// Where the weapon is held from the hip, in the eye's space (-Z ahead), metres.
     public var hipOffset = Vec3(x: 0.2, y: -0.2, z: -0.35)
+    /// Where the weapon is held with the sights up: under the eye, so the sight line is the view's.
     public var aimOffset = Vec3(x: 0, y: -0.07, z: -0.28)
 
     /// The engine's defaults.
@@ -89,7 +98,9 @@ public struct WeaponView: Equatable, Sendable {
     public var layers: UInt32
     /// Vertical, radians; nil follows the first-person camera's sights.
     public var fieldOfView: Float?
+    /// Metres: a centimetre, so a weapon pressed to the eye is still drawn.
     public var nearPlane: Float
+    /// Metres, beyond the near plane: the weapon view is culled against it.
     public var farPlane: Float
     /// The slice of the depth range nearest the eye it takes.
     public var depthFraction: Float
@@ -137,7 +148,8 @@ public struct WeaponView: Equatable, Sendable {
         out.near_plane = nearPlane
         out.far_plane = farPlane
         out.depth_fraction = depthFraction
-        out.flags = (receivesShadows ? 0 : CY_VIEWMODEL_IGNORE_SHADOWS)
+        out.flags =
+            (receivesShadows ? 0 : CY_VIEWMODEL_IGNORE_SHADOWS)
             | (castsShadows ? CY_VIEWMODEL_CAST_SHADOWS : 0)
             | (contactShadows ? CY_VIEWMODEL_CONTACT_SHADOWS : 0)
         return out
@@ -146,22 +158,25 @@ public struct WeaponView: Equatable, Sendable {
 
 /// What a first-person camera's last frame produced.
 public struct FirstPersonState: Equatable, Sendable {
-    /// The look the player controls — the control aim — recoil excluded, radians.
+    /// The look the player controls — the control aim — recoil excluded: turning right, radians.
     public var yaw: Float
+    /// The control aim's pitch, up, radians.
     public var pitch: Float
     /// The recoil spring's displacement: pitch and yaw.
     public var recoil: Vec2
     /// 0 at the hip, 1 with the sights fully up.
     public var aim: Float
-    /// The world's and the weapon view's vertical fields of view now.
+    /// The world's vertical field of view now, radians.
     public var fieldOfView: Float
+    /// The weapon view's vertical field of view now, radians.
     public var weaponFieldOfView: Float
     /// The bob, in the eye's space.
     public var eyeOffset: Vec3
     /// The weapon in the eye's space.
     public var weapon: Pose
-    /// Where the camera looks and where the weapon points, in the world.
+    /// Where the camera looks, in the world: the control aim plus the view's share of the recoil.
     public var viewAim: Vec3
+    /// Where the weapon points, in the world: where shots go.
     public var weaponAim: Vec3
 
     /// From the ABI's spelling.
@@ -205,12 +220,14 @@ public struct FirstPersonCamera: Hashable, Sendable {
 
     /// This frame's input: the mouse's counts (no sensitivity: it is applied once, here), the speed
     /// over the ground, the sights held, off the ground. Several calls in one frame add their look.
-    public func feed(look: Vec2, speed: Float, aiming: Bool = false, airborne: Bool = false) throws {
+    public func feed(look: Vec2, speed: Float, aiming: Bool = false, airborne: Bool = false) throws
+    {
         var raw = CyFirstPersonInput()
         raw.struct_size = UInt32(MemoryLayout<CyFirstPersonInput>.size)
         raw.look = look.tuple
         raw.move_speed = speed
-        raw.flags = (aiming ? CY_FIRST_PERSON_AIMING : 0) | (airborne ? CY_FIRST_PERSON_AIRBORNE : 0)
+        raw.flags =
+            (aiming ? CY_FIRST_PERSON_AIMING : 0) | (airborne ? CY_FIRST_PERSON_AIRBORNE : 0)
         try GameServices.engine().firstPersonInput(camera: camera.raw, input: &raw)
     }
 

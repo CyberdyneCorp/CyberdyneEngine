@@ -1112,6 +1112,31 @@ accepted from `onUpdate` and refused from `onFixedUpdate`.
 
 A full pool throws `.outOfRange`, a light that ended `.notFound`.
 
+### The first-person camera and the weapon view (ABI 1.13)
+
+`FirstPerson.swift` drives a camera's first-person behaviours and the weapon view drawn beside it
+(see [the first-person weapon view guide](first-person-weapon-view.md)). The camera is presentation:
+every call is accepted from `onUpdate` and refused from `onFixedUpdate`.
+
+```swift
+let eye = try FirstPersonCamera(camera: player, settings: FirstPersonSettings())
+try eye.setWeaponView(WeaponView(layers: 1 << 5))   // the arms and the weapon's layer
+// onUpdate:
+try eye.feed(look: mouseDelta, speed: speed, aiming: aimHeld, airborne: !grounded)
+if fired { try eye.kick(pitch: 3.0) }
+let state = try eye.state()
+```
+
+| | What |
+|---|---|
+| `FirstPersonCamera(camera:settings:)`, `configure(_:)` | give a camera behaviours, or new settings keeping its look |
+| `feed(look:speed:aiming:airborne:)` | the mouse's counts — no sensitivity on the binding: it is applied once, in the camera — the speed over the ground and the flags; several calls in one frame add their look |
+| `kick(pitch:yaw:)`, `reset(yaw:pitch:)` | a shot's impulse into the recoil spring; a cut |
+| `state()` | `FirstPersonState`: the control look, the recoil, the sights, both lenses, the bob, the weapon's pose in the eye, the view and weapon aims |
+| `setWeaponView(_:)`, `weaponView()` | `WeaponView`: layers, lens, near and far planes, depth fraction, receives, casts and contact shadows |
+
+A camera with no behaviours throws `.notFound`; a setting out of range `.invalidArgument`.
+
 ### Fog of war (ABI 1.10)
 
 `FogOfWar.swift` gives entities sight and asks what a team sees (see [the fog of war
