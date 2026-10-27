@@ -311,6 +311,11 @@ void CharacterController::update_ground(Vec3& position, f32 delta) noexcept {
         return;
     }
 
+    // The body the character stood on last step, before this one replaces it: a platform's motion
+    // is the SAME body's movement across the step, and stepping from one body onto another — a
+    // tread of a stair, the next slab — is not a platform moving the distance between their
+    // origins in one tick.
+    const BodyHandle previous_ground = state_.ground_body;
     state_.ground_normal = ground.normal;
     state_.ground_body = ground.body;
     state_.ground_material = ground.material;
@@ -334,7 +339,7 @@ void CharacterController::update_ground(Vec3& position, f32 delta) noexcept {
     // the caller set, but a body animated by writing transforms has none, and the character has to
     // follow both. Differencing the ground body's transform across one step covers each.
     const Expected<BodyState, Error> ground_state = server_->body_state(ground.body);
-    if (ground_state && had_ground_ && state_.ground_body == ground.body && delta > 0.0f) {
+    if (ground_state && had_ground_ && previous_ground == ground.body && delta > 0.0f) {
         const Vec3 moved =
             ground_state->transform.translation - previous_ground_transform_.translation;
         state_.platform_velocity = moved / delta;

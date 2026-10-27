@@ -9,7 +9,10 @@
 
 #include "fixture.h"
 
+#include <cy/core/math/scalar.h>
 #include <cy/servers/physics/character.h>
+
+#include <cmath>
 
 using namespace cy;
 using namespace cy::physics;
@@ -222,6 +225,44 @@ CY_TEST_CASE("a character on a moving platform is carried by it") {
     // a body it also sweeps against; what the requirement asks is that it moved WITH the platform
     // rather than being left behind.
     CY_CHECK_GT(character.state().transform.translation.x, 0.5f);
+}
+
+CY_TEST_CASE("walking from one static body onto another is not a ride on a platform") {
+    // Two slabs side by side, their centres ten metres apart, both still. The character walks off
+    // the first onto the second. A platform's velocity is how far the ground body under the
+    // character moved over a step — measured against the SAME body's previous transform. Measured
+    // against the previous ground's, the crossing reads as a platform that moved ten metres in a
+    // tick: 600 m/s, which throws the character ten metres on, and back when it steps across
+    // again. A stair is exactly this: every tread is a body of its own.
+    const Fixture fixture;
+    (void)fixture.body(fixture.box(Vec3{5.0f, 0.5f, 5.0f}), MotionType::Static,
+                       Vec3{0.0f, -0.5f, 0.0f});
+    (void)fixture.body(fixture.box(Vec3{5.0f, 0.5f, 5.0f}), MotionType::Static,
+                       Vec3{10.0f, -0.5f, 0.0f});
+    CharacterController character(*fixture.server, fixture.world);
+    CharacterDescription description;
+    description.start = Transform::from_translation(Vec3{3.0f, 0.9f, 0.0f});
+    CY_REQUIRE(character.create(description).has_value());
+    walk(character, Vec3{}, 10);
+    CY_REQUIRE_EQ(character.state().ground, GroundState::Grounded);
+
+    CharacterInput input;
+    input.desired_velocity = Vec3{2.0f, 0.0f, 0.0f};
+    f32 previous = character.state().transform.translation.x;
+    f32 largest_step = 0.0f;
+    f32 fastest_platform = 0.0f;
+    for (u32 index = 0; index < 120; ++index) {
+        CY_REQUIRE(character.move(kStep, input).has_value());
+        const f32 x = character.state().transform.translation.x;
+        largest_step = math::max(largest_step, std::fabs(x - previous));
+        fastest_platform = math::max(fastest_platform, length(character.state().platform_velocity));
+        previous = x;
+    }
+    // Two metres a second for two seconds: from 3 to 7, across the seam at 5, one step at a time.
+    CY_CHECK_NEAR(previous, 7.0f, 0.2f);
+    CY_CHECK_LT(largest_step, (2.0f * kStep) + 1e-3f);
+    CY_CHECK_LT(fastest_platform, 1e-3f);
+    CY_CHECK_EQ(character.state().ground, GroundState::Grounded);
 }
 
 CY_TEST_CASE("a floating character ignores gravity and moves in six degrees of freedom") {
