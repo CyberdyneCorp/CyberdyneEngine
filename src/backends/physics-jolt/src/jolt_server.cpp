@@ -52,6 +52,7 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Constraints/ContactConstraintManager.h>
 #include <Jolt/Physics/SoftBody/SoftBodyCreationSettings.h>
 #include <Jolt/Physics/SoftBody/SoftBodyMotionProperties.h>
 #include <Jolt/Physics/Vehicle/WheeledVehicleController.h>
@@ -286,14 +287,25 @@ struct JoltWorld final : public JPH::ContactListener {
     static constexpr JPH::uint kMaxJoltBarriers = 8;
 
     /// The temp arena, sized from the world's own capacities rather than from a constant, so a
-    /// small test world does not reserve the ten megabytes a full scene needs. The multipliers are
-    /// Jolt's rough per-object costs with generous headroom; the floor is what a world with no
-    /// bodies still needs for the broad-phase update.
+    /// small test world does not reserve the ten megabytes a full scene needs. The body and pair
+    /// multipliers are Jolt's rough per-object costs with generous headroom; the floor is what a
+    /// world with no bodies still needs for the broad-phase update.
+    ///
+    /// THE CONTACT TERM IS JOLT'S OWN, NOT AN ESTIMATE. Every step `PrepareConstraintBuffer`
+    /// allocates `contact_constraint_capacity × ContactConstraintManager::cMaxConstraintSize` from
+    /// this arena in one block, plus a word of offset a constraint — the WHOLE capacity, however
+    /// few contacts there are. At 256 bytes a constraint the term was smaller than that block, and
+    /// a world whose bodies term did not make up the difference (128 bodies at the default 2048
+    /// contacts) had its first contact step's allocation fail inside Jolt and crash on the null
+    /// buffer. `integration.physics_jolt`'s "a small world's first contact" holds it.
     [[nodiscard]] static usize temp_arena_bytes(const WorldDescription& description) noexcept {
         const usize floor = 1U << 20U;  // 1 MiB
-        const usize sized = (static_cast<usize>(description.body_capacity) * 512U) +
-                            (static_cast<usize>(description.body_pair_capacity) * 128U) +
-                            (static_cast<usize>(description.contact_constraint_capacity) * 256U);
+        const usize per_contact =
+            JPH::ContactConstraintManager::cMaxConstraintSize + sizeof(JPH::uint32) + 64U;
+        const usize sized =
+            (static_cast<usize>(description.body_capacity) * 512U) +
+            (static_cast<usize>(description.body_pair_capacity) * 128U) +
+            (static_cast<usize>(description.contact_constraint_capacity) * per_contact);
         return sized > floor ? sized : floor;
     }
 
