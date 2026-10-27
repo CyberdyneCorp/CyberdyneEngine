@@ -13,7 +13,6 @@
 #include <cy/test/test.h>
 
 #include <cmath>
-#include <cstring>
 
 using cy::f32;
 using cy::Mat4;
@@ -33,6 +32,16 @@ constexpr cy::render::LayerMask kWeaponLayer = 1U << 4U;
 constexpr u32 kWidth = 320;
 constexpr u32 kHeight = 180;
 constexpr f32 kAspect = static_cast<f32>(kWidth) / static_cast<f32>(kHeight);
+
+/// Every element of two matrices the same float: what "the same matrix" means for a copy.
+[[nodiscard]] bool same(const Mat4& a, const Mat4& b) {
+    for (u32 column = 0; column < 4; ++column) {
+        if (!(a.columns[column] == b.columns[column])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 /// Reversed-Z NDC depth of a view-space point through `projection`.
 [[nodiscard]] f32 ndc_depth(const Mat4& projection, Vec3 view_point) {
@@ -150,22 +159,19 @@ CY_TEST_CASE("last frame's lens is the weapon's previous projection, and a reset
     const Mat4 rotation = Mat4::identity();
     const ViewmodelMatrices first = frame.advance(settings, kAspect, rotation, temporal);
     // The first frame has no last lens: the two are one.
-    CY_CHECK(std::memcmp(&first.relative_to_clip, &first.previous_relative_to_clip, sizeof(Mat4)) ==
-             0);
+    CY_CHECK(same(first.relative_to_clip, first.previous_relative_to_clip));
 
     temporal.begin_frame(view);
     settings.vertical_fov_radians = 0.7F;  // the sights come up
     const ViewmodelMatrices second = frame.advance(settings, kAspect, rotation, temporal);
     const Mat4 old_lens = viewmodel_projection(weapon_settings(), kAspect);
-    CY_CHECK(std::memcmp(&second.previous_relative_to_clip, &old_lens, sizeof(Mat4)) == 0);
-    CY_CHECK(std::memcmp(&second.relative_to_clip, &second.previous_relative_to_clip,
-                         sizeof(Mat4)) != 0);
+    CY_CHECK(same(second.previous_relative_to_clip, old_lens));
+    CY_CHECK(!same(second.relative_to_clip, second.previous_relative_to_clip));
 
     frame.reset();
     temporal.begin_frame(view);
     const ViewmodelMatrices third = frame.advance(settings, kAspect, rotation, temporal);
-    CY_CHECK(std::memcmp(&third.relative_to_clip, &third.previous_relative_to_clip, sizeof(Mat4)) ==
-             0);
+    CY_CHECK(same(third.relative_to_clip, third.previous_relative_to_clip));
 }
 
 CY_TEST_CASE("the view block carries the rows, the world's jitter and the contact policy") {

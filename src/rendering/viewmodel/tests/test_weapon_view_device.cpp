@@ -34,6 +34,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 #include <vector>
 
 using namespace cy;
@@ -427,7 +428,7 @@ CY_TEST_CASE("motion vectors: none for a weapon a turning camera carries, its le
     CY_REQUIRE(bench.mask(mask));
 
     // THE CAMERA TURNS FOUR DEGREES AND STEPS FORWARD, carrying the weapon.
-    const f32 turn = 4.0F * 3.14159265F / 180.0F;
+    const f32 turn = 4.0F * std::numbers::pi_v<f32> / 180.0F;
     bench.scene().set_camera(Vec3{0.0F, 0.0F, -0.05F}, Vec3{std::sin(turn), 0.0F, -std::cos(turn)});
     CY_REQUIRE(bench.frame());
     f32 weapon_worst = 0.0F;
@@ -488,8 +489,8 @@ CY_TEST_CASE("motion vectors: none for a weapon a turning camera carries, its le
         // The prepass's convention: (previous - current) / 2 in x, (current - previous) / 2 in y.
         const f32 expected_x = ((ndc_x * k) - ndc_x) * 0.5F;
         const f32 expected_y = (ndc_y - (ndc_y * k)) * 0.5F;
-        worst_error = std::max(worst_error, std::max(std::fabs(motion.x - expected_x),
-                                                     std::fabs(motion.y - expected_y)));
+        worst_error = std::max(
+            {worst_error, std::fabs(motion.x - expected_x), std::fabs(motion.y - expected_y)});
         ++checked;
     }
     std::fprintf(stderr, "the sights up: %u weapon texels, the worst error %.6f\n", checked,

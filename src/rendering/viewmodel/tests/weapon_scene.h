@@ -373,22 +373,25 @@ inline Status scene_before_assemble(RenderGraph& graph, rendering::assembly::Ass
         // post-process, through the recorder's own extension seam.
         const FramePassKind kinds[4] = {FramePassKind::Prepare, FramePassKind::DepthPrepass,
                                         FramePassKind::Opaque, FramePassKind::PostProcess};
-        for (u32 index = 0; index < 4U; ++index) {
+        for (const FramePassKind kind : kinds) {
             const ExtensionRecordFn stamp = [](const ExtensionContext& context,
                                                void* data) noexcept {
                 auto* timed = static_cast<WeaponRun*>(data);
-                const u32 at = context.kind == FramePassKind::Prepare        ? 0U
-                               : context.kind == FramePassKind::DepthPrepass ? 1U
-                               : context.kind == FramePassKind::Opaque       ? 2U
-                                                                             : 3U;
+                u32 at = 3U;
+                if (context.kind == FramePassKind::Prepare) {
+                    at = 0U;
+                } else if (context.kind == FramePassKind::DepthPrepass) {
+                    at = 1U;
+                } else if (context.kind == FramePassKind::Opaque) {
+                    at = 2U;
+                }
                 if (at == 0U) {
                     context.commands->reset_queries(timed->timer, 0, 4);
                 }
                 context.commands->write_timestamp(timed->timer, at);
                 timed->timed = true;
             };
-            if (Status added =
-                    scene.recorder().add_extension(PassExtension{kinds[index], stamp, run});
+            if (Status added = scene.recorder().add_extension(PassExtension{kind, stamp, run});
                 !added) {
                 return added;
             }

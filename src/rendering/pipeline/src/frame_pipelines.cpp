@@ -255,8 +255,12 @@ Status FramePipelines::create_modules(rhi::Device& device) noexcept {
     };
     const bool metal = device.capabilities().native_shader_format() == rhi::ShaderFormat::Msl;
     const usize skinned_count = setup_.skinned ? sizeof(skinned) / sizeof(skinned[0]) : 0U;
-    const usize viewmodel_count = !setup_.viewmodel ? 0U : (setup_.skinned ? 4U : 2U);
-    const Request* selected[sizeof(requests) / sizeof(requests[0]) + 2U + 4U] = {};
+    // The rigid pair, and the skinned pair after it only with skinned draws.
+    usize viewmodel_count = 0;
+    if (setup_.viewmodel) {
+        viewmodel_count = setup_.skinned ? 4U : 2U;
+    }
+    const Request* selected[(sizeof(requests) / sizeof(requests[0])) + 2U + 4U] = {};
     usize total = 0;
     for (const Request& request : requests) {
         selected[total++] = &request;
@@ -446,10 +450,11 @@ Status FramePipelines::create_viewmodel_pipelines(rhi::Device& device,
                 continue;
             }
             const bool depth = kind == FramePipelineKind::Depth;
-            const rhi::ShaderModuleHandle vertex =
-                skinned
-                    ? (depth ? skinned_viewmodel_depth_vertex_ : skinned_viewmodel_forward_vertex_)
-                    : (depth ? viewmodel_depth_vertex_ : viewmodel_forward_vertex_);
+            const rhi::ShaderModuleHandle rigid =
+                depth ? viewmodel_depth_vertex_ : viewmodel_forward_vertex_;
+            const rhi::ShaderModuleHandle deformed =
+                depth ? skinned_viewmodel_depth_vertex_ : skinned_viewmodel_forward_vertex_;
+            const rhi::ShaderModuleHandle vertex = skinned ? deformed : rigid;
             auto created =
                 make_geometry_pipeline(device, setup, kind, vertex, layout_, false, {}, skinned);
             if (!created) {
