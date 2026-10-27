@@ -31,13 +31,13 @@ consteval MslText<(Sizes + ...) - sizeof...(Sizes) + 1> join_msl(const char (&..
 
 }  // namespace detail
 
-/// DepthVertex.metal, 7803 bytes.
+/// DepthVertex.metal, 8137 bytes.
 inline constexpr char kFrameDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 334 "src/rendering/shaders/cy/frame.slang"
+#line 363 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -47,7 +47,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 414
+#line 443
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -112,6 +112,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -130,7 +139,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -144,7 +153,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 343
+#line 372
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -157,7 +166,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 388
+#line 417
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -172,7 +181,7 @@ struct KernelContext_0
 };
 
 
-#line 398 "src/rendering/shaders/cy/frame.slang"
+#line 427 "src/rendering/shaders/cy/frame.slang"
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -180,34 +189,34 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 558
+#line 587
 float3 previousRelativeOf_0(uint slot_0, const CyInstanceTransform_0 thread* current_0, float3 previousModelPosition_0, KernelContext_0 thread* kernelContext_1)
 {
     uint _S3 = kernelContext_1->cyFrameView_0->frame_0->motionControl_0.x;
 
-#line 560
+#line 589
     CyInstanceTransform_0 _S4;
     if(_S3 == 4294967295U)
     {
 
-#line 561
+#line 590
         _S4 = *current_0;
 
-#line 561
+#line 590
     }
     else
     {
 
-#line 561
+#line 590
         _S4 = kernelContext_1->cyFrameView_0->instances_0[_S3 + slot_0];
 
-#line 561
+#line 590
     }
 
-#line 561
+#line 590
     thread CyInstanceTransform_0 _S5 = _S4;
 
-#line 561
+#line 590
     float3 _S6 = transformToRelative_0(&_S5, previousModelPosition_0);
     return _S6;
 }
@@ -236,14 +245,14 @@ float3 decodeOctahedral_0(float2 encoded_0)
 }
 
 
-#line 423 "src/rendering/shaders/cy/frame.slang"
+#line 452 "src/rendering/shaders/cy/frame.slang"
 float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
 {
     return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
 }
 
 
-#line 425
+#line 454
 struct cyDepthVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -253,7 +262,7 @@ struct cyDepthVertex_Result_0
 };
 
 
-#line 425
+#line 454
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
@@ -262,7 +271,7 @@ struct vertexInput_0
 };
 
 
-#line 541
+#line 570
 struct CyDepthVertex_0
 {
     float4 position_1;
@@ -272,40 +281,40 @@ struct CyDepthVertex_0
 };
 
 
-#line 541
+#line 570
 [[vertex]] cyDepthVertex_Result_0 cyDepthVertex(vertexInput_0 _S13 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
 {
 
-#line 541
+#line 570
     thread KernelContext_0 kernelContext_2;
 
-#line 541
+#line 570
     (&kernelContext_2)->cyFrameView_0 = cyFrameView_1;
 
-#line 541
+#line 570
     (&kernelContext_2)->cyDraw_0 = cyDraw_1;
 
-#line 569
+#line 598
     CyDrawInstance_0 _S14 = cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0];
     CyInstanceTransform_0 _S15 = cyFrameView_1->instances_0[_S14.instanceSlot_0];
 
-#line 570
+#line 599
     thread CyInstanceTransform_0 _S16 = _S15;
 
-#line 570
+#line 599
     float3 _S17 = transformToRelative_0(&_S16, _S13.modelPosition_1);
     thread CyDepthVertex_0 output_0;
 
-#line 571
+#line 600
     float4 _S18 = transformToClip_0(_S17, &kernelContext_2);
 
     (&output_0)->position_1 = _S18;
     (&output_0)->currentClip_1 = _S18;
 
-#line 574
+#line 603
     thread CyInstanceTransform_0 _S19 = _S15;
 
-#line 574
+#line 603
     float3 _S20 = previousRelativeOf_0(_S14.instanceSlot_0, &_S19, _S13.previousModelPosition_1, &kernelContext_2);
     float4 _S21 = float4(_S20, 1.0);
     (&output_0)->previousClip_1 = float4(dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow0_0, _S21), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow1_0, _S21), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow2_0, _S21), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow3_0, _S21));
@@ -314,37 +323,37 @@ struct CyDepthVertex_0
 
     float3 _S22 = decodeOctahedral_0(_S13.packedNormal_0.xy);
 
-#line 580
+#line 609
     thread CyInstanceTransform_0 _S23 = _S15;
 
-#line 580
+#line 609
     float3 _S24 = rotateToRelative_0(&_S23, _S22);
 
-#line 580
+#line 609
     (&output_0)->normal_2 = _S24;
 
-#line 580
+#line 609
     thread cyDepthVertex_Result_0 _S25;
 
-#line 580
+#line 609
     (&_S25)->position_0 = output_0.position_1;
 
-#line 580
+#line 609
     (&_S25)->normal_1 = output_0.normal_2;
 
-#line 580
+#line 609
     (&_S25)->currentClip_0 = output_0.currentClip_1;
 
-#line 580
+#line 609
     (&_S25)->previousClip_0 = output_0.previousClip_1;
 
-#line 580
+#line 609
     return _S25;
 }
 
 )cy_msl";
 
-/// DepthFragment.metal, 4290 bytes.
+/// DepthFragment.metal, 4624 bytes.
 inline constexpr char kFrameDepthFragmentMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -384,7 +393,7 @@ float2 encodeOctahedral_0(float3 normal_0)
 }
 
 
-#line 584 "src/rendering/shaders/cy/frame.slang"
+#line 613 "src/rendering/shaders/cy/frame.slang"
 struct CyDepthOutput_0
 {
     float4 normalRoughness_0 [[color(0)]];
@@ -392,7 +401,7 @@ struct CyDepthOutput_0
 };
 
 
-#line 584
+#line 613
 struct pixelInput_0
 {
     float3 normal_1 [[user(TEXCOORD)]];
@@ -458,6 +467,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -476,7 +494,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -511,13 +529,13 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 591
+#line 620
 [[fragment]] CyDepthOutput_0 cyDepthFragment(pixelInput_0 _S4 [[stage_in]], float4 position_0 [[position]], CyFrameViewSet_default_0 constant* cyFrameView_0 [[buffer(1)]])
 {
     thread CyDepthOutput_0 output_0;
     (&output_0)->normalRoughness_0 = float4(encodeOctahedral_0(normalize(_S4.normal_1)), 1.0, 1.0);
 
-#line 602
+#line 631
     float2 _S5 = _S4.currentClip_0.xy / float2(_S4.currentClip_0.w)  - cyFrameView_0->frame_0->temporalJitter_0.xy * float2(2.0)  * cyFrameView_0->frame_0->extentAndInverse_0.zw;
 
     float2 _S6 = _S4.previousClip_0.xy / float2(_S4.previousClip_0.w) ;
@@ -528,13 +546,13 @@ struct CyFrameViewSet_default_0
 
 )cy_msl";
 
-/// ShadowVertex.metal, 4879 bytes.
+/// ShadowVertex.metal, 5213 bytes.
 inline constexpr char kFrameShadowVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 334 "src/rendering/shaders/cy/frame.slang"
+#line 363 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -544,7 +562,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 414
+#line 443
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -609,6 +627,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -627,7 +654,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -641,7 +668,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 343
+#line 372
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -654,7 +681,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 388
+#line 417
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -669,7 +696,7 @@ struct KernelContext_0
 };
 
 
-#line 405 "src/rendering/shaders/cy/frame.slang"
+#line 434 "src/rendering/shaders/cy/frame.slang"
 float4 transformToShadowClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -677,60 +704,60 @@ float4 transformToShadowClip_0(float3 relative_0, KernelContext_0 thread* kernel
 }
 
 
-#line 408
+#line 437
 struct cyShadowVertex_Result_0
 {
     float4 position_0 [[position]];
 };
 
 
-#line 408
+#line 437
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
 };
 
 
-#line 516
+#line 545
 struct CyShadowVertex_0
 {
     float4 position_1;
 };
 
 
-#line 516
+#line 545
 [[vertex]] cyShadowVertex_Result_0 cyShadowVertex(vertexInput_0 _S3 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
 {
 
-#line 516
+#line 545
     thread KernelContext_0 kernelContext_1;
 
-#line 516
+#line 545
     (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
 
-#line 516
+#line 545
     (&kernelContext_1)->cyDraw_0 = cyDraw_1;
 
-#line 526
+#line 555
     thread CyShadowVertex_0 output_0;
 
-#line 526
+#line 555
     thread CyInstanceTransform_0 _S4 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
 
-#line 526
+#line 555
     float3 _S5 = transformToRelative_0(&_S4, _S3.modelPosition_1);
 
-#line 526
+#line 555
     float4 _S6 = transformToShadowClip_0(_S5, &kernelContext_1);
     (&output_0)->position_1 = _S6;
 
-#line 527
+#line 556
     thread cyShadowVertex_Result_0 _S7;
 
-#line 527
+#line 556
     (&_S7)->position_0 = output_0.position_1;
 
-#line 527
+#line 556
     return _S7;
 }
 
@@ -749,11 +776,11 @@ struct pixelOutput_0
 };
 
 
-#line 532 "src/rendering/shaders/cy/frame.slang"
+#line 561 "src/rendering/shaders/cy/frame.slang"
 [[fragment]] pixelOutput_0 cyShadowFragment(float4 position_0 [[position]])
 {
 
-#line 532
+#line 561
     pixelOutput_0 _S1 = { position_0.z };
 
     return _S1;
@@ -761,13 +788,13 @@ struct pixelOutput_0
 
 )cy_msl";
 
-/// ForwardVertex.metal, 6929 bytes.
+/// ForwardVertex.metal, 7263 bytes.
 inline constexpr char kFrameForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 334 "src/rendering/shaders/cy/frame.slang"
+#line 363 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -777,7 +804,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 414
+#line 443
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -842,6 +869,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -860,7 +896,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -874,7 +910,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 343
+#line 372
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -887,7 +923,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 388
+#line 417
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -902,7 +938,7 @@ struct KernelContext_0
 };
 
 
-#line 398 "src/rendering/shaders/cy/frame.slang"
+#line 427 "src/rendering/shaders/cy/frame.slang"
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -933,14 +969,14 @@ float3 decodeOctahedral_0(float2 encoded_0)
 }
 
 
-#line 423 "src/rendering/shaders/cy/frame.slang"
+#line 452 "src/rendering/shaders/cy/frame.slang"
 float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
 {
     return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
 }
 
 
-#line 425
+#line 454
 struct cyForwardVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -952,7 +988,7 @@ struct cyForwardVertex_Result_0
 };
 
 
-#line 425
+#line 454
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
@@ -962,7 +998,7 @@ struct vertexInput_0
 };
 
 
-#line 612
+#line 641
 struct CyForwardVertex_0
 {
     float4 position_1;
@@ -974,32 +1010,32 @@ struct CyForwardVertex_0
 };
 
 
-#line 612
+#line 641
 [[vertex]] cyForwardVertex_Result_0 cyForwardVertex(vertexInput_0 _S9 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
 {
 
-#line 612
+#line 641
     thread KernelContext_0 kernelContext_1;
 
-#line 612
+#line 641
     (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
 
-#line 612
+#line 641
     (&kernelContext_1)->cyDraw_0 = cyDraw_1;
 
-#line 633
+#line 662
     CyInstanceTransform_0 _S10 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
 
     thread CyForwardVertex_0 output_0;
 
-#line 635
+#line 664
     thread CyInstanceTransform_0 _S11 = _S10;
 
-#line 635
+#line 664
     float3 _S12 = transformToRelative_0(&_S11, _S9.modelPosition_1);
     (&output_0)->relativePosition_1 = _S12;
 
-#line 636
+#line 665
     float4 _S13 = transformToClip_0(_S12, &kernelContext_1);
     (&output_0)->position_1 = _S13;
 
@@ -1007,53 +1043,53 @@ struct CyForwardVertex_0
 
     float3 _S14 = decodeOctahedral_0(_S9.packedNormal_0.xy);
 
-#line 641
+#line 670
     thread CyInstanceTransform_0 _S15 = _S10;
 
-#line 641
+#line 670
     float3 _S16 = rotateToRelative_0(&_S15, _S14);
 
-#line 641
+#line 670
     (&output_0)->normal_2 = _S16;
     (&output_0)->uv_2 = _S9.uv_1;
     (&output_0)->drawIndex_2 = cyDraw_1->drawIndex_0;
     (&output_0)->lightmapUv_2 = _S9.lightmapUv_1;
 
-#line 644
+#line 673
     thread cyForwardVertex_Result_0 _S17;
 
-#line 644
+#line 673
     (&_S17)->position_0 = output_0.position_1;
 
-#line 644
+#line 673
     (&_S17)->relativePosition_0 = output_0.relativePosition_1;
 
-#line 644
+#line 673
     (&_S17)->normal_1 = output_0.normal_2;
 
-#line 644
+#line 673
     (&_S17)->uv_0 = output_0.uv_2;
 
-#line 644
+#line 673
     (&_S17)->drawIndex_1 = output_0.drawIndex_2;
 
-#line 644
+#line 673
     (&_S17)->lightmapUv_0 = output_0.lightmapUv_2;
 
-#line 644
+#line 673
     return _S17;
 }
 
 )cy_msl";
 
-/// ForwardFragment.metal, 104233 bytes.
+/// ForwardFragment.metal, 107232 bytes.
 inline constexpr auto kFrameForwardFragmentMslText = detail::join_msl(
     R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 1273 "src/rendering/shaders/cy/frame.slang"
+#line 1342 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameFogVolume_0
 {
     uint slot_0;
@@ -1117,6 +1153,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -1135,7 +1180,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -1205,13 +1250,13 @@ struct KernelContext_0
 };
 
 
-#line 1276 "src/rendering/shaders/cy/frame.slang"
+#line 1345 "src/rendering/shaders/cy/frame.slang"
 float4 CyFrameFogVolume_texel_0(const CyFrameFogVolume_0 thread* this_0, int2 coordinate_0, KernelContext_0 thread* kernelContext_0)
 {
 
     int3 _S1 = int3(coordinate_0, int(0));
 
-#line 1279
+#line 1348
     return ((kernelContext_0->cyFrameGlobals_0->textures_0[this_0->slot_0]).read(vec<uint,2>(((_S1)).xy), uint(((_S1)).z)));
 }
 
@@ -1289,13 +1334,13 @@ struct CyFogAtPoint_0
 };
 
 
-#line 1276 "src/rendering/shaders/cy/frame.slang"
+#line 1345 "src/rendering/shaders/cy/frame.slang"
 float4 CyFrameFogVolume_texel_1(const CyFrameFogVolume_0 thread* this_1, int2 coordinate_1, KernelContext_0 thread* kernelContext_2)
 {
 
     int3 _S16 = int3(coordinate_1, int(0));
 
-#line 1279
+#line 1348
     return ((kernelContext_2->cyFrameGlobals_0->textures_0[this_1->slot_0]).read(vec<uint,2>(((_S16)).xy), uint(((_S16)).z)));
 }
 
@@ -1474,7 +1519,7 @@ CyFogAtPoint_0 cyFogAt_0(const CyFrameFogVolume_0 thread* source_1, float3 relat
 }
 
 
-#line 650 "src/rendering/shaders/cy/frame.slang"
+#line 679 "src/rendering/shaders/cy/frame.slang"
 struct CyFrameShadowMap_0
 {
     uint slot_1;
@@ -1516,18 +1561,18 @@ float2 shadowDiscTap_0(int index_2, int count_1, float cosine_0, float sine_0)
 }
 
 
-#line 381 "src/rendering/shaders/cy/frame.slang"
+#line 410 "src/rendering/shaders/cy/frame.slang"
 float4 cyMaterialSampleTextureLevel_0(uint bindlessIndex_0, float2 uv_0, float level_0, KernelContext_0 thread* kernelContext_4)
 {
     return ((kernelContext_4->cyFrameGlobals_0->textures_0[bindlessIndex_0]).sample((kernelContext_4->cyFrameGlobals_0->sampler_0), (uv_0), level((level_0))));
 }
 
 
-#line 653
+#line 682
 float CyFrameShadowMap_storedDepth_0(const CyFrameShadowMap_0 thread* this_2, float2 uv_1, KernelContext_0 thread* kernelContext_5)
 {
 
-#line 653
+#line 682
     float4 _S42 = cyMaterialSampleTextureLevel_0(this_2->slot_1, uv_1, 0.0, kernelContext_5);
 
     return _S42.x;
@@ -1610,11 +1655,11 @@ struct PcssBlockers_0
 };
 
 
-#line 653 "src/rendering/shaders/cy/frame.slang"
+#line 682 "src/rendering/shaders/cy/frame.slang"
 float CyFrameShadowMap_storedDepth_1(const CyFrameShadowMap_0 thread* this_3, float2 uv_3, KernelContext_0 thread* kernelContext_7)
 {
 
-#line 653
+#line 682
     float4 _S47 = cyMaterialSampleTextureLevel_0(this_3->slot_1, uv_3, 0.0, kernelContext_7);
 
     return _S47.x;
@@ -1696,11 +1741,11 @@ uint cyDecalWordFromTexel_0(float4 texel_2)
 }
 
 
-#line 1187 "src/rendering/shaders/cy/frame.slang"
+#line 1256 "src/rendering/shaders/cy/frame.slang"
 uint CyFrameDecalSource_word_0(uint index_6, KernelContext_0 thread* kernelContext_9)
 {
 
-#line 1187
+#line 1256
     float4 _S52 = cyMaterialSampleTextureLevel_0(kernelContext_9->cyFrameView_0->frame_0->decalControl_0.x, cyDecalWordUv_0(index_6, kernelContext_9->cyFrameView_0->frame_0->decalControl_0.y), 0.0, kernelContext_9);
 
 
@@ -1727,7 +1772,8 @@ float3 wordFloat3_0(uint index_7, KernelContext_0 thread* kernelContext_10)
     uint _S57 = CyFrameDecalSource_word_0(index_7 + 2U, kernelContext_10);
 
 #line 115
-    return float3(_S54, _S56, (as_type<float>((_S57))));
+)cy_msl",
+    R"cy_msl(    return float3(_S54, _S56, (as_type<float>((_S57))));
 }
 
 
@@ -1743,8 +1789,7 @@ float wordFloat_0(uint index_8, KernelContext_0 thread* kernelContext_11)
 
 
 #line 151 "src/rendering/shaders/cy/volumetric_fog.slang"
-)cy_msl",
-    R"cy_msl(float3 cyApplyFog_0(const CyFrameFogVolume_0 thread* source_4, float3 radiance_0, float3 relativePosition_1, KernelContext_0 thread* kernelContext_12)
+float3 cyApplyFog_0(const CyFrameFogVolume_0 thread* source_4, float3 radiance_0, float3 relativePosition_1, KernelContext_0 thread* kernelContext_12)
 {
 
 #line 151
@@ -1825,11 +1870,11 @@ struct CyDecalSurface_0
 };
 
 
-#line 1187 "src/rendering/shaders/cy/frame.slang"
+#line 1256 "src/rendering/shaders/cy/frame.slang"
 uint CyFrameDecalSource_word_1(uint index_9, KernelContext_0 thread* kernelContext_14)
 {
 
-#line 1187
+#line 1256
     float4 _S65 = cyMaterialSampleTextureLevel_0(kernelContext_14->cyFrameView_0->frame_0->decalControl_0.x, cyDecalWordUv_0(index_9, kernelContext_14->cyFrameView_0->frame_0->decalControl_0.y), 0.0, kernelContext_14);
 
 
@@ -1887,18 +1932,18 @@ float cyDecalDistanceFade_0(float metres_0, float start_0, float end_0)
 }
 
 
-#line 381 "src/rendering/shaders/cy/frame.slang"
+#line 410 "src/rendering/shaders/cy/frame.slang"
 float4 cyMaterialSampleTextureLevel_1(uint bindlessIndex_1, float2 uv_6, float level_1, KernelContext_0 thread* kernelContext_15)
 {
     return ((kernelContext_15->cyFrameGlobals_0->textures_0[bindlessIndex_1]).sample((kernelContext_15->cyFrameGlobals_0->sampler_0), (uv_6), level((level_1))));
 }
 
 
-#line 1192
+#line 1261
 float CyFrameDecalSource_mask_0(uint slot_2, float2 uv_7, KernelContext_0 thread* kernelContext_16)
 {
 
-#line 1192
+#line 1261
     float4 _S70 = cyMaterialSampleTextureLevel_1(slot_2, uv_7, 0.0, kernelContext_16);
 
     return _S70.w;
@@ -2460,7 +2505,8 @@ Surface_0 defaultSurface_0()
     (&surface_2)->albedo_1 = float3(0.5) ;
     (&surface_2)->normal_1 = float3(0.0, 0.0, 1.0);
     (&surface_2)->roughness_1 = 0.5;
-    (&surface_2)->metallic_1 = 0.0;
+)cy_msl",
+    R"cy_msl(    (&surface_2)->metallic_1 = 0.0;
     (&surface_2)->emission_1 = float3(0.0) ;
     (&surface_2)->occlusion_0 = 1.0;
     (&surface_2)->opacity_0 = 1.0;
@@ -2468,30 +2514,29 @@ Surface_0 defaultSurface_0()
 }
 
 
-#line 442 "src/rendering/shaders/cy/frame.slang"
+#line 471 "src/rendering/shaders/cy/frame.slang"
 float3 readMaterialFloat3_0(uint material_1, uint wordOffset_0, KernelContext_0 thread* kernelContext_21)
 {
-)cy_msl",
-    R"cy_msl(    uint _S159 = material_1 * kernelContext_21->cyFrameView_0->frame_0->counts_0.y + wordOffset_0;
+    uint _S159 = material_1 * kernelContext_21->cyFrameView_0->frame_0->counts_0.y + wordOffset_0;
     return float3((as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 1U]))), (as_type<float>((kernelContext_21->cyFrameView_0->materialWords_0[_S159 + 2U]))));
 }
 
 
-#line 437
+#line 466
 float readMaterialFloat_0(uint material_2, uint wordOffset_1, KernelContext_0 thread* kernelContext_22)
 {
     return (as_type<float>((kernelContext_22->cyFrameView_0->materialWords_0[material_2 * kernelContext_22->cyFrameView_0->frame_0->counts_0.y + wordOffset_1])));
 }
 
 
-#line 452
+#line 481
 uint readMaterialUint_0(uint material_3, uint wordOffset_2, KernelContext_0 thread* kernelContext_23)
 {
     return kernelContext_23->cyFrameView_0->materialWords_0[material_3 * kernelContext_23->cyFrameView_0->frame_0->counts_0.y + wordOffset_2];
 }
 
 
-#line 462
+#line 491
 uint materialTextureSlot_0(uint material_4, uint wordOffset_3, KernelContext_0 thread* kernelContext_24)
 {
     if(wordOffset_3 == 4294967295U)
@@ -2499,54 +2544,54 @@ uint materialTextureSlot_0(uint material_4, uint wordOffset_3, KernelContext_0 t
         return 4294967295U;
     }
 
-#line 466
+#line 495
     uint _S160 = readMaterialUint_0(material_4, wordOffset_3, kernelContext_24);
 
     return _S160;
 }
 
 
-#line 376
+#line 405
 float4 cyMaterialSampleTexture_0(uint bindlessIndex_2, float2 uv_10, KernelContext_0 thread* kernelContext_25)
 {
     return ((kernelContext_25->cyFrameGlobals_0->textures_0[bindlessIndex_2]).sample((kernelContext_25->cyFrameGlobals_0->sampler_0), (uv_10)));
 }
 
 
-#line 498
+#line 527
 Surface_0 surfaceOf_0(uint material_5, float3 tint_1, float2 uv_11, KernelContext_0 thread* kernelContext_26)
 {
     thread Surface_0 surface_3 = defaultSurface_0();
 
-#line 500
+#line 529
     float3 _S161 = readMaterialFloat3_0(material_5, kernelContext_26->cyFrameView_0->frame_0->materialOffsets_0.x, kernelContext_26);
     (&surface_3)->albedo_1 = _S161 * tint_1;
 
-#line 501
+#line 530
     float _S162 = readMaterialFloat_0(material_5, kernelContext_26->cyFrameView_0->frame_0->materialOffsets_0.y, kernelContext_26);
     (&surface_3)->roughness_1 = clamp(_S162, 0.01999999955296516, 1.0);
 
-#line 502
+#line 531
     float _S163 = readMaterialFloat_0(material_5, kernelContext_26->cyFrameView_0->frame_0->materialOffsets_0.z, kernelContext_26);
     (&surface_3)->metallic_1 = saturate(_S163);
 
-#line 503
+#line 532
     float3 _S164 = readMaterialFloat3_0(material_5, kernelContext_26->cyFrameView_0->frame_0->materialOffsets_0.w, kernelContext_26);
     (&surface_3)->emission_1 = _S164;
 
-#line 504
+#line 533
     uint _S165 = materialTextureSlot_0(material_5, kernelContext_26->cyFrameView_0->frame_0->materialTextures_0.x, kernelContext_26);
 
 
     if(_S165 != 4294967295U)
     {
 
-#line 507
+#line 536
         float4 _S166 = cyMaterialSampleTexture_0(_S165, uv_11, kernelContext_26);
 
         (&surface_3)->albedo_1 = (&surface_3)->albedo_1 * _S166.xyz;
 
-#line 507
+#line 536
     }
 
 
@@ -2555,22 +2600,22 @@ Surface_0 surfaceOf_0(uint material_5, float3 tint_1, float2 uv_11, KernelContex
 }
 
 
-#line 1296
+#line 1365
 float2 lightmapCoordinate_0(uint address_0, float2 uv2_0, KernelContext_0 thread* kernelContext_27)
 {
     float _S167 = float(kernelContext_27->cyFrameView_0->frame_0->lightmapLayout_0.x);
 
     float _S168 = float(kernelContext_27->cyFrameView_0->frame_0->lightmapLayout_0.z);
 
-#line 1300
+#line 1369
     float2 _S169 = float2(float(kernelContext_27->cyFrameView_0->frame_0->lightmapLayout_0.x / 128U)) ;
 
-#line 1306
+#line 1375
     return (float2(float(address_0 & 127U), float((address_0 >> 7U) & 127U)) * _S169 + float2(_S168)  + uv2_0 * (float2(float(((address_0 >> 14U) & 127U) + 1U), float(((address_0 >> 21U) & 127U) + 1U)) * _S169 - float2((2.0 * _S168)) ) + float2(0.0, float((address_0 >> 28U) - 1U) * _S167)) / float2(_S167, _S167 * float(kernelContext_27->cyFrameView_0->frame_0->lightmapLayout_0.y));
 }
 
 
-#line 1383
+#line 1452
 float3 lightmapDensityHue_0(bool lightmapped_0, float2 uv_12, float3 relativePosition_4, KernelContext_0 thread* kernelContext_28)
 {
     if(!lightmapped_0)
@@ -2582,30 +2627,30 @@ float3 lightmapDensityHue_0(bool lightmapped_0, float2 uv_12, float3 relativePos
     float2 _S170 = uv_12 * float2(float(kernelContext_28->cyFrameView_0->frame_0->lightmapLayout_0.x), float(kernelContext_28->cyFrameView_0->frame_0->lightmapLayout_0.x * kernelContext_28->cyFrameView_0->frame_0->lightmapLayout_0.y));
     float2 _S171 = dfdx(_S170);
 
-#line 1392
+#line 1461
     float2 _S172 = dfdy(_S170);
     float3 _S173 = dfdx(relativePosition_4);
     float3 _S174 = dfdy(relativePosition_4);
 
     float _S175 = clamp(log2(max(sqrt(dot(_S171, _S171) + dot(_S172, _S172)) / max(sqrt(dot(_S173, _S173) + dot(_S174, _S174)), 9.99999971718068537e-10), 9.99999971718068537e-10) / max((as_type<float>((kernelContext_28->cyFrameView_0->frame_0->lightmapDebug_0.y))), 9.99999997475242708e-07)), -1.0, 1.0);
 
-#line 1396
+#line 1465
     float3 _S176;
     if(_S175 < 0.0)
     {
 
-#line 1397
+#line 1466
         _S176 = mix(float3(0.10000000149011612, 0.89999997615814209, 0.20000000298023224), float3(0.10000000149011612, 0.25, 1.0), float3(- _S175) );
 
-#line 1397
+#line 1466
     }
     else
     {
 
-#line 1397
+#line 1466
         _S176 = mix(float3(0.10000000149011612, 0.89999997615814209, 0.20000000298023224), float3(1.0, 0.15000000596046448, 0.10000000149011612), float3(_S175) );
 
-#line 1397
+#line 1466
     }
 
     uint2 _S177 = uint2(floor(_S170));
@@ -2615,18 +2660,18 @@ float3 lightmapDensityHue_0(bool lightmapped_0, float2 uv_12, float3 relativePos
     else
     {
 
-#line 1400
+#line 1469
         _S176 = _S176 * float3(0.55000001192092896) ;
 
-#line 1400
+#line 1469
     }
 
-#line 1400
+#line 1469
     return _S176;
 }
 
 
-#line 1367
+#line 1436
 float frameExposureStops_0(KernelContext_0 thread* kernelContext_29)
 {
 
@@ -2634,7 +2679,7 @@ float frameExposureStops_0(KernelContext_0 thread* kernelContext_29)
 }
 
 
-#line 1367
+#line 1436
 float frameExposureStops_1(KernelContext_0 thread* kernelContext_30)
 {
 
@@ -2642,27 +2687,27 @@ float frameExposureStops_1(KernelContext_0 thread* kernelContext_30)
 }
 
 
-#line 1378
+#line 1447
 float3 lightmapDensityColour_0(bool lightmapped_1, float2 uv_13, float3 relativePosition_5, KernelContext_0 thread* kernelContext_31)
 {
 
-#line 1378
+#line 1447
     float3 _S178 = lightmapDensityHue_0(lightmapped_1, uv_13, relativePosition_5, kernelContext_31);
 
-#line 1378
+#line 1447
     float _S179 = frameExposureStops_1(kernelContext_31);
 
     return _S178 * float3(exp2(- _S179)) ;
 }
 
 
-#line 1405
+#line 1474
 float3 lightmapChartColour_0(bool lightmapped_2, uint address_1, float2 uv_14, KernelContext_0 thread* kernelContext_32)
 {
     if(!lightmapped_2)
     {
 
-#line 1407
+#line 1476
         float _S180 = frameExposureStops_0(kernelContext_32);
 
         return float3(0.18000000715255737, 0.18000000715255737, 0.18000000715255737) * float3(exp2(- _S180)) ;
@@ -2675,87 +2720,87 @@ float3 lightmapChartColour_0(bool lightmapped_2, uint address_1, float2 uv_14, K
     uint _S183 = uint(_S181) % 6U;
     float _S184 = 0.89999997615814209 * (1.0 - 0.64999997615814209 * (1.0 - _S182));
 
-#line 1417
+#line 1486
     float3 _S185 = float3(0.89999997615814209, _S184, 0.31499999761581421);
 
-#line 1417
+#line 1486
     float3 colour_0;
     if(_S183 == 1U)
     {
 
-#line 1418
+#line 1487
         colour_0 = float3(0.89999997615814209 * (1.0 - 0.64999997615814209 * _S182), 0.89999997615814209, 0.31499999761581421);
 
-#line 1418
+#line 1487
     }
     else
     {
 
-#line 1418
+#line 1487
         colour_0 = _S185;
 
-#line 1418
+#line 1487
     }
     if(_S183 == 2U)
     {
 
-#line 1419
+#line 1488
         colour_0 = float3(0.31499999761581421, 0.89999997615814209, _S184);
 
-#line 1419
+#line 1488
     }
     if(_S183 == 3U)
     {
 
-#line 1420
+#line 1489
         colour_0 = float3(0.31499999761581421, 0.89999997615814209 * (1.0 - 0.64999997615814209 * _S182), 0.89999997615814209);
 
-#line 1420
+#line 1489
     }
     if(_S183 == 4U)
     {
 
-#line 1421
+#line 1490
         colour_0 = float3(_S184, 0.31499999761581421, 0.89999997615814209);
 
-#line 1421
+#line 1490
     }
     if(_S183 == 5U)
     {
 
-#line 1422
+#line 1491
         colour_0 = float3(0.89999997615814209, 0.31499999761581421, 0.89999997615814209 * (1.0 - 0.64999997615814209 * _S182));
 
-#line 1422
+#line 1491
     }
 
 
     uint2 _S186 = uint2(floor(uv_14 * float2(float(kernelContext_32->cyFrameView_0->frame_0->lightmapLayout_0.x), float(kernelContext_32->cyFrameView_0->frame_0->lightmapLayout_0.x * kernelContext_32->cyFrameView_0->frame_0->lightmapLayout_0.y))));
 
-#line 1425
+#line 1494
     float _S187;
     if(((_S186.x + _S186.y) & 1U) == 0U)
     {
 
-#line 1426
+#line 1495
         _S187 = 1.0;
 
-#line 1426
+#line 1495
     }
     else
     {
 
-#line 1426
+#line 1495
         _S187 = 0.69999998807907104;
 
-#line 1426
+#line 1495
     }
     float3 _S188 = colour_0 * float3(_S187) ;
 
-#line 1427
+#line 1496
     float _S189 = frameExposureStops_0(kernelContext_32);
 
-#line 1427
+#line 1496
     return _S188 * float3(exp2(- _S189)) ;
 }
 
@@ -2788,7 +2833,7 @@ uint clusterIndexOf_1(const ClusterGrid_0 constant* grid_6, uint3 coord_1)
 }
 
 
-#line 429 "src/rendering/shaders/cy/frame.slang"
+#line 458 "src/rendering/shaders/cy/frame.slang"
 float viewDepthOf_0(float3 relative_0, KernelContext_0 thread* kernelContext_33)
 {
 
@@ -2798,7 +2843,7 @@ float viewDepthOf_0(float3 relative_0, KernelContext_0 thread* kernelContext_33)
 }
 
 
-#line 1200
+#line 1269
 void applyFrameDecals_0(Surface_0 thread* surface_4, float3 thread* normal_2, float3 relativePosition_6, float2 fragmentCentre_0, uint receiverChannels_0, KernelContext_0 thread* kernelContext_34)
 {
 
@@ -2815,30 +2860,30 @@ void applyFrameDecals_0(Surface_0 thread* surface_4, float3 thread* normal_2, fl
     (&decalled_0)->emission_0 = surface_4->emission_1;
     (&decalled_0)->normal_0 = *normal_2;
 
-#line 1219
+#line 1288
     uint _S193 = kernelContext_34->cyFrameView_0->frame_0->decalControl_0.z;
 
-#line 1219
+#line 1288
     uint _S194 = cyDecalCount_0(kernelContext_34);
 
 
     uint2 _S195 = uint2(0U, _S194);
 
-#line 1222
+#line 1291
     uint2 list_0;
 
-#line 1222
+#line 1291
     uint mode_0;
     if((_S193 & 2U) != 0U)
     {
 
-#line 1223
+#line 1292
         list_0 = _S195;
 
-#line 1223
+#line 1292
         mode_0 = 0U;
 
-#line 1223
+#line 1292
     }
     else
     {
@@ -2849,125 +2894,125 @@ void applyFrameDecals_0(Surface_0 thread* surface_4, float3 thread* normal_2, fl
             if(_S194 != 0U)
             {
 
-#line 1230
+#line 1299
                 uint2 _S196 = cyDecalTableList_0(relativePosition_6, fragmentCentre_0, kernelContext_34);
 
-#line 1230
+#line 1299
                 list_0 = _S196;
 
-#line 1230
+#line 1299
             }
             else
             {
 
-#line 1230
+#line 1299
                 list_0 = uint2(0U) ;
 
-#line 1230
+#line 1299
             }
 
-#line 1230
+#line 1299
             mode_0 = 1U;
 
-#line 1227
+#line 1296
         }
         else
         {
 
-#line 1227
+#line 1296
             bool _S197;
 
-#line 1232
+#line 1301
             if((kernelContext_34->cyFrameView_0->frame_0->counts_0.w) != 0U)
             {
 
-#line 1232
+#line 1301
                 _S197 = ((&kernelContext_34->cyFrameView_0->frame_0->clusterGrid_0)->dimensions_0.z) != 0U;
 
-#line 1232
+#line 1301
             }
             else
             {
 
-#line 1232
+#line 1301
                 _S197 = false;
 
-#line 1232
+#line 1301
             }
 
-#line 1232
+#line 1301
             if(_S197)
             {
                 uint2 _S198 = uint2(kernelContext_34->cyFrameView_0->frame_0->extentAndInverse_0.xy);
                 uint2 _S199 = uint2(fragmentCentre_0);
 
-#line 1235
+#line 1304
                 float _S200 = viewDepthOf_0(relativePosition_6, kernelContext_34);
 
-#line 1235
+#line 1304
                 uint3 _S201 = clusterCoordOf_1(&kernelContext_34->cyFrameView_0->frame_0->clusterGrid_0, _S199, _S198, _S200);
 
-#line 1235
+#line 1304
                 uint _S202 = clusterIndexOf_1(&kernelContext_34->cyFrameView_0->frame_0->clusterGrid_0, _S201);
 
-#line 1235
+#line 1304
                 list_0 = kernelContext_34->cyFrameView_0->clusterHeaders_0[_S202 * kernelContext_34->cyFrameView_0->frame_0->counts_0.z + 1U];
 
-#line 1235
+#line 1304
                 mode_0 = 2U;
 
-#line 1232
+#line 1301
             }
             else
             {
 
-#line 1232
+#line 1301
                 list_0 = _S195;
 
-#line 1232
+#line 1301
                 mode_0 = 0U;
 
-#line 1232
+#line 1301
             }
 
-#line 1227
+#line 1296
         }
 
-#line 1223
+#line 1292
     }
 
-#line 1223
+#line 1292
     uint slot_3 = 0U;
 
-#line 1243
+#line 1312
     for(;;)
     {
 
-#line 1243
+#line 1312
         if(slot_3 < (list_0.y))
         {
         }
         else
         {
 
-#line 1243
+#line 1312
             break;
         }
 
-#line 1243
+#line 1312
         uint rank_1;
 
 
         if(mode_0 == 1U)
         {
 
-#line 1246
+#line 1315
             uint _S203 = cyDecalTableListEntry_0(list_0.x + slot_3, kernelContext_34);
 
-#line 1246
+#line 1315
             rank_1 = _S203;
 
-#line 1246
+#line 1315
         }
         else
         {
@@ -2975,43 +3020,43 @@ void applyFrameDecals_0(Surface_0 thread* surface_4, float3 thread* normal_2, fl
             if(mode_0 == 2U)
             {
 
-#line 1250
+#line 1319
                 rank_1 = kernelContext_34->cyFrameView_0->clusterIndices_0[list_0.x + slot_3];
 
-#line 1250
+#line 1319
             }
             else
             {
 
-#line 1250
+#line 1319
                 rank_1 = slot_3;
 
-#line 1250
+#line 1319
             }
 
-#line 1246
+#line 1315
         }
 
-#line 1254
+#line 1323
         if(rank_1 < _S194)
         {
 
-#line 1254
+#line 1323
             thread CyDecalReceiver_0 _S204 = receiver_5;
 
-#line 1254
+#line 1323
             cyApplyDecal_0(rank_1, &_S204, &decalled_0, kernelContext_34);
 
-#line 1254
+#line 1323
         }
 
-#line 1243
+#line 1312
         slot_3 = slot_3 + 1U;
 
-#line 1243
+#line 1312
     }
 
-#line 1260
+#line 1329
     surface_4->albedo_1 = (&decalled_0)->albedo_0;
     surface_4->roughness_1 = clamp((&decalled_0)->roughness_0, 0.01999999955296516, 1.0);
     surface_4->metallic_1 = saturate((&decalled_0)->metallic_0);
@@ -3021,7 +3066,7 @@ void applyFrameDecals_0(Surface_0 thread* surface_4, float3 thread* normal_2, fl
 }
 
 
-#line 732
+#line 761
 struct CyBakedLights_0
 {
     bool active_0;
@@ -3029,42 +3074,42 @@ struct CyBakedLights_0
 };
 
 
-#line 1339
+#line 1408
 CyBakedLights_0 bakedLightsOf_0(bool lightmapped_3, float2 uv_15, KernelContext_0 thread* kernelContext_35)
 {
     thread CyBakedLights_0 baked_0;
     (&baked_0)->active_0 = lightmapped_3;
     (&baked_0)->mask_0 = float4(1.0) ;
 
-#line 1343
+#line 1412
     bool _S205;
     if(lightmapped_3)
     {
 
-#line 1344
+#line 1413
         _S205 = (kernelContext_35->cyFrameView_0->frame_0->lightmapLayout_0.w) != 4294967295U;
 
-#line 1344
+#line 1413
     }
     else
     {
 
-#line 1344
+#line 1413
         _S205 = false;
 
-#line 1344
+#line 1413
     }
 
-#line 1344
+#line 1413
     if(_S205)
     {
 
-#line 1344
+#line 1413
         float4 _S206 = cyMaterialSampleTexture_0(kernelContext_35->cyFrameView_0->frame_0->lightmapLayout_0.w, uv_15, kernelContext_35);
 
         (&baked_0)->mask_0 = _S206;
 
-#line 1344
+#line 1413
     }
 
 
@@ -3073,12 +3118,94 @@ CyBakedLights_0 bakedLightsOf_0(bool lightmapped_3, float2 uv_15, KernelContext_
 }
 
 
+#line 427
+float4 transformToClip_0(float3 relative_1, KernelContext_0 thread* kernelContext_36)
+{
+    float4 _S207 = float4(relative_1, 1.0);
+    return float4(dot(kernelContext_36->cyFrameView_0->frame_0->relativeToClipRow0_0, _S207), dot(kernelContext_36->cyFrameView_0->frame_0->relativeToClipRow1_0, _S207), dot(kernelContext_36->cyFrameView_0->frame_0->relativeToClipRow2_0, _S207), dot(kernelContext_36->cyFrameView_0->frame_0->relativeToClipRow3_0, _S207));
+}
+
+
+#line 925
+float2 frameClusterPixel_0(uint instanceFlags_0, float3 relativePosition_7, float2 fragmentCentre_1, KernelContext_0 thread* kernelContext_37)
+{
+    if((instanceFlags_0 & 256U) == 0U)
+    {
+        return fragmentCentre_1;
+    }
+
+#line 929
+    float4 _S208 = transformToClip_0(relativePosition_7, kernelContext_37);
+
+
+    float _S209 = _S208.w;
+
+#line 932
+    bool _S210;
+
+#line 932
+    if(_S209 <= 0.0)
+    {
+
+#line 932
+        _S210 = true;
+
+#line 932
+    }
+    else
+    {
+
+#line 932
+        float _S211 = viewDepthOf_0(relativePosition_7, kernelContext_37);
+
+#line 932
+        _S210 = _S211 < ((&kernelContext_37->cyFrameView_0->frame_0->clusterGrid_0)->nearPlane_0);
+
+)cy_msl",
+    R"cy_msl(#line 932
+    }
+
+#line 932
+    if(_S210)
+    {
+        return float2(-1.0, -1.0);
+    }
+    float2 _S212 = _S208.xy / float2(_S209) ;
+    float _S213 = _S212.x;
+
+#line 937
+    if((abs(_S213)) > 1.0)
+    {
+
+#line 937
+        _S210 = true;
+
+#line 937
+    }
+    else
+    {
+
+#line 937
+        _S210 = (abs(_S212.y)) > 1.0;
+
+#line 937
+    }
+
+#line 937
+    if(_S210)
+    {
+        return float2(-1.0, -1.0);
+    }
+    return float2(_S213 * 0.5 + 0.5, 0.5 - _S212.y * 0.5) * kernelContext_37->cyFrameView_0->frame_0->extentAndInverse_0.xy;
+}
+
+
 #line 61 "src/rendering/shaders/cy/light.slang"
 float distanceAttenuation_0(float distanceSquared_0, float range_1)
 {
-    float _S207 = distanceSquared_0 / max(range_1 * range_1, 9.99999997475242708e-07);
-    float _S208 = saturate(1.0 - _S207 * _S207);
-    return _S208 * _S208 / max(distanceSquared_0, 0.00009999999747379);
+    float _S214 = distanceSquared_0 / max(range_1 * range_1, 9.99999997475242708e-07);
+    float _S215 = saturate(1.0 - _S214 * _S214);
+    return _S215 * _S215 / max(distanceSquared_0, 0.00009999999747379);
 }
 
 
@@ -3097,7 +3224,7 @@ LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelat
     thread LightSample_0 result_4;
 
 #line 70
-    uint _S209 = light_0->kind_0;
+    uint _S216 = light_0->kind_0;
     if((light_0->kind_0) == 0U)
     {
         (&result_4)->direction_1 = - light_0->direction_0;
@@ -3106,16 +3233,16 @@ LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelat
         return result_4;
     }
 
-    float3 _S210 = light_0->positionRelativeToCamera_0 - surfaceRelativeToCamera_0;
-    float _S211 = dot(_S210, _S210);
-    (&result_4)->direction_1 = _S210 * float3(rsqrt(max(_S211, 9.99999993922529029e-09))) ;
-    (&result_4)->attenuation_0 = distanceAttenuation_0(_S211, light_0->range_0);
+    float3 _S217 = light_0->positionRelativeToCamera_0 - surfaceRelativeToCamera_0;
+    float _S218 = dot(_S217, _S217);
+    (&result_4)->direction_1 = _S217 * float3(rsqrt(max(_S218, 9.99999993922529029e-09))) ;
+    (&result_4)->attenuation_0 = distanceAttenuation_0(_S218, light_0->range_0);
 
-    if(_S209 == 2U)
+    if(_S216 == 2U)
     {
 
-        float _S212 = saturate(dot(- (&result_4)->direction_1, light_0->direction_0) * light_0->spotScaleBias_0.x + light_0->spotScaleBias_0.y);
-        (&result_4)->attenuation_0 = (&result_4)->attenuation_0 * (_S212 * _S212);
+        float _S219 = saturate(dot(- (&result_4)->direction_1, light_0->direction_0) * light_0->spotScaleBias_0.x + light_0->spotScaleBias_0.y);
+        (&result_4)->attenuation_0 = (&result_4)->attenuation_0 * (_S219 * _S219);
 
 #line 84
     }
@@ -3124,8 +3251,7 @@ LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelat
 
 
 
-)cy_msl",
-    R"cy_msl(        if(_S209 == 3U)
+        if(_S216 == 3U)
         {
 
             (&result_4)->attenuation_0 = (&result_4)->attenuation_0 * saturate(dot(- (&result_4)->direction_1, light_0->direction_0) * light_0->spotScaleBias_0.x + light_0->spotScaleBias_0.y);
@@ -3142,11 +3268,11 @@ LightSample_0 evaluateLight_0(const Light_0 thread* light_0, float3 surfaceRelat
 }
 
 
-#line 405 "src/rendering/shaders/cy/frame.slang"
-float4 transformToShadowClip_0(float3 relative_1, KernelContext_0 thread* kernelContext_36)
+#line 434 "src/rendering/shaders/cy/frame.slang"
+float4 transformToShadowClip_0(float3 relative_2, KernelContext_0 thread* kernelContext_38)
 {
-    float4 _S213 = float4(relative_1, 1.0);
-    return float4(dot(kernelContext_36->cyFrameView_0->frame_0->shadowToClipRow0_0, _S213), dot(kernelContext_36->cyFrameView_0->frame_0->shadowToClipRow1_0, _S213), dot(kernelContext_36->cyFrameView_0->frame_0->shadowToClipRow2_0, _S213), dot(kernelContext_36->cyFrameView_0->frame_0->shadowToClipRow3_0, _S213));
+    float4 _S220 = float4(relative_2, 1.0);
+    return float4(dot(kernelContext_38->cyFrameView_0->frame_0->shadowToClipRow0_0, _S220), dot(kernelContext_38->cyFrameView_0->frame_0->shadowToClipRow1_0, _S220), dot(kernelContext_38->cyFrameView_0->frame_0->shadowToClipRow2_0, _S220), dot(kernelContext_38->cyFrameView_0->frame_0->shadowToClipRow3_0, _S220));
 }
 
 
@@ -3158,334 +3284,372 @@ float shadowDiscRotation_0(float2 pixel_3)
 }
 
 
-#line 661 "src/rendering/shaders/cy/frame.slang"
-float softShadowVisibility_0(float2 uv_16, float reference_0, float2 pixel_4, KernelContext_0 thread* kernelContext_37)
+#line 690 "src/rendering/shaders/cy/frame.slang"
+float softShadowVisibility_0(float2 uv_16, float reference_0, float2 pixel_4, KernelContext_0 thread* kernelContext_39)
 {
     thread CyFrameShadowMap_0 map_0;
-    (&map_0)->slot_1 = kernelContext_37->cyFrameView_0->frame_0->shadowControl_0.x;
+    (&map_0)->slot_1 = kernelContext_39->cyFrameView_0->frame_0->shadowControl_0.x;
     thread PcssShape_0 shape_4;
-    (&shape_4)->penumbraPerDepth_0 = kernelContext_37->cyFrameView_0->frame_0->softShadowShape_0.x;
-    (&shape_4)->minRadius_0 = kernelContext_37->cyFrameView_0->frame_0->softShadowShape_0.y;
-    (&shape_4)->maxRadius_0 = kernelContext_37->cyFrameView_0->frame_0->softShadowShape_0.z;
-    (&shape_4)->blockerTaps_0 = int(max(kernelContext_37->cyFrameView_0->frame_0->softShadowControl_0.z, 1U));
-    (&shape_4)->filterTaps_0 = int(max(kernelContext_37->cyFrameView_0->frame_0->softShadowControl_0.w, 1U));
-    float _S214 = shadowDiscRotation_0(pixel_4);
+    (&shape_4)->penumbraPerDepth_0 = kernelContext_39->cyFrameView_0->frame_0->softShadowShape_0.x;
+    (&shape_4)->minRadius_0 = kernelContext_39->cyFrameView_0->frame_0->softShadowShape_0.y;
+    (&shape_4)->maxRadius_0 = kernelContext_39->cyFrameView_0->frame_0->softShadowShape_0.z;
+    (&shape_4)->blockerTaps_0 = int(max(kernelContext_39->cyFrameView_0->frame_0->softShadowControl_0.z, 1U));
+    (&shape_4)->filterTaps_0 = int(max(kernelContext_39->cyFrameView_0->frame_0->softShadowControl_0.w, 1U));
+    float _S221 = shadowDiscRotation_0(pixel_4);
 
-#line 671
-    thread CyFrameShadowMap_0 _S215 = map_0;
+#line 700
+    thread CyFrameShadowMap_0 _S222 = map_0;
 
-#line 671
-    thread PcssShape_0 _S216 = shape_4;
+#line 700
+    thread PcssShape_0 _S223 = shape_4;
 
-#line 671
-    float _S217 = pcssVisibility_0(&_S215, uv_16, reference_0, &_S216, _S214, kernelContext_37);
+#line 700
+    float _S224 = pcssVisibility_0(&_S222, uv_16, reference_0, &_S223, _S221, kernelContext_39);
 
-#line 671
-    return _S217;
+#line 700
+    return _S224;
 }
 
 
-#line 694
-float directionalShadowVisibility_0(float3 relativePosition_7, float3 normal_3, float2 fragmentCentre_1, KernelContext_0 thread* kernelContext_38)
+#line 723
+float directionalShadowVisibility_0(float3 relativePosition_8, float3 normal_3, float2 fragmentCentre_2, KernelContext_0 thread* kernelContext_40)
 {
 
-#line 694
-    bool _S218;
+#line 723
+    bool _S225;
 
-    if((kernelContext_38->cyFrameView_0->frame_0->shadowControl_0.w) == 0U)
+    if((kernelContext_40->cyFrameView_0->frame_0->shadowControl_0.w) == 0U)
     {
 
-#line 696
-        _S218 = true;
+#line 725
+        _S225 = true;
 
-#line 696
+#line 725
     }
     else
     {
 
-#line 696
-        _S218 = (kernelContext_38->cyFrameView_0->frame_0->shadowControl_0.x) == 4294967295U;
+#line 725
+        _S225 = (kernelContext_40->cyFrameView_0->frame_0->shadowControl_0.x) == 4294967295U;
 
-#line 696
+#line 725
     }
 
-#line 696
-    if(_S218)
+#line 725
+    if(_S225)
     {
         return 1.0;
     }
 
-#line 698
-    float4 _S219 = transformToShadowClip_0(relativePosition_7 + normal_3 * float3(0.00499999988824129) , kernelContext_38);
+#line 727
+    float4 _S226 = transformToShadowClip_0(relativePosition_8 + normal_3 * float3(0.00499999988824129) , kernelContext_40);
 
 
-    float _S220 = _S219.w;
+    float _S227 = _S226.w;
 
-#line 701
-    if(_S220 <= 0.0)
+#line 730
+    if(_S227 <= 0.0)
     {
         return 1.0;
     }
-    float3 _S221 = _S219.xyz / float3(_S220) ;
-    float _S222 = _S221.x * 0.5 + 0.5;
+    float3 _S228 = _S226.xyz / float3(_S227) ;
+    float _S229 = _S228.x * 0.5 + 0.5;
 
-#line 706
-    float _S223 = 0.5 - _S221.y * 0.5;
+#line 735
+    float _S230 = 0.5 - _S228.y * 0.5;
 
-#line 706
-    float2 _S224 = float2(_S222, _S223);
-    if(_S222 < 0.0)
+#line 735
+    float2 _S231 = float2(_S229, _S230);
+    if(_S229 < 0.0)
     {
 
-#line 707
-        _S218 = true;
+#line 736
+        _S225 = true;
 
-#line 707
+#line 736
     }
     else
     {
 
-#line 707
-        _S218 = _S222 > 1.0;
+#line 736
+        _S225 = _S229 > 1.0;
 
-#line 707
+#line 736
     }
 
-#line 707
-    if(_S218)
+#line 736
+    if(_S225)
     {
 
-#line 707
-        _S218 = true;
+#line 736
+        _S225 = true;
 
-#line 707
+#line 736
     }
     else
     {
 
-#line 707
-        _S218 = _S223 < 0.0;
+#line 736
+        _S225 = _S230 < 0.0;
 
-#line 707
+#line 736
     }
 
-#line 707
-    if(_S218)
+#line 736
+    if(_S225)
     {
 
-#line 707
-        _S218 = true;
+#line 736
+        _S225 = true;
 
-#line 707
+#line 736
     }
     else
     {
 
-#line 707
-        _S218 = _S223 > 1.0;
+#line 736
+        _S225 = _S230 > 1.0;
 
-#line 707
+#line 736
     }
 
-#line 707
-    if(_S218)
+#line 736
+    if(_S225)
     {
         return 1.0;
     }
-    float _S225 = 1.0 / float(max(kernelContext_38->cyFrameView_0->frame_0->shadowControl_0.z, 1U));
-    float _S226 = _S221.z + 0.00050000002374873;
-    if(((kernelContext_38->cyFrameView_0->frame_0->softShadowControl_0.x) & 1U) != 0U)
+    float _S232 = 1.0 / float(max(kernelContext_40->cyFrameView_0->frame_0->shadowControl_0.z, 1U));
+    float _S233 = _S228.z + 0.00050000002374873;
+    if(((kernelContext_40->cyFrameView_0->frame_0->softShadowControl_0.x) & 1U) != 0U)
     {
 
-#line 713
-        float _S227 = softShadowVisibility_0(_S224, _S226, fragmentCentre_1, kernelContext_38);
+#line 742
+        float _S234 = softShadowVisibility_0(_S231, _S233, fragmentCentre_2, kernelContext_40);
 
-        return _S227;
+        return _S234;
     }
 
-#line 715
+#line 744
     int y_0 = int(-1);
 
-#line 715
+#line 744
     float visible_0 = 0.0;
 
 
     for(;;)
     {
 
-#line 718
+#line 747
         if(y_0 <= int(1))
         {
         }
         else
         {
 
-#line 718
+#line 747
             break;
         }
 
-#line 718
+#line 747
         int x_0 = int(-1);
 
         for(;;)
         {
 
-#line 720
+#line 749
             if(x_0 <= int(1))
             {
             }
             else
             {
 
-#line 720
+#line 749
                 break;
             }
 
-#line 720
-            float4 _S228 = cyMaterialSampleTextureLevel_0(kernelContext_38->cyFrameView_0->frame_0->shadowControl_0.x, _S224 + float2(float(x_0), float(y_0)) * float2(_S225) , 0.0, kernelContext_38);
+#line 749
+            float4 _S235 = cyMaterialSampleTextureLevel_0(kernelContext_40->cyFrameView_0->frame_0->shadowControl_0.x, _S231 + float2(float(x_0), float(y_0)) * float2(_S232) , 0.0, kernelContext_40);
 
-#line 720
-            float _S229;
+#line 749
+            float _S236;
 
 
 
-            if(_S226 >= (_S228.x))
+            if(_S233 >= (_S235.x))
             {
 
-#line 724
-                _S229 = 1.0;
+#line 753
+                _S236 = 1.0;
 
-#line 724
+#line 753
             }
             else
             {
 
-#line 724
-                _S229 = 0.0;
+#line 753
+                _S236 = 0.0;
 
-#line 724
+#line 753
             }
 
-#line 724
-            float visible_1 = visible_0 + _S229;
+#line 753
+            float visible_1 = visible_0 + _S236;
 
-#line 720
+#line 749
             x_0 = x_0 + int(1);
 
-#line 720
+#line 749
             visible_0 = visible_1;
 
-#line 720
+#line 749
         }
 
-#line 718
+#line 747
         y_0 = y_0 + int(1);
 
-#line 718
+#line 747
     }
 
-#line 727
+#line 756
     return visible_0 / 9.0;
 }
 
 
-#line 677
-float contactShadowVisibility_0(float2 fragmentCentre_2, KernelContext_0 thread* kernelContext_39)
+#line 706
+float contactShadowVisibility_0(float2 fragmentCentre_3, KernelContext_0 thread* kernelContext_41)
 {
 
-#line 677
-    bool _S230;
+#line 706
+    bool _S237;
 
-    if(((kernelContext_39->cyFrameView_0->frame_0->softShadowControl_0.x) & 2U) == 0U)
+    if(((kernelContext_41->cyFrameView_0->frame_0->softShadowControl_0.x) & 2U) == 0U)
     {
 
-#line 679
-        _S230 = true;
+#line 708
+        _S237 = true;
 
-#line 679
+#line 708
     }
     else
     {
 
-#line 679
-        _S230 = (kernelContext_39->cyFrameView_0->frame_0->softShadowControl_0.y) == 4294967295U;
+#line 708
+        _S237 = (kernelContext_41->cyFrameView_0->frame_0->softShadowControl_0.y) == 4294967295U;
 
-#line 679
+#line 708
     }
 
-#line 679
-    if(_S230)
+#line 708
+    if(_S237)
     {
 
         return 1.0;
     }
 
-#line 682
-    float4 _S231 = cyMaterialSampleTextureLevel_0(kernelContext_39->cyFrameView_0->frame_0->softShadowControl_0.y, fragmentCentre_2 * kernelContext_39->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_39);
+#line 711
+    float4 _S238 = cyMaterialSampleTextureLevel_0(kernelContext_41->cyFrameView_0->frame_0->softShadowControl_0.y, fragmentCentre_3 * kernelContext_41->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_41);
 
 
-    return _S231.x;
+    return _S238.x;
 }
 
 
-#line 740
-float bakedLightFactor_0(uint index_11, float4 mask_1, KernelContext_0 thread* kernelContext_40)
+#line 870
+float frameContactVisibility_0(uint instanceFlags_1, float2 fragmentCentre_4, KernelContext_0 thread* kernelContext_42)
 {
 
-#line 740
-    bool _S232;
+#line 870
+    bool _S239;
 
-    if(index_11 < 128U)
+    if((instanceFlags_1 & 256U) != 0U)
     {
 
-#line 742
-        _S232 = (((kernelContext_40->cyFrameView_0->frame_0->lightmapDirectLights_0[index_11 >> 5U]) >> (index_11 & 31U)) & 1U) != 0U;
+#line 872
+        _S239 = ((kernelContext_42->cyFrameView_0->frame_0->viewmodelControl_0.x) & 1U) == 0U;
 
-#line 742
+#line 872
     }
     else
     {
 
-#line 742
-        _S232 = false;
+#line 872
+        _S239 = false;
 
-#line 742
+#line 872
     }
 
-#line 742
-    if(_S232)
+#line 872
+    if(_S239)
+    {
+
+        return 1.0;
+    }
+
+#line 875
+    float _S240 = contactShadowVisibility_0(fragmentCentre_4, kernelContext_42);
+
+    return _S240;
+}
+
+
+#line 769
+float bakedLightFactor_0(uint index_11, float4 mask_1, KernelContext_0 thread* kernelContext_43)
+{
+
+#line 769
+    bool _S241;
+
+    if(index_11 < 128U)
+    {
+
+#line 771
+        _S241 = (((kernelContext_43->cyFrameView_0->frame_0->lightmapDirectLights_0[index_11 >> 5U]) >> (index_11 & 31U)) & 1U) != 0U;
+
+#line 771
+    }
+    else
+    {
+
+#line 771
+        _S241 = false;
+
+#line 771
+    }
+
+#line 771
+    if(_S241)
     {
         return 0.0;
     }
 
-#line 744
+#line 773
     uint channel_0 = 0U;
 
     for(;;)
     {
 
-#line 746
+#line 775
         if(channel_0 < 4U)
         {
         }
         else
         {
 
-#line 746
+#line 775
             break;
         }
-        if((kernelContext_40->cyFrameView_0->frame_0->lightmapShadowLights_0[channel_0]) == index_11)
+        if((kernelContext_43->cyFrameView_0->frame_0->lightmapShadowLights_0[channel_0]) == index_11)
         {
             return mask_1[channel_0];
         }
 
-#line 746
+#line 775
         channel_0 = channel_0 + 1U;
 
-#line 746
+#line 775
     }
 
-#line 753
+#line 782
     return 1.0;
 }
 
@@ -3507,23 +3671,23 @@ float3 diffuseLambert_0(float3 albedo_3)
 #line 11
 float distributionGgx_0(float normalDotHalf_0, float roughness_2)
 {
-    float _S233 = roughness_2 * roughness_2;
-    float _S234 = _S233 * _S233;
-    float _S235 = normalDotHalf_0 * normalDotHalf_0 * (_S234 - 1.0) + 1.0;
-    return _S234 / max(3.14159274101257324 * _S235 * _S235, 1.00000001168609742e-07);
+    float _S242 = roughness_2 * roughness_2;
+    float _S243 = _S242 * _S242;
+    float _S244 = normalDotHalf_0 * normalDotHalf_0 * (_S243 - 1.0) + 1.0;
+    return _S243 / max(3.14159274101257324 * _S244 * _S244, 1.00000001168609742e-07);
 }
 
 
 float visibilitySmithGgxCorrelated_0(float normalDotView_0, float normalDotLight_0, float roughness_3)
 {
 
-    float _S236 = roughness_3 * roughness_3;
-    float _S237 = _S236 * _S236;
-    float _S238 = 1.0 - _S237;
+    float _S245 = roughness_3 * roughness_3;
+    float _S246 = _S245 * _S245;
+    float _S247 = 1.0 - _S246;
 
 
 
-    return 0.5 / max(normalDotLight_0 * sqrt(normalDotView_0 * normalDotView_0 * _S238 + _S237) + normalDotView_0 * sqrt(normalDotLight_0 * normalDotLight_0 * _S238 + _S237), 1.00000001168609742e-07);
+    return 0.5 / max(normalDotLight_0 * sqrt(normalDotView_0 * normalDotView_0 * _S247 + _S246) + normalDotView_0 * sqrt(normalDotLight_0 * normalDotLight_0 * _S247 + _S246), 1.00000001168609742e-07);
 }
 
 float3 fresnelSchlick_0(float3 f0_0, float viewDotHalf_0)
@@ -3536,10 +3700,10 @@ float3 fresnelSchlick_0(float3 f0_0, float viewDotHalf_0)
 #line 45
 float3 specularGgx_0(float3 normal_4, float3 view_0, float3 light_1, float roughness_4, float3 f0_1)
 {
-    float3 _S239 = normalize(view_0 + light_1);
+    float3 _S248 = normalize(view_0 + light_1);
 
 #line 56
-    return float3((distributionGgx_0(saturate(dot(normal_4, _S239)), roughness_4) * visibilitySmithGgxCorrelated_0(saturate(dot(normal_4, view_0)) + 0.00000999999974738, saturate(dot(normal_4, light_1)), roughness_4)))  * fresnelSchlick_0(f0_1, saturate(dot(view_0, _S239)));
+    return float3((distributionGgx_0(saturate(dot(normal_4, _S248)), roughness_4) * visibilitySmithGgxCorrelated_0(saturate(dot(normal_4, view_0)) + 0.00000999999974738, saturate(dot(normal_4, light_1)), roughness_4)))  * fresnelSchlick_0(f0_1, saturate(dot(view_0, _S248)));
 }
 
 
@@ -3548,99 +3712,99 @@ float3 shadeSurfaceWithLight_0(const Surface_0 thread* surface_5, float3 worldNo
 {
 
 #line 109
-    float3 _S240 = sample_0->direction_1;
+    float3 _S249 = sample_0->direction_1;
 
-    float _S241 = saturate(dot(worldNormal_0, sample_0->direction_1));
-    if(_S241 <= 0.0)
+    float _S250 = saturate(dot(worldNormal_0, sample_0->direction_1));
+    if(_S250 <= 0.0)
     {
         return float3(0.0) ;
     }
 
 #line 120
-    return (diffuseLambert_0(surface_5->albedo_1 * float3((1.0 - surface_5->metallic_1)) ) + specularGgx_0(worldNormal_0, viewDirection_0, _S240, surface_5->roughness_1, computeF0_0(surface_5->albedo_1, surface_5->metallic_1))) * sample_0->illuminance_0 * float3(_S241) ;
+    return (diffuseLambert_0(surface_5->albedo_1 * float3((1.0 - surface_5->metallic_1)) ) + specularGgx_0(worldNormal_0, viewDirection_0, _S249, surface_5->roughness_1, computeF0_0(surface_5->albedo_1, surface_5->metallic_1))) * sample_0->illuminance_0 * float3(_S250) ;
 }
 
 
-#line 838 "src/rendering/shaders/cy/frame.slang"
-float3 directionalContribution_0(uint global_0, const Surface_0 thread* surface_6, float3 relativePosition_8, float3 normal_5, float3 viewDir_0, float2 fragmentCentre_3, uint instanceFlags_0, const CyBakedLights_0 thread* baked_1, KernelContext_0 thread* kernelContext_41)
+#line 881 "src/rendering/shaders/cy/frame.slang"
+float3 directionalContribution_0(uint global_0, const Surface_0 thread* surface_6, float3 relativePosition_9, float3 normal_5, float3 viewDir_0, float2 fragmentCentre_5, uint instanceFlags_2, const CyBakedLights_0 thread* baked_1, KernelContext_0 thread* kernelContext_44)
 {
-    thread Light_0 _S242 = kernelContext_41->cyFrameView_0->lights_0[global_0];
+    thread Light_0 _S251 = kernelContext_44->cyFrameView_0->lights_0[global_0];
 
-#line 840
-    LightSample_0 _S243 = evaluateLight_0(&_S242, relativePosition_8);
+#line 883
+    LightSample_0 _S252 = evaluateLight_0(&_S251, relativePosition_9);
 
-#line 840
-    bool _S244;
+#line 883
+    bool _S253;
 
-#line 846
-    if(global_0 == (kernelContext_41->cyFrameView_0->frame_0->shadowControl_0.y))
+#line 889
+    if(global_0 == (kernelContext_44->cyFrameView_0->frame_0->shadowControl_0.y))
     {
 
-#line 846
-        _S244 = (instanceFlags_0 & 8U) != 0U;
+#line 889
+        _S253 = (instanceFlags_2 & 8U) != 0U;
 
-#line 846
+#line 889
     }
     else
     {
 
-#line 846
-        _S244 = false;
+#line 889
+        _S253 = false;
 
-#line 846
+#line 889
     }
 
-#line 846
+#line 889
     float visibility_0;
-    if(_S244)
+    if(_S253)
     {
 
-#line 847
-        float _S245 = directionalShadowVisibility_0(relativePosition_8, normal_5, fragmentCentre_3, kernelContext_41);
+#line 890
+        float _S254 = directionalShadowVisibility_0(relativePosition_9, normal_5, fragmentCentre_5, kernelContext_44);
 
-#line 847
-        float _S246 = contactShadowVisibility_0(fragmentCentre_3, kernelContext_41);
+#line 890
+        float _S255 = frameContactVisibility_0(instanceFlags_2, fragmentCentre_5, kernelContext_44);
 
-#line 847
-        visibility_0 = min(_S245, _S246);
+#line 890
+        visibility_0 = min(_S254, _S255);
 
-#line 847
+#line 890
     }
     else
     {
 
-#line 847
+#line 890
         visibility_0 = 1.0;
 
-#line 847
+#line 890
     }
 
-#line 854
+#line 897
     if(baked_1->active_0)
     {
 
-#line 854
-        float _S247 = bakedLightFactor_0(global_0, baked_1->mask_0, kernelContext_41);
+#line 897
+        float _S256 = bakedLightFactor_0(global_0, baked_1->mask_0, kernelContext_44);
 
-#line 854
-        visibility_0 = min(visibility_0, _S247);
+#line 897
+        visibility_0 = min(visibility_0, _S256);
 
-#line 854
+#line 897
     }
 
-#line 854
-    thread LightSample_0 _S248 = _S243;
+#line 897
+    thread LightSample_0 _S257 = _S252;
 
-#line 854
-    float3 _S249 = shadeSurfaceWithLight_0(surface_6, normal_5, viewDir_0, &_S248);
+#line 897
+    float3 _S258 = shadeSurfaceWithLight_0(surface_6, normal_5, viewDir_0, &_S257);
 
 
 
-    return _S249 * float3(visibility_0) ;
+    return _S258 * float3(visibility_0) ;
 }
 
 
-#line 866
+#line 909
 struct LocalLightWalk_0
 {
     uint count_3;
@@ -3651,195 +3815,217 @@ struct LocalLightWalk_0
     float weight_3;
 };
 
-LocalLightWalk_0 localLightWalk_0(float3 relativePosition_9, uint2 pixel_5, float2 fragmentCentre_4, KernelContext_0 thread* kernelContext_42)
+
+#line 944
+LocalLightWalk_0 localLightWalk_0(float3 relativePosition_10, float2 clusterPixel_0, float2 fragmentCentre_6, KernelContext_0 thread* kernelContext_45)
 {
     thread LocalLightWalk_0 walk_0;
-    (&walk_0)->count_3 = kernelContext_42->cyFrameView_0->frame_0->counts_0.x;
+    (&walk_0)->count_3 = kernelContext_45->cyFrameView_0->frame_0->counts_0.x;
     (&walk_0)->offset_1 = 0U;
     (&walk_0)->clustered_0 = false;
     (&walk_0)->stochastic_0 = false;
     (&walk_0)->selected_0 = 0U;
     (&walk_0)->weight_3 = 0.0;
 
-#line 884
-    bool _S250;
+#line 952
+    bool _S259;
 
 
-    if(((kernelContext_42->cyFrameView_0->frame_0->lightingControl_0.w) & 1U) != 0U)
+    if(((kernelContext_45->cyFrameView_0->frame_0->lightingControl_0.w) & 1U) != 0U)
     {
 
-#line 887
-        float4 _S251 = cyMaterialSampleTextureLevel_0(kernelContext_42->cyFrameView_0->frame_0->lightingControl_0.z, fragmentCentre_4 * kernelContext_42->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_42);
+#line 955
+        float4 _S260 = cyMaterialSampleTextureLevel_0(kernelContext_45->cyFrameView_0->frame_0->lightingControl_0.z, fragmentCentre_6 * kernelContext_45->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_45);
 
 
 
         (&walk_0)->stochastic_0 = true;
-        (&walk_0)->weight_3 = _S251.y;
-        float _S252 = _S251.x;
+        (&walk_0)->weight_3 = _S260.y;
+        float _S261 = _S260.x;
 
-#line 893
-        if(_S252 >= 0.0)
+#line 961
+        if(_S261 >= 0.0)
         {
 
-#line 893
-            _S250 = ((&walk_0)->weight_3) > 0.0;
+#line 961
+            _S259 = ((&walk_0)->weight_3) > 0.0;
 
-#line 893
+#line 961
         }
         else
         {
 
-#line 893
-            _S250 = false;
+#line 961
+            _S259 = false;
 
-#line 893
+#line 961
         }
 
-#line 893
-        if(_S250)
+#line 961
+        if(_S259)
         {
 
-#line 893
-            _S250 = _S252 < float((&walk_0)->count_3);
+#line 961
+            _S259 = _S261 < float((&walk_0)->count_3);
 
-#line 893
+#line 961
         }
         else
         {
 
-#line 893
-            _S250 = false;
+#line 961
+            _S259 = false;
 
-#line 893
+#line 961
         }
 
-#line 893
-        uint _S253;
-        if(_S250)
+#line 961
+        uint _S262;
+        if(_S259)
         {
 
-#line 894
-            _S253 = uint(_S252);
+#line 962
+            _S262 = uint(_S261);
 
-#line 894
+#line 962
         }
         else
         {
 
-#line 894
-            _S253 = 0U;
+#line 962
+            _S262 = 0U;
 
-#line 894
+#line 962
         }
 
-#line 894
-        (&walk_0)->selected_0 = _S253;
-        if(_S250)
+#line 962
+        (&walk_0)->selected_0 = _S262;
+        if(_S259)
         {
 
-#line 895
-            _S253 = 1U;
+#line 963
+            _S262 = 1U;
 
-#line 895
+#line 963
         }
         else
         {
 
-#line 895
-            _S253 = 0U;
+#line 963
+            _S262 = 0U;
 
-#line 895
+#line 963
         }
 
-#line 895
-        (&walk_0)->count_3 = _S253;
+#line 963
+        (&walk_0)->count_3 = _S262;
         return walk_0;
     }
-    if((kernelContext_42->cyFrameView_0->frame_0->counts_0.w) == 0U)
+    if((kernelContext_45->cyFrameView_0->frame_0->counts_0.w) == 0U)
     {
 
-#line 898
-        _S250 = true;
+#line 966
+        _S259 = true;
 
-#line 898
+#line 966
     }
     else
     {
 
-#line 898
-        _S250 = ((&kernelContext_42->cyFrameView_0->frame_0->clusterGrid_0)->dimensions_0.z) == 0U;
+#line 966
+        _S259 = ((&kernelContext_45->cyFrameView_0->frame_0->clusterGrid_0)->dimensions_0.z) == 0U;
 
-#line 898
+#line 966
     }
 
-#line 898
-    if(_S250)
+#line 966
+    if(_S259)
+    {
+
+#line 966
+        _S259 = true;
+
+#line 966
+    }
+    else
+    {
+
+#line 966
+        _S259 = (clusterPixel_0.x) < 0.0;
+
+#line 966
+    }
+
+#line 966
+    if(_S259)
     {
         return walk_0;
     }
-    uint2 _S254 = uint2(kernelContext_42->cyFrameView_0->frame_0->extentAndInverse_0.xy);
+    uint2 _S263 = uint2(kernelContext_45->cyFrameView_0->frame_0->extentAndInverse_0.xy);
+    uint2 _S264 = uint2(clusterPixel_0);
 
-#line 902
-    float _S255 = viewDepthOf_0(relativePosition_9, kernelContext_42);
+#line 971
+)cy_msl",
+    R"cy_msl(    float _S265 = viewDepthOf_0(relativePosition_10, kernelContext_45);
 
-#line 902
-    uint3 _S256 = clusterCoordOf_1(&kernelContext_42->cyFrameView_0->frame_0->clusterGrid_0, pixel_5, _S254, _S255);
+#line 971
+    uint3 _S266 = clusterCoordOf_1(&kernelContext_45->cyFrameView_0->frame_0->clusterGrid_0, _S264, _S263, _S265);
 
-#line 902
-    uint _S257 = clusterIndexOf_1(&kernelContext_42->cyFrameView_0->frame_0->clusterGrid_0, _S256);
+#line 971
+    uint _S267 = clusterIndexOf_1(&kernelContext_45->cyFrameView_0->frame_0->clusterGrid_0, _S266);
 
-#line 907
-    uint2 _S258 = kernelContext_42->cyFrameView_0->clusterHeaders_0[_S257 * kernelContext_42->cyFrameView_0->frame_0->counts_0.z];
+#line 976
+    uint2 _S268 = kernelContext_45->cyFrameView_0->clusterHeaders_0[_S267 * kernelContext_45->cyFrameView_0->frame_0->counts_0.z];
     (&walk_0)->clustered_0 = true;
-    (&walk_0)->offset_1 = _S258.x;
-    (&walk_0)->count_3 = _S258.y;
+    (&walk_0)->offset_1 = _S268.x;
+    (&walk_0)->count_3 = _S268.y;
     return walk_0;
 }
 
-uint localLightIndex_0(const LocalLightWalk_0 thread* walk_1, uint slot_4, KernelContext_0 thread* kernelContext_43)
+uint localLightIndex_0(const LocalLightWalk_0 thread* walk_1, uint slot_4, KernelContext_0 thread* kernelContext_46)
 {
     if(walk_1->stochastic_0)
     {
         return walk_1->selected_0;
     }
 
-#line 918
-    uint _S259;
+#line 987
+    uint _S269;
 
     if(walk_1->clustered_0)
     {
 
-#line 920
-        _S259 = kernelContext_43->cyFrameView_0->clusterIndices_0[walk_1->offset_1 + slot_4];
+#line 989
+        _S269 = kernelContext_46->cyFrameView_0->clusterIndices_0[walk_1->offset_1 + slot_4];
 
-#line 920
+#line 989
     }
     else
     {
 
-#line 920
-        _S259 = slot_4;
+#line 989
+        _S269 = slot_4;
 
-#line 920
+#line 989
     }
 
-#line 920
-    return _S259;
+#line 989
+    return _S269;
 }
 
 
 #line 114 "src/rendering/shaders/cy/light.slang"
 bool isAreaLight_0(uint kind_1)
 {
-    uint _S260 = kind_1 & 255U;
+    uint _S270 = kind_1 & 255U;
 
 #line 116
-    bool _S261;
-    if(_S260 >= 4U)
+    bool _S271;
+    if(_S270 >= 4U)
     {
 
 #line 117
-        _S261 = _S260 <= 7U;
+        _S271 = _S270 <= 7U;
 
 #line 117
     }
@@ -3847,26 +4033,26 @@ bool isAreaLight_0(uint kind_1)
     {
 
 #line 117
-        _S261 = false;
+        _S271 = false;
 
 #line 117
     }
 
 #line 117
-    return _S261;
+    return _S271;
 }
 
 
-#line 767 "src/rendering/shaders/cy/frame.slang"
-float4 frameLtcTexel_0(uint x_1, uint y_1, KernelContext_0 thread* kernelContext_44)
+#line 796 "src/rendering/shaders/cy/frame.slang"
+float4 frameLtcTexel_0(uint x_1, uint y_1, KernelContext_0 thread* kernelContext_47)
 {
 
-#line 767
-    float4 _S262 = cyMaterialSampleTextureLevel_0(kernelContext_44->cyFrameView_0->frame_0->lightingControl_0.x, float2((float(x_1) + 0.5) / 24.0, (float(y_1) + 0.5) / 48.0), 0.0, kernelContext_44);
+#line 796
+    float4 _S272 = cyMaterialSampleTextureLevel_0(kernelContext_47->cyFrameView_0->frame_0->lightingControl_0.x, float2((float(x_1) + 0.5) / 24.0, (float(y_1) + 0.5) / 48.0), 0.0, kernelContext_47);
 
 
 
-    return _S262;
+    return _S272;
 }
 
 
@@ -3878,63 +4064,62 @@ struct AreaLtc_0
 };
 
 
-#line 775 "src/rendering/shaders/cy/frame.slang"
-AreaLtc_0 frameAreaLtc_0(float roughness_5, float cosTheta_0, KernelContext_0 thread* kernelContext_45)
+#line 804 "src/rendering/shaders/cy/frame.slang"
+AreaLtc_0 frameAreaLtc_0(float roughness_5, float cosTheta_0, KernelContext_0 thread* kernelContext_48)
 {
 
 
 
-    float _S263 = clamp(sqrt(saturate(roughness_5)) * 24.0 - 0.5, 0.0, 23.0);
-    float _S264 = clamp(sqrt(saturate(1.0 - cosTheta_0)) * 24.0 - 0.5, 0.0, 23.0);
-    uint _S265 = uint(_S263);
-    uint _S266 = uint(_S264);
-    uint _S267 = min(_S265 + 1U, 23U);
-    uint _S268 = min(_S266 + 1U, 23U);
-    float _S269 = _S263 - float(_S265);
-    float _S270 = _S264 - float(_S266);
+    float _S273 = clamp(sqrt(saturate(roughness_5)) * 24.0 - 0.5, 0.0, 23.0);
+    float _S274 = clamp(sqrt(saturate(1.0 - cosTheta_0)) * 24.0 - 0.5, 0.0, 23.0);
+    uint _S275 = uint(_S273);
+    uint _S276 = uint(_S274);
+    uint _S277 = min(_S275 + 1U, 23U);
+    uint _S278 = min(_S276 + 1U, 23U);
+    float _S279 = _S273 - float(_S275);
+    float _S280 = _S274 - float(_S276);
 
-#line 787
-    float4 _S271 = frameLtcTexel_0(_S265, _S266, kernelContext_45);
+#line 816
+    float4 _S281 = frameLtcTexel_0(_S275, _S276, kernelContext_48);
 
-#line 787
-    float4 _S272 = frameLtcTexel_0(_S267, _S266, kernelContext_45);
-    float4 _S273 = float4(_S269) ;
+#line 816
+    float4 _S282 = frameLtcTexel_0(_S277, _S276, kernelContext_48);
+    float4 _S283 = float4(_S279) ;
 
-#line 788
-    float4 _S274 = mix(_S271, _S272, _S273);
+#line 817
+    float4 _S284 = mix(_S281, _S282, _S283);
 
-#line 788
-    float4 _S275 = frameLtcTexel_0(_S265, _S268, kernelContext_45);
+#line 817
+    float4 _S285 = frameLtcTexel_0(_S275, _S278, kernelContext_48);
 
-#line 788
-    float4 _S276 = frameLtcTexel_0(_S267, _S268, kernelContext_45);
-)cy_msl",
-    R"cy_msl(    float4 _S277 = mix(_S275, _S276, _S273);
-    uint _S278 = _S266 + 24U;
+#line 817
+    float4 _S286 = frameLtcTexel_0(_S277, _S278, kernelContext_48);
+    float4 _S287 = mix(_S285, _S286, _S283);
+    uint _S288 = _S276 + 24U;
 
-#line 790
-    float4 _S279 = frameLtcTexel_0(_S265, _S278, kernelContext_45);
+#line 819
+    float4 _S289 = frameLtcTexel_0(_S275, _S288, kernelContext_48);
 
-#line 790
-    float4 _S280 = frameLtcTexel_0(_S267, _S278, kernelContext_45);
+#line 819
+    float4 _S290 = frameLtcTexel_0(_S277, _S288, kernelContext_48);
 
-#line 790
-    float4 _S281 = mix(_S279, _S280, _S273);
+#line 819
+    float4 _S291 = mix(_S289, _S290, _S283);
 
-    uint _S282 = _S268 + 24U;
+    uint _S292 = _S278 + 24U;
 
-#line 792
-    float4 _S283 = frameLtcTexel_0(_S265, _S282, kernelContext_45);
+#line 821
+    float4 _S293 = frameLtcTexel_0(_S275, _S292, kernelContext_48);
 
-#line 792
-    float4 _S284 = frameLtcTexel_0(_S267, _S282, kernelContext_45);
-    float4 _S285 = float4(_S270) ;
+#line 821
+    float4 _S294 = frameLtcTexel_0(_S277, _S292, kernelContext_48);
+    float4 _S295 = float4(_S280) ;
 
-#line 793
-    float4 _S286 = mix(_S281, mix(_S283, _S284, _S273), _S285);
+#line 822
+    float4 _S296 = mix(_S291, mix(_S293, _S294, _S283), _S295);
     thread AreaLtc_0 entry_0;
-    (&entry_0)->transform_0 = mix(_S274, _S277, _S285);
-    (&entry_0)->magnitude_0 = _S286.x;
+    (&entry_0)->transform_0 = mix(_S284, _S287, _S295);
+    (&entry_0)->magnitude_0 = _S296.x;
     return entry_0;
 }
 
@@ -3942,25 +4127,25 @@ AreaLtc_0 frameAreaLtc_0(float roughness_5, float cosTheta_0, KernelContext_0 th
 #line 362 "src/rendering/shaders/cy/light.slang"
 float areaLightWindow_0(const Light_0 thread* light_2, float3 surfaceRelativeToCamera_1)
 {
-    float3 _S287 = light_2->positionRelativeToCamera_0 - surfaceRelativeToCamera_1;
-    float _S288 = dot(_S287, _S287) / max(light_2->range_0 * light_2->range_0, 9.99999997475242708e-07);
-    float _S289 = saturate(1.0 - _S288 * _S288);
-    return _S289 * _S289;
+    float3 _S297 = light_2->positionRelativeToCamera_0 - surfaceRelativeToCamera_1;
+    float _S298 = dot(_S297, _S297) / max(light_2->range_0 * light_2->range_0, 9.99999997475242708e-07);
+    float _S299 = saturate(1.0 - _S298 * _S298);
+    return _S299 * _S299;
 }
 
 
 #line 161
 float3 unitOr_0(float3 value_1, float3 fallback_0)
 {
-    float _S290 = dot(value_1, value_1);
+    float _S300 = dot(value_1, value_1);
 
 #line 163
-    float3 _S291;
-    if(_S290 > 9.99999968265522539e-21)
+    float3 _S301;
+    if(_S300 > 9.99999968265522539e-21)
     {
 
 #line 164
-        _S291 = value_1 * float3(rsqrt(_S290)) ;
+        _S301 = value_1 * float3(rsqrt(_S300)) ;
 
 #line 164
     }
@@ -3968,13 +4153,13 @@ float3 unitOr_0(float3 value_1, float3 fallback_0)
     {
 
 #line 164
-        _S291 = fallback_0;
+        _S301 = fallback_0;
 
 #line 164
     }
 
 #line 164
-    return _S291;
+    return _S301;
 }
 
 
@@ -3983,13 +4168,13 @@ float signNotZero_0(float value_2)
 {
 
 #line 120
-    float _S292;
+    float _S302;
 
     if(value_2 >= 0.0)
     {
 
 #line 122
-        _S292 = 1.0;
+        _S302 = 1.0;
 
 #line 122
     }
@@ -3997,44 +4182,44 @@ float signNotZero_0(float value_2)
     {
 
 #line 122
-        _S292 = -1.0;
+        _S302 = -1.0;
 
 #line 122
     }
 
 #line 122
-    return _S292;
+    return _S302;
 }
 
 
 float3 decodeAreaTangent_0(uint word_0)
 {
-    float _S293 = max(float(int(word_0 << 16U) >> 16U) / 32767.0, -1.0);
-    float _S294 = max(float(int(word_0) >> 16U) / 32767.0, -1.0);
-    float _S295 = 1.0 - abs(_S293) - abs(_S294);
+    float _S303 = max(float(int(word_0 << 16U) >> 16U) / 32767.0, -1.0);
+    float _S304 = max(float(int(word_0) >> 16U) / 32767.0, -1.0);
+    float _S305 = 1.0 - abs(_S303) - abs(_S304);
 
 #line 130
-    thread float3 unit_0 = float3(_S293, _S294, _S295);
-    if(_S295 < 0.0)
+    thread float3 unit_0 = float3(_S303, _S304, _S305);
+    if(_S305 < 0.0)
     {
 
-        float _S296 = (1.0 - abs(unit_0.x)) * signNotZero_0(unit_0.y);
+        float _S306 = (1.0 - abs(unit_0.x)) * signNotZero_0(unit_0.y);
         unit_0.x = (1.0 - abs(unit_0.y)) * signNotZero_0(unit_0.x);
-        unit_0.y = _S296;
+        unit_0.y = _S306;
 
 #line 131
     }
 
 #line 138
-    float _S297 = dot(unit_0, unit_0);
+    float _S307 = dot(unit_0, unit_0);
 
 #line 138
-    float3 _S298;
-    if(_S297 > 0.0)
+    float3 _S308;
+    if(_S307 > 0.0)
     {
 
 #line 139
-        _S298 = unit_0 * float3(rsqrt(_S297)) ;
+        _S308 = unit_0 * float3(rsqrt(_S307)) ;
 
 #line 139
     }
@@ -4042,13 +4227,13 @@ float3 decodeAreaTangent_0(uint word_0)
     {
 
 #line 139
-        _S298 = float3(1.0, 0.0, 0.0);
+        _S308 = float3(1.0, 0.0, 0.0);
 
 #line 139
     }
 
 #line 139
-    return _S298;
+    return _S308;
 }
 
 
@@ -4057,13 +4242,13 @@ float3 facingPerpendicular_0(float3 axis_0, float3 towards_0)
 {
 
 #line 168
-    float3 _S299;
+    float3 _S309;
 
     if((abs(axis_0.y)) < 0.99000000953674316)
     {
 
 #line 170
-        _S299 = float3(0.0, 1.0, 0.0);
+        _S309 = float3(0.0, 1.0, 0.0);
 
 #line 170
     }
@@ -4071,11 +4256,11 @@ float3 facingPerpendicular_0(float3 axis_0, float3 towards_0)
     {
 
 #line 170
-        _S299 = float3(1.0, 0.0, 0.0);
+        _S309 = float3(1.0, 0.0, 0.0);
 
 #line 170
     }
-    return unitOr_0(cross(axis_0, towards_0), normalize(cross(axis_0, _S299)));
+    return unitOr_0(cross(axis_0, towards_0), normalize(cross(axis_0, _S309)));
 }
 
 
@@ -4094,18 +4279,18 @@ struct AreaQuad_0
 AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelativeToCamera_2)
 {
 
-    uint _S300 = (light_3->kind_0) & 255U;
-    float3 _S301 = light_3->positionRelativeToCamera_0 - surfaceRelativeToCamera_2;
-    float3 _S302 = unitOr_0(light_3->direction_0, float3(0.0, -1.0, 0.0));
+    uint _S310 = (light_3->kind_0) & 255U;
+    float3 _S311 = light_3->positionRelativeToCamera_0 - surfaceRelativeToCamera_2;
+    float3 _S312 = unitOr_0(light_3->direction_0, float3(0.0, -1.0, 0.0));
 
 
     float extentX_0 = light_3->spotScaleBias_0.x;
     float extentY_0 = light_3->spotScaleBias_0.y;
-    bool _S303 = ((light_3->kind_0) & 256U) == 0U;
+    bool _S313 = ((light_3->kind_0) & 256U) == 0U;
 
 #line 185
     bool singleSided_0;
-    if(_S300 == 4U)
+    if(_S310 == 4U)
     {
 
 #line 186
@@ -4117,7 +4302,7 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
     {
 
 #line 186
-        singleSided_0 = _S300 == 5U;
+        singleSided_0 = _S310 == 5U;
 
 #line 186
     }
@@ -4137,10 +4322,10 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
 #line 186
     if(singleSided_0)
     {
-        float3 _S304 = decodeAreaTangent_0(light_3->shapeWord_0);
-        float3 axisX_1 = unitOr_0(_S304 - _S302 * float3(dot(_S304, _S302)) , facingPerpendicular_0(_S302, _S301));
-        float3 _S305 = cross(_S302, axisX_1);
-        if(_S300 == 5U)
+        float3 _S314 = decodeAreaTangent_0(light_3->shapeWord_0);
+        float3 axisX_1 = unitOr_0(_S314 - _S312 * float3(dot(_S314, _S312)) , facingPerpendicular_0(_S312, _S311));
+        float3 _S315 = cross(_S312, axisX_1);
+        if(_S310 == 5U)
         {
 
             float extentY_2 = extentY_0 * 0.88622695207595825;
@@ -4169,10 +4354,10 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
         axisX_0 = axisX_1;
 
 #line 191
-        axisY_0 = _S305;
+        axisY_0 = _S315;
 
 #line 191
-        singleSided_0 = _S303;
+        singleSided_0 = _S313;
 
 #line 186
     }
@@ -4180,14 +4365,14 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
     {
 
 #line 197
-        if(_S300 == 7U)
+        if(_S310 == 7U)
         {
 
 #line 197
-            axisX_0 = facingPerpendicular_0(_S302, _S301);
+            axisX_0 = facingPerpendicular_0(_S312, _S311);
 
 #line 197
-            axisY_0 = _S302;
+            axisY_0 = _S312;
 
 #line 197
             extentX_1 = extentY_0;
@@ -4203,18 +4388,18 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
 #line 210
             float extentX_2 = extentX_0 * 0.88622695207595825;
 
-            float3 _S306 = float3(0.0, 0.0, 1.0);
+            float3 _S316 = float3(0.0, 0.0, 1.0);
 
 #line 212
-            float3 _S307 = unitOr_0(_S301, _S306);
-            float3 axisX_2 = unitOr_0(cross(_S306, _S307), float3(1.0, 0.0, 0.0));
-            float3 _S308 = cross(_S307, axisX_2);
+            float3 _S317 = unitOr_0(_S311, _S316);
+            float3 axisX_2 = unitOr_0(cross(_S316, _S317), float3(1.0, 0.0, 0.0));
+            float3 _S318 = cross(_S317, axisX_2);
 
 #line 214
             axisX_0 = axisX_2;
 
 #line 214
-            axisY_0 = _S308;
+            axisY_0 = _S318;
 
 #line 214
             extentX_1 = extentX_2;
@@ -4233,22 +4418,22 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
 
 #line 217
     thread AreaQuad_0 quad_0;
-    float3 _S309 = axisX_0 * float3(extentX_1) ;
+    float3 _S319 = axisX_0 * float3(extentX_1) ;
 
 #line 218
-    float3 _S310 = _S301 - _S309;
+    float3 _S320 = _S311 - _S319;
 
 #line 218
-    float3 _S311 = axisY_0 * float3(extentY_1) ;
+    float3 _S321 = axisY_0 * float3(extentY_1) ;
 
 #line 218
-    (&quad_0)->corner0_0 = _S310 - _S311;
-    float3 _S312 = _S301 + _S309;
+    (&quad_0)->corner0_0 = _S320 - _S321;
+    float3 _S322 = _S311 + _S319;
 
 #line 219
-    (&quad_0)->corner1_0 = _S312 - _S311;
-    (&quad_0)->corner2_0 = _S312 + _S311;
-    (&quad_0)->corner3_0 = _S310 + _S311;
+    (&quad_0)->corner1_0 = _S322 - _S321;
+    (&quad_0)->corner2_0 = _S322 + _S321;
+    (&quad_0)->corner3_0 = _S320 + _S321;
 
 
     if(!singleSided_0)
@@ -4263,7 +4448,7 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
     {
 
 #line 224
-        singleSided_0 = (dot(cross(axisX_0, axisY_0), _S301)) <= 0.0;
+        singleSided_0 = (dot(cross(axisX_0, axisY_0), _S311)) <= 0.0;
 
 #line 224
     }
@@ -4277,17 +4462,17 @@ AreaQuad_0 areaLightQuad_0(const Light_0 thread* light_3, float3 surfaceRelative
 float3 edgeVector_0(float3 a_2, float3 b_2)
 {
 
-    float _S313 = acos(clamp(dot(a_2, b_2), -1.0, 1.0));
-    float3 _S314 = cross(a_2, b_2);
-    float _S315 = length(_S314);
+    float _S323 = acos(clamp(dot(a_2, b_2), -1.0, 1.0));
+    float3 _S324 = cross(a_2, b_2);
+    float _S325 = length(_S324);
 
 #line 234
-    float _S316;
-    if(_S315 > 9.99999997475242708e-07)
+    float _S326;
+    if(_S325 > 9.99999997475242708e-07)
     {
 
 #line 235
-        _S316 = _S313 / _S315;
+        _S326 = _S323 / _S325;
 
 #line 235
     }
@@ -4295,11 +4480,11 @@ float3 edgeVector_0(float3 a_2, float3 b_2)
     {
 
 #line 235
-        _S316 = 1.0;
+        _S326 = 1.0;
 
 #line 235
     }
-    return _S314 * float3(_S316) ;
+    return _S324 * float3(_S326) ;
 }
 
 
@@ -4314,11 +4499,11 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
 {
     thread PolygonIntegral_0 result_5;
     (&result_5)->integral_0 = 0.0;
-    float3 _S317 = float3(0.0, 0.0, 1.0);
+    float3 _S327 = float3(0.0, 0.0, 1.0);
 
 #line 253
-    (&result_5)->direction_2 = _S317;
-    array<float3, int(4)> _S318 = { unitOr_0(c0_0, _S317), unitOr_0(c1_0, _S317), unitOr_0(c2_0, _S317), unitOr_0(c3_0, _S317) };
+    (&result_5)->direction_2 = _S327;
+    array<float3, int(4)> _S328 = { unitOr_0(c0_0, _S327), unitOr_0(c1_0, _S327), unitOr_0(c2_0, _S327), unitOr_0(c3_0, _S327) };
 
     thread array<float3, int(5)> clipped_0;
 
@@ -4343,27 +4528,27 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
         }
 
 #line 258
-        uint _S319 = index_12;
+        uint _S329 = index_12;
 
 
-        uint _S320 = index_12 + 1U;
+        uint _S330 = index_12 + 1U;
 
 #line 261
-        uint _S321 = _S320 % 4U;
-        float _S322 = _S318[index_12].z;
+        uint _S331 = _S330 % 4U;
+        float _S332 = _S328[index_12].z;
 
 #line 262
-        bool _S323 = _S322 > 0.0;
-        float _S324 = _S318[_S321].z;
+        bool _S333 = _S332 > 0.0;
+        float _S334 = _S328[_S331].z;
 
 #line 263
-        bool _S325 = _S324 > 0.0;
+        bool _S335 = _S334 > 0.0;
 
 #line 263
         uint written_1;
-        if(_S323)
+        if(_S333)
         {
-            clipped_0[written_0] = _S318[_S319];
+            clipped_0[written_0] = _S328[_S329];
 
 #line 266
             written_1 = written_0 + 1U;
@@ -4380,10 +4565,10 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
         }
 
 #line 269
-        if(_S323 != _S325)
+        if(_S333 != _S335)
         {
 
-            clipped_0[written_1] = _S318[_S319] + (_S318[_S321] - _S318[_S319]) * float3((_S322 / (_S322 - _S324))) ;
+            clipped_0[written_1] = _S328[_S329] + (_S328[_S331] - _S328[_S329]) * float3((_S332 / (_S332 - _S334))) ;
 
 #line 272
             written_0 = written_1 + 1U;
@@ -4400,7 +4585,7 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
         }
 
 #line 258
-        index_12 = _S320;
+        index_12 = _S330;
 
 #line 258
     }
@@ -4410,13 +4595,13 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
     {
         return result_5;
     }
-    float3 _S326 = float3(0.0) ;
+    float3 _S336 = float3(0.0) ;
 
 #line 280
     index_12 = 0U;
 
 #line 280
-    float3 sum_2 = _S326;
+    float3 sum_2 = _S336;
     for(;;)
     {
 
@@ -4430,15 +4615,15 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
 #line 281
             break;
         }
-        float3 _S327 = unitOr_0(clipped_0[index_12], _S317);
-        uint _S328 = index_12 + 1U;
+        float3 _S337 = unitOr_0(clipped_0[index_12], _S327);
+        uint _S338 = index_12 + 1U;
 
 #line 284
-        uint _S329 = _S328 % written_0;
-        float3 sum_3 = sum_2 + edgeVector_0(_S327, unitOr_0(clipped_0[_S329], _S317));
+        uint _S339 = _S338 % written_0;
+        float3 sum_3 = sum_2 + edgeVector_0(_S337, unitOr_0(clipped_0[_S339], _S327));
 
 #line 281
-        index_12 = _S328;
+        index_12 = _S338;
 
 #line 281
         sum_2 = sum_3;
@@ -4459,17 +4644,17 @@ PolygonIntegral_0 cosinePolygonVector_0(float3 c0_0, float3 c1_0, float3 c2_0, f
 
 
     (&result_5)->integral_0 = sum_2.z / 6.28318548202514648;
-    (&result_5)->direction_2 = unitOr_0(sum_2, _S317);
+    (&result_5)->direction_2 = unitOr_0(sum_2, _S327);
     return result_5;
 }
 
 
 float cosinePolygonIntegral_0(float3 c0_1, float3 c1_1, float3 c2_1, float3 c3_1)
 {
-    PolygonIntegral_0 _S330 = cosinePolygonVector_0(c0_1, c1_1, c2_1, c3_1);
+    PolygonIntegral_0 _S340 = cosinePolygonVector_0(c0_1, c1_1, c2_1, c3_1);
 
 #line 299
-    return _S330.integral_0;
+    return _S340.integral_0;
 }
 
 
@@ -4481,13 +4666,13 @@ float areaFormFactor_0(const AreaQuad_0 thread* quad_1, float3 normal_6)
     }
 
 #line 307
-    float3 _S331;
+    float3 _S341;
 
     if((abs(normal_6.z)) < 0.99900001287460327)
     {
 
 #line 309
-        _S331 = float3(0.0, 0.0, 1.0);
+        _S341 = float3(0.0, 0.0, 1.0);
 
 #line 309
     }
@@ -4495,16 +4680,16 @@ float areaFormFactor_0(const AreaQuad_0 thread* quad_1, float3 normal_6)
     {
 
 #line 309
-        _S331 = float3(1.0, 0.0, 0.0);
+        _S341 = float3(1.0, 0.0, 0.0);
 
 #line 309
     }
-    float3 _S332 = unitOr_0(cross(_S331, normal_6), float3(1.0, 0.0, 0.0));
-    float3 _S333 = cross(normal_6, _S332);
-    float _S334 = cosinePolygonIntegral_0(float3(dot(quad_1->corner0_0, _S332), dot(quad_1->corner0_0, _S333), dot(quad_1->corner0_0, normal_6)), float3(dot(quad_1->corner1_0, _S332), dot(quad_1->corner1_0, _S333), dot(quad_1->corner1_0, normal_6)), float3(dot(quad_1->corner2_0, _S332), dot(quad_1->corner2_0, _S333), dot(quad_1->corner2_0, normal_6)), float3(dot(quad_1->corner3_0, _S332), dot(quad_1->corner3_0, _S333), dot(quad_1->corner3_0, normal_6)));
+    float3 _S342 = unitOr_0(cross(_S341, normal_6), float3(1.0, 0.0, 0.0));
+    float3 _S343 = cross(normal_6, _S342);
+    float _S344 = cosinePolygonIntegral_0(float3(dot(quad_1->corner0_0, _S342), dot(quad_1->corner0_0, _S343), dot(quad_1->corner0_0, normal_6)), float3(dot(quad_1->corner1_0, _S342), dot(quad_1->corner1_0, _S343), dot(quad_1->corner1_0, normal_6)), float3(dot(quad_1->corner2_0, _S342), dot(quad_1->corner2_0, _S343), dot(quad_1->corner2_0, normal_6)), float3(dot(quad_1->corner3_0, _S342), dot(quad_1->corner3_0, _S343), dot(quad_1->corner3_0, normal_6)));
 
 #line 312
-    return _S334;
+    return _S344;
 }
 
 
@@ -4519,14 +4704,14 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
         return result_6;
     }
 
-    float3 _S335 = unitOr_0(view_1 - normal_7 * float3(clamp(dot(normal_7, view_1), 0.00100000004749745, 1.0)) , float3(1.0, 0.0, 0.0));
-    float3 _S336 = cross(normal_7, _S335);
+    float3 _S345 = unitOr_0(view_1 - normal_7 * float3(clamp(dot(normal_7, view_1), 0.00100000004749745, 1.0)) , float3(1.0, 0.0, 0.0));
+    float3 _S346 = cross(normal_7, _S345);
 
 #line 333
-    float4 _S337 = ltc_0->transform_0;
+    float4 _S347 = ltc_0->transform_0;
 
     thread array<float3, int(4)> local_0;
-    array<float3, int(4)> _S338 = { quad_2->corner0_0, quad_2->corner1_0, quad_2->corner2_0, quad_2->corner3_0 };
+    array<float3, int(4)> _S348 = { quad_2->corner0_0, quad_2->corner1_0, quad_2->corner2_0, quad_2->corner3_0 };
 
 #line 336
     uint index_13 = 0U;
@@ -4544,12 +4729,12 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
             break;
         }
 
-        float _S339 = dot(_S338[index_13], _S335);
+        float _S349 = dot(_S348[index_13], _S345);
 
 #line 340
-        float _S340 = dot(_S338[index_13], normal_7);
+        float _S350 = dot(_S348[index_13], normal_7);
 
-        local_0[index_13] = float3(_S337.x * _S339 + _S337.y * _S340, _S337.z * dot(_S338[index_13], _S336), _S337.w * _S339 + _S340);
+        local_0[index_13] = float3(_S347.x * _S349 + _S347.y * _S350, _S347.z * dot(_S348[index_13], _S346), _S347.w * _S349 + _S350);
 
 #line 337
         index_13 = index_13 + 1U;
@@ -4558,27 +4743,27 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
     }
 
 #line 345
-    PolygonIntegral_0 _S341 = cosinePolygonVector_0(local_0[int(0)], local_0[int(1)], local_0[int(2)], local_0[int(3)]);
+    PolygonIntegral_0 _S351 = cosinePolygonVector_0(local_0[int(0)], local_0[int(1)], local_0[int(2)], local_0[int(3)]);
 
 
-    float _S342 = _S337.x;
-
-#line 348
-    float _S343 = _S337.y;
+    float _S352 = _S347.x;
 
 #line 348
-    float _S344 = _S337.w;
+    float _S353 = _S347.y;
 
 #line 348
-    float _S345 = _S342 - _S343 * _S344;
+    float _S354 = _S347.w;
 
 #line 348
-    bool _S346;
-    if((abs(_S345)) >= 9.99999993922529029e-09)
+    float _S355 = _S352 - _S353 * _S354;
+
+#line 348
+    bool _S356;
+    if((abs(_S355)) >= 9.99999993922529029e-09)
     {
 
 #line 349
-        _S346 = (abs(_S337.z)) >= 9.99999993922529029e-09;
+        _S356 = (abs(_S347.z)) >= 9.99999993922529029e-09;
 
 #line 349
     }
@@ -4586,7 +4771,7 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
     {
 
 #line 349
-        _S346 = false;
+        _S356 = false;
 
 #line 349
     }
@@ -4595,15 +4780,15 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
     float3 gathered_0;
 
 #line 349
-    if(_S346)
+    if(_S356)
     {
-        float _S347 = _S341.direction_2.x;
+        float _S357 = _S351.direction_2.x;
 
 #line 351
-        float _S348 = _S341.direction_2.z;
+        float _S358 = _S351.direction_2.z;
 
 #line 351
-        gathered_0 = unitOr_0(float3((_S347 - _S343 * _S348) / _S345, _S341.direction_2.y / _S337.z, (_S342 * _S348 - _S344 * _S347) / _S345), _S341.direction_2);
+        gathered_0 = unitOr_0(float3((_S357 - _S353 * _S358) / _S355, _S351.direction_2.y / _S347.z, (_S352 * _S358 - _S354 * _S357) / _S355), _S351.direction_2);
 
 #line 349
     }
@@ -4611,14 +4796,14 @@ PolygonIntegral_0 areaSpecularIntegral_0(const AreaQuad_0 thread* quad_2, float3
     {
 
 #line 349
-        gathered_0 = _S341.direction_2;
+        gathered_0 = _S351.direction_2;
 
 #line 349
     }
 
 #line 355
-    (&result_6)->integral_0 = _S341.integral_0;
-    (&result_6)->direction_2 = unitOr_0(_S335 * float3(gathered_0.x)  + _S336 * float3(gathered_0.y)  + normal_7 * float3(gathered_0.z) , normal_7);
+    (&result_6)->integral_0 = _S351.integral_0;
+    (&result_6)->direction_2 = unitOr_0(_S345 * float3(gathered_0.x)  + _S346 * float3(gathered_0.y)  + normal_7 * float3(gathered_0.z) , normal_7);
 
     return result_6;
 }
@@ -4637,108 +4822,109 @@ AreaShading_0 shadeAreaLight_0(const Light_0 thread* light_4, float3 surfaceRela
 
 
     thread AreaShading_0 result_7;
-    float3 _S349 = float3(0.0) ;
+    float3 _S359 = float3(0.0) ;
 
 #line 383
-    (&result_7)->diffuse_0 = _S349;
-    (&result_7)->specular_0 = _S349;
+    (&result_7)->diffuse_0 = _S359;
+)cy_msl",
+    R"cy_msl(    (&result_7)->specular_0 = _S359;
 
 #line 384
-    float _S350 = areaLightWindow_0(light_4, surfaceRelativeToCamera_3);
+    float _S360 = areaLightWindow_0(light_4, surfaceRelativeToCamera_3);
 
-    if(_S350 <= 0.0)
+    if(_S360 <= 0.0)
     {
         return result_7;
     }
 
 #line 388
-    AreaQuad_0 _S351 = areaLightQuad_0(light_4, surfaceRelativeToCamera_3);
+    AreaQuad_0 _S361 = areaLightQuad_0(light_4, surfaceRelativeToCamera_3);
 
 
-    float3 _S352 = light_4->color_0 * float3((light_4->intensity_0 * _S350)) ;
-    float3 _S353 = albedo_4 * float3((1.0 - metallic_3))  * _S352;
-
-#line 392
-    thread AreaQuad_0 _S354 = _S351;
+    float3 _S362 = light_4->color_0 * float3((light_4->intensity_0 * _S360)) ;
+    float3 _S363 = albedo_4 * float3((1.0 - metallic_3))  * _S362;
 
 #line 392
-    float _S355 = areaFormFactor_0(&_S354, normal_8);
+    thread AreaQuad_0 _S364 = _S361;
 
 #line 392
-    (&result_7)->diffuse_0 = _S353 * float3(_S355) ;
+    float _S365 = areaFormFactor_0(&_S364, normal_8);
+
+#line 392
+    (&result_7)->diffuse_0 = _S363 * float3(_S365) ;
     if(!hasLtc_0)
     {
         return result_7;
     }
 
 #line 395
-    thread AreaQuad_0 _S356 = _S351;
+    thread AreaQuad_0 _S366 = _S361;
 
 #line 395
-    PolygonIntegral_0 _S357 = areaSpecularIntegral_0(&_S356, normal_8, view_2, ltc_1);
+    PolygonIntegral_0 _S367 = areaSpecularIntegral_0(&_S366, normal_8, view_2, ltc_1);
 
 #line 402
-    float3 _S358 = mix(float3(0.03999999910593033) , albedo_4, float3(metallic_3) );
+    float3 _S368 = mix(float3(0.03999999910593033) , albedo_4, float3(metallic_3) );
 
-    (&result_7)->specular_0 = (_S358 + (float3(1.0)  - _S358) * float3(pow(1.0 - saturate(dot(view_2, unitOr_0(view_2 + _S357.direction_2, normal_8))), 5.0)) ) * _S352 * float3((_S357.integral_0 * ltc_1->magnitude_0)) ;
+    (&result_7)->specular_0 = (_S368 + (float3(1.0)  - _S368) * float3(pow(1.0 - saturate(dot(view_2, unitOr_0(view_2 + _S367.direction_2, normal_8))), 5.0)) ) * _S362 * float3((_S367.integral_0 * ltc_1->magnitude_0)) ;
     return result_7;
 }
 
 
-#line 801 "src/rendering/shaders/cy/frame.slang"
-AreaShading_0 frameAreaShading_0(uint index_14, const Surface_0 thread* surface_7, float3 relativePosition_10, float3 normal_9, float3 viewDir_1, KernelContext_0 thread* kernelContext_46)
+#line 830 "src/rendering/shaders/cy/frame.slang"
+AreaShading_0 frameAreaShading_0(uint index_14, const Surface_0 thread* surface_7, float3 relativePosition_11, float3 normal_9, float3 viewDir_1, KernelContext_0 thread* kernelContext_49)
 {
 
-    bool _S359 = (kernelContext_46->cyFrameView_0->frame_0->lightingControl_0.x) != 4294967295U;
+    bool _S369 = (kernelContext_49->cyFrameView_0->frame_0->lightingControl_0.x) != 4294967295U;
     thread AreaLtc_0 ltc_2;
     (&ltc_2)->transform_0 = float4(1.0, 0.0, 1.0, 0.0);
     (&ltc_2)->magnitude_0 = 1.0;
-    if(_S359)
+    if(_S369)
     {
 
-#line 808
-        AreaLtc_0 _S360 = frameAreaLtc_0(surface_7->roughness_1, clamp(dot(normal_9, viewDir_1), 0.00100000004749745, 1.0), kernelContext_46);
+#line 837
+        AreaLtc_0 _S370 = frameAreaLtc_0(surface_7->roughness_1, clamp(dot(normal_9, viewDir_1), 0.00100000004749745, 1.0), kernelContext_49);
 
-        ltc_2 = _S360;
+        ltc_2 = _S370;
 
-#line 808
+#line 837
     }
 
-#line 808
-    thread Light_0 _S361 = kernelContext_46->cyFrameView_0->lights_0[index_14];
+#line 837
+    thread Light_0 _S371 = kernelContext_49->cyFrameView_0->lights_0[index_14];
 
-#line 808
-    thread AreaLtc_0 _S362 = ltc_2;
+#line 837
+    thread AreaLtc_0 _S372 = ltc_2;
 
-#line 808
-    AreaShading_0 _S363 = shadeAreaLight_0(&_S361, relativePosition_10, normal_9, viewDir_1, surface_7->albedo_1, surface_7->roughness_1, surface_7->metallic_1, _S359, &_S362);
+#line 837
+    AreaShading_0 _S373 = shadeAreaLight_0(&_S371, relativePosition_11, normal_9, viewDir_1, surface_7->albedo_1, surface_7->roughness_1, surface_7->metallic_1, _S369, &_S372);
 
 
 
-    return _S363;
+    return _S373;
 }
 
 
-#line 827
-LightSample_0 bakedLightSample_0(uint index_15, float3 relativePosition_11, const CyBakedLights_0 thread* baked_2, KernelContext_0 thread* kernelContext_47)
+#line 856
+LightSample_0 bakedLightSample_0(uint index_15, float3 relativePosition_12, const CyBakedLights_0 thread* baked_2, KernelContext_0 thread* kernelContext_50)
 {
 
-#line 827
-    thread Light_0 _S364 = kernelContext_47->cyFrameView_0->lights_0[index_15];
+#line 856
+    thread Light_0 _S374 = kernelContext_50->cyFrameView_0->lights_0[index_15];
 
-#line 827
-    LightSample_0 _S365 = evaluateLight_0(&_S364, relativePosition_11);
+#line 856
+    LightSample_0 _S375 = evaluateLight_0(&_S374, relativePosition_12);
 
-    thread LightSample_0 sample_1 = _S365;
+    thread LightSample_0 sample_1 = _S375;
     if(baked_2->active_0)
     {
 
-#line 830
-        float _S366 = bakedLightFactor_0(index_15, baked_2->mask_0, kernelContext_47);
+#line 859
+        float _S376 = bakedLightFactor_0(index_15, baked_2->mask_0, kernelContext_50);
 
-        (&sample_1)->illuminance_0 = (&sample_1)->illuminance_0 * float3(_S366) ;
+        (&sample_1)->illuminance_0 = (&sample_1)->illuminance_0 * float3(_S376) ;
 
-#line 830
+#line 859
     }
 
 
@@ -4747,541 +4933,543 @@ LightSample_0 bakedLightSample_0(uint index_15, float3 relativePosition_11, cons
 }
 
 
-#line 923
-)cy_msl",
-    R"cy_msl(float3 accumulateLights_0(const Surface_0 thread* surface_8, float3 relativePosition_12, float3 normal_10, float3 viewDir_2, float2 fragmentCentre_5, uint instanceFlags_1, const CyBakedLights_0 thread* baked_3, KernelContext_0 thread* kernelContext_48)
+#line 992
+float3 accumulateLights_0(const Surface_0 thread* surface_8, float3 relativePosition_13, float3 normal_10, float3 viewDir_2, float2 fragmentCentre_7, uint instanceFlags_3, const CyBakedLights_0 thread* baked_3, KernelContext_0 thread* kernelContext_51)
 {
 
-#line 924
-    bool _S367;
+#line 993
+    bool _S377;
 
-    uint2 _S368 = uint2(fragmentCentre_5);
-    float3 _S369 = float3(0.0) ;
-    uint _S370 = kernelContext_48->cyFrameView_0->frame_0->counts_0.x;
+#line 993
+    float2 _S378 = frameClusterPixel_0(instanceFlags_3, relativePosition_13, fragmentCentre_7, kernelContext_51);
 
-#line 943
-    bool _S371 = ((kernelContext_48->cyFrameView_0->frame_0->directionalLights_0.w) & 2147483648U) != 0U;
 
-#line 943
-    uint _S372;
-    if(_S371)
+    float3 _S379 = float3(0.0) ;
+    uint _S380 = kernelContext_51->cyFrameView_0->frame_0->counts_0.x;
+
+#line 1012
+    bool _S381 = ((kernelContext_51->cyFrameView_0->frame_0->directionalLights_0.w) & 2147483648U) != 0U;
+
+#line 1012
+    uint _S382;
+    if(_S381)
     {
 
-#line 944
-        _S372 = min((kernelContext_48->cyFrameView_0->frame_0->directionalLights_0.w) & 255U, 3U);
+#line 1013
+        _S382 = min((kernelContext_51->cyFrameView_0->frame_0->directionalLights_0.w) & 255U, 3U);
 
-#line 944
+#line 1013
     }
     else
     {
 
-#line 944
-        _S372 = _S370;
+#line 1013
+        _S382 = _S380;
 
-#line 944
+#line 1013
     }
 
-#line 944
+#line 1013
     uint slot_5 = 0U;
 
-#line 944
-    float3 lit_3 = _S369;
+#line 1013
+    float3 lit_3 = _S379;
     for(;;)
     {
 
-#line 945
-        if(slot_5 < _S372)
+#line 1014
+        if(slot_5 < _S382)
         {
         }
         else
         {
 
-#line 945
+#line 1014
             break;
         }
 
-#line 945
-        uint _S373;
+#line 1014
+        uint _S383;
 
-        if(_S371)
+        if(_S381)
         {
 
-#line 947
-            _S373 = kernelContext_48->cyFrameView_0->frame_0->directionalLights_0[slot_5];
+#line 1016
+            _S383 = kernelContext_51->cyFrameView_0->frame_0->directionalLights_0[slot_5];
 
-#line 947
+#line 1016
         }
         else
         {
 
-#line 947
-            _S373 = slot_5;
+#line 1016
+            _S383 = slot_5;
 
-#line 947
+#line 1016
         }
-        if(!_S371)
+        if(!_S381)
         {
 
-#line 948
-            _S367 = (kernelContext_48->cyFrameView_0->lights_0[_S373].kind_0) != 0U;
+#line 1017
+            _S377 = (kernelContext_51->cyFrameView_0->lights_0[_S383].kind_0) != 0U;
 
-#line 948
+#line 1017
         }
         else
         {
 
-#line 948
-            _S367 = false;
+#line 1017
+            _S377 = false;
 
-#line 948
+#line 1017
         }
 
-#line 948
-        if(_S367)
+#line 1017
+        if(_S377)
         {
             slot_5 = slot_5 + 1U;
 
-#line 945
+#line 1014
             continue;
         }
 
-#line 945
-        float3 _S374 = directionalContribution_0(_S373, surface_8, relativePosition_12, normal_10, viewDir_2, fragmentCentre_5, instanceFlags_1, baked_3, kernelContext_48);
+#line 1014
+        float3 _S384 = directionalContribution_0(_S383, surface_8, relativePosition_13, normal_10, viewDir_2, fragmentCentre_7, instanceFlags_3, baked_3, kernelContext_51);
 
-#line 945
-        lit_3 = lit_3 + _S374;
+#line 1014
+        lit_3 = lit_3 + _S384;
 
-#line 945
+#line 1014
         slot_5 = slot_5 + 1U;
 
-#line 945
+#line 1014
     }
 
-#line 945
-    LocalLightWalk_0 _S375 = localLightWalk_0(relativePosition_12, _S368, fragmentCentre_5, kernelContext_48);
+#line 1014
+    LocalLightWalk_0 _S385 = localLightWalk_0(relativePosition_13, _S378, fragmentCentre_7, kernelContext_51);
 
-#line 945
+#line 1014
     float3 sampled_0;
 
-#line 962
-    if(_S375.stochastic_0)
+#line 1031
+    if(_S385.stochastic_0)
     {
 
-#line 962
-        float4 _S376 = cyMaterialSampleTextureLevel_0(kernelContext_48->cyFrameView_0->frame_0->lightingControl_0.y, fragmentCentre_5 * kernelContext_48->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_48);
+#line 1031
+        float4 _S386 = cyMaterialSampleTextureLevel_0(kernelContext_51->cyFrameView_0->frame_0->lightingControl_0.y, fragmentCentre_7 * kernelContext_51->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_51);
 
-#line 962
-        sampled_0 = surface_8->albedo_1 * float3((1.0 - surface_8->metallic_1))  * float3(0.31830987334251404)  * _S376.xyz;
+#line 1031
+        sampled_0 = surface_8->albedo_1 * float3((1.0 - surface_8->metallic_1))  * float3(0.31830987334251404)  * _S386.xyz;
 
-#line 962
+#line 1031
     }
     else
     {
 
-#line 962
-        sampled_0 = _S369;
+#line 1031
+        sampled_0 = _S379;
 
-#line 962
+#line 1031
     }
 
-#line 962
+#line 1031
     slot_5 = 0U;
 
-#line 968
+#line 1037
     for(;;)
     {
 
-#line 968
-        if(slot_5 < (_S375.count_3))
+#line 1037
+        if(slot_5 < (_S385.count_3))
         {
         }
         else
         {
 
-#line 968
+#line 1037
             break;
         }
 
-#line 968
-        thread LocalLightWalk_0 _S377 = _S375;
+#line 1037
+        thread LocalLightWalk_0 _S387 = _S385;
 
-#line 968
-        uint _S378 = localLightIndex_0(&_S377, slot_5, kernelContext_48);
+#line 1037
+        uint _S388 = localLightIndex_0(&_S387, slot_5, kernelContext_51);
 
 
-        if(_S378 >= _S370)
+        if(_S388 >= _S380)
         {
 
-#line 971
-            _S367 = true;
+#line 1040
+            _S377 = true;
 
-#line 971
+#line 1040
         }
         else
         {
 
-#line 971
-            _S367 = (kernelContext_48->cyFrameView_0->lights_0[_S378].kind_0) == 0U;
+#line 1040
+            _S377 = (kernelContext_51->cyFrameView_0->lights_0[_S388].kind_0) == 0U;
 
-#line 971
+#line 1040
         }
 
-#line 971
-        bool _S379;
+#line 1040
+        bool _S389;
 
-#line 971
-        if(_S367)
+#line 1040
+        if(_S377)
         {
 
-#line 971
-            _S379 = true;
+#line 1040
+            _S389 = true;
 
-#line 971
+#line 1040
         }
         else
         {
 
-#line 971
-            _S379 = (kernelContext_48->cyFrameView_0->lights_0[_S378].kind_0) == 8U;
+#line 1040
+            _S389 = (kernelContext_51->cyFrameView_0->lights_0[_S388].kind_0) == 8U;
 
-#line 971
+#line 1040
         }
 
-#line 971
-        if(_S379)
+#line 1040
+        if(_S389)
         {
 
             slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
             continue;
         }
 
-#line 980
-        float3 _S380 = kernelContext_48->cyFrameView_0->lights_0[_S378].positionRelativeToCamera_0 - relativePosition_12;
+#line 1049
+        float3 _S390 = kernelContext_51->cyFrameView_0->lights_0[_S388].positionRelativeToCamera_0 - relativePosition_13;
 
-#line 980
-        bool _S381;
-        if(_S375.clustered_0)
+#line 1049
+        bool _S391;
+        if(_S385.clustered_0)
         {
 
-#line 981
-            _S381 = (dot(_S380, _S380)) >= (kernelContext_48->cyFrameView_0->lights_0[_S378].range_0 * kernelContext_48->cyFrameView_0->lights_0[_S378].range_0);
+#line 1050
+            _S391 = (dot(_S390, _S390)) >= (kernelContext_51->cyFrameView_0->lights_0[_S388].range_0 * kernelContext_51->cyFrameView_0->lights_0[_S388].range_0);
 
-#line 981
+#line 1050
         }
         else
         {
 
-#line 981
-            _S381 = false;
+#line 1050
+            _S391 = false;
 
-#line 981
+#line 1050
         }
 
-#line 981
-        if(_S381)
+#line 1050
+        if(_S391)
         {
             slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
             continue;
         }
 
-#line 985
-        if(isAreaLight_0(kernelContext_48->cyFrameView_0->lights_0[_S378].kind_0))
+#line 1054
+        if(isAreaLight_0(kernelContext_51->cyFrameView_0->lights_0[_S388].kind_0))
         {
 
-#line 985
-            AreaShading_0 _S382 = frameAreaShading_0(_S378, surface_8, relativePosition_12, normal_10, viewDir_2, kernelContext_48);
+#line 1054
+            AreaShading_0 _S392 = frameAreaShading_0(_S388, surface_8, relativePosition_13, normal_10, viewDir_2, kernelContext_51);
 
 
-            if(_S375.stochastic_0)
+            if(_S385.stochastic_0)
             {
 
-#line 988
-                sampled_0 = sampled_0 + _S382.specular_0 * float3(_S375.weight_3) ;
+#line 1057
+                sampled_0 = sampled_0 + _S392.specular_0 * float3(_S385.weight_3) ;
 
 
                 slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
                 continue;
             }
 
-#line 968
-            float _S383;
+#line 1037
+            float _S393;
 
-#line 994
+#line 1063
             if(baked_3->active_0)
             {
 
-#line 994
-                float _S384 = bakedLightFactor_0(_S378, baked_3->mask_0, kernelContext_48);
+#line 1063
+                float _S394 = bakedLightFactor_0(_S388, baked_3->mask_0, kernelContext_51);
 
-#line 994
-                _S383 = _S384;
+#line 1063
+                _S393 = _S394;
 
-#line 994
+#line 1063
             }
             else
             {
 
-#line 994
-                _S383 = 1.0;
+#line 1063
+                _S393 = 1.0;
 
-#line 994
+#line 1063
             }
 
-#line 994
-            lit_3 = lit_3 + (_S382.diffuse_0 + _S382.specular_0) * float3(_S383) ;
+#line 1063
+            lit_3 = lit_3 + (_S392.diffuse_0 + _S392.specular_0) * float3(_S393) ;
 
             slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
             continue;
         }
 
-#line 998
-        if(_S375.stochastic_0)
+#line 1067
+        if(_S385.stochastic_0)
         {
 
-#line 998
-            thread Light_0 _S385 = kernelContext_48->cyFrameView_0->lights_0[_S378];
+#line 1067
+            thread Light_0 _S395 = kernelContext_51->cyFrameView_0->lights_0[_S388];
 
-#line 998
-            LightSample_0 _S386 = evaluateLight_0(&_S385, relativePosition_12);
+#line 1067
+            LightSample_0 _S396 = evaluateLight_0(&_S395, relativePosition_13);
 
-#line 998
-            sampled_0 = sampled_0 + specularGgx_0(normal_10, viewDir_2, _S386.direction_1, surface_8->roughness_1, computeF0_0(surface_8->albedo_1, surface_8->metallic_1)) * _S386.illuminance_0 * float3(saturate(dot(normal_10, _S386.direction_1)))  * float3(_S375.weight_3) ;
+#line 1067
+            sampled_0 = sampled_0 + specularGgx_0(normal_10, viewDir_2, _S396.direction_1, surface_8->roughness_1, computeF0_0(surface_8->albedo_1, surface_8->metallic_1)) * _S396.illuminance_0 * float3(saturate(dot(normal_10, _S396.direction_1)))  * float3(_S385.weight_3) ;
 
-#line 1005
+#line 1074
             slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
             continue;
         }
 
-#line 968
-        LightSample_0 _S387 = bakedLightSample_0(_S378, relativePosition_12, baked_3, kernelContext_48);
+#line 1037
+        LightSample_0 _S397 = bakedLightSample_0(_S388, relativePosition_13, baked_3, kernelContext_51);
 
-#line 968
-        thread LightSample_0 _S388 = _S387;
+#line 1037
+        thread LightSample_0 _S398 = _S397;
 
-#line 968
-        float3 _S389 = shadeSurfaceWithLight_0(surface_8, normal_10, viewDir_2, &_S388);
+#line 1037
+        float3 _S399 = shadeSurfaceWithLight_0(surface_8, normal_10, viewDir_2, &_S398);
 
-#line 968
-        lit_3 = lit_3 + _S389;
+#line 1037
+        lit_3 = lit_3 + _S399;
 
-#line 968
+#line 1037
         slot_5 = slot_5 + 1U;
 
-#line 968
+#line 1037
     }
 
-#line 1010
-    if(_S375.stochastic_0)
+#line 1079
+    if(_S385.stochastic_0)
     {
 
-#line 1010
+#line 1079
         lit_3 = lit_3 + sampled_0;
 
-#line 1010
+#line 1079
     }
 
-#line 1010
+#line 1079
     return lit_3;
 }
 
 
-#line 1316
-float3 lightmapAmbient_0(float2 uv_17, float3 normal_11, KernelContext_0 thread* kernelContext_49)
+#line 1385
+float3 lightmapAmbient_0(float2 uv_17, float3 normal_11, KernelContext_0 thread* kernelContext_52)
 {
 
-#line 1316
-    float4 _S390 = cyMaterialSampleTexture_0(kernelContext_49->cyFrameView_0->frame_0->lightmapControl_0.x, uv_17, kernelContext_49);
+#line 1385
+    float4 _S400 = cyMaterialSampleTexture_0(kernelContext_52->cyFrameView_0->frame_0->lightmapControl_0.x, uv_17, kernelContext_52);
 
 
-    uint _S391 = kernelContext_49->cyFrameView_0->frame_0->lightmapControl_0.w;
-    if(_S391 == 2U)
+    uint _S401 = kernelContext_52->cyFrameView_0->frame_0->lightmapControl_0.w;
+    if(_S401 == 2U)
     {
 
-#line 1320
-        float4 _S392 = cyMaterialSampleTexture_0(kernelContext_49->cyFrameView_0->frame_0->lightmapControl_0.y, uv_17, kernelContext_49);
+#line 1389
+        float4 _S402 = cyMaterialSampleTexture_0(kernelContext_52->cyFrameView_0->frame_0->lightmapControl_0.y, uv_17, kernelContext_52);
 
 
 
-        return _S390.xyz * float3((max(0.0, 1.0 + dot(_S392.xyz, normal_11)) / max(_S392.w, 0.00100000004749745))) ;
+        return _S400.xyz * float3((max(0.0, 1.0 + dot(_S402.xyz, normal_11)) / max(_S402.w, 0.00100000004749745))) ;
     }
-    if(_S391 == 3U)
+    if(_S401 == 3U)
     {
 
-#line 1326
-        float4 _S393 = cyMaterialSampleTexture_0(kernelContext_49->cyFrameView_0->frame_0->lightmapControl_0.y, uv_17, kernelContext_49);
+#line 1395
+        float4 _S403 = cyMaterialSampleTexture_0(kernelContext_52->cyFrameView_0->frame_0->lightmapControl_0.y, uv_17, kernelContext_52);
 
-#line 1326
-        float4 _S394 = cyMaterialSampleTexture_0(kernelContext_49->cyFrameView_0->frame_0->lightmapControl_0.z, uv_17, kernelContext_49);
+#line 1395
+        float4 _S404 = cyMaterialSampleTexture_0(kernelContext_52->cyFrameView_0->frame_0->lightmapControl_0.z, uv_17, kernelContext_52);
 
 
 
-        return float3(max(0.0, _S390.w + dot(_S390.xyz, normal_11)), max(0.0, _S393.w + dot(_S393.xyz, normal_11)), max(0.0, _S394.w + dot(_S394.xyz, normal_11)));
+        return float3(max(0.0, _S400.w + dot(_S400.xyz, normal_11)), max(0.0, _S403.w + dot(_S403.xyz, normal_11)), max(0.0, _S404.w + dot(_S404.xyz, normal_11)));
     }
 
 
-    return _S390.xyz;
+    return _S400.xyz;
 }
 
 
-#line 1094
-float4 probeVolumeTexel_0(uint3 probe_0, uint texel_3, KernelContext_0 thread* kernelContext_50)
+#line 1163
+float4 probeVolumeTexel_0(uint3 probe_0, uint texel_3, KernelContext_0 thread* kernelContext_53)
 {
-    uint3 _S395 = kernelContext_50->cyFrameView_0->frame_0->probeVolumeControl_0.yzw;
+    uint3 _S405 = kernelContext_53->cyFrameView_0->frame_0->probeVolumeControl_0.yzw;
 
-    uint _S396 = _S395.y;
+    uint _S406 = _S405.y;
 
-#line 1098
-    float4 _S397 = cyMaterialSampleTextureLevel_0(kernelContext_50->cyFrameView_0->frame_0->probeVolumeControl_0.x, (float2(float(probe_0.x * 5U + texel_3), float(probe_0.y + _S396 * probe_0.z)) + float2(0.5) ) / float2(float(_S395.x * 5U), float(_S396 * _S395.z)), 0.0, kernelContext_50);
-
-
-    return _S397;
-}
+#line 1167
+    float4 _S407 = cyMaterialSampleTextureLevel_0(kernelContext_53->cyFrameView_0->frame_0->probeVolumeControl_0.x, (float2(float(probe_0.x * 5U + texel_3), float(probe_0.y + _S406 * probe_0.z)) + float2(0.5) ) / float2(float(_S405.x * 5U), float(_S406 * _S405.z)), 0.0, kernelContext_53);
 
 
-
-float probeVisibility_0(float4 distances0_0, float4 distances1_0, float3 probePosition_0, float3 position_1, float3 normal_12, float3 query_0, KernelContext_0 thread* kernelContext_51)
-{
-
-    float3 _S398 = probePosition_0 - position_1;
-    float _S399 = dot(_S398, _S398);
-
-#line 1110
-    float3 _S400;
-    if(_S399 > 9.999999960041972e-13)
-    {
-
-#line 1111
-        _S400 = _S398 * float3(rsqrt(_S399)) ;
-
-#line 1111
-    }
-    else
-    {
-
-#line 1111
-        _S400 = normal_12;
-
-#line 1111
-    }
-    float _S401 = max(0.00009999999747379, (dot(_S400, normal_12) + 1.0) * 0.5);
-    float _S402 = _S401 * _S401 + 0.20000000298023224;
-
-
-
-    float3 _S403 = query_0 - probePosition_0;
-
-#line 1117
-    float _S404;
-    if((_S403.x) >= 0.0)
-    {
-
-#line 1118
-        _S404 = distances0_0.y;
-
-#line 1118
-    }
-    else
-    {
-
-#line 1118
-        _S404 = distances0_0.z;
-
-#line 1118
-    }
-
-#line 1118
-    float _S405;
-    if((_S403.y) >= 0.0)
-    {
-
-#line 1119
-        _S405 = distances0_0.w;
-
-#line 1119
-    }
-    else
-    {
-
-#line 1119
-        _S405 = distances1_0.x;
-
-#line 1119
-    }
-
-#line 1119
-    float _S406;
-    if((_S403.z) >= 0.0)
-    {
-
-#line 1120
-        _S406 = distances1_0.y;
-
-#line 1120
-    }
-    else
-    {
-
-#line 1120
-        _S406 = distances1_0.z;
-
-#line 1120
-    }
-
-#line 1120
-    float3 _S407 = float3(kernelContext_51->cyFrameView_0->frame_0->probeVolumeParams_0.z) ;
-
-    float3 _S408 = saturate((float3(_S404, _S405, _S406) + _S407 - abs(_S403)) / _S407);
-    return _S402 * min(_S408.x, min(_S408.y, _S408.z));
+    return _S407;
 }
 
 
 
-float3 probeVolumeAmbient_0(float3 position_2, float3 normal_13, float3 flat_0, KernelContext_0 thread* kernelContext_52)
+float probeVisibility_0(float4 distances0_0, float4 distances1_0, float3 probePosition_0, float3 position_1, float3 normal_12, float3 query_0, KernelContext_0 thread* kernelContext_54)
 {
-    uint3 _S409 = kernelContext_52->cyFrameView_0->frame_0->probeVolumeControl_0.yzw;
 
-    float3 _S410 = position_2 + normal_13 * float3(kernelContext_52->cyFrameView_0->frame_0->probeVolumeParams_0.y) ;
+    float3 _S408 = probePosition_0 - position_1;
+    float _S409 = dot(_S408, _S408);
 
-#line 1132
-    float3 _S411 = float3(kernelContext_52->cyFrameView_0->frame_0->probeVolumeOrigin_0.w) ;
-    float3 _S412 = (_S410 - kernelContext_52->cyFrameView_0->frame_0->probeVolumeOrigin_0.xyz) / _S411;
+#line 1179
+    float3 _S410;
+    if(_S409 > 9.999999960041972e-13)
+    {
 
-#line 1133
-    float3 _S413 = float3(1.0) ;
-    float3 _S414 = float3(_S409) - _S413;
-    float3 _S415 = float3(0.0) ;
+#line 1180
+        _S410 = _S408 * float3(rsqrt(_S409)) ;
 
-#line 1135
-    float3 _S416 = max(max(- _S412, _S412 - _S414), _S415);
-    float _S417 = saturate(1.0 - max(_S416.x, max(_S416.y, _S416.z)));
-    if(_S417 <= 0.0)
+#line 1180
+    }
+    else
+    {
+
+#line 1180
+        _S410 = normal_12;
+
+#line 1180
+    }
+    float _S411 = max(0.00009999999747379, (dot(_S410, normal_12) + 1.0) * 0.5);
+    float _S412 = _S411 * _S411 + 0.20000000298023224;
+
+
+
+    float3 _S413 = query_0 - probePosition_0;
+
+#line 1186
+    float _S414;
+    if((_S413.x) >= 0.0)
+    {
+
+#line 1187
+        _S414 = distances0_0.y;
+
+#line 1187
+    }
+    else
+    {
+
+#line 1187
+        _S414 = distances0_0.z;
+
+#line 1187
+    }
+
+#line 1187
+    float _S415;
+    if((_S413.y) >= 0.0)
+    {
+
+#line 1188
+        _S415 = distances0_0.w;
+
+#line 1188
+    }
+    else
+    {
+
+#line 1188
+        _S415 = distances1_0.x;
+
+#line 1188
+    }
+
+#line 1188
+    float _S416;
+    if((_S413.z) >= 0.0)
+    {
+
+#line 1189
+        _S416 = distances1_0.y;
+
+#line 1189
+    }
+    else
+    {
+
+#line 1189
+        _S416 = distances1_0.z;
+
+#line 1189
+    }
+
+#line 1189
+    float3 _S417 = float3(kernelContext_54->cyFrameView_0->frame_0->probeVolumeParams_0.z) ;
+
+    float3 _S418 = saturate((float3(_S414, _S415, _S416) + _S417 - abs(_S413)) / _S417);
+    return _S412 * min(_S418.x, min(_S418.y, _S418.z));
+}
+
+
+
+float3 probeVolumeAmbient_0(float3 position_2, float3 normal_13, float3 flat_0, KernelContext_0 thread* kernelContext_55)
+{
+    uint3 _S419 = kernelContext_55->cyFrameView_0->frame_0->probeVolumeControl_0.yzw;
+
+    float3 _S420 = position_2 + normal_13 * float3(kernelContext_55->cyFrameView_0->frame_0->probeVolumeParams_0.y) ;
+
+#line 1201
+    float3 _S421 = float3(kernelContext_55->cyFrameView_0->frame_0->probeVolumeOrigin_0.w) ;
+    float3 _S422 = (_S420 - kernelContext_55->cyFrameView_0->frame_0->probeVolumeOrigin_0.xyz) / _S421;
+
+#line 1202
+    float3 _S423 = float3(1.0) ;
+    float3 _S424 = float3(_S419) - _S423;
+    float3 _S425 = float3(0.0) ;
+
+#line 1204
+    float3 _S426 = max(max(- _S422, _S422 - _S424), _S425);
+    float _S427 = saturate(1.0 - max(_S426.x, max(_S426.y, _S426.z)));
+    if(_S427 <= 0.0)
     {
         return flat_0;
     }
-    float3 _S418 = clamp(_S412, _S415, _S414);
-    uint3 _S419 = min(uint3(floor(_S418)), uint3(max(int3(_S409) - int3(int(2)) , int3(int(0)) )));
-    float3 _S420 = _S418 - float3(_S419);
+    float3 _S428 = clamp(_S422, _S425, _S424);
+    uint3 _S429 = min(uint3(floor(_S428)), uint3(max(int3(_S419) - int3(int(2)) , int3(int(0)) )));
+    float3 _S430 = _S428 - float3(_S429);
 
 
-    float4 _S421 = float4(0.28209498524665833, 0.32573533058166504 * normal_13.y, 0.32573533058166504 * normal_13.z, 0.32573533058166504 * normal_13.x);
+    float4 _S431 = float4(0.28209498524665833, 0.32573533058166504 * normal_13.y, 0.32573533058166504 * normal_13.z, 0.32573533058166504 * normal_13.x);
 
-#line 1146
+#line 1215
     uint corner_1 = 0U;
 
-#line 1146
-    float3 total_0 = _S415;
+#line 1215
+    float3 total_0 = _S425;
 
-#line 1146
+#line 1215
     float weightSum_0 = 0.0;
 
 
@@ -5289,196 +5477,197 @@ float3 probeVolumeAmbient_0(float3 position_2, float3 normal_13, float3 flat_0, 
     for(;;)
     {
 
-#line 1150
+#line 1219
         if(corner_1 < 8U)
         {
         }
         else
         {
 
-#line 1150
+#line 1219
             break;
         }
-        uint3 _S422 = uint3(corner_1 & 1U, (corner_1 >> 1U) & 1U, (corner_1 >> 2U) & 1U);
-        uint3 _S423 = min(_S419 + _S422, _S409 - uint3(1U) );
-        float3 _S424 = float3(_S422);
-        float3 _S425 = _S424 * _S420 + (_S413 - _S424) * (_S413 - _S420);
+        uint3 _S432 = uint3(corner_1 & 1U, (corner_1 >> 1U) & 1U, (corner_1 >> 2U) & 1U);
+        uint3 _S433 = min(_S429 + _S432, _S419 - uint3(1U) );
+        float3 _S434 = float3(_S432);
+        float3 _S435 = _S434 * _S430 + (_S423 - _S434) * (_S423 - _S430);
 
-#line 1155
-        float4 _S426 = probeVolumeTexel_0(_S423, 3U, kernelContext_52);
+#line 1224
+        float4 _S436 = probeVolumeTexel_0(_S433, 3U, kernelContext_55);
 
-        float _S427 = _S425.x * _S425.y * _S425.z * _S426.x;
-        if(_S427 <= 0.0)
+        float _S437 = _S435.x * _S435.y * _S435.z * _S436.x;
+        if(_S437 <= 0.0)
         {
             corner_1 = corner_1 + 1U;
 
-#line 1150
+#line 1219
             continue;
         }
 
-#line 1150
-        float4 _S428 = probeVolumeTexel_0(_S423, 4U, kernelContext_52);
+#line 1219
+        float4 _S438 = probeVolumeTexel_0(_S433, 4U, kernelContext_55);
 
-#line 1150
-        float _S429 = probeVisibility_0(_S426, _S428, kernelContext_52->cyFrameView_0->frame_0->probeVolumeOrigin_0.xyz + float3(_S423) * _S411, position_2, normal_13, _S410, kernelContext_52);
+#line 1219
+        float _S439 = probeVisibility_0(_S436, _S438, kernelContext_55->cyFrameView_0->frame_0->probeVolumeOrigin_0.xyz + float3(_S433) * _S421, position_2, normal_13, _S420, kernelContext_55);
 
-#line 1165
-        float _S430 = _S427 * _S429;
+#line 1234
+        float _S440 = _S437 * _S439;
 
-#line 1165
-        float4 _S431 = probeVolumeTexel_0(_S423, 0U, kernelContext_52);
-        float _S432 = dot(_S431, _S421);
+#line 1234
+        float4 _S441 = probeVolumeTexel_0(_S433, 0U, kernelContext_55);
+        float _S442 = dot(_S441, _S431);
 
-#line 1166
-        float4 _S433 = probeVolumeTexel_0(_S423, 1U, kernelContext_52);
-        float _S434 = dot(_S433, _S421);
+#line 1235
+        float4 _S443 = probeVolumeTexel_0(_S433, 1U, kernelContext_55);
+        float _S444 = dot(_S443, _S431);
 
-#line 1167
-        float4 _S435 = probeVolumeTexel_0(_S423, 2U, kernelContext_52);
+#line 1236
+        float4 _S445 = probeVolumeTexel_0(_S433, 2U, kernelContext_55);
 
 
 
-        float weightSum_1 = weightSum_0 + _S430;
+        float weightSum_1 = weightSum_0 + _S440;
 
-#line 1171
-        total_0 = total_0 + max(float3(_S432, _S434, dot(_S435, _S421)) * float3(kernelContext_52->cyFrameView_0->frame_0->probeVolumeParams_0.x) , _S415) * float3(_S430) ;
+#line 1240
+        total_0 = total_0 + max(float3(_S442, _S444, dot(_S445, _S431)) * float3(kernelContext_55->cyFrameView_0->frame_0->probeVolumeParams_0.x) , _S425) * float3(_S440) ;
 
-#line 1171
+#line 1240
         weightSum_0 = weightSum_1;
 
-#line 1150
+#line 1219
         corner_1 = corner_1 + 1U;
 
-#line 1150
+#line 1219
     }
 
-#line 1173
+#line 1242
     if(weightSum_0 > 9.99999997475242708e-07)
     {
 
-#line 1173
+#line 1242
         total_0 = total_0 / float3(weightSum_0) ;
 
-#line 1173
+#line 1242
     }
     else
     {
 
-#line 1173
+#line 1242
         total_0 = flat_0;
 
-#line 1173
+#line 1242
     }
-    return mix(flat_0, total_0, float3(_S417) );
+    return mix(flat_0, total_0, float3(_S427) );
 }
 
 
-#line 1028
-float3 frameGiSample_0(uint slot_6, float2 fragmentCentre_6, KernelContext_0 thread* kernelContext_53)
+#line 1097
+float3 frameGiSample_0(uint slot_6, float2 fragmentCentre_8, KernelContext_0 thread* kernelContext_56)
 {
 
-#line 1028
-    float4 _S436 = cyMaterialSampleTextureLevel_0(slot_6, fragmentCentre_6 * kernelContext_53->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_53);
+#line 1097
+)cy_msl",
+    R"cy_msl(    float4 _S446 = cyMaterialSampleTextureLevel_0(slot_6, fragmentCentre_8 * kernelContext_56->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_56);
 
-    return _S436.xyz;
+    return _S446.xyz;
 }
 
 
-#line 1039
-float3 frameGiAmbient_0(bool lightmapped_4, float2 fragmentCentre_7, float3 relativePosition_13, float3 normal_14, float3 ambient_0, KernelContext_0 thread* kernelContext_54)
+#line 1108
+float3 frameGiAmbient_0(bool lightmapped_4, float2 fragmentCentre_9, float3 relativePosition_14, float3 normal_14, float3 ambient_0, KernelContext_0 thread* kernelContext_57)
 {
 
-    uint _S437 = kernelContext_54->cyFrameView_0->frame_0->giControl_0.z;
+    uint _S447 = kernelContext_57->cyFrameView_0->frame_0->giControl_0.z;
 
-#line 1042
-    float3 _S438 = frameGiSample_0(kernelContext_54->cyFrameView_0->frame_0->giControl_0.x, fragmentCentre_7, kernelContext_54);
+#line 1111
+    float3 _S448 = frameGiSample_0(kernelContext_57->cyFrameView_0->frame_0->giControl_0.x, fragmentCentre_9, kernelContext_57);
 
-#line 1042
-    float3 _S439;
+#line 1111
+    float3 _S449;
 
     if(lightmapped_4)
     {
-        if((_S437 & 2U) != 0U)
+        if((_S447 & 2U) != 0U)
         {
 
-#line 1046
-            _S439 = _S438;
+#line 1115
+            _S449 = _S448;
 
-#line 1046
+#line 1115
         }
         else
         {
 
-#line 1046
-            _S439 = ambient_0;
+#line 1115
+            _S449 = ambient_0;
 
-#line 1046
+#line 1115
         }
 
-#line 1046
-        return _S439;
+#line 1115
+        return _S449;
     }
-    if((kernelContext_54->cyFrameView_0->frame_0->probeVolumeControl_0.x) != 4294967295U)
+    if((kernelContext_57->cyFrameView_0->frame_0->probeVolumeControl_0.x) != 4294967295U)
     {
-        if((_S437 & 4U) != 0U)
+        if((_S447 & 4U) != 0U)
         {
-            return _S438;
+            return _S448;
         }
-        if((_S437 & 1U) != 0U)
+        if((_S447 & 1U) != 0U)
         {
 
-#line 1054
-            float3 _S440 = probeVolumeAmbient_0(relativePosition_13, normal_14, _S438, kernelContext_54);
+#line 1123
+            float3 _S450 = probeVolumeAmbient_0(relativePosition_14, normal_14, _S448, kernelContext_57);
 
-#line 1054
-            _S439 = _S440;
+#line 1123
+            _S449 = _S450;
 
-#line 1054
+#line 1123
         }
         else
         {
 
-#line 1054
-            _S439 = ambient_0;
+#line 1123
+            _S449 = ambient_0;
 
-#line 1054
+#line 1123
         }
 
-#line 1054
-        return _S439;
+#line 1123
+        return _S449;
     }
 
-    if((_S437 & 1U) != 0U)
+    if((_S447 & 1U) != 0U)
     {
 
-#line 1057
-        _S439 = _S438;
+#line 1126
+        _S449 = _S448;
 
-#line 1057
+#line 1126
     }
     else
     {
 
-#line 1057
-        _S439 = ambient_0;
+#line 1126
+        _S449 = ambient_0;
 
-#line 1057
+#line 1126
     }
 
-#line 1057
-    return _S439;
+#line 1126
+    return _S449;
 }
 
 
 
-bool frameGiAdmits_0(bool lightmapped_5, KernelContext_0 thread* kernelContext_55)
+bool frameGiAdmits_0(bool lightmapped_5, KernelContext_0 thread* kernelContext_58)
 {
-    uint _S441 = kernelContext_55->cyFrameView_0->frame_0->giControl_0.z;
+    uint _S451 = kernelContext_58->cyFrameView_0->frame_0->giControl_0.z;
     if(lightmapped_5)
     {
-        return (_S441 & 2U) != 0U;
+        return (_S451 & 2U) != 0U;
     }
-    return (_S441 & 5U) != 0U;
+    return (_S451 & 5U) != 0U;
 }
 
 
@@ -5488,30 +5677,30 @@ float3 frameEnvironmentBrdf_0(float3 f0_2, float roughness_7, float normalDotVie
 {
 
 
-    float4 _S442 = float4(roughness_7)  * float4(-1.0, -0.02749999985098839, -0.57200002670288086, 0.02199999988079071) + float4(1.0, 0.04250000044703484, 1.03999996185302734, -0.03999999910593033);
-    float _S443 = _S442.x;
-    float2 _S444 = float2(-1.03999996185302734, 1.03999996185302734) * float2((min(_S443 * _S443, exp2(-9.27999973297119141 * normalDotView_1)) * _S443 + _S442.y))  + _S442.zw;
-    return f0_2 * float3(_S444.x)  + float3(_S444.y) ;
+    float4 _S452 = float4(roughness_7)  * float4(-1.0, -0.02749999985098839, -0.57200002670288086, 0.02199999988079071) + float4(1.0, 0.04250000044703484, 1.03999996185302734, -0.03999999910593033);
+    float _S453 = _S452.x;
+    float2 _S454 = float2(-1.03999996185302734, 1.03999996185302734) * float2((min(_S453 * _S453, exp2(-9.27999973297119141 * normalDotView_1)) * _S453 + _S452.y))  + _S452.zw;
+    return f0_2 * float3(_S454.x)  + float3(_S454.y) ;
 }
 
 
-#line 1015
-float occlusionVisibility_0(float2 fragmentCentre_8, KernelContext_0 thread* kernelContext_56)
+#line 1084
+float occlusionVisibility_0(float2 fragmentCentre_10, KernelContext_0 thread* kernelContext_59)
 {
 
-#line 1015
-    float4 _S445 = cyMaterialSampleTextureLevel_0(kernelContext_56->cyFrameView_0->frame_0->occlusionControl_0.x, fragmentCentre_8 * kernelContext_56->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_56);
+#line 1084
+    float4 _S455 = cyMaterialSampleTextureLevel_0(kernelContext_59->cyFrameView_0->frame_0->occlusionControl_0.x, fragmentCentre_10 * kernelContext_59->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_59);
 
 
-    return _S445.w;
+    return _S455.w;
 }
 
 
-#line 612
+#line 641
 struct CyForwardVertex_0
 {
     float4 position_3;
-    float3 relativePosition_14;
+    float3 relativePosition_15;
     float3 normal_15;
     float2 uv_18;
     [[flat]] uint drawIndex_0;
@@ -5519,351 +5708,350 @@ struct CyForwardVertex_0
 };
 
 
-#line 1433
-)cy_msl",
-    R"cy_msl(float4 cyShadeForward_0(const Surface_0 thread* resolved_0, const CyForwardVertex_0 thread* input_0, KernelContext_0 thread* kernelContext_57)
+#line 1502
+float4 cyShadeForward_0(const Surface_0 thread* resolved_0, const CyForwardVertex_0 thread* input_0, KernelContext_0 thread* kernelContext_60)
 {
-    CyDrawInstance_0 _S446 = kernelContext_57->cyFrameView_0->drawInstances_0[input_0->drawIndex_0];
+    CyDrawInstance_0 _S456 = kernelContext_60->cyFrameView_0->drawInstances_0[input_0->drawIndex_0];
     thread Surface_0 surface_9 = *resolved_0;
 
-#line 1436
-    bool _S447;
+#line 1505
+    bool _S457;
 
 
-    if((_S446.giAddress_0) != 0U)
+    if((_S456.giAddress_0) != 0U)
     {
 
-#line 1439
-        _S447 = (kernelContext_57->cyFrameView_0->frame_0->lightmapControl_0.w) != 0U;
+#line 1508
+        _S457 = (kernelContext_60->cyFrameView_0->frame_0->lightmapControl_0.w) != 0U;
 
-#line 1439
+#line 1508
     }
     else
     {
 
-#line 1439
-        _S447 = false;
+#line 1508
+        _S457 = false;
 
-#line 1439
+#line 1508
     }
 
-#line 1439
-    float2 _S448;
-    if(_S447)
+#line 1508
+    float2 _S458;
+    if(_S457)
     {
 
-#line 1440
-        float2 _S449 = lightmapCoordinate_0(_S446.giAddress_0, input_0->lightmapUv_0, kernelContext_57);
+#line 1509
+        float2 _S459 = lightmapCoordinate_0(_S456.giAddress_0, input_0->lightmapUv_0, kernelContext_60);
 
-#line 1440
-        _S448 = _S449;
+#line 1509
+        _S458 = _S459;
 
-#line 1440
+#line 1509
     }
     else
     {
 
-#line 1440
-        _S448 = float2(0.0) ;
+#line 1509
+        _S458 = float2(0.0) ;
 
-#line 1440
+#line 1509
     }
 
-    if((kernelContext_57->cyFrameView_0->frame_0->lightmapDebug_0.x) == 1U)
+    if((kernelContext_60->cyFrameView_0->frame_0->lightmapDebug_0.x) == 1U)
     {
 
-#line 1442
-        float3 _S450 = lightmapDensityColour_0(_S447, _S448, input_0->relativePosition_14, kernelContext_57);
+#line 1511
+        float3 _S460 = lightmapDensityColour_0(_S457, _S458, input_0->relativePosition_15, kernelContext_60);
 
-        return float4(_S450, 1.0);
+        return float4(_S460, 1.0);
     }
-    if((kernelContext_57->cyFrameView_0->frame_0->lightmapDebug_0.x) == 2U)
+    if((kernelContext_60->cyFrameView_0->frame_0->lightmapDebug_0.x) == 2U)
     {
 
-#line 1446
-        float3 _S451 = lightmapChartColour_0(_S447, _S446.giAddress_0, _S448, kernelContext_57);
+#line 1515
+        float3 _S461 = lightmapChartColour_0(_S457, _S456.giAddress_0, _S458, kernelContext_60);
 
-        return float4(_S451, 1.0);
+        return float4(_S461, 1.0);
     }
-    if((kernelContext_57->cyFrameView_0->frame_0->lightmapDebug_0.x) == 3U)
+    if((kernelContext_60->cyFrameView_0->frame_0->lightmapDebug_0.x) == 3U)
     {
 
-#line 1450
-        float4 _S452 = cyMaterialSampleTextureLevel_0(kernelContext_57->cyFrameView_0->frame_0->lightmapDebug_0.z, input_0->position_3.xy * kernelContext_57->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_57);
+#line 1519
+        float4 _S462 = cyMaterialSampleTextureLevel_0(kernelContext_60->cyFrameView_0->frame_0->lightmapDebug_0.z, input_0->position_3.xy * kernelContext_60->cyFrameView_0->frame_0->extentAndInverse_0.zw, 0.0, kernelContext_60);
 
-#line 1456
-        if((_S452.w) > 0.0)
+#line 1525
+        if((_S462.w) > 0.0)
         {
-            float3 _S453 = _S452.xyz;
+            float3 _S463 = _S462.xyz;
 
-#line 1458
-            float _S454 = frameExposureStops_0(kernelContext_57);
+#line 1527
+            float _S464 = frameExposureStops_0(kernelContext_60);
 
-#line 1458
-            return float4(_S453 * float3(exp2(- _S454)) , 1.0);
+#line 1527
+            return float4(_S463 * float3(exp2(- _S464)) , 1.0);
         }
 
-#line 1450
+#line 1519
     }
 
-#line 1462
+#line 1531
     thread float3 normal_16 = normalize(input_0->normal_15);
 
 
 
-    if((kernelContext_57->cyFrameView_0->frame_0->decalControl_0.x) != 4294967295U)
+    if((kernelContext_60->cyFrameView_0->frame_0->decalControl_0.x) != 4294967295U)
     {
 
-#line 1466
-        applyFrameDecals_0(&surface_9, &normal_16, input_0->relativePosition_14, input_0->position_3.xy, _S446.layerMask_1, kernelContext_57);
+#line 1535
+        applyFrameDecals_0(&surface_9, &normal_16, input_0->relativePosition_15, input_0->position_3.xy, _S456.layerMask_1, kernelContext_60);
 
-#line 1466
+#line 1535
     }
 
-#line 1466
-    float3 _S455 = input_0->relativePosition_14;
+#line 1535
+    float3 _S465 = input_0->relativePosition_15;
 
-#line 1473
-    float3 _S456 = normalize(- input_0->relativePosition_14);
+#line 1542
+    float3 _S466 = normalize(- input_0->relativePosition_15);
 
-#line 1473
-    CyBakedLights_0 _S457 = bakedLightsOf_0(_S447, _S448, kernelContext_57);
+#line 1542
+    CyBakedLights_0 _S467 = bakedLightsOf_0(_S457, _S458, kernelContext_60);
 
-#line 1480
-    float2 _S458 = input_0->position_3.xy;
+#line 1549
+    float2 _S468 = input_0->position_3.xy;
 
-#line 1480
-    thread Surface_0 _S459 = surface_9;
+#line 1549
+    thread Surface_0 _S469 = surface_9;
 
-#line 1480
-    thread CyBakedLights_0 _S460 = _S457;
+#line 1549
+    thread CyBakedLights_0 _S470 = _S467;
 
-#line 1480
-    float3 _S461 = accumulateLights_0(&_S459, _S455, normal_16, _S456, _S458, _S446.flags_0, &_S460, kernelContext_57);
+#line 1549
+    float3 _S471 = accumulateLights_0(&_S469, _S465, normal_16, _S466, _S468, _S456.flags_0, &_S470, kernelContext_60);
 
-#line 1494
-    float3 ambientRadiance_0 = kernelContext_57->cyFrameView_0->frame_0->ambientAndOcclusion_0.xyz;
+#line 1563
+    float3 ambientRadiance_0 = kernelContext_60->cyFrameView_0->frame_0->ambientAndOcclusion_0.xyz;
 
-#line 1494
+#line 1563
     float3 ambientRadiance_1;
-    if(_S447)
+    if(_S457)
     {
 
-#line 1495
-        float3 _S462 = lightmapAmbient_0(_S448, normal_16, kernelContext_57);
+#line 1564
+        float3 _S472 = lightmapAmbient_0(_S458, normal_16, kernelContext_60);
 
-#line 1495
-        ambientRadiance_1 = _S462;
+#line 1564
+        ambientRadiance_1 = _S472;
 
-#line 1495
+#line 1564
     }
     else
     {
 
-        if((kernelContext_57->cyFrameView_0->frame_0->probeVolumeControl_0.x) != 4294967295U)
+        if((kernelContext_60->cyFrameView_0->frame_0->probeVolumeControl_0.x) != 4294967295U)
         {
 
-#line 1499
-            float3 _S463 = probeVolumeAmbient_0(_S455, normal_16, ambientRadiance_0, kernelContext_57);
+#line 1568
+            float3 _S473 = probeVolumeAmbient_0(_S465, normal_16, ambientRadiance_0, kernelContext_60);
 
-#line 1499
-            ambientRadiance_1 = _S463;
+#line 1568
+            ambientRadiance_1 = _S473;
 
-#line 1499
+#line 1568
         }
         else
         {
 
-#line 1499
+#line 1568
             ambientRadiance_1 = ambientRadiance_0;
 
-#line 1499
+#line 1568
         }
 
-#line 1495
+#line 1564
     }
 
-#line 1506
-    float3 _S464 = float3(0.0) ;
-    bool _S465 = (kernelContext_57->cyFrameView_0->frame_0->giControl_0.x) != 4294967295U;
+#line 1575
+    float3 _S474 = float3(0.0) ;
+    bool _S475 = (kernelContext_60->cyFrameView_0->frame_0->giControl_0.x) != 4294967295U;
 
-#line 1507
+#line 1576
     float3 indirectSpecular_0;
-    if(_S465)
+    if(_S475)
     {
 
-#line 1508
-        float3 _S466 = frameGiAmbient_0(_S447, _S458, _S455, normal_16, ambientRadiance_1, kernelContext_57);
+#line 1577
+        float3 _S476 = frameGiAmbient_0(_S457, _S468, _S465, normal_16, ambientRadiance_1, kernelContext_60);
 
 
 
-        if((kernelContext_57->cyFrameView_0->frame_0->giControl_0.y) != 4294967295U)
+        if((kernelContext_60->cyFrameView_0->frame_0->giControl_0.y) != 4294967295U)
         {
 
-#line 1512
-            bool _S467 = frameGiAdmits_0(_S447, kernelContext_57);
+#line 1581
+            bool _S477 = frameGiAdmits_0(_S457, kernelContext_60);
 
-#line 1512
-            _S447 = _S467;
+#line 1581
+            _S457 = _S477;
 
-#line 1512
+#line 1581
         }
         else
         {
 
-#line 1512
-            _S447 = false;
+#line 1581
+            _S457 = false;
 
-#line 1512
+#line 1581
         }
 
-#line 1512
-        if(_S447)
+#line 1581
+        if(_S457)
         {
-            float3 _S468 = frameEnvironmentBrdf_0(computeF0_0((&surface_9)->albedo_1, (&surface_9)->metallic_1), (&surface_9)->roughness_1, saturate(dot(normal_16, _S456)));
+            float3 _S478 = frameEnvironmentBrdf_0(computeF0_0((&surface_9)->albedo_1, (&surface_9)->metallic_1), (&surface_9)->roughness_1, saturate(dot(normal_16, _S466)));
 
-#line 1514
-            float3 _S469 = frameGiSample_0(kernelContext_57->cyFrameView_0->frame_0->giControl_0.y, _S458, kernelContext_57);
+#line 1583
+            float3 _S479 = frameGiSample_0(kernelContext_60->cyFrameView_0->frame_0->giControl_0.y, _S468, kernelContext_60);
 
-#line 1514
-            indirectSpecular_0 = _S469 * _S468 * float3((&surface_9)->occlusion_0) ;
+#line 1583
+            indirectSpecular_0 = _S479 * _S478 * float3((&surface_9)->occlusion_0) ;
 
-#line 1512
+#line 1581
         }
         else
         {
 
-#line 1512
-            indirectSpecular_0 = _S464;
+#line 1581
+            indirectSpecular_0 = _S474;
 
-#line 1512
+#line 1581
         }
 
-#line 1512
-        ambientRadiance_1 = _S466;
+#line 1581
+        ambientRadiance_1 = _S476;
 
-#line 1508
+#line 1577
     }
     else
     {
 
-#line 1508
-        indirectSpecular_0 = _S464;
+#line 1577
+        indirectSpecular_0 = _S474;
 
-#line 1508
+#line 1577
     }
 
-#line 1521
+#line 1590
     float3 ambient_1 = (&surface_9)->albedo_1 * ambientRadiance_1 * float3((&surface_9)->occlusion_0) ;
 
-#line 1521
+#line 1590
     float3 color_1;
 
-#line 1521
+#line 1590
     float3 ambient_2;
-    if((kernelContext_57->cyFrameView_0->frame_0->occlusionControl_0.x) != 4294967295U)
+    if((kernelContext_60->cyFrameView_0->frame_0->occlusionControl_0.x) != 4294967295U)
     {
 
-#line 1522
-        float _S470 = occlusionVisibility_0(_S458, kernelContext_57);
+#line 1591
+        float _S480 = occlusionVisibility_0(_S468, kernelContext_60);
 
-#line 1522
-        float3 _S471 = float3(_S470) ;
+#line 1591
+        float3 _S481 = float3(_S480) ;
 
 
-        float3 ambient_3 = ambient_1 * _S471;
+        float3 ambient_3 = ambient_1 * _S481;
 
-        float3 indirectSpecular_1 = indirectSpecular_0 * _S471;
-        if((kernelContext_57->cyFrameView_0->frame_0->occlusionControl_0.y) != 0U)
+        float3 indirectSpecular_1 = indirectSpecular_0 * _S481;
+        if((kernelContext_60->cyFrameView_0->frame_0->occlusionControl_0.y) != 0U)
         {
 
-#line 1528
-            color_1 = _S461 * float3(mix(1.0, _S470, (as_type<float>((kernelContext_57->cyFrameView_0->frame_0->occlusionControl_0.z))))) ;
+#line 1597
+            color_1 = _S471 * float3(mix(1.0, _S480, (as_type<float>((kernelContext_60->cyFrameView_0->frame_0->occlusionControl_0.z))))) ;
 
-#line 1528
+#line 1597
         }
         else
         {
 
-#line 1528
-            color_1 = _S461;
+#line 1597
+            color_1 = _S471;
 
-#line 1528
+#line 1597
         }
 
-#line 1528
+#line 1597
         ambient_2 = ambient_3;
 
-#line 1528
+#line 1597
         indirectSpecular_0 = indirectSpecular_1;
 
-#line 1522
+#line 1591
     }
     else
     {
 
-#line 1522
-        color_1 = _S461;
+#line 1591
+        color_1 = _S471;
 
-#line 1522
+#line 1591
         ambient_2 = ambient_1;
 
-#line 1522
+#line 1591
     }
 
-#line 1534
+#line 1603
     float3 color_2 = color_1 + (&surface_9)->emission_1 + ambient_2;
-    if(_S465)
+    if(_S475)
     {
 
-#line 1535
+#line 1604
         color_1 = color_2 + indirectSpecular_0;
 
-#line 1535
+#line 1604
     }
     else
     {
 
-#line 1535
+#line 1604
         color_1 = color_2;
 
-#line 1535
+#line 1604
     }
 
-#line 1542
-    if((kernelContext_57->cyFrameView_0->frame_0->volumetricFogControl_0.x) != 4294967295U)
+#line 1611
+    if((kernelContext_60->cyFrameView_0->frame_0->volumetricFogControl_0.x) != 4294967295U)
     {
         thread CyFrameFogVolume_0 fog_0;
-        (&fog_0)->slot_0 = kernelContext_57->cyFrameView_0->frame_0->volumetricFogControl_0.x;
+        (&fog_0)->slot_0 = kernelContext_60->cyFrameView_0->frame_0->volumetricFogControl_0.x;
 
-#line 1545
-        thread CyFrameFogVolume_0 _S472 = fog_0;
+#line 1614
+        thread CyFrameFogVolume_0 _S482 = fog_0;
 
-#line 1545
-        float3 _S473 = cyApplyFog_0(&_S472, color_1, _S455, kernelContext_57);
+#line 1614
+        float3 _S483 = cyApplyFog_0(&_S482, color_1, _S465, kernelContext_60);
 
-#line 1545
-        color_1 = _S473;
+#line 1614
+        color_1 = _S483;
 
-#line 1542
+#line 1611
     }
 
-#line 1548
+#line 1617
     return float4(color_1, (&surface_9)->opacity_0);
 }
 
 
-#line 1548
+#line 1617
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 1548
+#line 1617
 struct pixelInput_0
 {
-    float3 relativePosition_15 [[user(TEXCOORD)]];
+    float3 relativePosition_16 [[user(TEXCOORD)]];
     float3 normal_17 [[user(TEXCOORD_1)]];
     float2 uv_19 [[user(TEXCOORD_2)]];
     [[flat]] uint drawIndex_1 [[user(TEXCOORD_3)]];
@@ -5871,67 +6059,67 @@ struct pixelInput_0
 };
 
 
-#line 1552
-[[fragment]] pixelOutput_0 cyForwardFragment(pixelInput_0 _S474 [[stage_in]], float4 position_4 [[position]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]])
+#line 1621
+[[fragment]] pixelOutput_0 cyForwardFragment(pixelInput_0 _S484 [[stage_in]], float4 position_4 [[position]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyFrameGlobalSet_default_0 constant& cyFrameGlobals_1 [[buffer(0)]])
 {
 
-#line 1552
-    thread KernelContext_0 kernelContext_58;
+#line 1621
+    thread KernelContext_0 kernelContext_61;
 
-#line 1552
-    (&kernelContext_58)->cyFrameView_0 = cyFrameView_1;
+#line 1621
+    (&kernelContext_61)->cyFrameView_0 = cyFrameView_1;
 
-#line 1552
-    (&kernelContext_58)->cyFrameGlobals_0 = &cyFrameGlobals_1;
+#line 1621
+    (&kernelContext_61)->cyFrameGlobals_0 = &cyFrameGlobals_1;
 
-    CyDrawInstance_0 _S475 = cyFrameView_1->drawInstances_0[_S474.drawIndex_1];
+    CyDrawInstance_0 _S485 = cyFrameView_1->drawInstances_0[_S484.drawIndex_1];
 
-#line 1554
-    Surface_0 _S476 = surfaceOf_0(_S475.material_0, cyFrameView_1->instances_0[_S475.instanceSlot_0].tint_0.xyz, _S474.uv_19, &kernelContext_58);
+#line 1623
+    Surface_0 _S486 = surfaceOf_0(_S485.material_0, cyFrameView_1->instances_0[_S485.instanceSlot_0].tint_0.xyz, _S484.uv_19, &kernelContext_61);
 
-#line 1554
-    thread Surface_0 _S477 = _S476;
+#line 1623
+    thread Surface_0 _S487 = _S486;
 
-#line 1554
-    thread CyForwardVertex_0 _S478;
+#line 1623
+    thread CyForwardVertex_0 _S488;
 
-#line 1554
-    (&_S478)->position_3 = position_4;
+#line 1623
+    (&_S488)->position_3 = position_4;
 
-#line 1554
-    (&_S478)->relativePosition_14 = _S474.relativePosition_15;
+#line 1623
+    (&_S488)->relativePosition_15 = _S484.relativePosition_16;
 
-#line 1554
-    (&_S478)->normal_15 = _S474.normal_17;
+#line 1623
+    (&_S488)->normal_15 = _S484.normal_17;
 
-#line 1554
-    (&_S478)->uv_18 = _S474.uv_19;
+#line 1623
+    (&_S488)->uv_18 = _S484.uv_19;
 
-#line 1554
-    (&_S478)->drawIndex_0 = _S474.drawIndex_1;
+#line 1623
+    (&_S488)->drawIndex_0 = _S484.drawIndex_1;
 
-#line 1554
-    (&_S478)->lightmapUv_0 = _S474.lightmapUv_1;
+#line 1623
+    (&_S488)->lightmapUv_0 = _S484.lightmapUv_1;
 
-#line 1554
-    float4 _S479 = cyShadeForward_0(&_S477, &_S478, &kernelContext_58);
+#line 1623
+    float4 _S489 = cyShadeForward_0(&_S487, &_S488, &kernelContext_61);
 
-#line 1554
-    pixelOutput_0 _S480 = { _S479 };
+#line 1623
+    pixelOutput_0 _S490 = { _S489 };
 
-    return _S480;
+    return _S490;
 }
 
 )cy_msl");
 inline constexpr const auto& kFrameForwardFragmentMsl = kFrameForwardFragmentMslText.text;
 
-/// SkinnedDepthVertex.metal, 8005 bytes.
+/// SkinnedDepthVertex.metal, 8339 bytes.
 inline constexpr char kFrameSkinnedDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 334 "src/rendering/shaders/cy/frame.slang"
+#line 363 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -5941,7 +6129,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 414
+#line 443
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -6006,6 +6194,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -6024,7 +6221,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -6038,7 +6235,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 343
+#line 372
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -6051,7 +6248,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 388
+#line 417
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -6066,7 +6263,7 @@ struct KernelContext_0
 };
 
 
-#line 398 "src/rendering/shaders/cy/frame.slang"
+#line 427 "src/rendering/shaders/cy/frame.slang"
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -6074,44 +6271,44 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 558
+#line 587
 float3 previousRelativeOf_0(uint slot_0, const CyInstanceTransform_0 thread* current_0, float3 previousModelPosition_0, KernelContext_0 thread* kernelContext_1)
 {
     uint _S3 = kernelContext_1->cyFrameView_0->frame_0->motionControl_0.x;
 
-#line 560
+#line 589
     CyInstanceTransform_0 _S4;
     if(_S3 == 4294967295U)
     {
 
-#line 561
+#line 590
         _S4 = *current_0;
 
-#line 561
+#line 590
     }
     else
     {
 
-#line 561
+#line 590
         _S4 = kernelContext_1->cyFrameView_0->instances_0[_S3 + slot_0];
 
-#line 561
+#line 590
     }
 
-#line 561
+#line 590
     thread CyInstanceTransform_0 _S5 = _S4;
 
-#line 561
+#line 590
     float3 _S6 = transformToRelative_0(&_S5, previousModelPosition_0);
     return _S6;
 }
 
 
-#line 1582
+#line 1651
 float2 cySkinnedNormalToStream_0(float4 frame_1)
 {
 
-#line 1582
+#line 1651
     float2 _S7 = float2(0.5) ;
 
     return frame_1.xy * _S7 + _S7;
@@ -6141,14 +6338,14 @@ float3 decodeOctahedral_0(float2 encoded_0)
 }
 
 
-#line 423 "src/rendering/shaders/cy/frame.slang"
+#line 452 "src/rendering/shaders/cy/frame.slang"
 float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
 {
     return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
 }
 
 
-#line 425
+#line 454
 struct cySkinnedDepthVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -6158,7 +6355,7 @@ struct cySkinnedDepthVertex_Result_0
 };
 
 
-#line 425
+#line 454
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
@@ -6167,7 +6364,7 @@ struct vertexInput_0
 };
 
 
-#line 541
+#line 570
 struct CyDepthVertex_0
 {
     float4 position_1;
@@ -6177,40 +6374,40 @@ struct CyDepthVertex_0
 };
 
 
-#line 541
+#line 570
 [[vertex]] cySkinnedDepthVertex_Result_0 cySkinnedDepthVertex(vertexInput_0 _S14 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
 {
 
-#line 541
+#line 570
     thread KernelContext_0 kernelContext_2;
 
-#line 541
+#line 570
     (&kernelContext_2)->cyFrameView_0 = cyFrameView_1;
 
-#line 541
+#line 570
     (&kernelContext_2)->cyDraw_0 = cyDraw_1;
 
-#line 1591
+#line 1660
     CyDrawInstance_0 _S15 = cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0];
     CyInstanceTransform_0 _S16 = cyFrameView_1->instances_0[_S15.instanceSlot_0];
 
-#line 1592
+#line 1661
     thread CyInstanceTransform_0 _S17 = _S16;
 
-#line 1592
+#line 1661
     float3 _S18 = transformToRelative_0(&_S17, _S14.modelPosition_1);
     thread CyDepthVertex_0 output_0;
 
-#line 1593
+#line 1662
     float4 _S19 = transformToClip_0(_S18, &kernelContext_2);
 
     (&output_0)->position_1 = _S19;
     (&output_0)->currentClip_1 = _S19;
 
-#line 1596
+#line 1665
     thread CyInstanceTransform_0 _S20 = _S16;
 
-#line 1596
+#line 1665
     float3 _S21 = previousRelativeOf_0(_S15.instanceSlot_0, &_S20, _S14.previousModelPosition_1, &kernelContext_2);
     float4 _S22 = float4(_S21, 1.0);
     (&output_0)->previousClip_1 = float4(dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow0_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow1_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow2_0, _S22), dot((&kernelContext_2)->cyFrameView_0->frame_0->previousRelativeToClipRow3_0, _S22));
@@ -6219,43 +6416,43 @@ struct CyDepthVertex_0
 
     float3 _S23 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S14.frame_2));
 
-#line 1602
+#line 1671
     thread CyInstanceTransform_0 _S24 = _S16;
 
-#line 1602
+#line 1671
     float3 _S25 = rotateToRelative_0(&_S24, _S23);
 
-#line 1602
+#line 1671
     (&output_0)->normal_2 = _S25;
 
-#line 1602
+#line 1671
     thread cySkinnedDepthVertex_Result_0 _S26;
 
-#line 1602
+#line 1671
     (&_S26)->position_0 = output_0.position_1;
 
-#line 1602
+#line 1671
     (&_S26)->normal_1 = output_0.normal_2;
 
-#line 1602
+#line 1671
     (&_S26)->currentClip_0 = output_0.currentClip_1;
 
-#line 1602
+#line 1671
     (&_S26)->previousClip_0 = output_0.previousClip_1;
 
-#line 1602
+#line 1671
     return _S26;
 }
 
 )cy_msl";
 
-/// SkinnedForwardVertex.metal, 7129 bytes.
+/// SkinnedForwardVertex.metal, 7463 bytes.
 inline constexpr char kFrameSkinnedForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
 using namespace metal;
 
-#line 334 "src/rendering/shaders/cy/frame.slang"
+#line 363 "src/rendering/shaders/cy/frame.slang"
 struct CyInstanceTransform_0
 {
     float4 row0_0;
@@ -6265,7 +6462,7 @@ struct CyInstanceTransform_0
 };
 
 
-#line 414
+#line 443
 float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
 {
     float4 _S1 = float4(modelPosition_0, 1.0);
@@ -6330,6 +6527,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -6348,7 +6554,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -6362,7 +6568,7 @@ struct CyDrawInstance_0
 };
 
 
-#line 343
+#line 372
 struct CyFrameViewSet_default_0
 {
     CyFrameData_0 constant* frame_0;
@@ -6375,7 +6581,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 388
+#line 417
 struct CyDrawPush_0
 {
     uint drawIndex_0;
@@ -6390,7 +6596,7 @@ struct KernelContext_0
 };
 
 
-#line 398 "src/rendering/shaders/cy/frame.slang"
+#line 427 "src/rendering/shaders/cy/frame.slang"
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S2 = float4(relative_0, 1.0);
@@ -6398,11 +6604,11 @@ float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContex
 }
 
 
-#line 1582
+#line 1651
 float2 cySkinnedNormalToStream_0(float4 frame_1)
 {
 
-#line 1582
+#line 1651
     float2 _S3 = float2(0.5) ;
 
     return frame_1.xy * _S3 + _S3;
@@ -6432,14 +6638,14 @@ float3 decodeOctahedral_0(float2 encoded_0)
 }
 
 
-#line 423 "src/rendering/shaders/cy/frame.slang"
+#line 452 "src/rendering/shaders/cy/frame.slang"
 float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
 {
     return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
 }
 
 
-#line 425
+#line 454
 struct cySkinnedForwardVertex_Result_0
 {
     float4 position_0 [[position]];
@@ -6451,7 +6657,7 @@ struct cySkinnedForwardVertex_Result_0
 };
 
 
-#line 425
+#line 454
 struct vertexInput_0
 {
     float3 modelPosition_1 [[attribute(0)]];
@@ -6461,7 +6667,7 @@ struct vertexInput_0
 };
 
 
-#line 612
+#line 641
 struct CyForwardVertex_0
 {
     float4 position_1;
@@ -6473,70 +6679,1334 @@ struct CyForwardVertex_0
 };
 
 
-#line 612
+#line 641
 [[vertex]] cySkinnedForwardVertex_Result_0 cySkinnedForwardVertex(vertexInput_0 _S10 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
 {
 
-#line 612
+#line 641
     thread KernelContext_0 kernelContext_1;
 
-#line 612
+#line 641
     (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
 
-#line 612
+#line 641
     (&kernelContext_1)->cyDraw_0 = cyDraw_1;
 
-#line 1611
+#line 1680
     CyInstanceTransform_0 _S11 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
 
     thread CyForwardVertex_0 output_0;
 
-#line 1613
+#line 1682
     thread CyInstanceTransform_0 _S12 = _S11;
 
-#line 1613
+#line 1682
     float3 _S13 = transformToRelative_0(&_S12, _S10.modelPosition_1);
     (&output_0)->relativePosition_1 = _S13;
 
-#line 1614
+#line 1683
     float4 _S14 = transformToClip_0(_S13, &kernelContext_1);
     (&output_0)->position_1 = _S14;
     float3 _S15 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S10.frame_2));
 
-#line 1616
+#line 1685
     thread CyInstanceTransform_0 _S16 = _S11;
 
-#line 1616
+#line 1685
     float3 _S17 = rotateToRelative_0(&_S16, _S15);
 
-#line 1616
+#line 1685
     (&output_0)->normal_2 = _S17;
     (&output_0)->uv_2 = _S10.uv_1;
     (&output_0)->drawIndex_2 = cyDraw_1->drawIndex_0;
     (&output_0)->lightmapUv_2 = _S10.lightmapUv_1;
 
-#line 1619
+#line 1688
     thread cySkinnedForwardVertex_Result_0 _S18;
 
-#line 1619
+#line 1688
     (&_S18)->position_0 = output_0.position_1;
 
-#line 1619
+#line 1688
     (&_S18)->relativePosition_0 = output_0.relativePosition_1;
 
-#line 1619
+#line 1688
     (&_S18)->normal_1 = output_0.normal_2;
 
-#line 1619
+#line 1688
     (&_S18)->uv_0 = output_0.uv_2;
 
-#line 1619
+#line 1688
     (&_S18)->drawIndex_1 = output_0.drawIndex_2;
 
-#line 1619
+#line 1688
     (&_S18)->lightmapUv_0 = output_0.lightmapUv_2;
 
-#line 1619
+#line 1688
+    return _S18;
+}
+
+)cy_msl";
+
+/// ViewmodelDepthVertex.metal, 8432 bytes.
+inline constexpr char kFrameViewmodelDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 363 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 443
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+    uint4 giControl_0;
+    uint4 lightingControl_0;
+    uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
+};
+
+
+#line 34 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    uint shapeWord_0;
+    uint layerMask_0;
+};
+
+
+#line 350 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_1;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 372
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 417
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 1720 "src/rendering/shaders/cy/frame.slang"
+float4 transformToViewmodelClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow3_0, _S2));
+}
+
+
+#line 587
+float3 previousRelativeOf_0(uint slot_0, const CyInstanceTransform_0 thread* current_0, float3 previousModelPosition_0, KernelContext_0 thread* kernelContext_1)
+{
+    uint _S3 = kernelContext_1->cyFrameView_0->frame_0->motionControl_0.x;
+
+#line 589
+    CyInstanceTransform_0 _S4;
+    if(_S3 == 4294967295U)
+    {
+
+#line 590
+        _S4 = *current_0;
+
+#line 590
+    }
+    else
+    {
+
+#line 590
+        _S4 = kernelContext_1->cyFrameView_0->instances_0[_S3 + slot_0];
+
+#line 590
+    }
+
+#line 590
+    thread CyInstanceTransform_0 _S5 = _S4;
+
+#line 590
+    float3 _S6 = transformToRelative_0(&_S5, previousModelPosition_0);
+    return _S6;
+}
+
+
+#line 1727
+float4 transformToPreviousViewmodelClip_0(float3 relative_1, KernelContext_0 thread* kernelContext_2)
+{
+    float4 _S7 = float4(relative_1, 1.0);
+    return float4(dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow0_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow1_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow2_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow3_0, _S7));
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S8 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S9 = _S8.x;
+
+#line 26
+    float _S10 = _S8.y;
+
+#line 26
+    float _S11 = 1.0 - abs(_S9) - abs(_S10);
+
+#line 26
+    thread float3 normal_0 = float3(_S9, _S10, _S11);
+    float _S12 = saturate(- _S11);
+    float2 _S13 = float2(_S9, _S10);
+
+#line 28
+    normal_0.xy = _S13 + select(float2(_S12) , float2(- _S12) , _S13 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 452 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 454
+struct cyViewmodelDepthVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 normal_1 [[user(TEXCOORD)]];
+    float4 currentClip_0 [[user(TEXCOORD_1)]];
+    float4 previousClip_0 [[user(TEXCOORD_2)]];
+};
+
+
+#line 454
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 packedNormal_0 [[attribute(1)]];
+    float3 previousModelPosition_1 [[attribute(2)]];
+};
+
+
+#line 570
+struct CyDepthVertex_0
+{
+    float4 position_1;
+    float3 normal_2;
+    float4 currentClip_1;
+    float4 previousClip_1;
+};
+
+
+#line 570
+[[vertex]] cyViewmodelDepthVertex_Result_0 cyViewmodelDepthVertex(vertexInput_0 _S14 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 570
+    thread KernelContext_0 kernelContext_3;
+
+#line 570
+    (&kernelContext_3)->cyFrameView_0 = cyFrameView_1;
+
+#line 570
+    (&kernelContext_3)->cyDraw_0 = cyDraw_1;
+
+#line 1741
+    CyDrawInstance_0 _S15 = cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0];
+    CyInstanceTransform_0 _S16 = cyFrameView_1->instances_0[_S15.instanceSlot_0];
+
+#line 1742
+    thread CyInstanceTransform_0 _S17 = _S16;
+
+#line 1742
+    float3 _S18 = transformToRelative_0(&_S17, _S14.modelPosition_1);
+    thread CyDepthVertex_0 output_0;
+
+#line 1743
+    float4 _S19 = transformToViewmodelClip_0(_S18, &kernelContext_3);
+
+    (&output_0)->position_1 = _S19;
+    (&output_0)->currentClip_1 = _S19;
+
+#line 1746
+    thread CyInstanceTransform_0 _S20 = _S16;
+
+#line 1746
+    float3 _S21 = previousRelativeOf_0(_S15.instanceSlot_0, &_S20, _S14.previousModelPosition_1, &kernelContext_3);
+
+#line 1746
+    float4 _S22 = transformToPreviousViewmodelClip_0(_S21, &kernelContext_3);
+    (&output_0)->previousClip_1 = _S22;
+
+    float3 _S23 = decodeOctahedral_0(_S14.packedNormal_0.xy);
+
+#line 1749
+    thread CyInstanceTransform_0 _S24 = _S16;
+
+#line 1749
+    float3 _S25 = rotateToRelative_0(&_S24, _S23);
+
+#line 1749
+    (&output_0)->normal_2 = _S25;
+
+#line 1749
+    thread cyViewmodelDepthVertex_Result_0 _S26;
+
+#line 1749
+    (&_S26)->position_0 = output_0.position_1;
+
+#line 1749
+    (&_S26)->normal_1 = output_0.normal_2;
+
+#line 1749
+    (&_S26)->currentClip_0 = output_0.currentClip_1;
+
+#line 1749
+    (&_S26)->previousClip_0 = output_0.previousClip_1;
+
+#line 1749
+    return _S26;
+}
+
+)cy_msl";
+
+/// ViewmodelForwardVertex.metal, 7334 bytes.
+inline constexpr char kFrameViewmodelForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 363 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 443
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+    uint4 giControl_0;
+    uint4 lightingControl_0;
+    uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
+};
+
+
+#line 34 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    uint shapeWord_0;
+    uint layerMask_0;
+};
+
+
+#line 350 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_1;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 372
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 417
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 1720 "src/rendering/shaders/cy/frame.slang"
+float4 transformToViewmodelClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow3_0, _S2));
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S3 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S4 = _S3.x;
+
+#line 26
+    float _S5 = _S3.y;
+
+#line 26
+    float _S6 = 1.0 - abs(_S4) - abs(_S5);
+
+#line 26
+    thread float3 normal_0 = float3(_S4, _S5, _S6);
+    float _S7 = saturate(- _S6);
+    float2 _S8 = float2(_S4, _S5);
+
+#line 28
+    normal_0.xy = _S8 + select(float2(_S7) , float2(- _S7) , _S8 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 452 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 454
+struct cyViewmodelForwardVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 relativePosition_0 [[user(TEXCOORD)]];
+    float3 normal_1 [[user(TEXCOORD_1)]];
+    float2 uv_0 [[user(TEXCOORD_2)]];
+    uint drawIndex_1 [[user(TEXCOORD_3)]];
+    float2 lightmapUv_0 [[user(TEXCOORD_4)]];
+};
+
+
+#line 454
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 packedNormal_0 [[attribute(1)]];
+    float2 uv_1 [[attribute(2)]];
+    float2 lightmapUv_1 [[attribute(3)]];
+};
+
+
+#line 641
+struct CyForwardVertex_0
+{
+    float4 position_1;
+    float3 relativePosition_1;
+    float3 normal_2;
+    float2 uv_2;
+    [[flat]] uint drawIndex_2;
+    float2 lightmapUv_2;
+};
+
+
+#line 641
+[[vertex]] cyViewmodelForwardVertex_Result_0 cyViewmodelForwardVertex(vertexInput_0 _S9 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 641
+    thread KernelContext_0 kernelContext_1;
+
+#line 641
+    (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
+
+#line 641
+    (&kernelContext_1)->cyDraw_0 = cyDraw_1;
+
+#line 1760
+    CyInstanceTransform_0 _S10 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
+
+    thread CyForwardVertex_0 output_0;
+
+#line 1762
+    thread CyInstanceTransform_0 _S11 = _S10;
+
+#line 1762
+    float3 _S12 = transformToRelative_0(&_S11, _S9.modelPosition_1);
+    (&output_0)->relativePosition_1 = _S12;
+
+#line 1763
+    float4 _S13 = transformToViewmodelClip_0(_S12, &kernelContext_1);
+    (&output_0)->position_1 = _S13;
+    float3 _S14 = decodeOctahedral_0(_S9.packedNormal_0.xy);
+
+#line 1765
+    thread CyInstanceTransform_0 _S15 = _S10;
+
+#line 1765
+    float3 _S16 = rotateToRelative_0(&_S15, _S14);
+
+#line 1765
+    (&output_0)->normal_2 = _S16;
+    (&output_0)->uv_2 = _S9.uv_1;
+    (&output_0)->drawIndex_2 = cyDraw_1->drawIndex_0;
+    (&output_0)->lightmapUv_2 = _S9.lightmapUv_1;
+
+#line 1768
+    thread cyViewmodelForwardVertex_Result_0 _S17;
+
+#line 1768
+    (&_S17)->position_0 = output_0.position_1;
+
+#line 1768
+    (&_S17)->relativePosition_0 = output_0.relativePosition_1;
+
+#line 1768
+    (&_S17)->normal_1 = output_0.normal_2;
+
+#line 1768
+    (&_S17)->uv_0 = output_0.uv_2;
+
+#line 1768
+    (&_S17)->drawIndex_1 = output_0.drawIndex_2;
+
+#line 1768
+    (&_S17)->lightmapUv_0 = output_0.lightmapUv_2;
+
+#line 1768
+    return _S17;
+}
+
+)cy_msl";
+
+/// SkinnedViewmodelDepthVertex.metal, 8619 bytes.
+inline constexpr char kFrameSkinnedViewmodelDepthVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 363 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 443
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+    uint4 giControl_0;
+    uint4 lightingControl_0;
+    uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
+};
+
+
+#line 34 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    uint shapeWord_0;
+    uint layerMask_0;
+};
+
+
+#line 350 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_1;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 372
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 417
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 1720 "src/rendering/shaders/cy/frame.slang"
+float4 transformToViewmodelClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow3_0, _S2));
+}
+
+
+#line 587
+float3 previousRelativeOf_0(uint slot_0, const CyInstanceTransform_0 thread* current_0, float3 previousModelPosition_0, KernelContext_0 thread* kernelContext_1)
+{
+    uint _S3 = kernelContext_1->cyFrameView_0->frame_0->motionControl_0.x;
+
+#line 589
+    CyInstanceTransform_0 _S4;
+    if(_S3 == 4294967295U)
+    {
+
+#line 590
+        _S4 = *current_0;
+
+#line 590
+    }
+    else
+    {
+
+#line 590
+        _S4 = kernelContext_1->cyFrameView_0->instances_0[_S3 + slot_0];
+
+#line 590
+    }
+
+#line 590
+    thread CyInstanceTransform_0 _S5 = _S4;
+
+#line 590
+    float3 _S6 = transformToRelative_0(&_S5, previousModelPosition_0);
+    return _S6;
+}
+
+
+#line 1727
+float4 transformToPreviousViewmodelClip_0(float3 relative_1, KernelContext_0 thread* kernelContext_2)
+{
+    float4 _S7 = float4(relative_1, 1.0);
+    return float4(dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow0_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow1_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow2_0, _S7), dot(kernelContext_2->cyFrameView_0->frame_0->previousViewmodelToClipRow3_0, _S7));
+}
+
+
+#line 1651
+float2 cySkinnedNormalToStream_0(float4 frame_1)
+{
+
+#line 1651
+    float2 _S8 = float2(0.5) ;
+
+    return frame_1.xy * _S8 + _S8;
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S9 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S10 = _S9.x;
+
+#line 26
+    float _S11 = _S9.y;
+
+#line 26
+    float _S12 = 1.0 - abs(_S10) - abs(_S11);
+
+#line 26
+    thread float3 normal_0 = float3(_S10, _S11, _S12);
+    float _S13 = saturate(- _S12);
+    float2 _S14 = float2(_S10, _S11);
+
+#line 28
+    normal_0.xy = _S14 + select(float2(_S13) , float2(- _S13) , _S14 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 452 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 454
+struct cySkinnedViewmodelDepthVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 normal_1 [[user(TEXCOORD)]];
+    float4 currentClip_0 [[user(TEXCOORD_1)]];
+    float4 previousClip_0 [[user(TEXCOORD_2)]];
+};
+
+
+#line 454
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 frame_2 [[attribute(1)]];
+    float3 previousModelPosition_1 [[attribute(2)]];
+};
+
+
+#line 570
+struct CyDepthVertex_0
+{
+    float4 position_1;
+    float3 normal_2;
+    float4 currentClip_1;
+    float4 previousClip_1;
+};
+
+
+#line 570
+[[vertex]] cySkinnedViewmodelDepthVertex_Result_0 cySkinnedViewmodelDepthVertex(vertexInput_0 _S15 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 570
+    thread KernelContext_0 kernelContext_3;
+
+#line 570
+    (&kernelContext_3)->cyFrameView_0 = cyFrameView_1;
+
+#line 570
+    (&kernelContext_3)->cyDraw_0 = cyDraw_1;
+
+#line 1777
+    CyDrawInstance_0 _S16 = cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0];
+    CyInstanceTransform_0 _S17 = cyFrameView_1->instances_0[_S16.instanceSlot_0];
+
+#line 1778
+    thread CyInstanceTransform_0 _S18 = _S17;
+
+#line 1778
+    float3 _S19 = transformToRelative_0(&_S18, _S15.modelPosition_1);
+    thread CyDepthVertex_0 output_0;
+
+#line 1779
+    float4 _S20 = transformToViewmodelClip_0(_S19, &kernelContext_3);
+
+    (&output_0)->position_1 = _S20;
+    (&output_0)->currentClip_1 = _S20;
+
+#line 1782
+    thread CyInstanceTransform_0 _S21 = _S17;
+
+#line 1782
+    float3 _S22 = previousRelativeOf_0(_S16.instanceSlot_0, &_S21, _S15.previousModelPosition_1, &kernelContext_3);
+
+#line 1782
+    float4 _S23 = transformToPreviousViewmodelClip_0(_S22, &kernelContext_3);
+    (&output_0)->previousClip_1 = _S23;
+
+    float3 _S24 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S15.frame_2));
+
+#line 1785
+    thread CyInstanceTransform_0 _S25 = _S17;
+
+#line 1785
+    float3 _S26 = rotateToRelative_0(&_S25, _S24);
+
+#line 1785
+    (&output_0)->normal_2 = _S26;
+
+#line 1785
+    thread cySkinnedViewmodelDepthVertex_Result_0 _S27;
+
+#line 1785
+    (&_S27)->position_0 = output_0.position_1;
+
+#line 1785
+    (&_S27)->normal_1 = output_0.normal_2;
+
+#line 1785
+    (&_S27)->currentClip_0 = output_0.currentClip_1;
+
+#line 1785
+    (&_S27)->previousClip_0 = output_0.previousClip_1;
+
+#line 1785
+    return _S27;
+}
+
+)cy_msl";
+
+/// SkinnedViewmodelForwardVertex.metal, 7522 bytes.
+inline constexpr char kFrameSkinnedViewmodelForwardVertexMsl[] = R"cy_msl(#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 363 "src/rendering/shaders/cy/frame.slang"
+struct CyInstanceTransform_0
+{
+    float4 row0_0;
+    float4 row1_0;
+    float4 row2_0;
+    float4 tint_0;
+};
+
+
+#line 443
+float3 transformToRelative_0(const CyInstanceTransform_0 thread* instance_0, float3 modelPosition_0)
+{
+    float4 _S1 = float4(modelPosition_0, 1.0);
+    return float3(dot(instance_0->row0_0, _S1), dot(instance_0->row1_0, _S1), dot(instance_0->row2_0, _S1));
+}
+
+
+#line 10 "src/rendering/shaders/cy/cluster.slang"
+struct ClusterGrid_0
+{
+    packed_uint3 dimensions_0;
+    uint maxLightsPerCluster_0;
+    float nearPlane_0;
+    float farPlane_0;
+    float sliceScale_0;
+    float sliceBias_0;
+};
+
+
+#line 115 "src/rendering/shaders/cy/frame.slang"
+struct CyFrameData_0
+{
+    float4 relativeToClipRow0_0;
+    float4 relativeToClipRow1_0;
+    float4 relativeToClipRow2_0;
+    float4 relativeToClipRow3_0;
+    float4 previousRelativeToClipRow0_0;
+    float4 previousRelativeToClipRow1_0;
+    float4 previousRelativeToClipRow2_0;
+    float4 previousRelativeToClipRow3_0;
+    float4 relativeToViewRow0_0;
+    float4 relativeToViewRow1_0;
+    float4 relativeToViewRow2_0;
+    float4 relativeToViewRow3_0;
+    float4 ambientAndOcclusion_0;
+    float4 extentAndInverse_0;
+    ClusterGrid_0 clusterGrid_0;
+    uint4 counts_0;
+    uint4 materialOffsets_0;
+    float4 temporalFeedback_0;
+    float4 temporalJitter_0;
+    uint4 materialTextures_0;
+    float4 shadowToClipRow0_0;
+    float4 shadowToClipRow1_0;
+    float4 shadowToClipRow2_0;
+    float4 shadowToClipRow3_0;
+    uint4 shadowControl_0;
+    uint4 occlusionControl_0;
+    uint4 softShadowControl_0;
+    float4 softShadowShape_0;
+    uint4 probeVolumeControl_0;
+    float4 probeVolumeOrigin_0;
+    float4 probeVolumeParams_0;
+    uint4 decalControl_0;
+    uint4 volumetricFogControl_0;
+    uint4 motionControl_0;
+    uint4 lightmapControl_0;
+    uint4 lightmapLayout_0;
+    uint4 lightmapShadowLights_0;
+    uint4 lightmapDirectLights_0;
+    uint4 lightmapDebug_0;
+    uint4 giControl_0;
+    uint4 lightingControl_0;
+    uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
+};
+
+
+#line 34 "src/rendering/shaders/cy/light.slang"
+struct Light_0
+{
+    packed_float3 positionRelativeToCamera_0;
+    float range_0;
+    packed_float3 direction_0;
+    float intensity_0;
+    packed_float3 color_0;
+    uint kind_0;
+    float2 spotScaleBias_0;
+    uint shapeWord_0;
+    uint layerMask_0;
+};
+
+
+#line 350 "src/rendering/shaders/cy/frame.slang"
+struct CyDrawInstance_0
+{
+    uint instanceSlot_0;
+    uint material_0;
+    uint parameterOffset_0;
+    uint giAddress_0;
+    uint layerMask_1;
+    uint lodAndFade_0;
+    uint surface_0;
+    uint flags_0;
+};
+
+
+#line 372
+struct CyFrameViewSet_default_0
+{
+    CyFrameData_0 constant* frame_0;
+    Light_0 device* lights_0;
+    uint2 device* clusterHeaders_0;
+    uint device* clusterIndices_0;
+    CyDrawInstance_0 device* drawInstances_0;
+    CyInstanceTransform_0 device* instances_0;
+    uint device* materialWords_0;
+};
+
+
+#line 417
+struct CyDrawPush_0
+{
+    uint drawIndex_0;
+};
+
+
+#line 5319 "core.meta.slang"
+struct KernelContext_0
+{
+    CyFrameViewSet_default_0 constant* cyFrameView_0;
+    CyDrawPush_0 constant* cyDraw_0;
+};
+
+
+#line 1720 "src/rendering/shaders/cy/frame.slang"
+float4 transformToViewmodelClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
+{
+    float4 _S2 = float4(relative_0, 1.0);
+    return float4(dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow0_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow1_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow2_0, _S2), dot(kernelContext_0->cyFrameView_0->frame_0->viewmodelToClipRow3_0, _S2));
+}
+
+
+#line 1651
+float2 cySkinnedNormalToStream_0(float4 frame_1)
+{
+
+#line 1651
+    float2 _S3 = float2(0.5) ;
+
+    return frame_1.xy * _S3 + _S3;
+}
+
+
+#line 23 "src/rendering/shaders/cy/packing.slang"
+float3 decodeOctahedral_0(float2 encoded_0)
+{
+    float2 _S4 = encoded_0 * float2(2.0)  - float2(1.0) ;
+    float _S5 = _S4.x;
+
+#line 26
+    float _S6 = _S4.y;
+
+#line 26
+    float _S7 = 1.0 - abs(_S5) - abs(_S6);
+
+#line 26
+    thread float3 normal_0 = float3(_S5, _S6, _S7);
+    float _S8 = saturate(- _S7);
+    float2 _S9 = float2(_S5, _S6);
+
+#line 28
+    normal_0.xy = _S9 + select(float2(_S8) , float2(- _S8) , _S9 >= (float2(0.0) ));
+    return normalize(normal_0);
+}
+
+
+#line 452 "src/rendering/shaders/cy/frame.slang"
+float3 rotateToRelative_0(const CyInstanceTransform_0 thread* instance_1, float3 direction_1)
+{
+    return normalize(float3(dot(instance_1->row0_0.xyz, direction_1), dot(instance_1->row1_0.xyz, direction_1), dot(instance_1->row2_0.xyz, direction_1)));
+}
+
+
+#line 454
+struct cySkinnedViewmodelForwardVertex_Result_0
+{
+    float4 position_0 [[position]];
+    float3 relativePosition_0 [[user(TEXCOORD)]];
+    float3 normal_1 [[user(TEXCOORD_1)]];
+    float2 uv_0 [[user(TEXCOORD_2)]];
+    uint drawIndex_1 [[user(TEXCOORD_3)]];
+    float2 lightmapUv_0 [[user(TEXCOORD_4)]];
+};
+
+
+#line 454
+struct vertexInput_0
+{
+    float3 modelPosition_1 [[attribute(0)]];
+    float4 frame_2 [[attribute(1)]];
+    float2 uv_1 [[attribute(2)]];
+    float2 lightmapUv_1 [[attribute(3)]];
+};
+
+
+#line 641
+struct CyForwardVertex_0
+{
+    float4 position_1;
+    float3 relativePosition_1;
+    float3 normal_2;
+    float2 uv_2;
+    [[flat]] uint drawIndex_2;
+    float2 lightmapUv_2;
+};
+
+
+#line 641
+[[vertex]] cySkinnedViewmodelForwardVertex_Result_0 cySkinnedViewmodelForwardVertex(vertexInput_0 _S10 [[stage_in]], CyFrameViewSet_default_0 constant* cyFrameView_1 [[buffer(1)]], CyDrawPush_0 constant* cyDraw_1 [[buffer(3)]])
+{
+
+#line 641
+    thread KernelContext_0 kernelContext_1;
+
+#line 641
+    (&kernelContext_1)->cyFrameView_0 = cyFrameView_1;
+
+#line 641
+    (&kernelContext_1)->cyDraw_0 = cyDraw_1;
+
+#line 1796
+    CyInstanceTransform_0 _S11 = cyFrameView_1->instances_0[cyFrameView_1->drawInstances_0[cyDraw_1->drawIndex_0].instanceSlot_0];
+
+    thread CyForwardVertex_0 output_0;
+
+#line 1798
+    thread CyInstanceTransform_0 _S12 = _S11;
+
+#line 1798
+    float3 _S13 = transformToRelative_0(&_S12, _S10.modelPosition_1);
+    (&output_0)->relativePosition_1 = _S13;
+
+#line 1799
+    float4 _S14 = transformToViewmodelClip_0(_S13, &kernelContext_1);
+    (&output_0)->position_1 = _S14;
+    float3 _S15 = decodeOctahedral_0(cySkinnedNormalToStream_0(_S10.frame_2));
+
+#line 1801
+    thread CyInstanceTransform_0 _S16 = _S11;
+
+#line 1801
+    float3 _S17 = rotateToRelative_0(&_S16, _S15);
+
+#line 1801
+    (&output_0)->normal_2 = _S17;
+    (&output_0)->uv_2 = _S10.uv_1;
+    (&output_0)->drawIndex_2 = cyDraw_1->drawIndex_0;
+    (&output_0)->lightmapUv_2 = _S10.lightmapUv_1;
+
+#line 1804
+    thread cySkinnedViewmodelForwardVertex_Result_0 _S18;
+
+#line 1804
+    (&_S18)->position_0 = output_0.position_1;
+
+#line 1804
+    (&_S18)->relativePosition_0 = output_0.relativePosition_1;
+
+#line 1804
+    (&_S18)->normal_1 = output_0.normal_2;
+
+#line 1804
+    (&_S18)->uv_0 = output_0.uv_2;
+
+#line 1804
+    (&_S18)->drawIndex_1 = output_0.drawIndex_2;
+
+#line 1804
+    (&_S18)->lightmapUv_0 = output_0.lightmapUv_2;
+
+#line 1804
     return _S18;
 }
 

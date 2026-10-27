@@ -222,4 +222,10 @@ private:
 /// that subtraction is where float precision goes.
 [[nodiscard]] Mat4 previous_camera_relative_to_clip(const TemporalFramework& temporal) noexcept;
 
+/// The VIEW half of `previous_camera_relative_to_clip`: last frame's view rebased by the camera's
+/// displacement, before any projection. What a view drawn through ANOTHER projection from the same
+/// camera — the first-person weapon view — reprojects through, so its motion vectors and the
+/// world's are one camera's.
+[[nodiscard]] Mat4 previous_camera_relative_view(const TemporalFramework& temporal) noexcept;
+
 }  // namespace cy::rendering

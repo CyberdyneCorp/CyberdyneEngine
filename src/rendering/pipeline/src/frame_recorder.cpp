@@ -268,10 +268,10 @@ void bind_skinned_streams(rhi::CommandBuffer& commands, const GeometrySource& ge
 /// not one this path can record: non-indexed, a negative window, or no frames for a pass that
 /// shades.
 [[nodiscard]] bool record_skinned_draw(FrameRecorder& recorder, rhi::CommandBuffer& commands,
-                                       FramePipelineKind pipeline, u32 index,
+                                       FramePipelineKind pipeline,
+                                       rhi::GraphicsPipelineHandle skinned, u32 index,
                                        const DrawGeometry& draw, DrawBindingState& bound,
                                        rhi::BufferHandle& bound_indices) noexcept {
-    const rhi::GraphicsPipelineHandle skinned = recorder.pipelines()->skinned_pipeline(pipeline);
     const bool shaded = pipeline != FramePipelineKind::Shadow;
     if (skinned.is_null() || draw.indices.is_null() || draw.vertex_offset < 0 ||
         draw.previous_vertex_offset < 0 || draw.static_vertex_offset < 0 ||
@@ -289,6 +289,46 @@ void bind_skinned_streams(rhi::CommandBuffer& commands, const GeometrySource& ge
         bound_indices = draw.indices;
     }
     commands.draw_indexed(draw.index_count, 1, draw.first_index, 0, 0);
+    return true;
+}
+
+/// Record one WEAPON VIEW draw through the viewmodel pipeline for this pass — rigid or skinned, as
+/// the draw is. False — the draw is skipped and counted — when the pipelines were created without
+/// the viewmodel variants (`PipelineSetup::viewmodel`). The caller's `DrawPipelineFn` is not
+/// consulted, as it is not for a skinned draw: a material variant's vertex stage projects through
+/// the world's rows, and a weapon drawn through them is the weapon in the wall.
+[[nodiscard]] bool record_viewmodel_draw(FrameRecorder& recorder, rhi::CommandBuffer& commands,
+                                         FramePipelineKind pipeline, const StreamSet& streams,
+                                         u32 index, DrawGeometry& draw, DrawBindingState& bound,
+                                         rhi::BufferHandle& bound_indices) noexcept {
+    const rhi::GraphicsPipelineHandle weapon =
+        recorder.pipelines()->viewmodel_pipeline(pipeline, draw.skinned());
+    if (weapon.is_null()) {
+        return false;
+    }
+    if (draw.skinned()) {
+        return record_skinned_draw(recorder, commands, pipeline, weapon, index, draw, bound,
+                                   bound_indices);
+    }
+    // A DEFORMED MESH IN THE PREPASS reads two windows of one stream, as `draw_layer` does for a
+    // world draw; everything else reads the streams from their start.
+    const bool deformed = pipeline == FramePipelineKind::Depth && draw.has_previous_vertices &&
+                          !draw.indices.is_null();
+    streams.bind(commands, deformed ? &draw : nullptr);
+    const DrawPipelineSelection selected{weapon, recorder.pipelines()->layout(), {}, 0};
+    bind_draw_pipeline(recorder, commands, selected, bound);
+    const DrawPush push{index};
+    commands.push_constants(selected.layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment,
+                            0, Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(push)));
+    if (draw.indices.is_null()) {
+        commands.draw(draw.vertex_count, 1, 0, 0);
+        return true;
+    }
+    if (!(draw.indices == bound_indices)) {
+        commands.bind_index_buffer(draw.indices, 0, draw.wide_indices);
+        bound_indices = draw.indices;
+    }
+    commands.draw_indexed(draw.index_count, 1, draw.first_index, draw.vertex_offset, 0);
     return true;
 }
 
@@ -340,11 +380,28 @@ void draw_layer(FrameRecorder& recorder, const PassContext& context, FramePipeli
             ++recorder.mutable_report().skipped_draws;
             continue;
         }
+        // THE WEAPON VIEW'S DRAWS, through its own pipelines in every pass but the shadow one —
+        // which projects from the light, so a weapon that casts casts from where it is in the
+        // world. The streams are rebound before the next draw, as after a skinned one.
+        if ((range.instances[index].flags & render::kInstanceViewmodel) != 0U &&
+            pipeline != FramePipelineKind::Shadow) {
+            if (record_viewmodel_draw(recorder, commands, pipeline, streams, index, draw, bound,
+                                      bound_indices)) {
+                ++counter;
+                ++recorder.mutable_report().viewmodel_draws;
+            } else {
+                ++recorder.mutable_report().skipped_draws;
+            }
+            offsets_moved = true;
+            forward_bound = 0;
+            continue;
+        }
         if (draw.skinned()) {
             // ITS OWN BUFFERS AND ITS OWN PIPELINE, and the pass's streams are rebound before the
             // next rigid or variant draw: a skinned draw leaves other buffers at bindings 0 and 1.
-            if (record_skinned_draw(recorder, commands, pipeline, index, draw, bound,
-                                    bound_indices)) {
+            if (record_skinned_draw(recorder, commands, pipeline,
+                                    recorder.pipelines()->skinned_pipeline(pipeline), index, draw,
+                                    bound, bound_indices)) {
                 ++counter;
                 ++recorder.mutable_report().skinned_draws;
             } else {

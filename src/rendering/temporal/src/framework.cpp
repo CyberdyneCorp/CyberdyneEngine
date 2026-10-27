@@ -271,14 +271,18 @@ Mat4 camera_relative_to_clip(const TemporalView& view) noexcept {
     return view.projection * rotation;
 }
 
-Mat4 previous_camera_relative_to_clip(const TemporalFramework& temporal) noexcept {
+Mat4 previous_camera_relative_view(const TemporalFramework& temporal) noexcept {
     const TemporalView& previous = temporal.previous_view();
     const Vec3 moved = temporal.view().camera_position - previous.camera_position;
     Mat4 relative = previous.view;
     const Vec4 translation = (relative.columns[0] * moved.x) + (relative.columns[1] * moved.y) +
                              (relative.columns[2] * moved.z);
     relative.columns[3] = Vec4{translation.x, translation.y, translation.z, 1.0F};
-    return previous.projection * relative;
+    return relative;
+}
+
+Mat4 previous_camera_relative_to_clip(const TemporalFramework& temporal) noexcept {
+    return temporal.previous_view().projection * previous_camera_relative_view(temporal);
 }
 
 }  // namespace cy::rendering

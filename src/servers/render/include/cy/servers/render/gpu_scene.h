@@ -104,6 +104,12 @@ enum InstanceFlagBits : u32 {
     /// The instance's geometry is a virtual-geometry asset, so cluster traversal owns it rather
     /// than an indexed draw. M7's; declared now so the bit number does not move later.
     kInstanceVirtualGeometry = 1U << 7U,
+    /// A draw in the first-person WEAPON VIEW: projected through the viewmodel's own field of view
+    /// and near plane, its depth in the slice of the range nearest the eye. Never published by the
+    /// GPU scene — the frame assembly sets it on the draws of the layers a weapon view selects
+    /// (`AssemblyView::viewmodel`) — and read by the recorder, which binds the viewmodel pipelines
+    /// for it, and by the forward pass. `cy/frame.slang`'s `kCyInstanceViewmodel`.
+    kInstanceViewmodel = 1U << 8U,
 };
 
 /// ONE INSTANCE, IN THE LAYOUT THE SHADER SEES.

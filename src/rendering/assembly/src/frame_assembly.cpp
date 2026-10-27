@@ -104,6 +104,7 @@ FrameAssembly::FrameAssembly(Allocator& allocator) noexcept
     : allocator_(&allocator),
       workspace_(allocator),
       results_(allocator),
+      viewmodel_results_(allocator),
       previous_lod_levels_(allocator),
       draws_(allocator),
       sort_(allocator),
@@ -381,11 +382,43 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
 
 // --- 3. Culling -------------------------------------------------------------------------------
 
+namespace {
+
+/// Remove every survivor on one of `layers`, keeping the rest in their order.
+[[nodiscard]] Status drop_layers(Array<VisibleInstance>& survivors,
+                                 render::LayerMask layers) noexcept {
+    usize kept = 0;
+    for (usize index = 0; index < survivors.size(); ++index) {
+        if ((survivors[index].layer_mask & layers) == 0U) {
+            survivors[kept++] = survivors[index];
+        }
+    }
+    return survivors.resize(kept);
+}
+
+}  // namespace
+
 Status FrameAssembly::run_cull(const SpatialIndex& index, const AssemblyView& view,
                                AssemblyReport& out) noexcept {
     CullOptions options;
-    if (Status culled = cull_view(index, view.cull, options, workspace_, results_); !culled) {
+    // THE PRIMARY VIEW DOES NOT DRAW THE WEAPON VIEW'S LAYERS: each of the two views is culled
+    // against its own frustum, and an instance is in one list or the other, never both. With no
+    // weapon view the mask is the view's own, bit for bit.
+    CullView world = view.cull;
+    world.layer_mask &= ~view.viewmodel.layers;
+    if (Status culled = cull_view(index, world, options, workspace_, results_); !culled) {
         return culled;
+    }
+    // AN INSTANCE ON A WEAPON LAYER IS THE WEAPON VIEW'S, even when it is on a world layer too:
+    // the cull's layer test is "any layer in common", so an arm on both would otherwise be drawn
+    // twice — once through each projection.
+    if (view.viewmodel.layers != render::kNoLayers) {
+        if (Status kept = drop_layers(results_.opaque, view.viewmodel.layers); !kept) {
+            return kept;
+        }
+        if (Status kept = drop_layers(results_.transparent, view.viewmodel.layers); !kept) {
+            return kept;
+        }
     }
     // Hysteresis state is indexed by spatial slot and belongs to the caller for the reason lod.h
     // gives; the assembly is that caller, and it keeps one band per view across frames.
@@ -420,9 +453,55 @@ Status FrameAssembly::run_device_cull(const SpatialIndex& index, const AssemblyV
     return ok();
 }
 
+/// The weapon view's own cull: its layers alone, against its own frustum and field of view, from
+/// the same camera. Nothing to do in a frame with no weapon view.
+Status FrameAssembly::run_viewmodel_cull(const SpatialIndex& index, const AssemblyView& view,
+                                         AssemblyReport& out) noexcept {
+    viewmodel_results_.clear();
+    if (view.viewmodel.layers == render::kNoLayers) {
+        return ok();
+    }
+    CullView weapon = view.cull;
+    weapon.frustum = view.viewmodel.frustum;
+    weapon.fov_y_radians = view.viewmodel.fov_y_radians;
+    weapon.layer_mask &= view.viewmodel.layers;
+    CullOptions options;
+    if (Status culled = cull_view(index, weapon, options, workspace_, viewmodel_results_);
+        !culled) {
+        return culled;
+    }
+    out.viewmodel_visible = viewmodel_results_.stats.visible;
+    return ok();
+}
+
 // --- 4. The draw list -------------------------------------------------------------------------
 
-Status FrameAssembly::build_draws(const FrameSinks& sinks, AssemblyReport& out) noexcept {
+Status FrameAssembly::append_draws(Span<const VisibleInstance> visible, const FrameSinks& sinks,
+                                   u32 set, u32 clear, u32& count) noexcept {
+    const SurfaceQueryFn query = sinks.surfaces != nullptr ? sinks.surfaces : &default_surfaces;
+    void* user = sinks.surfaces != nullptr ? sinks.surfaces_user : nullptr;
+    DrawList built(*allocator_);
+    if (Status made = build_draw_list(visible, query, user, built); !made) {
+        return made;
+    }
+    // The lists JOIN, items and records together, because `sort_draw_list` moves them in step and
+    // draw i's record is instances[i] afterwards. Two lists would be two orderings.
+    for (usize index = 0; index < built.items.size(); ++index) {
+        GpuDrawInstance record = built.instances[index];
+        record.flags = (record.flags | set) & ~clear;
+        if (Status added = draws_.items.push_back(built.items[index]); !added) {
+            return added;
+        }
+        if (Status added = draws_.instances.push_back(record); !added) {
+            return added;
+        }
+    }
+    count += static_cast<u32>(built.items.size());
+    return ok();
+}
+
+Status FrameAssembly::build_draws(const FrameSinks& sinks, const AssemblyView& view,
+                                  AssemblyReport& out) noexcept {
     draws_.clear();
     const SurfaceQueryFn query = sinks.surfaces != nullptr ? sinks.surfaces : &default_surfaces;
     void* user = sinks.surfaces != nullptr ? sinks.surfaces_user : nullptr;
@@ -433,22 +512,31 @@ Status FrameAssembly::build_draws(const FrameSinks& sinks, AssemblyReport& out) 
         return built;
     }
     out.opaque = static_cast<u32>(draws_.items.size());
-    DrawList transparent(*allocator_);
-    if (Status built = build_draw_list(results_.transparent.span(), query, user, transparent);
-        !built) {
-        return built;
+    if (Status added = append_draws(results_.transparent.span(), sinks, 0U, 0U, out.transparent);
+        !added) {
+        return added;
     }
-    // The two lists JOIN, items and records together, because `sort_draw_list` moves them in step
-    // and draw i's record is instances[i] afterwards. Two lists would be two orderings.
-    for (usize index = 0; index < transparent.items.size(); ++index) {
-        if (Status added = draws_.items.push_back(transparent.items[index]); !added) {
-            return added;
-        }
-        if (Status added = draws_.instances.push_back(transparent.instances[index]); !added) {
-            return added;
-        }
+    // THE WEAPON VIEW'S DRAWS, MARKED. The mark is what the recorder binds the viewmodel pipelines
+    // for, and the shadow policy rides on the two flags the shadow pass and the forward pass
+    // already read, so neither pass grows a second rule for the weapon.
+    const AssemblyViewmodel& weapon = view.viewmodel;
+    const u32 clear = (weapon.cast_shadows ? 0U : u32{render::kInstanceCastsShadow}) |
+                      (weapon.receive_shadows ? 0U : u32{render::kInstanceReceivesShadow});
+    u32 weapon_opaque = 0;
+    u32 weapon_transparent = 0;
+    if (Status added = append_draws(viewmodel_results_.opaque.span(), sinks,
+                                    render::kInstanceViewmodel, clear, weapon_opaque);
+        !added) {
+        return added;
     }
-    out.transparent = static_cast<u32>(transparent.items.size());
+    if (Status added = append_draws(viewmodel_results_.transparent.span(), sinks,
+                                    render::kInstanceViewmodel, clear, weapon_transparent);
+        !added) {
+        return added;
+    }
+    out.opaque += weapon_opaque;
+    out.transparent += weapon_transparent;
+    out.viewmodel_draws = weapon_opaque + weapon_transparent;
 
     if (Status sorted = sort_draw_list(draws_, sort_); !sorted) {
         return sorted;
@@ -973,6 +1061,14 @@ Status FrameAssembly::assemble(const SpatialIndex& index, const AssemblyView& vi
     out.jitter_index = temporal_.jitter().index();
 
     const bool on_device = cull_pass_ready_ && device_ != nullptr;
+    if (on_device && view.viewmodel.layers != render::kNoLayers) {
+        // REFUSED RATHER THAN DROPPED: the device dispatch draws from indirect arguments the
+        // processor never sees, so there is no draw list to mark, and a weapon view that quietly
+        // drew as world geometry would be the clipping the weapon view exists to prevent.
+        return fail(ErrorCode::InvalidArgument,
+                    "a weapon view needs the processor cull: turn `gpu_culling` off for a frame "
+                    "that draws one");
+    }
     if (on_device) {
         if (Status culled = run_device_cull(index, view, out); !culled) {
             return culled;
@@ -985,8 +1081,11 @@ Status FrameAssembly::assemble(const SpatialIndex& index, const AssemblyView& vi
     } else if (Status culled = run_cull(index, view, out); !culled) {
         return culled;
     }
+    if (Status culled = run_viewmodel_cull(index, view, out); !culled) {
+        return culled;
+    }
 
-    if (Status built = build_draws(sinks, out); !built) {
+    if (Status built = build_draws(sinks, view, out); !built) {
         return built;
     }
     if (Status built = build_lights(view, out); !built) {

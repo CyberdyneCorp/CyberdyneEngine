@@ -6,7 +6,7 @@
 
 namespace cy::rendering::particles {
 
-/// cyStripVertex.metal, 6655 bytes.
+/// cyStripVertex.metal, 6989 bytes.
 inline constexpr char kStripVertexMsl[] = R"cy_msl(#include <metal_stdlib>
 #include <metal_math>
 #include <metal_texture>
@@ -81,6 +81,15 @@ struct CyFrameData_0
     uint4 giControl_0;
     uint4 lightingControl_0;
     uint4 directionalLights_0;
+    float4 viewmodelToClipRow0_0;
+    float4 viewmodelToClipRow1_0;
+    float4 viewmodelToClipRow2_0;
+    float4 viewmodelToClipRow3_0;
+    float4 previousViewmodelToClipRow0_0;
+    float4 previousViewmodelToClipRow1_0;
+    float4 previousViewmodelToClipRow2_0;
+    float4 previousViewmodelToClipRow3_0;
+    uint4 viewmodelControl_0;
 };
 
 
@@ -99,7 +108,7 @@ struct Light_0
 };
 
 
-#line 321 "src/rendering/shaders/cy/frame.slang"
+#line 350 "src/rendering/shaders/cy/frame.slang"
 struct CyDrawInstance_0
 {
     uint instanceSlot_0;
@@ -134,7 +143,7 @@ struct CyFrameViewSet_default_0
 };
 
 
-#line 343
+#line 372
 struct KernelContext_0
 {
     CyStripVertex_0 device* cyStrips_0;
@@ -142,7 +151,7 @@ struct KernelContext_0
 };
 
 
-#line 398
+#line 427
 float4 transformToClip_0(float3 relative_0, KernelContext_0 thread* kernelContext_0)
 {
     float4 _S1 = float4(relative_0, 1.0);

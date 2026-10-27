@@ -141,6 +141,13 @@ struct FrameSceneHooks {
     /// The frame's lights, after the scene's sun and two point lights are written: a sample lit by
     /// its own sun replaces them.
     void (*lights)(Array<render::LightDescription>& lights, void* user) noexcept = nullptr;
+    /// Box `which`'s layers: `render::kDefaultLayer`, the scene's, unless the suite says otherwise
+    /// — a weapon view's suite puts its arms and weapon on a layer of their own. Appended.
+    render::LayerMask (*layer_mask)(u32 which, void* user) noexcept = nullptr;
+    /// Box `which`'s instance row, after the scene wrote its axis-aligned one: a suite whose box
+    /// turns — a weapon carried by a turning camera — writes the whole placement. Called whenever
+    /// the scene places the row. Appended.
+    void (*place_row)(u32 which, InstanceTransform& row, void* user) noexcept = nullptr;
 };
 
 /// The whole thing: the scene, the assembly, the layer, and one render.
@@ -202,6 +209,10 @@ public:
     /// `set_eye` with a view of the scene's own choosing. The rows follow as they do there.
     void set_camera(Vec3 eye, Vec3 forward) noexcept;
     [[nodiscard]] Vec3 forward() const noexcept { return forward_; }
+    /// The world's vertical field of view from the next `render`: 0.9 radians, the scene's,
+    /// unless a suite — the weapon view's, which holds the weapon to it — says otherwise.
+    void set_fov(f32 fov_y_radians) noexcept;
+    [[nodiscard]] f32 fov() const noexcept { return fov_y_radians_; }
     /// The view's rotation alone: camera-relative to view space.
     [[nodiscard]] const Mat4& relative_view() const noexcept { return relative_view_; }
     /// Draw box `which` as a mesh DEFORMED ON THE DEVICE, the way a skinned mesh is: the vertex
@@ -326,6 +337,9 @@ private:
     bool built_ = false;
     u32 width_ = kWidth;
     u32 height_ = kHeight;
+    f32 fov_y_radians_ = 0.9F;
+    f32 near_plane_ = 0.1F;
+    f32 far_plane_ = 120.0F;
     u32 light_capacity_ = 16;
 
     [[nodiscard]] u64 readback_bytes() const noexcept {

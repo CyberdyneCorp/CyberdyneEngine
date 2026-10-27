@@ -82,6 +82,8 @@ def frame_argument_buffers(source: str, name: str) -> str:
         "kFrameDepthVertexMsl", "kFrameDepthFragmentMsl",
         "kFrameForwardVertexMsl", "kFrameForwardFragmentMsl", "kFrameShadowVertexMsl",
         "kFrameSkinnedDepthVertexMsl", "kFrameSkinnedForwardVertexMsl",
+        "kFrameViewmodelDepthVertexMsl", "kFrameViewmodelForwardVertexMsl",
+        "kFrameSkinnedViewmodelDepthVertexMsl", "kFrameSkinnedViewmodelForwardVertexMsl",
     }:
         return source
     # Slang emits uint3 for the grid dimensions. Metal pads that field to 16

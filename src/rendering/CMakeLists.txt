@@ -261,3 +261,9 @@ add_subdirectory(fog_of_war)
 # the engine's denoiser transcribed. It joins cy::rendering-lighting, cy::rendering-denoise and
 # cy::rendering-pipeline, and its device suite renders pipeline/'s scene, so it is read after them.
 add_subdirectory(lights_gpu)
+
+# THE FIRST-PERSON WEAPON VIEW. `camera-system`'s "one camera, several views": the arms and the
+# weapon through their own field of view and near plane, drawn into the world's frame with a depth
+# squeezed against the eye so they never clip into a wall. It joins cy::rendering-assembly and
+# cy::rendering-pipeline, and its device suite renders pipeline/'s scene, so it is read after them.
+add_subdirectory(viewmodel)
