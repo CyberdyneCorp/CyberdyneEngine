@@ -161,7 +161,7 @@ A case is never run again when a second run could hide or garble something:
 
 - **it failed a check** — it has failed, and a second run would only add output;
 - **it entered a subcase** — doctest walks subcases by re-entering the case, and a run it did not
-  start would derail the walk; such a case is judged on its one run, as before;
+  start would break the walk; such a case is judged on its one run, as before;
 - **the process has spent its allowance** — twenty seconds of CPU on re-runs, a third of the unit
   tier's CTest timeout, so that a build in which every case is over (a wrong scale) still fails as
   `over budget:` rather than as a timeout.

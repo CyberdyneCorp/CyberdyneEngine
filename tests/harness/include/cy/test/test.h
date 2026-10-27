@@ -209,7 +209,7 @@ unsigned budget_repeats() noexcept;
 /// Whether a case whose run cost `cpu_ns` may be run again. A pure function, so the rule is tested
 /// without a case that has to be slow: never when the run failed a check (the overrun is beside the
 /// point, and a second run could only add noise to the report), never inside a subcase (doctest
-/// walks subcases by re-entering the case, and a run it did not start would derail the walk), and
+/// walks subcases by re-entering the case, and a run it did not start would break the walk), and
 /// never when the process's re-measuring allowance — twenty seconds of CPU, a third of the unit
 /// tier's CTest timeout — could not pay for one more run of this one.
 bool may_remeasure(unsigned long long cpu_ns, int failed_checks, bool entered_subcase,

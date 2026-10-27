@@ -981,7 +981,7 @@ CY_TEST_CASE("harness: an overrun is re-measured, and judged on the fastest run"
 CY_TEST_CASE("harness: a case with a subcase, or a failed check, is never run again") {
 #if defined(__linux__)
     // doctest walks subcases by re-entering the case; a run the harness started itself would
-    // derail that walk, so such a case is judged on its one run.
+    // break that walk, so such a case is judged on its one run.
     const ProbeRun subcase = run_probe("probe: a subcase that is slow only on its first run", {});
     CY_TEST_MESSAGE(subcase.output);
     CY_REQUIRE(subcase.started);

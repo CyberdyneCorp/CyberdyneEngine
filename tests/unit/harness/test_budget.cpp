@@ -107,7 +107,7 @@ CY_TEST_CASE("harness: an over-budget case is run again only when that cannot hi
     CY_CHECK(cy::test::may_remeasure(3 * kMillisecond, 0, false, kPlenty));
     // A case that failed a check has failed, whatever it cost.
     CY_CHECK_FALSE(cy::test::may_remeasure(3 * kMillisecond, 1, false, kPlenty));
-    // doctest re-enters a case to walk its subcases, and a run it did not start derails that.
+    // doctest re-enters a case to walk its subcases, and a run it did not start breaks that walk.
     CY_CHECK_FALSE(cy::test::may_remeasure(3 * kMillisecond, 0, true, kPlenty));
     // The process's allowance must pay for one more run of this one.
     CY_CHECK(cy::test::may_remeasure(3 * kMillisecond, 0, false, 3 * kMillisecond));
