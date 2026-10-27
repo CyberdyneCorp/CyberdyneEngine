@@ -4491,4 +4491,213 @@ impl Interface {
             None => Err(CallError::UnknownStatus(raw)),
         }
     }
+
+    /// Give a camera first-person behaviours, or new settings.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_configure(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        desc: *const ffi::CyFirstPersonDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_configure
+            .ok_or(CallError::Missing("first_person_configure"))?;
+        let raw = unsafe { entry(engine, camera, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A first-person camera's input for this frame.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_input(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        input: *const ffi::CyFirstPersonInput,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_input
+            .ok_or(CallError::Missing("first_person_input"))?;
+        let raw = unsafe { entry(engine, camera, input) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A shot's kick into the recoil spring.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_kick(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        pitch: f32,
+        yaw: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_kick
+            .ok_or(CallError::Missing("first_person_kick"))?;
+        let raw = unsafe { entry(engine, camera, pitch, yaw) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A cut: the look set and every smoothed state at rest.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_reset(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_reset
+            .ok_or(CallError::Missing("first_person_reset"))?;
+        let raw = unsafe { entry(engine, camera, yaw, pitch) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// What a first-person camera's last frame produced.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_state(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        into: *mut ffi::CyFirstPersonState,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_state
+            .ok_or(CallError::Missing("first_person_state"))?;
+        let raw = unsafe { entry(engine, camera, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Take a camera's first-person behaviours away.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn first_person_release(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .first_person_release
+            .ok_or(CallError::Missing("first_person_release"))?;
+        let raw = unsafe { entry(engine, camera) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// Set a camera's weapon view: its layers, lens and shadows.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn viewmodel_configure(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        desc: *const ffi::CyViewmodelDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .viewmodel_configure
+            .ok_or(CallError::Missing("viewmodel_configure"))?;
+        let raw = unsafe { entry(engine, camera, desc) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
+
+    /// A camera's weapon view as it was set.
+    ///
+    /// # Safety
+    ///
+    /// The handles and pointers are the ABI's, and the ABI's rules apply unchanged: a handle must be
+    /// live, a pointer must point at what its type says for the duration of the call, and a
+    /// `CyBorrow` must be re-validated against the world's epoch before it is read. The safe API in
+    /// the crate root is what discharges these; nothing outside the SDK calls this directly.
+    pub unsafe fn viewmodel_get(
+        &self,
+        engine: ffi::CyEngine,
+        camera: ffi::CyCamera,
+        into: *mut ffi::CyViewmodelDesc,
+    ) -> Result<(), CallError> {
+        let entry = self
+            .table()
+            .viewmodel_get
+            .ok_or(CallError::Missing("viewmodel_get"))?;
+        let raw = unsafe { entry(engine, camera, into) };
+        match Status::from_raw(raw) {
+            Some(Status::Ok) => Ok(()),
+            Some(status) => Err(CallError::Failed(status)),
+            None => Err(CallError::UnknownStatus(raw)),
+        }
+    }
 }

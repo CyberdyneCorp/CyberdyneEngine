@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 12,
+    "minor": 13,
     "patch": 0
   },
   "functions": [
@@ -922,10 +922,50 @@
         "index": 179,
         "name": "ui_navigate",
         "type": "CyResult(*)(CyEngine, uint32_t, uint32_t*)"
+      },
+      {
+        "index": 180,
+        "name": "first_person_configure",
+        "type": "CyResult(*)(CyEngine, CyCamera, const CyFirstPersonDesc*)"
+      },
+      {
+        "index": 181,
+        "name": "first_person_input",
+        "type": "CyResult(*)(CyEngine, CyCamera, const CyFirstPersonInput*)"
+      },
+      {
+        "index": 182,
+        "name": "first_person_kick",
+        "type": "CyResult(*)(CyEngine, CyCamera, float, float)"
+      },
+      {
+        "index": 183,
+        "name": "first_person_reset",
+        "type": "CyResult(*)(CyEngine, CyCamera, float, float)"
+      },
+      {
+        "index": 184,
+        "name": "first_person_state",
+        "type": "CyResult(*)(CyEngine, CyCamera, CyFirstPersonState*)"
+      },
+      {
+        "index": 185,
+        "name": "first_person_release",
+        "type": "CyResult(*)(CyEngine, CyCamera)"
+      },
+      {
+        "index": 186,
+        "name": "viewmodel_configure",
+        "type": "CyResult(*)(CyEngine, CyCamera, const CyViewmodelDesc*)"
+      },
+      {
+        "index": 187,
+        "name": "viewmodel_get",
+        "type": "CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)"
       }
     ],
     "name": "CyInterface",
-    "size": 1448
+    "size": 1512
   },
   "types": [
     {
@@ -5508,6 +5548,346 @@
       "members": [
         {
           "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "look_sensitivity",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "aim_sensitivity",
+          "offset": 12,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "pitch_limit",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "hip_fov",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "aim_fov",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "hip_viewmodel_fov",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "aim_viewmodel_fov",
+          "offset": 32,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "aim_half_life",
+          "offset": 36,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "bob_stride",
+          "offset": 40,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "bob_vertical",
+          "offset": 44,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "bob_lateral",
+          "offset": 48,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "bob_reference_speed",
+          "offset": 52,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "recoil_frequency",
+          "offset": 56,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "recoil_damping",
+          "offset": 60,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "recoil_camera_share",
+          "offset": 64,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "motion_reduction",
+          "offset": 68,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "hip_offset",
+          "offset": 72,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "aim_offset",
+          "offset": 84,
+          "size": 12,
+          "type": "float[3]"
+        }
+      ],
+      "name": "CyFirstPersonDesc",
+      "size": 96
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "look",
+          "offset": 8,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "move_speed",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 20,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyFirstPersonInput",
+      "size": 24
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "yaw",
+          "offset": 4,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "pitch",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "recoil",
+          "offset": 12,
+          "size": 8,
+          "type": "float[2]"
+        },
+        {
+          "alignment": 4,
+          "name": "aim",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "fov",
+          "offset": 24,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "viewmodel_fov",
+          "offset": 28,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "eye_offset",
+          "offset": 32,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "weapon",
+          "offset": 44,
+          "size": 28,
+          "type": "CyPose"
+        },
+        {
+          "alignment": 4,
+          "name": "view_aim",
+          "offset": 72,
+          "size": 12,
+          "type": "float[3]"
+        },
+        {
+          "alignment": 4,
+          "name": "weapon_aim",
+          "offset": 84,
+          "size": 12,
+          "type": "float[3]"
+        }
+      ],
+      "name": "CyFirstPersonState",
+      "size": 96
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "layers",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "fov",
+          "offset": 8,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "near_plane",
+          "offset": 12,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "far_plane",
+          "offset": 16,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "depth_fraction",
+          "offset": 20,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyViewmodelDesc",
+      "size": 32
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
           "name": "abi_major",
           "offset": 0,
           "size": 4,
@@ -6801,10 +7181,66 @@
           "offset": 1440,
           "size": 8,
           "type": "CyResult(*)(CyEngine, uint32_t, uint32_t*)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_configure",
+          "offset": 1448,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, const CyFirstPersonDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_input",
+          "offset": 1456,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, const CyFirstPersonInput*)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_kick",
+          "offset": 1464,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, float, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_reset",
+          "offset": 1472,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, float, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_state",
+          "offset": 1480,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, CyFirstPersonState*)"
+        },
+        {
+          "alignment": 8,
+          "name": "first_person_release",
+          "offset": 1488,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera)"
+        },
+        {
+          "alignment": 8,
+          "name": "viewmodel_configure",
+          "offset": 1496,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, const CyViewmodelDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "viewmodel_get",
+          "offset": 1504,
+          "size": 8,
+          "type": "CyResult(*)(CyEngine, CyCamera, CyViewmodelDesc*)"
         }
       ],
       "name": "CyInterface",
-      "size": 1448
+      "size": 1512
     },
     {
       "kind": "enum",

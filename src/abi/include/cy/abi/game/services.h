@@ -59,6 +59,7 @@ class LockstepBackend;
 class IlluminationBackend;
 class FogBackend;
 class LightsBackend;
+class FirstPersonBackend;
 
 // --- Phases --------------------------------------------------------------------------------------
 
@@ -117,6 +118,8 @@ struct GameServices {
     FogBackend* fog = nullptr;
     /// ABI 1.11: `light_*`. Null in a host that draws nothing.
     LightsBackend* lights = nullptr;
+    /// ABI 1.13: `first_person_*` and `viewmodel_*`. Null in a host that draws nothing.
+    FirstPersonBackend* first_person = nullptr;
     GameClock clock;
 };
 

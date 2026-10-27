@@ -953,4 +953,44 @@ public struct Interface: @unchecked Sendable {
     public func uiNavigate(engine: CyEngine, action: UInt32, consumed: UnsafeMutablePointer<UInt32>?) throws {
         try check(table.pointee.ui_navigate(engine, action, consumed))
     }
+
+    @inlinable
+    public func firstPersonConfigure(engine: CyEngine, camera: CyCamera, desc: UnsafePointer<CyFirstPersonDesc>?) throws {
+        try check(table.pointee.first_person_configure(engine, camera, desc))
+    }
+
+    @inlinable
+    public func firstPersonInput(engine: CyEngine, camera: CyCamera, input: UnsafePointer<CyFirstPersonInput>?) throws {
+        try check(table.pointee.first_person_input(engine, camera, input))
+    }
+
+    @inlinable
+    public func firstPersonKick(engine: CyEngine, camera: CyCamera, pitch: Float, yaw: Float) throws {
+        try check(table.pointee.first_person_kick(engine, camera, pitch, yaw))
+    }
+
+    @inlinable
+    public func firstPersonReset(engine: CyEngine, camera: CyCamera, yaw: Float, pitch: Float) throws {
+        try check(table.pointee.first_person_reset(engine, camera, yaw, pitch))
+    }
+
+    @inlinable
+    public func firstPersonState(engine: CyEngine, camera: CyCamera, into: UnsafeMutablePointer<CyFirstPersonState>?) throws {
+        try check(table.pointee.first_person_state(engine, camera, into))
+    }
+
+    @inlinable
+    public func firstPersonRelease(engine: CyEngine, camera: CyCamera) throws {
+        try check(table.pointee.first_person_release(engine, camera))
+    }
+
+    @inlinable
+    public func viewmodelConfigure(engine: CyEngine, camera: CyCamera, desc: UnsafePointer<CyViewmodelDesc>?) throws {
+        try check(table.pointee.viewmodel_configure(engine, camera, desc))
+    }
+
+    @inlinable
+    public func viewmodelGet(engine: CyEngine, camera: CyCamera, into: UnsafeMutablePointer<CyViewmodelDesc>?) throws {
+        try check(table.pointee.viewmodel_get(engine, camera, into))
+    }
 }

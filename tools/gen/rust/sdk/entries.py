@@ -410,6 +410,23 @@ ENTRIES: dict[str, Entry] = {
                                doc="Animate one of a widget's paint properties."),
     "ui_navigate": Entry(("engine", "action", "consumed"), result="fallible",
                          doc="Deliver a semantic interface action."),
+    # 1.13: the first-person camera and the weapon view
+    "first_person_configure": Entry(("engine", "camera", "desc"), result="fallible",
+                                    doc="Give a camera first-person behaviours, or new settings."),
+    "first_person_input": Entry(("engine", "camera", "input"), result="fallible",
+                                doc="A first-person camera's input for this frame."),
+    "first_person_kick": Entry(("engine", "camera", "pitch", "yaw"), result="fallible",
+                               doc="A shot's kick into the recoil spring."),
+    "first_person_reset": Entry(("engine", "camera", "yaw", "pitch"), result="fallible",
+                                doc="A cut: the look set and every smoothed state at rest."),
+    "first_person_state": Entry(("engine", "camera", "into"), result="fallible",
+                                doc="What a first-person camera's last frame produced."),
+    "first_person_release": Entry(("engine", "camera"), result="fallible",
+                                  doc="Take a camera's first-person behaviours away."),
+    "viewmodel_configure": Entry(("engine", "camera", "desc"), result="fallible",
+                                 doc="Set a camera's weapon view: its layers, lens and shadows."),
+    "viewmodel_get": Entry(("engine", "camera", "into"), result="fallible",
+                           doc="A camera's weapon view as it was set."),
 }
 
 RESULT_KINDS = frozenset({"value", "fallible"})

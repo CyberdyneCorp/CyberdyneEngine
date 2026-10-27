@@ -698,6 +698,46 @@ public struct Engine: @unchecked Sendable {
     public func uiNavigate(action: UInt32, consumed: UnsafeMutablePointer<UInt32>?) throws {
         try interface.uiNavigate(engine: raw, action: action, consumed: consumed)
     }
+
+    @inlinable
+    public func firstPersonConfigure(camera: CyCamera, desc: UnsafePointer<CyFirstPersonDesc>?) throws {
+        try interface.firstPersonConfigure(engine: raw, camera: camera, desc: desc)
+    }
+
+    @inlinable
+    public func firstPersonInput(camera: CyCamera, input: UnsafePointer<CyFirstPersonInput>?) throws {
+        try interface.firstPersonInput(engine: raw, camera: camera, input: input)
+    }
+
+    @inlinable
+    public func firstPersonKick(camera: CyCamera, pitch: Float, yaw: Float) throws {
+        try interface.firstPersonKick(engine: raw, camera: camera, pitch: pitch, yaw: yaw)
+    }
+
+    @inlinable
+    public func firstPersonReset(camera: CyCamera, yaw: Float, pitch: Float) throws {
+        try interface.firstPersonReset(engine: raw, camera: camera, yaw: yaw, pitch: pitch)
+    }
+
+    @inlinable
+    public func firstPersonState(camera: CyCamera, into: UnsafeMutablePointer<CyFirstPersonState>?) throws {
+        try interface.firstPersonState(engine: raw, camera: camera, into: into)
+    }
+
+    @inlinable
+    public func firstPersonRelease(camera: CyCamera) throws {
+        try interface.firstPersonRelease(engine: raw, camera: camera)
+    }
+
+    @inlinable
+    public func viewmodelConfigure(camera: CyCamera, desc: UnsafePointer<CyViewmodelDesc>?) throws {
+        try interface.viewmodelConfigure(engine: raw, camera: camera, desc: desc)
+    }
+
+    @inlinable
+    public func viewmodelGet(camera: CyCamera, into: UnsafeMutablePointer<CyViewmodelDesc>?) throws {
+        try interface.viewmodelGet(engine: raw, camera: camera, into: into)
+    }
 }
 
 public struct World: @unchecked Sendable {

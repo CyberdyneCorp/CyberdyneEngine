@@ -66,6 +66,9 @@ cy_add_module(
         src/game/fog_thunks.cpp
         # ABI 1.11: lights a game makes, over a backend cy::game-backend-lights binds.
         src/game/light_thunks.cpp
+        # ABI 1.13: the first-person camera and the weapon view, over a backend
+        # cy::game-backend-first-person binds.
+        src/game/first_person_thunks.cpp
         # ABI 1.12: the widget toolkit, over the 1.6 interface's backend.
         src/game/toolkit_thunks.cpp
         src/systems.cpp

@@ -2188,6 +2188,218 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
+    size_of::<ffi::CyFirstPersonDesc>() == 96,
+    "CyFirstPersonDesc is not 96 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFirstPersonDesc>() == 4,
+    "CyFirstPersonDesc is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, struct_size) == 0,
+    "CyFirstPersonDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, flags) == 4,
+    "CyFirstPersonDesc::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, look_sensitivity) == 8,
+    "CyFirstPersonDesc::look_sensitivity is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, aim_sensitivity) == 12,
+    "CyFirstPersonDesc::aim_sensitivity is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, pitch_limit) == 16,
+    "CyFirstPersonDesc::pitch_limit is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, hip_fov) == 20,
+    "CyFirstPersonDesc::hip_fov is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, aim_fov) == 24,
+    "CyFirstPersonDesc::aim_fov is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, hip_viewmodel_fov) == 28,
+    "CyFirstPersonDesc::hip_viewmodel_fov is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, aim_viewmodel_fov) == 32,
+    "CyFirstPersonDesc::aim_viewmodel_fov is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, aim_half_life) == 36,
+    "CyFirstPersonDesc::aim_half_life is not at byte 36"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, bob_stride) == 40,
+    "CyFirstPersonDesc::bob_stride is not at byte 40"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, bob_vertical) == 44,
+    "CyFirstPersonDesc::bob_vertical is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, bob_lateral) == 48,
+    "CyFirstPersonDesc::bob_lateral is not at byte 48"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, bob_reference_speed) == 52,
+    "CyFirstPersonDesc::bob_reference_speed is not at byte 52"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, recoil_frequency) == 56,
+    "CyFirstPersonDesc::recoil_frequency is not at byte 56"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, recoil_damping) == 60,
+    "CyFirstPersonDesc::recoil_damping is not at byte 60"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, recoil_camera_share) == 64,
+    "CyFirstPersonDesc::recoil_camera_share is not at byte 64"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, motion_reduction) == 68,
+    "CyFirstPersonDesc::motion_reduction is not at byte 68"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, hip_offset) == 72,
+    "CyFirstPersonDesc::hip_offset is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonDesc, aim_offset) == 84,
+    "CyFirstPersonDesc::aim_offset is not at byte 84"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyFirstPersonInput>() == 24,
+    "CyFirstPersonInput is not 24 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFirstPersonInput>() == 4,
+    "CyFirstPersonInput is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonInput, struct_size) == 0,
+    "CyFirstPersonInput::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonInput, flags) == 4,
+    "CyFirstPersonInput::flags is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonInput, look) == 8,
+    "CyFirstPersonInput::look is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonInput, move_speed) == 16,
+    "CyFirstPersonInput::move_speed is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonInput, reserved) == 20,
+    "CyFirstPersonInput::reserved is not at byte 20"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyFirstPersonState>() == 96,
+    "CyFirstPersonState is not 96 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyFirstPersonState>() == 4,
+    "CyFirstPersonState is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, struct_size) == 0,
+    "CyFirstPersonState::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, yaw) == 4,
+    "CyFirstPersonState::yaw is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, pitch) == 8,
+    "CyFirstPersonState::pitch is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, recoil) == 12,
+    "CyFirstPersonState::recoil is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, aim) == 20,
+    "CyFirstPersonState::aim is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, fov) == 24,
+    "CyFirstPersonState::fov is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, viewmodel_fov) == 28,
+    "CyFirstPersonState::viewmodel_fov is not at byte 28"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, eye_offset) == 32,
+    "CyFirstPersonState::eye_offset is not at byte 32"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, weapon) == 44,
+    "CyFirstPersonState::weapon is not at byte 44"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, view_aim) == 72,
+    "CyFirstPersonState::view_aim is not at byte 72"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyFirstPersonState, weapon_aim) == 84,
+    "CyFirstPersonState::weapon_aim is not at byte 84"
+);
+
+const _: () = assert!(
+    size_of::<ffi::CyViewmodelDesc>() == 32,
+    "CyViewmodelDesc is not 32 bytes; the ABI description and rustc disagree"
+);
+const _: () = assert!(
+    align_of::<ffi::CyViewmodelDesc>() == 4,
+    "CyViewmodelDesc is not 4-byte aligned"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, struct_size) == 0,
+    "CyViewmodelDesc::struct_size is not at byte 0"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, layers) == 4,
+    "CyViewmodelDesc::layers is not at byte 4"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, fov) == 8,
+    "CyViewmodelDesc::fov is not at byte 8"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, near_plane) == 12,
+    "CyViewmodelDesc::near_plane is not at byte 12"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, far_plane) == 16,
+    "CyViewmodelDesc::far_plane is not at byte 16"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, depth_fraction) == 20,
+    "CyViewmodelDesc::depth_fraction is not at byte 20"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, flags) == 24,
+    "CyViewmodelDesc::flags is not at byte 24"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyViewmodelDesc, reserved) == 28,
+    "CyViewmodelDesc::reserved is not at byte 28"
+);
+
+const _: () = assert!(
     size_of::<ffi::CyInterfaceHeader>() == 16,
     "CyInterfaceHeader is not 16 bytes; the ABI description and rustc disagree"
 );
@@ -2213,8 +2425,8 @@ const _: () = assert!(
 );
 
 const _: () = assert!(
-    size_of::<ffi::CyInterface>() == 1448,
-    "CyInterface is not 1448 bytes; the ABI description and rustc disagree"
+    size_of::<ffi::CyInterface>() == 1512,
+    "CyInterface is not 1512 bytes; the ABI description and rustc disagree"
 );
 const _: () = assert!(
     align_of::<ffi::CyInterface>() == 8,
@@ -2940,6 +3152,38 @@ const _: () = assert!(
     offset_of!(ffi::CyInterface, ui_navigate) == 1440,
     "CyInterface::ui_navigate is not at byte 1440"
 );
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_configure) == 1448,
+    "CyInterface::first_person_configure is not at byte 1448"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_input) == 1456,
+    "CyInterface::first_person_input is not at byte 1456"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_kick) == 1464,
+    "CyInterface::first_person_kick is not at byte 1464"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_reset) == 1472,
+    "CyInterface::first_person_reset is not at byte 1472"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_state) == 1480,
+    "CyInterface::first_person_state is not at byte 1480"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, first_person_release) == 1488,
+    "CyInterface::first_person_release is not at byte 1488"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, viewmodel_configure) == 1496,
+    "CyInterface::viewmodel_configure is not at byte 1496"
+);
+const _: () = assert!(
+    offset_of!(ffi::CyInterface, viewmodel_get) == 1504,
+    "CyInterface::viewmodel_get is not at byte 1504"
+);
 
 const _: () = assert!(
     size_of::<ffi::CyModuleInit>() == 40,
@@ -2986,7 +3230,7 @@ fn the_table_has_every_entry_the_description_declares() {
     // it and be invisible to a compiler that only sees Rust.
     assert_eq!(
         (size_of::<ffi::CyInterface>() - size_of::<ffi::CyInterfaceHeader>()) / size_of::<usize>(),
-        179,
+        187,
         "CyInterface has a different number of function-pointer entries than the ABI description"
     );
 }
