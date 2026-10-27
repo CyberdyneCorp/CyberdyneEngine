@@ -120,6 +120,9 @@ inline constexpr f32 kAnimationPreviewStep = 1.0F / 60.0F;
 inline constexpr f32 kAnimationGraphPreviewSeconds = 4.0F;
 /// The most recent events the preview keeps for its state.
 inline constexpr u32 kAnimationPreviewEvents = 16;
+/// The preview parameter that tilts the plane a graph's foot placement stands on, in degrees,
+/// rising towards the character's +x. Not a program parameter: the preview reads it itself.
+inline constexpr const char* kAnimationPreviewGroundSlope = "preview.ground_slope";
 
 /// One clip the preview can play.
 struct AnimationClipInfo {

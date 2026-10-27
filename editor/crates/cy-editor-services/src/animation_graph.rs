@@ -34,6 +34,11 @@ pub const EXTENSION: &str = "cyanimgraph";
 pub const EVENTS: &str = "events";
 /// The node type a clip is sampled by; only it carries events.
 pub const CLIP_NODE: &str = "pose.clip";
+/// The node type that places a character's feet on the ground.
+pub const FOOT_PLACEMENT_NODE: &str = "pose.foot_ik";
+/// The preview parameter the engine tilts the preview's ground by, in degrees: the plane a graph's
+/// foot placement stands the preview character on. Not one of the program's parameters.
+pub const GROUND_SLOPE: &str = "preview.ground_slope";
 
 /// The engine's `animation.*` operations.
 pub const CATALOGUE: &str = "animation.catalogue.get";
