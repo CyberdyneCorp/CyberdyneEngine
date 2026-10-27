@@ -516,11 +516,27 @@ jobs:
   # `continue-on-error` is deliberately absent. A nightly job that is allowed to fail is a nightly
   # job nobody reads; if this is red, the sanitizer found something and someone has to look.
   sanitize-nightly:
-    name: every suite under every sanitizer (nightly)
+    name: every suite under ${{ matrix.name }} (nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    # Three instrumented builds and the whole test set through each. The default six hours would let
-    # a hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
+    # ONE SANITIZER A JOB. The three instrumented builds and test sets ran as steps of one job until
+    # October 2026 and had outgrown its 120 minutes: TSan 46 min, ASan+UBSan 49 min, and UBSan alone
+    # cancelled at the limit (run 40488974451) — five of the ten nightlies before it were cancelled
+    # the same way, reported as nothing more specific than "cancelled". Each tool is now a job with
+    # the limit to itself, and a failure names the tool in the job list. `fail-fast: false`, so one
+    # tool's finding does not hide another's.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: ThreadSanitizer, sanitizer: thread}
+          - {name: AddressSanitizer and UndefinedBehaviorSanitizer, sanitizer: 'address,undefined'}
+          # UBSan alone as well as combined: ASan changes allocation layout, and an alignment or
+          # object-lifetime finding that only appears without it is exactly the kind the combined
+          # run can hide.
+          - {name: UndefinedBehaviorSanitizer alone, sanitizer: undefined}
+    # One instrumented build and the whole test set through it. The default six hours would let a
+    # hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -535,17 +551,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # Each sanitizer gets its own tree, which the recipe arranges; TSan cannot be combined with
-      # ASan, so this is three builds rather than two. They are separate steps so that a failure
-      # names the tool that found it in the step list rather than only in the log.
-      - name: Every suite under ThreadSanitizer
-        run: just test-sanitize --sanitizer thread --tests .
-      - name: Every suite under AddressSanitizer and UndefinedBehaviorSanitizer
-        run: just test-sanitize --sanitizer address,undefined --tests .
-      # UBSan alone as well as combined: ASan changes allocation layout, and an alignment or
-      # object-lifetime finding that only appears without it is exactly the kind the combined run
-      # can hide.
-      - name: Every suite under UndefinedBehaviorSanitizer alone
-        run: just test-sanitize --sanitizer undefined --tests .
+      # ASan, so this is three builds rather than two.
+      - name: Every suite under ${{ matrix.name }}
+        run: just test-sanitize --sanitizer ${{ matrix.sanitizer }} --tests .
 
   # --- The world: the ECS, the node façade, the cook, and the state hash ---------------------------
   #
