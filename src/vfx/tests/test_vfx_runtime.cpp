@@ -925,3 +925,62 @@ CY_TEST_CASE("a fire-and-forget effect releases itself and its pool block comes 
     CY_CHECK(world.find(*handle) == nullptr);
     CY_CHECK_EQ(world.pool().report().used_bytes, 0U);
 }
+
+CY_TEST_CASE("a fire-and-forget burst with a spawn duration releases itself without a stop") {
+    // A muzzle burst a game plays and forgets: nothing holds its handle, so nothing can stop it.
+    // Without a spawn duration it spawns for ever and is never released; with one it spawns for
+    // its seconds, lets its particles die, and gives its block back.
+    Cooked cooked(1, 64);
+    CY_REQUIRE(cooked.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+
+    EffectSpawn burst;
+    burst.release_on_completion = true;
+    burst.spawn_seconds = 0.05F;
+    auto handle = world.play(*cooked, burst);
+    CY_REQUIRE(handle.has_value());
+    EffectSpawn forever;
+    forever.release_on_completion = true;
+    auto endless = world.play(*cooked, forever);
+    CY_REQUIRE(endless.has_value());
+
+    StepReport report;
+    u32 spawned = 0;
+    for (u32 frame = 0; frame < 300U; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+        spawned += report.spawned;
+    }
+    CY_CHECK_GT(spawned, 0U);
+    CY_CHECK(world.find(*handle) == nullptr);
+    // The control: the same effect played with no duration is still spawning.
+    const EffectInstance* still = world.find(*endless);
+    CY_REQUIRE(still != nullptr);
+    CY_CHECK(still->spawning);
+    CY_CHECK_GT(still->live_particles, 0U);
+}
+
+CY_TEST_CASE("a spawn duration shorter than a sub-step still spawns once") {
+    // A 10 Hz instance at 60 frames a second simulates on one frame in six: a duration of one
+    // frame must not end the spawn before the first sub-step has run.
+    Cooked cooked(1, 64);
+    CY_REQUIRE(cooked.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+    EffectSpawn burst;
+    burst.release_on_completion = true;
+    burst.spawn_seconds = 1.0F / 60.0F;
+    burst.simulation_hz = 10.0F;
+    auto handle = world.play(*cooked, burst);
+    CY_REQUIRE(handle.has_value());
+    StepReport report;
+    u32 spawned = 0;
+    for (u32 frame = 0; frame < 8U; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+        spawned += report.spawned;
+    }
+    CY_CHECK_GT(spawned, 0U);
+    const EffectInstance* instance = world.find(*handle);
+    CY_REQUIRE(instance != nullptr);
+    CY_CHECK_FALSE(instance->spawning);
+}

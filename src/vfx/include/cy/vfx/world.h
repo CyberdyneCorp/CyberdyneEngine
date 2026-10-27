@@ -136,6 +136,11 @@ struct EffectSpawn {
     /// FIRE AND FORGET. `vfx-system`: "A fire-and-forget spawn SHALL be available that requires no
     /// handle management." The instance releases itself when its last particle dies.
     bool release_on_completion = false;
+    /// Seconds the instance spawns for: once its age reaches this and it has simulated at least one
+    /// sub-step, spawning ceases and its particles live out their lifetimes — a muzzle burst or a
+    /// shower of sparks, which with `release_on_completion` then releases itself with nothing left
+    /// to stop. Zero spawns until `stop`, as every effect did before. Appended.
+    f32 spawn_seconds = 0.0F;
 };
 
 /// One playing effect. One per system instance, not one per emitter: the emitters of a system share
@@ -164,6 +169,10 @@ struct EffectInstance {
     bool spawning = true;
     bool active = true;
     bool release_on_completion = false;
+    /// `EffectSpawn::spawn_seconds`. Appended.
+    f32 spawn_seconds = 0.0F;
+    /// Sub-steps simulated since the instance was played. Appended.
+    u32 steps = 0;
 };
 
 /// Current typed value of one exposed parameter on a playing effect.
