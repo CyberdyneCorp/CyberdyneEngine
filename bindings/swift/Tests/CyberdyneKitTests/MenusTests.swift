@@ -36,7 +36,7 @@ private func answer(
     buffer[fits] = 0
 }
 
-private func copy<T>(_ text: String, into tuple: inout T) {
+private func writeFixedString<T>(_ text: String, into tuple: inout T) {
     withUnsafeMutableBytes(of: &tuple) { raw in
         let bytes = Array(text.utf8.prefix(raw.count - 1))
         raw.copyBytes(from: bytes)
@@ -68,8 +68,8 @@ final class MenusTests: XCTestCase {
                 out.pointee.status = CY_INPUT_REBIND_APPLIED.rawValue
                 out.pointee.action = 4
                 out.pointee.scheme = CY_INPUT_SCHEME_GAMEPAD.rawValue
-                copy("gamepad/north", into: &out.pointee.control)
-                copy("Game.Interact", into: &out.pointee.conflict)
+                writeFixedString("gamepad/north", into: &out.pointee.control)
+                writeFixedString("Game.Interact", into: &out.pointee.conflict)
                 return CY_RESULT_OK
             }
             table.input_rebind_cancel = { _, _ in
