@@ -58,10 +58,11 @@ which the host prints and never acts on.
 ## The frame budget, measured
 
 On the RTX 5060 at 1920x1080, Development, no validation layer (`smoke.third_person_render`'s timed
-run): **a frame 8.2 ms on average** — recorded, submitted and waited for — against a budget of
-**16.7 ms** (sixty frames a second); the device's half 6.2 ms, of which the GI 2.6 ms. The game's
-own frame, the hero, the camera and the GI's host update, is about 1 ms. See the guide for the
-frame with each feature off.
+run): **a frame 7.9 ms on average** (7.5 to 9.3 ms across runs) — recorded, submitted and waited
+for — against a budget of **16.7 ms** (sixty frames a second); the device's half about 6.2 ms, of
+which the GI 2.6 to 2.8 ms. The game's own frame — the hero, the camera, and the GI's host update,
+which is most of it — is about 1 ms. Natively at 1920x1080 with temporal antialiasing instead of the
+upscaler the frame is 11.9 ms. The guide has the frame with each feature off.
 
 ## What the tests check
 

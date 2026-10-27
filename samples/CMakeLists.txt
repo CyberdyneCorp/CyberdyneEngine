@@ -188,6 +188,7 @@ add_subdirectory(13-rts-selection)
 # walls — and the engine draws it with shadows, ambient occlusion, the device GI and the temporal
 # upscaler. Declares nothing without Swift, the animation runtime or Jolt.
 add_subdirectory(14-third-person)
+
 # A first-person shooter written in Swift against ABI 1.15: a character that walks, sprints, jumps and
 # crouches, a first-person camera with a weapon view, hitscan shots by physics raycast, props pushed
 # by impulses, targets driven by the engine's AI, and what a shot leaves — a flash, bursts, sparks

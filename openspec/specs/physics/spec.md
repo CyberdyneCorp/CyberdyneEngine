@@ -191,6 +191,12 @@ degrees of freedom, for swimming and flying).
 - **THEN** the platform's motion SHALL be applied to the character, and on leaving, the configured
   inherited-velocity policy SHALL apply
 
+#### Scenario: Stepping from one body onto another
+- **WHEN** a grounded character walks from one static body onto another — a stair's tread, the next
+  slab
+- **THEN** no platform motion SHALL be applied: a platform's motion is the same ground body's
+  displacement across a step, never the distance between two bodies
+
 ### Requirement: Constraints
 The engine SHALL provide constraints: fixed, point (ball-and-socket), hinge (with limits and a
 motor), slider, distance, cone, swing-twist, six-degrees-of-freedom (per-axis limits, motors, and

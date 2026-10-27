@@ -11,6 +11,8 @@
 //                                                  `--no-upscale`, `--no-validation` as controls
 //   --map <hillside.cypak>                         the cooked level; the build's by default
 //   --frames <n>                                   stop early
+//   --trace <n>                                    every nth frame, where the capsule, the camera
+//                                                  and the feet are: a developer's view of the run
 //
 // The report is one line per claim, and tests/test_third_person_sample.cpp reads it. Every number
 // comes from the engine or from the game's `HeroReport`; none is computed here from anything the

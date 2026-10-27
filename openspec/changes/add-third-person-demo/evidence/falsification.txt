@@ -1,0 +1,90 @@
+add-third-person-demo — every new case proved red, on the RTX 5060, Linux, Development, GCC 13
+
+THE THREE DEFECTS: each regression case run against the code before its fix.
+
+1. unit.camera_system — the collision node's question and its recovery (src/servers/camera/src/rig_evaluate.cpp)
+   Before the fix (the queries from the pulled-in position; a clear answer a no-op):
+     'a camera pulled in by a wall stays in front of it, frame after frame'
+       CHECK_LE( farthest, 2.251 )            values: 6 <= 2.251        the camera alternated 6 m / 2.25 m
+       CHECK_LT( largest_step, 0.001 )        values: 5.89839 < 0.001
+       CHECK( previous == 2.25 +/- 0.001 )    values: 2.10938
+     'a wall that appears snaps the camera to it, and one that clears lets it ease out'
+       CHECK( frame == 2.25 +/- 0.0001 )      values: 0.101606, 0.198624, 0.291261 ...   first contact slammed
+                                                                                          it to 0.10 m and eased out
+   After: both green; unit.camera_system 94/94.
+
+2. integration.physics_behaviour — the platform measure (src/servers/physics/src/character.cpp)
+   Before the fix (the previous ground body read after it was overwritten):
+     'walking from one static body onto another is not a ride on a platform'
+       CHECK( previous == 7 +/- 0.2 )         values: 17                thrown ten metres at the seam
+       CHECK_LT( largest_step, 0.0343 )       values: 10.0333
+       CHECK_LT( fastest_platform, 0.001 )    values: 600               a 600 m/s "platform"
+       CHECK_EQ( ground, Grounded )           values: 2 (InAir)
+   After: green; integration.physics_behaviour 23/23.
+
+3. render.gi_gpu_resolve — the adaptive screen-probe slots (gi_screen_probes_common.slang, gpu_resolve.cpp)
+   Before the fix (a slot per candidate from InterlockedAdd), three runs of
+     'when a frame's adaptive capacity is spent the device keeps the probes the host keeps'
+       a spent capacity: 1568 live records compared, 2014 placed differently, 1642 adaptive refused   RED
+       a spent capacity: 1555 live records compared, 2028 placed differently, 1642 adaptive refused   RED
+       a spent capacity: 1521 live records compared, 2109 placed differently, 1642 adaptive refused   RED
+     — neither the host's nor the same twice. At 64x40 (the suite's other probe cases) the device's
+     threads reach the atomic in cell order and the case is green on the old code too, which is why
+     the case uses a 256x160 grid.
+   After: 2560 live records compared, 0 placed differently, 1642 adaptive refused, twice.
+   End to end: samples/14-third-person drawn at 480x270 differed between two runs from frame
+   233-254 on — the frames whose adaptive capacity was spent (taken == capacity on 28 of the first
+   400 frames, the first at 233) — by up to 15 of 255; after the fix 31 stills over 1200 frames are
+   byte-identical across runs.
+
+THE NEW SUITES: one mutation each, applied, rebuilt, run, and restored (the runner is the change's
+own script; each line is its verdict).
+
+  integration.game_backend_camera_collision — resolve() answers and submits nothing
+    RED
+      CHECK( (camera.frame(resolver)) == ::cy::test::within(kWallFace - kProbe, 1e-3F) ) is NOT correct!
+      CHECK( (camera.frame(resolver)) == ::cy::test::within(kWallFace - kProbe, 1e-3F) ) is NOT correct!
+  integration.game_backend_camera_collision — the ignore list dropped from the query filter
+    RED
+      CHECK( (resolver.stats().nearest_fraction) == ::cy::test::within((kWallFace - kProbe) / 6.0F, 1e-3F) ) is NOT correct!
+      CHECK( (camera.frame(resolver)) == ::cy::test::within(kWallFace - kProbe, 1e-3F) ) is NOT correct!
+  integration.third_person_sample — Hero.stepOffset 0.35 -> 0.1 (NOT RED: see below)
+    GREEN(!)
+  integration.third_person_sample — the host never resolves the camera's queries
+    RED
+      CHECK( number_after(run.camera, "collision_frames=") > 10.0 ) is NOT correct!
+      CHECK_EQ( number_after(run.camera, "queries="), 2.0 * 1199.0 ) is NOT correct!
+  integration.third_person_sample — the hero ignores its footstep events
+    RED
+      CHECK( number_after(run.steps, "footsteps=") > 20.0 ) is NOT correct!
+      CHECK( number_after(run.steps, "stone=") > 8.0 ) is NOT correct!
+  integration.third_person_sample — the hero sets foot placement's weight to zero
+    RED
+      CHECK( number_after(run.feet, "solved=") > 600.0 ) is NOT correct!
+      CHECK( number_after(run.feet, "adjusted=") > 30.0 ) is NOT correct!
+  integration.third_person_sample — the frame's wall time folded into the digest
+    RED
+      CHECK_EQ( first.digest, second.digest ) is NOT correct!
+  integration.third_person_sample — --no-behaviours attaches the behaviours anyway
+    RED
+      CHECK_EQ( number_after(run.module, "behaviours="), 0.0 ) is NOT correct!
+      CHECK_EQ( number_after(run.module, "report="), 0.0 ) is NOT correct!
+  smoke.third_person_render — the hero's head two centimetres larger
+    RED
+      CHECK_EQ( comparison.differing, 0U ) is NOT correct!
+  smoke.third_person_render — every drawn frame held to 20 ms
+    RED
+      CHECK_LT( number_after(cost, "frame_ms="), kFrameBudgetMs ) is NOT correct!
+  smoke.third_person_render — the drawn run skips the jump tap at frame 380
+    RED
+      CHECK_EQ( gameplay(drawn.output), gameplay(headless.output) ) is NOT correct!
+      CHECK_EQ( comparison.differing, 0U ) is NOT correct!
+  integration.third_person_sample — the stairs' risers 0.18 -> 0.45 m
+    RED
+      CHECK( number_after(run.hero, "stepped_up=") >= 8.0 ) is NOT correct!
+      CHECK_EQ( number_after(run.hero, "landings="), 2.0 ) is NOT correct!
+
+  The step offset alone is not what climbs an 18 cm riser: a capsule of 0.3 m radius meets the
+  riser's edge on its rounded bottom and the slide carries it up, so at a 0.1 m offset the hero still
+  climbs. The stairs claim is therefore proved by risers the capsule cannot ride (0.45 m), which
+  fail `stepped_up >= 8` and the second landing.

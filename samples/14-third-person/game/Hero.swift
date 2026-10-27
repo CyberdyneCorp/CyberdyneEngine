@@ -36,8 +36,9 @@ final class Hero: Behaviour {
     /// The capsule. Total height including both caps.
     @Export(range: 0.1...1) var radius: Float = 0.3
     @Export(range: 0.5...3) var height: Float = 1.8
-    /// The tallest step climbed rather than blocked: the stairs' 18 cm risers are, a 60 cm wall is
-    /// not. A gameplay decision, made here.
+    /// The tallest step the controller lifts the hero onto rather than blocking it: a 60 cm wall is
+    /// not one. (An 18 cm riser the capsule's round bottom half rides on its own.) A gameplay
+    /// decision, made here.
     @Export(range: 0...1) var stepOffset: Float = 0.35
     /// Above this a surface is a wall: the hill's 20-degree flank is walkable.
     @Export(range: 0...1.5) var maxSlope: Float = 0.87
