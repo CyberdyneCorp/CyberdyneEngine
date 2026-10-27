@@ -430,3 +430,109 @@ CY_TEST_CASE(
     player.tick(pose::LocomotionState::Idle);
     CY_CHECK(std::fabs(player.local[kUpperArm].rotation.x - down.x) < 1e-3F);
 }
+
+namespace {
+
+[[nodiscard]] graph::Literal named(const char* value) noexcept {
+    graph::Literal literal;
+    literal.type = Name::intern("name");
+    literal.text = Name::intern(value);
+    return literal;
+}
+
+[[nodiscard]] graph::Literal placed(f32 x, f32 y) noexcept {
+    graph::Literal literal;
+    literal.type = Name::intern("vec2");
+    literal.value.x = x;
+    literal.value.y = y;
+    return literal;
+}
+
+/// A program with a synchronised two-dimensional blend space, a foot placement and an aim: every
+/// table cooked program version 2 appends.
+[[nodiscard]] Expected<pose::PoseProgram, Error> compile_modifiers() noexcept {
+    graph::NodeRegistry registry(allocator());
+    if (Status registered = pose::register_pose_nodes(registry); !registered) {
+        return make_unexpected(registered.error());
+    }
+    graph::Graph graph(allocator(), Name::intern("modifiers"));
+    Status built = graph.add_node(10, Name::intern("pose.blend2d"));
+    built = built ? graph.set_property(10, Name::intern("x_parameter"), named("lateral")) : built;
+    built = built ? graph.set_property(10, Name::intern("y_parameter"), named("forward")) : built;
+    graph::Literal sync;
+    sync.type = Name::intern("bool");
+    sync.value.mask = 1;
+    built = built ? graph.set_property(10, Name::intern("sync"), sync) : built;
+    const char* clips[] = {"idle", "walk", "run"};
+    const f32 positions[3][2] = {{0.0F, 0.0F}, {0.0F, 1.5F}, {1.0F, 4.0F}};
+    for (u32 index = 0; index < 3; ++index) {
+        const graph::NodeKey node = index + 1;
+        char pin[4] = {'s', static_cast<char>('0' + index), '\0', '\0'};
+        built = built ? graph.add_node(node, Name::intern("pose.clip")) : built;
+        built = built ? graph.set_property(node, Name::intern("clip"), named(clips[index])) : built;
+        built = built ? graph.connect(node, Name::intern("pose"), 10, Name::intern(pin)) : built;
+        built = built ? graph.set_property(10, Name::intern(pin),
+                                           placed(positions[index][0], positions[index][1]))
+                      : built;
+    }
+    built = built ? graph.add_node(11, Name::intern("pose.foot_ik")) : built;
+    for (const char* property :
+         {"pelvis", "hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r"}) {
+        built = built ? graph.set_property(11, Name::intern(property), named(property)) : built;
+    }
+    built = built ? graph.set_property(11, Name::intern("weight_parameter"), named("feet")) : built;
+    built = built ? graph.add_node(12, Name::intern("pose.aim")) : built;
+    built = built ? graph.set_property(12, Name::intern("chain"), named("spine, head")) : built;
+    built = built ? graph.set_property(12, Name::intern("target_parameter"), named("look")) : built;
+    built = built ? graph.add_node(20, Name::intern("pose.state")) : built;
+    built = built ? graph.connect(10, Name::intern("pose"), 11, Name::intern("a")) : built;
+    built = built ? graph.connect(11, Name::intern("pose"), 12, Name::intern("a")) : built;
+    built = built ? graph.connect(12, Name::intern("pose"), 20, Name::intern("pose")) : built;
+    if (!built) {
+        return make_unexpected(built.error());
+    }
+    graph.resolve(registry);
+    graph::DiagnosticSink sink(allocator());
+    return pose::compile_pose(graph, registry, 12, sink);
+}
+
+[[nodiscard]] u32 record_version(const Array<u8>& bytes) noexcept {
+    u32 version = 0;
+    std::memcpy(&version, bytes.data() + 4, sizeof(version));
+    return version;
+}
+
+}  // namespace
+
+CY_TEST_CASE("cooked animation: blend spaces, foot placement and aim round-trip at version 2") {
+    Expected<pose::PoseProgram, Error> program = compile_modifiers();
+    CY_REQUIRE(program.has_value());
+    CY_REQUIRE_EQ(program->blend_spaces().size(), 1U);
+    CY_REQUIRE_EQ(program->foot_placements().size(), 1U);
+    CY_REQUIRE_EQ(program->aims().size(), 1U);
+
+    Array<u8> first(allocator());
+    CY_REQUIRE(encode_program(*program, first).has_value());
+    CY_CHECK_EQ(record_version(first), kCookedProgramModifiersVersion);
+    Expected<pose::PoseProgram, Error> read = decode_program(allocator(), first.span());
+    CY_REQUIRE(read.has_value());
+    Array<u8> second(allocator());
+    CY_REQUIRE(encode_program(*read, second).has_value());
+    CY_CHECK(same_bytes(first, second));
+    CY_CHECK_EQ(read->digest(), program->digest());
+    CY_CHECK(read->blend_spaces()[0].sync);
+    CY_CHECK_EQ(read->blend_spaces()[0].triangle_count, program->blend_spaces()[0].triangle_count);
+    CY_CHECK_EQ(read->blend_samples()[2].y, 4.0F);
+    CY_CHECK_EQ(read->foot_placements()[0].leg[1][1], Name::intern("knee_r"));
+    CY_CHECK_EQ(read->aims()[0].joints[1], Name::intern("head"));
+    CY_CHECK_EQ(read->aims()[0].target_param[1], program->aims()[0].target_param[1]);
+    CY_CHECK_FALSE(
+        decode_program(allocator(), first.span().subspan(0, first.size() - 1)).has_value());
+
+    // A PROGRAM WITHOUT THEM IS STILL VERSION 1, byte for byte what it was before they existed.
+    LocomotionRig locomotion(allocator());
+    CY_REQUIRE(locomotion.build().has_value());
+    Array<u8> plain(allocator());
+    CY_REQUIRE(encode_program(locomotion.program, plain).has_value());
+    CY_CHECK_EQ(record_version(plain), kCookedProgramVersion);
+}

@@ -2,6 +2,8 @@
 
 #include <cy/core/math/scalar.h>
 
+#include "blend_space_runtime.h"
+
 #include <cmath>
 #include <utility>
 
@@ -32,7 +34,15 @@ constexpr u16 kNoTransition = 0xFFFFU;
 // --- AnimationRig -------------------------------------------------------------------------------
 
 AnimationRig::AnimationRig(Allocator& allocator) noexcept
-    : clips_(allocator), times_(allocator), mask_weights_(allocator), chains_(allocator) {}
+    : clips_(allocator),
+      times_(allocator),
+      mask_weights_(allocator),
+      chains_(allocator),
+      feet_(allocator),
+      aims_(allocator),
+      sync_spaces_(allocator),
+      sync_samples_(allocator),
+      sync_times_(allocator) {}
 
 Status AnimationRig::bind(const Skeleton& skeleton, const PoseProgram& program,
                           Span<const Clip* const> clips) noexcept {
@@ -98,7 +108,17 @@ Status AnimationRig::bind(const Skeleton& skeleton, const PoseProgram& program,
 
     skeleton_ = &skeleton;
     program_ = &program;
-    return ok();
+    // Blend spaces' shared clocks and the joints foot placements and aims name, resolved once so a
+    // frame compares no string and sorts no marker.
+    Status resolved = bind_modifiers();
+    if (resolved) {
+        resolved = bind_sync();
+    }
+    if (!resolved) {
+        skeleton_ = nullptr;
+        program_ = nullptr;
+    }
+    return resolved;
 }
 
 Status AnimationRig::set_mask_weight(u16 mask, u16 joint, f32 weight) noexcept {
@@ -135,7 +155,11 @@ const IkChain* AnimationRig::ik_chain(u16 index) const noexcept {
 // --- AnimationInstance --------------------------------------------------------------------------
 
 AnimationInstance::AnimationInstance(Allocator& allocator) noexcept
-    : parameters_(allocator), cursors_(allocator), previous_(allocator) {}
+    : parameters_(allocator),
+      cursors_(allocator),
+      previous_(allocator),
+      feet_(allocator),
+      foot_reports_(allocator) {}
 
 Status AnimationInstance::prepare(const AnimationRig& rig) noexcept {
     if (!rig.bound()) {
@@ -167,9 +191,27 @@ Status AnimationInstance::prepare(const AnimationRig& rig) noexcept {
             }
         }
     }
+    if (Status sized = feet_.resize(program.foot_placements().size()); !sized) {
+        return sized;
+    }
+    if (Status sized = foot_reports_.resize(program.foot_placements().size()); !sized) {
+        return sized;
+    }
+    for (FootPlacementState& foot : feet_) {
+        foot = FootPlacementState{};
+    }
+    for (FootPlacementReport& report : foot_reports_) {
+        report = FootPlacementReport{};
+    }
     machine_ = graph::pose::PoseInstance{};
     machine_.state = program.entry_state();
     clear_root_motion();
+    // A synchronised space starts its cycle aligned: its first clip at zero and every other clip at
+    // the corresponding point of its stride, rather than all at zero and snapping on the first
+    // tick.
+    for (const AnimationRig::SyncSpace& space : rig.sync_spaces()) {
+        detail::restart_sync(rig, *this, space.space);
+    }
     return ok();
 }
 
@@ -293,6 +335,18 @@ struct Evaluator {
                                  const JointMask& required) noexcept;
     [[nodiscard]] Status apply_ik(const PoseInstruction& instruction, PoseValue value,
                                   const JointMask& required) noexcept;
+    [[nodiscard]] Status blend_space(const PoseInstruction& instruction, PoseValue value,
+                                     const JointMask& required) noexcept;
+    [[nodiscard]] Status place_feet(const PoseInstruction& instruction, PoseValue value,
+                                    const JointMask& required) noexcept;
+    [[nodiscard]] Status aim(const PoseInstruction& instruction, PoseValue value,
+                             const JointMask& required) noexcept;
+    /// Evaluate `a` into `value`'s slot and say whether a modifier should then run on it: not at a
+    /// tier that skips modifiers, and not at zero weight — both of which leave the pose exactly as
+    /// `a` produced it.
+    [[nodiscard]] Expected<f32, Error> modifier_input(const PoseInstruction& instruction,
+                                                      PoseValue value,
+                                                      const JointMask& required) noexcept;
 };
 
 void Evaluator::seed_reference(Span<Transform> out, const JointMask& mask) const noexcept {
@@ -408,6 +462,115 @@ Status Evaluator::apply_ik(const PoseInstruction& instruction, PoseValue value,
     return ok();
 }
 
+Status Evaluator::blend_space(const PoseInstruction& instruction, PoseValue value,
+                              const JointMask& required) noexcept {
+    f32 weights[graph::pose::kMaxBlendSamples] = {};
+    if (!detail::space_weights(*rig, instruction.clip, parameters(),
+                               Span<f32>(weights, graph::pose::kMaxBlendSamples))) {
+        return fail(ErrorCode::InvalidArgument, "the program blends a space it does not have");
+    }
+    const graph::pose::BlendSpace& space = program().blend_spaces()[instruction.clip];
+    const Span<Transform> out = scratch->slot(value);
+    // A RUNNING WEIGHT: each sample is interpolated in by its share of the weight seen so far, so
+    // three rotations blend by their barycentric weights through two slerps. A sample at zero
+    // weight is never walked — a blend space costs the two or three samples around the character,
+    // however many it holds.
+    f32 seen = 0.0F;
+    for (u32 index = 0; index < space.sample_count; ++index) {
+        if (weights[index] <= 0.0F) {
+            ++stats->blend_samples_skipped;
+            continue;
+        }
+        const PoseValue sample = program().blend_samples()[space.first_sample + index].value;
+        if (Status ran = run(sample); !ran) {
+            return ran;
+        }
+        const Span<const Transform> pose = scratch->slot(sample);
+        seen += weights[index];
+        if (seen == weights[index]) {
+            copy_masked(out, pose, required);
+            continue;
+        }
+        const f32 share = weights[index] / seen;
+        for (u32 joint = 0; joint < out.size() && joint < pose.size(); ++joint) {
+            if (required.test(joint)) {
+                out[joint] = interpolate(out[joint], pose[joint], share);
+            }
+        }
+    }
+    return ok();
+}
+
+Expected<f32, Error> Evaluator::modifier_input(const PoseInstruction& instruction, PoseValue value,
+                                               const JointMask& required) noexcept {
+    if (Status ran = run(instruction.a); !ran) {
+        return make_unexpected(ran.error());
+    }
+    copy_masked(scratch->slot(value), scratch->slot(instruction.a), required);
+    const f32 weight =
+        math::clamp(parameter_of(parameters(), instruction.weight_param), 0.0F, 1.0F);
+    if (!modifiers || !(weight > 0.0F)) {
+        ++stats->instructions_skipped;
+        return 0.0F;
+    }
+    return weight;
+}
+
+Status Evaluator::place_feet(const PoseInstruction& instruction, PoseValue value,
+                             const JointMask& required) noexcept {
+    Expected<f32, Error> weight = modifier_input(instruction, value, required);
+    if (!weight) {
+        return Status{make_unexpected(weight.error())};
+    }
+    FootPlacementState* state = instance->foot_state(instruction.chain);
+    FootPlacementReport* report = instance->foot_report(instruction.chain);
+    if (report != nullptr) {
+        *report = FootPlacementReport{};
+    }
+    const FootPlacementSetup* setup = rig->foot_placement(instruction.chain);
+    const GroundProbe* ground = instance->ground();
+    if (*weight <= 0.0F) {
+        if (state != nullptr) {
+            state->primed = false;
+        }
+        return ok();
+    }
+    if (setup == nullptr || ground == nullptr || state == nullptr) {
+        return ok();
+    }
+    if (Status solved =
+            solve_foot_placement(rig->skeleton(), *setup, instance->ground_context(), *ground,
+                                 *weight, *state, scratch->slot(value), report);
+        !solved) {
+        return solved;
+    }
+    ++stats->feet_placed;
+    return ok();
+}
+
+Status Evaluator::aim(const PoseInstruction& instruction, PoseValue value,
+                      const JointMask& required) noexcept {
+    Expected<f32, Error> weight = modifier_input(instruction, value, required);
+    if (!weight) {
+        return Status{make_unexpected(weight.error())};
+    }
+    const AimChain* chain = rig->aim(instruction.chain);
+    if (*weight <= 0.0F || chain == nullptr || instruction.chain >= program().aims().size()) {
+        return ok();
+    }
+    const graph::pose::AimRef& authored = program().aims()[instruction.chain];
+    const Span<const f32> params = parameters();
+    const Vec3 target{parameter_of(params, authored.target_param[0]),
+                      parameter_of(params, authored.target_param[1]),
+                      parameter_of(params, authored.target_param[2])};
+    if (Status solved = solve_aim(rig->skeleton(), *chain, target, *weight, scratch->slot(value));
+        !solved) {
+        return solved;
+    }
+    ++stats->aims_solved;
+    return ok();
+}
+
 Status Evaluator::run(PoseValue value) noexcept {
     if (value == kNoPose || value >= program().code().size()) {
         return ok();
@@ -432,6 +595,12 @@ Status Evaluator::run(PoseValue value) noexcept {
             return combine(instruction, value, required);
         case PoseOp::IK:
             return apply_ik(instruction, value, required);
+        case PoseOp::BlendSpace:
+            return blend_space(instruction, value, required);
+        case PoseOp::FootPlacement:
+            return place_feet(instruction, value, required);
+        case PoseOp::Aim:
+            return aim(instruction, value, required);
         case PoseOp::Count:
             break;
     }
@@ -517,6 +686,7 @@ struct RootWalker {
     Span<const f32> after;
 
     [[nodiscard]] RootDelta run(PoseValue value) const noexcept;
+    [[nodiscard]] RootDelta blend_space(const PoseInstruction& instruction) const noexcept;
 };
 
 /// The value a clip's time parameter held before the last advance. `before` is parallel to the
@@ -580,11 +750,38 @@ RootDelta RootWalker::run(PoseValue value) const noexcept {
             return run(from_layer ? instruction.b : instruction.a);
         }
         case PoseOp::IK:
+        case PoseOp::FootPlacement:
+        case PoseOp::Aim:
             return run(instruction.a);
+        case PoseOp::BlendSpace:
+            return blend_space(instruction);
         case PoseOp::Count:
             break;
     }
     return RootDelta{};
+}
+
+RootDelta RootWalker::blend_space(const PoseInstruction& instruction) const noexcept {
+    // "the root delta blends by the pose weights": the samples' deltas, by the same running
+    // weight the pose is blended with.
+    f32 weights[graph::pose::kMaxBlendSamples] = {};
+    if (!detail::space_weights(*rig, instruction.clip, parameters,
+                               Span<f32>(weights, graph::pose::kMaxBlendSamples))) {
+        return RootDelta{};
+    }
+    const graph::pose::BlendSpace& space = rig->program().blend_spaces()[instruction.clip];
+    RootDelta blended;
+    f32 seen = 0.0F;
+    for (u32 index = 0; index < space.sample_count; ++index) {
+        if (weights[index] <= 0.0F) {
+            continue;
+        }
+        seen += weights[index];
+        const RootDelta sample =
+            run(rig->program().blend_samples()[space.first_sample + index].value);
+        blended = blend_root(blended, sample, weights[index] / seen);
+    }
+    return blended;
 }
 
 /// Emit the events every clip of a state's tree crossed in the interval.
@@ -605,6 +802,18 @@ RootDelta RootWalker::run(PoseValue value) const noexcept {
         const f32 from = time_before(rig, instruction.time_param, before);
         const f32 to = parameter_of(after, instruction.time_param);
         return emit_events(*clip, instance.identifier(), from, to, instance.event_policy(), buffer);
+    }
+    if (instruction.op == PoseOp::BlendSpace) {
+        // ONE SAMPLE SPEAKS FOR A SPACE: the heaviest. A walk and a run blended half and half are
+        // one character taking one step, and both clips' footsteps would be two.
+        if (instruction.clip >= program.blend_spaces().size()) {
+            return ok();
+        }
+        const graph::pose::BlendSpace& space = program.blend_spaces()[instruction.clip];
+        const u32 heaviest = detail::heaviest_sample(rig, instruction.clip, instance.parameters());
+        return emit_state_events(rig, instance,
+                                 program.blend_samples()[space.first_sample + heaviest].value,
+                                 before, after, buffer);
     }
     if (Status left = emit_state_events(rig, instance, instruction.a, before, after, buffer);
         !left) {
@@ -643,6 +852,16 @@ void reset_state_times(const AnimationRig& rig, AnimationInstance& instance,
         if (instruction.time_param < parameters.size()) {
             parameters[instruction.time_param] = 0.0F;
         }
+        return;
+    }
+    if (instruction.op == PoseOp::BlendSpace && instruction.clip < program.blend_spaces().size()) {
+        const graph::pose::BlendSpace& space = program.blend_spaces()[instruction.clip];
+        for (u32 index = 0; index < space.sample_count; ++index) {
+            reset_state_times(rig, instance,
+                              program.blend_samples()[space.first_sample + index].value);
+        }
+        // A synchronised space restarts aligned, not with every clip at zero.
+        detail::restart_sync(rig, instance, instruction.clip);
         return;
     }
     reset_state_times(rig, instance, instruction.a);
@@ -687,6 +906,10 @@ Status advance(const AnimationRig& rig, AnimationInstance& instance, f32 dt,
                 math::clamp(parameters[entry.parameter], 0.0F, math::max(entry.duration, 0.0F));
         }
     }
+    // A synchronised blend space's clips are not on their own clocks: the space's shared phase
+    // moves them, at the blended cadence. Their interval is set here, before root motion and events
+    // read it.
+    detail::advance_sync(rig, instance, step);
 
     const u16 state_before = instance.machine().state;
     const u16 target_before = instance.machine().target;

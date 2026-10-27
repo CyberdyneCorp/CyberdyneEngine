@@ -21,7 +21,9 @@
 //              at version 1, so an importer's record round-trips byte for byte.
 //   program    NEW: a `graph::pose::PoseProgram` as `compile_pose` produced it — instructions with
 //              their dependency masks, states, transitions, clip references, masks, parameter
-//              names, sync tables and the digest. It is written at cook time and read by
+//              names, sync tables and the digest; version 2 appends blend spaces, foot placements
+//              and aims, and a program without them stays at version 1. It is written at cook time
+//              and read by
 //              `graph::pose::assemble_pose_program`, which validates and copies and compiles
 //              nothing, so a runtime that loads programs links no compiler.
 //
@@ -46,6 +48,10 @@ inline constexpr u32 kCookedClipEventsVersion = 2;
 /// "CYPG" as it reads in a hex dump of the little-endian word.
 inline constexpr u32 kCookedProgramMagic = 0x47505943U;
 inline constexpr u32 kCookedProgramVersion = 1;
+/// Version 2 appends the blend spaces, their samples and triangles, the foot placements and the
+/// aims. A program with none of them is written at version 1, so a program cooked before they
+/// existed round-trips byte for byte.
+inline constexpr u32 kCookedProgramModifiersVersion = 2;
 
 /// Read a cooked skeleton into `out`, which must be empty, and its humanoid profile. `out` is
 /// finalized on success and ready for `AnimationRig::bind`.
