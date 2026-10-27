@@ -1,0 +1,24 @@
+# The game module's manifest. `native-abi`: "module name, entry symbol, minimum ABI version,
+# per-platform library paths, and whether the module is hot-reloadable".
+#
+# The host takes the library's path from the build (`CY_FIRST_PERSON_MODULE_LIBRARY`) because the
+# file is named for its hot-reload generation; see samples/04-character/module.toml.
+#
+# min_abi_minor = 15: the game plays effects and spawns decals (ABI 1.15), drives a first-person
+# camera and its weapon view (1.13), spawns lights (1.11), moves a character and pushes bodies
+# (1.5), and reads input, raycasts and plays cues (1.3); an engine older than 1.15 lacks the first.
+
+name = "first-person"
+entry_symbol = "cy_module_entry"
+min_abi_major = 1
+min_abi_minor = 15
+hot_reload = true
+
+[platform.linux]
+library = "libCyGame_g0.so"
+
+[platform.windows]
+library = "CyGame_g0.dll"
+
+[platform.macos]
+library = "libCyGame_g0.dylib"
